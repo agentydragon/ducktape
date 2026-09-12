@@ -141,10 +141,6 @@ py_test(
     name = "test_app",
     size = "medium",
     srcs = ["test_app.py"],
-    data = [
-        "//third_party/containers:pgvector_pg18",
-        "//third_party/containers:ryuk",
-    ],
     requires_docker = True,
     deps = [
         ":app",
@@ -166,10 +162,6 @@ py_test(
     name = "test_store",
     size = "medium",
     srcs = ["test_store.py"],
-    data = [
-        "//third_party/containers:pgvector_pg18",
-        "//third_party/containers:ryuk",
-    ],
     requires_docker = True,
     deps = [
         ":conftest",

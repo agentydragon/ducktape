@@ -108,7 +108,6 @@ py_binary(
 py_library(
     name = "grocy_container",
     srcs = ["grocy_container.py"],
-    data = ["//third_party/containers:grocy"],
     visibility = ["//grocy_mcp:__subpackages__"],
     deps = [
         ":mcp_types",
@@ -125,7 +124,6 @@ py_library(
     name = "grocy_fixtures",
     testonly = True,
     srcs = ["grocy_fixtures.py"],
-    data = ["//third_party/containers:grocy"],
     visibility = ["//grocy_mcp:__subpackages__"],
     deps = [
         ":grocy_container",

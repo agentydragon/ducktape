@@ -32,7 +32,6 @@ py_binary(
 py_test(
     name = "test_twenty_questions",
     srcs = ["test_twenty_questions.py"],
-    data = ["//third_party/containers:python_3_13_slim"],
     requires_docker = True,
     deps = [
         ":conftest",

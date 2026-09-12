@@ -144,7 +144,6 @@ py_library(
 py_test(
     name = "test_container_logs",
     srcs = ["test_container_logs.py"],
-    data = ["//third_party/containers:debian_slim"],
     requires_docker = True,
     deps = [
         ":container_logs",

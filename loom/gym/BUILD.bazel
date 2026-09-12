@@ -343,7 +343,6 @@ py_test(
     srcs = ["test_inspect_harness.py"],
     data = [
         "//loom/wayback/proxy:image_info",
-        "//third_party/containers:python_3_13_slim",
     ],
     requires_docker = True,
     deps = [

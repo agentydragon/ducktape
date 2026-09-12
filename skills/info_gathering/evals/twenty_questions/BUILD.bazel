@@ -52,9 +52,6 @@ py_library(
 
 py_binary(
     name = "twenty_questions_bin",
-    data = [
-        "//third_party/containers:debian_slim",
-    ],
     main_module = "skills.info_gathering.evals.twenty_questions.twenty_questions",
     deps = [":twenty_questions"],
 )
