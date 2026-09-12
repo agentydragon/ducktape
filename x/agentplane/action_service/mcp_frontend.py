@@ -10,18 +10,17 @@ from functools import wraps
 from typing import Annotated, cast
 from uuid import UUID
 
-from fastapi import HTTPException
 from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
 from fastmcp.exceptions import ToolError
-from fastmcp.server.dependencies import CurrentRequest, get_http_request
+from fastmcp.server.auth.auth import AccessToken
+from fastmcp.server.dependencies import CurrentAccessToken, get_access_token, get_http_request
 from fastmcp.tools import ToolResult
 from pydantic import BaseModel, Field, JsonValue
 from starlette.requests import Request
-from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from x.agentplane.action_service.caller_auth import CallerAuthenticator
+from x.agentplane.action_service.caller_auth import CallerToken, CallerTokenVerifier
 from x.agentplane.action_service.catalog import (
     ActionCatalog,
     ActionIdentity,
@@ -71,27 +70,21 @@ class EventPage(BaseModel):
     next_after_sequence: int | None = None
 
 
-class ActionsMcp:
-    """Authenticate every transport request, never just MCP initialization or a session id."""
+class TransportDisconnects:
+    """Expose the transport's `http.disconnect` to tools as `request.state.action_disconnected`.
 
-    def __init__(self, app: ASGIApp, authenticator: CallerAuthenticator) -> None:
+    Only a wrapper around the transport's `receive` sees the disconnect, and the MCP SDK's stateless
+    server task can outlive the transport, so a bounded wait watches this event instead."""
+
+    def __init__(self, app: ASGIApp) -> None:
         self._app = app
-        self._authenticator = authenticator
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
             await self._app(scope, receive, send)
             return
-        request = Request(scope)
-        try:
-            request.state.action_principal = await self._authenticator(request)
-        except HTTPException as error:
-            await JSONResponse({"detail": error.detail}, status_code=error.status_code, headers=error.headers)(
-                scope, receive, send
-            )
-            return
         disconnected = asyncio.Event()
-        request.state.action_disconnected = disconnected
+        Request(scope).state.action_disconnected = disconnected
 
         async def observe_disconnect() -> Message:
             message = await receive()
@@ -102,15 +95,14 @@ class ActionsMcp:
         try:
             await self._app(scope, observe_disconnect, send)
         finally:
-            # The MCP SDK's stateless server task can outlive its HTTP transport. End only
-            # this request's bounded read, without cancelling the canonical Action.
+            # End only this request's bounded read, without cancelling the canonical Action.
             disconnected.set()
 
 
 @dataclass(frozen=True, slots=True)
 class Caller:
-    """Who this transport request authenticated as, as `ActionsMcp` recorded it: injected into every
-    tool that acts for a caller, never a tool argument."""
+    """Who this transport request authenticated as, as `CallerTokenVerifier` verified it: injected
+    into every tool that acts for a caller, never a tool argument."""
 
     principal: Principal
     external_grant: ExternalGrantProvenance | None
@@ -118,14 +110,18 @@ class Caller:
 
 # FastMCP resolves a parameter by its dependency default and strips it from a tool's input schema;
 # the markers are module-level because a call in a default is what ruff's B008 refuses.
-CURRENT_REQUEST = CurrentRequest()
+CURRENT_ACCESS_TOKEN = CurrentAccessToken()
 
 
-def _caller(request: Request = CURRENT_REQUEST) -> Caller:
-    return Caller(
-        principal=cast(Principal, request.state.action_principal),
-        external_grant=cast(ExternalGrantProvenance | None, request.state.action_external_grant),
-    )
+def _caller_token(token: AccessToken | None) -> CallerToken:
+    if not isinstance(token, CallerToken):
+        raise RuntimeError(f"the MCP transport was not authenticated by CallerTokenVerifier: {type(token).__name__}")
+    return token
+
+
+def _caller(token: AccessToken = CURRENT_ACCESS_TOKEN) -> Caller:
+    verified = _caller_token(token)
+    return Caller(principal=verified.principal, external_grant=verified.external_grant)
 
 
 CALLER = Depends(_caller)
@@ -172,26 +168,24 @@ def _result(model: BaseModel, *, exclude_none: bool = False) -> ToolResult:
 
 
 def create_server(
-    service: ActionService, catalog: ActionCatalog, updates: ActionUpdates, authenticator: CallerAuthenticator
+    service: ActionService, catalog: ActionCatalog, updates: ActionUpdates, verifier: CallerTokenVerifier
 ) -> FastMCP:
     waiter = ActionWaiter(service, updates)
     server = FastMCP(
         "Agentplane Actions",
         instructions="Discover Action identifiers, fetch details only when needed, then submit with a stable idempotency key. "
         "A pending receipt is not execution success. Recover with get_action_request; do not create a replacement key.",
+        auth=verifier,
         mask_error_details=True,
         strict_input_validation=True,
         tasks=False,
     )
 
     async def revalidate(principal: Principal) -> None:
-        try:
-            current = await authenticator(get_http_request())
-        except HTTPException:
-            raise ToolError(
-                "Caller authorization expired during the wait; reconnect with a valid caller bearer."
-            ) from None
-        if current != principal:
+        current = await verifier.verify_token(_caller_token(get_access_token()).token)
+        if current is None:
+            raise ToolError("Caller authorization expired during the wait; reconnect with a valid caller bearer.")
+        if current.principal != principal:
             raise ToolError("Caller identity changed during the wait; recover the request as its original caller.")
 
     async def wait_for_receipt(request_id: UUID, principal: Principal, options: WaitOptions) -> ActionRequestView:

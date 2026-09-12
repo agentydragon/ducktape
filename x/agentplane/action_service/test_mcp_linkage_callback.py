@@ -25,7 +25,6 @@ from x.agentplane.action_service.mcp_linkage import (
 from x.agentplane.action_service.models import Principal, PrincipalRole
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.updates import ActionUpdates
-from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 
 
@@ -62,7 +61,7 @@ async def callback_client(
     actions = ActionService(ActionStore(make_sessionmaker(engine)), catalog, {})
     app = create_app(
         actions,
-        SandboxPrincipalAuthenticator(Mock(spec=SandboxPrincipalResolver)),
+        Mock(spec=SandboxPrincipalResolver),
         DisabledOperatorAuthenticator(),
         catalog,
         updates=ActionUpdates(db_url),

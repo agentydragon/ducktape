@@ -19,7 +19,7 @@ from x.agentplane.action_service.db import ActionStore, make_sessionmaker
 from x.agentplane.action_service.operator_oidc import OidcOperatorAuthenticator, OperatorOidcSettings
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.updates import ActionUpdates
-from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
+from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 
 
 @pytest.mark.parametrize("failure", [None, "issuer", "audience", "expired", "signature", "azp", "missing-sub"])
@@ -32,7 +32,7 @@ async def test_signed_operator_admission(engine: AsyncEngine, failure: str | Non
     service = ActionService(ActionStore(make_sessionmaker(engine)), catalog, {})
     app = create_app(
         service,
-        cast(SandboxPrincipalAuthenticator, None),
+        cast(SandboxPrincipalResolver, None),
         OidcOperatorAuthenticator(OperatorOidcSettings(issuer=issuer, audience="actions", jwks_uri=f"{issuer}/jwks")),
         catalog,
         updates=ActionUpdates("postgresql://unused-test-listener"),

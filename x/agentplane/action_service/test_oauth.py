@@ -59,7 +59,7 @@ from x.agentplane.action_service.oauth import ActionsOAuthProxy, OAuthSettings, 
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, eligible_callers
 from x.agentplane.action_service.updates import ActionUpdates
-from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
+from x.agentplane.sandbox_auth.principal import RejectionReason, SandboxPrincipalRejectedError, SandboxPrincipalResolver
 
 CALLBACK = "https://client.example.test/callback"
 SCOPES = "openid email profile offline_access"
@@ -263,10 +263,9 @@ async def test_real_sdk_dcr_over_http_persists_client_metadata(
     service = ActionService(store, echo_catalog, {"agentplane": echo_executor})
     # Only the unrelated Kubernetes TokenReview boundary is fake. The request has
     # no workload token; OAuth routes, SDK HTTP, and PostgreSQL are real.
-    sandbox = AsyncMock(spec=SandboxPrincipalAuthenticator, side_effect=HTTPException(401, "no workload credential"))
     app = create_app(
         service,
-        sandbox,
+        _no_workload(),
         DisabledOperatorAuthenticator(),
         echo_catalog,
         updates=ActionUpdates(db_url),
@@ -581,7 +580,12 @@ async def test_wrong_upstream_subject_is_refused_before_code_consumption(
 
 
 async def test_external_grant_reaches_canonical_mcp_admission_and_cancel(
-    oauth: OAuthFixture, engine: AsyncEngine, db_url: str, echo_catalog: ActionCatalog, echo_executor: Executor
+    oauth: OAuthFixture,
+    engine: AsyncEngine,
+    db_url: str,
+    echo_catalog: ActionCatalog,
+    echo_executor: Executor,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     client_id = await oauth.register()
     handle, verifier = await oauth.authorize(client_id)
@@ -593,7 +597,7 @@ async def test_external_grant_reaches_canonical_mcp_admission_and_cancel(
     assert grant is not None
     store = ActionStore(make_sessionmaker(engine), external_grants=oauth.connections)
     service = ActionService(store, echo_catalog, {"agentplane": echo_executor})
-    sandbox = AsyncMock(spec=SandboxPrincipalAuthenticator, side_effect=HTTPException(401, "no workload credential"))
+    sandbox = _no_workload()
     app = create_app(
         service,
         sandbox,
@@ -610,7 +614,12 @@ async def test_external_grant_reaches_canonical_mcp_admission_and_cancel(
     ):
         unauthenticated = await http.post("/mcp", json={})
         assert unauthenticated.status_code == 401
-        assert "resource_metadata=" in unauthenticated.headers["www-authenticate"]
+        # RFC 6750 §3.1: no error attribute without credentials; the challenge names metadata this app serves.
+        metadata_url = f"{oauth.base_url}/.well-known/oauth-protected-resource/mcp"
+        assert unauthenticated.headers["www-authenticate"] == f'Bearer resource_metadata="{metadata_url}"'
+        metadata = await http.get(metadata_url)
+        assert metadata.status_code == 200, metadata.text
+        assert metadata.json()["resource"] == f"{oauth.base_url}/mcp"
         sandbox.reset_mock()
         request = {
             "idempotency_key": "external-original-key",
@@ -631,15 +640,31 @@ async def test_external_grant_reaches_canonical_mcp_admission_and_cancel(
             await _call_mcp(http, bearer, "request_action", {"request": request})
         )
         assert recovered == cancelled.request
+        assert isinstance(oauth.proxy._client_storage, BaseWrapper)
+        with monkeypatch.context() as patch:
+            patch.setattr(
+                oauth.proxy._client_storage.key_value, "get", AsyncMock(side_effect=RuntimeError("test store outage"))
+            )
+            outage = await http.post("/mcp", headers={"Authorization": f"Bearer {bearer}"}, json={})
+        assert outage.status_code == 503, outage.text
+        assert "retry-after" in outage.headers
         await oauth.connections.revoke(grant.id)
         refused = await http.post("/mcp", headers={"Authorization": f"Bearer {bearer}"}, json={})
         assert refused.status_code == 401
+        assert 'error="invalid_token"' in refused.headers["www-authenticate"]
         refresh_bearer = await http.post(
             "/mcp", headers={"Authorization": f"Bearer {issued.json()['refresh_token']}"}, json={}
         )
         assert refresh_bearer.status_code == 401
-        sandbox.assert_not_awaited()  # Failed local OAuth credentials do not get forwarded to TokenReview.
+        sandbox.resolve.assert_not_awaited()  # Failed local OAuth credentials do not get forwarded to TokenReview.
     await service.close()
+
+
+def _no_workload() -> AsyncMock:
+    """The unrelated Kubernetes TokenReview boundary, accepting no bearer at all."""
+    resolver = AsyncMock(spec=SandboxPrincipalResolver)
+    resolver.resolve.side_effect = SandboxPrincipalRejectedError(RejectionReason.TOKEN_REJECTED, "test: no workload")
+    return resolver
 
 
 async def _call_mcp(http: httpx.AsyncClient, bearer: str, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
