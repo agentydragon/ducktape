@@ -45,12 +45,14 @@ manifest:
     arrow: arrow
     asgiref: asgiref
     asttokens: asttokens
+    async_lru: async_lru
     asyncpg: asyncpg
     asyncvnc: asyncvnc
     atomicwrites: atomicwrites
     attr: attrs
     attrs: attrs
     authlib: authlib
+    babel: babel
     bcrypt: bcrypt
     beancount: beancount
     beartype: beartype
@@ -71,6 +73,7 @@ manifest:
     claude_code_sdk: claude_code_sdk
     click: click
     cloudpickle: cloudpickle
+    code_sandboxes: code_sandboxes
     colorama: colorama
     comm: comm
     compact_json: compact_json
@@ -99,6 +102,7 @@ manifest:
     execnet: execnet
     executing: executing
     ezdxf: ezdxf
+    faker: faker
     farama_notifications: farama_notifications
     fastapi: fastapi
     fastjsonschema: fastjsonschema
@@ -251,20 +255,29 @@ manifest:
     jsonschema_path: jsonschema_path
     jsonschema_specifications: jsonschema_specifications
     jupyter: jupyter_core
+    jupyter_builder: jupyter_builder
     jupyter_client: jupyter_client
+    jupyter_collaboration: jupyter_collaboration
+    jupyter_collaboration_ui: jupyter_collaboration_ui
     jupyter_core: jupyter_core
+    jupyter_docprovider: jupyter_docprovider
     jupyter_events: jupyter_events
     jupyter_kernel_client: jupyter_kernel_client
+    jupyter_lsp: jupyter_lsp
     jupyter_mcp_server: jupyter_mcp_server
     jupyter_mcp_tools: jupyter_mcp_tools
     jupyter_mimetypes: jupyter_mimetypes
     jupyter_nbmodel_client: jupyter_nbmodel_client
     jupyter_server: jupyter_server
     jupyter_server_client: jupyter_server_client
+    jupyter_server_fileid: jupyter_server_fileid
     jupyter_server_nbmodel: jupyter_server_nbmodel
     jupyter_server_terminals: jupyter_server_terminals
+    jupyter_server_ydoc: jupyter_server_ydoc
     jupyter_ydoc: jupyter_ydoc
+    jupyterlab: jupyterlab
     jupyterlab_pygments: jupyterlab_pygments
+    jupyterlab_server: jupyterlab_server
     jwt: pyjwt
     kaitaistruct: kaitaistruct
     key_value: py_key_value_aio
@@ -327,6 +340,7 @@ manifest:
     networkx: networkx
     nio: matrix_nio
     nodeenv: nodeenv
+    notebook_shim: notebook_shim
     nulltype: nulltype
     numpy: numpy
     numpyro: numpyro
@@ -397,6 +411,8 @@ manifest:
     pyasn1_modules: pyasn1_modules
     pycparser: pycparser
     pycrdt: pycrdt
+    pycrdt.store: pycrdt_store
+    pycrdt.websocket: pycrdt_websocket
     pydantic: pydantic
     pydantic_ai: pydantic_ai_slim
     pydantic_core: pydantic_core
@@ -431,6 +447,7 @@ manifest:
     pywebpush: pywebpush
     qrcode: qrcode
     qtpy: QtPy
+    reactor: datalayer_reactor
     reaktiv: reaktiv
     redis: redis
     redisvl: redisvl
@@ -464,6 +481,7 @@ manifest:
     soupsieve: soupsieve
     splitwise: splitwise
     sqlalchemy: sqlalchemy
+    sqlite_anyio: sqlite_anyio
     sqlparse: sqlparse
     sse_starlette: sse_starlette
     stack_data: stack_data
@@ -590,4 +608,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 96c406238eff2ea969f5596afc95ef9c2065590d8fca9959ce778f70737b8a90
+integrity: 9bd671fc2e66647a324694640063d3880d575f223e24f9f905cf406b1fe3e1e3
