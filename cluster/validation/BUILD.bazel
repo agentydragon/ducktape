@@ -616,6 +616,19 @@ py_test(
 )
 
 py_test(
+    name = "test_agentplane_action_policies",
+    srcs = ["test_agentplane_action_policies.py"],
+    data = ["//cluster/k8s:cluster_yaml_files"],
+    deps = [
+        "//util/bazel:runfiles",
+        "//x/agentplane/action_service/policies:resources",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
     name = "test_egress_allowlists",
     srcs = ["test_egress_allowlists.py"],
     data = ["//cluster/k8s:egress_allowlist_files"],

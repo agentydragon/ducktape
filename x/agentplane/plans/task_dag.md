@@ -62,6 +62,7 @@ flowchart TB
     AG["Deferred<br/>hosted Thread lifecycle<br/>cross-Identity read policy"]:::future
     IDENTITY_SCOPE["Deferred discussion<br/>cross-service static Identity access<br/>MCP and binding-authority placement"]:::future
     PROD["Milestone<br/>production-capable governed action execution"]:::milestone
+    ACTION_PROVENANCE_PRUNE["Deferred idea<br/>prune ActionRequestInput origin/correlation<br/>collapse to one client-authored identifier?"]:::future
 
     CRED --> MCPAUTH
     MCPAUTH --> PROD
@@ -141,6 +142,21 @@ The request may become a policy-gated Action with operator approval, or use anot
 configuration path. Keep the authority, approval, persistence, and rollback model open until a
 concrete caller and policy owner are chosen. This does not grant agents a direct policy mutation
 path and does not block current credential-placeholder egress.
+
+### `ACTION_PROVENANCE_PRUNE` — prune `ActionRequestInput.origin`/`correlation`
+
+**Deferred idea:** `origin` and `correlation` on `ActionRequestInput` are two open-ended
+`dict[str, JsonValue]` bags with exactly one real consumer today — idempotency-retry equality
+matching in `action_service/db.py` (a resubmitted `idempotency_key` with different `origin`/
+`correlation` is treated as a conflicting request, not a matching retry). Beyond that check,
+nothing in the Action Service parses or acts on their contents; they are stored, returned in
+`ActionRequestView` (redacted for non-operators), and otherwise inert. Consider collapsing both
+down to one client-authored identifier field, or confirm no simplification is warranted.
+
+This is a breaking schema change to already-shipped, in-production surface — a real Pydantic
+model, real DB columns, real tests, and documented invariants (`action_service/SPEC.md`,
+`action_service/README.md`) — not something to fold into a separate, unrelated addition of new
+caller-facing fields to the same model. No dependency on anything else; nothing waits on this.
 
 ## Named gates and acceptance evidence
 
