@@ -588,12 +588,8 @@ py_library(
     deps = [
         ":actions",
         ":books",
-        ":fixed_point",
-        ":market_path",
-        ":money",
         ":mortgage",
         ":observations",
-        ":prepared",
         "//finance/augur/sim/compiler:tax",
     ],
 )
@@ -661,11 +657,13 @@ py_test(
     deps = [
         ":accounting",
         ":actions",
+        ":actor",
         ":books",
         ":claims",
         ":payments",
         ":results",
         ":scenario",
+        ":tax_authority",
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/sim/testing:accounting",
@@ -830,6 +828,7 @@ py_library(
     srcs = ["property.py"],
     deps = [
         ":accounting",
+        ":actor",
         ":books",
         ":fixed_point",
         ":holdings",
@@ -848,6 +847,7 @@ py_library(
         ":actions",
         ":actor",
         ":agent",
+        ":bills",
         ":books",
         ":claims",
         ":distributions",
@@ -863,7 +863,9 @@ py_library(
         ":prepared",
         ":private_equity",
         ":property",
+        ":property_tax",
         ":results",
+        ":tax_authority",
         ":tlh",
         ":validation",
         "//finance/augur/sim/compiler:income_sources",
@@ -947,6 +949,7 @@ py_test(
         ":actions",
         ":actor",
         ":agent",
+        ":bills",
         ":books",
         ":capture",
         ":configured",
@@ -1077,4 +1080,42 @@ py_library(
 py_library(
     name = "ids",
     srcs = ["ids.py"],
+)
+
+py_library(
+    name = "bills",
+    srcs = ["bills.py"],
+    deps = [
+        ":actor",
+        ":claims",
+        ":prepared",
+        ":property",
+    ],
+)
+
+py_library(
+    name = "property_tax",
+    srcs = ["property_tax.py"],
+    deps = [
+        ":actor",
+        ":books",
+        ":claims",
+        ":fixed_point",
+        ":money",
+        ":prepared",
+        ":property",
+    ],
+)
+
+py_library(
+    name = "tax_authority",
+    srcs = ["tax_authority.py"],
+    deps = [
+        ":accounting",
+        ":actor",
+        ":books",
+        ":claims",
+        ":money",
+        "//finance/augur/sim/compiler:tax",
+    ],
 )

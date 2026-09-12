@@ -5,6 +5,7 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 
 from finance.augur.sim.accounting import Accounting, TransferOutcome
+from finance.augur.sim.actor import Statement
 from finance.augur.sim.books import AccountRef, JournalEntry, Posting, PropertyState
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.holdings import gain_account
@@ -118,6 +119,15 @@ def mortgage_terms(purchase: _PropertyPurchase) -> MortgageTerms:
     )
 
 
+class PropertyStatement(Statement):
+    """What a property tells the contracts attached to it: whether it is held and how much is let."""
+
+    property_id: str
+    active: bool
+    purchase_month: int
+    rented_fraction_ppb: int
+
+
 class Properties:
     def __init__(self, scenario: PreparedScenario, accounting: Accounting) -> None:
         self.properties: dict[str, Property] = {}
@@ -166,6 +176,19 @@ class Properties:
             self.originations,
         ):
             outcomes.clear()
+
+    def statement(self, property_id: str, month: int) -> PropertyStatement | None:
+        """None for a property the world never held; a sold one reports inactive."""
+        property_ = self.properties.get(property_id)
+        if property_ is None:
+            return None
+        return PropertyStatement(
+            month=month,
+            property_id=property_id,
+            active=property_.state.active,
+            purchase_month=property_.state.purchase_month,
+            rented_fraction_ppb=property_.state.rented_fraction_ppb,
+        )
 
     def snapshots(self) -> list[PropertyState]:
         return [property_.state for property_ in self.properties.values()]

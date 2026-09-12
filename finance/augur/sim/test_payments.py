@@ -9,10 +9,12 @@ import pytest_bazel
 from finance.augur.sim import results
 from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.actions import ClaimId, Consume, PayClaim
+from finance.augur.sim.actor import MonthOpened
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.claims import Claim, Claims, tax_claims
+from finance.augur.sim.claims import Claim, Claims
 from finance.augur.sim.payments import execute, settle_grouped
 from finance.augur.sim.scenario import ORDINARY_INCOME
+from finance.augur.sim.tax_authority import TaxAuthority
 from finance.augur.sim.testing.accounting import (
     CASH,
     EXOGENOUS,
@@ -216,13 +218,24 @@ def test_estimates_and_true_up_settle_the_same_annual_liability() -> None:
         ),
     )
     books = Accounting(scenario.accounts, scenario.tax_profiles, scenario.income_sources)
+    authority = TaxAuthority(profile)
+
+    def assessed(month: int) -> Claims:
+        authority.handle(books.liability_statement(month))
+        return Claims(
+            month,
+            [
+                Claim(a.cause_id, a.obligation_type, a.from_account, a.to_account, a.amount, a.effect)
+                for a in authority.handle(MonthOpened(month=month))
+            ],
+        )
+
     for month in (3, 5, 8):
-        claims = Claims(month, tax_claims(scenario.tax_profiles, books.tax_liabilities, month))
-        assert not settle_grouped(books, claims, HOUSEHOLD).failed
+        assert not settle_grouped(books, assessed(month), HOUSEHOLD).failed
     books.tax.income.accrue(HOUSEHOLD, ORDINARY_INCOME, 10_000)
     books.close_tax_year(scenario, 11, [])
     assert [liability.amount_owed for liability in books.tax_liabilities] == [1000]
-    claims = Claims(12, tax_claims(scenario.tax_profiles, books.tax_liabilities, 12))
+    claims = assessed(12)
     assert [claim.amount_due for claim in claims.entries] == [100, 600]
     assert not settle_grouped(books, claims, HOUSEHOLD).failed
     assert [payment.amount_paid for payment in books.tax_payments] == [100, 100, 100, 100, 600]

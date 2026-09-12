@@ -44,12 +44,16 @@ The batch form drives one such world per selected path:
 The caller owns the time loop; a tracked agent owns its memory, a batch policy's
 memory belongs to the caller. Everything tracked is an `Actor[In, Out]` (<actor.py>):
 it receives the typed messages addressed to it and returns the messages it emits.
-When a month opens the world posts each agent's mail — every emitter's statement
-(`MarketStatement`, `AccountStatement`, `PositionStatement`, `BondStatement`,
-`TlhStatement`, defined beside the component that issues it), the typed dues
-(`BillDue`, `AssessmentDue`, `InstallmentDue`, `PropertyTaxDue`) and last month's
-`Receipt`s — and `step` delivers `MonthOpened`, whose reply is the household's ordered
-actions. The world builds no view on anyone's behalf: `EconomicAgent` assembles the
+When a month opens the counterparties act first: each `Biller`, `Mortgage`,
+`PropertyTaxAuthority` and `TaxAuthority` is posted the statement it reads
+(`PropertyStatement`, `ServicingStatement`, `TaxLiabilityStatement`) and
+`MonthOpened`, and the demand it returns is registered as this month's claim on its
+payer, in that tier order. Then the world posts each agent's mail — every emitter's
+statement (`MarketStatement`, `AccountStatement`, `PositionStatement`,
+`BondStatement`, `TlhStatement`, defined beside the component that issues it), the
+typed dues (`BillDue`, `AssessmentDue`, `InstallmentDue`, `PropertyTaxDue`) and last
+month's `Receipt`s — and `step` delivers `MonthOpened`, whose reply is the
+household's ordered actions. The world builds no view on anyone's behalf: `EconomicAgent` assembles the
 `Observation` its `decide` reads from the mail it kept, and the batch session assembles
 the same view for its `Decision`s from its delegate's mail. `World` has no capture
 mode, no named subject and no history: component outcome lists (`accounting.journal`, `holdings.dispositions`, …)

@@ -56,6 +56,12 @@ class AccountStatement(Statement):
     accounts: tuple[tuple[str, int], ...]
 
 
+class TaxLiabilityStatement(Statement):
+    """The tax book's assessed liabilities, for the authority that collects them."""
+
+    liabilities: tuple[TaxLiabilityState, ...]
+
+
 class Accounting:
     """Ledger, tax book and outstanding liabilities are state; the outcome lists hold only this month.
 
@@ -115,6 +121,9 @@ class Accounting:
                 if account.agent_id == actor
             ),
         )
+
+    def liability_statement(self, month: int) -> TaxLiabilityStatement:
+        return TaxLiabilityStatement(month=month, liabilities=tuple(self.tax_liabilities))
 
     def begin_month(self) -> None:
         self.journal.clear()

@@ -20,6 +20,7 @@ from finance.augur.sim.actions import (
 )
 from finance.augur.sim.actor import MonthOpened
 from finance.augur.sim.agent import EconomicAgent, Mail
+from finance.augur.sim.bills import Bill, Biller
 from finance.augur.sim.books import (
     AccountBalance,
     AccountRef,
@@ -43,6 +44,8 @@ from finance.augur.sim.mortgage import InstallmentPaid, Mortgage, MortgagePaymen
 from finance.augur.sim.prepared import CompiledRun, PreparedTlhPortfolio
 from finance.augur.sim.private_equity import PrivateEquity
 from finance.augur.sim.property import Properties, mortgage_terms
+from finance.augur.sim.property_tax import PropertyTaxAuthority, PropertyTaxBill
+from finance.augur.sim.tax_authority import Assessment, TaxAuthority
 from finance.augur.sim.tlh import (
     ModeledRealizations,
     TlhMarketUpdate,
@@ -98,10 +101,10 @@ def validate_actor(run: CompiledRun, actor: str) -> None:
 class World:
     """One rollout's present state and the clock; nothing here is a history.
 
-    Track an agent and the contracts that exist at month zero, `start`, then `step`
-    until `finished`. When a month opens each contract is posted its servicing
-    statement and `MonthOpened`, and its installment becomes the borrower's due; then
-    every tracked agent receives its statements, dues and last month's receipts.
+    Track an agent and the contracts and bills that exist at month zero, `start`, then
+    `step` until `finished`. When a month opens each counterparty is posted the
+    statements it reads and `MonthOpened`, and what it demands becomes its payer's due;
+    then every tracked agent receives its statements, dues and last month's receipts.
     `step` delivers `MonthOpened` to the agents and settles the actions they return.
     The batch session drives several worlds the same way. Component outcome lists
     hold this month only and are cleared when the next month opens; whoever wants a
@@ -140,6 +143,17 @@ class World:
         self.distributions = Distributions()
         self.private_equity = PrivateEquity()
         self.claims = claims.Claims(0, [])
+        # The scenario's counterparties, in the order their demands are registered.
+        self.billers = [Biller(spec) for spec in (*self.scenario.obligations, *self.scenario.recurring_obligations)]
+        purchases = {purchase.property_id: purchase for purchase in self.scenario._scheduled_property_purchases}
+        locations = {location.location_id: location for location in self.scenario.locations}
+        self.property_tax_authorities = [
+            PropertyTaxAuthority(
+                policy, purchases[policy.property_id], locations[purchases[policy.property_id].location_id]
+            )
+            for policy in self.scenario._property_tax_policies
+        ]
+        self.tax_authorities = [TaxAuthority(profile) for profile in self.scenario.tax_profiles]
         self.month = 0
         self.failed_month: int | None = None
         # This month's settlement outcomes, cleared when the next month opens.
@@ -182,16 +196,30 @@ class World:
             long_term_gain=realizations.long_term_gain,
         )
 
-    def track(self, actor: EconomicAgent | Mortgage) -> None:
-        """Register a decision-making agent or a month-zero contract; the prepared input is checked against an agent here."""
+    def track(self, actor: EconomicAgent | Mortgage | Biller) -> None:
+        """Register a decision-making agent, a month-zero contract or a bill; the prepared input is checked against an agent here."""
         if isinstance(actor, Mortgage):
             self._track_mortgage(actor)
             return
+        if isinstance(actor, Biller):
+            self._track_biller(actor)
+            return
         if not isinstance(actor, EconomicAgent):
-            raise TypeError("only EconomicAgent subclasses and Mortgage contracts can be tracked")
+            raise TypeError("only EconomicAgent subclasses, Mortgage contracts and Billers can be tracked")
         validate_actor(self.run, actor.agent_id)
         validate(self.run)
         self._track(actor)
+
+    def _track_biller(self, biller: Biller) -> None:
+        if self.started:
+            raise ValueError("track components before starting the world")
+        spec = biller.spec
+        if spec.property_id is not None:
+            raise ValueError("a bill attached to a property needs the property tracked; that waits for housing")
+        self.validate_scope(spec.from_account.agent_id)
+        if spec.from_account not in self.accounting.declared:
+            raise ValueError("bill payer account is not declared")
+        self.billers.append(biller)
 
     def _track_mortgage(self, mortgage: Mortgage) -> None:
         """Open the ledger with the contract's outstanding balance; servicing then runs on the world's clock."""
@@ -559,26 +587,75 @@ class World:
         return originated, paid_off
 
     def assemble_claims(self, installments: Sequence[MortgagePayment]) -> None:
+        """Post each counterparty what it reads and `MonthOpened`; register its demands and the installments, in tier order."""
+        month = self.month
         seen = set()
         for installment in installments:
             id_ = installment.terms.liability_id
             if (
                 id_ in seen
-                or installment.terms.origination_month >= self.month
+                or installment.terms.origination_month >= month
                 or not 0 <= installment.principal <= self.mortgage_principal(id_)
                 or self.mortgage_principal(id_) <= 0
                 or not 0 <= installment.rental_interest <= installment.interest
             ):
                 raise ValueError("invalid mortgage installment")
             seen.add(id_)
-        self.claims = claims.assemble(
-            self.scenario,
-            self.market,
-            self.month,
-            self.properties.snapshots(),
-            installments,
-            self.accounting.tax_liabilities,
-        )
+        self.claims = claims.Claims(month, [])
+        opened = MonthOpened(month=month)
+        for biller in self.billers:
+            property_id = biller.spec.property_id
+            statement = None if property_id is None else self.properties.statement(property_id, month)
+            if statement is not None and biller.handle(statement):
+                raise ValueError("a property statement takes no reply")
+            for bill in biller.handle(opened):
+                self.register(bill)
+        for installment in installments:
+            self.register(installment)
+        for property_authority in self.property_tax_authorities:
+            statement = self.properties.statement(property_authority.policy.property_id, month)
+            if statement is not None and property_authority.handle(statement):
+                raise ValueError("a property statement takes no reply")
+            for property_bill in property_authority.handle(opened):
+                self.register(property_bill)
+        for authority in self.tax_authorities:
+            if authority.handle(self.accounting.liability_statement(month)):
+                raise ValueError("a liability statement takes no reply")
+            for assessment in authority.handle(opened):
+                self.register(assessment)
+
+    def register(self, demand: Bill | MortgagePayment | PropertyTaxBill | Assessment) -> None:
+        """The ledger's side of a demand: price it and make it this month's claim on the payer."""
+        match demand:
+            case Bill():
+                claim = claims.Claim(
+                    demand.cause_id,
+                    demand.obligation_type,
+                    demand.from_account,
+                    demand.to_account,
+                    self.market.amount(demand.amount, self.month),
+                    demand.deduction,
+                )
+            case MortgagePayment():
+                terms = demand.terms
+                claim = claims.Claim(
+                    f"{terms.liability_id}_payment_m{self.month}",
+                    "mortgage_payment",
+                    terms.borrower,
+                    terms.lender,
+                    checked_count(demand.interest + demand.principal, "money addition"),
+                    demand,
+                )
+            case PropertyTaxBill() | Assessment():
+                claim = claims.Claim(
+                    demand.cause_id,
+                    demand.obligation_type,
+                    demand.from_account,
+                    demand.to_account,
+                    demand.amount,
+                    demand.effect,
+                )
+        self.claims.entries.append(claim)
 
     def public_price(self, actor: str, asset: str, month: int) -> int:
         return self.holdings.public_price(actor, asset, self.market, month)

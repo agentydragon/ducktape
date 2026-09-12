@@ -10,6 +10,7 @@ import pytest_bazel
 from finance.augur.sim.actions import Action, Buy, ClaimId, Consume, DecisionActions, LotSale, PayClaim, Sell, Transfer
 from finance.augur.sim.actor import MonthOpened
 from finance.augur.sim.agent import EconomicAgent, assemble
+from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.capture import FinancialCapture, WorldResult, event_log
 from finance.augur.sim.compiler.tax import PreparedTaxBracket
@@ -23,6 +24,7 @@ from finance.augur.sim.prepared import (
     PreparedHoldingPool,
     PreparedLot,
     PreparedObligation,
+    PreparedRecurringObligation,
     PreparedSeries,
     PreparedTransfer,
     _ScheduledSale,
@@ -824,6 +826,37 @@ def test_tracked_mortgage_is_serviced_from_the_ledger_through_payoff() -> None:
     assert checking(world) == 10_000 - sum(interest + principal for _, interest, principal in paid)
 
 
+def rent() -> Biller:
+    """Rent of 500 due in months 1 and 2."""
+    return Biller(
+        PreparedRecurringObligation(
+            obligation_id="test-rent",
+            obligation_type="rent",
+            from_account=CASH,
+            to_account=EXOGENOUS,
+            amount_due=500,
+            property_id=None,
+            deduction_category=None,
+            deductible_fraction_ppb=1_000_000_000,
+            start_month=1,
+            end_month=2,
+        )
+    )
+
+
+def test_a_tracked_bill_is_demanded_in_its_months_and_paid_by_the_household() -> None:
+    world = World(actor_run(horizon=4), 0)
+    household = _Household({})
+    world.track(household)
+    world.track(rent())
+    world.start()
+    while not world.finished:
+        world.step()
+    assert world.stop is None
+    assert household.dues == [(1, "rent", 500), (2, "rent", 500)]
+    assert checking(world) == 9000
+
+
 class _Deadbeat(EconomicAgent):
     def decide(self, observation: Observation) -> list[Action]:
         return []
@@ -841,6 +874,22 @@ def test_an_unpaid_installment_stops_the_path_and_leaves_the_contract_open() -> 
     assert world.finished
     assert world.stop == UnpaidClaims(month=1, claims=[ClaimId(month=1, index=0)])
     assert (mortgage.active, world.mortgage_principal("test-loan"), checking(world)) == (True, 6000, 10_000)
+
+
+def test_tracked_bills_name_a_declared_payer_and_no_property() -> None:
+    world = World(actor_run(), 0)
+    with pytest.raises(ValueError, match="property"):
+        world.track(Biller(replace(rent().spec, property_id="test-home")))
+    with pytest.raises(ValueError, match="unknown actor"):
+        world.track(
+            Biller(replace(rent().spec, from_account=AccountRef(agent_id="test-nobody", account_id="checking")))
+        )
+    with pytest.raises(ValueError, match="not declared"):
+        world.track(Biller(replace(rent().spec, from_account=AccountRef(agent_id=HOUSEHOLD, account_id="test-none"))))
+    world.track(rent())
+    world.start()
+    with pytest.raises(ValueError, match="before starting"):
+        world.track(rent())
 
 
 def test_tracked_mortgages_open_the_ledger_once_before_the_world_starts() -> None:
