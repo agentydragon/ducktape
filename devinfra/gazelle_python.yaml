@@ -541,16 +541,6 @@ manifest:
     testcontainers.vault: testcontainers
     testcontainers.weaviate: testcontainers
     tests: splitwise
-    tests.conftest: caio
-    tests.test_aio_context: caio
-    tests.test_asyncio_adapter: caio
-    tests.test_free_threading: caio
-    tests.test_impl_selector: caio
-    tests.test_operation_refcounting: caio
-    tests.test_python_aio_callback: caio
-    tests.test_raw_low_level: caio
-    tests.test_thread_aio_specific: caio
-    tests.test_thread_aio_windows: caio
     text_unidecode: text_unidecode
     textual: textual
     tiktoken: tiktoken
@@ -605,4 +595,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: bcf6af1460fafa40f93cd2f928fb3ff54e38fdded2e84fa17d6aa01dc10e21d6
+integrity: 823b1c2e3d1b0fee87bbb789cc99f2d794f98ca9c2be35e2dc37a15f89f9f77c
