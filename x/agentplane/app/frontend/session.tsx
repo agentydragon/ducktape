@@ -6,6 +6,7 @@ import {
   Button,
   Code,
   Group,
+  Menu,
   Paper,
   Select,
   ScrollArea,
@@ -16,6 +17,7 @@ import {
   TextInput,
   Tooltip,
 } from "@mantine/core";
+import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
 import IconPlayerStop from "@tabler/icons-react/dist/esm/icons/IconPlayerStop.mjs";
 import IconPower from "@tabler/icons-react/dist/esm/icons/IconPower.mjs";
 import { Fragment, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
@@ -314,6 +316,25 @@ function ThreadTitle({
   );
 }
 
+/** Session attachment (`status`) and the harness process (`state.harness`) are two independent
+ * state machines; this collapses them into one dot by severity, worst axis first, so the header
+ * doesn't need a badge per axis. */
+function connectionStatus(
+  status: string,
+  harness: SessionState["harness"]
+): { color: string; breathing?: boolean; label: string } {
+  if (status.startsWith("runner: ")) return { color: "red", label: status };
+  if (harness === "lost") return { color: "red", label: "Harness lost" };
+  if (status === "connecting") return { color: "yellow", breathing: true, label: "Connecting…" };
+  if (status === "reconnecting") return { color: "yellow", breathing: true, label: "Reconnecting…" };
+  if (status === "attached" && harness === null) {
+    return { color: "yellow", breathing: true, label: "Attached · waiting for harness" };
+  }
+  if (status === "stream ended") return { color: "gray", label: `Stream ended · harness ${harness ?? "unknown"}` };
+  if (harness === "stopped") return { color: "gray", label: `${status} · harness stopped` };
+  return { color: "green", label: `${status} · harness ${harness ?? "unknown"}` };
+}
+
 export function SessionView({
   sandbox,
   sessionId,
@@ -458,18 +479,6 @@ export function SessionView({
           ← {sandbox}
         </Button>
         <ThreadTitle sessionId={sessionId} thread={thread} onRenamed={setThread} onError={setError} />
-        <Badge>{status}</Badge>
-        {state.harness && <Badge color={state.harness === "running" ? "green" : "gray"}>harness {state.harness}</Badge>}
-        <ActionIcon
-          variant="light"
-          color="red"
-          aria-label="Shut down harness"
-          onClick={() => void run(() => shutdownSession(sandbox, sessionId))}
-          disabled={state.harness !== "running"}
-        >
-          <IconPower size={16} />
-        </ActionIcon>
-        <Switch label="Raw frames" checked={showRaw} onChange={(e) => setFlag("raw", "1", e.currentTarget.checked)} />
       </Group>
       {error && <Text c="red">{error}</Text>}
       {/* `minHeight: 0` so this shrinks instead of pushing the composer off: a flex child
@@ -532,19 +541,53 @@ export function SessionView({
           onKeyDown={composerKey}
         />
         <Group justify="space-between" wrap="nowrap">
-          <Select
-            aria-label="Model"
-            data={modelOptions}
-            value={model}
-            onChange={(next) => void selectModel(next)}
-            disabled={state.harness !== "running" || activeTurn !== undefined || modelPending}
-            w={200}
-          />
+          <Group gap="xs" wrap="nowrap">
+            <StatusDot {...connectionStatus(status, state.harness)} />
+            <Select
+              aria-label="Model"
+              data={modelOptions}
+              value={model}
+              onChange={(next) => void selectModel(next)}
+              disabled={state.harness !== "running" || activeTurn !== undefined || modelPending}
+              w={200}
+            />
+          </Group>
           <Group gap="xs" wrap="nowrap">
             {sending && <Text role="status">Sending…</Text>}
+            {/* Opens upward: the composer sits at the bottom of the viewport, so there's rarely
+                room below the trigger -- Mantine's own Floating-UI flip would land here anyway,
+                but "top-end" states the intent rather than leaving it to the fallback. */}
+            <Menu position="top-end" withArrow closeOnItemClick={false} shadow="md">
+              <Menu.Target>
+                <ActionIcon variant="light" aria-label="More">
+                  <IconDotsVertical size={16} />
+                </ActionIcon>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Item
+                  rightSection={
+                    <Switch checked={showRaw} readOnly tabIndex={-1} size="xs" style={{ pointerEvents: "none" }} />
+                  }
+                  onClick={() => setFlag("raw", "1", !showRaw)}
+                >
+                  Raw frames
+                </Menu.Item>
+                <Menu.Divider />
+                <Menu.Item
+                  color="red"
+                  leftSection={<IconPower size={15} />}
+                  disabled={state.harness !== "running"}
+                  closeMenuOnClick
+                  onClick={() => void run(() => shutdownSession(sandbox, sessionId))}
+                >
+                  Shut down harness
+                </Menu.Item>
+              </Menu.Dropdown>
+            </Menu>
             <ActionIcon
               size="lg"
               variant="light"
+              color="red"
               aria-label="Interrupt"
               onClick={() => void run(() => interruptSession(sandbox, sessionId))}
               disabled={!activeTurn}
