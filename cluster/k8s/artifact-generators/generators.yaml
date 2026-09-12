@@ -5428,3 +5428,203 @@ spec:
           to: "@artifact/cluster/k8s/proxmox-proxy/"
           exclude:
             - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: reloader
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: reloader
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/reloader/**"
+          to: "@artifact/cluster/k8s/reloader/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: sdr
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: sdr
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/sdr/**"
+          to: "@artifact/cluster/k8s/sdr/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: seaweedfs-drivefs-artifacts-bucket
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: seaweedfs-drivefs-artifacts-bucket
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/seaweedfs/drivefs-artifacts-bucket/**"
+          to: "@artifact/cluster/k8s/seaweedfs/drivefs-artifacts-bucket/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: seaweedfs-forgejo-bucket
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: seaweedfs-forgejo-bucket
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/seaweedfs/forgejo-bucket/**"
+          to: "@artifact/cluster/k8s/seaweedfs/forgejo-bucket/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: seaweedfs-haku-openclaw-spike-backups-bucket
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: seaweedfs-haku-openclaw-spike-backups-bucket
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/seaweedfs/haku-openclaw-spike-backups-bucket/**"
+          to: "@artifact/cluster/k8s/seaweedfs/haku-openclaw-spike-backups-bucket/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: seaweedfs-home-assistant-backups-bucket
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: seaweedfs-home-assistant-backups-bucket
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/seaweedfs/home-assistant-backups-bucket/**"
+          to: "@artifact/cluster/k8s/seaweedfs/home-assistant-backups-bucket/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: seaweedfs-langfuse-bucket
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: seaweedfs-langfuse-bucket
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/seaweedfs/langfuse-bucket/**"
+          to: "@artifact/cluster/k8s/seaweedfs/langfuse-bucket/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: seaweedfs-loom-gym-bucket
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: seaweedfs-loom-gym-bucket
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/seaweedfs/loom-gym-bucket/**"
+          to: "@artifact/cluster/k8s/seaweedfs/loom-gym-bucket/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: seaweedfs-monitoring
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: seaweedfs-monitoring
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/seaweedfs/monitoring/**"
+          to: "@artifact/cluster/k8s/seaweedfs/monitoring/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: seaweedfs-pr-visuals-bucket
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: seaweedfs-pr-visuals-bucket
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/seaweedfs/pr-visuals-bucket/**"
+          to: "@artifact/cluster/k8s/seaweedfs/pr-visuals-bucket/"
+          exclude:
+            - flux-kustomization.yaml

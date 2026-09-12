@@ -12,8 +12,8 @@ spec:
   prune: true
   wait: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: sdr
     namespace: ducktape-flux
   timeout: 5m
   dependsOn:

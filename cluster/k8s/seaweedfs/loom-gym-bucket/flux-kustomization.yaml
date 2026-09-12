@@ -9,8 +9,8 @@ spec:
   path: ./cluster/k8s/seaweedfs/loom-gym-bucket
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: seaweedfs-loom-gym-bucket
     namespace: ducktape-flux
   dependsOn:
     - name: seaweedfs-cluster
