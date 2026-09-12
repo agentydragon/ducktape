@@ -25,6 +25,8 @@ per-ServiceAccount auto-approval do not gate it. SandboxPresets remain integrati
   badge-to-dot and role-to-bubble transcript styling, a global pending-approval overlay
 - [Session-first navigation](session_first_navigation.md) — bigger later redesign: a conversation-list
   home view instead of Sandbox-first, and the cross-sandbox session listing it would need
+- [Action-request plaintext context](action_request_context.md) — captured, not designed: callers
+  have no plaintext title/description field to submit with an Action, so there's none to render
 
 ## Implemented contracts
 
