@@ -100,25 +100,42 @@ def test_run_once_hands_the_invocation_id_to_bbr_rather_than_reading_it_back() -
     assert "--noremote_accept_cached" in seen[0]
 
 
-def test_the_fleet_is_read_out_of_bbr_query_output_around_its_progress_lines() -> None:
-    """`bbr` interleaves coloured progress with the labels, and colours the first one.
+def test_the_fleet_is_read_as_records_out_of_the_runner_s_own_progress() -> None:
+    """The runner shares this stdout, and closes its last coloured line without a newline.
 
-    Matching lines on a bare "//" prefix silently drops that first target, which is a target
-    this sweep then never checks -- so the parse strips colour before it decides.
+    So the first target arrives with an escape sequence glued to its front. Reading labels as
+    text would drop it -- it does not start with "//" -- and silently check one target fewer.
+    A JSON record per line is instead something a log line cannot imitate.
     """
     stdout = (
-        "Loading: 1 packages loaded\n"
-        "\x1b[32mINFO: \x1b[mStreaming build results to: https://app.buildbuddy.io/invocation/x\n"
-        "\x1b[m//aiquota/frontend:screenshots\n"
-        "//props/frontend:visual\n"
+        "Waiting for available remote runner...\n"
+        "\x1b[90m2026-09-12 15:28:14.665 UTC \x1b[mSyncing existing repo...\n"
+        '\x1b[m{"type":"RULE","rule":{"name":"//aiquota/frontend:screenshots","ruleClass":"js_test"}}\n'
+        '{"type":"RULE","rule":{"name":"//props/frontend:visual","ruleClass":"js_test"}}\n'
         "\x1b[32mINFO: \x1b[mElapsed time: 2.2s\n"
+        "Remote run completed at 2026-09-12 15:28:20 UTC\n"
     )
 
     def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        assert "attr(tags, visual, //...)" in [str(part) for part in command]
+        flags = [str(part) for part in command]
+        assert "--output=streamed_jsonproto" in flags
+        assert "attr(tags, visual, //...)" in flags
         return subprocess.CompletedProcess(command, 0, stdout, "")
 
     assert visual_fleet(bbr=Path("bbr"), run=fake_run) == ["//aiquota/frontend:screenshots", "//props/frontend:visual"]
+
+
+def test_a_source_file_in_the_query_output_is_not_a_target_to_run() -> None:
+    """Only rule records name something runnable; other record types are not the fleet."""
+    stdout = (
+        '{"type":"SOURCE_FILE","sourceFile":{"name":"//props/frontend:harness.mjs"}}\n'
+        '{"type":"RULE","rule":{"name":"//props/frontend:visual","ruleClass":"js_test"}}\n'
+    )
+
+    def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(command, 0, stdout, "")
+
+    assert visual_fleet(bbr=Path("bbr"), run=fake_run) == ["//props/frontend:visual"]
 
 
 def test_a_fleet_query_that_matches_nothing_is_an_error_not_an_empty_sweep() -> None:

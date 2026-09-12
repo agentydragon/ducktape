@@ -18,7 +18,7 @@ timeout that once went red.
 from __future__ import annotations
 
 import argparse
-import re
+import json
 import subprocess
 import uuid
 from collections import defaultdict
@@ -36,8 +36,6 @@ RENDER_SUFFIX = ".png"
 # somebody has to remember to update. It has already gone stale once: four per-scenario airlock
 # targets outlived their collapse into one sweep.
 VISUAL_FLEET = "attr(tags, visual, //...)"
-
-_ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
 
 @dataclass(frozen=True)
@@ -65,17 +63,35 @@ class Observation:
 
 
 def visual_fleet(*, bbr: Path, run: Runner) -> list[str]:
-    """Every browser target in the repo, asked of Bazel."""
-    result = run([bbr, "query", VISUAL_FLEET], check=True, text=True, capture_output=True)
-    # Strip colour before matching: `bbr` interleaves its own coloured progress with the query
-    # output, and the first label comes back with a reset sequence still attached, so a bare
-    # `startswith("//")` drops one target without saying so.
-    labels = sorted(
-        {clean for line in result.stdout.splitlines() if (clean := _ANSI.sub("", line).strip()).startswith("//")}
+    """Every browser target in the repo, asked of Bazel.
+
+    `streamed_jsonproto` rather than the default label output, because the runner's own progress
+    shares this stdout: one target per line as JSON is a payload a log line cannot imitate, so a
+    line either parses into a rule record or is not one. Reading labels as text would instead need
+    a rule for telling them from log lines -- and the obvious one, a leading "//", is already wrong:
+    the runner closes its last coloured line without a newline, so the first target arrives with an
+    escape sequence glued to its front and no leading "//" at all.
+    """
+    result = run(
+        [bbr, "query", "--output=streamed_jsonproto", VISUAL_FLEET], check=True, text=True, capture_output=True
     )
+    labels = sorted({name for line in result.stdout.splitlines() if (name := _rule_label(line)) is not None})
     if not labels:
         raise SystemExit(f"`{VISUAL_FLEET}` matched nothing -- that tag is how the fleet is found")
     return labels
+
+
+def _rule_label(line: str) -> str | None:
+    """The label in one `streamed_jsonproto` line, or None if the line is not a rule record."""
+    brace = line.find("{")
+    if brace < 0:
+        return None
+    try:
+        record = json.loads(line[brace:])
+    except ValueError:
+        return None
+    rule = record.get("rule")
+    return rule.get("name") if isinstance(rule, dict) and isinstance(rule.get("name"), str) else None
 
 
 def run_once(targets: list[str], *, bbr: Path, run: Runner) -> str:
