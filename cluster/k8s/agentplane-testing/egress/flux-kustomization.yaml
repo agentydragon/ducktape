@@ -31,8 +31,8 @@ spec:
       kind: Bundle
       name: agentplane-testing-egress-ca
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: agentplane-testing-egress
     namespace: ducktape-flux
   dependsOn:
     - name: agentplane-testing-namespace

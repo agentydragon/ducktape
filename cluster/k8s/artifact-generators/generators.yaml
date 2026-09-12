@@ -1212,3 +1212,203 @@ spec:
           to: "@artifact/cluster/k8s/litellm/namespace/"
           exclude:
             - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: agentplane-egress-credentials-namespace
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: agentplane-egress-credentials-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agentplane-egress-credentials/namespace/**"
+          to: "@artifact/cluster/k8s/agentplane-egress-credentials/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: agentplane-egress-credentials
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: agentplane-egress-credentials
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agentplane-egress-credentials/secrets/**"
+          to: "@artifact/cluster/k8s/agentplane-egress-credentials/secrets/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: agentplane-staging-agent-rbac
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: agentplane-staging-agent-rbac
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agentplane-staging/agent-rbac/**"
+          to: "@artifact/cluster/k8s/agentplane-staging/agent-rbac/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: agentplane-staging-egress
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: agentplane-staging-egress
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agentplane-staging/egress/**"
+          to: "@artifact/cluster/k8s/agentplane-staging/egress/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: agentplane-staging-llm-ingress
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: agentplane-staging-llm-ingress
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agentplane-staging/llm-ingress/**"
+          to: "@artifact/cluster/k8s/agentplane-staging/llm-ingress/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: agentplane-testing-agent-rbac
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: agentplane-testing-agent-rbac
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agentplane-testing/agent-rbac/**"
+          to: "@artifact/cluster/k8s/agentplane-testing/agent-rbac/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: agentplane-testing-app
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: agentplane-testing-app
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agentplane-testing/app/**"
+          to: "@artifact/cluster/k8s/agentplane-testing/app/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: agentplane-testing-dex
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: agentplane-testing-dex
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agentplane-testing/dex/**"
+          to: "@artifact/cluster/k8s/agentplane-testing/dex/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: agentplane-testing-egress
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: agentplane-testing-egress
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agentplane-testing/egress/**"
+          to: "@artifact/cluster/k8s/agentplane-testing/egress/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: agentplane-testing-llm-ingress
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: agentplane-testing-llm-ingress
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agentplane-testing/llm-ingress/**"
+          to: "@artifact/cluster/k8s/agentplane-testing/llm-ingress/"
+          exclude:
+            - flux-kustomization.yaml
