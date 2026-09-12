@@ -1,8 +1,6 @@
 # Session-first navigation
 
-Status: **captured, not designed.** A bigger, later redesign than
-[mobile density](mobile_density.md), which this complements: mobile density is about decluttering
-the views that exist today; this is about which view is the _default/primary_ one.
+Status: **captured, not designed.**
 
 ## Current model: Sandbox-first, mirrors Kubernetes
 
@@ -10,7 +8,7 @@ The app was designed to map directly onto the Kubernetes objects underneath it, 
 still shows it literally: `/sandboxes/:name` and `/sandboxes/:name/sessions/:sessionId`
 (`app.tsx:14-19,37-61`). The landing page is `SandboxList` (`sandboxes.tsx`), a table of Sandbox
 resources with their Kubernetes-condition-derived state (`STATE_COLORS`:
-running/suspended/archived/waiting_for_pod\*, `sandboxes.tsx:36-41`). Sessions are one tab inside
+running/suspended/waiting_for_pod\*, `sandboxes.tsx:37-42`). Sessions are one tab inside
 `SandboxPage` (`sandbox_page.tsx:309`, the `"sessions"` tab), populated by calling `listSessions(name)`
 against that one sandbox's runner (`sandbox_page.tsx:161-187`).
 
@@ -25,9 +23,9 @@ Make the primary landing view a list of conversations (Sessions), each row showi
 - the session itself (title/thread, matching what `SessionView`/`ThreadTitle` already track in
   `session.tsx`),
 - which Sandbox it belongs to, and
-- that Sandbox's current state — running / suspended / archived / **no longer exists** — reusing
-  the state vocabulary `sandboxes.tsx` already has (`STATE_COLORS`), extended with a terminal
-  "deleted" case that isn't a live Kubernetes condition at all.
+- that Sandbox's current state — running / suspended / **no longer exists** — reusing the state
+  vocabulary `sandboxes.tsx` already has (`STATE_COLORS`), extended with a terminal "deleted" case
+  that isn't a live Kubernetes condition at all.
 
 **Explicit non-goal:** don't make the UI lie about the underlying model. A Sandbox is a real
 resource with its own lifecycle (suspend/resume/delete — see `lifecycle.tsx`'s `SuspendResume`/
@@ -47,21 +45,20 @@ design so that "a deleted sandbox loses nothing" (`trajectory.py:1-7`; corrobora
 holds the full proto-JSON of each event — turns, items, tool calls/output, reasoning — not just a
 thread name or index entry, and `Thread` already carries `sandbox`, `session_id`, and `name`.
 
-So a session-first home view's list can likely be built by querying `Thread` (paginated,
-newest-first) directly, without fanning `listSessions` out across every Sandbox — the durable
-`Thread` row already ties a session to its Sandbox name independent of whether that Sandbox's
-runner (or the Sandbox itself) still exists. What's still open: `Thread` alone doesn't carry a
-Sandbox's _current_ lifecycle state (running/suspended/archived/deleted) — that still needs
-joining against live Sandbox state for sandboxes that exist, with "not found" read as deleted for
-ones that don't. Confirmed caveat: the trajectory schema has no Alembic migrations yet and its own
-docstring calls it "staging-only and disposable until a production instance needs migrations in
-place" (`trajectory.py:6-7`) — worth resolving before leaning on it as the backing store for a
-primary UI view.
+This is no longer speculative: `GET /threads/with-sandboxes` now exists, returning every Thread the
+operator can see (paginated newest-first is still open) paired with each Thread's own still-existing
+Sandbox — normalized, not fanning `listSessions` out across every Sandbox, and tolerant of a Thread
+whose Sandbox no longer exists (a miss in the returned `sandboxes` map reads as deleted). What's
+still open: the response doesn't yet carry cursor pagination (see `THREAD_BROWSE_PAGINATE` in
+[the task DAG](task_dag.md) for when that's needed), and the trajectory store's schema is moving
+onto real Alembic migrations (in flight) rather than the ad hoc idempotent-DDL pattern its docstring
+used to call out as a staging-only stopgap.
 
 ## Open questions (not decided here)
 
 - Does a session-first list replace `SandboxList` as the `/` route, or live alongside it as a
-  second top-level view (e.g. the nav-overflow split from [mobile density](mobile_density.md))?
+  second top-level view? (Settled direction, per the App Shell mock: replace it entirely as one
+  atomic cutover — see `UISHELL_SIDEBAR` in [the task DAG](task_dag.md).)
 - What happens to a session row when its Sandbox is deleted — kept as a read-only historical entry,
   or dropped once the Sandbox is gone? (Now answerable either way, since `Thread` rows already
   outlive the Sandbox.)
@@ -71,6 +68,3 @@ primary UI view.
 - Does a deleted Sandbox's session become read-only against its last-ingested `Event` rows (a real
   transcript replay with no live runner behind it), or just a dead list entry with no detail view?
   `trajectory.py`'s stored payloads make the former possible, not just a metadata stub.
-- Whether to put Alembic migrations under `trajectory.py` is arguably a prerequisite for leaning on
-  it as a primary-view backing store, not just a "staging" nice-to-have — worth raising with
-  whoever owns that store before this navigation work starts.

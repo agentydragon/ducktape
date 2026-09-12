@@ -21,10 +21,8 @@ per-ServiceAccount auto-approval do not gate it. SandboxPresets remain integrati
 - [Agent access to external systems](external_access.md) — deferred delegated-versus-brokered access choices
 - [Profiles](profiles.md) — broader capability profiles remain deferred
 - [User stories](user_stories.md) — north-star product context, not an implementation queue
-- [Mobile/compact UI density](mobile_density.md) — captured, not designed: nav/header overflow,
-  badge-to-dot and role-to-bubble transcript styling, a global pending-approval overlay
 - [Session-first navigation](session_first_navigation.md) — bigger later redesign: a conversation-list
-  home view instead of Sandbox-first, and the cross-sandbox session listing it would need
+  home view instead of Sandbox-first, now that the cross-sandbox listing it needs has landed
 - [Action-request plaintext context](action_request_context.md) — captured, not designed: callers
   have no plaintext title/description field to submit with an Action, so there's none to render
 

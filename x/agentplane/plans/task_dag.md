@@ -156,8 +156,8 @@ one atomic cutover, not a transitional shim running both navs at once; `UISHELL_
 it lands. `THREAD_BROWSE_PAGINATE` is explicitly deferred, not designed: finding one old Thread once
 the sidebar's working-set list outgrows it needs its own paginated/searchable page eventually,
 flagged now only so the with-sandboxes endpoint isn't assumed to stay one unpaginated call forever.
-See [mobile density](mobile_density.md), [session-first navigation](session_first_navigation.md),
-and [Action-request plaintext context](action_request_context.md).
+See [session-first navigation](session_first_navigation.md) and
+[Action-request plaintext context](action_request_context.md).
 
 ### `BB` — BuildBuddy hosted-run credential boundary
 
