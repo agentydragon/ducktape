@@ -175,7 +175,7 @@ py_test(
         "//x/agentplane/action_service/policies:resources",
         "//x/agentplane/action_service/test_fixtures:callers",
         "//x/agentplane/app/testing:kubernetes",
-        "//x/agentplane/sandbox_auth:http",
+        "//x/agentplane/sandbox_auth:principal",
         "@pypi//fastapi",
         "@pypi//fastmcp_slim",
         "@pypi//httpx",
