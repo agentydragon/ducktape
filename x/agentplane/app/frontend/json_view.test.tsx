@@ -4,7 +4,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { HighlightedText, JsonView, unwrapMcpContent } from "./json_view";
+import { HighlightedText, JsonView } from "./json_view";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const mounted: Array<{ root: ReturnType<typeof createRoot>; container: HTMLDivElement }> = [];
@@ -55,29 +55,5 @@ describe("HighlightedText", () => {
     const container = await render(<HighlightedText text={"README.md\nsrc\n"} />);
     expect(container.querySelector(".hljs-string")).toBeNull();
     expect(container.textContent).toContain("README.md");
-  });
-});
-
-describe("unwrapMcpContent", () => {
-  it("parses a JSON-encoded string inside an MCP content-block's content array", () => {
-    const result = unwrapMcpContent({ content: ['{"login":"test-user","id":714892}'] });
-    expect(result).toEqual({ content: [{ login: "test-user", id: 714892 }] });
-  });
-
-  it("recurses into a content-block shape nested deeper in the tree", () => {
-    const result = unwrapMcpContent({
-      outer: { content: ['{"nested":{"content":["{\\"login\\":\\"test-user\\"}"]}}'] },
-    });
-    expect(result).toEqual({ outer: { content: [{ nested: { content: [{ login: "test-user" }] } }] } });
-  });
-
-  it("leaves a value that doesn't match the content-block shape unchanged", () => {
-    const plain = { matches: 3, repository: "test-owner/test-repository" };
-    expect(unwrapMcpContent(plain)).toEqual(plain);
-  });
-
-  it("leaves a content entry that isn't valid JSON as the original string", () => {
-    const result = unwrapMcpContent({ content: ["not json"] });
-    expect(result).toEqual({ content: ["not json"] });
   });
 });

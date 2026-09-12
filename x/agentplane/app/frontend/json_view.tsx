@@ -27,43 +27,6 @@ export function highlightJson(text: string): string {
   });
 }
 
-/** True for the MCP tool-result content-block shape, `{content: [<json-encoded string>, ...]}` --
- * a structural check, not a type assumption: not every `execution.result` is an MCP tool result. */
-function isContentBlock(value: unknown): value is { content: unknown[] } {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
-    Array.isArray((value as { content?: unknown }).content)
-  );
-}
-
-function unwrapContentEntry(entry: unknown): unknown {
-  if (typeof entry !== "string") return unwrapMcpContent(entry);
-  try {
-    // The entry is itself a further-nested content block often enough (a tool call embedded in a
-    // tool result) to warrant unwrapping the parse, not just pretty-printing it.
-    return unwrapMcpContent(JSON.parse(entry));
-  } catch {
-    return entry;
-  }
-}
-
-/**
- * Recursively parses a JSON-encoded string sitting inside an MCP content-block shape's `content`
- * array -- at any depth in `value`, not only at the top -- so it renders as structure instead of
- * one escaped-quote wall of text. A value that doesn't match the shape anywhere passes through
- * unchanged, since only MCP-tool-call Actions produce it.
- */
-export function unwrapMcpContent(value: unknown): unknown {
-  if (isContentBlock(value)) return { ...value, content: value.content.map(unwrapContentEntry) };
-  if (Array.isArray(value)) return value.map(unwrapMcpContent);
-  if (typeof value === "object" && value !== null) {
-    return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, unwrapMcpContent(entry)]));
-  }
-  return value;
-}
-
 /** A JSON-serializable value, rendered as syntax-highlighted, sanitized JSON inside a `<Code
  * block>`. Untrusted-content safe: see `highlightJson`. */
 export function JsonView({ value }: { value: unknown }): JSX.Element {

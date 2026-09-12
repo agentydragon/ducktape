@@ -518,17 +518,7 @@ const ACTIONS: ActionRequestView[] = [
     execution: {
       id: "72000000-0000-4000-8000-000000000004",
       state: "succeeded",
-      // The MCP tool-result content-block shape: a `content` array whose entries are themselves
-      // JSON-encoded strings, the way a real GitHub search_code call returns them. Exercises the
-      // Result view's nested-JSON parsing rather than a plain value like the other fixtures'.
-      result: {
-        content: [
-          JSON.stringify({
-            total_count: 1,
-            items: [{ path: "x/agentplane/action_service/policies/policy.py", repository: "agentydragon/ducktape" }],
-          }),
-        ],
-      },
+      result: { matches: 3 },
       error: null,
       created_at: ago(14 * 60_000),
       started_at: ago(14 * 60_000 - 500),
