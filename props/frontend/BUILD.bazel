@@ -22,13 +22,18 @@ exports_files(
 # ============================================================
 
 js_library(
+    name = "app_css",
+    srcs = ["src/app.css"],
+)
+
+js_library(
     name = "app",
     srcs = [
         "src/App.svelte",
-        "src/app.css",
         "src/main.ts",
     ],
     deps = [
+        ":app_css",
         ":node_modules/svelte",
         "//props/frontend/src/components:RunTriggerModal",
         "//props/frontend/src/lib:router",
@@ -142,8 +147,18 @@ js_library(
     ],
     tags = ["no-lint"],
     deps = [
-        ":app",
+        ":app_css",
+        ":node_modules/svelte",
         ":scenarios",
+        "//props/frontend/src/components:DefinitionDetail",
+        "//props/frontend/src/components:FileViewer",
+        "//props/frontend/src/components:LLMRequestViewer",
+        "//props/frontend/src/components:RunDetail",
+        "//props/frontend/src/components:RunsBrowser",
+        "//props/frontend/src/components/stats:CoverageHeatmap",
+        "//props/frontend/src/components/stats:DistributionChart",
+        "//props/frontend/src/components/stats:OccurrenceStats",
+        "//props/frontend/src/pages:SnapshotDetailPage",
     ],
 )
 
