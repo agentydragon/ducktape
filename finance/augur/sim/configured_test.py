@@ -36,7 +36,7 @@ from finance.augur.sim.scenario import (
     ScheduledPropertyPurchase,
     TaxProfile,
 )
-from finance.augur.sim.session import Capture
+from finance.augur.sim.world import Capture
 
 AGENT = "alice"
 HORIZON_MONTHS = 30

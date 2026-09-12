@@ -7,6 +7,7 @@ from uuid import uuid4
 
 import pytest
 import pytest_bazel
+from more_itertools import one
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.exc import DBAPIError
@@ -23,6 +24,7 @@ from x.agentplane.action_service.connections import (
     ReconnectConnection,
 )
 from x.agentplane.action_service.db import (
+    ActionConflictError,
     ActionStore,
     ConnectionRow,
     ExternalGrantNotAuthorizedError,
@@ -46,7 +48,7 @@ from x.agentplane.action_service.models import (
 )
 from x.agentplane.action_service.policies.resources import parse_binding, parse_policy_set
 from x.agentplane.action_service.policy_evaluation import PROVIDER_NAME, PolicySetDecisionProvider
-from x.agentplane.action_service.policy_informer import PolicyIndex, namespaced_key
+from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.providers import DecisionContext
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, eligible_callers
@@ -93,6 +95,7 @@ async def grant(authority: ConnectionAuthority) -> Grant:
 def envelope() -> ActionRequestInput:
     return ActionRequestInput(
         idempotency_key="key",
+        title="test title for key",
         action=ActionIdentity(group="agentplane", name="echo"),
         arguments={},
         origin={"client_id": "forged", "grant_id": "forged", "issuer": "forged"},
@@ -109,18 +112,19 @@ async def allow(store: ActionStore, request: ActionRequestView) -> ActionRequest
     return result
 
 
-async def test_shared_service_account_retry_keeps_first_snapshot_after_rename_and_revoke(
+async def test_shared_service_account_repeat_refused_and_lookup_keeps_first_snapshot_after_rename_and_revoke(
     engine: AsyncEngine, authority: ConnectionAuthority, store: ActionStore, grant: Grant, envelope: ActionRequestInput
 ) -> None:
-    first, _ = await store.submit(envelope, grant.principal(), external_grant=grant.provenance())
+    first = await store.submit(envelope, grant.principal(), external_grant=grant.provenance())
     assert first.external_grant == grant.provenance()
     connection = await authority.get(grant.connection_id)
     await authority.rename(connection.id, expected_version=connection.version, display_name="renamed")
     await authority.revoke(grant.id)
     sibling = await activated(authority, "second-client")
     restarted = ActionStore(make_sessionmaker(engine), external_grants=authority)
-    duplicate, created = await restarted.submit(envelope, sibling.principal(), external_grant=sibling.provenance())
-    assert not created
+    with pytest.raises(ActionConflictError):
+        await restarted.submit(envelope, sibling.principal(), external_grant=sibling.provenance())
+    duplicate = one(await restarted.list_requests(sibling.principal(), idempotency_key=envelope.idempotency_key))
     assert duplicate.id == first.id
     assert duplicate.external_grant == grant.provenance()
     assert (await restarted.get(first.id, OPERATOR)).external_grant == grant.provenance()
@@ -174,7 +178,7 @@ async def test_original_authority_is_rechecked_before_dispatch_without_rewriting
     invalidate: str,
     available: bool,
 ) -> None:
-    request, _ = await store.submit(envelope, grant.principal(), external_grant=grant.provenance())
+    request = await store.submit(envelope, grant.principal(), external_grant=grant.provenance())
     allowed = await allow(store, request)
     if invalidate == "revoke":
         await authority.revoke(grant.id)
@@ -231,7 +235,7 @@ async def test_original_authority_is_rechecked_before_dispatch_without_rewriting
 async def test_claimed_work_continues_with_original_provenance_after_revocation(
     authority: ConnectionAuthority, store: ActionStore, grant: Grant, envelope: ActionRequestInput
 ) -> None:
-    request, _ = await store.submit(envelope, grant.principal(), external_grant=grant.provenance())
+    request = await store.submit(envelope, grant.principal(), external_grant=grant.provenance())
     await allow(store, request)
     claim = await store.claim_execution(request.id, executor_id="worker", lease_duration=LEASE_DURATION)
     assert claim is not None
@@ -267,7 +271,7 @@ async def test_admission_and_claim_hold_revocation_lock_until_transaction_end(
 
     checker = CheckingAuthority()
     store = ActionStore(sessions, external_grants=checker)
-    request, _ = await store.submit(envelope, grant.principal(), external_grant=grant.provenance())
+    request = await store.submit(envelope, grant.principal(), external_grant=grant.provenance())
     await allow(store, request)
     assert await store.claim_execution(request.id, executor_id="worker", lease_duration=LEASE_DURATION) is not None
     assert checker.calls == 2
@@ -326,13 +330,14 @@ async def test_bound_service_account_is_auto_approved_by_its_binding_only(
 ) -> None:
     namespace = PERSONAL.namespace
     index = PolicyIndex(synced=True)
-    index.policy_sets[namespaced_key(namespace, "echo")] = parse_policy_set(
+    policy_set = parse_policy_set(
         {
             "metadata": {"name": "echo", "namespace": namespace, "uid": "u1", "generation": 1, "resourceVersion": "1"},
             "spec": {"autoApproveIf": [{"type": "exact_actions", "actions": {"agentplane": ["echo"]}}]},
         }
     )
-    index.bindings[namespaced_key(namespace, "personal-echo")] = parse_binding(
+    index.policy_sets[policy_set.namespaced_name] = policy_set
+    binding = parse_binding(
         {
             "metadata": {
                 "name": "personal-echo",
@@ -344,6 +349,7 @@ async def test_bound_service_account_is_auto_approved_by_its_binding_only(
             "spec": {"subject": {"serviceAccount": PERSONAL.model_dump()}, "policySets": ["echo"]},
         }
     )
+    index.bindings[binding.namespaced_name] = binding
     service = ActionService(
         store,
         echo_catalog,

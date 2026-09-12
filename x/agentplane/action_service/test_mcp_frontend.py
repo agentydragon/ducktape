@@ -17,6 +17,7 @@ import pytest_bazel
 from fastapi import FastAPI
 from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
+from fastmcp.exceptions import ToolError
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import AuthenticationV1Api, CoreV1Api
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -36,11 +37,14 @@ from x.agentplane.action_service.models import (
     Executor,
     Principal,
     PrincipalRole,
+    SandboxCaller,
     Verdict,
 )
+from x.agentplane.action_service.policies.resources import parse_binding, parse_policy_set
+from x.agentplane.action_service.policy_informer import PolicyIndex
+from x.agentplane.action_service.policy_view import CallerActionPolicyView
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.updates import ActionUpdates
-from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
 from x.agentplane.sandbox_auth.principal import (
     POD_NAME_CLAIM,
     POD_UID_CLAIM,
@@ -63,6 +67,46 @@ def sandbox(label: str) -> SandboxPrincipal:
         sandbox_name=f"test-sandbox-{label}",
         sandbox_uid=f"test-sandbox-uid-{label}",
     )
+
+
+def _policy_index() -> PolicyIndex:
+    """Sandbox a bound to `test-reads`, sandbox b to nothing: what each may read of its own policy."""
+    index = PolicyIndex(synced=True)
+    for name, spec in (
+        ("test-reads", {"autoApproveIf": [{"type": "exact_actions", "actions": {"test-group": ["alpha"]}}]}),
+        ("test-other", {"autoApproveIf": [{"type": "exact_actions", "actions": {"test-group": ["beta"]}}]}),
+    ):
+        policy_set = parse_policy_set(
+            {
+                "metadata": {
+                    "name": name,
+                    "namespace": NAMESPACE,
+                    "uid": f"uid-{name}",
+                    "generation": 1,
+                    "resourceVersion": "1",
+                },
+                "spec": spec,
+            }
+        )
+        index.policy_sets[policy_set.namespaced_name] = policy_set
+    for name, uid, sets in (
+        ("test-a-reads", sandbox("a").sandbox_uid, ["test-reads", "test-vanished"]),
+        ("test-elsewhere", "test-sandbox-uid-elsewhere", ["test-other"]),
+    ):
+        binding = parse_binding(
+            {
+                "metadata": {
+                    "name": name,
+                    "namespace": NAMESPACE,
+                    "uid": f"uid-{name}",
+                    "generation": 1,
+                    "resourceVersion": "1",
+                },
+                "spec": {"subject": {"sandbox": {"name": f"test-sandbox-{name}", "uid": uid}}, "policySets": sets},
+            }
+        )
+        index.bindings[binding.namespaced_name] = binding
+    return index
 
 
 class EgressSubstitution(httpx.AsyncBaseTransport):
@@ -184,17 +228,15 @@ async def frontend(engine: AsyncEngine, db_url: str, echo_executor: Executor) ->
         }
     )
     store = ActionStore(make_sessionmaker(engine))
-    service = ActionService(store, catalog, {"test-group": echo_executor})
+    service = ActionService(store, catalog, {"test-group": echo_executor}, policies=_policy_index())
     updates = ActionUpdates(db_url)
     app = create_app(
         service,
-        SandboxPrincipalAuthenticator(
-            SandboxPrincipalResolver(
-                authentication=authentication,
-                core_v1=core,
-                audience=AUDIENCE,
-                allowed_service_account_namespaces=frozenset({NAMESPACE}),
-            )
+        SandboxPrincipalResolver(
+            authentication=authentication,
+            core_v1=core,
+            audience=AUDIENCE,
+            allowed_service_account_namespaces=frozenset({NAMESPACE}),
         ),
         DisabledOperatorAuthenticator(),
         catalog,
@@ -228,7 +270,7 @@ async def frontend(engine: AsyncEngine, db_url: str, echo_executor: Executor) ->
 async def test_compact_catalog_opt_in_pagination_and_small_generic_schema(frontend: Frontend) -> None:
     async with frontend.client(egress=True) as client:
         tools = await client.list_tools()
-        assert len(tools) == 6
+        assert len(tools) == 7
         cancellation = next(tool for tool in tools if tool.name == "cancel_action_request")
         assert set(cancellation.inputSchema["properties"]) == {"request_id"}
         assert cancellation.inputSchema["required"] == ["request_id"]
@@ -258,22 +300,31 @@ async def test_compact_catalog_opt_in_pagination_and_small_generic_schema(fronte
 
 async def test_submission_wait_receipts_events_and_owner_scope(frontend: Frontend) -> None:
     async with frontend.client() as caller, frontend.client("test-token-b") as other:
+        key = "test-submit"
         envelope = {
-            "idempotency_key": "test-submit",
+            "idempotency_key": key,
+            "title": "test title for test-submit",
             "action": {"group": "test-group", "name": "alpha"},
             "arguments": {"message": "test-message"},
         }
         result = await caller.call_tool("request_action", {"request": envelope})
         receipt = ActionRequestView.model_validate(result.structured_content)
         assert receipt.state is ActionState.DECISION_PENDING
-        repeated = await caller.call_tool("request_action", {"request": envelope})
-        assert repeated.structured_content == result.structured_content
-        for name in ("get_action_request", "list_action_request_events"):
-            denied = await other.call_tool(name, {"request_id": str(receipt.id)}, raise_on_error=False)
+        with pytest.raises(ToolError, match="idempotency key already used"):
+            await caller.call_tool("request_action", {"request": envelope})
+        by_key = {"idempotency_key": key}
+        assert (await caller.call_tool("get_action_request", by_key)).structured_content == result.structured_content
+        for args in ({}, {"request_id": str(receipt.id), **by_key}):
+            with pytest.raises(ToolError, match="exactly one of request_id or idempotency_key"):
+                await caller.call_tool("get_action_request", args)
+        for name, args in (
+            ("get_action_request", {"request_id": str(receipt.id)}),
+            ("get_action_request", by_key),
+            ("list_action_request_events", {"request_id": str(receipt.id)}),
+        ):
+            denied = await other.call_tool(name, args, raise_on_error=False)
             assert denied.is_error
-        task = asyncio.create_task(
-            caller.call_tool("get_action_request", {"request_id": str(receipt.id), "wait_seconds": 10})
-        )
+        task = asyncio.create_task(caller.call_tool("get_action_request", {**by_key, "wait_seconds": 10}))
         # A commit before or after subscription must both be observed, without polling.
         await frontend.store.decide(
             receipt.id,
@@ -296,13 +347,109 @@ async def test_submission_wait_receipts_events_and_owner_scope(frontend: Fronten
         ).id == receipt.id
 
 
+async def test_a_caller_reads_the_effective_policy_of_itself_or_a_named_target(frontend: Frontend) -> None:
+    """The tool answers for the authenticated Sandbox unless a target is named: its bindings and the
+    sets that resolved (a name nothing answers to is simply absent), and another Sandbox's binding
+    in the same namespace appears only when that Sandbox is the target. The HTTP route is the
+    caller's own view. Nothing is submitted by reading."""
+    async with frontend.client(egress=True) as caller, frontend.client("test-token-b") as other:
+        own = CallerActionPolicyView.model_validate((await caller.call_tool("get_action_policy")).structured_content)
+        assert isinstance(own.subject, SandboxCaller)
+        assert own.subject == SandboxCaller.from_principal(workload_principal(frontend.tokens["test-token-a"]))
+        assert own.synced is True
+        assert [(binding.name, binding.policy_sets) for binding in own.bindings] == [("test-a-reads", ["test-reads"])]
+        assert [(p.binding, p.policy_set, p.index, p.policy.actions) for p in own.auto_approve_if] == [
+            ("test-a-reads", "test-reads", 0, {"test-group": ["alpha"]})
+        ]
+        assert "test-vanished" not in str(own)
+        assert "test-elsewhere" not in str(own)
+        by_name = await caller.call_tool("get_action_policy", {"target": "self"})
+        assert CallerActionPolicyView.model_validate(by_name.structured_content) == own
+        nothing = CallerActionPolicyView.model_validate((await other.call_tool("get_action_policy")).structured_content)
+        assert nothing.subject == SandboxCaller.from_principal(workload_principal(frontend.tokens["test-token-b"]))
+        assert (nothing.synced, nothing.bindings, nothing.auto_approve_if) == (True, [], [])
+        # A named target gets the same view its own caller would; one the service does not watch has nothing.
+        about_a = await other.call_tool(
+            "get_action_policy",
+            {"target": {"sandbox": {"namespace": own.subject.namespace, "sandbox_uid": own.subject.sandbox_uid}}},
+        )
+        assert CallerActionPolicyView.model_validate(about_a.structured_content) == own
+        elsewhere = await caller.call_tool(
+            "get_action_policy",
+            {"target": {"sandbox": {"namespace": NAMESPACE, "sandbox_uid": "test-sandbox-uid-elsewhere"}}},
+        )
+        assert [b.name for b in CallerActionPolicyView.model_validate(elsewhere.structured_content).bindings] == [
+            "test-elsewhere"
+        ]
+        unwatched = await caller.call_tool(
+            "get_action_policy", {"target": {"service_account": {"namespace": "test-unwatched", "name": "nobody"}}}
+        )
+        assert CallerActionPolicyView.model_validate(unwatched.structured_content).bindings == []
+    assert await frontend.store.list_requests(OPERATOR) == []
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(frontend.app), base_url="http://actions.test") as http:
+        over_http = await http.get("/v1/action-policy", headers={"Authorization": "Bearer test-token-a"})
+        assert over_http.status_code == 200, over_http.text
+        assert CallerActionPolicyView.model_validate(over_http.json()) == own
+        assert (await http.get("/v1/action-policy")).status_code == 401
+
+
 @pytest.mark.parametrize("authorization", [None, "Bearer test-operator", f"Bearer {WORKLOAD_CREDENTIAL_PLACEHOLDER}"])
 async def test_transport_requires_real_workload_bearer(frontend: Frontend, authorization: str | None) -> None:
     async with httpx.AsyncClient(transport=httpx.ASGITransport(frontend.app), base_url="http://actions.test") as client:
         headers = {"Authorization": authorization} if authorization is not None else {}
-        for method in ("GET", "POST", "DELETE"):
+        for method in ("POST", "DELETE"):
             response = await client.request(method, "/mcp", headers=headers)
             assert response.status_code == 401
+            # RFC 6750 §3.1: an error attribute only once credentials were presented and refused.
+            assert ('error="invalid_token"' in response.headers["www-authenticate"]) == (authorization is not None)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-11-25",
+                "capabilities": {},
+                "clientInfo": {"name": "test-client", "version": "0"},
+            },
+        },
+        {"method": "tools/list"},
+    ],
+    ids=["initialize", "tools/list"],
+)
+async def test_protocol_setup_needs_a_bearer_at_the_transport(frontend: Frontend, body: dict[str, object]) -> None:
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(frontend.app), base_url="http://actions.test") as http:
+        response = await http.post(
+            "/mcp",
+            headers={"Accept": "application/json, text/event-stream", "MCP-Protocol-Version": "2025-11-25"},
+            json={"jsonrpc": "2.0", "id": 1, **body},
+        )
+        assert response.status_code == 401
+        assert response.headers["www-authenticate"] == "Bearer"
+
+
+async def test_tools_act_as_the_identity_the_transport_verified(frontend: Frontend) -> None:
+    receipts: dict[str, ActionRequestView] = {}
+    for token in ("test-token-a", "test-token-b"):
+        async with frontend.client(token) as client:
+            result = await client.call_tool(
+                "request_action",
+                {
+                    "request": {
+                        "idempotency_key": f"test-identity-{token}",
+                        "title": "test title for test-identity",
+                        "action": {"group": "test-group", "name": "alpha"},
+                        "arguments": {"message": "test-identity"},
+                    }
+                },
+            )
+            receipts[token] = ActionRequestView.model_validate(result.structured_content)
+    for token, receipt in receipts.items():
+        stored = await frontend.store.get(receipt.id, OPERATOR)
+        assert stored.caller_principal == workload_principal(frontend.tokens[token]).key
+        assert stored.external_grant is None
 
 
 async def test_revalidates_live_pod_and_rejects_duplicate_auth_and_forgery(frontend: Frontend) -> None:
@@ -312,6 +459,7 @@ async def test_revalidates_live_pod_and_rejects_duplicate_auth_and_forgery(front
             {
                 "request": {
                     "idempotency_key": "test-forgery",
+                    "title": "test title for test-forgery",
                     "action": {"group": "test-group", "name": "alpha"},
                     "arguments": {"message": "test"},
                     "caller_principal": "test-other",
@@ -357,6 +505,7 @@ async def test_submission_deadline_and_wait_validation(frontend: Frontend) -> No
     async with frontend.client() as client:
         request = {
             "idempotency_key": "test-bounded-submit",
+            "title": "test title for test-bounded-submit",
             "action": {"group": "test-group", "name": "alpha"},
             "arguments": {"message": "test-wait"},
         }
@@ -382,6 +531,7 @@ async def test_allowed_action_executes_and_returns_canonical_result(frontend: Fr
             {
                 "request": {
                     "idempotency_key": "test-execute",
+                    "title": "test title for test-execute",
                     "action": {"group": "test-group", "name": "alpha"},
                     "arguments": {"message": "test-result"},
                 }
@@ -444,6 +594,7 @@ async def test_http_disconnect_releases_wait_without_cancelling_action(
                         "arguments": {
                             "request": {
                                 "idempotency_key": "test-disconnect",
+                                "title": "test title for test-disconnect",
                                 "action": {"group": "test-group", "name": "alpha"},
                                 "arguments": {"message": "test-disconnect"},
                             },
@@ -498,8 +649,10 @@ async def test_cancellation_preserves_canonical_cutoff_ownership_and_retry(
     frontend: Frontend, state: ActionState
 ) -> None:
     async with frontend.client() as caller, frontend.client("test-token-b") as other:
+        key = "test-cancel"
         request = {
-            "idempotency_key": "test-cancel",
+            "idempotency_key": key,
+            "title": "test title for test-cancel",
             "action": {"group": "test-group", "name": "alpha"},
             "arguments": {"message": "test-cancel"},
         }
@@ -543,12 +696,11 @@ async def test_cancellation_preserves_canonical_cutoff_ownership_and_retry(
             assert repeated.outcome is CancellationOutcome.ALREADY_CANCELLED
             assert cancelled.request.state is ActionState.CANCELLED
         assert repeated.request == cancelled.request
-        assert (
-            ActionRequestView.model_validate(
-                (await caller.call_tool("request_action", {"request": request})).structured_content
-            )
-            == cancelled.request
-        )
+        with pytest.raises(ToolError, match="idempotency key already used"):
+            await caller.call_tool("request_action", {"request": request})
+        by_key = {"idempotency_key": key}
+        recovered = (await caller.call_tool("get_action_request", by_key)).structured_content
+        assert ActionRequestView.model_validate(recovered) == cancelled.request
 
 
 async def test_cancellation_wakes_mcp_receipt_wait(frontend: Frontend, subscription_signals: WaitSignals) -> None:
@@ -560,6 +712,7 @@ async def test_cancellation_wakes_mcp_receipt_wait(frontend: Frontend, subscript
                     {
                         "request": {
                             "idempotency_key": "test-cancel-wake",
+                            "title": "test title for test-cancel-wake",
                             "action": {"group": "test-group", "name": "alpha"},
                             "arguments": {"message": "test-cancel-wake"},
                         }

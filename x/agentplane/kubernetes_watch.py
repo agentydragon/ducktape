@@ -27,20 +27,27 @@ from tenacity import AsyncRetrying, before_sleep_log, wait_exponential
 logger = logging.getLogger(__name__)
 
 
+def _as_listed(obj: Any) -> Any:
+    return obj
+
+
 @dataclass(frozen=True)
-class WatchedKind:
+class WatchedKind[K, T]:
     """One kind to keep in sync: how to list it, and how to fold one object (or its deletion) in.
 
-    `apply` and `names` are bound to the caller's store; `name` keys the freshness timestamp and
-    names the task, so it is the resource's plural.
+    `key` reads a parsed object's key; `apply` and `names` are bound to the caller's store under
+    those keys. `parse` turns a listed or watched item into the stored object and defaults to
+    storing it as listed. `name` keys the freshness timestamp and names the task, so it is the
+    resource's plural.
     """
 
     name: str
     list: Callable[..., Awaitable[Any]]
     args: tuple[Any, ...]
-    parse: Callable[[Any], tuple[str, Any]]
-    names: Callable[[], set[str]]
-    apply: Callable[[str, Any | None], None]
+    key: Callable[[T], K]
+    names: Callable[[], set[K]]
+    apply: Callable[[K, T | None], None]
+    parse: Callable[[Any], T] = _as_listed
     kwargs: Mapping[str, Any] = field(default_factory=dict)
 
 
@@ -90,11 +97,11 @@ class ListWatch:
         version = (
             listed["metadata"]["resourceVersion"] if isinstance(listed, dict) else listed.metadata.resource_version
         )
-        parsed = dict(kind.parse(item) for item in items)
-        for name in kind.names() - set(parsed):
-            kind.apply(name, None)
-        for name, obj in parsed.items():
-            kind.apply(name, obj)
+        parsed = {kind.key(obj): obj for obj in map(kind.parse, items)}
+        for key in kind.names() - set(parsed):
+            kind.apply(key, None)
+        for key, obj in parsed.items():
+            kind.apply(key, obj)
         self._listed.add(kind.name)
         await self._on_change(kind)
         watcher = k8s_watch.Watch()
@@ -106,11 +113,10 @@ class ListWatch:
             ):
                 match event["type"]:
                     case "ADDED" | "MODIFIED":
-                        name, obj = kind.parse(event["object"])
-                        kind.apply(name, obj)
+                        obj = kind.parse(event["object"])
+                        kind.apply(kind.key(obj), obj)
                     case "DELETED":
-                        name, _ = kind.parse(event["object"])
-                        kind.apply(name, None)
+                        kind.apply(kind.key(kind.parse(event["object"])), None)
                     case "BOOKMARK":
                         continue
                     case other:
@@ -123,9 +129,9 @@ class ListWatch:
         await self._on_cycle(kind, self._clock())
 
 
-def apply_to[T](store: dict[str, T], name: str, obj: T | None) -> None:
-    """The usual `apply`: an object replaces what is stored under its name, and `None` removes it."""
+def apply_to[K, T](store: dict[K, T], key: K, obj: T | None) -> None:
+    """The usual `apply`: an object replaces what is stored under its key, and `None` removes it."""
     if obj is None:
-        store.pop(name, None)
+        store.pop(key, None)
     else:
-        store[name] = obj
+        store[key] = obj

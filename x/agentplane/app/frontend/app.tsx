@@ -1,4 +1,4 @@
-import { Button, Container, Group, Stack } from "@mantine/core";
+import { Anchor, Stack, Text } from "@mantine/core";
 import { useState } from "react";
 import { HashRouter, Route, Routes, useLocation, useMatch, useNavigate, useParams } from "react-router";
 
@@ -9,6 +9,8 @@ import { SandboxPage } from "./sandbox_page";
 import { SandboxList } from "./sandboxes";
 import { SessionView } from "./session";
 import { Settings, type SettingsTab } from "./settings/dialog";
+import { Sidebar } from "./sidebar";
+import "./shell.css";
 
 // Hash routing: the API serves the bundle at "/" only, so no path has to reach the server.
 function sandboxPath(name: string): string {
@@ -24,7 +26,23 @@ function required(value: string | undefined, name: string): string {
   return value;
 }
 
-function ListRoute(): JSX.Element {
+/** Nothing selected: the sidebar carries the Threads list, so the landing pane just points at it. */
+function ThreadsLanding(): JSX.Element {
+  const navigate = useNavigate();
+  return (
+    <Stack align="center" justify="center" h="100%">
+      <Text c="dimmed">
+        Select a thread from the sidebar, or{" "}
+        <Anchor size="sm" onClick={() => void navigate("/sandboxes")}>
+          open Sandboxes
+        </Anchor>{" "}
+        to start one.
+      </Text>
+    </Stack>
+  );
+}
+
+function SandboxListRoute(): JSX.Element {
   const navigate = useNavigate();
   return <SandboxList onOpen={(name) => void navigate(sandboxPath(name))} />;
 }
@@ -40,7 +58,7 @@ function SandboxRoute(): JSX.Element {
   return (
     <SandboxPage
       name={name}
-      onBack={() => void navigate("/")}
+      onBack={() => void navigate("/sandboxes")}
       onOpenSession={(sessionId) => void navigate(sessionPath(name, sessionId))}
     />
   );
@@ -61,7 +79,6 @@ function SessionRoute(): JSX.Element {
 }
 
 function AppRoutes(): JSX.Element {
-  const navigate = useNavigate();
   const location = useLocation();
   const sessionRoute = useMatch("/sandboxes/:name/sessions/:sessionId");
   // Not legacy-path compatibility: api.py's MCP-linkage OAuth callback redirects the browser here
@@ -69,47 +86,32 @@ function AppRoutes(): JSX.Element {
   const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(() =>
     location.pathname === "/mcp-servers" ? "mcp-servers" : null
   );
+  const fullBleed = sessionRoute !== null;
   return (
-    <Container size="xl" py="md" h={sessionRoute ? "100dvh" : undefined}>
-      <Stack h="100%">
-        <Group>
-          <Button variant={location.pathname === "/" ? "filled" : "subtle"} onClick={() => void navigate("/")}>
-            Sandboxes
-          </Button>
-          <Button
-            variant={location.pathname === "/actions" ? "filled" : "subtle"}
-            onClick={() => void navigate("/actions")}
-          >
-            Actions
-          </Button>
-          <Button
-            variant={location.pathname === "/actions/history" ? "filled" : "subtle"}
-            onClick={() => void navigate("/actions/history")}
-          >
-            Action history
-          </Button>
-          <Button variant={settingsTab ? "filled" : "subtle"} onClick={() => setSettingsTab("oauth-clients")}>
-            Settings
-          </Button>
-        </Group>
-        <Routes>
-          <Route path="/" element={<ListRoute />} />
-          <Route path="/actions" element={<ActionRequests />} />
-          <Route path="/actions/history" element={<ActionHistory />} />
-          <Route path="/actions/:requestId" element={<ActionRequests />} />
-          <Route path="/connection-enrollments/:handle" element={<ConsentRoute />} />
-          <Route path="/sandboxes/:name" element={<SandboxRoute />} />
-          <Route path="/sandboxes/:name/sessions/:sessionId" element={<SessionRoute />} />
-          <Route path="*" element={<ListRoute />} />
-        </Routes>
-        <Settings
-          opened={settingsTab !== null}
-          tab={settingsTab ?? "oauth-clients"}
-          onTabChange={setSettingsTab}
-          onClose={() => setSettingsTab(null)}
-        />
-      </Stack>
-    </Container>
+    <div className="agentplane-shell">
+      <Sidebar settingsOpen={settingsTab !== null} onOpenSettings={() => setSettingsTab("oauth-clients")} />
+      <div className={`agentplane-shell-main${fullBleed ? " agentplane-shell-fullbleed" : ""}`}>
+        <div className={`agentplane-shell-main-content${fullBleed ? " agentplane-shell-fullbleed" : ""}`}>
+          <Routes>
+            <Route path="/" element={<ThreadsLanding />} />
+            <Route path="/sandboxes" element={<SandboxListRoute />} />
+            <Route path="/actions" element={<ActionRequests />} />
+            <Route path="/actions/history" element={<ActionHistory />} />
+            <Route path="/actions/:requestId" element={<ActionRequests />} />
+            <Route path="/connection-enrollments/:handle" element={<ConsentRoute />} />
+            <Route path="/sandboxes/:name" element={<SandboxRoute />} />
+            <Route path="/sandboxes/:name/sessions/:sessionId" element={<SessionRoute />} />
+            <Route path="*" element={<ThreadsLanding />} />
+          </Routes>
+        </div>
+      </div>
+      <Settings
+        opened={settingsTab !== null}
+        tab={settingsTab ?? "oauth-clients"}
+        onTabChange={setSettingsTab}
+        onClose={() => setSettingsTab(null)}
+      />
+    </div>
   );
 }
 

@@ -9,7 +9,7 @@ models:
     - chatgpt/oai-responses/gpt-5.6-luna
 
 # Rendered into the image-owned agent-instruction template; deployments may use different service names.
-agent_egress_rules_url: http://agentplane-egress.agentplane-testing.svc.cluster.local/v1/rules
+agent_egress_api_url: http://agentplane-egress.agentplane-testing.svc.cluster.local
 agent_actions_service_url: http://agentplane-actions.agentplane-testing.svc.cluster.local:8080
 
 # App-owned launch presets. Names are resolved here; the Sandbox CR and runner receive only the

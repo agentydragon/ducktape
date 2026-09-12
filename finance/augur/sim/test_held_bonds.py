@@ -37,7 +37,7 @@ def nominal() -> PreparedBond:
 
 def bond_books(bond: PreparedBond, levels: tuple[int, ...]) -> tuple[Accounting, HeldBonds]:
     scenario = replace(prepared_scenario(), horizon_months=len(levels) - 1, initial_bonds=(bond,))
-    accounting = Accounting(scenario.accounts, scenario.tax_profiles, scenario.income_sources, capture="forensic")
+    accounting = Accounting(scenario.accounts, scenario.tax_profiles, scenario.income_sources)
     run = CompiledRun(
         currency_code="USD",
         currency_quantum="0.01",

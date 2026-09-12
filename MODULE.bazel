@@ -29,7 +29,7 @@ bazel_dep(name = "googletest", version = "1.17.0")
 bazel_dep(name = "googleapis", version = "0.0.0-20260223-edfe7983")
 bazel_dep(name = "googleapis-go", version = "1.0.0")
 bazel_dep(name = "rules_shell", version = "0.6.1")  # Required by buildifier_prebuilt
-bazel_dep(name = "buildifier_prebuilt", version = "8.5.1.3")
+bazel_dep(name = "buildifier_prebuilt", version = "8.5.1.4")
 bazel_dep(name = "aspect_rules_lint", version = "2.3.0")
 bazel_dep(name = "rules_multirun", version = "0.14.0")  # Required by format_multirun
 bazel_dep(name = "rules_multitool", version = "1.11.1")
@@ -213,7 +213,7 @@ oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
 # The hermetic Python toolchain is bundled in the interpreter layer.
 oci.pull(
     name = "debian_trixie_slim",
-    digest = "sha256:38a76d01668772e381ad2826d876627c89e7133e2f8a0f5d567306798b0f2a16",
+    digest = "sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132",
     image = "mirror.gcr.io/library/debian",
     platforms = ["linux/amd64"],
     tag = "trixie-slim",
@@ -222,7 +222,7 @@ oci.pull(
 # Test infrastructure: PostgreSQL for Testcontainers (match production version)
 oci.pull(
     name = "postgres_18",
-    digest = "sha256:cd78ca58eb75f929698e117a589488ccb2bd45107247fe02400b50ff6c418324",
+    digest = "sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
     image = "mirror.gcr.io/library/postgres",
     platforms = ["linux/amd64"],
     tag = "18",
@@ -270,7 +270,7 @@ oci.pull(
 # Debian 12 (Bookworm) ships glibc 2.36.
 oci.pull(
     name = "distroless_cc_debian12",
-    digest = "sha256:633c48ef17ed6f68966f71a2da76515ce907528c8ba0b8dc60daf42e841321ed",
+    digest = "sha256:e5d81ddde149641e2a9ba55be4545bc125c67de07508b03ba4c22e6eb0ded5aa",
     image = "gcr.io/distroless/cc-debian12",
     platforms = ["linux/amd64"],
     tag = "latest",
@@ -280,7 +280,7 @@ oci.pull(
 # To update: docker manifest inspect inventree/inventree:stable | jq -r '.manifests[] | select(.platform.architecture=="amd64") | .digest'
 oci.pull(
     name = "inventree_stable",
-    digest = "sha256:8e943a0e3450f269c44ffde875afe3f0dfa26f66877d46058a22b65f3eab2ce7",
+    digest = "sha256:a946ec09da3e5a5b7343fb7d02f2367f74167f4ce883a62e4a313db7bdb9bd54",
     image = "mirror.gcr.io/inventree/inventree",
     platforms = ["linux/amd64"],
     tag = "stable",
@@ -301,7 +301,7 @@ oci.pull(
 # Base image for container E2E tests. rules_distroless layers git + JDK on top.
 oci.pull(
     name = "python_3_13_slim",
-    digest = "sha256:8fef26df932191825664e4957ff488c96dfe64918327634a357a55facbc994d3",
+    digest = "sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285",
     image = "mirror.gcr.io/library/python",
     platforms = ["linux/amd64"],
     tag = "3.13-slim",
@@ -444,7 +444,7 @@ use_repo(apt, "gnome_shell_test", "trixie_agentplane_runner", "trixie_attic_rota
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")
 bazel_dep(name = "aspect_rules_esbuild", version = "0.25.1")
-bazel_dep(name = "aspect_rules_js", version = "2.9.2")
+bazel_dep(name = "aspect_rules_js", version = "2.9.3")
 bazel_dep(name = "aspect_rules_ts", version = "3.8.7")
 bazel_dep(name = "rules_nodejs", version = "6.7.5")
 
@@ -1072,6 +1072,16 @@ go_deps.module(
     version = "v1.4.0",
 )
 go_deps.module(
+    path = "github.com/coder/websocket",
+    sum = "h1:9L0p0iKiNOibykf283eHkKUHHrpG7f65OE3BhhO7v9g=",
+    version = "v1.8.14",
+)
+go_deps.module(
+    path = "github.com/pb33f/ordered-map/v2",
+    sum = "h1:5319HDO0aw4DA4gzi+zv4FXU9UlSs3xGZ40wcP1nBjY=",
+    version = "v2.3.1",
+)
+go_deps.module(
     path = "github.com/goretk/gore",
     sum = "h1:ADlDhsNmAm3ve9Q5dClyUuHUPD7VnwPe1njSDvrENTk=",
     version = "v0.13.27",
@@ -1269,6 +1279,7 @@ use_repo(
     "com_github_caarlos0_env_v11",
     "com_github_cespare_xxhash_v2",
     "com_github_cheynewallace_tabby",
+    "com_github_coder_websocket",
     "com_github_docker_docker",
     "com_github_dustin_go_humanize",
     "com_github_elliotchance_orderedmap",
@@ -1283,6 +1294,7 @@ use_repo(
     "com_github_mark3labs_mcp_go",
     "com_github_munnerz_goautoneg",
     "com_github_nervsystems_osmmcp",
+    "com_github_pb33f_ordered_map_v2",
     "com_github_prometheus_client_golang",
     "com_github_prometheus_client_model",
     "com_github_prometheus_common",

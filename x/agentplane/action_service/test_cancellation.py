@@ -45,6 +45,7 @@ def store(engine: AsyncEngine) -> ActionStore:
 def envelope() -> ActionRequestInput:
     return ActionRequestInput(
         idempotency_key="test-cancellation",
+        title="test title for test-cancellation",
         action=ActionIdentity(group="agentplane", name="echo"),
         arguments={},
         origin={"thread_id": "untrusted-thread", "caller_principal": OTHER_CALLER.key},
@@ -53,8 +54,7 @@ def envelope() -> ActionRequestInput:
 
 @pytest.fixture
 async def pending(store: ActionStore, envelope: ActionRequestInput) -> ActionRequestView:
-    request, _ = await store.submit(envelope, CALLER)
-    return request
+    return await store.submit(envelope, CALLER)
 
 
 def decision(pending: ActionRequestView, verdict: Verdict = Verdict.ALLOW) -> DecisionInput:
@@ -80,11 +80,10 @@ async def test_pending_cancellation_is_durable_and_idempotent(
     duplicate = await restarted.cancel(pending.id, CALLER)
     assert duplicate.outcome is CancellationOutcome.ALREADY_CANCELLED
     assert duplicate.request == result.request
-    retried, created = await restarted.submit(envelope, CALLER)
-    assert not created
-    assert retried == result.request
-    fresh, created = await restarted.submit(envelope.model_copy(update={"idempotency_key": "fresh-attempt"}), CALLER)
-    assert created
+    with pytest.raises(ActionConflictError):
+        await restarted.submit(envelope, CALLER)
+    assert await restarted.list_requests(CALLER, idempotency_key=envelope.idempotency_key) == [result.request]
+    fresh = await restarted.submit(envelope.model_copy(update={"idempotency_key": "fresh-attempt"}), CALLER)
     assert fresh.id != pending.id
     assert fresh.state is ActionState.DECISION_PENDING
     events = await restarted.events(pending.id, CALLER)

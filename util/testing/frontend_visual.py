@@ -16,13 +16,13 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from util.bazel.runfiles import get_required_path
+from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 if TYPE_CHECKING:
     from playwright.sync_api import Browser, BrowserContext, Playwright, ViewportSize
 
 
-_FLAGS = json.loads(get_required_path("_main/util/testing/chromium-flags.json").read_text())
+_FLAGS = json.loads(get_required_path(own_repo_rlocation("util/testing/chromium-flags.json")).read_text())
 # Makes headless Chromium run in containerized/RBE environments.
 CONTAINER_BASE_BROWSER_ARGS: list[str] = _FLAGS["containerBase"]
 # Container base plus font/raster/compositing/animation pinning for stable renders.
@@ -43,7 +43,7 @@ def launch_deterministic_browser(playwright_sync: Playwright) -> Browser:
 
 
 def frozen_clock_script(now_ms: int) -> str:
-    source = get_required_path("_main/util/testing/frozen-clock.js").read_text()
+    source = get_required_path(own_repo_rlocation("util/testing/frozen-clock.js")).read_text()
     return f"(() => {{ {source} frozenClock({now_ms}); }})();"
 
 
@@ -94,7 +94,7 @@ def stability_style() -> str:
 
 def deterministic_style() -> str:
     """`stability_style` plus a hermetic Inter font forced everywhere."""
-    font_bytes = get_required_path("_main/util/testing/frontend_visual/fonts/Inter.woff2").read_bytes()
+    font_bytes = get_required_path(own_repo_rlocation("util/testing/frontend_visual/fonts/Inter.woff2")).read_bytes()
     font_base64 = base64.b64encode(font_bytes).decode()
     return f"""
     @font-face {{

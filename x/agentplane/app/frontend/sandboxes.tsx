@@ -17,10 +17,13 @@ import {
 // Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
 import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router";
 
+import { readiness } from "./action_policy";
 import {
   api,
   displayableError,
+  type ActionPolicySetView,
   type Condition,
   type NewSandbox,
   type SandboxPresetView,
@@ -31,10 +34,12 @@ import { changedDefaults } from "./launch_presets";
 import { ConfirmDelete, deletable, SuspendResume } from "./lifecycle";
 import { liveSandboxesUrl, LiveStatus, useLive, type SandboxesSnapshot } from "./live";
 
-const EMPTY_FORM: NewSandbox = { slug: "", policies: [] };
+const EMPTY_FORM: NewSandbox = { slug: "", policies: [], action_policy_sets: [] };
 const EMPTY_THREAD: ThreadDefaults = {};
+// The picked preset, in the URL like the sandbox page's tab, so a launch form can be linked to.
+const PRESET_PARAM = "preset";
 
-const STATE_COLORS: Record<string, string> = {
+export const STATE_COLORS: Record<string, string> = {
   running: "green",
   suspended: "gray",
   waiting_for_pod: "yellow",
@@ -46,7 +51,7 @@ function conditionLine({ type, status, reason, message }: Condition): string {
 }
 
 /** The State badge's hover detail: the Sandbox's own conditions, then the Pod's phase and containers. */
-function stateDetail(row: SandboxView): string {
+export function stateDetail(row: SandboxView): string {
   const lines = row.conditions.map(conditionLine);
   if (row.pod) {
     lines.push(
@@ -68,6 +73,12 @@ function stateDetail(row: SandboxView): string {
   return lines.length > 0 ? lines.join("\n") : "No conditions reported";
 }
 
+/** A set to pick, with the verdict the Action Service wrote on it: a refused set binds nothing. */
+function policySetOption(policySet: ActionPolicySetView): { value: string; label: string } {
+  const state = policySet.refused ? "invalid" : readiness(policySet.ready, policySet.generation).label;
+  return { value: policySet.name, label: state === "Ready" ? policySet.name : `${policySet.name} · ${state}` };
+}
+
 function StateBadge({ row }: { row: SandboxView }): JSX.Element {
   return (
     <Tooltip label={stateDetail(row)} multiline style={{ whiteSpace: "pre-line" }} withArrow>
@@ -87,16 +98,48 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   const modelOptions = thread.provider ? (modelCatalog?.[thread.provider] ?? []) : [];
   // The namespace's policies; ticking some grants them to this sandbox alone.
   const [policies, setPolicies] = useState<string[]>([]);
+  // The namespace's action policy sets; a preset pre-fills the pick and the operator edits it.
+  const [policySets, setPolicySets] = useState<ActionPolicySetView[]>([]);
   // The sandbox whose deletion is being confirmed, by name; deleting takes its volume with it.
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
   const live = useLive<SandboxesSnapshot>(liveSandboxesUrl());
   const rows: SandboxView[] = live.snapshot?.sandboxes ?? [];
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedPreset = searchParams.get(PRESET_PARAM);
+
+  /** Fill the form from a preset, or clear what one filled; every launch field stays editable. */
+  function pickPreset(preset: SandboxPresetView | null): void {
+    if (!preset) {
+      setForm((current) => ({ ...current, preset: null, policies: [], action_policy_sets: [] }));
+      setInheritedThread(EMPTY_THREAD);
+      setThread(EMPTY_THREAD);
+      return;
+    }
+    setForm((current) => ({
+      ...current,
+      preset: preset.name,
+      policies: preset.policies,
+      action_policy_sets: preset.action_policy_sets,
+    }));
+    setInheritedThread(preset.thread_defaults);
+    setThread(preset.thread_defaults);
+  }
+
+  // The URL names a preset the form has not taken yet: once the catalog is here, take it.
+  useEffect(() => {
+    if (requestedPreset === null || requestedPreset === form.preset) return;
+    const preset = presets.find((candidate) => candidate.name === requestedPreset);
+    if (preset) pickPreset(preset);
+  }, [requestedPreset, presets]);
 
   useEffect(() => {
     void (async () => {
       const { data: policyViews, error: policyFailure } = await api.GET("/egress/policies");
       if (policyFailure) setError(displayableError(policyFailure));
       else setPolicies(policyViews.map((policy) => policy.name));
+      const { data: setViews, error: setFailure } = await api.GET("/action-policy/sets");
+      if (setFailure) setError(displayableError(setFailure));
+      else setPolicySets(setViews);
       const { data: presetViews } = await api.GET("/presets");
       setPresets(presetViews ?? []);
     })();
@@ -173,16 +216,12 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           data={presets.map((preset) => ({ value: preset.name, label: preset.title }))}
           value={form.preset ?? null}
           onChange={(name) => {
-            const preset = presets.find((candidate) => candidate.name === name);
-            if (!preset) {
-              setForm({ ...form, preset: null, policies: [] });
-              setInheritedThread(EMPTY_THREAD);
-              setThread(EMPTY_THREAD);
-              return;
-            }
-            setForm({ ...form, preset: preset.name, policies: preset.policies });
-            setInheritedThread(preset.thread_defaults);
-            setThread(preset.thread_defaults);
+            const preset = presets.find((candidate) => candidate.name === name) ?? null;
+            pickPreset(preset);
+            const params = new URLSearchParams(searchParams);
+            if (preset) params.set(PRESET_PARAM, preset.name);
+            else params.delete(PRESET_PARAM);
+            setSearchParams(params, { replace: true });
           }}
           style={{ flex: "1 1 12rem" }}
         />
@@ -198,6 +237,14 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           data={policies}
           value={form.policies ?? []}
           onChange={(picked) => setForm({ ...form, policies: picked })}
+          style={{ flex: "1 1 12rem" }}
+        />
+        <MultiSelect
+          label="Action policy sets"
+          description="What its harness may do without the operator"
+          data={policySets.map(policySetOption)}
+          value={form.action_policy_sets ?? []}
+          onChange={(picked) => setForm({ ...form, action_policy_sets: picked })}
           style={{ flex: "1 1 12rem" }}
         />
         <Button

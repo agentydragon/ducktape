@@ -24,6 +24,7 @@ from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, Settings
 from util.bazel.runfiles import get_required_path
 from util.kubernetes import CustomObjectsClient
 from x.agentplane.app.action_federation import ActionFederationSettings, FederatedOperatorActions
+from x.agentplane.app.action_policy import ActionPolicyInventory
 from x.agentplane.app.api import ModelCatalog, create_app
 from x.agentplane.app.bridge import DiscoverSandboxes, RunnerBridge, runner_address
 from x.agentplane.app.decisions import DecisionsClient
@@ -123,11 +124,13 @@ class Settings(BaseSettings):
         default=None,
         description="Operational instructions prepended to every Agentplane-launched session; omitted uses the image default.",
     )
-    agent_egress_rules_url: str | None = Field(
-        default=None, description="Rules endpoint rendered into the image-owned agent-instruction template."
+    agent_egress_api_url: str | None = Field(
+        default=None,
+        description="Root of the egress proxy's agent-facing API, rendered into the image-owned agent-instruction template.",
     )
     agent_actions_service_url: str | None = Field(
-        default=None, description="Actions Service endpoint rendered into the image-owned agent-instruction template."
+        default=None,
+        description="Root of the Actions Service, rendered into the image-owned agent-instruction template.",
     )
     default_policies: list[str] = Field(
         default_factory=list,
@@ -181,17 +184,17 @@ class Settings(BaseSettings):
 
 
 def resolved_agent_instructions(
-    configured: str | None, *, egress_rules_url: str | None, actions_service_url: str | None
+    configured: str | None, *, egress_api_url: str | None, actions_service_url: str | None
 ) -> str:
     """Use the image-owned instructions unless deployment configuration explicitly replaces them."""
     if configured is not None:
         return configured
-    if egress_rules_url is None or actions_service_url is None:
-        raise ValueError("image-owned agent instructions require agent_egress_rules_url and agent_actions_service_url")
+    if egress_api_url is None or actions_service_url is None:
+        raise ValueError("image-owned agent instructions require agent_egress_api_url and agent_actions_service_url")
     template = Template(
         get_required_path(DEFAULT_AGENT_INSTRUCTIONS_TEMPLATE).read_text(encoding="utf-8"), undefined=StrictUndefined
     )
-    return template.render(egress_rules_url=egress_rules_url, actions_service_url=actions_service_url)
+    return template.render(egress_api_url=egress_api_url, actions_service_url=actions_service_url)
 
 
 def main() -> None:
@@ -229,6 +232,9 @@ async def async_main(settings: Settings) -> None:
         egress = EgressInventory(
             namespace=settings.namespace, custom_objects=custom_objects, default_policies=settings.default_policies
         )
+        # In the Sandbox's namespace, not the app's: that is where the Action Service matches a
+        # binding to the authenticated Sandbox, and where the owner reference cascades.
+        action_policy = ActionPolicyInventory(namespace=settings.sandbox_namespace, custom_objects=custom_objects)
         live = LiveIndex(stale_after_seconds=float(settings.resync_seconds * STALE_AFTER_CYCLES))
         watch = watch_for(
             live,
@@ -239,7 +245,6 @@ async def async_main(settings: Settings) -> None:
             resync_seconds=settings.resync_seconds,
         )
         store = TrajectoryStore.connect(settings.database_url)
-        await store.ensure_schema()
         await store.start_updates()
 
         async def running_sandboxes() -> list[str]:
@@ -265,6 +270,7 @@ async def async_main(settings: Settings) -> None:
             egress,
             DecisionsClient(admin_http),
             live,
+            action_policy,
             oidc,
             TokenReviewer(AuthenticationV1Api(api), audience=settings.token_audience, subjects=settings.token_subjects),
             operator_actions=operator_actions,
@@ -273,7 +279,7 @@ async def async_main(settings: Settings) -> None:
                 threads=settings.thread_presets,
                 agent_instructions=resolved_agent_instructions(
                     settings.agent_instructions,
-                    egress_rules_url=settings.agent_egress_rules_url,
+                    egress_api_url=settings.agent_egress_api_url,
                     actions_service_url=settings.agent_actions_service_url,
                 ),
             ),

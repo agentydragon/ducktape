@@ -20,6 +20,7 @@ import uvicorn
 from fastapi import FastAPI
 from fastmcp import FastMCP
 from kubernetes_asyncio import client as k8s_client
+from more_itertools import one
 from pydantic import JsonValue, ValidationError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -27,7 +28,7 @@ from util.bazel.runfiles import get_required_path
 from x.agentplane.action_service.api import create_app
 from x.agentplane.action_service.auth import DisabledOperatorAuthenticator
 from x.agentplane.action_service.catalog import ActionCatalog, ActionGroup, ActionIdentity, McpExecutorBinding
-from x.agentplane.action_service.db import ActionStore, make_sessionmaker
+from x.agentplane.action_service.db import ActionConflictError, ActionStore, make_sessionmaker
 from x.agentplane.action_service.main import ActionServer, Settings, async_main
 from x.agentplane.action_service.mcp_executor import McpActionGroupExecutor
 from x.agentplane.action_service.models import (
@@ -56,7 +57,7 @@ from x.agentplane.action_service.service import ActionService, UnsupportedAction
 from x.agentplane.action_service.test_fixtures.lifecycle import wait_available
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.egress.testing.fake_apiserver import fake_apiserver
-from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
+from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 
 CALLER = SandboxCaller(namespace="agentplane-test", sandbox_uid="sandbox-uid").principal()
 OPERATOR = Principal(issuer="test", subject="operator", role=PrincipalRole.OPERATOR)
@@ -85,7 +86,12 @@ async def test_empty_catalog_has_no_echo_fallback(engine: AsyncEngine) -> None:
         service = ActionService(ActionStore(make_sessionmaker(engine)), catalog, executors)
         for identity in (ActionIdentity(group="agentplane", name="echo"),):
             with pytest.raises(UnsupportedActionError):
-                await service.submit(ActionRequestInput(idempotency_key="empty", action=identity, arguments={}), CALLER)
+                await service.submit(
+                    ActionRequestInput(
+                        idempotency_key="empty", title="test title for empty", action=identity, arguments={}
+                    ),
+                    CALLER,
+                )
 
 
 def test_missing_binding_is_rejected() -> None:
@@ -283,13 +289,17 @@ async def test_main_serves_real_stdio_execution_and_closes_in_order(db_url: str,
         with pytest.raises(UnsupportedActionError):
             await service.submit(
                 ActionRequestInput(
-                    idempotency_key="no-echo", action=ActionIdentity(group="agentplane", name="echo"), arguments={}
+                    idempotency_key="no-echo",
+                    title="test title for no-echo",
+                    action=ActionIdentity(group="agentplane", name="echo"),
+                    arguments={},
                 ),
                 CALLER,
             )
         view = await service.submit(
             ActionRequestInput(
                 idempotency_key="real-stdio",
+                title="test title for real-stdio",
                 action=ActionIdentity(group="demo", name="slow_echo"),
                 arguments={"marker_path": str(tmp_path / "called"), "seconds": 0, "text": "wired"},
             ),
@@ -393,6 +403,7 @@ async def test_main_auto_approves_the_bound_sandbox_from_watched_policy_objects(
         await index.wait_for(lambda: index.synced)
         body = ActionRequestInput(
             idempotency_key="fixture-once",
+            title="test title for fixture-once",
             action=ActionIdentity(group="fixture", name="echo"),
             arguments={"message": "MCP0-ok"},
         )
@@ -408,13 +419,17 @@ async def test_main_auto_approves_the_bound_sandbox_from_watched_policy_objects(
                 view = await service.get(view.id, bound.principal())
         assert view.execution is not None
         assert view.execution.result == {"content": ["Echo: MCP0-ok"]}
-        assert (await service.submit(body, bound.principal())).execution == view.execution
+        with pytest.raises(ActionConflictError):
+            await service.submit(body, bound.principal())
+        recovered = one(await service.list_requests(bound.principal(), idempotency_key=body.idempotency_key))
+        assert recovered.execution == view.execution
         # An argument outside the schema, and a Sandbox nothing names, take the human path whatever
         # the envelope claims.
         for key, caller, message in [("too-long", bound, "x" * 201), ("unbound", unbound, "MCP0-ok")]:
             pending = await service.submit(
                 ActionRequestInput(
                     idempotency_key=key,
+                    title=f"test title for {key}",
                     action=body.action,
                     arguments={"message": message},
                     origin={"caller": bound.principal().key, "binding": "fixture-echo"},
@@ -478,7 +493,7 @@ async def test_sigterm_fences_readiness_and_traffic_before_http_shutdown(engine:
     service = ActionService(ActionStore(make_sessionmaker(engine)), catalog, {})
     app = create_app(
         service,
-        MagicMock(spec=SandboxPrincipalAuthenticator),
+        MagicMock(spec=SandboxPrincipalResolver),
         DisabledOperatorAuthenticator(),
         catalog,
         updates=ActionUpdates(db_url),

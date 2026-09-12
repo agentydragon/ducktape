@@ -41,7 +41,6 @@ async def lease(store: TrajectoryStore) -> IngestionLease:
 @pytest.fixture
 async def replica(db_url: str) -> AsyncIterator[TrajectoryStore]:
     replica = TrajectoryStore.connect(db_url)
-    await replica.ensure_schema()
     await replica.start_updates()
     try:
         yield replica
@@ -114,11 +113,36 @@ async def test_threads_list_with_their_progress(store: TrajectoryStore, lease: I
         0,
         None,
     )
+    # No feed has ever attached to either thread (only their event log was replayed), so the
+    # exposed harness state stays unspecified rather than inferring it from history.
+    assert views[thread].harness == views[empty].harness == "HARNESS_STATE_UNSPECIFIED"
     assert await store.get_thread(empty) == views[empty]
     assert await store.get_thread(thread) == views[thread]
     assert [view.id for view in await store.list_threads(sandbox="sb-1")] == [thread]
     assert [view.id for view in await store.list_threads(sandbox="sb-2", session_id="s-9")] == [empty]
     assert await store.list_threads(sandbox="sb-1", session_id="s-9") == []
+
+
+async def test_threads_list_reflects_the_attached_feed_s_harness_state(
+    store: TrajectoryStore, lease: IngestionLease
+) -> None:
+    """`list_threads`/`get_thread` expose `FeedState.attached.harness` per thread — the live
+    running/idle signal the sidebar's per-thread status dot reads (`x/agentplane/plans/task_dag.md`
+    `UISHELL_SIDEBAR`), not a value derived from the historical event log."""
+    thread = await store.thread("sb-1", "s-1", SPEC)
+    running_attached = pb.Attached(session_id="s-1", spec=SPEC, harness=pb.HARNESS_STATE_RUNNING)
+    await store.set_attached(thread, running_attached, lease=lease)
+
+    (running,) = await store.list_threads()
+    assert running.harness == "HARNESS_STATE_RUNNING"
+    got_thread = await store.get_thread(thread)
+    assert got_thread is not None
+    assert got_thread.harness == "HARNESS_STATE_RUNNING"
+
+    stopped_attached = pb.Attached(session_id="s-1", spec=SPEC, harness=pb.HARNESS_STATE_STOPPED)
+    await store.set_attached(thread, stopped_attached, lease=lease)
+    (stopped,) = await store.list_threads()
+    assert stopped.harness == "HARNESS_STATE_STOPPED"
 
 
 async def test_a_thread_is_unnamed_until_renamed_and_keeps_its_progress(
@@ -138,20 +162,26 @@ async def test_a_thread_is_unnamed_until_renamed_and_keeps_its_progress(
         await store.rename(UUID(int=0), "nobody")
 
 
-async def test_ensure_schema_adds_the_name_column_to_a_table_created_without_it(db_url: str) -> None:
-    """create_all never alters an existing table, and staging already had threads before names."""
-    store = TrajectoryStore.connect(db_url)
-    try:
-        await store.ensure_schema()
-        older = create_async_engine(db_url)
-        async with older.begin() as connection:
-            await connection.execute(text("ALTER TABLE thread DROP COLUMN name"))
-        await older.dispose()
-        await store.ensure_schema()
-        thread = await store.thread("sb-1", "s-1", SPEC)
-        assert (await store.rename(thread, "after the alter")).name == "after the alter"
-    finally:
-        await store.close()
+async def test_a_thread_archives_and_unarchives_without_touching_its_progress(
+    store: TrajectoryStore, lease: IngestionLease
+) -> None:
+    thread = await store.thread("sb-1", "s-1", SPEC)
+    await store.record(thread, [_event(1, harness_started=pb.HarnessStarted(pid=1))], lease=lease)
+    (unarchived,) = await store.list_threads()
+    assert unarchived.archived is False
+
+    archived = await store.archive(thread)
+
+    assert (archived.archived, archived.last_sequence) == (True, 1)
+    assert await store.get_thread(thread) == archived
+    assert await store.list_threads() == []
+    assert [view.id for view in await store.list_threads(include_archived=True)] == [thread]
+
+    unarchived = await store.unarchive(thread)
+    assert unarchived.archived is False
+    assert [view.id for view in await store.list_threads()] == [thread]
+    with pytest.raises(ThreadNotFoundError):
+        await store.archive(UUID(int=0))
 
 
 async def test_concurrent_replicas_create_one_thread(store: TrajectoryStore, replica: TrajectoryStore) -> None:

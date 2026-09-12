@@ -27,9 +27,9 @@ grant, and activation is bounded by its deadline. The [app consent UI](../app/RE
 [OAuth adapter](#external-oauth) use this authority. An authenticated external adapter submits a resolved
 `Grant.provenance()` through the trusted `ActionService.submit(..., external_grant=...)` keyword,
 never a caller-envelope field. Admission stores the exact issuer/client/Connection/grant/revision
-snapshot atomically with the first request. Shared-ServiceAccount idempotent retries preserve the
-original snapshot, including after rename or reconnect. Existing workload requests retain a null
-snapshot.
+snapshot atomically with the first request. A shared-ServiceAccount repeat of the key is refused;
+the lookup by key returns the original snapshot, including after rename or reconnect. Existing
+workload requests retain a null snapshot.
 
 `ActionStore` validates that snapshot against the original active grant and its ServiceAccount's
 current eligibility under the Connection row lock, both during admission and before the dispatch
@@ -45,8 +45,9 @@ Configurable policies and the Thread lifecycle are separate from this authority.
 
 The v0 executable seam is deliberately small:
 
-- one invariant request envelope, with optional `origin` and `correlation` stored only as untrusted
-  provenance;
+- one invariant request envelope, carrying a required caller-authored `title` (at most 60
+  characters) and optional `description` (at most 250 characters) projected verbatim to the
+  deciding operator, plus optional `origin` and `correlation` stored only as untrusted provenance;
 - caller-own and operator-all reads: operator arguments are exact, while caller arguments and all execution result/error views recursively redact credential-shaped fields;
 - a human operator Decision route, with expected-version and idempotency protection and one
   `decision_note` (optional, at most 2000 characters), shared unchanged with caller and operator;
@@ -133,9 +134,9 @@ or cancelling an HTTP/MCP wait does not cancel the underlying ActionRequest.
 A successful cancellation appends one canonical `cancelled` event with authenticated
 `actor_principal` and timestamp. Migration `0007_cancellation_actor` adds the nullable actor field;
 existing and non-caller-cancellation events leave it null. An unclaimed Execution retains null
-`started_at`, result and error, with `completed_at` set to the cancellation time. Repeating the
-original submission idempotency key returns the same cancelled request; an intentional new attempt
-needs a new key.
+`started_at`, result and error, with `completed_at` set to the cancellation time. The cancelled
+request stays readable by its submission idempotency key; an intentional new attempt needs a new
+key.
 
 ## Delivery: durable events and bounded waits
 
@@ -168,8 +169,12 @@ the PostgreSQL update listener and MCP transport and unwinds both on shutdown/st
 This is the production `main.py` composition, not a sidecar, upstream-tool proxy, or second store.
 Requests use the same Sandbox bearer/egress placeholder substitution as the REST workload API.
 Operator/OIDC bearers remain confined to `/v1/operator/...`; configured external OAuth grants are
-also accepted by `/mcp`. Staging and testing publish `/mcp`, `/register`, `/authorize`, `/token`,
-`/revoke`, `/auth/callback`, and the OAuth well-known paths through an `HTTPRoute` at
+also accepted by `/mcp`. Both are verified by FastMCP's own bearer layer (`CallerTokenVerifier` in
+`caller_auth.py`): a request without a bearer gets 401 with the protected-resource metadata
+challenge, a refused bearer 401 `invalid_token`, and tools receive the verified identity through
+FastMCP's `CurrentAccessToken` dependency, never from request state. Staging and testing publish
+`/mcp`, `/register`, `/authorize`, `/token`, `/revoke`, `/auth/callback`, and the OAuth well-known
+paths through an `HTTPRoute` at
 `agentplane-actions-{staging,testing}.allegedly.works`
 (`cluster/k8s/agentplane-{staging,testing}/actions/httproute.yaml`); REST and operator endpoints
 stay off that origin. FastMCP's automatic Host/Origin guard protects loopback access without
@@ -180,7 +185,7 @@ workload credential substitution. The protocol tests exercise substitution at th
 
 ### External OAuth
 
-The optional `oauth` settings enable FastMCP 3.4.4's DCR, discovery, authorization, callback,
+The optional `oauth` settings enable FastMCP 3.4.7's DCR, discovery, authorization, callback,
 token and revocation routes in this process. `ActionsOAuthProxy` holds the validated upstream
 redirect in the durable enrollment authority and sends the browser to the integration app's
 consent page. The page chooses a new name or existing Connection and a labeled caller
@@ -208,20 +213,21 @@ each Action retains immutable submitting Connection/grant/revision/issuer/client
 Production admission and dispatch use the same Connection authority. Sandbox bearers still use
 live workload validation and egress substitution; OAuth does not grant an operator bearer bypass.
 
-| Tool                         | Use                                                                                                                                               |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `list_actions`               | Compact `{group, name, available}` entries; optional group filter, `limit` (default 30, max 100), keyset `after`/`next_after`.                    |
-| `get_action`                 | One definition by group/name. `include_fields` on either catalog read accepts only `input_schema` and `description`; omitted/empty excludes both. |
-| `request_action`             | The existing request envelope under `request`; caller-scoped idempotency and input validation are unchanged.                                      |
-| `get_action_request`         | One own-caller receipt by `request_id`, not an Action definition.                                                                                 |
-| `cancel_action_request`      | Own-caller pre-claim cancellation by request ID, without a version; returns canonical outcome and receipt.                                        |
-| `list_action_request_events` | One own-caller event page; `after_sequence`, `limit`, optional `next_after_sequence`.                                                             |
+| Tool                         | Use                                                                                                                                                                    |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_actions`               | Compact `{group, name, available}` entries; optional group filter, `limit` (default 30, max 100), keyset `after`/`next_after`.                                         |
+| `get_action_policy`          | The effective policy of a `target`: `"self"` (default) or a named Sandbox or ServiceAccount; its bindings, the sets that resolved, the three lists (`policy_view.py`). |
+| `get_action`                 | One definition by group/name. `include_fields` on either catalog read accepts only `input_schema` and `description`; omitted/empty excludes both.                      |
+| `request_action`             | The existing request envelope under `request`, validated as on HTTP; a key this caller already used is refused.                                                        |
+| `get_action_request`         | One own-caller receipt by exactly one of `request_id` or `idempotency_key`; the key lookup recovers a submission whose response was lost.                              |
+| `cancel_action_request`      | Own-caller pre-claim cancellation by request ID, without a version; returns canonical outcome and receipt.                                                             |
+| `list_action_request_events` | One own-caller event page; `after_sequence`, `limit`, optional `next_after_sequence`.                                                                                  |
 
 `cancel_action_request(request_id)` explicitly withdraws an own-caller request before dispatch
 claim, without a version parameter. It returns the canonical outcome (`cancelled`,
 `already_cancelled`, `already_finished`, or `too_late`) and receipt; it never interrupts an
-executor. Retry the original submission key to recover that same cancelled receipt. It is
-independent of cancelling or disconnecting a wait.
+executor. The cancelled receipt stays readable by request ID or submission key. It is independent
+of cancelling or disconnecting a wait.
 
 Both submission and receipt reads accept `wait_seconds` (0–30, default 0) and `wait_until`
 (`decision` or `terminal`, default terminal). Waits use commit notifications rather than periodic
@@ -255,7 +261,10 @@ must remain compatible while old and new replicas overlap.
 The catalog is also the admission and routing authority: `ActionService` resolves the submitted
 structured `action: {group, name}`, rejects unknown or unavailable groups/Actions and unbound groups before persistence,
 and validates arguments against the advertised JSON Schema before persistence or provider
-evaluation. Invalid arguments return HTTP 422 without reserving the idempotency key.
+evaluation. Invalid arguments return HTTP 422 without reserving the idempotency key. An accepted
+key is reserved for its caller: `POST /v1/action-requests` refuses a repeat with HTTP 409, and
+`GET /v1/action-requests?idempotency_key=<key>` (operator: `/v1/operator/action-requests`)
+returns the request it named, combinable with `state`.
 Dispatch uses the executor bound to that group. `ActionStore` owns persistence and lifecycle,
 not a second admission registry. Executors expose execution only, not an action registry.
 Dispatch resolves the identity again, so a removed action is terminally refused rather than rerouted or
@@ -331,6 +340,15 @@ provider's allow carries `PolicyEvidence`, persisted on the Decision (migration
 names the repository a GitHub kind resolved and whether the public lookup confirmed it. Deny lists
 are parsed and reported but decide nothing yet. Dispatch is unchanged: it re-checks caller
 authority, never policy.
+
+`policy_view` projects that same `resolve_bindings` for readers: `GET /v1/action-policy` answers
+the authenticated caller (a Sandbox principal on the workload route) and the `get_action_policy`
+tool a `target` (the caller itself, a Sandbox principal or the grant's ServiceAccount, by default;
+or a named Sandbox or ServiceAccount) with the redacted `CallerActionPolicyView`, and
+`GET /v1/operator/action-policy/{sandboxes/{namespace}/{uid},service-accounts/{namespace}/{name}}`
+answers the operator with `SubjectActionPolicyView`, adding each binding's labels and `Ready`
+verdict and each named set as present, refused or missing. Both carry `synced`; the integration
+app's Sandbox page reads the operator form.
 
 The deployed proof is `//x/agentplane/acceptance:test_mcp`, which creates the set and binding
 for the Sandbox it launches through the Kubernetes API (see [the acceptance README](../acceptance/README.md))

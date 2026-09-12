@@ -61,10 +61,9 @@ class ManagedPortfolios:
         self, scenario: PreparedScenario, accounting: Accounting, observations: Sequence[TlhPortfolioObservation]
     ) -> None:
         self.marks: dict[str, TlhPortfolioObservation] = {}
+        # This month's outcomes, cleared by `begin_month`; marks are the state.
         self.effects: list[FinancialEffect] = []
-        self.effect_count = 0
         self.distributions: list[DistributionOutcome] = []
-        self.distribution_count = 0
         if len({row.portfolio_id for row in observations}) != len(observations) or len(observations) != len(
             scenario.tlh_portfolios
         ):
@@ -88,6 +87,10 @@ class ManagedPortfolios:
             )
         accounting.apply_entries(entries)
         self.marks = {row.portfolio_id: row for row in observations}
+
+    def begin_month(self) -> None:
+        self.effects.clear()
+        self.distributions.clear()
 
     @staticmethod
     def validate_observation(scenario: PreparedScenario, row: TlhPortfolioObservation) -> None:
@@ -213,30 +216,25 @@ class ManagedPortfolios:
             tax.income.accrue(
                 actor, InterestIncome(issuer_jurisdiction_id=interest.issuer_jurisdiction_id), interest.amount
             )
-        count = self.effect_count + 1
-        if count >= 1 << 64:
-            raise OverflowError("integer overflow during TLH financial effect count")
         accounting.apply(JournalEntry(month=month, cause_id=cause, postings=postings))
         accounting.tax = tax
         self.marks[row.portfolio_id] = row
-        self.effect_count = count
-        if accounting.capture != "summary":
-            self.effects.append(
-                FinancialEffect(
-                    month,
-                    cause,
-                    row.portfolio_id,
-                    actor,
-                    row.account_id,
-                    effects.cash_account_id,
-                    operation,
-                    effects.cash_amount,
-                    effects.short_term_gain,
-                    effects.long_term_gain,
-                    basis_change,
-                    interest_total,
-                )
+        self.effects.append(
+            FinancialEffect(
+                month,
+                cause,
+                row.portfolio_id,
+                actor,
+                row.account_id,
+                effects.cash_account_id,
+                operation,
+                effects.cash_amount,
+                effects.short_term_gain,
+                effects.long_term_gain,
+                basis_change,
+                interest_total,
             )
+        )
 
     def distribute(
         self, scenario: PreparedScenario, accounting: Accounting, month: int, index: int, total: int
@@ -274,9 +272,6 @@ class ManagedPortfolios:
                     amount=amount,
                 )
             )
-        count = self.distribution_count + len(outcomes)
-        if count >= 1 << 64:
-            raise OverflowError("integer overflow during distribution count")
         self.settle(
             scenario,
             accounting,
@@ -286,6 +281,4 @@ class ManagedPortfolios:
             ComponentEffects(observation, spec.to_account_id, cash, 0, 0, tuple(credits)),
             operation="distribution",
         )
-        self.distribution_count = count
-        if accounting.capture != "summary":
-            self.distributions.extend(outcomes)
+        self.distributions.extend(outcomes)

@@ -11,6 +11,7 @@ from uuid import UUID
 
 import pytest
 import pytest_bazel
+from more_itertools import one
 from pydantic import JsonValue, ValidationError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -36,7 +37,7 @@ from x.agentplane.action_service.models import (
 )
 from x.agentplane.action_service.policies.resources import parse_binding, parse_policy_set
 from x.agentplane.action_service.policy_evaluation import AUTO_APPROVE_REASON, PROVIDER_NAME, PolicySetDecisionProvider
-from x.agentplane.action_service.policy_informer import PolicyIndex, namespaced_key
+from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.providers import DecisionContext
 from x.agentplane.action_service.service import ActionService, InvalidActionArgumentsError
 
@@ -114,7 +115,9 @@ class RacingHumanProvider:
 
 
 def body(idempotency_key: str, n: int = 1) -> ActionRequestInput:
-    return ActionRequestInput(idempotency_key=idempotency_key, action=ECHO, arguments={"n": n})
+    return ActionRequestInput(
+        idempotency_key=idempotency_key, title=f"test title for {idempotency_key}", action=ECHO, arguments={"n": n}
+    )
 
 
 async def _succeeded(service: ActionService, request_id: UUID) -> ActionRequestView:
@@ -296,6 +299,7 @@ async def test_decision_context_carries_only_the_authenticated_caller(
     try:
         forged = ActionRequestInput(
             idempotency_key="identity-context",
+            title="test title for identity-context",
             action=ECHO,
             arguments={"n": 1},
             origin={"agent_id": "forged-agent", "owner": "forged-owner", "sandbox_uid": "forged-uid"},
@@ -356,13 +360,11 @@ def _index(
     """An index from raw specs, parsed the way the informer parses them, so invalid ones stay invalid."""
     index = PolicyIndex(synced=synced)
     for name, spec in (sets or {}).items():
-        index.policy_sets[namespaced_key(NAMESPACE, name)] = parse_policy_set(
-            {"metadata": _meta(name, generation=4, version="40"), "spec": spec}
-        )
+        policy_set = parse_policy_set({"metadata": _meta(name, generation=4, version="40"), "spec": spec})
+        index.policy_sets[policy_set.namespaced_name] = policy_set
     for name, spec in (bindings or {}).items():
-        index.bindings[namespaced_key(NAMESPACE, name)] = parse_binding(
-            {"metadata": _meta(name, version="7"), "spec": spec}
-        )
+        binding = parse_binding({"metadata": _meta(name, version="7"), "spec": spec})
+        index.bindings[binding.namespaced_name] = binding
     return index
 
 
@@ -437,9 +439,11 @@ async def test_bound_sandbox_is_auto_approved_with_evidence_and_an_execution(
         view = await _succeeded(service, allowed.id)
         assert view.execution is not None
         assert view.execution.result == {"n": 3}
-        # The same evidence is the operator's, and a retry recovers the same Decision.
+        # The same evidence is the operator's; a repeat of the key is refused and the lookup keeps the Decision.
         assert (await service.get(allowed.id, OPERATOR)).decision == allowed.decision
-        assert (await service.submit(body("bound", n=3), CALLER)).decision == allowed.decision
+        with pytest.raises(ActionConflictError):
+            await service.submit(body("bound", n=3), CALLER)
+        assert one(await service.list_requests(CALLER, idempotency_key="bound")).decision == allowed.decision
         # An argument miss takes the human path with no evidence recorded.
         pending = await service.submit(body("argument-miss", n=9), CALLER)
         assert pending.state is ActionState.DECISION_PENDING
@@ -540,6 +544,7 @@ async def test_nothing_grants_without_a_matching_valid_unexpired_binding(
         pending = await service.submit(
             ActionRequestInput(
                 idempotency_key="unbound",
+                title="test title for unbound",
                 action=ECHO,
                 arguments={"n": 1},
                 origin={"binding": "coder", "sandbox_uid": SANDBOX.sandbox_uid, "policy_set": "bounded-echo"},
@@ -594,7 +599,13 @@ async def test_invalid_arguments_are_rejected_before_persistence_and_provider_ev
     try:
         with pytest.raises(InvalidActionArgumentsError, match="advertised Action schema"):
             await service.submit(
-                ActionRequestInput(idempotency_key="schema-check", action=ECHO, arguments=arguments), CALLER
+                ActionRequestInput(
+                    idempotency_key="schema-check",
+                    title="test title for schema-check",
+                    action=ECHO,
+                    arguments=arguments,
+                ),
+                CALLER,
             )
         assert provider.contexts == []
         assert await store.list_requests(CALLER) == []

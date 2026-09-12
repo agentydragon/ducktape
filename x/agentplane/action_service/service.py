@@ -47,6 +47,13 @@ from x.agentplane.action_service.models import (
 )
 from x.agentplane.action_service.policy_evaluation import resolve_bindings
 from x.agentplane.action_service.policy_informer import PolicyIndex
+from x.agentplane.action_service.policy_view import (
+    CallerActionPolicyView,
+    PolicySubject,
+    SubjectActionPolicyView,
+    caller_view,
+    subject_view,
+)
 from x.agentplane.action_service.providers import DecisionContext, DecisionProvider
 
 # types-jsonschema stubs import referencing; the mypy aspect needs that typed package directly.
@@ -154,8 +161,9 @@ class ActionService:
         self._catalog = catalog
         self._executors = dict(executors)
         self._providers = tuple(providers)
-        # None: this deployment watches no policy objects, so every caller is human-only.
-        self._policies = policies
+        # None: this deployment watches no policy objects. An index nothing feeds never syncs, so
+        # every caller is human-only and reads as much.
+        self._policies = policies if policies is not None else PolicyIndex()
         self._clock = clock
         self._provider_timeout_seconds = provider_timeout_seconds
         self._executor_id = executor_id or f"executor-{uuid4()}"
@@ -239,9 +247,7 @@ class ActionService:
             jsonschema.validate(body.arguments, action.input_schema)
         except jsonschema.ValidationError:
             raise InvalidActionArgumentsError("arguments do not match the advertised Action schema") from None
-        view, created = await self._store.submit(body, principal, external_grant=external_grant)
-        if not created:
-            return view
+        view = await self._store.submit(body, principal, external_grant=external_grant)
         return await self._auto_decide(view, body, principal, external_grant)
 
     def _resolve_executor(self, identity: ActionIdentity) -> Executor:
@@ -272,7 +278,7 @@ class ActionService:
             action=body.action,
             arguments=body.arguments,
             caller=caller,
-            bindings=resolve_bindings(self._policies, caller, self._clock()) if self._policies is not None else (),
+            bindings=resolve_bindings(self._policies, caller, self._clock()),
         )
         vote = await self._evaluate_providers(context)
         if vote is None:
@@ -322,10 +328,24 @@ class ActionService:
             outcome = ProviderOutcome(verdict=ProviderVerdict.NO_OPINION, reason_code=PROVIDER_UNAVAILABLE_REASON)
         return _ProviderVote(provider=provider.name, outcome=outcome)
 
+    def caller_action_policy(
+        self, principal: Principal, external_grant: ExternalGrantProvenance | None
+    ) -> CallerActionPolicyView:
+        """What the caller's own bindings auto-decide, resolved as admission would resolve them now."""
+        return caller_view(self._policies, _caller(principal, external_grant), self._clock())
+
+    def target_action_policy(self, subject: PolicySubject) -> CallerActionPolicyView:
+        """What a named subject's bindings auto-decide, in the view a caller may see."""
+        return caller_view(self._policies, subject, self._clock())
+
+    def subject_action_policy(self, subject: PolicySubject) -> SubjectActionPolicyView:
+        """The operator's view of what a named subject's bindings auto-decide, resolved the same way."""
+        return subject_view(self._policies, subject, self._clock())
+
     async def list_requests(
-        self, principal: Principal, *, states: tuple[ActionState, ...] = ()
+        self, principal: Principal, *, states: tuple[ActionState, ...] = (), idempotency_key: str | None = None
     ) -> list[ActionRequestView]:
-        return await self._store.list_requests(principal, states=states)
+        return await self._store.list_requests(principal, states=states, idempotency_key=idempotency_key)
 
     async def get(self, request_id: UUID, principal: Principal) -> ActionRequestView:
         return await self._store.get(request_id, principal)

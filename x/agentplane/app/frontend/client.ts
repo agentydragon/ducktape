@@ -32,8 +32,15 @@ export type SandboxView = components["schemas"]["SandboxView"];
 export type NewSandbox = components["schemas"]["NewSandbox"];
 export type Condition = components["schemas"]["Condition"];
 export type ThreadView = components["schemas"]["ThreadView"];
+export type ThreadsWithSandboxes = components["schemas"]["ThreadsWithSandboxes"];
 export type BindingView = components["schemas"]["BindingView"];
 export type PolicyView = components["schemas"]["PolicyView"];
+export type ActionPolicyView = components["schemas"]["ActionPolicyView"];
+export type ActionPolicyUnavailable = components["schemas"]["ActionPolicyUnavailable"];
+export type ActionPolicyBindingView = components["schemas"]["ActionPolicyBindingView"];
+export type ActionPolicySetView = components["schemas"]["ActionPolicySetView"];
+export type EffectivePolicyView = components["schemas"]["EffectivePolicyView"];
+export type ReadyConditionView = components["schemas"]["ReadyConditionView"];
 export type SandboxPresetView = components["schemas"]["SandboxPresetView"];
 export type ThreadDefaults = components["schemas"]["ThreadDefaults"];
 export type Decision = components["schemas"]["Decision"];
@@ -251,4 +258,21 @@ export async function renameThread(threadId: string, name: string | null): Promi
   });
   if (error) throw new Error(displayableError(error));
   return data;
+}
+
+/** Every Thread across every Sandbox, paired with each Thread's own still-existing Sandbox; a
+ * Thread whose `sandbox` name is absent from `sandboxes` has an already-deleted Sandbox. */
+export async function listThreadsWithSandboxes(includeArchived: boolean): Promise<ThreadsWithSandboxes> {
+  const { data, error } = await api.GET("/threads/with-sandboxes", {
+    params: { query: { include_archived: includeArchived } },
+  });
+  if (error) throw new Error(displayableError(error));
+  return data;
+}
+
+export async function archiveThread(threadId: string, archived: boolean): Promise<void> {
+  const { error } = await api.POST(`/threads/{thread_id}/${archived ? "archive" : "unarchive"}`, {
+    params: { path: { thread_id: threadId } },
+  });
+  if (error) throw new Error(displayableError(error));
 }

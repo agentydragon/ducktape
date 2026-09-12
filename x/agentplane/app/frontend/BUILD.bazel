@@ -109,6 +109,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":client",
+        ":json_view",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -137,6 +138,7 @@ ts_library(
     deps = [
         ":actions",
         ":client",
+        ":json_view",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -351,6 +353,7 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
+        ":action_policy",
         ":client",
         ":launch_presets",
         ":lifecycle",
@@ -359,6 +362,82 @@ ts_library(
         "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//:node_modules/react-router",
+    ],
+)
+
+ts_library(
+    name = "thread_groups",
+    srcs = ["thread_groups.ts"],
+    tsconfig = TSCONFIG,
+    deps = [":client"],
+)
+
+ts_library(
+    name = "thread_groups_test",
+    testonly = True,
+    srcs = ["thread_groups.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":thread_groups",
+        "//:node_modules/vitest",
+    ],
+)
+
+# sidebar.tsx imports this for the bundler, the way frame.tsx does its own stylesheet.
+js_library(
+    name = "sidebar_css",
+    srcs = ["sidebar.css"],
+)
+
+# app.tsx imports this for the bundler, the way frame.tsx does its own stylesheet.
+js_library(
+    name = "shell_css",
+    srcs = ["shell.css"],
+)
+
+ts_library(
+    name = "sidebar",
+    srcs = [
+        "sidebar.tsx",
+        # `declare module "*.css"` for the stylesheet import above.
+        "css.d.ts",
+        # Ambient module declarations for the @tabler/icons-react per-icon subpaths this file
+        # imports. A declaration file is type-only, so it joins this target's program without
+        # being emitted.
+        "tabler_icons.d.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":sandboxes",
+        ":sidebar_css",
+        ":thread_groups",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-router",
+    ],
+)
+
+ts_library(
+    name = "sidebar_test",
+    testonly = True,
+    srcs = ["sidebar.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":sidebar",
+        ":thread_groups",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/react-router",
+        "//:node_modules/vitest",
     ],
 )
 
@@ -376,18 +455,57 @@ ts_library(
 )
 
 ts_library(
-    name = "sandbox_page",
-    srcs = ["sandbox_page.tsx"],
+    name = "action_policy",
+    srcs = ["action_policy.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":client",
         ":egress",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "action_policy_test",
+    testonly = True,
+    srcs = ["action_policy.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":action_policy",
+        ":client",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "sandbox_page",
+    srcs = [
+        "sandbox_page.tsx",
+        # Ambient module declarations for the @tabler/icons-react per-icon subpaths this file
+        # imports. A declaration file is type-only, so it joins this target's program without
+        # being emitted.
+        "tabler_icons.d.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":action_policy",
+        ":client",
+        ":egress",
+        ":json_view",
         ":launch_presets",
         ":lifecycle",
         ":live",
         ":protocol_pb",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
@@ -426,6 +544,50 @@ ts_library(
     ],
 )
 
+# json_view.tsx imports this for the bundler; esbuild resolves it beside the emitted json_view.js
+# and folds it into the SPA's stylesheet, so it travels as a dep of the library that imports it.
+js_library(
+    name = "json_view_css",
+    srcs = ["json_view.css"],
+)
+
+# The one shared syntax-highlighted-JSON component/helpers, reused at every raw-JSON site
+# (actions.tsx, actions_history.tsx, session.tsx, sandbox_page.tsx) and by frame.tsx's raw view.
+ts_library(
+    name = "json_view",
+    srcs = [
+        "json_view.tsx",
+        # `declare module "*.css"` for the stylesheet import above.
+        "css.d.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":json_view_css",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/dompurify",
+        "//:node_modules/@types/react",
+        "//:node_modules/dompurify",
+        "//:node_modules/highlight.js",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "json_view_test",
+    testonly = True,
+    srcs = ["json_view.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":json_view",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+    ],
+)
+
 # frame.tsx imports this for the bundler; esbuild resolves it beside the emitted frame.js and folds
 # it into the SPA's stylesheet, so it travels as a dep of the library that imports it.
 js_library(
@@ -443,13 +605,11 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":frame_css",
+        ":json_view",
         ":protocol_pb",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
-        "//:node_modules/@types/dompurify",
         "//:node_modules/@types/react",
-        "//:node_modules/dompurify",
-        "//:node_modules/highlight.js",
         "//:node_modules/react",
     ],
 )
@@ -475,6 +635,7 @@ ts_library(
         ":client",
         ":events",
         ":frame",
+        ":json_view",
         ":markdown",
         ":protocol_pb",
         ":session_css",
@@ -523,7 +684,11 @@ filegroup(
 
 ts_library(
     name = "app",
-    srcs = ["app.tsx"],
+    srcs = [
+        "app.tsx",
+        # `declare module "*.css"` for the stylesheet import above.
+        "css.d.ts",
+    ],
     tsconfig = TSCONFIG,
     deps = [
         ":actions",
@@ -533,6 +698,8 @@ ts_library(
         ":sandboxes",
         ":session",
         ":settings",
+        ":shell_css",
+        ":sidebar",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -576,6 +743,7 @@ ts_library(
         "//:node_modules/@types/react-dom",
         "//:node_modules/react",
         "//:node_modules/react-dom",
+        "//:node_modules/react-router",
         "//:node_modules/vitest",
     ],
 )
@@ -586,12 +754,14 @@ vitest_bin.vitest_test(
     chdir = package_name(),
     data = [
         "vitest.config.ts",
+        ":action_policy_test",
         ":actions_history_test",
         ":actions_test",
         ":client_test",
         ":connections_test",
         ":consent_test",
         ":events_test",
+        ":json_view_test",
         ":launch_presets_test",
         ":mcp_servers_test",
         ":push_test",
@@ -599,6 +769,8 @@ vitest_bin.vitest_test(
         ":sandboxes_test",
         ":session_test",
         ":settings_test",
+        ":sidebar_test",
+        ":thread_groups_test",
         "//:node_modules/happy-dom",
         "//:node_modules/vitest",
     ],
@@ -613,6 +785,7 @@ ts_library(
     testonly = True,
     srcs = ["visual/scenarios.ts"],
     tsconfig = TSCONFIG,
+    deps = ["//util/testing/frontend_visual:visual_test_lib"],
 )
 
 ts_library(

@@ -83,18 +83,30 @@ def scoped() -> CompiledRun:
 
 
 def world_for(run: CompiledRun) -> World:
-    return World(run, 0, [], capture_mode="forensic", actor=HOUSEHOLD, product_actor=HOUSEHOLD)
+    world = World(run, 0)
+    world.start()
+    return world
 
 
 def close(world: World) -> None:
-    world.close_month(failed=False, shortfall=0, mortgages=[], snapshots=[])
+    world.close_month()
+    if not world.finished:
+        world.open_month()
+
+
+def household_wealth(world: World) -> tuple[int, int]:
+    cash = sum(
+        world.accounting.ledger.balance(account)
+        for account in world.accounting.declared
+        if account.agent_id == HOUSEHOLD
+    )
+    return cash, world.holding_value(HOUSEHOLD, world.mark_month)
 
 
 def test_scoped_observations_match_output_at_same_marks_and_round_each_lot(scoped: CompiledRun) -> None:
     world = world_for(scoped)
+    wealth = [household_wealth(world)]
     for month, value in enumerate((4, 8, 11)):
-        world.prepare_month(month, {}, {})
-        world.assemble_claims([])
         observed = world.observe(HOUSEHOLD)
         assert (observed.agent_id, observed.month, observed.cash, observed.public_holdings) == (
             HOUSEHOLD,
@@ -117,20 +129,16 @@ def test_scoped_observations_match_output_at_same_marks_and_round_each_lot(scope
         ) == ("half-a", "checking", "stock", -24, 5, 10, 0, (1, 3, 5)[month])
         assert [p.value for p in (first, second, sleeve, reserve)] == ([1, 1, 1, 1], [2, 2, 2, 2], [3, 3, 2, 3])[month]
         close(world)
-    result = world.finish([])
-    assert result.summary is not None
-    assert result.financial is not None
-    assert [sum(s.values[m] for s in result.summary.public_holdings) for m in range(4)] == [4, 8, 11, 15]
-    assert [sum(s.values[m] for s in result.summary.cash) for m in range(4)] == [1000] * 4
-    assert len(result.financial.months) == 4
+        wealth.append(household_wealth(world))
+    assert world.finished
+    assert [holdings for _, holdings in wealth] == [4, 8, 11, 15]
+    assert [cash for cash, _ in wealth] == [1000] * 4
 
 
 def observations(run: CompiledRun) -> list[Observation]:
     world = world_for(run)
     seen = []
-    for month in range(3):
-        world.prepare_month(month, {}, {})
-        world.assemble_claims([])
+    for _ in range(3):
         seen.append(world.observe(HOUSEHOLD))
         close(world)
     return seen
@@ -155,9 +163,8 @@ def test_actor_books_follow_partial_sales_and_hide_exhausted_lots(scoped: Compil
         ),
     )
     world = world_for(run)
+    dispositions = []
     for month in range(3):
-        world.prepare_month(month, {}, {})
-        world.assemble_claims([])
         observed = world.observe(HOUSEHOLD)
         if month < 2:
             first = observed.public_positions[0]
@@ -186,10 +193,9 @@ def test_actor_books_follow_partial_sales_and_hide_exhausted_lots(scoped: Compil
             )
         else:
             assert [p.lot_id for p in observed.public_positions] == ["second", "reserve"]
+        dispositions.extend(world.holdings.dispositions)
         close(world)
-    result = world.finish([]).financial
-    assert result is not None
-    assert [(d.units, d.basis) for d in result.dispositions] == [(2, 3), (3, 4), (5, 0)]
+    assert [(d.units, d.basis) for d in dispositions] == [(2, 3), (3, 4), (5, 0)]
 
 
 def test_actor_books_reject_unpriced_public_positions_before_inspection(scoped: CompiledRun) -> None:

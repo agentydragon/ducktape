@@ -238,7 +238,7 @@ def post_payment(accounting: Accounting, month: int, claim: Claim, source: Accou
                 shortfall=0,
             )
         )
-    if amount > 0 and accounting.capture != "summary":
+    if amount > 0:
         accounting.transfers.append(TransferOutcome(month, cause, source, claim.to_account, amount, None))
 
 

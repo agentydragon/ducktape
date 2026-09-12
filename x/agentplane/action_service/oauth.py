@@ -155,8 +155,8 @@ class ActionsOAuthProxy(DownstreamClientIdentityOIDCProxy):
         enrollments: EnrollmentAuthority,
         connections: ConnectionAuthority,
     ) -> None:
-        if fastmcp.__version__ != "3.4.4":
-            raise RuntimeError("ActionsOAuthProxy requires compatibility verification against FastMCP 3.4.4")
+        if fastmcp.__version__ != "3.4.7":
+            raise RuntimeError("ActionsOAuthProxy requires compatibility verification against FastMCP 3.4.7")
         signing_key = settings.jwt_signing_key_file.read_text().strip()
         client_secret = settings.upstream_client_secret_file.read_text().strip()
         if len(signing_key) < 32 or not client_secret:

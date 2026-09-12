@@ -19,6 +19,7 @@ filegroup(
         "//x/agentplane/action_service/migrations/versions:0012_action_push_subscription.py",
         "//x/agentplane/action_service/migrations/versions:0013_mcp_server_linkage.py",
         "//x/agentplane/action_service/migrations/versions:0014_action_policies.py",
+        "//x/agentplane/action_service/migrations/versions:0015_action_request_context.py",
     ],
     visibility = ["//x/agentplane/action_service:__pkg__"],
 )

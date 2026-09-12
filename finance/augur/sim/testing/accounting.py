@@ -54,4 +54,4 @@ def prepared_scenario() -> PreparedScenario:
 
 def accounting() -> Accounting:
     scenario_ = prepared_scenario()
-    return Accounting(scenario_.accounts, scenario_.tax_profiles, scenario_.income_sources, capture="forensic")
+    return Accounting(scenario_.accounts, scenario_.tax_profiles, scenario_.income_sources)

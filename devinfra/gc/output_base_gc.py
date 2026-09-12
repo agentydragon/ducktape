@@ -10,6 +10,7 @@ base name. Ambiguous state is reported for manual review and is never deleted.
 import errno
 import fcntl
 import hashlib
+import logging
 import os
 import pwd
 import re
@@ -25,6 +26,8 @@ from pathlib import Path
 
 import humanize
 from tabulate import tabulate
+
+logger = logging.getLogger(__name__)
 
 _HASHED_BASE_RE = re.compile(r"[0-9a-f]{32}")
 _QUARANTINE_PREFIX = ".bazel-output-base-gc-"
@@ -341,11 +344,20 @@ def scan_output_user_root(
     root = root.resolve(strict=True)
     points = mount_points(mountinfo_path=mountinfo_path)
     inspections: list[Inspection] = []
-    for base in sorted(root.iterdir()):
+    candidates = [
+        base
+        for base in sorted(root.iterdir())
+        if _HASHED_BASE_RE.fullmatch(base.name) or base.name.startswith(_QUARANTINE_PREFIX)
+    ]
+    logger.info("Scanning %d output bases in %s", len(candidates), root)
+    for index, base in enumerate(candidates, start=1):
+        logger.info("Scanning output base %d/%d %s", index, len(candidates), base.name)
         if _HASHED_BASE_RE.fullmatch(base.name):
-            inspections.append(inspect_output_base(base, uid=uid, points=points, proc_root=proc_root))
-        elif base.name.startswith(_QUARANTINE_PREFIX):
-            inspections.append(ReviewBase(base, "incomplete previous GC quarantine", base.lstat().st_mtime_ns))
+            inspection = inspect_output_base(base, uid=uid, points=points, proc_root=proc_root)
+        else:
+            inspection = ReviewBase(base, "incomplete previous GC quarantine", base.lstat().st_mtime_ns)
+        inspections.append(inspection)
+        logger.info("Finished output base %d/%d %s", index, len(candidates), base.name)
     return inspections
 
 
@@ -395,7 +407,8 @@ def delete_prunable_bases(
 ) -> list[DeletionResult]:
     uid = os.getuid() if uid is None else uid
     results: list[DeletionResult] = []
-    for candidate in candidates:
+    for index, candidate in enumerate(candidates, start=1):
+        logger.info("Deleting output base %d/%d %s", index, len(candidates), candidate.path.name)
         quarantine: Path | None = None
         try:
             with _bazel_lock(candidate.path, uid=uid):
@@ -478,7 +491,11 @@ def render_report(inspections: Sequence[Inspection], *, include_kept: bool, incl
     visible = (
         list(inspections) if include_kept else [item for item in inspections if not isinstance(item, RetainedBase)]
     )
-    sizes = {item.path: allocated_bytes(item.path) for item in visible} if include_sizes else {}
+    sizes: dict[Path, int | None] = {}
+    if include_sizes:
+        for index, item in enumerate(visible, start=1):
+            logger.info("Measuring output-base size %d/%d %s", index, len(visible), item.path.name)
+            sizes[item.path] = allocated_bytes(item.path)
     headers = ["STATUS", "LAST ACTIVITY", "BASE", "DETAIL"]
     if include_sizes:
         headers.insert(1, "SIZE")

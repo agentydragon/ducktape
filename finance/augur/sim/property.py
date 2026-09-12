@@ -124,6 +124,7 @@ class Properties:
         self.primary: dict[str, str | None] = {
             row.agent_id: row.property_id for row in scenario._initial_primary_residences
         }
+        # This month's outcomes, cleared by `begin_month`; property state lives in `properties`.
         self.purchases: list[Purchase] = []
         self.sales: list[Sale] = []
         self.residences: list[Residence] = []
@@ -154,6 +155,17 @@ class Properties:
                     accounting.ledger.ensure_account(
                         AccountRef(agent_id=agent, account_id=f"{prefix}:{loan.liability_id}")
                     )
+
+    def begin_month(self) -> None:
+        for outcomes in (
+            self.purchases,
+            self.sales,
+            self.residences,
+            self.rented_fractions,
+            self.improvements,
+            self.originations,
+        ):
+            outcomes.clear()
 
     def snapshots(self) -> list[PropertyState]:
         return [property_.state for property_ in self.properties.values()]
@@ -430,7 +442,7 @@ class Properties:
                 active=True,
             )
             accounting.apply(JournalEntry(month=month, cause_id=purchase.cause_id, postings=postings))
-            if stake > 0 and accounting.capture != "summary":
+            if stake > 0:
                 accounting.transfers.append(
                     TransferOutcome(month, f"{purchase.cause_id}_buyer_cash", buyer, seller, stake, None)
                 )

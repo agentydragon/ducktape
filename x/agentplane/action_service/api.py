@@ -18,7 +18,7 @@ from starlette.middleware.base import RequestResponseEndpoint
 from starlette.routing import Route
 
 from x.agentplane.action_service.auth import OperatorAuthenticator, workload_principal
-from x.agentplane.action_service.caller_auth import CallerAuthenticator
+from x.agentplane.action_service.caller_auth import CallerTokenVerifier
 from x.agentplane.action_service.catalog import (
     ActionCatalog,
     ActionGroupView,
@@ -46,7 +46,7 @@ from x.agentplane.action_service.enrollments import (
     EnrollmentPreviewInput,
     EnrollmentRejectedError,
 )
-from x.agentplane.action_service.mcp_frontend import ActionsMcp, create_server
+from x.agentplane.action_service.mcp_frontend import TransportDisconnects, create_server
 from x.agentplane.action_service.mcp_linkage import (
     McpLinkageAuthority,
     McpLinkageConflictError,
@@ -65,9 +65,11 @@ from x.agentplane.action_service.models import (
     DecisionInput,
     Principal,
     PrincipalRole,
+    SandboxCaller,
     ServiceAccountRef,
 )
 from x.agentplane.action_service.oauth import ActionsOAuthProxy
+from x.agentplane.action_service.policy_view import CallerActionPolicyView, SubjectActionPolicyView
 from x.agentplane.action_service.push import PushIdentity, PushSubscriptionStore
 from x.agentplane.action_service.service import (
     ActionService,
@@ -77,6 +79,7 @@ from x.agentplane.action_service.service import (
 )
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
+from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 
 
 class PushSubscriptionInput(BaseModel):
@@ -87,6 +90,11 @@ class PushSubscriptionInput(BaseModel):
 
 
 _operator_bearer = HTTPBearer(auto_error=False)
+
+
+IDEMPOTENCY_KEY_FILTER = (
+    "Only the request submitted under this idempotency key; recovers a submission whose response was lost."
+)
 
 
 def _sse_json(value: list[ActionRequestView]) -> bytes:
@@ -137,7 +145,7 @@ async def _operator(
 
 def create_app(
     service: ActionService,
-    workload_authenticator: SandboxPrincipalAuthenticator,
+    workload_resolver: SandboxPrincipalResolver,
     operator_authenticator: OperatorAuthenticator,
     catalog: ActionCatalog,
     *,
@@ -149,8 +157,7 @@ def create_app(
     push_subscriptions: PushSubscriptionStore | None = None,
     mcp_linkage: McpLinkageAuthority | None = None,
 ) -> FastAPI:
-    caller_authenticator = CallerAuthenticator(workload_authenticator, oauth)
-    mcp_app = create_server(service, catalog, updates, caller_authenticator).http_app(
+    mcp_app = create_server(service, catalog, updates, CallerTokenVerifier(workload_resolver, oauth=oauth)).http_app(
         path="/mcp", stateless_http=True, json_response=False, host_origin_protection="auto"
     )
 
@@ -168,7 +175,7 @@ def create_app(
 
     app = FastAPI(title="Agentplane Action Service", version="v1", lifespan=lifespan)
     app.state.action_service = service
-    app.state.workload_authenticator = workload_authenticator
+    app.state.workload_authenticator = SandboxPrincipalAuthenticator(workload_resolver)
     app.state.operator_authenticator = operator_authenticator
     app.state.action_catalog = catalog
     app.state.action_updates = updates
@@ -252,8 +259,11 @@ def create_app(
         principal: Annotated[Principal, Depends(_workload)],
         action_service: Annotated[ActionService, Depends(_service)],
         state_filter: Annotated[list[ActionState] | None, Query(alias="state")] = None,
+        idempotency_key: Annotated[str | None, Query(description=IDEMPOTENCY_KEY_FILTER)] = None,
     ) -> list[ActionRequestView]:
-        return await action_service.list_requests(principal, states=tuple(state_filter or ()))
+        return await action_service.list_requests(
+            principal, states=tuple(state_filter or ()), idempotency_key=idempotency_key
+        )
 
     @app.get("/v1/action-requests/{request_id}", response_model=ActionRequestView)
     async def get_own_request(
@@ -299,6 +309,16 @@ def create_app(
         del principal
         return action_catalog.action_view(group_key, action_key)
 
+    @app.get("/v1/action-policy", response_model=CallerActionPolicyView)
+    async def own_action_policy(
+        principal: Annotated[Principal, Depends(_workload)], action_service: Annotated[ActionService, Depends(_service)]
+    ) -> CallerActionPolicyView:
+        """The caller's own effective policy, from the resolution admission uses: the bindings on it, the
+        sets that resolved, and the auto_approve_if / auto_deny_if / auto_deny_unless entries in evaluation
+        order. This surface only ever sees a Sandbox principal; an external grant reaches the service
+        through `/mcp`, whose tool reads the grant `CallerTokenVerifier` verified."""
+        return action_service.caller_action_policy(principal, external_grant=None)
+
     # Operator/BFF surface: deliberately different paths and authenticator. A workload bearer can
     # never acquire operator-all read or decision authority merely by authenticating as a Sandbox.
     @app.get("/v1/operator/action-requests", response_model=list[ActionRequestView])
@@ -306,8 +326,11 @@ def create_app(
         principal: Annotated[Principal, Depends(_operator)],
         action_service: Annotated[ActionService, Depends(_service)],
         state_filter: Annotated[list[ActionState] | None, Query(alias="state")] = None,
+        idempotency_key: Annotated[str | None, Query(description=IDEMPOTENCY_KEY_FILTER)] = None,
     ) -> list[ActionRequestView]:
-        return await action_service.list_requests(principal, states=tuple(state_filter or ()))
+        return await action_service.list_requests(
+            principal, states=tuple(state_filter or ()), idempotency_key=idempotency_key
+        )
 
     @app.get("/v1/operator/action-requests/stream")
     async def operator_stream(
@@ -350,6 +373,29 @@ def create_app(
         action_service: Annotated[ActionService, Depends(_service)],
     ) -> ActionRequestView:
         return await action_service.get(request_id, principal)
+
+    @app.get("/v1/operator/action-policy/sandboxes/{namespace}/{sandbox_uid}", response_model=SubjectActionPolicyView)
+    async def operator_sandbox_action_policy(
+        namespace: str,
+        sandbox_uid: str,
+        principal: Annotated[Principal, Depends(_operator)],
+        action_service: Annotated[ActionService, Depends(_service)],
+    ) -> SubjectActionPolicyView:
+        """A Sandbox's effective policy as the operator sees it: each binding with its labels and Ready
+        verdict, each named set as present, refused or missing, and the resolved entries."""
+        del principal
+        return action_service.subject_action_policy(SandboxCaller(namespace=namespace, sandbox_uid=sandbox_uid))
+
+    @app.get("/v1/operator/action-policy/service-accounts/{namespace}/{name}", response_model=SubjectActionPolicyView)
+    async def operator_service_account_action_policy(
+        namespace: str,
+        name: str,
+        principal: Annotated[Principal, Depends(_operator)],
+        action_service: Annotated[ActionService, Depends(_service)],
+    ) -> SubjectActionPolicyView:
+        """A ServiceAccount caller's effective policy, in the same shape as the Sandbox read."""
+        del principal
+        return action_service.subject_action_policy(ServiceAccountRef(namespace=namespace, name=name))
 
     @app.get("/v1/operator/push/config")
     async def push_config(principal: Annotated[Principal, Depends(_operator)]) -> dict[str, str | None]:
@@ -415,7 +461,7 @@ def create_app(
     # Match only the transport endpoint, without a slash redirect or intercepting unknown REST paths.
     if oauth is not None:
         app.router.routes.extend(oauth.get_routes(mcp_path="/mcp"))
-    app.router.routes.append(Route("/mcp", ActionsMcp(mcp_app, caller_authenticator)))
+    app.router.routes.append(Route("/mcp", TransportDisconnects(mcp_app)))
     return app
 
 

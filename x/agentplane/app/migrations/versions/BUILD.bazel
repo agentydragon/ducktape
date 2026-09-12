@@ -1,0 +1,27 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+exports_files(
+    [
+        "0001_trajectory_store.py",
+        "0002_thread_archived.py",
+    ],
+    visibility = ["//x/agentplane/app/migrations:__pkg__"],
+)
+
+py_library(
+    name = "0001_trajectory_store",
+    srcs = ["0001_trajectory_store.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "0002_thread_archived",
+    srcs = ["0002_thread_archived.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)

@@ -29,7 +29,7 @@
 #
 # CLEANUP(added 2026-08-10): delete with the archived spike snapshot once the
 #   reference is no longer useful. See its README for the question list.
-FROM debian:testing@sha256:8fe7e20ebb14e121fa7abd75c2d8de93f2fc2e9ce1f92748f10257b29350d276
+FROM debian:testing@sha256:dab11cdb0a9dcf4bbd68f671635b35f1f726b452b92396875b69bb2c7daa42a9
 
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \

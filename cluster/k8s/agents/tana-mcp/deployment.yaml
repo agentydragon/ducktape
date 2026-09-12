@@ -115,7 +115,7 @@ spec:
         # receiver as a tana://auth deep-link. See
         # cluster/docs/plans/tana_mcp_sane_signin.md.
         - name: firebase-resigner
-          image: git.allegedly.works/ducktape-ci/tana-firebase-resigner:devel-20260828071759-20a40e4 # {"$imagepolicy": "flux-system:tana-firebase-resigner"}
+          image: git.allegedly.works/ducktape-ci/tana-firebase-resigner:devel-20260912110731-637014b # {"$imagepolicy": "flux-system:tana-firebase-resigner"}
           env:
             - name: FIREBASE_API_KEY
               # Tana web bundle's REACT_APP_FIREBASE_API_KEY for project

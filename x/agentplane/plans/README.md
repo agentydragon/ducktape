@@ -14,8 +14,7 @@ per-ServiceAccount auto-approval do not gate it. SandboxPresets remain integrati
 ## Open plans and gates
 
 - [Task DAG](task_dag.md) — remaining-work dependency map, including `INPUT_DELIVERY`: re-read native queue research and refresh captures before changing the common protocol
-- [SSH Executor](ssh_executor.md) — Kubernetes-backed SSH keys, target bindings, and one-shot execution
-- [Configured Action policies](action_policies.md) — the integration app's Sandbox bindings and read-only policy view, then the deny lists
+- [Durable SSH-backed processes](ssh_durable_processes.md) — deferred systemd-backed host daemon for processes that outlive an SSH connection
 - [External MCP connections](external_mcp_connections.md) — staging rollout, real Claude.ai/local Claude Code acceptance, remaining Connection management/reconnect, and Haku migration
 - [Driver-provided tools and background work](driver_tools_and_background.md) — deferred seam that must reuse the Action contracts
 - [Agent access to external systems](external_access.md) — deferred delegated-versus-brokered access choices
@@ -31,6 +30,7 @@ Use the [Action Service specification](../action_service/SPEC.md) and
 generic MCP, configured Identities, Connection grants, and OAuth/consent. The
 [app README](../app/README.md) owns the consent and Action-review presentation contracts.
 [Executor liveness](../docs/executor_liveness.md), [operator federation](../docs/operator_federation.md),
-[workload authentication](../docs/workload_authentication.md), and
-[launch presets](../docs/launch_presets.md) own the other implemented contracts.
+[workload authentication](../docs/workload_authentication.md),
+[launch presets](../docs/launch_presets.md), and [action policies](../docs/action_policies.md) own
+the other implemented contracts.
 Deployed acceptance is tracked in the DAG; code or CI evidence alone does not satisfy it.
