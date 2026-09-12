@@ -1,0 +1,19 @@
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: forgejo-images
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: forgejo-images
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/forgejo-images/**"
+          to: "@artifact/cluster/k8s/forgejo-images/"
+          exclude:
+            - flux-kustomization.yaml
