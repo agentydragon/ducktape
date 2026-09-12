@@ -22,6 +22,7 @@ from finance.augur.sim.testing.accounting import (
     RECIPIENT,
     RESERVE,
     accounting,
+    prepared_books,
     prepared_scenario,
 )
 
@@ -217,7 +218,7 @@ def test_estimates_and_true_up_settle_the_same_annual_liability() -> None:
             for account in scenario.accounts
         ),
     )
-    books = Accounting(scenario.accounts, scenario.tax_profiles, scenario.income_sources)
+    books = prepared_books(scenario)
     authority = TaxAuthority(profile)
 
     def assessed(month: int) -> Claims:
@@ -233,7 +234,7 @@ def test_estimates_and_true_up_settle_the_same_annual_liability() -> None:
     for month in (3, 5, 8):
         assert not settle_grouped(books, assessed(month), HOUSEHOLD).failed
     books.tax.income.accrue(HOUSEHOLD, ORDINARY_INCOME, 10_000)
-    books.close_tax_year(scenario, 11, [])
+    books.close_tax_year(11, [])
     assert [liability.amount_owed for liability in books.tax_liabilities] == [1000]
     claims = assessed(12)
     assert [claim.amount_due for claim in claims.entries] == [100, 600]

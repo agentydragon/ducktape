@@ -1,6 +1,6 @@
 """Year-to-date tax facts and exact assessment of already-resolved jurisdiction rules."""
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from finance.augur.sim.compiler.tax import PreparedTaxBracket, PreparedTaxRules
@@ -50,8 +50,13 @@ class TaxAssessment:
 class IncomeLedger:
     """Income remains per source, including income a particular jurisdiction exempts."""
 
-    def __init__(self, taxpayers: Iterable[str], sources: Sequence[TransferIncomeCategory]) -> None:
-        self.by_source = {(agent, source): 0 for agent in taxpayers for source in sources}
+    def __init__(self, sources: Sequence[TransferIncomeCategory]) -> None:
+        self.sources = tuple(sources)
+        self.by_source: dict[tuple[str, TransferIncomeCategory], int] = {}
+
+    def enroll(self, agent_id: str) -> None:
+        for source in self.sources:
+            self.by_source[(agent_id, source)] = 0
 
     def accrue(self, agent_id: str, source: TransferIncomeCategory, amount: int) -> None:
         key = (agent_id, source)

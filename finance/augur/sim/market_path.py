@@ -1,8 +1,12 @@
 """Read one rollout's supplied exact market marks; no sampling or future-path policy access."""
 
+from __future__ import annotations
+
+from collections.abc import Iterable
+
 from finance.augur.sim.actor import Statement
 from finance.augur.sim.money import mul_div
-from finance.augur.sim.prepared import CompiledRun, PreparedAmount, PreparedFixedAmount
+from finance.augur.sim.prepared import CompiledRun, PreparedAmount, PreparedFixedAmount, PreparedSeries
 
 
 class MarketStatement(Statement):
@@ -12,11 +16,18 @@ class MarketStatement(Statement):
 
 
 class MarketPath:
-    def __init__(self, run: CompiledRun, rollout_id: int) -> None:
-        if not 0 <= rollout_id < run.rollout_count:
+    """One rollout's view of the supplied series populations."""
+
+    def __init__(self, series: Iterable[PreparedSeries], rollout_id: int, *, rollout_count: int) -> None:
+        if not 0 <= rollout_id < rollout_count:
             raise ValueError("invalid rollout selection")
         self.rollout_id = rollout_id
-        self.series = {series.series_id: series for series in run.series}
+        self.rollout_count = rollout_count
+        self.series = {row.series_id: row for row in series}
+
+    @classmethod
+    def from_run(cls, run: CompiledRun, rollout_id: int) -> MarketPath:
+        return cls(run.series, rollout_id, rollout_count=run.rollout_count)
 
     def value(self, series_id: str, month: int) -> int:
         series = self.series[series_id]

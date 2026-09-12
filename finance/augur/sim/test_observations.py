@@ -85,7 +85,7 @@ def scoped() -> CompiledRun:
 
 
 def world_for(run: CompiledRun) -> World:
-    world = World(run, 0)
+    world = World.from_run(run, 0)
     world.start()
     return world
 

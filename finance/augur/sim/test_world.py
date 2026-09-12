@@ -99,7 +99,7 @@ def cash_only() -> CompiledRun:
 
 
 def world_for(run: CompiledRun, rollout: int = 0) -> World:
-    world = World(run, rollout)
+    world = World.from_run(run, rollout)
     world.start()
     return world
 
@@ -557,7 +557,7 @@ def test_month_stepping_preserves_tax_year_and_stopped_books_in_every_capture_mo
         sales = (replace(sales[0], units=1_000_000),)
     run = replace(run, scenario=replace(run.scenario, _scheduled_sales=sales))
     [baseline] = execute(run, mode, HOUSEHOLD)
-    path = World(run, 0)
+    path = World.from_run(run, 0)
     capture = FinancialCapture(path, capture=mode)
     rows = [product_row(path, HOUSEHOLD)]
     path.start()
@@ -712,7 +712,7 @@ def test_tracked_agent_steps_agree_with_the_batch_session() -> None:
     run = actor_run(horizon=3, paths=2)
     run = replace(run, scenario=replace(run.scenario, obligations=(bill(1000),)))
     amounts = {0: 500, 2: 700}
-    world = World(run, 1)
+    world = World.from_run(run, 1)
     agent = _Household(amounts)
     world.track(agent)
     world.start()
@@ -735,7 +735,7 @@ def test_tracked_agent_steps_agree_with_the_batch_session() -> None:
 
 
 def test_rejected_action_stops_the_path_before_later_decisions() -> None:
-    world = World(actor_run(horizon=3), 0)
+    world = World.from_run(actor_run(horizon=3), 0)
     agent = _Household({0: 100, 1: 10_000_000, 2: 100})
     world.track(agent)
     world.start()
@@ -749,7 +749,7 @@ def test_rejected_action_stops_the_path_before_later_decisions() -> None:
 
 
 def test_tracking_is_checked_before_the_world_starts() -> None:
-    world = World(actor_run(), 0)
+    world = World.from_run(actor_run(), 0)
     with pytest.raises(ValueError, match="not running"):
         world.step()
     with pytest.raises(ValueError, match="unknown actor"):
@@ -762,7 +762,7 @@ def test_tracking_is_checked_before_the_world_starts() -> None:
         world.track(_Household({}))
     with pytest.raises(ValueError, match="already started"):
         world.start()
-    untracked = World(actor_run(), 0)
+    untracked = World.from_run(actor_run(), 0)
     untracked.start()
     with pytest.raises(ValueError, match="tracked agent"):
         untracked.step()
@@ -786,7 +786,7 @@ def loan(opening_principal: int | None = 6000) -> Mortgage:
 
 
 def test_tracked_mortgage_is_serviced_from_the_ledger_through_payoff() -> None:
-    world = World(actor_run(horizon=14), 0)
+    world = World.from_run(actor_run(horizon=14), 0)
     household, mortgage = _Household({}), loan()
     world.track(household)
     world.track(mortgage)
@@ -845,7 +845,7 @@ def rent() -> Biller:
 
 
 def test_a_tracked_bill_is_demanded_in_its_months_and_paid_by_the_household() -> None:
-    world = World(actor_run(horizon=4), 0)
+    world = World.from_run(actor_run(horizon=4), 0)
     household = _Household({})
     world.track(household)
     world.track(rent())
@@ -863,7 +863,7 @@ class _Deadbeat(EconomicAgent):
 
 
 def test_an_unpaid_installment_stops_the_path_and_leaves_the_contract_open() -> None:
-    world = World(actor_run(horizon=3), 0)
+    world = World.from_run(actor_run(horizon=3), 0)
     mortgage = loan()
     world.track(_Deadbeat(HOUSEHOLD))
     world.track(mortgage)
@@ -877,7 +877,7 @@ def test_an_unpaid_installment_stops_the_path_and_leaves_the_contract_open() -> 
 
 
 def test_tracked_bills_name_a_declared_payer_and_no_property() -> None:
-    world = World(actor_run(), 0)
+    world = World.from_run(actor_run(), 0)
     with pytest.raises(ValueError, match="property"):
         world.track(Biller(replace(rent().spec, property_id="test-home")))
     with pytest.raises(ValueError, match="unknown actor"):
@@ -893,7 +893,7 @@ def test_tracked_bills_name_a_declared_payer_and_no_property() -> None:
 
 
 def test_tracked_mortgages_open_the_ledger_once_before_the_world_starts() -> None:
-    world = World(actor_run(), 0)
+    world = World.from_run(actor_run(), 0)
     with pytest.raises(ValueError, match="outstanding"):
         world.track(loan(None))
     with pytest.raises(ValueError, match="unknown actor"):

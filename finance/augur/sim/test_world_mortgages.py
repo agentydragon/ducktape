@@ -159,7 +159,7 @@ def fingerprint(world: World) -> tuple[object, ...]:
 def test_mortgage_postings_use_selected_cash_and_ledger_principal_through_payoff(
     run: CompiledRun, mortgage: Mortgage
 ) -> None:
-    world = World(run, 0)
+    world = World.from_run(run, 0)
     assert world.mortgage_principal("test-mortgage") == 0
     for month, ending_principal in enumerate((0, 0, 60_000, 59_000, 58_000, 0)):
         active = {"test-mortgage": mortgage} if month >= 2 else {}
@@ -221,7 +221,7 @@ def test_mid_horizon_property_mark_and_sale_share_the_purchase_anchor(run: Compi
         series=(replace(run.series[0], values=(50, 100, 200, 240, 300, 360, 800, 500, 7, 200, 240, 300, 360, 800)),),
     )
     for rollout in range(2):
-        world = World(run, rollout)
+        world = World.from_run(run, rollout)
         for month in range(6):
             world.prepare_month(month, {}, {})
             world.assemble_claims([])
@@ -251,7 +251,7 @@ def test_invalid_mortgage_effects_do_not_change_cash_or_principal(
         ),
     )
     mortgage = Mortgage(replace(mortgage.terms, origination_month=0))
-    world = World(run, 0)
+    world = World.from_run(run, 0)
     before = fingerprint(world)
     with pytest.raises(ValueError, match="mortgage origination"):
         world.prepare_month(0, {}, {})

@@ -174,6 +174,28 @@ def _level_series(
     )
 
 
+def compile_series(
+    external_series: ExternalSeriesContext, *, rollout_count: int, horizon_months: int, currency_quantum: Decimal
+) -> tuple[PreparedSeries, ...]:
+    """The sampled level series as integer paths, for a world composed without a `Scenario`.
+
+    Only sampled keys are carried; a composed world checks at `declare_pool` that the
+    series a pool needs is present.
+    """
+    rows = materialize_level_rows(
+        tuple(external_series.levels.value_rows()), rollout_count=rollout_count, horizon_months=horizon_months
+    )
+    keys = tuple(row.key for row in rows)
+    levels, money = external_series_cubes(
+        rows,
+        series_index_by_id={key: index for index, key in enumerate(keys)},
+        rollout_count=rollout_count,
+        horizon_months=horizon_months,
+        currency_quantum=currency_quantum,
+    )
+    return _level_series(keys, levels, money)
+
+
 def _private_equity_series(
     issuer_ids: tuple[str, ...],
     pe_channels: PEChannels,

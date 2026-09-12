@@ -45,7 +45,7 @@ def product_row(world: World, actor: str) -> tuple[int, int, int, int, int, int,
     )
     property_value = sum(
         world.properties.market_value(purchase, world.market, mark)
-        for purchase in world.scenario._scheduled_property_purchases
+        for purchase in world.properties.housing.purchases
         if purchase.buyer_agent_id == actor
         and purchase.property_id in world.properties.properties
         and world.properties.properties[purchase.property_id].state.active
@@ -80,7 +80,7 @@ def execute(run: CompiledRun, capture: Capture, product_actor: str | None = None
         raise TypeError("execution requires a CompiledRun, not serialized input")
     validate_prepared(run)
     validate(run)
-    worlds = {rollout_id: World(run, rollout_id) for rollout_id in range(run.rollout_count)}
+    worlds = {rollout_id: World.from_run(run, rollout_id) for rollout_id in range(run.rollout_count)}
     captures = {id_: FinancialCapture(world, capture=capture) for id_, world in worlds.items()}
     rows: dict[int, list[tuple[int, int, int, int, int, int, int]]] = {id_: [] for id_ in worlds}
     if product_actor is not None:
@@ -114,7 +114,6 @@ def execute(run: CompiledRun, capture: Capture, product_actor: str | None = None
                 candidate = deepcopy(path.portfolios[spec.portfolio_id])
                 withdrawal = candidate._withdraw_units(sale.units)
                 path.managed.settle(
-                    run.scenario,
                     path.accounting,
                     month,
                     spec.owner_agent_id,
@@ -163,7 +162,7 @@ def execute(run: CompiledRun, capture: Capture, product_actor: str | None = None
         for path in paths.values():
             if not path.failed:
                 path.private_equity.advance(
-                    run.scenario, path.accounting, path.holdings, path.market, list(path.managed.marks.values()), month
+                    path.accounting, path.holdings, path.market, list(path.managed.marks.values()), month
                 )
         for rollout_id, path in paths.items():
             path.close_month()

@@ -9,7 +9,7 @@ from finance.augur.sim.compiler.tax import PreparedTaxProfile
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.money import MAX_COUNT, checked_count, checked_wide, mul_div, round_ratio
 from finance.augur.sim.mortgage import Mortgage
-from finance.augur.sim.prepared import PreparedScenario
+from finance.augur.sim.prepared import PreparedJurisdiction, _MortgageInterestDeduction, _SaltDeduction
 from finance.augur.sim.scenario import InterestIncome, OrdinaryIncome, TransferIncomeCategory
 from finance.augur.sim.tax import IncomeLedger, TaxFacts, assess, net_capital_gains, taxes_interest_from
 
@@ -26,9 +26,28 @@ class TaxYear:
 
 
 class TaxBook:
-    def __init__(self, profiles: Sequence[PreparedTaxProfile], sources: Sequence[TransferIncomeCategory]) -> None:
-        self.years = {profile.agent_id: TaxYear() for profile in profiles}
-        self.income = IncomeLedger(self.years, sources)
+    """Per-taxpayer year state and the rules the close assesses under.
+
+    Taxpayers are enrolled one profile at a time. The configured deduction policies are
+    scenario tables the import adapter attaches; a composed world leaves them empty.
+    """
+
+    def __init__(
+        self, sources: Sequence[TransferIncomeCategory], jurisdictions: Sequence[PreparedJurisdiction]
+    ) -> None:
+        self.jurisdictions = tuple(jurisdictions)
+        self.profiles: list[PreparedTaxProfile] = []
+        self.years: dict[str, TaxYear] = {}
+        self.income = IncomeLedger(sources)
+        self.salt_policies: tuple[_SaltDeduction, ...] = ()
+        self.mortgage_interest_policies: tuple[_MortgageInterestDeduction, ...] = ()
+
+    def enroll(self, profile: PreparedTaxProfile) -> None:
+        if profile.agent_id in self.years:
+            raise ValueError(f"taxpayer {profile.agent_id!r} is already enrolled")
+        self.profiles.append(profile)
+        self.years[profile.agent_id] = TaxYear()
+        self.income.enroll(profile.agent_id)
 
     def gain(self, agent: str, amount: int, *, long_term: bool) -> None:
         if agent not in self.years:
@@ -47,12 +66,12 @@ class TaxBook:
             year = self.years[agent]
             year.property_tax_paid = checked_count(year.property_tax_paid + owner, "money addition")
 
-    def assessments(self, scenario: PreparedScenario, month: int, mortgages: Sequence[Mortgage]) -> list[TaxAccrual]:
+    def assessments(self, month: int, mortgages: Sequence[Mortgage]) -> list[TaxAccrual]:
         """Quote the whole close without mutating income, carryovers, or financial balances."""
         income = deepcopy(self.income)
         rows: list[TaxAccrual] = []
-        levels = {jurisdiction.jurisdiction_id: jurisdiction.level for jurisdiction in scenario.jurisdictions}
-        for profile in scenario.tax_profiles:
+        levels = {jurisdiction.jurisdiction_id: jurisdiction.level for jurisdiction in self.jurisdictions}
+        for profile in self.profiles:
             year = self.years[profile.agent_id]
             gains = net_capital_gains(
                 year.short_term_gain,
@@ -78,7 +97,7 @@ class TaxBook:
                     ):
                         taxable = checked_count(taxable + amount, "money addition")
                 mortgage_deduction = mortgage_interest_deduction(
-                    scenario, mortgages, profile.agent_id, rules.jurisdiction_id
+                    self.mortgage_interest_policies, mortgages, profile.agent_id, rules.jurisdiction_id
                 )
                 facts = TaxFacts(
                     taxable_ordinary_income=taxable,
@@ -92,14 +111,7 @@ class TaxBook:
                     property_tax_paid=year.property_tax_paid,
                 )
                 annual.append((rules, facts, assess(facts, rules)))
-            policy = next(
-                (
-                    policy
-                    for policy in scenario._federal_salt_deduction_policies
-                    if policy.profile_id == profile.agent_id
-                ),
-                None,
-            )
+            policy = next((policy for policy in self.salt_policies if policy.profile_id == profile.agent_id), None)
             if policy is not None:
                 state_tax = 0
                 for rules, _, assessment in annual:
@@ -158,11 +170,11 @@ class TaxBook:
 
 
 def mortgage_interest_deduction(
-    scenario: PreparedScenario, mortgages: Sequence[Mortgage], agent: str, jurisdiction: str
+    policies: Sequence[_MortgageInterestDeduction], mortgages: Sequence[Mortgage], agent: str, jurisdiction: str
 ) -> int:
     numerator = 0
     by_id = {mortgage.terms.liability_id: mortgage for mortgage in mortgages}
-    for policy in scenario._mortgage_interest_deduction_policies:
+    for policy in policies:
         if policy.owner_agent_id != agent or policy.liability_id not in by_id:
             continue
         mortgage = by_id[policy.liability_id]

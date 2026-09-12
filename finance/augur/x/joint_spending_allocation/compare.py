@@ -78,7 +78,7 @@ def run_path(
     prepared: CompiledRun, rollout_id: int, *, parameters: Parameters, annual_step: int, replay: bool
 ) -> tuple[PathMeasurements, Replay | None]:
     """One world with a fresh household; the experiment owns the loop and records between steps."""
-    world = World(prepared, rollout_id)
+    world = World.from_run(prepared, rollout_id)
     household = JointHousehold(parameters, annual_step=annual_step)
     world.track(household)
     world.start()

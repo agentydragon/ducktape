@@ -35,9 +35,9 @@ class _Record:
         self.actor = actor
         self.mode = mode
         self.cash = [
-            results.CashSeries(account=account.account, values=[])
-            for account in world.scenario.accounts
-            if account.account.agent_id == actor
+            results.CashSeries(account=account, values=[])
+            for account in world.accounting.declared
+            if account.agent_id == actor
         ]
         self.holdings: dict[tuple[AccountRef, str], list[int]] = {}
         self.bond_terms = [bond for bond in world.bonds.terms if bond.agent_id == actor]
@@ -155,7 +155,7 @@ class ActionSession:
         self._month = 0
         self._started = False
         self._closed = False
-        self._paths = {rollout_id: World(run, rollout_id) for rollout_id in rollout_ids}
+        self._paths = {rollout_id: World.from_run(run, rollout_id) for rollout_id in rollout_ids}
         self._delegates: dict[int, _Delegate] = {}
         for rollout_id, world in self._paths.items():
             delegate = _Delegate(self._actor)

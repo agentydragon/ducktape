@@ -21,7 +21,7 @@ from finance.augur.sim.prepared import (
     PreparedSeries,
     _ScheduledSale,
 )
-from finance.augur.sim.testing.accounting import CASH, EXOGENOUS, HOUSEHOLD, prepared_scenario
+from finance.augur.sim.testing.accounting import CASH, EXOGENOUS, HOUSEHOLD, prepared_books, prepared_scenario
 
 BROKERAGE = AccountRef(agent_id=HOUSEHOLD, account_id="brokerage")
 
@@ -67,9 +67,13 @@ def books() -> Books:
             for month, id_, basis in [(-12, "old", 17), (0, "new", 32)]
         ),
     )
-    accounting = Accounting(scenario.accounts, scenario.tax_profiles, scenario.income_sources)
-    holdings = Holdings(scenario, accounting)
-    market = MarketPath(
+    accounting = prepared_books(scenario)
+    holdings = Holdings()
+    for pool in scenario.holding_pools:
+        holdings.declare_pool(accounting, pool)
+    for lot in scenario.initial_lots:
+        holdings.hold(accounting, lot)
+    market = MarketPath.from_run(
         CompiledRun(
             currency_code="USD",
             currency_quantum="0.01",
@@ -234,7 +238,7 @@ def test_overflow_after_first_lot_or_jurisdiction_cannot_partially_commit(books:
 
 
 def test_purchase_posts_cash_and_basis_then_joins_future_exact_sales(books: Books) -> None:
-    books.holdings.buy(books.scenario, books.accounting, 0, purchase(), price=10)
+    books.holdings.buy(books.accounting, 0, purchase(), price=10)
     lot = books.holdings.lots[2]
     assert lot.units_remaining == lot.basis_remaining == 15
     assert lot.spec.purchase_month == 0
@@ -263,7 +267,7 @@ def test_invalid_or_unfunded_purchase_does_not_create_lot_or_debit_cash(
 ) -> None:
     before = books.snapshot()
     with pytest.raises((ValueError, OverflowError), match=r"purchase|holding pool|unknown declared|overflow"):
-        books.holdings.buy(books.scenario, books.accounting, 0, purchase().model_copy(update=changes), price=10)
+        books.holdings.buy(books.accounting, 0, purchase().model_copy(update=changes), price=10)
     assert books.snapshot() == before
 
 

@@ -53,6 +53,15 @@ def prepared_scenario() -> PreparedScenario:
     return replace(prepared, tax_profiles=profiles, income_sources=(ORDINARY_INCOME, InterestIncome()))
 
 
+def prepared_books(scenario_: PreparedScenario) -> Accounting:
+    """The prepared scenario's accounts and taxpayers on a fresh ledger."""
+    accounting_ = Accounting(scenario_.income_sources, scenario_.jurisdictions)
+    for account in scenario_.accounts:
+        accounting_.declare(account)
+    for profile in scenario_.tax_profiles:
+        accounting_.enroll(profile)
+    return accounting_
+
+
 def accounting() -> Accounting:
-    scenario_ = prepared_scenario()
-    return Accounting(scenario_.accounts, scenario_.tax_profiles, scenario_.income_sources)
+    return prepared_books(prepared_scenario())

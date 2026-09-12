@@ -131,54 +131,52 @@ def _brackets(brackets: Sequence[TaxBracket], *, quantum: Decimal) -> tuple[Prep
     )
 
 
-def compile_tax(scenario: Scenario, jurisdictions: Mapping[str, Jurisdiction]) -> TaxCompileOutput:
-    quantum = scenario.currency.quantum
-    profiles = []
-    for profile in scenario.tax_profiles:
-        offset_cap = _agreed_capital_loss_offset_cap(profile, jurisdictions, quantum=quantum)
-        rules = []
-        for jurisdiction_id in profile.jurisdiction_ids:
-            jurisdiction = jurisdictions[jurisdiction_id]
-            rules.append(
-                PreparedTaxRules(
-                    jurisdiction_id=jurisdiction_id,
-                    exempt_interest_from_levels=tuple(sorted(jurisdiction.exempt_interest_from_levels)),
-                    exempts_own_issue=jurisdiction.exempts_own_issue,
-                    ordinary_brackets=_brackets(
-                        jurisdiction.ordinary_income_brackets[profile.filing_status], quantum=quantum
-                    ),
-                    long_term_capital_gain_brackets=(
-                        _brackets(jurisdiction.ltcg_brackets[profile.filing_status], quantum=quantum)
-                        if jurisdiction.ltcg_brackets is not None
-                        else ()
-                    ),
-                    standard_deduction=int(
-                        currency_amount_to_quanta(
-                            jurisdiction.standard_deduction[profile.filing_status], quantum=quantum
-                        )
-                    ),
-                    max_capital_loss_ordinary_offset=offset_cap,
-                    section_1250_rate_ppb=rate_to_ppb(
-                        SECTION_1250_FEDERAL_CAP_RATE
-                        if jurisdiction_id == SECTION_1250_FEDERAL_JURISDICTION_ID
-                        else 0.0
-                    ),
-                )
-            )
-        profiles.append(
-            PreparedTaxProfile(
-                agent_id=profile.agent_id,
-                tax_authority_agent_id=profile.tax_authority_agent_id,
-                payment_account_id=profile.payment_account_id,
-                tax_authority_account_id=profile.tax_authority_account_id,
-                prior_year_tax=int(currency_amount_to_quanta(profile.prior_year_tax, quantum=quantum)),
-                section_121_exclusion=int(
-                    currency_amount_to_quanta(section_121_exclusion_for(profile.filing_status), quantum=quantum)
+def compile_profile(
+    profile: TaxProfile, jurisdictions: Mapping[str, Jurisdiction], *, quantum: Decimal
+) -> PreparedTaxProfile:
+    """One taxpayer's routing and quantized rules; what a composed world enrolls without a `Scenario`."""
+    offset_cap = _agreed_capital_loss_offset_cap(profile, jurisdictions, quantum=quantum)
+    rules = []
+    for jurisdiction_id in profile.jurisdiction_ids:
+        jurisdiction = jurisdictions[jurisdiction_id]
+        rules.append(
+            PreparedTaxRules(
+                jurisdiction_id=jurisdiction_id,
+                exempt_interest_from_levels=tuple(sorted(jurisdiction.exempt_interest_from_levels)),
+                exempts_own_issue=jurisdiction.exempts_own_issue,
+                ordinary_brackets=_brackets(
+                    jurisdiction.ordinary_income_brackets[profile.filing_status], quantum=quantum
                 ),
-                jurisdictions=tuple(rules),
+                long_term_capital_gain_brackets=(
+                    _brackets(jurisdiction.ltcg_brackets[profile.filing_status], quantum=quantum)
+                    if jurisdiction.ltcg_brackets is not None
+                    else ()
+                ),
+                standard_deduction=int(
+                    currency_amount_to_quanta(jurisdiction.standard_deduction[profile.filing_status], quantum=quantum)
+                ),
+                max_capital_loss_ordinary_offset=offset_cap,
+                section_1250_rate_ppb=rate_to_ppb(
+                    SECTION_1250_FEDERAL_CAP_RATE if jurisdiction_id == SECTION_1250_FEDERAL_JURISDICTION_ID else 0.0
+                ),
             )
         )
+    return PreparedTaxProfile(
+        agent_id=profile.agent_id,
+        tax_authority_agent_id=profile.tax_authority_agent_id,
+        payment_account_id=profile.payment_account_id,
+        tax_authority_account_id=profile.tax_authority_account_id,
+        prior_year_tax=int(currency_amount_to_quanta(profile.prior_year_tax, quantum=quantum)),
+        section_121_exclusion=int(
+            currency_amount_to_quanta(section_121_exclusion_for(profile.filing_status), quantum=quantum)
+        ),
+        jurisdictions=tuple(rules),
+    )
 
+
+def compile_tax(scenario: Scenario, jurisdictions: Mapping[str, Jurisdiction]) -> TaxCompileOutput:
+    quantum = scenario.currency.quantum
+    profiles = [compile_profile(profile, jurisdictions, quantum=quantum) for profile in scenario.tax_profiles]
     sources = tuple(sorted({OrdinaryIncome(), *collect_income_sources(scenario)}, key=income_source_sort_key))
     # Every named issuer must resolve, including issuers found only on cashflows.
     for source in sources:
