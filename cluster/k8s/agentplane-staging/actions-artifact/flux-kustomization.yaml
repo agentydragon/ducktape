@@ -4,6 +4,7 @@ metadata:
   name: agentplane-staging-actions-artifact
   namespace: ducktape-flux
 spec:
+  retryInterval: 1m
   interval: 10m
   path: ./cluster/k8s/agentplane-staging/actions-artifact
   prune: true
