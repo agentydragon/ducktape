@@ -29,8 +29,10 @@ unique idempotency_key, action group/name, and discovered arguments. Keep the re
 and key. decision_pending means the request is waiting for an operator, not that it succeeded.
 Follow a request with GET /v1/action-requests/{id} and GET
 /v1/action-requests/{id}/events?after_sequence={last sequence}; advance the cursor only after
-recording events. Retry an uncertain submission with the same key, never a replacement. Do not call
-operator routes or decide an Action yourself. Report only facts observed from the service.
+recording events. A repeated key is refused: after a lost submission response, look the request up
+with GET /v1/action-requests?idempotency_key={key} rather than resubmitting, and never use a
+replacement key. Do not call operator routes or decide an Action yourself. Report only facts
+observed from the service.
 
 Agentplane is developed in the agentydragon/ducktape repository. Consult that repository's source
 and documentation when a task needs Agentplane-specific detail beyond these instructions.
