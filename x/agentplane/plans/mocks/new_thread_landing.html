@@ -1,0 +1,1044 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <style>
+      :root {
+        color-scheme: light;
+      }
+      body {
+        margin: 0;
+        padding: 0;
+        font:
+          14px -apple-system,
+          BlinkMacSystemFont,
+          sans-serif;
+        background: #faf9f5;
+        color: #141413;
+      }
+      img {
+        max-width: 100%;
+      }
+      [hidden]:not([hidden="until-found" i]) {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <title>Agentplane New-Thread Landing</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        --bg: #f4f5f7;
+        --surface: #ffffff;
+        --surface-2: #f1f3f5;
+        --surface-3: #eef0f2;
+        --border: #dfe2e7;
+        --border-soft: #e8eaed;
+        --ink: #1b1d22;
+        --muted: #676d79;
+        --faint: #9aa0ab;
+        --accent: #1c7ed6;
+        --accent-soft: #e7f3ff;
+        --warn: #e8590c;
+        --warn-soft: #fff2e8;
+        --danger: #d92d20;
+        --danger-soft: #fdeeed;
+        --ok: #2b8a3e;
+        --gray-chip: #eef0f2;
+        --shadow: 0 1px 2px rgba(20, 24, 33, 0.04), 0 8px 24px -12px rgba(20, 24, 33, 0.18);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) {
+          --bg: #18191c;
+          --surface: #232427;
+          --surface-2: #2a2b2f;
+          --surface-3: #303136;
+          --border: #3a3b40;
+          --border-soft: #313236;
+          --ink: #e9eaec;
+          --muted: #a2a7b0;
+          --faint: #6f7480;
+          --accent: #66b2f0;
+          --accent-soft: #1d3247;
+          --warn: #f2994a;
+          --warn-soft: #3a2a17;
+          --danger: #f2705f;
+          --danger-soft: #3b2220;
+          --ok: #6cc27a;
+          --gray-chip: #303136;
+          --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
+        }
+      }
+      :root[data-theme="dark"] {
+        --bg: #18191c;
+        --surface: #232427;
+        --surface-2: #2a2b2f;
+        --surface-3: #303136;
+        --border: #3a3b40;
+        --border-soft: #313236;
+        --ink: #e9eaec;
+        --muted: #a2a7b0;
+        --faint: #6f7480;
+        --accent: #66b2f0;
+        --accent-soft: #1d3247;
+        --warn: #f2994a;
+        --warn-soft: #3a2a17;
+        --danger: #f2705f;
+        --danger-soft: #3b2220;
+        --ok: #6cc27a;
+        --gray-chip: #303136;
+        --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+        padding: 0 20px;
+        padding-block: 40px 64px;
+      }
+      main {
+        max-width: 980px;
+        margin: 0 auto;
+        display: flex;
+        flex-direction: column;
+        gap: 48px;
+      }
+      .eyebrow {
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--accent);
+        margin: 0 0 8px;
+      }
+      h1 {
+        font-size: 30px;
+        font-weight: 700;
+        letter-spacing: -0.015em;
+        margin: 0 0 10px;
+        text-wrap: balance;
+      }
+      .lede {
+        font-size: 15.5px;
+        line-height: 1.6;
+        color: var(--muted);
+        max-width: 68ch;
+        margin: 0;
+      }
+      h2 {
+        font-size: 12.5px;
+        font-weight: 700;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        color: var(--faint);
+        margin: 0 0 16px;
+      }
+      section {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      .section-note {
+        font-size: 13.5px;
+        line-height: 1.55;
+        color: var(--muted);
+        max-width: 72ch;
+        margin: -6px 0 4px;
+      }
+      .stage {
+        overflow-x: auto;
+        padding: 4px 2px 12px;
+      }
+
+      /* ---- shell device (same anatomy as app_shell.html) ---- */
+      .device {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        box-shadow: var(--shadow);
+        overflow: hidden;
+        width: 780px;
+        flex: 0 0 auto;
+        display: flex;
+        height: 520px;
+      }
+      .sidebar {
+        width: 240px;
+        flex: 0 0 auto;
+        border-right: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        background: var(--surface-2);
+      }
+      .sidebar-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--faint);
+        padding: 12px 10px 6px 12px;
+      }
+      .new-thread-btn {
+        width: 20px;
+        height: 20px;
+        border-radius: 6px;
+        flex: 0 0 auto;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--accent);
+        background: var(--accent-soft);
+      }
+      .new-thread-btn svg {
+        width: 11px;
+        height: 11px;
+      }
+      .new-thread-btn.active {
+        background: var(--accent);
+        color: white;
+      }
+      .sidebar-body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 8px;
+        background: var(--surface);
+      }
+      .group-label {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--muted);
+        padding: 10px 8px 4px;
+      }
+      .dot {
+        display: inline-block;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        flex: 0 0 auto;
+      }
+      .dot.ok {
+        background: var(--ok);
+      }
+      .dot.gray {
+        background: var(--faint);
+      }
+      .dot.warn {
+        background: var(--warn);
+      }
+      .state-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 13px;
+        height: 13px;
+        flex: 0 0 auto;
+      }
+      .state-icon svg {
+        width: 100%;
+        height: 100%;
+      }
+      .state-icon.running {
+        color: var(--ok);
+      }
+      .state-icon.pending {
+        color: var(--warn);
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 8px;
+        border-radius: 7px;
+        font-size: 13px;
+        color: var(--ink);
+      }
+      .row.current {
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-weight: 600;
+      }
+      .row .name {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .sidebar-footer {
+        border-top: 1px solid var(--border-soft);
+        padding: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 6px;
+      }
+      .gear-btn {
+        width: 28px;
+        height: 28px;
+        border-radius: 7px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--faint);
+        flex: 0 0 auto;
+      }
+      .gear-btn svg {
+        width: 15px;
+        height: 15px;
+      }
+
+      /* ---- main content pane ---- */
+      .pane {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+      .breadcrumb {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--border-soft);
+        font-size: 13.5px;
+      }
+      .breadcrumb .sandbox-crumb {
+        color: var(--muted);
+      }
+      .breadcrumb .sep {
+        color: var(--faint);
+      }
+      .breadcrumb .title-crumb {
+        font-weight: 600;
+      }
+      .pane-body {
+        flex: 1;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .bubble-stub {
+        align-self: flex-end;
+        background: var(--accent-soft);
+        color: var(--accent);
+        border-radius: 10px;
+        padding: 8px 12px;
+        font-size: 12.5px;
+        max-width: 60%;
+      }
+      .bubble-stub.pending {
+        opacity: 0.55;
+      }
+      .reply-stub {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 10px 12px;
+        font-size: 12.5px;
+        color: var(--muted);
+      }
+
+      /* ---- target picker (segmented: existing sandbox / new sandbox) ---- */
+      .new-thread-body {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        padding: 20px 24px;
+        overflow-y: auto;
+      }
+      .segmented {
+        display: inline-flex;
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        padding: 2px;
+        background: var(--surface-2);
+        align-self: flex-start;
+      }
+      .segmented .seg {
+        padding: 5px 12px;
+        border-radius: 7px;
+        font-size: 12.5px;
+        font-weight: 600;
+        color: var(--muted);
+      }
+      .segmented .seg.active {
+        background: var(--surface);
+        color: var(--ink);
+        box-shadow: 0 1px 2px rgba(20, 24, 33, 0.08);
+      }
+      .field-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        flex: 1 1 140px;
+      }
+      .field label {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--muted);
+      }
+      .field .hint {
+        font-size: 10.5px;
+        color: var(--faint);
+      }
+      .picker {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 6px 10px;
+        font-size: 12.5px;
+        color: var(--ink);
+        background: var(--surface);
+      }
+      .picker svg {
+        width: 11px;
+        height: 11px;
+        color: var(--faint);
+        flex: 0 0 auto;
+      }
+      .text-field {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 6px 10px;
+        font-size: 12.5px;
+        color: var(--faint);
+        background: var(--surface);
+      }
+      .new-sandbox-form {
+        border: 1px solid var(--border-soft);
+        border-radius: 10px;
+        padding: 12px;
+        background: var(--surface-2);
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .form-section-label {
+        font-size: 10.5px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--faint);
+      }
+      .new-thread-input {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 14px;
+        font-size: 13px;
+        color: var(--faint);
+        min-height: 64px;
+      }
+      .new-thread-input.filled {
+        color: var(--ink);
+      }
+      .new-thread-input[disabled] {
+        opacity: 0.55;
+        background: var(--surface-2);
+      }
+      .composer-stub {
+        margin: 0 16px 16px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 10px 12px;
+        font-size: 12.5px;
+        color: var(--faint);
+      }
+
+      /* ---- provisioning status stack ---- */
+      .status-stack {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        border: 1px solid var(--border-soft);
+        border-radius: 10px;
+        padding: 12px 14px;
+        background: var(--surface-2);
+        max-width: 420px;
+      }
+      .status-line {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12.5px;
+        color: var(--muted);
+      }
+      .status-line .mark {
+        width: 14px;
+        height: 14px;
+        flex: 0 0 auto;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .status-line.done .mark {
+        color: var(--ok);
+      }
+      .status-line.active .mark svg {
+        animation: spin 1s linear infinite;
+      }
+      .status-line.active {
+        color: var(--ink);
+        font-weight: 600;
+      }
+      .status-line.pending {
+        color: var(--faint);
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .status-line.active .mark svg {
+          animation: none;
+        }
+      }
+
+      /* ---- states / notes / table (shared boilerplate) ---- */
+      .states {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 16px;
+      }
+      .state-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        box-shadow: var(--shadow);
+        padding: 14px;
+      }
+      .state-tag {
+        display: inline-flex;
+        align-items: center;
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--muted);
+        background: var(--surface-2);
+        border-radius: 999px;
+        padding: 3px 9px;
+        margin-bottom: 12px;
+      }
+      .table-wrap {
+        overflow-x: auto;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        overflow: hidden;
+      }
+      thead th {
+        text-align: left;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--faint);
+        background: var(--surface-2);
+        padding: 9px 12px;
+        border-bottom: 1px solid var(--border);
+      }
+      tbody td {
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--border-soft);
+        vertical-align: top;
+      }
+      tbody tr:last-child td {
+        border-bottom: none;
+      }
+      td.element {
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      td.muted {
+        color: var(--muted);
+      }
+      td code {
+        white-space: nowrap;
+      }
+      ul.notes {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      ul.notes li {
+        font-size: 13.5px;
+        line-height: 1.55;
+        color: var(--ink);
+        padding-left: 18px;
+        position: relative;
+      }
+      ul.notes li::before {
+        content: "";
+        position: absolute;
+        left: 2px;
+        top: 7px;
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--accent);
+      }
+      ul.notes b {
+        font-weight: 600;
+      }
+      ul.notes code {
+        font-family: ui-monospace, SFMono-Regular, "Liberation Mono", monospace;
+        font-size: 0.92em;
+        background: var(--surface-2);
+        padding: 1px 5px;
+        border-radius: 4px;
+      }
+      footer {
+        font-size: 12px;
+        color: var(--faint);
+        border-top: 1px solid var(--border-soft);
+        padding-top: 20px;
+      }
+    </style>
+
+    <main>
+      <header>
+        <p class="eyebrow">x/agentplane · UISHELL_NEWTHREAD_LANDING / UISHELL_NEWTHREAD_SANDBOX</p>
+        <h1>One page, three states — not a wizard</h1>
+        <p class="lede">
+          The sidebar's "+" (unscoped) and a Sandbox page's own "+ New thread" (pre-scoped) open the
+          <em>same</em> page as an open thread — same composer, same layout — just in a state where no Sandbox/Thread is
+          bound yet. That state lets the operator target an existing Sandbox or describe a new one; pressing Enter
+          submits the draft immediately, provisions whatever is missing, and then rebinds the page to the real thread in
+          place. The picker area is the only thing that changes shape — the composer never moves and is never replaced
+          by a different component.
+        </p>
+      </header>
+
+      <section>
+        <h2>State A — picking a target, existing Sandbox</h2>
+        <div class="stage">
+          <div class="device">
+            <div class="sidebar">
+              <div class="sidebar-header">
+                Threads
+                <span class="new-thread-btn active" title="New thread">
+                  <svg viewBox="0 0 16 16" fill="none">
+                    <path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                  </svg>
+                </span>
+              </div>
+              <div class="sidebar-body">
+                <div class="group-label">
+                  <span class="state-icon running" title="Running"
+                    ><svg viewBox="0 0 12 12" fill="currentColor"><path d="M3 2.2v7.6l6-3.8-6-3.8Z" /></svg
+                  ></span>
+                  demo-a1b2
+                  <span style="margin-left: auto; font-size: 11px; color: var(--faint)">2 threads</span>
+                </div>
+                <div class="row"><span class="dot ok"></span><span class="name">List the repository files</span></div>
+              </div>
+              <div class="sidebar-footer">
+                <span class="gear-btn"
+                  ><svg viewBox="0 0 16 16" fill="none">
+                    <circle cx="8" cy="8" r="2.3" stroke="currentColor" stroke-width="1.3" /></svg
+                ></span>
+              </div>
+            </div>
+            <div class="pane">
+              <div class="breadcrumb"><span class="title-crumb">New thread</span></div>
+              <div class="new-thread-body">
+                <div class="segmented">
+                  <span class="seg active">Existing sandbox</span>
+                  <span class="seg">New sandbox</span>
+                </div>
+                <div class="picker">
+                  demo-a1b2 · running
+                  <svg viewBox="0 0 12 12" fill="none">
+                    <path d="M3 4.5 6 7.5 9 4.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                  </svg>
+                </div>
+                <div class="picker">
+                  claude-sonnet-5
+                  <svg viewBox="0 0 12 12" fill="none">
+                    <path d="M3 4.5 6 7.5 9 4.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                  </svg>
+                </div>
+                <div class="new-thread-input">Describe what you want done…</div>
+              </div>
+              <p class="composer-stub" style="margin: 0 16px 16px">
+                Enter starts the thread on demo-a1b2, Ctrl+Enter for a new line
+              </p>
+            </div>
+          </div>
+        </div>
+        <p class="section-note">
+          Reusing the existing "New thread" composer's picker row (already shipped as a mock in
+          <code>app_shell.html</code>), the segmented control replaces its single "+ New sandbox from preset" affordance
+          with an explicit either/or: pick a Sandbox that already exists (any state — running, suspended, still
+          provisioning), or describe a new one. Reached pre-scoped from a Sandbox's own page
+          (<code>UISHELL_NEWTHREAD_SANDBOX</code>), the segmented control and Sandbox picker are both hidden — the
+          target is already fixed, exactly like the existing "pre-scoped" state card in <code>app_shell.html</code>.
+        </p>
+      </section>
+
+      <section>
+        <h2>State B — new sandbox, form expanded, draft typed</h2>
+        <div class="stage">
+          <div class="device">
+            <div class="sidebar">
+              <div class="sidebar-header">
+                Threads
+                <span class="new-thread-btn active" title="New thread">
+                  <svg viewBox="0 0 16 16" fill="none">
+                    <path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                  </svg>
+                </span>
+              </div>
+              <div class="sidebar-body">
+                <div class="group-label">
+                  <span class="state-icon running" title="Running"
+                    ><svg viewBox="0 0 12 12" fill="currentColor"><path d="M3 2.2v7.6l6-3.8-6-3.8Z" /></svg
+                  ></span>
+                  demo-a1b2
+                  <span style="margin-left: auto; font-size: 11px; color: var(--faint)">2 threads</span>
+                </div>
+              </div>
+              <div class="sidebar-footer">
+                <span class="gear-btn"
+                  ><svg viewBox="0 0 16 16" fill="none">
+                    <circle cx="8" cy="8" r="2.3" stroke="currentColor" stroke-width="1.3" /></svg
+                ></span>
+              </div>
+            </div>
+            <div class="pane">
+              <div class="breadcrumb"><span class="title-crumb">New thread</span></div>
+              <div class="new-thread-body">
+                <div class="segmented">
+                  <span class="seg">Existing sandbox</span>
+                  <span class="seg active">New sandbox</span>
+                </div>
+                <div class="new-sandbox-form">
+                  <span class="form-section-label">Sandbox</span>
+                  <div class="field-row">
+                    <div class="field">
+                      <label>Preset</label>
+                      <div class="picker">
+                        public-coder
+                        <svg viewBox="0 0 12 12" fill="none">
+                          <path
+                            d="M3 4.5 6 7.5 9 4.5"
+                            stroke="currentColor"
+                            stroke-width="1.4"
+                            stroke-linecap="round"
+                          />
+                        </svg>
+                      </div>
+                    </div>
+                    <div class="field">
+                      <label>Name</label>
+                      <div class="text-field">investigate-ci</div>
+                    </div>
+                    <div class="field">
+                      <label>Policies</label>
+                      <div class="text-field">github, docs-site</div>
+                    </div>
+                  </div>
+                  <span class="form-section-label">Thread</span>
+                  <div class="field-row">
+                    <div class="field">
+                      <label>Harness</label>
+                      <div class="text-field">claude</div>
+                    </div>
+                    <div class="field">
+                      <label>Model</label>
+                      <div class="text-field">claude-sonnet-5</div>
+                    </div>
+                    <div class="field">
+                      <label>Reasoning effort</label>
+                      <div class="text-field">medium</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="new-thread-input filled">Look into why the flaky CI job fails on prod-x7f2.</div>
+              </div>
+              <p class="composer-stub" style="margin: 0 16px 16px">
+                Enter creates the sandbox, then starts the thread, Ctrl+Enter for a new line
+              </p>
+            </div>
+          </div>
+        </div>
+        <p class="section-note">
+          Same fields as <code>sandboxes.tsx</code>'s existing "New sandbox" form (preset, name, policies, action policy
+          sets — preset pre-fills, every field stays editable) plus <code>sandbox_page.tsx</code>'s existing "New
+          session" fields (harness, model, reasoning effort, standing instructions) — nothing new to design here, just
+          the same two forms already shipped elsewhere, composed on one page instead of two.
+        </p>
+      </section>
+
+      <section>
+        <h2>State C — submitted: provisioning, composer holds the queued turn</h2>
+        <div class="stage">
+          <div class="device">
+            <div class="sidebar">
+              <div class="sidebar-header">
+                Threads
+                <span class="new-thread-btn" title="New thread">
+                  <svg viewBox="0 0 16 16" fill="none">
+                    <path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                  </svg>
+                </span>
+              </div>
+              <div class="sidebar-body">
+                <div class="group-label">
+                  <span class="state-icon pending" title="Provisioning"
+                    ><svg viewBox="0 0 12 12" fill="none">
+                      <circle
+                        cx="6"
+                        cy="6"
+                        r="4.4"
+                        stroke="currentColor"
+                        stroke-width="1.3"
+                        stroke-dasharray="4 3"
+                      /></svg
+                  ></span>
+                  investigate-ci
+                  <span style="margin-left: auto; font-size: 11px; color: var(--faint)">provisioning…</span>
+                </div>
+                <div class="group-label">
+                  <span class="state-icon running" title="Running"
+                    ><svg viewBox="0 0 12 12" fill="currentColor"><path d="M3 2.2v7.6l6-3.8-6-3.8Z" /></svg
+                  ></span>
+                  demo-a1b2
+                  <span style="margin-left: auto; font-size: 11px; color: var(--faint)">2 threads</span>
+                </div>
+              </div>
+              <div class="sidebar-footer">
+                <span class="gear-btn"
+                  ><svg viewBox="0 0 16 16" fill="none">
+                    <circle cx="8" cy="8" r="2.3" stroke="currentColor" stroke-width="1.3" /></svg
+                ></span>
+              </div>
+            </div>
+            <div class="pane">
+              <div class="breadcrumb">
+                <span class="sandbox-crumb">investigate-ci</span><span class="sep">/</span
+                ><span class="title-crumb">New thread</span>
+              </div>
+              <div class="pane-body">
+                <div class="bubble-stub pending">Look into why the flaky CI job fails on prod-x7f2.</div>
+              </div>
+              <div style="margin: 0 16px 16px">
+                <div class="status-stack">
+                  <div class="status-line done">
+                    <span class="mark"
+                      ><svg viewBox="0 0 12 12" fill="none">
+                        <path
+                          d="M2.5 6.2 5 8.7l4.5-5"
+                          stroke="currentColor"
+                          stroke-width="1.6"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        /></svg></span
+                    >Sandbox created
+                  </div>
+                  <div class="status-line active">
+                    <span class="mark"
+                      ><svg viewBox="0 0 12 12" fill="none">
+                        <circle
+                          cx="6"
+                          cy="6"
+                          r="4.4"
+                          stroke="currentColor"
+                          stroke-width="1.4"
+                          stroke-dasharray="5 4"
+                        /></svg></span
+                    >Waiting for pod…
+                  </div>
+                  <div class="status-line pending"><span class="mark">·</span>Starting thread</div>
+                </div>
+              </div>
+              <div class="composer-stub" style="margin: 0 16px 16px; opacity: 0.6">
+                Composer disabled while starting
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="section-note">
+          The just-submitted draft becomes the first bubble immediately, in the exact spot it'll occupy once the thread
+          is real — dimmed to read as "sent, not yet delivered" rather than disappearing into a spinner. Below it, a
+          status stack narrates the sequence instead of one opaque "Creating…" label, because each step (Sandbox object
+          created → Pod ready → session opened) is a real wait with its own failure mode worth surfacing separately. The
+          composer itself is disabled, not hidden, so its position never shifts.
+        </p>
+      </section>
+
+      <section>
+        <h2>State D — bound: the new thread is live</h2>
+        <div class="stage">
+          <div class="device">
+            <div class="sidebar">
+              <div class="sidebar-header">
+                Threads
+                <span class="new-thread-btn" title="New thread">
+                  <svg viewBox="0 0 16 16" fill="none">
+                    <path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                  </svg>
+                </span>
+              </div>
+              <div class="sidebar-body">
+                <div class="group-label">
+                  <span class="state-icon running" title="Running"
+                    ><svg viewBox="0 0 12 12" fill="currentColor"><path d="M3 2.2v7.6l6-3.8-6-3.8Z" /></svg
+                  ></span>
+                  investigate-ci
+                  <span style="margin-left: auto; font-size: 11px; color: var(--faint)">1 thread</span>
+                </div>
+                <div class="row current">
+                  <span class="dot ok"></span><span class="name">Look into why the flaky CI job fails…</span>
+                </div>
+                <div class="group-label">
+                  <span class="state-icon running" title="Running"
+                    ><svg viewBox="0 0 12 12" fill="currentColor"><path d="M3 2.2v7.6l6-3.8-6-3.8Z" /></svg
+                  ></span>
+                  demo-a1b2
+                  <span style="margin-left: auto; font-size: 11px; color: var(--faint)">2 threads</span>
+                </div>
+              </div>
+              <div class="sidebar-footer">
+                <span class="gear-btn"
+                  ><svg viewBox="0 0 16 16" fill="none">
+                    <circle cx="8" cy="8" r="2.3" stroke="currentColor" stroke-width="1.3" /></svg
+                ></span>
+              </div>
+            </div>
+            <div class="pane">
+              <div class="breadcrumb">
+                <span class="sandbox-crumb">investigate-ci</span><span class="sep">/</span
+                ><span class="title-crumb">Look into why the flaky CI job fails…</span>
+              </div>
+              <div class="pane-body">
+                <div class="bubble-stub">Look into why the flaky CI job fails on prod-x7f2.</div>
+                <div class="reply-stub">Checking the last ten runs of that job…</div>
+              </div>
+              <div class="composer-stub" style="margin: 0 16px 16px">Enter sends, Ctrl+Enter for a new line</div>
+            </div>
+          </div>
+        </div>
+        <p class="section-note">
+          Same DOM subtree that was showing the target picker a moment ago now shows the real transcript — the picker
+          area and status stack unmount, the transcript/composer mount in their place, the sidebar gains the new thread
+          row and highlights it as current, and the URL updates (<code>history.replaceState</code> to
+          <code>/sandboxes/investigate-ci/sessions/&lt;id&gt;</code>) without a route navigation the operator notices.
+          Refreshing mid-provision (State C) loses the in-flight submission and lands back on an empty picker — a known,
+          accepted rough edge, not solved here.
+        </p>
+      </section>
+
+      <section>
+        <h2>State machine</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>State</th>
+                <th>Picker area</th>
+                <th>Composer</th>
+                <th>Sidebar</th>
+                <th>URL</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="element">Picking (A/B)</td>
+                <td class="muted">Segmented control + Sandbox picker or new-sandbox form</td>
+                <td class="muted">Enabled, empty or draft</td>
+                <td class="muted">"+" highlighted active, no new row</td>
+                <td class="muted">unscoped: none changed · pre-scoped: that Sandbox's page</td>
+              </tr>
+              <tr>
+                <td class="element">Provisioning (C)</td>
+                <td class="muted">Status stack (Sandbox created → Pod ready → Thread starting)</td>
+                <td class="muted">Disabled; draft shown as a pending bubble above it</td>
+                <td class="muted">New group appears, "provisioning" state icon, no thread row yet</td>
+                <td class="muted">unchanged</td>
+              </tr>
+              <tr>
+                <td class="element">Bound (D)</td>
+                <td class="muted">Gone — real transcript in its place</td>
+                <td class="muted">Enabled, normal composer</td>
+                <td class="muted">New thread row, marked current</td>
+                <td class="muted"><code>history.replaceState</code> to the real thread URL</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section>
+        <h2>Behavior notes</h2>
+        <ul class="notes">
+          <li>
+            <b>One composer component, three call sites.</b> The sidebar's unscoped "+"
+            (<code>UISHELL_NEWTHREAD_LANDING</code>), a Sandbox page's pre-scoped "+ New thread"
+            (<code>UISHELL_NEWTHREAD_SANDBOX</code>), and an already-bound open thread (<code>session.tsx</code>) render
+            the same component in three states, not three components — a pre-scoped entry starts in State A/B with the
+            segmented control and Sandbox picker hidden and that Sandbox already fixed, exactly the "no sandbox/preset
+            picker" card already sketched in <code>app_shell.html</code>.
+          </li>
+          <li>
+            <b>No new combined backend RPC is needed to build this.</b> <code>POST /sandboxes</code> is already async
+            with its state pushed live (<code>useLive</code>/<code>liveSandboxUrl</code> — see
+            <code>sandboxes.tsx:105</code>), and
+            <code>openSession(name, sessionId, spec)</code> (<code>sandbox_page.tsx:277-302</code>) is already a
+            separate call made once <code>state === "running"</code>. The frontend sequences the two over the live
+            stream it already has: create → observe <code>running</code> → open session. Existing-sandbox targets that
+            aren't <code>running</code> yet (suspended, still provisioning) go through the same status stack, resuming
+            first if needed.
+          </li>
+          <li>
+            <b>Hardening this server-side is a possible later step, not a blocker.</b> Client-side sequencing means
+            closing the tab mid-provision abandons the in-flight submission (State C's known rough edge above); if that
+            turns out to matter in practice, a single server-side "create sandbox, then thread" endpoint could replace
+            the two-call dance without changing anything in this mock's states or transitions — deliberately left open,
+            not decided here.
+          </li>
+          <li>
+            <b>The draft is captured optimistically on Enter</b>, before any network call — so it survives as the
+            pending bubble even if the very first request (creating the Sandbox) fails; a failure surfaces inline in the
+            status stack (replacing the failed step with an error line and a Retry), and the draft stays intact for the
+            operator to retry rather than needing to be retyped.
+          </li>
+        </ul>
+      </section>
+
+      <footer>
+        Mock for <code>x/agentplane/plans/task_dag.md</code>'s <code>UISHELL_NEWTHREAD_LANDING</code> and
+        <code>UISHELL_NEWTHREAD_SANDBOX</code> · not wired to real state
+      </footer>
+    </main>
+  </body>
+</html>

@@ -17,3 +17,7 @@ for.
   picker, kebab menu, interrupt) already shipped in the transcript-restyle PR; kept for the
   status-dot state-machine table (`status`/`harness` → one of four dots), which is more detailed
   than what actually shipped.
+- **`new_thread_landing.html`** — the unscoped/pre-scoped "New thread" composer
+  (`UISHELL_NEWTHREAD_LANDING`/`UISHELL_NEWTHREAD_SANDBOX` in [`../task_dag.md`](../task_dag.md)) as
+  one page with three states (picking a target, provisioning, bound to the live thread) instead of a
+  separate wizard — the composer and its position never change across states.
