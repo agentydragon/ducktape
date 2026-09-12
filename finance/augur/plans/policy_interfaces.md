@@ -1,10 +1,11 @@
 # Actor-facing policy interfaces
 
 Target design for the remaining migration and gates in [the roadmap](roadmap.md).
-The [GWORLD and GMETRICS decisions](library_design_gates.md) are still open:
-these sketches do not finalize a public World, component-registration/step
-protocol, or metrics collector. Preserve the settled economic action contract
-while comparing those alternatives.
+The composition decision is recorded in [the gate note](library_design_gates.md):
+a coordinating `World` over tracked components whose `step()` opens the month,
+drains a deterministic queue of typed messages and closes; each tracked
+`EconomicAgent`'s `decide` handles month-opened once per month with its inbox. GMETRICS is still open; these sketches
+do not finalize a metrics collector. Preserve the settled economic action contract.
 Reuse the common `ActionSession` and its single batch contract. Public requests
 already belong to `sim/actions.py`, current facts to `sim/observations.py`, and
 lifecycle to `sim/session.py`; there is no public native wrapper counterpart.
@@ -14,10 +15,9 @@ existing domain types only for a supported consumer.
 The boundary is economic agency: a policy sees information available to its actor
 and requests actions that actor could take. The environment owns contracts,
 execution and consequences. **Python owns the outer loop for every consumer**, including
-the app as it migrates. Financial execution is Python-owned. A World may still
-coordinate all participating economic objects and enforce cross-object invariants;
-experiment ownership of the loop does not rule that out. GWORLD chooses the
-public ownership and lifecycle mechanism, not whether accounting duties matter.
+the app as it migrates. Financial execution is Python-owned. The World coordinates
+all participating economic objects and enforces cross-object invariants; the
+experiment owns the loop around `World.step()`.
 Rule-driven brokers, lenders and tax authorities suffice; this does not require a
 strategic many-agent economy.
 
@@ -230,8 +230,8 @@ The Python session advances each component once before investor operations,
 including scheduled/configured redemptions, then settles its financial effects
 through direct Python-world financial calls. Candidate state is adopted only with accepted
 cash/tax settlement. Accounting/capture may retain immutable reporting statements,
-never a mirrored mutable position/basis book. Whether the experiment supplies these
-components to World or another coordinator is a GWORLD decision. No custom exception taxonomy, model
+never a mirrored mutable position/basis book. The experiment tracks these components on the
+World. No custom exception taxonomy, model
 callback handoff or generic managed-account API is needed.
 
 The [paired TLH study](managed_portfolio.md) remains future work. Tax-aware rules
