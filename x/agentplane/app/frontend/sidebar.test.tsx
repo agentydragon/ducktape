@@ -192,8 +192,11 @@ function footerButton(label: string): HTMLButtonElement {
   return found;
 }
 
-it("routes the footer icons to pending approvals, Action history, and Settings", async () => {
+it("routes the footer icons to Sandboxes, pending approvals, Action history, and Settings", async () => {
   const { onOpenSettings } = await render([], {});
+
+  await act(async () => footerButton("Sandboxes").click());
+  expect(location()).toBe("/sandboxes");
 
   await act(async () => footerButton("Pending approvals").click());
   expect(location()).toBe("/actions");

@@ -7,6 +7,7 @@ import { ActionIcon, Switch, Text, Tooltip } from "@mantine/core";
 // Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
 import IconArchive from "@tabler/icons-react/dist/esm/icons/IconArchive.mjs";
 import IconArchiveOff from "@tabler/icons-react/dist/esm/icons/IconArchiveOff.mjs";
+import IconBox from "@tabler/icons-react/dist/esm/icons/IconBox.mjs";
 import IconCircleX from "@tabler/icons-react/dist/esm/icons/IconCircleX.mjs";
 import IconClock from "@tabler/icons-react/dist/esm/icons/IconClock.mjs";
 import IconHistory from "@tabler/icons-react/dist/esm/icons/IconHistory.mjs";
@@ -396,6 +397,15 @@ export function Sidebar({
         )}
       </div>
       <div className="agentplane-sidebar-footer">
+        <Tooltip label="Sandboxes" withArrow>
+          <ActionIcon
+            variant={location.pathname === "/sandboxes" ? "light" : "subtle"}
+            aria-label="Sandboxes"
+            onClick={() => void navigate("/sandboxes")}
+          >
+            <IconBox size={15} />
+          </ActionIcon>
+        </Tooltip>
         <Tooltip label="Pending approvals" withArrow>
           <ActionIcon
             variant={location.pathname === "/actions" ? "light" : "subtle"}
