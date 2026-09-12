@@ -21,7 +21,7 @@ spec:
         kubernetes.io/hostname: wyrm2
       containers:
         - name: rtl-tcp
-          image: git.allegedly.works/ducktape-ci/rtl-tcp:devel-20260912183822-c34f50a # {"$imagepolicy": "flux-system:rtl-tcp"}
+          image: git.allegedly.works/ducktape-ci/rtl-tcp:devel-20260912233729-25e3111 # {"$imagepolicy": "flux-system:rtl-tcp"}
           ports:
             - containerPort: 1234
               name: iq-stream
