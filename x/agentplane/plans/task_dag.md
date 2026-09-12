@@ -84,6 +84,7 @@ bindings auto-approved GitHub reads that executed through the operator-linked Gi
 repeated idempotency key was refused and recovered by key; a pending Action was approved by the
 operator through Authentik federation and executed; and a browser push arrived and was decided
 from its buttons. Not tested: upstream refresh, rotation, and the Kubernetes provider (`MCPAUTH`);
+that operator REST and enrollment-management routes are unreachable through the public MCP route;
 and, left to bug reports, the Deny control, grant retention across refresh and restart, negative
 isolation and revocation for an external client, duplicate Decision or Execution under retries or
 reconnect, push subscription revocation, unavailable-push and SSE fallbacks, and Web Push
@@ -91,12 +92,13 @@ reconciliation after reconnect.
 
 The external-client track is complete and single-operator: Identity (configured authority),
 Connection (runtime named client enrollment), and Thread (execution/conversation state), with no
-multi-operator management or per-operator ownership model; the
-[external connection plan](external_mcp_connections.md) keeps its compatibility notes and the Haku
-migration. A backend credential binds to an ActionGroup's executor
-([MCP executor transports](../action_service/README.md#mcp-executor-transports)), never to the
-caller, and no linked token, static bearer, or kubeconfig reaches the MCP client, Sandbox,
-transcript, or Action prompt; outbound account OAuth remains `MCPAUTH`. The Kubernetes, SSH, and
+multi-operator management or per-operator ownership model. Credentials bind to a ServiceAccount,
+the principal policies bind to; the backend credentials in use are the ActionGroup executor's auth
+modes ([MCP executor transports](../action_service/README.md#mcp-executor-transports)), shared by
+every caller of the group, and no linked token, static bearer, or kubeconfig reaches the MCP
+client, Sandbox, transcript, or Action prompt; outbound account OAuth remains `MCPAUTH`. Generic
+tool discovery stays compact; a client that needs more opts into a schema or description per
+Action. The Kubernetes, SSH, and
 GitHub affordances run behind the frontend; what remains of the Haku Console cutover is policy
 parity (`CONSOLE_POLICIES`) and retiring the aggregator (`MCPAGG`, `RETIRE_TOOLS`).
 The deny lists of the landed [action policies](../docs/action_policies.md) are `DENY_LISTS`.
@@ -417,9 +419,11 @@ each resource-owning service retains its authorization, independent of caller au
 Sharing an Identity's Action scope does not by itself grant access to another service.
 
 Discuss resource-specific permissions, credential audiences, trusted identity propagation, revocation, and preservation
-of exact client provenance across services. The [external connection plan](external_mcp_connections.md)
-records the boundary. This is not a prerequisite for the current DCR/consent slice, not a decision
-to extract now, and not a reason to add speculative service interfaces or preset coupling.
+of exact client provenance across services. The in-process placement is the first delivery slice,
+not an ownership decision: other services need not become Action executors to be accessible, and
+sharing authentication infrastructure does not require one bearer accepted everywhere. This is not
+a decision to extract now, and not a reason to add speculative service interfaces or preset
+coupling.
 
 ### `ING` — Event & Notification Hub
 
@@ -438,6 +442,11 @@ Action outbox or event store; cross-Identity delivery requires an explicit read 
   [`external_access.md`](external_access.md);
 - MCP registry, dynamic action marketplace, standing grants, and cross-agent permissions;
 - per-destination workload audiences until recipient isolation is required;
+- per-ServiceAccount backend credential bindings — every caller of an ActionGroup shares its
+  executor's credential today;
+- per-Action MCP projection and new generic-tool metadata such as output schemas;
+- registration/enrollment retention cleanup, once actual growth is measured — bounded expiry that
+  preserves historical attribution and replay tombstones, never a gate for client use;
 - broad profiles beyond the landed launch-preset slice;
 - separating the egress proxy's rule namespace from its Sandbox namespace — both deployments pass
   one namespace for both today, the reason separation mattered is not recorded, and a split has to
