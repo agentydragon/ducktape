@@ -122,6 +122,7 @@ py_test(
         "AUGUR_BUNDLE_INDEX_RUNFILE": "_main/finance/augur/frontend/dist/index.html",
         "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
     },
+    tags = ["visual"],
     deps = [
         ":conftest",
         ":dev_server",
