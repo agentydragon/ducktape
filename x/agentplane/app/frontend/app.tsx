@@ -15,17 +15,6 @@ function sandboxPath(name: string): string {
   return `/sandboxes/${encodeURIComponent(name)}`;
 }
 
-/**
- * The three pages the Settings modal replaced kept their own routes; a path among them still opens
- * the modal on the matching tab, so an old bookmark or the visual-test harness's `#/connections`
- * still lands somewhere sensible without a dedicated `<Route>`.
- */
-const LEGACY_SETTINGS_PATH: Record<string, SettingsTab> = {
-  "/connections": "oauth-clients",
-  "/mcp-servers": "mcp-servers",
-  "/notifications": "notifications",
-};
-
 function sessionPath(name: string, sessionId: string): string {
   return `${sandboxPath(name)}/sessions/${encodeURIComponent(sessionId)}`;
 }
@@ -75,10 +64,10 @@ function AppRoutes(): JSX.Element {
   const navigate = useNavigate();
   const location = useLocation();
   const sessionRoute = useMatch("/sandboxes/:name/sessions/:sessionId");
-  // Seeded from the initial path so a legacy link/bookmark (or the visual-test harness) opens
-  // straight to the matching tab; afterwards the modal is plain local UI state, not routed.
-  const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(
-    () => LEGACY_SETTINGS_PATH[location.pathname] ?? null
+  // Not legacy-path compatibility: api.py's MCP-linkage OAuth callback redirects the browser here
+  // on completion, and it needs to land showing the result rather than the Sandboxes list.
+  const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(() =>
+    location.pathname === "/mcp-servers" ? "mcp-servers" : null
   );
   return (
     <Container size="xl" py="md" h={sessionRoute ? "100dvh" : undefined}>

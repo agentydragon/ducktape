@@ -233,9 +233,10 @@ redaction are unchanged. There is no app-owned Action/Decision/Execution authori
 
 ## Settings
 
-The nav row's Settings button opens a modal with OAuth clients/MCP servers/Notifications tabs;
-`/#/connections`, `/#/mcp-servers`, and `/#/notifications` still open it pre-selected to the
-matching tab, so old links and the visual-test harness keep working without a dedicated route.
+The nav row's Settings button opens a modal with OAuth clients/MCP servers/Notifications tabs; it
+has no dedicated route of its own. The one exception is `/#/mcp-servers`, the MCP-linkage OAuth
+callback's redirect target (see below): landing there opens the modal pre-selected to that tab
+instead of showing the Sandboxes list as if the linkage completed silently.
 
 The OAuth clients tab lists the Action Service's runtime named Connections, each row showing its
 most recent grant's OAuth client ID and the ServiceAccount it acts as; superseded grants stay in
