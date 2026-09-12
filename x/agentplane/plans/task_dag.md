@@ -72,7 +72,7 @@ flowchart TB
     UISHELL_NEWTHREAD_LANDING["Planned UI<br/>sidebar '+' unscoped new-thread composer<br/>Sandbox/preset/model pickers + prompt"]:::future
     THREAD_BROWSE_PAGINATE["Deferred, way later<br/>paginated/searchable all-threads page<br/>find an old Thread once the sidebar list outgrows it"]:::future
     NO_MANUAL_REFRESH["Planned principle<br/>no page in the app needs a Refresh button<br/>push (WS or SSE) everywhere, not just Sandboxes/Actions"]:::future
-    ACTION_JSON_POLISH["Planned UI polish<br/>syntax-highlighted JSON, parsed MCP content blocks<br/>verbose IDs behind disclosure, consistent card styling"]:::future
+    ACTION_JSON_POLISH["Planned UI polish<br/>parse MCP content blocks in Action results<br/>rest landed via #6303 (#6309 open)"]:::future
 
     CRED --> MCPAUTH
     MCPAUTH --> PROD
@@ -665,36 +665,18 @@ here.
 
 **No dependency** on the UI-shell cluster above; ships independently, one tab/page at a time.
 
-### `ACTION_JSON_POLISH` — syntax-highlighted, less verbose Action rendering
+### `ACTION_JSON_POLISH` — parse the MCP content-block shape in Action results
 
-**Planned UI polish**, mostly in `actions.tsx`/`actions_history.tsx` but not only there:
+**Landed via #6303** (merged): a shared syntax-highlighted-JSON component (`json_view.tsx`) reused
+at every raw-JSON dump site (`actions.tsx`, `actions_history.tsx`, `session.tsx`,
+`sandbox_page.tsx`), verbose per-request identifiers (`request.id`, the external-grant
+caller/client/issuer/connection lines) collapsed behind one disclosure widget, and styling parity
+between the pending and history cards.
 
-- **Syntax-highlighted JSON, generally — every raw-JSON dump in the app, not one component.**
-  `JsonProjection` (`actions.tsx:30-34`) is a plain `<Code block>{JSON.stringify(value, null, 2)}`
-  with no highlighting; it renders `request.arguments`, `request.execution.result`, and
-  `request.execution.error`. The identical pattern (plain `<Code block>` around
-  `JSON.stringify`/a pre-stringified field, no highlighting) recurs at every other raw-JSON site
-  in the frontend: `session.tsx:185-186` (`item.argumentsJson`/`item.output`, the transcript's own
-  tool-call rendering) and `sandbox_page.tsx:91` (the Status tab's whole-Sandbox dump). One fix
-  covers all of them — a shared highlighted-JSON component, not a per-file patch.
-- **Parse the MCP content-block shape instead of re-stringifying it whole.** An MCP tool call's
-  `execution.result` is `{"content": [<json-encoded string>, ...]}`; `JsonProjection` stringifies
-  the outer object as-is, so a JSON string inside `content` renders as one escaped-quote wall of
-  text instead of being parsed and pretty-printed. At minimum, detect and recursively
-  parse/pretty-print a JSON string sitting inside a `content` array rather than leaving it
-  double-encoded.
-- **Collapse verbose per-request identifiers behind a disclosure widget by default**, not shown
-  unconditionally: `request.id` (the "Request {id}" line in both cards), and — inside
-  `ExternalGrantDetails` (`actions.tsx:36-68`) — the caller/client_id/issuer/connection_id lines,
-  currently always visible above the already-collapsed "Grant audit details" `<details>`. The
-  file already has two disclosure idioms in active use nearby (`<details>`/`<summary>` and
-  Mantine's `Accordion`, wrapping "Arguments" in `actions_history.tsx`) — reuse one rather than
-  inventing a third.
-- **Card styling drifted between the pending and history views** of the same fields: the
-  group/name text is monospace in `HistoryCard` (`actions_history.tsx`) but not in
-  `PendingActionCard` (`actions.tsx`); the caller-principal text is `size="xs"` in the pending
-  card's `ActionCaller` but `size="sm"` in history's inline "requested by" line. Both cards render
-  the same conceptual fields and should match.
+**Remaining, in #6309 (open):** an MCP tool call's `execution.result` is
+`{"content": [<json-encoded string>, ...]}`; recursively parse/pretty-print a JSON string sitting
+inside a `content` array rather than leaving it double-encoded, so it renders as structure instead
+of one escaped-quote wall of text.
 
 **No dependency** on the UI-shell cluster; ships independently.
 
