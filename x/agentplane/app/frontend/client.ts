@@ -33,6 +33,7 @@ export type ThreadView = components["schemas"]["ThreadView"];
 export type BindingView = components["schemas"]["BindingView"];
 export type PolicyView = components["schemas"]["PolicyView"];
 export type ActionPolicyView = components["schemas"]["ActionPolicyView"];
+export type ActionPolicyUnavailable = components["schemas"]["ActionPolicyUnavailable"];
 export type ActionPolicyBindingView = components["schemas"]["ActionPolicyBindingView"];
 export type ActionPolicySetView = components["schemas"]["ActionPolicySetView"];
 export type EffectivePolicyView = components["schemas"]["EffectivePolicyView"];

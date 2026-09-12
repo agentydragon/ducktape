@@ -173,6 +173,7 @@ const BINDINGS: BindingView[] = [
  * since it was judged, refused, and missing.
  */
 const ACTION_POLICY: ActionPolicyView = {
+  synced: true,
   bindings: [
     {
       name: "demo-a1b2-k2m9x",

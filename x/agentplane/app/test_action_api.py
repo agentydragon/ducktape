@@ -6,7 +6,7 @@ import asyncio
 import logging
 import time
 from collections.abc import AsyncIterator, Callable
-from contextlib import AsyncExitStack
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import cast
@@ -17,6 +17,8 @@ import httpx
 import jwt
 import pytest
 import pytest_bazel
+import uvicorn
+from fastapi import FastAPI
 from fastmcp import FastMCP
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -40,11 +42,20 @@ from x.agentplane.action_service.models import (
     PrincipalRole,
 )
 from x.agentplane.action_service.operator_oidc import OidcOperatorAuthenticator, OperatorOidcSettings
+from x.agentplane.action_service.policy_informer import PolicyIndex, namespaced_key
+from x.agentplane.action_service.policy_resources import parse_binding, parse_policy_set
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.test_fixtures.callers import PERSONAL, eligible_callers
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.app.action_federation import ExchangeFederationSettings, FederatedOperatorActions
-from x.agentplane.app.action_policy import ActionPolicyInventory
+from x.agentplane.app.action_policy import (
+    MANAGED_BY_APP,
+    MANAGED_BY_LABEL,
+    ActionPolicyInventory,
+    ActionPolicyUnavailable,
+    ActionPolicyView,
+    BindingProvenance,
+)
 from x.agentplane.app.api import Provider, create_app
 from x.agentplane.app.bridge import RunnerBridge
 from x.agentplane.app.conftest import AGENT_AUTH
@@ -53,8 +64,9 @@ from x.agentplane.app.decisions import DecisionsClient
 from x.agentplane.app.egress import EgressInventory
 from x.agentplane.app.identity import TokenReviewer
 from x.agentplane.app.inventory import SandboxInventory
-from x.agentplane.app.live import LiveIndex
-from x.agentplane.app.oidc import OIDCSettings
+from x.agentplane.app.live import LiveIndex, SandboxSnapshot
+from x.agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings
+from x.agentplane.app.testing.kubernetes import NAMESPACE, FakeCustomObjectsApi, sandbox
 from x.agentplane.app.trajectory import TrajectoryStore
 from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
 
@@ -74,6 +86,8 @@ class Review:
     exchanged_subjects: list[str]
     enrollments: EnrollmentAuthority
     connections: ConnectionAuthority
+    policies: PolicyIndex
+    app: FastAPI
 
 
 @pytest.fixture
@@ -113,16 +127,19 @@ async def review(
         executor = McpActionGroupExecutor("test_review", group, server)
         stack.push_async_callback(executor.close)
         await executor.start()
-        service = ActionService(ActionStore(make_sessionmaker(engine)), catalog, {"test_review": executor})
-        stack.push_async_callback(service.close)
-        await service.start()
         private_key, public_key = generate_rsa_keypair()
         idp_sock = bind_free_port()
         idp_origin, app_url = f"http://127.0.0.1:{idp_sock.getsockname()[1]}", "http://test-app.invalid"
         idp_url = f"{idp_origin}/application/o/login/"
         target_issuer = f"{idp_origin}/application/o/actions/"
         target = OperatorOidcSettings(issuer=target_issuer, audience="test-actions", jwks_uri=f"{idp_url}jwks/")
-        connections = ConnectionAuthority(make_sessionmaker(engine), eligible_callers(PERSONAL))
+        policies = eligible_callers(PERSONAL)
+        service = ActionService(
+            ActionStore(make_sessionmaker(engine)), catalog, {"test_review": executor}, policies=policies
+        )
+        stack.push_async_callback(service.close)
+        await service.start()
+        connections = ConnectionAuthority(make_sessionmaker(engine), policies)
         enrollments = EnrollmentAuthority(make_sessionmaker(engine), connections)
         downstream = service_api.create_app(
             service,
@@ -282,6 +299,8 @@ async def review(
             exchanged_subjects,
             enrollments,
             connections,
+            policies,
+            app,
         )
 
 
@@ -343,6 +362,101 @@ async def test_connection_management_preserves_federation_csrf_versions_and_hist
     assert unbound.json()["grants"][0]["id"] == str(grant.id)
     assert len((await browser.get("/connections")).json()) == 1
     assert review.calls == []
+
+
+def _bind_live_sandbox(policies: PolicyIndex, sandbox_uid: str) -> None:
+    """What the Action Service's informer would hold: a set and a binding pinning the Sandbox's UID,
+    plus a binding for another Sandbox of the same name that must not show."""
+    metadata = {"namespace": NAMESPACE, "uid": "test-uid", "generation": 1, "resourceVersion": "1"}
+    policies.policy_sets[namespaced_key(NAMESPACE, "test-reads")] = parse_policy_set(
+        {
+            "metadata": {"name": "test-reads", **metadata},
+            "spec": {"autoApproveIf": [{"type": "exact_actions", "actions": {"test_review": ["record"]}}]},
+        }
+    )
+    for name, uid, labels in (
+        ("live-launch", sandbox_uid, {MANAGED_BY_LABEL: MANAGED_BY_APP}),
+        ("live-previous", str(uuid4()), {}),
+    ):
+        policies.bindings[namespaced_key(NAMESPACE, name)] = parse_binding(
+            {
+                "metadata": {"name": name, "labels": labels, **metadata},
+                "spec": {"subject": {"sandbox": {"name": "live", "uid": uid}}, "policySets": ["test-reads", "gone"]},
+            }
+        )
+
+
+@asynccontextmanager
+async def _served(app: FastAPI) -> AsyncIterator[str]:
+    """The app on a real socket, in this loop: the in-memory transport waits for a body that never
+    ends, and another thread's loop could not use the store's connections."""
+    port = pick_free_port()
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
+    serving = asyncio.create_task(server.serve())
+    while not server.started:
+        if serving.done():
+            serving.result()
+            raise RuntimeError("uvicorn exited before starting")
+        await asyncio.sleep(0.02)
+    try:
+        yield f"http://127.0.0.1:{port}"
+    finally:
+        server.should_exit = True
+        await serving
+
+
+async def _first_snapshot(client: httpx.AsyncClient, path: str, headers: dict[str, str]) -> SandboxSnapshot:
+    async with client.stream("GET", path, headers=headers) as stream:
+        lines = stream.aiter_lines()
+        async for line in lines:
+            if line == "event: snapshot":
+                return SandboxSnapshot.model_validate_json((await anext(lines)).removeprefix("data: "))
+    raise AssertionError("the stream ended before its first snapshot")
+
+
+@pytest.mark.parametrize("operator_connection", ["configured", "disabled"])
+async def test_the_sandbox_policy_is_the_services_answer_for_its_uid_or_says_why_not(
+    review: Review, custom_objects: FakeCustomObjectsApi, live_index: LiveIndex, operator_connection: str
+) -> None:
+    """The route and the live frame both carry what the Action Service resolves for the Sandbox's
+    UID through the operator federation, with the app adding only who wrote each binding. Where
+    the service cannot be asked, the route fails as the other operator routes do and the frame
+    says so in place of the policy rather than showing an empty one."""
+    custom_objects.objects[("sandboxes", "live")] = live_index.sandboxes["live"] = sandbox("live")
+    _bind_live_sandbox(review.policies, custom_objects.objects[("sandboxes", "live")]["metadata"]["uid"])
+    browser = review.browser
+    assert (await browser.get("/sandboxes/live/action-policy", headers=AGENT_AUTH)).status_code == 403
+    await browser.get("/auth/login")
+
+    response = await browser.get("/sandboxes/live/action-policy")
+    if operator_connection == "disabled":
+        assert (response.status_code, response.json()["detail"]) == (
+            503,
+            {"code": "operator_federation_not_configured"},
+        )
+    else:
+        assert response.status_code == 200, response.text
+        view = ActionPolicyView.model_validate(response.json())
+        assert view.synced is True
+        (binding,) = view.bindings
+        assert (binding.name, binding.provenance, binding.missing_policy_sets) == (
+            "live-launch",
+            BindingProvenance.APP,
+            ["gone"],
+        )
+        assert [(p.binding, p.policy_set, p.index) for p in view.auto_approve_if] == [("live-launch", "test-reads", 0)]
+        assert (await browser.get("/sandboxes/nope/action-policy")).status_code == 404
+
+    session = {"Cookie": f"{INSECURE_COOKIE}={browser.cookies[INSECURE_COOKIE]}"}
+    async with _served(review.app) as url, httpx.AsyncClient(base_url=url) as client:
+        frame = await _first_snapshot(client, "/live/sandboxes/live", session)
+        assert frame.sandbox is not None
+        if operator_connection == "disabled":
+            assert frame.action_policy == ActionPolicyUnavailable(code="operator_federation_not_configured")
+        else:
+            assert frame.action_policy == ActionPolicyView.model_validate(response.json())
+        as_agent = await _first_snapshot(client, "/live/sandboxes/live", AGENT_AUTH)
+        assert as_agent.action_policy == ActionPolicyUnavailable(code="operator_session_required")
 
 
 @pytest.mark.parametrize("operator_connection", ["disabled", "target-subject-mismatch", "wrong-audience"])

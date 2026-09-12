@@ -1,8 +1,9 @@
 # Action policy bindings
 
 Status: **decided 2026-09-12; the Action Service side has landed (CRDs, informer, ServiceAccount
-callers, evaluation, evidence, the acceptance scenario), and so has the integration app's binding
-writer and read-only view; the deny lists are the step below.**
+callers, evaluation, evidence, the caller and operator reads of the effective policy, the acceptance
+scenario), and so has the integration app's binding writer and Sandbox page; the deny lists are the
+step below.**
 The single operator configures bounded auto-approval for both external MCP connections and
 harnesses running in Threads inside Sandboxes. Both use the canonical Action Service and Decision
 lifecycle. Identity/OAuth/Connection authority is implemented independently of policy

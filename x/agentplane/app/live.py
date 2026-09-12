@@ -4,7 +4,9 @@ to the open tabs as SSE.
 `inventory.py` and `egress.py` answer a request by listing against the API server and hold nothing
 in between; this keeps the same objects between requests instead, so a change reaches a tab when it
 happens rather than at the next poll, and one watch serves every tab. The projections are theirs --
-`sandbox_views`, `matching_bindings` -- so a pushed row and a fetched one cannot drift.
+`sandbox_views`, `matching_bindings` -- so a pushed row and a fetched one cannot drift. The action
+policy is the Action Service's answer, not a projection of anything held here: the two policy kinds
+are watched only so that an event on either re-asks the service.
 
 A frame is a whole snapshot of what the subscription covers, not a delta. Kubernetes watch state is
 not a durable log to resume against: a relist replaces a kind wholesale and a `resourceVersion`
@@ -28,6 +30,7 @@ from datetime import UTC, datetime
 from typing import Annotated, Any
 from uuid import UUID
 
+import httpx
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 from kubernetes_asyncio import client as k8s_client
@@ -36,7 +39,13 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from util.kubernetes import CustomObjectsClient
 from x.agentplane.action_service import policy_resources
-from x.agentplane.app.action_policy import ACTION_POLICY_API, ActionPolicyView, action_policy_view
+from x.agentplane.app.action_federation import OperatorFederationError, operator_actions, upstream_failure_detail
+from x.agentplane.app.action_policy import (
+    ACTION_POLICY_API,
+    ActionPolicyInventory,
+    ActionPolicyUnavailable,
+    ActionPolicyView,
+)
 from x.agentplane.app.changes import Changes
 from x.agentplane.app.egress import (
     BINDINGS_PLURAL,
@@ -46,6 +55,7 @@ from x.agentplane.app.egress import (
     BindingView,
     matching_bindings,
 )
+from x.agentplane.app.identity import CallerIdentity, require_caller
 from x.agentplane.app.inventory import (
     MANAGED_LABEL,
     SANDBOX_API,
@@ -98,8 +108,9 @@ class SandboxSnapshot(BaseModel):
 
     sandbox: SandboxView | None = Field(description="None once the sandbox is gone: deleted, or never there.")
     bindings: list[BindingView]
-    action_policy: ActionPolicyView | None = Field(
-        description="None with the sandbox: a policy subject pins its UID, so a gone sandbox has none."
+    action_policy: ActionPolicyView | ActionPolicyUnavailable | None = Field(
+        description="The Action Service's answer for the sandbox, or why it could not be asked; None only with "
+        "the sandbox, since a policy subject pins its UID and a gone sandbox has none."
     )
     threads: list[ThreadView]
     watch: WatchHealth
@@ -119,8 +130,12 @@ class LiveIndex:
     bindings: dict[str, object] = field(default_factory=dict)
     policies: dict[str, object] = field(default_factory=dict)
     credentials: dict[str, object] = field(default_factory=dict)
-    action_policy_sets: dict[str, dict[str, Any]] = field(default_factory=dict)
-    action_policy_bindings: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # The action policy kinds are a trigger, not a copy: the Action Service's informer holds the
+    # objects, and the sandbox stream asks it again whenever this moves. Only the names stay, for a
+    # relist to reconcile against.
+    action_policy_sets: set[str] = field(default_factory=set)
+    action_policy_bindings: set[str] = field(default_factory=set)
+    action_policy_changes: int = 0
     refreshed: dict[str, datetime] = field(default_factory=dict)
     changes: Changes = field(default_factory=Changes)
 
@@ -136,12 +151,13 @@ class LiveIndex:
             self.bindings.values(), self.policies.values(), self.credentials.values(), sandbox=name
         )
 
-    def action_policy_for(self, sandbox_uid: UUID, now: datetime) -> ActionPolicyView:
-        """Expiry is judged at `now`, the frame's time: a binding lapsing while nothing else changes
-        leaves the page at the next frame, not at the instant."""
-        return action_policy_view(
-            self.action_policy_bindings.values(), self.action_policy_sets.values(), sandbox_uid=sandbox_uid, now=now
-        )
+    def action_policy_seen(self, names: set[str], name: str, obj: object | None) -> None:
+        """`apply` for the two policy kinds: keep the name, bump the trigger."""
+        if obj is None:
+            names.discard(name)
+        else:
+            names.add(name)
+        self.action_policy_changes += 1
 
     def health(self, now: datetime) -> WatchHealth:
         ages = {kind: (now - at).total_seconds() for kind, at in self.refreshed.items()}
@@ -235,7 +251,7 @@ def watch_for(
                 args=(*ACTION_POLICY_API, sandbox_namespace, policy_resources.POLICY_SETS_PLURAL),
                 parse=_named,
                 names=lambda: set(index.action_policy_sets),
-                apply=lambda name, obj: apply_to(index.action_policy_sets, name, obj),
+                apply=lambda name, obj: index.action_policy_seen(index.action_policy_sets, name, obj),
             ),
             WatchedKind(
                 name=policy_resources.BINDINGS_PLURAL,
@@ -243,7 +259,7 @@ def watch_for(
                 args=(*ACTION_POLICY_API, sandbox_namespace, policy_resources.BINDINGS_PLURAL),
                 parse=_named,
                 names=lambda: set(index.action_policy_bindings),
-                apply=lambda name, obj: apply_to(index.action_policy_bindings, name, obj),
+                apply=lambda name, obj: index.action_policy_seen(index.action_policy_bindings, name, obj),
             ),
         ),
         resync_seconds=resync_seconds,
@@ -283,11 +299,53 @@ def _frame(event: str, data: dict[str, object]) -> bytes:
     return f"event: {event}\ndata: {json.dumps(data)}\n\n".encode()
 
 
+async def action_policy_frame(
+    request: Request, caller: CallerIdentity, inventory: ActionPolicyInventory, sandbox_uid: UUID
+) -> ActionPolicyView | ActionPolicyUnavailable:
+    """The Action Service's answer for the sandbox, or why it could not be asked: the failure
+    `GET /sandboxes/{name}/action-policy` would answer with, carried in the frame instead of ending
+    a stream that also carries the sandbox itself."""
+    try:
+        return await inventory.for_sandbox(operator_actions(request, caller), sandbox_uid)
+    except OperatorFederationError as error:
+        return ActionPolicyUnavailable(code=str(error))
+    except (httpx.HTTPStatusError, httpx.RequestError) as error:
+        return ActionPolicyUnavailable(code="upstream_request_failed", upstream=upstream_failure_detail(error))
+
+
+class ActionPolicyFrames:
+    """One stream's action policy: asked of the service again when a policy object changed or the
+    sandbox is another incarnation, and otherwise repeated, so a Pod or thread event does not cost an
+    exchange with the identity provider. A failure is never kept; the next change retries."""
+
+    def __init__(
+        self, index: LiveIndex, fetch: Callable[[UUID], Awaitable[ActionPolicyView | ActionPolicyUnavailable]]
+    ) -> None:
+        self._index = index
+        self._fetch = fetch
+        self._kept: tuple[UUID, int, ActionPolicyView] | None = None
+
+    async def for_sandbox(self, sandbox_uid: UUID) -> ActionPolicyView | ActionPolicyUnavailable:
+        seen = self._index.action_policy_changes
+        if self._kept is not None and self._kept[:2] == (sandbox_uid, seen):
+            return self._kept[2]
+        frame = await self._fetch(sandbox_uid)
+        self._kept = (sandbox_uid, seen, frame) if isinstance(frame, ActionPolicyView) else None
+        return frame
+
+
 def _index(request: Request) -> LiveIndex:
     index = request.app.state.live
     if not isinstance(index, LiveIndex):
         raise TypeError(f"app.state.live is {type(index).__name__}, not LiveIndex")
     return index
+
+
+def _action_policy(request: Request) -> ActionPolicyInventory:
+    inventory = request.app.state.action_policy
+    if not isinstance(inventory, ActionPolicyInventory):
+        raise TypeError(f"app.state.action_policy is {type(inventory).__name__}, not ActionPolicyInventory")
+    return inventory
 
 
 def _store(request: Request) -> TrajectoryStore:
@@ -299,6 +357,8 @@ def _store(request: Request) -> TrajectoryStore:
 
 Index = Annotated[LiveIndex, Depends(_index)]
 Store = Annotated[TrajectoryStore, Depends(_store)]
+ActionPolicy = Annotated[ActionPolicyInventory, Depends(_action_policy)]
+Caller = Annotated[CallerIdentity, Depends(require_caller)]
 
 router = APIRouter(prefix="/live", tags=["live"])
 
@@ -337,19 +397,30 @@ async def live_sandboxes(
 
 
 @router.get("/sandboxes/{name}", responses=_SANDBOX_FRAMES)
-async def live_sandbox(index: Index, store: Store, shutdown: Shutdown, name: str) -> StreamingResponse:
+async def live_sandbox(
+    request: Request,
+    caller: Caller,
+    index: Index,
+    store: Store,
+    action_policy: ActionPolicy,
+    shutdown: Shutdown,
+    name: str,
+) -> StreamingResponse:
     """One sandbox page, pushed: the sandbox, its bindings, its action policy, and its threads.
 
     Threads are not Kubernetes and no watch reaches them; the store notifies when it creates or
-    renames one, which is every change a page shows.
+    renames one, which is every change a page shows. The action policy is the Action Service's
+    answer, asked as the operator this session is; the watch on the policy kinds only says when to
+    ask again.
     """
+    policy = ActionPolicyFrames(index, lambda uid: action_policy_frame(request, caller, action_policy, uid))
 
     async def snapshot() -> SandboxSnapshot:
         sandbox = index.sandbox_view(name)
         return SandboxSnapshot(
             sandbox=sandbox,
             bindings=index.bindings_for(name),
-            action_policy=None if sandbox is None else index.action_policy_for(sandbox.uid, datetime.now(UTC)),
+            action_policy=None if sandbox is None else await policy.for_sandbox(sandbox.uid),
             threads=await store.list_threads(sandbox=name),
             watch=_health(index),
         )

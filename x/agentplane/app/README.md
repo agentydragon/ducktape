@@ -29,20 +29,20 @@ bbr test //x/agentplane/app/...
   repository's to remove, so revoking one is refused with 409 rather than deleting an object the
   next reconcile re-creates. `decisions.py` reads the proxy's recent decisions off its admin port,
   and an unreachable proxy leaves the rules readable.
-- `action_policy.py`: the sandbox namespace's `ActionPolicySet` and `ActionPolicyBinding` resources
-  as the app writes and shows them. A preset's `action_policy_sets` become one binding per Sandbox
-  the app launches, owner-referenced to it and labelled `app.agentplane.allegedly.works/managed-by:
-integration-app`; the Action Service evaluates bindings and reads `spec` only, so no preset name
-  reaches it. The read side projects what the service would resolve at admission (below). Nothing
-  edits a binding at runtime; kubectl does.
+- `action_policy.py`: the sandbox namespace's `ActionPolicyBinding`s as the app writes them, and
+  the Action Service's answer for a Sandbox as the app shows it. A preset's `action_policy_sets`
+  become one binding per Sandbox the app launches, owner-referenced to it and labelled
+  `app.agentplane.allegedly.works/managed-by: integration-app`; the Action Service evaluates
+  bindings and reads `spec` only, so no preset name reaches it. The read side asks the service
+  (below). Nothing edits a binding at runtime; kubectl does.
 - `bridge.py`: runner-first commands, leased ingestion per sandbox, and database-backed browser
   SSE; `api.py` is the REST surface and the OpenAPI schema `export_schema.py` emits
   for the frontend's generated client.
 - `client.py`: a Python client over the app's HTTP surface, speaking the app's own request and
   response models and the runner protocol's `Event` messages.
-- `live.py`: one list-and-watch over Sandboxes, their Pods, the egress objects and the action policy
-  objects (`../kubernetes_watch.py`), and the SSE streams that push a snapshot of it to every open
-  tab.
+- `live.py`: one list-and-watch over Sandboxes, their Pods and the egress objects
+  (`../kubernetes_watch.py`), the action policy kinds watched only as a trigger to re-ask the Action
+  Service, and the SSE streams that push a snapshot of it to every open tab.
 - `changes.py`: the payload-free wake-up a reader of the cluster index or the trajectory store waits
   on; a burst of changes coalesces into one re-read.
 - `identity.py`: whether a request proved itself, by whichever credential it carried; `oidc.py` and
@@ -288,18 +288,24 @@ per-turn task remain the place for workload-specific constraints and the request
 
 ## Action policy
 
-The Sandbox page's "Action policy" tab, and `GET /sandboxes/{name}/action-policy` behind it, show what
-the Action Service auto-decides for one Sandbox from the objects as they stand: the unexpired
-`ActionPolicyBinding`s whose subject pins the Sandbox's UID, each with its provenance (git, this app
-at launch, or the operator with kubectl), expiry and the service's `Ready` verdict; every
-`ActionPolicySet` those name, as present, edited since the service judged it, refused with the
-validation report, or missing; and the resulting `autoApproveIf`, `autoDenyIf` and `autoDenyUnless`
-lists in the order the service walks them, each entry naming the binding, set and index a Decision's
-evidence names. The lists are the app's own projection through the service's resource models, not
-a query of the service, so they say what an admission would see now and nothing about past
-Decisions; the Actions page holds those. The tab is read-only. The binding expiry is judged when a
-frame is built, so a binding lapsing while nothing else changes leaves the page at the next frame.
-Which lists the service enforces is its contract
+The Sandbox page's "Action policy" tab, and `GET /sandboxes/{name}/action-policy` behind it, show
+the Action Service's own answer for the Sandbox's UID, read through the operator federation
+(`/v1/operator/action-policy/sandboxes/{namespace}/{uid}`, so an operator session is required as for
+the Actions page): the unexpired `ActionPolicyBinding`s whose subject pins the UID, each with expiry
+and the service's `Ready` verdict; every `ActionPolicySet` those name, as present, edited since the
+service judged it, refused with the validation report, or missing; the resulting `autoApproveIf`,
+`autoDenyIf` and `autoDenyUnless` lists in the order the service walks them, each entry naming the
+binding, set and index a Decision's evidence names; and `synced`, false while the service's watch
+has not synced and nothing auto-decides. It is the resolution an admission would use now, from the
+service that would use it, and says nothing about past Decisions; the Actions page holds those. The
+app adds only each binding's provenance (git, this app at launch, or the operator with kubectl),
+read from labels the service reports. The tab is read-only. The app's own watch of the two kinds is
+a trigger: an event on either re-asks the service for the next frame, and a binding lapsing while
+nothing changes leaves the page at the next frame. The two watches are independent, so a frame can
+briefly precede the service's informer seeing the same event and show the answer from just before
+it. Where the service cannot be asked -- no federation configured, a session to log in again, a
+failed exchange or request -- the frame says so in place of the policy; the route answers as the
+other operator routes do. Which lists the service enforces is its contract
 ([SPEC § Action policies](../action_service/SPEC.md#action-policies)).
 
 ## Decisions

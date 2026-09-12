@@ -31,6 +31,7 @@ from x.agentplane.app import auth_routes, bridge as runner_bridge
 from x.agentplane.app.action_federation import (
     FederatedOperatorActions,
     OperatorFederationError,
+    operator_actions,
     upstream_failure_detail,
 )
 from x.agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyView, UnknownPolicySetError
@@ -50,7 +51,7 @@ from x.agentplane.app.egress import (
     PolicyView,
     UnknownPolicyError,
 )
-from x.agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer, require_caller
+from x.agentplane.app.identity import CallerIdentity, TokenReviewer, require_caller
 from x.agentplane.app.inventory import (
     PRESET_BINDING_ANNOTATION,
     NewSandbox,
@@ -277,10 +278,13 @@ async def sandbox_egress_decisions(inventory: Inventory, decisions: Decisions, n
 
 
 @router.get("/{name}/action-policy")
-async def sandbox_action_policy(inventory: Inventory, action_policy: ActionPolicy, name: str) -> ActionPolicyView:
-    """What the Action Service auto-decides for the sandbox: its unexpired bindings, the sets they
-    name, and the lists that result, as the objects stand now. Read-only; kubectl edits them."""
-    return await action_policy.for_sandbox((await inventory.get(name)).uid)
+async def sandbox_action_policy(
+    inventory: Inventory, action_policy: ActionPolicy, client: OperatorActions, name: str
+) -> ActionPolicyView:
+    """What the Action Service auto-decides for the sandbox, as the service resolves it now for the
+    UID its bindings pin: its unexpired bindings, the sets they name, and the lists that result.
+    Read-only, and an operator's read; kubectl edits the objects."""
+    return await action_policy.for_sandbox(client, (await inventory.get(name)).uid)
 
 
 egress_router = APIRouter(prefix="/egress", tags=["egress"])
@@ -320,18 +324,8 @@ consent_router = APIRouter(prefix="/connection-enrollments", tags=["connections"
 async def _operator_actions(
     request: Request, caller: Annotated[CallerIdentity, Depends(require_caller)]
 ) -> AsyncIterator[OperatorActionServiceClient]:
-    if caller.kind is not CallerKind.OPERATOR:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Action Service management requires an operator session")
-    provider = request.app.state.operator_actions
-    if provider is None:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, {"code": "operator_federation_not_configured"})
-    if not isinstance(provider, FederatedOperatorActions):
-        raise TypeError("operator_actions must be FederatedOperatorActions")
-    session = operator_session(request)
-    if session is None:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "operator_reauthentication_required")
     try:
-        yield provider.for_session(session)
+        yield operator_actions(request, caller)
     except OperatorFederationError as error:
         raise HTTPException(error.status_code, {"code": str(error)}) from None
     except httpx.HTTPStatusError as error:
@@ -343,9 +337,9 @@ async def _operator_actions(
 def upstream_http_error(error: httpx.HTTPStatusError | httpx.RequestError) -> HTTPException:
     """Describe the failed request, which may be to the identity provider or the service."""
     detail = upstream_failure_detail(error)
-    response_status = detail["upstream_status"]
     return HTTPException(
-        response_status if isinstance(response_status, int) else status.HTTP_503_SERVICE_UNAVAILABLE, detail
+        detail.upstream_status if detail.upstream_status is not None else status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail.model_dump(),
     )
 
 

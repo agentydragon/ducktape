@@ -223,7 +223,8 @@ acceptance above remains required even when every offline target is green.
 
 ## Failures are distinguishable and fail closed
 
-- No browser session: 401. A workload caller asking for Action review: 403.
+- No browser session: 401. A workload caller asking for Action review: 403 with
+  `operator_session_required`.
 - Federation absent: 503 with `detail.code=operator_federation_not_configured`.
 - Expired session: 401, re-login. No usable retained access token: 403 with
   `operator_reauthentication_required`.

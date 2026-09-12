@@ -1,8 +1,9 @@
-import { Badge, Code, Group, Stack, Table, Text, Title, Tooltip } from "@mantine/core";
+import { Alert, Badge, Code, Group, Stack, Table, Text, Title, Tooltip } from "@mantine/core";
 
 import type {
   ActionPolicyBindingView,
   ActionPolicySetView,
+  ActionPolicyUnavailable,
   ActionPolicyView,
   EffectivePolicyView,
   ReadyConditionView,
@@ -278,14 +279,44 @@ function PolicyList({
   );
 }
 
+/** Why the frame carries no policy: the service could not be asked, and by whom or what. */
+function Unavailable({ failure }: { failure: ActionPolicyUnavailable }): JSX.Element {
+  return (
+    <Alert color="red" role="alert" title="The Action Service could not be asked">
+      <Text size="sm">
+        <Code>{failure.code}</Code>
+        {failure.upstream && (
+          <>
+            {" "}
+            · {failure.upstream.method} {failure.upstream.url}:{" "}
+            {failure.upstream.upstream_status ?? failure.upstream.error_type}
+          </>
+        )}
+      </Text>
+    </Alert>
+  );
+}
+
 /**
- * What the Action Service auto-decides for the sandbox, from its pushed bindings: the bindings,
- * the sets they name, and the three lists as the service evaluates them. Read-only.
+ * What the Action Service auto-decides for the sandbox, as the service itself resolves it for the
+ * sandbox's UID: the bindings, the sets they name, and the three lists as it evaluates them. What
+ * arrives here is the service's answer, or why there is none. Read-only.
  */
-export function ActionPolicySection({ policy }: { policy: ActionPolicyView | null }): JSX.Element {
+export function ActionPolicySection({
+  policy,
+}: {
+  policy: ActionPolicyView | ActionPolicyUnavailable | null;
+}): JSX.Element {
   if (!policy) return <></>;
+  if ("kind" in policy) return <Unavailable failure={policy} />;
   return (
     <Stack gap="md">
+      {!policy.synced && (
+        <Alert color="orange" role="alert" title="The Action Service's watch has not synced">
+          Nothing auto-decides until it has: every Action from this sandbox waits for the operator, whatever the objects
+          say.
+        </Alert>
+      )}
       <BindingsTable bindings={policy.bindings} />
       <SetsTable bindings={policy.bindings} />
       <PolicyList
