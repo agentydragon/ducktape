@@ -914,9 +914,6 @@ if (scenario.openActionPolicySets) {
   });
   openSets.observe(document, { childList: true, subtree: true });
 }
-
-if (page.startsWith("connections")) {
-}
 if (scenario.openSettings) {
   // There's no dedicated route for the Settings modal; open it the way an operator would, by
   // clicking the nav button, rather than a URL that only exists for this test.
