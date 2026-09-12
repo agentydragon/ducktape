@@ -14,12 +14,7 @@ from util.bazel.runfiles import get_required_path
 def test_actions_artifact_preserves_render_inputs(tmp_path: Path) -> None:
     root = get_required_path("_main/cluster/k8s/kustomization.yaml").parent
     root_kustomization = yaml.safe_load((root / "kustomization.yaml").read_text())
-    expected_source = {
-        "alias": "repo",
-        "kind": "GitRepository",
-        "name": "ducktape",
-        "namespace": "ducktape-flux",
-    }
+    expected_source = {"alias": "repo", "kind": "GitRepository", "name": "ducktape", "namespace": "ducktape-flux"}
     kustomize = resolve_tool("kustomize", "multitool/tools/kustomize/kustomize")
 
     for environment in ("staging", "testing"):
