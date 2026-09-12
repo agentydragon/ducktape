@@ -1,5 +1,15 @@
 # Staging Action Service
 
+## Action policies
+
+`actionpolicyset-*.yaml` are this environment's Git-managed `ActionPolicySet`s and
+`actionpolicybinding-*.yaml` the bindings for labeled caller ServiceAccounts such as
+`claude-ai`; a new set, or a binding for a ServiceAccount, is a PR here. Bindings for
+Sandbox subjects are written by the integration app when it creates the Sandbox and are
+never checked in. `//cluster/validation:test_agentplane_action_policies` parses every set
+and binding with the Action Service's own models, so a spec the service would refuse fails
+CI instead of reporting `Ready=False` on the cluster.
+
 ## Browser notifications
 
 `web-push-vapid.sops.yaml` owns a staging-only P-256 VAPID identity. The
