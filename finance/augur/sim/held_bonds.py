@@ -16,8 +16,11 @@ class HeldBonds:
     def __init__(self, bonds: Sequence[PreparedBond], market: MarketPath) -> None:
         self.terms = tuple(bonds)
         self.market = market
+        # This month's cashflows, cleared by `begin_month`; terms plus the ledger are the state.
         self.cashflows: list[BondCashflowOutcome] = []
-        self.cashflow_count = 0
+
+    def begin_month(self) -> None:
+        self.cashflows.clear()
 
     def principal(self, bond: PreparedBond, month: int) -> int:
         if not isinstance(bond.coupon, PreparedIndexedCoupon):
@@ -77,9 +80,6 @@ class HeldBonds:
                     bond.agent_id, InterestIncome(issuer_jurisdiction_id=bond.issuer_jurisdiction_id), income
                 )
             changed = coupon != 0 or accretion != 0 or redemption != 0
-            count = self.cashflow_count + int(changed)
-            if count >= 1 << 64:
-                raise OverflowError("integer overflow during bond cashflow count")
             cause = f"bond:{bond.bond_id}:m{month}"
             if paid:
                 accounting.move(
@@ -90,8 +90,7 @@ class HeldBonds:
                     paid,
                 )
             accounting.tax = tax
-            self.cashflow_count = count
-            if changed and accounting.capture != "summary":
+            if changed:
                 self.cashflows.append(
                     BondCashflowOutcome(
                         month=month,

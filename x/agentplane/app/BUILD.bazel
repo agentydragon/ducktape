@@ -168,7 +168,7 @@ py_test(
         "//x/agentplane/action_service:service",
         "//x/agentplane/action_service:updates",
         "//x/agentplane/action_service/test_fixtures:callers",
-        "//x/agentplane/sandbox_auth:http",
+        "//x/agentplane/sandbox_auth:principal",
         "@pypi//fastmcp_slim",
         "@pypi//httpx",
         "@pypi//pyjwt",

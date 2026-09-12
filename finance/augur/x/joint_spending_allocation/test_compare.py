@@ -9,9 +9,8 @@ import pytest
 import pytest_bazel
 
 from finance.augur.sim.results import Paid
-from finance.augur.x.bounded_spending.python_policy import Parameters, run
-from finance.augur.x.joint_spending_allocation.compare import Output, measurements
-from finance.augur.x.joint_spending_allocation.policy import JointPolicy
+from finance.augur.x.bounded_spending.python_policy import Parameters
+from finance.augur.x.joint_spending_allocation.compare import Measurements, Traces, replay_cell, run_cell
 from finance.augur.x.joint_spending_allocation.scenario import prepare, sample
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
@@ -33,24 +32,24 @@ def results(tmp_path_factory: pytest.TempPathFactory) -> Path:
 def test_same_paths_and_reserves_fund_bills_and_chosen_consumption(results: Path) -> None:
     manifest = json.loads((results / "experiment.json").read_text())
     for cell in manifest["cells"]:
-        output = Output.model_validate_json((results / f"{cell['name']}.json").read_text())
-        assert [row.rollout_id for row in output.rollouts] == [0, 1, 2]
+        output = Measurements.model_validate_json((results / f"{cell['name']}.json").read_text())
+        assert [row.rollout_id for row in output.paths] == [0, 1, 2]
         expected = 11_000_000 * cell["spending"]["rate_bps"] // 10_000
-        for rollout, report in zip(output.rollouts, output.measurements.paths, strict=True):
+        for report in output.paths:
             opening = report.months[0]
             assert opening.intended_consumption == opening.consumption_requested == opening.consumption_paid == expected
             assert opening.consumption_shortfall == opening.cut_from_fixed_real_anchor == 0
-            first = rollout.summary.payments[:2]
+            first = report.payments[:2]
             assert [row.receipt.outcome for row in first] == [Paid(), Paid()]
             assert [row.receipt.amount_requested for row in first] == [100_000, expected]
-            assert len(report.months) == rollout.summary.ending_book.month
-        assert any(path.tax_paid > 0 for path in output.measurements.paths)
+            assert len(report.months) == report.closed_months
+        assert any(path.tax_paid > 0 for path in output.paths)
 
 
 def test_both_policy_dimensions_change_the_joint_financial_result(results: Path) -> None:
-    fixed = Output.model_validate_json((results / "r800-fixed_real-constant.json").read_text()).measurements.paths
-    bounded = Output.model_validate_json((results / "r800-bounded-constant.json").read_text()).measurements.paths
-    glide = Output.model_validate_json((results / "r800-bounded-glide.json").read_text()).measurements.paths
+    fixed = Measurements.model_validate_json((results / "r800-fixed_real-constant.json").read_text()).paths
+    bounded = Measurements.model_validate_json((results / "r800-bounded-constant.json").read_text()).paths
+    glide = Measurements.model_validate_json((results / "r800-bounded-glide.json").read_text()).paths
     assert fixed[0].months[12].intended_consumption == 924_000
     assert bounded[0].months[12].intended_consumption == 739_200
     assert bounded[0].months[12].cut_from_fixed_real_anchor == 184_800
@@ -70,16 +69,13 @@ def test_both_policy_dimensions_change_the_joint_financial_result(results: Path)
 def test_selected_original_ids_replay_identical_intentions_and_financial_prefixes(results: Path) -> None:
     manifest = json.loads((results / "experiment.json").read_text())
     for cell in manifest["cells"]:
-        compact = Output.model_validate_json((results / f"{cell['name']}.json").read_text())
-        traces = Output.model_validate_json((results / f"{cell['name']}-traces.json").read_text())
-        assert [row.rollout_id for row in traces.rollouts] == [2, 0]
-        for replay, report in zip(traces.rollouts, traces.measurements.paths, strict=True):
-            original = compact.rollouts[replay.rollout_id]
-            assert replay.summary == original.summary
-            assert replay.stop == original.stop
-            assert report == compact.measurements.paths[replay.rollout_id]
-            assert replay.trace is not None
-            for entry in replay.trace.journal:
+        compact = Measurements.model_validate_json((results / f"{cell['name']}.json").read_text())
+        traces = Traces.model_validate_json((results / f"{cell['name']}-traces.json").read_text())
+        assert [replay.measurements.rollout_id for replay in traces.replays] == [2, 0]
+        for replay in traces.replays:
+            assert replay.measurements == compact.paths[replay.measurements.rollout_id]
+            assert replay.journal
+            for entry in replay.journal:
                 assert sum(posting.amount for posting in entry.postings) == 0
 
 
@@ -88,9 +84,7 @@ def test_tax_free_control_keeps_tax_payments_separate_from_consumption() -> None
     reports = []
     for taxable in (False, True):
         prepared = prepare(paths, rollout_count=3, horizon_months=25, taxable=taxable)
-        policy = JointPolicy(Parameters(800, 0, 0), rollout_count=3, annual_step=5)
-        output = run(prepared, policy, [2])
-        reports.append(measurements(output, policy).paths[0])
+        reports.append(run_cell(prepared, [2], parameters=Parameters(800, 0, 0), annual_step=5).paths[0])
     untaxed, taxed = reports
     assert untaxed.stop is taxed.stop is None
     assert untaxed.tax_paid == untaxed.tax_assessed == 0
@@ -109,9 +103,8 @@ def test_exhaustion_distinguishes_rejected_consumption_from_unattempted_intentio
         prepared,
         scenario=replace(prepared.scenario, obligations=(replace(obligations[0], amount_due=bill), *obligations[1:])),
     )
-    policy = JointPolicy(Parameters(10_000, 0, 0), rollout_count=3, annual_step=0)
-    output = run(prepared, policy, [1], capture="forensic")
-    report = measurements(output, policy).paths[0]
+    [replay] = replay_cell(prepared, [1], parameters=Parameters(10_000, 0, 0), annual_step=0).replays
+    report = replay.measurements
     assert report.terminal_assets is None
     assert report.ending_mark_month == 0
     assert len(report.months) == 1
@@ -126,10 +119,8 @@ def test_exhaustion_distinguishes_rejected_consumption_from_unattempted_intentio
         assert month.consumption_paid == 0
         assert month.consumption_shortfall == 11_000_000
         assert report.ending_assets == 11_000_000
-    financial = output.rollouts[0].trace
-    assert financial is not None
-    assert financial.events.lot_dispositions.get_column("proceeds_quanta").sum() == 10_000_000
-    assert financial.events.lot_dispositions.get_column("cost_basis_consumed_quanta").sum() == 8_000_000
+    assert sum(row.proceeds for row in replay.dispositions) == 10_000_000
+    assert sum(row.basis for row in replay.dispositions) == 8_000_000
 
 
 if __name__ == "__main__":

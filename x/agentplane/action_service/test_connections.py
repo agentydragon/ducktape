@@ -35,7 +35,6 @@ from x.agentplane.action_service.policy_informer import PolicyIndex, namespaced_
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, UNLABELED, eligible_callers
 from x.agentplane.action_service.updates import ActionUpdates
-from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 
 ISSUER = "https://actions.example.test"
@@ -221,7 +220,7 @@ async def test_operator_routes_do_not_expose_binding_or_accept_workload_credenti
     actions = ActionService(ActionStore(make_sessionmaker(engine)), catalog, {})
     app = create_app(
         actions,
-        SandboxPrincipalAuthenticator(Mock(spec=SandboxPrincipalResolver)),
+        Mock(spec=SandboxPrincipalResolver),
         ConfiguredOperatorBearerAuthenticator(token_digest=hashlib.sha256(token.encode()).digest(), subject="operator"),
         catalog,
         connections=service,

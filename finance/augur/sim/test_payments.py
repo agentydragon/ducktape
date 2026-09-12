@@ -46,7 +46,6 @@ def state(books: Accounting, claims: Claims) -> tuple[object, ...]:
         deepcopy(books.tax.income.by_source),
         deepcopy(books.tax.years),
         list(books.journal),
-        books.journal_entry_count,
         list(books.transfers),
         deepcopy(claims.entries),
     )
@@ -216,7 +215,7 @@ def test_estimates_and_true_up_settle_the_same_annual_liability() -> None:
             for account in scenario.accounts
         ),
     )
-    books = Accounting(scenario.accounts, scenario.tax_profiles, scenario.income_sources, capture="forensic")
+    books = Accounting(scenario.accounts, scenario.tax_profiles, scenario.income_sources)
     for month in (3, 5, 8):
         claims = Claims(month, tax_claims(scenario.tax_profiles, books.tax_liabilities, month))
         assert not settle_grouped(books, claims, HOUSEHOLD).failed

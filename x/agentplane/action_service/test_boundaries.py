@@ -29,7 +29,6 @@ from x.agentplane.action_service.client import (
 from x.agentplane.action_service.models import ActionRequestInput, ActionRequestView, ActionState, Principal
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.updates import ActionUpdates
-from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
 from x.agentplane.sandbox_auth.principal import (
     POD_NAME_CLAIM,
     POD_UID_CLAIM,
@@ -116,7 +115,7 @@ class FakeCoreApi:
         return self.pods[(namespace, name)]
 
 
-def workload_authenticator() -> tuple[SandboxPrincipalAuthenticator, FakeAuthenticationApi]:
+def workload_resolver() -> tuple[SandboxPrincipalResolver, FakeAuthenticationApi]:
     authentication = FakeAuthenticationApi()
     resolver = SandboxPrincipalResolver(
         authentication=cast(AuthenticationV1Api, authentication),
@@ -124,7 +123,7 @@ def workload_authenticator() -> tuple[SandboxPrincipalAuthenticator, FakeAuthent
         audience=AUDIENCE,
         allowed_service_account_namespaces=frozenset({NAMESPACE}),
     )
-    return SandboxPrincipalAuthenticator(resolver), authentication
+    return resolver, authentication
 
 
 class RecordingActionService:
@@ -178,9 +177,9 @@ class FakeCentralProxy(httpx.AsyncBaseTransport):
 
 
 async def test_same_service_account_pods_resolve_two_sandbox_principals() -> None:
-    authenticator, authentication = workload_authenticator()
+    resolver, authentication = workload_resolver()
 
-    first, second = await authenticator.resolver.resolve(TOKEN_A), await authenticator.resolver.resolve(TOKEN_B)
+    first, second = await resolver.resolve(TOKEN_A), await resolver.resolve(TOKEN_B)
 
     assert first.service_account_subject == second.service_account_subject == SUBJECT
     assert (first.pod_uid, first.sandbox_uid) != (second.pod_uid, second.sandbox_uid)
@@ -190,11 +189,11 @@ async def test_same_service_account_pods_resolve_two_sandbox_principals() -> Non
 async def test_central_placeholder_replay_is_required_before_action_service_auth(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    authenticator, authentication = workload_authenticator()
+    resolver, authentication = workload_resolver()
     service = RecordingActionService()
     app = create_app(
         cast(ActionService, service),
-        authenticator,
+        resolver,
         cast(OperatorAuthenticator, DisabledOperatorAuthenticator()),
         ActionCatalog(),
         updates=ActionUpdates("postgresql://unused-test-listener"),

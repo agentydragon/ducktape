@@ -55,7 +55,7 @@ from x.agentplane.app.inventory import SandboxInventory
 from x.agentplane.app.live import LiveIndex
 from x.agentplane.app.oidc import OIDCSettings
 from x.agentplane.app.trajectory import TrajectoryStore
-from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
+from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 
 CALLER = Principal(issuer="test-workload", subject="test-sandbox", role=PrincipalRole.CALLER)
 SUBJECT_A = "test-operator-subject"
@@ -124,7 +124,7 @@ async def review(
         enrollments = EnrollmentAuthority(make_sessionmaker(engine), connections)
         downstream = service_api.create_app(
             service,
-            cast(SandboxPrincipalAuthenticator, None),
+            cast(SandboxPrincipalResolver, None),
             OidcOperatorAuthenticator(target),
             catalog,
             connections=connections,

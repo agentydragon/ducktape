@@ -169,8 +169,12 @@ the PostgreSQL update listener and MCP transport and unwinds both on shutdown/st
 This is the production `main.py` composition, not a sidecar, upstream-tool proxy, or second store.
 Requests use the same Sandbox bearer/egress placeholder substitution as the REST workload API.
 Operator/OIDC bearers remain confined to `/v1/operator/...`; configured external OAuth grants are
-also accepted by `/mcp`. Staging and testing publish `/mcp`, `/register`, `/authorize`, `/token`,
-`/revoke`, `/auth/callback`, and the OAuth well-known paths through an `HTTPRoute` at
+also accepted by `/mcp`. Both are verified by FastMCP's own bearer layer (`CallerTokenVerifier` in
+`caller_auth.py`): a request without a bearer gets 401 with the protected-resource metadata
+challenge, a refused bearer 401 `invalid_token`, and tools receive the verified identity through
+FastMCP's `CurrentAccessToken` dependency, never from request state. Staging and testing publish
+`/mcp`, `/register`, `/authorize`, `/token`, `/revoke`, `/auth/callback`, and the OAuth well-known
+paths through an `HTTPRoute` at
 `agentplane-actions-{staging,testing}.allegedly.works`
 (`cluster/k8s/agentplane-{staging,testing}/actions/httproute.yaml`); REST and operator endpoints
 stay off that origin. FastMCP's automatic Host/Origin guard protects loopback access without
