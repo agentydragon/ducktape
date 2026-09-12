@@ -10,6 +10,6 @@ spec:
   prune: true
   sourceRef:
     kind: ExternalArtifact
-    name: ducktape
+    name: seaweedfs-namespace
 
     namespace: ducktape-flux

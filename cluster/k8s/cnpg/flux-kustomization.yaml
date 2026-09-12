@@ -9,7 +9,7 @@ spec:
   timeout: 5m
   sourceRef:
     kind: ExternalArtifact
-    name: ducktape
+    name: cnpg
     namespace: ducktape-flux
   path: "./cluster/k8s/cnpg"
   prune: true

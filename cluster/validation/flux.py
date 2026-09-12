@@ -266,7 +266,9 @@ def parse_flux_kustomizations(flux_file: Path) -> dict[str, FluxKustomizationSpe
 # Flux source CR kinds that a Kustomization.spec.sourceRef can reference.
 # Consumed by parse_cluster to build ParsedCluster.flux_sources — including the
 # bootstrap GitRepository under flux-system/, which the app-manifest skip there
-# would otherwise miss as a sourceRef resolution target.
+# would otherwise miss as a sourceRef resolution target. ExternalArtifact is not
+# a Git-declared kind: source-watcher creates one per ArtifactGenerator artifact,
+# so parse_cluster indexes the generators instead.
 FLUX_SOURCE_KINDS = {"GitRepository", "OCIRepository", "HelmRepository", "HelmChart"}
 
 
