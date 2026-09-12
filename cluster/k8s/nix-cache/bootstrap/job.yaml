@@ -33,7 +33,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: bootstrap
-          image: git.allegedly.works/ducktape-ci/attic-jwt-rotation:devel-20260912151358-3579607 # {"$imagepolicy": "flux-system:attic-jwt-rotation"}
+          image: git.allegedly.works/ducktape-ci/attic-jwt-rotation:devel-20260912170258-01b10bb # {"$imagepolicy": "flux-system:attic-jwt-rotation"}
           args:
             - "bootstrap-caches"
             - "--cache=main"

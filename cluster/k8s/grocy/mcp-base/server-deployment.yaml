@@ -44,7 +44,7 @@ spec:
                     operator: DoesNotExist
       containers:
         - name: server
-          image: git.allegedly.works/ducktape-ci/grocy-mcp:devel-20260912162640-4498bde # {"$imagepolicy": "flux-system:grocy-mcp-oidc-server"}
+          image: git.allegedly.works/ducktape-ci/grocy-mcp:devel-20260912170204-01b10bb # {"$imagepolicy": "flux-system:grocy-mcp-oidc-server"}
           imagePullPolicy: Always
           ports:
             - name: http
