@@ -9,7 +9,7 @@ spec:
   path: ./cluster/k8s/langfuse/namespace
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: langfuse-namespace
 
     namespace: ducktape-flux

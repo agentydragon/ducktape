@@ -54,6 +54,16 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         ("tofu-controller", "tofu-controller"),
         ("tofu-state-db", "tofu-state/db"),
         ("valkey", "valkey"),
+        ("kyverno-policies", "kyverno/policies"),
+        ("haku-state", "forgejo/haku-state"),
+        ("agentplane-crds", "agentplane-crds"),
+        ("monitoring-namespace", "monitoring/namespace"),
+        ("haku-namespace", "haku/namespace"),
+        ("langfuse-namespace", "langfuse/namespace"),
+        ("volsync", "volsync"),
+        ("authentik-namespace", "authentik/namespace"),
+        ("cert-manager-trust", "cert-manager/trust"),
+        ("agent-sandbox-controller", "agents/agent-sandbox/controller"),
     )
 
     assert set(generators) == {artifact_name for artifact_name, _ in cases}

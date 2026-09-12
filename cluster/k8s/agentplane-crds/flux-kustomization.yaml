@@ -15,6 +15,6 @@ spec:
   prune: false
   wait: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: agentplane-crds
     namespace: ducktape-flux

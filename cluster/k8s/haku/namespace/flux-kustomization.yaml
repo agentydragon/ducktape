@@ -8,7 +8,7 @@ spec:
   path: ./cluster/k8s/haku/namespace
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: haku-namespace
     namespace: ducktape-flux
   timeout: 2m
