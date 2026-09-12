@@ -33,6 +33,20 @@
 # `map_kind py_binary py_library` directive here: Gazelle applies map_kind to existing
 # hand-written py_binary rules too, rewriting their kind.
 #
+# One generated module per pre-built container image (devinfra/oci/defs.bzl
+# `oci_image_py`): the module holds the image's OciImage and its target carries the image
+# itself, so a test names it once. Generated, so there is no source file for Gazelle to
+# map the import onto -- same reason skills/BUILD.bazel pins its generated spec modules.
+# gazelle:resolve py third_party.containers.debian_slim //third_party/containers:debian_slim
+# gazelle:resolve py third_party.containers.grocy //third_party/containers:grocy
+# gazelle:resolve py third_party.containers.mitmproxy //third_party/containers:mitmproxy
+# gazelle:resolve py third_party.containers.pgvector_pg18 //third_party/containers:pgvector_pg18
+# gazelle:resolve py third_party.containers.postgres_18 //third_party/containers:postgres_18
+# gazelle:resolve py third_party.containers.python_3_13_slim //third_party/containers:python_3_13_slim
+# gazelle:resolve py third_party.containers.registry_2 //third_party/containers:registry_2
+# gazelle:resolve py third_party.containers.ryuk //third_party/containers:ryuk
+# gazelle:resolve py third_party.containers.synapse //third_party/containers:synapse
+#
 # Bazel-provided libraries (not from PyPI)
 # gazelle:resolve py rules_python.python.runfiles @rules_python//python/runfiles
 # gazelle:resolve py python.runfiles @rules_python//python/runfiles

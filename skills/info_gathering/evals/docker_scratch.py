@@ -12,7 +12,7 @@ from fastmcp.client import Client
 
 from agent_core.mcp_provider import MCPToolProvider
 from skills.eval_infra.docker_exec import scratch_exec_server
-from third_party.containers.rlocations import DEBIAN_SLIM
+from third_party.containers import debian_slim
 from util.oci import load_oci_image
 
 logger = logging.getLogger(__name__)
@@ -33,4 +33,4 @@ async def scratch_container(image: str) -> AsyncGenerator[MCPToolProvider]:
 
 def load_scratch_image() -> str:
     """Load the debian-slim image into the local Docker daemon and return its tag."""
-    return load_oci_image(DEBIAN_SLIM)
+    return load_oci_image(debian_slim.IMAGE)

@@ -215,7 +215,7 @@ py_test(
         "//haku/console:tool_call_actor",
         "//haku/console/mcp:approval",
         "//mcp_infra/authentik_auth:oidc_principal",
-        "//third_party/containers:rlocations",
+        "//third_party/containers:pgvector_pg18",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
         "@pypi//pytest",

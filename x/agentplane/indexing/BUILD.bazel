@@ -127,7 +127,7 @@ py_library(
         ":store",
         "//haku/recall_index:chunking",
         "//haku/recall_index:fake_embedder",
-        "//third_party/containers:rlocations",
+        "//third_party/containers:pgvector_pg18",
         "//util/testing:postgres_fixtures",
         "@pypi//asyncpg",
         "@pypi//pygit2",
