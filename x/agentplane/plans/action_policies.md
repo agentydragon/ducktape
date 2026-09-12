@@ -160,6 +160,22 @@ the binding revision they used.
    form for additional bindings with `expiresAt`; optionally create a `StaticIdentity` during
    enrollment instead of a Git edit.
 5. **Deny lists** when an Action needs them, `autoDenyIf` first; `autoDenyUnless` later.
+6. **Deployed acceptance.** Extend `//x/agentplane/acceptance` with a vertical scenario: the
+   test creates a set and a binding for the Sandbox it launches, the harness submits a matching
+   Action and gets an auto-approved Execution with the expected evidence, a non-matching one waits
+   for the operator, and an expired binding no longer auto-approves.
+
+## Later: ServiceAccounts instead of static identities
+
+An external client such as Claude Code web could be a Kubernetes ServiceAccount rather than a
+`StaticIdentity`: one principal that Kubernetes RBAC already binds native permissions to and that
+an `ActionPolicyBinding` binds Action permissions to, with the OAuth Connection bound to the
+ServiceAccount by name. Sandbox callers are already ServiceAccount-backed principals, so this would
+leave one identity vocabulary. Decide before step 1 builds the `StaticIdentity` CRD, since the
+cheaper form of this change is to never create it: the binding subject becomes
+`serviceAccount {namespace, name}`, existence is the enable, and a ServiceAccount bearer with a
+dedicated audience becomes a second admission path beside OAuth for clients that can hold one.
+Per-Sandbox bindings stay per Sandbox either way; a shared ServiceAccount is not a caller.
 
 ## Acceptance
 
