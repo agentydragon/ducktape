@@ -14,7 +14,15 @@ import { createRoot } from "react-dom/client";
 
 import App from "../app";
 import { sampleConnection } from "../connections_fixture";
-import type { ActionRequestView, BindingView, Decision, PolicyView, SandboxView, ThreadView } from "../client";
+import type {
+  ActionPolicyView,
+  ActionRequestView,
+  BindingView,
+  Decision,
+  PolicyView,
+  SandboxView,
+  ThreadView,
+} from "../client";
 import type { SandboxesSnapshot, SandboxSnapshot, WatchHealth } from "../live";
 import {
   AttachedSchema,
@@ -166,6 +174,98 @@ const BINDINGS: BindingView[] = [
     missing_policies: [],
   },
 ];
+
+/**
+ * What the Action Service auto-decides for demo-a1b2: the binding the app wrote at launch, one the
+ * operator added for the afternoon, and every state a set can be in -- parsed and judged, edited
+ * since it was judged, refused, and missing.
+ */
+const ACTION_POLICY: ActionPolicyView = {
+  synced: true,
+  bindings: [
+    {
+      name: "demo-a1b2-k2m9x",
+      provenance: "app",
+      expires_at: null,
+      ready: { status: "True", reason: "Valid", message: "spec accepted", observed_generation: 1 },
+      policy_sets: [
+        {
+          name: "public-coder",
+          generation: 2,
+          ready: { status: "True", reason: "Valid", message: "spec accepted", observed_generation: 2 },
+          refused: null,
+        },
+      ],
+      missing_policy_sets: [],
+    },
+    {
+      name: "demo-a1b2-push-afternoon",
+      provenance: "operator",
+      expires_at: new Date(NOW + 3 * HOUR).toISOString(),
+      ready: null,
+      policy_sets: [
+        {
+          name: "harness-push",
+          generation: 3,
+          ready: { status: "True", reason: "Valid", message: "spec accepted", observed_generation: 2 },
+          refused: null,
+        },
+        {
+          name: "harness-edited",
+          generation: 1,
+          ready: {
+            status: "False",
+            reason: "Invalid",
+            message: "spec.autoApproveIf.0.type: Input should be 'exact_actions' or 'argument_schema'",
+            observed_generation: 1,
+          },
+          refused: "spec.autoApproveIf.0.type: Input should be 'exact_actions' or 'argument_schema'",
+        },
+      ],
+      missing_policy_sets: ["harness-release"],
+    },
+  ],
+  auto_approve_if: [
+    {
+      binding: "demo-a1b2-k2m9x",
+      policy_set: "public-coder",
+      index: 0,
+      policy: { type: "exact_actions", actions: { github: ["get_file_contents", "list_commits", "search_code"] } },
+    },
+    {
+      binding: "demo-a1b2-k2m9x",
+      policy_set: "public-coder",
+      index: 1,
+      policy: {
+        type: "argument_schema",
+        actions: { github: ["create_issue"] },
+        argument_schema: {
+          properties: { owner: { const: "harness-owner" }, repo: { const: "harness-repo" } },
+          required: ["owner", "repo"],
+        },
+      },
+    },
+    {
+      binding: "demo-a1b2-push-afternoon",
+      policy_set: "harness-push",
+      index: 0,
+      policy: {
+        type: "argument_schema",
+        actions: { github: ["push_files"] },
+        argument_schema: { properties: { branch: { pattern: "^harness/" } }, required: ["branch"] },
+      },
+    },
+  ],
+  auto_deny_if: [
+    {
+      binding: "demo-a1b2-push-afternoon",
+      policy_set: "harness-push",
+      index: 0,
+      policy: { type: "exact_actions", actions: { kubernetes: ["pods_delete", "resources_delete"] } },
+    },
+  ],
+  auto_deny_unless: [],
+};
 
 const DECISIONS: Decision[] = [
   {
@@ -693,14 +793,28 @@ routes.push(
 const FRESH: WatchHealth = {
   fresh: true,
   stale_after_seconds: 900,
-  refreshed_seconds_ago: { sandboxes: 4.2, pods: 3.1, egressbindings: 11.7, egresspolicies: 11.7 },
+  refreshed_seconds_ago: {
+    sandboxes: 4.2,
+    pods: 3.1,
+    egressbindings: 11.7,
+    egresspolicies: 11.7,
+    actionpolicysets: 8.3,
+    actionpolicybindings: 8.3,
+  },
 };
 
 /** A watch that has stopped cycling: what the `_stale` scenarios have to show rather than hide. */
 const WEDGED: WatchHealth = {
   fresh: false,
   stale_after_seconds: 900,
-  refreshed_seconds_ago: { sandboxes: 2417.4, pods: 2417.4, egressbindings: 11.7, egresspolicies: 11.7 },
+  refreshed_seconds_ago: {
+    sandboxes: 2417.4,
+    pods: 2417.4,
+    egressbindings: 11.7,
+    egresspolicies: 11.7,
+    actionpolicysets: 8.3,
+    actionpolicybindings: 8.3,
+  },
 };
 
 function watch(): WatchHealth {
@@ -738,6 +852,7 @@ class HarnessEventSource extends EventTarget {
       const snapshot: SandboxSnapshot = {
         sandbox: SANDBOXES.find((row) => row.name === decodeURIComponent(sandbox)) ?? null,
         bindings: BINDINGS,
+        action_policy: ACTION_POLICY,
         threads: THREADS,
         watch: watch(),
       };

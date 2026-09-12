@@ -1,8 +1,9 @@
 # Action policy bindings
 
 Status: **decided 2026-09-12; the Action Service side has landed (CRDs, informer, ServiceAccount
-callers, evaluation, evidence, the acceptance scenario); `SBPOLICY` is the step below and the deny
-lists are deferred as `DENY_LISTS` in the task DAG.**
+callers, evaluation, evidence, the caller and operator reads of the effective policy, the acceptance
+scenario), and so has the integration app's binding writer and Sandbox page; the deny lists are
+deferred as `DENY_LISTS` in the task DAG.**
 The single operator configures bounded auto-approval for both external MCP connections and
 harnesses running in Threads inside Sandboxes. Both use the canonical Action Service and Decision
 lifecycle. Identity/OAuth/Connection authority is implemented independently of policy
@@ -160,12 +161,6 @@ A `search_code` in `agentydragon/ducktape` auto-approves for the Sandbox and for
 alike; removing that action from `public-coder` makes the next one wait for the operator for both,
 with no binding edited; at 20:01 the push grant is gone and the Decisions it produced still name
 the binding revision they used.
-
-## Steps
-
-1. **Integration app.** Write the Sandbox binding at creation from the preset's set list, and show
-   what a Sandbox can currently do: its unexpired bindings, their sets, and the resulting lists.
-   Read-only; no runtime editing surface yet.
 
 ## Console policies the Action Service cannot express yet
 

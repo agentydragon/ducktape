@@ -114,6 +114,19 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: PHONE,
     outputName: "sandbox-egress-phone",
   },
+  // The read-only action policy: both bindings, every set state, and the three lists.
+  sandbox_policy: {
+    element: "#app",
+    route: `${SANDBOX_ROUTE}?tab=policy`,
+    viewport: { width: 1200, height: 1100 },
+    outputName: "sandbox-policy",
+  },
+  sandbox_policy_phone: {
+    element: "#app",
+    route: `${SANDBOX_ROUTE}?tab=policy`,
+    viewport: PHONE,
+    outputName: "sandbox-policy-phone",
+  },
 
   session: { element: "#app", route: SESSION_ROUTE, viewport: { width: 1200, height: 900 }, captureViewport: true },
   session_phone: {

@@ -49,7 +49,7 @@ it("renders the Client/Service account table with the immutable client ID and an
   expect(container.textContent).toContain("Service account");
   for (const value of ["registered-client-123", "Claude desktop", sampleConnection().id, "agentplane-test/personal"])
     expect(container.textContent).toContain(value);
-  expect(container.textContent).toContain("not a labeled caller");
+  expect(container.textContent).toContain("ServiceAccount not labeled as an Action caller");
 });
 it("shows the most recent grant when a connection has more than one", async () => {
   const row = sampleConnection();
@@ -70,7 +70,7 @@ it("shows the most recent grant when a connection has more than one", async () =
   expect(container.textContent).toContain("registered-client-456");
   expect(container.textContent).not.toContain("registered-client-123");
   expect(container.textContent).toContain("agentplane-test/other");
-  expect(container.textContent).not.toContain("not a labeled caller");
+  expect(container.textContent).not.toContain("ServiceAccount not labeled as an Action caller");
 });
 it("requires confirmation, permits cancelling, and preserves the row after unlink", async () => {
   const api = service();

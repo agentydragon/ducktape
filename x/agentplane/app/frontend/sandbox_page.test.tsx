@@ -29,6 +29,7 @@ const live = vi.hoisted(
         },
         threads: [] as ThreadView[],
         bindings: [],
+        action_policy: null,
         watch: { fresh: true, stale_after_seconds: 60, refreshed_seconds_ago: {} },
       },
       connection: "connected",
