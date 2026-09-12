@@ -85,7 +85,6 @@ manifest:
     dateutil: python_dateutil
     dbus_fast: dbus_fast
     debugpy: debugpy
-    decorator: decorator
     defusedxml: defusedxml
     dev.make-release-notes: vulture
     distlib: distlib
@@ -608,4 +607,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: c898982c1d0b353c5c112651ec746e9010801496bcda34480e0b9f3f60a0ca87
+integrity: d2e78da65267ac260f1753c1dda3187557119e20580ad528a2b7538e8be38c5b
