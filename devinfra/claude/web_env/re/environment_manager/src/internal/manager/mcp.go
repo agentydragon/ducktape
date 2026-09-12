@@ -53,7 +53,7 @@ func (m *Manager) registerMCPServers(
 	// Binary: 0xb70315 call to mcp.GetMCPRegistrations
 	// m.Config.Session.MCPRegistrations or similar - accessed via offset 0x18 -> 0x20
 	// m.TunnelInfo at offset 0x48
-	registrations := mcp.GetMCPRegistrations( /* envType */ "" /* sessionMode */, "")
+	registrations := mcp.GetMCPRegistrations("")
 	totalCount := len(registrations)
 
 	m.Logger.Info("registering MCP servers", "count", totalCount)
