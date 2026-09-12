@@ -101,7 +101,10 @@ resource "github_repository_ruleset" "default_branch_protection" {
       required_check {
         context = "Pre-commit checks"
       }
-      strict_required_status_checks_policy = false
+      # A required check is only reusable while its PR branch still contains
+      # the latest base branch. If devel advances, GitHub blocks merge until
+      # the PR is updated and the checks run against the new merge result.
+      strict_required_status_checks_policy = true
     }
   }
 }
