@@ -8,8 +8,8 @@ spec:
   path: ./cluster/k8s/agents/manifold-mcp/servicemonitor
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: manifold-mcp-servicemonitor
 
     namespace: ducktape-flux
   dependsOn:
