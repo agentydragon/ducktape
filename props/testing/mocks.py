@@ -6,19 +6,18 @@ from agent_core.testing.mcp.responses import MCPDecoratorMock
 from agent_core.testing.responses import tool_roundtrip
 from mcp_infra.exec.models import BaseExecResult
 from mcp_infra.exec.subprocess import DirectExecArgs
-from openai_utils.model import FunctionCallItem, ResponsesRequest, SystemMessage
+from openai_utils.model import FunctionCallItem, ResponsesRequest
 
 
-def get_system_message_text(req: ResponsesRequest) -> str:
-    """Extract full system message text from a ResponsesRequest.
+def get_system_prompt_text(req: ResponsesRequest) -> str:
+    """The system prompt a ResponsesRequest carries, for a mock asserting on it.
 
-    Concatenates all text parts from all SystemMessage items in the request.
-    Useful for mocks that need to verify the system prompt contains expected content.
+    The Responses API's own top-level `instructions` field, which is where the agent
+    framework's OpenAI Responses client puts an agent's `instructions`. It used to prepend
+    them to `input` as a system message instead, so a reader scanning `input` saw the prompt
+    until agent-framework-openai 1.14.3 and an empty string after it.
     """
-    if isinstance(req.input, str):
-        return ""
-
-    return "\n".join(part.text for item in req.input if isinstance(item, SystemMessage) for part in item.content)
+    return req.instructions or ""
 
 
 class SubprocessExecMock(MCPDecoratorMock):
