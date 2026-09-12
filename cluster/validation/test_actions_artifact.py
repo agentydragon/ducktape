@@ -117,6 +117,16 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         ("grocy-sf", "grocy/sf/app"),
         ("grocy-vallejo", "grocy/vallejo/app"),
         ("haku-console-namespace", "haku/console-namespace"),
+        ("haku-egress-proxy-namespace", "agents/haku-egress-proxy-namespace"),
+        ("haku-mailbox-namespace", "haku/mailbox-namespace"),
+        ("haku-openclaw-spike-namespace", "agents/haku-openclaw-spike/namespace"),
+        ("home-assistant", "home-assistant/app"),
+        ("inventree-secrets", "inventree/secrets"),
+        ("litellm", "litellm/app"),
+        ("monitoring-stack-secrets", "monitoring/stack-secrets"),
+        ("nix-cache", "nix-cache/app"),
+        ("nvidia-device-plugin", "nvidia-device-plugin"),
+        ("ollama-secrets", "ollama/secrets"),
     )
 
     assert set(generators) == {artifact_name for artifact_name, _ in cases}

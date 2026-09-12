@@ -15,8 +15,8 @@ spec:
   prune: true
   wait: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: home-assistant
     namespace: ducktape-flux
   decryption:
     provider: sops

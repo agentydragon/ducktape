@@ -8,8 +8,8 @@ spec:
   path: ./cluster/k8s/litellm/app
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: litellm
     namespace: ducktape-flux
   timeout: 10m
   dependsOn:
