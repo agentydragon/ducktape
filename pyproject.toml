@@ -19,7 +19,7 @@ dependencies = [
     # Core
     "pydantic>=2.13.5",
     "pydantic-settings>=2.0.0",
-    "typer>=0.12.0",
+    "typer>=0.27.2",
     "typer-di>=0.1.3",
     "click>=8.5.0",
     "rich>=13.0.0",
@@ -149,7 +149,7 @@ dependencies = [
 
     # ducktape-llm-common
     "humanize>=4.0.0",
-    "ruff>=0.15.8",
+    "ruff>=0.16.7",
     "pre-commit>=3.5",
 
     # finance
@@ -207,7 +207,7 @@ dependencies = [
 
     # haku/console — Web Push (RFC 8291 payload encryption + RFC 8292 VAPID). Used for its
     # encoder/signer only; the console POSTs to the push service over its own async httpx.
-    "pywebpush>=2.0.0",
+    "pywebpush>=2.5.0",
 
     # skills/info_gathering/evals/twenty_questions/x
     "agent-framework-core>=1.18.0",
@@ -248,7 +248,7 @@ dependencies = [
     "django>=4.0",
     "inventree>=0.15",
     "pint>=0.26.1",
-    "tqdm>=4.66",
+    "tqdm>=4.70.1",
 
     # qr_codes
     "qrcode>=7.4",
