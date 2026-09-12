@@ -4228,3 +4228,203 @@ spec:
           to: "@artifact/cluster/k8s/agents/alloy-otlp-bearer/"
           exclude:
             - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: haku-console-db
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: haku-console-db
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/haku/console/db/**"
+          to: "@artifact/cluster/k8s/haku/console/db/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: haku-console
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: haku-console
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/haku/console/**"
+          to: "@artifact/cluster/k8s/haku/console/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: haku-console-migration
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: haku-console-migration
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/haku/console/migration/**"
+          to: "@artifact/cluster/k8s/haku/console/migration/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: haku-console-servicemonitor
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: haku-console-servicemonitor
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/haku/console/servicemonitor/**"
+          to: "@artifact/cluster/k8s/haku/console/servicemonitor/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: haku-mailbox-app
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: haku-mailbox-app
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/haku/mailbox/app/**"
+          to: "@artifact/cluster/k8s/haku/mailbox/app/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: haku-mailbox-db
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: haku-mailbox-db
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/haku/mailbox/db/**"
+          to: "@artifact/cluster/k8s/haku/mailbox/db/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: haku-managed-agent
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: haku-managed-agent
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/haku/managed-agent/**"
+          to: "@artifact/cluster/k8s/haku/managed-agent/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: haku-ui-image-webhook
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: haku-ui-image-webhook
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/haku/ui-image-webhook/**"
+          to: "@artifact/cluster/k8s/haku/ui-image-webhook/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: haku-workloads
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: haku-workloads
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/haku/workloads/**"
+          to: "@artifact/cluster/k8s/haku/workloads/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: haku-workspaces-app
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: haku-workspaces-app
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/haku/workspaces/app/**"
+          to: "@artifact/cluster/k8s/haku/workspaces/app/"
+          exclude:
+            - flux-kustomization.yaml

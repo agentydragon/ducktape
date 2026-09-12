@@ -13,8 +13,8 @@ spec:
   # NotReady until Haku first seeds k8s/, which would otherwise wedge this wrapper.
   wait: false
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: haku-workloads
     namespace: ducktape-flux
   dependsOn:
     # The forgejo/haku-state Terraform apply provisions the haku-state repo and the

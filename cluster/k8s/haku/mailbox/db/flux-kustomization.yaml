@@ -11,8 +11,8 @@ spec:
   prune: true
   wait: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: haku-mailbox-db
     namespace: ducktape-flux
   dependsOn:
     - name: haku-mailbox-namespace
