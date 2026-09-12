@@ -124,7 +124,6 @@ py_test(
 py_test(
     name = "test_function_learning",
     srcs = ["test_function_learning.py"],
-    data = ["//third_party/containers:python_3_13_slim"],
     requires_docker = True,
     deps = [
         ":conftest",
