@@ -334,6 +334,14 @@ class World:
                 raise ValueError(f'missing series "{series_id}"')
         self.properties = Properties(housing, self.accounting)
         located = {location.location_id: location for location in locations}
+        for purchase in housing.purchases:
+            if purchase.location_id not in located:
+                known = ", ".join(repr(id_) for id_ in sorted(located)) or "<none>"
+                raise ValueError(
+                    f"scheduled property purchase {purchase.cause_id!r} references unknown location_id "
+                    f"{purchase.location_id!r}; known location ids: {known}"
+                )
+        self.properties = Properties(housing, self.accounting)
         self.property_tax_authorities = [
             PropertyTaxAuthority(
                 policy, purchases[policy.property_id], located[purchases[policy.property_id].location_id]
