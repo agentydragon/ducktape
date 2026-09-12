@@ -7,7 +7,6 @@ import {
   MultiSelect,
   Select,
   Stack,
-  Switch,
   Table,
   Text,
   Textarea,
@@ -38,7 +37,6 @@ const EMPTY_THREAD: ThreadDefaults = {};
 const STATE_COLORS: Record<string, string> = {
   running: "green",
   suspended: "gray",
-  archived: "gray",
   waiting_for_pod: "yellow",
   waiting_for_pod_ready: "yellow",
 };
@@ -79,7 +77,6 @@ function StateBadge({ row }: { row: SandboxView }): JSX.Element {
 }
 
 export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX.Element {
-  const [includeArchived, setIncludeArchived] = useState(false);
   // The list is pushed; an action's own failure is what this holds.
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<NewSandbox>(EMPTY_FORM);
@@ -92,7 +89,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   const [policies, setPolicies] = useState<string[]>([]);
   // The sandbox whose deletion is being confirmed, by name; deleting takes its volume with it.
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
-  const live = useLive<SandboxesSnapshot>(liveSandboxesUrl(includeArchived));
+  const live = useLive<SandboxesSnapshot>(liveSandboxesUrl());
   const rows: SandboxView[] = live.snapshot?.sandboxes ?? [];
 
   useEffect(() => {
@@ -127,7 +124,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
 
   // No refresh after an action: the change reaches the API server, and the watch behind the
   // stream brings the new row back on its own.
-  async function act(name: string, action: "suspend" | "resume" | "archive" | "unarchive" | "delete"): Promise<void> {
+  async function act(name: string, action: "suspend" | "resume" | "delete"): Promise<void> {
     const params = { params: { path: { name } } };
     const { error: failure } =
       action === "delete"
@@ -258,14 +255,6 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           />
         </Stack>
       )}
-      <Group justify="flex-end">
-        <Switch
-          size="md"
-          label="Show archived"
-          checked={includeArchived}
-          onChange={(e) => setIncludeArchived(e.currentTarget.checked)}
-        />
-      </Group>
       <Table>
         <Table.Thead>
           <Table.Tr>
@@ -305,11 +294,6 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
                         </ActionIcon>
                       </Menu.Target>
                       <Menu.Dropdown>
-                        {row.archived ? (
-                          <Menu.Item onClick={() => void act(row.name, "unarchive")}>Unarchive</Menu.Item>
-                        ) : (
-                          <Menu.Item onClick={() => void act(row.name, "archive")}>Archive</Menu.Item>
-                        )}
                         {/* The API refuses a running sandbox (inventory.py); suspend is one click left. */}
                         <Menu.Item color="red" disabled={!deletable(row)} onClick={() => setConfirmingDelete(row.name)}>
                           Delete

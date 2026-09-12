@@ -94,8 +94,12 @@ def test_haku_console_migration_release_gate(k8s_dir: Path) -> None:
     deployment = yaml.safe_load((console_dir / "deployment.yaml").read_text(encoding="utf-8"))
     job = yaml.safe_load((console_dir / "migration" / "job.yaml").read_text(encoding="utf-8"))
     service_account = yaml.safe_load((console_dir / "migration" / "serviceaccount.yaml").read_text(encoding="utf-8"))
+    database_flux = yaml.safe_load((console_dir / "db" / "flux-kustomization.yaml").read_text(encoding="utf-8"))
     migration_flux = yaml.safe_load((console_dir / "migration" / "flux-kustomization.yaml").read_text(encoding="utf-8"))
     console_flux = yaml.safe_load((console_dir / "flux-kustomization.yaml").read_text(encoding="utf-8"))
+    machine_access_flux = yaml.safe_load(
+        (k8s_dir / "agents" / "machine-access-tf" / "flux-kustomization.yaml").read_text(encoding="utf-8")
+    )
 
     server = one(
         container for container in deployment["spec"]["template"]["spec"]["containers"] if container["name"] == "server"
@@ -141,8 +145,15 @@ def test_haku_console_migration_release_gate(k8s_dir: Path) -> None:
     assert migration_flux["spec"]["healthChecks"] == [
         {"apiVersion": "batch/v1", "kind": "Job", "name": "haku-console-migration", "namespace": "haku-console"}
     ]
-    assert {entry["name"] for entry in migration_flux["spec"]["dependsOn"]} == {"haku-console-db", "forgejo-images"}
-    assert "haku-console-migration" in {entry["name"] for entry in console_flux["spec"]["dependsOn"]}
+    migration_dependencies = {entry["name"] for entry in migration_flux["spec"]["dependsOn"]}
+    console_dependencies = {entry["name"] for entry in console_flux["spec"]["dependsOn"]}
+    assert migration_dependencies == {"haku-console-db", "forgejo-images"}
+    assert "haku-console-namespace" in {entry["name"] for entry in database_flux["spec"]["dependsOn"]}
+    assert "haku-console-migration" in console_dependencies
+    assert {"haku-console-namespace", "haku-console-db", "forgejo-images"}.isdisjoint(console_dependencies)
+    assert "agent-machine-access-tf" in console_dependencies
+    assert "authentik" not in console_dependencies
+    assert "authentik" in {entry["name"] for entry in machine_access_flux["spec"]["dependsOn"]}
     root_kustomization = yaml.safe_load((k8s_dir / "kustomization.yaml").read_text(encoding="utf-8"))
     assert "haku/console/migration/flux-kustomization.yaml" in root_kustomization["resources"]
 

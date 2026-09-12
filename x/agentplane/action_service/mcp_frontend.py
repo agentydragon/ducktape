@@ -14,7 +14,7 @@ from fastapi import HTTPException
 from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
 from fastmcp.exceptions import ToolError
-from fastmcp.server.dependencies import get_http_request
+from fastmcp.server.dependencies import CurrentRequest, get_http_request
 from fastmcp.tools import ToolResult
 from pydantic import BaseModel, Field, JsonValue
 from starlette.requests import Request
@@ -117,16 +117,18 @@ class Caller:
     external_grant: ExternalGrantProvenance | None
 
 
-def _caller() -> Caller:
-    state = get_http_request().state
+# FastMCP resolves a parameter by its dependency default and strips it from a tool's input schema;
+# the markers are module-level because a call in a default is what ruff's B008 refuses.
+CURRENT_REQUEST = CurrentRequest()
+
+
+def _caller(request: Request = CURRENT_REQUEST) -> Caller:
     return Caller(
-        principal=cast(Principal, state.action_principal),
-        external_grant=cast(ExternalGrantProvenance | None, state.action_external_grant),
+        principal=cast(Principal, request.state.action_principal),
+        external_grant=cast(ExternalGrantProvenance | None, request.state.action_external_grant),
     )
 
 
-# FastMCP strips a parameter from the tool's input schema by its `Depends` default; one module-level
-# marker serves every tool, since a call in a default is what ruff's B008 refuses.
 CALLER = Depends(_caller)
 
 
