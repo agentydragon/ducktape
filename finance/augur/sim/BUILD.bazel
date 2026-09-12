@@ -433,23 +433,6 @@ py_test(
     ],
 )
 
-py_test(
-    name = "configured_mortgage_test",
-    srcs = ["configured_mortgage_test.py"],
-    deps = [
-        ":configured",
-        ":metric_composition",
-        ":scenario",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/product:simulation",
-        "//finance/augur/sim/testing:case",
-        "//finance/augur/sim/testing:fixtures",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
 py_library(
     name = "money",
     srcs = ["money.py"],
@@ -807,6 +790,7 @@ py_library(
         ":books",
         ":claims",
         ":distributions",
+        ":fixed_point",
         ":held_bonds",
         ":holdings",
         ":ids",
@@ -838,25 +822,6 @@ py_library(
         ":money",
         ":prepared",
         ":scenario",
-    ],
-)
-
-py_test(
-    name = "validation_test",
-    srcs = ["validation_test.py"],
-    deps = [
-        ":configured",
-        ":prepared",
-        ":results",
-        ":scenario",
-        ":session",
-        ":tlh",
-        ":validation",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/sim/testing:example_run",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -909,7 +874,6 @@ py_test(
         ":bills",
         ":books",
         ":capture",
-        ":configured",
         ":events",
         ":ids",
         ":market_path",
@@ -919,9 +883,11 @@ py_test(
         ":product_metrics",
         ":results",
         ":session",
+        ":tax_authority",
         ":world",
         "//:conftest",
         "//finance/augur:conftest",
+        "//finance/augur/policy:configured_household",
         "//finance/augur/sim/compiler:tax",
         "//finance/augur/sim/testing:accounting",
         "@pypi//pytest",
@@ -964,23 +930,6 @@ py_test(
         ":results",
         ":session",
         ":world",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/augur/sim/testing:accounting",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_validation_contracts",
-    srcs = ["test_validation_contracts.py"],
-    deps = [
-        ":books",
-        ":configured",
-        ":prepared",
-        ":scenario",
-        ":validation",
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/sim/testing:accounting",
@@ -1124,6 +1073,52 @@ py_test(
         "//finance/augur/sim/compiler:execution",
         "//finance/augur/sim/testing:case",
         "//finance/augur/sim/testing:fixtures",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "mortgage_lifecycle_test",
+    srcs = ["mortgage_lifecycle_test.py"],
+    deps = [
+        ":actions",
+        ":bills",
+        ":books",
+        ":external_series",
+        ":fixed_point",
+        ":ids",
+        ":market_path",
+        ":prepared",
+        ":product_metrics",
+        ":property",
+        ":results",
+        ":world",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "//finance/augur/policy:configured_household",
+        "//finance/augur/sim/compiler:execution",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_declaration_guards",
+    srcs = ["test_declaration_guards.py"],
+    deps = [
+        ":books",
+        ":jurisdictions",
+        ":market_path",
+        ":prepared",
+        ":property",
+        ":scenario",
+        ":tlh",
+        ":world",
+        "//:conftest",
+        "//finance/augur:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

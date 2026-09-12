@@ -303,9 +303,9 @@ ValidationEdge}` and `configured_mortgage_test` use grouped settlement and sched
   billers and authorities. `scheduled_transfers` and the property cashflow tables
   become tracked emitters or declarations on the way.
 - **SIMTESTS.** `sim/testing/example_run.py` and the tests of the prepared-input path
-  (`test_results`, `validation_test`, `test_validation_contracts`,
-  `testing/test_invocation`, `product/test_action_projection`) compose their worlds;
-  what they assert about validation moves to the declaration that now rejects it.
+  (`test_results`, `testing/test_invocation`, `product/test_action_projection`) compose
+  their worlds; what they assert about validation moves to the declaration that now
+  rejects it.
 - **RUN.** `CompiledRun`, `PreparedScenario`, `compile_run`, `World.from_run`,
   `ActionSession.from_run` and `sim/validation.py` are deleted; the prepared record
   types stay as the declaration vocabulary. `SCHEMA` closes here.

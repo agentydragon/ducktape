@@ -69,24 +69,6 @@ py_library(
 )
 
 py_library(
-    name = "engine_edges",
-    srcs = ["engine_edges.py"],
-    deps = [
-        ":case",
-        ":simulation_result",
-        "//finance/augur/model:asset_key",
-        "//finance/augur/model:private_equity_bundle",
-        "//finance/augur/model:series",
-        "//finance/augur/sim:external_series",
-        "//finance/augur/sim:locations",
-        "//finance/augur/sim:scenario",
-        "@pypi//numpy",
-        "@pypi//polars",
-        "@pypi//pytest",
-    ],
-)
-
-py_library(
     name = "accounting",
     srcs = ["accounting.py"],
     deps = [
@@ -189,12 +171,9 @@ py_test(
     deps = [
         ":case",
         ":configured_result",
-        ":engine_edges",
         ":fixtures",
-        ":simulation_result",
         "//:conftest",
         "//finance/augur:conftest",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -739,6 +718,58 @@ py_test(
         "//finance/augur/sim/compiler:execution",
         "@pypi//more_itertools",
         "@pypi//numpy",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "scan_phase_test",
+    srcs = ["scan_phase_test.py"],
+    deps = [
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "//finance/augur/policy:configured_household",
+        "//finance/augur/sim:bills",
+        "//finance/augur/sim:books",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:ids",
+        "//finance/augur/sim:jurisdictions",
+        "//finance/augur/sim:market_path",
+        "//finance/augur/sim:prepared",
+        "//finance/augur/sim:property",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim:tax_authority",
+        "//finance/augur/sim:world",
+        "//finance/augur/sim/compiler:execution",
+        "//finance/augur/sim/compiler:tax",
+        "@pypi//numpy",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "validation_edges_test",
+    srcs = ["validation_edges_test.py"],
+    deps = [
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:private_equity_bundle",
+        "//finance/augur/model:series",
+        "//finance/augur/policy:configured_household",
+        "//finance/augur/sim:books",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:ids",
+        "//finance/augur/sim:market_path",
+        "//finance/augur/sim:prepared",
+        "//finance/augur/sim:world",
+        "//finance/augur/sim/compiler:execution",
+        "//finance/augur/sim/compiler:private_equity",
+        "@pypi//numpy",
+        "@pypi//polars",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
