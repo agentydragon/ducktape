@@ -14,8 +14,9 @@ metrics; absent detail is `trace=None`. Bond carrying value uses each declared b
 captured principal, including redemption and stopped-event marks, not a sale quote or
 an inferred history from its ending book. Missing/duplicate bond histories reject.
 Property and private-equity histories remain unsupported and raise explicitly.
-`ProductService` runs <simulation.py>: one world per path with the app household
-(<household.py>) tracked on it; these projection functions do not route between engines.
+`ProductService` runs <simulation.py>: one world per path with the configured household
+(<../policy/configured_household.py>) tracked on it; these projection functions do not
+route between engines.
 
 `shortfall_quanta` sums unpaid due claims and valid attempted consumption gaps,
 not additional cash needed to fund payment or newly incurred debt. Malformed

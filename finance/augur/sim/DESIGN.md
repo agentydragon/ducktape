@@ -123,10 +123,11 @@ comparing stopped books with completed horizons.
 ## The app and the remaining configured consumers
 
 `ProductService` runs <../product/simulation.py>: one world per path with the app
-household (<../product/household.py>) tracked on it and stepped to the horizon. The
-household consults `policy/configured_allocation.py` for its funding sales, then
-pays each account's claims all or none on the cash those sales leave, so a month
-it cannot fund stops the path with the whole due as its shortfall. Selected detail
+household (<../policy/configured_household.py>) tracked on it and stepped to the
+horizon. The household consults `policy/configured_allocation.py` for its funding
+sales, pays each account's claims all or none on the cash those sales leave — so a
+month it cannot fund stops the path with the whole due as its shortfall — and sizes
+each exact purchase from what those sales and payments leave. Selected detail
 executes once and projects both metrics and events from that completed capture
 before applying <../product/projection.py>; in-process event projection consumes
 captured rows directly, without a JSON export/decode round trip. The app's

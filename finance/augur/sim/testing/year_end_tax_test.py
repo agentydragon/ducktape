@@ -12,7 +12,7 @@ import pytest_bazel
 from more_itertools import one
 
 from finance.augur.model.series import SecurityKey, SecuritySymbol
-from finance.augur.product.household import ConfiguredHousehold
+from finance.augur.policy.configured_household import ConfiguredHousehold
 from finance.augur.sim.actions import DecisionActions
 from finance.augur.sim.books import AccountRef, Book, TaxLiabilityState
 from finance.augur.sim.compiler.execution import compile_series

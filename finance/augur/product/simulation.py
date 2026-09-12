@@ -3,7 +3,7 @@
 import numpy as np
 
 from finance.augur.policy.configured_allocation import validate_prepared
-from finance.augur.product.household import ConfiguredHousehold
+from finance.augur.policy.configured_household import ConfiguredHousehold
 from finance.augur.sim.capture import FinancialCapture, WorldResult, event_log
 from finance.augur.sim.events import EventLog
 from finance.augur.sim.ids import AgentId

@@ -30,7 +30,7 @@ Shared proposal helpers live in <../policy/>; they do not settle trades or taxes
 quantities, tax rules and supplied paths. The compiler constructs these directly;
 file serialization is private to the I/O boundaries. Sessions accept the prepared value,
 not a mutable wire dictionary. The app composes its worlds from the same prepared
-facts and tracks its household (<../product/household.py>) on each; the remaining
+facts and tracks its household (<../policy/configured_household.py>) on each; the remaining
 configured suites drive theirs through <configured.py>, which is not an interface
 new experiments should extend.
 

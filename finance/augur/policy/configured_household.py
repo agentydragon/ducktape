@@ -1,9 +1,9 @@
-"""The app's household: the configured funding policies' sales, then every claim its cash covers."""
+"""The configured household: its policies' funding sales, the claims its cash covers, then its purchases."""
 
 from collections import defaultdict
 
-from finance.augur.policy.configured_allocation import plan
-from finance.augur.sim.actions import Action, Liquidate, LotSale, PayClaim, Sell, Withdraw
+from finance.augur.policy.configured_allocation import PendingBuy, materialize_buy, plan
+from finance.augur.sim.actions import Action, Buy, Liquidate, LotSale, PayClaim, Sell, Withdraw
 from finance.augur.sim.agent import EconomicAgent
 from finance.augur.sim.ids import AgentId
 from finance.augur.sim.money import checked_count, mul_div, position_value
@@ -12,11 +12,13 @@ from finance.augur.sim.prepared import PreparedAmount, PreparedFixedAmount, _All
 
 
 class ConfiguredHousehold(EconomicAgent):
-    """Sells on schedule and on the funding policies' terms, then pays each account's claims all or none.
+    """Sells on schedule and on the funding policies' terms, pays each account's claims all or none, then buys.
 
     The sales come first and the claims are judged on the cash they leave: an account whose
     month's claims exceed that pays none of them, so the month's shortfall is the whole due and
-    the path stops on it. Purchases are outside this household; the app's policies never buy.
+    the path stops on it. The purchases come last and are sized from the same projection, less
+    the claims this batch decided to pay, so each order is exact against the cash the month will
+    actually leave.
     """
 
     def __init__(
@@ -27,21 +29,21 @@ class ConfiguredHousehold(EconomicAgent):
         scheduled_sales: tuple[_ScheduledSale, ...] = (),
     ) -> None:
         super().__init__(agent_id)
-        for policy in policies:
-            if policy.agent_id != agent_id:
-                raise ValueError("a funding policy belongs to the household that consults it")
-            if policy.allow_purchases:
-                raise ValueError("the app household sells on its policies; it does not purchase")
+        if any(policy.agent_id != agent_id for policy in policies):
+            raise ValueError("a funding policy belongs to the household that consults it")
         if any(sale.agent_id != agent_id for sale in scheduled_sales):
             raise ValueError("a scheduled sale belongs to the household that makes it")
         self.policies = policies
         self.scheduled_sales = scheduled_sales
+        # One lot-identity counter per (policy, sleeve), advanced only by an emitted Buy.
+        self.lot_sequences: defaultdict[tuple[int, int], int] = defaultdict(int)
 
     def decide(self, observation: Observation) -> list[Action]:
         prices = {pool.asset_id: pool.price for pool in observation.holding_pools}
         actions: list[Action] = [
             self._scheduled(sale, observation) for sale in self.scheduled_sales if sale.month == observation.month
         ]
+        pending: list[PendingBuy] = []
         for index, policy in enumerate(self.policies):
             proposal = plan(
                 observation,
@@ -52,6 +54,7 @@ class ConfiguredHousehold(EconomicAgent):
                 prices={sleeve.asset_id: prices[sleeve.asset_id] for sleeve in policy.sleeves},
             )
             actions.extend(proposal.sales)
+            pending.extend(proposal.buys)
         cash = dict(observation.accounts)
         for action in actions:
             account, proceeds = self._proceeds(action, observation)
@@ -61,7 +64,7 @@ class ConfiguredHousehold(EconomicAgent):
             due[claim.from_account.account_id] = checked_count(
                 due[claim.from_account.account_id] + claim.amount_due, "claims due"
             )
-        actions.extend(
+        payments = [
             PayClaim(
                 request_id=index + 1,
                 cause_id=claim.cause_id,
@@ -71,8 +74,34 @@ class ConfiguredHousehold(EconomicAgent):
             )
             for index, claim in enumerate(observation.claims)
             if cash[claim.from_account.account_id] >= due[claim.from_account.account_id]
-        )
+        ]
+        actions.extend(payments)
+        for payment in payments:
+            account = payment.from_account.account_id
+            cash[account] = checked_count(cash[account] - payment.amount, "projected cash")
+        actions.extend(self._purchases(observation, pending, cash))
         return actions
+
+    def _purchases(self, observation: Observation, pending: list[PendingBuy], cash: dict[str, int]) -> list[Action]:
+        """Exact orders, each sized from the cash left once this batch's sales and payments settle."""
+        orders: list[Action] = []
+        for buy in pending:
+            key = (buy.policy_index, buy.sleeve_index)
+            order = materialize_buy(
+                observation.model_copy(update={"accounts": tuple(cash.items())}),
+                buy,
+                lot_sequence=self.lot_sequences[key],
+            )
+            if order is None:
+                continue
+            if isinstance(order, Buy):
+                spent = position_value(buy.price, order.units, buy.quantity_scale)
+                self.lot_sequences[key] += 1
+            else:
+                spent = order.amount
+            cash[buy.cash_account_id] = checked_count(cash[buy.cash_account_id] - spent, "projected cash")
+            orders.append(order)
+        return orders
 
     @staticmethod
     def _scheduled(sale: _ScheduledSale, observation: Observation) -> Sell:
@@ -110,7 +139,7 @@ class ConfiguredHousehold(EconomicAgent):
         if isinstance(amount, PreparedFixedAmount):
             return amount.amount
         if amount.series_id != "inflation" or amount.base_month_index != 0 or amount.adjustment_period_months != 1:
-            raise ValueError("the app household indexes a band bound to monthly CPI from month zero only")
+            raise ValueError("the configured household indexes a band bound to monthly CPI from month zero only")
         if observation.cpi is None:
             raise ValueError("an inflation-indexed band bound needs a modeled CPI")
         current, origin = observation.cpi

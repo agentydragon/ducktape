@@ -367,25 +367,11 @@ py_test(
 )
 
 py_library(
-    name = "household",
-    srcs = ["household.py"],
-    deps = [
-        "//finance/augur/policy:configured_allocation",
-        "//finance/augur/sim:actions",
-        "//finance/augur/sim:agent",
-        "//finance/augur/sim:ids",
-        "//finance/augur/sim:money",
-        "//finance/augur/sim:observations",
-        "//finance/augur/sim:prepared",
-    ],
-)
-
-py_library(
     name = "simulation",
     srcs = ["simulation.py"],
     deps = [
-        ":household",
         "//finance/augur/policy:configured_allocation",
+        "//finance/augur/policy:configured_household",
         "//finance/augur/sim:capture",
         "//finance/augur/sim:events",
         "//finance/augur/sim:ids",
