@@ -102,16 +102,17 @@ review. See <https://github.com/agentydragon/ducktape/pull/3478> and
 delay).
 
 To check a harness is actually deterministic, don't just eyeball the PNGs — run
-the target twice with fresh (non-cached) execution and diff BuildBuddy's
-artifact content digests directly, without downloading anything:
+it repeatedly with fresh (non-cached) execution and compare BuildBuddy's artifact
+content digests, which needs nothing downloaded:
 
 ```bash
-bbr test --noremote_accept_cached --nocache_test_results //path/to:target   # run 1
-bbr test --noremote_accept_cached --nocache_test_results //path/to:target   # run 2
-bbapi artifact list <invocation-1> --json > /tmp/run1.json
-bbapi artifact list <invocation-2> --json > /tmp/run2.json
-# diff the "uri" field per asset name — identical content hashes to the same blob URI
+bb run //devinfra/pr_visuals:determinism_bin -- --runs 5 //path/to:target
 ```
+
+Two runs is the minimum and rarely enough: all three instances above are races
+that fire intermittently, and one that fires one time in five looks perfectly
+stable across a pair. The same sweep runs weekly over every visual target
+(`.github/workflows/visual-determinism.yml`) and can be dispatched on demand.
 
 If they differ, `launchDeterministicBrowser()` + `DISABLE_ANIMATIONS_CSS` (both in
 `launcher.mjs`) close off rendering-level jitter (font rasterization, unguarded
