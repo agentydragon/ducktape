@@ -2,9 +2,11 @@ import {
   Accordion,
   ActionIcon,
   Badge,
+  Box,
   Button,
   Code,
   Group,
+  Menu,
   Paper,
   Select,
   ScrollArea,
@@ -13,10 +15,13 @@ import {
   Text,
   Textarea,
   TextInput,
+  Tooltip,
+  VisuallyHidden,
 } from "@mantine/core";
+import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
 import IconPlayerStop from "@tabler/icons-react/dist/esm/icons/IconPlayerStop.mjs";
 import IconPower from "@tabler/icons-react/dist/esm/icons/IconPower.mjs";
-import { Fragment, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { Fragment, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { useSearchParams } from "react-router";
 
 import { fromJson, type JsonValue } from "@bufbuild/protobuf";
@@ -56,18 +61,56 @@ const KIND_LABELS: Partial<Record<ItemKind, string>> = {
   [ItemKind.TOOL_CALL]: "tool",
 };
 
-function InputView({ input }: { input: InputState }): JSX.Element {
+/** A transient/binary state, shown as a small colored dot rather than a labeled badge: the label
+ * is still there for a screen reader, and for anyone hovering or (on a touch/keyboard device)
+ * focusing it, just not spelled out at rest. `breathing` pulses the dot, for a state that is
+ * still ongoing (streaming) rather than settled (failed, sending); `style` lets a caller take it
+ * out of flow instead of the default inline placement. */
+function StatusDot({
+  color,
+  label,
+  breathing,
+  style,
+}: {
+  color: string;
+  label: string;
+  breathing?: boolean;
+  style?: CSSProperties;
+}): JSX.Element {
   return (
-    <Paper withBorder p="sm" bg="var(--mantine-color-default-hover)">
-      <Group gap="xs">
-        <Badge variant="light" color="grape">
-          user
-        </Badge>
-        {input.state === "submitted" && <Badge color="yellow">sending</Badge>}
-      </Group>
-      {/* An input logged before the runner carried its text shows as its id. */}
-      <Text style={{ whiteSpace: "pre-wrap" }}>{input.text || `input ${input.id}`}</Text>
-    </Paper>
+    <Tooltip label={label} events={{ hover: true, focus: true, touch: true }}>
+      <Box
+        component="span"
+        role="img"
+        aria-label={label}
+        title={label}
+        tabIndex={0}
+        className={breathing ? "agentplane-status-dot agentplane-breathing-dot" : "agentplane-status-dot"}
+        style={{ backgroundColor: `var(--mantine-color-${color}-6)`, ...style }}
+      />
+    </Tooltip>
+  );
+}
+
+/** Role reads from position and color, not a label: the assistant's items are already full-width
+ * (`ItemView`), so only user input needs a distinct treatment -- a right-aligned bubble. Sending
+ * reads from the bubble's own color, not a dot on top of it -- a still-submitted input keeps the
+ * "in progress" yellow this app already uses for streaming/pending elsewhere, switching to the
+ * settled blue once the runner accepts it into a turn. */
+function InputView({ input }: { input: InputState }): JSX.Element {
+  const sending = input.state === "submitted";
+  return (
+    <Group justify="flex-end">
+      <Paper
+        className={sending ? "agentplane-user-bubble agentplane-user-bubble-sending" : "agentplane-user-bubble"}
+        p="sm"
+      >
+        {/* The color change alone would be invisible to a screen reader. */}
+        {sending && <VisuallyHidden>Sending. </VisuallyHidden>}
+        {/* An input logged before the runner carried its text shows as its id. */}
+        <Text style={{ whiteSpace: "pre-wrap" }}>{input.text || `input ${input.id}`}</Text>
+      </Paper>
+    </Group>
   );
 }
 
@@ -90,12 +133,18 @@ function ReasoningView({ item }: { item: Item }): JSX.Element {
     setSearchParams(next, { replace: true });
   }
   return (
-    <Accordion variant="contained" chevronPosition="left" value={open.has(item.id) ? item.id : null} onChange={toggle}>
+    <Accordion
+      variant="contained"
+      chevronPosition="left"
+      classNames={{ chevron: "agentplane-accordion-chevron" }}
+      value={open.has(item.id) ? item.id : null}
+      onChange={toggle}
+    >
       <Accordion.Item value={item.id}>
         <Accordion.Control>
           <Group gap="xs">
             <Badge variant="light">reasoning</Badge>
-            {!item.completed && <Badge color="yellow">streaming</Badge>}
+            {!item.completed && <StatusDot breathing color="yellow" label="Streaming" />}
           </Group>
         </Accordion.Control>
         <Accordion.Panel>
@@ -108,15 +157,25 @@ function ReasoningView({ item }: { item: Item }): JSX.Element {
 
 function ItemView({ item }: { item: Item }): JSX.Element {
   if (item.kind === ItemKind.REASONING) return <ReasoningView item={item} />;
+  // Assistant text needs no kind label: it's the only unlabeled content in the transcript besides
+  // the user's own bubble, so the absence of a badge already reads as "the reply" -- a status dot,
+  // when there is one, is all it still needs.
+  const isAssistant = item.kind === ItemKind.ASSISTANT_TEXT;
   const label = KIND_LABELS[item.kind] ?? ItemKind[item.kind];
+  const streaming = !item.completed;
+  const failed = item.succeeded === false;
   return (
-    <Paper withBorder p="sm">
-      <Group gap="xs">
-        <Badge variant="light">{label}</Badge>
-        {item.toolName && <Text fw={600}>{item.toolName}</Text>}
-        {!item.completed && <Badge color="yellow">streaming</Badge>}
-        {item.succeeded === false && <Badge color="red">failed</Badge>}
-      </Group>
+    <Paper withBorder p="sm" style={{ position: "relative" }}>
+      {(!isAssistant || failed) && (
+        <Group gap="xs">
+          {!isAssistant && <Badge variant="light">{label}</Badge>}
+          {item.toolName && <Text fw={600}>{item.toolName}</Text>}
+          {/* Assistant text has no header row to toggle a dot inside of -- see the pinned dot
+              below, which doesn't grow/shrink the card as text streams in. */}
+          {!isAssistant && streaming && <StatusDot breathing color="yellow" label="Streaming" />}
+          {failed && <StatusDot color="red" label="Failed" />}
+        </Group>
+      )}
       {item.text &&
         (item.kind === ItemKind.ASSISTANT_TEXT ? (
           <Markdown source={item.text} />
@@ -125,6 +184,11 @@ function ItemView({ item }: { item: Item }): JSX.Element {
         ))}
       {item.argumentsJson && <Code block>{item.argumentsJson}</Code>}
       {item.output && <Code block>{item.output}</Code>}
+      {/* Pinned to the card, not the header: growing reply text must not make a badge row pop in
+          and out above it, so this sits out of flow at the corner instead of a separate line. */}
+      {isAssistant && streaming && (
+        <StatusDot breathing color="yellow" label="Streaming" style={{ position: "absolute", right: 8, bottom: 8 }} />
+      )}
     </Paper>
   );
 }
@@ -145,13 +209,19 @@ function summarizeRun(items: Item[]): string {
 function ItemRunView({ items }: { items: Item[] }): JSX.Element {
   const [open, setOpen] = useState(false);
   return (
-    <Accordion variant="contained" chevronPosition="left" value={open ? "run" : null} onChange={() => setOpen(!open)}>
+    <Accordion
+      variant="contained"
+      chevronPosition="left"
+      classNames={{ chevron: "agentplane-accordion-chevron" }}
+      value={open ? "run" : null}
+      onChange={() => setOpen(!open)}
+    >
       <Accordion.Item value="run">
         <Accordion.Control>
           <Group gap="xs">
             <Badge variant="light">{summarizeRun(items)}</Badge>
-            {items.some((item) => !item.completed) && <Badge color="yellow">streaming</Badge>}
-            {items.some((item) => item.succeeded === false) && <Badge color="red">failed</Badge>}
+            {items.some((item) => !item.completed) && <StatusDot breathing color="yellow" label="Streaming" />}
+            {items.some((item) => item.succeeded === false) && <StatusDot color="red" label="Failed" />}
           </Group>
         </Accordion.Control>
         <Accordion.Panel>
@@ -261,6 +331,25 @@ function ThreadTitle({
       )}
     </Group>
   );
+}
+
+/** Session attachment (`status`) and the harness process (`state.harness`) are two independent
+ * state machines; this collapses them into one dot by severity, worst axis first, so the header
+ * doesn't need a badge per axis. */
+function connectionStatus(
+  status: string,
+  harness: SessionState["harness"]
+): { color: string; breathing?: boolean; label: string } {
+  if (status.startsWith("runner: ")) return { color: "red", label: status };
+  if (harness === "lost") return { color: "red", label: "Harness lost" };
+  if (status === "connecting") return { color: "yellow", breathing: true, label: "Connecting…" };
+  if (status === "reconnecting") return { color: "yellow", breathing: true, label: "Reconnecting…" };
+  if (status === "attached" && harness === null) {
+    return { color: "yellow", breathing: true, label: "Attached · waiting for harness" };
+  }
+  if (status === "stream ended") return { color: "gray", label: `Stream ended · harness ${harness ?? "unknown"}` };
+  if (harness === "stopped") return { color: "gray", label: `${status} · harness stopped` };
+  return { color: "green", label: `${status} · harness ${harness ?? "unknown"}` };
 }
 
 export function SessionView({
@@ -407,26 +496,6 @@ export function SessionView({
           ← {sandbox}
         </Button>
         <ThreadTitle sessionId={sessionId} thread={thread} onRenamed={setThread} onError={setError} />
-        <Badge>{status}</Badge>
-        {state.harness && <Badge color={state.harness === "running" ? "green" : "gray"}>harness {state.harness}</Badge>}
-        <Select
-          aria-label="Model"
-          data={modelOptions}
-          value={model}
-          onChange={(next) => void selectModel(next)}
-          disabled={state.harness !== "running" || activeTurn !== undefined || modelPending}
-          w={280}
-        />
-        <ActionIcon
-          variant="light"
-          color="red"
-          aria-label="Shut down harness"
-          onClick={() => void run(() => shutdownSession(sandbox, sessionId))}
-          disabled={state.harness !== "running"}
-        >
-          <IconPower size={16} />
-        </ActionIcon>
-        <Switch label="Raw frames" checked={showRaw} onChange={(e) => setFlag("raw", "1", e.currentTarget.checked)} />
       </Group>
       {error && <Text c="red">{error}</Text>}
       {/* `minHeight: 0` so this shrinks instead of pushing the composer off: a flex child
@@ -474,9 +543,11 @@ export function SessionView({
           )}
         </Stack>
       </ScrollArea>
-      <Group align="flex-end" gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>
+      {/* The model picker and stop control sit under the composer, not the header: on a phone
+          that's the row already in thumb reach, and it's one thing keeping the header a
+          two-line-tall row instead of three. */}
+      <Stack gap="xs" style={{ flexShrink: 0 }}>
         <Textarea
-          style={{ flex: 1 }}
           placeholder="Enter sends, Ctrl+Enter for a new line"
           value={draft}
           autosize
@@ -486,17 +557,63 @@ export function SessionView({
           onChange={(e) => setDraft(e.currentTarget.value)}
           onKeyDown={composerKey}
         />
-        {sending && <Text role="status">Sending…</Text>}
-        <ActionIcon
-          size="lg"
-          variant="light"
-          aria-label="Interrupt"
-          onClick={() => void run(() => interruptSession(sandbox, sessionId))}
-          disabled={!activeTurn}
-        >
-          <IconPlayerStop size={16} />
-        </ActionIcon>
-      </Group>
+        <Group justify="space-between" wrap="nowrap">
+          <Group gap="xs" wrap="nowrap">
+            <StatusDot {...connectionStatus(status, state.harness)} />
+            <Select
+              aria-label="Model"
+              data={modelOptions}
+              value={model}
+              onChange={(next) => void selectModel(next)}
+              disabled={state.harness !== "running" || activeTurn !== undefined || modelPending}
+              w={200}
+            />
+          </Group>
+          <Group gap="xs" wrap="nowrap">
+            {sending && <Text role="status">Sending…</Text>}
+            {/* Opens upward: the composer sits at the bottom of the viewport, so there's rarely
+                room below the trigger -- Mantine's own Floating-UI flip would land here anyway,
+                but "top-end" states the intent rather than leaving it to the fallback. */}
+            <Menu position="top-end" withArrow closeOnItemClick={false} shadow="md">
+              <Menu.Target>
+                <ActionIcon variant="light" aria-label="More">
+                  <IconDotsVertical size={16} />
+                </ActionIcon>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Item
+                  rightSection={
+                    <Switch checked={showRaw} readOnly tabIndex={-1} size="xs" style={{ pointerEvents: "none" }} />
+                  }
+                  onClick={() => setFlag("raw", "1", !showRaw)}
+                >
+                  Raw frames
+                </Menu.Item>
+                <Menu.Divider />
+                <Menu.Item
+                  color="red"
+                  leftSection={<IconPower size={15} />}
+                  disabled={state.harness !== "running"}
+                  closeMenuOnClick
+                  onClick={() => void run(() => shutdownSession(sandbox, sessionId))}
+                >
+                  Shut down harness
+                </Menu.Item>
+              </Menu.Dropdown>
+            </Menu>
+            <ActionIcon
+              size="lg"
+              variant="light"
+              color="red"
+              aria-label="Interrupt"
+              onClick={() => void run(() => interruptSession(sandbox, sessionId))}
+              disabled={!activeTurn}
+            >
+              <IconPlayerStop size={16} />
+            </ActionIcon>
+          </Group>
+        </Group>
+      </Stack>
     </Stack>
   );
 }
