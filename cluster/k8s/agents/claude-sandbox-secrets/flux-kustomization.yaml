@@ -8,8 +8,8 @@ spec:
   path: ./cluster/k8s/agents/claude-sandbox-secrets
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: claude-sandbox-secrets
 
     namespace: ducktape-flux
   timeout: 5m

@@ -16,8 +16,8 @@ spec:
   path: ./cluster/k8s/agents/haku-openclaw-spike/backup
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: haku-openclaw-spike-backup
     namespace: ducktape-flux
   decryption:
     provider: sops

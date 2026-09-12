@@ -2020,6 +2020,206 @@ spec:
 apiVersion: source.extensions.fluxcd.io/v1beta1
 kind: ArtifactGenerator
 metadata:
+  name: attic-jwt-rotation
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: attic-jwt-rotation
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/attic-jwt-rotation/**"
+          to: "@artifact/cluster/k8s/agents/attic-jwt-rotation/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: claude-sandbox-secrets
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: claude-sandbox-secrets
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/claude-sandbox-secrets/**"
+          to: "@artifact/cluster/k8s/agents/claude-sandbox-secrets/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: coinbase-read
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: coinbase-read
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/coinbase-read/**"
+          to: "@artifact/cluster/k8s/agents/coinbase-read/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: forgejo-token-rotation
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: forgejo-token-rotation
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/forgejo-token-rotation/**"
+          to: "@artifact/cluster/k8s/agents/forgejo-token-rotation/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: ha-mcp
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: ha-mcp
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/ha-mcp/app/**"
+          to: "@artifact/cluster/k8s/agents/ha-mcp/app/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: ha-mcp-credentials
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: ha-mcp-credentials
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/ha-mcp/credentials/**"
+          to: "@artifact/cluster/k8s/agents/ha-mcp/credentials/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: ha-mcp-servicemonitor
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: ha-mcp-servicemonitor
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/ha-mcp/servicemonitor/**"
+          to: "@artifact/cluster/k8s/agents/ha-mcp/servicemonitor/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: haku-openclaw-spike-app
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: haku-openclaw-spike-app
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/haku-openclaw-spike/app/**"
+          to: "@artifact/cluster/k8s/agents/haku-openclaw-spike/app/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: haku-openclaw-spike-backup
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: haku-openclaw-spike-backup
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/haku-openclaw-spike/backup/**"
+          to: "@artifact/cluster/k8s/agents/haku-openclaw-spike/backup/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: kubectl-machine-mcp
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: kubectl-machine-mcp
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/kubectl-machine-mcp/app/**"
+          to: "@artifact/cluster/k8s/agents/kubectl-machine-mcp/app/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
   name: activitywatch
   namespace: ducktape-flux
 spec:
