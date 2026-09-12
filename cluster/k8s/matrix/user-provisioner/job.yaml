@@ -17,7 +17,7 @@ spec:
       containers:
         - name: provision
           # Script baked in via Bazel (//cluster/provisioners/matrix_user_provisioner:image).
-          image: git.allegedly.works/ducktape-ci/matrix-user-provisioner:devel-20260910004736-9d1a996 # {"$imagepolicy": "flux-system:matrix-user-provisioner"}
+          image: git.allegedly.works/ducktape-ci/matrix-user-provisioner:devel-20260912094554-b1fb784 # {"$imagepolicy": "flux-system:matrix-user-provisioner"}
           imagePullPolicy: Always
           env:
             - name: REGISTRATION_SECRET
