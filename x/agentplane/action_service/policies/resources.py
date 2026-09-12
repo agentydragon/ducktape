@@ -16,7 +16,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Discriminator, Field, Tag, ValidationError
 
-from x.agentplane.action_service.models import ServiceAccountRef
+from x.agentplane.action_service.models import NamespacedName, ServiceAccountRef
 from x.agentplane.action_service.policies.kind import Spec
 from x.agentplane.action_service.policies.registry import Policy
 
@@ -46,6 +46,16 @@ class ObjectMeta(_Wire):
     resource_version: str = Field(
         alias="resourceVersion", description="Bumped on every write, status included; what a Decision records."
     )
+
+
+class _Namespaced(_Wire):
+    """A namespaced object as read off the API server; `namespaced_name` is its key in the index."""
+
+    metadata: ObjectMeta
+
+    @property
+    def namespaced_name(self) -> NamespacedName:
+        return NamespacedName(self.metadata.namespace, self.metadata.name)
 
 
 class Condition(_Wire):
@@ -80,8 +90,7 @@ class PolicySetSpec(Spec):
     )
 
 
-class ActionPolicySet(_Wire):
-    metadata: ObjectMeta
+class ActionPolicySet(_Namespaced):
     spec: PolicySetSpec
     status: Status = Field(default_factory=Status)
 
@@ -130,8 +139,7 @@ class BindingSpec(Spec):
     )
 
 
-class ActionPolicyBinding(_Wire):
-    metadata: ObjectMeta
+class ActionPolicyBinding(_Namespaced):
     spec: BindingSpec
     status: Status = Field(default_factory=Status)
 
@@ -143,6 +151,10 @@ class InvalidResource:
     metadata: ObjectMeta
     status: Status
     message: str
+
+    @property
+    def namespaced_name(self) -> NamespacedName:
+        return NamespacedName(self.metadata.namespace, self.metadata.name)
 
 
 def _report(error: ValidationError) -> str:

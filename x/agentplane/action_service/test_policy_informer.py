@@ -13,7 +13,7 @@ from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import ApiClient, CoreV1Api, CustomObjectsApi
 
 from util.kubernetes import CustomObjectsClient
-from x.agentplane.action_service.models import ServiceAccountRef
+from x.agentplane.action_service.models import NamespacedName, ServiceAccountRef
 from x.agentplane.action_service.policies.resources import (
     BINDINGS_PLURAL,
     CALLER_LABEL,
@@ -25,7 +25,7 @@ from x.agentplane.action_service.policies.resources import (
     ActionPolicySet,
     InvalidResource,
 )
-from x.agentplane.action_service.policy_informer import PolicyIndex, PolicyInformer, namespaced_key
+from x.agentplane.action_service.policy_informer import PolicyIndex, PolicyInformer
 from x.agentplane.egress.testing.fake_apiserver import FakeApiServer, fake_apiserver
 
 NAMESPACE = "agentplane-policy-test"
@@ -123,8 +123,8 @@ async def index(fake: FakeApiServer) -> AsyncIterator[PolicyIndex]:
             await asyncio.gather(task, return_exceptions=True)
 
 
-def key(name: str) -> str:
-    return namespaced_key(NAMESPACE, name)
+def key(name: str) -> NamespacedName:
+    return NamespacedName(NAMESPACE, name)
 
 
 def _ready(index: PolicyIndex, name: str, status: str, generation: int) -> bool:
