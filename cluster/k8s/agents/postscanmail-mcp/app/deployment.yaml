@@ -24,7 +24,7 @@ spec:
       automountServiceAccountToken: false
       containers:
         - name: postscanmail-mcp-server
-          image: git.allegedly.works/ducktape-ci/postscanmail-mcp-server:devel-20260912093459-b1fb784 # {"$imagepolicy": "flux-system:postscanmail-mcp-server"}
+          image: git.allegedly.works/ducktape-ci/postscanmail-mcp-server:devel-20260912111232-637014b # {"$imagepolicy": "flux-system:postscanmail-mcp-server"}
           imagePullPolicy: Always
           ports:
             - name: bridge
