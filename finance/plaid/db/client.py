@@ -365,7 +365,7 @@ def _split_link_products(products: list[str]) -> tuple[str, list[str]]:
     """
     if not products:
         raise ValueError("a Link token needs at least one product")
-    ordered = [p.value for p in Product if p.value in set(products)]
+    ordered: list[str] = [p.value for p in Product if p.value in set(products)]
     unknown = sorted(set(products) - {p.value for p in Product})
     if unknown:
         raise ValueError(f"not products this app syncs: {unknown}")

@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from typing import Any
 
 import litellm
-from litellm.types.utils import Choices
+from litellm.types.utils import ChatCompletionMessageToolCall, Choices
 
 from tana.litellm_proxy.provider import register_litellm_provider
 
@@ -82,19 +82,20 @@ def main() -> int:
     if not isinstance(choice, Choices):
         raise TypeError(f"unexpected streaming choice in non-streaming response: {type(choice).__name__}")
     if choice.message.tool_calls:
-        print(
-            json.dumps(
-                [
-                    {
-                        "id": tool_call.id,
-                        "type": tool_call.type,
-                        "function": {"name": tool_call.function.name, "arguments": tool_call.function.arguments},
-                    }
-                    for tool_call in choice.message.tool_calls
-                ],
-                indent=2,
+        calls = []
+        for tool_call in choice.message.tool_calls:
+            # The demo offers one function tool, so a custom tool call back is the model answering
+            # a question nobody asked -- worth failing on rather than formatting around.
+            if not isinstance(tool_call, ChatCompletionMessageToolCall):
+                raise TypeError(f"the demo tool is a function call, got {tool_call.type}")
+            calls.append(
+                {
+                    "id": tool_call.id,
+                    "type": tool_call.type,
+                    "function": {"name": tool_call.function.name, "arguments": tool_call.function.arguments},
+                }
             )
-        )
+        print(json.dumps(calls, indent=2))
     else:
         print(choice.message.content)
     return 0
