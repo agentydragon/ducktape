@@ -33,6 +33,8 @@ spec:
       namespace: ducktape-flux
     - name: agentplane-staging-egress
       namespace: ducktape-flux
+    - name: agentplane-crds # the ActionPolicySet and ActionPolicyBinding kinds the service watches
+      namespace: ducktape-flux
     - name: forgejo-images
       namespace: ducktape-flux
     - name: ssh-mcp-secrets

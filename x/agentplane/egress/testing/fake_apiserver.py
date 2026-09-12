@@ -1,9 +1,11 @@
-"""An in-memory API server for the proxy's tests: TokenReview, Pod reads, list/watch, status patches.
+"""An in-memory API server for informer tests: TokenReview, Pod reads, list/watch, status patches.
 
 Objects are kept in wire shape, with a global `resourceVersion` counter the way the real server
 stamps them, so the informer's list-then-watch-from-version protocol is exercised for real: a watch
 replays every change after the version it names, then streams live ones until `timeoutSeconds`
-passes or `close_watches` ends it (which is how a test forces a relist).
+passes or `close_watches` ends it (which is how a test forces a relist). The kinds served and the
+namespace each is legitimately read from default to the egress proxy's; another informer's tests
+pass their own map.
 """
 
 from __future__ import annotations
@@ -66,19 +68,20 @@ class _Event:
     obj: dict[str, Any]
 
 
+def _selected(selector: str, obj: dict[str, Any]) -> bool:
+    """Whether `obj` matches a `key=value[,key=value]` label selector; the empty selector matches all."""
+    labels = obj["metadata"].get("labels", {})
+    return all(
+        labels.get(key) == value for key, _, value in (item.partition("=") for item in selector.split(",")) if key
+    )
+
+
 @dataclass
 class FakeApiServer:
     tokens: dict[str, TokenVerdict] = field(default_factory=dict)
     pods: dict[str, dict[str, Any]] = field(default_factory=dict)
-    objects: dict[str, dict[str, dict[str, Any]]] = field(
-        default_factory=lambda: {
-            POLICIES_PLURAL: {},
-            BINDINGS_PLURAL: {},
-            CREDENTIALS_PLURAL: {},
-            SANDBOXES_PLURAL: {},
-            SECRETS_PLURAL: {},
-        }
-    )
+    namespace_of: dict[str, str] = field(default_factory=lambda: dict(_NAMESPACE_OF))
+    objects: dict[str, dict[str, dict[str, Any]]] = field(default_factory=dict)
     status_patches: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
     token_reviews: int = 0
     pod_reads: int = 0
@@ -86,6 +89,10 @@ class FakeApiServer:
     _version: int = 0
     _events: list[_Event] = field(default_factory=list)
     _watchers: set[asyncio.Queue[_Event | None]] = field(default_factory=set)
+
+    def __post_init__(self) -> None:
+        for plural in self.namespace_of:
+            self.objects.setdefault(plural, {})
 
     def put(self, plural: str, obj: dict[str, Any]) -> None:
         """Create or replace; stamps the next resourceVersion (and a uid on create) and wakes watches."""
@@ -158,20 +165,21 @@ class FakeApiServer:
         if not self.watch_available:
             return web.Response(status=503)
         plural = request.match_info["plural"]
-        assert request.match_info["namespace"] == _NAMESPACE_OF[plural]
+        assert request.match_info["namespace"] == self.namespace_of[plural]
+        selector = request.query.get("labelSelector", "")
         # The client spells the flag `True`, which the real server parses like `true`.
         if request.query.get("watch", "").lower() == "true":
-            return await self._watch(request, plural)
+            return await self._watch(request, plural, selector)
         return web.json_response(
             {
                 "apiVersion": "v1",
                 "kind": "List",
                 "metadata": {"resourceVersion": str(self._version)},
-                "items": list(self.objects[plural].values()),
+                "items": [obj for obj in self.objects[plural].values() if _selected(selector, obj)],
             }
         )
 
-    async def _watch(self, request: web.Request, plural: str) -> web.StreamResponse:
+    async def _watch(self, request: web.Request, plural: str, selector: str) -> web.StreamResponse:
         since = int(request.query.get("resourceVersion", "0"))
         # The API server parses timeoutSeconds with strconv.ParseInt and answers 400 for anything
         # else, so a float reaches it as "300.0" and every watch fails. Refusing it here too keeps
@@ -212,16 +220,19 @@ class FakeApiServer:
                     break
                 if event.plural != plural:
                     continue
-                await response.write((json.dumps({"type": event.type, "object": event.obj}) + "\n").encode())
+                # As the real server does under a selector: an object that stopped matching is
+                # reported deleted, one that never matched is not reported at all.
+                event_type = event.type if _selected(selector, event.obj) else "DELETED"
+                await response.write((json.dumps({"type": event_type, "object": event.obj}) + "\n").encode())
         finally:
             self._watchers.discard(queue)
         await response.write_eof()
         return response
 
     async def patch_status(self, request: web.Request) -> web.Response:
-        assert request.match_info["namespace"] == NAMESPACE
-        assert request.content_type == "application/merge-patch+json"
         plural, name = request.match_info["plural"], request.match_info["name"]
+        assert request.match_info["namespace"] == self.namespace_of[plural]
+        assert request.content_type == "application/merge-patch+json"
         patch = await request.json()
         self.status_patches.append((name, patch["status"]))
         current = self.objects[plural][name]
@@ -316,8 +327,8 @@ def binding(
 
 
 @asynccontextmanager
-async def fake_apiserver() -> AsyncIterator[FakeApiServer]:
-    fake = FakeApiServer()
+async def fake_apiserver(namespace_of: dict[str, str] | None = None) -> AsyncIterator[FakeApiServer]:
+    fake = FakeApiServer() if namespace_of is None else FakeApiServer(namespace_of=namespace_of)
     app = web.Application()
     app.router.add_post("/apis/authentication.k8s.io/v1/tokenreviews", fake.token_review)
     app.router.add_get("/api/v1/namespaces/{namespace}/pods/{name}", fake.get_pod)

@@ -8,13 +8,15 @@ import os
 from contextlib import AsyncExitStack
 from pathlib import Path
 from types import FrameType
+from typing import cast
 
 import uvicorn
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
-from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api
+from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api, CustomObjectsApi
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 
+from util.kubernetes import CustomObjectsClient
 from x.agentplane.action_service.api import create_app
 from x.agentplane.action_service.auth import (
     ConfiguredOperatorBearerAuthenticator,
@@ -29,6 +31,7 @@ from x.agentplane.action_service.fixture_policy import FixtureAutoAllow, Fixture
 from x.agentplane.action_service.mcp_linkage import McpLinkageAuthority, McpOAuthServer
 from x.agentplane.action_service.oauth import OAuthSettings, running_oauth
 from x.agentplane.action_service.operator_oidc import OidcOperatorAuthenticator, OperatorOidcSettings
+from x.agentplane.action_service.policy_informer import PolicyIndex, PolicyInformer
 from x.agentplane.action_service.push import ActionPushNotifier, PushIdentity, PushSubscriptionStore, WebPushSettings
 from x.agentplane.action_service.runtime import running_executor
 from x.agentplane.action_service.service import ActionService
@@ -76,7 +79,12 @@ class Settings(BaseSettings):
     token_audience: str = "agentplane-egress"
     allowed_service_account_namespaces: frozenset[str] = Field(
         default=frozenset({"agentplane-staging"}),
-        description="Kubernetes namespaces whose ServiceAccounts may authenticate sandbox callers; does not grant Action approval.",
+        description="Kubernetes namespaces whose ServiceAccounts may authenticate sandbox callers and whose "
+        "ActionPolicySets, ActionPolicyBindings and labeled caller ServiceAccounts the service watches; "
+        "does not grant Action approval.",
+    )
+    policy_resync_seconds: int = Field(
+        default=300, gt=0, description="Policy watch lifetime; every watched kind is relisted this often."
     )
     operator_bearer_file: Path | None = None
     operator_oidc: OperatorOidcSettings | None = None
@@ -149,6 +157,23 @@ async def async_main(settings: Settings) -> None:
         catalog = ActionCatalog(groups=settings.action_groups)
         providers = settings.decision_providers(catalog)
         api = await stack.enter_async_context(ApiClient(configuration=configuration))
+        policy_index = PolicyIndex()
+        informer_task = asyncio.create_task(
+            PolicyInformer(
+                index=policy_index,
+                custom_objects=cast(CustomObjectsClient, CustomObjectsApi(api)),
+                core_v1=CoreV1Api(api),
+                namespaces=settings.allowed_service_account_namespaces,
+                resync_seconds=settings.policy_resync_seconds,
+            ).run(),
+            name="action-policy-informer",
+        )
+
+        async def stop_informer() -> None:
+            informer_task.cancel()
+            await asyncio.gather(informer_task, return_exceptions=True)
+
+        stack.push_async_callback(stop_informer)
         connections = ConnectionAuthority(make_sessionmaker(engine), settings.identities)
         enrollments = EnrollmentAuthority(make_sessionmaker(engine), connections)
         mcp_linkage = McpLinkageAuthority(make_sessionmaker(engine), settings.mcp_servers, engine=engine)

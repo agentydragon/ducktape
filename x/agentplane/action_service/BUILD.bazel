@@ -167,10 +167,12 @@ py_library(
         ":mcp_linkage",
         ":oauth",
         ":operator_oidc",
+        ":policy_informer",
         ":push",
         ":runtime",
         ":service",
         ":updates",
+        "//util:kubernetes",
         "//x/agentplane/sandbox_auth:http",
         "//x/agentplane/sandbox_auth:principal",
         "@pypi//kubernetes_asyncio",
@@ -883,5 +885,59 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "policy_informer",
+    srcs = ["policy_informer.py"],
+    deps = [
+        ":models",
+        ":policy_resources",
+        "//util:kubernetes",
+        "//x/agentplane:kubernetes_watch",
+        "@pypi//kubernetes_asyncio",
+    ],
+)
+
+py_library(
+    name = "policy_resources",
+    srcs = ["policy_resources.py"],
+    deps = [
+        ":catalog",
+        ":models",
+        "@pypi//jsonschema",
+        "@pypi//pydantic",
+        "@pypi//referencing",
+    ],
+)
+
+py_test(
+    name = "test_policy_informer",
+    srcs = ["test_policy_informer.py"],
+    deps = [
+        ":conftest",
+        ":models",
+        ":policy_informer",
+        ":policy_resources",
+        "//:conftest",
+        "//util:kubernetes",
+        "//x/agentplane/egress/testing:fake_apiserver",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_policy_resources",
+    srcs = ["test_policy_resources.py"],
+    deps = [
+        ":conftest",
+        ":models",
+        ":policy_resources",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

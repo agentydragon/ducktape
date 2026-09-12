@@ -31,6 +31,22 @@ class Principal(BaseModel):
         return f"{self.issuer}:{self.subject}"
 
 
+class ServiceAccountRef(BaseModel):
+    """A Kubernetes ServiceAccount by namespace and name."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    namespace: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+
+
+class PolicyKind(StrEnum):
+    """The `type` of one ActionPolicySet policy; each names one Python evaluator."""
+
+    EXACT_ACTIONS = "exact_actions"
+    ARGUMENT_SCHEMA = "argument_schema"
+
+
 CONFIGURED_IDENTITY_ISSUER = "configured-identity"
 
 
