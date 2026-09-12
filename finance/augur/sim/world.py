@@ -214,7 +214,14 @@ class World:
         )
         borrower_equity = AccountRef(agent_id=terms.borrower.agent_id, account_id="equity:opening")
         lender_equity = AccountRef(agent_id=terms.lender.agent_id, account_id="equity:opening")
-        for account in (liability, receivable, borrower_equity, lender_equity):
+        for account in (
+            liability,
+            receivable,
+            borrower_equity,
+            lender_equity,
+            AccountRef(agent_id=terms.borrower.agent_id, account_id=f"expense:mortgage-interest:{terms.liability_id}"),
+            AccountRef(agent_id=terms.lender.agent_id, account_id=f"income:mortgage-interest:{terms.liability_id}"),
+        ):
             self.accounting.ledger.ensure_account(account)
         owed = checked_count(-mortgage.opening_principal, "money negation")
         self.accounting.apply(

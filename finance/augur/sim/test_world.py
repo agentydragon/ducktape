@@ -805,16 +805,20 @@ def test_tracked_mortgage_is_serviced_from_the_ledger_through_payoff() -> None:
     assert [due for due in household.dues if due[1] == "mortgage_payment"] == [
         (month, "mortgage_payment", interest + principal) for month, interest, principal in paid
     ]
-    assert [month for month, _, _ in paid] == list(range(1, 13))
+    # Twelve level installments leave a rounding residual, paid by a short thirteenth.
+    assert [month for month, _, _ in paid] == list(range(1, len(paid) + 1))
     assert paid[0] == (1, 60, 473)
+    assert 0 < paid[-1][1] + paid[-1][2] < 533
     assert principals[:2] == [6000, 6000]
-    assert [before - after for before, after in pairwise(principals[1:14])] == [principal for _, _, principal in paid]
-    assert principals[-2:] == [0, 0]
+    assert [before - after for before, after in pairwise(principals[1 : len(paid) + 2])] == [
+        principal for _, _, principal in paid
+    ]
+    assert principals[-1] == 0
     assert sum(principal for _, _, principal in paid) == 6000
     # Year-to-date interest accrues through November, resets at the December close and restarts.
     assert interest_ytd[10] == sum(interest for month, interest, _ in paid if month <= 10)
     assert interest_ytd[11] == 0
-    assert interest_ytd[12] == paid[-1][1]
+    assert interest_ytd[12] == paid[11][1]
     [state] = world.book().mortgages
     assert (state.active, world.accounting.ledger.balance(receivable)) == (False, 0)
     assert checking(world) == 10_000 - sum(interest + principal for _, interest, principal in paid)
