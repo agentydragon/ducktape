@@ -56,10 +56,10 @@ py_library(
     srcs = ["tool_call_service.py"],
     deps = [
         ":execution",
+        "//github_policy:visibility",
         "//haku/console:mcp_config",
         "//haku/console:settings",
         "//haku/console:tool_call_actor",
-        "//haku/console/auto_approval:github",
         "//haku/console/auto_approval:registry",
         "//haku/console/grants:principal",
         "//haku/console/grants/kubernetes:authorization_service",

@@ -22,7 +22,6 @@ const live = vi.hoisted(
         sandbox: {
           name: "startup-test",
           uid: "00000000-0000-4000-8000-000000000001",
-          archived: false,
           state: "running",
           created_at: "2026-01-01T00:00:00Z",
           operating_mode: "Running",

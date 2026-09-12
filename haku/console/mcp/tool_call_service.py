@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 from uuid import UUID
 
-from haku.console.auto_approval.github import GitHubRepositoryVisibilityService
+from github_policy.visibility import RepositoryVisibilityService
 from haku.console.auto_approval.registry import AutoApprovalPolicyRegistry, PolicyDenial, auto_approve_tool_call
 from haku.console.grants.kubernetes.authorization_service import KubernetesAuthorizationService
 from haku.console.grants.principal import RequestPrincipal
@@ -294,7 +294,7 @@ class ToolCallApplicationService:
         approval_notifier: PendingApprovalNotifier,
         gmail_client_provider: GmailClientProvider,
         kubernetes_authorization: KubernetesAuthorizationService | None = None,
-        github_repository_visibility: GitHubRepositoryVisibilityService | None = None,
+        github_repository_visibility: RepositoryVisibilityService | None = None,
     ) -> None:
         self._settings = settings
         self._repository = repository

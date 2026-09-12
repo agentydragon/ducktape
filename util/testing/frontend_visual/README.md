@@ -23,13 +23,13 @@ rendered PNG for PR visual review instead — see
 where it wants its scenario list to live.
 
 - **`main(name, options)`** — one `js_test` per scenario, each with its own entry-point `.mjs`.
-  Scenario names are then in BUILD as well as in the harness. `props/frontend`,
-  `airlock/frontend` and `study_casino/frontend` work this way.
+  Scenario names are then in BUILD as well as in the harness. `airlock/frontend` and
+  `study_casino/frontend` work this way.
 - **`runScenarios(table, {title})`** — one `js_test` over a whole table, split with `shard_count`.
   The list lives only in the table; BUILD carries a shard count, which needs no edit when the
   table grows. One browser serves every scenario in a shard, and a failure is recorded and the
   sweep continues, so a run enumerates every broken scene rather than stopping at the first.
-  `x/agentplane/app/frontend` works this way.
+  `x/agentplane/app/frontend` and `props/frontend` work this way.
 
 Under `runScenarios`, `--test_filter=<scenario>` (Bazel's `TESTBRIDGE_TEST_ONLY`) addresses a
 single scenario — the substitute for a per-scenario target name. Filtering happens before

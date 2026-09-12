@@ -26,7 +26,6 @@ from util.kubernetes import CustomObjectsClient
 from x.agentplane.app.presets import SandboxBinding, ThreadDefaults
 
 MANAGED_LABEL = "agentplane.allegedly.works/managed"
-ARCHIVED_LABEL = "agentplane.allegedly.works/archived"
 PRESET_BINDING_ANNOTATION = "agentplane.allegedly.works/launch-preset"
 
 _TEMPLATE_API = ("extensions.agents.x-k8s.io", "v1beta1")
@@ -55,7 +54,6 @@ class ProvisioningState(StrEnum):
     WAITING_FOR_POD_READY = "waiting_for_pod_ready"
     RUNNING = "running"
     SUSPENDED = "suspended"
-    ARCHIVED = "archived"
 
 
 class InventoryError(Exception):
@@ -139,7 +137,6 @@ class SandboxView(BaseModel):
 
     name: str = Field(description="The Sandbox name, and its Pod's; the handle for every operation.")
     uid: UUID = Field(description="The API server's identity of this Sandbox; what an owned binding references.")
-    archived: bool
     state: ProvisioningState
     created_at: datetime
     operating_mode: OperatingMode
@@ -214,16 +211,14 @@ class SandboxInventory:
         self._custom_objects = custom_objects
         self._core_v1 = core_v1
 
-    async def list_sandboxes(self, *, include_archived: bool = False) -> list[SandboxView]:
+    async def list_sandboxes(self) -> list[SandboxView]:
         sandboxes_page, pods = await asyncio.gather(
             self._custom_objects.list_namespaced_custom_object(
                 *SANDBOX_API, self._namespace, SANDBOXES_PLURAL, label_selector=f"{MANAGED_LABEL}=true"
             ),
             self._core_v1.list_namespaced_pod(self._namespace),
         )
-        return sandbox_views(
-            _ResourceList.model_validate(sandboxes_page).items, pods.items, include_archived=include_archived
-        )
+        return sandbox_views(_ResourceList.model_validate(sandboxes_page).items, pods.items)
 
     async def get(self, name: str) -> SandboxView:
         sandbox = await self._sandbox(name)
@@ -269,17 +264,6 @@ class SandboxInventory:
 
     async def resume(self, name: str) -> None:
         await self._set_operating_mode(name, OperatingMode.RUNNING)
-
-    async def archive(self, name: str) -> None:
-        # Suspend before labelling: if the label write fails, a suspended sandbox is still a valid
-        # state, whereas a labelled-but-running one would hide a live Pod from the active list.
-        await self.suspend(name)
-        await self._patch(name, {"metadata": {"labels": {ARCHIVED_LABEL: "true"}}})
-
-    async def unarchive(self, name: str) -> None:
-        """Return the sandbox to the active list; it stays suspended until resumed explicitly."""
-        await self._sandbox(name)
-        await self._patch(name, {"metadata": {"labels": {ARCHIVED_LABEL: None}}})
 
     async def require_known(self, name: str) -> None:
         """Raise `SandboxNotFoundError` unless the name is one of Agentplane's sandboxes; the
@@ -335,18 +319,14 @@ class SandboxInventory:
 # same row.
 
 
-def sandbox_views(
-    sandboxes: Iterable[object], pods: Iterable[k8s_client.V1Pod], *, include_archived: bool
-) -> list[SandboxView]:
+def sandbox_views(sandboxes: Iterable[object], pods: Iterable[k8s_client.V1Pod]) -> list[SandboxView]:
     """One row per Sandbox, each joined to the Pod of the same name."""
     pods_by_name = {pod.metadata.name: pod for pod in pods}
     views = []
     for item in sandboxes:
         parsed = _Sandbox.model_validate(item)
         views.append(_view(parsed, pods_by_name.get(parsed.metadata.name)))
-    if include_archived:
-        return views
-    return [view for view in views if not view.archived]
+    return views
 
 
 def sandbox_view(sandbox: object, pod: k8s_client.V1Pod | None) -> SandboxView:
@@ -354,13 +334,10 @@ def sandbox_view(sandbox: object, pod: k8s_client.V1Pod | None) -> SandboxView:
 
 
 def _view(sandbox: _Sandbox, pod: k8s_client.V1Pod | None) -> SandboxView:
-    labels = sandbox.metadata.labels
-    archived = labels.get(ARCHIVED_LABEL) == "true"
     return SandboxView(
         name=sandbox.metadata.name,
         uid=sandbox.metadata.uid,
-        archived=archived,
-        state=_state(sandbox, pod, archived=archived),
+        state=_state(sandbox, pod),
         created_at=sandbox.metadata.creation_timestamp,
         operating_mode=sandbox.spec.operating_mode,
         conditions=sandbox.status.conditions,
@@ -414,9 +391,7 @@ def _container_status(container: k8s_client.V1ContainerStatus) -> ContainerStatu
     )
 
 
-def _state(sandbox: _Sandbox, pod: k8s_client.V1Pod | None, *, archived: bool) -> ProvisioningState:
-    if archived:
-        return ProvisioningState.ARCHIVED
+def _state(sandbox: _Sandbox, pod: k8s_client.V1Pod | None) -> ProvisioningState:
     if sandbox.spec.operating_mode == OperatingMode.SUSPENDED:
         return ProvisioningState.SUSPENDED
     if pod is None:

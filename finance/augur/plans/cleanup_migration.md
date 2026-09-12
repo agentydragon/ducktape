@@ -7,9 +7,9 @@ or a second migration plan. Remove each section with its last reader.
 ## Scope and expansion freeze
 
 The [roadmap's library cleanup slices](roadmap.md#committed-library-cleanups-and-open-designs)
-are committed directions; GWORLD and GMETRICS still choose the public composition,
-lifecycle and recording mechanisms. Do not turn these deletion notes into an
-implicit decision to remove World or standardize a particular collector.
+are committed directions; the composition/lifecycle mechanism is decided in the
+gate note and GMETRICS still chooses recording. Do not turn these deletion notes
+into an implicit decision to standardize a particular collector.
 
 - **SCHEMA:** after the applicable COMPOSE constructors exist, migrate a real
   caller off mandatory Scenario/compiler authoring and make import construct those
@@ -18,7 +18,7 @@ implicit decision to remove World or standardize a particular collector.
   the giant input schema with another equivalent bag.
 - **P12:** no new configured implicit strategies or experiment consumers. Existing
   supported-interface migrations can proceed without waiting for the full World
-  design; genuinely new public lifecycle/composition APIs require GWORLD.
+  design; genuinely new public lifecycle/composition APIs belong to COMPOSE.
 - **RECORD:** after GMETRICS, remove the affected product-specific capture from
   `World.snapshot`/`World.finish` and replaced result shapes. Preserve required
   accounting facts and existing app outputs. A new global metric tuple, mandatory

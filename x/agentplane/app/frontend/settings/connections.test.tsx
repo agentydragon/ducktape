@@ -4,9 +4,9 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { ConnectionRequestError, type ConnectionService } from "./client";
+import { ConnectionRequestError, type ConnectionService } from "../client";
 import { Connections } from "./connections";
-import { sampleConnection } from "./connections_fixture";
+import { sampleConnection } from "../connections_fixture";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const mounted: Array<{ root: ReturnType<typeof createRoot>; container: HTMLDivElement }> = [];

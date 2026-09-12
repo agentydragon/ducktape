@@ -156,10 +156,8 @@ Decisions = Annotated[DecisionsClient, Depends(_decisions)]
 
 
 @router.get("")
-async def list_sandboxes(
-    inventory: Inventory, include_archived: Annotated[bool, Query(description="Also list archived sandboxes.")] = False
-) -> list[SandboxView]:
-    return await inventory.list_sandboxes(include_archived=include_archived)
+async def list_sandboxes(inventory: Inventory) -> list[SandboxView]:
+    return await inventory.list_sandboxes()
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -204,18 +202,6 @@ async def suspend_sandbox(inventory: Inventory, name: str) -> Response:
 @router.post("/{name}/resume", status_code=status.HTTP_204_NO_CONTENT)
 async def resume_sandbox(inventory: Inventory, name: str) -> Response:
     await inventory.resume(name)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@router.post("/{name}/archive", status_code=status.HTTP_204_NO_CONTENT)
-async def archive_sandbox(inventory: Inventory, name: str) -> Response:
-    await inventory.archive(name)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@router.post("/{name}/unarchive", status_code=status.HTTP_204_NO_CONTENT)
-async def unarchive_sandbox(inventory: Inventory, name: str) -> Response:
-    await inventory.unarchive(name)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -525,9 +511,7 @@ async def list_threads_with_sandboxes(
     `sandboxes` and treat a miss as deleted."""
     thread_views = await store.list_threads(include_archived=include_archived)
     referenced = {thread.sandbox for thread in thread_views}
-    sandboxes = {
-        view.name: view for view in await inventory.list_sandboxes(include_archived=True) if view.name in referenced
-    }
+    sandboxes = {view.name: view for view in await inventory.list_sandboxes() if view.name in referenced}
     return ThreadsWithSandboxes(threads=thread_views, sandboxes=sandboxes)
 
 
