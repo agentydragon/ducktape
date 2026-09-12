@@ -8,7 +8,12 @@ from pathlib import Path
 import networkx as nx
 import pygit2
 
-from cluster.validation.flux import FLUX_SOURCE_KINDS, FluxKustomizationSpec, parse_flux_kustomizations
+from cluster.validation.flux import (
+    EXTERNAL_ARTIFACT_KIND,
+    FLUX_SOURCE_KINDS,
+    FluxKustomizationSpec,
+    parse_flux_kustomizations,
+)
 from cluster.validation.k8s import ArtifactGeneratorResource, K8sResource, parse_k8s_resource_file
 from cluster.validation.kustomize import KustomizeBuildResult, KustomizeFile, parse_kustomize_file
 
@@ -54,11 +59,14 @@ class ParsedCluster:
     flux_kustomizations: dict[str, FluxKustomizationSpec] = field(default_factory=dict)
     all_yaml_files: set[Path] = field(default_factory=set)
     source_resources: dict[Path, list[K8sResource]] = field(default_factory=dict)
-    # {(namespace, name)} a Kustomization.sourceRef can resolve to: Flux source CRs
+    # {(kind, namespace, name)} a Kustomization.sourceRef can resolve to: Flux source CRs
     # (GitRepository/OCIRepository/...), including the bootstrap source under
     # flux-system/, and the ExternalArtifacts ArtifactGenerators declare. Used by
-    # cross-namespace sourceRef validation — see dependencies.check_cross_namespace_references.
-    flux_sources: set[tuple[str, str]] = field(default_factory=set)
+    # sourceRef validation — see dependencies.check_cross_namespace_references.
+    flux_sources: set[tuple[str, str, str]] = field(default_factory=set)
+    # {(namespace, artifact): repo-relative directories the ArtifactGenerator copies into it} —
+    # an ExternalArtifact consumer's spec.path must lie under one of them.
+    artifact_paths: dict[tuple[str, str], set[str]] = field(default_factory=dict)
     build_results: list[KustomizeBuildResult] = field(default_factory=list)
 
     # Directed graph of Flux kustomization dependencies.
@@ -90,12 +98,17 @@ class ParsedCluster:
         return result
 
 
-def _source_keys(resource: K8sResource) -> set[tuple[str, str]]:
-    """The (namespace, name) sourceRef targets one manifest declares; an ArtifactGenerator's
-    artifacts materialize as ExternalArtifacts in its own namespace."""
+def _index_source(
+    resource: K8sResource, sources: set[tuple[str, str, str]], artifact_paths: dict[tuple[str, str], set[str]]
+) -> None:
+    """Record the sourceRef targets one manifest declares; an ArtifactGenerator's artifacts
+    materialize as ExternalArtifacts in its own namespace, carrying the directories it copies."""
     if isinstance(resource, ArtifactGeneratorResource):
-        return {(resource.namespace, artifact.name) for artifact in resource.spec.artifacts}
-    return {(resource.namespace, resource.name)} if resource.kind in FLUX_SOURCE_KINDS else set()
+        for artifact in resource.spec.artifacts:
+            sources.add((EXTERNAL_ARTIFACT_KIND, resource.namespace, artifact.name))
+            artifact_paths[(resource.namespace, artifact.name)] = {op.artifact_dir() for op in artifact.copies}
+    elif resource.kind in FLUX_SOURCE_KINDS:
+        sources.add((resource.kind, resource.namespace, resource.name))
 
 
 def parse_cluster(k8s_dir: Path) -> ParsedCluster:
@@ -104,7 +117,8 @@ def parse_cluster(k8s_dir: Path) -> ParsedCluster:
     flux_kustomizations: dict[str, FluxKustomizationSpec] = {}
     all_yaml_files: set[Path] = set()
     source_resources: dict[Path, list[K8sResource]] = {}
-    flux_sources: set[tuple[str, str]] = set()
+    flux_sources: set[tuple[str, str, str]] = set()
+    artifact_paths: dict[tuple[str, str], set[str]] = {}
     repo = _open_repo(k8s_dir)
 
     for yaml_file in k8s_dir.rglob("*.yaml"):
@@ -114,7 +128,7 @@ def parse_cluster(k8s_dir: Path) -> ParsedCluster:
         # lives here and is a valid sourceRef target for Kustomizations elsewhere.
         if "flux-system" in yaml_file.parts:
             for r in parse_k8s_resource_file(yaml_file):
-                flux_sources |= _source_keys(r)
+                _index_source(r, flux_sources, artifact_paths)
             continue
 
         # Skip blueprints directory (Authentik-specific YAML with !Env tags, not K8s resources)
@@ -138,7 +152,7 @@ def parse_cluster(k8s_dir: Path) -> ParsedCluster:
             if resources:
                 source_resources[yaml_file] = resources
                 for r in resources:
-                    flux_sources |= _source_keys(r)
+                    _index_source(r, flux_sources, artifact_paths)
 
     return ParsedCluster(
         kustomize_files=kustomize_files,
@@ -146,4 +160,5 @@ def parse_cluster(k8s_dir: Path) -> ParsedCluster:
         all_yaml_files=all_yaml_files,
         source_resources=source_resources,
         flux_sources=flux_sources,
+        artifact_paths=artifact_paths,
     )

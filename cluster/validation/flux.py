@@ -26,10 +26,11 @@ class DependsOn(BaseModel):
 
 
 class SourceRef(BaseModel):
-    """Flux Kustomization spec.sourceRef — the GitRepository/OCIRepository it reconciles from."""
+    """Flux Kustomization spec.sourceRef — the GitRepository/OCIRepository/ExternalArtifact it reconciles from."""
 
     model_config = ConfigDict(extra="ignore", alias_generator=to_camel, populate_by_name=True)
 
+    kind: str = ""
     name: str = ""
     namespace: str | None = None
 
@@ -270,6 +271,7 @@ def parse_flux_kustomizations(flux_file: Path) -> dict[str, FluxKustomizationSpe
 # a Git-declared kind: source-watcher creates one per ArtifactGenerator artifact,
 # so parse_cluster indexes the generators instead.
 FLUX_SOURCE_KINDS = {"GitRepository", "OCIRepository", "HelmRepository", "HelmChart"}
+EXTERNAL_ARTIFACT_KIND = "ExternalArtifact"
 
 
 async def run_flux_build(k8s_dir: Path) -> tuple[int, str, str]:
