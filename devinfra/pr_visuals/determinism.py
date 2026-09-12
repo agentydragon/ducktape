@@ -220,10 +220,12 @@ def main() -> None:
     parser.add_argument("--bbapi", type=Path, default=Path("bbapi"))
     parser.add_argument("--summary", type=Path, help="Write the markdown report here as well as to stdout.")
     args = parser.parse_args()
-    targets = args.targets or visual_fleet(bbr=args.bbr, run=subprocess.run)
-
+    # Before the query: resolving the fleet is a remote Bazel round trip, and spending it only to
+    # reject an argument makes a typo cost a minute and look like a tool failure.
     if args.runs < 2:
         raise SystemExit("--runs must be at least 2; a single run cannot show reproducibility")
+
+    targets = args.targets or visual_fleet(bbr=args.bbr, run=subprocess.run)
 
     invocations = []
     for index in range(args.runs):
