@@ -246,7 +246,19 @@ def test_a_preset_naming_a_missing_action_policy_set_creates_nothing(
     assert [name for kind, name in custom_objects.objects if kind == "sandboxes"] == ["live", "fresh", "shelved"]
 
 
-def test_explicit_sandbox_fields_replace_preset_defaults(client: TestClient) -> None:
+def _written_bindings(custom_objects: FakeCustomObjectsApi) -> list[tuple[str, list[str]]]:
+    """Each ActionPolicyBinding the app wrote, as (bound Sandbox, its sets): the launch's whole effect,
+    read where it landed, since the policy route answers only an operator session."""
+    return [
+        (obj["spec"]["subject"]["sandbox"]["name"], obj["spec"]["policySets"])
+        for (kind, _), obj in custom_objects.objects.items()
+        if kind == "actionpolicybindings"
+    ]
+
+
+def test_explicit_sandbox_fields_replace_preset_defaults(
+    client: TestClient, custom_objects: FakeCustomObjectsApi
+) -> None:
     row = client.post(
         "/sandboxes",
         json={"slug": "coder", "preset": "public-coder", "policies": ["pypi"], "action_policy_sets": ["github-writes"]},
@@ -254,8 +266,7 @@ def test_explicit_sandbox_fields_replace_preset_defaults(client: TestClient) -> 
 
     (binding,) = client.get(f"/sandboxes/{row['name']}/egress").json()
     assert [policy["name"] for policy in binding["policies"]] == ["pypi"]
-    (bound,) = client.get(f"/sandboxes/{row['name']}/action-policy").json()["bindings"]
-    assert [policy_set["name"] for policy_set in bound["policy_sets"]] == ["github-writes"]
+    assert _written_bindings(custom_objects) == [(row["name"], ["github-writes"])]
 
 
 def test_the_launch_pick_of_action_policy_sets_is_the_operators(
@@ -265,12 +276,11 @@ def test_the_launch_pick_of_action_policy_sets_is_the_operators(
     launch without a preset may pick sets of its own, the same 422 guarding a dangling name."""
     unbound = client.post("/sandboxes", json={"slug": "coder", "preset": "public-coder", "action_policy_sets": []})
     assert unbound.status_code == 201, unbound.text
-    assert client.get(f"/sandboxes/{unbound.json()['name']}/action-policy").json()["bindings"] == []
+    assert _written_bindings(custom_objects) == []
 
     picked = client.post("/sandboxes", json={"slug": "plain", "action_policy_sets": ["github-reads", "github-writes"]})
     assert picked.status_code == 201, picked.text
-    (bound,) = client.get(f"/sandboxes/{picked.json()['name']}/action-policy").json()["bindings"]
-    assert [policy_set["name"] for policy_set in bound["policy_sets"]] == ["github-reads", "github-writes"]
+    assert _written_bindings(custom_objects) == [(picked.json()["name"], ["github-reads", "github-writes"])]
 
     sandboxes_before = [name for kind, name in custom_objects.objects if kind == "sandboxes"]
     refused = client.post("/sandboxes", json={"slug": "plain", "action_policy_sets": ["vanished"]})
