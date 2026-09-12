@@ -8,8 +8,8 @@ spec:
   path: ./cluster/k8s/agents/shared-secrets
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: agent-shared-secrets
 
     namespace: ducktape-flux
   timeout: 5m
