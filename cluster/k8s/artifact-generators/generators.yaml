@@ -4828,3 +4828,203 @@ spec:
           to: "@artifact/cluster/k8s/litellm/db/"
           exclude:
             - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: litellm-servicemonitor
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: litellm-servicemonitor
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/litellm/servicemonitor/**"
+          to: "@artifact/cluster/k8s/litellm/servicemonitor/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: litellm-tana
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: litellm-tana
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/litellm/tana/**"
+          to: "@artifact/cluster/k8s/litellm/tana/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: litellm-cheap-experiments-namespace
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: litellm-cheap-experiments-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/litellm-cheap-experiments/namespace/**"
+          to: "@artifact/cluster/k8s/litellm-cheap-experiments/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: matrix-app
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: matrix-app
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/matrix/app/**"
+          to: "@artifact/cluster/k8s/matrix/app/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: matrix-db
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: matrix-db
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/matrix/db/**"
+          to: "@artifact/cluster/k8s/matrix/db/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: matrix-user-provisioner
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: matrix-user-provisioner
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/matrix/user-provisioner/**"
+          to: "@artifact/cluster/k8s/matrix/user-provisioner/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: metrics-server
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: metrics-server
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/metrics-server/**"
+          to: "@artifact/cluster/k8s/metrics-server/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: monitoring-alloy
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: monitoring-alloy
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/monitoring/alloy/**"
+          to: "@artifact/cluster/k8s/monitoring/alloy/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: monitoring-alloy-otlp-bearer-token-tf
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: monitoring-alloy-otlp-bearer-token-tf
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/monitoring/alloy-otlp-bearer-token-tf/**"
+          to: "@artifact/cluster/k8s/monitoring/alloy-otlp-bearer-token-tf/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: monitoring-cilium
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: monitoring-cilium
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/monitoring/cilium/**"
+          to: "@artifact/cluster/k8s/monitoring/cilium/"
+          exclude:
+            - flux-kustomization.yaml

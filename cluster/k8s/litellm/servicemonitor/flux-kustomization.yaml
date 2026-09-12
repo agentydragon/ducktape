@@ -8,8 +8,8 @@ spec:
   path: ./cluster/k8s/litellm/servicemonitor
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: litellm-servicemonitor
 
     namespace: ducktape-flux
   dependsOn:

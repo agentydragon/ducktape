@@ -9,8 +9,8 @@ spec:
   path: ./cluster/k8s/matrix/user-provisioner
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: matrix-user-provisioner
     namespace: ducktape-flux
   timeout: 5m
   # The job registers users against Synapse's admin API, so it must not start

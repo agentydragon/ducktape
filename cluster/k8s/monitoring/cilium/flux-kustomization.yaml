@@ -10,8 +10,8 @@ spec:
   path: ./cluster/k8s/monitoring/cilium
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: monitoring-cilium
     namespace: ducktape-flux
   dependsOn:
     - name: monitoring-stack
