@@ -138,7 +138,7 @@ replica_deletion_delay_days: 0
 
 # API Image
 # =========================================
-backend_image: "docker.io/webrecorder/browsertrix-backend:1.24.3"
+backend_image: "docker.io/webrecorder/browsertrix-backend:1.25.2"
 backend_pull_policy: "IfNotPresent"
 
 backend_password_secret: "PASSWORD!"
@@ -209,7 +209,7 @@ cleanup_files_after_minutes: 1440
 
 # Emails Image
 # =========================================
-emails_image: "docker.io/webrecorder/browsertrix-emails:1.24.3"
+emails_image: "docker.io/webrecorder/browsertrix-emails:1.25.2"
 emails_pull_policy: "IfNotPresent"
 
 emails_cpu: "10m"
@@ -218,7 +218,7 @@ emails_memory: "75Mi"
 
 # Nginx Image
 # =========================================
-frontend_image: "docker.io/webrecorder/browsertrix-frontend:1.24.3"
+frontend_image: "docker.io/webrecorder/browsertrix-frontend:1.25.2"
 frontend_pull_policy: "IfNotPresent"
 
 frontend_cpu: "10m"
@@ -319,7 +319,7 @@ dedupe:
 # 'default' channel must always be included
 crawler_channels:
   - id: default
-    image: "docker.io/webrecorder/browsertrix-crawler:1.14.2"
+    image: "docker.io/webrecorder/browsertrix-crawler:1.14.3"
     imagePullPolicy: Always
 
   # Add, remove, or edit additional crawler versions below, for example:
