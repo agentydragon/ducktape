@@ -33,10 +33,11 @@ flowchart TB
 
     MCPAUTH["Remaining acceptance<br/>credentialed MCP account<br/>OAuth linkage + provider proof"]:::active
     CRED["Deferred decision<br/>static credential + binding design<br/>ownership, lifecycle, revocation"]:::future
-    POLICYBIND["Decided 2026-09-12<br/>ServiceAccount subjects, ActionPolicySet + ActionPolicyBinding CRDs<br/>informer-resolved, Git or runtime per object"]:::active
     MCPDEPLOY["Remaining acceptance<br/>staged MCP endpoint rollout<br/>public MCP and Sandbox reachability"]:::active
-    CALLERPOLICY["Planned support<br/>configured caller Action bounds<br/>and auto-approval deciders"]:::future
-    SBPOLICY["Planned behavior<br/>auto-approve configured Actions<br/>through concrete Sandbox bindings"]:::future
+    CALLERPOLICY["In flight<br/>ActionPolicySet/Binding CRDs, ServiceAccount callers<br/>evaluate-once auto-approval"]:::active
+    SBPOLICY["Planned behavior<br/>app-written Sandbox bindings<br/>and read-only effective policy view"]:::future
+    ELEVATE["Planned behavior<br/>agent-requested temporary permission<br/>ServiceAccount and Sandbox callers, operator-approved"]:::future
+    FORK["Deferred design<br/>per-task identity fork<br/>sub-identity scoped by token possession"]:::future
     CLAUDEAI["Priority milestone<br/>working Claude.ai MCP facade<br/>deployed Action execution"]:::active
     EXTERNALMCP["Planned milestone<br/>Claude.ai + external Claude Code<br/>identity-bound Action execution"]:::future
     MCPAGG["Deferred migration<br/>replace Haku Console MCP aggregator<br/>real Claude.ai/Claude Code proof"]:::future
@@ -67,8 +68,10 @@ flowchart TB
 
     CRED --> MCPAUTH
     MCPAUTH --> PROD
-    POLICYBIND --> CALLERPOLICY
     CALLERPOLICY --> SBPOLICY
+    SBPOLICY --> ELEVATE
+    APPROVALUI --> ELEVATE
+    ELEVATE --> FORK
     MCPDEPLOY --> CLAUDEAI
     APPROVALUI --> CLAUDEAI
     CLAUDEAI --> EXTERNALMCP
@@ -108,10 +111,11 @@ provenance display are implemented. The remaining first-delivery work is staging
 (`MCPDEPLOY`) and real operator/client proof (`APPROVALUI` / `CLAUDEAI`). `EXTERNALMCP` additionally proves independently
 running Claude Code. The [external connection plan](external_mcp_connections.md) owns remaining
 delivery and compatibility work, not a duplicate of the implemented contracts.
-The first external slice uses human approval. `POLICYBIND` settles policy-definition/assignment
-storage before `CALLERPOLICY`; neither gates the human-approved client proof. Connection authority
-already lives in PostgreSQL and is not part of that open storage decision. Static Identity does
-not select backend credentials or wait for `CRED`/`PROFILES`; outbound account OAuth remains
+The first external slice uses human approval. The policy model is decided in the
+[Action policy plan](action_policies.md) and `CALLERPOLICY` implements it; neither gates the
+human-approved client proof. Connection authority already lives in PostgreSQL. A caller
+ServiceAccount does not select backend credentials or wait for `CRED`/`PROFILES`; outbound account
+OAuth remains
 `MCPAUTH`. Initial client proof does not establish full Haku tool parity.
 Hosted harnesses continue to call Actions from their Sandbox Threads: `CALLERPOLICY -> SBPOLICY`
 adds configurable auto-approval through concrete Actions-owned Sandbox bindings. SandboxPreset stays
@@ -238,19 +242,6 @@ merged source PR or a healthy old pod does not establish readiness. Then run `CL
 configuration task alone cannot satisfy it. Verify Sandbox MCP reachability in parallel; that
 caller's acceptance is not a prerequisite for `CLAUDEAI`.
 
-### `POLICYBIND` — policy-binding model and storage
-
-**Decided (2026-09-12):** external callers are labeled Kubernetes ServiceAccounts, replacing the
-`identities:` settings map while keeping the OAuth consent path that picks one; two namespaced
-CRDs watched by the Action Service — `ActionPolicySet` (typed, Python-evaluated policies in
-`autoApproveIf`/`autoDenyIf`/`autoDenyUnless` lists) and `ActionPolicyBinding` (a ServiceAccount
-or a live Sandbox UID to sets, optionally expiring). Whether an object is Git-managed through Flux
-or written at runtime by the integration app or kubectl is decided per object. The app writes
-Sandbox bindings from its presets with owner references; the Action Service never reads preset
-language. Runtime Connections and grants stay in the Action Service's PostgreSQL. The
-[Action policy plan](action_policies.md) holds the model, the worked external-plus-Sandbox example,
-the evaluate-once evidence contract, and the implementation steps.
-
 ### `CALLERPOLICY` — bounded Action deciders for external and hosted callers
 
 **Planned support:** the `exact_actions` and `argument_schema` policy kinds, the policy-set
@@ -279,6 +270,34 @@ outage (enforcement continues from applied bindings), instance additions survivi
 re-resolution, and policy changes before dispatch. Same-preset Sandboxes retain separate caller
 reads/idempotency; Threads within one Sandbox retain current shared workload scope. See
 [Action policies](action_policies.md).
+
+### `ELEVATE` — agent-requested temporary permission
+
+**Planned behavior:** a caller that knows it will need an Action outside its current policy asks
+for it through an Action of its own: the request names the set to add (or the binding to remove),
+the subject (its own ServiceAccount or Sandbox; never another caller), and an `expiresAt`. The
+operator sees it rendered as that specific request, with the set's lists shown, not as a generic
+approval card. Approval writes the `ActionPolicyBinding` with the requested expiry through the same
+authority the app uses; denial writes nothing. Both caller classes get this: a ServiceAccount-bound
+OAuth client and a harness in a Sandbox.
+
+**Design gate / acceptance:** the requesting Action is an ordinary Action with an ordinary Decision,
+so the request itself can be auto-approved by policy later, never by default. A granted binding is
+evaluated like any other, once per subsequent Action at admission. Prove: a Sandbox requests a set,
+the operator approves, the next matching Action auto-approves and the Decision names the new
+binding; the same request from a different subject grants nothing to the requester; expiry ends it.
+Depends on `SBPOLICY` for bindings on both caller classes and on `APPROVALUI` for the rendering path.
+
+### `FORK` — per-task identity fork
+
+**Deferred design:** a wide ServiceAccount-bound identity such as "Claude Code web via OIDC" may
+serve several concurrent agent threads managed outside Agentplane. An agent forks its identity into
+a per-task sub-identity, requests permission for that sub-identity through `ELEVATE`, and uses the
+sub-identity's credential for the task. Scope then follows possession of that credential: a thread
+that never receives it never gains the permission. Open questions: how a sub-identity is
+represented (a derived ServiceAccount, or a child Connection under the parent's OAuth grant),
+whether the parent's permissions flow down, and how the sub-identity ends. Low priority; nothing
+else depends on it.
 
 ### `CLAUDEAI` — working Claude.ai MCP facade
 
@@ -325,8 +344,8 @@ start code or schema work from it until Rai confirms the design.
 
 ### `PROFILES` — cross-cutting capability profiles
 
-The Action-only reusable policy-set slice is planned under `POLICYBIND`/`CALLERPOLICY`; it can serve
-both Sandbox types and external Identities without waiting for this broader profile.
+The Action-only reusable policy-set slice is in flight under `CALLERPOLICY`; it serves both
+Sandbox types and ServiceAccount callers without waiting for this broader profile.
 
 **Deferred decision — Rai confirmation required:** define a durable authority for capabilities shared by egress, approvals, MCP
 reachability, and other tool permissions. Do not widen the landed launch-preset slice merely to

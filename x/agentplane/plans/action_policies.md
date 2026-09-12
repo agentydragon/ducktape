@@ -180,10 +180,12 @@ the binding revision they used.
 ## Later
 
 - A runtime editing surface for sets and bindings; kubectl is the first slice's editor.
-- Agent-initiated, operator-approved privilege changes: an Action that requests an additional
-  binding, or the removal of one, rendered for the operator as that specific request rather than a
-  generic approval card. Optionally, creating a labeled ServiceAccount during enrollment instead of
-  a Git edit.
+- Agent-initiated, operator-approved privilege changes for both caller classes: an Action that
+  requests an additional binding for the caller's own subject, or the removal of one, rendered for
+  the operator as that specific request rather than a generic approval card. Optionally, creating a
+  labeled ServiceAccount during enrollment instead of a Git edit.
+- A per-task identity fork, so one thread of a wide OAuth-bound identity can hold a permission its
+  siblings do not.
 - A TokenReview admission path for clients that hold a ServiceAccount token.
 
 ## Acceptance
