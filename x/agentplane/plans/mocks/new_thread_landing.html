@@ -950,11 +950,12 @@
         </div>
         <p class="section-note">
           Same DOM subtree that was showing the target picker a moment ago now shows the real transcript — the picker
-          area and status stack unmount, the transcript/composer mount in their place, the sidebar gains the new thread
-          row and highlights it as current, and the URL updates (<code>history.replaceState</code> to
-          <code>/sandboxes/investigate-ci/sessions/&lt;id&gt;</code>) without a route navigation the operator notices.
-          Refreshing mid-provision (State C) loses the in-flight submission and lands back on an empty picker — a known,
-          accepted rough edge, not solved here.
+          area and status stack unmount, the transcript/composer mount in their place, and the sidebar gains the new
+          thread row and highlights it as current. The URL was already
+          <code>/sandboxes/investigate-ci/sessions/&lt;id&gt;</code>
+          from the moment the submission was made (see Behavior notes below) — this transition is a local live-stream
+          state change, not a navigation. Reloading at any point, including mid-provision, lands back on this same URL
+          and the same live stream, picking up wherever provisioning has gotten to.
         </p>
       </section>
 
@@ -981,17 +982,19 @@
               </tr>
               <tr>
                 <td class="element">Provisioning (C)</td>
-                <td class="muted">Status stack (Sandbox created → Pod ready → Thread starting)</td>
+                <td class="muted">Status stack (Sandbox created → Pod ready → Thread starting), server-driven</td>
                 <td class="muted">Disabled; draft shown as a pending bubble above it</td>
                 <td class="muted">New group appears, "provisioning" state icon, no thread row yet</td>
-                <td class="muted">unchanged</td>
+                <td class="muted">
+                  already the real thread URL — minted client-side on submit, before anything exists server-side
+                </td>
               </tr>
               <tr>
                 <td class="element">Bound (D)</td>
                 <td class="muted">Gone — real transcript in its place</td>
                 <td class="muted">Enabled, normal composer</td>
                 <td class="muted">New thread row, marked current</td>
-                <td class="muted"><code>history.replaceState</code> to the real thread URL</td>
+                <td class="muted">unchanged — same URL as Provisioning, just further along the same live stream</td>
               </tr>
             </tbody>
           </table>
@@ -1010,21 +1013,23 @@
             picker" card already sketched in <code>app_shell.html</code>.
           </li>
           <li>
-            <b>No new combined backend RPC is needed to build this.</b> <code>POST /sandboxes</code> is already async
-            with its state pushed live (<code>useLive</code>/<code>liveSandboxUrl</code> — see
-            <code>sandboxes.tsx:105</code>), and
-            <code>openSession(name, sessionId, spec)</code> (<code>sandbox_page.tsx:277-302</code>) is already a
-            separate call made once <code>state === "running"</code>. The frontend sequences the two over the live
-            stream it already has: create → observe <code>running</code> → open session. Existing-sandbox targets that
-            aren't <code>running</code> yet (suspended, still provisioning) go through the same status stack, resuming
-            first if needed.
+            <b>Provisioning has to be server-owned, not client-sequenced.</b> Closing the browser right after pressing
+            Enter must still leave a thread that shows up running when reopened later — so "wait for the pod, then open
+            the session, then send the first turn" cannot live in a <code>useEffect</code> watching the live stream; it
+            has to run durably on the server, independent of any client connection. <code>openSession</code>'s own
+            reachability check (<code>bridge.py</code>'s <code>runner_address</code>) already requires
+            <code>state === "running"</code> with a pod IP — today nothing but the frontend performs that wait, which is
+            exactly the gap. A server-side worker (naturally an extension of <code>bridge.py</code>'s existing
+            per-sandbox watch, since it already observes each sandbox becoming reachable) needs to own opening the
+            session and sending the first turn once the pod is up. This is a real backend change, not a frontend-only
+            feature — see <code>NEWTHREAD_DURABLE</code> in <code>../task_dag.md</code>.
           </li>
           <li>
-            <b>Hardening this server-side is a possible later step, not a blocker.</b> Client-side sequencing means
-            closing the tab mid-provision abandons the in-flight submission (State C's known rough edge above); if that
-            turns out to matter in practice, a single server-side "create sandbox, then thread" endpoint could replace
-            the two-call dance without changing anything in this mock's states or transitions — deliberately left open,
-            not decided here.
+            <b>The client mints the session id up front</b> (same pattern <code>sandbox_page.tsx</code>'s
+            <code>createSession</code> already uses — <code>s-${crypto.randomUUID()}</code>) and gets back a stable URL
+            to bind to immediately on submit, before the sandbox or session exist yet — not deferred to State D.
+            Reopening that URL later, from any device, reconnects to the same live stream and shows the same in-progress
+            or by-then-completed thread; there is no separate "in-flight submission" state that a reload can lose.
           </li>
           <li>
             <b>The draft is captured optimistically on Enter</b>, before any network call — so it survives as the
