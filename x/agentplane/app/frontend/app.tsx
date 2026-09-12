@@ -10,6 +10,7 @@ import { SandboxList } from "./sandboxes";
 import { SessionView } from "./session";
 import { Settings, type SettingsTab } from "./settings/dialog";
 import { Sidebar } from "./sidebar";
+import "./shell.css";
 
 // Hash routing: the API serves the bundle at "/" only, so no path has to reach the server.
 function sandboxPath(name: string): string {

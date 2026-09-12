@@ -387,6 +387,12 @@ js_library(
     srcs = ["sidebar.css"],
 )
 
+# app.tsx imports this for the bundler, the way frame.tsx does its own stylesheet.
+js_library(
+    name = "shell_css",
+    srcs = ["shell.css"],
+)
+
 ts_library(
     name = "sidebar",
     srcs = [
@@ -599,7 +605,11 @@ filegroup(
 
 ts_library(
     name = "app",
-    srcs = ["app.tsx"],
+    srcs = [
+        "app.tsx",
+        # `declare module "*.css"` for the stylesheet import above.
+        "css.d.ts",
+    ],
     tsconfig = TSCONFIG,
     deps = [
         ":actions",
@@ -609,6 +619,7 @@ ts_library(
         ":sandboxes",
         ":session",
         ":settings",
+        ":shell_css",
         ":sidebar",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",

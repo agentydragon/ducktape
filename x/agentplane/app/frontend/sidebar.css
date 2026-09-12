@@ -1,43 +1,6 @@
-/* The persistent left sidebar and the app shell around it (`app.tsx`, `sidebar.tsx`). Mantine's own
-   CSS variables, so colors follow the same light/dark scheme as the rest of the app. */
-
-.agentplane-shell {
-  display: flex;
-  height: 100dvh;
-  overflow: hidden;
-}
-
-.agentplane-shell-main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  overflow-y: auto;
-}
-
-.agentplane-shell-main.agentplane-shell-fullbleed {
-  overflow: hidden;
-}
-
-.agentplane-shell-main-content {
-  flex: 1;
-  min-height: 0;
-  width: 100%;
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: var(--mantine-spacing-md);
-  display: flex;
-  flex-direction: column;
-}
-
-.agentplane-shell-main-content.agentplane-shell-fullbleed {
-  max-width: none;
-  /* The session view owns its own full-height layout (composer pinned to the bottom, transcript
-     scrolling above it), so no vertical padding here -- but it still needs the same horizontal
-     gutter every other route gets, or its content sits flush against the sidebar's border. */
-  padding: 0 var(--mantine-spacing-md);
-  height: 100%;
-}
+/* The persistent left sidebar (`sidebar.tsx`) -- the app shell's own layout lives in `shell.css`,
+   imported by `app.tsx` directly. Mantine's own CSS variables, so colors follow the same
+   light/dark scheme as the rest of the app. */
 
 .agentplane-sidebar {
   width: 240px;
