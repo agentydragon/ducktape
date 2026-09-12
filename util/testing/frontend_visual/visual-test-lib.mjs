@@ -140,9 +140,8 @@ export async function runScenarios(scenarios, { title }) {
   mkdirSync(outputDir, { recursive: true });
 
   const selected = selectForShard(Object.keys(scenarios));
-  // A shard with nothing to render must not start Chromium: `--single-process` with no page ever
-  // opened wedges in browser.close(), which under --test_filter (where every shard but one is
-  // empty) means a 900s timeout per shard instead of an instant pass.
+  // Nothing to render, so nothing to launch a browser for: under `--test_filter` every shard but
+  // one is empty, and each would otherwise pay a Chromium start and stop to render no scene.
   if (selected.length === 0) {
     console.log(`shard ${process.env.TEST_SHARD_INDEX ?? 0}: no scenario to render`);
     process.exit(0);
@@ -153,9 +152,9 @@ export async function runScenarios(scenarios, { title }) {
   );
   mkdirSync(userDataDir, { recursive: true });
 
-  // --single-process + file access: the harness is loaded from a file:// URL.
+  // The harness page is a file:// URL, so it needs file access to reach its own bundle.
   const browser = await launchDeterministicBrowser({
-    args: ["--single-process", "--allow-file-access-from-files"],
+    args: ["--allow-file-access-from-files"],
     userDataDir,
   });
   const failures = [];
