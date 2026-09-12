@@ -29,7 +29,6 @@ def snapshot(books: Accounting) -> tuple[object, ...]:
         deepcopy(books.tax.income.by_source),
         deepcopy(books.tax.years),
         list(books.journal),
-        books.journal_entry_count,
         list(books.transfers),
     )
 
@@ -78,9 +77,7 @@ def test_actors_cannot_overdraw_or_impersonate_another_source_or_classify_tax(
     assert snapshot(books) == before
 
 
-@pytest.mark.parametrize(
-    ("case", "deduction"), [(0, "ordinary"), (1, "ordinary"), (2, "ordinary"), (3, "ordinary"), (4, "invalid")]
-)
+@pytest.mark.parametrize(("case", "deduction"), [(0, "ordinary"), (1, "ordinary"), (3, "ordinary"), (4, "invalid")])
 def test_scheduled_tax_and_posting_failures_do_not_partially_apply(
     books: Accounting, transfer_request: Transfer, case: int, deduction: TransferDeductionCategory
 ) -> None:
@@ -88,8 +85,6 @@ def test_scheduled_tax_and_posting_failures_do_not_partially_apply(
         books.tax.income.accrue(RECIPIENT.agent_id, ORDINARY_INCOME, MAX_COUNT)
     elif case == 1:
         books.tax.income.accrue(HOUSEHOLD, ORDINARY_INCOME, MIN_COUNT)
-    elif case == 2:
-        books.journal_entry_count = (1 << 64) - 1
     elif case == 3:
         books.ledger.apply(
             JournalEntry(
@@ -142,9 +137,9 @@ def test_transfer_sequence_is_not_an_implicitly_atomic_batch(books: Accounting, 
 def test_zero_scheduled_cashflow_still_has_a_balanced_journal_entry(
     books: Accounting, transfer_request: Transfer
 ) -> None:
-    count = books.journal_entry_count
+    count = len(books.journal)
     books.transfer(0, transfer_request.model_copy(update={"amount": 0}), actor=None)
-    assert books.journal_entry_count == count + 1
+    assert len(books.journal) == count + 1
     assert books.transfers[-1].amount == 0
     assert books.ledger.trial_balance() == 0
 

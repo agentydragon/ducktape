@@ -38,10 +38,8 @@ class Books:
             dict(self.accounting.ledger.balances),
             deepcopy(self.accounting.tax.years),
             list(self.accounting.journal),
-            self.accounting.journal_entry_count,
             deepcopy(self.holdings.lots),
             list(self.holdings.dispositions),
-            self.holdings.disposition_count,
         )
 
 
@@ -69,7 +67,7 @@ def books() -> Books:
             for month, id_, basis in [(-12, "old", 17), (0, "new", 32)]
         ),
     )
-    accounting = Accounting(scenario.accounts, scenario.tax_profiles, scenario.income_sources, capture="forensic")
+    accounting = Accounting(scenario.accounts, scenario.tax_profiles, scenario.income_sources)
     holdings = Holdings(scenario, accounting)
     market = MarketPath(
         CompiledRun(
@@ -149,7 +147,7 @@ def test_total_proceeds_use_the_same_basis_and_tax_commit(books: Books) -> None:
     assert books.accounting.ledger.trial_balance() == 0
 
 
-@pytest.mark.parametrize("case", range(8))
+@pytest.mark.parametrize("case", [0, 1, 2, 3, 6, 7])
 def test_rejected_total_cashouts_leave_lots_cash_tax_and_capture_unchanged(books: Books, case: int) -> None:
     request = both_lots()
     total = 100
@@ -165,10 +163,6 @@ def test_rejected_total_cashouts_leave_lots_cash_tax_and_capture_unchanged(books
         )
     elif case == 3:
         request = request.model_copy(update={"proceeds_account_id": "missing"})
-    elif case == 4:
-        books.holdings.disposition_count = (1 << 64) - 2
-    elif case == 5:
-        books.accounting.journal_entry_count = (1 << 64) - 1
     elif case == 6:
         books.accounting.tax.years[HOUSEHOLD].long_term_gain = MAX_COUNT
     else:
@@ -218,14 +212,10 @@ def test_invalid_exact_lot_requests_leave_every_book_unchanged(books: Books, cas
     assert books.snapshot() == before
 
 
-@pytest.mark.parametrize("case", range(5))
+@pytest.mark.parametrize("case", [0, 3, 4])
 def test_overflow_after_first_lot_or_jurisdiction_cannot_partially_commit(books: Books, case: int) -> None:
     if case == 0:
         books.accounting.tax.years[HOUSEHOLD].long_term_gain = MAX_COUNT
-    elif case == 1:
-        books.holdings.disposition_count = (1 << 64) - 2
-    elif case == 2:
-        books.accounting.journal_entry_count = (1 << 64) - 1
     elif case == 3:
         books.accounting.ledger.apply(
             JournalEntry(
@@ -240,14 +230,6 @@ def test_overflow_after_first_lot_or_jurisdiction_cannot_partially_commit(books:
     before = books.snapshot()
     with pytest.raises(OverflowError):
         books.holdings.sell(books.accounting, 0, both_lots(), price=MAX_COUNT if case == 4 else 20)
-    assert books.snapshot() == before
-
-
-def test_rejected_scheduled_sale_preserves_every_book(books: Books) -> None:
-    books.accounting.journal_entry_count = (1 << 64) - 1
-    before = books.snapshot()
-    with pytest.raises(OverflowError):
-        books.holdings.scheduled_sale(books.accounting, books.market, scheduled(3))
     assert books.snapshot() == before
 
 
@@ -274,14 +256,11 @@ def test_purchase_posts_cash_and_basis_then_joins_future_exact_sales(books: Book
         {"holding_account_id": "other"},
         {"agent_id": "test_intruder"},
         {"cash_account_id": "other"},
-        {},
     ],
 )
 def test_invalid_or_unfunded_purchase_does_not_create_lot_or_debit_cash(
     books: Books, changes: dict[str, object]
 ) -> None:
-    if not changes:
-        books.accounting.journal_entry_count = (1 << 64) - 1
     before = books.snapshot()
     with pytest.raises((ValueError, OverflowError), match=r"purchase|holding pool|unknown declared|overflow"):
         books.holdings.buy(books.scenario, books.accounting, 0, purchase().model_copy(update=changes), price=10)

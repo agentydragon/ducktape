@@ -144,7 +144,7 @@ js_library(
     srcs = [
         "tests/harness/harness.ts",
         "tests/harness/index.html",
-    ],
+    ] + glob(["tests/harness/fixtures/*.ts"]),
     tags = ["no-lint"],
     deps = [
         ":app_css",
