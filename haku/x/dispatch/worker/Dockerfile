@@ -6,7 +6,7 @@
 #
 # The image holds NO credentials: the per-job LiteLLM key and result token
 # arrive via the Job's secret (haku/archive/2026_08_multi_agent.md → job lifecycle).
-FROM node:22.23.2-bookworm-slim@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5
+FROM node:24.21.0-bookworm-slim@sha256:713cfbf4a0ac19f40e1bb9919893e126b74a5c8cf5d0623c9f89515c8f74c6fa
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git ca-certificates python3 \
