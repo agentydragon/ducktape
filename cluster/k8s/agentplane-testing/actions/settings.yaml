@@ -8,8 +8,11 @@ mcp_servers:
     server_id: example
     provider: example
     server_url: http://agentplane-oauth-fixture.agentplane-testing.svc.cluster.local:8080/mcp
-    client_id: agentplane-acceptance-client
+    client_id: agentplane-testing-mcp
+    client_secret_file: /etc/agentplane-mcp/client-secret
     redirect_uri: https://agentplane-testing.allegedly.works/mcp-linkage/callback
+    scopes:
+      - openid
 action_groups:
   everything:
     title: Upstream Everything
@@ -23,10 +26,10 @@ action_groups:
         auth: none
   example:
     title: OAuth Example
-    description: Self-contained OAuth-linked MCP fixture for testing acceptance of the linkage flow.
+    description: Dex-backed OAuth-linked MCP fixture for testing acceptance of the linkage flow.
     executor:
       kind: mcp
-      description: In-memory OAuth authorization server and MCP tool in one process; no real credentials.
+      description: MCP tool protected by Dex-issued JWTs; no real credentials.
       config:
         transport: streamable-http
         url: http://agentplane-oauth-fixture.agentplane-testing.svc.cluster.local:8080/mcp

@@ -22,6 +22,14 @@ spec:
         - ports:
             - port: "5556"
               protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+            app.kubernetes.io/name: agentplane-oauth-fixture
+      toPorts:
+        - ports:
+            - port: "5556"
+              protocol: TCP
   egress:
     - toEndpoints:
         - matchLabels:

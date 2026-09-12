@@ -228,6 +228,13 @@ theirs. Never switch branches there or commit on top of it unasked: judge whethe
 request builds on that dirty state; if not, do the work in a fresh worktree and send a
 PR from it; if genuinely ambiguous, ask.
 
+### Parallel Bash calls share one working directory
+
+**Gotcha:** concurrent Bash tool calls run in one shell whose cwd persists across calls. A
+call without its own `cd` runs wherever the most recent `cd` of any other call landed and
+edits that worktree, not the one it was written for. Start every call that touches a
+worktree with `cd <worktree> &&`, and never end a chain with a `cd` elsewhere.
+
 ## Conventions
 
 - **`debug/`**: write investigation notes here, not in code comments or PR descriptions.

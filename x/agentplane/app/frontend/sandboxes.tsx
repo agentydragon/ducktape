@@ -39,7 +39,7 @@ const EMPTY_THREAD: ThreadDefaults = {};
 // The picked preset, in the URL like the sandbox page's tab, so a launch form can be linked to.
 const PRESET_PARAM = "preset";
 
-const STATE_COLORS: Record<string, string> = {
+export const STATE_COLORS: Record<string, string> = {
   running: "green",
   suspended: "gray",
   waiting_for_pod: "yellow",
@@ -51,7 +51,7 @@ function conditionLine({ type, status, reason, message }: Condition): string {
 }
 
 /** The State badge's hover detail: the Sandbox's own conditions, then the Pod's phase and containers. */
-function stateDetail(row: SandboxView): string {
+export function stateDetail(row: SandboxView): string {
   const lines = row.conditions.map(conditionLine);
   if (row.pod) {
     lines.push(

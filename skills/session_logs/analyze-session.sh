@@ -1,76 +1,82 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# Analyze Claude Code Session Script
-# Provides summary statistics and recent activity from a session log
+# Summarize a Claude Code or Codex CLI transcript.
 
 set -euo pipefail
 
-# Get session file (argument or auto-detect)
-if [ $# -eq 1 ]; then
-  SESSION_FILE="$1"
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+
+usage() {
+  echo "usage: $0 [claude|codex|TRANSCRIPT.jsonl]" >&2
+  exit 2
+}
+
+if [[ $# -eq 0 ]]; then
+  SESSION_FILE=$("$SCRIPT_DIR/find-current-session.sh")
+elif [[ $# -eq 1 && ("$1" == claude || "$1" == codex) ]]; then
+  SESSION_FILE=$("$SCRIPT_DIR/find-current-session.sh" "$1")
+elif [[ $# -eq 1 ]]; then
+  SESSION_FILE=$1
 else
-  SESSION_FILE=$(~/.claude/skills/session_logs/find-current-session.sh)
+  usage
 fi
 
-if [ ! -f "$SESSION_FILE" ]; then
-  echo "Error: Session file not found: $SESSION_FILE" >&2
+if [[ ! -f "$SESSION_FILE" ]]; then
+  echo "Error: transcript file not found: $SESSION_FILE" >&2
   exit 1
 fi
 
-echo "=== Session Analysis: $(basename "$SESSION_FILE") ==="
-echo ""
+if jq -e 'select(.type == "session_meta")' "$SESSION_FILE" >/dev/null 2>&1; then
+  HARNESS=codex
+else
+  HARNESS=claude
+fi
 
-# Session metadata from last entry
-LAST_ENTRY=$(tail -1 "$SESSION_FILE")
-SESSION_ID=$(echo "$LAST_ENTRY" | jq -r '.sessionId // "unknown"')
-CWD=$(echo "$LAST_ENTRY" | jq -r '.cwd // "unknown"')
-BRANCH=$(echo "$LAST_ENTRY" | jq -r '.gitBranch // "unknown"')
-LAST_TIMESTAMP=$(echo "$LAST_ENTRY" | jq -r '.timestamp // "unknown"')
+case "$HARNESS" in
+  claude)
+    read -r SESSION_ID CWD BRANCH LAST_TIMESTAMP < <(
+      jq -sr '
+        {
+          session_id: ([.[] | select(.sessionId != null) | .sessionId][0] // "unknown"),
+          cwd: ([.[] | select(.cwd != null) | .cwd][0] // "unknown"),
+          branch: ([.[] | select(.gitBranch != null) | .gitBranch][0] // "unknown"),
+          timestamp: ([.[] | select(.timestamp != null) | .timestamp][-1] // "unknown")
+        } | [.session_id, .cwd, .branch, .timestamp] | @tsv
+      ' "$SESSION_FILE"
+    )
+    USER_MESSAGES=$(jq -sr '
+      [ .[] | select(.type == "user") |
+        (if (.message.content | type) == "string" then .message.content
+         elif (.message.content | type) == "array" then
+           [.message.content[]? | select(.type == "text") | .text // ""] | join("\n")
+         else "" end) |
+        select(length > 0) |
+        select(startswith("<task-notification>") | not) |
+        select(startswith("<system-reminder>") | not)
+      ] | length
+    ' "$SESSION_FILE")
+    AGENT_MESSAGES=$(jq -sr '[.[] | select(.type == "assistant")] | length' "$SESSION_FILE")
+    COMPACTIONS=$(jq -sr '[.[] | select(.type == "system" and .subtype == "compact_boundary")] | length' "$SESSION_FILE")
+    TOOL_USES=$(jq -sr '[.[] | select(.type == "assistant") | .message.content[]? | select(.type == "tool_use")] | length' "$SESSION_FILE")
+    ;;
+  codex)
+    read -r SESSION_ID CWD BRANCH LAST_TIMESTAMP < <(
+      jq -sr '
+        (map(select(.type == "session_meta")) | last | .payload) as $meta |
+        [$meta.session_id // "unknown", $meta.cwd // "unknown", ($meta.git.branch // "unknown"),
+         ([.[] | select(.timestamp != null) | .timestamp][-1] // "unknown")] | @tsv
+      ' "$SESSION_FILE"
+    )
+    USER_MESSAGES=$(jq -sr '[.[] | select(.type == "response_item" and .payload.type == "message" and .payload.role == "user")] | length' "$SESSION_FILE")
+    AGENT_MESSAGES=$(jq -sr '[.[] | select(.type == "response_item" and .payload.type == "message" and .payload.role == "assistant")] | length' "$SESSION_FILE")
+    COMPACTIONS=$(jq -sr '[.[] | select(.type == "event_msg" and .payload.type == "context_compacted")] | length' "$SESSION_FILE")
+    TOOL_USES=$(jq -sr '[.[] | select(.type == "response_item" and (.payload.type == "function_call" or .payload.type == "custom_tool_call"))] | length' "$SESSION_FILE")
+    ;;
+esac
 
-echo "Session ID: $SESSION_ID"
-echo "Working Directory: $CWD"
-echo "Git Branch: $BRANCH"
-echo "Last Activity: $LAST_TIMESTAMP"
-echo ""
-
-# Entry counts
-TOTAL_ENTRIES=$(wc -l <"$SESSION_FILE")
-TOOL_USES=$(grep -c '"type":"tool_use"' "$SESSION_FILE" || echo 0)
-USER_MESSAGES=$(grep -c '"type":"user"' "$SESSION_FILE" || echo 0)
-THINKING_BLOCKS=$(grep -c '"type":"thinking"' "$SESSION_FILE" || echo 0)
-
-echo "=== Statistics ==="
-echo "Total Entries: $TOTAL_ENTRIES"
-echo "Tool Uses: $TOOL_USES"
-echo "User Messages: $USER_MESSAGES"
-echo "Thinking Blocks: $THINKING_BLOCKS"
-echo ""
-
-# Tool usage breakdown
-echo "=== Tool Usage ==="
-grep '"type":"tool_use"' "$SESSION_FILE" \
-  | jq -r '.message.content[0].name // "unknown"' \
-  | sort | uniq -c | sort -rn | head -10
-echo ""
-
-# Recent tool calls (last 10)
-echo "=== Recent Tool Calls (last 10) ==="
-grep '"type":"tool_use"' "$SESSION_FILE" | tail -10 \
-  | jq -r '"\(.timestamp | split("T")[1] | split(".")[0]): \(.message.content[0].name)"'
-echo ""
-
-# Files modified
-echo "=== Files Modified ==="
-grep '"type":"tool_use"' "$SESSION_FILE" \
-  | jq -r 'select(.message.content[0].name == "Edit" or .message.content[0].name == "Write") |
-    .message.content[0].input.file_path' \
-  | sort -u | head -20
-echo ""
-
-# Recent user messages (last 5)
-echo "=== Recent User Messages (last 5) ==="
-grep '"type":"user"' "$SESSION_FILE" | tail -5 \
-  | jq -r '"\(.timestamp | split("T")[1] | split(".")[0]): \(.message.content[0].text[0:80])"'
-echo ""
-
-echo "=== Session file: $SESSION_FILE ==="
+printf '=== Session analysis: %s ===\n' "$(basename "$SESSION_FILE")"
+printf 'Harness: %s\nSession ID: %s\nWorking directory: %s\nGit branch: %s\nLast activity: %s\n' \
+  "$HARNESS" "$SESSION_ID" "$CWD" "$BRANCH" "$LAST_TIMESTAMP"
+printf 'Entries: %s\nUser messages: %s\nAgent messages: %s\nTool calls: %s\nCompactions: %s\n' \
+  "$(wc -l <"$SESSION_FILE")" "$USER_MESSAGES" "$AGENT_MESSAGES" "$TOOL_USES" "$COMPACTIONS"
+printf 'Transcript: %s\n' "$SESSION_FILE"

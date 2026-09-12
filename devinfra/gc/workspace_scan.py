@@ -18,6 +18,7 @@ the difference between five seconds and forty.
 from __future__ import annotations
 
 import dataclasses
+import logging
 import os
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -31,6 +32,8 @@ from devinfra.gc.branch_gc import BranchClassification, Holder, MainCheckout
 from devinfra.gc.output_base_gc import Inspection, RetainedBase
 from devinfra.gc.pull_request import PrInfo
 from devinfra.gc.worktree_gc import Classification, PrunableWorktree
+
+logger = logging.getLogger(__name__)
 
 _BRANCH_WORKERS = 8  # content_in_main runs pygit2 merges (GIL released), so threads help
 
@@ -89,20 +92,26 @@ def _classify_branches(
     and classifies a contiguous slice, so the flattened result stays in `names` order.
     """
 
-    def classify_slice(slice_names: list[str]) -> list[BranchClassification]:
+    total = len(names)
+
+    def classify_slice(args: tuple[int, list[str]]) -> list[BranchClassification]:
+        offset, slice_names = args
         pg = pygit2.Repository(os.fspath(main_path))
-        return [
-            branch_gc.classify_branch(
+        results: list[BranchClassification] = []
+        for index, name in enumerate(slice_names, start=offset + 1):
+            logger.info("Scanning branch %d/%d %s", index, total, name)
+            result = branch_gc.classify_branch(
                 name, pg=pg, main=main, default_branch=default_branch, pr=pr_states.get(name), holder=holder_for(name)
             )
-            for name in slice_names
-        ]
+            results.append(result)
+            logger.info("Finished branch %d/%d %s", index, total, name)
+        return results
 
     workers = min(_BRANCH_WORKERS, len(names))
     if workers <= 1:
-        return classify_slice(names)
+        return classify_slice((0, names))
     step = -(-len(names) // workers)  # ceil → `workers` contiguous slices
-    slices = [names[i : i + step] for i in range(0, len(names), step)]
+    slices = [(i, names[i : i + step]) for i in range(0, len(names), step)]
     with ThreadPoolExecutor(max_workers=workers) as pool:
         return [item for chunk in pool.map(classify_slice, slices) for item in chunk]
 
@@ -151,23 +160,21 @@ def annotate_bases(
 
     main_path = git_repo.main_worktree(repo)
     live = worktree_gc.processes_by_worktree((wt.path for wt in candidates), proc_root=proc_root)
-    prunable = _resolved(
-        {
-            wt.path
-            for wt in candidates
-            if isinstance(
-                worktree_gc.classify_worktree(
-                    wt,
-                    main=main,
-                    pr_states=pr_states,
-                    main_path=main_path,
-                    active_path=active_path,
-                    live_pids=live.get(wt.path, []),
-                ),
-                PrunableWorktree,
-            )
-        }
-    )
+    prunable_paths: set[Path] = set()
+    for index, wt in enumerate(candidates, start=1):
+        logger.info("Annotating base workspace %d/%d %s", index, len(candidates), wt.path)
+        classification = worktree_gc.classify_worktree(
+            wt,
+            main=main,
+            pr_states=pr_states,
+            main_path=main_path,
+            active_path=active_path,
+            live_pids=live.get(wt.path, []),
+        )
+        logger.info("Finished base workspace %d/%d %s", index, len(candidates), wt.path)
+        if isinstance(classification, PrunableWorktree):
+            prunable_paths.add(wt.path)
+    prunable = _resolved(prunable_paths)
     return [_annotate_base(base, prunable) for base in bases]
 
 
@@ -186,9 +193,12 @@ def scan_workspace(
     pg = pygit2.Repository(os.fspath(main_path))
 
     linked = [wt for wt in git_repo.list_worktrees(repo) if wt.path != main_path]
+    logger.info("Scanning %d linked worktrees", len(linked))
     live = worktree_gc.processes_by_worktree((wt.path for wt in linked), proc_root=proc_root)
-    worktrees = [
-        worktree_gc.classify_worktree(
+    worktrees: list[Classification] = []
+    for index, wt in enumerate(linked, start=1):
+        logger.info("Scanning worktree %d/%d %s", index, len(linked), wt.path)
+        classification = worktree_gc.classify_worktree(
             wt,
             main=main,
             pr_states=pr_states,
@@ -196,8 +206,9 @@ def scan_workspace(
             active_path=active_path,
             live_pids=live.get(wt.path, []),
         )
-        for wt in linked
-    ]
+        worktrees.append(classification)
+        logger.info("Finished worktree %d/%d %s", index, len(linked), wt.path)
+    logger.info("Worktree scan complete: %d linked worktrees", len(linked))
 
     holders = branch_gc.branch_holders(repo)
     holder_by_path = {item.worktree.path: item for item in worktrees}
@@ -210,25 +221,25 @@ def scan_workspace(
             return MainCheckout()
         return holder_by_path.get(holder_path)
 
+    names = branch_gc.local_branches(pg)
+    logger.info("Scanning %d local branches", len(names))
     branches = _classify_branches(
-        main_path,
-        branch_gc.local_branches(pg),
-        main=main,
-        default_branch=default_branch,
-        pr_states=pr_states,
-        holder_for=holder_for,
+        main_path, names, main=main, default_branch=default_branch, pr_states=pr_states, holder_for=holder_for
     )
+    logger.info("Branch scan complete: %d local branches", len(branches))
 
     bases: list[Inspection] = []
     if output_user_root is not None:
         prunable_workspaces = _resolved(
             {item.worktree.path for item in worktrees if isinstance(item, PrunableWorktree)}
         )
+        logger.info("Scanning Bazel output bases in %s", output_user_root)
         bases = [
             _annotate_base(base, prunable_workspaces)
             for base in output_base_gc.scan_output_user_root(
                 output_user_root, proc_root=proc_root, mountinfo_path=mountinfo_path
             )
         ]
+        logger.info("Bazel output-base scan complete: %d bases", len(bases))
 
     return WorkspaceScan(worktrees=worktrees, branches=branches, bases=bases)

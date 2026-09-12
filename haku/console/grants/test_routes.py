@@ -52,7 +52,7 @@ class _Console:
     def call[T](self, func: Callable[..., Awaitable[T]], *args: Any) -> T:
         """Run one async step on the app's own event loop, where its engine lives."""
         assert self.client.portal is not None
-        return self.client.portal.call(func, *args)
+        return cast(T, self.client.portal.call(func, *args))
 
 
 @pytest.fixture
