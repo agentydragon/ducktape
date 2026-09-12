@@ -543,10 +543,9 @@ manifest:
     xdist: pytest_xdist
     yaml: pyyaml
     yarl: yarl
-    zipfile_zstd: zipfile_zstd
     zipp: zipp
     zmq: pyzmq
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: a0c715772535263a5ab5d0789b27e20ceb9543a9adf4860f8df2206e6d07cc54
+integrity: 061e08abcda6485935ab3f622cd90177e25df6f493759f346b5fe36e89b73878
