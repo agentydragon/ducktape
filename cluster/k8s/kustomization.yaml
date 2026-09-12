@@ -412,6 +412,7 @@ resources:
 
   # --- seaweedfs (trial) ---
   - seaweedfs/namespace/flux-kustomization.yaml
+  - seaweedfs/secrets-artifact/flux-kustomization.yaml
   - seaweedfs/secrets/flux-kustomization.yaml
   - seaweedfs/operator/flux-kustomization.yaml
   - seaweedfs/db/flux-kustomization.yaml
