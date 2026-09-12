@@ -112,6 +112,7 @@ manifest:
     flexcache: flexcache
     flexparser: flexparser
     fontTools: fonttools
+    formulaic: formulaic
     fqdn: fqdn
     frozenlist: frozenlist
     fsspec: fsspec
@@ -225,6 +226,7 @@ manifest:
     importlib_resources: importlib_resources
     iniconfig: iniconfig
     inspect_ai: inspect_ai
+    interface_meta: interface_meta
     inventree: inventree
     invoke: invoke
     ipykernel: ipykernel
@@ -331,6 +333,7 @@ manifest:
     mypy_protobuf: mypy_protobuf
     mypyc: mypy
     nacl: pynacl
+    narwhals: narwhals
     nbclient: nbclient
     nbconvert: nbconvert
     nbformat: nbformat
@@ -491,55 +494,7 @@ manifest:
     tabulate: tabulate
     tenacity: tenacity
     terminado: terminado
-    testcontainers.arangodb: testcontainers
-    testcontainers.aws: testcontainers
-    testcontainers.azurite: testcontainers
-    testcontainers.cassandra: testcontainers
-    testcontainers.chroma: testcontainers
-    testcontainers.clickhouse: testcontainers
-    testcontainers.cockroachdb: testcontainers
-    testcontainers.compose: testcontainers
-    testcontainers.core: testcontainers
-    testcontainers.cosmosdb: testcontainers
-    testcontainers.db2: testcontainers
-    testcontainers.elasticsearch: testcontainers
-    testcontainers.generic: testcontainers
-    testcontainers.google: testcontainers
-    testcontainers.influxdb: testcontainers
-    testcontainers.influxdb1: testcontainers
-    testcontainers.influxdb2: testcontainers
-    testcontainers.k3s: testcontainers
-    testcontainers.kafka: testcontainers
-    testcontainers.keycloak: testcontainers
-    testcontainers.localstack: testcontainers
-    testcontainers.mailpit: testcontainers
-    testcontainers.memcached: testcontainers
-    testcontainers.milvus: testcontainers
-    testcontainers.minio: testcontainers
-    testcontainers.mongodb: testcontainers
-    testcontainers.mqtt: testcontainers
-    testcontainers.mssql: testcontainers
-    testcontainers.mysql: testcontainers
-    testcontainers.nats: testcontainers
-    testcontainers.neo4j: testcontainers
-    testcontainers.nginx: testcontainers
-    testcontainers.ollama: testcontainers
-    testcontainers.openfga: testcontainers
-    testcontainers.opensearch: testcontainers
-    testcontainers.oracle: testcontainers
-    testcontainers.postgres: testcontainers
-    testcontainers.qdrant: testcontainers
-    testcontainers.rabbitmq: testcontainers
-    testcontainers.redis: testcontainers
-    testcontainers.registry: testcontainers
-    testcontainers.scylla: testcontainers
-    testcontainers.selenium: testcontainers
-    testcontainers.sftp: testcontainers
-    testcontainers.socat: testcontainers
-    testcontainers.test_module_import: testcontainers
-    testcontainers.trino: testcontainers
-    testcontainers.vault: testcontainers
-    testcontainers.weaviate: testcontainers
+    testcontainers: testcontainers
     tests: splitwise
     text_unidecode: text_unidecode
     textual: textual
@@ -561,7 +516,6 @@ manifest:
     typing_inspection: typing_inspection
     tzdata: tzdata
     tzlocal: tzlocal
-    uc_micro: uc_micro_py
     ulid: python_ulid
     uncalled_for: uncalled_for
     unidiff: unidiff
@@ -595,4 +549,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 0882729ee6438387de69189ebc842c8f96f04efc3b2222cf845992c04ca18b1c
+integrity: cdf9a159e1f2e02ba20fcd7b71a1a89216a4862b0283500e909329492b5b9a00
