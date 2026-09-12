@@ -170,9 +170,7 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
     )
 
     artifact_names = [
-        artifact["name"]
-        for generator in generators.values()
-        for artifact in generator["spec"]["artifacts"]
+        artifact["name"] for generator in generators.values() for artifact in generator["spec"]["artifacts"]
     ]
     assert len(artifact_names) == len(set(artifact_names)) == len(cases)
     generated_artifacts = {
