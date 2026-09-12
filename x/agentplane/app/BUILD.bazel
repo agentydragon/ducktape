@@ -115,6 +115,7 @@ py_library(
     srcs = ["conftest.py"],
     deps = [
         ":bridge",
+        ":database_migrate",
         ":decisions",
         ":egress",
         ":identity",
@@ -333,6 +334,50 @@ oci_image(
         ":app_layers",
         "//third_party/debian_slim:cacerts",
     ],
+    user = "1000:1000",
+)
+
+py_library(
+    name = "database_migrate",
+    srcs = ["database_migrate.py"],
+    data = ["//x/agentplane/app/migrations:files"],
+    deps = [
+        ":trajectory",
+        "@pypi//alembic",
+        "@pypi//psycopg",
+        "@pypi//pydantic_settings",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_binary(
+    name = "migrate",
+    main_module = "x.agentplane.app.database_migrate",
+    deps = [":database_migrate"],
+)
+
+# The migration runner, published as agentplane-app-migrate (devinfra/ci/image_targets.json) and run
+# as the `migrate` init container ahead of the app.
+aspect_py_binary(
+    name = "migration_image_bin",
+    main = "database_migrate.py",
+    deps = [":database_migrate"],
+)
+
+py_image_layer(
+    name = "migration_layers",
+    binary = ":migration_image_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "migration_image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("migration_image_bin"),
+    env = py_image_env(binary_name = "migration_image_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":migration_layers"],
     user = "1000:1000",
 )
 
@@ -658,5 +703,21 @@ py_test(
         ":shutdown",
         "//:conftest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_database_migrate",
+    size = "medium",
+    srcs = ["test_database_migrate.py"],
+    deps = [
+        ":conftest",
+        ":database_migrate",
+        ":trajectory",
+        "//:conftest",
+        "@pypi//alembic",
+        "@pypi//psycopg",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )

@@ -45,6 +45,10 @@ bbr test //x/agentplane/app/...
 - `action_federation.py`: request-bound operator federation into the canonical Action Service.
 - `consent.py`: browser-session-bound enrollment BFF; the Action Service owns consent and grants.
 - `operator_sessions.py`: PostgreSQL browser identity and pending OAuth state, shared across replicas.
+- `database_migrate.py` and `migrations/`: the Alembic history covering the shared `Base` declared
+  in `operator_sessions.py` and reused by `trajectory.py`'s tables. Migrations run separately through
+  `:migrate`; the server itself never creates or checks tables at startup. `:image` and
+  `:migration_image` are separate OCI targets.
 - `frontend/`: the React SPA on the repo's `ts_library` and esbuild toolchain, with the visual
   scenarios under `frontend/visual/`.
 
@@ -226,7 +230,7 @@ bearer or workload-token promotion is used. Missing configuration is specificall
 `503 detail.code=operator_federation_not_configured`; token callers get 403.
 
 See [`../docs/operator_federation.md`](../docs/operator_federation.md) for exact settings, PostgreSQL
-startup schema creation, opaque session lifecycle/CSRF/invalidation, failure codes, and signed
+session storage, opaque session lifecycle/CSRF/invalidation, failure codes, and signed
 multi-replica/two-operator test targets. Existing browser sessions must log in again after rollout.
 Only operator Action arguments are unredacted; caller arguments and execution result/error
 redaction are unchanged. There is no app-owned Action/Decision/Execution authority.
@@ -276,7 +280,7 @@ content to the runner under a stable preset identity. The runner executes it ide
 persistent state volume; a failure refuses the session open. The existing full `SessionSpec` API is
 available when no preset is selected. Every launch prepends the image's `agent_instructions.j2` to
 the task or preset instructions, including direct `SessionSpec` API launches. The app renders its
-service URLs from `agent_egress_rules_url` and `agent_actions_service_url` in deployment
+service URLs from `agent_egress_api_url` and `agent_actions_service_url` in deployment
 configuration. A configured `agent_instructions` key replaces that image default, including an
 explicitly empty value. The
 shared block teaches agents the platform's egress and Actions Service protocol; a preset and the

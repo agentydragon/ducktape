@@ -46,7 +46,9 @@ def preview_screenshots(name, entry, deps, visibility = None):
     )
     js_test(
         name = name,
-        size = "large",
+        # medium: the largest of these (grocy, 9 fixtures x 2 variants x 2 schemes) measures
+        # 54.5s, gmail 33.0s. large gave a 900s budget to under a minute of work.
+        size = "medium",
         entry_point = "//haku/console/frontend/tool_rendering/screenshot:render",
         data = [
             ":%s_bundle" % name,
