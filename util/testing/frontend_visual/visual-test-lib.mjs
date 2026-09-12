@@ -35,30 +35,11 @@ import {
   WAIT_TIMEOUT_MS,
 } from "./capture.mjs";
 import { launchDeterministicBrowser } from "./launcher.mjs";
+import { selectForShard } from "./sharding.mjs";
 import { upsertVisualReviewAsset } from "./visual-review-manifest.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-
-/**
- * The scenarios this process is responsible for: `--test_filter` narrows the table, and Bazel's
- * shard environment splits what remains. Filtering first keeps a one-scenario filter addressable
- * whichever shard would otherwise own it — the other shards then run nothing and pass.
- */
-function selectScenarios(names) {
-  // Bazel honours shard_count only for a runner that advertises support by touching this file,
-  // and it must be touched whether or not this shard ends up owning any scenario.
-  const statusFile = process.env.TEST_SHARD_STATUS_FILE;
-  if (statusFile) writeFileSync(statusFile, "");
-  const filter = process.env.TESTBRIDGE_TEST_ONLY;
-  const matched = filter ? names.filter((name) => name.includes(filter)) : names;
-  if (filter && matched.length === 0) {
-    throw new Error(`--test_filter=${filter} matched none of: ${names.join(", ")}`);
-  }
-  const total = Number(process.env.TEST_TOTAL_SHARDS ?? 1);
-  const index = Number(process.env.TEST_SHARD_INDEX ?? 0);
-  return matched.filter((_, position) => position % total === index);
-}
 
 async function captureScenario(browser, scenarioName, options, { harnessUrl, outputDir, title }) {
   if (!options?.element) {
@@ -158,7 +139,7 @@ export async function runScenarios(scenarios, { title }) {
   const outputDir = process.env.TEST_UNDECLARED_OUTPUTS_DIR || join(__dirname, "renders");
   mkdirSync(outputDir, { recursive: true });
 
-  const selected = selectScenarios(Object.keys(scenarios));
+  const selected = selectForShard(Object.keys(scenarios));
   // A shard with nothing to render must not start Chromium: `--single-process` with no page ever
   // opened wedges in browser.close(), which under --test_filter (where every shard but one is
   // empty) means a 900s timeout per shard instead of an instant pass.

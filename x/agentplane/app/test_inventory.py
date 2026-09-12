@@ -9,7 +9,6 @@ import pytest
 import pytest_bazel
 
 from x.agentplane.app.inventory import (
-    ARCHIVED_LABEL,
     MANAGED_LABEL,
     NewSandbox,
     ProvisioningState,
@@ -36,9 +35,6 @@ def _populate_one_of_each_state(custom_objects: FakeCustomObjectsApi, core_v1: F
     custom_objects.objects[("sandboxes", "live")] = sandbox("live", status=_READY)
     core_v1.pods["live"] = pod("live", phase="Running", ready=True, ip="10.0.0.7")
     custom_objects.objects[("sandboxes", "paused")] = sandbox("paused", operating_mode="Suspended")
-    custom_objects.objects[("sandboxes", "shelved")] = sandbox(
-        "shelved", labels={ARCHIVED_LABEL: "true"}, operating_mode="Suspended"
-    )
     # Not Agentplane's: another tenant's Sandbox in the same namespace stays invisible.
     custom_objects.objects[("sandboxes", "foreign")] = {
         "metadata": {"name": "foreign", "uid": str(uuid4()), "creationTimestamp": "2026-09-01T12:00:00Z"},
@@ -51,14 +47,13 @@ async def test_list_derives_each_provisioning_state_from_the_sandbox_and_its_pod
 ) -> None:
     _populate_one_of_each_state(custom_objects, core_v1)
 
-    views = {view.name: view for view in await inventory.list_sandboxes(include_archived=True)}
+    views = {view.name: view for view in await inventory.list_sandboxes()}
 
     assert {name: view.state for name, view in views.items()} == {
         "podless": ProvisioningState.WAITING_FOR_POD,
         "starting": ProvisioningState.WAITING_FOR_POD_READY,
         "live": ProvisioningState.RUNNING,
         "paused": ProvisioningState.SUSPENDED,
-        "shelved": ProvisioningState.ARCHIVED,
     }
     live = views["live"]
     assert live.pod is not None
@@ -81,19 +76,6 @@ async def test_list_derives_each_provisioning_state_from_the_sandbox_and_its_pod
         ("waiting", "ImagePullBackOff", "ImagePullBackOff on starting")
     ]
     assert (views["podless"].pod, views["podless"].conditions) == (None, [])
-    assert views["shelved"].archived
-    assert not views["live"].archived
-
-
-async def test_list_hides_archived_sandboxes_unless_asked(
-    inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api
-) -> None:
-    _populate_one_of_each_state(custom_objects, core_v1)
-
-    names = {view.name for view in await inventory.list_sandboxes()}
-
-    assert "shelved" not in names
-    assert "live" in names
 
 
 async def test_get_reads_one_sandbox_and_refuses_foreign_or_missing_ones(
@@ -155,33 +137,6 @@ async def test_suspend_and_resume_patch_the_operating_mode(
         await inventory.suspend("foreign")
 
 
-async def test_archive_suspends_then_labels(
-    inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api
-) -> None:
-    _populate_one_of_each_state(custom_objects, core_v1)
-
-    await inventory.archive("live")
-
-    assert custom_objects.patches == [
-        ("sandboxes", "live", {"spec": {"operatingMode": "Suspended"}}),
-        ("sandboxes", "live", {"metadata": {"labels": {ARCHIVED_LABEL: "true"}}}),
-    ]
-    assert (await inventory.get("live")).state == ProvisioningState.ARCHIVED
-    assert "live" not in {view.name for view in await inventory.list_sandboxes()}
-
-
-async def test_unarchive_clears_the_label_and_leaves_the_sandbox_suspended(
-    inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api
-) -> None:
-    _populate_one_of_each_state(custom_objects, core_v1)
-
-    await inventory.unarchive("shelved")
-
-    assert custom_objects.patches == [("sandboxes", "shelved", {"metadata": {"labels": {ARCHIVED_LABEL: None}}})]
-    assert ARCHIVED_LABEL not in custom_objects.objects[("sandboxes", "shelved")]["metadata"]["labels"]
-    assert (await inventory.get("shelved")).state == ProvisioningState.SUSPENDED
-
-
 async def test_delete_takes_a_suspended_sandbox_and_refuses_a_running_one(
     inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api
 ) -> None:
@@ -198,17 +153,6 @@ async def test_delete_takes_a_suspended_sandbox_and_refuses_a_running_one(
     assert custom_objects.deleted == [("sandboxes", "live")]
     with pytest.raises(SandboxNotFoundError):
         await inventory.delete("live")
-
-
-async def test_delete_removes_an_archived_sandbox(
-    inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api
-) -> None:
-    """An archived sandbox is a suspended one, so the shelf does not block deletion."""
-    _populate_one_of_each_state(custom_objects, core_v1)
-
-    await inventory.delete("shelved")
-
-    assert custom_objects.deleted == [("sandboxes", "shelved")]
 
 
 if __name__ == "__main__":
