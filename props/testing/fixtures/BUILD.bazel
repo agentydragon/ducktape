@@ -88,7 +88,7 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         "//props/db:models",
-        "//third_party/containers:registry_2",
+        "//third_party/containers:registry_3",
         "//third_party/containers:ryuk",
         "//util:oci",
         "@pypi//httpx",

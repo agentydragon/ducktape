@@ -1,7 +1,7 @@
 """Testcontainers-based e2e infrastructure fixtures.
 
 Provides test infrastructure:
-- Docker registry (testcontainers registry:2, session-scoped with per-test cleanup)
+- Docker registry (testcontainers registry:3, session-scoped with per-test cleanup)
 - BazelImage fixtures for agent images (from Bazel oci_image layouts)
 
 The registry container is session-scoped to avoid 28-76s startup overhead on RBE,
@@ -28,7 +28,7 @@ from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 
 from props.db.models import AgentType
-from third_party.containers import registry_2, ryuk
+from third_party.containers import registry_3, ryuk
 from util.oci import BazelImage, load_oci_image
 
 logger = logging.getLogger(__name__)
@@ -40,9 +40,9 @@ tracer = trace.get_tracer(__name__)
 
 @pytest.fixture(scope="session", autouse=True)
 def _preload_registry_images() -> None:
-    """Preload registry:2 image once per session so per-test container startup is fast."""
+    """Preload registry:3 image once per session so per-test container startup is fast."""
     load_oci_image(ryuk.IMAGE)
-    load_oci_image(registry_2.IMAGE)
+    load_oci_image(registry_3.IMAGE)
 
 
 @pytest.fixture(scope="session")
@@ -54,7 +54,7 @@ def _e2e_registry_container() -> Generator[DockerContainer]:
     with tracer.start_as_current_span("e2e_registry startup"):
         with tracer.start_as_current_span("configure container"):
             registry = (
-                DockerContainer(registry_2.IMAGE.tag)
+                DockerContainer(registry_3.IMAGE.tag)
                 .with_exposed_ports(5000)
                 .with_env("REGISTRY_HTTP_RELATIVEURLS", "true")
                 .with_env("REGISTRY_STORAGE_DELETE_ENABLED", "true")

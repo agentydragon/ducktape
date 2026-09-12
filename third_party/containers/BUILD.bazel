@@ -41,10 +41,10 @@ oci_image_py(
 )
 
 oci_image_py(
-    name = "registry_2",
+    name = "registry_3",
     testonly = True,
-    image = "@registry_2_linux_amd64",
-    tag = "registry:2",
+    image = "@registry_3_linux_amd64",
+    tag = "registry:3",
     visibility = ["//visibility:public"],
 )
 

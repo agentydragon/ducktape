@@ -17,7 +17,7 @@ services:
       retries: 30
 
   registry:
-    image: docker.io/library/registry:2
+    image: docker.io/library/registry:3
     container_name: props-registry
     network_mode: host
     environment:
