@@ -52,6 +52,7 @@ def test_public_coder_defaults_and_nonsecret_instructions_bootstrap_workload_cre
     assert rules[actions_host]["methods"] == ["GET", "POST"]
     assert rules[actions_host]["paths"] == [
         "/mcp",
+        "/openapi.json",
         "/v1/action-groups",
         "/v1/action-groups/**",
         "/v1/action-requests",
@@ -61,9 +62,9 @@ def test_public_coder_defaults_and_nonsecret_instructions_bootstrap_workload_cre
     assert credential["spec"]["source"] == {"authenticatedWorkloadToken": {}}
     assert target == {"header": "Authorization", "method": "schemeToken", "scheme": "Bearer"}
     assert rule["methods"] == ["GET"]
-    assert rule["paths"] == ["/v1/rules"]
+    assert rule["paths"] == ["/openapi.json", "/v1/rules"]
     assert rule["clusterInternal"] is True
-    assert config["agent_egress_rules_url"] == f"http://{one(rule['hosts'])}{one(rule['paths'])}"
+    assert config["agent_egress_api_url"] == f"http://{one(rule['hosts'])}"
 
 
 def test_staging_egress_retains_one_available_replica_during_voluntary_changes() -> None:
