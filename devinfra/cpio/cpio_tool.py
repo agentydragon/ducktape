@@ -49,7 +49,7 @@ def main() -> None:
         sys.exit(f"Usage: {sys.argv[0]} <output.cpio> <manifest.json>")
 
     output_path, manifest_path = sys.argv[1], sys.argv[2]
-    entries = pkg_manifest.read_entries_from_file(manifest_path)
+    entries = pkg_manifest.read_entries_from(manifest_path)
 
     cpio_entries = [(".", None, 0o040755, 2)]
     for e in entries:
