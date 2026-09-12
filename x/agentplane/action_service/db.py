@@ -16,7 +16,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Mapper, mapped_column
 
 from x.agentplane.action_service.catalog import ActionIdentity
 from x.agentplane.action_service.models import (
-    EXTERNAL_ISSUERS,
+    SERVICE_ACCOUNT_ISSUER,
     ActionEventView,
     ActionRequestInput,
     ActionRequestView,
@@ -69,7 +69,7 @@ class EnrollmentRow(Base):
     operator_subject: Mapped[str | None] = mapped_column(Text)
     verdict: Mapped[str | None] = mapped_column(Text)
     decision_digest: Mapped[str | None] = mapped_column(Text)
-    # A `models.GrantCaller`, set by an allow decision.
+    # A `models.ServiceAccountRef`, set by an allow decision.
     caller: Mapped[dict[str, JsonValue] | None] = mapped_column(JSONB(none_as_null=True))
     display_name: Mapped[str | None] = mapped_column(Text)
     connection_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("external_connection.id"))
@@ -94,8 +94,7 @@ class ConnectionGrantRow(Base):
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     connection_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("external_connection.id"))
     revision: Mapped[int] = mapped_column(Integer)
-    # A `models.GrantCaller`: the ServiceAccount the grant acts as, or the configured Identity a
-    # pre-ServiceAccount grant was bound to.
+    # A `models.ServiceAccountRef`: the ServiceAccount the grant acts as.
     caller: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
     issuer: Mapped[str] = mapped_column(Text)
     client_id: Mapped[str] = mapped_column(Text)
@@ -357,7 +356,7 @@ class ActionStore:
             if external_grant is not None:
                 if principal != external_grant.principal() or not await self._grant_authorized(session, external_grant):
                     raise ExternalGrantNotAuthorizedError("external grant is not authorized")
-            elif principal.issuer in EXTERNAL_ISSUERS:
+            elif principal.issuer == SERVICE_ACCOUNT_ISSUER:
                 raise ExternalGrantNotAuthorizedError("an external caller requires an authenticated grant")
             now = datetime.now(UTC)
             request_id = uuid4()

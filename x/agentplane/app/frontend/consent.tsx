@@ -13,7 +13,7 @@ import {
 } from "@mantine/core";
 import { useEffect, useState } from "react";
 
-import { callerLabel, displayableError, serviceAccountKey } from "./client";
+import { displayableError, serviceAccountKey } from "./client";
 import { consentService, type ConsentDecision, type ConsentPreview, type ConsentService } from "./consent_client";
 
 function continueAuthorization(url: string): void {
@@ -176,7 +176,7 @@ export function ConnectionConsent({
                     </Text>
                     {existing.grants.map((grant) => (
                       <Text key={grant.id} size="sm" style={{ overflowWrap: "anywhere" }}>
-                        Acts as {callerLabel(grant.caller)} · {grant.status} · client {grant.client_id} · issuer{" "}
+                        Acts as {serviceAccountKey(grant.caller)} · {grant.status} · client {grant.client_id} · issuer{" "}
                         {grant.issuer}
                       </Text>
                     ))}

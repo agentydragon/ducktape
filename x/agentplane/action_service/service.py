@@ -24,14 +24,13 @@ from uuid import UUID, uuid4
 import jsonschema
 
 from x.agentplane.action_service.catalog import ActionCatalog, ActionIdentity, UnknownActionError
-from x.agentplane.action_service.db import ActionConflictError, ActionStore, ExternalGrantNotAuthorizedError
+from x.agentplane.action_service.db import ActionConflictError, ActionStore
 from x.agentplane.action_service.models import (
     ActionEventView,
     ActionRequestInput,
     ActionRequestView,
     ActionState,
     CancellationResult,
-    ConfiguredIdentityRef,
     DecisionInput,
     ExecutionClaim,
     ExecutionResult,
@@ -43,7 +42,6 @@ from x.agentplane.action_service.models import (
     ProviderVerdict,
     SandboxCaller,
     ServiceAccountCaller,
-    ServiceAccountRef,
     UnknownOutcomeReason,
     Verdict,
 )
@@ -98,11 +96,7 @@ def _caller(
     was minted for. Admission already refused any grant a ServiceAccount does not back."""
     if external_grant is None:
         return SandboxCaller.from_principal(principal)
-    match external_grant.caller:
-        case ServiceAccountRef() as account:
-            return ServiceAccountCaller(service_account=account, grant_revision=external_grant.revision)
-        case ConfiguredIdentityRef():
-            raise ExternalGrantNotAuthorizedError("a configured Identity grant cannot be evaluated")
+    return ServiceAccountCaller(service_account=external_grant.caller, grant_revision=external_grant.revision)
 
 
 class _StoreBackedLease:

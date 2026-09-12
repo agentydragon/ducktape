@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import {
   actionService,
-  callerLabel,
+  serviceAccountKey,
   displayableError,
   type ActionRequestView,
   type ActionService,
@@ -49,7 +49,7 @@ function ActionCaller({ request }: { request: ActionRequestView }): JSX.Element 
         Authenticated external caller at submission
       </Text>
       <Text size="xs">
-        Acts as <Code>{callerLabel(grant.caller)}</Code> · Client <Code>{grant.client_id}</Code>
+        Acts as <Code>{serviceAccountKey(grant.caller)}</Code> · Client <Code>{grant.client_id}</Code>
       </Text>
       <Text size="xs">
         Issuer <Code>{grant.issuer}</Code>

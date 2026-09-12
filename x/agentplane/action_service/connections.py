@@ -19,7 +19,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from x.agentplane.action_service.db import ConnectionGrantRow, ConnectionRow, SessionMaker
-from x.agentplane.action_service.models import ExternalGrantProvenance, GrantCaller, Principal, ServiceAccountRef
+from x.agentplane.action_service.models import ExternalGrantProvenance, Principal, ServiceAccountRef
 from x.agentplane.action_service.policy_informer import PolicyIndex
 
 ConnectionName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
@@ -79,7 +79,7 @@ class Grant(BaseModel):
     id: UUID
     connection_id: UUID
     revision: int
-    caller: GrantCaller
+    caller: ServiceAccountRef
     issuer: str
     client_id: str
     status: GrantStatus
@@ -137,9 +137,9 @@ class ConnectionAuthority:
         """The ServiceAccounts a new grant may act as, as the informer currently sees them."""
         return self._callers.caller_service_accounts()
 
-    def require_caller(self, caller: GrantCaller) -> ServiceAccountRef:
-        """Refuse unless the caller is a ServiceAccount the informer currently lists as labeled."""
-        if isinstance(caller, ServiceAccountRef) and self._callers.eligible(caller):
+    def require_caller(self, caller: ServiceAccountRef) -> ServiceAccountRef:
+        """Refuse unless the informer currently lists the ServiceAccount as labeled."""
+        if self._callers.eligible(caller):
             return caller
         raise GrantRejectedError("caller ServiceAccount is missing or not labeled as an Action caller")
 

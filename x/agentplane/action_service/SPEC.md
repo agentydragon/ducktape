@@ -23,9 +23,7 @@ Reconnect revokes the previous grant and creates a new pending revision. Existin
 acquire the replacement ServiceAccount's authority. Unbind and grant revocation take effect on the
 next authority resolution; a ServiceAccount that is missing, unlabeled, or not yet seen by the
 watch also refuses resolution. Revoking an old grant cannot revoke its replacement. No grant or
-Connection history is deleted. A grant bound to a configured Identity, the pre-ServiceAccount
-authority, stays readable in the inventory and on its Actions' provenance and never resolves
-again; fresh OAuth selecting a ServiceAccount is how such a Connection regains authority.
+Connection history is deleted.
 
 Resolved external principals use the ServiceAccount as their receipt/idempotency scope:
 Connections acting as the same ServiceAccount share reads, while different ServiceAccounts remain

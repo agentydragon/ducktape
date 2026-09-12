@@ -3,10 +3,10 @@ import { useCallback, useEffect, useState } from "react";
 
 import {
   ConnectionRequestError,
-  callerLabel,
   connectionService,
   displayableError,
   isEligibleCaller,
+  serviceAccountKey,
   type CallerServiceAccount,
   type Connection,
   type ConnectionService,
@@ -118,7 +118,7 @@ export function Connections({ service = connectionService }: { service?: Connect
                     <Badge color={grant.status === "active" ? "blue" : grant.status === "pending" ? "yellow" : "gray"}>
                       Grant {grant.status}
                     </Badge>
-                    <Text size="sm">Acts as: {callerLabel(grant.caller)}</Text>
+                    <Text size="sm">Acts as: {serviceAccountKey(grant.caller)}</Text>
                     <Text size="sm" c={isEligibleCaller(grant.caller, accounts) ? "dimmed" : "orange"}>
                       ({isEligibleCaller(grant.caller, accounts) ? "labeled caller" : "not a labeled caller"})
                     </Text>

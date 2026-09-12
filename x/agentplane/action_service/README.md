@@ -15,7 +15,7 @@ needs at run time. `policy_informer.PolicyInformer` watches them with a label se
 and `connections.ConnectionAuthority` resolves grants against that index: a grant whose
 ServiceAccount is missing, unlabeled, or not yet listed by the watch refuses resolution.
 `ConnectionAuthority` persists runtime named Connections and immutable grant revisions in the
-existing database (migration `0008_external_connections`; `0014_grant_caller` stores the
+existing database (migration `0008_external_connections`; `0014_action_policies` stores the
 ServiceAccount as a typed `caller` JSON value). The operator API exposes
 `GET /v1/operator/caller-service-accounts`, list/detail at `/v1/operator/connections`, `PATCH` of
 a name with `expected_version`, and `POST .../{id}/unbind` with `expected_version`.
@@ -39,11 +39,6 @@ now acts as the same ServiceAccount: the unstarted Execution fails with
 stopped. Receipt and executor projections carry the original snapshot; no credentials are stored
 in it. Migration `0009_action_external_grant` adds its nullable column without inventing
 provenance for pre-existing requests.
-
-Grants and snapshots from before ServiceAccount callers carry the configured Identity they were
-bound to (`models.ConfiguredIdentityRef`, persisted as `{"identity_id": ...}` and as the
-`configured-identity` principal issuer). They stay readable everywhere and never resolve; fresh
-OAuth selecting a ServiceAccount is the migration path for such a Connection.
 
 Action Service/PostgreSQL owns Connection authority; the integration app owns its operator UI.
 Configurable policies and the Thread lifecycle are separate from this authority.
@@ -325,7 +320,7 @@ they name, nothing before sync), and `PolicySetDecisionProvider`, the one produc
 `DecisionProvider`. `ActionService` builds the `DecisionContext` at admission with the typed
 caller (`SandboxCaller` from the workload principal, `ServiceAccountCaller` from the grant) and
 those bindings; the provider's allow carries `PolicyEvidence`, persisted on the Decision
-(migration `0015_decision_policy_evidence`) and projected as `DecisionView.policy_evidence`. Deny
+(migration `0014_action_policies`) and projected as `DecisionView.policy_evidence`. Deny
 lists are parsed and reported but decide nothing yet. Dispatch is unchanged: it re-checks caller
 authority, never policy.
 

@@ -55,16 +55,6 @@ it("renders immutable IDs and distinguishes an unlabeled ServiceAccount from an 
   ])
     expect(container.textContent).toContain(value);
 });
-it("names a pre-ServiceAccount configured Identity as such", async () => {
-  const api = service();
-  const row = sampleConnection();
-  api.list = vi.fn(async () => [
-    { ...row, grants: row.grants.map((grant) => ({ ...grant, caller: { identity_id: "retired" } })) },
-  ]);
-  const container = await render(api);
-  expect(container.textContent).toContain("configured Identity retired");
-  expect(container.textContent).toContain("not a labeled caller");
-});
 it("requires confirmation, permits cancelling, and preserves the row after unbind", async () => {
   const api = service();
   const row = sampleConnection();

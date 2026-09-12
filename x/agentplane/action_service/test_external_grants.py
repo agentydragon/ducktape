@@ -17,24 +17,19 @@ from x.agentplane.action_service.connections import (
     ConnectionAuthority,
     Grant,
     GrantBinding,
-    GrantRejectedError,
-    GrantStatus,
     NewConnection,
     ReconnectConnection,
 )
 from x.agentplane.action_service.db import (
     ActionStore,
-    ConnectionGrantRow,
     ConnectionRow,
     ExternalGrantNotAuthorizedError,
     make_sessionmaker,
 )
 from x.agentplane.action_service.models import (
-    CONFIGURED_IDENTITY_ISSUER,
     ActionRequestInput,
     ActionRequestView,
     ActionState,
-    ConfiguredIdentityRef,
     DecisionInput,
     ExecutionResult,
     ExecutionState,
@@ -274,52 +269,6 @@ async def test_admission_and_claim_hold_revocation_lock_until_transaction_end(
     await allow(store, request)
     assert await store.claim_execution(request.id, executor_id="worker", lease_duration=LEASE_DURATION) is not None
     assert checker.calls == 2
-
-
-async def test_pre_service_account_grant_stays_readable_but_never_authorizes(
-    engine: AsyncEngine, authority: ConnectionAuthority, store: ActionStore, envelope: ActionRequestInput
-) -> None:
-    """Rows migrated from configured Identities keep their history and provenance; only fresh OAuth
-    selecting a ServiceAccount regains authority."""
-    now = datetime.now(UTC)
-    connection_id, grant_id = uuid4(), uuid4()
-    async with make_sessionmaker(engine).begin() as db:
-        db.add(ConnectionRow(id=connection_id, display_name="Legacy", version=2, created_at=now, updated_at=now))
-        await db.flush()
-        db.add(
-            ConnectionGrantRow(
-                id=grant_id,
-                connection_id=connection_id,
-                revision=1,
-                caller={"identity_id": "legacy-personal"},
-                issuer=ISSUER,
-                client_id="legacy-client",
-                request_digest="legacy-digest",
-                activation_deadline=now + timedelta(minutes=10),
-                status=GrantStatus.ACTIVE,
-                created_at=now,
-                activated_at=now,
-                revoked_at=None,
-            )
-        )
-    (legacy,) = (await authority.get(connection_id)).grants
-    assert legacy.caller == ConfiguredIdentityRef(identity_id="legacy-personal")
-    assert legacy.principal().issuer == CONFIGURED_IDENTITY_ISSUER
-    with pytest.raises(GrantRejectedError):
-        await authority.resolve(grant_id, issuer=ISSUER, client_id="legacy-client")
-    with pytest.raises(ExternalGrantNotAuthorizedError):
-        await store.submit(envelope, legacy.principal(), external_grant=legacy.provenance())
-    persisted = ExternalGrantProvenance.model_validate(
-        {
-            "identity_id": "legacy-personal",
-            "issuer": ISSUER,
-            "client_id": "legacy-client",
-            "connection_id": str(connection_id),
-            "grant_id": str(grant_id),
-            "revision": 1,
-        }
-    )
-    assert persisted == legacy.provenance()
 
 
 async def test_service_preserves_human_approval_and_canonical_external_provenance(

@@ -545,7 +545,7 @@ routes.push(
           ...grant,
           id: "20000000-0000-4000-8000-000000000002",
           connection_id: "10000000-0000-4000-8000-000000000002",
-          caller: { identity_id: "retired" },
+          caller: { namespace: "agentplane-visual", name: "retired" },
           status: "revoked",
           revoked_at: "2026-09-09T12:03:00Z",
         })),

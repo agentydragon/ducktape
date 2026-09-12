@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from enum import StrEnum
-from typing import Annotated, Any, Literal, Protocol
+from typing import Literal, Protocol
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Discriminator, Field, JsonValue, Tag, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from x.agentplane.action_service.catalog import ActionIdentity
 
@@ -33,9 +33,6 @@ class Principal(BaseModel):
 
 SANDBOX_ISSUER = "kubernetes-sandbox"
 SERVICE_ACCOUNT_ISSUER = "service-account"
-# Rows written before external callers were ServiceAccounts; readable, never authorizing.
-CONFIGURED_IDENTITY_ISSUER = "configured-identity"
-EXTERNAL_ISSUERS = frozenset({SERVICE_ACCOUNT_ISSUER, CONFIGURED_IDENTITY_ISSUER})
 
 
 class ServiceAccountRef(BaseModel):
@@ -51,33 +48,6 @@ class ServiceAccountRef(BaseModel):
         return Principal(
             issuer=SERVICE_ACCOUNT_ISSUER, subject=f"{self.namespace}:{self.name}", role=PrincipalRole.CALLER
         )
-
-
-class ConfiguredIdentityRef(BaseModel):
-    """The subject of a grant bound before external callers were ServiceAccounts. Nothing resolves
-    it any more: such a Connection stays readable in the inventory and on its Actions' provenance,
-    and fresh OAuth selecting a ServiceAccount is how it regains authority."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    identity_id: str
-
-    def principal(self) -> Principal:
-        return Principal(issuer=CONFIGURED_IDENTITY_ISSUER, subject=self.identity_id, role=PrincipalRole.CALLER)
-
-
-def _grant_caller_kind(value: Any) -> str | None:
-    if isinstance(value, ConfiguredIdentityRef) or (isinstance(value, dict) and "identity_id" in value):
-        return "configured_identity"
-    if isinstance(value, ServiceAccountRef | dict):
-        return "service_account"
-    return None
-
-
-GrantCaller = Annotated[
-    Annotated[ServiceAccountRef, Tag("service_account")] | Annotated[ConfiguredIdentityRef, Tag("configured_identity")],
-    Discriminator(_grant_caller_kind),
-]
 
 
 class SandboxCaller(BaseModel):
@@ -173,22 +143,12 @@ class ExternalGrantProvenance(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    caller: GrantCaller
+    caller: ServiceAccountRef
     issuer: str
     client_id: str
     connection_id: UUID
     grant_id: UUID
     revision: int = Field(ge=1)
-
-    @model_validator(mode="before")
-    @classmethod
-    def _legacy_identity(cls, value: Any) -> Any:
-        # Snapshots persisted before ServiceAccount callers carry the configured Identity at top level.
-        if isinstance(value, dict) and "identity_id" in value and "caller" not in value:
-            legacy = dict(value)
-            legacy["caller"] = {"identity_id": legacy.pop("identity_id")}
-            return legacy
-        return value
 
     def principal(self) -> Principal:
         return self.caller.principal()

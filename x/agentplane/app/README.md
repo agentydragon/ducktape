@@ -237,8 +237,7 @@ redaction are unchanged. There is no app-owned Action/Decision/Execution authori
 The operator can rename or explicitly confirm unbind; unbind revokes active/pending authority,
 without deleting history or stopping already claimed executions. Whether a grant's ServiceAccount
 is still a labeled caller is displayed separately from the grant's lifecycle status: an active grant
-does not imply its ServiceAccount remains eligible, and a grant bound to a pre-ServiceAccount
-configured Identity is named as such.
+does not imply its ServiceAccount remains eligible.
 
 The BFF proxies `GET /connections[/{id}]`, `PATCH /connections/{id}`,
 `POST /connections/{id}/unbind`, and `GET /connection-service-accounts` through the same request-bound

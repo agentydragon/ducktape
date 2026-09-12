@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 
@@ -21,10 +21,7 @@ from x.agentplane.action_service.connections import (
     ReconnectConnection,
 )
 from x.agentplane.action_service.db import EnrollmentRow, SessionMaker
-from x.agentplane.action_service.models import GrantCaller, Principal, PrincipalRole, ServiceAccountRef, Verdict
-
-# The stored caller is the discriminated union, so a row from before ServiceAccount callers reads back typed.
-_GRANT_CALLER: TypeAdapter[GrantCaller] = TypeAdapter(GrantCaller)
+from x.agentplane.action_service.models import Principal, PrincipalRole, ServiceAccountRef, Verdict
 
 
 class EnrollmentInput(BaseModel):
@@ -216,7 +213,7 @@ class EnrollmentAuthority:
                 raise EnrollmentRejectedError("issuing operator does not match consent")
             if row.exchange_claimed_at is not None:
                 raise EnrollmentRejectedError("token exchange already claimed; restart authorization")
-            caller = _GRANT_CALLER.validate_python(row.caller)
+            caller = ServiceAccountRef.model_validate(row.caller)
             self._require_caller(caller)
             connection: NewConnection | ReconnectConnection
             if row.connection_id is not None and row.connection_version is not None:
@@ -242,10 +239,10 @@ class EnrollmentAuthority:
             row = _require_live(await db.get(EnrollmentRow, grant_id, with_for_update=True))
             if row.verdict != Verdict.ALLOW or row.caller is None or row.exchange_claimed_at is not None:
                 raise EnrollmentRejectedError("enrollment cannot issue another token family")
-            self._require_caller(_GRANT_CALLER.validate_python(row.caller))
+            self._require_caller(ServiceAccountRef.model_validate(row.caller))
             row.exchange_claimed_at = datetime.now(UTC)
 
-    def _require_caller(self, caller: GrantCaller) -> ServiceAccountRef:
+    def _require_caller(self, caller: ServiceAccountRef) -> ServiceAccountRef:
         try:
             return self._connections.require_caller(caller)
         except GrantRejectedError as error:
