@@ -135,12 +135,12 @@ Canonical accounting settles its financial effects and determines household tax.
 The approximation does not reconstruct constituent trades or establish statutory
 TLH fidelity. See <docs/tlh.md> for model and numerical conventions.
 
-## Preserved configured capabilities and limits
+## Declared housing and private-equity capabilities and limits
 
-Configured scenarios support property purchase/ownership, mortgages, carrying
-costs, rent/occupancy changes, disposal and PE liquidity events. These are not yet
-callable housing/PE actions in the common session. Changing a policy does not
-make an existing contract cease to exist.
+A declared housing table supports property purchase/ownership, mortgages, carrying
+costs, rent/occupancy changes and disposal; a private holding brings its issuer's
+liquidity events. These are not yet callable housing/PE actions in the common
+session. Changing a policy does not make an existing contract cease to exist.
 
 Mortgage installments, interest and payoff reconcile to the outstanding principal
 in the liability ledger. Servicing state and reporting do not maintain independent
@@ -154,8 +154,7 @@ merely by reaching the horizon.
 PE paths distinguish marks, voluntary opportunities, eligibility/capacity,
 liquidity blocks and forced sale/recovery. A stated recovery cashout is a total
 for the remaining position, not a per-unit quote; proceeds and disposed basis
-reconcile to it. The configured path still depends on tender-policy setup even
-for compulsory recovery. It does not yet guarantee policy-independent compulsory
+reconcile to it. Compulsory recovery still depends on a declared tender policy. It does not yet guarantee policy-independent compulsory
 events or require explicit responses to every voluntary opportunity.
 
 Taxes are settled financial consequences, not a terminal-wealth haircut.

@@ -228,14 +228,11 @@ Callers by surface today, so the burn-down can be checked off:
   delegate agents, and a vectorised policy layer replaces the delegates later.
 - **App (`product/service.py`) — landed on `product/simulation.py`:** one world per
   path, the `ConfiguredHousehold` tracked on it and `step()` to the horizon; it
-  consults `configured_allocation.plan` for its sales and pays claims all or none
-  per account. `product/service_test.py` pins agreement with the configured runner
-  on spending, ruin, hand-to-mouth and indexed-band cases while that runner exists.
-- **Configured runner (`sim/configured.py`):** the configured acceptance suites
-  (`sim/testing/configured_acceptance_test.py` through `sim/testing/case.py` and
-  `configured_result.py`) and `sim/configured_mortgage_test.py`. These leave with
-  SUITES-A. Until then the runner drives worlds through the explicit phase methods
-  (`begin_actions`, `execute`, `close_month`, `open_month`).
+  consults `configured_allocation.plan` for its sales, pays claims all or none
+  per account and sizes exact purchases from what those leave.
+- **Configured runner — gone:** every configured acceptance suite composes its
+  worlds under `sim/testing/*_test.py`; `sim/configured.py` and the legacy result
+  adapters are deleted.
 - **`Scenario`/`compile_run` authoring:** every caller above plus `product/scenarios.py`;
   leaves with SCHEMA after the constructor slice.
 - **App recording (`capture.FinancialCapture`, `configured.product_row`):** leaves to
@@ -250,8 +247,6 @@ parallel. Each node leaves this section when it lands.
 ```mermaid
 graph TD
     TLH_MONEY["TLH-MONEY: the managed portfolio is denominated in money, not proxy units"]
-    SUITES_NOBUY["SUITES-A: configured suites that never purchase move onto a household"]
-    CONFIGURED_GONE["CONFIGURED: delete sim/configured.py, case.py, the legacy result adapters"]
     APP_COMPOSE["APP-COMPOSE: product/scenarios.py declares worlds, no authored Scenario"]
     SIMTESTS["SIMTESTS: the prepared-input sim tests compose their worlds"]
     RUN_GONE["RUN: delete CompiledRun, compile_run, from_run, validation.py"]
@@ -262,11 +257,8 @@ graph TD
     SEASONED["SEASONED: tracked contracts originated before month zero (GHOUSE)"]
     PROPERTY["PROPERTY: a tracked property component; rented share on tracked loans (GHOUSE)"]
     VECTOR["VECTOR: World gains a rollout axis; ActionSession and its delegates go"]
-    SUITES_NOBUY --> CONFIGURED_GONE
-    CONFIGURED_GONE --> RUN_GONE
     APP_COMPOSE --> RUN_GONE
     SIMTESTS --> RUN_GONE
-    CONFIGURED_GONE --> RECORD
     OFFERS --> DRAIN
     RUN_GONE --> VECTOR
 ```
@@ -284,17 +276,6 @@ graph TD
   loop go; `tlh_test`, `harvest_test`, `tlh_session_test` and
   `allocation_household_test` update the rounding they pinned. The app declares no
   managed sleeve, so its output is untouched.
-- **SUITES-A.** `TestConfigured{IncomeSources,PropertyStakes,PrivateEquity,Deductions,
-CashConservation,FrozenRollout,Rental*,YearEndTax,PropertyCarryingCost,ScanPhase,
-ValidationEdge}` and `configured_mortgage_test` use grouped settlement and scheduled
-  sales but no purchases: each composes its worlds as `harvest_test` does and states
-  its sales and payments as actions. Grouped all-or-none settlement is the household's
-  choice per account, as in `policy/configured_household.py`.
-- **CONFIGURED.** With no suite left, `sim/configured.py`, `sim/testing/case.py`,
-  `configured_result.py`, `simulation_result.py`, `product/service_test`'s agreement
-  test against the runner, and `configured_allocation.validate_prepared`'s reader of
-  the prepared run with `sim/prepared_allocation_test.py` go.
-  `policy/configured_allocation.plan` stays as the household's helper.
 - **APP-COMPOSE.** `product/scenarios.py` builds an authored `Scenario` that
   `compile_run` lowers; instead it declares accounts, pools, lots, bonds, housing,
   distributions, tender and funding policies on each `World` through the compiler's
@@ -302,10 +283,14 @@ ValidationEdge}` and `configured_mortgage_test` use grouped settlement and sched
   distribution lowerings still inside `compile_run`), and tracks its household,
   billers and authorities. `scheduled_transfers` and the property cashflow tables
   become tracked emitters or declarations on the way.
-- **SIMTESTS.** `sim/testing/example_run.py` and the tests of the prepared-input path
-  (`test_results`, `testing/test_invocation`, `product/test_action_projection`) compose
-  their worlds; what they assert about validation moves to the declaration that now
-  rejects it.
+- **SIMTESTS.** `sim/testing/example_run.py`, `sim/testing/case.py` and
+  `fixtures.py`, and the tests still built on them (`test_results`,
+  `testing/test_invocation`, `product/test_action_projection`, `test_tlh_timeline`,
+  `prepared_allocation_test`, `compiler/execution_test`, the bond suites,
+  `policy/test_sleeves`, `x/monthly_actions/test_policy`) compose their worlds; what
+  they assert about the compiler's validation moves to the declaration that now
+  rejects it, and `configured_allocation.validate_prepared` goes with its last
+  compiled-run caller.
 - **RUN.** `CompiledRun`, `PreparedScenario`, `compile_run`, `World.from_run`,
   `ActionSession.from_run` and `sim/validation.py` are deleted; the prepared record
   types stay as the declaration vocabulary. `SCHEMA` closes here.

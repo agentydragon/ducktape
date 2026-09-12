@@ -38,7 +38,7 @@ from finance.augur.model.testing import (
     int_matrix_with_step,
     level_matrix_with_step,
 )
-from finance.augur.product import service, simulation
+from finance.augur.product import service
 from finance.augur.product.conftest import MakeProductService
 from finance.augur.product.scenarios import build_scenario, resolve_primary_agent_id
 from finance.augur.product.simulation import simulate_product_metrics
@@ -73,13 +73,11 @@ from finance.augur.product.wire import (
     SetRentedFractionEventWire,
     SleeveWeight,
 )
-from finance.augur.sim import configured
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.product_metrics import ProductMetricFanSummary, ProductTerminalSummary
 from finance.augur.sim.quantiles import currency_quantiles
 from finance.augur.sim.scenario import Agent, InitialAccountBalance, InitialLot, Scenario, SeriesIndexedAmount
 from finance.augur.sim.testing.case import Case
-from finance.augur.sim.world import Capture
 
 
 @dataclass
@@ -1916,69 +1914,6 @@ def test_cash_property_purchase_omits_mortgage_interest_deduction(
     )
     assert federal_accrual.mortgage_interest_deduction_quanta == _usd_quanta(0.0)
     assert federal_accrual.itemized_deduction_quanta == _usd_quanta(0.0)
-
-
-def _band(*, index_to_inflation: bool = False, floor: int = 20_000, ceiling: int = 60_000) -> FundingPolicy:
-    return FundingPolicy(
-        cash_floor=floor,
-        cash_ceiling=ceiling,
-        cash_band_index_to_inflation=index_to_inflation,
-        sleeve_weights=(
-            SleeveWeight(symbol="VOO", weight=1),
-            SleeveWeight(symbol="btc", weight=1),
-            SleeveWeight(symbol="eth", weight=1),
-        ),
-    )
-
-
-@pytest.mark.parametrize("capture", ["summary", "dense"])
-@pytest.mark.parametrize(
-    "scenario",
-    [
-        pytest.param(_scenario_key(horizon_months=14), id="spending_through_a_tax_year"),
-        pytest.param(
-            ScenarioKey(model_id="current_model", horizon_months=6, monthly_spend=300_000, spend_index="none"),
-            id="ruin_without_a_funding_policy",
-        ),
-        pytest.param(
-            ScenarioKey(
-                model_id="current_model",
-                horizon_months=6,
-                monthly_spend=120_000,
-                spend_index="none",
-                funding_policy=_band(floor=0, ceiling=0),
-            ),
-            id="hand_to_mouth_funding",
-        ),
-        pytest.param(
-            ScenarioKey(
-                model_id="current_model",
-                horizon_months=14,
-                monthly_spend=30_000,
-                spend_index="inflation",
-                funding_policy=_band(index_to_inflation=True),
-            ),
-            id="an_indexed_band_through_a_tax_year",
-        ),
-    ],
-)
-def test_the_household_reproduces_the_configured_runner(
-    product: service.ProductService, scenario: ScenarioKey, capture: Capture
-) -> None:
-    """The app household on a stepped world posts what the configured runner's grouped month posted.
-
-    The configured runner is the oracle while it exists: same sales, same all-or-none claim
-    settlement and shortfall, same issuer protocol outcomes, same tax year.
-    """
-    run, _ = product._compile_product_run(scenario, (7, 8))
-    primary = product._primary_agent_id
-    expected = configured.execute(run, capture, primary)
-    actual = simulation.execute(run, capture, primary)
-    assert [result.financial for result in actual] == [result.financial for result in expected]
-    assert [result.configured_summary for result in actual] == [result.configured_summary for result in expected]
-    assert [result.product_metrics for result in actual] == [result.product_metrics for result in expected]
-    if capture == "dense":
-        assert [result.events for result in actual] == [result.events for result in expected]
 
 
 if __name__ == "__main__":

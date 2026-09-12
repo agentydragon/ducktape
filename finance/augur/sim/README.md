@@ -30,9 +30,7 @@ Shared proposal helpers live in <../policy/>; they do not settle trades or taxes
 quantities, tax rules and supplied paths. The compiler constructs these directly;
 file serialization is private to the I/O boundaries. Sessions accept the prepared value,
 not a mutable wire dictionary. The app composes its worlds from the same prepared
-facts and tracks its household (<../policy/configured_household.py>) on each; the remaining
-configured suites drive theirs through <configured.py>, which is not an interface
-new experiments should extend.
+facts and tracks its household (<../policy/configured_household.py>) on each.
 
 ## Outcomes and failure
 
@@ -46,11 +44,6 @@ mark time. A stop book is not completed-horizon wealth; unobserved months are no
 zero-valued observations. Policy intentions, attempted requests and actual paid
 consumption are distinct. Tax and contractual liabilities are not inferred from
 a generic spending shortfall.
-
-The configured runner still has grouped funding and post-settlement purchases its
-suites depend on and the common action session does not offer. Moving a caller
-requires explicit treatment of those differences, not a compatibility wrapper or
-removal of its financial coverage.
 
 ## References
 

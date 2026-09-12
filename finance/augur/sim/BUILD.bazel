@@ -309,26 +309,6 @@ py_test(
 )
 
 py_library(
-    name = "configured",
-    srcs = ["configured.py"],
-    deps = [
-        ":actions",
-        ":agent",
-        ":capture",
-        ":events",
-        ":ids",
-        ":observations",
-        ":prepared",
-        ":product_metrics",
-        ":results",
-        ":validation",
-        ":world",
-        "//finance/augur/policy:configured_allocation",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
     name = "session",
     srcs = ["session.py"],
     deps = [

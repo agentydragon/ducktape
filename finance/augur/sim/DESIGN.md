@@ -1,9 +1,9 @@
 # Augur simulator implementation
 
-The current code has one canonical set of financial mechanics and two remaining
-Python orchestration surfaces: the common monthly action session and the configured
-runner used by the app and legacy acceptance readers.
-They share financial steps but differ in policy control and supported domains.
+The current code has one canonical set of financial mechanics and two ways to
+drive them: a tracked household on `World.step()`, which the app and every stepped
+experiment use, and the common monthly action session, which batch callers use to
+submit ordered actions for many paths at once.
 
 ## Preparation and dependencies
 
@@ -34,7 +34,7 @@ supplied paths (+ rules)
 
 An authored `Scenario` reaches the same world through the import adapter,
 `compile_run` then `World.from_run(run, rollout_id)`, which declares and tracks
-what the prepared scenario describes and attaches the configured-only tables.
+what the prepared scenario describes.
 
 The batch form drives one such world per selected path:
 
@@ -120,7 +120,7 @@ book at snapshot `f + 1`, marked at the already observed month `f`; no future
 marks or decisions are invented. Reporting must retain this distinction when
 comparing stopped books with completed horizons.
 
-## The app and the remaining configured consumers
+## The app
 
 `ProductService` runs <../product/simulation.py>: one world per path with the app
 household (<../policy/configured_household.py>) tracked on it and stepped to the
@@ -133,12 +133,3 @@ before applying <../product/projection.py>; in-process event projection consumes
 captured rows directly, without a JSON export/decode round trip. The app's
 projections do not define the financial capabilities or output shape required by
 every experiment.
-
-<configured.py> remains for its own suites: full-horizon loops through the
-explicit phase methods with grouped funding and deferred purchases.
-
-`sim/testing/simulation_result.py` and `sim/testing/configured_result.py` are the separate legacy
-acceptance adapter, not the common public result contract. Existing tests on
-those adapters remain until equivalent supported-domain controls move to the
-action session. Keep independent expected financial facts, rather than retaining
-an obsolete runner just to compare implementations.

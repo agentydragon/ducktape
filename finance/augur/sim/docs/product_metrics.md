@@ -6,10 +6,9 @@ owes the product read model, including the observation boundary when execution s
 
 ## The split
 
-The configured product adapter calls the Python `sim/configured.py` loop, whose
-Python financial steps capture base series and the per-rollout failure month. The common
-action result instead supplies scoped numeric histories to
-`product/action_projection.py`. Both use `sim/metric_composition.py` and
+The app's runner (`product/simulation.py`) steps a household on each world and
+captures base series and the per-rollout failure month. The common action result
+instead supplies scoped numeric histories to `product/action_projection.py`. Both use `sim/metric_composition.py` and
 `sim/quantiles.py` for derived metrics, terminal reductions and percentile interpolation.
 
 Valuation remains canonical; neither adapter reconstructs trades, tax or basis.
@@ -18,8 +17,8 @@ actually reached by their original rollout IDs.
 
 ## Why the metrics are not read out of dense output
 
-`sim/configured.py::simulate_product_metrics` requests summary capture: no monthly
-book, journal or event trace. Common-action compact results likewise retain scoped
+`product/simulation.py::simulate_product_metrics` requests summary capture: no
+monthly book, journal or event trace. Common-action compact results likewise retain scoped
 numeric histories without dense books. Selected dense/forensic captures retain
 canonical events; only forensic capture includes the journal.
 
