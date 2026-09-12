@@ -144,7 +144,9 @@ class World:
         self.private_equity = PrivateEquity()
         self.claims = claims.Claims(0, [])
         # The scenario's counterparties, in the order their demands are registered.
-        self.billers = [Biller(spec) for spec in (*self.scenario.obligations, *self.scenario.recurring_obligations)]
+        self.billers = [Biller(spec) for spec in self.scenario.obligations] + [
+            Biller(spec) for spec in self.scenario.recurring_obligations
+        ]
         purchases = {purchase.property_id: purchase for purchase in self.scenario._scheduled_property_purchases}
         locations = {location.location_id: location for location in self.scenario.locations}
         self.property_tax_authorities = [
