@@ -3,9 +3,18 @@ import subprocess
 from pathlib import Path
 from uuid import UUID
 
+import pytest
 import pytest_bazel
 
-from devinfra.pr_visuals.determinism import Observation, Render, observe, observe_targets, report, run_once
+from devinfra.pr_visuals.determinism import (
+    Observation,
+    Render,
+    observe,
+    observe_targets,
+    report,
+    run_once,
+    visual_fleet,
+)
 
 
 def _listing(by_invocation: dict[str, list[dict[str, str]]]):
@@ -89,6 +98,37 @@ def test_run_once_hands_the_invocation_id_to_bbr_rather_than_reading_it_back() -
     # Without both, a later run replays the first run's result and every scene looks stable.
     assert "--nocache_test_results" in seen[0]
     assert "--noremote_accept_cached" in seen[0]
+
+
+def test_the_fleet_is_read_out_of_bbr_query_output_around_its_progress_lines() -> None:
+    """`bbr` interleaves coloured progress with the labels, and colours the first one.
+
+    Matching lines on a bare "//" prefix silently drops that first target, which is a target
+    this sweep then never checks -- so the parse strips colour before it decides.
+    """
+    stdout = (
+        "Loading: 1 packages loaded\n"
+        "\x1b[32mINFO: \x1b[mStreaming build results to: https://app.buildbuddy.io/invocation/x\n"
+        "\x1b[m//aiquota/frontend:screenshots\n"
+        "//props/frontend:visual\n"
+        "\x1b[32mINFO: \x1b[mElapsed time: 2.2s\n"
+    )
+
+    def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        assert "attr(tags, visual, //...)" in [str(part) for part in command]
+        return subprocess.CompletedProcess(command, 0, stdout, "")
+
+    assert visual_fleet(bbr=Path("bbr"), run=fake_run) == ["//aiquota/frontend:screenshots", "//props/frontend:visual"]
+
+
+def test_a_fleet_query_that_matches_nothing_is_an_error_not_an_empty_sweep() -> None:
+    """Zero targets would otherwise report "all renders reproduced" having rendered none."""
+
+    def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(command, 0, "Loading: 0 packages loaded\n", "")
+
+    with pytest.raises(SystemExit):
+        visual_fleet(bbr=Path("bbr"), run=fake_run)
 
 
 def _test_row(label: str, *, status: str = "PASSED", shards: int | None = None, seconds: float) -> dict[str, object]:

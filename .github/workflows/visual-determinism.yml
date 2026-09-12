@@ -51,28 +51,13 @@ jobs:
       # and one clock, the exact conditions under which an intermittent race hides.
       #
       # Word-split unquoted, because the whole value is one space-separated target list.
+      # Empty is the normal case: the checker then asks Bazel for every target tagged
+      # `visual`, which is what the fleet is. A roster here would be a second answer to
+      # that question, and the one that goes stale -- this held four airlock targets
+      # that had already been collapsed into a single sweep.
       - name: Run each target repeatedly and compare renders
         env:
-          # Every target that renders a browser scene. Hand-listed only until this asks
-          # Bazel instead: #6336 tagged all fifteen `visual`, so
-          # `attr(tags, visual, //...)` already returns exactly this list.
-          TARGETS: >-
-            ${{ inputs.targets
-              || '//aiquota/frontend:screenshots
-                  //airlock/frontend:visual
-                  //finance/augur:visual_test
-                  //haku/console/frontend:screenshots
-                  //haku/console/frontend/tool_rendering/gmail:previews
-                  //haku/console/frontend/tool_rendering/google_calendar:previews
-                  //haku/console/frontend/tool_rendering/grants:previews
-                  //haku/console/frontend/tool_rendering/grocy:previews
-                  //haku/console/frontend/tool_rendering/haku_routine:previews
-                  //haku/console/frontend/tool_rendering/kubectl:previews
-                  //haku/console/frontend/tool_rendering/tana:previews
-                  //props/frontend:visual
-                  //study_casino:visual_test
-                  //study_casino/frontend:visual
-                  //x/agentplane/app/frontend:visual' }}
+          TARGETS: ${{ inputs.targets }}
           RUNS: ${{ inputs.runs || 5 }}
         run: |
           bb run //devinfra/pr_visuals:determinism_bin -- \

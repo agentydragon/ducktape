@@ -18,6 +18,7 @@ timeout that once went red.
 from __future__ import annotations
 
 import argparse
+import re
 import subprocess
 import uuid
 from collections import defaultdict
@@ -29,6 +30,14 @@ from devinfra.pr_visuals.targets import TestRun, list_test_runs
 
 # What a rendered scene is published as; anything else in the outputs is not a render.
 RENDER_SUFFIX = ".png"
+
+# Every target that drives a browser carries this tag -- `visual_test` applies it, and the
+# screenshot macros set it directly -- so the fleet is a question for Bazel rather than a list
+# somebody has to remember to update. It has already gone stale once: four per-scenario airlock
+# targets outlived their collapse into one sweep.
+VISUAL_FLEET = "attr(tags, visual, //...)"
+
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
 
 @dataclass(frozen=True)
@@ -53,6 +62,20 @@ class Observation:
     @property
     def runs_present(self) -> int:
         return sum(len(invocations) for invocations in self.by_digest.values())
+
+
+def visual_fleet(*, bbr: Path, run: Runner) -> list[str]:
+    """Every browser target in the repo, asked of Bazel."""
+    result = run([bbr, "query", VISUAL_FLEET], check=True, text=True, capture_output=True)
+    # Strip colour before matching: `bbr` interleaves its own coloured progress with the query
+    # output, and the first label comes back with a reset sequence still attached, so a bare
+    # `startswith("//")` drops one target without saying so.
+    labels = sorted(
+        {clean for line in result.stdout.splitlines() if (clean := _ANSI.sub("", line).strip()).startswith("//")}
+    )
+    if not labels:
+        raise SystemExit(f"`{VISUAL_FLEET}` matched nothing -- that tag is how the fleet is found")
+    return labels
 
 
 def run_once(targets: list[str], *, bbr: Path, run: Runner) -> str:
@@ -160,24 +183,27 @@ def report(observations: dict[Render, Observation], invocations: list[str], targ
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("targets", nargs="+", help="Bazel target patterns to run repeatedly.")
+    parser.add_argument(
+        "targets", nargs="*", help="Bazel target patterns to run repeatedly; default is every target tagged `visual`."
+    )
     parser.add_argument("--runs", type=int, default=5, help="How many uncached executions (default 5).")
     parser.add_argument("--bbr", type=Path, default=Path("bbr"))
     parser.add_argument("--bbapi", type=Path, default=Path("bbapi"))
     parser.add_argument("--summary", type=Path, help="Write the markdown report here as well as to stdout.")
     args = parser.parse_args()
+    targets = args.targets or visual_fleet(bbr=args.bbr, run=subprocess.run)
 
     if args.runs < 2:
         raise SystemExit("--runs must be at least 2; a single run cannot show reproducibility")
 
     invocations = []
     for index in range(args.runs):
-        print(f"run {index + 1}/{args.runs}: {' '.join(args.targets)}", flush=True)
-        invocations.append(run_once(args.targets, bbr=args.bbr, run=subprocess.run))
+        print(f"run {index + 1}/{args.runs}: {' '.join(targets)}", flush=True)
+        invocations.append(run_once(targets, bbr=args.bbr, run=subprocess.run))
 
     observations = observe(invocations, bbapi=args.bbapi, run=subprocess.run)
     if not observations:
-        raise SystemExit(f"no renders published by {args.targets}; nothing to compare")
+        raise SystemExit(f"no renders published by {targets}; nothing to compare")
 
     summary = report(observations, invocations, observe_targets(invocations, bbapi=args.bbapi, run=subprocess.run))
     print(summary)

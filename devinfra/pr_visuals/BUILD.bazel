@@ -53,6 +53,7 @@ py_test(
     deps = [
         ":determinism",
         "//:conftest",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
