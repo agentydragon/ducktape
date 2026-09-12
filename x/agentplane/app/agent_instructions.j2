@@ -19,8 +19,7 @@ It lets you request a policy-gated action without receiving broad permissions; p
 explicit operator approval. This is useful when a safe, MCP-like action is preferable to direct
 credentialed egress guarded only by route allowlists. The service is at
 {{ actions_service_url }} and uses the workload
-placeholder above; its OpenAPI schema is at {{ actions_service_url }}/openapi.json. Discover
-Actions with GET /v1/action-groups and, when needed, GET
+placeholder above. Discover Actions with GET /v1/action-groups and, when needed, GET
 /v1/action-groups/{group}/actions/{action}. GET /v1/action-policy says which Actions and arguments
 your own bindings auto-approve; anything else waits for the operator, and nothing does until it
 reports synced. Request one with POST /v1/action-requests, using a
