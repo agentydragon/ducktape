@@ -553,13 +553,13 @@ async def test_operator_reads_a_named_subjects_effective_policy(
         ("sandbox-a-reads", {"sandbox": {"name": SANDBOX_A.sandbox_name, "uid": SANDBOX_A.sandbox_uid}}),
         ("client-reads", {"serviceAccount": account.model_dump()}),
     ):
-        binding = parse_binding(
+        bound = parse_binding(
             {
                 "metadata": {"name": name, "labels": {"test.example/writer": name}, **metadata},
                 "spec": {"subject": subject, "policySets": ["reads", "gone"]},
             }
         )
-        index.bindings[binding.namespaced_name] = binding
+        index.bindings[bound.namespaced_name] = bound
     service = ActionService(
         ActionStore(make_sessionmaker(engine)), echo_catalog, {"agentplane": CountingExecutor()}, policies=index
     )
