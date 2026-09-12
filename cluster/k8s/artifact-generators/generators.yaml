@@ -1,0 +1,615 @@
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: agentplane-staging-actions
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: agentplane-staging-actions
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agentplane-staging/actions/**"
+          to: "@artifact/cluster/k8s/agentplane-staging/actions/"
+          # Root Flux owns the consumer declaration, not its own artifact.
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: monitoring-stack
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: monitoring-stack
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/monitoring/stack/**"
+          to: "@artifact/cluster/k8s/monitoring/stack/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: agentplane-staging-app
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: agentplane-staging-app
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agentplane-staging/app/**"
+          to: "@artifact/cluster/k8s/agentplane-staging/app/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: agentplane-staging-namespace
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: agentplane-staging-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agentplane-staging/namespace/**"
+          to: "@artifact/cluster/k8s/agentplane-staging/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: agentplane-testing-actions
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: agentplane-testing-actions
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agentplane-testing/actions/**"
+          to: "@artifact/cluster/k8s/agentplane-testing/actions/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: claude-rbac
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: claude-rbac
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/agent-rbac-base/**"
+          to: "@artifact/cluster/k8s/agents/agent-rbac-base/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: agent-machine-access-tf
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: agent-machine-access-tf
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/machine-access-tf/**"
+          to: "@artifact/cluster/k8s/agents/machine-access-tf/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: authentik
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: authentik
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/authentik/app/**"
+          to: "@artifact/cluster/k8s/authentik/app/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: sso-providers-tf
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: sso-providers-tf
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/authentik/sso-providers-tf/**"
+          to: "@artifact/cluster/k8s/authentik/sso-providers-tf/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: cert-manager
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: cert-manager
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/cert-manager/app/**"
+          to: "@artifact/cluster/k8s/cert-manager/app/"
+          # Root Flux owns the consumer declaration, not its own artifact.
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: cert-manager-environment
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: cert-manager-environment
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/cert-manager/environment/**"
+          to: "@artifact/cluster/k8s/cert-manager/environment/"
+          exclude:
+            - flux-kustomization.yaml
+        - from: "@repo/cluster/k8s/cert-manager/config/**"
+          to: "@artifact/cluster/k8s/cert-manager/config/"
+        - from: "@repo/cluster/k8s/cert-manager/cluster-ca/**"
+          to: "@artifact/cluster/k8s/cert-manager/cluster-ca/"
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: cert-manager-issuer-config
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: cert-manager-issuer-config
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/cert-manager/issuer-config/**"
+          to: "@artifact/cluster/k8s/cert-manager/issuer-config/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: cnpg
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: cnpg
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/cnpg/**"
+          to: "@artifact/cluster/k8s/cnpg/"
+          # Root Flux owns the consumer declaration, not its own artifact.
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: external-secrets-config
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: external-secrets-config
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/external-secrets/config/**"
+          to: "@artifact/cluster/k8s/external-secrets/config/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: external-secrets-operator
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: external-secrets-operator
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/external-secrets/operator/**"
+          to: "@artifact/cluster/k8s/external-secrets/operator/"
+          # Root Flux owns the consumer declaration, not its own artifact.
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: forgejo
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: forgejo
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/forgejo/app/**"
+          to: "@artifact/cluster/k8s/forgejo/app/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: forgejo-images
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: forgejo-images
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/forgejo-images/**"
+          to: "@artifact/cluster/k8s/forgejo-images/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: gateway
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: gateway
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/gateway/**"
+          to: "@artifact/cluster/k8s/gateway/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: kyverno
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: kyverno
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/kyverno/app/**"
+          to: "@artifact/cluster/k8s/kyverno/app/"
+          # Root Flux owns the consumer declaration, not its own artifact.
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: litellm-keys-tf
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: litellm-keys-tf
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/litellm/keys-tf/**"
+          to: "@artifact/cluster/k8s/litellm/keys-tf/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: local-path-provisioner
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: local-path-provisioner
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/local-path-provisioner/**"
+          to: "@artifact/cluster/k8s/local-path-provisioner/"
+          # Root Flux owns the consumer declaration, not its own artifact.
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: reflector
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: reflector
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/reflector/**"
+          to: "@artifact/cluster/k8s/reflector/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: seaweedfs-cluster
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: seaweedfs-cluster
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/seaweedfs/cluster/**"
+          to: "@artifact/cluster/k8s/seaweedfs/cluster/"
+          # Root Flux owns the consumer declaration, not its own artifact.
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: seaweedfs-filer-db
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: seaweedfs-filer-db
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/seaweedfs/db/**"
+          to: "@artifact/cluster/k8s/seaweedfs/db/"
+          # Root Flux owns the consumer declaration, not its own artifact.
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: seaweedfs-namespace
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: seaweedfs-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/seaweedfs/namespace/**"
+          to: "@artifact/cluster/k8s/seaweedfs/namespace/"
+          # Root Flux owns the consumer declaration, not its own artifact.
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: seaweedfs-operator
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: seaweedfs-operator
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/seaweedfs/operator/**"
+          to: "@artifact/cluster/k8s/seaweedfs/operator/"
+          # Root Flux owns the consumer declaration, not its own artifact.
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: seaweedfs-secrets
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: seaweedfs-secrets
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/seaweedfs/secrets/**"
+          to: "@artifact/cluster/k8s/seaweedfs/secrets/"
+          # Root Flux owns the consumer declaration, not its own artifact.
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: tofu-controller
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: tofu-controller
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/tofu-controller/**"
+          to: "@artifact/cluster/k8s/tofu-controller/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: tofu-state-db
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: tofu-state-db
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/tofu-state/db/**"
+          to: "@artifact/cluster/k8s/tofu-state/db/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: valkey
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: valkey
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/valkey/**"
+          to: "@artifact/cluster/k8s/valkey/"
+          exclude:
+            - flux-kustomization.yaml
+---
