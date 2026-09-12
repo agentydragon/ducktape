@@ -332,7 +332,6 @@ class World:
             series_id = f"home_value:{purchases[sale.property_id].location_id}"
             if series_id not in self.market.series:
                 raise ValueError(f'missing series "{series_id}"')
-        self.properties = Properties(housing, self.accounting)
         located = {location.location_id: location for location in locations}
         for purchase in housing.purchases:
             if purchase.location_id not in located:
