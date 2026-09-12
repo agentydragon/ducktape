@@ -1,0 +1,865 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <style>
+      :root {
+        color-scheme: light;
+      }
+      body {
+        margin: 0;
+        padding: 0;
+        font:
+          14px -apple-system,
+          BlinkMacSystemFont,
+          sans-serif;
+        background: #faf9f5;
+        color: #141413;
+      }
+      img {
+        max-width: 100%;
+      }
+      [hidden]:not([hidden="until-found" i]) {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <title>Agentplane Nav Overflow</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        --bg: #f4f5f7;
+        --surface: #ffffff;
+        --surface-2: #f1f3f5;
+        --border: #dfe2e7;
+        --border-soft: #e8eaed;
+        --ink: #1b1d22;
+        --muted: #676d79;
+        --faint: #9aa0ab;
+        --accent: #1c7ed6;
+        --accent-soft: #e7f3ff;
+        --warn: #e8590c;
+        --warn-soft: #fff2e8;
+        --danger: #d92d20;
+        --shadow: 0 1px 2px rgba(20, 24, 33, 0.04), 0 8px 24px -12px rgba(20, 24, 33, 0.18);
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) {
+          --bg: #18191c;
+          --surface: #232427;
+          --surface-2: #2a2b2f;
+          --border: #3a3b40;
+          --border-soft: #313236;
+          --ink: #e9eaec;
+          --muted: #a2a7b0;
+          --faint: #6f7480;
+          --accent: #66b2f0;
+          --accent-soft: #1d3247;
+          --warn: #f2994a;
+          --warn-soft: #3a2a17;
+          --danger: #f2705f;
+          --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
+        }
+      }
+
+      :root[data-theme="dark"] {
+        --bg: #18191c;
+        --surface: #232427;
+        --surface-2: #2a2b2f;
+        --border: #3a3b40;
+        --border-soft: #313236;
+        --ink: #e9eaec;
+        --muted: #a2a7b0;
+        --faint: #6f7480;
+        --accent: #66b2f0;
+        --accent-soft: #1d3247;
+        --warn: #f2994a;
+        --warn-soft: #3a2a17;
+        --danger: #f2705f;
+        --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+        padding: 0 20px;
+        padding-block: 40px 64px;
+      }
+
+      main {
+        max-width: 900px;
+        margin: 0 auto;
+        display: flex;
+        flex-direction: column;
+        gap: 48px;
+      }
+
+      .eyebrow {
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--accent);
+        margin: 0 0 8px;
+      }
+
+      h1 {
+        font-size: 30px;
+        font-weight: 700;
+        letter-spacing: -0.015em;
+        margin: 0 0 10px;
+        text-wrap: balance;
+      }
+
+      .lede {
+        font-size: 15.5px;
+        line-height: 1.6;
+        color: var(--muted);
+        max-width: 62ch;
+        margin: 0;
+      }
+
+      h2 {
+        font-size: 12.5px;
+        font-weight: 700;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        color: var(--faint);
+        margin: 0 0 16px;
+      }
+
+      section {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+
+      .section-note {
+        font-size: 13.5px;
+        line-height: 1.55;
+        color: var(--muted);
+        max-width: 68ch;
+        margin: -6px 0 4px;
+      }
+
+      .stage {
+        overflow-x: auto;
+        padding: 4px 2px 12px;
+      }
+
+      .device {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        box-shadow: var(--shadow);
+        padding: 16px;
+        width: 640px;
+        flex: 0 0 auto;
+      }
+
+      .device.phone {
+        width: 360px;
+      }
+
+      .navrow {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        position: relative;
+      }
+
+      .navbtn {
+        font-size: 14px;
+        font-weight: 500;
+        padding: 7px 14px;
+        border-radius: 8px;
+        color: var(--muted);
+        background: transparent;
+        border: 1px solid transparent;
+      }
+
+      .navbtn.active {
+        background: var(--accent);
+        color: white;
+      }
+
+      .navbtn.more {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .navbtn.more svg {
+        width: 12px;
+        height: 12px;
+      }
+
+      .page-stub {
+        margin-top: 16px;
+        border: 1px dashed var(--border);
+        border-radius: 10px;
+        padding: 22px;
+        color: var(--faint);
+        font-size: 13px;
+        text-align: center;
+      }
+
+      .states {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 16px;
+      }
+      .state-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        box-shadow: var(--shadow);
+        padding: 16px;
+      }
+      .state-tag {
+        display: inline-flex;
+        align-items: center;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.03em;
+        color: var(--muted);
+        background: var(--surface-2);
+        border-radius: 999px;
+        padding: 3px 9px;
+        margin-bottom: 14px;
+      }
+
+      /* Menu opens downward -- the nav sits at the TOP of the viewport, so there's room below it
+     (the reverse of the composer bar's menu, which had to open upward). */
+      .menu {
+        position: absolute;
+        top: calc(100% + 8px);
+        left: 0;
+        width: 190px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        box-shadow: var(--shadow);
+        padding: 6px;
+        z-index: 2;
+      }
+      .menu::before {
+        content: "";
+        position: absolute;
+        top: -6px;
+        left: 22px;
+        width: 11px;
+        height: 11px;
+        background: var(--surface);
+        border-left: 1px solid var(--border);
+        border-top: 1px solid var(--border);
+        transform: rotate(45deg);
+      }
+      .menu-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        border-radius: 6px;
+        font-size: 13.5px;
+        color: var(--ink);
+      }
+      .menu-item.current {
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-weight: 600;
+      }
+
+      /* ---- drilled-in page header (sandbox / session) ---- */
+
+      .page-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        position: relative;
+      }
+      .page-header .back {
+        color: var(--accent);
+        font-weight: 500;
+        font-size: 14px;
+        flex: 0 0 auto;
+      }
+      .page-header .title {
+        font-weight: 700;
+        font-size: 19px;
+      }
+      .page-header .spacer {
+        flex: 1;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        padding: 3px 9px;
+        border-radius: 999px;
+        background: var(--accent);
+        color: white;
+      }
+      .btn-ghost {
+        font-size: 13px;
+        font-weight: 500;
+        padding: 6px 12px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        color: var(--ink);
+        background: var(--surface);
+        white-space: nowrap;
+      }
+      .icon-btn {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--surface-2);
+        color: var(--muted);
+        flex: 0 0 auto;
+      }
+      .icon-btn svg {
+        width: 15px;
+        height: 15px;
+      }
+      .icon-btn.open {
+        background: var(--accent-soft);
+        color: var(--accent);
+      }
+
+      .tabs {
+        display: flex;
+        gap: 20px;
+        border-bottom: 1px solid var(--border);
+        margin-top: 14px;
+      }
+      .tab {
+        padding: 8px 1px;
+        font-size: 13.5px;
+        color: var(--muted);
+        border-bottom: 2px solid transparent;
+        margin-bottom: -1px;
+      }
+      .tab.active {
+        color: var(--accent);
+        border-bottom-color: var(--accent);
+        font-weight: 600;
+      }
+
+      /* Same dropdown look as the top-nav menu, anchored to the right instead of the left. */
+      .menu.right {
+        left: auto;
+        right: 0;
+      }
+      .menu.right::before {
+        left: auto;
+        right: 12px;
+      }
+
+      .table-wrap {
+        overflow-x: auto;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13.5px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        overflow: hidden;
+      }
+      thead th {
+        text-align: left;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--faint);
+        background: var(--surface-2);
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--border);
+      }
+      tbody td {
+        padding: 11px 14px;
+        border-bottom: 1px solid var(--border-soft);
+        vertical-align: top;
+      }
+      tbody tr:last-child td {
+        border-bottom: none;
+      }
+      td.element {
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      td.muted {
+        color: var(--muted);
+      }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 11.5px;
+        font-weight: 600;
+        padding: 2px 8px;
+        border-radius: 999px;
+      }
+      .pill.stay {
+        background: var(--accent-soft);
+        color: var(--accent);
+      }
+      .pill.move {
+        background: var(--warn-soft);
+        color: var(--warn);
+      }
+
+      ul.notes {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      ul.notes li {
+        font-size: 13.5px;
+        line-height: 1.55;
+        color: var(--ink);
+        padding-left: 18px;
+        position: relative;
+      }
+      ul.notes li::before {
+        content: "";
+        position: absolute;
+        left: 2px;
+        top: 7px;
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--accent);
+      }
+      ul.notes b {
+        font-weight: 600;
+      }
+      ul.notes code {
+        font-family: ui-monospace, SFMono-Regular, "Liberation Mono", monospace;
+        font-size: 0.92em;
+        background: var(--surface-2);
+        padding: 1px 5px;
+        border-radius: 4px;
+      }
+
+      footer {
+        font-size: 12px;
+        color: var(--faint);
+        border-top: 1px solid var(--border-soft);
+        padding-top: 20px;
+      }
+    </style>
+
+    <main>
+      <header>
+        <p class="eyebrow">x/agentplane · app.tsx</p>
+        <h1>Top nav overflow</h1>
+        <p class="lede">
+          Five always-visible buttons become two primaries plus a menu: Sandboxes and Actions are the operational loop,
+          Connections/MCP servers/Notifications are configuration you visit rarely. Further down: what happens to this
+          nav once you're drilled into a sandbox or a session, where it's stacking on top of that page's own header
+          today.
+        </p>
+      </header>
+
+      <section>
+        <h2>Anatomy</h2>
+        <p class="section-note">
+          Same <code>Button</code>s as today for the two primaries — this only touches the last three. "More" reads as a
+          peer of "Sandboxes"/"Actions", not a stray icon, so it stays a labeled button.
+        </p>
+        <div class="stage">
+          <div class="device">
+            <div class="navrow">
+              <span class="navbtn active">Sandboxes</span>
+              <span class="navbtn">Actions</span>
+              <span class="navbtn more">
+                More
+                <svg viewBox="0 0 12 12" fill="none">
+                  <path
+                    d="M3 4.5 6 7.5 9 4.5"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </span>
+            </div>
+            <div class="page-stub">Sandbox list</div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>States</h2>
+        <div class="states">
+          <div class="state-card">
+            <span class="state-tag">On a primary route</span>
+            <div class="navrow">
+              <span class="navbtn active">Sandboxes</span>
+              <span class="navbtn">Actions</span>
+              <span class="navbtn more">
+                More
+                <svg viewBox="0 0 12 12" fill="none">
+                  <path
+                    d="M3 4.5 6 7.5 9 4.5"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </span>
+            </div>
+          </div>
+
+          <div class="state-card">
+            <span class="state-tag">On a route inside the menu</span>
+            <div class="navrow">
+              <span class="navbtn">Sandboxes</span>
+              <span class="navbtn">Actions</span>
+              <span class="navbtn more active">
+                More
+                <svg viewBox="0 0 12 12" fill="none">
+                  <path
+                    d="M3 4.5 6 7.5 9 4.5"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </span>
+            </div>
+            <div class="page-stub">Connections</div>
+          </div>
+
+          <div class="state-card">
+            <span class="state-tag">Menu open (on Connections)</span>
+            <div class="navrow">
+              <span class="navbtn">Sandboxes</span>
+              <span class="navbtn">Actions</span>
+              <span class="navbtn more active">
+                More
+                <svg viewBox="0 0 12 12" fill="none">
+                  <path
+                    d="M3 4.5 6 7.5 9 4.5"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </span>
+              <div class="menu">
+                <div class="menu-item current">Connections</div>
+                <div class="menu-item">MCP servers</div>
+                <div class="menu-item">Notifications</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>On a phone</h2>
+        <p class="section-note">
+          Three buttons instead of five — no wrap even at 360px, where the current row already crowds.
+        </p>
+        <div class="stage">
+          <div class="device phone">
+            <div class="navrow">
+              <span class="navbtn active">Sandboxes</span>
+              <span class="navbtn">Actions</span>
+              <span class="navbtn more">
+                More
+                <svg viewBox="0 0 12 12" fill="none">
+                  <path
+                    d="M3 4.5 6 7.5 9 4.5"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>What moved, and why</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Route</th>
+                <th>Today</th>
+                <th>Proposed</th>
+                <th>Why</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="element">Sandboxes (<code>/</code>)</td>
+                <td class="muted">Primary button</td>
+                <td><span class="pill stay">stays</span></td>
+                <td class="muted">The operational loop — where a session actually lives</td>
+              </tr>
+              <tr>
+                <td class="element">Actions (<code>/actions</code>)</td>
+                <td class="muted">Primary button</td>
+                <td><span class="pill stay">stays</span></td>
+                <td class="muted">
+                  Time-sensitive: pending approvals live here (see the separate approval-overlay plan)
+                </td>
+              </tr>
+              <tr>
+                <td class="element">Connections</td>
+                <td class="muted">Primary button</td>
+                <td><span class="pill move">→ menu</span></td>
+                <td class="muted">Configured once, checked rarely</td>
+              </tr>
+              <tr>
+                <td class="element">MCP servers</td>
+                <td class="muted">Primary button</td>
+                <td><span class="pill move">→ menu</span></td>
+                <td class="muted">Configured once, checked rarely</td>
+              </tr>
+              <tr>
+                <td class="element">Notifications</td>
+                <td class="muted">Primary button</td>
+                <td><span class="pill move">→ menu</span></td>
+                <td class="muted">Configured once, checked rarely</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section>
+        <h2>Behavior notes</h2>
+        <ul class="notes">
+          <li>
+            <b>The menu opens downward</b> — the nav sits at the top of the viewport, the reverse of the composer bar's
+            kebab menu, which had to open upward for the opposite reason. Mantine's default <code>Menu</code> placement
+            already fits without an explicit <code>position</code> override.
+          </li>
+          <li>
+            <b>"More" shows the active/filled treatment</b> whenever the current route is one of the three menu items,
+            not just on click — the same <code>location.pathname === "..."</code> check the primary buttons already use,
+            matched against all three hidden routes at once. Landing directly on <code>/connections</code> (a bookmark,
+            a link) must not look like nothing in the nav is selected.
+          </li>
+          <li>
+            <b>Each menu item is a one-shot navigation</b> (unlike the composer bar's "Raw frames" toggle) — Mantine's
+            default <code>closeOnItemClick</code> (true) is correct here, no override needed.
+          </li>
+          <li>
+            <b>The current menu item gets a highlighted row</b> inside the dropdown too (not just the trigger) — opening
+            "More" while on Connections should make it obvious which of the three you're already on.
+          </li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>Inside a sandbox or session — no separate nav row</h2>
+        <p class="section-note">
+          Today the five-button nav renders unconditionally above <em>every</em> route, including a sandbox or session —
+          so drilling in stacks the global nav row on top of that page's own back-button header, two rows of chrome
+          doing overlapping jobs right where space is tightest. Proposed: once drilled in, the global nav row disappears
+          entirely. The page's own back button is the way up one level; the handful of times you'd want to jump straight
+          to Actions or Connections from deep in a session live behind a small trailing menu on that same header row
+          instead of a whole extra row.
+        </p>
+
+        <h2 style="margin-top: 8px">Sandbox page</h2>
+        <div class="states">
+          <div class="state-card">
+            <span class="state-tag">Idle</span>
+            <div class="page-header">
+              <span class="back">← Sandboxes</span>
+              <span class="title">demo-a1b2</span>
+              <span class="badge">RUNNING</span>
+              <span class="spacer"></span>
+              <span class="btn-ghost">Suspend</span>
+              <span class="icon-btn">
+                <svg viewBox="0 0 16 16" fill="none">
+                  <circle cx="8" cy="3.2" r="1.3" fill="currentColor" />
+                  <circle cx="8" cy="8" r="1.3" fill="currentColor" />
+                  <circle cx="8" cy="12.8" r="1.3" fill="currentColor" />
+                </svg>
+              </span>
+            </div>
+            <div class="tabs">
+              <span class="tab active">Sessions</span>
+              <span class="tab">Egress</span>
+              <span class="tab">Status</span>
+            </div>
+          </div>
+
+          <div class="state-card">
+            <span class="state-tag">Menu open</span>
+            <div class="page-header">
+              <span class="back">← Sandboxes</span>
+              <span class="title">demo-a1b2</span>
+              <span class="badge">RUNNING</span>
+              <span class="spacer"></span>
+              <span class="btn-ghost">Suspend</span>
+              <span class="icon-btn open">
+                <svg viewBox="0 0 16 16" fill="none">
+                  <circle cx="8" cy="3.2" r="1.3" fill="currentColor" />
+                  <circle cx="8" cy="8" r="1.3" fill="currentColor" />
+                  <circle cx="8" cy="12.8" r="1.3" fill="currentColor" />
+                </svg>
+              </span>
+              <div class="menu right">
+                <div class="menu-item">Actions</div>
+                <div class="menu-item">Connections</div>
+                <div class="menu-item">MCP servers</div>
+                <div class="menu-item">Notifications</div>
+              </div>
+            </div>
+            <div class="tabs">
+              <span class="tab active">Sessions</span>
+              <span class="tab">Egress</span>
+              <span class="tab">Status</span>
+            </div>
+          </div>
+        </div>
+        <p class="section-note">
+          "Sandboxes" isn't in this menu — the back button already goes there, so repeating it would be pure redundancy
+          right next to the button that does the same thing.
+        </p>
+
+        <h2 style="margin-top: 8px">Session page</h2>
+        <div class="states">
+          <div class="state-card">
+            <span class="state-tag">Idle</span>
+            <div class="page-header">
+              <span class="back">← demo-a1b2</span>
+              <span class="title">Clean up the stale branch</span>
+              <span class="spacer"></span>
+              <span class="icon-btn">
+                <svg viewBox="0 0 16 16" fill="none">
+                  <circle cx="8" cy="3.2" r="1.3" fill="currentColor" />
+                  <circle cx="8" cy="8" r="1.3" fill="currentColor" />
+                  <circle cx="8" cy="12.8" r="1.3" fill="currentColor" />
+                </svg>
+              </span>
+            </div>
+            <div class="page-stub">transcript, composer bar — see the composer-bar mock</div>
+          </div>
+
+          <div class="state-card">
+            <span class="state-tag">Menu open</span>
+            <div class="page-header">
+              <span class="back">← demo-a1b2</span>
+              <span class="title">Clean up the stale branch</span>
+              <span class="spacer"></span>
+              <span class="icon-btn open">
+                <svg viewBox="0 0 16 16" fill="none">
+                  <circle cx="8" cy="3.2" r="1.3" fill="currentColor" />
+                  <circle cx="8" cy="8" r="1.3" fill="currentColor" />
+                  <circle cx="8" cy="12.8" r="1.3" fill="currentColor" />
+                </svg>
+              </span>
+              <div class="menu right">
+                <div class="menu-item">Sandboxes</div>
+                <div class="menu-item">Actions</div>
+                <div class="menu-item">Connections</div>
+                <div class="menu-item">MCP servers</div>
+                <div class="menu-item">Notifications</div>
+              </div>
+            </div>
+            <div class="page-stub">transcript, composer bar — see the composer-bar mock</div>
+          </div>
+        </div>
+        <p class="section-note">
+          Here the menu has all five — back only goes up to the sandbox, not to any of these, so none of them is
+          redundant with it the way "Sandboxes" was one level up.
+        </p>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Depth</th>
+                <th>Back goes to</th>
+                <th>Menu holds</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="element">List pages (Sandboxes/Actions/Connections/…)</td>
+                <td class="muted">— (these are the top level)</td>
+                <td class="muted">n/a — the nav row itself is the menu (see above)</td>
+              </tr>
+              <tr>
+                <td class="element">Sandbox page</td>
+                <td class="muted">Sandboxes (list)</td>
+                <td class="muted">Actions, Connections, MCP servers, Notifications</td>
+              </tr>
+              <tr>
+                <td class="element">Session page</td>
+                <td class="muted">This sandbox</td>
+                <td class="muted">Sandboxes, Actions, Connections, MCP servers, Notifications</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section>
+        <h2>Behavior notes — drilled-in header</h2>
+        <ul class="notes">
+          <li>
+            <b>This is a second, distinct menu from the composer bar's own "More"</b> shown in the composer-bar mock.
+            That one is scoped to <i>this session</i> (raw frames, shut down harness); this one is global site
+            navigation. They look alike on purpose — same kebab icon, same dropdown — but hold unrelated things, and a
+            session page legitimately shows both: this one in the header, the session-scoped one down in the composer
+            bar.
+          </li>
+          <li>
+            <b>The menu's contents are a simple rule, not a hand-picked list per page:</b> all five top-level
+            destinations, minus whichever one the local back button already goes to. No per-route configuration to
+            maintain as pages are added.
+          </li>
+          <li>
+            <b>No "current route" highlighting needed here</b> — unlike the top nav's own overflow menu, none of the
+            five items can ever be the page you're already on while drilled into a sandbox or session.
+          </li>
+          <li>
+            <b>Existing sandbox-page controls (state badge, Suspend/Resume, Delete) are unchanged</b> — this only adds
+            the trailing menu button after them, it doesn't touch what's already there.
+          </li>
+        </ul>
+      </section>
+
+      <footer>Mock for x/agentplane/plans/mobile_density.md · not wired to real state</footer>
+    </main>
+  </body>
+</html>

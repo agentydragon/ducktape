@@ -1,0 +1,1913 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <style>
+      :root {
+        color-scheme: light;
+      }
+      body {
+        margin: 0;
+        padding: 0;
+        font:
+          14px -apple-system,
+          BlinkMacSystemFont,
+          sans-serif;
+        background: #faf9f5;
+        color: #141413;
+      }
+      img {
+        max-width: 100%;
+      }
+      [hidden]:not([hidden="until-found" i]) {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <title>Agentplane App Shell</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        --bg: #f4f5f7;
+        --surface: #ffffff;
+        --surface-2: #f1f3f5;
+        --surface-3: #eef0f2;
+        --border: #dfe2e7;
+        --border-soft: #e8eaed;
+        --ink: #1b1d22;
+        --muted: #676d79;
+        --faint: #9aa0ab;
+        --accent: #1c7ed6;
+        --accent-soft: #e7f3ff;
+        --warn: #e8590c;
+        --warn-soft: #fff2e8;
+        --danger: #d92d20;
+        --danger-soft: #fdeeed;
+        --ok: #2b8a3e;
+        --gray-chip: #eef0f2;
+        --shadow: 0 1px 2px rgba(20, 24, 33, 0.04), 0 8px 24px -12px rgba(20, 24, 33, 0.18);
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) {
+          --bg: #18191c;
+          --surface: #232427;
+          --surface-2: #2a2b2f;
+          --surface-3: #303136;
+          --border: #3a3b40;
+          --border-soft: #313236;
+          --ink: #e9eaec;
+          --muted: #a2a7b0;
+          --faint: #6f7480;
+          --accent: #66b2f0;
+          --accent-soft: #1d3247;
+          --warn: #f2994a;
+          --warn-soft: #3a2a17;
+          --danger: #f2705f;
+          --danger-soft: #3b2220;
+          --ok: #6cc27a;
+          --gray-chip: #303136;
+          --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
+        }
+      }
+      :root[data-theme="dark"] {
+        --bg: #18191c;
+        --surface: #232427;
+        --surface-2: #2a2b2f;
+        --surface-3: #303136;
+        --border: #3a3b40;
+        --border-soft: #313236;
+        --ink: #e9eaec;
+        --muted: #a2a7b0;
+        --faint: #6f7480;
+        --accent: #66b2f0;
+        --accent-soft: #1d3247;
+        --warn: #f2994a;
+        --warn-soft: #3a2a17;
+        --danger: #f2705f;
+        --danger-soft: #3b2220;
+        --ok: #6cc27a;
+        --gray-chip: #303136;
+        --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+        padding: 0 20px;
+        padding-block: 40px 64px;
+      }
+
+      main {
+        max-width: 980px;
+        margin: 0 auto;
+        display: flex;
+        flex-direction: column;
+        gap: 48px;
+      }
+
+      .eyebrow {
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--accent);
+        margin: 0 0 8px;
+      }
+      h1 {
+        font-size: 30px;
+        font-weight: 700;
+        letter-spacing: -0.015em;
+        margin: 0 0 10px;
+        text-wrap: balance;
+      }
+      .lede {
+        font-size: 15.5px;
+        line-height: 1.6;
+        color: var(--muted);
+        max-width: 66ch;
+        margin: 0;
+      }
+      h2 {
+        font-size: 12.5px;
+        font-weight: 700;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        color: var(--faint);
+        margin: 0 0 16px;
+      }
+      section {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      .section-note {
+        font-size: 13.5px;
+        line-height: 1.55;
+        color: var(--muted);
+        max-width: 70ch;
+        margin: -6px 0 4px;
+      }
+      .stage {
+        overflow-x: auto;
+        padding: 4px 2px 12px;
+      }
+
+      /* ---- shell device ---- */
+
+      .device {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        box-shadow: var(--shadow);
+        overflow: hidden;
+        width: 780px;
+        flex: 0 0 auto;
+        display: flex;
+        height: 500px;
+      }
+
+      .sidebar {
+        width: 240px;
+        flex: 0 0 auto;
+        border-right: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        background: var(--surface-2);
+      }
+      /* A single list, not a tab strip -- Sandboxes folded in above, Actions history moved to its own
+     full page below, so there's nothing left to switch between. */
+      .sidebar-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--faint);
+        padding: 12px 10px 6px 12px;
+      }
+      .new-thread-btn {
+        width: 20px;
+        height: 20px;
+        border-radius: 6px;
+        flex: 0 0 auto;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--accent);
+        background: var(--accent-soft);
+      }
+      .new-thread-btn svg {
+        width: 11px;
+        height: 11px;
+      }
+      .new-thread-btn.active {
+        background: var(--accent);
+        color: white;
+      }
+      .sidebar-body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 8px;
+        background: var(--surface);
+      }
+
+      .group-label {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--muted);
+        padding: 10px 8px 4px;
+      }
+      .dot {
+        display: inline-block;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        flex: 0 0 auto;
+      }
+      .dot.ok {
+        background: var(--ok);
+      }
+      .dot.gray {
+        background: var(--faint);
+      }
+      .dot.warn {
+        background: var(--warn);
+      }
+
+      /* Play/pause reads as running/suspended without spelling it out -- shape carries the meaning,
+     not just color, so it doesn't fail the same way a bare colored dot would for anyone who can't
+     distinguish the two hues. */
+      .state-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 13px;
+        height: 13px;
+        flex: 0 0 auto;
+      }
+      .state-icon svg {
+        width: 100%;
+        height: 100%;
+      }
+      .state-icon.running {
+        color: var(--ok);
+      }
+      .state-icon.suspended {
+        color: var(--faint);
+      }
+      .state-icon.deleted {
+        color: var(--faint);
+      }
+
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 8px;
+        border-radius: 7px;
+        font-size: 13px;
+        color: var(--ink);
+      }
+      .row.current {
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-weight: 600;
+      }
+      .row .name {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .row .meta {
+        font-size: 11px;
+        color: var(--faint);
+        flex: 0 0 auto;
+      }
+      .row.sandbox-row .name {
+        font-weight: 600;
+      }
+      .row.archived {
+        opacity: 0.6;
+      }
+      .row-action {
+        margin-left: auto;
+        width: 18px;
+        height: 18px;
+        border-radius: 5px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--faint);
+        flex: 0 0 auto;
+      }
+      .row-action svg {
+        width: 10px;
+        height: 10px;
+      }
+
+      /* Sandbox-level "Show archived" toggle (sandboxes.tsx) moved to Thread level, same default-off
+     idiom: archived Threads are excluded from the list unless switched on. */
+      .archived-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 6px 4px;
+        margin-top: 4px;
+        border-top: 1px solid var(--border-soft);
+        font-size: 11.5px;
+        color: var(--muted);
+      }
+      .switch {
+        display: inline-flex;
+        align-items: center;
+        width: 26px;
+        height: 15px;
+        border-radius: 999px;
+        background: var(--gray-chip);
+        padding: 2px;
+        flex: 0 0 auto;
+      }
+      .switch .knob {
+        width: 11px;
+        height: 11px;
+        border-radius: 50%;
+        background: var(--surface);
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+        transition: transform 120ms ease;
+      }
+      .switch.on {
+        background: var(--accent);
+      }
+      .switch.on .knob {
+        transform: translateX(11px);
+      }
+
+      .sidebar-footer {
+        border-top: 1px solid var(--border-soft);
+        padding: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 6px;
+      }
+      .gear-btn {
+        width: 28px;
+        height: 28px;
+        border-radius: 7px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--faint);
+        flex: 0 0 auto;
+      }
+      .gear-btn svg {
+        width: 15px;
+        height: 15px;
+      }
+      .gear-btn.active {
+        background: var(--accent-soft);
+        color: var(--accent);
+      }
+
+      /* ---- composer row (status dot, model picker, kebab menu, interrupt) -- see the composer-bar
+     mock for the full state/behavior breakdown; reproduced here so the shell reads as complete. */
+      .picker {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 6px 10px;
+        font-size: 12.5px;
+        color: var(--ink);
+        background: var(--surface);
+      }
+      .picker svg {
+        width: 11px;
+        height: 11px;
+        color: var(--faint);
+      }
+      .composer-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin: 0 16px 16px;
+      }
+      .composer-row .cluster {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .composer-icon-btn {
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--surface-2);
+        color: var(--muted);
+        flex: 0 0 auto;
+      }
+      .composer-icon-btn svg {
+        width: 14px;
+        height: 14px;
+      }
+      .composer-icon-btn.danger {
+        background: var(--danger-soft);
+        color: var(--danger);
+      }
+
+      /* ---- main content pane ---- */
+
+      .pane {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+      .breadcrumb {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--border-soft);
+        font-size: 13.5px;
+        position: relative;
+      }
+      .breadcrumb .sandbox-crumb {
+        color: var(--muted);
+      }
+      .breadcrumb .sep {
+        color: var(--faint);
+      }
+      .breadcrumb .title-crumb {
+        font-weight: 600;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .breadcrumb .folder-link {
+        margin-left: 2px;
+        color: var(--faint);
+        display: flex;
+      }
+      .breadcrumb .folder-link svg {
+        width: 13px;
+        height: 13px;
+      }
+      .breadcrumb .right-spacer {
+        flex: 1;
+      }
+
+      .pane-body {
+        flex: 1;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .bubble-stub {
+        align-self: flex-end;
+        background: var(--accent-soft);
+        color: var(--accent);
+        border-radius: 10px;
+        padding: 8px 12px;
+        font-size: 12.5px;
+        max-width: 60%;
+      }
+      .reply-stub {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 10px 12px;
+        font-size: 12.5px;
+        color: var(--muted);
+      }
+      .composer-stub {
+        margin: 0 16px 16px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 10px 12px;
+        font-size: 12.5px;
+        color: var(--faint);
+      }
+
+      /* ---- new-thread composer (sidebar "+", or a Sandbox page's own "+ New thread") ---- */
+      .new-thread-body {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 14px;
+        padding: 24px;
+      }
+      .new-thread-pickers {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .new-thread-input {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 14px;
+        font-size: 13px;
+        color: var(--faint);
+        min-height: 84px;
+      }
+
+      /* ---- pending badge + drawer ---- */
+
+      .badge-btn {
+        position: relative;
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--muted);
+        background: var(--surface-2);
+        flex: 0 0 auto;
+      }
+      .badge-btn svg {
+        width: 15px;
+        height: 15px;
+      }
+      .badge-count {
+        position: absolute;
+        top: -4px;
+        right: -4px;
+        background: var(--danger);
+        color: white;
+        font-size: 10px;
+        font-weight: 700;
+        line-height: 1;
+        min-width: 15px;
+        height: 15px;
+        border-radius: 999px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0 3px;
+      }
+
+      .drawer {
+        position: absolute;
+        top: calc(100% + 8px);
+        right: 16px;
+        width: 300px;
+        max-height: 320px;
+        overflow-y: auto;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        box-shadow: var(--shadow);
+        padding: 10px;
+        z-index: 3;
+      }
+      .drawer-title {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--faint);
+        padding: 4px 6px 8px;
+      }
+      .drawer-footer {
+        text-align: center;
+        padding-top: 8px;
+        margin-top: 4px;
+        border-top: 1px solid var(--border-soft);
+      }
+      .approval-card {
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        padding: 10px;
+        margin-bottom: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .approval-card:last-child {
+        margin-bottom: 0;
+      }
+      /* Wraps on its own when the card is too narrow (the 300px drawer) rather than needing a
+     breakpoint -- the wider full-page history cards get "requested by" on the title's row for free. */
+      .approval-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        column-gap: 8px;
+        row-gap: 2px;
+      }
+      .approval-head .mini-badge {
+        margin-left: auto;
+      }
+      .approval-title {
+        font-size: 13px;
+        font-weight: 600;
+        font-family: ui-monospace, SFMono-Regular, "Liberation Mono", monospace;
+      }
+      .approval-title .sep {
+        color: var(--faint);
+        font-weight: 400;
+        margin: 0 2px;
+      }
+      .approval-caller {
+        font-size: 11.5px;
+        color: var(--muted);
+      }
+      .approval-detail {
+        font-size: 11.5px;
+        color: var(--muted);
+      }
+      .approval-actions {
+        display: flex;
+        gap: 6px;
+        margin-top: 2px;
+      }
+
+      /* Same disclosure convention as the transcript's accordion chevrons: right collapsed, down
+     expanded. */
+      .approval-args summary {
+        font-size: 11.5px;
+        font-weight: 600;
+        color: var(--muted);
+        cursor: pointer;
+        list-style: none;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+      }
+      .approval-args summary::-webkit-details-marker {
+        display: none;
+      }
+      .approval-args summary .chev {
+        transform: rotate(0deg);
+        transition: transform 120ms ease;
+        display: inline-flex;
+      }
+      .approval-args summary .chev svg {
+        width: 9px;
+        height: 9px;
+      }
+      .approval-args[open] summary .chev {
+        transform: rotate(90deg);
+      }
+      .approval-json {
+        margin-top: 6px;
+        background: var(--surface-2);
+        border-radius: 6px;
+        padding: 8px 10px;
+        font-family: ui-monospace, SFMono-Regular, "Liberation Mono", monospace;
+        font-size: 11px;
+        line-height: 1.5;
+        white-space: pre-wrap;
+        color: var(--ink);
+      }
+      .btn-deny,
+      .btn-approve {
+        flex: 1;
+        text-align: center;
+        font-size: 12px;
+        font-weight: 600;
+        padding: 6px 0;
+        border-radius: 6px;
+      }
+      .btn-deny {
+        background: var(--danger-soft);
+        color: var(--danger);
+      }
+      .btn-approve {
+        background: var(--ok);
+        color: white;
+      }
+
+      /* ---- states grid ---- */
+
+      .states {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 16px;
+      }
+      .state-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        box-shadow: var(--shadow);
+        padding: 14px;
+      }
+      .state-tag {
+        display: inline-flex;
+        align-items: center;
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--muted);
+        background: var(--surface-2);
+        border-radius: 999px;
+        padding: 3px 9px;
+        margin-bottom: 12px;
+      }
+
+      /* ---- settings modal ---- */
+
+      .modal-backdrop {
+        background: rgba(20, 22, 27, 0.35);
+        border-radius: 14px;
+        padding: 30px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .modal {
+        background: var(--surface);
+        border-radius: 12px;
+        box-shadow: var(--shadow);
+        width: 100%;
+        max-width: 380px;
+        overflow: hidden;
+      }
+      .modal-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--border-soft);
+        font-weight: 700;
+        font-size: 14px;
+      }
+      .modal-tabs {
+        display: flex;
+        gap: 4px;
+        padding: 8px 10px 0;
+      }
+      .modal-tab {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--muted);
+        padding: 6px 10px;
+        border-radius: 7px 7px 0 0;
+      }
+      .modal-tab.active {
+        background: var(--surface-3);
+        color: var(--accent);
+      }
+      .modal-body {
+        padding: 16px;
+        font-size: 12.5px;
+        color: var(--muted);
+      }
+      .modal-body table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      .modal-body thead th {
+        text-align: left;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--faint);
+        padding: 0 6px 6px 0;
+        border-bottom: 1px solid var(--border-soft);
+      }
+      .modal-body tbody td {
+        padding: 8px 6px 8px 0;
+        border-bottom: 1px solid var(--border-soft);
+        vertical-align: middle;
+      }
+      .modal-body tbody tr:last-child td {
+        border-bottom: none;
+      }
+      .client-name {
+        font-weight: 600;
+        color: var(--ink);
+        font-size: 12.5px;
+      }
+      .sa-picker {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 11.5px;
+        font-weight: 600;
+        color: var(--ink);
+      }
+      .sa-picker svg {
+        width: 9px;
+        height: 9px;
+        color: var(--faint);
+      }
+      .link-btn {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--accent);
+      }
+      .link-btn.danger {
+        color: var(--danger);
+      }
+      .mini-badge {
+        font-size: 10.5px;
+        font-weight: 700;
+        padding: 2px 7px;
+        border-radius: 999px;
+        background: var(--gray-chip);
+        color: var(--muted);
+      }
+      .mini-badge.ok {
+        background: rgba(43, 138, 62, 0.14);
+        color: var(--ok);
+      }
+      .mini-badge.danger {
+        background: var(--danger-soft);
+        color: var(--danger);
+      }
+
+      /* ---- phone ---- */
+
+      .phone-shell {
+        width: 380px;
+        height: 620px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        box-shadow: var(--shadow);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+      }
+      .phone-topbar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--border-soft);
+      }
+      .hamburger {
+        width: 28px;
+        height: 28px;
+        border-radius: 7px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--muted);
+        background: var(--surface-2);
+      }
+      .hamburger svg {
+        width: 15px;
+        height: 15px;
+      }
+      .phone-title {
+        font-weight: 600;
+        font-size: 13.5px;
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .table-wrap {
+        overflow-x: auto;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13.5px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        overflow: hidden;
+      }
+      thead th {
+        text-align: left;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--faint);
+        background: var(--surface-2);
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--border);
+      }
+      tbody td {
+        padding: 11px 14px;
+        border-bottom: 1px solid var(--border-soft);
+        vertical-align: top;
+      }
+      tbody tr:last-child td {
+        border-bottom: none;
+      }
+      td.element {
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      td.muted {
+        color: var(--muted);
+      }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 11.5px;
+        font-weight: 600;
+        padding: 2px 8px;
+        border-radius: 999px;
+      }
+      .pill.new {
+        background: var(--accent-soft);
+        color: var(--accent);
+      }
+
+      ul.notes {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      ul.notes li {
+        font-size: 13.5px;
+        line-height: 1.55;
+        color: var(--ink);
+        padding-left: 18px;
+        position: relative;
+      }
+      ul.notes li::before {
+        content: "";
+        position: absolute;
+        left: 2px;
+        top: 7px;
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--accent);
+      }
+      ul.notes b {
+        font-weight: 600;
+      }
+      ul.notes code {
+        font-family: ui-monospace, SFMono-Regular, "Liberation Mono", monospace;
+        font-size: 0.92em;
+        background: var(--surface-2);
+        padding: 1px 5px;
+        border-radius: 4px;
+      }
+
+      footer {
+        font-size: 12px;
+        color: var(--faint);
+        border-top: 1px solid var(--border-soft);
+        padding-top: 20px;
+      }
+    </style>
+
+    <main>
+      <header>
+        <p class="eyebrow">x/agentplane · session-first shell</p>
+        <h1>The app shell</h1>
+        <p class="lede">
+          Supersedes the earlier top-nav-row mock: the row goes away entirely in favor of a persistent left sidebar.
+          Threads are the primary thing you browse, grouped by the sandbox that hosts them — the group header already
+          carries that sandbox's identity, state, and thread count, so there's no separate Sandboxes tab; a flat
+          browse-by-sandbox view would just repeat what's already visible one level up. That leaves the sidebar itself
+          down to one list, so it's a plain list, not a tab strip. Pending approvals get their own always-reachable
+          badge, and decided Actions get a dedicated full page (not a sidebar tab — there's real detail to show per
+          entry: caller, group/name, arguments) — the same drawer-plus-separate-history-page shape
+          <code>haku/console</code>'s <code>shell_chrome.tsx</code> already uses for its own approval queue.
+        </p>
+      </header>
+
+      <section>
+        <h2>Anatomy — Threads tab, a thread open</h2>
+        <div class="stage">
+          <div class="device">
+            <div class="sidebar">
+              <div class="sidebar-header">
+                Threads
+                <span class="new-thread-btn" title="New thread">
+                  <svg viewBox="0 0 16 16" fill="none">
+                    <path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                  </svg>
+                </span>
+              </div>
+              <div class="sidebar-body">
+                <div class="group-label">
+                  <span class="state-icon running" title="Running"
+                    ><svg viewBox="0 0 12 12" fill="currentColor"><path d="M3 2.2v7.6l6-3.8-6-3.8Z" /></svg
+                  ></span>
+                  demo-a1b2
+                  <span class="meta" style="margin-left: auto">2 threads</span>
+                </div>
+                <div class="row current">
+                  <span class="dot ok" title="Harness running"></span
+                  ><span class="name">List the repository files</span>
+                </div>
+                <div class="row">
+                  <span class="dot warn" title="Needs your approval"></span
+                  ><span class="name">Clean up the stale branch</span
+                  ><span class="row-action" title="Archive"
+                    ><svg viewBox="0 0 12 12" fill="none">
+                      <rect x="1.5" y="2" width="9" height="2.2" rx="0.6" stroke="currentColor" stroke-width="1" />
+                      <path
+                        d="M2.2 4.7v4.3a1 1 0 0 0 1 1h5.6a1 1 0 0 0 1-1V4.7"
+                        stroke="currentColor"
+                        stroke-width="1"
+                      />
+                      <path d="M4.8 6.7h2.4" stroke="currentColor" stroke-width="1" stroke-linecap="round" /></svg
+                  ></span>
+                </div>
+                <div class="group-label">
+                  <span class="state-icon suspended" title="Suspended"
+                    ><svg viewBox="0 0 12 12" fill="currentColor">
+                      <rect x="3" y="2" width="2" height="8" rx="0.5" />
+                      <rect x="7" y="2" width="2" height="8" rx="0.5" /></svg
+                  ></span>
+                  prod-x7f2
+                  <span class="meta" style="margin-left: auto">1 thread</span>
+                </div>
+                <div class="row">
+                  <span class="dot gray" title="Sandbox suspended"></span><span class="name">Investigate flaky CI</span>
+                </div>
+                <div class="group-label">
+                  <span class="state-icon deleted" title="Sandbox deleted"
+                    ><svg viewBox="0 0 12 12" fill="none">
+                      <circle cx="6" cy="6" r="4.6" stroke="currentColor" stroke-width="1.1" />
+                      <path d="M3 3l6 6" stroke="currentColor" stroke-width="1.1" /></svg
+                  ></span>
+                  <span style="text-decoration: line-through; text-decoration-color: var(--faint)">old-debug-3f9c</span>
+                  <span class="meta" style="margin-left: auto">1 thread</span>
+                </div>
+                <div class="row">
+                  <span class="dot gray" title="Sandbox deleted — read only"></span
+                  ><span class="name">Why did the migration hang</span>
+                </div>
+                <div class="archived-toggle">
+                  Show archived (3)
+                  <span class="switch" title="Show archived threads"><span class="knob"></span></span>
+                </div>
+              </div>
+              <div class="sidebar-footer">
+                <span class="gear-btn" title="Action history">
+                  <svg viewBox="0 0 16 16" fill="none">
+                    <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.3" />
+                    <path
+                      d="M8 4.8V8l2.4 1.4"
+                      stroke="currentColor"
+                      stroke-width="1.3"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                </span>
+                <span class="gear-btn" title="Settings">
+                  <svg viewBox="0 0 16 16" fill="none">
+                    <circle cx="8" cy="8" r="2.3" stroke="currentColor" stroke-width="1.3" />
+                    <path
+                      d="M8 1.8v1.4M8 12.8v1.4M14.2 8h-1.4M3.2 8H1.8M12.2 3.8l-1 1M4.8 11.2l-1 1M12.2 12.2l-1-1M4.8 4.8l-1-1"
+                      stroke="currentColor"
+                      stroke-width="1.3"
+                      stroke-linecap="round"
+                    />
+                  </svg>
+                </span>
+              </div>
+            </div>
+            <div class="pane">
+              <div class="breadcrumb">
+                <span class="sandbox-crumb">demo-a1b2</span>
+                <span class="sep">/</span>
+                <span class="title-crumb">List the repository files</span>
+                <span class="folder-link" title="Open sandbox">
+                  <svg viewBox="0 0 16 16" fill="none">
+                    <path
+                      d="M2 4.5a1 1 0 0 1 1-1h3l1.2 1.5H13a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-7.5Z"
+                      stroke="currentColor"
+                      stroke-width="1.2"
+                    />
+                  </svg>
+                </span>
+                <span class="right-spacer"></span>
+                <span class="badge-btn">
+                  <svg viewBox="0 0 16 16" fill="none">
+                    <path
+                      d="M8 2a4 4 0 0 0-4 4v2.2L2.8 10.6c-.3.4 0 1 .5 1h9.4c.5 0 .8-.6.5-1L12 8.2V6a4 4 0 0 0-4-4Z"
+                      stroke="currentColor"
+                      stroke-width="1.2"
+                      stroke-linejoin="round"
+                    />
+                    <path d="M6.3 13.2a1.8 1.8 0 0 0 3.4 0" stroke="currentColor" stroke-width="1.2" />
+                  </svg>
+                  <span class="badge-count">2</span>
+                </span>
+              </div>
+              <div class="pane-body">
+                <div class="reply-stub">Repository root — two entries, both tracked…</div>
+                <div class="bubble-stub">List the repository files.</div>
+              </div>
+              <div class="composer-stub">Enter sends, Ctrl+Enter for a new line</div>
+              <div class="composer-row">
+                <div class="cluster">
+                  <span class="dot ok" title="Attached · Harness running"></span>
+                  <span class="picker">
+                    claude-sonnet-5
+                    <svg viewBox="0 0 12 12" fill="none">
+                      <path
+                        d="M3 4.5 6 7.5 9 4.5"
+                        stroke="currentColor"
+                        stroke-width="1.4"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
+                  </span>
+                </div>
+                <div class="cluster">
+                  <span class="composer-icon-btn" title="More">
+                    <svg viewBox="0 0 16 16" fill="none">
+                      <circle cx="8" cy="3.2" r="1.3" fill="currentColor" />
+                      <circle cx="8" cy="8" r="1.3" fill="currentColor" />
+                      <circle cx="8" cy="12.8" r="1.3" fill="currentColor" />
+                    </svg>
+                  </span>
+                  <span class="composer-icon-btn" title="Interrupt">
+                    <svg viewBox="0 0 16 16" fill="none">
+                      <rect x="4.5" y="4.5" width="7" height="7" rx="1.2" fill="currentColor" />
+                    </svg>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="section-note">
+          Sandboxes group the threads inside them, newest thread first within each group — the group header carries the
+          sandbox's own state (running/suspended/deleted) and thread count, so you don't lose that context once you're
+          browsing by conversation instead of by sandbox, and there's no separate Sandboxes tab repeating it. Each
+          thread row also carries its own status dot: green while its harness is attached and running, gray while idle
+          (or its sandbox is suspended or deleted), amber when something inside that specific thread needs your approval
+          — visible without opening it first.
+        </p>
+      </section>
+
+      <section>
+        <h2>Anatomy — starting a new thread</h2>
+        <div class="stage">
+          <div class="device">
+            <div class="sidebar">
+              <div class="sidebar-header">
+                Threads
+                <span class="new-thread-btn active" title="New thread">
+                  <svg viewBox="0 0 16 16" fill="none">
+                    <path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                  </svg>
+                </span>
+              </div>
+              <div class="sidebar-body">
+                <div class="group-label">
+                  <span class="state-icon running" title="Running"
+                    ><svg viewBox="0 0 12 12" fill="currentColor"><path d="M3 2.2v7.6l6-3.8-6-3.8Z" /></svg
+                  ></span>
+                  demo-a1b2
+                  <span class="meta" style="margin-left: auto">2 threads</span>
+                </div>
+                <div class="row">
+                  <span class="dot ok" title="Harness running"></span
+                  ><span class="name">List the repository files</span>
+                </div>
+                <div class="row">
+                  <span class="dot warn" title="Needs your approval"></span
+                  ><span class="name">Clean up the stale branch</span>
+                </div>
+              </div>
+              <div class="sidebar-footer">
+                <span class="gear-btn" title="Action history">
+                  <svg viewBox="0 0 16 16" fill="none">
+                    <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.3" />
+                    <path
+                      d="M8 4.8V8l2.4 1.4"
+                      stroke="currentColor"
+                      stroke-width="1.3"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                </span>
+                <span class="gear-btn" title="Settings">
+                  <svg viewBox="0 0 16 16" fill="none">
+                    <circle cx="8" cy="8" r="2.3" stroke="currentColor" stroke-width="1.3" />
+                    <path
+                      d="M8 1.8v1.4M8 12.8v1.4M14.2 8h-1.4M3.2 8H1.8M12.2 3.8l-1 1M4.8 11.2l-1 1M12.2 12.2l-1-1M4.8 4.8l-1-1"
+                      stroke="currentColor"
+                      stroke-width="1.3"
+                      stroke-linecap="round"
+                    />
+                  </svg>
+                </span>
+              </div>
+            </div>
+            <div class="pane">
+              <div class="breadcrumb">
+                <span class="title-crumb">New thread</span>
+              </div>
+              <div class="new-thread-body">
+                <div class="new-thread-pickers">
+                  <span class="picker">
+                    + New sandbox from preset
+                    <svg viewBox="0 0 12 12" fill="none">
+                      <path
+                        d="M3 4.5 6 7.5 9 4.5"
+                        stroke="currentColor"
+                        stroke-width="1.4"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
+                  </span>
+                  <span class="picker">
+                    Preset: public-coder
+                    <svg viewBox="0 0 12 12" fill="none">
+                      <path
+                        d="M3 4.5 6 7.5 9 4.5"
+                        stroke="currentColor"
+                        stroke-width="1.4"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
+                  </span>
+                  <span class="picker">
+                    claude-sonnet-5
+                    <svg viewBox="0 0 12 12" fill="none">
+                      <path
+                        d="M3 4.5 6 7.5 9 4.5"
+                        stroke="currentColor"
+                        stroke-width="1.4"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
+                  </span>
+                </div>
+                <div class="new-thread-input">Describe what you want done…</div>
+                <p class="composer-stub" style="margin: 0">Enter launches the thread, Ctrl+Enter for a new line</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="states">
+          <div class="state-card">
+            <span class="state-tag">Same composer, pre-scoped from an existing Sandbox's own page</span>
+            <div style="display: flex; align-items: center; gap: 8px; font-size: 13.5px; margin-bottom: 10px">
+              <span style="color: var(--muted)">demo-a1b2</span>
+              <span class="sep" style="color: var(--faint)">/</span>
+              <span style="font-weight: 600">New thread</span>
+            </div>
+            <span class="picker" style="margin-bottom: 10px">
+              claude-sonnet-5
+              <svg viewBox="0 0 12 12" fill="none">
+                <path
+                  d="M3 4.5 6 7.5 9 4.5"
+                  stroke="currentColor"
+                  stroke-width="1.4"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </span>
+            <div class="new-thread-input" style="min-height: 60px">Describe what you want done…</div>
+            <p style="font-size: 11.5px; color: var(--faint); margin: 8px 0 0">
+              No sandbox/preset picker — reached from that Sandbox's own page, so both are already fixed
+            </p>
+          </div>
+        </div>
+        <p class="section-note">
+          The sidebar's "+" opens an empty composer, not a wizard: pick an existing Sandbox or "+ New sandbox from
+          preset" (only then does a preset picker appear), pick a model, type a prompt, press Enter — the page then
+          binds to whatever Sandbox/Thread that created. A Sandbox's own page keeps a "+ New thread" of its own reusing
+          the identical component with the Sandbox (and therefore preset) already fixed, per the operator's own framing
+          that a per-Sandbox page should still be able to start a fresh conversation directly. Whether this same empty
+          composer eventually replaces whatever the default landing page is instead of requiring the sidebar click first
+          is an open question, not decided here — see
+          <code>x/agentplane/plans/session_first_navigation.md</code>.
+        </p>
+      </section>
+
+      <section>
+        <h2>Pending drawer, a deleted-sandbox thread, and archived threads</h2>
+        <div class="states">
+          <div class="state-card">
+            <span class="state-tag">Thread open — sandbox deleted</span>
+            <div style="display: flex; align-items: center; gap: 8px; font-size: 13.5px; margin-bottom: 10px">
+              <span style="text-decoration: line-through; color: var(--faint)">old-debug-3f9c</span>
+              <span class="sep" style="color: var(--faint)">/</span>
+              <span style="font-weight: 600">Why did the migration hang</span>
+            </div>
+            <div class="reply-stub">The migration job never emitted a heartbeat after…</div>
+            <p style="font-size: 11.5px; color: var(--faint); margin: 10px 0 0">
+              Read only — no folder link, no composer (the sandbox is gone)
+            </p>
+          </div>
+          <div class="state-card">
+            <span class="state-tag">"Show archived" switched on</span>
+            <div class="group-label" style="padding: 0 0 4px">
+              <span class="state-icon running" title="Running"
+                ><svg viewBox="0 0 12 12" fill="currentColor"><path d="M3 2.2v7.6l6-3.8-6-3.8Z" /></svg
+              ></span>
+              demo-a1b2
+              <span class="meta" style="margin-left: auto">3 threads</span>
+            </div>
+            <div class="row">
+              <span class="dot ok" title="Harness running"></span><span class="name">List the repository files</span>
+            </div>
+            <div class="row archived">
+              <span class="dot gray" title="Archived"></span><span class="name">Old flaky-test spike</span
+              ><span class="row-action" title="Unarchive"
+                ><svg viewBox="0 0 12 12" fill="none">
+                  <path
+                    d="M6 9.5V2.5M3 5.5 6 2.5l3 3"
+                    stroke="currentColor"
+                    stroke-width="1.1"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  /></svg
+              ></span>
+            </div>
+            <div class="archived-toggle">
+              Show archived (3)
+              <span class="switch on" title="Hide archived threads"><span class="knob"></span></span>
+            </div>
+          </div>
+          <div class="state-card">
+            <span class="state-tag">Pending badge + drawer open</span>
+            <div style="position: relative">
+              <span class="badge-btn" style="position: static; display: inline-flex">
+                <svg viewBox="0 0 16 16" fill="none">
+                  <path
+                    d="M8 2a4 4 0 0 0-4 4v2.2L2.8 10.6c-.3.4 0 1 .5 1h9.4c.5 0 .8-.6.5-1L12 8.2V6a4 4 0 0 0-4-4Z"
+                    stroke="currentColor"
+                    stroke-width="1.2"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+                <span class="badge-count" style="top: -4px; right: -4px">2</span>
+              </span>
+              <div class="drawer" style="position: static; margin-top: 10px; width: 100%; max-height: none">
+                <div class="drawer-title">Pending approval</div>
+                <div class="approval-card">
+                  <div class="approval-head">
+                    <span class="approval-title">kubernetes<span class="sep">/</span>restart_pod</span>
+                    <span class="approval-caller">requested by public-coder-agent</span>
+                  </div>
+                  <details class="approval-args">
+                    <summary>
+                      <span class="chev"
+                        ><svg viewBox="0 0 12 12" fill="none">
+                          <path
+                            d="M3 2.5 8 6l-5 3.5"
+                            stroke="currentColor"
+                            stroke-width="1.4"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          /></svg></span
+                      >Arguments
+                    </summary>
+                    <div class="approval-json">{ "namespace": "prod", "pod": "api-7d9f4c-x2p9k" }</div>
+                  </details>
+                  <div class="approval-actions">
+                    <span class="btn-deny">Deny</span><span class="btn-approve">Approve</span>
+                  </div>
+                </div>
+                <div class="approval-card">
+                  <div class="approval-head">
+                    <span class="approval-title">secrets<span class="sep">/</span>rotate_key</span>
+                    <span class="approval-caller">requested by haku-routine</span>
+                  </div>
+                  <details class="approval-args">
+                    <summary>
+                      <span class="chev"
+                        ><svg viewBox="0 0 12 12" fill="none">
+                          <path
+                            d="M3 2.5 8 6l-5 3.5"
+                            stroke="currentColor"
+                            stroke-width="1.4"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          /></svg></span
+                      >Arguments
+                    </summary>
+                    <div class="approval-json">{ "key_id": "api-prod-2026-08" }</div>
+                  </details>
+                  <div class="approval-actions">
+                    <span class="btn-deny">Deny</span><span class="btn-approve">Approve</span>
+                  </div>
+                </div>
+                <div class="drawer-footer"><a class="link-btn">View history →</a></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="section-note">
+          <code>sandboxes.tsx</code>'s existing "Show archived" switch and per-row Archive/Unarchive (default off,
+          <code>includeArchived=false</code>) move to the Thread level: with Sandboxes no longer a separate browsing
+          view, "archived" has to describe the thing you're actually browsing now. Same idiom, one level down — a switch
+          at the bottom of the Threads list, off by default, an Archive action on each row, an Unarchive action once
+          revealed.
+        </p>
+      </section>
+
+      <section>
+        <h2>Anatomy — Action history (full page)</h2>
+        <div class="stage">
+          <div class="device">
+            <div class="sidebar">
+              <div class="sidebar-header">
+                Threads
+                <span class="new-thread-btn" title="New thread">
+                  <svg viewBox="0 0 16 16" fill="none">
+                    <path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                  </svg>
+                </span>
+              </div>
+              <div class="sidebar-body">
+                <div class="group-label">
+                  <span class="state-icon running" title="Running"
+                    ><svg viewBox="0 0 12 12" fill="currentColor"><path d="M3 2.2v7.6l6-3.8-6-3.8Z" /></svg
+                  ></span>
+                  demo-a1b2
+                  <span class="meta" style="margin-left: auto">2 threads</span>
+                </div>
+                <div class="row">
+                  <span class="dot ok" title="Harness running"></span
+                  ><span class="name">List the repository files</span>
+                </div>
+                <div class="row">
+                  <span class="dot warn" title="Needs your approval"></span
+                  ><span class="name">Clean up the stale branch</span>
+                </div>
+              </div>
+              <div class="sidebar-footer">
+                <span class="gear-btn active" title="Action history">
+                  <svg viewBox="0 0 16 16" fill="none">
+                    <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.3" />
+                    <path
+                      d="M8 4.8V8l2.4 1.4"
+                      stroke="currentColor"
+                      stroke-width="1.3"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                </span>
+                <span class="gear-btn" title="Settings">
+                  <svg viewBox="0 0 16 16" fill="none">
+                    <circle cx="8" cy="8" r="2.3" stroke="currentColor" stroke-width="1.3" />
+                    <path
+                      d="M8 1.8v1.4M8 12.8v1.4M14.2 8h-1.4M3.2 8H1.8M12.2 3.8l-1 1M4.8 11.2l-1 1M12.2 12.2l-1-1M4.8 4.8l-1-1"
+                      stroke="currentColor"
+                      stroke-width="1.3"
+                      stroke-linecap="round"
+                    />
+                  </svg>
+                </span>
+              </div>
+            </div>
+            <div class="pane">
+              <div class="breadcrumb">
+                <span class="sandbox-crumb" style="cursor: pointer">← Threads</span>
+                <span class="sep">/</span>
+                <span class="title-crumb">Action history</span>
+              </div>
+              <div class="pane-body" style="gap: 8px">
+                <div class="approval-card">
+                  <div class="approval-head">
+                    <span class="approval-title">kubernetes<span class="sep">/</span>delete_pod</span>
+                    <span class="approval-caller">requested by public-coder-agent · 2h ago</span>
+                    <span class="mini-badge danger">Denied</span>
+                  </div>
+                  <span class="approval-detail">"This pod is stateful — restart it instead." — agentydragon</span>
+                  <details class="approval-args">
+                    <summary>
+                      <span class="chev"
+                        ><svg viewBox="0 0 12 12" fill="none">
+                          <path
+                            d="M3 2.5 8 6l-5 3.5"
+                            stroke="currentColor"
+                            stroke-width="1.4"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          /></svg></span
+                      >Arguments
+                    </summary>
+                    <div class="approval-json">{ "namespace": "prod", "pod": "api-7d9f4c-x2p9k" }</div>
+                  </details>
+                </div>
+                <div class="approval-card">
+                  <div class="approval-head">
+                    <span class="approval-title">secrets<span class="sep">/</span>rotate_key</span>
+                    <span class="approval-caller">requested by haku-routine · 1d ago</span>
+                    <span class="mini-badge ok">Allowed</span>
+                  </div>
+                  <details class="approval-args">
+                    <summary>
+                      <span class="chev"
+                        ><svg viewBox="0 0 12 12" fill="none">
+                          <path
+                            d="M3 2.5 8 6l-5 3.5"
+                            stroke="currentColor"
+                            stroke-width="1.4"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          /></svg></span
+                      >Arguments
+                    </summary>
+                    <div class="approval-json">{ "key_id": "api-prod-2026-08" }</div>
+                  </details>
+                </div>
+                <div class="approval-card">
+                  <div class="approval-head">
+                    <span class="approval-title">github<span class="sep">/</span>create_issue</span>
+                    <span class="approval-caller">auto-approved via policy public-coder · 3d ago</span>
+                    <span class="mini-badge ok">Allowed</span>
+                  </div>
+                  <details class="approval-args">
+                    <summary>
+                      <span class="chev"
+                        ><svg viewBox="0 0 12 12" fill="none">
+                          <path
+                            d="M3 2.5 8 6l-5 3.5"
+                            stroke="currentColor"
+                            stroke-width="1.4"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          /></svg></span
+                      >Arguments
+                    </summary>
+                    <div class="approval-json">
+                      { "owner": "agentydragon", "repo": "ducktape", "title": "Flaky CI on prod-x7f2" }
+                    </div>
+                  </details>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="section-note">
+          No approve/deny — these are already decided. Same card shape as the pending drawer (group/name, caller,
+          collapsible arguments), plus the decision and when it happened, and — for a policy-matched one — which policy
+          decided it rather than a person, tying back to
+          <code>x/agentplane/plans/action_policies.md</code>'s own evidence contract. Reached from either the
+          sidebar-footer clock icon or the pending drawer's "View history" link, never a sidebar tab. The denied card's
+          second line is <code>decision_note</code> — a plaintext note the operator already can attach when deciding
+          (real, shipped field: <code>actions.tsx:107-110</code>). The reverse direction — a plaintext title/description
+          the <i>caller</i> submits with the request — has since shipped too (<code>ActionContext</code> in
+          <code>actions.tsx</code>); this mock predates it and doesn't render it.
+        </p>
+      </section>
+
+      <section>
+        <h2>Settings — OAuth clients / MCP servers / Notifications</h2>
+        <p class="section-note">
+          The gear at the bottom of the sidebar (next to the history clock — see the anatomy above) replaces what used
+          to be three separate routed pages behind the old nav row's "More" menu — one modal, tabbed, instead of three
+          pages to navigate between. Renamed the first tab from "Connections" to "OAuth clients": each row is exactly
+          that — <code>claude.ai</code>, a Codex instance on some machine, any OAuth-connected agent — bound to one
+          caller ServiceAccount, the model in <code>x/agentplane/plans/action_policies.md</code>. Plain enough to be a
+          3-column table rather than a card list: client, its ServiceAccount as a dropdown (picking a different eligible
+          one there is the whole rebind, no new OAuth round-trip, no separate "Change" step), and Unlink. Still the
+          <code>Connection</code> type in code and API — this only changes the label and the exposed controls, not the
+          domain name used everywhere else.
+        </p>
+        <div class="stage">
+          <div class="device" style="height: 320px">
+            <div class="modal-backdrop" style="width: 100%">
+              <div class="modal">
+                <div class="modal-header">
+                  Settings<span style="color: var(--faint); font-weight: 400; cursor: default">✕</span>
+                </div>
+                <div class="modal-tabs">
+                  <span class="modal-tab active">OAuth clients</span>
+                  <span class="modal-tab">MCP servers</span>
+                  <span class="modal-tab">Notifications</span>
+                </div>
+                <div class="modal-body">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Client</th>
+                        <th>Service account</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td class="client-name">claude.ai</td>
+                        <td>
+                          <span class="sa-picker"
+                            >public-coder<svg viewBox="0 0 12 12" fill="none">
+                              <path
+                                d="M3 4.5 6 7.5 9 4.5"
+                                stroke="currentColor"
+                                stroke-width="1.4"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                              /></svg
+                          ></span>
+                        </td>
+                        <td><a class="link-btn danger">Unlink</a></td>
+                      </tr>
+                      <tr>
+                        <td class="client-name">codex on wyrm2</td>
+                        <td>
+                          <span class="sa-picker"
+                            >public-coder<svg viewBox="0 0 12 12" fill="none">
+                              <path
+                                d="M3 4.5 6 7.5 9 4.5"
+                                stroke="currentColor"
+                                stroke-width="1.4"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                              /></svg
+                          ></span>
+                        </td>
+                        <td><a class="link-btn danger">Unlink</a></td>
+                      </tr>
+                      <tr>
+                        <td class="client-name">codex on rugged</td>
+                        <td>
+                          <span class="sa-picker"
+                            >ducktape-push<svg viewBox="0 0 12 12" fill="none">
+                              <path
+                                d="M3 4.5 6 7.5 9 4.5"
+                                stroke="currentColor"
+                                stroke-width="1.4"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                              /></svg
+                          ></span>
+                        </td>
+                        <td><a class="link-btn danger">Unlink</a></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>On a phone</h2>
+        <p class="section-note">
+          Sidebar collapses behind a hamburger; the pending badge stays in the top bar whether or not the sidebar drawer
+          is open.
+        </p>
+        <div class="stage">
+          <div class="phone-shell">
+            <div class="phone-topbar">
+              <span class="hamburger">
+                <svg viewBox="0 0 16 16" fill="none">
+                  <path
+                    d="M2 4.5h12M2 8h12M2 11.5h12"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                    stroke-linecap="round"
+                  />
+                </svg>
+              </span>
+              <span class="phone-title">List the repository files</span>
+              <span class="badge-btn">
+                <svg viewBox="0 0 16 16" fill="none">
+                  <path
+                    d="M8 2a4 4 0 0 0-4 4v2.2L2.8 10.6c-.3.4 0 1 .5 1h9.4c.5 0 .8-.6.5-1L12 8.2V6a4 4 0 0 0-4-4Z"
+                    stroke="currentColor"
+                    stroke-width="1.2"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+                <span class="badge-count">2</span>
+              </span>
+            </div>
+            <div class="pane-body">
+              <div class="reply-stub">Repository root — two entries, both tracked…</div>
+              <div class="bubble-stub">List the repository files.</div>
+            </div>
+            <div class="composer-stub">Enter sends, Ctrl+Enter for a new line</div>
+            <div class="composer-row">
+              <div class="cluster">
+                <span class="dot ok" title="Attached · Harness running"></span>
+                <span class="picker">
+                  sonnet-5
+                  <svg viewBox="0 0 12 12" fill="none">
+                    <path
+                      d="M3 4.5 6 7.5 9 4.5"
+                      stroke="currentColor"
+                      stroke-width="1.4"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                </span>
+              </div>
+              <div class="cluster">
+                <span class="composer-icon-btn" title="More">
+                  <svg viewBox="0 0 16 16" fill="none">
+                    <circle cx="8" cy="3.2" r="1.3" fill="currentColor" />
+                    <circle cx="8" cy="8" r="1.3" fill="currentColor" />
+                    <circle cx="8" cy="12.8" r="1.3" fill="currentColor" />
+                  </svg>
+                </span>
+                <span class="composer-icon-btn" title="Interrupt">
+                  <svg viewBox="0 0 16 16" fill="none">
+                    <rect x="4.5" y="4.5" width="7" height="7" rx="1.2" fill="currentColor" />
+                  </svg>
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>What moved, and where</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Element</th>
+                <th>New home</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="element">Sandbox list (was <code>/</code>)</td>
+                <td class="muted">
+                  Folded into the Threads list's group headers (icon + name + thread count) — no separate
+                  sandbox-browsing view
+                </td>
+              </tr>
+              <tr>
+                <td class="element">Thread list (was a Sandbox-page tab)</td>
+                <td class="muted">
+                  <span class="pill new">now primary</span> The sidebar itself — a single list, grouped by sandbox, each
+                  thread with its own status dot
+                </td>
+              </tr>
+              <tr>
+                <td class="element">Actions — pending</td>
+                <td class="muted">
+                  <span class="pill new">new</span> Persistent badge + drawer, independent of the sidebar
+                </td>
+              </tr>
+              <tr>
+                <td class="element">Actions — history</td>
+                <td class="muted">
+                  <span class="pill new">new shape</span> Dedicated full page (caller, group/name, arguments, decision)
+                  — reached from the sidebar-footer clock icon or the drawer's "View history" link, not a sidebar tab
+                </td>
+              </tr>
+              <tr>
+                <td class="element">Connections (renamed "OAuth clients") / MCP servers / Notifications</td>
+                <td class="muted">
+                  One Settings modal, tabbed, behind the sidebar's gear; each OAuth-clients row is an MCP client with a
+                  ServiceAccount dropdown and an unlink action
+                </td>
+              </tr>
+              <tr>
+                <td class="element">Thread/sandbox back-navigation</td>
+                <td class="muted">The sidebar itself on desktop; a breadcrumb + hamburger toggle on a phone</td>
+              </tr>
+              <tr>
+                <td class="element">Starting a new conversation</td>
+                <td class="muted">
+                  <span class="pill new">new</span> Sidebar "+" opens an empty composer (Sandbox/preset/model pickers +
+                  prompt); a Sandbox's own page keeps the same composer pre-scoped
+                </td>
+              </tr>
+              <tr>
+                <td class="element">"Show archived" (was a Sandbox-level switch in <code>sandboxes.tsx</code>)</td>
+                <td class="muted">
+                  <span class="pill new">moved level</span> Same switch, same default-off, now filtering the Threads
+                  list instead of a sandbox list
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section>
+        <h2>Behavior notes</h2>
+        <ul class="notes">
+          <li>
+            <b>The pending badge is deliberately not a sidebar tab.</b> It has to stay visible and reachable no matter
+            what the sidebar is showing or whether it's even open (phone) — mixing "browse" and "something needs you"
+            into one panel buries the urgent thing.
+          </li>
+          <li>
+            <b>Precedent: <code>haku/console/frontend/shell_chrome.tsx</code></b> already ships this exact split for its
+            own MCP tool-call approval queue — an icon-rail trigger opens a non-modal drawer over the content area, with
+            a separate full page for history. This mock follows that shape rather than inventing a new one — including
+            giving history its own page rather than a compact tab list, once it needs to show the same per-entry detail
+            (caller, group/name, arguments) the pending drawer does.
+          </li>
+          <li>
+            <b>The drawer is non-modal</b> — approving/denying doesn't lose your place in the transcript you were
+            reading, unlike a full-page interrupt. Whether a genuinely urgent new arrival also needs a harder interrupt
+            (a toast, a sound) is still open — the drawer covers steady-state access, not necessarily "the moment it
+            arrives."
+          </li>
+          <li>
+            <b>The sidebar is one list, not a tab strip.</b> Sandboxes are folded into the Threads list's group headers
+            (identity, state, thread count) rather than a separate flat browsing view, and Actions history moved to its
+            own full page — between those two, there was nothing left to switch tabs between. Tradeoff, left open: a
+            sandbox with zero threads has no row to appear on here at all; whether that needs its own minimal listing
+            (or is simply fine — a sandbox worth tracking usually has a thread) isn't decided.
+          </li>
+          <li>
+            <b>Per-thread status dot</b> mirrors the composer bar's own worst-axis cascade — green while that thread's
+            harness is attached and running, gray while idle or its sandbox is suspended/deleted, amber when something
+            inside that specific thread needs your approval — so a thread needing attention doesn't require opening it
+            first to find out, and a suspended sandbox's threads read as gray without a separate view to learn why.
+          </li>
+          <li>
+            <b>A thread whose sandbox was deleted</b> stays listed and readable — <code>trajectory.py</code>'s
+            Thread/Event store is durable and outlives the Sandbox — but its group header renders struck through with a
+            distinct icon, and the open thread has no folder-link (there's no live <code>SandboxPage</code> left to
+            open) and no composer: read-only history only.
+          </li>
+          <li>
+            <b>The folder icon in the breadcrumb</b> is the one way left to reach a specific
+            <code>SandboxPage</code> directly from a thread whose sandbox still exists — mirroring the reference
+            screenshots' own folder-icon-opens-workspace affordance.
+          </li>
+          <li>
+            <b>"Threads," not "Sessions,"</b> to match the codebase's own noun for a conversation —
+            <code>Thread</code>/<code>Event</code> in <code>trajectory.py</code>, <code>ThreadView</code>/<code
+              >ThreadTitle</code
+            >
+            in the frontend already. <code>SessionView</code>/<code>sessionId</code> stay as the code names for the live
+            runner-attached connection; the UI label is what changes.
+          </li>
+          <li>
+            <b>"OAuth clients," not "Linked accounts" or third-party services.</b> Each row is an OAuth-connected agent
+            (<code>claude.ai</code>, a Codex instance on some machine) bound to a single caller ServiceAccount — the
+            model <code>x/agentplane/plans/action_policies.md</code> already specifies. The ServiceAccount is a dropdown
+            on the row itself, not a separate "acts as" line plus a "Change" step; a "Linked" badge is dropped too — a
+            client's presence in this list already says that.
+          </li>
+          <li>
+            <b>Approval JSON gets real syntax highlighting</b> in the actual frontend — an existing library already used
+            elsewhere — not the plain monospace block shown here; this mock only stands in for layout, not rendering
+            fidelity.
+          </li>
+          <li>
+            <b>Archived Threads are hidden by default</b>, same as the Sandbox-level "Show archived" switch this
+            replaces: the switch sits at the bottom of the Threads list, off by default, and each row gets its own
+            Archive (or, once revealed, Unarchive) action — a Sandbox's archived state and a Thread's are now two
+            separate flags at two separate levels, not one inherited from the other.
+          </li>
+          <li>
+            <b>A paginated/searchable "all threads" view is deferred</b>, not designed here: this sidebar is fine for a
+            working set, but finding one old Thread once the list runs past the dozens needs its own answer (probably a
+            full page, the same shape as Action history) — flagging it now so <code>THREAD_LIST_API</code> doesn't get
+            built assuming an unpaginated single call is enough forever.
+          </li>
+          <li>
+            <b>Starting a new thread is one component, reached two ways.</b> The sidebar's "+" opens it unscoped — pick
+            an existing Sandbox or "+ New sandbox from preset" (which reveals a preset picker), a model, then type and
+            press Enter — and a Sandbox's own page keeps a "+ New thread" reusing the identical composer with the
+            Sandbox (and its preset) already fixed, so the per-Sandbox entry point survives the sidebar redesign rather
+            than getting displaced by it. Submitting binds the same page to whatever Sandbox/Thread the submission
+            created — there's no separate "creating…" transition state mocked here.
+          </li>
+          <li>
+            <b>Whether this composer becomes the default landing page</b> instead of something reached by clicking "+"
+            first is intentionally left open — it would make the empty-state and the sidebar's own trigger the same
+            surface, but that's a bigger claim about what <code>/</code> shows than this mock decides.
+          </li>
+        </ul>
+      </section>
+
+      <footer>Mock for x/agentplane/plans/session_first_navigation.md · not wired to real state</footer>
+    </main>
+  </body>
+</html>
