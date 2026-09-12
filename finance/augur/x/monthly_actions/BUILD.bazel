@@ -5,10 +5,7 @@ package(default_visibility = ["//visibility:public"])
 py_library(
     name = "profile",
     srcs = ["profile.py"],
-    deps = [
-        ":run",
-        "//finance/augur/sim:artifacts",
-    ],
+    deps = [":run"],
 )
 
 py_binary(
@@ -29,14 +26,21 @@ py_library(
     deps = [
         ":policy",
         "//finance/augur/model:series",
-        "//finance/augur/sim:artifacts",
+        "//finance/augur/sim:bills",
+        "//finance/augur/sim:books",
         "//finance/augur/sim:external_series",
+        "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:ids",
         "//finance/augur/sim:jurisdictions",
+        "//finance/augur/sim:market_path",
         "//finance/augur/sim:prepared",
         "//finance/augur/sim:results",
         "//finance/augur/sim:scenario",
         "//finance/augur/sim:session",
+        "//finance/augur/sim:tax_authority",
+        "//finance/augur/sim:world",
         "//finance/augur/sim/compiler:execution",
+        "//finance/augur/sim/compiler:tax",
         "@pypi//numpy",
     ],
 )
@@ -52,7 +56,6 @@ py_test(
         ":run",
         "//:conftest",
         "//finance/augur:conftest",
-        "//finance/augur/sim:artifacts",
         "//finance/augur/sim:books",
         "//finance/augur/sim:results",
         "//util/bazel:runfiles",

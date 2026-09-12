@@ -467,6 +467,7 @@ py_test(
     name = "test_invocation",
     srcs = ["test_invocation.py"],
     deps = [
+        ":example_run",
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/model:series",
@@ -475,9 +476,9 @@ py_test(
         "//finance/augur/sim:results",
         "//finance/augur/sim:scenario",
         "//finance/augur/sim:session",
+        "//finance/augur/sim:world",
         "//finance/augur/sim/compiler:execution",
         "//finance/augur/x/bounded_spending:python_policy",
-        "//finance/augur/x/monthly_actions:run",
         "@pypi//numpy",
         "@pypi//pydantic",
         "@pypi//pytest",
@@ -499,5 +500,19 @@ py_test(
         "//finance/augur/sim:session",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "example_run",
+    srcs = ["example_run.py"],
+    deps = [
+        "//finance/augur/model:series",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:jurisdictions",
+        "//finance/augur/sim:prepared",
+        "//finance/augur/sim:scenario",
+        "//finance/augur/sim/compiler:execution",
+        "@pypi//numpy",
     ],
 )

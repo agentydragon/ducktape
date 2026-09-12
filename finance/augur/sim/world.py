@@ -47,6 +47,7 @@ from finance.augur.sim.prepared import (
     CompiledRun,
     PreparedAccount,
     PreparedBond,
+    PreparedDistribution,
     PreparedHoldingPool,
     PreparedJurisdiction,
     PreparedLocation,
@@ -217,11 +218,8 @@ class World:
         housing = Housing.from_scenario(scenario)
         if housing != Housing() or scenario._property_tax_policies:
             world.attach_housing(housing, scenario._property_tax_policies, scenario.locations)
-        if scenario.distributions:
-            world.distributions = Distributions(
-                scenario.distributions,
-                {(spec.owner_agent_id, spec.account_id, spec.asset_id) for spec in scenario.tlh_portfolios},
-            )
+        for distribution in scenario.distributions:
+            world.declare_distribution(distribution)
         if scenario._private_equity_tender_policies or any(
             private_issuer(lot.asset_id) is not None for lot in scenario.initial_lots
         ):
@@ -261,6 +259,17 @@ class World:
             self.bonds = HeldBonds((), self.market)
         self.bonds.hold(holding)
 
+    def declare_distribution(self, spec: PreparedDistribution) -> None:
+        """A security's periodic payout to its holder, on the path's distribution series."""
+        self._composing()
+        if f"security_distribution:{spec.asset_id}" not in self.market.series:
+            raise ValueError(f"missing distribution series for {spec.asset_id!r}")
+        if self.distributions is None:
+            self.distributions = Distributions(
+                (), {(spec.owner_agent_id, spec.account_id, spec.asset_id) for spec in self.specs.values()}
+            )
+        self.distributions.specs = (*self.distributions.specs, spec)
+
     def declare_portfolio(self, spec: PreparedTlhPortfolio) -> None:
         """A managed TLH portfolio held at month zero, marked at the path's opening price."""
         self._composing()
@@ -281,6 +290,8 @@ class World:
             self.managed = ManagedPortfolios(self.income_sources, self.jurisdictions)
         self.managed.open(self.accounting, spec, self.statement(spec, portfolio.observe()))
         self.holdings.reserve(spec.owner_agent_id, spec.account_id, spec.asset_id)
+        if self.distributions is not None:
+            self.distributions.managed_slots.add((spec.owner_agent_id, spec.account_id, spec.asset_id))
         self.specs[spec.portfolio_id] = spec
         self.portfolios[spec.portfolio_id] = portfolio
 

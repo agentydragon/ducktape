@@ -17,9 +17,9 @@ from finance.augur.policy.sleeves import withdraw
 from finance.augur.sim.actions import Consume, DecisionActions, PayClaim
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.observations import Decision
-from finance.augur.sim.prepared import CompiledRun
 from finance.augur.sim.results import ConsumptionTarget, Finished
 from finance.augur.sim.session import ActionSession
+from finance.augur.sim.world import World
 
 
 @dataclass(frozen=True)
@@ -234,7 +234,7 @@ class SpendingPolicy:
 
 
 def run(
-    prepared: CompiledRun,
+    compose: Callable[[int], World],
     policy: Callable[[list[Decision]], list[DecisionActions]],
     rollout_ids: list[int],
     *,
@@ -242,10 +242,10 @@ def run(
     chunk_size: int | None = None,
     reverse: bool = False,
 ) -> Finished:
-    """Python owns the loop; chunks author one complete response before each advance."""
+    """Python owns the loop over a fresh world per path; chunks author one complete response before each advance."""
     if chunk_size is not None and chunk_size <= 0:
         raise ValueError("chunk_size must be positive")
-    session = ActionSession.from_run(prepared, "retiree", rollout_ids, capture=capture)
+    session = ActionSession({id_: compose(id_) for id_ in rollout_ids}, "retiree", capture=capture)
     try:
         batch = session.start()
         while not isinstance(batch, Finished):
