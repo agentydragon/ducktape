@@ -80,7 +80,7 @@ reconstruct tax schedules from padded arrays or reread jurisdiction rules.
 
 ## Deployment integration
 
-The production server is API-only: `//augur/api:server` reads a `Config`
+The production server is API-only: `//finance/augur/api:server` reads a `Config`
 from `--config`, `$AUGUR_CONFIG_PATH`, or `/etc/augur/config.yaml`, then serves
 the `/api/*` routes and `/healthz`. `/api/deployment` reports the deployed
 API/frontend source commits when the runtime manifest provides image tags via
@@ -112,7 +112,7 @@ property ID to a deployment-owned asset ID and either an explicit public
 For local public-fixture development, use the combined dev-only wrapper:
 
 ```bash
-bazelisk run //augur:dev
+bazelisk run //finance/augur:dev
 ```
 
 The public fixture config uses a composite exogenous provider: an independent
@@ -123,11 +123,11 @@ path plus grouped conditioning observations.
 
 ## Profiling
 
-Use `//augur/api:profile_metric_fan` for a focused backend profile of one
+Use `//finance/augur/api:profile_metric_fan` for a focused backend profile of one
 product API metric-fan request:
 
 ```bash
-bazelisk run --config=nolint //augur/api:profile_metric_fan
+bazelisk run --config=nolint //finance/augur/api:profile_metric_fan
 ```
 
 The default request runs 50 rollouts over 100 months through
