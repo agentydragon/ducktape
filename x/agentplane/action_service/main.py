@@ -43,7 +43,6 @@ from x.agentplane.action_service.push import ActionPushNotifier, PushIdentity, P
 from x.agentplane.action_service.runtime import running_executor
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.updates import ActionUpdates
-from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 
 # YamlConfigSettingsSource loads yaml lazily inside pydantic-settings; gazelle cannot see the dependency.
@@ -231,13 +230,11 @@ async def async_main(settings: Settings) -> None:
         )
         app = create_app(
             service,
-            SandboxPrincipalAuthenticator(
-                SandboxPrincipalResolver(
-                    authentication=AuthenticationV1Api(api),
-                    core_v1=CoreV1Api(api),
-                    audience=settings.token_audience,
-                    allowed_service_account_namespaces=settings.allowed_service_account_namespaces,
-                )
+            SandboxPrincipalResolver(
+                authentication=AuthenticationV1Api(api),
+                core_v1=CoreV1Api(api),
+                audience=settings.token_audience,
+                allowed_service_account_namespaces=settings.allowed_service_account_namespaces,
             ),
             operator_authenticator,
             catalog,
