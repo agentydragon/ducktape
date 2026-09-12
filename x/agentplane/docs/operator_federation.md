@@ -9,9 +9,9 @@ holds Authlib's state/nonce/PKCE verifier while login is pending, then verified 
 lifetime is known) the access token. ID tokens and refresh tokens are not retained. Neither identity
 nor OAuth/token material is encoded in the cookie. The row key is a SHA-256 digest of the handle.
 
-The app follows its existing `TrajectoryStore.ensure_schema()` startup DDL pattern: it creates the
-new table and expiry index with SQLAlchemy, under a PostgreSQL transaction advisory lock shared
-by app startups. There is no separate app Alembic runner today. The Action schema is unchanged.
+The table and its expiry index come from the app's own Alembic history
+(`x/agentplane/app/migrations/`), applied by the `migrate` init container before the app starts; the
+app itself only verifies the migrated schema. The Action schema is unchanged.
 Existing signed-payload cookies are deliberately invalid after rollout: log in again. Replicas
 must use the same app database, OIDC configuration, public origin, and session signing secret.
 
@@ -166,9 +166,9 @@ preserve this source contract or update and revalidate the subject mode.
    The devel CI run [34167823523](https://github.com/agentydragon/ducktape/actions/runs/34167823523)
    published all three; existing Flux image markers/policies remain enabled. Do not enable this
    configuration on the previous `5686ff8` app image (it lacks persistent sessions/federation).
-   Existing cookies require a new login. App startup creates `operator_browser_session` and its
-   expiry index via the existing shared-Postgres advisory-lock DDL path; no separate app migration,
-   DB, signing-secret rotation, or session-replica expansion is introduced.
+   Existing cookies require a new login. The app's `migrate` init container creates
+   `operator_browser_session` and its expiry index; no separate DB, signing-secret rotation, or
+   session-replica expansion is introduced.
 
 The BFF already reaches Action on the destination Pod port 8080, and Action admits it separately
 from the workload proxy. Both now reach the public Authentik origin on host/remote-node TCP 443,
@@ -183,8 +183,8 @@ by L7 HTTP inspection of encrypted TLS. A different Gateway/DNS/L7-proxy setup r
 ### Live acceptance after merge/reconciliation (not performed in this PR)
 
 - Confirm the Terraform resource and both Flux layers are ready, configuration ConfigMap references
-  resolved, the intended image revisions running, Action migration healthy, and app startup completed
-  its session-table DDL. Inspect status, not secret payloads or a credential-bearing Terraform plan.
+  resolved, the intended image revisions running, both Action and app migrations healthy, and app
+  startup past its schema verification. Inspect status, not secret payloads or a credential-bearing Terraform plan.
 - Verify public discovery/JWKS issuer and RS256 metadata against the configured login and target
   pins. Verify Hubble shows the BFF token/JWKS and Action JWKS connections admitted; a TLS connection
   with a different SNI on the same gateway must be denied. Do not weaken egress if this fails.

@@ -3,8 +3,8 @@ PostgreSQL as it arrives.
 
 A thread is one runner session, keyed by the sandbox and the client-chosen session id; its events
 are stored as the protocol's own proto-JSON under the session's sequence, so a thread reads back
-without a runner and a deleted sandbox loses nothing. The schema is created at startup: the store
-is staging-only and disposable until a production instance needs migrations in place.
+without a runner and a deleted sandbox loses nothing. The schema is owned by the Alembic migrations
+under `migrations/`, applied by `database_migrate.py` as a separate deploy step.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from uuid import UUID, uuid4
 
 from google.protobuf.json_format import MessageToDict, ParseDict
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Text, UniqueConstraint, delete, func, select, text, update
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Text, UniqueConstraint, delete, func, select, update
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID, insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -142,14 +142,12 @@ class TrajectoryStore:
     def connect(cls, database_url: str) -> TrajectoryStore:
         return cls(create_async_engine(database_url, pool_pre_ping=True, hide_parameters=True))
 
-    async def ensure_schema(self) -> None:
-        async with self._engine.begin() as connection:
-            await connection.execute(text("SELECT pg_advisory_xact_lock(5820)"))
-            await connection.run_sync(Base.metadata.create_all)
-            await connection.run_sync(SessionBase.metadata.create_all)
-            # create_all only creates tables it does not find; a column added since a table was
-            # created is added here, idempotently, until the store grows a migration mechanism.
-            await connection.execute(text("ALTER TABLE thread ADD COLUMN IF NOT EXISTS name text"))
+    async def verify_schema(self) -> None:
+        """Read every owned table without applying DDL; migrations are a separate deploy step."""
+        async with self._engine.connect() as connection:
+            for metadata in (Base.metadata, SessionBase.metadata):
+                for table in metadata.tables.values():
+                    await connection.execute(select(table).limit(0))
 
     async def close(self) -> None:
         await self._updates.close()

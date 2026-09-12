@@ -45,6 +45,10 @@ bbr test //x/agentplane/app/...
 - `action_federation.py`: request-bound operator federation into the canonical Action Service.
 - `consent.py`: browser-session-bound enrollment BFF; the Action Service owns consent and grants.
 - `operator_sessions.py`: PostgreSQL browser identity and pending OAuth state, shared across replicas.
+- `database_migrate.py` and `migrations/`: the Alembic history covering both declarative bases above,
+  the trajectory store's and the operator sessions'. Migrations run separately through `:migrate`;
+  the server verifies the migrated schema and never creates tables at startup. `:image` and
+  `:migration_image` are separate OCI targets.
 - `frontend/`: the React SPA on the repo's `ts_library` and esbuild toolchain, with the visual
   scenarios under `frontend/visual/`.
 
@@ -226,7 +230,7 @@ bearer or workload-token promotion is used. Missing configuration is specificall
 `503 detail.code=operator_federation_not_configured`; token callers get 403.
 
 See [`../docs/operator_federation.md`](../docs/operator_federation.md) for exact settings, PostgreSQL
-startup schema creation, opaque session lifecycle/CSRF/invalidation, failure codes, and signed
+session storage, opaque session lifecycle/CSRF/invalidation, failure codes, and signed
 multi-replica/two-operator test targets. Existing browser sessions must log in again after rollout.
 Only operator Action arguments are unredacted; caller arguments and execution result/error
 redaction are unchanged. There is no app-owned Action/Decision/Execution authority.
