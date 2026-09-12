@@ -835,7 +835,6 @@ py_library(
         ":money",
         ":mortgage",
         ":prepared",
-        "//finance/augur/sim/compiler:tax",
     ],
 )
 
@@ -932,6 +931,7 @@ py_test(
     srcs = ["test_private_equity.py"],
     deps = [
         ":capture",
+        ":market_path",
         ":prepared",
         ":validation",
         ":world",
@@ -978,9 +978,12 @@ py_test(
     deps = [
         ":actions",
         ":agent",
+        ":bills",
         ":capture",
+        ":market_path",
         ":mortgage",
         ":prepared",
+        ":property",
         ":results",
         ":world",
         "//:conftest",
