@@ -56,7 +56,6 @@ const SANDBOXES: SandboxView[] = [
   {
     name: "demo-a1b2",
     uid: "0f9c1d2e-0000-4000-8000-00000000a1b2",
-    archived: false,
     state: "running",
     created_at: ago(3 * HOUR),
     operating_mode: "Running",
@@ -78,7 +77,6 @@ const SANDBOXES: SandboxView[] = [
   {
     name: "codex-c3d4",
     uid: "0f9c1d2e-0000-4000-8000-00000000c3d4",
-    archived: false,
     state: "waiting_for_pod_ready",
     created_at: ago(2 * 60_000),
     operating_mode: "Running",
@@ -106,7 +104,6 @@ const SANDBOXES: SandboxView[] = [
   {
     name: "old-e5f6",
     uid: "0f9c1d2e-0000-4000-8000-00000000e5f6",
-    archived: false,
     state: "suspended",
     created_at: ago(48 * HOUR),
     operating_mode: "Suspended",

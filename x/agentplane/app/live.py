@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import CoreV1Api
@@ -115,8 +115,8 @@ class LiveIndex:
     refreshed: dict[str, datetime] = field(default_factory=dict)
     changes: Changes = field(default_factory=Changes)
 
-    def sandbox_views(self, *, include_archived: bool) -> list[SandboxView]:
-        return sandbox_views(self.sandboxes.values(), self.pods.values(), include_archived=include_archived)
+    def sandbox_views(self) -> list[SandboxView]:
+        return sandbox_views(self.sandboxes.values(), self.pods.values())
 
     def sandbox_view(self, name: str) -> SandboxView | None:
         raw = self.sandboxes.get(name)
@@ -290,15 +290,11 @@ def _stream(source: AsyncIterator[bytes]) -> StreamingResponse:
 
 
 @router.get("/sandboxes", responses=_SANDBOXES_FRAMES)
-async def live_sandboxes(
-    index: Index,
-    shutdown: Shutdown,
-    include_archived: Annotated[bool, Query(description="Also carry archived sandboxes.")] = False,
-) -> StreamingResponse:
+async def live_sandboxes(index: Index, shutdown: Shutdown) -> StreamingResponse:
     """The sandbox list, pushed."""
 
     async def snapshot() -> SandboxesSnapshot:
-        return SandboxesSnapshot(sandboxes=index.sandbox_views(include_archived=include_archived), watch=_health(index))
+        return SandboxesSnapshot(sandboxes=index.sandbox_views(), watch=_health(index))
 
     return _stream(shutdown.until(frames(snapshot, lambda: _health(index), index.changes)))
 
