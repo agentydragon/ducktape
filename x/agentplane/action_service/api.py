@@ -301,13 +301,14 @@ def create_app(
         del principal
         return action_catalog.action_view(group_key, action_key)
 
-    # The caller's own effective policy, from the resolution admission uses. This surface only ever
-    # sees a Sandbox principal; an external grant reaches the service through `/mcp`, whose tool
-    # reads the grant `CallerTokenVerifier` verified.
     @app.get("/v1/action-policy", response_model=CallerActionPolicyView)
     async def own_action_policy(
         principal: Annotated[Principal, Depends(_workload)], action_service: Annotated[ActionService, Depends(_service)]
     ) -> CallerActionPolicyView:
+        """The caller's own effective policy, from the resolution admission uses: the bindings on it, the
+        sets that resolved, and the auto_approve_if / auto_deny_if / auto_deny_unless entries in evaluation
+        order. This surface only ever sees a Sandbox principal; an external grant reaches the service
+        through `/mcp`, whose tool reads the grant `CallerTokenVerifier` verified."""
         return action_service.caller_action_policy(principal, external_grant=None)
 
     # Operator/BFF surface: deliberately different paths and authenticator. A workload bearer can
@@ -369,6 +370,8 @@ def create_app(
         principal: Annotated[Principal, Depends(_operator)],
         action_service: Annotated[ActionService, Depends(_service)],
     ) -> SubjectActionPolicyView:
+        """A Sandbox's effective policy as the operator sees it: each binding with its labels and Ready
+        verdict, each named set as present, refused or missing, and the resolved entries."""
         del principal
         return action_service.subject_action_policy(SandboxCaller(namespace=namespace, sandbox_uid=sandbox_uid))
 
@@ -379,6 +382,7 @@ def create_app(
         principal: Annotated[Principal, Depends(_operator)],
         action_service: Annotated[ActionService, Depends(_service)],
     ) -> SubjectActionPolicyView:
+        """A ServiceAccount caller's effective policy, in the same shape as the Sandbox read."""
         del principal
         return action_service.subject_action_policy(ServiceAccountRef(namespace=namespace, name=name))
 
