@@ -31,7 +31,8 @@ from x.agentplane.action_service.connections import (
 )
 from x.agentplane.action_service.db import ActionNotFoundError, ActionStore, Base, ConnectionGrantRow, make_sessionmaker
 from x.agentplane.action_service.models import ActionRequestInput, Principal, PrincipalRole, ServiceAccountRef
-from x.agentplane.action_service.policy_informer import PolicyIndex, namespaced_key
+from x.agentplane.action_service.policies.resources import NamespacedName
+from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, UNLABELED, eligible_callers
 from x.agentplane.action_service.updates import ActionUpdates
@@ -193,7 +194,7 @@ async def test_unlabeled_removed_unsynced_and_expired_grants_do_not_authorize(en
     with pytest.raises(GrantRejectedError):
         await service.bind(expired)
     unsynced = PolicyIndex()
-    unsynced.service_accounts[namespaced_key(PERSONAL.namespace, PERSONAL.name)] = PERSONAL
+    unsynced.service_accounts[NamespacedName(PERSONAL.namespace, PERSONAL.name)] = PERSONAL
     for callers in [eligible_callers(), eligible_callers(OTHER, UNLABELED), unsynced]:
         changed = ConnectionAuthority(make_sessionmaker(engine), callers)
         with pytest.raises(GrantRejectedError):

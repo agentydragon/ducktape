@@ -24,8 +24,9 @@ from x.agentplane.action_service.policies.resources import (
     ActionPolicyBinding,
     ActionPolicySet,
     InvalidResource,
+    NamespacedName,
 )
-from x.agentplane.action_service.policy_informer import PolicyIndex, PolicyInformer, namespaced_key
+from x.agentplane.action_service.policy_informer import PolicyIndex, PolicyInformer
 from x.agentplane.egress.testing.fake_apiserver import FakeApiServer, fake_apiserver
 
 NAMESPACE = "agentplane-policy-test"
@@ -123,8 +124,8 @@ async def index(fake: FakeApiServer) -> AsyncIterator[PolicyIndex]:
             await asyncio.gather(task, return_exceptions=True)
 
 
-def key(name: str) -> str:
-    return namespaced_key(NAMESPACE, name)
+def key(name: str) -> NamespacedName:
+    return NamespacedName(NAMESPACE, name)
 
 
 def _ready(index: PolicyIndex, name: str, status: str, generation: int) -> bool:

@@ -44,9 +44,9 @@ from x.agentplane.action_service.models import (
     ServiceAccountRef,
     Verdict,
 )
-from x.agentplane.action_service.policies.resources import parse_binding, parse_policy_set
+from x.agentplane.action_service.policies.resources import NamespacedName, parse_binding, parse_policy_set
 from x.agentplane.action_service.policy_evaluation import PROVIDER_NAME, PolicySetDecisionProvider
-from x.agentplane.action_service.policy_informer import PolicyIndex, namespaced_key
+from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.providers import DecisionContext
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, eligible_callers
@@ -326,13 +326,13 @@ async def test_bound_service_account_is_auto_approved_by_its_binding_only(
 ) -> None:
     namespace = PERSONAL.namespace
     index = PolicyIndex(synced=True)
-    index.policy_sets[namespaced_key(namespace, "echo")] = parse_policy_set(
+    index.policy_sets[NamespacedName(namespace, "echo")] = parse_policy_set(
         {
             "metadata": {"name": "echo", "namespace": namespace, "uid": "u1", "generation": 1, "resourceVersion": "1"},
             "spec": {"autoApproveIf": [{"type": "exact_actions", "actions": {"agentplane": ["echo"]}}]},
         }
     )
-    index.bindings[namespaced_key(namespace, "personal-echo")] = parse_binding(
+    index.bindings[NamespacedName(namespace, "personal-echo")] = parse_binding(
         {
             "metadata": {
                 "name": "personal-echo",

@@ -26,10 +26,11 @@ from x.agentplane.action_service.policies.resources import (
     ActionPolicyBinding,
     ActionPolicySet,
     InvalidResource,
+    NamespacedName,
     SandboxSubject,
     ServiceAccountSubject,
 )
-from x.agentplane.action_service.policy_informer import PolicyIndex, namespaced_key
+from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.providers import DecisionContext, ResolvedBinding
 
 PROVIDER_NAME = "action_policy_set"
@@ -76,7 +77,7 @@ def resolve_bindings(
             policy_set
             for name in spec.policy_sets
             if isinstance(
-                policy_set := index.policy_sets.get(namespaced_key(binding.metadata.namespace, name)), ActionPolicySet
+                policy_set := index.policy_sets.get(NamespacedName(binding.metadata.namespace, name)), ActionPolicySet
             )
         )
         resolved.append(ResolvedBinding(binding=binding, policy_sets=sets))
@@ -86,7 +87,7 @@ def resolve_bindings(
 def _evidence(context: DecisionContext, matched: MatchedPolicy) -> PolicyEvidence:
     bindings: list[ActionPolicyBinding] = [resolved.binding for resolved in context.bindings]
     sets = {
-        namespaced_key(policy_set.metadata.namespace, policy_set.metadata.name): policy_set
+        NamespacedName(policy_set.metadata.namespace, policy_set.metadata.name): policy_set
         for resolved in context.bindings
         for policy_set in resolved.policy_sets
     }

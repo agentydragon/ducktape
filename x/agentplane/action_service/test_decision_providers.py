@@ -34,9 +34,9 @@ from x.agentplane.action_service.models import (
     SandboxCaller,
     Verdict,
 )
-from x.agentplane.action_service.policies.resources import parse_binding, parse_policy_set
+from x.agentplane.action_service.policies.resources import NamespacedName, parse_binding, parse_policy_set
 from x.agentplane.action_service.policy_evaluation import AUTO_APPROVE_REASON, PROVIDER_NAME, PolicySetDecisionProvider
-from x.agentplane.action_service.policy_informer import PolicyIndex, namespaced_key
+from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.providers import DecisionContext
 from x.agentplane.action_service.service import ActionService, InvalidActionArgumentsError
 
@@ -356,11 +356,11 @@ def _index(
     """An index from raw specs, parsed the way the informer parses them, so invalid ones stay invalid."""
     index = PolicyIndex(synced=synced)
     for name, spec in (sets or {}).items():
-        index.policy_sets[namespaced_key(NAMESPACE, name)] = parse_policy_set(
+        index.policy_sets[NamespacedName(NAMESPACE, name)] = parse_policy_set(
             {"metadata": _meta(name, generation=4, version="40"), "spec": spec}
         )
     for name, spec in (bindings or {}).items():
-        index.bindings[namespaced_key(NAMESPACE, name)] = parse_binding(
+        index.bindings[NamespacedName(NAMESPACE, name)] = parse_binding(
             {"metadata": _meta(name, version="7"), "spec": spec}
         )
     return index

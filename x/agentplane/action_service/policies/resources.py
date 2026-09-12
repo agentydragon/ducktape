@@ -32,6 +32,14 @@ READY_CONDITION = "Ready"
 _MESSAGE_LIMIT = 32768
 
 
+@dataclass(frozen=True, slots=True, order=True)
+class NamespacedName:
+    """What the policy index is keyed by; ordered so a sorted index walks namespace, then name."""
+
+    namespace: str
+    name: str
+
+
 class _Wire(BaseModel):
     """Server-stamped envelope fields, read off the API server; constructed by field name in tests."""
 

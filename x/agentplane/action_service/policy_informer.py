@@ -32,6 +32,7 @@ from x.agentplane.action_service.policies.resources import (
     ActionPolicySet,
     Condition,
     InvalidResource,
+    NamespacedName,
     ObjectMeta,
     parse_binding,
     parse_policy_set,
@@ -43,25 +44,20 @@ logger = logging.getLogger(__name__)
 _MERGE_PATCH = "application/merge-patch+json"
 
 
-def namespaced_key(namespace: str, name: str) -> str:
-    """How the index keys an object: `namespace/name`, as kubectl spells it."""
-    return f"{namespace}/{name}"
-
-
 @dataclass
 class PolicyIndex:
-    """Everything the policy decision reads, keyed by `namespaced_key`. Mutated only by the informer;
+    """Everything the policy decision reads, keyed by `NamespacedName`. Mutated only by the informer;
     `changed` pulses on every mutation so readers can wait for a state rather than a duration."""
 
-    policy_sets: dict[str, ActionPolicySet | InvalidResource] = field(default_factory=dict)
-    bindings: dict[str, ActionPolicyBinding | InvalidResource] = field(default_factory=dict)
-    service_accounts: dict[str, ServiceAccountRef] = field(default_factory=dict)
+    policy_sets: dict[NamespacedName, ActionPolicySet | InvalidResource] = field(default_factory=dict)
+    bindings: dict[NamespacedName, ActionPolicyBinding | InvalidResource] = field(default_factory=dict)
+    service_accounts: dict[NamespacedName, ServiceAccountRef] = field(default_factory=dict)
     synced: bool = False
     changed: asyncio.Condition = field(default_factory=asyncio.Condition, repr=False)
 
     def eligible(self, ref: ServiceAccountRef) -> bool:
         """Whether this ServiceAccount currently carries the caller label; nothing is eligible before sync."""
-        return self.synced and namespaced_key(ref.namespace, ref.name) in self.service_accounts
+        return self.synced and NamespacedName(ref.namespace, ref.name) in self.service_accounts
 
     def caller_service_accounts(self) -> list[ServiceAccountRef]:
         return [self.service_accounts[key] for key in sorted(self.service_accounts)]
@@ -75,23 +71,23 @@ class PolicyIndex:
             await self.changed.wait_for(predicate)
 
 
-def _parse_policy_set(raw: dict[str, Any]) -> tuple[str, ActionPolicySet | InvalidResource]:
+def _parse_policy_set(raw: dict[str, Any]) -> tuple[NamespacedName, ActionPolicySet | InvalidResource]:
     parsed = parse_policy_set(raw)
-    return namespaced_key(parsed.metadata.namespace, parsed.metadata.name), parsed
+    return NamespacedName(parsed.metadata.namespace, parsed.metadata.name), parsed
 
 
-def _parse_binding(raw: dict[str, Any]) -> tuple[str, ActionPolicyBinding | InvalidResource]:
+def _parse_binding(raw: dict[str, Any]) -> tuple[NamespacedName, ActionPolicyBinding | InvalidResource]:
     parsed = parse_binding(raw)
-    return namespaced_key(parsed.metadata.namespace, parsed.metadata.name), parsed
+    return NamespacedName(parsed.metadata.namespace, parsed.metadata.name), parsed
 
 
-def _parse_service_account(raw: k8s_client.V1ServiceAccount) -> tuple[str, ServiceAccountRef]:
+def _parse_service_account(raw: k8s_client.V1ServiceAccount) -> tuple[NamespacedName, ServiceAccountRef]:
     ref = ServiceAccountRef(namespace=raw.metadata.namespace, name=raw.metadata.name)
-    return namespaced_key(ref.namespace, ref.name), ref
+    return NamespacedName(ref.namespace, ref.name), ref
 
 
-def _keys_in(store: dict[str, Any], namespace: str) -> set[str]:
-    return {key for key in store if key.startswith(f"{namespace}/")}
+def _keys_in(store: Mapping[NamespacedName, object], namespace: str) -> set[NamespacedName]:
+    return {key for key in store if key.namespace == namespace}
 
 
 def ready_condition(obj: ActionPolicySet | ActionPolicyBinding | InvalidResource, now: datetime) -> Condition:
@@ -191,7 +187,9 @@ class PolicyInformer:
         for uid in set(self._written) - held:
             del self._written[uid]
 
-    def _stores(self) -> tuple[tuple[str, Mapping[str, ActionPolicySet | ActionPolicyBinding | InvalidResource]], ...]:
+    def _stores(
+        self,
+    ) -> tuple[tuple[str, Mapping[NamespacedName, ActionPolicySet | ActionPolicyBinding | InvalidResource]], ...]:
         return ((POLICY_SETS_PLURAL, self._index.policy_sets), (BINDINGS_PLURAL, self._index.bindings))
 
     async def _write(self, plural: str, metadata: ObjectMeta, condition: Condition) -> None:

@@ -28,19 +28,19 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
-class WatchedKind:
+class WatchedKind[K]:
     """One kind to keep in sync: how to list it, and how to fold one object (or its deletion) in.
 
-    `apply` and `names` are bound to the caller's store; `name` keys the freshness timestamp and
-    names the task, so it is the resource's plural.
+    `apply` and `names` are bound to the caller's store, keyed by whatever `parse` returns; `name`
+    keys the freshness timestamp and names the task, so it is the resource's plural.
     """
 
     name: str
     list: Callable[..., Awaitable[Any]]
     args: tuple[Any, ...]
-    parse: Callable[[Any], tuple[str, Any]]
-    names: Callable[[], set[str]]
-    apply: Callable[[str, Any | None], None]
+    parse: Callable[[Any], tuple[K, Any]]
+    names: Callable[[], set[K]]
+    apply: Callable[[K, Any | None], None]
     kwargs: Mapping[str, Any] = field(default_factory=dict)
 
 
@@ -123,7 +123,7 @@ class ListWatch:
         await self._on_cycle(kind, self._clock())
 
 
-def apply_to[T](store: dict[str, T], name: str, obj: T | None) -> None:
+def apply_to[K, T](store: dict[K, T], name: K, obj: T | None) -> None:
     """The usual `apply`: an object replaces what is stored under its name, and `None` removes it."""
     if obj is None:
         store.pop(name, None)
