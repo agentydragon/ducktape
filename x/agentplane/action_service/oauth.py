@@ -62,6 +62,12 @@ _ISSUING: ContextVar[UUID | None] = ContextVar("agentplane_oauth_issuing", defau
 _VERIFY_FAILURES: ContextVar[list[Exception] | None] = ContextVar("agentplane_oauth_verify_failures", default=None)
 logger = logging.getLogger(__name__)
 _INVALID_GRANT = "The Connection authorization grant is invalid; authorize a new connection."
+_CODE_INVALID = (
+    "The authorization code is unknown, expired, or was issued to another client; authorize a new connection."
+)
+_NOT_OPERATOR = "The upstream account that signed in is not this service's operator."
+_UPSTREAM_UNVERIFIED = "The upstream sign-in could not be verified; authorize a new connection."
+_CONNECTION_GONE = "The Connection no longer exists; authorize a new connection."
 
 
 def _observe_failure(error: Exception) -> None:
@@ -221,13 +227,12 @@ class ActionsOAuthProxy(DownstreamClientIdentityOIDCProxy):
     async def exchange_authorization_code(
         self, client: OAuthClientInformationFull, authorization_code: AuthorizationCode
     ) -> OAuthToken:
-        # Every refusal below reaches the client as one bounded invalid_grant; the log names the
-        # check that refused it, since nothing else in the flow does.
+        # Each refusal names the check that made it, in error_description and in the log. The
+        # sentences are fixed, so no identifier or upstream claim reaches the client.
         try:
             code = await self._code_store.get(key=authorization_code.code)
             if code is None or code.client_id != client.client_id or authorization_code.client_id != client.client_id:
-                logger.warning("token exchange refused: authorization code unknown or bound to another client")
-                raise TokenError("invalid_grant", _INVALID_GRANT)
+                raise _refused("token exchange", _CODE_INVALID)
             principal = await self._principal_resolver.resolve(code.idp_tokens)
             if (principal.issuer, principal.subject) != (
                 self._settings.upstream_issuer,
@@ -240,7 +245,7 @@ class ActionsOAuthProxy(DownstreamClientIdentityOIDCProxy):
                     principal.subject == self._settings.upstream_subject,
                     principal.issuer,
                 )
-                raise InvalidOidcPrincipalError
+                raise TokenError("invalid_grant", _NOT_OPERATOR)
             binding = await self._enrollments.approved(
                 client_id=code.client_id,
                 redirect_uri=code.redirect_uri,
@@ -251,10 +256,11 @@ class ActionsOAuthProxy(DownstreamClientIdentityOIDCProxy):
             await self._connections.validate_pending(grant.id, issuer=binding.issuer, client_id=code.client_id)
             await self._enrollments.claim_exchange(grant.id)
         except InvalidOidcPrincipalError:
-            raise TokenError("invalid_grant", _INVALID_GRANT) from None
-        except (EnrollmentRejectedError, GrantRejectedError, ConnectionConflictError, ConnectionNotFoundError) as error:
-            logger.warning("token exchange refused: %s: %s", type(error).__name__, error)
-            raise TokenError("invalid_grant", _INVALID_GRANT) from None
+            raise _refused("token exchange", _UPSTREAM_UNVERIFIED) from None
+        except ConnectionNotFoundError:
+            raise _refused("token exchange", _CONNECTION_GONE) from None
+        except (EnrollmentRejectedError, GrantRejectedError, ConnectionConflictError) as error:
+            raise _refused("token exchange", str(error)) from None
         except (OidcPrincipalVerificationUnavailableError, SQLAlchemyError):
             raise _unavailable() from None
 
@@ -266,8 +272,8 @@ class ActionsOAuthProxy(DownstreamClientIdentityOIDCProxy):
         self._validate_family(token, grant)
         try:
             await self._connections.activate(grant.id)
-        except GrantRejectedError:
-            raise TokenError("invalid_grant", _INVALID_GRANT) from None
+        except GrantRejectedError as error:
+            raise _refused("token exchange", str(error)) from None
         except SQLAlchemyError:
             raise _unavailable() from None
         return token
@@ -290,9 +296,9 @@ class ActionsOAuthProxy(DownstreamClientIdentityOIDCProxy):
                     principal.subject == self._settings.upstream_subject,
                     principal.issuer,
                 )
-                raise InvalidOidcPrincipalError
+                raise TokenError("invalid_grant", _NOT_OPERATOR)
         except InvalidOidcPrincipalError:
-            raise TokenError("invalid_grant", _INVALID_GRANT) from None
+            raise _refused("token refresh", _UPSTREAM_UNVERIFIED) from None
         except OidcPrincipalVerificationUnavailableError:
             raise _unavailable() from None
         return {"grant_id": str(grant_id)}
@@ -338,8 +344,8 @@ class ActionsOAuthProxy(DownstreamClientIdentityOIDCProxy):
             self._validate_family(token, grant)
             await self._resolve(reference)
             return token
-        except GrantRejectedError:
-            raise TokenError("invalid_grant", _INVALID_GRANT) from None
+        except GrantRejectedError as error:
+            raise _refused("token refresh", str(error)) from None
         except SQLAlchemyError:
             raise _unavailable() from None
 
@@ -456,6 +462,12 @@ class ActionsOAuthProxy(DownstreamClientIdentityOIDCProxy):
         if loaded is not None and loaded.client_id == client.client_id:
             await self.revoke_token(loaded)
         return Response(status_code=200, headers={"Cache-Control": "no-store", "Pragma": "no-cache"})
+
+
+def _refused(flow: str, description: str) -> TokenError:
+    """A refusal the client hears verbatim: a fixed sentence naming the check, never a value."""
+    logger.warning("%s refused: %s", flow, description)
+    return TokenError("invalid_grant", description)
 
 
 def _unavailable() -> HTTPException:

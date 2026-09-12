@@ -207,10 +207,10 @@ class EnrollmentAuthority:
                 )
             )
             row = _require_live(row)
-            if (row.operator_issuer, row.operator_subject) != (operator.issuer, operator.subject):
-                raise EnrollmentRejectedError("issuing operator does not match consent")
             if row.verdict != Verdict.ALLOW or row.identity_id is None:
                 raise EnrollmentRejectedError("enrollment was not approved")
+            if (row.operator_issuer, row.operator_subject) != (operator.issuer, operator.subject):
+                raise EnrollmentRejectedError("issuing operator does not match consent")
             if row.exchange_claimed_at is not None:
                 raise EnrollmentRejectedError("token exchange already claimed; restart authorization")
             self._require_identity(row.identity_id)
