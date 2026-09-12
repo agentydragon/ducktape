@@ -1,7 +1,7 @@
 import { Button, Container, Group, Stack } from "@mantine/core";
 import { HashRouter, Route, Routes, useLocation, useMatch, useNavigate, useParams } from "react-router";
 
-import { ActionRequests } from "./actions";
+import { ActionHistory, ActionRequests } from "./actions";
 import { Connections } from "./connections";
 import { ConnectionConsent } from "./consent";
 import { SandboxPage } from "./sandbox_page";
@@ -78,6 +78,12 @@ function AppRoutes(): JSX.Element {
             Actions
           </Button>
           <Button
+            variant={location.pathname === "/actions/history" ? "filled" : "subtle"}
+            onClick={() => void navigate("/actions/history")}
+          >
+            Action history
+          </Button>
+          <Button
             variant={location.pathname === "/connections" ? "filled" : "subtle"}
             onClick={() => void navigate("/connections")}
           >
@@ -99,6 +105,7 @@ function AppRoutes(): JSX.Element {
         <Routes>
           <Route path="/" element={<ListRoute />} />
           <Route path="/actions" element={<ActionRequests />} />
+          <Route path="/actions/history" element={<ActionHistory />} />
           <Route path="/actions/:requestId" element={<ActionRequests />} />
           <Route path="/connection-enrollments/:handle" element={<ConsentRoute />} />
           <Route path="/connections" element={<Connections />} />

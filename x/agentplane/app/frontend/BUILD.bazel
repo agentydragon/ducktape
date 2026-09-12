@@ -612,6 +612,8 @@ VISUAL_DATA = [
     for scenario in [
         "actions",
         "actions_phone",
+        "actions_history",
+        "actions_history_phone",
         "connections",
         "connections_phone",
         "consent",

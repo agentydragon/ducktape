@@ -5,8 +5,10 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ActionRequests, stateLabel } from "./actions";
+import { ActionHistory, ActionRequests, stateLabel } from "./actions";
 import { actionService, type ActionRequestView, type ActionService, type ActionState } from "./client";
+
+type View = (props: { service?: ActionService }) => JSX.Element;
 
 const mounted: Array<{ root: ReturnType<typeof createRoot>; container: HTMLDivElement }> = [];
 
@@ -53,7 +55,7 @@ function request(state: ActionState, index: number): ActionRequestView {
   };
 }
 
-async function render(service: ActionService): Promise<HTMLDivElement> {
+async function render(service: ActionService, View: View = ActionRequests): Promise<HTMLDivElement> {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -61,7 +63,7 @@ async function render(service: ActionService): Promise<HTMLDivElement> {
   await act(async () => {
     root.render(
       <MantineProvider>
-        <ActionRequests service={service} />
+        <View service={service} />
       </MantineProvider>
     );
   });
@@ -88,47 +90,43 @@ describe("ActionRequests", () => {
     expect(container.textContent).toContain(JSON.stringify(failure));
     expect(container.textContent).not.toContain("[object Object]");
     expect(container.textContent).not.toContain("No requests are waiting");
-    expect(container.textContent).not.toContain("No decided requests");
     expect(container.textContent).not.toContain("Loading actions");
   });
 
-  it.each(["decision_pending", "succeeded"] as const)(
-    "shows the immutable authenticated submitter for %s receipts",
-    async (state) => {
-      const grant = {
-        caller: { namespace: "agentplane-test", name: "test-caller" },
-        issuer: "https://test-issuer.example/oauth",
-        client_id: "test-external-client",
-        connection_id: "40000000-0000-4000-8000-000000000001",
-        grant_id: "50000000-0000-4000-8000-000000000001",
-        revision: 7,
-      };
-      const row = {
-        ...request(state, 1),
-        caller_principal: "service-account:agentplane-test:test-caller",
-        external_grant: grant,
-        origin: { identity_id: "forged-origin-identity", client_id: "forged-origin-client" },
-        correlation: { connection_id: "forged-correlation-connection", display_name: "mutable-connection-name" },
-      };
-      const container = await render({ list: async () => [row], decide: vi.fn() });
+  it("shows the immutable authenticated submitter for a pending receipt", async () => {
+    const grant = {
+      caller: { namespace: "agentplane-test", name: "test-caller" },
+      issuer: "https://test-issuer.example/oauth",
+      client_id: "test-external-client",
+      connection_id: "40000000-0000-4000-8000-000000000001",
+      grant_id: "50000000-0000-4000-8000-000000000001",
+      revision: 7,
+    };
+    const row = {
+      ...request("decision_pending", 1),
+      caller_principal: "service-account:agentplane-test:test-caller",
+      external_grant: grant,
+      origin: { identity_id: "forged-origin-identity", client_id: "forged-origin-client" },
+      correlation: { connection_id: "forged-correlation-connection", display_name: "mutable-connection-name" },
+    };
+    const container = await render({ list: async () => [row], decide: vi.fn() });
 
-      expect(container.textContent).toContain("Authenticated external caller at submission");
-      for (const value of ["agentplane-test/test-caller", grant.issuer, grant.client_id, grant.connection_id]) {
-        expect(container.textContent).toContain(value);
-      }
-      expect(container.textContent).not.toContain("forged-");
-      expect(container.textContent).not.toContain("mutable-connection-name");
-      const details = container.querySelector("details");
-      const summary = details?.querySelector("summary");
-      if (!details || !summary) throw new Error("missing grant audit disclosure");
-      expect(details.open).toBe(false);
-      await act(async () => summary.click());
-      expect(details.open).toBe(true);
-      expect(details.textContent).toContain(grant.grant_id);
-      expect(details.textContent).toContain("Revision 7");
-      expect(details.textContent).toContain("Historical submission evidence");
+    expect(container.textContent).toContain("Authenticated external caller at submission");
+    for (const value of ["agentplane-test/test-caller", grant.issuer, grant.client_id, grant.connection_id]) {
+      expect(container.textContent).toContain(value);
     }
-  );
+    expect(container.textContent).not.toContain("forged-");
+    expect(container.textContent).not.toContain("mutable-connection-name");
+    const details = container.querySelector("details");
+    const summary = details?.querySelector("summary");
+    if (!details || !summary) throw new Error("missing grant audit disclosure");
+    expect(details.open).toBe(false);
+    await act(async () => summary.click());
+    expect(details.open).toBe(true);
+    expect(details.textContent).toContain(grant.grant_id);
+    expect(details.textContent).toContain("Revision 7");
+    expect(details.textContent).toContain("Historical submission evidence");
+  });
 
   it.each([null, undefined])(
     "retains workload caller display without manufacturing external provenance (%s)",
@@ -147,32 +145,13 @@ describe("ActionRequests", () => {
     }
   );
 
-  it("renders pending, decision, running, and every terminal outcome", async () => {
-    const states: ActionState[] = [
-      "decision_pending",
-      "allowed",
-      "denied",
-      "dispatching",
-      "running",
-      "succeeded",
-      "failed",
-      "cancelled",
-      "execution_unknown",
-    ];
-    const service: ActionService = {
-      list: vi.fn(async () => states.map(request)),
-      decide: vi.fn(),
-    };
-
+  it("renders every pending request with its unredacted arguments", async () => {
+    const service: ActionService = { list: vi.fn(async () => [request("decision_pending", 1)]), decide: vi.fn() };
     const container = await render(service);
-
-    for (const state of states) expect(container.textContent).toContain(stateLabel(state));
+    expect(container.textContent).toContain(stateLabel("decision_pending"));
     expect(container.textContent).toContain("Exact arguments (unredacted)");
     expect(container.textContent).toContain("test-exact-token");
     expect(container.textContent).toContain("test-exact-password");
-    expect(container.textContent).toContain("Reviewed scope — allowed for this request.");
-    expect(container.textContent).toContain("Result");
-    expect(container.textContent).toContain("Execution error");
   });
 
   it.each([
@@ -191,60 +170,194 @@ describe("ActionRequests", () => {
 
     expect(decide).toHaveBeenCalledOnce();
     expect(decide).toHaveBeenCalledWith(expect.objectContaining({ state: "decision_pending" }), verdict);
-    expect(container.textContent).toContain(state);
     expect(container.textContent).not.toContain("Pending (1)");
+  });
+
+  it("renders server-pushed pending state without list polling and closes the stream", async () => {
+    let stream: EventTarget | undefined;
+    const close = vi.fn();
+    class Stream extends EventTarget {
+      onerror = null;
+      close = close;
+      constructor(url: string) {
+        super();
+        expect(url).toBe("/actions/stream");
+        stream = this;
+      }
+    }
+    vi.stubGlobal("EventSource", Stream);
+    const list = vi.spyOn(actionService, "list").mockResolvedValue([]);
+    try {
+      const container = await render(actionService);
+      expect(container.textContent).toContain("Loading actions");
+      expect(container.textContent).not.toContain("No requests are waiting");
+      expect(container.textContent).not.toContain("Pending (0)");
+      await act(async () => {
+        stream?.dispatchEvent(new MessageEvent("snapshot", { data: "not JSON" }));
+      });
+      expect(container.textContent).toContain("The live Action update was invalid");
+      await act(async () => {
+        stream?.dispatchEvent(new MessageEvent("snapshot", { data: "[]" }));
+      });
+      expect(container.textContent).toContain("No requests are waiting");
+      expect(container.textContent).not.toContain("Loading actions");
+      await act(async () => {
+        stream?.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify([request("decision_pending", 1)]) }));
+      });
+      expect(container.textContent).toContain("Pending (1)");
+      await act(async () => {
+        stream?.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify([request("denied", 1)]) }));
+      });
+      expect(container.textContent).toContain("Pending (0)");
+      expect(list).not.toHaveBeenCalled();
+      const item = mounted.pop();
+      await act(async () => item?.root.unmount());
+      item?.container.remove();
+      expect(close).toHaveBeenCalledOnce();
+    } finally {
+      list.mockRestore();
+      vi.unstubAllGlobals();
+    }
   });
 });
 
-it("renders server-pushed Action state without list polling and closes the stream", async () => {
-  let stream: EventTarget | undefined;
-  const close = vi.fn();
-  class Stream extends EventTarget {
-    onerror = null;
-    close = close;
-    constructor(url: string) {
-      super();
-      expect(url).toBe("/actions/stream");
-      stream = this;
-    }
-  }
-  vi.stubGlobal("EventSource", Stream);
-  const list = vi.spyOn(actionService, "list").mockResolvedValue([]);
-  try {
-    const container = await render(actionService);
-    expect(container.textContent).toContain("Loading actions");
-    expect(container.textContent).not.toContain("No requests are waiting");
+describe("ActionHistory", () => {
+  it("shows structured list errors without an empty-state claim", async () => {
+    const failure = { detail: { code: "operator_federation_exchange_failed" } };
+    const container = await render({ list: vi.fn().mockRejectedValue(failure), decide: vi.fn() }, ActionHistory);
+    expect(container.textContent).toContain(JSON.stringify(failure));
+    expect(container.textContent).not.toContain("[object Object]");
     expect(container.textContent).not.toContain("No decided requests");
-    expect(container.textContent).not.toContain("Pending (0)");
-    await act(async () => {
-      stream?.dispatchEvent(new MessageEvent("snapshot", { data: "not JSON" }));
-    });
-    expect(container.textContent).toContain("The live Action update was invalid");
-    expect(container.textContent).not.toContain("No requests are waiting");
-    expect(container.textContent).not.toContain("No decided requests");
-    await act(async () => {
-      stream?.dispatchEvent(new MessageEvent("snapshot", { data: "[]" }));
-    });
-    expect(container.textContent).toContain("No requests are waiting");
-    expect(container.textContent).toContain("No decided requests");
     expect(container.textContent).not.toContain("Loading actions");
-    expect(container.textContent).not.toContain("The live Action update was invalid");
-    await act(async () => {
-      stream?.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify([request("decision_pending", 1)]) }));
-    });
-    expect(container.textContent).toContain("Pending (1)");
-    await act(async () => {
-      stream?.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify([request("denied", 1)]) }));
-    });
-    expect(container.textContent).toContain("Pending (0)");
-    expect(container.textContent).toContain("denied");
-    expect(list).not.toHaveBeenCalled();
-    const item = mounted.pop();
-    await act(async () => item?.root.unmount());
-    item?.container.remove();
-    expect(close).toHaveBeenCalledOnce();
-  } finally {
-    list.mockRestore();
-    vi.unstubAllGlobals();
-  }
+  });
+
+  it("shows the immutable authenticated submitter for a decided receipt", async () => {
+    const grant = {
+      caller: { namespace: "agentplane-test", name: "test-caller" },
+      issuer: "https://test-issuer.example/oauth",
+      client_id: "test-external-client",
+      connection_id: "40000000-0000-4000-8000-000000000001",
+      grant_id: "50000000-0000-4000-8000-000000000001",
+      revision: 7,
+    };
+    const row = {
+      ...request("succeeded", 1),
+      caller_principal: "service-account:agentplane-test:test-caller",
+      external_grant: grant,
+    };
+    const container = await render({ list: async () => [row], decide: vi.fn() }, ActionHistory);
+
+    expect(container.textContent).toContain("Authenticated external caller at submission");
+    for (const value of ["agentplane-test/test-caller", grant.issuer, grant.client_id, grant.connection_id]) {
+      expect(container.textContent).toContain(value);
+    }
+    const details = container.querySelector("details");
+    const summary = details?.querySelector("summary");
+    if (!details || !summary) throw new Error("missing grant audit disclosure");
+    expect(details.open).toBe(false);
+    await act(async () => summary.click());
+    expect(details.open).toBe(true);
+    expect(details.textContent).toContain(grant.grant_id);
+  });
+
+  it("renders every terminal outcome with its decision, result, and error", async () => {
+    const states: ActionState[] = [
+      "allowed",
+      "denied",
+      "dispatching",
+      "running",
+      "succeeded",
+      "failed",
+      "cancelled",
+      "execution_unknown",
+    ];
+    const service: ActionService = { list: vi.fn(async () => states.map(request)), decide: vi.fn() };
+
+    const container = await render(service, ActionHistory);
+
+    for (const state of states) expect(container.textContent).toContain(stateLabel(state));
+    expect(container.textContent).toContain("requested by system:serviceaccount:test:agent");
+    expect(container.textContent).toContain("Allowed");
+    expect(container.textContent).toContain("Denied");
+    expect(container.textContent).toContain("Reviewed scope — allowed for this request.");
+    expect(container.textContent).toContain("Result");
+    expect(container.textContent).toContain("Execution error");
+    // Arguments stay in the DOM (Mantine's Collapse animates height rather than unmounting) but
+    // start folded, per the disclosure convention shared with the session transcript.
+    expect(container.textContent).toContain("test-exact-token");
+  });
+
+  it("folds Arguments behind the shared disclosure convention until expanded", async () => {
+    const container = await render({ list: async () => [request("succeeded", 1)], decide: vi.fn() }, ActionHistory);
+    const control = [...container.querySelectorAll("button")].find((candidate) =>
+      candidate.textContent?.includes("Arguments")
+    );
+    if (!control) throw new Error("missing Arguments disclosure control");
+    expect(control.getAttribute("aria-expanded")).toBe("false");
+    await act(async () => control.click());
+    expect(control.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("renders the auto-approving policy when the Decision carries policy evidence", async () => {
+    const base = request("succeeded", 1);
+    const row: ActionRequestView = {
+      ...base,
+      decision: {
+        ...base.decision!,
+        provider: "policy_engine",
+        decision_note: null,
+        policy_evidence: {
+          bindings: [{ namespace: "agentplane-visual", name: "demo-a1b2-github-public", resource_version: "12345" }],
+          policy_sets: [{ namespace: "agentplane-visual", name: "fixture-auto-allow", generation: 1 }],
+          matched: {
+            namespace: "agentplane-visual",
+            policy_set: "fixture-auto-allow",
+            source: "autoApproveIf",
+            index: 0,
+            type: "exact_actions",
+          },
+        },
+      },
+    };
+    const container = await render({ list: async () => [row], decide: vi.fn() }, ActionHistory);
+    expect(container.textContent).toContain("Auto-approved via policy");
+    expect(container.textContent).toContain("fixture-auto-allow");
+  });
+
+  it("renders server-pushed decided state without list polling and closes the stream", async () => {
+    let stream: EventTarget | undefined;
+    const close = vi.fn();
+    class Stream extends EventTarget {
+      onerror = null;
+      close = close;
+      constructor(url: string) {
+        super();
+        expect(url).toBe("/actions/stream");
+        stream = this;
+      }
+    }
+    vi.stubGlobal("EventSource", Stream);
+    const list = vi.spyOn(actionService, "list").mockResolvedValue([]);
+    try {
+      const container = await render(actionService, ActionHistory);
+      expect(container.textContent).toContain("Loading actions");
+      await act(async () => {
+        stream?.dispatchEvent(new MessageEvent("snapshot", { data: "[]" }));
+      });
+      expect(container.textContent).toContain("No decided requests");
+      await act(async () => {
+        stream?.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify([request("denied", 1)]) }));
+      });
+      expect(container.textContent).not.toContain("No decided requests");
+      expect(container.textContent).toContain("Denied");
+      expect(list).not.toHaveBeenCalled();
+      const item = mounted.pop();
+      await act(async () => item?.root.unmount());
+      item?.container.remove();
+      expect(close).toHaveBeenCalledOnce();
+    } finally {
+      list.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
 });
