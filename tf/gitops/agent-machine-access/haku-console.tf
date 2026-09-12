@@ -153,9 +153,10 @@ resource "kubernetes_secret" "haku_console_oidc_source" {
 # Dedicated static-Agent bearer for public-coder-agent -> Haku Console MCP. The real value is
 # delivered only to Haku Console and public-coder-agent's iron-proxy; the OpenClaw container gets
 # a non-secret placeholder that the proxy replaces only for haku.allegedly.works Authorization
-# headers. This Agent is assigned the explicit no-auto-approval policy in the console config, so
-# possession of the bearer can submit calls but can never approve or execute one without the
-# Operator's reviewed approval.
+# headers. This Agent is assigned the `public-coder` access profile in the console config: its
+# repository-scoped policy may execute reviewed Ducktape and Gaffer GitHub reads automatically,
+# while every other downstream tool stays operator-reviewed. Possession of the bearer can never
+# approve a pending request or inherit the Operator's authority.
 resource "random_password" "haku_console_public_coder_agent" {
   length  = 48
   special = false
