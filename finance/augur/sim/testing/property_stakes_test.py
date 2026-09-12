@@ -22,7 +22,7 @@ import pytest_bazel
 from more_itertools import one
 
 from finance.augur.model.series import HomeValueKey, LocationId
-from finance.augur.product.household import ConfiguredHousehold
+from finance.augur.policy.configured_household import ConfiguredHousehold
 from finance.augur.sim.actions import DecisionActions
 from finance.augur.sim.books import AccountRef, Book
 from finance.augur.sim.compiler.execution import compile_series

@@ -21,7 +21,7 @@ import pytest
 import pytest_bazel
 from more_itertools import one
 
-from finance.augur.product.household import ConfiguredHousehold
+from finance.augur.policy.configured_household import ConfiguredHousehold
 from finance.augur.sim.actions import DecisionActions
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.compiler.tax import compile_profile

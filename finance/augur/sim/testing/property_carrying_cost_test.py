@@ -9,7 +9,7 @@ import pytest
 import pytest_bazel
 from more_itertools import one
 
-from finance.augur.product.household import ConfiguredHousehold
+from finance.augur.policy.configured_household import ConfiguredHousehold
 from finance.augur.sim.actions import DecisionActions
 from finance.augur.sim.books import AccountRef, Book
 from finance.augur.sim.fixed_point import currency_amount_to_quanta, rate_to_ppb, round_currency_amount

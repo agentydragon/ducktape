@@ -35,7 +35,7 @@ forecast results. The tax example's flat rates are not a jurisdiction's statutes
 
 ## Configured case A: a smaller demand versus an unfunded group
 
-`sim/configured_allocation_test.py::test_group_failure_does_not_undo_prior_funding_sales` starts with
+`sim/allocation_household_test.py::test_group_failure_does_not_undo_prior_funding_sales` starts with
 $100 cash and $1,000 of sellable stock; an existing $700 rent demand is due in
 month 0. The policy's consumption component excludes rent; rent is also household
 consumption, despite being committed. Taxes are explicitly absent. The two inputs
@@ -61,13 +61,13 @@ caller's order and preserves a successful prefix; this table is not its contract
 
 ## Configured case B: consumption, tax payment and surplus investment
 
-`sim/configured_allocation_test.py::test_configured_funding_preserves_tax_year_claims_and_surplus` starts
+`sim/allocation_household_test.py::test_configured_funding_preserves_tax_year_claims_and_surplus` starts
 from the same $100 cash and $1,000 stock, with $500 basis. No rent. The synthetic
 tax profile charges long-term gains at 10%, ordinary income at 20%, no deduction,
 and no prior-year tax target. Compare investing surplus versus leaving it in cash
 using the configured `allow_purchases` choice. Consumption amounts are predefined
-claims, not a within-path callback; the test reads the configured Python driver's
-canonical financial results.
+claims, not a within-path callback; the test reads the household's canonical
+financial results.
 
 | Event month | Opening books / predefined demand             | Execution                                                                                                                 |
 | ----------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
@@ -82,15 +82,15 @@ lot. Payment timing here is **current synthetic engine behavior**, not a claim
 that January true-up represents statutory filing/payment deadlines. The
 [tax checklist](tax_coverage.md) tracks that gap separately.
 
-The configured phase order is: apply current cashflows/events → assemble demands →
-funding sales → grouped settlement → surplus
-purchases → year-end assessment when due. A failed group stops subsequent
+The phase order is: apply current cashflows/events → assemble demands → funding
+sales → the account's claims all or none → surplus purchases → year-end assessment
+when due. A failed group stops subsequent
 purchases, but is not a rollback of every action earlier in the month.
 
 Run the two cases without network evidence downloads:
 
 ```bash
-bbr test //finance/augur/sim:configured_allocation_test
+bbr test //finance/augur/sim:allocation_household_test
 ```
 
 ## Monthly action contract

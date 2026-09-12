@@ -47,19 +47,6 @@ py_library(
 )
 
 py_library(
-    name = "target_allocation",
-    srcs = ["target_allocation.py"],
-    deps = [
-        ":case",
-        ":fixtures",
-        ":simulation_result",
-        "//finance/augur/sim:scenario",
-        "@pypi//polars",
-        "@pypi//pytest",
-    ],
-)
-
-py_library(
     name = "bonds",
     srcs = ["bonds.py"],
     deps = [
@@ -205,7 +192,6 @@ py_test(
         ":engine_edges",
         ":fixtures",
         ":simulation_result",
-        ":target_allocation",
         "//:conftest",
         "//finance/augur:conftest",
         "@pypi//pytest",
@@ -500,7 +486,7 @@ py_test(
     deps = [
         "//:conftest",
         "//finance/augur:conftest",
-        "//finance/augur/product:household",
+        "//finance/augur/policy:configured_household",
         "//finance/augur/sim:actions",
         "//finance/augur/sim:books",
         "//finance/augur/sim:fixed_point",
@@ -528,7 +514,7 @@ py_test(
     deps = [
         "//:conftest",
         "//finance/augur:conftest",
-        "//finance/augur/product:household",
+        "//finance/augur/policy:configured_household",
         "//finance/augur/sim:actions",
         "//finance/augur/sim:books",
         "//finance/augur/sim:fixed_point",
@@ -554,7 +540,7 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/model:series",
-        "//finance/augur/product:household",
+        "//finance/augur/policy:configured_household",
         "//finance/augur/sim:actions",
         "//finance/augur/sim:books",
         "//finance/augur/sim:external_series",
@@ -586,7 +572,7 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/model:series",
-        "//finance/augur/product:household",
+        "//finance/augur/policy:configured_household",
         "//finance/augur/sim:actions",
         "//finance/augur/sim:books",
         "//finance/augur/sim:external_series",
@@ -629,7 +615,7 @@ py_test(
         "//finance/augur:conftest",
         "//finance/augur/model:asset_key",
         "//finance/augur/model:series",
-        "//finance/augur/product:household",
+        "//finance/augur/policy:configured_household",
         "//finance/augur/sim:actions",
         "//finance/augur/sim:bills",
         "//finance/augur/sim:books",
@@ -662,7 +648,7 @@ py_test(
         "//finance/augur:conftest",
         "//finance/augur/model:asset_key",
         "//finance/augur/model:series",
-        "//finance/augur/product:household",
+        "//finance/augur/policy:configured_household",
         "//finance/augur/sim:actions",
         "//finance/augur/sim:bills",
         "//finance/augur/sim:books",
@@ -728,6 +714,31 @@ py_test(
         "//finance/augur/sim/compiler:tax",
         "@pypi//polars",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "target_allocation_test",
+    srcs = ["target_allocation_test.py"],
+    deps = [
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "//finance/augur/policy:configured_household",
+        "//finance/augur/sim:bills",
+        "//finance/augur/sim:books",
+        "//finance/augur/sim:capture",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:holdings",
+        "//finance/augur/sim:ids",
+        "//finance/augur/sim:market_path",
+        "//finance/augur/sim:prepared",
+        "//finance/augur/sim:world",
+        "//finance/augur/sim/compiler:execution",
+        "@pypi//more_itertools",
+        "@pypi//numpy",
         "@pypi//pytest_bazel",
     ],
 )

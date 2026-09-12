@@ -10,7 +10,7 @@ import pytest_bazel
 
 from finance.augur.model.asset_key import PrivateEquityAssetKey
 from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode
-from finance.augur.product.household import ConfiguredHousehold
+from finance.augur.policy.configured_household import ConfiguredHousehold
 from finance.augur.sim.actions import ClaimId, DecisionActions
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
