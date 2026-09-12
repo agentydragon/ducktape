@@ -6,7 +6,10 @@ real drawbacks — full Anthropic lock-in and the options it forecloses (see
 below). Runtimes B and C remain experiments at different levels of completeness,
 not production replacements. This is the "which runtime" comparison; the
 detailed design of Runtime B is in [managed_agents.md](managed_agents.md) (+ its
-[artifact drafts](managed_agents_artifacts.md)).
+[artifact drafts](managed_agents_artifacts.md)). The **wake model** (long-lived
+session vs fresh session per run), provider **sensitivity silos**, run **logging**, and
+the **eval** for choosing between them are a separate axis — see
+[wake_model_and_eval.md](wake_model_and_eval.md).
 
 ## The two layers of lock-in
 
