@@ -8,8 +8,8 @@ spec:
   path: ./cluster/k8s/ollama/app
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: ollama-app
     namespace: ducktape-flux
   timeout: 10m
   dependsOn:

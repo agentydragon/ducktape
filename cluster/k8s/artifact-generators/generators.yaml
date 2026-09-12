@@ -5228,3 +5228,203 @@ spec:
           to: "@artifact/cluster/k8s/node-feature-discovery/"
           exclude:
             - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: oci-cache-app
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: oci-cache-app
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/oci-cache/app/**"
+          to: "@artifact/cluster/k8s/oci-cache/app/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: oci-cache-namespace
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: oci-cache-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/oci-cache/namespace/**"
+          to: "@artifact/cluster/k8s/oci-cache/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: ollama-agent-rbac
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: ollama-agent-rbac
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/ollama/agent-rbac/**"
+          to: "@artifact/cluster/k8s/ollama/agent-rbac/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: ollama-app
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: ollama-app
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/ollama/app/**"
+          to: "@artifact/cluster/k8s/ollama/app/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: openebs-lvm
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: openebs-lvm
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/openebs-lvm/**"
+          to: "@artifact/cluster/k8s/openebs-lvm/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: paperless-app
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: paperless-app
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/paperless/app/**"
+          to: "@artifact/cluster/k8s/paperless/app/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: paperless-cache
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: paperless-cache
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/paperless/cache/**"
+          to: "@artifact/cluster/k8s/paperless/cache/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: paperless-db
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: paperless-db
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/paperless/db/**"
+          to: "@artifact/cluster/k8s/paperless/db/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: paperless-secrets
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: paperless-secrets
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/paperless/secrets/**"
+          to: "@artifact/cluster/k8s/paperless/secrets/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: proxmox-proxy
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: proxmox-proxy
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/proxmox-proxy/**"
+          to: "@artifact/cluster/k8s/proxmox-proxy/"
+          exclude:
+            - flux-kustomization.yaml
