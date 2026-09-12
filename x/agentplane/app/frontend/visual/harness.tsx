@@ -263,6 +263,18 @@ const THREADS: ThreadView[] = [
     last_sequence: 31,
     last_event_at: ago(90 * 60_000),
   },
+  {
+    id: "5f1c4a2e-0000-4000-8000-000000000002",
+    sandbox: "demo-a1b2",
+    session_id: "s-2",
+    provider: "PROVIDER_CLAUDE",
+    model: "harness-claude-model",
+    cwd: "/state/work",
+    created_at: ago(30 * 60_000),
+    name: "Clean up the stale branch",
+    last_sequence: 23,
+    last_event_at: ago(10_000),
+  },
 ];
 
 const ACTIONS: ActionRequestView[] = [
@@ -327,6 +339,13 @@ const ATTACHED: Attached = create(AttachedSchema, {
   sessionId: "s-1",
   spec: SPEC,
   lastSequence: 14n,
+  harness: HarnessState.RUNNING,
+});
+
+const ATTACHED_STATES: Attached = create(AttachedSchema, {
+  sessionId: "s-2",
+  spec: SPEC,
+  lastSequence: 23n,
   harness: HarnessState.RUNNING,
 });
 
@@ -428,6 +447,63 @@ const EVENTS: Event[] = [
   event(32, frame(Direction.FROM_HARNESS, { type: "text", text: "Reading `src` now" })),
   event(33, { case: "itemStarted", value: { itemId: "m#1", kind: ItemKind.ASSISTANT_TEXT } }, [32]),
   event(34, { case: "textDelta", value: { itemId: "m#1", text: "Reading `src` now" } }, [32]),
+];
+
+/**
+ * A second canned script, not a second turn of the same conversation: every state the transcript
+ * restyle (role-as-bubble, status-as-dot) touches that the main script above doesn't produce on
+ * its own -- a failed tool call standing alone, a run whose reasoning is still streaming beside a
+ * tool call that already failed, and a message still queued mid-turn. Not meant to read as a
+ * plausible conversation; each piece exists to make one dot's rendering show up in a diff.
+ */
+const EVENTS_STATES: Event[] = [
+  event(1, { case: "harnessStarted", value: { resumed: false, pid: 9 } }),
+  event(2, { case: "inputSubmitted", value: { inputId: "i1", text: "Delete the stale branch." } }),
+  event(3, { case: "turnStarted", value: { turnId: "t1" } }),
+  event(4, { case: "inputAccepted", value: { inputId: "i1", turnId: "t1" } }),
+  event(5, { case: "itemStarted", value: { itemId: "tool#0", kind: ItemKind.TOOL_CALL, toolName: "Bash" } }),
+  event(6, { case: "toolArguments", value: { itemId: "tool#0", argumentsJson: '{"command": "git branch -d stale"}' } }),
+  event(7, {
+    case: "itemCompleted",
+    value: {
+      itemId: "tool#0",
+      outcome: { case: "tool", value: { output: "fatal: branch 'stale' not found.", succeeded: false } },
+    },
+  }),
+  event(8, { case: "itemStarted", value: { itemId: "m#0", kind: ItemKind.ASSISTANT_TEXT } }),
+  event(9, { case: "textDelta", value: { itemId: "m#0", text: "That branch doesn't exist." } }),
+  event(10, {
+    case: "itemCompleted",
+    value: { itemId: "m#0", outcome: { case: "text", value: "That branch doesn't exist." } },
+  }),
+  event(11, { case: "turnCompleted", value: { turnId: "t1", status: TurnStatus.COMPLETED } }),
+  event(12, {
+    case: "inputSubmitted",
+    value: { inputId: "i2", text: "Run the test suite twice, thinking it over first." },
+  }),
+  event(13, { case: "turnStarted", value: { turnId: "t2" } }),
+  event(14, { case: "inputAccepted", value: { inputId: "i2", turnId: "t2" } }),
+  event(15, { case: "itemStarted", value: { itemId: "r#0", kind: ItemKind.REASONING } }),
+  event(16, {
+    case: "textDelta",
+    value: { itemId: "r#0", text: "Running it once could hide a flaky failure; twice tells the difference." },
+  }),
+  // r#0 never completes: the run it starts is still thinking while its own tool calls finish.
+  event(17, { case: "itemStarted", value: { itemId: "tool#1", kind: ItemKind.TOOL_CALL, toolName: "Bash" } }),
+  event(18, { case: "toolArguments", value: { itemId: "tool#1", argumentsJson: '{"command": "bazel test //..."}' } }),
+  event(19, {
+    case: "itemCompleted",
+    value: { itemId: "tool#1", outcome: { case: "tool", value: { output: "42 passed", succeeded: true } } },
+  }),
+  event(20, { case: "itemStarted", value: { itemId: "tool#2", kind: ItemKind.TOOL_CALL, toolName: "Bash" } }),
+  event(21, { case: "toolArguments", value: { itemId: "tool#2", argumentsJson: '{"command": "bazel test //..."}' } }),
+  event(22, {
+    case: "itemCompleted",
+    value: { itemId: "tool#2", outcome: { case: "tool", value: { output: "1 test regressed", succeeded: false } } },
+  }),
+  // Turn t2 stays active: the run above (r#0, tool#1, tool#2) is what an in-progress, partly-failed
+  // step looks like. i3 is never accepted: this is what a message queued mid-turn looks like.
+  event(23, { case: "inputSubmitted", value: { inputId: "i3", text: "One more thing before you go." } }),
 ];
 
 // Only what a page still asks for: the sandboxes, their bindings and their threads arrive on the
@@ -570,8 +646,13 @@ class HarnessEventSource extends EventTarget {
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
       return;
     }
-    this.dispatchEvent(new MessageEvent("attached", { data: toJsonString(AttachedSchema, ATTACHED) }));
-    for (const event of EVENTS) {
+    // The only other stream shape: a session's own events. Which script depends on which session
+    // the URL names -- everything but `s-2` gets the original two-turn script above.
+    const isStatesSession = url.pathname.endsWith(`/sessions/${ATTACHED_STATES.sessionId}/events`);
+    const attached = isStatesSession ? ATTACHED_STATES : ATTACHED;
+    const events = isStatesSession ? EVENTS_STATES : EVENTS;
+    this.dispatchEvent(new MessageEvent("attached", { data: toJsonString(AttachedSchema, attached) }));
+    for (const event of events) {
       this.dispatchEvent(
         new MessageEvent("event", { data: toJsonString(EventSchema, event), lastEventId: String(event.sequence) })
       );
@@ -608,6 +689,12 @@ const PAGES: Record<string, string> = {
   session_reasoning: "/sandboxes/demo-a1b2/sessions/s-1?reasoning=r%231",
   // The raw scenario opens it too: a reader following the frames wants the thinking they produced.
   session_raw: "/sandboxes/demo-a1b2/sessions/s-1?raw=1&reasoning=r%231",
+  // A standalone failed tool call, a run whose reasoning is still streaming beside a tool call that
+  // already failed, and a message queued mid-turn -- every status this session's badge-to-dot
+  // restyle touches that the main `session` fixture doesn't produce on its own. The run's own
+  // open/closed state isn't URL-synced (unlike a reasoning block's), so it renders folded, which is
+  // fine here: its summary is exactly where the streaming/failed dots this scenario exists for show.
+  session_states: "/sandboxes/demo-a1b2/sessions/s-2",
 };
 
 const page = new URLSearchParams(window.location.search).get("page") ?? "sandboxes";

@@ -32,3 +32,62 @@
 .agentplane-thread-name-input:not(:disabled) {
   cursor: text;
 }
+
+/* A transient item/input status (sending/streaming/failed), rendered as a dot instead of a
+   labeled badge -- see `StatusDot`. The color itself comes from an inline `--mantine-color-*`
+   variable per call site; this only fixes the dot's shape and focus affordance. */
+.agentplane-status-dot {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  outline-offset: 2px;
+}
+
+/* Streaming specifically pulses, so it reads as "still going" rather than a fixed state like
+   failed/sending. Visual tests disable all animations globally, so a screenshot always lands on
+   one still frame regardless of this. */
+.agentplane-breathing-dot {
+  animation: agentplane-breathe 1.2s ease-in-out infinite;
+}
+
+@keyframes agentplane-breathe {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+
+/* Disclosure convention: pointing at what the click will do, not restating the current state --
+   right (toward the content it will reveal) collapsed, down (toward the content now shown below)
+   expanded -- matching `chevronPosition="left"`'s reading order. Mantine's own default is the
+   reverse (down collapsed, up expanded); `!important` wins over its internal rule regardless of
+   selector order. `aria-expanded` is the control's own accessible state, not a class we maintain. */
+.agentplane-accordion-chevron {
+  transform: rotate(-90deg) !important;
+}
+
+[aria-expanded="true"] .agentplane-accordion-chevron {
+  transform: rotate(0deg) !important;
+}
+
+/* User input, right-aligned per `InputView`: a filled bubble instead of the bordered full-width
+   Paper every other row uses, so role reads from position/color without a "user" label. Capped
+   width keeps a short message from stretching edge-to-edge the way a bubble never does. */
+.agentplane-user-bubble {
+  background-color: var(--mantine-color-blue-light);
+  max-width: min(34rem, 80%);
+}
+
+/* Still submitted, not yet accepted into a turn: the same "in progress" yellow used for
+   streaming/pending everywhere else in this app, on the bubble itself rather than a dot on top
+   of it. */
+.agentplane-user-bubble-sending {
+  background-color: var(--mantine-color-yellow-light);
+  color: var(--mantine-color-yellow-light-color);
+}

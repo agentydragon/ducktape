@@ -353,7 +353,8 @@ async def test_dcr_consent_pkce_refresh_and_revocation(oauth: OAuthFixture, db_u
         oauth.metadata["token_endpoint"],
         data={"grant_type": "refresh_token", "client_id": client_id, "refresh_token": refresh.json()["refresh_token"]},
     )
-    assert refused.status_code == 401
+    assert refused.status_code == 401, refused.text
+    assert refused.json()["error_description"] == "grant is not authorized"
 
 
 async def test_concurrent_code_exchange_issues_at_most_one_family(oauth: OAuthFixture) -> None:
@@ -441,6 +442,7 @@ async def test_stale_reconnect_code_is_invalid_grant_without_revoking_current_au
     refused = await oauth.exchange(client_id, code, verifier)
     assert refused.status_code == 401, refused.text
     assert refused.json()["error"] == "invalid_grant"
+    assert refused.json()["error_description"] == "Connection version changed"
     assert await oauth.proxy.authenticate(tokens["access_token"]) == grant
 
 
@@ -527,7 +529,9 @@ async def test_upstream_login_without_approved_consent_cannot_issue_tokens(
         row = (await db.scalars(select(EnrollmentRow))).one()
         upstream_url = row.upstream_url
     code = await oauth.callback(upstream_url)
-    assert (await oauth.exchange(client_id, code, verifier)).status_code == 401
+    refused = await oauth.exchange(client_id, code, verifier)
+    assert refused.status_code == 401, refused.text
+    assert refused.json()["error_description"] == "enrollment was not approved"
     assert await oauth.connections.list() == []
 
 
@@ -565,7 +569,11 @@ async def test_wrong_upstream_subject_is_refused_before_code_consumption(
     code = await oauth.callback(await oauth.approve(handle))
     with monkeypatch.context() as patch:
         patch.setattr(oauth.proxy, "_settings", oauth.settings.model_copy(update={"upstream_subject": "another-user"}))
-        assert (await oauth.exchange(client_id, code, verifier)).status_code == 401
+        refused = await oauth.exchange(client_id, code, verifier)
+        assert refused.status_code == 401, refused.text
+        assert (
+            refused.json()["error_description"] == "The upstream account that signed in is not this service's operator."
+        )
         assert await oauth.connections.list() == []
     # The pre-consumption check did not burn a valid code on the configuration mismatch.
     corrected = await oauth.exchange(client_id, code, verifier)

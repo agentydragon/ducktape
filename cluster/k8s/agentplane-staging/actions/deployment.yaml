@@ -143,12 +143,14 @@ spec:
               port: http
             initialDelaySeconds: 3
             periodSeconds: 10
+            timeoutSeconds: 5
           livenessProbe:
             httpGet:
               path: /healthz
               port: http
             initialDelaySeconds: 20
             periodSeconds: 30
+            timeoutSeconds: 5
           resources:
             requests:
               cpu: 50m
