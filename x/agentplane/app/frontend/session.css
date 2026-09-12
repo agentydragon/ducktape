@@ -32,3 +32,22 @@
 .agentplane-thread-name-input:not(:disabled) {
   cursor: text;
 }
+
+/* A transient item/input status (sending/streaming/failed), rendered as a dot instead of a
+   labeled badge -- see `StatusDot`. The color itself comes from an inline `--mantine-color-*`
+   variable per call site; this only fixes the dot's shape and focus affordance. */
+.agentplane-status-dot {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  outline-offset: 2px;
+}
+
+/* User input, right-aligned per `InputView`: a filled bubble instead of the bordered full-width
+   Paper every other row uses, so role reads from position/color without a "user" label. Capped
+   width keeps a short message from stretching edge-to-edge the way a bubble never does. */
+.agentplane-user-bubble {
+  background-color: var(--mantine-color-blue-light);
+  max-width: min(34rem, 80%);
+}

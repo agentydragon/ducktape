@@ -625,12 +625,14 @@ VISUAL_DATA = [
         "session",
         "session_raw",
         "session_reasoning",
+        "session_states",
         "sandboxes_phone",
         "sandbox_phone",
         "sandbox_egress_phone",
         "session_phone",
         "session_raw_phone",
         "session_reasoning_phone",
+        "session_states_phone",
     ]
 ]
 

@@ -2,6 +2,7 @@ import {
   Accordion,
   ActionIcon,
   Badge,
+  Box,
   Button,
   Code,
   Group,
@@ -13,6 +14,7 @@ import {
   Text,
   Textarea,
   TextInput,
+  Tooltip,
 } from "@mantine/core";
 import IconPlayerStop from "@tabler/icons-react/dist/esm/icons/IconPlayerStop.mjs";
 import IconPower from "@tabler/icons-react/dist/esm/icons/IconPower.mjs";
@@ -56,18 +58,40 @@ const KIND_LABELS: Partial<Record<ItemKind, string>> = {
   [ItemKind.TOOL_CALL]: "tool",
 };
 
+/** A transient/binary state, shown as a small colored dot rather than a labeled badge: the label
+ * is still there for a screen reader, and for anyone hovering or (on a touch/keyboard device)
+ * focusing it, just not spelled out at rest. */
+function StatusDot({ color, label }: { color: string; label: string }): JSX.Element {
+  return (
+    <Tooltip label={label} events={{ hover: true, focus: true, touch: true }}>
+      <Box
+        component="span"
+        role="img"
+        aria-label={label}
+        title={label}
+        tabIndex={0}
+        className="agentplane-status-dot"
+        style={{ backgroundColor: `var(--mantine-color-${color}-6)` }}
+      />
+    </Tooltip>
+  );
+}
+
+/** Role reads from position and color, not a label: the assistant's items are already full-width
+ * (`ItemView`), so only user input needs a distinct treatment -- a right-aligned bubble. */
 function InputView({ input }: { input: InputState }): JSX.Element {
   return (
-    <Paper withBorder p="sm" bg="var(--mantine-color-default-hover)">
-      <Group gap="xs">
-        <Badge variant="light" color="grape">
-          user
-        </Badge>
-        {input.state === "submitted" && <Badge color="yellow">sending</Badge>}
-      </Group>
-      {/* An input logged before the runner carried its text shows as its id. */}
-      <Text style={{ whiteSpace: "pre-wrap" }}>{input.text || `input ${input.id}`}</Text>
-    </Paper>
+    <Group justify="flex-end">
+      <Paper className="agentplane-user-bubble" p="sm">
+        {input.state === "submitted" && (
+          <Group gap="xs" justify="flex-end">
+            <StatusDot color="yellow" label="Sending" />
+          </Group>
+        )}
+        {/* An input logged before the runner carried its text shows as its id. */}
+        <Text style={{ whiteSpace: "pre-wrap" }}>{input.text || `input ${input.id}`}</Text>
+      </Paper>
+    </Group>
   );
 }
 
@@ -95,7 +119,7 @@ function ReasoningView({ item }: { item: Item }): JSX.Element {
         <Accordion.Control>
           <Group gap="xs">
             <Badge variant="light">reasoning</Badge>
-            {!item.completed && <Badge color="yellow">streaming</Badge>}
+            {!item.completed && <StatusDot color="yellow" label="Streaming" />}
           </Group>
         </Accordion.Control>
         <Accordion.Panel>
@@ -114,8 +138,8 @@ function ItemView({ item }: { item: Item }): JSX.Element {
       <Group gap="xs">
         <Badge variant="light">{label}</Badge>
         {item.toolName && <Text fw={600}>{item.toolName}</Text>}
-        {!item.completed && <Badge color="yellow">streaming</Badge>}
-        {item.succeeded === false && <Badge color="red">failed</Badge>}
+        {!item.completed && <StatusDot color="yellow" label="Streaming" />}
+        {item.succeeded === false && <StatusDot color="red" label="Failed" />}
       </Group>
       {item.text &&
         (item.kind === ItemKind.ASSISTANT_TEXT ? (
@@ -150,8 +174,8 @@ function ItemRunView({ items }: { items: Item[] }): JSX.Element {
         <Accordion.Control>
           <Group gap="xs">
             <Badge variant="light">{summarizeRun(items)}</Badge>
-            {items.some((item) => !item.completed) && <Badge color="yellow">streaming</Badge>}
-            {items.some((item) => item.succeeded === false) && <Badge color="red">failed</Badge>}
+            {items.some((item) => !item.completed) && <StatusDot color="yellow" label="Streaming" />}
+            {items.some((item) => item.succeeded === false) && <StatusDot color="red" label="Failed" />}
           </Group>
         </Accordion.Control>
         <Accordion.Panel>
