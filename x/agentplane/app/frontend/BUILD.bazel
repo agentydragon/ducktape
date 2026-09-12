@@ -177,7 +177,7 @@ ts_library(
 
 ts_library(
     name = "connections",
-    srcs = ["connections.tsx"],
+    srcs = ["settings/connections.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":client",
@@ -189,7 +189,7 @@ ts_library(
 
 ts_library(
     name = "mcp_servers",
-    srcs = ["mcp_servers.tsx"],
+    srcs = ["settings/mcp_servers.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":client",
@@ -202,7 +202,7 @@ ts_library(
 ts_library(
     name = "mcp_servers_test",
     testonly = True,
-    srcs = ["mcp_servers.test.tsx"],
+    srcs = ["settings/mcp_servers.test.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":client",
@@ -226,7 +226,7 @@ ts_library(
 
 ts_library(
     name = "settings",
-    srcs = ["settings.tsx"],
+    srcs = ["settings/dialog.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":connections",
@@ -241,7 +241,7 @@ ts_library(
 ts_library(
     name = "settings_test",
     testonly = True,
-    srcs = ["settings.test.tsx"],
+    srcs = ["settings/dialog.test.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":settings",
@@ -257,7 +257,7 @@ ts_library(
 ts_library(
     name = "connections_test",
     testonly = True,
-    srcs = ["connections.test.tsx"],
+    srcs = ["settings/connections.test.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":client",
@@ -507,7 +507,7 @@ ts_library(
 
 ts_library(
     name = "push",
-    srcs = ["push.tsx"],
+    srcs = ["settings/push.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@mantine/core",
@@ -711,7 +711,7 @@ js_test(
 ts_library(
     name = "push_test",
     testonly = True,
-    srcs = ["push.test.tsx"],
+    srcs = ["settings/push.test.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":push",
