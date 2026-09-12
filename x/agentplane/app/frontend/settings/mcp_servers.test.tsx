@@ -4,7 +4,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 
-import type { McpLinkageService, McpLinkageView } from "./client";
+import type { McpLinkageService, McpLinkageView } from "../client";
 import { McpServers } from "./mcp_servers";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;

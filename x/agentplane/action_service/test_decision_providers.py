@@ -14,6 +14,7 @@ import pytest_bazel
 from pydantic import JsonValue, ValidationError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from github_policy.visibility import RepositoryVisibilityService
 from x.agentplane.action_service.catalog import ActionCatalog, ActionIdentity
 from x.agentplane.action_service.db import ActionConflictError, ActionStore, make_sessionmaker
 from x.agentplane.action_service.mcp_executor import McpActionGroupExecutor
@@ -33,9 +34,9 @@ from x.agentplane.action_service.models import (
     SandboxCaller,
     Verdict,
 )
+from x.agentplane.action_service.policies.resources import parse_binding, parse_policy_set
 from x.agentplane.action_service.policy_evaluation import AUTO_APPROVE_REASON, PROVIDER_NAME, PolicySetDecisionProvider
 from x.agentplane.action_service.policy_informer import PolicyIndex, namespaced_key
-from x.agentplane.action_service.policy_resources import parse_binding, parse_policy_set
 from x.agentplane.action_service.providers import DecisionContext
 from x.agentplane.action_service.service import ActionService, InvalidActionArgumentsError
 
@@ -378,20 +379,27 @@ OWN_SANDBOX: dict[str, Any] = {"sandbox": {"name": "coder", "uid": SANDBOX.sandb
 
 
 def _service(
-    engine: AsyncEngine, catalog: ActionCatalog, executor: McpActionGroupExecutor, index: PolicyIndex | None
+    engine: AsyncEngine,
+    catalog: ActionCatalog,
+    executor: McpActionGroupExecutor,
+    index: PolicyIndex | None,
+    visibility: RepositoryVisibilityService,
 ) -> ActionService:
     return ActionService(
         ActionStore(make_sessionmaker(engine)),
         catalog,
         {"agentplane": executor},
-        providers=[PolicySetDecisionProvider()],
+        providers=[PolicySetDecisionProvider(visibility=visibility)],
         policies=index,
         clock=lambda: NOW,
     )
 
 
 async def test_bound_sandbox_is_auto_approved_with_evidence_and_an_execution(
-    mcp_executor: McpActionGroupExecutor, engine: AsyncEngine, echo_catalog: ActionCatalog
+    mcp_executor: McpActionGroupExecutor,
+    engine: AsyncEngine,
+    echo_catalog: ActionCatalog,
+    github_visibility: Callable[..., RepositoryVisibilityService],
 ) -> None:
     index = _index(
         sets={"bounded-echo": BOUNDED_ECHO, "unused": {"autoApproveIf": []}},
@@ -400,7 +408,7 @@ async def test_bound_sandbox_is_auto_approved_with_evidence_and_an_execution(
             "coder-unused": {"subject": OWN_SANDBOX, "policySets": ["unused"]},
         },
     )
-    service = _service(engine, echo_catalog, mcp_executor, index)
+    service = _service(engine, echo_catalog, mcp_executor, index, github_visibility())
     try:
         allowed = await service.submit(body("bound", n=3), CALLER)
         assert allowed.state is ActionState.ALLOWED
@@ -525,8 +533,9 @@ async def test_nothing_grants_without_a_matching_valid_unexpired_binding(
     engine: AsyncEngine,
     echo_catalog: ActionCatalog,
     index: Callable[[], PolicyIndex | None],
+    github_visibility: Callable[..., RepositoryVisibilityService],
 ) -> None:
-    service = _service(engine, echo_catalog, mcp_executor, index())
+    service = _service(engine, echo_catalog, mcp_executor, index(), github_visibility())
     try:
         pending = await service.submit(
             ActionRequestInput(
@@ -545,13 +554,16 @@ async def test_nothing_grants_without_a_matching_valid_unexpired_binding(
 
 
 async def test_binding_change_after_admission_leaves_the_decision_alone(
-    mcp_executor: McpActionGroupExecutor, engine: AsyncEngine, echo_catalog: ActionCatalog
+    mcp_executor: McpActionGroupExecutor,
+    engine: AsyncEngine,
+    echo_catalog: ActionCatalog,
+    github_visibility: Callable[..., RepositoryVisibilityService],
 ) -> None:
     index = _index(
         sets={"bounded-echo": BOUNDED_ECHO},
         bindings={"coder": {"subject": OWN_SANDBOX, "policySets": ["bounded-echo"]}},
     )
-    service = _service(engine, echo_catalog, mcp_executor, index)
+    service = _service(engine, echo_catalog, mcp_executor, index, github_visibility())
     try:
         allowed = await service.submit(body("before-removal"), CALLER)
         assert allowed.state is ActionState.ALLOWED

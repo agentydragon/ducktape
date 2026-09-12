@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from x.agentplane.action_service.catalog import ActionIdentity
 from x.agentplane.action_service.models import ProviderOutcome, SandboxCaller, ServiceAccountCaller
-from x.agentplane.action_service.policy_resources import ActionPolicyBinding, ActionPolicySet
+from x.agentplane.action_service.policies.resources import ActionPolicyBinding, ActionPolicySet
 
 
 class ResolvedBinding(BaseModel):

@@ -1,0 +1,40 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//:__subpackages__"])
+
+py_library(
+    name = "repository",
+    srcs = ["repository.py"],
+    deps = [":visibility"],
+)
+
+py_library(
+    name = "visibility",
+    srcs = ["visibility.py"],
+    deps = ["@pypi//httpx"],
+)
+
+py_test(
+    name = "test_repository",
+    srcs = ["test_repository.py"],
+    deps = [
+        ":repository",
+        ":visibility",
+        "//:conftest",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_visibility",
+    srcs = ["test_visibility.py"],
+    deps = [
+        ":visibility",
+        "//:conftest",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

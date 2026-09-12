@@ -20,9 +20,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from x.agentplane.action_service.models import PolicyKind, SandboxCaller, ServiceAccountCaller, ServiceAccountRef
-from x.agentplane.action_service.policy_evaluation import resolve_bindings
-from x.agentplane.action_service.policy_informer import PolicyIndex, namespaced_key
-from x.agentplane.action_service.policy_resources import (
+from x.agentplane.action_service.policies.resources import (
     ActionPolicyBinding,
     ActionPolicySet,
     ArgumentSchemaPolicy,
@@ -30,6 +28,8 @@ from x.agentplane.action_service.policy_resources import (
     ExactActionsPolicy,
     InvalidResource,
 )
+from x.agentplane.action_service.policy_evaluation import resolve_bindings
+from x.agentplane.action_service.policy_informer import PolicyIndex, namespaced_key
 from x.agentplane.action_service.providers import ResolvedBinding
 
 # What a binding's subject names, as the operator asks about it: a live Sandbox by namespace and

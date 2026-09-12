@@ -36,8 +36,8 @@ from x.agentplane.action_service.models import (
     ServiceAccountRef,
     Verdict,
 )
+from x.agentplane.action_service.policies.resources import parse_binding, parse_policy_set
 from x.agentplane.action_service.policy_informer import PolicyIndex, namespaced_key
-from x.agentplane.action_service.policy_resources import parse_binding, parse_policy_set
 from x.agentplane.action_service.policy_view import SubjectActionPolicyView
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.updates import ActionUpdates

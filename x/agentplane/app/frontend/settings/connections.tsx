@@ -10,7 +10,7 @@ import {
   type CallerServiceAccount,
   type Connection,
   type ConnectionService,
-} from "./client";
+} from "../client";
 
 type Grant = Connection["grants"][number];
 
