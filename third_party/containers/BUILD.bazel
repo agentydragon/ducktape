@@ -13,7 +13,10 @@ py_library(
     name = "rlocations",
     srcs = ["rlocations.py"],
     visibility = ["//visibility:public"],
-    deps = ["//util:oci"],
+    deps = [
+        "//util:oci",
+        "//util/bazel:runfiles",
+    ],
 )
 
 py_library(
