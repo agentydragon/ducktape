@@ -15,6 +15,9 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
     root = get_required_path("_main/cluster/k8s/kustomization.yaml").parent
     root_kustomization = yaml.safe_load((root / "kustomization.yaml").read_text())
     expected_source = {"alias": "repo", "kind": "GitRepository", "name": "ducktape", "namespace": "ducktape-flux"}
+    expected_sources = {
+        "external-creds": {"alias": "repo", "kind": "GitRepository", "name": "flux-system", "namespace": "flux-system"}
+    }
     kustomize = resolve_tool("kustomize", "multitool/tools/kustomize/kustomize")
 
     artifact_relative = "artifact-generators"
@@ -64,13 +67,23 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         ("authentik-namespace", "authentik/namespace"),
         ("cert-manager-trust", "cert-manager/trust"),
         ("agent-sandbox-controller", "agents/agent-sandbox/controller"),
+        ("external-creds", "external-creds"),
+        ("agentplane-testing-namespace", "agentplane-testing/namespace"),
+        ("grafana-helmrepository", "monitoring/grafana-helmrepository"),
+        ("kubevirt", "kubevirt/app"),
+        ("paperless-namespace", "paperless/namespace"),
+        ("public-coder-agent-namespace", "agents/public-coder-agent/namespace"),
+        ("agentplane-index-namespace", "agentplane-index/namespace"),
+        ("agentplane-staging-db", "agentplane-staging/db"),
+        ("agentplane-testing-db", "agentplane-testing/db"),
+        ("clickhouse", "clickhouse/cluster"),
     )
 
     assert set(generators) == {artifact_name for artifact_name, _ in cases}
     for artifact_name, source_relative in cases:
         relative = f"cluster/k8s/{source_relative}"
         generator = generators[artifact_name]
-        assert generator["spec"]["sources"] == [expected_source]
+        assert generator["spec"]["sources"] == [expected_sources.get(artifact_name, expected_source)]
         (artifact,) = generator["spec"]["artifacts"]
         assert artifact["name"] == artifact_name
         assert "revision" not in artifact  # Content-derived, not the monorepo revision.

@@ -8,7 +8,7 @@ spec:
   path: ./cluster/k8s/agents/public-coder-agent/namespace
   prune: false
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: public-coder-agent-namespace
     namespace: ducktape-flux
   timeout: 2m
