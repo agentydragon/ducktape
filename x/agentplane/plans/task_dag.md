@@ -677,13 +677,16 @@ here.
 
 ### `ACTION_JSON_POLISH` — syntax-highlighted, less verbose Action rendering
 
-**Planned UI polish**, all in `actions.tsx`/`actions_history.tsx`:
+**Planned UI polish**, mostly in `actions.tsx`/`actions_history.tsx` but not only there:
 
-- **Syntax-highlighted JSON, generally.** `JsonProjection` (`actions.tsx:30-34`) is a plain
-  `<Code block>{JSON.stringify(value, null, 2)}` with no highlighting; it renders
-  `request.arguments`, `request.execution.result`, and `request.execution.error` everywhere in the
-  app. Applies beyond Actions too: any raw-JSON dump in the integration app should be highlighted,
-  not just this one component.
+- **Syntax-highlighted JSON, generally — every raw-JSON dump in the app, not one component.**
+  `JsonProjection` (`actions.tsx:30-34`) is a plain `<Code block>{JSON.stringify(value, null, 2)}`
+  with no highlighting; it renders `request.arguments`, `request.execution.result`, and
+  `request.execution.error`. The identical pattern (plain `<Code block>` around
+  `JSON.stringify`/a pre-stringified field, no highlighting) recurs at every other raw-JSON site
+  in the frontend: `session.tsx:185-186` (`item.argumentsJson`/`item.output`, the transcript's own
+  tool-call rendering) and `sandbox_page.tsx:91` (the Status tab's whole-Sandbox dump). One fix
+  covers all of them — a shared highlighted-JSON component, not a per-file patch.
 - **Parse the MCP content-block shape instead of re-stringifying it whole.** An MCP tool call's
   `execution.result` is `{"content": [<json-encoded string>, ...]}`; `JsonProjection` stringifies
   the outer object as-is, so a JSON string inside `content` renders as one escaped-quote wall of
