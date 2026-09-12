@@ -10,6 +10,7 @@ import socket
 from collections.abc import MutableMapping
 from pathlib import Path
 from typing import Any, cast
+from urllib.parse import urljoin
 
 import httpx
 import uvicorn
@@ -191,7 +192,12 @@ def resolved_agent_instructions(
     template = Template(
         get_required_path(DEFAULT_AGENT_INSTRUCTIONS_TEMPLATE).read_text(encoding="utf-8"), undefined=StrictUndefined
     )
-    return template.render(egress_rules_url=egress_rules_url, actions_service_url=actions_service_url)
+    return template.render(
+        egress_rules_url=egress_rules_url,
+        # The rules API is a FastAPI app at the root of its listener, so its schema sits beside the rules path.
+        egress_rules_openapi_url=urljoin(egress_rules_url, "/openapi.json"),
+        actions_service_url=actions_service_url,
+    )
 
 
 def main() -> None:

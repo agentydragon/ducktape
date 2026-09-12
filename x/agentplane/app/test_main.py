@@ -103,7 +103,8 @@ def test_image_owned_agent_instructions_render_deployment_service_urls() -> None
     )
 
     assert "http://egress.test.invalid/v1/rules" in instructions
-    assert "http://actions.test.invalid:8080" in instructions
+    assert "http://egress.test.invalid/openapi.json" in instructions
+    assert "http://actions.test.invalid:8080/openapi.json" in instructions
 
 
 def test_without_an_issuer_there_is_no_login(monkeypatch: pytest.MonkeyPatch) -> None:
