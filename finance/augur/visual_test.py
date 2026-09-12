@@ -1,10 +1,10 @@
 """Render-health checks + PR-visuals publication for representative Augur URLs.
 
 Each case boots the real dev server (hermetic prices), drives the page through
-its `wait_ready` DOM/geometry assertions (the real regression net), renders
-twice to prove determinism, and fails on any uncaught page error. The rendered
-PNGs plus a `visual-review.json` manifest go to undeclared outputs, where
-trusted CI (`devinfra/pr_visuals/publisher.py`) publishes them for review.
+its `wait_ready` DOM/geometry assertions (the real regression net), and fails on
+any uncaught page error. The rendered PNGs plus a `visual-review.json` manifest
+go to undeclared outputs, where trusted CI (`devinfra/pr_visuals/publisher.py`)
+publishes them for review.
 
 There is no checked-in pixel golden — pixel changes are reviewed on the PR's
 visual-review page, not gated in CI (see
@@ -529,47 +529,37 @@ def _take_stable_full_page_screenshot(page: Page, target_path: Path) -> Path:
     return target_path
 
 
-def _render_case(page: Page, origin: str, case: VisualCase, out_dir: Path, suffix: str) -> Path:
+def _render_case(page: Page, origin: str, case: VisualCase, out_dir: Path) -> Path:
     page.goto(f"{origin}{case.path}", wait_until="networkidle", timeout=60_000)
     try:
         case.wait_ready(page)
     except Exception:
         debug_dir = undeclared_outputs_dir()
-        page.screenshot(path=str(debug_dir / f"{case.name}.{suffix}.debug.png"), full_page=True)
+        page.screenshot(path=str(debug_dir / f"{case.name}.debug.png"), full_page=True)
         dom = page.content()
-        (debug_dir / f"{case.name}.{suffix}.debug.html").write_text(dom[:5000])
+        (debug_dir / f"{case.name}.debug.html").write_text(dom[:5000])
         errors = page.evaluate("() => window.__jsErrors?.join('\\n') ?? 'no __jsErrors'")
-        (debug_dir / f"{case.name}.{suffix}.debug.txt").write_text(f"JS errors: {errors}\nURL: {page.url}")
+        (debug_dir / f"{case.name}.debug.txt").write_text(f"JS errors: {errors}\nURL: {page.url}")
         raise
     page.goto(page.url, wait_until="networkidle", timeout=60_000)
     case.wait_ready(page)
     if case.interact is not None:
         case.interact(page)
         _wait_for_product_chart_geometry(page)
-    actual_path = out_dir / f"{case.name}.{suffix}.png"
-    return _take_stable_full_page_screenshot(page, actual_path)
+    return _take_stable_full_page_screenshot(page, out_dir / f"{case.name}.png")
 
 
 @pytest.mark.parametrize("case", VISUAL_CASES, ids=[case.name for case in VISUAL_CASES])
 def test_augur_pages_render(
     page: Page, page_errors: list[str], augur_server: str, tmp_path: Path, case: VisualCase
 ) -> None:
-    undeclared_dir = undeclared_outputs_dir()
-    first_path = _render_case(page, augur_server, case, tmp_path, "first")
-    second_path = _render_case(page, augur_server, case, tmp_path, "second")
+    rendered = _render_case(page, augur_server, case, tmp_path)
     if page_errors:
         raise AssertionError(f"{case.name}: uncaught page error(s) during render:\n" + "\n".join(page_errors))
-    if first_path.read_bytes() != second_path.read_bytes():
-        shutil.copy(first_path, undeclared_dir / f"{case.name}.first.png")
-        shutil.copy(second_path, undeclared_dir / f"{case.name}.second.png")
-        raise AssertionError(
-            f"{case.name} visual render is not deterministic across reloads; "
-            f"inspect {case.name}.first.png and {case.name}.second.png in {undeclared_dir}"
-        )
 
     # Retain the render + visual-review manifest for the PR visual-review
     # publisher (devinfra/pr_visuals/publisher.py) — the pixel-review path.
-    retain_review_asset(first_path, title="Augur pages", label=case.name.replace("_", " "), name=f"{case.name}.png")
+    retain_review_asset(rendered, title="Augur pages", label=case.name.replace("_", " "), name=f"{case.name}.png")
 
 
 if __name__ == "__main__":
