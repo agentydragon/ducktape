@@ -6228,3 +6228,63 @@ spec:
           to: "@artifact/cluster/k8s/x/openhands/sandboxes/"
           exclude:
             - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: tandoor-app
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: tandoor-app
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/x/tandoor/app/**"
+          to: "@artifact/cluster/k8s/x/tandoor/app/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: tandoor-db
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: tandoor-db
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/x/tandoor/db/**"
+          to: "@artifact/cluster/k8s/x/tandoor/db/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: tandoor-namespace
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: tandoor-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/x/tandoor/namespace/**"
+          to: "@artifact/cluster/k8s/x/tandoor/namespace/"
+          exclude:
+            - flux-kustomization.yaml
