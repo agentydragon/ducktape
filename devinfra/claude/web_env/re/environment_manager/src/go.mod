@@ -20,13 +20,13 @@ require (
 	github.com/spf13/cobra v1.10.2
 	go.opentelemetry.io/contrib/bridges/otelslog v0.20.1
 	go.opentelemetry.io/otel v1.46.0
-	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.21.0
-	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.45.0
-	go.opentelemetry.io/otel/exporters/stdout/stdoutmetric v1.45.0
+	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.22.0
+	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.46.0
+	go.opentelemetry.io/otel/exporters/stdout/stdoutmetric v1.46.0
 	go.opentelemetry.io/otel/metric v1.46.0
-	go.opentelemetry.io/otel/sdk v1.45.0
-	go.opentelemetry.io/otel/sdk/log v0.21.0
-	go.opentelemetry.io/otel/sdk/metric v1.45.0
+	go.opentelemetry.io/otel/sdk v1.46.0
+	go.opentelemetry.io/otel/sdk/log v0.22.0
+	go.opentelemetry.io/otel/sdk/metric v1.46.0
 	golang.org/x/sync v0.23.0
 	google.golang.org/protobuf v1.36.12
 )
@@ -41,7 +41,7 @@ require (
 	// Validate) and the unexported field name `resolvedRef` are exclusive to
 	// this library; none of them exist in the old binary.
 	github.com/google/jsonschema-go v0.4.2 // indirect
-	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
+	github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	// RE(0b86a2a0): added — mcp-go v0.54.1's JSON Schema validator, used for
 	// tool output-schema validation. Identified from the (mis-capitalised)
@@ -60,15 +60,15 @@ require (
 	golang.org/x/net v0.59.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20260803160001-6ac0973c030d // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260803160001-6ac0973c030d // indirect
-	google.golang.org/grpc v1.83.0 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20260819154853-08b0e4226688 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260819154853-08b0e4226688 // indirect
+	google.golang.org/grpc v1.83.1 // indirect
 )
 
-require go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.45.0
+require go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.46.0
 
 require (
 	github.com/Microsoft/go-winio v0.5.0 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
-	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.45.0 // indirect
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.46.0 // indirect
 )
