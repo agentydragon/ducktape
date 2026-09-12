@@ -6,6 +6,7 @@ filegroup(
         "env.py",
         "script.py.mako",
         "//x/agentplane/app/migrations/versions:0001_trajectory_store.py",
+        "//x/agentplane/app/migrations/versions:0002_thread_archived.py",
     ],
     visibility = ["//x/agentplane/app:__pkg__"],
 )

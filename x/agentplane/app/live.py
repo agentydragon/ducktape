@@ -31,7 +31,7 @@ from typing import Annotated, Any
 from uuid import UUID
 
 import httpx
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import CoreV1Api
@@ -249,7 +249,7 @@ def watch_for(
                 name=policy_resources.POLICY_SETS_PLURAL,
                 list=custom_objects.list_namespaced_custom_object,
                 args=(*ACTION_POLICY_API, sandbox_namespace, policy_resources.POLICY_SETS_PLURAL),
-                parse=_named,
+                key=_name,
                 names=lambda: set(index.action_policy_sets),
                 apply=lambda name, obj: index.action_policy_seen(index.action_policy_sets, name, obj),
             ),
@@ -257,7 +257,7 @@ def watch_for(
                 name=policy_resources.BINDINGS_PLURAL,
                 list=custom_objects.list_namespaced_custom_object,
                 args=(*ACTION_POLICY_API, sandbox_namespace, policy_resources.BINDINGS_PLURAL),
-                parse=_named,
+                key=_name,
                 names=lambda: set(index.action_policy_bindings),
                 apply=lambda name, obj: index.action_policy_seen(index.action_policy_bindings, name, obj),
             ),
@@ -401,13 +401,14 @@ async def live_sandbox(
     action_policy: ActionPolicy,
     shutdown: Shutdown,
     name: str,
+    include_archived: Annotated[bool, Query(description="Also carry archived threads.")] = False,
 ) -> StreamingResponse:
     """One sandbox page, pushed: the sandbox, its bindings, its action policy, and its threads.
 
-    Threads are not Kubernetes and no watch reaches them; the store notifies when it creates or
-    renames one, which is every change a page shows. The action policy is the Action Service's
-    answer, asked as the operator this session is; the watch on the policy kinds only says when to
-    ask again.
+    Threads are not Kubernetes and no watch reaches them; the store notifies when it creates,
+    renames, or archives one, which is every change a page shows. The action policy is the Action
+    Service's answer, asked as the operator this session is; the watch on the policy kinds only says
+    when to ask again.
     """
     policy = ActionPolicyFrames(index, lambda uid: action_policy_frame(request, caller, action_policy, uid))
 
@@ -417,7 +418,7 @@ async def live_sandbox(
             sandbox=sandbox,
             bindings=index.bindings_for(name),
             action_policy=None if sandbox is None else await policy.for_sandbox(sandbox.uid),
-            threads=await store.list_threads(sandbox=name),
+            threads=await store.list_threads(sandbox=name, include_archived=include_archived),
             watch=_health(index),
         )
 

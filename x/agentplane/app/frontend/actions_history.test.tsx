@@ -67,6 +67,11 @@ describe("ActionHistory", () => {
     expect(container.textContent).toContain("Allowed");
     expect(container.textContent).toContain("Denied");
     expect(container.textContent).toContain("Reviewed scope — allowed for this request.");
+    // The caller's own framing stays on the receipt, beside the operator's decision note.
+    for (const state of states) {
+      expect(container.textContent).toContain(`test title for the ${state} fixture`);
+      expect(container.textContent).toContain(`test description adding what the ${state} title leaves out`);
+    }
     expect(container.textContent).toContain("Result");
     expect(container.textContent).toContain("Execution error");
     // Arguments stay in the DOM (Mantine's Collapse animates height rather than unmounting) but

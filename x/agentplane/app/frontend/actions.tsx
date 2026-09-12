@@ -71,6 +71,23 @@ export function ExternalGrantDetails({
   );
 }
 
+/** The caller's own plain-language framing of what it is asking for — the required one-line
+ * `title` and the optional `description` — shared by the pending and history cards so the operator
+ * reads the same words when deciding and when auditing. */
+export function ActionContext({ request }: { request: ActionRequestView }): JSX.Element {
+  return (
+    <>
+      {/* TODO: rendered verbatim as plain text; markdown rendering is a possible later addition. */}
+      <Text size="sm">{request.title}</Text>
+      {request.description && (
+        <Text size="xs" c="dimmed">
+          {request.description}
+        </Text>
+      )}
+    </>
+  );
+}
+
 function ActionCaller({ request }: { request: ActionRequestView }): JSX.Element {
   const grant = request.external_grant;
   if (!grant)
@@ -174,6 +191,7 @@ function PendingActionCard({
             </Text>
             <Badge color={STATE_COLORS[request.state] ?? "gray"}>{stateLabel(request.state)}</Badge>
           </Group>
+          <ActionContext request={request} />
           <Text size="xs" c="dimmed">
             Request {request.id}
           </Text>

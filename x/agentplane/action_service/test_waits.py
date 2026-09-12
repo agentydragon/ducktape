@@ -64,7 +64,10 @@ async def waiting(engine: AsyncEngine, db_url: str, echo_catalog: ActionCatalog)
     reader = ObservedService(ActionStore(make_sessionmaker(engine)), echo_catalog)
     request, _ = await writer.submit(
         ActionRequestInput(
-            action=ActionIdentity(group="agentplane", name="echo"), arguments={}, idempotency_key="test-wait"
+            action=ActionIdentity(group="agentplane", name="echo"),
+            arguments={},
+            idempotency_key="test-wait",
+            title="test title for test-wait",
         ),
         CALLER,
     )
