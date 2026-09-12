@@ -79,7 +79,7 @@ def _sale(
 
 
 def _run(case: Case, propose: Callable[[Observation], list[Action]]) -> list[Rollout]:
-    session = ActionSession(case.compiled_run, "alice", list(range(case.rollout_count)))
+    session = ActionSession.from_run(case.compiled_run, "alice", list(range(case.rollout_count)))
     try:
         batch = session.start()
         while not isinstance(batch, Finished):

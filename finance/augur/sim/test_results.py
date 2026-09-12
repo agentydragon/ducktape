@@ -14,7 +14,7 @@ from finance.augur.x.monthly_actions.run import prepare
 
 @pytest.mark.parametrize("capture", ["summary", "forensic"])
 def test_results_and_file_replay_keep_exact_successful_prefix(capture: Literal["summary", "forensic"]) -> None:
-    session = ActionSession(prepare(), "example-household", [1, 0], capture=capture)
+    session = ActionSession.from_run(prepare(), "example-household", [1, 0], capture=capture)
     try:
         batch = session.start()
         while not isinstance(batch, Finished):

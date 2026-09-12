@@ -65,7 +65,7 @@ def consume(amount: int, cause: str = "chosen-spend") -> Action:
 
 
 def run(prepared: CompiledRun, ids: list[int]) -> tuple[list[Rollout], dict[int, list[tuple[int, int]]]]:
-    session = ActionSession(prepared, "alice", ids)
+    session = ActionSession.from_run(prepared, "alice", ids)
     observed: dict[int, list[tuple[int, int]]] = {id_: [] for id_ in ids}
     memory = dict.fromkeys(ids, 0)
     try:
@@ -114,7 +114,7 @@ def test_current_facts_receipt_memory_and_original_replay(prepared: CompiledRun)
 
 
 def test_action_order_prefix_retention_and_independent_continuation(prepared: CompiledRun) -> None:
-    session = ActionSession(prepared, "alice", [0, 1])
+    session = ActionSession.from_run(prepared, "alice", [0, 1])
     batch = session.start()
     assert not isinstance(batch, Finished)
     responses = []
@@ -156,7 +156,7 @@ def test_action_order_prefix_retention_and_independent_continuation(prepared: Co
 
 
 def test_unpaid_due_claim_is_not_an_implicit_payment(prepared: CompiledRun) -> None:
-    session = ActionSession(prepared, "alice", [1])
+    session = ActionSession.from_run(prepared, "alice", [1])
     session.start()
     finished = session.advance([DecisionActions(1, 0, [])])
     assert isinstance(finished, Finished)
@@ -169,7 +169,7 @@ def test_unpaid_due_claim_is_not_an_implicit_payment(prepared: CompiledRun) -> N
 
 @pytest.mark.parametrize("keys", [[], [(0, 0)], [(0, 0), (0, 0)], [(0, 1), (1, 0)], [(0, 0), (2, 0)]])
 def test_bad_routing_aborts_without_resubmission(prepared: CompiledRun, keys: list[tuple[int, int]]) -> None:
-    session = ActionSession(prepared, "alice", [0, 1])
+    session = ActionSession.from_run(prepared, "alice", [0, 1])
     session.start()
     with pytest.raises(ValueError, match="each active path/month"):
         session.advance([DecisionActions(id_, month, []) for id_, month in keys])
@@ -178,7 +178,7 @@ def test_bad_routing_aborts_without_resubmission(prepared: CompiledRun, keys: li
 
 
 def test_cross_rollout_claim_handle_is_a_routing_error(prepared: CompiledRun) -> None:
-    session = ActionSession(prepared, "alice", [0, 1])
+    session = ActionSession.from_run(prepared, "alice", [0, 1])
     batch = session.start()
     assert not isinstance(batch, Finished)
     claim = batch[0].observation.claims[0]
@@ -198,14 +198,14 @@ def test_cross_rollout_claim_handle_is_a_routing_error(prepared: CompiledRun) ->
 
 
 def test_claim_handle_cannot_alias_another_sessions_claim(prepared: CompiledRun) -> None:
-    first = ActionSession(prepared, "alice", [0])
+    first = ActionSession.from_run(prepared, "alice", [0])
     first_batch = first.start()
     assert not isinstance(first_batch, Finished)
     old_claim = first_batch[0].observation.claims[0]
     first.close()
     other_claim = replace(prepared.scenario.obligations[0], obligation_id="different-bill")
     other = replace(prepared, scenario=replace(prepared.scenario, obligations=(other_claim,)))
-    second = ActionSession(other, "alice", [0])
+    second = ActionSession.from_run(other, "alice", [0])
     second_batch = second.start()
     assert not isinstance(second_batch, Finished)
     assert second_batch[0].observation.claims[0].cause_id != old_claim.cause_id
@@ -228,12 +228,12 @@ def test_claim_handle_cannot_alias_another_sessions_claim(prepared: CompiledRun)
 
 
 def test_repeated_start_and_advance_before_start_abort(prepared: CompiledRun) -> None:
-    early = ActionSession(prepared, "alice", [0])
+    early = ActionSession.from_run(prepared, "alice", [0])
     with pytest.raises(ValueError, match="lifecycle state"):
         early.advance([])
     with pytest.raises(ValueError, match="finished, aborted or closed"):
         early.start()
-    repeated = ActionSession(prepared, "alice", [0])
+    repeated = ActionSession.from_run(prepared, "alice", [0])
     repeated.start()
     with pytest.raises(ValueError, match="lifecycle state"):
         repeated.start()
@@ -242,7 +242,7 @@ def test_repeated_start_and_advance_before_start_abort(prepared: CompiledRun) ->
 
 
 def test_copied_observations_do_not_mutate_books(prepared: CompiledRun) -> None:
-    session = ActionSession(prepared, "alice", [0])
+    session = ActionSession.from_run(prepared, "alice", [0])
     batch = session.start()
     assert not isinstance(batch, Finished)
     observation = batch[0].observation
@@ -268,24 +268,24 @@ def test_copied_observations_do_not_mutate_books(prepared: CompiledRun) -> None:
 @pytest.mark.parametrize("ids", [[], [0, 0], [2]])
 def test_invalid_selection_rejects_at_construction(prepared: CompiledRun, ids: list[int]) -> None:
     with pytest.raises(ValueError, match="selected rollout IDs"):
-        ActionSession(prepared, "alice", ids)
+        ActionSession.from_run(prepared, "alice", ids)
 
 
 def test_invalid_capture_rejects_at_construction(prepared: CompiledRun) -> None:
     invalid: Any = "invented"
     with pytest.raises(ValueError, match="capture must be"):
-        ActionSession(prepared, "alice", [0], capture=invalid)
+        ActionSession.from_run(prepared, "alice", [0], capture=invalid)
 
 
 def test_extraction_error_and_explicit_close_release_the_session(prepared: CompiledRun) -> None:
-    session = ActionSession(prepared, "alice", [0])
+    session = ActionSession.from_run(prepared, "alice", [0])
     session.start()
     invalid: Any = [None]
     with pytest.raises(TypeError):
         session.advance(invalid)
     with pytest.raises(ValueError, match="finished, aborted or closed"):
         session.start()
-    closed = ActionSession(prepared, "alice", [0])
+    closed = ActionSession.from_run(prepared, "alice", [0])
     closed.close()
     closed.close()
     with pytest.raises(ValueError, match="finished, aborted or closed"):

@@ -86,7 +86,7 @@ def test_imported_basis_is_exact_through_sales(
         rollout_count=1,
         series={ASSET: levels([[Decimal(1)] * (horizon + 1)])},
     )
-    session = ActionSession(case.compiled_run, "test-owner", [0])
+    session = ActionSession.from_run(case.compiled_run, "test-owner", [0])
     try:
         batch = session.start()
         while not isinstance(batch, Finished):

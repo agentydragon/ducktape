@@ -113,7 +113,9 @@ def execute(
     input_path: Path, output_path: Path, rollout_ids: Sequence[int], capture: Literal["summary", "dense", "forensic"]
 ) -> Finished:
     """Own the monthly Python loop over one retained action session and write its results."""
-    session = ActionSession(read_prepared_input(input_path), "example-household", list(rollout_ids), capture=capture)
+    session = ActionSession.from_run(
+        read_prepared_input(input_path), "example-household", list(rollout_ids), capture=capture
+    )
     try:
         batch = session.start()
         while not isinstance(batch, Finished):

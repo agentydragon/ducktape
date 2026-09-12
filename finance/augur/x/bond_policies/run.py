@@ -126,7 +126,7 @@ def execute(
     run: CompiledRun, *, rollout_ids: Sequence[int], capture: Literal["summary", "dense", "forensic"] = "summary"
 ) -> list[Rollout]:
     """Run the monthly batch policy on selected original paths, without reinvestment."""
-    session = ActionSession(run, HOUSEHOLD, list(rollout_ids), capture=capture)
+    session = ActionSession.from_run(run, HOUSEHOLD, list(rollout_ids), capture=capture)
     try:
         batch = session.start()
         while not isinstance(batch, Finished):

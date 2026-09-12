@@ -41,7 +41,7 @@ def test_invalid_terminal_price_precedes_all_world_and_component_construction(
     def construct() -> object:
         if configured:
             return execute(invalid, "forensic")
-        return ActionSession(invalid, "example-household", [0])
+        return ActionSession.from_run(invalid, "example-household", [0])
 
     driver = "finance.augur.sim.configured.World" if configured else "finance.augur.sim.session.World"
     with patch(driver) as world, patch("finance.augur.sim.world.TlhPortfolio") as portfolio:
@@ -51,7 +51,7 @@ def test_invalid_terminal_price_precedes_all_world_and_component_construction(
         portfolio.assert_not_called()
     assert invalid == before
     # The original prepared authority remains reusable after the rejected input.
-    session = ActionSession(run, "example-household", [0])
+    session = ActionSession.from_run(run, "example-household", [0])
     try:
         assert not isinstance(session.start(), Finished)
     finally:
@@ -121,7 +121,7 @@ def test_zero_price_is_allowed_only_for_exclusively_managed_assets(run: Compiled
         scenario=replace(run.scenario, initial_lots=(), tlh_portfolios=(portfolio,)),
         series=(replace(price, values=(0,) * len(price.values)),),
     )
-    session = ActionSession(worthless, lot.agent_id, [0])
+    session = ActionSession.from_run(worthless, lot.agent_id, [0])
     try:
         batch = session.start()
         assert not isinstance(batch, Finished)

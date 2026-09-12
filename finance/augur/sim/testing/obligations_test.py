@@ -81,7 +81,7 @@ def _run(
     prices: tuple[tuple[int, ...], ...] = ((100, 100),),
 ) -> tuple[list[Rollout], list[tuple[int, int]]]:
     case = Case(scenario=scenario, rollout_count=len(prices), series={VTI: np.asarray(prices, dtype=np.float64)})
-    session = ActionSession(case.compiled_run, "alice", list(range(len(prices))), capture="forensic")
+    session = ActionSession.from_run(case.compiled_run, "alice", list(range(len(prices))), capture="forensic")
     calls: list[tuple[int, int]] = []
     try:
         batch = session.start()

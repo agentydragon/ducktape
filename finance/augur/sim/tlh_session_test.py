@@ -74,7 +74,7 @@ def test_managed_opening_is_not_an_ordinary_lot_and_sale_follows_same_month_loss
     case = _case(horizon=1)
     assert case.compiled_run.currency_quantum == "1"
     assert case.compiled_run.scenario.initial_lots == ()
-    session = ActionSession(case.compiled_run, "owner", [0])
+    session = ActionSession.from_run(case.compiled_run, "owner", [0])
     try:
         batch = session.start()
         assert not isinstance(batch, Finished)
@@ -116,7 +116,7 @@ def test_managed_opening_is_not_an_ordinary_lot_and_sale_follows_same_month_loss
 
 
 def test_rejected_contribution_preserves_harvest_and_earlier_withdrawal_without_future_policy_calls() -> None:
-    session = ActionSession(_case(rollouts=2).compiled_run, "owner", [0, 1])
+    session = ActionSession.from_run(_case(rollouts=2).compiled_run, "owner", [0, 1])
     try:
         first = session.start()
         assert not isinstance(first, Finished)
@@ -168,7 +168,7 @@ def test_rejected_contribution_preserves_harvest_and_earlier_withdrawal_without_
 
 @pytest.mark.parametrize("amount", [-1, 101])
 def test_invalid_withdrawal_changes_no_component_state(amount: int) -> None:
-    session = ActionSession(_case(horizon=1, harvest=False).compiled_run, "owner", [0])
+    session = ActionSession.from_run(_case(horizon=1, harvest=False).compiled_run, "owner", [0])
     try:
         session.start()
         result = session.advance(
@@ -210,7 +210,7 @@ def test_another_actors_component_is_neither_observed_nor_redeemable() -> None:
             tlh_portfolios=case.scenario.tlh_portfolios,
         ),
     )
-    session = ActionSession(case.compiled_run, "other", [0])
+    session = ActionSession.from_run(case.compiled_run, "other", [0])
     try:
         batch = session.start()
         assert not isinstance(batch, Finished)
@@ -233,7 +233,7 @@ def test_another_actors_component_is_neither_observed_nor_redeemable() -> None:
 
 
 def test_model_defect_closes_session_instead_of_becoming_a_rejected_action(monkeypatch: pytest.MonkeyPatch) -> None:
-    session = ActionSession(_case().compiled_run, "owner", [0])
+    session = ActionSession.from_run(_case().compiled_run, "owner", [0])
 
     def broken_advance(self: TlhPortfolio, market: TlhMarketUpdate) -> None:
         raise ArithmeticError("model defect")
@@ -251,7 +251,7 @@ def test_model_defect_closes_session_instead_of_becoming_a_rejected_action(monke
 def test_closing_marks_and_product_projection_do_not_advance_the_model_early(capture: Capture, reject: bool) -> None:
     case = _case(horizon=1)
     case = replace(case, series={ASSET: levels([[Decimal(1), Decimal(2)]])})
-    session = ActionSession(case.compiled_run, "owner", [0], capture=capture)
+    session = ActionSession.from_run(case.compiled_run, "owner", [0], capture=capture)
     try:
         session.start()
         actions: list[Action] = (
@@ -302,7 +302,7 @@ def test_managed_subquantum_distribution_keeps_cash_and_issuer_character() -> No
         ),
         series={**case.series, SecurityDistributionKey(symbol=ASSET.symbol): levels([[Decimal("0.015"), Decimal(0)]])},
     )
-    session = ActionSession(case.compiled_run, "owner", [0])
+    session = ActionSession.from_run(case.compiled_run, "owner", [0])
     try:
         batch = session.start()
         assert not isinstance(batch, Finished)
@@ -326,7 +326,7 @@ def test_managed_subquantum_distribution_keeps_cash_and_issuer_character() -> No
 
 
 def test_contribution_is_first_harvested_in_the_next_month() -> None:
-    session = ActionSession(_case(cash=100).compiled_run, "owner", [0])
+    session = ActionSession.from_run(_case(cash=100).compiled_run, "owner", [0])
     try:
         first = session.start()
         assert not isinstance(first, Finished)
