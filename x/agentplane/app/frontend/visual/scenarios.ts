@@ -46,14 +46,25 @@ const SESSION_STATES_ROUTE = `${SANDBOX_ROUTE}/sessions/s-2`;
 const REASONING = "reasoning=r%231";
 
 export const SCENARIOS: Record<string, Scenario> = {
-  sandboxes: { element: "#app", route: "/", viewport: { width: 1200, height: 900 } },
-  sandboxes_phone: { element: "#app", route: "/", viewport: PHONE, outputName: "sandboxes-phone" },
-  sandboxes_stale: { element: "#app", route: "/", viewport: { width: 1200, height: 900 }, wedgedWatch: true },
+  // The sidebar's landing state (UISHELL_SIDEBAR): every group state icon (running, pending,
+  // suspended, deleted) and the struck-through read-only group, with no thread open yet.
+  threads: { element: "#app", route: "/", viewport: { width: 1200, height: 900 } },
+  threads_phone: { element: "#app", route: "/", viewport: PHONE, outputName: "threads-phone" },
+
+  sandboxes: { element: "#app", route: "/sandboxes", viewport: { width: 1200, height: 900 } },
+  sandboxes_phone: { element: "#app", route: "/sandboxes", viewport: PHONE, outputName: "sandboxes-phone" },
+  sandboxes_stale: {
+    element: "#app",
+    route: "/sandboxes",
+    viewport: { width: 1200, height: 900 },
+    wedgedWatch: true,
+  },
   // The launch form with a preset picked through the URL and the sets dropdown opened by the
-  // harness, so the shot carries the namespace's options beside the pre-filled pick.
+  // harness, so the shot carries the namespace's options beside the pre-filled pick. `/sandboxes`,
+  // not `/`: UISHELL_SIDEBAR moved the Sandbox list off the landing route.
   new_sandbox: {
     element: "#app",
-    route: "/?preset=public-coder",
+    route: "/sandboxes?preset=public-coder",
     viewport: { width: 1200, height: 900 },
     outputName: "new-sandbox",
     readySelectors: [".mantine-Pill-root", '[role="listbox"]'],
@@ -61,7 +72,7 @@ export const SCENARIOS: Record<string, Scenario> = {
   },
   new_sandbox_phone: {
     element: "#app",
-    route: "/?preset=public-coder",
+    route: "/sandboxes?preset=public-coder",
     viewport: PHONE,
     outputName: "new-sandbox-phone",
     readySelectors: [".mantine-Pill-root", '[role="listbox"]'],

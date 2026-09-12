@@ -707,6 +707,8 @@ async def test_threads_with_sandboxes_pairs_each_thread_with_its_sandbox_or_none
         default_body = (await http.get("/threads/with-sandboxes")).json()
         default_thread_ids = {row["id"] for row in default_body["threads"]}
         assert default_thread_ids == {str(live_thread), str(other_live_thread)}
+        # Neither thread's feed has attached; the sidebar's per-thread status dot reads this as gray.
+        assert {row["harness"] for row in default_body["threads"]} == {"HARNESS_STATE_UNSPECIFIED"}
         assert set(default_body["sandboxes"]) == {"live"}
         assert (default_body["sandboxes"]["live"]["name"], default_body["sandboxes"]["live"]["state"]) == (
             "live",

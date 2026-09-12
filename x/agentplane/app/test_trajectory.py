@@ -113,11 +113,36 @@ async def test_threads_list_with_their_progress(store: TrajectoryStore, lease: I
         0,
         None,
     )
+    # No feed has ever attached to either thread (only their event log was replayed), so the
+    # exposed harness state stays unspecified rather than inferring it from history.
+    assert views[thread].harness == views[empty].harness == "HARNESS_STATE_UNSPECIFIED"
     assert await store.get_thread(empty) == views[empty]
     assert await store.get_thread(thread) == views[thread]
     assert [view.id for view in await store.list_threads(sandbox="sb-1")] == [thread]
     assert [view.id for view in await store.list_threads(sandbox="sb-2", session_id="s-9")] == [empty]
     assert await store.list_threads(sandbox="sb-1", session_id="s-9") == []
+
+
+async def test_threads_list_reflects_the_attached_feed_s_harness_state(
+    store: TrajectoryStore, lease: IngestionLease
+) -> None:
+    """`list_threads`/`get_thread` expose `FeedState.attached.harness` per thread — the live
+    running/idle signal the sidebar's per-thread status dot reads (`x/agentplane/plans/task_dag.md`
+    `UISHELL_SIDEBAR`), not a value derived from the historical event log."""
+    thread = await store.thread("sb-1", "s-1", SPEC)
+    running_attached = pb.Attached(session_id="s-1", spec=SPEC, harness=pb.HARNESS_STATE_RUNNING)
+    await store.set_attached(thread, running_attached, lease=lease)
+
+    (running,) = await store.list_threads()
+    assert running.harness == "HARNESS_STATE_RUNNING"
+    got_thread = await store.get_thread(thread)
+    assert got_thread is not None
+    assert got_thread.harness == "HARNESS_STATE_RUNNING"
+
+    stopped_attached = pb.Attached(session_id="s-1", spec=SPEC, harness=pb.HARNESS_STATE_STOPPED)
+    await store.set_attached(thread, stopped_attached, lease=lease)
+    (stopped,) = await store.list_threads()
+    assert stopped.harness == "HARNESS_STATE_STOPPED"
 
 
 async def test_a_thread_is_unnamed_until_renamed_and_keeps_its_progress(
