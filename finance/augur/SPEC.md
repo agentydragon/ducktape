@@ -65,8 +65,10 @@ alternative executable policy interface.
 
 For each active path, the common session:
 
-1. Applies scheduled financial events and component market updates, and assembles
-   due claims. TLH advances before investor operations, including scheduled ones.
+1. Applies scheduled financial events and component market updates, then lets each
+   counterparty (bills, mortgages, property tax, the tax authority) demand what is
+   due this month. TLH advances before investor operations, including scheduled
+   ones.
 2. Posts each actor its mail for the month, once: every emitter's statement, its
    typed dues and last month's receipts.
 3. Executes the submitted actions in caller order.
