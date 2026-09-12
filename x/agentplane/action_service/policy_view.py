@@ -20,12 +20,15 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from x.agentplane.action_service.models import PolicyKind, SandboxCaller, ServiceAccountCaller, ServiceAccountRef
+from x.agentplane.action_service.policies.argument_schema import ArgumentSchema
+from x.agentplane.action_service.policies.exact_actions import ExactActions
+from x.agentplane.action_service.policies.github_public_repository import GitHubPublicRepository
+from x.agentplane.action_service.policies.github_repository import GitHubRepository
+from x.agentplane.action_service.policies.registry import Policy
 from x.agentplane.action_service.policies.resources import (
     ActionPolicyBinding,
     ActionPolicySet,
-    ArgumentSchemaPolicy,
     Condition,
-    ExactActionsPolicy,
     InvalidResource,
 )
 from x.agentplane.action_service.policy_evaluation import resolve_bindings
@@ -77,7 +80,22 @@ class ArgumentSchemaView(_View):
     argument_schema: dict[str, JsonValue] = Field(description="The JSON Schema the arguments must satisfy.")
 
 
-PolicyView = Annotated[ExactActionsView | ArgumentSchemaView, Field(discriminator="type")]
+class GitHubRepositoryView(_View):
+    type: Literal[PolicyKind.GITHUB_REPOSITORY]
+    actions: dict[str, list[str]] = Field(description="Action names by ActionGroup key, sorted.")
+    owner: str = Field(description="The GitHub repository owner the call must target.")
+    repository: str = Field(description="The GitHub repository name the call must target.")
+
+
+class GitHubPublicRepositoryView(_View):
+    type: Literal[PolicyKind.GITHUB_PUBLIC_REPOSITORY]
+    actions: dict[str, list[str]] = Field(description="Action names by ActionGroup key, sorted.")
+
+
+PolicyView = Annotated[
+    ExactActionsView | ArgumentSchemaView | GitHubRepositoryView | GitHubPublicRepositoryView,
+    Field(discriminator="type"),
+]
 
 
 class EffectivePolicyView(_View):
@@ -159,13 +177,21 @@ class SubjectActionPolicyView(_EffectivePolicy):
     )
 
 
-def _policy_view(policy: ExactActionsPolicy | ArgumentSchemaPolicy) -> ExactActionsView | ArgumentSchemaView:
+def _policy_view(
+    policy: Policy,
+) -> ExactActionsView | ArgumentSchemaView | GitHubRepositoryView | GitHubPublicRepositoryView:
     actions = {group: sorted(names) for group, names in sorted(policy.actions.items())}
     match policy:
-        case ExactActionsPolicy():
+        case ExactActions():
             return ExactActionsView(type=PolicyKind.EXACT_ACTIONS, actions=actions)
-        case ArgumentSchemaPolicy(argument_schema=schema):
+        case ArgumentSchema(argument_schema=schema):
             return ArgumentSchemaView(type=PolicyKind.ARGUMENT_SCHEMA, actions=actions, argument_schema=schema)
+        case GitHubRepository(owner=owner, repository=repository):
+            return GitHubRepositoryView(
+                type=PolicyKind.GITHUB_REPOSITORY, actions=actions, owner=owner, repository=repository
+            )
+        case GitHubPublicRepository():
+            return GitHubPublicRepositoryView(type=PolicyKind.GITHUB_PUBLIC_REPOSITORY, actions=actions)
 
 
 def _effective(

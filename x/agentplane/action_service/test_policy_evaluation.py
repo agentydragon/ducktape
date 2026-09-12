@@ -39,7 +39,14 @@ from x.agentplane.action_service.policy_evaluation import (
     resolve_bindings,
 )
 from x.agentplane.action_service.policy_informer import PolicyIndex, namespaced_key
-from x.agentplane.action_service.policy_view import ArgumentSchemaView, ExactActionsView, caller_view, subject_view
+from x.agentplane.action_service.policy_view import (
+    ArgumentSchemaView,
+    ExactActionsView,
+    GitHubPublicRepositoryView,
+    GitHubRepositoryView,
+    caller_view,
+    subject_view,
+)
 from x.agentplane.action_service.providers import DecisionContext, ResolvedBinding
 
 NAMESPACE = "agentplane-test"
@@ -155,6 +162,27 @@ def test_nothing_resolves_before_the_informer_has_synced() -> None:
     assert resolve_bindings(index, SANDBOX, NOW) == ()
     index.synced = True
     assert len(resolve_bindings(index, SANDBOX, NOW)) == 1
+
+
+def test_every_kind_projects_to_its_own_view() -> None:
+    index = index_of(
+        policy_set(
+            "set-kinds",
+            [
+                {"type": "exact_actions", "actions": {"everything": ["echo"]}},
+                SCHEMA_POLICY,
+                {"type": "github_repository", "actions": {"github": ["search_code"]}, "owner": "o", "repository": "r"},
+                {"type": "github_public_repository", "actions": {"github": ["get_file_contents"]}},
+            ],
+        ),
+        binding("b-kinds", {"sandbox": {"name": "coder", "uid": SANDBOX.sandbox_uid}}, ["set-kinds"]),
+    )
+    views = [entry.policy for entry in caller_view(index, SANDBOX, NOW).auto_approve_if]
+    assert [view.type for view in views] == list(PolicyKind)
+    assert isinstance(views[2], GitHubRepositoryView)
+    assert (views[2].owner, views[2].repository, views[2].actions) == ("o", "r", {"github": ["search_code"]})
+    assert isinstance(views[3], GitHubPublicRepositoryView)
+    assert views[3].actions == {"github": ["get_file_contents"]}
 
 
 @pytest.fixture
