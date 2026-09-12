@@ -6,6 +6,7 @@ agent, initial cash); does not know about properties, locations, or bootstrap.
 
 from __future__ import annotations
 
+import functools
 import threading
 from decimal import Decimal
 from typing import Any, overload
@@ -14,7 +15,7 @@ import numpy as np
 
 from finance.augur.api.config import SecurityDistributionConfig
 from finance.augur.api.portfolio import PortfolioConfig
-from finance.augur.api.schemas import Frame
+from finance.augur.api.schemas import ApiModel, Frame
 from finance.augur.api.wire import Property
 from finance.augur.model.exogenous import (
     ExogenousSamplingRequest,
@@ -80,9 +81,12 @@ class ProductService:
         models: dict[str, Sampler],
         max_rollout_samples: int,
         max_horizon_months: int,
+        result_cache_entries: int,
     ) -> None:
         if max_horizon_months <= 0:
             raise ValueError("max_horizon_months must be positive")
+        if result_cache_entries < 0:
+            raise ValueError(f"result_cache_entries must not be negative; got {result_cache_entries=}")
         if not models:
             raise ValueError("models must contain at least one preset")
         self._portfolio = portfolio
@@ -104,6 +108,16 @@ class ProductService:
         # Keep one product projection in flight per API process. A dense rollout batch is
         # memory-heavy enough that overlapping fan + terminal requests can exceed the pod limit.
         self._projection_lock = threading.Lock()
+        # A projection request fully determines its result — the samplers are pure in the
+        # request's seeds and horizon, and nothing a simulation reads off this service changes
+        # after construction — so repeats (the frontend re-sends byte-identical bodies on every
+        # page load, reload and chart toggle) are answered from a bounded LRU that is never
+        # invalidated. Looked up under `_projection_lock`, so two identical concurrent requests
+        # simulate once: the second blocks, then hits the first's entry. 0 entries disables both.
+        self._cached_projection_summary = functools.lru_cache(maxsize=result_cache_entries)(
+            self._simulate_projection_summary
+        )
+        self._cached_rollout = functools.lru_cache(maxsize=result_cache_entries)(self._simulate_rollout)
 
     def metric_fan(self, request: ProjectionSamplingRequest) -> MetricFanResponse:
         if request.rollout_count > self._max_rollout_samples:
@@ -131,31 +145,33 @@ class ProductService:
         """Return the fan and terminal distribution from one shared simulation."""
         if request.rollout_count > self._max_rollout_samples:
             raise ValueError(f"rollout count {request.rollout_count} exceeds max {self._max_rollout_samples}")
+        with self._projection_lock:
+            return _detached_copy(self._cached_projection_summary(request))
+
+    def _simulate_projection_summary(self, request: ProductProjectionRequest) -> ProductProjectionResponse:
         fan_percentiles = tuple(float(pct) for pct in request.fan_percentiles)
         terminal_percentiles = tuple(float(pct) for pct in request.terminal_percentiles)
-        with self._projection_lock:
-            summaries, model_id = self._simulate_product_summaries(
-                request.scenario, request.rollout_seeds, metric=request.metric, percentiles=fan_percentiles
-            )
-            fan = summaries.metric_fan
-            terminal = summaries.terminal_distribution
-            return ProductProjectionResponse(
-                metric_fan=_metric_fan_response(fan, model_id=model_id, metric=request.metric),
-                terminal_distribution=_terminal_distribution_response(
-                    terminal,
-                    model_id=model_id,
-                    metric=request.metric,
-                    percentiles=terminal_percentiles,
-                    seeds=request.rollout_seeds,
-                ),
-            )
+        summaries, model_id = self._simulate_product_summaries(
+            request.scenario, request.rollout_seeds, metric=request.metric, percentiles=fan_percentiles
+        )
+        return ProductProjectionResponse(
+            metric_fan=_metric_fan_response(summaries.metric_fan, model_id=model_id, metric=request.metric),
+            terminal_distribution=_terminal_distribution_response(
+                summaries.terminal_distribution,
+                model_id=model_id,
+                metric=request.metric,
+                percentiles=terminal_percentiles,
+                seeds=request.rollout_seeds,
+            ),
+        )
 
     def rollout(self, request: RolloutRequest) -> RolloutResponse:
         with self._projection_lock:
-            return self._rollout_response(request.scenario, int(request.seed))
+            return _detached_copy(self._cached_rollout(request))
 
-    def _rollout_response(self, scenario: ScenarioKey, seed: int) -> RolloutResponse:
-        run, model_id = self._compile_product_run(scenario, (seed,))
+    def _simulate_rollout(self, request: RolloutRequest) -> RolloutResponse:
+        seed = int(request.seed)
+        run, model_id = self._compile_product_run(request.scenario, (seed,))
         completed = execute(run, "dense", product_actor=self._primary_agent_id)
         projection = project_product_rollout(
             project_events(completed),
@@ -283,6 +299,16 @@ class ProductService:
         )
         model_id = sampled.model_id or scenario_key.model_id
         return scenario, sampled, model_id
+
+
+def _detached_copy[ResponseT: ApiModel](response: ResponseT) -> ResponseT:
+    """Hand the caller a response it may not corrupt the cache with.
+
+    The response models are frozen, but the `Frame` payloads inside them are plain dicts of
+    lists, so a caller holding the cached object could rewrite a cached projection in place.
+    """
+
+    return response.model_copy(deep=True)
 
 
 def _quanta_metric(metric: str) -> str:

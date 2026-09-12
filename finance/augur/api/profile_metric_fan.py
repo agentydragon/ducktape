@@ -50,6 +50,8 @@ def main() -> int:
         models=_profile_models(config),
         max_rollout_samples=config.max_rollout_samples,
         max_horizon_months=config.max_horizon_months,
+        # Profiling measures simulation, so every request must actually simulate.
+        result_cache_entries=0,
     )
     request = ProjectionSamplingRequest(
         scenario=ScenarioKey(
