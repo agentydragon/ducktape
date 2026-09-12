@@ -3,9 +3,18 @@ import subprocess
 from pathlib import Path
 from uuid import UUID
 
+import pytest
 import pytest_bazel
 
-from devinfra.pr_visuals.determinism import Observation, Render, observe, observe_targets, report, run_once
+from devinfra.pr_visuals.determinism import (
+    Observation,
+    Render,
+    observe,
+    observe_targets,
+    report,
+    run_once,
+    visual_fleet,
+)
 
 
 def _listing(by_invocation: dict[str, list[dict[str, str]]]):
@@ -89,6 +98,54 @@ def test_run_once_hands_the_invocation_id_to_bbr_rather_than_reading_it_back() -
     # Without both, a later run replays the first run's result and every scene looks stable.
     assert "--nocache_test_results" in seen[0]
     assert "--noremote_accept_cached" in seen[0]
+
+
+def test_the_fleet_is_read_as_records_out_of_the_runner_s_own_progress() -> None:
+    """The runner shares this stdout, and closes its last coloured line without a newline.
+
+    So the first target arrives with an escape sequence glued to its front. Reading labels as
+    text would drop it -- it does not start with "//" -- and silently check one target fewer.
+    A JSON record per line is instead something a log line cannot imitate.
+    """
+    stdout = (
+        "Waiting for available remote runner...\n"
+        "\x1b[90m2026-09-12 15:28:14.665 UTC \x1b[mSyncing existing repo...\n"
+        '\x1b[m{"type":"RULE","rule":{"name":"//aiquota/frontend:screenshots","ruleClass":"js_test"}}\n'
+        '{"type":"RULE","rule":{"name":"//props/frontend:visual","ruleClass":"js_test"}}\n'
+        "\x1b[32mINFO: \x1b[mElapsed time: 2.2s\n"
+        "Remote run completed at 2026-09-12 15:28:20 UTC\n"
+    )
+
+    def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        flags = [str(part) for part in command]
+        assert "--output=streamed_jsonproto" in flags
+        assert "attr(tags, visual, //...)" in flags
+        return subprocess.CompletedProcess(command, 0, stdout, "")
+
+    assert visual_fleet(bbr=Path("bbr"), run=fake_run) == ["//aiquota/frontend:screenshots", "//props/frontend:visual"]
+
+
+def test_a_source_file_in_the_query_output_is_not_a_target_to_run() -> None:
+    """Only rule records name something runnable; other record types are not the fleet."""
+    stdout = (
+        '{"type":"SOURCE_FILE","sourceFile":{"name":"//props/frontend:harness.mjs"}}\n'
+        '{"type":"RULE","rule":{"name":"//props/frontend:visual","ruleClass":"js_test"}}\n'
+    )
+
+    def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(command, 0, stdout, "")
+
+    assert visual_fleet(bbr=Path("bbr"), run=fake_run) == ["//props/frontend:visual"]
+
+
+def test_a_fleet_query_that_matches_nothing_is_an_error_not_an_empty_sweep() -> None:
+    """Zero targets would otherwise report "all renders reproduced" having rendered none."""
+
+    def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(command, 0, "Loading: 0 packages loaded\n", "")
+
+    with pytest.raises(SystemExit):
+        visual_fleet(bbr=Path("bbr"), run=fake_run)
 
 
 def _test_row(label: str, *, status: str = "PASSED", shards: int | None = None, seconds: float) -> dict[str, object]:
