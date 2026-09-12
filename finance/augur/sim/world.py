@@ -26,7 +26,9 @@ from finance.augur.sim.books import (
     Book,
     CapitalGainState,
     IncomeState,
+    JournalEntry,
     MortgageState,
+    Posting,
     TlhPortfolioState,
 )
 from finance.augur.sim.compiler.income_sources import income_source_wire_id
@@ -37,10 +39,10 @@ from finance.augur.sim.ids import AgentId
 from finance.augur.sim.managed import ComponentEffects, ManagedPortfolios
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import checked_count, position_value
-from finance.augur.sim.mortgage import Mortgage, MortgagePayment
+from finance.augur.sim.mortgage import InstallmentPaid, Mortgage, MortgagePayment, ServicingStatement
 from finance.augur.sim.prepared import CompiledRun, PreparedTlhPortfolio
 from finance.augur.sim.private_equity import PrivateEquity
-from finance.augur.sim.property import Properties, mortgage_terms, principal
+from finance.augur.sim.property import Properties, mortgage_terms
 from finance.augur.sim.tlh import (
     ModeledRealizations,
     TlhMarketUpdate,
@@ -96,11 +98,14 @@ def validate_actor(run: CompiledRun, actor: str) -> None:
 class World:
     """One rollout's present state and the clock; nothing here is a history.
 
-    Track an agent, `start`, then `step` until `finished`. When a month opens every
-    tracked agent receives its statements, dues and last month's receipts; `step`
-    delivers `MonthOpened` and settles the actions it returns. The batch session drives
-    several worlds the same way. Component outcome lists hold this month only and are
-    cleared when the next month opens; whoever wants a series reads state between steps.
+    Track an agent and the contracts that exist at month zero, `start`, then `step`
+    until `finished`. When a month opens each contract is posted its servicing
+    statement and `MonthOpened`, and its installment becomes the borrower's due; then
+    every tracked agent receives its statements, dues and last month's receipts.
+    `step` delivers `MonthOpened` to the agents and settles the actions they return.
+    The batch session drives several worlds the same way. Component outcome lists
+    hold this month only and are cleared when the next month opens; whoever wants a
+    series reads state between steps.
     """
 
     def __init__(self, run: CompiledRun, rollout_id: int) -> None:
@@ -177,13 +182,54 @@ class World:
             long_term_gain=realizations.long_term_gain,
         )
 
-    def track(self, agent: EconomicAgent) -> None:
-        """Register a decision-making agent; the prepared input is checked against it here."""
-        if not isinstance(agent, EconomicAgent):
-            raise TypeError("only EconomicAgent subclasses can be tracked")
-        validate_actor(self.run, agent.agent_id)
+    def track(self, actor: EconomicAgent | Mortgage) -> None:
+        """Register a decision-making agent or a month-zero contract; the prepared input is checked against an agent here."""
+        if isinstance(actor, Mortgage):
+            self._track_mortgage(actor)
+            return
+        if not isinstance(actor, EconomicAgent):
+            raise TypeError("only EconomicAgent subclasses and Mortgage contracts can be tracked")
+        validate_actor(self.run, actor.agent_id)
         validate(self.run)
-        self._track(agent)
+        self._track(actor)
+
+    def _track_mortgage(self, mortgage: Mortgage) -> None:
+        """Open the ledger with the contract's outstanding balance; servicing then runs on the world's clock."""
+        if self.started:
+            raise ValueError("track components before starting the world")
+        terms = mortgage.terms
+        if mortgage.opening_principal is None:
+            raise ValueError("a tracked mortgage needs the principal outstanding at month zero")
+        if terms.liability_id in self.mortgages or any(
+            purchase.mortgage is not None and purchase.mortgage.liability_id == terms.liability_id
+            for purchase in self.scenario._scheduled_property_purchases
+        ):
+            raise ValueError(f"duplicate mortgage liability {terms.liability_id!r}")
+        self.validate_scope(terms.borrower.agent_id)
+        if terms.borrower not in self.accounting.declared:
+            raise ValueError("mortgage borrower account is not declared")
+        liability = AccountRef(agent_id=terms.borrower.agent_id, account_id=f"liability:mortgage:{terms.liability_id}")
+        receivable = AccountRef(
+            agent_id=terms.lender.agent_id, account_id=f"asset:mortgage-receivable:{terms.liability_id}"
+        )
+        borrower_equity = AccountRef(agent_id=terms.borrower.agent_id, account_id="equity:opening")
+        lender_equity = AccountRef(agent_id=terms.lender.agent_id, account_id="equity:opening")
+        for account in (liability, receivable, borrower_equity, lender_equity):
+            self.accounting.ledger.ensure_account(account)
+        owed = checked_count(-mortgage.opening_principal, "money negation")
+        self.accounting.apply(
+            JournalEntry(
+                month=0,
+                cause_id=f"opening:mortgage:{terms.liability_id}",
+                postings=[
+                    Posting(account=liability, amount=owed),
+                    Posting(account=borrower_equity, amount=mortgage.opening_principal),
+                    Posting(account=receivable, amount=mortgage.opening_principal),
+                    Posting(account=lender_equity, amount=owed),
+                ],
+            )
+        )
+        self.mortgages[terms.liability_id] = mortgage
 
     def _track(self, agent: EconomicAgent) -> None:
         """Registration without re-validating the run; the batch session validated it once."""
@@ -274,7 +320,7 @@ class World:
                     raise ValueError("statements and dues take no reply; act on MonthOpened")
 
     def open_mortgages(self) -> None:
-        """Originate/pay off configured contracts, then quote this month's installments."""
+        """Originate/pay off configured contracts, then post each active contract its servicing mail and collect its quote."""
         candidates = {}
         for purchase in self.scenario._scheduled_property_purchases:
             financing = purchase.mortgage
@@ -290,11 +336,15 @@ class World:
         for id_, loan in self.mortgages.items():
             if not loan.active:
                 continue
-            payment = loan.payment(
-                self.month, self.mortgage_principal(id_), self.property_rented_fraction(loan.terms.property_id)
+            statement = ServicingStatement(
+                month=self.month,
+                principal=self.mortgage_principal(id_),
+                rented_fraction_ppb=self.property_rented_fraction(loan.terms.property_id),
             )
-            if payment is not None:
-                self.mortgage_payments[id_] = payment
+            if loan.handle(statement):
+                raise ValueError("a servicing statement takes no reply")
+            for quote in loan.handle(MonthOpened(month=self.month)):
+                self.mortgage_payments[id_] = quote
         self.assemble_claims(list(self.mortgage_payments.values()))
 
     def mortgage_snapshots(self) -> list[MortgageState]:
@@ -401,7 +451,9 @@ class World:
             for claim in self.claims.entries
             if claim.paid and isinstance(claim.effect, MortgagePayment)
         ):
-            self.mortgages[id_].record_payment(self.mortgage_payments[id_], self.mortgage_principal(id_))
+            self.mortgages[id_].handle(
+                InstallmentPaid(payment=self.mortgage_payments[id_], principal_after=self.mortgage_principal(id_))
+            )
         reset_year = not self.failed and (self.month + 1) % 12 == 0
         self.close_books(failed=self.failed, mortgages=list(self.mortgages.values()))
         if reset_year:
@@ -426,20 +478,33 @@ class World:
         return self.accounting.ledger.balance(key) if key in self.accounting.declared else None
 
     def mortgage_principal(self, liability_id: str) -> int:
-        purchase = next(
-            (
-                purchase
-                for purchase in self.scenario._scheduled_property_purchases
-                if purchase.mortgage is not None and purchase.mortgage.liability_id == liability_id
+        """Outstanding principal from the ledger, for a tracked contract or a configured purchase's financing."""
+        loan = self.mortgages.get(liability_id)
+        if loan is not None:
+            borrower = loan.terms.borrower.agent_id
+        else:
+            purchase = next(
+                (
+                    purchase
+                    for purchase in self.scenario._scheduled_property_purchases
+                    if purchase.mortgage is not None and purchase.mortgage.liability_id == liability_id
+                ),
+                None,
+            )
+            if purchase is None:
+                raise ValueError("unknown mortgage liability")
+            borrower = purchase.buyer_agent_id
+        return checked_count(
+            -self.accounting.ledger.balance(
+                AccountRef(agent_id=borrower, account_id=f"liability:mortgage:{liability_id}")
             ),
-            None,
+            "money negation",
         )
-        if purchase is None:
-            raise ValueError("unknown mortgage liability")
-        return principal(self.accounting, purchase)
 
     def property_rented_fraction(self, property_id: str) -> int:
-        return self.properties.properties[property_id].state.rented_fraction_ppb
+        # A tracked contract's property is not a component yet, so none of it is rented out.
+        property_ = self.properties.properties.get(property_id)
+        return 0 if property_ is None else property_.state.rented_fraction_ppb
 
     def prepare_month(
         self, month: int, originations: Mapping[str, Mortgage], mortgages: Mapping[str, Mortgage]
