@@ -10,8 +10,8 @@ spec:
   prune: true
   wait: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: talos-cloud-controller-manager
 
     namespace: ducktape-flux
   targetNamespace: kube-system

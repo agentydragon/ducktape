@@ -5628,3 +5628,203 @@ spec:
           to: "@artifact/cluster/k8s/seaweedfs/pr-visuals-bucket/"
           exclude:
             - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: seaweedfs-public-coder-agent-backups-bucket
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: seaweedfs-public-coder-agent-backups-bucket
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/seaweedfs/public-coder-agent-backups-bucket/**"
+          to: "@artifact/cluster/k8s/seaweedfs/public-coder-agent-backups-bucket/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: seaweedfs-registry-cache-bucket
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: seaweedfs-registry-cache-bucket
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/seaweedfs/registry-cache-bucket/**"
+          to: "@artifact/cluster/k8s/seaweedfs/registry-cache-bucket/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: seaweedfs-vm-images-bucket
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: seaweedfs-vm-images-bucket
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/seaweedfs/vm-images-bucket/**"
+          to: "@artifact/cluster/k8s/seaweedfs/vm-images-bucket/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: seaweedfs-wayback-archive-bucket
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: seaweedfs-wayback-archive-bucket
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/seaweedfs/wayback-archive-bucket/**"
+          to: "@artifact/cluster/k8s/seaweedfs/wayback-archive-bucket/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: ssh-mcp
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: ssh-mcp
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/ssh-mcp/**"
+          to: "@artifact/cluster/k8s/ssh-mcp/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: sshpiper-crds
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: sshpiper-crds
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/sshpiper-crds/**"
+          to: "@artifact/cluster/k8s/sshpiper-crds/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: study-casino-agent-rbac
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: study-casino-agent-rbac
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/study-casino/agent-rbac/**"
+          to: "@artifact/cluster/k8s/study-casino/agent-rbac/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: study-casino-app
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: study-casino-app
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/study-casino/app/**"
+          to: "@artifact/cluster/k8s/study-casino/app/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: study-casino-db
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: study-casino-db
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/study-casino/db/**"
+          to: "@artifact/cluster/k8s/study-casino/db/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: talos-cloud-controller-manager
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: talos-cloud-controller-manager
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/talos-cloud-controller-manager/**"
+          to: "@artifact/cluster/k8s/talos-cloud-controller-manager/"
+          exclude:
+            - flux-kustomization.yaml
