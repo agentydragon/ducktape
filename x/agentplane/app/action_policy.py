@@ -38,6 +38,7 @@ from x.agentplane.action_service.policy_view import (
     ReadyConditionView,
     SubjectActionPolicyView,
     SubjectBindingView,
+    set_view,
 )
 from x.agentplane.app.action_federation import UpstreamFailure
 from x.agentplane.app.egress import FLUX_KUSTOMIZATION_LABEL
@@ -138,6 +139,10 @@ class ActionPolicyInventory:
     async def require_policy_sets(self, names: Sequence[str]) -> None:
         """Every name must resolve to a set the namespace holds, or nothing is written."""
         _require_known(names, await self._policy_sets_by_name())
+
+    async def list_policy_sets(self) -> list[ActionPolicySetView]:
+        """Every set in the namespace, refused ones included, in name order."""
+        return [set_view(policy_set) for name, policy_set in sorted((await self._policy_sets_by_name()).items())]
 
     async def for_sandbox(self, client: OperatorActionServiceClient, sandbox_uid: UUID) -> ActionPolicyView:
         """The Sandbox's policy as the Action Service resolves it now, for the UID a subject pins."""

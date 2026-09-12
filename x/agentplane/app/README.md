@@ -280,11 +280,14 @@ linked group becomes available is the Action Service's contract
 `POST /sandboxes` keeps its no-preset shape and additionally accepts an optional preset: omitted
 fields inherit, while explicit policies and thread fields replace preset values. The Sandbox
 annotation stores the preset name and only explicit thread edits, so later sessions resolve against
-the current configured default instead of freezing a copied form. A preset's `action_policy_sets`
-have no per-launch override: the launch writes one `ActionPolicyBinding` naming them for the new
-Sandbox, and a set name the namespace does not hold is refused with 422 before the Sandbox exists,
-as an unknown egress policy is. A Sandbox launched without a preset has no binding until the
-operator writes one.
+the current configured default instead of freezing a copied form. `action_policy_sets` works as
+`policies` does: a preset pre-fills the pick, an explicit list replaces it (an empty one binds
+nothing), and a launch without a preset may pick sets of its own. The launch writes one
+`ActionPolicyBinding` naming the picked sets for the new Sandbox; a set name the namespace does not
+hold is refused with 422 before the Sandbox exists, as an unknown egress policy is. The create form
+offers the namespace's sets from `GET /action-policy/sets`, each with the Action Service's verdict
+on it, and records the picked preset in the URL (`/#/?preset=<name>`) so a launch form can be
+linked to.
 
 Before opening a session on a bound Sandbox, the app sends the SandboxPreset's configured bootstrap
 content to the runner under a stable preset identity. The runner executes it idempotently on the
@@ -310,7 +313,8 @@ binding, set and index a Decision's evidence names; and `synced`, false while th
 has not synced and nothing auto-decides. It is the resolution an admission would use now, from the
 service that would use it, and says nothing about past Decisions; the Actions page holds those. The
 app adds only each binding's provenance (git, this app at launch, or the operator with kubectl),
-read from labels the service reports. The tab is read-only. The app's own watch of the two kinds is
+read from labels the service reports. The tab is read-only; the one place the app writes a binding is a launch, whose pick the create form
+draws from `GET /action-policy/sets`, the namespace's sets each with the same verdict. The app's own watch of the two kinds is
 a trigger: an event on either re-asks the service for the next frame, and a binding lapsing while
 nothing changes leaves the page at the next frame. The two watches are independent, so a frame can
 briefly precede the service's informer seeing the same event and show the answer from just before

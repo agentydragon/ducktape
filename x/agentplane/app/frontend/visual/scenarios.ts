@@ -22,6 +22,8 @@ export interface Scenario extends ScenarioOptions {
   preselectReconnect?: boolean;
   /** Click the nav's Settings button once it mounts: the modal has no route of its own. */
   openSettings?: boolean;
+  /** Once the preset's pick has landed as a pill, open the action policy sets dropdown. */
+  openActionPolicySets?: boolean;
 }
 
 /** A Pixel 6's CSS viewport: the app is used from a phone, so every page has to fit its width. */
@@ -44,6 +46,24 @@ export const SCENARIOS: Record<string, Scenario> = {
   sandboxes: { element: "#app", route: "/", viewport: { width: 1200, height: 900 } },
   sandboxes_phone: { element: "#app", route: "/", viewport: PHONE, outputName: "sandboxes-phone" },
   sandboxes_stale: { element: "#app", route: "/", viewport: { width: 1200, height: 900 }, wedgedWatch: true },
+  // The launch form with a preset picked through the URL and the sets dropdown opened by the
+  // harness, so the shot carries the namespace's options beside the pre-filled pick.
+  new_sandbox: {
+    element: "#app",
+    route: "/?preset=public-coder",
+    viewport: { width: 1200, height: 900 },
+    outputName: "new-sandbox",
+    readySelectors: [".mantine-Pill-root", '[role="listbox"]'],
+    openActionPolicySets: true,
+  },
+  new_sandbox_phone: {
+    element: "#app",
+    route: "/?preset=public-coder",
+    viewport: PHONE,
+    outputName: "new-sandbox-phone",
+    readySelectors: [".mantine-Pill-root", '[role="listbox"]'],
+    openActionPolicySets: true,
+  },
 
   actions: { element: "#app", route: "/actions", viewport: { width: 1200, height: 1100 }, readySelectors: ["details"] },
   actions_phone: {
