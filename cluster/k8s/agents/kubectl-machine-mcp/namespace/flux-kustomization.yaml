@@ -8,8 +8,8 @@ spec:
   interval: 10m
   timeout: 1m
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: kubectl-machine-mcp-namespace
     namespace: ducktape-flux
   path: ./cluster/k8s/agents/kubectl-machine-mcp/namespace
   prune: false

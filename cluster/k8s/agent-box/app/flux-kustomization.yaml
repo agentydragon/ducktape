@@ -13,8 +13,8 @@ spec:
   path: ./cluster/k8s/agent-box/app
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: agent-box
     namespace: ducktape-flux
   decryption:
     provider: sops

@@ -6,8 +6,8 @@ metadata:
 spec:
   interval: 10m
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: osm-mcp-namespace
 
     namespace: ducktape-flux
   path: ./cluster/k8s/agents/osm-mcp/namespace

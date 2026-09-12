@@ -8,8 +8,8 @@ spec:
   interval: 10m
   timeout: 10m
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: plaid-mcp-db
 
     namespace: ducktape-flux
   path: ./cluster/k8s/agents/plaid-mcp/db

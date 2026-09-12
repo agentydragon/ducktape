@@ -8,8 +8,8 @@ spec:
   path: ./cluster/k8s/agents/forgejo-token-rotation
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: forgejo-token-rotation
 
     namespace: ducktape-flux
   dependsOn:
