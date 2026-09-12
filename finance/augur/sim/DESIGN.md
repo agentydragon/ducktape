@@ -129,8 +129,7 @@ projections do not define the financial capabilities or output shape required by
 every experiment.
 
 <configured.py> remains for its own suites: full-horizon loops through the
-explicit phase methods with grouped funding, deferred purchases and
-unit-denominated managed redemptions.
+explicit phase methods with grouped funding and deferred purchases.
 
 `sim/testing/simulation_result.py` and `sim/testing/configured_result.py` are the separate legacy
 acceptance adapter, not the common public result contract. Existing tests on

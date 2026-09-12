@@ -76,7 +76,7 @@ class ConfiguredHousehold(EconomicAgent):
 
     @staticmethod
     def _scheduled(sale: _ScheduledSale, observation: Observation) -> Sell:
-        """The scheduled units from the oldest lots first; a managed portfolio has no unit-denominated sale."""
+        """The scheduled units from the oldest lots first."""
         remaining = sale.units
         lots = []
         for position in sorted(
