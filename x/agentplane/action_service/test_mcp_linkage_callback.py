@@ -34,6 +34,10 @@ async def linkage(engine: AsyncEngine) -> AsyncIterator[McpLinkageAuthority]:
     def provider(request: httpx.Request) -> httpx.Response:
         if request.method == "POST":
             assert request.url.path == "/token"
+            # GitHub answers form-encoded without this header, and reports a bad code as 200.
+            assert request.headers["accept"] == "application/json"
+            if parse_qs(request.content.decode())["code"] == ["test-bad-code"]:
+                return httpx.Response(200, json={"error": "bad_verification_code"})
             return httpx.Response(200, json={"access_token": "test-access-token", "expires_in": 3600})
         return httpx.Response(404)
 
@@ -90,6 +94,18 @@ async def test_first_link_relink_and_link_after_disconnect(
         replay = await callback_client.get("/v1/mcp-linkage/callback", params={"state": state, "code": "test-code"})
         assert replay.status_code == 409
         assert "test-access-token" not in response.text
+
+
+async def test_rejected_code_is_reported_and_leaves_the_server_unlinked(
+    linkage: McpLinkageAuthority, callback_client: httpx.AsyncClient
+) -> None:
+    operator = Principal(issuer="test-issuer", subject="test-operator", role=PrincipalRole.OPERATOR)
+    started = await linkage.start("test-kubernetes", McpLinkageStart(), operator)
+    state = parse_qs(urlsplit(started.authorization_url).query)["state"][0]
+    response = await callback_client.get("/v1/mcp-linkage/callback", params={"state": state, "code": "test-bad-code"})
+    assert response.status_code == 502, response.text
+    assert response.json()["detail"] == "MCP OAuth provider rejected the token"
+    assert (await linkage.status("test-kubernetes")).status is McpLinkageStatus.UNLINKED
 
 
 if __name__ == "__main__":
