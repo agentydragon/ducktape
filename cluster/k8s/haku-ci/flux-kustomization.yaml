@@ -13,8 +13,8 @@ spec:
   # (haku-ci-runner-token) is provisioned during paving — don't block on health.
   wait: false
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: haku-ci
     namespace: ducktape-flux
   dependsOn:
     - name: forgejo # Forgejo (with Actions enabled, #2556) must be up first

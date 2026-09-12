@@ -4428,3 +4428,203 @@ spec:
           to: "@artifact/cluster/k8s/haku/workspaces/app/"
           exclude:
             - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: haku-ci
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: haku-ci
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/haku-ci/**"
+          to: "@artifact/cluster/k8s/haku-ci/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: headlamp-app
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: headlamp-app
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/headlamp/app/**"
+          to: "@artifact/cluster/k8s/headlamp/app/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: headlamp-namespace
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: headlamp-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/headlamp/namespace/**"
+          to: "@artifact/cluster/k8s/headlamp/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: home-assistant-namespace
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: home-assistant-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/home-assistant/namespace/**"
+          to: "@artifact/cluster/k8s/home-assistant/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: hubble-ui
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: hubble-ui
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/hubble-ui/**"
+          to: "@artifact/cluster/k8s/hubble-ui/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: infra-drift
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: infra-drift
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/infra-drift/**"
+          to: "@artifact/cluster/k8s/infra-drift/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: inventree-app
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: inventree-app
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/inventree/app/**"
+          to: "@artifact/cluster/k8s/inventree/app/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: inventree-db
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: inventree-db
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/inventree/db/**"
+          to: "@artifact/cluster/k8s/inventree/db/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: inventree-token-provisioner
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: inventree-token-provisioner
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/inventree/token-provisioner/**"
+          to: "@artifact/cluster/k8s/inventree/token-provisioner/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: keda
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: keda
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/keda/**"
+          to: "@artifact/cluster/k8s/keda/"
+          exclude:
+            - flux-kustomization.yaml

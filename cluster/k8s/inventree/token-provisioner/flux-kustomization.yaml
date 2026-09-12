@@ -10,8 +10,8 @@ spec:
   path: ./cluster/k8s/inventree/token-provisioner
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: inventree-token-provisioner
 
     namespace: ducktape-flux
   # Explicitly health-check the InvenTree HelmRelease so the Job starts only after

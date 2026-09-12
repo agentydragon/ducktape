@@ -9,8 +9,8 @@ spec:
   interval: 10m
   timeout: 10m
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: inventree-db
     namespace: ducktape-flux
   path: ./cluster/k8s/inventree/db
   prune: true
