@@ -1,5 +1,7 @@
 """Year-to-date tax facts and exact assessment of already-resolved jurisdiction rules."""
 
+from __future__ import annotations
+
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
@@ -68,6 +70,13 @@ class IncomeLedger:
         for key in self.by_source:
             if key[0] == agent_id:
                 self.by_source[key] = 0
+
+    def copy(self) -> IncomeLedger:
+        """Rows are ints under frozen keys, so a fresh dict detaches the copy; `deepcopy` would
+        rebuild every income-source model behind those keys."""
+        clone = IncomeLedger((), ())
+        clone.by_source = dict(self.by_source)
+        return clone
 
 
 def taxes_interest_from(rules: PreparedTaxRules, issuer_id: str | None, issuer_level: JurisdictionLevel | None) -> bool:
