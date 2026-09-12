@@ -159,6 +159,7 @@ resources:
   - external-secrets/config/flux-kustomization.yaml
 
   # --- cert-manager ---
+  - cert-manager/issuer-config-artifact/flux-kustomization.yaml
   - cert-manager/issuer-config/flux-kustomization.yaml
   - cert-manager/app/flux-kustomization.yaml
   - cert-manager/servicemonitor/flux-kustomization.yaml
