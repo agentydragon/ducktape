@@ -9,8 +9,8 @@ CI runs it tiny (defaults) as a smoke test. Scale it locally:
 
   bazelisk test //finance/augur/product:service_scale_test --config=nolint \\
     --test_env=AUGUR_BENCH_ROLLOUTS=10000 --test_env=AUGUR_BENCH_HORIZON=240 \\
-    --test_env=AUGUR_BENCH_PROFILE=1 --test_output=all --nocache_test_results \\
-    --test_timeout=900
+    --test_env=AUGUR_BENCH_SPEND=2000 --test_env=AUGUR_BENCH_PROFILE=1 \\
+    --test_output=all --nocache_test_results --test_timeout=900
 """
 
 from __future__ import annotations
@@ -32,13 +32,16 @@ from finance.augur.product.wire import ProjectionSamplingRequest, RolloutRequest
 def test_metric_fan_scale(make_product_service: MakeProductService, augur_config: Config) -> None:
     rollouts = int(os.environ.get("AUGUR_BENCH_ROLLOUTS", "64"))
     horizon = int(os.environ.get("AUGUR_BENCH_HORIZON", str(min(60, augur_config.max_horizon_months))))
+    # Spend drives solvency, and an insolvent household stops settling claims: the default keeps
+    # the smoke run cheap, a lower spend exercises the settlement path for the whole horizon.
+    spend = int(os.environ.get("AUGUR_BENCH_SPEND", "5000"))
     profile = os.environ.get("AUGUR_BENCH_PROFILE") == "1"
 
     # `make_product_service` registers the realized model under "current_model" (see conftest),
     # so the scenario must reference that id regardless of the config's default preset name.
     model = augur_config.models[augur_config.default_model_id].realize_model()
     service: ProductService = make_product_service(model)
-    scenario = ScenarioKey(model_id="current_model", horizon_months=horizon, monthly_spend=5000, spend_index="none")
+    scenario = ScenarioKey(model_id="current_model", horizon_months=horizon, monthly_spend=spend, spend_index="none")
     request = ProjectionSamplingRequest(
         scenario=scenario, first_seed=0, rollout_count=rollouts, metric="cash", percentiles=(5.0, 50.0, 95.0)
     )

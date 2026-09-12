@@ -1,7 +1,6 @@
 """Full payments or typed rejections; grouped funding remains distinct from ordered actions."""
 
 from collections import defaultdict
-from copy import deepcopy
 from dataclasses import dataclass
 
 from finance.augur.sim import results
@@ -99,7 +98,7 @@ def execute(
 
 
 def post_payment(accounting: Accounting, month: int, claim: Claim, source: AccountRef, cause: str, amount: int) -> None:
-    tax = deepcopy(accounting.tax)
+    tax = accounting.tax.copy()
     liabilities = list(accounting.tax_liabilities)
     effect = claim.effect
     postings = [

@@ -10,7 +10,19 @@ from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.ledger import Ledger
 from finance.augur.sim.prepared import _SaltCap, _SaltDeduction
 from finance.augur.sim.scenario import ORDINARY_INCOME
+from finance.augur.sim.tax_year import TaxBook
 from finance.augur.sim.testing.accounting import CASH, HOUSEHOLD, flat_rules, prepared_scenario
+
+
+def test_a_copied_book_shares_no_year_or_income_row_with_the_original() -> None:
+    scenario = prepared_scenario()
+    book = TaxBook(scenario.tax_profiles, scenario.income_sources)
+    book.income.accrue(HOUSEHOLD, ORDINARY_INCOME, 100)
+    clone = book.copy()
+    clone.income.accrue(HOUSEHOLD, ORDINARY_INCOME, 50)
+    clone.years[HOUSEHOLD].property_tax_paid = 7
+    assert (clone.income.ordinary(HOUSEHOLD), clone.years[HOUSEHOLD].property_tax_paid) == (150, 7)
+    assert (book.income.ordinary(HOUSEHOLD), book.years[HOUSEHOLD].property_tax_paid) == (100, 0)
 
 
 def test_year_close_nets_once_then_reassesses_federal_salt_and_resets() -> None:
