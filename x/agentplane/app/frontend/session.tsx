@@ -128,7 +128,13 @@ function ReasoningView({ item }: { item: Item }): JSX.Element {
     setSearchParams(next, { replace: true });
   }
   return (
-    <Accordion variant="contained" chevronPosition="left" value={open.has(item.id) ? item.id : null} onChange={toggle}>
+    <Accordion
+      variant="contained"
+      chevronPosition="left"
+      classNames={{ chevron: "agentplane-accordion-chevron" }}
+      value={open.has(item.id) ? item.id : null}
+      onChange={toggle}
+    >
       <Accordion.Item value={item.id}>
         <Accordion.Control>
           <Group gap="xs">
@@ -198,7 +204,13 @@ function summarizeRun(items: Item[]): string {
 function ItemRunView({ items }: { items: Item[] }): JSX.Element {
   const [open, setOpen] = useState(false);
   return (
-    <Accordion variant="contained" chevronPosition="left" value={open ? "run" : null} onChange={() => setOpen(!open)}>
+    <Accordion
+      variant="contained"
+      chevronPosition="left"
+      classNames={{ chevron: "agentplane-accordion-chevron" }}
+      value={open ? "run" : null}
+      onChange={() => setOpen(!open)}
+    >
       <Accordion.Item value="run">
         <Accordion.Control>
           <Group gap="xs">
