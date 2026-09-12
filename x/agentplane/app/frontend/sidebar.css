@@ -3,7 +3,7 @@
    light/dark scheme as the rest of the app. */
 
 .agentplane-sidebar {
-  width: 240px;
+  position: relative;
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
@@ -11,9 +11,35 @@
   background: var(--mantine-color-body);
 }
 
+/* Straddles the border so the drag target isn't a 1px hairline; the resized width comes from
+   sidebar.tsx's inline `style`, this is only the drag handle's own hit area and hover affordance. */
+.agentplane-sidebar-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 1;
+}
+
+.agentplane-sidebar-resize-handle:hover,
+.agentplane-sidebar-resize-handle:focus-visible {
+  background: var(--mantine-primary-color-filled);
+  opacity: 0.5;
+  outline: none;
+}
+
 @media (max-width: 560px) {
+  /* Overrides the resized inline width: dragging a 6px handle on a touch-width sidebar isn't a
+     usable interaction, so phone width stays fixed and the handle itself is hidden. */
   .agentplane-sidebar {
-    width: 168px;
+    width: 168px !important;
+  }
+
+  .agentplane-sidebar-resize-handle {
+    display: none;
   }
 }
 

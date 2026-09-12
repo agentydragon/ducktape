@@ -21,6 +21,7 @@ afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
   vi.clearAllMocks();
+  window.localStorage.clear();
 });
 
 function sandbox(name: string, overrides: Partial<SandboxView> = {}): SandboxView {
@@ -202,4 +203,60 @@ it("routes the footer icons to pending approvals, Action history, and Settings",
 
   await act(async () => footerButton("Settings").click());
   expect(onOpenSettings).toHaveBeenCalledOnce();
+});
+
+function sidebarWidth(): number {
+  const nav = container.querySelector("nav.agentplane-sidebar");
+  if (!(nav instanceof HTMLElement)) throw new Error("missing sidebar nav");
+  return Number.parseInt(nav.style.width, 10);
+}
+
+function resizeHandle(): HTMLElement {
+  const found = container.querySelector('[aria-label="Resize sidebar"]');
+  if (!(found instanceof HTMLElement)) throw new Error("missing resize handle");
+  return found;
+}
+
+it("defaults to 240px and widens on ArrowRight, narrows on ArrowLeft, from the resize handle", async () => {
+  await render([], {});
+  expect(sidebarWidth()).toBe(240);
+
+  const handle = resizeHandle();
+  await act(async () => handle.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })));
+  expect(sidebarWidth()).toBe(256);
+
+  await act(async () => {
+    handle.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
+    handle.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
+  });
+  expect(sidebarWidth()).toBe(224);
+});
+
+it("clamps a dragged width to the [180, 480] range", async () => {
+  await render([], {});
+  const handle = resizeHandle();
+
+  await act(async () => {
+    handle.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerId: 1, clientX: 0 }));
+    handle.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, pointerId: 1, clientX: -1000 }));
+  });
+  expect(sidebarWidth()).toBe(180);
+
+  await act(async () => {
+    handle.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, pointerId: 1, clientX: 1000 }));
+  });
+  expect(sidebarWidth()).toBe(480);
+});
+
+it("persists the resized width across a remount", async () => {
+  await render([], {});
+  await act(async () =>
+    resizeHandle().dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }))
+  );
+  expect(sidebarWidth()).toBe(256);
+
+  await act(async () => root.unmount());
+  container.remove();
+  await render([], {});
+  expect(sidebarWidth()).toBe(256);
 });
