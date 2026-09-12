@@ -58,10 +58,7 @@ jobs:
           TARGETS: >-
             ${{ inputs.targets
               || '//aiquota/frontend:screenshots
-                  //airlock/frontend:visual_OAuthPage
-                  //airlock/frontend:visual_OAuthPage_dark
-                  //airlock/frontend:visual_OAuthPage_mobile
-                  //airlock/frontend:visual_OAuthPage_mobile_dark
+                  //airlock/frontend:visual
                   //finance/augur:visual_test
                   //haku/console/frontend:screenshots
                   //haku/console/frontend/tool_rendering/gmail:previews
