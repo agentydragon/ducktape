@@ -245,7 +245,7 @@ def find_test_invocations(*, run_id: str, run_attempt: str, commit_sha: str, api
     because it names the run that triggered this publish, which is frequently not the
     run that ran the tests.
 
-    The two are not combined: `download_visual_tests` rejects a target whose manifests
+    The two are not combined: `download_visual_tests` rejects a target whose rosters
     disagree across invocations, and mixing a sweep with an affected-set run invites
     exactly that.
     """
@@ -351,28 +351,44 @@ def _merge_manifests(
 ) -> tuple[VisualReviewManifest, dict[str, str]]:
     """One review per target, from however many results published a manifest.
 
-    A sharded test publishes one manifest per shard, each naming only the scenes that shard
-    rendered, so the target's review is their union.  Duplicate listings of a single result publish
-    the same manifest twice, which unions to itself.  What stays an error is two results
-    disagreeing -- a title that differs, or one asset path described two ways -- since there is no
-    honest way to pick a winner without a result-attempt identity.
+    Two different things produce several manifests for one label, and they reconcile differently.
+    WITHIN an invocation, a sharded test publishes one manifest per shard, each naming only the
+    scenes that shard rendered: those union into that invocation's roster.  ACROSS invocations --
+    a retry, or a child invocation discovered after the primary one -- each publishes a whole
+    roster, so they must agree.  Unioning there would paper over the case find_test_invocations
+    exists to avoid: a full sweep and an affected-set run at one commit publish different rosters
+    for the same target, and their union is a review that looks complete while taking each shot
+    from whichever run happened to be listed first.
 
     Returns the merged manifest and, per asset path, the invocation whose result declared it.
     """
     titles = {manifest.title for manifest in parsed}
     if len(titles) != 1:
         raise ValueError(f"{target_label} exposed conflicting visual-review titles: {sorted(titles)}")
-    assets: dict[str, VisualReviewAsset] = {}
-    declared_by: dict[str, str] = {}
+
+    rosters: dict[str, dict[str, VisualReviewAsset]] = {}
     for download, manifest in zip(downloads, parsed, strict=True):
+        roster = rosters.setdefault(download.listed.invocation_id, {})
         for asset in manifest.assets:
-            if (previous := assets.get(asset.path)) is not None:
-                if previous != asset:
-                    raise ValueError(f"{target_label} exposed conflicting visual-review entries for {asset.path}")
-                continue
-            assets[asset.path] = asset
-            declared_by[asset.path] = download.listed.invocation_id
-    return VisualReviewManifest(title=one(titles), assets=list(assets.values())), declared_by
+            if (previous := roster.get(asset.path)) is not None and previous != asset:
+                raise ValueError(f"{target_label} exposed conflicting visual-review entries for {asset.path}")
+            roster.setdefault(asset.path, asset)
+
+    canonical_id = min(rosters)
+    canonical = rosters[canonical_id]
+    for other_id, roster in sorted(rosters.items()):
+        if roster != canonical:
+            differing = sorted(set(canonical) ^ set(roster))
+            detail = f"paths {differing}" if differing else "the same paths labelled differently"
+            raise ValueError(
+                f"{target_label} published different visual-review rosters in invocations "
+                f"{canonical_id} and {other_id} ({detail}); a full sweep and an affected-set "
+                f"run at one commit do this, and there is no honest way to combine them"
+            )
+    return (
+        VisualReviewManifest(title=one(titles), assets=list(canonical.values())),
+        dict.fromkeys(canonical, canonical_id),
+    )
 
 
 def download_visual_tests(
