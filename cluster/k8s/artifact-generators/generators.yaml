@@ -3420,6 +3420,206 @@ spec:
 apiVersion: source.extensions.fluxcd.io/v1beta1
 kind: ArtifactGenerator
 metadata:
+  name: forgejo-agentydragon
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: forgejo-agentydragon
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/forgejo/agentydragon/**"
+          to: "@artifact/cluster/k8s/forgejo/agentydragon/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: forgejo-agentydragon-repos
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: forgejo-agentydragon-repos
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/forgejo/agentydragon-repos/**"
+          to: "@artifact/cluster/k8s/forgejo/agentydragon-repos/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: augur-evidence
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: augur-evidence
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/forgejo/augur-evidence/**"
+          to: "@artifact/cluster/k8s/forgejo/augur-evidence/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: budget-ledger
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: budget-ledger
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/forgejo/budget-ledger/**"
+          to: "@artifact/cluster/k8s/forgejo/budget-ledger/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: forgejo-cache
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: forgejo-cache
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/forgejo/cache/**"
+          to: "@artifact/cluster/k8s/forgejo/cache/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: forgejo-claude
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: forgejo-claude
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/forgejo/claude/**"
+          to: "@artifact/cluster/k8s/forgejo/claude/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: cpap-data
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: cpap-data
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/forgejo/cpap-data/**"
+          to: "@artifact/cluster/k8s/forgejo/cpap-data/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: forgejo-db
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: forgejo-db
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/forgejo/db/**"
+          to: "@artifact/cluster/k8s/forgejo/db/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: forgejo-secrets
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: forgejo-secrets
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/forgejo/secrets/**"
+          to: "@artifact/cluster/k8s/forgejo/secrets/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: forgejo-servicemonitor
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: forgejo-servicemonitor
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/forgejo/servicemonitor/**"
+          to: "@artifact/cluster/k8s/forgejo/servicemonitor/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
   name: activitywatch
   namespace: ducktape-flux
 spec:

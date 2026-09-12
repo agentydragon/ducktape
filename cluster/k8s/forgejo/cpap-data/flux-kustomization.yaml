@@ -11,8 +11,8 @@ spec:
   prune: true
   wait: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: cpap-data
 
     # Wait for the Terraform apply (creates the Forgejo repo + service users + the
     # cpap-data-git-{write,read} Secrets) so the sync CronJob can depend on it.
