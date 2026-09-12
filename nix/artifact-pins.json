@@ -213,8 +213,8 @@
       "sha256": "zcaOOCVfx/GJzszicLGTJAe5K/Y4bZBdOGcq4soigII="
     },
     "gazelle": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/gazelle-1f009728f784/gazelle_python_binary",
-      "sha256": "HwCXKPeElwzcF0o1zA9qEL5Ep2KvSnP+r0NiuiDsARk="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/gazelle-ac77f8227c16/gazelle_python_binary",
+      "sha256": "rHf4InwW4x2wRUIkuZMrYAFknR1aKTcWt5sCTca/CJQ="
     },
     "hakuctl": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/hakuctl-19245dcb58ca/hakuctl-0.1.0-py3-none-any.whl",
