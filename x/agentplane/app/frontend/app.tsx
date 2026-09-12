@@ -1,15 +1,14 @@
 import { Button, Container, Group, Stack } from "@mantine/core";
+import { useState } from "react";
 import { HashRouter, Route, Routes, useLocation, useMatch, useNavigate, useParams } from "react-router";
 
 import { ActionRequests } from "./actions";
 import { ActionHistory } from "./actions_history";
-import { Connections } from "./connections";
 import { ConnectionConsent } from "./consent";
 import { SandboxPage } from "./sandbox_page";
 import { SandboxList } from "./sandboxes";
 import { SessionView } from "./session";
-import { PushSettings } from "./push";
-import { McpServers } from "./mcp_servers";
+import { Settings, type SettingsTab } from "./settings";
 
 // Hash routing: the API serves the bundle at "/" only, so no path has to reach the server.
 function sandboxPath(name: string): string {
@@ -65,6 +64,11 @@ function AppRoutes(): JSX.Element {
   const navigate = useNavigate();
   const location = useLocation();
   const sessionRoute = useMatch("/sandboxes/:name/sessions/:sessionId");
+  // Not legacy-path compatibility: api.py's MCP-linkage OAuth callback redirects the browser here
+  // on completion, and it needs to land showing the result rather than the Sandboxes list.
+  const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(() =>
+    location.pathname === "/mcp-servers" ? "mcp-servers" : null
+  );
   return (
     <Container size="xl" py="md" h={sessionRoute ? "100dvh" : undefined}>
       <Stack h="100%">
@@ -84,23 +88,8 @@ function AppRoutes(): JSX.Element {
           >
             Action history
           </Button>
-          <Button
-            variant={location.pathname === "/connections" ? "filled" : "subtle"}
-            onClick={() => void navigate("/connections")}
-          >
-            Connections
-          </Button>
-          <Button
-            variant={location.pathname === "/mcp-servers" ? "filled" : "subtle"}
-            onClick={() => void navigate("/mcp-servers")}
-          >
-            MCP servers
-          </Button>
-          <Button
-            variant={location.pathname === "/notifications" ? "filled" : "subtle"}
-            onClick={() => void navigate("/notifications")}
-          >
-            Notifications
+          <Button variant={settingsTab ? "filled" : "subtle"} onClick={() => setSettingsTab("oauth-clients")}>
+            Settings
           </Button>
         </Group>
         <Routes>
@@ -109,13 +98,16 @@ function AppRoutes(): JSX.Element {
           <Route path="/actions/history" element={<ActionHistory />} />
           <Route path="/actions/:requestId" element={<ActionRequests />} />
           <Route path="/connection-enrollments/:handle" element={<ConsentRoute />} />
-          <Route path="/connections" element={<Connections />} />
-          <Route path="/notifications" element={<PushSettings />} />
-          <Route path="/mcp-servers" element={<McpServers />} />
           <Route path="/sandboxes/:name" element={<SandboxRoute />} />
           <Route path="/sandboxes/:name/sessions/:sessionId" element={<SessionRoute />} />
           <Route path="*" element={<ListRoute />} />
         </Routes>
+        <Settings
+          opened={settingsTab !== null}
+          tab={settingsTab ?? "oauth-clients"}
+          onTabChange={setSettingsTab}
+          onClose={() => setSettingsTab(null)}
+        />
       </Stack>
     </Container>
   );

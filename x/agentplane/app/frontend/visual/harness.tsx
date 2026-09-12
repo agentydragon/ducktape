@@ -627,6 +627,11 @@ routes.push(
     ],
   ],
   ["GET", /^\/connection-service-accounts$/, () => [{ namespace: "agentplane-visual", name: "operator-assistant" }]],
+  // The Settings modal mounts all three tabs at once (Mantine keepMounted); MCP servers and
+  // Notifications fetch on mount even while the OAuth clients tab is the one shown in the shot.
+  ["GET", /^\/mcp-servers$/, () => []],
+  ["GET", /^\/push\/config$/, () => ({ application_server_key: null })],
+  ["GET", /^\/push\/subscriptions$/, () => []],
   [
     "POST",
     /^\/connection-enrollments\/[^/]+\/preview$/,
@@ -752,8 +757,8 @@ const PAGES: Record<string, string> = {
   consent_phone: "/connection-enrollments/test-only-opaque-handle",
   consent_reconnect: "/connection-enrollments/test-only-opaque-handle",
   consent_reconnect_phone: "/connection-enrollments/test-only-opaque-handle",
-  connections: "/connections",
-  connections_phone: "/connections",
+  connections: "/",
+  connections_phone: "/",
   sandbox: "/sandboxes/demo-a1b2",
   // With the github-public binding's rules open, so the shot carries the credential detail — its
   // description, where the proxy puts it, and which secret it comes from — and the other
@@ -788,6 +793,17 @@ if (page.startsWith("consent_reconnect")) {
     account.dispatchEvent(new Event("change", { bubbles: true }));
   });
   selectExisting.observe(document, { childList: true, subtree: true });
+}
+if (page.startsWith("connections")) {
+  // There's no dedicated route for the Settings modal; open it the way an operator would, by
+  // clicking the nav button, rather than a URL that only exists for this test.
+  const openSettings = new MutationObserver(() => {
+    const button = [...document.querySelectorAll("button")].find((candidate) => candidate.textContent === "Settings");
+    if (!button) return;
+    openSettings.disconnect();
+    button.click();
+  });
+  openSettings.observe(document, { childList: true, subtree: true });
 }
 window.location.hash = path;
 

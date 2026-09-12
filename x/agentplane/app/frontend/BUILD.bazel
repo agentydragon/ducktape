@@ -224,6 +224,36 @@ ts_library(
 )
 
 ts_library(
+    name = "settings",
+    srcs = ["settings.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":connections",
+        ":mcp_servers",
+        ":push",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "settings_test",
+    testonly = True,
+    srcs = ["settings.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":settings",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
     name = "connections_test",
     testonly = True,
     srcs = ["connections.test.tsx"],
@@ -497,13 +527,11 @@ ts_library(
     deps = [
         ":actions",
         ":actions_history",
-        ":connections",
         ":consent",
-        ":mcp_servers",
-        ":push",
         ":sandbox_page",
         ":sandboxes",
         ":session",
+        ":settings",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -569,6 +597,7 @@ vitest_bin.vitest_test(
         ":sandbox_page_test",
         ":sandboxes_test",
         ":session_test",
+        ":settings_test",
         "//:node_modules/happy-dom",
         "//:node_modules/vitest",
     ],
