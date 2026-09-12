@@ -136,14 +136,14 @@ class LiveIndex:
         )
 
 
-def _named(raw: dict[str, object]) -> tuple[str, dict[str, object]]:
+def _name(raw: dict[str, object]) -> str:
     metadata = raw["metadata"]
     assert isinstance(metadata, dict)
-    return str(metadata["name"]), raw
+    return str(metadata["name"])
 
 
-def _named_pod(pod: k8s_client.V1Pod) -> tuple[str, k8s_client.V1Pod]:
-    return str(pod.metadata.name), pod
+def _pod_name(pod: k8s_client.V1Pod) -> str:
+    return str(pod.metadata.name)
 
 
 def watch_for(
@@ -176,7 +176,7 @@ def watch_for(
                 list=custom_objects.list_namespaced_custom_object,
                 args=(*SANDBOX_API, sandbox_namespace, SANDBOXES_PLURAL),
                 kwargs={"label_selector": f"{MANAGED_LABEL}=true"},
-                parse=_named,
+                key=_name,
                 names=lambda: set(index.sandboxes),
                 apply=lambda name, obj: apply_to(index.sandboxes, name, obj),
             ),
@@ -184,7 +184,7 @@ def watch_for(
                 name=PODS_PLURAL,
                 list=core_v1.list_namespaced_pod,
                 args=(sandbox_namespace,),
-                parse=_named_pod,
+                key=_pod_name,
                 names=lambda: set(index.pods),
                 apply=lambda name, obj: apply_to(index.pods, name, obj),
             ),
@@ -192,7 +192,7 @@ def watch_for(
                 name=BINDINGS_PLURAL,
                 list=custom_objects.list_namespaced_custom_object,
                 args=(*EGRESS_API, namespace, BINDINGS_PLURAL),
-                parse=_named,
+                key=_name,
                 names=lambda: set(index.bindings),
                 apply=lambda name, obj: apply_to(index.bindings, name, obj),
             ),
@@ -200,7 +200,7 @@ def watch_for(
                 name=POLICIES_PLURAL,
                 list=custom_objects.list_namespaced_custom_object,
                 args=(*EGRESS_API, namespace, POLICIES_PLURAL),
-                parse=_named,
+                key=_name,
                 names=lambda: set(index.policies),
                 apply=lambda name, obj: apply_to(index.policies, name, obj),
             ),
@@ -208,7 +208,7 @@ def watch_for(
                 name=CREDENTIALS_PLURAL,
                 list=custom_objects.list_namespaced_custom_object,
                 args=(*EGRESS_API, namespace, CREDENTIALS_PLURAL),
-                parse=_named,
+                key=_name,
                 names=lambda: set(index.credentials),
                 apply=lambda name, obj: apply_to(index.credentials, name, obj),
             ),

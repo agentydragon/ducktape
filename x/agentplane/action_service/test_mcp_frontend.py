@@ -40,7 +40,7 @@ from x.agentplane.action_service.models import (
     Verdict,
 )
 from x.agentplane.action_service.policies.resources import parse_binding, parse_policy_set
-from x.agentplane.action_service.policy_informer import PolicyIndex, namespaced_key
+from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.policy_view import CallerActionPolicyView
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.updates import ActionUpdates
@@ -75,7 +75,7 @@ def _policy_index() -> PolicyIndex:
         ("test-reads", {"autoApproveIf": [{"type": "exact_actions", "actions": {"test-group": ["alpha"]}}]}),
         ("test-other", {"autoApproveIf": [{"type": "exact_actions", "actions": {"test-group": ["beta"]}}]}),
     ):
-        index.policy_sets[namespaced_key(NAMESPACE, name)] = parse_policy_set(
+        policy_set = parse_policy_set(
             {
                 "metadata": {
                     "name": name,
@@ -87,11 +87,12 @@ def _policy_index() -> PolicyIndex:
                 "spec": spec,
             }
         )
+        index.policy_sets[policy_set.namespaced_name] = policy_set
     for name, uid, sets in (
         ("test-a-reads", sandbox("a").sandbox_uid, ["test-reads", "test-vanished"]),
         ("test-elsewhere", "test-sandbox-uid-elsewhere", ["test-other"]),
     ):
-        index.bindings[namespaced_key(NAMESPACE, name)] = parse_binding(
+        binding = parse_binding(
             {
                 "metadata": {
                     "name": name,
@@ -103,6 +104,7 @@ def _policy_index() -> PolicyIndex:
                 "spec": {"subject": {"sandbox": {"name": f"test-sandbox-{name}", "uid": uid}}, "policySets": sets},
             }
         )
+        index.bindings[binding.namespaced_name] = binding
     return index
 
 
