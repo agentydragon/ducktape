@@ -8,8 +8,8 @@ spec:
   path: ./cluster/k8s/agents/alloy-otlp-bearer
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: alloy-otlp-bearer
 
     namespace: ducktape-flux
   dependsOn:

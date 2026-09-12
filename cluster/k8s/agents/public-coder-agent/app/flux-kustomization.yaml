@@ -10,8 +10,8 @@ spec:
   path: ./cluster/k8s/agents/public-coder-agent/app
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: public-coder-agent-app
     namespace: ducktape-flux
   decryption:
     provider: sops

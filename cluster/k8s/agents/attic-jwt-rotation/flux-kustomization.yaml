@@ -9,8 +9,8 @@ spec:
   path: ./cluster/k8s/agents/attic-jwt-rotation
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: attic-jwt-rotation
 
     namespace: ducktape-flux
   dependsOn:

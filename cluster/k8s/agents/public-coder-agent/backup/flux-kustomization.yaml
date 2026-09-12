@@ -15,8 +15,8 @@ spec:
   path: ./cluster/k8s/agents/public-coder-agent/backup
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: public-coder-agent-backup
     namespace: ducktape-flux
   decryption:
     provider: sops
