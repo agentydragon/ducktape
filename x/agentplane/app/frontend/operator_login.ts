@@ -13,12 +13,18 @@ type LoginLocation = Pick<Location, "pathname" | "hash" | "replace">;
 
 let redirectStarted = false;
 
-/** Start at most one login for this document, however many requests fail at once. */
-export function redirectToLogin(location: LoginLocation = window.location): void {
-  if (redirectStarted || location.pathname.startsWith("/auth/")) return;
-  redirectStarted = true;
-  if (location.hash) sessionStorage.setItem(STASH, location.hash);
-  location.replace("/auth/login");
+/**
+ * Start at most one login for this document, however many requests fail at once. Reports whether a
+ * login navigation is in flight for this document.
+ */
+export function redirectToLogin(location: LoginLocation = window.location): boolean {
+  if (location.pathname.startsWith("/auth/")) return false;
+  if (!redirectStarted) {
+    redirectStarted = true;
+    if (location.hash) sessionStorage.setItem(STASH, location.hash);
+    location.replace("/auth/login");
+  }
+  return true;
 }
 
 /** Put the browser back on the route it was reading before it was sent to log in. */
