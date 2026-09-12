@@ -60,6 +60,8 @@ def prepared_books(scenario_: PreparedScenario) -> Accounting:
         accounting_.declare(account)
     for profile in scenario_.tax_profiles:
         accounting_.enroll(profile)
+    accounting_.tax.salt_policies = scenario_._federal_salt_deduction_policies
+    accounting_.tax.mortgage_interest_policies = scenario_._mortgage_interest_deduction_policies
     return accounting_
 
 

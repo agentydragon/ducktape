@@ -6,12 +6,14 @@ experiment policies and their outer time loops are Python code.
 
 ## Experiment path
 
-An experiment supplies a `Scenario`, market paths, jurisdiction rules and
-locations to `compile_run` in <compiler/execution.py>. It then either tracks an
-`EconomicAgent` subclass (<agent.py>), and any `Mortgage` (<mortgage.py>) or
-`Biller` (<bills.py>) that exists at month zero, on one `World` (<world.py>) per
-path and loops over `world.step()`, or starts the common `ActionSession` and submits one
-batch of ordered actions per decision month. Both read typed results from
+An experiment composes a `World` (<world.py>) per path on a `MarketPath`: it
+declares the accounts, pools, lots, bonds and TLH portfolios held at month zero,
+tracks an `EconomicAgent` subclass (<agent.py>) and any `Mortgage`
+(<mortgage.py>), `Biller` (<bills.py>) or `TaxAuthority` (<tax_authority.py>)
+that exists then, and loops over `world.step()`. An authored `Scenario` reaches
+the same world through `compile_run` in <compiler/execution.py> and
+`World.from_run`. Alternatively it starts the common `ActionSession` and submits
+one batch of ordered actions per decision month. Both read typed results from
 <results.py> and books from <books.py>. Exact requests are defined in
 <actions.py>; the statements and dues an actor is posted when a month opens are
 defined beside their emitters (`accounting.AccountStatement`,

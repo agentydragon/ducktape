@@ -39,7 +39,7 @@ def test_year_close_nets_once_then_reassesses_federal_salt_and_resets() -> None:
     year.rental_interest_deduction = 60
     year.depreciation_deduction = 40
     before = deepcopy(books.tax.years)
-    quoted = books.tax.assessments(scenario, 11, [])
+    quoted = books.tax.assessments(11, [])
     assert books.tax.years == before
     federal, state = quoted
     assert federal.ordinary_income == state.ordinary_income == 9600
@@ -54,7 +54,7 @@ def test_year_close_nets_once_then_reassesses_federal_salt_and_resets() -> None:
     assert books.tax.years[HOUSEHOLD].capital_loss_carryforward == 400
     assert books.tax.years[HOUSEHOLD].short_term_gain == 0
     assert books.tax.years[HOUSEHOLD].depreciation_deduction == 0
-    following = books.tax.assessments(scenario, 23, [])
+    following = books.tax.assessments(23, [])
     assert all(row.capital_loss_carryforward == 100 for row in following)
     assert all(row.total_tax == 0 for row in following)
 

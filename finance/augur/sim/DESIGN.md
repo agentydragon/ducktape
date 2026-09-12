@@ -24,12 +24,17 @@ or HTTP modules.
 ## Common experiment session
 
 ```text
-authored scenario + supplied paths/rules
-    -> compile_run
-    -> World(run, rollout_id); world.track(agent); world.start()
+supplied paths (+ rules)
+    -> World(MarketPath(series, rollout_id, ...), horizon_months=...)
+    -> world.declare_account / declare_pool / hold / declare_portfolio
+    -> world.track(agent | mortgage | biller | tax_authority); world.start()
     -> world.step()  # open: statements and dues to the agent; MonthOpened -> ordered actions; close
     -> world.finished; the experiment read what it measures between steps
 ```
+
+An authored `Scenario` reaches the same world through the import adapter,
+`compile_run` then `World.from_run(run, rollout_id)`, which declares and tracks
+what the prepared scenario describes and attaches the configured-only tables.
 
 The batch form drives one such world per selected path:
 
