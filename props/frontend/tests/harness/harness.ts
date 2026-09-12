@@ -2,6 +2,8 @@
 // Renders full pages with mock data to verify overall layout and navigation
 
 import { mount } from "svelte";
+
+import { SCENARIOS } from "./scenarios.mjs";
 import "../../src/app.css";
 
 // Import page components
@@ -784,6 +786,19 @@ const pages: Record<string, { component: any; props: Record<string, unknown>; wr
     },
   },
 };
+
+// scenarios.mjs is what the sweep runs; `pages` is what this harness can mount. A name in one and
+// not the other means a scenario that is never rendered, or one the runner asks for and cannot get
+// -- both of which used to pass silently. Fail on the first scenario instead.
+const declared = new Set(SCENARIOS);
+const mountable = new Set(Object.keys(pages));
+const missing = [...declared].filter((name) => !mountable.has(name));
+const unswept = [...mountable].filter((name) => !declared.has(name));
+if (missing.length || unswept.length) {
+  throw new Error(
+    `scenarios.mjs and harness pages disagree: ${JSON.stringify({ missingFromHarness: missing, missingFromScenarios: unswept })}`
+  );
+}
 
 // Parse URL parameters
 const params = new URLSearchParams(window.location.search);
