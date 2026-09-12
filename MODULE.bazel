@@ -241,10 +241,10 @@ oci.pull(
 # Test infrastructure: Testcontainers Ryuk reaper (container cleanup)
 oci.pull(
     name = "ryuk",
-    digest = "sha256:bf3f74a47dee0acda89aba4b2fc9c7fdcf994a084db02a2d06566f07baae022e",
+    digest = "sha256:f0456560ea5b4acdbed0da0efc33b5f9dd6bc1e59f2337106826dcb5b0b0e981",
     image = "mirror.gcr.io/testcontainers/ryuk",
     platforms = ["linux/amd64"],
-    tag = "0.8.1",
+    tag = "0.14.0",
 )
 
 # Test infrastructure: Grocy for MCP e2e tests (match cluster/k8s/grocy/deployment.yaml)
@@ -282,10 +282,10 @@ oci.pull(
 # v1.12.x requires --privileged and produces non-reproducible images.
 oci.pull(
     name = "talos_imager",
-    digest = "sha256:bc8bce35a1debae740a887be7a8a3e2907c243c29edca1d57b66720e96a73e24",
+    digest = "sha256:65ca4a8696abbba5be0700bb929a5126d38b953c5e4e8eff94f065f34a24cc82",
     image = "ghcr.io/siderolabs/imager",
     platforms = ["linux/amd64"],
-    tag = "v1.13.0-alpha.2",
+    tag = "v1.14.0-alpha.2",
 )
 
 # Base image for container E2E tests. rules_distroless layers git + JDK on top.
@@ -307,13 +307,13 @@ oci.pull(
 # Unprivileged nginx for the augur frontend image (static React bundle served
 # behind oauth2-proxy + readOnlyRootFilesystem).
 # To repin:
-#   crane digest --platform linux/amd64 docker.io/nginxinc/nginx-unprivileged:1.27-alpine
+#   crane digest --platform linux/amd64 docker.io/nginxinc/nginx-unprivileged:1.31-alpine
 oci.pull(
     name = "nginx_unprivileged",
-    digest = "sha256:28d91bdce70ad09025ea901458fdd149259d8e05982ade79d4ef2c0d9470eb48",
+    digest = "sha256:e1754f434ace974cdf9b9f98d868082b86ab8ee703f8466e6d3d777f553d3fb9",
     image = "mirror.gcr.io/nginxinc/nginx-unprivileged",
     platforms = ["linux/amd64"],
-    tag = "1.27-alpine",
+    tag = "1.31-alpine",
 )
 
 # Stalwart mailserver — base for the haku-mailbox repack (server + stalwart-cli,
