@@ -107,6 +107,16 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         ("study-casino-namespace", "study-casino/namespace"),
         ("tana-mcp", "agents/tana-mcp"),
         ("authentik-jwt-rotation", "agents/authentik-jwt-rotation"),
+        ("inventree-namespace", "inventree/namespace"),
+        ("authentik-sso-secrets", "authentik/sso-secrets"),
+        ("cdi", "kubevirt/cdi"),
+        ("firecrawl-namespace", "firecrawl/namespace"),
+        ("flux-image-automation-ghcr", "flux-image-automation-ghcr"),
+        ("gatus-namespace", "gatus/namespace"),
+        ("grafana-operator", "monitoring/grafana-operator"),
+        ("grocy-sf", "grocy/sf/app"),
+        ("grocy-vallejo", "grocy/vallejo/app"),
+        ("haku-console-namespace", "haku/console-namespace"),
     )
 
     assert set(generators) == {artifact_name for artifact_name, _ in cases}
@@ -135,11 +145,12 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         }
         assert f"{artifact_relative}/flux-kustomization.yaml" in root_kustomization["resources"]
         source = root / source_relative
-        packaged = tmp_path / relative
+        packaged_root = tmp_path / artifact_name
+        packaged = packaged_root / relative
         for operation in artifact["copy"]:
             operation_source_relative = operation["from"].removeprefix("@repo/").removesuffix("/**")
             operation_source = root / operation_source_relative.removeprefix("cluster/k8s/")
-            operation_target = tmp_path / operation["to"].removeprefix("@artifact/")
+            operation_target = packaged_root / operation["to"].removeprefix("@artifact/")
             shutil.copytree(
                 operation_source, operation_target, ignore=shutil.ignore_patterns(*operation.get("exclude", []))
             )
