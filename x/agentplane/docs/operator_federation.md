@@ -11,7 +11,7 @@ nor OAuth/token material is encoded in the cookie. The row key is a SHA-256 dige
 
 The table and its expiry index come from the app's own Alembic history
 (`x/agentplane/app/migrations/`), applied by the `migrate` init container before the app starts; the
-app itself only verifies the migrated schema. The Action schema is unchanged.
+app itself never creates or checks tables. The Action schema is unchanged.
 Existing signed-payload cookies are deliberately invalid after rollout: log in again. Replicas
 must use the same app database, OIDC configuration, public origin, and session signing secret.
 
@@ -183,8 +183,8 @@ by L7 HTTP inspection of encrypted TLS. A different Gateway/DNS/L7-proxy setup r
 ### Live acceptance after merge/reconciliation (not performed in this PR)
 
 - Confirm the Terraform resource and both Flux layers are ready, configuration ConfigMap references
-  resolved, the intended image revisions running, both Action and app migrations healthy, and app
-  startup past its schema verification. Inspect status, not secret payloads or a credential-bearing Terraform plan.
+  resolved, the intended image revisions running, both Action and app migrations healthy, and the
+  app started successfully. Inspect status, not secret payloads or a credential-bearing Terraform plan.
 - Verify public discovery/JWKS issuer and RS256 metadata against the configured login and target
   pins. Verify Hubble shows the BFF token/JWKS and Action JWKS connections admitted; a TLS connection
   with a different SNI on the same gateway must be denied. Do not weaken egress if this fails.

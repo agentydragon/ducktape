@@ -342,7 +342,6 @@ py_library(
     srcs = ["database_migrate.py"],
     data = ["//x/agentplane/app/migrations:files"],
     deps = [
-        ":operator_sessions",
         ":trajectory",
         "@pypi//alembic",
         "@pypi//psycopg",
@@ -714,7 +713,6 @@ py_test(
     deps = [
         ":conftest",
         ":database_migrate",
-        ":operator_sessions",
         ":trajectory",
         "//:conftest",
         "@pypi//alembic",

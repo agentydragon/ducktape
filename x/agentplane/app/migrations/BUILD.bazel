@@ -14,7 +14,7 @@ py_library(
     name = "env",
     srcs = ["env.py"],
     deps = [
-        "//x/agentplane/app:operator_sessions",
+        "//x/agentplane/app:database_migrate",
         "//x/agentplane/app:trajectory",
         "@pypi//alembic",
     ],

@@ -11,7 +11,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import create_engine, select, text
 from sqlalchemy.engine import make_url
 
-from x.agentplane.app.operator_sessions import Base as SessionBase
 from x.agentplane.app.trajectory import Base
 
 # SQLAlchemy loads psycopg from the URL scheme; Gazelle cannot infer the runtime dependency.
@@ -19,9 +18,15 @@ from x.agentplane.app.trajectory import Base
 
 _MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 _MIGRATION_LOCK_KEY = 0x5452_414A  # "TRAJ"
-# The trajectory store and the operator browser sessions are separate declarative bases sharing
-# one database; both are the app's own schema and migrate together.
-_METADATA = [Base.metadata, SessionBase.metadata]
+# Base is declared in operator_sessions.py; trajectory.py's own Thread/Event tables and
+# operator_sessions.py's BrowserSession all share it, and importing it here (via trajectory.py,
+# which already imports operator_sessions.py) registers every table onto one metadata.
+_METADATA = Base.metadata
+
+# This history's own stamp. The Action Service owns a second Alembic history, and the app's
+# integration tests point both runners at one database; the default `alembic_version` would have
+# each read the other's stamp and fail to locate the revision.
+VERSION_TABLE = "alembic_version_app"
 
 
 class MigrationSettings(BaseSettings):
@@ -46,9 +51,8 @@ def run_migrations_for_connection(connection: Any, revision: str = "head") -> No
 
 
 def verify_schema_for_connection(connection: Any) -> None:
-    for metadata in _METADATA:
-        for table in metadata.tables.values():
-            connection.execute(select(table).limit(0))
+    for table in _METADATA.tables.values():
+        connection.execute(select(table).limit(0))
 
 
 def apply_migrations(database_url: str, revision: str = "head") -> None:

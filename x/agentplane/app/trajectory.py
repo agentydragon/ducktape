@@ -19,10 +19,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import BigInteger, DateTime, ForeignKey, Text, UniqueConstraint, delete, func, select, update
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID, insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column
 
 from x.agentplane.app.changes import Changes
-from x.agentplane.app.operator_sessions import Base as SessionBase, OperatorSessionStore
+from x.agentplane.app.operator_sessions import Base, OperatorSessionStore
 from x.agentplane.app.trajectory_updates import CHANNEL, TrajectoryUpdates
 from x.agentplane.runner import protocol_pb2 as pb
 
@@ -30,10 +30,6 @@ from x.agentplane.runner import protocol_pb2 as pb
 # gazelle:include_dep @pypi//protobuf
 # SQLAlchemy loads the asyncpg dialect from the URL scheme; nothing imports it directly.
 # gazelle:include_dep @pypi//asyncpg
-
-
-class Base(DeclarativeBase):
-    pass
 
 
 class Thread(Base):
@@ -141,13 +137,6 @@ class TrajectoryStore:
     @classmethod
     def connect(cls, database_url: str) -> TrajectoryStore:
         return cls(create_async_engine(database_url, pool_pre_ping=True, hide_parameters=True))
-
-    async def verify_schema(self) -> None:
-        """Read every owned table without applying DDL; migrations are a separate deploy step."""
-        async with self._engine.connect() as connection:
-            for metadata in (Base.metadata, SessionBase.metadata):
-                for table in metadata.tables.values():
-                    await connection.execute(select(table).limit(0))
 
     async def close(self) -> None:
         await self._updates.close()
