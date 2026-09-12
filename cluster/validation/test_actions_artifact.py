@@ -127,6 +127,16 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         ("nix-cache", "nix-cache/app"),
         ("nvidia-device-plugin", "nvidia-device-plugin"),
         ("ollama-secrets", "ollama/secrets"),
+        ("activitywatch", "activitywatch"),
+        ("agent-box", "agent-box/app"),
+        ("agent-box-namespace", "agent-box/namespace"),
+        ("agentplane-index-app", "agentplane-index/app"),
+        ("agentplane-index-db", "agentplane-index/db"),
+        ("agentplane-index-secrets", "agentplane-index/secrets"),
+        ("agent-workspaces-app", "agents/agent-sandbox/workspaces/app"),
+        ("agent-workspaces-namespace", "agents/agent-sandbox/workspaces/namespace"),
+        ("airlock", "agents/airlock"),
+        ("alloy-otlp-bearer", "agents/alloy-otlp-bearer"),
     )
 
     assert set(generators) == {artifact_name for artifact_name, _ in cases}

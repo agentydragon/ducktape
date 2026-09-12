@@ -2016,3 +2016,203 @@ spec:
           to: "@artifact/cluster/k8s/ollama/secrets/"
           exclude:
             - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: activitywatch
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: activitywatch
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/activitywatch/**"
+          to: "@artifact/cluster/k8s/activitywatch/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: agent-box
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: agent-box
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agent-box/app/**"
+          to: "@artifact/cluster/k8s/agent-box/app/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: agent-box-namespace
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: agent-box-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agent-box/namespace/**"
+          to: "@artifact/cluster/k8s/agent-box/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: agentplane-index-app
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: agentplane-index-app
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agentplane-index/app/**"
+          to: "@artifact/cluster/k8s/agentplane-index/app/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: agentplane-index-db
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: agentplane-index-db
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agentplane-index/db/**"
+          to: "@artifact/cluster/k8s/agentplane-index/db/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: agentplane-index-secrets
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: agentplane-index-secrets
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agentplane-index/secrets/**"
+          to: "@artifact/cluster/k8s/agentplane-index/secrets/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: agent-workspaces-app
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: agent-workspaces-app
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/agent-sandbox/workspaces/app/**"
+          to: "@artifact/cluster/k8s/agents/agent-sandbox/workspaces/app/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: agent-workspaces-namespace
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: agent-workspaces-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/agent-sandbox/workspaces/namespace/**"
+          to: "@artifact/cluster/k8s/agents/agent-sandbox/workspaces/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: airlock
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: airlock
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/airlock/**"
+          to: "@artifact/cluster/k8s/agents/airlock/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: alloy-otlp-bearer
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: alloy-otlp-bearer
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/alloy-otlp-bearer/**"
+          to: "@artifact/cluster/k8s/agents/alloy-otlp-bearer/"
+          exclude:
+            - flux-kustomization.yaml
