@@ -19,7 +19,13 @@ from typing import Annotated, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-from x.agentplane.action_service.models import PolicyKind, SandboxCaller, ServiceAccountCaller, ServiceAccountRef
+from x.agentplane.action_service.models import (
+    NamespacedName,
+    PolicyKind,
+    SandboxCaller,
+    ServiceAccountCaller,
+    ServiceAccountRef,
+)
 from x.agentplane.action_service.policies.argument_schema import ArgumentSchema
 from x.agentplane.action_service.policies.exact_actions import ExactActions
 from x.agentplane.action_service.policies.github_public_repository import GitHubPublicRepository
@@ -32,7 +38,7 @@ from x.agentplane.action_service.policies.resources import (
     InvalidResource,
 )
 from x.agentplane.action_service.policy_evaluation import resolve_bindings
-from x.agentplane.action_service.policy_informer import PolicyIndex, namespaced_key
+from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.providers import ResolvedBinding
 
 # What a binding's subject names, as the operator asks about it: a live Sandbox by namespace and
@@ -261,7 +267,7 @@ def subject_view(index: PolicyIndex, subject: PolicySubject, now: datetime) -> S
 def _subject_binding(index: PolicyIndex, binding: ActionPolicyBinding) -> SubjectBindingView:
     # In the binding's own order, duplicates included: what `resolve_bindings` walks.
     named = [
-        (name, index.policy_sets.get(namespaced_key(binding.metadata.namespace, name)))
+        (name, index.policy_sets.get(NamespacedName(binding.metadata.namespace, name)))
         for name in binding.spec.policy_sets
     ]
     return SubjectBindingView(

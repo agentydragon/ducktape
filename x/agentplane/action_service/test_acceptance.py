@@ -36,7 +36,7 @@ from x.agentplane.action_service.models import (
     Verdict,
 )
 from x.agentplane.action_service.policies.resources import parse_binding, parse_policy_set
-from x.agentplane.action_service.policy_informer import PolicyIndex, namespaced_key
+from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.policy_view import SubjectActionPolicyView
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.updates import ActionUpdates
@@ -541,23 +541,25 @@ async def test_operator_reads_a_named_subjects_effective_policy(
     A workload bearer is not an operator on this surface either."""
     index = PolicyIndex(synced=True)
     metadata = {"namespace": NAMESPACE, "uid": "test-uid", "generation": 2, "resourceVersion": "9"}
-    index.policy_sets[namespaced_key(NAMESPACE, "reads")] = parse_policy_set(
+    policy_set = parse_policy_set(
         {
             "metadata": {"name": "reads", **metadata},
             "spec": {"autoApproveIf": [{"type": "exact_actions", "actions": {"agentplane": ["echo"]}}]},
         }
     )
+    index.policy_sets[policy_set.namespaced_name] = policy_set
     account = ServiceAccountRef(namespace=NAMESPACE, name="test-client")
     for name, subject in (
         ("sandbox-a-reads", {"sandbox": {"name": SANDBOX_A.sandbox_name, "uid": SANDBOX_A.sandbox_uid}}),
         ("client-reads", {"serviceAccount": account.model_dump()}),
     ):
-        index.bindings[namespaced_key(NAMESPACE, name)] = parse_binding(
+        bound = parse_binding(
             {
                 "metadata": {"name": name, "labels": {"test.example/writer": name}, **metadata},
                 "spec": {"subject": subject, "policySets": ["reads", "gone"]},
             }
         )
+        index.bindings[bound.namespaced_name] = bound
     service = ActionService(
         ActionStore(make_sessionmaker(engine)), echo_catalog, {"agentplane": CountingExecutor()}, policies=index
     )
