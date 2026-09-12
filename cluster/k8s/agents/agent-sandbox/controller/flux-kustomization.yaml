@@ -13,8 +13,8 @@ spec:
   prune: true
   wait: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: agent-sandbox-controller
     namespace: ducktape-flux
   healthChecks:
     - apiVersion: apps/v1

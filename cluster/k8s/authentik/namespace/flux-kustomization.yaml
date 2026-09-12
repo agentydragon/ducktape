@@ -8,7 +8,7 @@ spec:
   path: ./cluster/k8s/authentik/namespace
   prune: false # Don't delete namespace on kustomization removal
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: authentik-namespace
     namespace: ducktape-flux
   timeout: 1m

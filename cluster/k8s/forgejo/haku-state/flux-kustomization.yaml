@@ -11,8 +11,8 @@ spec:
   prune: true
   wait: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: haku-state
     # Wait for the Terraform apply (creates the Forgejo repo + service user + the
     # haku-forgejo-git Secret) so scan runs can depend on it.
     namespace: ducktape-flux

@@ -613,3 +613,202 @@ spec:
           exclude:
             - flux-kustomization.yaml
 ---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: kyverno-policies
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: kyverno-policies
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/kyverno/policies/**"
+          to: "@artifact/cluster/k8s/kyverno/policies/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: haku-state
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: haku-state
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/forgejo/haku-state/**"
+          to: "@artifact/cluster/k8s/forgejo/haku-state/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: agentplane-crds
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: agentplane-crds
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agentplane-crds/**"
+          to: "@artifact/cluster/k8s/agentplane-crds/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: monitoring-namespace
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: monitoring-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/monitoring/namespace/**"
+          to: "@artifact/cluster/k8s/monitoring/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: haku-namespace
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: haku-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/haku/namespace/**"
+          to: "@artifact/cluster/k8s/haku/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: langfuse-namespace
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: langfuse-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/langfuse/namespace/**"
+          to: "@artifact/cluster/k8s/langfuse/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: volsync
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: volsync
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/volsync/**"
+          to: "@artifact/cluster/k8s/volsync/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: authentik-namespace
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: authentik-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/authentik/namespace/**"
+          to: "@artifact/cluster/k8s/authentik/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: cert-manager-trust
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: cert-manager-trust
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/cert-manager/trust/**"
+          to: "@artifact/cluster/k8s/cert-manager/trust/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: agent-sandbox-controller
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: agent-sandbox-controller
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/agent-sandbox/controller/**"
+          to: "@artifact/cluster/k8s/agents/agent-sandbox/controller/"
+          exclude:
+            - flux-kustomization.yaml

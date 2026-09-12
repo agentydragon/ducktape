@@ -8,8 +8,8 @@ spec:
   interval: 10m
   timeout: 5m
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: cert-manager-trust
 
     namespace: ducktape-flux
   path: ./cluster/k8s/cert-manager/trust
