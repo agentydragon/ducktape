@@ -5,7 +5,6 @@ ordering until each moves onto a composed world.
 """
 
 from collections import defaultdict
-from copy import deepcopy
 from typing import Any
 
 from pydantic import JsonValue
@@ -57,33 +56,8 @@ def execute(run: CompiledRun, capture: Capture, product_actor: str | None = None
         pending: list[tuple[int, PendingBuy]] = []
         for rollout_id, path in paths.items():
             for sale in run.scenario._scheduled_sales:
-                if sale.month != month:
-                    continue
-                spec = next(
-                    (
-                        spec
-                        for spec in path.specs.values()
-                        if (spec.owner_agent_id, spec.account_id, spec.asset_id)
-                        == (sale.agent_id, sale.account_id, sale.asset_id)
-                    ),
-                    None,
-                )
-                if spec is None:
+                if sale.month == month:
                     path.holdings.scheduled_sale(path.accounting, path.market, sale)
-                    continue
-                candidate = deepcopy(path.portfolios[spec.portfolio_id])
-                withdrawal = candidate._withdraw_units(sale.units)
-                path.managed_portfolios().settle(
-                    path.accounting,
-                    month,
-                    spec.owner_agent_id,
-                    sale.cause_id,
-                    path.effects(
-                        spec, candidate, sale.proceeds_account_id, withdrawal.cash_received, withdrawal.realizations
-                    ),
-                    operation="redemption",
-                )
-                path.portfolios[spec.portfolio_id] = candidate
             for index, policy in enumerate(run.scenario._target_allocation_policies):
                 proposal = plan(
                     observe(path, policy.agent_id),

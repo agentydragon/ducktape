@@ -123,7 +123,7 @@ def validate(run: CompiledRun) -> None:
         require_account(
             AccountRef(agent_id=sale.agent_id, account_id=sale.proceeds_account_id), f"sale {sale.cause_id!r}"
         )
-        if (sale.agent_id, sale.account_id, sale.asset_id) not in pools | managed:
+        if (sale.agent_id, sale.account_id, sale.asset_id) not in pools:
             raise ValueError(f"sale {sale.cause_id!r} references no holding pool")
         require_series(f"security:{sale.asset_id}")
     locations = {location.location_id for location in scenario.locations}

@@ -223,7 +223,7 @@ Callers by surface today, so the burn-down can be checked off:
 - **`World.step` with a tracked agent:** `x/joint_spending_allocation` only.
 - **`ActionSession` (batch):** `x/monthly_actions`, `x/bounded_spending`, `x/bond_policies`,
   `x/allocation_glide`, `study/trinity`, `product/funding.py` and its tests, and the
-  acceptance suites in `sim/testing/{action,asset_sales,bond,held_bond,indexed_payments,lot_basis,obligations,public_sales,security_distributions,transfers}_test.py`.
+  acceptance suites in `sim/testing/{action,asset_sales,bond,harvest,held_bond,indexed_payments,lot_basis,obligations,public_sales,security_distributions,transfers}_test.py`.
   These stay on the batch API; the batch layer already drives N worlds through
   delegate agents, and a vectorised policy layer replaces the delegates later.
 - **App (`product/service.py`) — landed on `product/simulation.py`:** one world per
@@ -234,8 +234,8 @@ Callers by surface today, so the burn-down can be checked off:
 - **Configured runner (`sim/configured.py`):** the configured acceptance suites
   (`sim/testing/configured_acceptance_test.py` through `sim/testing/case.py` and
   `configured_result.py`), `sim/configured_*_test.py`, `tlh_session_test.py`. These
-  leave with P12: purchases and unit-denominated managed redemptions need an action
-  shape before their household exists. Until then the runner drives worlds through
+  leave with P12: purchases clamped to post-settlement cash need an action shape
+  before their household exists. Until then the runner drives worlds through
   the explicit phase methods (`begin_actions`, `execute`, `close_month`, `open_month`).
 - **`Scenario`/`compile_run` authoring:** every caller above plus `product/scenarios.py`;
   leaves with SCHEMA after the constructor slice.

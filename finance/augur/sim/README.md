@@ -47,10 +47,10 @@ zero-valued observations. Policy intentions, attempted requests and actual paid
 consumption are distinct. Tax and contractual liabilities are not inferred from
 a generic spending shortfall.
 
-The configured runner still has grouped funding, purchases and unit-denominated
-managed redemptions its suites depend on and the common action session does not
-offer. Moving a caller requires explicit treatment of those differences, not a
-compatibility wrapper or removal of its financial coverage.
+The configured runner still has grouped funding and post-settlement purchases its
+suites depend on and the common action session does not offer. Moving a caller
+requires explicit treatment of those differences, not a compatibility wrapper or
+removal of its financial coverage.
 
 ## References
 
