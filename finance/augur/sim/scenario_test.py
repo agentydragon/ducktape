@@ -16,6 +16,7 @@ from pydantic import ValidationError
 from finance.augur.model.series import LocationId, RentKey, SecurityKey, SecuritySymbol
 from finance.augur.sim.scenario import (
     Agent,
+    CapitalImprovementEvent,
     CashflowOnly,
     DistributionTaxSlice,
     InitialAccountBalance,
@@ -714,7 +715,9 @@ def test_scenario_allows_noop_recurring_windows_outside_horizon() -> None:
 
 
 def _property_lifecycle_validation_scenario(
-    *, property_lifecycle_events: list[SetRentedFractionEvent | PropertySaleEvent], horizon_months: int = 3
+    *,
+    property_lifecycle_events: list[SetRentedFractionEvent | CapitalImprovementEvent | PropertySaleEvent],
+    horizon_months: int = 3,
 ) -> Scenario:
     return Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="seller")],
@@ -779,6 +782,26 @@ def test_scenario_rejects_lifecycle_events_after_property_sale() -> None:
             property_lifecycle_events=[
                 PropertySaleEvent(month=1, property_id="home", closing_cost_pct=6.0),
                 SetRentedFractionEvent(month=2, property_id="home", rented_fraction=1.0),
+            ]
+        )
+
+
+def test_scenario_rejects_same_month_sale_and_rented_fraction_event() -> None:
+    with pytest.raises(ValidationError, match="same-month sale lifecycle ordering is ambiguous"):
+        _property_lifecycle_validation_scenario(
+            property_lifecycle_events=[
+                SetRentedFractionEvent(month=1, property_id="home", rented_fraction=0.0),
+                PropertySaleEvent(month=1, property_id="home", closing_cost_pct=6.0),
+            ]
+        )
+
+
+def test_scenario_rejects_same_month_sale_and_capital_improvement_event() -> None:
+    with pytest.raises(ValidationError, match="same-month sale lifecycle ordering is ambiguous"):
+        _property_lifecycle_validation_scenario(
+            property_lifecycle_events=[
+                CapitalImprovementEvent(month=1, property_id="home", amount=100000, description="new roof"),
+                PropertySaleEvent(month=1, property_id="home", closing_cost_pct=6.0),
             ]
         )
 

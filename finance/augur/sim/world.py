@@ -326,8 +326,13 @@ class World:
         self._composing()
         if self.properties is not None:
             raise ValueError("housing is already declared")
-        self.properties = Properties(housing, self.accounting)
         purchases = {purchase.property_id: purchase for purchase in housing.purchases}
+        for sale in housing.sales:
+            # A sale prices the property off its location's path; nothing else reads that series.
+            series_id = f"home_value:{purchases[sale.property_id].location_id}"
+            if series_id not in self.market.series:
+                raise ValueError(f'missing series "{series_id}"')
+        self.properties = Properties(housing, self.accounting)
         located = {location.location_id: location for location in locations}
         self.property_tax_authorities = [
             PropertyTaxAuthority(

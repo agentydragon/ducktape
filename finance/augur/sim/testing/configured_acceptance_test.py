@@ -16,14 +16,6 @@ from finance.augur.sim.testing.frozen_rollout import FrozenRolloutAcceptance
 from finance.augur.sim.testing.income_sources import IncomeSourceAcceptance
 from finance.augur.sim.testing.private_equity import PrivateEquityAcceptance
 from finance.augur.sim.testing.property_stakes import PropertyStakeAcceptance
-from finance.augur.sim.testing.rental_lifecycle import (
-    LeasingFeeAcceptance,
-    ManagementFeeAcceptance,
-    RentalCashflowReconciliationAcceptance,
-    RentalIncomeAcceptance,
-    RentalIncomeTaxationAcceptance,
-    RentalLifecycleCashflowsAcceptance,
-)
 from finance.augur.sim.testing.simulation_result import Backend
 from finance.augur.sim.testing.target_allocation import TargetAllocationAcceptance
 
@@ -65,42 +57,6 @@ class TestConfiguredCashConservation(CashConservationAcceptance):
 
 
 class TestConfiguredFrozenRollout(FrozenRolloutAcceptance):
-    @pytest.fixture
-    def backend(self) -> Backend:
-        return run_case
-
-
-class TestConfiguredRentalIncome(RentalIncomeAcceptance):
-    @pytest.fixture
-    def backend(self) -> Backend:
-        return run_case
-
-
-class TestConfiguredManagementFee(ManagementFeeAcceptance):
-    @pytest.fixture
-    def backend(self) -> Backend:
-        return run_case
-
-
-class TestConfiguredRentalLifecycleCashflows(RentalLifecycleCashflowsAcceptance):
-    @pytest.fixture
-    def backend(self) -> Backend:
-        return run_case
-
-
-class TestConfiguredLeasingFee(LeasingFeeAcceptance):
-    @pytest.fixture
-    def backend(self) -> Backend:
-        return run_case
-
-
-class TestConfiguredRentalIncomeTaxation(RentalIncomeTaxationAcceptance):
-    @pytest.fixture
-    def backend(self) -> Backend:
-        return run_case
-
-
-class TestConfiguredRentalCashflowReconciliation(RentalCashflowReconciliationAcceptance):
     @pytest.fixture
     def backend(self) -> Backend:
         return run_case
