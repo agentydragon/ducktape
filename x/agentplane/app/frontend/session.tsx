@@ -4,7 +4,6 @@ import {
   Badge,
   Box,
   Button,
-  Code,
   Group,
   Menu,
   Paper,
@@ -53,6 +52,7 @@ import {
   type Turn,
 } from "./events";
 import { FrameView } from "./frame";
+import { HighlightedText } from "./json_view";
 import { Markdown } from "./markdown";
 import { AttachedSchema, EventSchema, ItemKind, Provider, TurnStatus } from "./protocol_pb";
 
@@ -182,8 +182,8 @@ function ItemView({ item }: { item: Item }): JSX.Element {
         ) : (
           <Text style={{ whiteSpace: "pre-wrap" }}>{item.text}</Text>
         ))}
-      {item.argumentsJson && <Code block>{item.argumentsJson}</Code>}
-      {item.output && <Code block>{item.output}</Code>}
+      {item.argumentsJson && <HighlightedText text={item.argumentsJson} />}
+      {item.output && <HighlightedText text={item.output} />}
       {/* Pinned to the card, not the header: growing reply text must not make a badge row pop in
           and out above it, so this sits out of flow at the corner instead of a separate line. */}
       {isAssistant && streaming && (

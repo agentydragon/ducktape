@@ -933,6 +933,16 @@ if (scenario.openSettings) {
   });
   openSettings.observe(document, { childList: true, subtree: true });
 }
+if (scenario.openRawStatus) {
+  // No URL param toggles the switch (unlike the tab itself); flip it the way an operator would.
+  const openRaw = new MutationObserver(() => {
+    const label = [...document.querySelectorAll("label")].find((candidate) => candidate.textContent === "Raw");
+    if (!label) return;
+    openRaw.disconnect();
+    label.click();
+  });
+  openRaw.observe(document, { childList: true, subtree: true });
+}
 window.location.hash = scenario.route;
 
 const container = document.getElementById("app");

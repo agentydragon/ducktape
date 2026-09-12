@@ -2,7 +2,6 @@ import {
   ActionIcon,
   Badge,
   Button,
-  Code,
   Group,
   Menu,
   Select,
@@ -33,6 +32,7 @@ import {
 } from "./client";
 import { ActionPolicySection } from "./action_policy";
 import { EgressSection } from "./egress";
+import { JsonView } from "./json_view";
 import { effectiveThreadDefaults } from "./launch_presets";
 import { ConfirmDelete, DeleteButton, SuspendResume } from "./lifecycle";
 import { liveSandboxUrl, LiveStatus, useLive, type SandboxSnapshot } from "./live";
@@ -89,7 +89,7 @@ function StatusView({ sandbox }: { sandbox: SandboxView }): JSX.Element {
         <Switch label="Raw" checked={raw} onChange={(e) => setRaw(e.currentTarget.checked)} />
       </Group>
       {raw ? (
-        <Code block>{JSON.stringify(sandbox, null, 2)}</Code>
+        <JsonView value={sandbox} />
       ) : (
         <>
           <Text size="sm">
