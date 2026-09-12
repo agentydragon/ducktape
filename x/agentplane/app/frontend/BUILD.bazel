@@ -51,6 +51,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":client",
+        ":operator_login",
         "//:node_modules/vitest",
     ],
 )
