@@ -44,6 +44,25 @@
   outline-offset: 2px;
 }
 
+/* Streaming specifically pulses, so it reads as "still going" rather than a fixed state like
+   failed/sending. Visual tests disable all animations globally, so a screenshot always lands on
+   one still frame regardless of this. */
+.agentplane-breathing-dot {
+  animation: agentplane-breathe 1.2s ease-in-out infinite;
+}
+
+@keyframes agentplane-breathe {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+
 /* User input, right-aligned per `InputView`: a filled bubble instead of the bordered full-width
    Paper every other row uses, so role reads from position/color without a "user" label. Capped
    width keeps a short message from stretching edge-to-edge the way a bubble never does. */

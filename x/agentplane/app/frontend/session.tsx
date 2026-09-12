@@ -18,7 +18,7 @@ import {
 } from "@mantine/core";
 import IconPlayerStop from "@tabler/icons-react/dist/esm/icons/IconPlayerStop.mjs";
 import IconPower from "@tabler/icons-react/dist/esm/icons/IconPower.mjs";
-import { Fragment, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { Fragment, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { useSearchParams } from "react-router";
 
 import { fromJson, type JsonValue } from "@bufbuild/protobuf";
@@ -60,8 +60,20 @@ const KIND_LABELS: Partial<Record<ItemKind, string>> = {
 
 /** A transient/binary state, shown as a small colored dot rather than a labeled badge: the label
  * is still there for a screen reader, and for anyone hovering or (on a touch/keyboard device)
- * focusing it, just not spelled out at rest. */
-function StatusDot({ color, label }: { color: string; label: string }): JSX.Element {
+ * focusing it, just not spelled out at rest. `breathing` pulses the dot, for a state that is
+ * still ongoing (streaming) rather than settled (failed, sending); `style` lets a caller take it
+ * out of flow instead of the default inline placement. */
+function StatusDot({
+  color,
+  label,
+  breathing,
+  style,
+}: {
+  color: string;
+  label: string;
+  breathing?: boolean;
+  style?: CSSProperties;
+}): JSX.Element {
   return (
     <Tooltip label={label} events={{ hover: true, focus: true, touch: true }}>
       <Box
@@ -70,8 +82,8 @@ function StatusDot({ color, label }: { color: string; label: string }): JSX.Elem
         aria-label={label}
         title={label}
         tabIndex={0}
-        className="agentplane-status-dot"
-        style={{ backgroundColor: `var(--mantine-color-${color}-6)` }}
+        className={breathing ? "agentplane-status-dot agentplane-breathing-dot" : "agentplane-status-dot"}
+        style={{ backgroundColor: `var(--mantine-color-${color}-6)`, ...style }}
       />
     </Tooltip>
   );
@@ -119,7 +131,7 @@ function ReasoningView({ item }: { item: Item }): JSX.Element {
         <Accordion.Control>
           <Group gap="xs">
             <Badge variant="light">reasoning</Badge>
-            {!item.completed && <StatusDot color="yellow" label="Streaming" />}
+            {!item.completed && <StatusDot breathing color="yellow" label="Streaming" />}
           </Group>
         </Accordion.Control>
         <Accordion.Panel>
@@ -140,12 +152,14 @@ function ItemView({ item }: { item: Item }): JSX.Element {
   const streaming = !item.completed;
   const failed = item.succeeded === false;
   return (
-    <Paper withBorder p="sm">
-      {(!isAssistant || streaming || failed) && (
+    <Paper withBorder p="sm" style={{ position: "relative" }}>
+      {(!isAssistant || failed) && (
         <Group gap="xs">
           {!isAssistant && <Badge variant="light">{label}</Badge>}
           {item.toolName && <Text fw={600}>{item.toolName}</Text>}
-          {streaming && <StatusDot color="yellow" label="Streaming" />}
+          {/* Assistant text has no header row to toggle a dot inside of -- see the pinned dot
+              below, which doesn't grow/shrink the card as text streams in. */}
+          {!isAssistant && streaming && <StatusDot breathing color="yellow" label="Streaming" />}
           {failed && <StatusDot color="red" label="Failed" />}
         </Group>
       )}
@@ -157,6 +171,11 @@ function ItemView({ item }: { item: Item }): JSX.Element {
         ))}
       {item.argumentsJson && <Code block>{item.argumentsJson}</Code>}
       {item.output && <Code block>{item.output}</Code>}
+      {/* Pinned to the card, not the header: growing reply text must not make a badge row pop in
+          and out above it, so this sits out of flow at the corner instead of a separate line. */}
+      {isAssistant && streaming && (
+        <StatusDot breathing color="yellow" label="Streaming" style={{ position: "absolute", right: 8, bottom: 8 }} />
+      )}
     </Paper>
   );
 }
@@ -182,7 +201,7 @@ function ItemRunView({ items }: { items: Item[] }): JSX.Element {
         <Accordion.Control>
           <Group gap="xs">
             <Badge variant="light">{summarizeRun(items)}</Badge>
-            {items.some((item) => !item.completed) && <StatusDot color="yellow" label="Streaming" />}
+            {items.some((item) => !item.completed) && <StatusDot breathing color="yellow" label="Streaming" />}
             {items.some((item) => item.succeeded === false) && <StatusDot color="red" label="Failed" />}
           </Group>
         </Accordion.Control>
