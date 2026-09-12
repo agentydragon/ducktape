@@ -34,6 +34,13 @@ js_test(
     entry_point = "capture.test.mjs",
 )
 
+# Which scenes a Bazel shard owns: filter, then split. Shared by every multi-scene runner.
+js_library(
+    name = "sharding",
+    srcs = ["sharding.mjs"],
+    visibility = ["//visibility:public"],
+)
+
 # Puppeteer-based visual render-health test runner.
 js_library(
     name = "visual_test_lib",
@@ -42,6 +49,7 @@ js_library(
     deps = [
         ":capture",
         ":launcher",
+        ":sharding",
         ":visual_review_manifest",
     ],
 )
