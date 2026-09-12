@@ -66,7 +66,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 def postgres_container() -> Generator[PostgresContainer]:
     """Session-scoped PostgreSQL container.
 
-    Starts a fresh PostgreSQL 16 container for the entire test session.
+    Starts a fresh PostgreSQL 18 container for the entire test session.
     All tests share this container but get isolated databases.
     """
     with tracer.start_as_current_span("postgres_container fixture"):

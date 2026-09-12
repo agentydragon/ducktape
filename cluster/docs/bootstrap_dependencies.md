@@ -209,7 +209,7 @@ If the CA changed, existing kubelet TLS state is invalid:
 
 1. Ensure the operator can decrypt SOPS inputs and reach the infrastructure APIs
 2. Ensure L1 SOPS secrets exist in git (Nebula identities, cluster age key, infrastructure credentials)
-3. Start temp PG: `podman run -d --name tofu-pg -e POSTGRES_PASSWORD=tofu -e POSTGRES_DB=tfstate -p 15432:5432 docker.io/postgres:16-alpine`
+3. Start temp PG: `podman run -d --name tofu-pg -e POSTGRES_PASSWORD=tofu -e POSTGRES_DB=tfstate -p 15432:5432 docker.io/postgres:18-alpine`
 4. `tofu init -reconfigure` with `PG_CONN_STR` pointing to temp PG
 5. `bazel run //cluster:bootstrap` (on wyrm2, add `-- --exclude=proxmox_virtual_environment_vm.wyrm2`)
 6. Deploy the persisted Nebula identities and exported kubelet bootstrap material to NixOS workers
