@@ -2,7 +2,7 @@ name: props
 
 services:
   postgres:
-    image: docker.io/library/postgres:16
+    image: docker.io/library/postgres:18
     container_name: props-postgres
     network_mode: host
     environment:
