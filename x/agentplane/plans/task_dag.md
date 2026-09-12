@@ -91,10 +91,10 @@ reconciliation after reconnect.
 
 The external-client track is complete and single-operator: Identity (configured authority),
 Connection (runtime named client enrollment), and Thread (execution/conversation state), with no
-multi-operator management or per-operator ownership model. Credentials bind to a ServiceAccount,
-the principal policies bind to; the backend credentials in use are the ActionGroup executor's auth
-modes ([MCP executor transports](../action_service/README.md#mcp-executor-transports)), shared by
-every caller of the group, and no linked token, static bearer, or kubeconfig reaches the MCP
+multi-operator management or per-operator ownership model. A Connection binds to a ServiceAccount,
+the principal policies bind to; backend credentials are the ActionGroup executor's auth modes
+([MCP executor transports](../action_service/README.md#mcp-executor-transports)), shared by every
+caller of the group, and no linked token, static bearer, or kubeconfig reaches the MCP
 client, Sandbox, transcript, or Action prompt; outbound account OAuth remains `MCPAUTH`. Generic
 tool discovery stays compact; a client that needs more opts into a schema or description per
 Action. The Kubernetes, SSH, and
@@ -427,8 +427,6 @@ Action outbox or event store; cross-Identity delivery requires an explicit read 
   constraints are in
   [workload authentication § Access beyond Actions](../docs/workload_authentication.md#access-beyond-actions);
 - per-destination workload audiences until recipient isolation is required;
-- per-ServiceAccount backend credential bindings — every caller of an ActionGroup shares its
-  executor's credential today;
 - per-Action MCP projection and new generic-tool metadata such as output schemas;
 - registration/enrollment retention cleanup, once actual growth is measured — bounded expiry that
   preserves historical attribution and replay tombstones, never a gate for client use;
