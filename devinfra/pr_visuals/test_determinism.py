@@ -175,11 +175,35 @@ def test_durations_come_from_buildbuddy_as_wall_time_not_summed_shards() -> None
     def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(command, 0, json.dumps(listing), "")
 
-    targets = observe_targets(["run-1"], bbapi=Path("bbapi"), run=fake_run)
+    targets = observe_targets(["run-1"], ["//ui:visual"], bbapi=Path("bbapi"), run=fake_run)
 
     assert [test_run.summary.shard_count for test_run in targets["//ui:visual"]] == [4]
     summary = report({}, ["run-1"], targets)
     assert "| `//ui:visual` | 4 | 11.1s | 11.1s | PASSED |" in summary
+
+
+def test_a_target_the_bulk_listing_truncated_is_still_timed() -> None:
+    """BuildBuddy capped a fifteen-target sweep at twelve per group, with no page token.
+
+    The three it dropped were the last alphabetically, so the durations table silently omitted
+    them. Anything the sweep ran and the listing did not mention is asked for by label.
+    """
+    asked: list[list[str]] = []
+
+    def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        flags = [str(part) for part in command]
+        asked.append(flags)
+        label = flags[flags.index("--label") + 1] if "--label" in flags else "//ui:early"
+        payload = {"targetGroups": [{"targets": [_test_row(label, seconds=9.0)]}]}
+        return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
+
+    timed = observe_targets(["run-1"], ["//ui:early", "//zz:late"], bbapi=Path("bbapi"), run=fake_run)
+
+    assert sorted(timed) == ["//ui:early", "//zz:late"]
+    # Only the one the bulk listing missed costs an extra call.
+    assert [flags for flags in asked if "--label" in flags] == [
+        ["bbapi", "target", "run-1", "--json", "--label", "//zz:late"]
+    ]
 
 
 def test_a_target_that_did_not_pass_says_so_in_the_report() -> None:
@@ -194,7 +218,9 @@ def test_a_target_that_did_not_pass_says_so_in_the_report() -> None:
         }
         return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
 
-    summary = report({}, ["run-1", "run-2"], observe_targets(["run-1", "run-2"], bbapi=Path("bbapi"), run=fake_run))
+    summary = report(
+        {}, ["run-1", "run-2"], observe_targets(["run-1", "run-2"], ["//ui:visual"], bbapi=Path("bbapi"), run=fake_run)
+    )
 
     assert "FLAKY, PASSED" in summary
 

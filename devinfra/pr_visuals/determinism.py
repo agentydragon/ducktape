@@ -143,11 +143,17 @@ def observe(invocations: list[str], *, bbapi: Path, run: Runner) -> dict[Render,
     return dict(seen)
 
 
-def observe_targets(invocations: list[str], *, bbapi: Path, run: Runner) -> dict[str, list[TestRun]]:
-    """Every run's view of each target, keyed by label."""
+def observe_targets(
+    invocations: list[str], targets: list[str], *, bbapi: Path, run: Runner
+) -> dict[str, list[TestRun]]:
+    """Every run's view of each target, keyed by label.
+
+    `targets` is what was swept, so a listing that came back short can be completed rather than
+    quietly reporting on fewer targets than ran.
+    """
     by_label: dict[str, list[TestRun]] = defaultdict(list)
     for invocation in invocations:
-        for test_run in list_test_runs(invocation, bbapi=bbapi, run=run):
+        for test_run in list_test_runs(invocation, targets, bbapi=bbapi, run=run):
             by_label[test_run.label].append(test_run)
     return dict(by_label)
 
@@ -236,7 +242,9 @@ def main() -> None:
     if not observations:
         raise SystemExit(f"no renders published by {targets}; nothing to compare")
 
-    summary = report(observations, invocations, observe_targets(invocations, bbapi=args.bbapi, run=subprocess.run))
+    summary = report(
+        observations, invocations, observe_targets(invocations, targets, bbapi=args.bbapi, run=subprocess.run)
+    )
     print(summary)
     if args.summary:
         args.summary.write_text(summary)
