@@ -614,6 +614,7 @@ async def test_external_grant_reaches_canonical_mcp_admission_and_cancel(
         sandbox.reset_mock()
         request = {
             "idempotency_key": "external-original-key",
+            "title": "test title for external-original-key",
             "action": {"group": "agentplane", "name": "echo"},
             "arguments": {"message": "external-test"},
         }

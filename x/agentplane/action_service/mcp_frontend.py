@@ -265,7 +265,7 @@ def create_server(
         caller: Caller = CALLER,
     ) -> ToolResult:
         """Submit one Action for policy evaluation, human decision if needed, and single-shot execution.
-        Supply a stable idempotency_key with structured action group/name and validated arguments.
+        Supply a stable idempotency_key with structured action group/name, validated arguments, and a title the deciding operator reads.
         Returns the durable receipt immediately by default; optionally wait up to 30 seconds for decision or terminal state.
         Pending is not success. After response loss reuse the identical request/key or read its ID, never submit a new key.
         """

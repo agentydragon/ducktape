@@ -85,7 +85,12 @@ async def test_empty_catalog_has_no_echo_fallback(engine: AsyncEngine) -> None:
         service = ActionService(ActionStore(make_sessionmaker(engine)), catalog, executors)
         for identity in (ActionIdentity(group="agentplane", name="echo"),):
             with pytest.raises(UnsupportedActionError):
-                await service.submit(ActionRequestInput(idempotency_key="empty", action=identity, arguments={}), CALLER)
+                await service.submit(
+                    ActionRequestInput(
+                        idempotency_key="empty", title="test title for empty", action=identity, arguments={}
+                    ),
+                    CALLER,
+                )
 
 
 def test_missing_binding_is_rejected() -> None:
@@ -283,13 +288,17 @@ async def test_main_serves_real_stdio_execution_and_closes_in_order(db_url: str,
         with pytest.raises(UnsupportedActionError):
             await service.submit(
                 ActionRequestInput(
-                    idempotency_key="no-echo", action=ActionIdentity(group="agentplane", name="echo"), arguments={}
+                    idempotency_key="no-echo",
+                    title="test title for no-echo",
+                    action=ActionIdentity(group="agentplane", name="echo"),
+                    arguments={},
                 ),
                 CALLER,
             )
         view = await service.submit(
             ActionRequestInput(
                 idempotency_key="real-stdio",
+                title="test title for real-stdio",
                 action=ActionIdentity(group="demo", name="slow_echo"),
                 arguments={"marker_path": str(tmp_path / "called"), "seconds": 0, "text": "wired"},
             ),
@@ -393,6 +402,7 @@ async def test_main_auto_approves_the_bound_sandbox_from_watched_policy_objects(
         await index.wait_for(lambda: index.synced)
         body = ActionRequestInput(
             idempotency_key="fixture-once",
+            title="test title for fixture-once",
             action=ActionIdentity(group="fixture", name="echo"),
             arguments={"message": "MCP0-ok"},
         )
@@ -415,6 +425,7 @@ async def test_main_auto_approves_the_bound_sandbox_from_watched_policy_objects(
             pending = await service.submit(
                 ActionRequestInput(
                     idempotency_key=key,
+                    title=f"test title for {key}",
                     action=body.action,
                     arguments={"message": message},
                     origin={"caller": bound.principal().key, "binding": "fixture-echo"},

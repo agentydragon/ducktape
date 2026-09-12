@@ -102,7 +102,10 @@ async def test_same_service_account_shares_receipts_while_distinct_accounts_are_
 
     store = ActionStore(make_sessionmaker(engine), external_grants=service)
     body = ActionRequestInput(
-        idempotency_key="same-key", action=ActionIdentity(group="test", name="echo"), arguments={}
+        idempotency_key="same-key",
+        title="test title for same-key",
+        action=ActionIdentity(group="test", name="echo"),
+        arguments={},
     )
     original, _ = await store.submit(body, first, external_grant=submitted_grants[0].provenance())
     duplicate, created = await store.submit(body, sibling, external_grant=submitted_grants[1].provenance())

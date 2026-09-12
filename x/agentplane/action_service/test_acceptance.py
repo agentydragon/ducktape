@@ -142,6 +142,8 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
     try:
         envelope = {
             "idempotency_key": "submit-1",
+            "title": "test title for submit-1",
+            "description": "test description the submit-1 title leaves out",
             "action": {"group": "agentplane", "name": "echo"},
             "arguments": {"text": "hello", "nested": {"api_key": "provider-material"}},
             # Every identity-like value here is deliberately forged, accepted only as untrusted
@@ -186,6 +188,16 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
         assert pending["caller_principal"] is None
         assert pending["arguments"]["nested"]["api_key"] == "[redacted]"
         assert pending["origin"]["authorization"] == "[redacted]"
+        # The caller's own plaintext context is projected verbatim, unlike credential-shaped values.
+        assert pending["title"] == envelope["title"]
+        assert pending["description"] == envelope["description"]
+        # Reusing the key for a differently-worded envelope is the conflict the check exists for.
+        reworded = await client.post(
+            "/v1/action-requests",
+            json={**envelope, "title": "test title reworded on retry"},
+            headers=_workload("workload-a"),
+        )
+        assert reworded.status_code == 409
 
         # Both Pods use the same ServiceAccount; live Sandbox identity, not subject, owns the row.
         assert SANDBOX_A.service_account_subject == SANDBOX_B.service_account_subject
@@ -198,6 +210,8 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
         assert operator_list.json()[0]["arguments"] == envelope["arguments"]
         operator_detail = await client.get(_operator_path(request_id), headers=_operator())
         assert operator_detail.json()["arguments"] == envelope["arguments"]
+        assert operator_detail.json()["title"] == envelope["title"]
+        assert operator_detail.json()["description"] == envelope["description"]
         assert operator_list.json()[0]["caller_principal"] == CALLER_A.key
         assert operator_list.json()[0]["origin"]["owner"] == CALLER_B.key, "forgery remains inert provenance"
 
@@ -348,6 +362,7 @@ async def test_executor_exception_material_is_not_logged_projected_or_retried(
                 headers=_workload("workload-a"),
                 json={
                     "idempotency_key": "leaky-failure",
+                    "title": "test title for leaky-failure",
                     "action": {"group": "agentplane", "name": "echo"},
                     "arguments": {"safe": True},
                 },
@@ -394,6 +409,7 @@ async def test_restart_resumes_only_pending_dispatch_and_leaves_inflight_work_to
     pending_view, _ = await store.submit(
         ActionRequestInput(
             idempotency_key="restart-pending",
+            title="test title for restart-pending",
             action=ActionIdentity(group="agentplane", name="echo"),
             arguments={"case": "safe"},
         ),
@@ -420,6 +436,7 @@ async def test_restart_resumes_only_pending_dispatch_and_leaves_inflight_work_to
     inflight_view, _ = await store.submit(
         ActionRequestInput(
             idempotency_key="restart-inflight",
+            title="test title for restart-inflight",
             action=ActionIdentity(group="agentplane", name="echo"),
             arguments={"case": "unsafe"},
         ),
@@ -541,14 +558,24 @@ async def test_catalog_admission_and_group_routing(engine: AsyncEngine, echo_cat
         for group, name in [("missing", "echo"), ("agentplane", "missing"), ("unbound", "echo")]:
             response = await client.post(
                 "/v1/action-requests",
-                json={"idempotency_key": group, "action": {"group": group, "name": name}, "arguments": {}},
+                json={
+                    "idempotency_key": group,
+                    "title": f"test title for {group}",
+                    "action": {"group": group, "name": name},
+                    "arguments": {},
+                },
                 headers=_workload("workload-a"),
             )
             assert response.status_code == 422
             assert "unsupported group/action" in response.text
         offline = await client.post(
             "/v1/action-requests",
-            json={"idempotency_key": "offline", "action": {"group": "offline", "name": "echo"}, "arguments": {}},
+            json={
+                "idempotency_key": "offline",
+                "title": "test title for offline",
+                "action": {"group": "offline", "name": "echo"},
+                "arguments": {},
+            },
             headers=_workload("workload-a"),
         )
         assert offline.status_code == 503
@@ -556,7 +583,12 @@ async def test_catalog_admission_and_group_routing(engine: AsyncEngine, echo_cat
         for malformed in ["agentplane.echo", "agentplane:v0.echo", {"group": "agentplane", "name": "echo.extra"}]:
             response = await client.post(
                 "/v1/action-requests",
-                json={"idempotency_key": "malformed", "action": malformed, "arguments": {}},
+                json={
+                    "idempotency_key": "malformed",
+                    "title": "test title for malformed",
+                    "action": malformed,
+                    "arguments": {},
+                },
                 headers=_workload("workload-a"),
             )
             assert response.status_code == 422
@@ -565,7 +597,12 @@ async def test_catalog_admission_and_group_routing(engine: AsyncEngine, echo_cat
 
         for group in ["agentplane", "other"]:
             identity = {"group": group, "name": "echo"}
-            payload = {"idempotency_key": group, "action": identity, "arguments": {"action": identity}}
+            payload = {
+                "idempotency_key": group,
+                "title": f"test title for {group}",
+                "action": identity,
+                "arguments": {"action": identity},
+            }
             response = await client.post("/v1/action-requests", json=payload, headers=_workload("workload-a"))
             response.raise_for_status()
             submitted = response.json()
@@ -585,14 +622,24 @@ async def test_catalog_admission_and_group_routing(engine: AsyncEngine, echo_cat
 
         conflict = await client.post(
             "/v1/action-requests",
-            json={"idempotency_key": "agentplane", "action": {"group": "other", "name": "echo"}, "arguments": {}},
+            json={
+                "idempotency_key": "agentplane",
+                "title": "test title for agentplane",
+                "action": {"group": "other", "name": "echo"},
+                "arguments": {},
+            },
             headers=_workload("workload-a"),
         )
         assert conflict.status_code == 409
         del echo_catalog.groups["agentplane"].actions["echo"]
         refused = await client.post(
             "/v1/action-requests",
-            json={"idempotency_key": "removed", "action": {"group": "agentplane", "name": "echo"}, "arguments": {}},
+            json={
+                "idempotency_key": "removed",
+                "title": "test title for removed",
+                "action": {"group": "agentplane", "name": "echo"},
+                "arguments": {},
+            },
             headers=_workload("workload-a"),
         )
         assert refused.status_code == 422
@@ -611,6 +658,7 @@ async def test_action_removed_before_allow_never_dispatches(engine: AsyncEngine,
         view = await service.submit(
             ActionRequestInput(
                 idempotency_key="removed-before-allow",
+                title="test title for removed-before-allow",
                 action=ActionIdentity(group="agentplane", name="echo"),
                 arguments={},
             ),
@@ -649,6 +697,7 @@ async def test_submission_schema_error_is_http_422_and_does_not_persist(
             "/v1/action-requests",
             json={
                 "idempotency_key": "invalid-schema",
+                "title": "test title for invalid-schema",
                 "action": {"group": "agentplane", "name": "echo"},
                 "arguments": {"n": "private-request-value"},
             },
@@ -682,6 +731,7 @@ async def test_operator_arguments_are_exact_but_caller_arguments_are_recursively
             headers=_workload("workload-a"),
             json={
                 "idempotency_key": "nested-arguments",
+                "title": "test title for nested-arguments",
                 "action": {"group": "agentplane", "name": "echo"},
                 "arguments": arguments,
             },
@@ -713,6 +763,7 @@ async def test_cancellation_http_is_owner_only_and_needs_no_version(
             headers=_workload("workload-a"),
             json=ActionRequestInput(
                 idempotency_key="test-http-cancel",
+                title="test title for test-http-cancel",
                 action=ActionIdentity(group="agentplane", name="echo"),
                 arguments={"access_token": "must-redact"},
                 origin={"caller_principal": CALLER_B.key, "thread_id": "untrusted-thread"},
