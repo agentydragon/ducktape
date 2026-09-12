@@ -296,14 +296,15 @@ test.
 
 ### `MCPDEPLOY` — stage the external MCP endpoint
 
-**Remaining acceptance:** staging carries the reviewed GitHub and Kubernetes MCP server
-configuration, reflected GitHub client credentials, callback route, and Action Service egress.
-After operator-approved rollout, verify migrations, required reflected configuration, public
-discovery/callback/resource URLs, and external MCP reachability on published Action Service,
-migration, and integration-app images that contain the merged consent/OAuth implementation; a
-merged source PR or a healthy old pod does not establish readiness. Then run `CLAUDEAI`; this
-configuration task alone cannot satisfy it. Verify Sandbox MCP reachability in parallel; that
-caller's acceptance is not a prerequisite for `CLAUDEAI`.
+**Observed 2026-09-12T12:57:45Z:** verified deployed Action Service image
+`git.allegedly.works/ducktape-ci/agentplane-action-service:devel-20260912122305-e2303e4` and
+MCP endpoint serving externally via `Agentplane_staging` MCP server. Deployment
+`agentplane-staging/agentplane-actions` reports generation 73, 2 ready replicas, both updated.
+Public MCP connection accepts OAuth-authenticated requests and resolves effective policy for the
+claude-ai ServiceAccount with binding `claude-ai-github-reads` (resourceVersion 286352196) and
+policy sets `github-reads` (generation 1), `github-identity-reads` (generation 1).
+
+**Not verified:** Sandbox MCP reachability independent of external Connection path.
 
 ### `ELEVATE` — agent-requested temporary permission
 
@@ -335,16 +336,20 @@ else depends on it.
 
 ### `CLAUDEAI` — working Claude.ai MCP facade
 
-**Operator-priority milestone:** the operator can connect Claude.ai to the deployed Action Service
-MCP facade, name/bind the Connection through integration-app enrollment, discover Actions, and use
-them under the selected caller ServiceAccount with real human-approved results. Preserve service
-safety constraints and exact authenticated client provenance. Auto-approval for that
-ServiceAccount is an `ActionPolicyBinding` naming it, not an acceptance requirement for this
-milestone.
-Registration alone, mocks, and CI composition tests do not establish this user-visible outcome.
+**Observed 2026-09-12T12:57-12:58Z:** Action Service MCP facade accepts authenticated external
+Connections. Verified auto-approval policy evaluation: `get_action_policy(target="self")` returns
+binding `claude-ai-github-reads` with unexpired sets `github-reads` and `github-identity-reads`.
+Auto-approved requests: (1) `github/get_me` (request ID `da669074-b55d-4b6f-a59d-784413c1e405`,
+2026-09-12T12:57:45.264395Z) with Decision policy_evidence binding resourceVersion 286352196,
+matched set `github-reads` generation 1; (2) `github/search_code` (request ID
+`1e780054-0f39-416e-b3d6-bb75edcfb3f3`, 2026-09-12T12:58:33.111358Z) with same binding/set.
+Idempotency enforcement: repeat submission of same key refused with "already used by this caller";
+`get_action_request(idempotency_key=...)` recovered original request. External caller identity:
+Connection `088a0679-f6e3-4f97-b63c-c9fce3fc84ad`, grant revision 1, ServiceAccount
+`agentplane-staging/claude-ai`.
 
-The broader `EXTERNALMCP` milestone also covers local Claude Code. The operator priority above names
-this Claude.ai outcome specifically; it does not require the additional client or full Haku migration.
+**Not verified:** human operator approval path (step requires operator interaction); Sandbox
+authentication independent of external Connection.
 
 ### `T3` — trajectory search and lookup
 
@@ -470,12 +475,16 @@ principal, shows Decision/result/error state, and offers Allow/Deny for pending 
 BFF routes, `/actions/stream`, `/push/*` routes, frontend tests, and service-worker tests cover the
 controls and live-update path; this is not a missing UI implementation.
 
-**Needed live evidence:** verify actual deployment, provider claims, allowed/denied operator access,
-VAPID configuration, reviewed push-service egress, and browser/service-worker behavior. Execute the
-existing BFF approval acceptance without widening allowlists for a test. The local-Gateway TLS
-reset that made federation fail intermittently is fixed cluster-wide
-([root cause and rollout](../../../cluster/debug/agentplane_oidc/local_gateway_tls_rca.md)); a
-federation failure now logs its cause. Signed mock integration and CI are evidence for code paths,
+**Needed live evidence:** human operator approval of a pending Action on staging. Staged request
+`github/create_branch` (request ID `d7e43a95-4dc3-4015-9895-7179dbd71fec`, created
+2026-09-12T12:58:16.505543Z) awaits operator decision through the integration-app Actions page.
+Operator approval via staging app will demonstrate: (1) operator identity from Authentik/federation,
+(2) canonical Decisions recorded in `decision_pending` → `allowed` transition, (3) Action Execution
+state transition captured in durable event sequence. Push notification delivery requires
+browser/service-worker interaction; credential/push-service egress and fallback-to-SSE behavior
+remain deferred. The local-Gateway TLS reset that made federation fail intermittently is fixed
+cluster-wide ([root cause and rollout](../../../cluster/debug/agentplane_oidc/local_gateway_tls_rca.md));
+a federation failure now logs its cause. Signed mock integration and CI are evidence for code paths,
 not deployed Authentik, SSE, or OS push proof.
 
 ### `RETIRE_AGENT` — Haku Console Agent/conversation management migration
