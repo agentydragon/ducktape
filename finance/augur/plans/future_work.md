@@ -30,7 +30,7 @@ assumptions remain downstream.
   decisions and other modeled processes in experiment provenance. Do not turn a
   storage position into another rollout identity or promise seed equivalence
   between different models.
-- **IDTYPES, deferred:** use distinct strongly typed entity IDs so security and
+- **IDTYPES:** use distinct strongly typed entity IDs so security and
   property identities cannot be interchanged at domain/API boundaries. This is
   not merely a prefix spelling change. Preserve existing typed keys; do not make
   a global serialization/ID sweep a prerequisite for product composition.
