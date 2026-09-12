@@ -52,12 +52,7 @@ def build_app(*, base_url: str, redirect_uri: str) -> FastMCP:
 
 
 def build_dex_app(*, base_url: str, authorization_server: str, jwks_uri: str, audience: str) -> FastMCP:
-    verifier = JWTVerifier(
-        jwks_uri=jwks_uri,
-        issuer=authorization_server,
-        audience=audience,
-        base_url=base_url,
-    )
+    verifier = JWTVerifier(jwks_uri=jwks_uri, issuer=authorization_server, audience=audience, base_url=base_url)
     auth = RemoteAuthProvider(
         token_verifier=verifier,
         authorization_servers=[AnyHttpUrl(authorization_server)],

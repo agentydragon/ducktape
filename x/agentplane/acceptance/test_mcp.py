@@ -197,9 +197,8 @@ async def _follow_dex_authorization(
     except (httpx.InvalidURL, ValueError):
         pytest.fail("BLOCKED: Dex authorization URL or operator issuer is invalid", pytrace=False)
     dex = issuer.copy_with(path="/", query=None, fragment=None)
-    if (
-        authorization.copy_with(path="/", query=None, fragment=None) != dex
-        or not DEX_OAUTH_PATH.fullmatch(authorization.path)
+    if authorization.copy_with(path="/", query=None, fragment=None) != dex or not DEX_OAUTH_PATH.fullmatch(
+        authorization.path
     ):
         pytest.fail("BLOCKED: MCP authorization did not target the configured Dex origin", pytrace=False)
 
