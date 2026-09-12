@@ -146,8 +146,9 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
     await service.start()
     client = await _client(service)
     try:
+        key = "submit-1"
         envelope = {
-            "idempotency_key": "submit-1",
+            "idempotency_key": key,
             "title": "test title for submit-1",
             "description": "test description the submit-1 title leaves out",
             "action": {"group": "agentplane", "name": "echo"},
@@ -182,12 +183,14 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
             )
             assert response.status_code == 422
 
-        submitted, concurrent_duplicate = await asyncio.gather(
-            client.post("/v1/action-requests", json=envelope, headers=_workload("workload-a")),
-            client.post("/v1/action-requests", json=envelope, headers=_workload("workload-a")),
+        submitted, concurrent_duplicate = sorted(
+            await asyncio.gather(
+                client.post("/v1/action-requests", json=envelope, headers=_workload("workload-a")),
+                client.post("/v1/action-requests", json=envelope, headers=_workload("workload-a")),
+            ),
+            key=lambda response: response.status_code,
         )
-        assert submitted.status_code == concurrent_duplicate.status_code == 202
-        assert concurrent_duplicate.json()["id"] == submitted.json()["id"]
+        assert (submitted.status_code, concurrent_duplicate.status_code) == (202, 409)
         pending = submitted.json()
         request_id = pending["id"]
         assert pending["state"] == "decision_pending"
@@ -197,23 +200,35 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
         # The caller's own plaintext context is projected verbatim, unlike credential-shaped values.
         assert pending["title"] == envelope["title"]
         assert pending["description"] == envelope["description"]
-        # Reusing the key for a differently-worded envelope is the conflict the check exists for.
+        # The key is spent whatever the envelope says; the request it named is read back by key.
         reworded = await client.post(
             "/v1/action-requests",
             json={**envelope, "title": "test title reworded on retry"},
             headers=_workload("workload-a"),
         )
         assert reworded.status_code == 409
+        by_key = {"idempotency_key": key}
+        recovered = await client.get("/v1/action-requests", params=by_key, headers=_workload("workload-a"))
+        assert [row["id"] for row in recovered.json()] == [request_id]
+        filtered = await client.get(
+            "/v1/action-requests", params={**by_key, "state": "succeeded"}, headers=_workload("workload-a")
+        )
+        assert filtered.json() == []
 
-        # Both Pods use the same ServiceAccount; live Sandbox identity, not subject, owns the row.
+        # Both Pods use the same ServiceAccount; live Sandbox identity, not subject, owns the row and its key.
         assert SANDBOX_A.service_account_subject == SANDBOX_B.service_account_subject
-        assert (await client.get("/v1/action-requests", headers=_workload("workload-b"))).json() == []
+        for params in ({}, by_key):
+            assert (
+                await client.get("/v1/action-requests", params=params, headers=_workload("workload-b"))
+            ).json() == []
         assert (
             await client.get(f"/v1/action-requests/{request_id}", headers=_workload("workload-b"))
         ).status_code == 404
         operator_list = await client.get("/v1/operator/action-requests", headers=_operator())
         assert operator_list.status_code == 200
         assert operator_list.json()[0]["arguments"] == envelope["arguments"]
+        operator_by_key = await client.get("/v1/operator/action-requests", params=by_key, headers=_operator())
+        assert [row["id"] for row in operator_by_key.json()] == [request_id]
         operator_detail = await client.get(_operator_path(request_id), headers=_operator())
         assert operator_detail.json()["arguments"] == envelope["arguments"]
         assert operator_detail.json()["title"] == envelope["title"]
@@ -412,7 +427,7 @@ async def test_restart_resumes_only_pending_dispatch_and_leaves_inflight_work_to
     store = ActionStore(sessions)
     executor = CountingExecutor()
 
-    pending_view, _ = await store.submit(
+    pending_view = await store.submit(
         ActionRequestInput(
             idempotency_key="restart-pending",
             title="test title for restart-pending",
@@ -439,7 +454,7 @@ async def test_restart_resumes_only_pending_dispatch_and_leaves_inflight_work_to
         await client.aclose()
         await restarted.close()
 
-    inflight_view, _ = await store.submit(
+    inflight_view = await store.submit(
         ActionRequestInput(
             idempotency_key="restart-inflight",
             title="test title for restart-inflight",
@@ -671,8 +686,8 @@ async def test_catalog_admission_and_group_routing(engine: AsyncEngine, echo_cat
             response = await client.post("/v1/action-requests", json=payload, headers=_workload("workload-a"))
             response.raise_for_status()
             submitted = response.json()
-            duplicate = await client.post("/v1/action-requests", json=payload, headers=_workload("workload-a"))
-            assert duplicate.json()["id"] == submitted["id"]
+            repeated = await client.post("/v1/action-requests", json=payload, headers=_workload("workload-a"))
+            assert repeated.status_code == 409
             decision = await client.post(
                 _operator_path(submitted["id"], "/decision"),
                 json={"verdict": "allow", "expected_version": submitted["version"], "idempotency_key": group},
