@@ -6,6 +6,7 @@ resources:
   - serviceaccount-claude-ai.yaml
   - actionpolicyset-github-reads.yaml
   - actionpolicyset-github-identity-reads.yaml
+  - actionpolicybinding-claude-ai-github-reads.yaml
   - rbac.yaml
   - configmap-action-federation.yaml
   - deployment.yaml
