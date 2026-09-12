@@ -20,19 +20,23 @@ on:
 # Each called workflow carries its own group instead, and the polarity differs according
 # to what the work is worth once it has been superseded:
 #
-#   bazel-ci.yml                  cancel-in-progress: true — a test result for a commit
-#                                 nobody will ship is worthless, so kill it.
+#   bazel-ci.yml                  cancels only PR runs — a test result for a PR head
+#                                 nobody will merge is worthless. A push run is for a
+#                                 commit that ships, so it queues behind the run in
+#                                 flight; GitHub keeps one pending run per group, so a
+#                                 merge burst costs the run in flight plus the newest.
+#                                 Cancelling push runs starved devel of images: eight
+#                                 in ten devel runs were cancelled on a busy day, and a
+#                                 cancelled run publishes nothing, so nothing published
+#                                 until a gap longer than a full run appeared.
 #   push-images.yml, release.yml  cancel-in-progress: false — a half-finished publish is
 #                                 not worthless. Queued runs coalesce (a new one replaces
 #                                 the pending one); running ones are left to finish.
 #
-# A superseded bazel-ci is cancelled, and the publish jobs below skip that run rather
-# than publish from it. `cancelled()` reports the *run*, not the dependency, so without
-# the explicit `needs.bazel-ci.result` check they would go ahead with no invocation ids
-# and fail open on every row: measured on devel, that is "42 of 42 images need a push"
-# plus ~20 releases, on the 8-in-10 pushes whose bazel-ci gets cancelled. Nothing is
-# lost by skipping, because the run that superseded this one publishes from its own
-# build, and it holds the newer commit.
+# The publish jobs below still skip a cancelled bazel-ci rather than publish from it.
+# `cancelled()` reports the *run*, not the dependency, so without the explicit
+# `needs.bazel-ci.result` check they would go ahead with no invocation ids and fail open
+# on every row: measured on devel, that is "42 of 42 images need a push" plus ~20 releases.
 
 permissions:
   contents: write
