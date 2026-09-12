@@ -1,0 +1,1050 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <style>
+      :root {
+        color-scheme: light;
+      }
+      body {
+        margin: 0;
+        padding: 0;
+        font:
+          14px -apple-system,
+          BlinkMacSystemFont,
+          sans-serif;
+        background: #faf9f5;
+        color: #141413;
+      }
+      img {
+        max-width: 100%;
+      }
+      [hidden]:not([hidden="until-found" i]) {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <title>Agentplane Composer Bar</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        --bg: #f4f5f7;
+        --surface: #ffffff;
+        --surface-2: #f1f3f5;
+        --surface-3: #eef0f2;
+        --border: #dfe2e7;
+        --border-soft: #e8eaed;
+        --ink: #1b1d22;
+        --muted: #676d79;
+        --faint: #9aa0ab;
+        --accent: #1c7ed6;
+        --accent-soft: #e7f3ff;
+        --warn: #e8590c;
+        --warn-soft: #fff2e8;
+        --danger: #d92d20;
+        --danger-soft: #fdeeed;
+        --ok: #2b8a3e;
+        --shadow: 0 1px 2px rgba(20, 24, 33, 0.04), 0 8px 24px -12px rgba(20, 24, 33, 0.18);
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) {
+          --bg: #18191c;
+          --surface: #232427;
+          --surface-2: #2a2b2f;
+          --surface-3: #303136;
+          --border: #3a3b40;
+          --border-soft: #313236;
+          --ink: #e9eaec;
+          --muted: #a2a7b0;
+          --faint: #6f7480;
+          --accent: #66b2f0;
+          --accent-soft: #1d3247;
+          --warn: #f2994a;
+          --warn-soft: #3a2a17;
+          --danger: #f2705f;
+          --danger-soft: #3b2220;
+          --ok: #6cc27a;
+          --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
+        }
+      }
+
+      :root[data-theme="dark"] {
+        --bg: #18191c;
+        --surface: #232427;
+        --surface-2: #2a2b2f;
+        --surface-3: #303136;
+        --border: #3a3b40;
+        --border-soft: #313236;
+        --ink: #e9eaec;
+        --muted: #a2a7b0;
+        --faint: #6f7480;
+        --accent: #66b2f0;
+        --accent-soft: #1d3247;
+        --warn: #f2994a;
+        --warn-soft: #3a2a17;
+        --danger: #f2705f;
+        --danger-soft: #3b2220;
+        --ok: #6cc27a;
+        --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+        padding: 0 20px;
+        padding-block: 40px 64px;
+      }
+
+      main {
+        max-width: 900px;
+        margin: 0 auto;
+        display: flex;
+        flex-direction: column;
+        gap: 48px;
+      }
+
+      .eyebrow {
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--accent);
+        margin: 0 0 8px;
+      }
+
+      h1 {
+        font-size: 30px;
+        font-weight: 700;
+        letter-spacing: -0.015em;
+        margin: 0 0 10px;
+        text-wrap: balance;
+      }
+
+      .lede {
+        font-size: 15.5px;
+        line-height: 1.6;
+        color: var(--muted);
+        max-width: 62ch;
+        margin: 0;
+      }
+
+      h2 {
+        font-size: 12.5px;
+        font-weight: 700;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        color: var(--faint);
+        margin: 0 0 16px;
+      }
+
+      section {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+
+      .section-note {
+        font-size: 13.5px;
+        line-height: 1.55;
+        color: var(--muted);
+        max-width: 68ch;
+        margin: -6px 0 4px;
+      }
+
+      /* ---- mock scaffolding ---- */
+
+      .stage {
+        overflow-x: auto;
+        padding: 4px 2px 12px;
+      }
+
+      .device {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        box-shadow: var(--shadow);
+        padding: 14px;
+        width: 640px;
+        flex: 0 0 auto;
+      }
+
+      .device.phone {
+        width: 360px;
+      }
+
+      .device-label {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--faint);
+        letter-spacing: 0.04em;
+        margin-bottom: 10px;
+      }
+
+      .header-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 13.5px;
+        color: var(--muted);
+      }
+
+      .back {
+        color: var(--accent);
+        font-weight: 500;
+      }
+
+      .thread-title {
+        color: var(--ink);
+        font-weight: 600;
+        font-size: 15px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .textarea-mock {
+        margin-top: 12px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 10px 12px;
+        color: var(--faint);
+        font-size: 13.5px;
+        background: var(--surface);
+      }
+
+      .bar {
+        margin-top: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        position: relative;
+      }
+
+      .cluster {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        flex: 0 0 auto;
+        outline: 2px solid transparent;
+        outline-offset: 2px;
+      }
+      .dot.ok {
+        background: var(--ok);
+      }
+      .dot.warn {
+        background: var(--warn);
+      }
+      .dot.danger {
+        background: var(--danger);
+      }
+      .dot.idle {
+        background: var(--faint);
+      }
+      .dot.breathing {
+        animation: breathe 1.3s ease-in-out infinite;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .dot.breathing {
+          animation: none;
+        }
+      }
+      @keyframes breathe {
+        0%,
+        100% {
+          opacity: 0.4;
+          transform: scale(0.82);
+        }
+        50% {
+          opacity: 1;
+          transform: scale(1);
+        }
+      }
+
+      .picker {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 6px 10px;
+        font-size: 13px;
+        color: var(--ink);
+        background: var(--surface);
+      }
+      .picker svg {
+        width: 12px;
+        height: 12px;
+        color: var(--faint);
+      }
+
+      .icon-btn {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid transparent;
+        background: var(--surface-2);
+        color: var(--muted);
+        flex: 0 0 auto;
+      }
+      .icon-btn svg {
+        width: 16px;
+        height: 16px;
+      }
+
+      .icon-btn.idle {
+        color: var(--faint);
+        background: var(--surface-2);
+      }
+      .icon-btn.active-stop {
+        color: var(--danger);
+        background: var(--danger-soft);
+        border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+      }
+      .icon-btn.open {
+        background: var(--accent-soft);
+        color: var(--accent);
+      }
+
+      .caption-row {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 6px;
+        gap: 8px;
+      }
+      .caption {
+        font-size: 10.5px;
+        color: var(--faint);
+        text-align: center;
+        flex: 1 1 0;
+      }
+      .caption.pair {
+        flex: 0 0 auto;
+        width: 108px;
+      }
+      .caption.single {
+        flex: 0 0 auto;
+        width: 32px;
+      }
+
+      /* ---- states grid ---- */
+
+      .states {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 16px;
+      }
+      .state-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        box-shadow: var(--shadow);
+        padding: 14px;
+      }
+      .state-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.03em;
+        color: var(--muted);
+        background: var(--surface-2);
+        border-radius: 999px;
+        padding: 3px 9px;
+        margin-bottom: 12px;
+      }
+      .state-tag .dot {
+        width: 6px;
+        height: 6px;
+      }
+
+      /* Stand-in for scrolled transcript content, just to give an upward-opening menu real room to
+     float over -- in the real page this is the ScrollArea, not empty space. */
+      .transcript-stub {
+        height: 108px;
+        border-radius: 8px;
+        background: linear-gradient(180deg, var(--surface-2) 0%, var(--surface-2) 60%, transparent 100%);
+        margin-bottom: 10px;
+        position: relative;
+      }
+      .transcript-stub::after {
+        content: "transcript, scrolled";
+        position: absolute;
+        top: 8px;
+        left: 10px;
+        font-size: 10.5px;
+        color: var(--faint);
+      }
+
+      /* ---- menu dropdown ---- */
+
+      /* Opens upward: the composer sits at the bottom of the viewport, so there's rarely room
+     below the trigger. Mantine's Menu floats via Floating UI and flips placement on its own
+     (default position "bottom", auto-flips to "top" when it would clip) -- this is what that
+     flip settles on here, not a special case to hand-code. */
+      .menu {
+        position: absolute;
+        bottom: calc(100% + 8px);
+        right: 40px;
+        width: 208px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        box-shadow: var(--shadow);
+        padding: 6px;
+        z-index: 2;
+      }
+      .menu::before {
+        content: "";
+        position: absolute;
+        bottom: -6px;
+        right: 18px;
+        width: 11px;
+        height: 11px;
+        background: var(--surface);
+        border-right: 1px solid var(--border);
+        border-bottom: 1px solid var(--border);
+        transform: rotate(45deg);
+      }
+      .menu-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 8px 8px;
+        border-radius: 6px;
+        font-size: 13px;
+        color: var(--ink);
+      }
+      .menu-item .left {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .menu-item svg {
+        width: 15px;
+        height: 15px;
+        color: var(--faint);
+      }
+      .menu-item.danger {
+        color: var(--danger);
+      }
+      .menu-item.danger svg {
+        color: var(--danger);
+      }
+      .menu-divider {
+        height: 1px;
+        background: var(--border-soft);
+        margin: 4px 4px;
+      }
+
+      .switch {
+        width: 30px;
+        height: 17px;
+        border-radius: 999px;
+        background: var(--accent);
+        position: relative;
+        flex: 0 0 auto;
+      }
+      .switch::after {
+        content: "";
+        position: absolute;
+        top: 2px;
+        right: 2px;
+        width: 13px;
+        height: 13px;
+        border-radius: 50%;
+        background: var(--surface);
+      }
+
+      /* ---- status dot states ---- */
+
+      .dot-states {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 12px;
+      }
+      .dot-swatch {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 12px 14px;
+      }
+      .dot-swatch .dot {
+        margin-top: 5px;
+        width: 10px;
+        height: 10px;
+      }
+      .dot-swatch-name {
+        font-size: 13.5px;
+        font-weight: 600;
+      }
+      .dot-swatch-detail {
+        font-size: 12px;
+        color: var(--muted);
+        margin-top: 2px;
+        line-height: 1.45;
+      }
+      .dot-swatch-tip {
+        display: inline-block;
+        margin-top: 6px;
+        font-size: 11px;
+        color: var(--faint);
+        background: var(--surface-2);
+        border-radius: 6px;
+        padding: 2px 6px;
+      }
+
+      /* ---- mapping table ---- */
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13.5px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        overflow: hidden;
+      }
+      thead th {
+        text-align: left;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--faint);
+        background: var(--surface-2);
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--border);
+      }
+      tbody td {
+        padding: 11px 14px;
+        border-bottom: 1px solid var(--border-soft);
+        vertical-align: top;
+      }
+      tbody tr:last-child td {
+        border-bottom: none;
+      }
+      td.element {
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      td.muted {
+        color: var(--muted);
+      }
+      td.order {
+        font-variant-numeric: tabular-nums;
+        color: var(--faint);
+        font-weight: 700;
+        width: 28px;
+      }
+      td code {
+        white-space: nowrap;
+      }
+      .table-wrap {
+        overflow-x: auto;
+      }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 11.5px;
+        font-weight: 600;
+        padding: 2px 8px;
+        border-radius: 999px;
+      }
+      .pill.stay {
+        background: var(--accent-soft);
+        color: var(--accent);
+      }
+      .pill.move {
+        background: var(--warn-soft);
+        color: var(--warn);
+      }
+
+      /* ---- notes ---- */
+
+      ul.notes {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      ul.notes li {
+        font-size: 13.5px;
+        line-height: 1.55;
+        color: var(--ink);
+        padding-left: 18px;
+        position: relative;
+      }
+      ul.notes li::before {
+        content: "";
+        position: absolute;
+        left: 2px;
+        top: 7px;
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--accent);
+      }
+      ul.notes b {
+        font-weight: 600;
+      }
+      ul.notes code {
+        font-family: ui-monospace, SFMono-Regular, "Liberation Mono", monospace;
+        font-size: 0.92em;
+        background: var(--surface-2);
+        padding: 1px 5px;
+        border-radius: 4px;
+      }
+
+      footer {
+        font-size: 12px;
+        color: var(--faint);
+        border-top: 1px solid var(--border-soft);
+        padding-top: 20px;
+      }
+    </style>
+
+    <main>
+      <header>
+        <p class="eyebrow">x/agentplane · session.tsx</p>
+        <h1>The composer bar</h1>
+        <p class="lede">
+          A proposal for the row under the composer: fold session/harness status, the raw-frames switch, and the
+          shutdown control in around the model picker and the interrupt button that already live there — so the header
+          is left with just navigation.
+        </p>
+      </header>
+
+      <section>
+        <h2>Header, after</h2>
+        <p class="section-note">
+          Once status and shutdown move down, the header is back button and thread title — nothing else fights the title
+          for room.
+        </p>
+        <div class="stage">
+          <div class="device">
+            <div class="header-row">
+              <span class="back">← demo-a1b2</span>
+              <span class="thread-title">Add fonts-liberation to the RBE image</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Anatomy</h2>
+        <p class="section-note">
+          Left cluster reads the session (is it worth trusting, what's it running); right cluster acts on it. Interrupt
+          sits apart from the menu on purpose — it's not "one of the options."
+        </p>
+        <div class="stage">
+          <div class="device">
+            <div class="device-label">Composer · idle</div>
+            <div class="textarea-mock">Enter sends, Ctrl+Enter for a new line</div>
+            <div class="bar">
+              <div class="cluster">
+                <span class="dot ok"></span>
+                <span class="picker">
+                  claude-sonnet-5
+                  <svg viewBox="0 0 12 12" fill="none">
+                    <path
+                      d="M3 4.5 6 7.5 9 4.5"
+                      stroke="currentColor"
+                      stroke-width="1.4"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                </span>
+              </div>
+              <div class="cluster">
+                <span class="icon-btn idle">
+                  <svg viewBox="0 0 16 16" fill="none">
+                    <circle cx="8" cy="3.2" r="1.3" fill="currentColor" />
+                    <circle cx="8" cy="8" r="1.3" fill="currentColor" />
+                    <circle cx="8" cy="12.8" r="1.3" fill="currentColor" />
+                  </svg>
+                </span>
+                <span class="icon-btn idle">
+                  <svg viewBox="0 0 16 16" fill="none">
+                    <rect x="4.5" y="4.5" width="7" height="7" rx="1.2" fill="currentColor" />
+                  </svg>
+                </span>
+              </div>
+            </div>
+            <div class="caption-row">
+              <span class="caption pair">Session + harness status</span>
+              <span class="caption pair">Model</span>
+              <span class="caption single">More</span>
+              <span class="caption single">Interrupt</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>States</h2>
+        <div class="states">
+          <div class="state-card">
+            <span class="state-tag"><span class="dot ok"></span>Idle — nothing running</span>
+            <div class="textarea-mock">Enter sends, Ctrl+Enter for a new line</div>
+            <div class="bar">
+              <div class="cluster">
+                <span class="dot ok"></span>
+                <span class="picker">
+                  claude-sonnet-5
+                  <svg viewBox="0 0 12 12" fill="none">
+                    <path
+                      d="M3 4.5 6 7.5 9 4.5"
+                      stroke="currentColor"
+                      stroke-width="1.4"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                </span>
+              </div>
+              <div class="cluster">
+                <span class="icon-btn idle">
+                  <svg viewBox="0 0 16 16" fill="none">
+                    <circle cx="8" cy="3.2" r="1.3" fill="currentColor" />
+                    <circle cx="8" cy="8" r="1.3" fill="currentColor" />
+                    <circle cx="8" cy="12.8" r="1.3" fill="currentColor" />
+                  </svg>
+                </span>
+                <span class="icon-btn idle">
+                  <svg viewBox="0 0 16 16" fill="none">
+                    <rect x="4.5" y="4.5" width="7" height="7" rx="1.2" fill="currentColor" />
+                  </svg>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div class="state-card">
+            <span class="state-tag"><span class="dot warn"></span>Turn active — a turn is streaming</span>
+            <div class="textarea-mock">Enter sends, Ctrl+Enter for a new line</div>
+            <div class="bar">
+              <div class="cluster">
+                <span class="dot ok"></span>
+                <span class="picker" style="opacity: 0.5">
+                  claude-sonnet-5
+                  <svg viewBox="0 0 12 12" fill="none">
+                    <path
+                      d="M3 4.5 6 7.5 9 4.5"
+                      stroke="currentColor"
+                      stroke-width="1.4"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                </span>
+              </div>
+              <div class="cluster">
+                <span class="icon-btn idle">
+                  <svg viewBox="0 0 16 16" fill="none">
+                    <circle cx="8" cy="3.2" r="1.3" fill="currentColor" />
+                    <circle cx="8" cy="8" r="1.3" fill="currentColor" />
+                    <circle cx="8" cy="12.8" r="1.3" fill="currentColor" />
+                  </svg>
+                </span>
+                <span class="icon-btn active-stop">
+                  <svg viewBox="0 0 16 16" fill="none">
+                    <rect x="4.5" y="4.5" width="7" height="7" rx="1.2" fill="currentColor" />
+                  </svg>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div class="state-card">
+            <span class="state-tag"><span class="dot ok"></span>Menu open</span>
+            <div class="transcript-stub"></div>
+            <div class="textarea-mock">Enter sends, Ctrl+Enter for a new line</div>
+            <div class="bar">
+              <div class="cluster">
+                <span class="dot ok"></span>
+                <span class="picker">
+                  claude-sonnet-5
+                  <svg viewBox="0 0 12 12" fill="none">
+                    <path
+                      d="M3 4.5 6 7.5 9 4.5"
+                      stroke="currentColor"
+                      stroke-width="1.4"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                </span>
+              </div>
+              <div class="cluster">
+                <span class="icon-btn open">
+                  <svg viewBox="0 0 16 16" fill="none">
+                    <circle cx="8" cy="3.2" r="1.3" fill="currentColor" />
+                    <circle cx="8" cy="8" r="1.3" fill="currentColor" />
+                    <circle cx="8" cy="12.8" r="1.3" fill="currentColor" />
+                  </svg>
+                </span>
+                <span class="icon-btn idle">
+                  <svg viewBox="0 0 16 16" fill="none">
+                    <rect x="4.5" y="4.5" width="7" height="7" rx="1.2" fill="currentColor" />
+                  </svg>
+                </span>
+              </div>
+              <div class="menu">
+                <div class="menu-item">
+                  <span class="left">Raw frames</span>
+                  <span class="switch"></span>
+                </div>
+                <div class="menu-divider"></div>
+                <div class="menu-item danger">
+                  <span class="left">
+                    <svg viewBox="0 0 16 16" fill="none">
+                      <path d="M8 2.5v5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                      <path d="M5 4.3a5 5 0 1 0 6 0" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                    </svg>
+                    Shut down harness
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>On a phone</h2>
+        <p class="section-note">Same row, same order — four small controls fit at 360px with room to spare.</p>
+        <div class="stage">
+          <div class="device phone">
+            <div class="textarea-mock">Enter sends, Ctrl+Enter for a new line</div>
+            <div class="bar">
+              <div class="cluster">
+                <span class="dot ok"></span>
+                <span class="picker">
+                  sonnet-5
+                  <svg viewBox="0 0 12 12" fill="none">
+                    <path
+                      d="M3 4.5 6 7.5 9 4.5"
+                      stroke="currentColor"
+                      stroke-width="1.4"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                </span>
+              </div>
+              <div class="cluster">
+                <span class="icon-btn idle">
+                  <svg viewBox="0 0 16 16" fill="none">
+                    <circle cx="8" cy="3.2" r="1.3" fill="currentColor" />
+                    <circle cx="8" cy="8" r="1.3" fill="currentColor" />
+                    <circle cx="8" cy="12.8" r="1.3" fill="currentColor" />
+                  </svg>
+                </span>
+                <span class="icon-btn idle">
+                  <svg viewBox="0 0 16 16" fill="none">
+                    <rect x="4.5" y="4.5" width="7" height="7" rx="1.2" fill="currentColor" />
+                  </svg>
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Status dot states</h2>
+        <p class="section-note">
+          Two independent state machines — session attachment (<code>status</code>) and the harness process
+          (<code>state.harness</code>) — collapse into one dot. Worst axis wins; first match in the table below decides
+          it.
+        </p>
+        <div class="dot-states">
+          <div class="dot-swatch">
+            <span class="dot ok"></span>
+            <div>
+              <div class="dot-swatch-name">Healthy</div>
+              <div class="dot-swatch-detail">Attached, harness running.</div>
+              <span class="dot-swatch-tip">Attached · Harness running</span>
+            </div>
+          </div>
+          <div class="dot-swatch">
+            <span class="dot warn breathing"></span>
+            <div>
+              <div class="dot-swatch-name">Pending</div>
+              <div class="dot-swatch-detail">
+                Still connecting, reconnecting, or attached with no harness report yet.
+              </div>
+              <span class="dot-swatch-tip">Reconnecting…</span>
+            </div>
+          </div>
+          <div class="dot-swatch">
+            <span class="dot idle"></span>
+            <div>
+              <div class="dot-swatch-name">Idle</div>
+              <div class="dot-swatch-detail">Stream ended, or the harness was shut down on purpose.</div>
+              <span class="dot-swatch-tip">Stream ended · Harness stopped</span>
+            </div>
+          </div>
+          <div class="dot-swatch">
+            <span class="dot danger"></span>
+            <div>
+              <div class="dot-swatch-name">Error</div>
+              <div class="dot-swatch-detail">Harness lost, or the runner reported an error.</div>
+              <span class="dot-swatch-tip">Harness lost</span>
+            </div>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th></th>
+                <th>Condition (first match wins)</th>
+                <th>Dot</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="order">1</td>
+                <td><code>status</code> starts with <code>"runner: "</code>, or <code>harness === "lost"</code></td>
+                <td class="muted">Error — red, static</td>
+              </tr>
+              <tr>
+                <td class="order">2</td>
+                <td>
+                  <code>status</code> is <code>"connecting"</code> / <code>"reconnecting"</code>, or attached with
+                  <code>harness === null</code>
+                </td>
+                <td class="muted">Pending — amber, breathing</td>
+              </tr>
+              <tr>
+                <td class="order">3</td>
+                <td><code>status === "stream ended"</code>, or <code>harness === "stopped"</code></td>
+                <td class="muted">Idle — gray, static</td>
+              </tr>
+              <tr>
+                <td class="order">4</td>
+                <td>otherwise — attached and <code>harness === "running"</code></td>
+                <td class="muted">Healthy — green, static</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section>
+        <h2>What moved, and why</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Element</th>
+                <th>Today</th>
+                <th>Proposed</th>
+                <th>Why</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="element">Status + harness badges</td>
+                <td class="muted">Two <code>Badge</code>s in the header</td>
+                <td><span class="pill move">→ composer bar</span> one dot, tooltip for the breakdown</td>
+                <td class="muted">Two state machines collapsed to one glanceable signal</td>
+              </tr>
+              <tr>
+                <td class="element">Model picker</td>
+                <td class="muted">Composer bar (already landed)</td>
+                <td><span class="pill stay">stays</span></td>
+                <td class="muted">—</td>
+              </tr>
+              <tr>
+                <td class="element">Raw frames switch</td>
+                <td class="muted">Header <code>Switch</code></td>
+                <td><span class="pill move">→ menu</span></td>
+                <td class="muted">Debugging affordance, not a primary control</td>
+              </tr>
+              <tr>
+                <td class="element">Shut down harness</td>
+                <td class="muted">Header <code>ActionIcon</code></td>
+                <td><span class="pill move">→ menu</span></td>
+                <td class="muted">Destructive, rare — extra friction is wanted here</td>
+              </tr>
+              <tr>
+                <td class="element">Interrupt</td>
+                <td class="muted">Composer bar (already landed)</td>
+                <td><span class="pill stay">stays, always visible</span></td>
+                <td class="muted">Time-critical during an active turn — never in the menu</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section>
+        <h2>Behavior notes</h2>
+        <ul class="notes">
+          <li>
+            <b>The menu is a Mantine <code>Menu</code></b> anchored to the "more" button. It floats via Floating UI,
+            which flips placement on its own — the composer sits at the bottom of the viewport, so it opens
+            <i>upward</i> here, not below the trigger; that's the library's default flip behavior, not something to
+            hand-code. Closes on outside click, Escape, or picking an item.
+          </li>
+          <li>
+            <b>"Raw frames" stays open after toggling</b> (<code>closeOnItemClick={false}</code>) so flipping it shows
+            the switch move without having to reopen the menu to confirm.
+          </li>
+          <li>
+            <b>"Shut down harness" is disabled</b> exactly when it is today — <code>state.harness !== "running"</code> —
+            and probably wants a confirm step now that it's one tap more casual to reach.
+          </li>
+          <li>
+            <b>The status dot picks one of four buckets by priority</b> (see the states table above) rather than a
+            literal cross-product of session/harness values — a plain function of the two, easy to unit-test on its own.
+          </li>
+          <li>
+            <b>The tooltip carries the breakdown</b> the two badges used to spell out — same <code>role="img"</code> +
+            <code>aria-label</code> + <code>Tooltip</code> pattern already used for the transcript's
+            streaming/failed/sending dots, and "Pending" reuses that same dot's breathing animation.
+          </li>
+          <li>
+            <b>Interrupt's color is the only thing that changes with state</b> — neutral and disabled when idle,
+            danger-tinted and enabled the moment a turn starts, so "there's something to stop" reads before the operator
+            reads the label.
+          </li>
+        </ul>
+      </section>
+
+      <footer>Mock for x/agentplane/plans/mobile_density.md · not wired to real state</footer>
+    </main>
+  </body>
+</html>

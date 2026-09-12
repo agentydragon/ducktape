@@ -57,8 +57,8 @@ used to call out as a staging-only stopgap.
 ## Open questions (not decided here)
 
 - Does a session-first list replace `SandboxList` as the `/` route, or live alongside it as a
-  second top-level view? (Settled direction, per the App Shell mock: replace it entirely as one
-  atomic cutover — see `UISHELL_SIDEBAR` in [the task DAG](task_dag.md).)
+  second top-level view? (Settled direction, per [the App Shell mock](mocks/app_shell.html):
+  replace it entirely as one atomic cutover — see `UISHELL_SIDEBAR` in [the task DAG](task_dag.md).)
 - What happens to a session row when its Sandbox is deleted — kept as a read-only historical entry,
   or dropped once the Sandbox is gone? (Now answerable either way, since `Thread` rows already
   outlive the Sandbox.)

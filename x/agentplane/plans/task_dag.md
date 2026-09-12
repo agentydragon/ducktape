@@ -606,9 +606,8 @@ left sidebar: a single Threads list grouped by the Sandbox that hosts them (stat
 thread count per group; a per-thread status dot for harness-running/idle/needs-approval), including
 a struck-through group for a Thread whose Sandbox was deleted (read-only, no folder-link, no
 composer). Sandboxes get no separate browse-by-sandbox tab — that identity/state/count already
-lives in the group headers. See the App Shell mock captured for
-[session-first navigation](session_first_navigation.md) for the settled layout. Ship as one atomic
-cutover; no transitional shim keeping both navs live.
+lives in the group headers. See [the App Shell mock](mocks/app_shell.html) for the settled layout.
+Ship as one atomic cutover; no transitional shim keeping both navs live.
 
 **Acceptance:** every Thread across every Sandbox appears exactly once, grouped correctly; a Thread
 survives its Sandbox's deletion and renders read-only; per-thread status reflects real
