@@ -195,7 +195,7 @@ bazel_dep(name = "aspect_rules_py", version = "1.10.0")
 
 # Container images (rules_oci)
 bazel_dep(name = "rules_oci", version = "2.3.0")
-bazel_dep(name = "rules_distroless", version = "0.9.4")
+bazel_dep(name = "rules_distroless", version = "0.8.0")
 bazel_dep(name = "rules_pkg", version = "1.2.0")
 
 oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
