@@ -213,7 +213,7 @@ oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
 # The hermetic Python toolchain is bundled in the interpreter layer.
 oci.pull(
     name = "debian_trixie_slim",
-    digest = "sha256:38a76d01668772e381ad2826d876627c89e7133e2f8a0f5d567306798b0f2a16",
+    digest = "sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132",
     image = "mirror.gcr.io/library/debian",
     platforms = ["linux/amd64"],
     tag = "trixie-slim",
@@ -222,7 +222,7 @@ oci.pull(
 # Test infrastructure: PostgreSQL for Testcontainers (match production version)
 oci.pull(
     name = "postgres_18",
-    digest = "sha256:cd78ca58eb75f929698e117a589488ccb2bd45107247fe02400b50ff6c418324",
+    digest = "sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
     image = "mirror.gcr.io/library/postgres",
     platforms = ["linux/amd64"],
     tag = "18",
@@ -270,7 +270,7 @@ oci.pull(
 # Debian 12 (Bookworm) ships glibc 2.36.
 oci.pull(
     name = "distroless_cc_debian12",
-    digest = "sha256:633c48ef17ed6f68966f71a2da76515ce907528c8ba0b8dc60daf42e841321ed",
+    digest = "sha256:e5d81ddde149641e2a9ba55be4545bc125c67de07508b03ba4c22e6eb0ded5aa",
     image = "gcr.io/distroless/cc-debian12",
     platforms = ["linux/amd64"],
     tag = "latest",
@@ -280,7 +280,7 @@ oci.pull(
 # To update: docker manifest inspect inventree/inventree:stable | jq -r '.manifests[] | select(.platform.architecture=="amd64") | .digest'
 oci.pull(
     name = "inventree_stable",
-    digest = "sha256:8e943a0e3450f269c44ffde875afe3f0dfa26f66877d46058a22b65f3eab2ce7",
+    digest = "sha256:a946ec09da3e5a5b7343fb7d02f2367f74167f4ce883a62e4a313db7bdb9bd54",
     image = "mirror.gcr.io/inventree/inventree",
     platforms = ["linux/amd64"],
     tag = "stable",
@@ -301,7 +301,7 @@ oci.pull(
 # Base image for container E2E tests. rules_distroless layers git + JDK on top.
 oci.pull(
     name = "python_3_13_slim",
-    digest = "sha256:8fef26df932191825664e4957ff488c96dfe64918327634a357a55facbc994d3",
+    digest = "sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285",
     image = "mirror.gcr.io/library/python",
     platforms = ["linux/amd64"],
     tag = "3.13-slim",
