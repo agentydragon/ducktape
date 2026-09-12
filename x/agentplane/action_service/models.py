@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Literal, Protocol
@@ -35,6 +36,14 @@ SANDBOX_ISSUER = "kubernetes-sandbox"
 SERVICE_ACCOUNT_ISSUER = "service-account"
 
 
+@dataclass(frozen=True, slots=True, order=True)
+class NamespacedName:
+    """What the policy index is keyed by; ordered so a sorted index walks namespace, then name."""
+
+    namespace: str
+    name: str
+
+
 class ServiceAccountRef(BaseModel):
     """A Kubernetes ServiceAccount by namespace and name; as an Action caller it is eligible only while
     labeled, which the Connection authority checks on every resolution."""
@@ -43,6 +52,10 @@ class ServiceAccountRef(BaseModel):
 
     namespace: str = Field(min_length=1)
     name: str = Field(min_length=1)
+
+    @property
+    def namespaced_name(self) -> NamespacedName:
+        return NamespacedName(self.namespace, self.name)
 
     def principal(self) -> Principal:
         return Principal(

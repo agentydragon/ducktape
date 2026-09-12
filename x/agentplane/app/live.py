@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import CoreV1Api
@@ -136,14 +136,14 @@ class LiveIndex:
         )
 
 
-def _named(raw: dict[str, object]) -> tuple[str, dict[str, object]]:
+def _name(raw: dict[str, object]) -> str:
     metadata = raw["metadata"]
     assert isinstance(metadata, dict)
-    return str(metadata["name"]), raw
+    return str(metadata["name"])
 
 
-def _named_pod(pod: k8s_client.V1Pod) -> tuple[str, k8s_client.V1Pod]:
-    return str(pod.metadata.name), pod
+def _pod_name(pod: k8s_client.V1Pod) -> str:
+    return str(pod.metadata.name)
 
 
 def watch_for(
@@ -176,7 +176,7 @@ def watch_for(
                 list=custom_objects.list_namespaced_custom_object,
                 args=(*SANDBOX_API, sandbox_namespace, SANDBOXES_PLURAL),
                 kwargs={"label_selector": f"{MANAGED_LABEL}=true"},
-                parse=_named,
+                key=_name,
                 names=lambda: set(index.sandboxes),
                 apply=lambda name, obj: apply_to(index.sandboxes, name, obj),
             ),
@@ -184,7 +184,7 @@ def watch_for(
                 name=PODS_PLURAL,
                 list=core_v1.list_namespaced_pod,
                 args=(sandbox_namespace,),
-                parse=_named_pod,
+                key=_pod_name,
                 names=lambda: set(index.pods),
                 apply=lambda name, obj: apply_to(index.pods, name, obj),
             ),
@@ -192,7 +192,7 @@ def watch_for(
                 name=BINDINGS_PLURAL,
                 list=custom_objects.list_namespaced_custom_object,
                 args=(*EGRESS_API, namespace, BINDINGS_PLURAL),
-                parse=_named,
+                key=_name,
                 names=lambda: set(index.bindings),
                 apply=lambda name, obj: apply_to(index.bindings, name, obj),
             ),
@@ -200,7 +200,7 @@ def watch_for(
                 name=POLICIES_PLURAL,
                 list=custom_objects.list_namespaced_custom_object,
                 args=(*EGRESS_API, namespace, POLICIES_PLURAL),
-                parse=_named,
+                key=_name,
                 names=lambda: set(index.policies),
                 apply=lambda name, obj: apply_to(index.policies, name, obj),
             ),
@@ -208,7 +208,7 @@ def watch_for(
                 name=CREDENTIALS_PLURAL,
                 list=custom_objects.list_namespaced_custom_object,
                 args=(*EGRESS_API, namespace, CREDENTIALS_PLURAL),
-                parse=_named,
+                key=_name,
                 names=lambda: set(index.credentials),
                 apply=lambda name, obj: apply_to(index.credentials, name, obj),
             ),
@@ -300,18 +300,24 @@ async def live_sandboxes(index: Index, shutdown: Shutdown) -> StreamingResponse:
 
 
 @router.get("/sandboxes/{name}", responses=_SANDBOX_FRAMES)
-async def live_sandbox(index: Index, store: Store, shutdown: Shutdown, name: str) -> StreamingResponse:
+async def live_sandbox(
+    index: Index,
+    store: Store,
+    shutdown: Shutdown,
+    name: str,
+    include_archived: Annotated[bool, Query(description="Also carry archived threads.")] = False,
+) -> StreamingResponse:
     """One sandbox page, pushed: the sandbox, its bindings, and its threads.
 
-    Threads are not Kubernetes and no watch reaches them; the store notifies when it creates or
-    renames one, which is every change a page shows.
+    Threads are not Kubernetes and no watch reaches them; the store notifies when it creates,
+    renames, or archives one, which is every change a page shows.
     """
 
     async def snapshot() -> SandboxSnapshot:
         return SandboxSnapshot(
             sandbox=index.sandbox_view(name),
             bindings=index.bindings_for(name),
-            threads=await store.list_threads(sandbox=name),
+            threads=await store.list_threads(sandbox=name, include_archived=include_archived),
             watch=_health(index),
         )
 

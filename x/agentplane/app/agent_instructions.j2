@@ -22,7 +22,9 @@ credentialed egress guarded only by route allowlists. The service is at
 {{ actions_service_url }} and uses the workload
 placeholder above; its OpenAPI schema is at {{ actions_service_url }}/openapi.json. Discover
 Actions with GET /v1/action-groups and, when needed, GET
-/v1/action-groups/{group}/actions/{action}. Request one with POST /v1/action-requests, using a
+/v1/action-groups/{group}/actions/{action}. GET /v1/action-policy says which Actions and arguments
+your own bindings auto-approve; anything else waits for the operator, and nothing does until it
+reports synced. Request one with POST /v1/action-requests, using a
 unique idempotency_key, action group/name, and discovered arguments. Keep the returned request ID
 and key. decision_pending means the request is waiting for an operator, not that it succeeded.
 Follow a request with GET /v1/action-requests/{id} and GET

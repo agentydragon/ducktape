@@ -50,7 +50,7 @@ spec:
               mountPath: /data
       containers:
         - name: cli-proxy-api
-          image: git.allegedly.works/ducktape-ci/cli-proxy-api:devel-20260909225434-a464157 # {"$imagepolicy": "flux-system:cli-proxy-api"}
+          image: git.allegedly.works/ducktape-ci/cli-proxy-api:devel-20260912093210-b1fb784 # {"$imagepolicy": "flux-system:cli-proxy-api"}
           args: [-config, /config/config.yaml]
           env:
             - name: MANAGEMENT_PASSWORD

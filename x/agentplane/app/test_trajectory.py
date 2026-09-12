@@ -137,6 +137,28 @@ async def test_a_thread_is_unnamed_until_renamed_and_keeps_its_progress(
         await store.rename(UUID(int=0), "nobody")
 
 
+async def test_a_thread_archives_and_unarchives_without_touching_its_progress(
+    store: TrajectoryStore, lease: IngestionLease
+) -> None:
+    thread = await store.thread("sb-1", "s-1", SPEC)
+    await store.record(thread, [_event(1, harness_started=pb.HarnessStarted(pid=1))], lease=lease)
+    (unarchived,) = await store.list_threads()
+    assert unarchived.archived is False
+
+    archived = await store.archive(thread)
+
+    assert (archived.archived, archived.last_sequence) == (True, 1)
+    assert await store.get_thread(thread) == archived
+    assert await store.list_threads() == []
+    assert [view.id for view in await store.list_threads(include_archived=True)] == [thread]
+
+    unarchived = await store.unarchive(thread)
+    assert unarchived.archived is False
+    assert [view.id for view in await store.list_threads()] == [thread]
+    with pytest.raises(ThreadNotFoundError):
+        await store.archive(UUID(int=0))
+
+
 async def test_concurrent_replicas_create_one_thread(store: TrajectoryStore, replica: TrajectoryStore) -> None:
     first, second = await asyncio.gather(store.thread("sb-1", "s-1", SPEC), replica.thread("sb-1", "s-1", SPEC))
     assert first == second
