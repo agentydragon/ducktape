@@ -52,7 +52,7 @@ oci_image_py(
     name = "ryuk",
     testonly = True,
     image = "@ryuk_linux_amd64",
-    tag = "testcontainers/ryuk:0.8.1",
+    tag = "testcontainers/ryuk:0.14.0",
     visibility = ["//visibility:public"],
 )
 
