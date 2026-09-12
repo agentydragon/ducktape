@@ -63,11 +63,8 @@ flowchart TB
     IDENTITY_SCOPE["Deferred discussion<br/>cross-service static Identity access<br/>MCP and binding-authority placement"]:::future
     PROD["Milestone<br/>production-capable governed action execution"]:::milestone
 
-    UISHELL_SETTINGS["Planned UI<br/>Settings modal consolidation<br/>OAuth clients table + ServiceAccount dropdown"]:::future
-    UISHELL_HISTORY["Planned UI<br/>Action history full page<br/>caller, arguments, decision evidence"]:::future
     ACTION_CONTEXT["Planned schema<br/>caller-supplied Action title/description<br/>ActionRequestInput + ActionCard rendering"]:::future
     THREAD_ARCHIVE["Planned support<br/>per-Thread archived flag + filter<br/>archive/unarchive wired into current UI"]:::future
-    THREAD_LIST_API["Planned support<br/>cross-sandbox Thread-listing endpoint<br/>Sandbox id/state, deleted-Sandbox tolerance"]:::future
     UISHELL_SIDEBAR["Planned milestone<br/>session-first sidebar shell<br/>Threads grouped by Sandbox, replaces top nav"]:::milestone
     UISHELL_DRAWER["Planned UI<br/>pending-approval badge + drawer<br/>global subscription, non-modal"]:::future
     UISHELL_MOBILE["Planned UI<br/>mobile sidebar collapse<br/>hamburger toggle, badge stays in top bar"]:::future
@@ -99,12 +96,9 @@ flowchart TB
 
     ACCESS -. authority choice .-> EGRESS_CHANGE
 
-    THREAD_LIST_API --> UISHELL_SIDEBAR
     UISHELL_SIDEBAR --> UISHELL_DRAWER
     UISHELL_SIDEBAR --> UISHELL_MOBILE
     UISHELL_SIDEBAR --> UISHELL_NEWTHREAD_LANDING
-    THREAD_LIST_API --> THREAD_BROWSE_PAGINATE
-    THREAD_ARCHIVE -. archived filter reused .-> THREAD_LIST_API
 ```
 
 The credentialless MCP vertical is complete and is intentionally removed from this remaining-work
@@ -145,24 +139,22 @@ Haku Console migration is split: Agent/conversation management and tool-call/app
 can retire on different schedules after their respective replacement surfaces exist. Neither is a
 prerequisite for the first Action/MCP acceptance.
 
-The session-first UI shell (`UISHELL_SETTINGS`, `UISHELL_HISTORY`, `ACTION_CONTEXT`,
-`THREAD_ARCHIVE`, `THREAD_LIST_API`, `UISHELL_SIDEBAR`, `UISHELL_DRAWER`, `UISHELL_MOBILE`,
-`UISHELL_NEWTHREAD_SANDBOX`, `UISHELL_NEWTHREAD_LANDING`, `THREAD_BROWSE_PAGINATE`) is a separate
-frontend-ergonomics track: it is not gated by, and does not gate, the Action Service milestones
-above. `UISHELL_SETTINGS`, `UISHELL_HISTORY`, `ACTION_CONTEXT`, `THREAD_ARCHIVE`, and
-`UISHELL_NEWTHREAD_SANDBOX` have no dependencies and ship independently and in parallel.
-`THREAD_LIST_API` is the one real blocker for the sidebar: a Thread is reachable today only through
-its owning Sandbox's own session list, and the sidebar needs one cross-sandbox listing call that
-also tolerates a Thread whose Sandbox no longer exists; it reuses the archived-Thread filter
-`THREAD_ARCHIVE` adds rather than inventing a second one. `UISHELL_SIDEBAR` then replaces the top
-nav row entirely as one atomic cutover, not a transitional shim running both navs at once;
-`UISHELL_DRAWER`, `UISHELL_MOBILE`, and `UISHELL_NEWTHREAD_LANDING` (the sidebar's own "+") build on
-its chrome after it lands. `THREAD_BROWSE_PAGINATE` is explicitly deferred, not designed: finding
-one old Thread once the sidebar's working-set list outgrows it needs its own paginated/searchable
-page eventually, flagged now only so `THREAD_LIST_API` isn't built assuming one unpaginated call is
-enough forever. See [mobile density](mobile_density.md),
-[session-first navigation](session_first_navigation.md), and
-[Action-request plaintext context](action_request_context.md).
+The session-first UI shell (`ACTION_CONTEXT`, `THREAD_ARCHIVE`, `UISHELL_SIDEBAR`, `UISHELL_DRAWER`,
+`UISHELL_MOBILE`, `UISHELL_NEWTHREAD_SANDBOX`, `UISHELL_NEWTHREAD_LANDING`, `THREAD_BROWSE_PAGINATE`)
+is a separate frontend-ergonomics track: it is not gated by, and does not gate, the Action Service
+milestones above. `ACTION_CONTEXT`, `THREAD_ARCHIVE`, and `UISHELL_NEWTHREAD_SANDBOX` have no
+dependencies and ship independently and in parallel. The cross-sandbox Thread-listing endpoint
+(`GET /threads/with-sandboxes`) that was the sidebar's one real blocker has landed — a Thread was
+previously reachable only through its owning Sandbox's own session list — tolerant of a Thread whose
+Sandbox no longer exists, and reusing the same `include_archived` filter `THREAD_ARCHIVE` adds
+rather than a second one. `UISHELL_SIDEBAR` is unblocked and replaces the top nav row entirely as
+one atomic cutover, not a transitional shim running both navs at once; `UISHELL_DRAWER`,
+`UISHELL_MOBILE`, and `UISHELL_NEWTHREAD_LANDING` (the sidebar's own "+") build on its chrome after
+it lands. `THREAD_BROWSE_PAGINATE` is explicitly deferred, not designed: finding one old Thread once
+the sidebar's working-set list outgrows it needs its own paginated/searchable page eventually,
+flagged now only so the with-sandboxes endpoint isn't assumed to stay one unpaginated call forever.
+See [mobile density](mobile_density.md), [session-first navigation](session_first_navigation.md),
+and [Action-request plaintext context](action_request_context.md).
 
 ### `BB` — BuildBuddy hosted-run credential boundary
 
@@ -566,29 +558,17 @@ lives in the group headers. See the App Shell mock captured for
 [session-first navigation](session_first_navigation.md) for the settled layout. Ship as one atomic
 cutover; no transitional shim keeping both navs live.
 
-**Depends on** `THREAD_LIST_API`. **Acceptance:** every Thread across every Sandbox appears exactly
-once, grouped correctly; a Thread survives its Sandbox's deletion and renders read-only; per-thread
-status reflects real harness/pending-approval state, not a cached snapshot.
-
-### `THREAD_LIST_API` — cross-sandbox Thread-listing endpoint
-
-**Needed support:** today a Thread is reachable only through its owning Sandbox's own session list;
-`UISHELL_SIDEBAR` needs one call returning every Thread the operator can see, each annotated with
-its Sandbox's id and current state, tolerant of a Thread whose Sandbox row is gone. Reuses
-`THREAD_ARCHIVE`'s archived-Thread filter rather than inventing a second one. This is the one real
-technical blocker in the UI-shell cluster; nothing else in it waits on this.
+**Acceptance:** every Thread across every Sandbox appears exactly once, grouped correctly; a Thread
+survives its Sandbox's deletion and renders read-only; per-thread status reflects real
+harness/pending-approval state, not a cached snapshot.
 
 ### `THREAD_ARCHIVE` — per-Thread archived flag and filter
 
-**Needed support:** `sandboxes.tsx` already has a Sandbox-level "archived" concept (a "Show
-archived" switch, default off, `includeArchived` filter, per-row Archive/Unarchive) that needs a
-Thread-level sibling now that Threads are meant to be browsed independently of their Sandbox.
-Before adding it, check for any other existing "archived"/"closed"/"ended" lifecycle concept
-already attached to a Thread or session that this could collide with or duplicate. Add the field,
-an archive/unarchive mutation, and a default-false filter on the existing per-Sandbox Thread
-listing; wire Archive/Unarchive into whatever lists a Sandbox's Threads today (there's no sidebar
-yet to host it). No dependency on `THREAD_LIST_API` — ships independently; `THREAD_LIST_API` reuses
-its filter once both exist.
+**Needed support:** add an `archived` flag to Thread, an archive/unarchive mutation, and a
+default-false filter on the Thread listing; wire Archive/Unarchive into whatever lists a Sandbox's
+Threads today (there's no sidebar yet to host it). This is unrelated to Sandbox-level archiving,
+which has since been removed as a separate, redundant mechanism. Ships independently; the
+cross-sandbox Thread-listing endpoint reuses this filter once both land.
 
 ### `UISHELL_DRAWER` — pending-approval badge and drawer
 
@@ -601,22 +581,6 @@ raise the badge without a page visit.
 
 **Depends on** `UISHELL_SIDEBAR` for chrome placement; the subscription plumbing itself can be
 built in parallel.
-
-### `UISHELL_HISTORY` — Action history full page
-
-**Planned UI:** move decided Actions off `actions.tsx`'s current single list into their own page
-(reached from a sidebar-footer icon or the drawer's "view history" link, never a tab list) with the
-same per-entry detail as the pending drawer, plus the decision, `decision_note`, and — for a
-policy-matched Decision — which `ActionPolicySet` decided it. No dependency on `UISHELL_SIDEBAR`;
-`actions.tsx` already exists as a routed page today.
-
-### `UISHELL_SETTINGS` — Settings modal consolidation
-
-**Planned UI:** merge the Connections/MCP servers/Notifications pages into one tabbed modal behind
-a single affordance; rename "Connections" to "OAuth clients" and reshape the list into a 3-column
-table (client, ServiceAccount as a dropdown, Unlink) — the model already specified in
-[Action policies](action_policies.md), not a redesign of the `Connection` type. No dependency on
-the sidebar; today's nav row can host the same modal.
 
 ### `UISHELL_MOBILE` — mobile sidebar collapse
 
@@ -654,11 +618,11 @@ click first is an open question, not decided.
 
 **Deferred, way later:** the sidebar's Threads list is fine for a working set, but finding one old
 Thread once it runs past the dozens needs its own answer — probably a full page, the same shape as
-`UISHELL_HISTORY`. Not designed here; flagged only so `THREAD_LIST_API` doesn't get built assuming
-one unpaginated call is enough forever.
+the Action history page. Not designed here; flagged only so the with-sandboxes endpoint doesn't get
+assumed to stay one unpaginated call forever.
 
-**Depends on** `THREAD_LIST_API` (extends its endpoint with cursor pagination and, eventually,
-search). Nothing above waits on this.
+**Depends on** the cross-sandbox Thread-listing endpoint (extends it with cursor pagination and,
+eventually, search). Nothing above waits on this.
 
 ## Deferred
 
