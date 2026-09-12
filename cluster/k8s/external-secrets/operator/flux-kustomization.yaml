@@ -9,7 +9,7 @@ spec:
   path: ./cluster/k8s/external-secrets/operator
   prune: true
   sourceRef:
-    kind: GitRepository
+    kind: ExternalArtifact
     name: ducktape
     namespace: ducktape-flux
   timeout: 5m0s

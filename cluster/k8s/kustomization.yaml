@@ -156,6 +156,7 @@ resources:
   # --- external-secrets ---
   - external-secrets/crds/gitrepository.yaml
   - external-secrets/crds/flux-kustomization.yaml
+  - external-secrets/operator-artifact/flux-kustomization.yaml
   - external-secrets/operator/flux-kustomization.yaml
   - external-secrets/config-artifact/flux-kustomization.yaml
   - external-secrets/config/flux-kustomization.yaml
