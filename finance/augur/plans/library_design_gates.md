@@ -242,6 +242,92 @@ Callers by surface today, so the burn-down can be checked off:
 - **App recording (`capture.FinancialCapture`, `configured.product_row`):** leaves to
   `product/` with RECORD.
 
+### Remaining work, in dependency order
+
+The burn-down that is left, as a graph: an edge means the target cannot start until
+the source has landed. Everything else is independent and can be dispatched in
+parallel. Each node leaves this section when it lands.
+
+```mermaid
+graph TD
+    INVEST["INVEST: a clamped, money-denominated invest order (decision open)"]
+    SUITES_NOBUY["SUITES-A: configured suites that never purchase move onto a household"]
+    SUITES_BUY["SUITES-B: configured suites that purchase move onto a household"]
+    CONFIGURED_GONE["CONFIGURED: delete sim/configured.py, case.py, the legacy result adapters"]
+    APP_COMPOSE["APP-COMPOSE: product/scenarios.py declares worlds, no authored Scenario"]
+    SIMTESTS["SIMTESTS: the prepared-input sim tests compose their worlds"]
+    RUN_GONE["RUN: delete CompiledRun, compile_run, from_run, validation.py"]
+    RECORD["RECORD: app recording lives in product/; absent domains absent from books"]
+    OFFERS["OFFERS: Issuer, TenderOffer, Accept/Decline (GPE gate)"]
+    DRAIN["DRAIN: emit/accept check on track(), per-month drain budget"]
+    TAXCLOSE["TAXCLOSE: the tax year closes inside TaxAuthority"]
+    SEASONED["SEASONED: tracked contracts originated before month zero (GHOUSE)"]
+    PROPERTY["PROPERTY: a tracked property component; rented share on tracked loans (GHOUSE)"]
+    VECTOR["VECTOR: World gains a rollout axis; ActionSession and its delegates go"]
+    INVEST --> SUITES_BUY
+    SUITES_NOBUY --> CONFIGURED_GONE
+    SUITES_BUY --> CONFIGURED_GONE
+    CONFIGURED_GONE --> RUN_GONE
+    APP_COMPOSE --> RUN_GONE
+    SIMTESTS --> RUN_GONE
+    CONFIGURED_GONE --> RECORD
+    OFFERS --> DRAIN
+    RUN_GONE --> VECTOR
+```
+
+- **INVEST.** The configured runner buys after settlement, sized to the cash actually
+  left; a household deciding once a month cannot see that cash. Open decision: an
+  order the ledger fills up to an amount from the account's cash on hand, turned into
+  whole units for a lot pool and contributed as-is to a managed portfolio. The
+  managed case drops today's rounding of a contribution to whole units of the
+  underlying, which `tlh_session_test` and `configured_allocation_test` may pin.
+- **SUITES-A.** `TestConfigured{IncomeSources,PropertyStakes,PrivateEquity,Deductions,
+CashConservation,FrozenRollout,Rental*,YearEndTax,PropertyCarryingCost,ScanPhase,
+ValidationEdge}` and `configured_mortgage_test` use grouped settlement and scheduled
+  sales but no purchases: each composes its worlds as `harvest_test` does and states
+  its sales and payments as actions. Grouped all-or-none settlement is the household's
+  choice per account, as in `product/household.py`.
+- **SUITES-B.** `TestConfiguredTargetAllocation`, `configured_allocation_test`,
+  `tlh_session_test`: the same, once the invest order exists.
+- **CONFIGURED.** With no suite left, `sim/configured.py`, `sim/testing/case.py`,
+  `configured_result.py`, `simulation_result.py`, `product/service_test`'s agreement
+  test against the runner, and `configured_allocation.validate_prepared`'s reader of
+  the prepared run go. `policy/configured_allocation.plan` stays as the household's
+  helper.
+- **APP-COMPOSE.** `product/scenarios.py` builds an authored `Scenario` that
+  `compile_run` lowers; instead it declares accounts, pools, lots, bonds, housing,
+  distributions, tender and funding policies on each `World` through the compiler's
+  per-table pieces (`compile_series`, `compile_profile`, and the property, bond and
+  distribution lowerings still inside `compile_run`), and tracks its household,
+  billers and authorities. `scheduled_transfers` and the property cashflow tables
+  become tracked emitters or declarations on the way.
+- **SIMTESTS.** `sim/testing/example_run.py` and the tests of the prepared-input path
+  (`test_results`, `validation_test`, `test_validation_contracts`,
+  `testing/test_invocation`, `product/test_action_projection`) compose their worlds;
+  what they assert about validation moves to the declaration that now rejects it.
+- **RUN.** `CompiledRun`, `PreparedScenario`, `compile_run`, `World.from_run`,
+  `ActionSession.from_run` and `sim/validation.py` are deleted; the prepared record
+  types stay as the declaration vocabulary. `SCHEMA` closes here.
+- **RECORD.** `capture.FinancialCapture`, `WorldResult` and `product_row` move to
+  `product/`; `Book` and `FinancialOutput` drop the channels of absent domains, and
+  the app's event frames and decoders read the new shape.
+- **OFFERS.** Gated on GPE: which compulsory events run without a tender policy, and
+  when forced proceeds become spendable. Then `Issuer` emits `TenderOffer` and
+  `ForcedRecovery` from the path's series, the household answers inside the month,
+  and `PrivateEquity.advance` and `declare_tender_policy` go.
+- **DRAIN.** With a second addressee and a reactive message, `track()` checks that
+  every message an actor can emit has an acceptor, and the month's drain has a budget
+  whose breach raises.
+- **TAXCLOSE.** The tax book becomes the authority's state; `Accounting.close_tax_year`
+  moves into `TaxAuthority`, which posts the assessment it computes.
+- **SEASONED.** A tracked `Mortgage` may carry an `origination_month` before the
+  world's origin; the ledger opens with the outstanding balance and the amortisation
+  schedule is honoured from there.
+- **PROPERTY.** A property held at month zero is a tracked component with its own
+  statements; a tracked loan's rented share comes from it instead of being zero.
+- **VECTOR.** Policies act on a rollout axis; `World` carries N paths, and the batch
+  session with its delegate households is deleted with its callers moving to `World`.
+
 ## GMETRICS — decided: every caller records what it wants, between steps
 
 Selected 2026-09-12. The world exposes present state and each component's outcomes
