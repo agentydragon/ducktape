@@ -62,7 +62,7 @@ async def waiting(engine: AsyncEngine, db_url: str, echo_catalog: ActionCatalog)
     # The writer uses a separate session/store from the reader; only PostgreSQL connects them.
     writer = ActionStore(make_sessionmaker(engine))
     reader = ObservedService(ActionStore(make_sessionmaker(engine)), echo_catalog)
-    request, _ = await writer.submit(
+    request = await writer.submit(
         ActionRequestInput(
             action=ActionIdentity(group="agentplane", name="echo"),
             arguments={},

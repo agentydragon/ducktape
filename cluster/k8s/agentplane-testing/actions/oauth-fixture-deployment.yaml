@@ -22,7 +22,7 @@ spec:
         - name: forgejo-images-creds
       containers:
         - name: fixture
-          image: git.allegedly.works/ducktape-ci/agentplane-oauth-fixture:devel-20260911213301-65189c0 # {"$imagepolicy": "flux-system:agentplane-oauth-fixture"}
+          image: git.allegedly.works/ducktape-ci/agentplane-oauth-fixture:devel-20260912094743-b1fb784 # {"$imagepolicy": "flux-system:agentplane-oauth-fixture"}
           env:
             # Cluster-internal only (see oauth-fixture-networkpolicy.yaml): both the Action
             # Service's discovery/token exchange and the acceptance test's own "browser" GET to

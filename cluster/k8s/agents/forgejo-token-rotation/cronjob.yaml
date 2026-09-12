@@ -53,7 +53,7 @@ spec:
               # Initial placeholder matching the ImagePolicy filterTags regex
               # (^devel-\d{14}-[0-9a-f]{7}$). Flux rewrites the field after CI
               # publishes git.allegedly.works/ducktape-ci/forgejo-token-rotation.
-              image: git.allegedly.works/ducktape-ci/forgejo-token-rotation:devel-20260901093658-4f5b4a7 # {"$imagepolicy": "flux-system:forgejo-token-rotation"}
+              image: git.allegedly.works/ducktape-ci/forgejo-token-rotation:devel-20260912093747-b1fb784 # {"$imagepolicy": "flux-system:forgejo-token-rotation"}
               args: ["--config", "/config/tokens.yaml"]
               securityContext:
                 allowPrivilegeEscalation: false
