@@ -27,6 +27,9 @@ export interface Scenario extends ScenarioOptions {
   openRawStatus?: boolean;
   /** Once the preset's pick has landed as a pill, open the action policy sets dropdown. */
   openActionPolicySets?: boolean;
+  /** Click the phone-width hamburger once it mounts: the sidebar drawer has no route of its own
+   * (UISHELL_MOBILE). */
+  openMobileSidebar?: boolean;
 }
 
 /** A Pixel 6's CSS viewport: the app is used from a phone, so every page has to fit its width. */
@@ -50,6 +53,16 @@ export const SCENARIOS: Record<string, Scenario> = {
   // suspended, deleted) and the struck-through read-only group, with no thread open yet.
   threads: { element: "#app", route: "/", viewport: { width: 1200, height: 900 } },
   threads_phone: { element: "#app", route: "/", viewport: PHONE, outputName: "threads-phone" },
+  // The phone-width sidebar drawer opened over the landing view (UISHELL_MOBILE): the hamburger,
+  // the backdrop, and the same group/thread list the desktop sidebar shows.
+  threads_phone_drawer: {
+    element: "#app",
+    route: "/",
+    viewport: PHONE,
+    outputName: "threads-phone-drawer",
+    readySelectors: [".agentplane-sidebar-backdrop"],
+    openMobileSidebar: true,
+  },
 
   sandboxes: { element: "#app", route: "/sandboxes", viewport: { width: 1200, height: 900 } },
   sandboxes_phone: { element: "#app", route: "/sandboxes", viewport: PHONE, outputName: "sandboxes-phone" },

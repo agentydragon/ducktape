@@ -1024,6 +1024,17 @@ if (scenario.openRawStatus) {
   });
   openRaw.observe(document, { childList: true, subtree: true });
 }
+if (scenario.openMobileSidebar) {
+  // The drawer has no route of its own; open it the way an operator would, by tapping the
+  // phone-width hamburger.
+  const openMobileSidebar = new MutationObserver(() => {
+    const button = document.querySelector('button[aria-label="Open navigation"]');
+    if (!button) return;
+    openMobileSidebar.disconnect();
+    (button as HTMLButtonElement).click();
+  });
+  openMobileSidebar.observe(document, { childList: true, subtree: true });
+}
 window.location.hash = scenario.route;
 
 const container = document.getElementById("app");

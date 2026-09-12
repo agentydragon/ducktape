@@ -688,6 +688,9 @@ ts_library(
         "app.tsx",
         # `declare module "*.css"` for the stylesheet import above.
         "css.d.ts",
+        # The ambient declaration for the @tabler/icons-react subpath app.tsx imports; see the note
+        # in the file itself.
+        "tabler_icons.d.ts",
     ],
     tsconfig = TSCONFIG,
     deps = [
@@ -701,6 +704,7 @@ ts_library(
         ":shell_css",
         ":sidebar",
         "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
