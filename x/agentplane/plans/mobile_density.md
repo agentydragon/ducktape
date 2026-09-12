@@ -64,11 +64,31 @@ separate settings surface:
   `role="img"`/`aria-label`/`Tooltip` pattern this PR round already used for streaming/failed/sending
   (`StatusDot` in `session.tsx`). Two independent state machines (session attachment, harness
   process) folding into one glanceable indicator, with the breakdown one hover away.
+
+  **Decided: four buckets, worst-axis-wins, first match in this order:**
+
+  | #   | Condition                                                                        | Dot                        |
+  | --- | -------------------------------------------------------------------------------- | -------------------------- |
+  | 1   | `status` starts with `"runner: "`, or `harness === "lost"`                       | Error — red, static        |
+  | 2   | `status` is `"connecting"`/`"reconnecting"`, or attached with `harness === null` | Pending — amber, breathing |
+  | 3   | `status === "stream ended"`, or `harness === "stopped"`                          | Idle — gray, static        |
+  | 4   | otherwise — attached and `harness === "running"`                                 | Healthy — green, static    |
+
+  `status` is the free-form string `session.tsx`'s `EventSource` handlers set
+  (`"connecting"`/`"attached"`/`"reconnecting"`/`"stream ended"`/`` `runner: ${detail}` ``);
+  `state.harness` is `events.ts`'s typed `"running" | "stopped" | "lost" | null`. A plain function
+  of the two, not a hand-maintained cross-product — easy to unit-test on its own. "Pending" reuses
+  the same breathing animation `agentplane-breathing-dot` already gives the streaming dot, so the
+  visual vocabulary for "still settling" stays one idiom across the app.
+
 - **Hamburger/overflow menu near the composer**, holding the "Raw frames" switch and — per the
   header-row bullet above — the harness **shutdown** button (`IconPower`), plus room for the
   combined-status bubble's detail if it reads better as a menu item than a tooltip on small touch
   targets. A menu item reads by its text, not an icon alone, so "Shut down harness" would need its
-  full label there (unlike today's icon-only `ActionIcon` with just a tooltip).
+  full label there (unlike today's icon-only `ActionIcon` with just a tooltip). **Opens upward**:
+  the composer sits at the bottom of the viewport, so a Mantine `Menu` here needs its default
+  Floating-UI flip behavior left alone rather than a hardcoded downward `position` — there's rarely
+  room below the trigger.
 - **Decided: interrupt (`IconPlayerStop`, stops the current turn) stays a visible icon, always —
   it does not move into the menu.** It's genuinely time-sensitive — the operator reaches for it
   _during_ an active turn, not at rest — so tucking it a menu-tap deep would trade away exactly the
