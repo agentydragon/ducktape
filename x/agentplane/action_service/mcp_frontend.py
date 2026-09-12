@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from enum import StrEnum
 from functools import wraps
 from typing import Annotated, cast
@@ -11,6 +12,7 @@ from uuid import UUID
 
 from fastapi import HTTPException
 from fastmcp import FastMCP
+from fastmcp.dependencies import Depends
 from fastmcp.exceptions import ToolError
 from fastmcp.server.dependencies import get_http_request
 from fastmcp.tools import ToolResult
@@ -106,12 +108,26 @@ class ActionsMcp:
             disconnected.set()
 
 
-def _principal() -> Principal:
-    return cast(Principal, get_http_request().state.action_principal)
+@dataclass(frozen=True, slots=True)
+class Caller:
+    """Who this transport request authenticated as, as `ActionsMcp` recorded it: injected into every
+    tool that acts for a caller, never a tool argument."""
+
+    principal: Principal
+    external_grant: ExternalGrantProvenance | None
 
 
-def _external_grant() -> ExternalGrantProvenance | None:
-    return cast(ExternalGrantProvenance | None, get_http_request().state.action_external_grant)
+def _caller() -> Caller:
+    state = get_http_request().state
+    return Caller(
+        principal=cast(Principal, state.action_principal),
+        external_grant=cast(ExternalGrantProvenance | None, state.action_external_grant),
+    )
+
+
+# FastMCP strips a parameter from the tool's input schema by its `Depends` default; one module-level
+# marker serves every tool, since a call in a default is what ruff's B008 refuses.
+CALLER = Depends(_caller)
 
 
 def _tool_errors[**P, R](tool: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
@@ -241,7 +257,7 @@ def create_server(
 
     @server.tool(annotations={"readOnlyHint": True})
     @_tool_errors
-    async def get_action_policy(target: PolicyTarget = "self") -> ToolResult:
+    async def get_action_policy(target: PolicyTarget = "self", caller: Caller = CALLER) -> ToolResult:
         """Read what bindings auto-decide for a target: your own ("self", the default), or a named Sandbox
         (namespace and UID) or ServiceAccount. The answer is the policy sets bound to it and the auto_approve_if,
         auto_deny_if and auto_deny_unless entries in evaluation order, each naming the binding, set and index
@@ -251,22 +267,25 @@ def create_server(
         Action and says nothing about past Decisions; read those with get_action_request.
         """
         if isinstance(target, str):
-            return _result(service.caller_action_policy(_principal(), _external_grant()))
+            return _result(service.caller_action_policy(caller.principal, caller.external_grant))
         subject = target.sandbox if isinstance(target, SandboxTarget) else target.service_account
         return _result(service.target_action_policy(subject))
 
     @server.tool(annotations={"readOnlyHint": False, "idempotentHint": True})
     @_tool_errors
     async def request_action(
-        request: ActionRequestInput, wait_seconds: WaitSeconds = 0, wait_until: WaitUntil = WaitUntil.TERMINAL
+        request: ActionRequestInput,
+        wait_seconds: WaitSeconds = 0,
+        wait_until: WaitUntil = WaitUntil.TERMINAL,
+        caller: Caller = CALLER,
     ) -> ToolResult:
         """Submit one Action for policy evaluation, human decision if needed, and single-shot execution.
         Supply a stable idempotency_key with structured action group/name and validated arguments.
         Returns the durable receipt immediately by default; optionally wait up to 30 seconds for decision or terminal state.
         Pending is not success. After response loss reuse the identical request/key or read its ID, never submit a new key.
         """
-        principal = _principal()
-        view = await service.submit(request, principal, external_grant=_external_grant())
+        principal = caller.principal
+        view = await service.submit(request, principal, external_grant=caller.external_grant)
         if wait_seconds:
             view = await wait_for_receipt(
                 view.id, principal, WaitOptions(wait_seconds=wait_seconds, wait_until=wait_until)
@@ -277,14 +296,17 @@ def create_server(
     @server.tool(annotations={"readOnlyHint": True})
     @_tool_errors
     async def get_action_request(
-        request_id: UUID, wait_seconds: WaitSeconds = 0, wait_until: WaitUntil = WaitUntil.TERMINAL
+        request_id: UUID,
+        wait_seconds: WaitSeconds = 0,
+        wait_until: WaitUntil = WaitUntil.TERMINAL,
+        caller: Caller = CALLER,
     ) -> ToolResult:
         """Read your submitted Action's current receipt, Decision, and safe execution result/error.
         Use the durable request ID returned by request_action, not a catalog group/name.
         Optionally wait up to 30 seconds for decision or terminal state; a deadline returns the current pending receipt.
         This never submits, retries, or cancels execution, and other callers' request IDs are not readable.
         """
-        principal = _principal()
+        principal = caller.principal
         view = await wait_for_receipt(
             request_id, principal, WaitOptions(wait_seconds=wait_seconds, wait_until=wait_until)
         )
@@ -294,25 +316,25 @@ def create_server(
 
     @server.tool(annotations={"readOnlyHint": False, "idempotentHint": True})
     @_tool_errors
-    async def cancel_action_request(request_id: UUID) -> ToolResult:
+    async def cancel_action_request(request_id: UUID, caller: Caller = CALLER) -> ToolResult:
         """Withdraw your Action request only before its execution has been claimed for dispatch.
         Provide the durable request ID; no version is required, and another caller's requests are inaccessible.
         Returns cancelled, already_cancelled, already_finished, or too_late together with the current receipt.
         Dispatching/running or unknown executions cannot be stopped; retrying the original submission key retains its receipt.
         """
-        return _result(await service.cancel(request_id, _principal()))
+        return _result(await service.cancel(request_id, caller.principal))
 
     @server.tool(annotations={"readOnlyHint": True})
     @_tool_errors
     async def list_action_request_events(
-        request_id: UUID, after_sequence: Annotated[int, Field(ge=0)] = 0, limit: PageSize = 30
+        request_id: UUID, after_sequence: Annotated[int, Field(ge=0)] = 0, limit: PageSize = 30, caller: Caller = CALLER
     ) -> ToolResult:
         """Read an ordered page of canonical state transitions for your Action request.
         Start after_sequence at zero or at the last sequence already received; use next_after_sequence for more pages.
         Each event carries its sequence, state, and timestamp; get_action_request provides the current receipt and result.
         This read never submits or retries execution and cannot reveal another caller's events.
         """
-        events = await service.events(request_id, _principal(), after_sequence=after_sequence, limit=limit + 1)
+        events = await service.events(request_id, caller.principal, after_sequence=after_sequence, limit=limit + 1)
         return _result(
             EventPage(
                 events=events[:limit], next_after_sequence=events[limit - 1].sequence if len(events) > limit else None
