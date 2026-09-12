@@ -169,12 +169,20 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         ("alloy-otlp-bearer", "agents/alloy-otlp-bearer"),
     )
 
-    assert set(generators) == {artifact_name for artifact_name, _ in cases}
+    artifact_names = [
+        artifact["name"] for generator in generators.values() for artifact in generator["spec"]["artifacts"]
+    ]
+    assert len(artifact_names) == len(set(artifact_names)) == len(cases)
+    generated_artifacts = {
+        artifact["name"]: (generator, artifact)
+        for generator in generators.values()
+        for artifact in generator["spec"]["artifacts"]
+    }
+    assert set(generated_artifacts) == {artifact_name for artifact_name, _ in cases}
     for artifact_name, source_relative in cases:
         relative = f"cluster/k8s/{source_relative}"
-        generator = generators[artifact_name]
+        generator, artifact = generated_artifacts[artifact_name]
         assert generator["spec"]["sources"] == [expected_sources.get(artifact_name, expected_source)]
-        (artifact,) = generator["spec"]["artifacts"]
         assert artifact["name"] == artifact_name
         assert "revision" not in artifact  # Content-derived, not the monorepo revision.
         assert artifact["originRevision"] == "@repo"

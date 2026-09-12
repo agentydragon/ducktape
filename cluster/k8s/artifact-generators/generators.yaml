@@ -1,7 +1,7 @@
 apiVersion: source.extensions.fluxcd.io/v1beta1
 kind: ArtifactGenerator
 metadata:
-  name: agentplane-staging-actions
+  name: ducktape-artifacts
   namespace: ducktape-flux
 spec:
   sources:
@@ -18,19 +18,7 @@ spec:
           # Root Flux owns the consumer declaration, not its own artifact.
           exclude:
             - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: monitoring-stack
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
+
     - name: monitoring-stack
       originRevision: "@repo"
       copy:
@@ -38,19 +26,7 @@ spec:
           to: "@artifact/cluster/k8s/monitoring/stack/"
           exclude:
             - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: agentplane-staging-app
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
+
     - name: agentplane-staging-app
       originRevision: "@repo"
       copy:
@@ -58,19 +34,7 @@ spec:
           to: "@artifact/cluster/k8s/agentplane-staging/app/"
           exclude:
             - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: agentplane-staging-namespace
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
+
     - name: agentplane-staging-namespace
       originRevision: "@repo"
       copy:
@@ -78,19 +42,7 @@ spec:
           to: "@artifact/cluster/k8s/agentplane-staging/namespace/"
           exclude:
             - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: agentplane-testing-actions
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
+
     - name: agentplane-testing-actions
       originRevision: "@repo"
       copy:
@@ -98,19 +50,7 @@ spec:
           to: "@artifact/cluster/k8s/agentplane-testing/actions/"
           exclude:
             - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: claude-rbac
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
+
     - name: claude-rbac
       originRevision: "@repo"
       copy:
@@ -118,19 +58,7 @@ spec:
           to: "@artifact/cluster/k8s/agents/agent-rbac-base/"
           exclude:
             - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: agent-machine-access-tf
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
+
     - name: agent-machine-access-tf
       originRevision: "@repo"
       copy:
@@ -138,19 +66,7 @@ spec:
           to: "@artifact/cluster/k8s/agents/machine-access-tf/"
           exclude:
             - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: authentik
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
+
     - name: authentik
       originRevision: "@repo"
       copy:
@@ -158,19 +74,7 @@ spec:
           to: "@artifact/cluster/k8s/authentik/app/"
           exclude:
             - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: sso-providers-tf
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
+
     - name: sso-providers-tf
       originRevision: "@repo"
       copy:
@@ -178,19 +82,7 @@ spec:
           to: "@artifact/cluster/k8s/authentik/sso-providers-tf/"
           exclude:
             - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: cert-manager
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
+
     - name: cert-manager
       originRevision: "@repo"
       copy:
@@ -199,19 +91,7 @@ spec:
           # Root Flux owns the consumer declaration, not its own artifact.
           exclude:
             - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: cert-manager-environment
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
+
     - name: cert-manager-environment
       originRevision: "@repo"
       copy:
@@ -223,19 +103,7 @@ spec:
           to: "@artifact/cluster/k8s/cert-manager/config/"
         - from: "@repo/cluster/k8s/cert-manager/cluster-ca/**"
           to: "@artifact/cluster/k8s/cert-manager/cluster-ca/"
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: cert-manager-issuer-config
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
+
     - name: cert-manager-issuer-config
       originRevision: "@repo"
       copy:
@@ -243,19 +111,7 @@ spec:
           to: "@artifact/cluster/k8s/cert-manager/issuer-config/"
           exclude:
             - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: cnpg
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
+
     - name: cnpg
       originRevision: "@repo"
       copy:
@@ -264,19 +120,7 @@ spec:
           # Root Flux owns the consumer declaration, not its own artifact.
           exclude:
             - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: external-secrets-config
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
+
     - name: external-secrets-config
       originRevision: "@repo"
       copy:
@@ -284,19 +128,7 @@ spec:
           to: "@artifact/cluster/k8s/external-secrets/config/"
           exclude:
             - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: external-secrets-operator
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
+
     - name: external-secrets-operator
       originRevision: "@repo"
       copy:
@@ -305,19 +137,7 @@ spec:
           # Root Flux owns the consumer declaration, not its own artifact.
           exclude:
             - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: forgejo
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
+
     - name: forgejo
       originRevision: "@repo"
       copy:
@@ -325,19 +145,7 @@ spec:
           to: "@artifact/cluster/k8s/forgejo/app/"
           exclude:
             - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: forgejo-images
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
+
     - name: forgejo-images
       originRevision: "@repo"
       copy:
@@ -345,19 +153,7 @@ spec:
           to: "@artifact/cluster/k8s/forgejo-images/"
           exclude:
             - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: gateway
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
+
     - name: gateway
       originRevision: "@repo"
       copy:
@@ -365,19 +161,7 @@ spec:
           to: "@artifact/cluster/k8s/gateway/"
           exclude:
             - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: kyverno
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
+
     - name: kyverno
       originRevision: "@repo"
       copy:
@@ -386,19 +170,7 @@ spec:
           # Root Flux owns the consumer declaration, not its own artifact.
           exclude:
             - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: litellm-keys-tf
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
+
     - name: litellm-keys-tf
       originRevision: "@repo"
       copy:
@@ -406,19 +178,7 @@ spec:
           to: "@artifact/cluster/k8s/litellm/keys-tf/"
           exclude:
             - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: local-path-provisioner
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
+
     - name: local-path-provisioner
       originRevision: "@repo"
       copy:
@@ -427,19 +187,7 @@ spec:
           # Root Flux owns the consumer declaration, not its own artifact.
           exclude:
             - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: reflector
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
+
     - name: reflector
       originRevision: "@repo"
       copy:
@@ -447,19 +195,7 @@ spec:
           to: "@artifact/cluster/k8s/reflector/"
           exclude:
             - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: seaweedfs-cluster
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
+
     - name: seaweedfs-cluster
       originRevision: "@repo"
       copy:
@@ -468,19 +204,7 @@ spec:
           # Root Flux owns the consumer declaration, not its own artifact.
           exclude:
             - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: seaweedfs-filer-db
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
+
     - name: seaweedfs-filer-db
       originRevision: "@repo"
       copy:
@@ -489,19 +213,7 @@ spec:
           # Root Flux owns the consumer declaration, not its own artifact.
           exclude:
             - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: seaweedfs-namespace
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
+
     - name: seaweedfs-namespace
       originRevision: "@repo"
       copy:
@@ -510,19 +222,7 @@ spec:
           # Root Flux owns the consumer declaration, not its own artifact.
           exclude:
             - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: seaweedfs-operator
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
+
     - name: seaweedfs-operator
       originRevision: "@repo"
       copy:
@@ -531,19 +231,7 @@ spec:
           # Root Flux owns the consumer declaration, not its own artifact.
           exclude:
             - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: seaweedfs-secrets
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
+
     - name: seaweedfs-secrets
       originRevision: "@repo"
       copy:
@@ -552,19 +240,7 @@ spec:
           # Root Flux owns the consumer declaration, not its own artifact.
           exclude:
             - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: tofu-controller
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
+
     - name: tofu-controller
       originRevision: "@repo"
       copy:
@@ -572,19 +248,7 @@ spec:
           to: "@artifact/cluster/k8s/tofu-controller/"
           exclude:
             - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: tofu-state-db
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
+
     - name: tofu-state-db
       originRevision: "@repo"
       copy:
@@ -592,19 +256,7 @@ spec:
           to: "@artifact/cluster/k8s/tofu-state/db/"
           exclude:
             - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: valkey
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
+
     - name: valkey
       originRevision: "@repo"
       copy:
@@ -612,19 +264,7 @@ spec:
           to: "@artifact/cluster/k8s/valkey/"
           exclude:
             - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: kyverno-policies
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
+
     - name: kyverno-policies
       originRevision: "@repo"
       copy:
@@ -632,19 +272,7 @@ spec:
           to: "@artifact/cluster/k8s/kyverno/policies/"
           exclude:
             - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: haku-state
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
+
     - name: haku-state
       originRevision: "@repo"
       copy:
@@ -652,19 +280,7 @@ spec:
           to: "@artifact/cluster/k8s/forgejo/haku-state/"
           exclude:
             - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: agentplane-crds
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
+
     - name: agentplane-crds
       originRevision: "@repo"
       copy:
@@ -672,19 +288,7 @@ spec:
           to: "@artifact/cluster/k8s/agentplane-crds/"
           exclude:
             - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: monitoring-namespace
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
+
     - name: monitoring-namespace
       originRevision: "@repo"
       copy:
@@ -692,19 +296,7 @@ spec:
           to: "@artifact/cluster/k8s/monitoring/namespace/"
           exclude:
             - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: haku-namespace
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
+
     - name: haku-namespace
       originRevision: "@repo"
       copy:
@@ -712,19 +304,7 @@ spec:
           to: "@artifact/cluster/k8s/haku/namespace/"
           exclude:
             - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: langfuse-namespace
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
+
     - name: langfuse-namespace
       originRevision: "@repo"
       copy:
@@ -732,19 +312,7 @@ spec:
           to: "@artifact/cluster/k8s/langfuse/namespace/"
           exclude:
             - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: volsync
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
+
     - name: volsync
       originRevision: "@repo"
       copy:
@@ -752,19 +320,7 @@ spec:
           to: "@artifact/cluster/k8s/volsync/"
           exclude:
             - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: authentik-namespace
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
+
     - name: authentik-namespace
       originRevision: "@repo"
       copy:
@@ -772,19 +328,7 @@ spec:
           to: "@artifact/cluster/k8s/authentik/namespace/"
           exclude:
             - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: cert-manager-trust
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
+
     - name: cert-manager-trust
       originRevision: "@repo"
       copy:
@@ -792,19 +336,7 @@ spec:
           to: "@artifact/cluster/k8s/cert-manager/trust/"
           exclude:
             - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: agent-sandbox-controller
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
+
     - name: agent-sandbox-controller
       originRevision: "@repo"
       copy:
@@ -812,11 +344,807 @@ spec:
           to: "@artifact/cluster/k8s/agents/agent-sandbox/controller/"
           exclude:
             - flux-kustomization.yaml
+
+    - name: agentplane-testing-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agentplane-testing/namespace/**"
+          to: "@artifact/cluster/k8s/agentplane-testing/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: grafana-helmrepository
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/monitoring/grafana-helmrepository/**"
+          to: "@artifact/cluster/k8s/monitoring/grafana-helmrepository/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: kubevirt
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/kubevirt/app/**"
+          to: "@artifact/cluster/k8s/kubevirt/app/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: paperless-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/paperless/namespace/**"
+          to: "@artifact/cluster/k8s/paperless/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: public-coder-agent-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/public-coder-agent/namespace/**"
+          to: "@artifact/cluster/k8s/agents/public-coder-agent/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: agentplane-index-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agentplane-index/namespace/**"
+          to: "@artifact/cluster/k8s/agentplane-index/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: agentplane-staging-db
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agentplane-staging/db/**"
+          to: "@artifact/cluster/k8s/agentplane-staging/db/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: agentplane-testing-db
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agentplane-testing/db/**"
+          to: "@artifact/cluster/k8s/agentplane-testing/db/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: clickhouse
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/clickhouse/cluster/**"
+          to: "@artifact/cluster/k8s/clickhouse/cluster/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: forgejo-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/forgejo/namespace/**"
+          to: "@artifact/cluster/k8s/forgejo/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: atuin-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/atuin/namespace/**"
+          to: "@artifact/cluster/k8s/atuin/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: budget-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/budget/namespace/**"
+          to: "@artifact/cluster/k8s/budget/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: github-secrets-sync-secrets
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/github-secrets-sync/secrets/**"
+          to: "@artifact/cluster/k8s/github-secrets-sync/secrets/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: grafana-instance
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/monitoring/grafana-instance/**"
+          to: "@artifact/cluster/k8s/monitoring/grafana-instance/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: ha-mcp-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/ha-mcp/namespace/**"
+          to: "@artifact/cluster/k8s/agents/ha-mcp/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: haku-egress-proxy
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/haku-egress-proxy/**"
+          to: "@artifact/cluster/k8s/agents/haku-egress-proxy/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: haku-rbac
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/haku/rbac/**"
+          to: "@artifact/cluster/k8s/haku/rbac/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: langfuse-secrets
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/langfuse/secrets/**"
+          to: "@artifact/cluster/k8s/langfuse/secrets/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: litellm-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/litellm/namespace/**"
+          to: "@artifact/cluster/k8s/litellm/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: agentplane-egress-credentials-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agentplane-egress-credentials/namespace/**"
+          to: "@artifact/cluster/k8s/agentplane-egress-credentials/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: agentplane-egress-credentials
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agentplane-egress-credentials/secrets/**"
+          to: "@artifact/cluster/k8s/agentplane-egress-credentials/secrets/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: agentplane-staging-agent-rbac
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agentplane-staging/agent-rbac/**"
+          to: "@artifact/cluster/k8s/agentplane-staging/agent-rbac/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: agentplane-staging-egress
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agentplane-staging/egress/**"
+          to: "@artifact/cluster/k8s/agentplane-staging/egress/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: agentplane-staging-llm-ingress
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agentplane-staging/llm-ingress/**"
+          to: "@artifact/cluster/k8s/agentplane-staging/llm-ingress/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: agentplane-testing-agent-rbac
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agentplane-testing/agent-rbac/**"
+          to: "@artifact/cluster/k8s/agentplane-testing/agent-rbac/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: agentplane-testing-app
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agentplane-testing/app/**"
+          to: "@artifact/cluster/k8s/agentplane-testing/app/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: agentplane-testing-dex
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agentplane-testing/dex/**"
+          to: "@artifact/cluster/k8s/agentplane-testing/dex/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: agentplane-testing-egress
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agentplane-testing/egress/**"
+          to: "@artifact/cluster/k8s/agentplane-testing/egress/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: agentplane-testing-llm-ingress
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agentplane-testing/llm-ingress/**"
+          to: "@artifact/cluster/k8s/agentplane-testing/llm-ingress/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: litellm-secrets
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/litellm/secrets/**"
+          to: "@artifact/cluster/k8s/litellm/secrets/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: matrix-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/matrix/namespace/**"
+          to: "@artifact/cluster/k8s/matrix/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: matrix-secrets
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/matrix/secrets/**"
+          to: "@artifact/cluster/k8s/matrix/secrets/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: ollama-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/ollama/namespace/**"
+          to: "@artifact/cluster/k8s/ollama/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: seaweedfs-csi
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/seaweedfs-csi/**"
+          to: "@artifact/cluster/k8s/seaweedfs-csi/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: seaweedfs-public-s3
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/seaweedfs/public-s3/**"
+          to: "@artifact/cluster/k8s/seaweedfs/public-s3/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: ssh-mcp-secrets
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/ssh-mcp/secrets/**"
+          to: "@artifact/cluster/k8s/ssh-mcp/secrets/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: study-casino-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/study-casino/namespace/**"
+          to: "@artifact/cluster/k8s/study-casino/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: tana-mcp
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/tana-mcp/**"
+          to: "@artifact/cluster/k8s/agents/tana-mcp/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: authentik-jwt-rotation
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/authentik-jwt-rotation/**"
+          to: "@artifact/cluster/k8s/agents/authentik-jwt-rotation/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: inventree-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/inventree/namespace/**"
+          to: "@artifact/cluster/k8s/inventree/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: authentik-sso-secrets
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/authentik/sso-secrets/**"
+          to: "@artifact/cluster/k8s/authentik/sso-secrets/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: cdi
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/kubevirt/cdi/**"
+          to: "@artifact/cluster/k8s/kubevirt/cdi/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: firecrawl-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/firecrawl/namespace/**"
+          to: "@artifact/cluster/k8s/firecrawl/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: flux-image-automation-ghcr
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/flux-image-automation-ghcr/**"
+          to: "@artifact/cluster/k8s/flux-image-automation-ghcr/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: gatus-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/gatus/namespace/**"
+          to: "@artifact/cluster/k8s/gatus/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: grafana-operator
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/monitoring/grafana-operator/**"
+          to: "@artifact/cluster/k8s/monitoring/grafana-operator/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: grocy-sf
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/grocy/sf/app/**"
+          to: "@artifact/cluster/k8s/grocy/sf/app/"
+          exclude:
+            - flux-kustomization.yaml
+        - from: "@repo/cluster/k8s/grocy/app-base/**"
+          to: "@artifact/cluster/k8s/grocy/app-base/"
+
+    - name: grocy-vallejo
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/grocy/vallejo/app/**"
+          to: "@artifact/cluster/k8s/grocy/vallejo/app/"
+          exclude:
+            - flux-kustomization.yaml
+        - from: "@repo/cluster/k8s/grocy/app-base/**"
+          to: "@artifact/cluster/k8s/grocy/app-base/"
+
+    - name: haku-console-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/haku/console-namespace/**"
+          to: "@artifact/cluster/k8s/haku/console-namespace/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: haku-egress-proxy-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/haku-egress-proxy-namespace/**"
+          to: "@artifact/cluster/k8s/agents/haku-egress-proxy-namespace/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: haku-mailbox-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/haku/mailbox-namespace/**"
+          to: "@artifact/cluster/k8s/haku/mailbox-namespace/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: haku-openclaw-spike-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/haku-openclaw-spike/namespace/**"
+          to: "@artifact/cluster/k8s/agents/haku-openclaw-spike/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: home-assistant
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/home-assistant/app/**"
+          to: "@artifact/cluster/k8s/home-assistant/app/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: inventree-secrets
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/inventree/secrets/**"
+          to: "@artifact/cluster/k8s/inventree/secrets/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: litellm
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/litellm/app/**"
+          to: "@artifact/cluster/k8s/litellm/app/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: monitoring-stack-secrets
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/monitoring/stack-secrets/**"
+          to: "@artifact/cluster/k8s/monitoring/stack-secrets/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: nix-cache
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/nix-cache/app/**"
+          to: "@artifact/cluster/k8s/nix-cache/app/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: nvidia-device-plugin
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/nvidia-device-plugin/**"
+          to: "@artifact/cluster/k8s/nvidia-device-plugin/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: ollama-secrets
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/ollama/secrets/**"
+          to: "@artifact/cluster/k8s/ollama/secrets/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: attic-jwt-rotation
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/attic-jwt-rotation/**"
+          to: "@artifact/cluster/k8s/agents/attic-jwt-rotation/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: claude-sandbox-secrets
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/claude-sandbox-secrets/**"
+          to: "@artifact/cluster/k8s/agents/claude-sandbox-secrets/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: coinbase-read
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/coinbase-read/**"
+          to: "@artifact/cluster/k8s/agents/coinbase-read/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: forgejo-token-rotation
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/forgejo-token-rotation/**"
+          to: "@artifact/cluster/k8s/agents/forgejo-token-rotation/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: ha-mcp
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/ha-mcp/app/**"
+          to: "@artifact/cluster/k8s/agents/ha-mcp/app/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: ha-mcp-credentials
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/ha-mcp/credentials/**"
+          to: "@artifact/cluster/k8s/agents/ha-mcp/credentials/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: ha-mcp-servicemonitor
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/ha-mcp/servicemonitor/**"
+          to: "@artifact/cluster/k8s/agents/ha-mcp/servicemonitor/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: haku-openclaw-spike-app
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/haku-openclaw-spike/app/**"
+          to: "@artifact/cluster/k8s/agents/haku-openclaw-spike/app/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: haku-openclaw-spike-backup
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/haku-openclaw-spike/backup/**"
+          to: "@artifact/cluster/k8s/agents/haku-openclaw-spike/backup/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: kubectl-machine-mcp
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/kubectl-machine-mcp/app/**"
+          to: "@artifact/cluster/k8s/agents/kubectl-machine-mcp/app/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: kubectl-machine-mcp-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/kubectl-machine-mcp/namespace/**"
+          to: "@artifact/cluster/k8s/agents/kubectl-machine-mcp/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: kubectl-passthrough-mcp
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/kubectl-passthrough-mcp/app/**"
+          to: "@artifact/cluster/k8s/agents/kubectl-passthrough-mcp/app/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: kubectl-passthrough-mcp-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/kubectl-passthrough-mcp/namespace/**"
+          to: "@artifact/cluster/k8s/agents/kubectl-passthrough-mcp/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: loki-read-proxy
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/loki-read-proxy/**"
+          to: "@artifact/cluster/k8s/agents/loki-read-proxy/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: manifold-mcp
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/manifold-mcp/app/**"
+          to: "@artifact/cluster/k8s/agents/manifold-mcp/app/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: manifold-mcp-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/manifold-mcp/namespace/**"
+          to: "@artifact/cluster/k8s/agents/manifold-mcp/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: manifold-mcp-servicemonitor
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/manifold-mcp/servicemonitor/**"
+          to: "@artifact/cluster/k8s/agents/manifold-mcp/servicemonitor/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: agents-mitmproxy-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/mitmproxy-namespace/**"
+          to: "@artifact/cluster/k8s/agents/mitmproxy-namespace/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: osm-mcp
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/osm-mcp/app/**"
+          to: "@artifact/cluster/k8s/agents/osm-mcp/app/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: osm-mcp-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/osm-mcp/namespace/**"
+          to: "@artifact/cluster/k8s/agents/osm-mcp/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: plaid-db-mcp
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/plaid-db-mcp/app/**"
+          to: "@artifact/cluster/k8s/agents/plaid-db-mcp/app/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: plaid-db-mcp-servicemonitor
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/plaid-db-mcp/servicemonitor/**"
+          to: "@artifact/cluster/k8s/agents/plaid-db-mcp/servicemonitor/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: plaid-mcp
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/plaid-mcp/app/**"
+          to: "@artifact/cluster/k8s/agents/plaid-mcp/app/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: plaid-mcp-db
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/plaid-mcp/db/**"
+          to: "@artifact/cluster/k8s/agents/plaid-mcp/db/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: plaid-mcp-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/plaid-mcp/namespace/**"
+          to: "@artifact/cluster/k8s/agents/plaid-mcp/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: postscanmail-mcp
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/postscanmail-mcp/app/**"
+          to: "@artifact/cluster/k8s/agents/postscanmail-mcp/app/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: postscanmail-mcp-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/postscanmail-mcp/namespace/**"
+          to: "@artifact/cluster/k8s/agents/postscanmail-mcp/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: postscanmail-mcp-servicemonitor
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/postscanmail-mcp/servicemonitor/**"
+          to: "@artifact/cluster/k8s/agents/postscanmail-mcp/servicemonitor/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: public-coder-agent-app
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/public-coder-agent/app/**"
+          to: "@artifact/cluster/k8s/agents/public-coder-agent/app/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: public-coder-agent-backup
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/public-coder-agent/backup/**"
+          to: "@artifact/cluster/k8s/agents/public-coder-agent/backup/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: activitywatch
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/activitywatch/**"
+          to: "@artifact/cluster/k8s/activitywatch/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: agent-box
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agent-box/app/**"
+          to: "@artifact/cluster/k8s/agent-box/app/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: agent-box-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agent-box/namespace/**"
+          to: "@artifact/cluster/k8s/agent-box/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: agentplane-index-app
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agentplane-index/app/**"
+          to: "@artifact/cluster/k8s/agentplane-index/app/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: agentplane-index-db
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agentplane-index/db/**"
+          to: "@artifact/cluster/k8s/agentplane-index/db/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: agentplane-index-secrets
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agentplane-index/secrets/**"
+          to: "@artifact/cluster/k8s/agentplane-index/secrets/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: agent-workspaces-app
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/agent-sandbox/workspaces/app/**"
+          to: "@artifact/cluster/k8s/agents/agent-sandbox/workspaces/app/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: agent-workspaces-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/agent-sandbox/workspaces/namespace/**"
+          to: "@artifact/cluster/k8s/agents/agent-sandbox/workspaces/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: airlock
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/airlock/**"
+          to: "@artifact/cluster/k8s/agents/airlock/"
+          exclude:
+            - flux-kustomization.yaml
+
+    - name: alloy-otlp-bearer
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/alloy-otlp-bearer/**"
+          to: "@artifact/cluster/k8s/agents/alloy-otlp-bearer/"
+          exclude:
+            - flux-kustomization.yaml
 ---
 apiVersion: source.extensions.fluxcd.io/v1beta1
 kind: ArtifactGenerator
 metadata:
-  name: external-creds
+  name: flux-system-artifacts
   namespace: ducktape-flux
 spec:
   sources:
@@ -830,1989 +1158,5 @@ spec:
       copy:
         - from: "@repo/cluster/k8s/external-creds/**"
           to: "@artifact/cluster/k8s/external-creds/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: agentplane-testing-namespace
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: agentplane-testing-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agentplane-testing/namespace/**"
-          to: "@artifact/cluster/k8s/agentplane-testing/namespace/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: grafana-helmrepository
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: grafana-helmrepository
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/monitoring/grafana-helmrepository/**"
-          to: "@artifact/cluster/k8s/monitoring/grafana-helmrepository/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: kubevirt
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: kubevirt
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/kubevirt/app/**"
-          to: "@artifact/cluster/k8s/kubevirt/app/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: paperless-namespace
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: paperless-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/paperless/namespace/**"
-          to: "@artifact/cluster/k8s/paperless/namespace/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: public-coder-agent-namespace
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: public-coder-agent-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/public-coder-agent/namespace/**"
-          to: "@artifact/cluster/k8s/agents/public-coder-agent/namespace/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: agentplane-index-namespace
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: agentplane-index-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agentplane-index/namespace/**"
-          to: "@artifact/cluster/k8s/agentplane-index/namespace/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: agentplane-staging-db
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: agentplane-staging-db
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agentplane-staging/db/**"
-          to: "@artifact/cluster/k8s/agentplane-staging/db/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: agentplane-testing-db
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: agentplane-testing-db
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agentplane-testing/db/**"
-          to: "@artifact/cluster/k8s/agentplane-testing/db/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: clickhouse
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: clickhouse
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/clickhouse/cluster/**"
-          to: "@artifact/cluster/k8s/clickhouse/cluster/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: forgejo-namespace
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: forgejo-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/forgejo/namespace/**"
-          to: "@artifact/cluster/k8s/forgejo/namespace/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: atuin-namespace
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: atuin-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/atuin/namespace/**"
-          to: "@artifact/cluster/k8s/atuin/namespace/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: budget-namespace
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: budget-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/budget/namespace/**"
-          to: "@artifact/cluster/k8s/budget/namespace/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: github-secrets-sync-secrets
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: github-secrets-sync-secrets
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/github-secrets-sync/secrets/**"
-          to: "@artifact/cluster/k8s/github-secrets-sync/secrets/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: grafana-instance
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: grafana-instance
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/monitoring/grafana-instance/**"
-          to: "@artifact/cluster/k8s/monitoring/grafana-instance/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: ha-mcp-namespace
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: ha-mcp-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/ha-mcp/namespace/**"
-          to: "@artifact/cluster/k8s/agents/ha-mcp/namespace/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: haku-egress-proxy
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: haku-egress-proxy
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/haku-egress-proxy/**"
-          to: "@artifact/cluster/k8s/agents/haku-egress-proxy/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: haku-rbac
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: haku-rbac
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/haku/rbac/**"
-          to: "@artifact/cluster/k8s/haku/rbac/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: langfuse-secrets
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: langfuse-secrets
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/langfuse/secrets/**"
-          to: "@artifact/cluster/k8s/langfuse/secrets/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: litellm-namespace
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: litellm-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/litellm/namespace/**"
-          to: "@artifact/cluster/k8s/litellm/namespace/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: agentplane-egress-credentials-namespace
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: agentplane-egress-credentials-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agentplane-egress-credentials/namespace/**"
-          to: "@artifact/cluster/k8s/agentplane-egress-credentials/namespace/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: agentplane-egress-credentials
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: agentplane-egress-credentials
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agentplane-egress-credentials/secrets/**"
-          to: "@artifact/cluster/k8s/agentplane-egress-credentials/secrets/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: agentplane-staging-agent-rbac
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: agentplane-staging-agent-rbac
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agentplane-staging/agent-rbac/**"
-          to: "@artifact/cluster/k8s/agentplane-staging/agent-rbac/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: agentplane-staging-egress
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: agentplane-staging-egress
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agentplane-staging/egress/**"
-          to: "@artifact/cluster/k8s/agentplane-staging/egress/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: agentplane-staging-llm-ingress
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: agentplane-staging-llm-ingress
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agentplane-staging/llm-ingress/**"
-          to: "@artifact/cluster/k8s/agentplane-staging/llm-ingress/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: agentplane-testing-agent-rbac
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: agentplane-testing-agent-rbac
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agentplane-testing/agent-rbac/**"
-          to: "@artifact/cluster/k8s/agentplane-testing/agent-rbac/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: agentplane-testing-app
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: agentplane-testing-app
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agentplane-testing/app/**"
-          to: "@artifact/cluster/k8s/agentplane-testing/app/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: agentplane-testing-dex
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: agentplane-testing-dex
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agentplane-testing/dex/**"
-          to: "@artifact/cluster/k8s/agentplane-testing/dex/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: agentplane-testing-egress
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: agentplane-testing-egress
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agentplane-testing/egress/**"
-          to: "@artifact/cluster/k8s/agentplane-testing/egress/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: agentplane-testing-llm-ingress
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: agentplane-testing-llm-ingress
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agentplane-testing/llm-ingress/**"
-          to: "@artifact/cluster/k8s/agentplane-testing/llm-ingress/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: litellm-secrets
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: litellm-secrets
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/litellm/secrets/**"
-          to: "@artifact/cluster/k8s/litellm/secrets/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: matrix-namespace
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: matrix-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/matrix/namespace/**"
-          to: "@artifact/cluster/k8s/matrix/namespace/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: matrix-secrets
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: matrix-secrets
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/matrix/secrets/**"
-          to: "@artifact/cluster/k8s/matrix/secrets/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: ollama-namespace
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: ollama-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/ollama/namespace/**"
-          to: "@artifact/cluster/k8s/ollama/namespace/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: seaweedfs-csi
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: seaweedfs-csi
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/seaweedfs-csi/**"
-          to: "@artifact/cluster/k8s/seaweedfs-csi/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: seaweedfs-public-s3
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: seaweedfs-public-s3
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/seaweedfs/public-s3/**"
-          to: "@artifact/cluster/k8s/seaweedfs/public-s3/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: ssh-mcp-secrets
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: ssh-mcp-secrets
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/ssh-mcp/secrets/**"
-          to: "@artifact/cluster/k8s/ssh-mcp/secrets/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: study-casino-namespace
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: study-casino-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/study-casino/namespace/**"
-          to: "@artifact/cluster/k8s/study-casino/namespace/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: tana-mcp
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: tana-mcp
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/tana-mcp/**"
-          to: "@artifact/cluster/k8s/agents/tana-mcp/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: authentik-jwt-rotation
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: authentik-jwt-rotation
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/authentik-jwt-rotation/**"
-          to: "@artifact/cluster/k8s/agents/authentik-jwt-rotation/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: inventree-namespace
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: inventree-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/inventree/namespace/**"
-          to: "@artifact/cluster/k8s/inventree/namespace/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: authentik-sso-secrets
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: authentik-sso-secrets
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/authentik/sso-secrets/**"
-          to: "@artifact/cluster/k8s/authentik/sso-secrets/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: cdi
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: cdi
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/kubevirt/cdi/**"
-          to: "@artifact/cluster/k8s/kubevirt/cdi/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: firecrawl-namespace
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: firecrawl-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/firecrawl/namespace/**"
-          to: "@artifact/cluster/k8s/firecrawl/namespace/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: flux-image-automation-ghcr
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: flux-image-automation-ghcr
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/flux-image-automation-ghcr/**"
-          to: "@artifact/cluster/k8s/flux-image-automation-ghcr/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: gatus-namespace
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: gatus-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/gatus/namespace/**"
-          to: "@artifact/cluster/k8s/gatus/namespace/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: grafana-operator
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: grafana-operator
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/monitoring/grafana-operator/**"
-          to: "@artifact/cluster/k8s/monitoring/grafana-operator/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: grocy-sf
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: grocy-sf
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/grocy/sf/app/**"
-          to: "@artifact/cluster/k8s/grocy/sf/app/"
-          exclude:
-            - flux-kustomization.yaml
-        - from: "@repo/cluster/k8s/grocy/app-base/**"
-          to: "@artifact/cluster/k8s/grocy/app-base/"
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: grocy-vallejo
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: grocy-vallejo
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/grocy/vallejo/app/**"
-          to: "@artifact/cluster/k8s/grocy/vallejo/app/"
-          exclude:
-            - flux-kustomization.yaml
-        - from: "@repo/cluster/k8s/grocy/app-base/**"
-          to: "@artifact/cluster/k8s/grocy/app-base/"
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: haku-console-namespace
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: haku-console-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/haku/console-namespace/**"
-          to: "@artifact/cluster/k8s/haku/console-namespace/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: haku-egress-proxy-namespace
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: haku-egress-proxy-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/haku-egress-proxy-namespace/**"
-          to: "@artifact/cluster/k8s/agents/haku-egress-proxy-namespace/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: haku-mailbox-namespace
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: haku-mailbox-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/haku/mailbox-namespace/**"
-          to: "@artifact/cluster/k8s/haku/mailbox-namespace/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: haku-openclaw-spike-namespace
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: haku-openclaw-spike-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/haku-openclaw-spike/namespace/**"
-          to: "@artifact/cluster/k8s/agents/haku-openclaw-spike/namespace/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: home-assistant
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: home-assistant
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/home-assistant/app/**"
-          to: "@artifact/cluster/k8s/home-assistant/app/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: inventree-secrets
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: inventree-secrets
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/inventree/secrets/**"
-          to: "@artifact/cluster/k8s/inventree/secrets/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: litellm
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: litellm
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/litellm/app/**"
-          to: "@artifact/cluster/k8s/litellm/app/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: monitoring-stack-secrets
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: monitoring-stack-secrets
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/monitoring/stack-secrets/**"
-          to: "@artifact/cluster/k8s/monitoring/stack-secrets/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: nix-cache
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: nix-cache
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/nix-cache/app/**"
-          to: "@artifact/cluster/k8s/nix-cache/app/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: nvidia-device-plugin
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: nvidia-device-plugin
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/nvidia-device-plugin/**"
-          to: "@artifact/cluster/k8s/nvidia-device-plugin/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: ollama-secrets
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: ollama-secrets
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/ollama/secrets/**"
-          to: "@artifact/cluster/k8s/ollama/secrets/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: attic-jwt-rotation
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: attic-jwt-rotation
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/attic-jwt-rotation/**"
-          to: "@artifact/cluster/k8s/agents/attic-jwt-rotation/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: claude-sandbox-secrets
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: claude-sandbox-secrets
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/claude-sandbox-secrets/**"
-          to: "@artifact/cluster/k8s/agents/claude-sandbox-secrets/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: coinbase-read
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: coinbase-read
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/coinbase-read/**"
-          to: "@artifact/cluster/k8s/agents/coinbase-read/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: forgejo-token-rotation
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: forgejo-token-rotation
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/forgejo-token-rotation/**"
-          to: "@artifact/cluster/k8s/agents/forgejo-token-rotation/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: ha-mcp
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: ha-mcp
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/ha-mcp/app/**"
-          to: "@artifact/cluster/k8s/agents/ha-mcp/app/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: ha-mcp-credentials
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: ha-mcp-credentials
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/ha-mcp/credentials/**"
-          to: "@artifact/cluster/k8s/agents/ha-mcp/credentials/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: ha-mcp-servicemonitor
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: ha-mcp-servicemonitor
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/ha-mcp/servicemonitor/**"
-          to: "@artifact/cluster/k8s/agents/ha-mcp/servicemonitor/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: haku-openclaw-spike-app
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: haku-openclaw-spike-app
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/haku-openclaw-spike/app/**"
-          to: "@artifact/cluster/k8s/agents/haku-openclaw-spike/app/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: haku-openclaw-spike-backup
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: haku-openclaw-spike-backup
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/haku-openclaw-spike/backup/**"
-          to: "@artifact/cluster/k8s/agents/haku-openclaw-spike/backup/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: kubectl-machine-mcp
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: kubectl-machine-mcp
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/kubectl-machine-mcp/app/**"
-          to: "@artifact/cluster/k8s/agents/kubectl-machine-mcp/app/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: kubectl-machine-mcp-namespace
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: kubectl-machine-mcp-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/kubectl-machine-mcp/namespace/**"
-          to: "@artifact/cluster/k8s/agents/kubectl-machine-mcp/namespace/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: kubectl-passthrough-mcp
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: kubectl-passthrough-mcp
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/kubectl-passthrough-mcp/app/**"
-          to: "@artifact/cluster/k8s/agents/kubectl-passthrough-mcp/app/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: kubectl-passthrough-mcp-namespace
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: kubectl-passthrough-mcp-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/kubectl-passthrough-mcp/namespace/**"
-          to: "@artifact/cluster/k8s/agents/kubectl-passthrough-mcp/namespace/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: loki-read-proxy
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: loki-read-proxy
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/loki-read-proxy/**"
-          to: "@artifact/cluster/k8s/agents/loki-read-proxy/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: manifold-mcp
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: manifold-mcp
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/manifold-mcp/app/**"
-          to: "@artifact/cluster/k8s/agents/manifold-mcp/app/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: manifold-mcp-namespace
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: manifold-mcp-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/manifold-mcp/namespace/**"
-          to: "@artifact/cluster/k8s/agents/manifold-mcp/namespace/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: manifold-mcp-servicemonitor
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: manifold-mcp-servicemonitor
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/manifold-mcp/servicemonitor/**"
-          to: "@artifact/cluster/k8s/agents/manifold-mcp/servicemonitor/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: agents-mitmproxy-namespace
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: agents-mitmproxy-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/mitmproxy-namespace/**"
-          to: "@artifact/cluster/k8s/agents/mitmproxy-namespace/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: osm-mcp
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: osm-mcp
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/osm-mcp/app/**"
-          to: "@artifact/cluster/k8s/agents/osm-mcp/app/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: osm-mcp-namespace
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: osm-mcp-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/osm-mcp/namespace/**"
-          to: "@artifact/cluster/k8s/agents/osm-mcp/namespace/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: plaid-db-mcp
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: plaid-db-mcp
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/plaid-db-mcp/app/**"
-          to: "@artifact/cluster/k8s/agents/plaid-db-mcp/app/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: plaid-db-mcp-servicemonitor
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: plaid-db-mcp-servicemonitor
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/plaid-db-mcp/servicemonitor/**"
-          to: "@artifact/cluster/k8s/agents/plaid-db-mcp/servicemonitor/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: plaid-mcp
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: plaid-mcp
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/plaid-mcp/app/**"
-          to: "@artifact/cluster/k8s/agents/plaid-mcp/app/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: plaid-mcp-db
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: plaid-mcp-db
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/plaid-mcp/db/**"
-          to: "@artifact/cluster/k8s/agents/plaid-mcp/db/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: plaid-mcp-namespace
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: plaid-mcp-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/plaid-mcp/namespace/**"
-          to: "@artifact/cluster/k8s/agents/plaid-mcp/namespace/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: postscanmail-mcp
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: postscanmail-mcp
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/postscanmail-mcp/app/**"
-          to: "@artifact/cluster/k8s/agents/postscanmail-mcp/app/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: postscanmail-mcp-namespace
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: postscanmail-mcp-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/postscanmail-mcp/namespace/**"
-          to: "@artifact/cluster/k8s/agents/postscanmail-mcp/namespace/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: postscanmail-mcp-servicemonitor
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: postscanmail-mcp-servicemonitor
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/postscanmail-mcp/servicemonitor/**"
-          to: "@artifact/cluster/k8s/agents/postscanmail-mcp/servicemonitor/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: public-coder-agent-app
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: public-coder-agent-app
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/public-coder-agent/app/**"
-          to: "@artifact/cluster/k8s/agents/public-coder-agent/app/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: public-coder-agent-backup
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: public-coder-agent-backup
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/public-coder-agent/backup/**"
-          to: "@artifact/cluster/k8s/agents/public-coder-agent/backup/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: activitywatch
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: activitywatch
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/activitywatch/**"
-          to: "@artifact/cluster/k8s/activitywatch/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: agent-box
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: agent-box
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agent-box/app/**"
-          to: "@artifact/cluster/k8s/agent-box/app/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: agent-box-namespace
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: agent-box-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agent-box/namespace/**"
-          to: "@artifact/cluster/k8s/agent-box/namespace/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: agentplane-index-app
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: agentplane-index-app
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agentplane-index/app/**"
-          to: "@artifact/cluster/k8s/agentplane-index/app/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: agentplane-index-db
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: agentplane-index-db
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agentplane-index/db/**"
-          to: "@artifact/cluster/k8s/agentplane-index/db/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: agentplane-index-secrets
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: agentplane-index-secrets
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agentplane-index/secrets/**"
-          to: "@artifact/cluster/k8s/agentplane-index/secrets/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: agent-workspaces-app
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: agent-workspaces-app
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/agent-sandbox/workspaces/app/**"
-          to: "@artifact/cluster/k8s/agents/agent-sandbox/workspaces/app/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: agent-workspaces-namespace
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: agent-workspaces-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/agent-sandbox/workspaces/namespace/**"
-          to: "@artifact/cluster/k8s/agents/agent-sandbox/workspaces/namespace/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: airlock
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: airlock
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/airlock/**"
-          to: "@artifact/cluster/k8s/agents/airlock/"
-          exclude:
-            - flux-kustomization.yaml
----
-apiVersion: source.extensions.fluxcd.io/v1beta1
-kind: ArtifactGenerator
-metadata:
-  name: alloy-otlp-bearer
-  namespace: ducktape-flux
-spec:
-  sources:
-    - alias: repo
-      kind: GitRepository
-      name: ducktape
-      namespace: ducktape-flux
-  artifacts:
-    - name: alloy-otlp-bearer
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/alloy-otlp-bearer/**"
-          to: "@artifact/cluster/k8s/agents/alloy-otlp-bearer/"
           exclude:
             - flux-kustomization.yaml
