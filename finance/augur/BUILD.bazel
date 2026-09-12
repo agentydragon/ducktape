@@ -105,6 +105,8 @@ py_library(
     ],
 )
 
+# Nine cases, each a full app simulation plus two renders; a shard pays only a server boot and a
+# browser launch on top of its cases, so splitting them is nearly free wall-clock-wise.
 py_test(
     name = "visual_test",
     size = "large",
@@ -124,6 +126,7 @@ py_test(
         "FONTCONFIG_FILE": "$(rootpath //util/testing/frontend_visual:fonts_conf)",
         "FREETYPE_PROPERTIES": "cff:no-stem-darkening=1",
     },
+    shard_count = 3,
     deps = [
         ":conftest",
         ":dev_server",
