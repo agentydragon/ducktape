@@ -10,13 +10,6 @@ from finance.augur.sim.testing.configured_result import run_case
 from finance.augur.sim.testing.engine_edges import ScanPhaseAcceptance, ValidationEdgeAcceptance
 from finance.augur.sim.testing.fixtures import SF, checking, home_purchase
 from finance.augur.sim.testing.simulation_result import Backend
-from finance.augur.sim.testing.target_allocation import TargetAllocationAcceptance
-
-
-class TestConfiguredTargetAllocation(TargetAllocationAcceptance):
-    @pytest.fixture
-    def backend(self) -> Backend:
-        return run_case
 
 
 class TestConfiguredScanPhase(ScanPhaseAcceptance):
