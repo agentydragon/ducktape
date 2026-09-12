@@ -7,6 +7,10 @@ resources:
   - actionpolicyset-github-reads.yaml
   - actionpolicyset-github-identity-reads.yaml
   - actionpolicybinding-claude-ai-github-reads.yaml
+  - actionpolicyset-public-ducktape-reads.yaml
+  - actionpolicyset-public-ducktape-fork-reads.yaml
+  - actionpolicyset-public-gaffer-private-reads.yaml
+  - actionpolicyset-public-github-reads.yaml
   - rbac.yaml
   - configmap-action-federation.yaml
   - deployment.yaml

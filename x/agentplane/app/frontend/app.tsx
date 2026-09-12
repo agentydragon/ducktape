@@ -8,7 +8,7 @@ import { ConnectionConsent } from "./consent";
 import { SandboxPage } from "./sandbox_page";
 import { SandboxList } from "./sandboxes";
 import { SessionView } from "./session";
-import { Settings, type SettingsTab } from "./settings";
+import { Settings, type SettingsTab } from "./settings/dialog";
 
 // Hash routing: the API serves the bundle at "/" only, so no path has to reach the server.
 function sandboxPath(name: string): string {

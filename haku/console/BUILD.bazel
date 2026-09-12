@@ -361,7 +361,7 @@ py_library(
         ":models",
         ":recall_index_reader",
         ":settings",
-        "//haku/console/auto_approval:github",
+        "//github_policy:visibility",
         "//haku/console/grants:catalog",
         "//haku/console/grants:routes",
         "//haku/console/grants/http:repository",

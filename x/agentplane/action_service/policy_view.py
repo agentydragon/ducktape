@@ -20,16 +20,19 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from x.agentplane.action_service.models import PolicyKind, SandboxCaller, ServiceAccountCaller, ServiceAccountRef
-from x.agentplane.action_service.policy_evaluation import resolve_bindings
-from x.agentplane.action_service.policy_informer import PolicyIndex, namespaced_key
-from x.agentplane.action_service.policy_resources import (
+from x.agentplane.action_service.policies.argument_schema import ArgumentSchema
+from x.agentplane.action_service.policies.exact_actions import ExactActions
+from x.agentplane.action_service.policies.github_public_repository import GitHubPublicRepository
+from x.agentplane.action_service.policies.github_repository import GitHubRepository
+from x.agentplane.action_service.policies.registry import Policy
+from x.agentplane.action_service.policies.resources import (
     ActionPolicyBinding,
     ActionPolicySet,
-    ArgumentSchemaPolicy,
     Condition,
-    ExactActionsPolicy,
     InvalidResource,
 )
+from x.agentplane.action_service.policy_evaluation import resolve_bindings
+from x.agentplane.action_service.policy_informer import PolicyIndex, namespaced_key
 from x.agentplane.action_service.providers import ResolvedBinding
 
 # What a binding's subject names, as the operator asks about it: a live Sandbox by namespace and
@@ -39,6 +42,20 @@ type PolicySubject = SandboxCaller | ServiceAccountRef
 
 class _View(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class SandboxTarget(_View):
+    """A live Sandbox as the subject to read, by the namespace and UID a binding pins."""
+
+    sandbox: SandboxCaller
+
+
+class ServiceAccountTarget(_View):
+    service_account: ServiceAccountRef
+
+
+# Whose policy a caller asks for: its own, or a named subject.
+type PolicyTarget = Literal["self"] | SandboxTarget | ServiceAccountTarget
 
 
 class ReadyConditionView(_View):
@@ -63,7 +80,22 @@ class ArgumentSchemaView(_View):
     argument_schema: dict[str, JsonValue] = Field(description="The JSON Schema the arguments must satisfy.")
 
 
-PolicyView = Annotated[ExactActionsView | ArgumentSchemaView, Field(discriminator="type")]
+class GitHubRepositoryView(_View):
+    type: Literal[PolicyKind.GITHUB_REPOSITORY]
+    actions: dict[str, list[str]] = Field(description="Action names by ActionGroup key, sorted.")
+    owner: str = Field(description="The GitHub repository owner the call must target.")
+    repository: str = Field(description="The GitHub repository name the call must target.")
+
+
+class GitHubPublicRepositoryView(_View):
+    type: Literal[PolicyKind.GITHUB_PUBLIC_REPOSITORY]
+    actions: dict[str, list[str]] = Field(description="Action names by ActionGroup key, sorted.")
+
+
+PolicyView = Annotated[
+    ExactActionsView | ArgumentSchemaView | GitHubRepositoryView | GitHubPublicRepositoryView,
+    Field(discriminator="type"),
+]
 
 
 class EffectivePolicyView(_View):
@@ -99,10 +131,14 @@ class CallerBindingView(_View):
 
 
 class CallerActionPolicyView(_EffectivePolicy):
-    """What the authenticated caller's own bindings auto-decide, as admission would resolve them now."""
+    """What a subject's bindings auto-decide, as admission would resolve them now, in the form a
+    caller may see: the caller's own subject by default, or one it named."""
 
+    subject: SandboxCaller | ServiceAccountRef = Field(
+        description="Whose bindings these are: a Sandbox by namespace and UID, or a ServiceAccount."
+    )
     bindings: list[CallerBindingView] = Field(
-        description="The caller's unexpired, valid bindings in name order; empty means every request waits for the operator."
+        description="The subject's unexpired, valid bindings in name order; empty means every request waits for the operator."
     )
 
 
@@ -141,13 +177,21 @@ class SubjectActionPolicyView(_EffectivePolicy):
     )
 
 
-def _policy_view(policy: ExactActionsPolicy | ArgumentSchemaPolicy) -> ExactActionsView | ArgumentSchemaView:
+def _policy_view(
+    policy: Policy,
+) -> ExactActionsView | ArgumentSchemaView | GitHubRepositoryView | GitHubPublicRepositoryView:
     actions = {group: sorted(names) for group, names in sorted(policy.actions.items())}
     match policy:
-        case ExactActionsPolicy():
+        case ExactActions():
             return ExactActionsView(type=PolicyKind.EXACT_ACTIONS, actions=actions)
-        case ArgumentSchemaPolicy(argument_schema=schema):
+        case ArgumentSchema(argument_schema=schema):
             return ArgumentSchemaView(type=PolicyKind.ARGUMENT_SCHEMA, actions=actions, argument_schema=schema)
+        case GitHubRepository(owner=owner, repository=repository):
+            return GitHubRepositoryView(
+                type=PolicyKind.GITHUB_REPOSITORY, actions=actions, owner=owner, repository=repository
+            )
+        case GitHubPublicRepository():
+            return GitHubPublicRepositoryView(type=PolicyKind.GITHUB_PUBLIC_REPOSITORY, actions=actions)
 
 
 def _effective(
@@ -177,12 +221,13 @@ def _effective(
 
 
 def caller_view(
-    index: PolicyIndex, caller: SandboxCaller | ServiceAccountCaller, now: datetime
+    index: PolicyIndex, subject: PolicySubject | ServiceAccountCaller, now: datetime
 ) -> CallerActionPolicyView:
-    """The caller's own view, from the same bindings admission resolves."""
-    bindings = resolve_bindings(index, caller, now)
+    """The caller-facing view of a subject, from the same bindings admission resolves."""
+    bindings = resolve_bindings(index, subject, now)
     auto_approve_if, auto_deny_if, auto_deny_unless = _effective(bindings)
     return CallerActionPolicyView(
+        subject=subject.service_account if isinstance(subject, ServiceAccountCaller) else subject,
         synced=index.synced,
         bindings=[
             CallerBindingView(

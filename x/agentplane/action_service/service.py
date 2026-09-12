@@ -336,6 +336,10 @@ class ActionService:
         """What the caller's own bindings auto-decide, resolved as admission would resolve them now."""
         return caller_view(self._policies, _caller(principal, external_grant), self._clock())
 
+    def target_action_policy(self, subject: PolicySubject) -> CallerActionPolicyView:
+        """What a named subject's bindings auto-decide, in the view a caller may see."""
+        return caller_view(self._policies, subject, self._clock())
+
     def subject_action_policy(self, subject: PolicySubject) -> SubjectActionPolicyView:
         """The operator's view of what a named subject's bindings auto-decide, resolved the same way."""
         return subject_view(self._policies, subject, self._clock())

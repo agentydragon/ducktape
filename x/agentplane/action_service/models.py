@@ -96,6 +96,8 @@ class PolicyKind(StrEnum):
 
     EXACT_ACTIONS = "exact_actions"
     ARGUMENT_SCHEMA = "argument_schema"
+    GITHUB_REPOSITORY = "github_repository"
+    GITHUB_PUBLIC_REPOSITORY = "github_public_repository"
 
 
 class BindingEvidence(BaseModel):
@@ -114,6 +116,19 @@ class PolicySetEvidence(BaseModel):
     generation: int
 
 
+class MatchedRepository(BaseModel):
+    """The one GitHub repository a `github_*` policy resolved the request to target, as the request spelled it."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    owner: str
+    repository: str
+    confirmed_public: bool = Field(
+        description="Whether an unauthenticated GitHub lookup confirmed the repository public at admission "
+        "(`github_public_repository`); a `github_repository` policy names its repository and never looks."
+    )
+
+
 class MatchedPolicy(BaseModel):
     """The leaf policy that produced the Decision: which set, which list, which entry, which kind."""
 
@@ -124,6 +139,9 @@ class MatchedPolicy(BaseModel):
     source: Literal["autoApproveIf"]
     index: int = Field(ge=0)
     type: PolicyKind
+    repository: MatchedRepository | None = Field(
+        default=None, description="Set by the GitHub repository kinds; the other kinds resolve no repository."
+    )
 
 
 class PolicyEvidence(BaseModel):

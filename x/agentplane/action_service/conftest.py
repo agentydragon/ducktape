@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import re
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
 from datetime import timedelta
 
+import httpx
 import pytest
 import yaml
 from fastmcp import FastMCP
@@ -15,6 +16,7 @@ from testcontainers.core.container import DockerContainer
 from testcontainers.core.waiting_utils import wait_for_logs
 from testcontainers.postgres import PostgresContainer
 
+from github_policy.visibility import RepositoryVisibilityService
 from util.bazel.runfiles import get_required_path
 from util.testing.postgres import create_database_sync, force_drop_database_sync
 from util.testing.postgres_fixtures import postgres_container
@@ -124,3 +126,27 @@ async def mcp_executor(echo_catalog: ActionCatalog) -> AsyncIterator[McpActionGr
         yield executor
     finally:
         await executor.close()
+
+
+@pytest.fixture
+def github_visibility() -> Callable[..., RepositoryVisibilityService]:
+    """Stands in for GitHub's unauthenticated repository endpoint: 200 for the `public` pairs named,
+    404 for anything else, 500 for everything when `unavailable`."""
+
+    def make(*public: tuple[str, str], unavailable: bool = False) -> RepositoryVisibilityService:
+        confirmed = {(owner.casefold(), repository.casefold()) for owner, repository in public}
+
+        def handle(request: httpx.Request) -> httpx.Response:
+            if unavailable:
+                return httpx.Response(500)
+            _, _, owner, repository = request.url.path.split("/", 3)
+            if (owner.casefold(), repository.casefold()) in confirmed:
+                return httpx.Response(200, json={"private": False})
+            return httpx.Response(404)
+
+        return RepositoryVisibilityService(
+            httpx.AsyncClient(base_url="https://github-api.test", transport=httpx.MockTransport(handle)),
+            ttl_seconds=3600.0,
+        )
+
+    return make

@@ -41,15 +41,21 @@ spec:
                   description: A request matching any policy here is auto-approved.
                   type: array
                   items: &policy
+                    description: >-
+                      One typed evaluator: `type` selects the kind, and each kind admits exactly
+                      the fields its `oneOf` branch names.
                     type: object
                     required: [type, actions]
                     properties:
                       type:
                         description: >-
                           The evaluator. `exact_actions` matches by Action name alone;
-                          `argument_schema` also requires the arguments to satisfy `schema`.
+                          `argument_schema` also requires the arguments to satisfy `schema`;
+                          `github_repository` requires a GitHub MCP call to target
+                          `owner`/`repository`; `github_public_repository` requires it to
+                          target a repository an unauthenticated GitHub lookup confirms public.
                         type: string
-                        enum: [exact_actions, argument_schema]
+                        enum: [exact_actions, argument_schema, github_repository, github_public_repository]
                       actions:
                         description: Action names by ActionGroup key; the policy matches only these.
                         type: object
@@ -64,9 +70,50 @@ spec:
                         description: >-
                           A JSON Schema the arguments must satisfy, with plain JSON Schema
                           semantics: `properties` alone never implies presence; use `required`.
-                          Read only by `argument_schema` policies.
                         type: object
                         x-kubernetes-preserve-unknown-fields: true
+                      owner:
+                        description: The GitHub repository owner.
+                        type: string
+                        minLength: 1
+                      repository:
+                        description: The GitHub repository name.
+                        type: string
+                        minLength: 1
+                    # The discriminated union. A structural schema declares every field once, above,
+                    # and lets a `oneOf` branch carry only value validations, so each branch pins
+                    # `type` and says which of the declared fields that kind requires and forbids.
+                    oneOf:
+                      - properties:
+                          type:
+                            enum: [exact_actions]
+                        not:
+                          anyOf:
+                            - required: [schema]
+                            - required: [owner]
+                            - required: [repository]
+                      - properties:
+                          type:
+                            enum: [argument_schema]
+                        required: [schema]
+                        not:
+                          anyOf:
+                            - required: [owner]
+                            - required: [repository]
+                      - properties:
+                          type:
+                            enum: [github_repository]
+                        required: [owner, repository]
+                        not:
+                          required: [schema]
+                      - properties:
+                          type:
+                            enum: [github_public_repository]
+                        not:
+                          anyOf:
+                            - required: [schema]
+                            - required: [owner]
+                            - required: [repository]
                 autoDenyIf:
                   description: A request matching any policy here is auto-denied.
                   type: array
