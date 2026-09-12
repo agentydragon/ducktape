@@ -20,7 +20,7 @@ from collections import Counter
 from pathlib import Path
 
 import yaml
-from pydantic import Field, HttpUrl, PositiveInt, model_validator
+from pydantic import Field, HttpUrl, NonNegativeInt, PositiveInt, model_validator
 
 from finance.augur.api.local_regulation import LocalRegulation
 from finance.augur.api.portfolio_source_config import PortfolioSourcesConfig
@@ -187,6 +187,15 @@ class Config(ApiModel):
             "Server-side maximum rollout length in months. Product projection requests simulate the "
             "requested `horizon_months` directly and may not exceed this ceiling. Defaults to (and "
             "may not exceed) the wire's absolute cap."
+        ),
+    )
+    projection_cache_entries: NonNegativeInt = Field(
+        default=16,
+        description=(
+            "How many distinct product projection results the server keeps, per result kind "
+            "(combined summary, single rollout), keyed on the whole request. A projection is a "
+            "pure function of its request, so a repeat — every page load, reload and chart "
+            "toggle re-sends the same body — is answered without resimulating. 0 disables it."
         ),
     )
     # User-overridable starting values for the product input panel. Optional per-field; the

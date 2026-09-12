@@ -6,7 +6,7 @@ import enum
 import json
 import os
 
-import httpx
+import httpx2
 import openai
 import pytest
 
@@ -28,17 +28,17 @@ mock_and_live = pytest.mark.parametrize(
 )
 
 
-def error_transport(code: str, message: str) -> httpx.MockTransport:
+def error_transport(code: str, message: str) -> httpx2.MockTransport:
     """Transport returning a 400 with an OpenAI-shaped error body."""
     body = json.dumps({"error": {"message": message, "type": "invalid_request_error", "code": code}})
-    return httpx.MockTransport(
-        lambda _request: httpx.Response(400, content=body, headers={"content-type": "application/json"})
+    return httpx2.MockTransport(
+        lambda _request: httpx2.Response(400, content=body, headers={"content-type": "application/json"})
     )
 
 
-def mock_openai_client(transport: httpx.MockTransport) -> OpenAIModelProto:
+def mock_openai_client(transport: httpx2.MockTransport) -> OpenAIModelProto:
     """Build BoundOpenAIModel backed by a mock transport (no retries)."""
-    inner = openai.AsyncOpenAI(api_key="test-key", http_client=httpx.AsyncClient(transport=transport))
+    inner = openai.AsyncOpenAI(api_key="test-key", http_client=httpx2.AsyncClient(transport=transport))
     return BoundOpenAIModel(client=inner, model="test")
 
 

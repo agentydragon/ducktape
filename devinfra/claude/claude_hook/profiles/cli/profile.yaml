@@ -4,11 +4,11 @@
 # DUCKTAPE_OTEL_BEARER_TOKEN still comes from .envrc (cli_env.sh) regardless.
 git_shim:
   block_amend: true
-  # block_stash is disabled because pre-commit (invoked as a git commit hook) uses
-  # git stash internally to save/restore unstaged changes before running checks.
-  # When the shim blocks git stash, the hook process receives SIGSEGV (signal 11)
-  # and git commit fails with "pre-commit died of signal 11", even though all
-  # checks actually pass. Disabling the block lets pre-commit operate normally.
+  # block_stash stays off: with it on, `git commit` failed with "pre-commit died of
+  # signal 11" although every check passed. pre-commit itself never runs `git stash`
+  # (4.5.1 parks unstaged changes as a patch file: `git diff-index --binary`,
+  # `git checkout -- .`, `git apply`), so that crash is unexplained; re-test it under
+  # the current shim before turning the block on.
   block_stash: false
   block_add_all: true
 idle_watchdog: true

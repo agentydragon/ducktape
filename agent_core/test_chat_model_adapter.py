@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import cast
 
-import httpx
+import httpx2
 import pytest_bazel
 from openai import AsyncOpenAI
 from openai.types.chat.completion_create_params import CompletionCreateParamsNonStreaming
@@ -23,10 +23,10 @@ from openai_utils.model import (
 async def test_chat_adapter_prepares_and_parses_tool_call() -> None:
     captured_body: CompletionCreateParamsNonStreaming | None = None
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         nonlocal captured_body
         captured_body = cast(CompletionCreateParamsNonStreaming, json.loads(request.content))
-        return httpx.Response(
+        return httpx2.Response(
             200,
             json={
                 "id": "chatcmpl_test",
@@ -61,7 +61,7 @@ async def test_chat_adapter_prepares_and_parses_tool_call() -> None:
             },
         )
 
-    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    http_client = httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
     try:
         client = AsyncOpenAI(base_url="http://test/v1", api_key="sk-test", http_client=http_client)
         model = ChatCompletionsAgentModel(client=client, model="chat-model")

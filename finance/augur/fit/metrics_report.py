@@ -40,7 +40,7 @@ from finance.augur.model.independent import IndependentProviderConfig
 from finance.augur.model.path_models.scenarios import HistoricalSeries
 from finance.augur.model.provider_config import CompositeProviderConfig
 from finance.augur.model.vecm import VecmConfig, VecmModel
-from util.bazel.runfiles import get_required_path
+from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 
 @dataclass(frozen=True)
@@ -52,7 +52,7 @@ class ModelMetricSpec:
 
 
 def _build_independent_from_testdata() -> Scorable:
-    augur_config = load_augur_config(get_required_path("_main/finance/augur/api/testdata/config.yaml"))
+    augur_config = load_augur_config(get_required_path(own_repo_rlocation("finance/augur/api/testdata/config.yaml")))
     provider = augur_config.models[augur_config.default_model_id]
     if isinstance(provider, CompositeProviderConfig):
         config = provider.macro

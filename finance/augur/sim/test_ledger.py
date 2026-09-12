@@ -95,6 +95,21 @@ def test_overflow_does_not_commit_a_successful_prefix(ledger: Ledger) -> None:
     assert ledger.balances == before
 
 
+def test_a_group_commits_together_and_a_rejection_uncommits_its_predecessors(ledger: Ledger) -> None:
+    funding = JournalEntry(
+        month=0, cause_id="funding", postings=[Posting(account=CASH, amount=100), Posting(account=BASIS, amount=-100)]
+    )
+    spending = JournalEntry(
+        month=0, cause_id="spending", postings=[Posting(account=CASH, amount=-30), Posting(account=GAIN, amount=30)]
+    )
+    ledger.apply_all([funding, spending])
+    assert (ledger.balance(CASH), ledger.balance(BASIS), ledger.balance(GAIN)) == (70, -100, 30)
+    before = dict(ledger.balances)
+    with pytest.raises(ValueError, match="unbalanced by 1 quanta"):
+        ledger.apply_all([funding, JournalEntry(month=1, cause_id="bad", postings=[Posting(account=CASH, amount=1)])])
+    assert ledger.balances == before
+
+
 def test_compound_delta_overflow_does_not_cancel_silently(ledger: Ledger) -> None:
     before = dict(ledger.balances)
     with pytest.raises(OverflowError):

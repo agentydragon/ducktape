@@ -10,7 +10,7 @@ from testcontainers.postgres import PostgresContainer
 
 from haku.recall_index.fake_embedder import FakeEmbedder
 from haku.recall_index.store import ensure_schema
-from third_party.containers.rlocations import PGVECTOR_PG18
+from third_party.containers import pgvector_pg18
 from util.testing.postgres_fixtures import start_postgres_container
 
 # Fixtures build postgresql+asyncpg:// engines; SQLAlchemy loads the dialect's
@@ -20,7 +20,7 @@ from util.testing.postgres_fixtures import start_postgres_container
 
 @pytest.fixture(scope="session")
 def pgvector_container() -> Generator[PostgresContainer]:
-    container = start_postgres_container(PGVECTOR_PG18)
+    container = start_postgres_container(pgvector_pg18.IMAGE)
     try:
         yield container
     finally:

@@ -60,7 +60,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: app
-          image: git.allegedly.works/ducktape-ci/agentplane-app:devel-20260912111548-637014b # {"$imagepolicy": "flux-system:agentplane-app"}
+          image: git.allegedly.works/ducktape-ci/agentplane-app:devel-20260912134815-8966471 # {"$imagepolicy": "flux-system:agentplane-app"}
           imagePullPolicy: IfNotPresent
           args:
             - --namespace=agentplane-staging
@@ -174,7 +174,7 @@ spec:
         # The app's Alembic history (x/agentplane/app/migrations). The app itself creates no tables;
         # it verifies the migrated schema at startup and fails if this has not run.
         - name: migrate
-          image: git.allegedly.works/ducktape-ci/agentplane-app-migrate:devel-20260912111656-637014b # {"$imagepolicy": "flux-system:agentplane-app-migrate"}
+          image: git.allegedly.works/ducktape-ci/agentplane-app-migrate:devel-20260912122524-e2303e4 # {"$imagepolicy": "flux-system:agentplane-app-migrate"}
           imagePullPolicy: Always
           env: *app-env
           resources:

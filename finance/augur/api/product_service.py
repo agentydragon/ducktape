@@ -35,4 +35,5 @@ def build_product_service(
         models=models,
         max_rollout_samples=config.max_rollout_samples,
         max_horizon_months=config.max_horizon_months,
+        result_cache_entries=config.projection_cache_entries,
     )

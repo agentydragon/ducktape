@@ -44,7 +44,7 @@ py_test(
         "//skills/info_gathering/evals:replay_client",
         "//skills/info_gathering/evals/twenty_questions:conftest",
         "//skills/info_gathering/evals/twenty_questions:result_types",
-        "//third_party/containers:rlocations",
+        "//third_party/containers:python_3_13_slim",
         "//util:oci",
         "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present

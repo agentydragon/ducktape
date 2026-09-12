@@ -31,10 +31,14 @@ def _build_result(k8s_dir: Path, subdir: str, resources: list[tuple[str, str]]) 
 def _cluster(
     flux_kustomizations: dict[str, FluxKustomizationSpec],
     build_results: list[KustomizeBuildResult] | None = None,
-    flux_sources: set[tuple[str, str]] | None = None,
+    flux_sources: set[tuple[str, str, str]] | None = None,
+    artifact_paths: dict[tuple[str, str], set[str]] | None = None,
 ) -> ParsedCluster:
     return ParsedCluster(
-        flux_kustomizations=flux_kustomizations, build_results=build_results or [], flux_sources=flux_sources or set()
+        flux_kustomizations=flux_kustomizations,
+        build_results=build_results or [],
+        flux_sources=flux_sources or set(),
+        artifact_paths=artifact_paths or {},
     )
 
 
@@ -222,8 +226,12 @@ class TestCrossNamespaceReferences:
     def test_source_ref_cross_namespace_fails(self) -> None:
         """Bare sourceRef to a source that exists only in another namespace is flagged."""
         cluster = _cluster(
-            {"app": FluxKustomizationSpec(namespace="ducktape-flux", source_ref=SourceRef(name="flux-system"))},
-            flux_sources={("flux-system", "flux-system")},
+            {
+                "app": FluxKustomizationSpec(
+                    namespace="ducktape-flux", source_ref=SourceRef(kind="GitRepository", name="flux-system")
+                )
+            },
+            flux_sources={("GitRepository", "flux-system", "flux-system")},
         )
         errors = check_cross_namespace_references(cluster)
         assert len(errors) == 1
@@ -233,10 +241,81 @@ class TestCrossNamespaceReferences:
     def test_source_ref_same_namespace_bare_passes(self) -> None:
         """Bare sourceRef within the source's own namespace resolves there."""
         cluster = _cluster(
-            {"app": FluxKustomizationSpec(namespace="flux-system", source_ref=SourceRef(name="flux-system"))},
-            flux_sources={("flux-system", "flux-system")},
+            {
+                "app": FluxKustomizationSpec(
+                    namespace="flux-system", source_ref=SourceRef(kind="GitRepository", name="flux-system")
+                )
+            },
+            flux_sources={("GitRepository", "flux-system", "flux-system")},
         )
         assert check_cross_namespace_references(cluster) == []
+
+    def test_source_ref_name_shared_by_another_kind_is_not_a_collision(self) -> None:
+        """A GitRepository ref is judged against GitRepositories only; a HelmRepository elsewhere
+        that happens to share the name is not the source it fails to find."""
+        cluster = _cluster(
+            {
+                "app": FluxKustomizationSpec(
+                    namespace="ducktape-flux", source_ref=SourceRef(kind="GitRepository", name="kyverno")
+                )
+            },
+            flux_sources={("HelmRepository", "kyverno", "kyverno")},
+        )
+        assert check_cross_namespace_references(cluster) == []
+
+    def test_external_artifact_ref_needs_a_declaring_generator(self) -> None:
+        """`kind: ExternalArtifact, name: ducktape` with only a GitRepository of that name (the #6297
+        outage class): no generator declares the artifact, so the ref stalls."""
+        cluster = _cluster(
+            {
+                "cert-manager": FluxKustomizationSpec(
+                    namespace="ducktape-flux",
+                    path="./cluster/k8s/cert-manager/app",
+                    source_ref=SourceRef(kind="ExternalArtifact", name="ducktape", namespace="ducktape-flux"),
+                )
+            },
+            flux_sources={
+                ("GitRepository", "ducktape-flux", "ducktape"),
+                ("ExternalArtifact", "ducktape-flux", "cert-manager"),
+            },
+            artifact_paths={("ducktape-flux", "cert-manager"): {"cluster/k8s/cert-manager/app"}},
+        )
+        errors = check_cross_namespace_references(cluster)
+        assert len(errors) == 1
+        assert "ArtifactGenerator" in errors[0]
+        assert "cert-manager" in errors[0]
+
+    def test_external_artifact_ref_resolves_to_declared_artifact(self) -> None:
+        """The consumer names its generator's artifact and lives under a directory it carries."""
+        cluster = _cluster(
+            {
+                "cert-manager": FluxKustomizationSpec(
+                    namespace="ducktape-flux",
+                    path="./cluster/k8s/cert-manager/app",
+                    source_ref=SourceRef(kind="ExternalArtifact", name="cert-manager"),
+                )
+            },
+            flux_sources={("ExternalArtifact", "ducktape-flux", "cert-manager")},
+            artifact_paths={("ducktape-flux", "cert-manager"): {"cluster/k8s/cert-manager/app"}},
+        )
+        assert check_cross_namespace_references(cluster) == []
+
+    def test_external_artifact_must_carry_the_consumer_path(self) -> None:
+        """A consumer whose path the artifact does not carry would reconcile an empty tree."""
+        cluster = _cluster(
+            {
+                "cert-manager-issuer-config": FluxKustomizationSpec(
+                    namespace="ducktape-flux",
+                    path="./cluster/k8s/cert-manager/issuer-config",
+                    source_ref=SourceRef(kind="ExternalArtifact", name="cert-manager"),
+                )
+            },
+            flux_sources={("ExternalArtifact", "ducktape-flux", "cert-manager")},
+            artifact_paths={("ducktape-flux", "cert-manager"): {"cluster/k8s/cert-manager/app"}},
+        )
+        errors = check_cross_namespace_references(cluster)
+        assert len(errors) == 1
+        assert "issuer-config" in errors[0]
 
 
 if __name__ == "__main__":

@@ -25,9 +25,26 @@ from x.agentplane.action_service.mcp_linkage import (
 )
 from x.agentplane.action_service.models import ExecutionLease, ExecutionRequest, Principal, PrincipalRole
 from x.agentplane.action_service.test_fixtures.lifecycle import wait_available
-from x.agentplane.action_service.test_fixtures.oauth_mcp_server import CLIENT_ID, PATH, build_app
+from x.agentplane.action_service.test_fixtures.oauth_mcp_server import CLIENT_ID, PATH, build_app, build_dex_app
 
 REDIRECT_URI = "https://app.example.test/mcp-linkage/callback"
+
+
+async def test_dex_app_exposes_remote_oauth_metadata() -> None:
+    app = build_dex_app(
+        base_url="http://fixture.example.test",
+        authorization_server="https://dex.example.test/dex",
+        jwks_uri="http://dex.example.test/dex/keys",
+        audience="agentplane-testing-mcp",
+    ).http_app(path=PATH)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://fixture.example.test"
+    ) as http:
+        response = await http.get("/.well-known/oauth-protected-resource/mcp")
+
+    assert response.status_code == 200, response.text
+    assert response.json()["authorization_servers"] == ["https://dex.example.test/dex"]
+    assert response.json()["scopes_supported"] == ["openid"]
 
 
 async def test_full_linkage_cycle_and_tool_call(engine: AsyncEngine, execution_lease: ExecutionLease) -> None:

@@ -10,7 +10,7 @@ spec:
   prune: true
   sourceRef:
     kind: ExternalArtifact
-    name: ducktape
+    name: seaweedfs-cluster
     namespace: ducktape-flux
   dependsOn:
     - name: seaweedfs-operator

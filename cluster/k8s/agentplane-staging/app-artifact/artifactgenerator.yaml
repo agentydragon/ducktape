@@ -1,0 +1,19 @@
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: agentplane-staging-app
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: agentplane-staging-app
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agentplane-staging/app/**"
+          to: "@artifact/cluster/k8s/agentplane-staging/app/"
+          exclude:
+            - flux-kustomization.yaml

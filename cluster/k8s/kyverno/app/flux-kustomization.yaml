@@ -10,7 +10,7 @@ spec:
   prune: true
   sourceRef:
     kind: ExternalArtifact
-    name: ducktape
+    name: kyverno
     namespace: ducktape-flux
   timeout: 10m0s
   wait: true

@@ -116,15 +116,13 @@ py_test(
         "//finance/augur/api:public_fixture_properties",
         "//finance/augur/frontend:bundle_base",
         "//util/testing/frontend_visual:fonts",
-        "//util/testing/frontend_visual:fonts_conf",
         "@playwright_browsers//:chromium-headless-shell",
     ],
     env = {
         "AUGUR_BUNDLE_INDEX_RUNFILE": "_main/finance/augur/frontend/dist/index.html",
         "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
-        "FONTCONFIG_FILE": "$(rootpath //util/testing/frontend_visual:fonts_conf)",
-        "FREETYPE_PROPERTIES": "cff:no-stem-darkening=1",
     },
+    tags = ["visual"],
     deps = [
         ":conftest",
         ":dev_server",

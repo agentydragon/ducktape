@@ -4,7 +4,7 @@ metadata:
   name: agentplane-oauth-fixture
   namespace: agentplane-testing
   annotations:
-    description: Self-contained OAuth-protected MCP server for acceptance-testing MCP OAuth linkage; the in-memory authorization server and the MCP tool are the same process, no external IdP.
+    description: Dex-backed OAuth-protected MCP server for acceptance-testing MCP OAuth linkage; the fixture verifies Dex JWTs locally and has no credentials.
 spec:
   replicas: 1
   strategy:
@@ -22,16 +22,18 @@ spec:
         - name: forgejo-images-creds
       containers:
         - name: fixture
-          image: git.allegedly.works/ducktape-ci/agentplane-oauth-fixture:devel-20260912111700-637014b # {"$imagepolicy": "flux-system:agentplane-oauth-fixture"}
+          image: git.allegedly.works/ducktape-ci/agentplane-oauth-fixture:devel-20260912130739-9392be4 # {"$imagepolicy": "flux-system:agentplane-oauth-fixture"}
           env:
-            # Cluster-internal only (see oauth-fixture-networkpolicy.yaml): both the Action
-            # Service's discovery/token exchange and the acceptance test's own "browser" GET to
-            # /authorize reach this hostname directly -- the acceptance suite runs from the
-            # public-coder-devbox KubeVirt VM, a genuine pod-network endpoint, not an external host.
+            # The MCP resource server remains cluster-internal. Dex's public issuer is advertised
+            # to clients, while the fixture fetches signing keys over the internal Dex Service.
             - name: OAUTH_FIXTURE_BASE_URL
               value: http://agentplane-oauth-fixture.agentplane-testing.svc.cluster.local:8080
-            - name: OAUTH_FIXTURE_REDIRECT_URI
-              value: https://agentplane-testing.allegedly.works/mcp-linkage/callback
+            - name: OAUTH_FIXTURE_AUTHORIZATION_SERVER
+              value: https://agentplane-dex-testing.allegedly.works/dex
+            - name: OAUTH_FIXTURE_JWKS_URI
+              value: http://agentplane-testing-dex.agentplane-testing.svc.cluster.local:5556/dex/keys
+            - name: OAUTH_FIXTURE_AUDIENCE
+              value: agentplane-testing-mcp
           ports:
             - name: http
               containerPort: 8080
