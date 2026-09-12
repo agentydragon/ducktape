@@ -25,6 +25,7 @@ from starlette.routing import Route
 from util.net import bind_free_port
 from util.testing.asgi import serve_app
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
+from x.agentplane.app.action_policy import ActionPolicyInventory
 from x.agentplane.app.api import Provider, create_app
 from x.agentplane.app.bridge import RunnerBridge
 from x.agentplane.app.conftest import AGENT, AGENT_AUTH, AUDIENCE, STRANGER_AUTH
@@ -60,6 +61,7 @@ def serve(
     decisions: DecisionsClient,
     authentication: FakeAuthenticationV1Api,
     live_index: LiveIndex,
+    action_policy: ActionPolicyInventory,
 ) -> ServeApp:
     """The app as staging runs it -- a login and the token path on one port -- and its IdP."""
 
@@ -104,7 +106,7 @@ def serve(
             public_base_url=app_url,
         )
         reviewer = TokenReviewer(cast(Any, authentication), audience=AUDIENCE, subjects=subjects)
-        app = create_app(inventory, bridge, store, MODELS, egress, decisions, live_index, oidc, reviewer)
+        app = create_app(inventory, bridge, store, MODELS, egress, decisions, live_index, action_policy, oidc, reviewer)
         # The database pool belongs to this event loop, not serve_app's dedicated thread.
         server = uvicorn.Server(uvicorn.Config(app, log_level="warning"))
         async with serve_app(idp, sock=idp_sock):

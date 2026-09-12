@@ -30,6 +30,7 @@ py_library(
     srcs = ["api.py"],
     deps = [
         ":action_federation",
+        ":action_policy",
         ":auth_routes",
         ":bridge",
         ":consent",
@@ -85,6 +86,7 @@ py_library(
     ],  # keep: the SPA and service worker the server mounts
     deps = [
         ":action_federation",
+        ":action_policy",
         ":api",
         ":bridge",
         ":decisions",
@@ -114,7 +116,9 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
+        ":action_policy",
         ":bridge",
+        ":database_migrate",
         ":decisions",
         ":egress",
         ":identity",
@@ -141,6 +145,7 @@ py_test(
     requires_docker = True,
     deps = [
         ":action_federation",
+        ":action_policy",
         ":api",
         ":bridge",
         ":conftest",
@@ -165,16 +170,21 @@ py_test(
         "//x/agentplane/action_service:mcp_executor",
         "//x/agentplane/action_service:models",
         "//x/agentplane/action_service:operator_oidc",
+        "//x/agentplane/action_service:policy_informer",
         "//x/agentplane/action_service:service",
         "//x/agentplane/action_service:updates",
+        "//x/agentplane/action_service/policies:resources",
         "//x/agentplane/action_service/test_fixtures:callers",
+        "//x/agentplane/app/testing:kubernetes",
         "//x/agentplane/sandbox_auth:principal",
+        "@pypi//fastapi",
         "@pypi//fastmcp_slim",
         "@pypi//httpx",
         "@pypi//pyjwt",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//starlette",
+        "@pypi//uvicorn",
     ],
 )
 
@@ -183,6 +193,7 @@ py_test(
     size = "medium",
     srcs = ["test_api.py"],
     deps = [
+        ":action_policy",
         ":api",
         ":bridge",
         ":conftest",
@@ -265,6 +276,7 @@ py_test(
         "@platforms//os:linux",
     ],
     deps = [
+        ":action_policy",
         ":api",
         ":bridge",
         ":changes",
@@ -293,6 +305,7 @@ py_library(
     name = "export_schema",
     srcs = ["export_schema.py"],
     deps = [
+        ":action_policy",
         ":api",
         ":bridge",
         ":decisions",
@@ -337,6 +350,50 @@ oci_image(
 )
 
 py_library(
+    name = "database_migrate",
+    srcs = ["database_migrate.py"],
+    data = ["//x/agentplane/app/migrations:files"],
+    deps = [
+        ":trajectory",
+        "@pypi//alembic",
+        "@pypi//psycopg",
+        "@pypi//pydantic_settings",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_binary(
+    name = "migrate",
+    main_module = "x.agentplane.app.database_migrate",
+    deps = [":database_migrate"],
+)
+
+# The migration runner, published as agentplane-app-migrate (devinfra/ci/image_targets.json) and run
+# as the `migrate` init container ahead of the app.
+aspect_py_binary(
+    name = "migration_image_bin",
+    main = "database_migrate.py",
+    deps = [":database_migrate"],
+)
+
+py_image_layer(
+    name = "migration_layers",
+    binary = ":migration_image_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "migration_image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("migration_image_bin"),
+    env = py_image_env(binary_name = "migration_image_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":migration_layers"],
+    user = "1000:1000",
+)
+
+py_library(
     name = "trajectory",
     srcs = ["trajectory.py"],
     deps = [
@@ -372,6 +429,7 @@ py_test(
     size = "medium",
     srcs = ["test_main.py"],
     deps = [
+        ":action_policy",
         ":api",
         ":bridge",
         ":conftest",
@@ -460,6 +518,7 @@ py_test(
     size = "medium",
     srcs = ["test_auth_routes.py"],
     deps = [
+        ":action_policy",
         ":api",
         ":bridge",
         ":conftest",
@@ -504,14 +563,19 @@ py_library(
     name = "live",
     srcs = ["live.py"],
     deps = [
+        ":action_federation",
+        ":action_policy",
         ":changes",
         ":egress",
+        ":identity",
         ":inventory",
         ":shutdown",
         ":trajectory",
         "//util:kubernetes",
         "//x/agentplane:kubernetes_watch",
+        "//x/agentplane/action_service/policies:resources",
         "@pypi//fastapi",
+        "@pypi//httpx",
         "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",
     ],
@@ -522,6 +586,8 @@ py_test(
     size = "medium",
     srcs = ["test_live.py"],
     deps = [
+        ":action_federation",
+        ":action_policy",
         ":api",
         ":bridge",
         ":conftest",
@@ -530,8 +596,11 @@ py_test(
         ":identity",
         ":inventory",
         ":live",
+        ":oidc",
         ":trajectory",
         "//:conftest",
+        "//util:net",
+        "//x/agentplane/action_service:operator_oidc",
         "//x/agentplane/app/testing:kubernetes",
         "@pypi//fastapi",
         "@pypi//httpx",
@@ -560,11 +629,13 @@ py_library(
     name = "action_federation",
     srcs = ["action_federation.py"],
     deps = [
+        ":identity",
         ":oidc",
         "//mcp_infra/authentik_auth:oidc_principal",
         "//x/agentplane/action_service:client",
         "//x/agentplane/action_service:operator_oidc",
         "@pypi//authlib",
+        "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pydantic",
     ],
@@ -657,6 +728,55 @@ py_test(
         ":conftest",
         ":shutdown",
         "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_database_migrate",
+    size = "medium",
+    srcs = ["test_database_migrate.py"],
+    deps = [
+        ":conftest",
+        ":database_migrate",
+        ":trajectory",
+        "//:conftest",
+        "@pypi//alembic",
+        "@pypi//psycopg",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "action_policy",
+    srcs = ["action_policy.py"],
+    deps = [
+        ":action_federation",
+        ":egress",
+        ":inventory",
+        "//util:kubernetes",
+        "//x/agentplane/action_service:client",
+        "//x/agentplane/action_service:policy_view",
+        "//x/agentplane/action_service/policies:resources",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_action_policy",
+    srcs = ["test_action_policy.py"],
+    deps = [
+        ":action_policy",
+        ":conftest",
+        ":egress",
+        "//:conftest",
+        "//x/agentplane/action_service:client",
+        "//x/agentplane/action_service:models",
+        "//x/agentplane/action_service:policy_view",
+        "//x/agentplane/app/testing:kubernetes",
+        "@pypi//httpx",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

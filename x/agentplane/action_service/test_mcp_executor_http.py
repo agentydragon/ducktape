@@ -23,6 +23,7 @@ import pytest_bazel
 import uvicorn
 from cryptography.fernet import Fernet
 from fastapi import FastAPI
+from more_itertools import one
 from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -41,7 +42,7 @@ from x.agentplane.action_service.catalog import (
     ActionUnavailableError,
     McpExecutorBinding,
 )
-from x.agentplane.action_service.db import ExecutionRow, make_sessionmaker
+from x.agentplane.action_service.db import ActionConflictError, ExecutionRow, make_sessionmaker
 from x.agentplane.action_service.main import Settings, async_main
 from x.agentplane.action_service.mcp_executor import McpActionGroupExecutor, _LinkageBearerAuth
 from x.agentplane.action_service.mcp_linkage import McpLinkageStatus
@@ -484,6 +485,7 @@ async def test_main_oauth_serves_during_backend_outage_and_recovers(
             pending = await service.submit(
                 ActionRequestInput(
                     idempotency_key="after-outage",
+                    title="test title for after-outage",
                     action=ActionIdentity(group="remote", name="echo"),
                     arguments={"text": "recovered"},
                 ),
@@ -528,7 +530,10 @@ async def test_production_http_composition_one_execution_no_replay(
             view.model_dump_json() for view in catalog.group_views()
         )
         body = ActionRequestInput(
-            idempotency_key="http-once", action=ActionIdentity(group="remote", name="echo"), arguments={"text": "hi"}
+            idempotency_key="http-once",
+            title="test title for http-once",
+            action=ActionIdentity(group="remote", name="echo"),
+            arguments={"text": "hi"},
         )
         pending = await service.submit(body, caller)
         assert pending.state is ActionState.DECISION_PENDING
@@ -577,7 +582,10 @@ async def test_production_http_composition_one_execution_no_replay(
                 await service.submit(body, caller)
             fake_server.tools[0]["inputSchema"] = {"type": "object"}
             await wait_available(http_group)
-        assert (await service.submit(body, caller)).execution == final.execution
+        with pytest.raises(ActionConflictError):
+            await service.submit(body, caller)
+        recovered = one(await service.list_requests(caller, idempotency_key=body.idempotency_key))
+        assert recovered.execution == final.execution
         assert (await service.decide(pending.id, decision, operator)).execution == final.execution
         # Duplicate dispatch and restart recovery must both respect the durable single-Execution claim.
         await service._dispatch_once(pending.id)

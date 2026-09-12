@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from util.net import pick_free_port
+from x.agentplane.app.action_policy import ActionPolicyInventory
 from x.agentplane.app.api import Provider, create_app
 from x.agentplane.app.bridge import RunnerBridge
 from x.agentplane.app.conftest import AGENT_AUTH
@@ -97,13 +98,12 @@ def test_the_two_settings_models_read_one_environment_without_colliding(monkeypa
 
 def test_image_owned_agent_instructions_render_deployment_service_urls() -> None:
     instructions = resolved_agent_instructions(
-        None,
-        egress_rules_url="http://egress.test.invalid/v1/rules",
-        actions_service_url="http://actions.test.invalid:8080",
+        None, egress_api_url="http://egress.test.invalid", actions_service_url="http://actions.test.invalid:8080"
     )
 
     assert "http://egress.test.invalid/v1/rules" in instructions
-    assert "http://actions.test.invalid:8080" in instructions
+    assert "http://egress.test.invalid/openapi.json" in instructions
+    assert "http://actions.test.invalid:8080/openapi.json" in instructions
 
 
 def test_without_an_issuer_there_is_no_login(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -167,6 +167,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_bridge_a
     egress: EgressInventory,
     decisions: DecisionsClient,
     live_index: LiveIndex,
+    action_policy: ActionPolicyInventory,
     reviewer: TokenReviewer,
     database: AsyncEngine,
 ) -> None:
@@ -174,7 +175,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_bridge_a
     now ends at the signal -- cleanly, which a stream cancelled at the budget would not -- readiness
     fails while the drain is on, and the unwind then releases the ingestion lease and every
     connection the store held."""
-    app = create_app(inventory, bridge, store, MODELS, egress, decisions, live_index, reviewer=reviewer)
+    app = create_app(inventory, bridge, store, MODELS, egress, decisions, live_index, action_policy, reviewer=reviewer)
     port = pick_free_port()
     # A budget the test would never wait out: the stream has to end because of the drain, not this.
     server = AppServer(

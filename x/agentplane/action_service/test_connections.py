@@ -29,9 +29,16 @@ from x.agentplane.action_service.connections import (
     NewConnection,
     ReconnectConnection,
 )
-from x.agentplane.action_service.db import ActionNotFoundError, ActionStore, Base, ConnectionGrantRow, make_sessionmaker
+from x.agentplane.action_service.db import (
+    ActionConflictError,
+    ActionNotFoundError,
+    ActionStore,
+    Base,
+    ConnectionGrantRow,
+    make_sessionmaker,
+)
 from x.agentplane.action_service.models import ActionRequestInput, Principal, PrincipalRole, ServiceAccountRef
-from x.agentplane.action_service.policy_informer import PolicyIndex, namespaced_key
+from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, UNLABELED, eligible_callers
 from x.agentplane.action_service.updates import ActionUpdates
@@ -101,12 +108,15 @@ async def test_same_service_account_shares_receipts_while_distinct_accounts_are_
 
     store = ActionStore(make_sessionmaker(engine), external_grants=service)
     body = ActionRequestInput(
-        idempotency_key="same-key", action=ActionIdentity(group="test", name="echo"), arguments={}
+        idempotency_key="same-key",
+        title="test title for same-key",
+        action=ActionIdentity(group="test", name="echo"),
+        arguments={},
     )
-    original, _ = await store.submit(body, first, external_grant=submitted_grants[0].provenance())
-    duplicate, created = await store.submit(body, sibling, external_grant=submitted_grants[1].provenance())
-    assert duplicate.id == original.id
-    assert not created
+    original = await store.submit(body, first, external_grant=submitted_grants[0].provenance())
+    with pytest.raises(ActionConflictError):
+        await store.submit(body, sibling, external_grant=submitted_grants[1].provenance())
+    assert [request.id for request in await store.list_requests(sibling, idempotency_key="same-key")] == [original.id]
     assert (await store.get(original.id, sibling)).id == original.id
     assert await store.events(original.id, sibling)
     assert len(await store.list_requests(sibling)) == 1
@@ -115,8 +125,7 @@ async def test_same_service_account_shares_receipts_while_distinct_accounts_are_
         await store.get(original.id, different)
     with pytest.raises(ActionNotFoundError):
         await store.events(original.id, different)
-    separate, created = await store.submit(body, different, external_grant=submitted_grants[2].provenance())
-    assert created
+    separate = await store.submit(body, different, external_grant=submitted_grants[2].provenance())
     assert separate.id != original.id
     operator = Principal(issuer="operator", subject="only-operator", role=PrincipalRole.OPERATOR)
     assert len(await store.list_requests(operator)) == 2
@@ -193,7 +202,7 @@ async def test_unlabeled_removed_unsynced_and_expired_grants_do_not_authorize(en
     with pytest.raises(GrantRejectedError):
         await service.bind(expired)
     unsynced = PolicyIndex()
-    unsynced.service_accounts[namespaced_key(PERSONAL.namespace, PERSONAL.name)] = PERSONAL
+    unsynced.service_accounts[PERSONAL.namespaced_name] = PERSONAL
     for callers in [eligible_callers(), eligible_callers(OTHER, UNLABELED), unsynced]:
         changed = ConnectionAuthority(make_sessionmaker(engine), callers)
         with pytest.raises(GrantRejectedError):

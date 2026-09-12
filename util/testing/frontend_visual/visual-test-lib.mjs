@@ -29,6 +29,7 @@ import { dirname, join, resolve } from "path";
 import {
   abortUnexpectedRequests,
   assertNetworkSettled,
+  assertNoPageErrors,
   prepareDeterministicPage,
   screenshotElement,
   waitForStable,
@@ -52,10 +53,6 @@ async function captureScenario(browser, scenarioName, options, { harnessUrl, out
   const outputName = options.outputName || scenarioName;
   const page = await browser.newPage();
   try {
-    // Render health: any uncaught error in the page fails the scenario — with no
-    // pixel gate this is the primary crash detector.
-    const pageErrors = [];
-    page.on("pageerror", (error) => pageErrors.push(error));
     // Freezing the wall clock keeps time-relative formatters (e.g. date-fns
     // formatDistanceToNow used by formatAge) deterministic — without it, renders drift
     // as the mock dates cross date-fns thresholds ("about 1 year" → "over 1 year", etc.).
@@ -87,6 +84,7 @@ async function captureScenario(browser, scenarioName, options, { harnessUrl, out
     if (escapedRequests.length > 0) {
       throw new Error(`requests escaped the harness:\n    ${escapedRequests.join("\n    ")}`);
     }
+    assertNoPageErrors(page, { context: outputName });
 
     // Viewport captures preserve clipping instead of expanding to fit an overflowing app.
     const screenshot = options.captureViewport
@@ -102,10 +100,6 @@ async function captureScenario(browser, scenarioName, options, { harnessUrl, out
       asset: { path: `${outputName}-actual.png`, label: outputName },
     });
 
-    if (pageErrors.length > 0) {
-      const detail = pageErrors.map((error) => error.stack || error).join("\n    ");
-      throw new Error(`${pageErrors.length} browser page error(s):\n    ${detail}`);
-    }
     console.log("  ✓ Passed");
   } finally {
     await page.close();
@@ -140,9 +134,8 @@ export async function runScenarios(scenarios, { title }) {
   mkdirSync(outputDir, { recursive: true });
 
   const selected = selectForShard(Object.keys(scenarios));
-  // A shard with nothing to render must not start Chromium: `--single-process` with no page ever
-  // opened wedges in browser.close(), which under --test_filter (where every shard but one is
-  // empty) means a 900s timeout per shard instead of an instant pass.
+  // Nothing to render, so nothing to launch a browser for: under `--test_filter` every shard but
+  // one is empty, and each would otherwise pay a Chromium start and stop to render no scene.
   if (selected.length === 0) {
     console.log(`shard ${process.env.TEST_SHARD_INDEX ?? 0}: no scenario to render`);
     process.exit(0);
@@ -153,9 +146,9 @@ export async function runScenarios(scenarios, { title }) {
   );
   mkdirSync(userDataDir, { recursive: true });
 
-  // --single-process + file access: the harness is loaded from a file:// URL.
+  // The harness page is a file:// URL, so it needs file access to reach its own bundle.
   const browser = await launchDeterministicBrowser({
-    args: ["--single-process", "--allow-file-access-from-files"],
+    args: ["--allow-file-access-from-files"],
     userDataDir,
   });
   const failures = [];

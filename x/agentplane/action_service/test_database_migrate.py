@@ -29,6 +29,10 @@ def _round_trip(connection: Connection) -> None:
     assert connection.scalar(text("SELECT decision_note FROM action_decision")) == "Existing deployed note — preserved."
     assert connection.scalar(text("SELECT count(*) FROM action_event WHERE actor_principal IS NOT NULL")) == 0
     assert connection.scalar(text("SELECT count(*) FROM action_request WHERE external_grant IS NOT NULL")) == 0
+    # A request submitted before callers could supply context must come back with a renderable
+    # title, not an empty one, or the approval surfaces show a blank line for it forever.
+    assert connection.scalar(text("SELECT title FROM action_request"))
+    assert connection.scalar(text("SELECT count(*) FROM action_request WHERE description IS NOT NULL")) == 0
     # Check the changed tables, not unrelated migration-only request/execution indexes.
     context = MigrationContext.configure(
         connection,
@@ -45,9 +49,12 @@ async def test_decision_note_migration_preserves_data_and_matches_metadata(engin
     store = ActionStore(make_sessionmaker(engine))
     caller = Principal(issuer="test", subject="caller", role=PrincipalRole.CALLER)
     operator = Principal(issuer="test", subject="operator", role=PrincipalRole.OPERATOR)
-    pending, _ = await store.submit(
+    pending = await store.submit(
         ActionRequestInput(
-            idempotency_key="migration-request", action=ActionIdentity(group="test", name="echo"), arguments={}
+            idempotency_key="migration-request",
+            title="test title for migration-request",
+            action=ActionIdentity(group="test", name="echo"),
+            arguments={},
         ),
         caller,
     )

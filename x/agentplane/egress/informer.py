@@ -4,9 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Any
 
-from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import CoreV1Api
 
 from util.kubernetes import CustomObjectsClient
@@ -29,29 +27,8 @@ from x.agentplane.egress.resources import (
 from x.agentplane.kubernetes_watch import ListWatch, WatchedKind, apply_to
 
 
-def _parse_policy(raw: dict[str, Any]) -> tuple[str, EgressPolicy]:
-    policy = EgressPolicy.model_validate(raw)
-    return policy.metadata.name, policy
-
-
-def _parse_credential(raw: dict[str, Any]) -> tuple[str, EgressCredential]:
-    credential = EgressCredential.model_validate(raw)
-    return credential.metadata.name, credential
-
-
-def _parse_binding(raw: dict[str, Any]) -> tuple[str, EgressBinding]:
-    binding = EgressBinding.model_validate(raw)
-    return binding.metadata.name, binding
-
-
-def _parse_sandbox(raw: dict[str, Any]) -> tuple[str, Sandbox]:
-    sandbox = Sandbox.model_validate(raw)
-    return sandbox.metadata.name, sandbox
-
-
-def _parse_secret(raw: k8s_client.V1Secret) -> tuple[str, Secret]:
-    secret = Secret.from_v1(raw)
-    return secret.name, secret
+def _name(obj: EgressPolicy | EgressBinding | EgressCredential | Sandbox) -> str:
+    return obj.metadata.name
 
 
 class Informer:
@@ -74,7 +51,8 @@ class Informer:
                     name=POLICIES_PLURAL,
                     list=custom_objects.list_namespaced_custom_object,
                     args=(GROUP, VERSION, namespace, POLICIES_PLURAL),
-                    parse=_parse_policy,
+                    parse=EgressPolicy.model_validate,
+                    key=_name,
                     names=lambda: set(index.policies),
                     apply=lambda name, obj: apply_to(index.policies, name, obj),
                 ),
@@ -82,7 +60,8 @@ class Informer:
                     name=BINDINGS_PLURAL,
                     list=custom_objects.list_namespaced_custom_object,
                     args=(GROUP, VERSION, namespace, BINDINGS_PLURAL),
-                    parse=_parse_binding,
+                    parse=EgressBinding.model_validate,
+                    key=_name,
                     names=lambda: set(index.bindings),
                     apply=lambda name, obj: apply_to(index.bindings, name, obj),
                 ),
@@ -90,7 +69,8 @@ class Informer:
                     name=CREDENTIALS_PLURAL,
                     list=custom_objects.list_namespaced_custom_object,
                     args=(GROUP, VERSION, namespace, CREDENTIALS_PLURAL),
-                    parse=_parse_credential,
+                    parse=EgressCredential.model_validate,
+                    key=_name,
                     names=lambda: set(index.credentials),
                     apply=lambda name, obj: apply_to(index.credentials, name, obj),
                 ),
@@ -98,7 +78,8 @@ class Informer:
                     name=SANDBOXES_PLURAL,
                     list=custom_objects.list_namespaced_custom_object,
                     args=(SANDBOX_GROUP, SANDBOX_VERSION, sandbox_namespace, SANDBOXES_PLURAL),
-                    parse=_parse_sandbox,
+                    parse=Sandbox.model_validate,
+                    key=_name,
                     names=lambda: set(index.sandboxes),
                     apply=lambda name, obj: apply_to(index.sandboxes, name, obj),
                 ),
@@ -106,7 +87,8 @@ class Informer:
                     name="secrets",
                     list=core_v1.list_namespaced_secret,
                     args=(credentials_namespace,),
-                    parse=_parse_secret,
+                    parse=Secret.from_v1,
+                    key=lambda secret: secret.name,
                     names=lambda: set(index.secrets),
                     apply=lambda name, obj: apply_to(index.secrets, name, obj),
                 ),

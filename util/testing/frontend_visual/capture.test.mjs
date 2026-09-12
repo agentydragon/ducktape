@@ -3,14 +3,19 @@ import assert from "node:assert/strict";
 import {
   abortUnexpectedRequests,
   assertNetworkSettled,
+  assertNoPageErrors,
   prepareDeterministicPage,
   screenshotElement,
 } from "./capture.mjs";
 
 function fakePage() {
   const calls = [];
+  const listeners = new Map();
   return {
     calls,
+    /** Deliver `error` to whatever `prepareDeterministicPage` registered for "pageerror". */
+    emitPageError: (error) => listeners.get("pageerror")(error),
+    on: (event, listener) => listeners.set(event, listener),
     evaluateOnNewDocument: async (script) => calls.push(["evaluateOnNewDocument", script]),
     setViewport: async (viewport) => calls.push(["setViewport", viewport]),
     emulateMediaFeatures: async (features) => calls.push(["emulateMediaFeatures", features]),
@@ -39,6 +44,22 @@ function fakePage() {
   const page = fakePage();
   await prepareDeterministicPage(page, { viewport: { width: 1, height: 1 }, colorScheme: "light", nowMs: 42 });
   assert.match(page.calls[0][1], /frozenClock\(42\)/);
+}
+
+{
+  // A prepared page that threw nothing passes; one that threw fails naming the error.
+  const page = fakePage();
+  await prepareDeterministicPage(page, { viewport: { width: 1, height: 1 }, colorScheme: "light" });
+  assertNoPageErrors(page, { context: "scene foo" });
+  page.emitPageError(new Error("ReferenceError: thing is not defined"));
+  assert.throws(() => assertNoPageErrors(page, { context: "scene foo" }), /scene foo: uncaught page errors/);
+  assert.throws(() => assertNoPageErrors(page), /thing is not defined/);
+}
+
+{
+  // A page nobody prepared has no collector, so asserting on it proves nothing — say so
+  // rather than passing and leaving the caller believing the scene is gated.
+  assert.throws(() => assertNoPageErrors(fakePage()), /was not prepared by prepareDeterministicPage/);
 }
 
 {

@@ -31,7 +31,14 @@ from x.agentplane.app import auth_routes, bridge as runner_bridge
 from x.agentplane.app.action_federation import (
     FederatedOperatorActions,
     OperatorFederationError,
+    operator_actions,
     upstream_failure_detail,
+)
+from x.agentplane.app.action_policy import (
+    ActionPolicyInventory,
+    ActionPolicySetView,
+    ActionPolicyView,
+    UnknownPolicySetError,
 )
 from x.agentplane.app.consent import (
     ConsentDecision,
@@ -49,7 +56,7 @@ from x.agentplane.app.egress import (
     PolicyView,
     UnknownPolicyError,
 )
-from x.agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer, require_caller
+from x.agentplane.app.identity import CallerIdentity, TokenReviewer, require_caller
 from x.agentplane.app.inventory import (
     PRESET_BINDING_ANNOTATION,
     NewSandbox,
@@ -145,6 +152,16 @@ def _egress(request: Request) -> EgressInventory:
 Egress = Annotated[EgressInventory, Depends(_egress)]
 
 
+def _action_policy(request: Request) -> ActionPolicyInventory:
+    action_policy = request.app.state.action_policy
+    if not isinstance(action_policy, ActionPolicyInventory):
+        raise TypeError(f"app.state.action_policy is {type(action_policy).__name__}, not ActionPolicyInventory")
+    return action_policy
+
+
+ActionPolicy = Annotated[ActionPolicyInventory, Depends(_action_policy)]
+
+
 def _decisions(request: Request) -> DecisionsClient:
     decisions = request.app.state.decisions
     if not isinstance(decisions, DecisionsClient):
@@ -161,15 +178,23 @@ async def list_sandboxes(inventory: Inventory) -> list[SandboxView]:
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-async def create_sandbox(inventory: Inventory, egress: Egress, presets: Presets, spec: NewSandbox) -> SandboxView:
-    """Resolve an optional app preset, then create the same concrete Sandbox the no-preset API does."""
+async def create_sandbox(
+    inventory: Inventory, egress: Egress, action_policy: ActionPolicy, presets: Presets, spec: NewSandbox
+) -> SandboxView:
+    """Resolve an optional app preset, then create the same concrete Sandbox the no-preset API does.
+    The launch's action policy sets, the preset's unless picked explicitly, become one binding of
+    the new Sandbox; a launch picking none leaves it without one."""
     template_name: str | None = None
     annotations: dict[str, str] | None = None
     picked_policies = spec.policies
+    policy_sets = spec.action_policy_sets
     if spec.preset is not None:
         preset = presets.sandbox(spec.preset)
         template_name = preset.template
         picked_policies = preset.policies if "policies" not in spec.model_fields_set else spec.policies
+        policy_sets = (
+            preset.action_policy_sets if "action_policy_sets" not in spec.model_fields_set else spec.action_policy_sets
+        )
         # Validate and preserve only explicit Sandbox-level edits; current preset defaults remain live.
         overrides = spec.thread_defaults or ThreadDefaults()
         if spec.thread_preset is not None:
@@ -182,9 +207,12 @@ async def create_sandbox(inventory: Inventory, egress: Egress, presets: Presets,
         raise InvalidLaunchError("thread_preset and thread_defaults require a sandbox preset")
     policies = egress.launch_policies(picked_policies)
     await egress.require_policies(policies)
+    await action_policy.require_policy_sets(policy_sets)
     view = await inventory.create(spec, template_name=template_name, annotations=annotations)
     if policies:
         await egress.grant(sandbox=view.name, sandbox_uid=view.uid, policies=policies)
+    if policy_sets:
+        await action_policy.bind(sandbox=view.name, sandbox_uid=view.uid, policy_sets=policy_sets)
     return view
 
 
@@ -242,6 +270,16 @@ async def sandbox_egress_decisions(inventory: Inventory, decisions: Decisions, n
     return await decisions.recent(name)
 
 
+@router.get("/{name}/action-policy")
+async def sandbox_action_policy(
+    inventory: Inventory, action_policy: ActionPolicy, client: OperatorActions, name: str
+) -> ActionPolicyView:
+    """What the Action Service auto-decides for the sandbox, as the service resolves it now for the
+    UID its bindings pin: its unexpired bindings, the sets they name, and the lists that result.
+    Read-only, and an operator's read; kubectl edits the objects."""
+    return await action_policy.for_sandbox(client, (await inventory.get(name)).uid)
+
+
 egress_router = APIRouter(prefix="/egress", tags=["egress"])
 
 
@@ -256,6 +294,15 @@ async def revoke_binding(egress: Egress, name: str) -> Response:
     """Revoke a runtime binding by deleting the rule; one from git is refused with 409."""
     await egress.revoke(name)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+action_policy_router = APIRouter(prefix="/action-policy", tags=["action-policy"])
+
+
+@action_policy_router.get("/sets")
+async def list_policy_sets(action_policy: ActionPolicy) -> list[ActionPolicySetView]:
+    """The namespace's sets with the Action Service's verdict on each: what a launch picks from."""
+    return await action_policy.list_policy_sets()
 
 
 threads = APIRouter(prefix="/threads", tags=["threads"])
@@ -279,18 +326,8 @@ consent_router = APIRouter(prefix="/connection-enrollments", tags=["connections"
 async def _operator_actions(
     request: Request, caller: Annotated[CallerIdentity, Depends(require_caller)]
 ) -> AsyncIterator[OperatorActionServiceClient]:
-    if caller.kind is not CallerKind.OPERATOR:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Action Service management requires an operator session")
-    provider = request.app.state.operator_actions
-    if provider is None:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, {"code": "operator_federation_not_configured"})
-    if not isinstance(provider, FederatedOperatorActions):
-        raise TypeError("operator_actions must be FederatedOperatorActions")
-    session = operator_session(request)
-    if session is None:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "operator_reauthentication_required")
     try:
-        yield provider.for_session(session)
+        yield operator_actions(request, caller)
     except OperatorFederationError as error:
         raise HTTPException(error.status_code, {"code": str(error)}) from None
     except httpx.HTTPStatusError as error:
@@ -302,9 +339,9 @@ async def _operator_actions(
 def upstream_http_error(error: httpx.HTTPStatusError | httpx.RequestError) -> HTTPException:
     """Describe the failed request, which may be to the identity provider or the service."""
     detail = upstream_failure_detail(error)
-    response_status = detail["upstream_status"]
     return HTTPException(
-        response_status if isinstance(response_status, int) else status.HTTP_503_SERVICE_UNAVAILABLE, detail
+        detail.upstream_status if detail.upstream_status is not None else status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail.model_dump(),
     )
 
 
@@ -480,10 +517,11 @@ async def list_threads(
     store: Store,
     sandbox: Annotated[str | None, Query(description="Only threads of this sandbox.")] = None,
     session_id: Annotated[str | None, Query(description="Only threads of this session id.")] = None,
+    include_archived: Annotated[bool, Query(description="Also list archived threads.")] = False,
 ) -> list[ThreadView]:
     """Every persisted thread, newest first; a thread outlives its sandbox. Both filters together
     name at most one thread: a session's."""
-    return await store.list_threads(sandbox=sandbox, session_id=session_id)
+    return await store.list_threads(sandbox=sandbox, session_id=session_id, include_archived=include_archived)
 
 
 class ThreadsWithSandboxes(BaseModel):
@@ -499,12 +537,16 @@ class ThreadsWithSandboxes(BaseModel):
 
 
 @threads.get("/with-sandboxes")
-async def list_threads_with_sandboxes(store: Store, inventory: Inventory) -> ThreadsWithSandboxes:
+async def list_threads_with_sandboxes(
+    store: Store,
+    inventory: Inventory,
+    include_archived: Annotated[bool, Query(description="Also list archived threads.")] = False,
+) -> ThreadsWithSandboxes:
     """Every Thread across every Sandbox the operator can see, newest first, with each Thread's own
     still-existing Sandbox included once regardless of how many Threads it hosts. A Thread survives
     its Sandbox's deletion here rather than disappearing with it; look it up by `thread.sandbox` in
     `sandboxes` and treat a miss as deleted."""
-    thread_views = await store.list_threads()
+    thread_views = await store.list_threads(include_archived=include_archived)
     referenced = {thread.sandbox for thread in thread_views}
     sandboxes = {view.name: view for view in await inventory.list_sandboxes() if view.name in referenced}
     return ThreadsWithSandboxes(threads=thread_views, sandboxes=sandboxes)
@@ -521,6 +563,18 @@ async def get_thread(store: Store, thread_id: UUID) -> ThreadView:
 @threads.patch("/{thread_id}")
 async def rename_thread(store: Store, thread_id: UUID, body: ThreadRename) -> ThreadView:
     return await store.rename(thread_id, body.name)
+
+
+@threads.post("/{thread_id}/archive", status_code=status.HTTP_204_NO_CONTENT)
+async def archive_thread(store: Store, thread_id: UUID) -> Response:
+    await store.archive(thread_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@threads.post("/{thread_id}/unarchive", status_code=status.HTTP_204_NO_CONTENT)
+async def unarchive_thread(store: Store, thread_id: UUID) -> Response:
+    await store.unarchive(thread_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @threads.get("/{thread_id}/events")
@@ -544,6 +598,7 @@ def create_app(
     egress: EgressInventory,
     decisions: DecisionsClient,
     live: LiveIndex,
+    action_policy: ActionPolicyInventory,
     oidc: OIDCSettings | None = None,
     reviewer: TokenReviewer | None = None,
     presets: PresetCatalog | None = None,
@@ -564,6 +619,7 @@ def create_app(
     app.state.models = catalog
     app.state.presets = configured_presets
     app.state.egress = egress
+    app.state.action_policy = action_policy
     app.state.decisions = decisions
     app.state.live = live
     app.state.oidc = oidc
@@ -583,6 +639,7 @@ def create_app(
         consent_router,
         connections_router,
         egress_router,
+        action_policy_router,
         live_router,
     ):
         app.include_router(api_router, dependencies=[Depends(require_caller)])
@@ -648,6 +705,10 @@ def create_app(
     async def _unknown_policy(_request: Request, error: UnknownPolicyError) -> JSONResponse:
         # 422 rather than 404: the sandbox in the path is there, and 404 on these routes already
         # says it is not. The body parsed and named something that does not resolve.
+        return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, content={"detail": str(error)})
+
+    @app.exception_handler(UnknownPolicySetError)
+    async def _unknown_policy_set(_request: Request, error: UnknownPolicySetError) -> JSONResponse:
         return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, content={"detail": str(error)})
 
     @app.exception_handler(runner_bridge.SandboxNotReachableError)

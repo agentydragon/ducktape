@@ -13,7 +13,7 @@ sequence. Independently running Claude Code (for example on wyrm2) extends the c
 `EXTERNALMCP`; the [task DAG](task_dag.md) owns dependencies and status.
 
 The first external requests require human approval. Configurable
-[Action policies](action_policies.md), backend-account OAuth, and the broader Thread model do not
+[Action policies](../docs/action_policies.md), backend-account OAuth, and the broader Thread model do not
 gate this delivery. Identity means configured authority, Connection means runtime client enrollment,
 and Thread means execution/conversation state. This remains single-operator, with no multi-operator
 management. Sandbox callers use the same MCP frontend with workload bearers, without DCR.
@@ -56,13 +56,15 @@ exercise the provider's refresh path. Do not print or persist token values.
    In the deployed app, inspect exact arguments and Identity/client/Connection provenance; exercise
    both Allow and Deny browser controls. Allow yields one Execution and the expected safe result;
    deny yields none. Claude.ai must recover those receipts/results.
-3. Exercise bounded waits and interrupted/retried tool responses against the real client. Reuse the
-   request ID, event cursor, and original submission key rather than creating another execution.
+3. Exercise bounded waits and interrupted/retried tool responses against the real client. Recover
+   by request ID, event cursor, or a lookup by the original submission key rather than creating
+   another execution; a repeated key is refused.
    Refresh must retain the grant; service/client restart must not lose pending requests or attribution.
    Do not assume Claude will autonomously poll or wake once its conversation stops.
 4. Verify wrong-resource/invalid tokens, disabled Identities, unbound Connections, and another
    Identity cannot acquire caller or operator authority. Same-Identity clients share receipt and
-   idempotency scope but retain distinct exact submission provenance; a retry cannot rewrite it.
+   idempotency scope but retain distinct exact submission provenance; a repeated key is refused
+   and cannot rewrite it.
    After unbind/revocation, old tokens fail and unclaimed work cannot borrow replacement authority.
    Already-claimed execution is not killed.
 
@@ -95,8 +97,8 @@ race tests already exist; fix regressions found in delivery rather than planning
 
 ## Later policy and lifecycle work
 
-Policy definitions and ServiceAccount/Sandbox-to-policy assignments are the model decided in
-[Action policies](action_policies.md). Runtime Connection/grant/enrollment storage is already PostgreSQL, with encrypted
+Policy definitions and ServiceAccount/Sandbox-to-policy assignments are the landed
+[Action policies](../docs/action_policies.md) model. Runtime Connection/grant/enrollment storage is already PostgreSQL, with encrypted
 PostgreSQL storage for SDK OAuth state; do not reopen it as part of policy selection. Reusable
 policy references must allow an external Identity and a class of Sandboxes to share permissions
 without sharing caller ownership or copying rules. SandboxPreset remains an app-only recipe.

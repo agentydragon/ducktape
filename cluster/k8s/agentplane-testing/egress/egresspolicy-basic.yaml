@@ -20,8 +20,10 @@ spec:
       methods: [GET, POST]
       paths:
         - /mcp
+        - /openapi.json
         - /v1/action-groups
         - /v1/action-groups/**
+        - /v1/action-policy
         - /v1/action-requests
         - /v1/action-requests/**
       credentialRef:
@@ -31,6 +33,7 @@ spec:
       clusterInternal: true
       methods: [GET]
       paths:
+        - /openapi.json
         - /v1/rules
       credentialRef:
         name: agentplane-workload

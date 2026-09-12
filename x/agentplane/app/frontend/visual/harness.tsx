@@ -14,7 +14,15 @@ import { createRoot } from "react-dom/client";
 
 import App from "../app";
 import { sampleConnection } from "../connections_fixture";
-import type { ActionRequestView, BindingView, Decision, PolicyView, SandboxView, ThreadView } from "../client";
+import type {
+  ActionPolicyView,
+  ActionRequestView,
+  BindingView,
+  Decision,
+  PolicyView,
+  SandboxView,
+  ThreadView,
+} from "../client";
 import type { SandboxesSnapshot, SandboxSnapshot, WatchHealth } from "../live";
 import {
   AttachedSchema,
@@ -167,6 +175,111 @@ const BINDINGS: BindingView[] = [
   },
 ];
 
+/**
+ * What the Action Service auto-decides for demo-a1b2: the binding the app wrote at launch, one the
+ * operator added for the afternoon, and every state a set can be in -- parsed and judged, edited
+ * since it was judged, refused, and missing.
+ */
+const ACTION_POLICY: ActionPolicyView = {
+  synced: true,
+  bindings: [
+    {
+      name: "demo-a1b2-k2m9x",
+      provenance: "app",
+      expires_at: null,
+      ready: { status: "True", reason: "Valid", message: "spec accepted", observed_generation: 1 },
+      // The preset names public-coder alone; harness-reviews was picked at launch.
+      policy_sets: [
+        {
+          name: "public-coder",
+          generation: 2,
+          ready: { status: "True", reason: "Valid", message: "spec accepted", observed_generation: 2 },
+          refused: null,
+        },
+        {
+          name: "harness-reviews",
+          generation: 1,
+          ready: { status: "True", reason: "Valid", message: "spec accepted", observed_generation: 1 },
+          refused: null,
+        },
+      ],
+      missing_policy_sets: [],
+    },
+    {
+      name: "demo-a1b2-push-afternoon",
+      provenance: "operator",
+      expires_at: new Date(NOW + 3 * HOUR).toISOString(),
+      ready: null,
+      policy_sets: [
+        {
+          name: "harness-push",
+          generation: 3,
+          ready: { status: "True", reason: "Valid", message: "spec accepted", observed_generation: 2 },
+          refused: null,
+        },
+        {
+          name: "harness-edited",
+          generation: 1,
+          ready: {
+            status: "False",
+            reason: "Invalid",
+            message: "spec.autoApproveIf.0.type: Input should be 'exact_actions' or 'argument_schema'",
+            observed_generation: 1,
+          },
+          refused: "spec.autoApproveIf.0.type: Input should be 'exact_actions' or 'argument_schema'",
+        },
+      ],
+      missing_policy_sets: ["harness-release"],
+    },
+  ],
+  auto_approve_if: [
+    {
+      binding: "demo-a1b2-k2m9x",
+      policy_set: "public-coder",
+      index: 0,
+      policy: { type: "exact_actions", actions: { github: ["get_file_contents", "list_commits", "search_code"] } },
+    },
+    {
+      binding: "demo-a1b2-k2m9x",
+      policy_set: "public-coder",
+      index: 1,
+      policy: {
+        type: "argument_schema",
+        actions: { github: ["create_issue"] },
+        argument_schema: {
+          properties: { owner: { const: "harness-owner" }, repo: { const: "harness-repo" } },
+          required: ["owner", "repo"],
+        },
+      },
+    },
+    {
+      binding: "demo-a1b2-k2m9x",
+      policy_set: "harness-reviews",
+      index: 0,
+      policy: { type: "exact_actions", actions: { github: ["pull_request_read", "list_pull_requests"] } },
+    },
+    {
+      binding: "demo-a1b2-push-afternoon",
+      policy_set: "harness-push",
+      index: 0,
+      policy: {
+        type: "argument_schema",
+        actions: { github: ["push_files"] },
+        argument_schema: { properties: { branch: { pattern: "^harness/" } }, required: ["branch"] },
+      },
+    },
+  ],
+  auto_deny_if: [
+    {
+      binding: "demo-a1b2-push-afternoon",
+      policy_set: "harness-push",
+      index: 0,
+      policy: { type: "exact_actions", actions: { kubernetes: ["pods_delete", "resources_delete"] } },
+    },
+  ],
+  auto_deny_unless: [],
+};
+
 const DECISIONS: Decision[] = [
   {
     at: ago(9 * 60_000),
@@ -256,6 +369,7 @@ const THREADS: ThreadView[] = [
     cwd: "/state/work",
     created_at: ago(HOUR),
     name: "List the repository files",
+    archived: false,
     last_sequence: 14,
     last_event_at: ago(60_000),
   },
@@ -268,6 +382,7 @@ const THREADS: ThreadView[] = [
     cwd: "/state/work",
     created_at: ago(2 * HOUR),
     name: null,
+    archived: false,
     last_sequence: 31,
     last_event_at: ago(90 * 60_000),
   },
@@ -280,6 +395,7 @@ const THREADS: ThreadView[] = [
     cwd: "/state/work",
     created_at: ago(30 * 60_000),
     name: "Clean up the stale branch",
+    archived: false,
     last_sequence: 23,
     last_event_at: ago(10_000),
   },
@@ -290,6 +406,8 @@ const ACTIONS: ActionRequestView[] = [
     id: "70000000-0000-4000-8000-000000000001",
     action: { group: "everything", name: "echo" },
     arguments: { repository: "test-owner/test-repository", token: "[redacted]" },
+    title: "echo the test repository handle back",
+    description: "Confirms the fixture connection still reaches the echo Action before the demo run.",
     origin: { thread_id: THREADS[0].id },
     correlation: {},
     idempotency_key: "visual-pending",
@@ -313,6 +431,8 @@ const ACTIONS: ActionRequestView[] = [
     id: "70000000-0000-4000-8000-000000000002",
     action: { group: "everything", name: "echo" },
     arguments: { message: "completed fixture execution" },
+    title: "echo the completed fixture message",
+    description: null,
     origin: { thread_id: THREADS[1].id },
     correlation: {},
     idempotency_key: "visual-completed",
@@ -345,6 +465,8 @@ const ACTIONS: ActionRequestView[] = [
     id: "70000000-0000-4000-8000-000000000003",
     action: { group: "everything", name: "echo" },
     arguments: { repository: "test-owner/other-repository" },
+    title: "echo a repository outside the binding",
+    description: "Reads test-owner/other-repository, which this workload has no binding for.",
     origin: { thread_id: THREADS[1].id },
     correlation: {},
     idempotency_key: "visual-denied",
@@ -376,6 +498,8 @@ const ACTIONS: ActionRequestView[] = [
     id: "70000000-0000-4000-8000-000000000004",
     action: { group: "github", name: "search_code" },
     arguments: { repository: "agentydragon/ducktape", query: "auto_allow" },
+    title: "search ducktape for auto_allow",
+    description: null,
     origin: { thread_id: THREADS[2].id },
     correlation: {},
     idempotency_key: "visual-auto-approved",
@@ -601,6 +725,7 @@ routes.push(
         title: "Public coder",
         template: "agentplane-runner",
         policies: ["github-public"],
+        action_policy_sets: ["public-coder"],
         thread_preset: "public-coder-codex",
         thread_defaults: {
           provider: "codex",
@@ -613,6 +738,7 @@ routes.push(
     ],
   ],
   ["GET", /^\/egress\/policies$/, () => POLICIES],
+  ["GET", /^\/action-policy\/sets$/, () => ACTION_POLICY.bindings.flatMap((binding) => binding.policy_sets)],
   ["GET", /^\/actions$/, () => ACTIONS],
   [
     "GET",
@@ -682,14 +808,28 @@ routes.push(
 const FRESH: WatchHealth = {
   fresh: true,
   stale_after_seconds: 900,
-  refreshed_seconds_ago: { sandboxes: 4.2, pods: 3.1, egressbindings: 11.7, egresspolicies: 11.7 },
+  refreshed_seconds_ago: {
+    sandboxes: 4.2,
+    pods: 3.1,
+    egressbindings: 11.7,
+    egresspolicies: 11.7,
+    actionpolicysets: 8.3,
+    actionpolicybindings: 8.3,
+  },
 };
 
 /** A watch that has stopped cycling: what the `_stale` scenarios have to show rather than hide. */
 const WEDGED: WatchHealth = {
   fresh: false,
   stale_after_seconds: 900,
-  refreshed_seconds_ago: { sandboxes: 2417.4, pods: 2417.4, egressbindings: 11.7, egresspolicies: 11.7 },
+  refreshed_seconds_ago: {
+    sandboxes: 2417.4,
+    pods: 2417.4,
+    egressbindings: 11.7,
+    egresspolicies: 11.7,
+    actionpolicysets: 8.3,
+    actionpolicybindings: 8.3,
+  },
 };
 
 function watch(): WatchHealth {
@@ -727,6 +867,7 @@ class HarnessEventSource extends EventTarget {
       const snapshot: SandboxSnapshot = {
         sandbox: SANDBOXES.find((row) => row.name === decodeURIComponent(sandbox)) ?? null,
         bindings: BINDINGS,
+        action_policy: ACTION_POLICY,
         threads: THREADS,
         watch: watch(),
       };
@@ -766,6 +907,21 @@ if (scenario.preselectReconnect) {
   });
   selectExisting.observe(document, { childList: true, subtree: true });
 }
+if (scenario.openActionPolicySets) {
+  // Once the preset's pick has landed as a pill, open the sets dropdown so the shot carries the
+  // namespace's options beside the pre-filled pick.
+  const openSets = new MutationObserver(() => {
+    const pill = [...document.querySelectorAll(".mantine-Pill-root")].find(
+      (node) => node.textContent?.trim() === "public-coder"
+    );
+    const label = [...document.querySelectorAll("label")].find((node) => node.textContent === "Action policy sets");
+    const control = label?.control;
+    if (!pill || !(control instanceof HTMLInputElement)) return;
+    openSets.disconnect();
+    control.click();
+  });
+  openSets.observe(document, { childList: true, subtree: true });
+}
 if (scenario.openSettings) {
   // There's no dedicated route for the Settings modal; open it the way an operator would, by
   // clicking the nav button, rather than a URL that only exists for this test.
@@ -776,6 +932,16 @@ if (scenario.openSettings) {
     button.click();
   });
   openSettings.observe(document, { childList: true, subtree: true });
+}
+if (scenario.openRawStatus) {
+  // No URL param toggles the switch (unlike the tab itself); flip it the way an operator would.
+  const openRaw = new MutationObserver(() => {
+    const label = [...document.querySelectorAll("label")].find((candidate) => candidate.textContent === "Raw");
+    if (!label) return;
+    openRaw.disconnect();
+    label.click();
+  });
+  openRaw.observe(document, { childList: true, subtree: true });
 }
 window.location.hash = scenario.route;
 

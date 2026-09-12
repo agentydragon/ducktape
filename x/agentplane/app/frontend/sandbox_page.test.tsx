@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { afterAll, afterEach, expect, it, vi } from "vitest";
 
+import type { ThreadView } from "./client";
 import type { Live, SandboxSnapshot } from "./live";
 import { SandboxPage } from "./sandbox_page";
 
@@ -26,8 +27,9 @@ const live = vi.hoisted(
           operating_mode: "Running",
           conditions: [],
         },
-        threads: [],
+        threads: [] as ThreadView[],
         bindings: [],
+        action_policy: null,
         watch: { fresh: true, stale_after_seconds: 60, refreshed_seconds_ago: {} },
       },
       connection: "connected",
@@ -46,10 +48,28 @@ afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
   vi.useRealTimers();
+  live.snapshot.threads = [];
 });
 afterAll(() => vi.unstubAllGlobals());
 
-async function render(sessions: (request: Request) => Promise<Response>): Promise<ReturnType<typeof vi.fn>> {
+function thread(overrides: Partial<ThreadView> & Pick<ThreadView, "id" | "session_id">): ThreadView {
+  return {
+    sandbox: "startup-test",
+    provider: "PROVIDER_CLAUDE",
+    model: "test-model",
+    cwd: "/work",
+    created_at: "2026-01-01T00:00:00Z",
+    name: null,
+    archived: false,
+    last_sequence: 0,
+    ...overrides,
+  };
+}
+
+async function render(
+  sessions: (request: Request) => Promise<Response>,
+  threadActions: (request: Request) => Promise<Response> = async () => new Response(null, { status: 204 })
+): Promise<ReturnType<typeof vi.fn>> {
   fetchMock.mockImplementation((request: Request) => {
     const path = new URL(request.url).pathname;
     if (path === "/models") {
@@ -59,6 +79,7 @@ async function render(sessions: (request: Request) => Promise<Response>): Promis
       return Promise.resolve(Response.json([]));
     }
     if (path.startsWith("/sandboxes/startup-test/sessions")) return sessions(request);
+    if (/^\/threads\/[^/]+\/(un)?archive$/.test(path)) return threadActions(request);
     throw new Error(`Unexpected request: ${request.method} ${path}`);
   });
   container = document.createElement("div");
@@ -83,6 +104,20 @@ function newSession(): HTMLButtonElement {
   );
   if (!button) throw new Error("Missing new session button");
   return button;
+}
+
+function labeledInput(label: string): HTMLInputElement {
+  const element = [...container.querySelectorAll("label")].find((node) => node.textContent === label);
+  const control = element?.control;
+  if (!(control instanceof HTMLInputElement)) throw new Error(`Missing ${label} input`);
+  return control;
+}
+
+/** Mantine portals a Menu's dropdown onto `document.body`, so its items live outside `container`. */
+function menuItem(text: string): HTMLElement {
+  const item = [...document.querySelectorAll('[role="menuitem"]')].find((node) => node.textContent === text);
+  if (!(item instanceof HTMLElement)) throw new Error(`Missing menu item ${text}`);
+  return item;
 }
 
 it.each([409, 503])("recovers from runner HTTP %s without a reload", async (status) => {
@@ -124,4 +159,31 @@ it("shows creation progress, prevents duplicate clicks, and restores the button 
   expect(newSession().disabled).toBe(false);
   expect(container.textContent).toContain("session refused");
   expect(onOpenSession).not.toHaveBeenCalled();
+});
+
+it("hides an archived thread's session by default, reveals it via Show archived, and unarchives it", async () => {
+  live.snapshot.threads = [thread({ id: "test-thread-1", session_id: "existing-session", archived: true })];
+  const archiveRequests: Request[] = [];
+  await render(
+    async () => Response.json([{ sessionId: "existing-session" }]),
+    async (request) => {
+      archiveRequests.push(request);
+      return new Response(null, { status: 204 });
+    }
+  );
+  expect(container.textContent).not.toContain("existing-session");
+
+  await act(async () => labeledInput("Show archived").click());
+  expect(container.textContent).toContain("existing-session");
+
+  const menuButton = [...container.querySelectorAll("button")].find(
+    (node) => node.getAttribute("aria-label") === "More actions for existing-session"
+  );
+  if (!menuButton) throw new Error("Missing per-session actions menu");
+  await act(async () => menuButton.click());
+  await act(async () => menuItem("Unarchive").click());
+
+  expect(archiveRequests.map((request) => [request.method, new URL(request.url).pathname])).toEqual([
+    ["POST", "/threads/test-thread-1/unarchive"],
+  ]);
 });

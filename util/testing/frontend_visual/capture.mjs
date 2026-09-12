@@ -64,17 +64,48 @@ export async function waitForStable(page) {
   });
 }
 
+/** Uncaught page errors per prepared page, for `assertNoPageErrors` to fail the capture on. */
+const pageErrors = new WeakMap();
+
 /**
- * Freeze `page`'s clock and set its viewport/media emulation. Call before loading content —
- * `evaluateOnNewDocument` only takes effect on documents loaded after it's registered.
+ * Freeze `page`'s clock, set its viewport/media emulation, and start recording anything it
+ * throws. Call before loading content — `evaluateOnNewDocument` only takes effect on documents
+ * loaded after it's registered, and an error thrown during load is one of the ones worth
+ * catching.
  */
 export async function prepareDeterministicPage(page, { viewport, colorScheme, nowMs = FROZEN_NOW_MS }) {
+  const errors = [];
+  pageErrors.set(page, errors);
+  page.on("pageerror", (error) => errors.push(error));
   await page.evaluateOnNewDocument(frozenClockScript(nowMs));
   await page.setViewport(viewport);
   await page.emulateMediaFeatures([
     { name: "prefers-reduced-motion", value: "reduce" },
     { name: "prefers-color-scheme", value: colorScheme },
   ]);
+}
+
+/**
+ * Fail the scene on anything the page threw and nobody caught.
+ *
+ * With no pixel baseline to compare against, this is the primary crash detector: a component
+ * that throws out of an effect leaves a partial render that photographs perfectly well, and
+ * publishes as a plausible-looking baseline nobody re-reads.
+ *
+ * Throws for a page `prepareDeterministicPage` never prepared, rather than passing it: a caller
+ * asserting on an uninstrumented page believes it is gated and is not.
+ */
+export function assertNoPageErrors(page, { context } = {}) {
+  const errors = pageErrors.get(page);
+  if (errors === undefined) {
+    throw new Error(`${context ? `${context}: ` : ""}page was not prepared by prepareDeterministicPage`);
+  }
+  if (errors.length > 0) {
+    throw new Error(
+      `${context ? `${context}: ` : ""}uncaught page errors:\n  ` +
+        errors.map((error) => error.stack ?? String(error)).join("\n  ")
+    );
+  }
 }
 
 /**

@@ -7,17 +7,17 @@ authors = ["Rai <agentydragon@gmail.com>"]
 edition = "2024"
 
 [dependencies]
-log = "^0.4.29"
+log = "^0.4.34"
 env_logger = "^0.11.8"
 # rust_decimal must use `serde-arbitrary-precision` to match `serde_json`, which
 # is built with `arbitrary_precision` on workspace-wide (feature unification).
 # Any other format (or `serde` alone) deserializes a JSON number as
 # "invalid type: map, expected a Decimal type" — `serde-float` only works when
 # serde_json lacks `arbitrary_precision`, which it does not here.
-rust_decimal = { version = "^1.40.0", features = ["serde-arbitrary-precision"] }
+rust_decimal = { version = "^1.43.0", features = ["serde-arbitrary-precision"] }
 tokio = { version = "^1.49.0", features = ["macros", "rt-multi-thread", "net", "process", "signal", "time", "fs", "sync", "io-util", "io-std"], default-features=false}
 # native-tls makes trouble
-reqwest = {version="^0.12.28", features=["json", "rustls-tls"], default-features=false}
+reqwest = {version="^0.13.0", features=["json", "rustls"], default-features=false}
 serde = {version="^1.0.228", features=["derive"]}
 url = {version="^2.5.8", features=["serde"]}
 serde_json = "^1.0.149"
@@ -28,11 +28,11 @@ serde-xml-rs = "^0.8.2"
 petgraph = "^0.8.3"
 rustc-hash = "^2.1.2"
 # debundle selector index: roaring bitmaps for posting-list intersection
-roaring = "^0.10.12"
+roaring = "^0.11.0"
 # debundle relational-selector solver: in-process Datalog (CQ over the program graph)
-ascent = "^0.8.0"
+ascent = "^0.8.1"
 # debundle: derive enum -> wire-string (snake_case) so kind spellings aren't hand-rolled
-strum = { version = "^0.27", features = ["derive"] }
+strum = { version = "^0.28.0", features = ["derive"] }
 #tokio = { version = "*", features = ["full", "time"] }
 warp = "^0.4.2"
 futures = "^0.3.31"
@@ -46,15 +46,15 @@ currency_layer = "^0.2.0"
 async-trait = "^0.1.89"
 rust_decimal_macros = "^1.40.0"
 term-table = "^1.4.0"
-uuid = { version="^1.19.0", features=["v4"] }
+uuid = { version="^1.26.1", features=["v4"] }
 shlex = "^1.3.0"
 glob = "^0.3.3"
 csv = "^1.4.0"
-scraper = "^0.26.0"
+scraper = "^0.27.0"
 # process_api RE dependencies
-tokio-tungstenite = "^0.29.0"
+tokio-tungstenite = "^0.30.0"
 tokio-vsock = "^0.7.2"
-hyper = { version = "^1.8.1", features = ["http1", "server"] }
+hyper = { version = "^1.11.1", features = ["http1", "server"] }
 hyper-util = { version = "^0.1.19", features = ["tokio"] }
 http = "^1.4.0"
 http-body-util = "^0.1.3"
@@ -75,8 +75,8 @@ sea-orm = { version = "1.1.17", default-features = false, features = ["macros", 
 sha2 = "^0.11.0"
 # rig-core's default `reqwest-rustls` feature pulls aws-lc-rs → aws-lc-sys (needs cmake).
 # Use native-tls instead (system OpenSSL on Linux, no cmake required).
-rig-core = { version = "^0.33.0", default-features = false, features = ["derive", "reqwest-native-tls"] }
-bollard = "^0.20.2"
+rig-core = { version = "^0.42.0", default-features = false, features = ["derive", "native-tls"] }
+bollard = "^0.21.0"
 swc_atoms = "^9.0.0"
 swc_common = { version = "^21.0.1", features = ["concurrent"] }
 swc_ecma_ast = "^23.0.0"
@@ -96,19 +96,19 @@ proptest = "^1.6.0"
 # tana/firebase_session_extractor
 rusty-leveldb = "^4.0.1"
 v8_valueserializer = "^0.1.2"
-prometheus = "^0.13.4"
+prometheus = "^0.14.0"
 # x/codex_execpolicy_audit — pulled in so crate_universe renders them into @crates
 # for the overlaid codex-shell-command + codex-utils-absolute-path BUILD files.
 # Versions pinned to openai/codex's workspace deps for API compatibility.
-base64 = "0.22.1"
+base64 = "0.23.0"
 dirs = "6"
 dunce = "1.0.4"
 once_cell = "1.20.2"
-tree-sitter = "0.25.10"
+tree-sitter = "0.27.0"
 tree-sitter-bash = "0.25"
-which = "8"
+which = "^8.0.6"
 # codex-utils-absolute-path (a dep of codex-shell-command) derives JsonSchema + TS.
-schemars = "0.8.22"
+schemars = "0.9.0"
 ts-rs = "11"
 # codex-execpolicy (the real Starlark rule engine) deps.
 multimap = "0.10.0"

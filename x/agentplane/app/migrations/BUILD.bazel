@@ -1,0 +1,22 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+filegroup(
+    name = "files",
+    srcs = [
+        "env.py",
+        "script.py.mako",
+        "//x/agentplane/app/migrations/versions:0001_trajectory_store.py",
+        "//x/agentplane/app/migrations/versions:0002_thread_archived.py",
+    ],
+    visibility = ["//x/agentplane/app:__pkg__"],
+)
+
+py_library(
+    name = "env",
+    srcs = ["env.py"],
+    deps = [
+        "//x/agentplane/app:database_migrate",
+        "//x/agentplane/app:trajectory",
+        "@pypi//alembic",
+    ],
+)

@@ -19,6 +19,8 @@ export function request(state: ActionState, index: number): ActionRequestView {
     id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
     action: { group: "agentplane", name: `state-${state}` },
     arguments: { state, token: "test-exact-token", nested: { password: "test-exact-password" } },
+    title: `test title for the ${state} fixture`,
+    description: `test description adding what the ${state} title leaves out`,
     origin: { thread_id: "10000000-0000-4000-8000-000000000000" },
     correlation: {},
     idempotency_key: `request-${index}`,

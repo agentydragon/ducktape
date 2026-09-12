@@ -621,8 +621,10 @@ async def test_external_grant_reaches_canonical_mcp_admission_and_cancel(
         assert metadata.status_code == 200, metadata.text
         assert metadata.json()["resource"] == f"{oauth.base_url}/mcp"
         sandbox.reset_mock()
+        key = "external-original-key"
         request = {
-            "idempotency_key": "external-original-key",
+            "idempotency_key": key,
+            "title": "test title for external-original-key",
             "action": {"group": "agentplane", "name": "echo"},
             "arguments": {"message": "external-test"},
         }
@@ -636,8 +638,10 @@ async def test_external_grant_reaches_canonical_mcp_admission_and_cancel(
             await _call_mcp(http, bearer, "cancel_action_request", {"request_id": str(receipt.id)})
         )
         assert cancelled.request.external_grant == grant.provenance()
+        repeat = await _call_mcp_result(http, bearer, "request_action", {"request": request})
+        assert repeat.isError, repeat
         recovered = ActionRequestView.model_validate(
-            await _call_mcp(http, bearer, "request_action", {"request": request})
+            await _call_mcp(http, bearer, "get_action_request", {"idempotency_key": key})
         )
         assert recovered == cancelled.request
         assert isinstance(oauth.proxy._client_storage, BaseWrapper)
@@ -668,6 +672,15 @@ def _no_workload() -> AsyncMock:
 
 
 async def _call_mcp(http: httpx.AsyncClient, bearer: str, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    result = await _call_mcp_result(http, bearer, name, arguments)
+    assert not result.isError, result
+    assert result.structuredContent is not None
+    return result.structuredContent
+
+
+async def _call_mcp_result(
+    http: httpx.AsyncClient, bearer: str, name: str, arguments: dict[str, Any]
+) -> CallToolResult:
     response = await http.post(
         "/mcp",
         headers={
@@ -679,10 +692,7 @@ async def _call_mcp(http: httpx.AsyncClient, bearer: str, name: str, arguments: 
     )
     assert response.status_code == 200, response.text
     data = next(line.removeprefix("data: ") for line in response.text.splitlines() if line.startswith("data: "))
-    result = CallToolResult.model_validate(json.loads(data)["result"])
-    assert not result.isError, result
-    assert result.structuredContent is not None
-    return result.structuredContent
+    return CallToolResult.model_validate(json.loads(data)["result"])
 
 
 if __name__ == "__main__":

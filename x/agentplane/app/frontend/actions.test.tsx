@@ -64,7 +64,13 @@ describe("ActionRequests", () => {
       expect(container.textContent).toContain(row.caller_principal);
       expect(container.textContent).not.toContain("Authenticated external caller");
       expect(container.textContent).not.toContain("forged-origin-identity");
-      expect(container.querySelector("details")).toBeNull();
+      // The request-id disclosure exists regardless of external_grant, but carries only the id --
+      // no grant provenance to fold in without one.
+      const details = container.querySelector("details");
+      expect(details?.textContent).not.toContain("Authenticated external caller");
+      expect(details?.querySelector("summary")?.textContent).toBe("Request audit details");
+      expect(details?.open).toBe(false);
+      expect(details?.textContent).toContain(row.id);
       expect(button(container, "Allow").disabled).toBe(false);
     }
   );
@@ -76,6 +82,26 @@ describe("ActionRequests", () => {
     expect(container.textContent).toContain("Exact arguments (unredacted)");
     expect(container.textContent).toContain("test-exact-token");
     expect(container.textContent).toContain("test-exact-password");
+  });
+
+  it("renders the caller's own title and description verbatim, as plain text", async () => {
+    const row = {
+      ...request("decision_pending", 1),
+      title: "delete the <b>crashlooping</b> test pod",
+      description: "Restarted 14 times in *5* minutes; the rest of the test deployment is healthy.",
+    };
+    const container = await render({ list: async () => [row], decide: vi.fn() }, ActionRequests);
+    expect(container.textContent).toContain(row.title);
+    expect(container.textContent).toContain(row.description);
+    expect(container.innerHTML).not.toContain("<b>");
+    expect(container.querySelector("em")).toBeNull();
+  });
+
+  it("renders a request whose caller supplied no description", async () => {
+    const row = { ...request("decision_pending", 1), description: null };
+    const container = await render({ list: async () => [row], decide: vi.fn() }, ActionRequests);
+    expect(container.textContent).toContain(row.title);
+    expect(container.textContent).not.toContain("null");
   });
 
   it.each([

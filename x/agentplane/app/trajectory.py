@@ -3,8 +3,8 @@ PostgreSQL as it arrives.
 
 A thread is one runner session, keyed by the sandbox and the client-chosen session id; its events
 are stored as the protocol's own proto-JSON under the session's sequence, so a thread reads back
-without a runner and a deleted sandbox loses nothing. The schema is created at startup: the store
-is staging-only and disposable until a production instance needs migrations in place.
+without a runner and a deleted sandbox loses nothing. The schema is owned by the Alembic migrations
+under `migrations/`, applied by `database_migrate.py` as a separate deploy step.
 """
 
 from __future__ import annotations
@@ -16,13 +16,25 @@ from uuid import UUID, uuid4
 
 from google.protobuf.json_format import MessageToDict, ParseDict
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Text, UniqueConstraint, delete, func, select, text, update
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Text,
+    UniqueConstraint,
+    delete,
+    func,
+    select,
+    text,
+    update,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID, insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column
 
 from x.agentplane.app.changes import Changes
-from x.agentplane.app.operator_sessions import Base as SessionBase, OperatorSessionStore
+from x.agentplane.app.operator_sessions import Base, OperatorSessionStore
 from x.agentplane.app.trajectory_updates import CHANNEL, TrajectoryUpdates
 from x.agentplane.runner import protocol_pb2 as pb
 
@@ -30,10 +42,6 @@ from x.agentplane.runner import protocol_pb2 as pb
 # gazelle:include_dep @pypi//protobuf
 # SQLAlchemy loads the asyncpg dialect from the URL scheme; nothing imports it directly.
 # gazelle:include_dep @pypi//asyncpg
-
-
-class Base(DeclarativeBase):
-    pass
 
 
 class Thread(Base):
@@ -49,6 +57,7 @@ class Thread(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     # NULL while unnamed; never the empty string.
     name: Mapped[str | None] = mapped_column(Text)
+    archived: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
 
 
 class Event(Base):
@@ -121,6 +130,7 @@ class ThreadView(BaseModel):
     cwd: str
     created_at: datetime
     name: str | None = Field(description="The user-given name; None while the thread is unnamed.")
+    archived: bool
     last_sequence: int = Field(description="The highest stored sequence; 0 while nothing is stored.")
     last_event_at: datetime | None = None
 
@@ -141,15 +151,6 @@ class TrajectoryStore:
     @classmethod
     def connect(cls, database_url: str) -> TrajectoryStore:
         return cls(create_async_engine(database_url, pool_pre_ping=True, hide_parameters=True))
-
-    async def ensure_schema(self) -> None:
-        async with self._engine.begin() as connection:
-            await connection.execute(text("SELECT pg_advisory_xact_lock(5820)"))
-            await connection.run_sync(Base.metadata.create_all)
-            await connection.run_sync(SessionBase.metadata.create_all)
-            # create_all only creates tables it does not find; a column added since a table was
-            # created is added here, idempotently, until the store grows a migration mechanism.
-            await connection.execute(text("ALTER TABLE thread ADD COLUMN IF NOT EXISTS name text"))
 
     async def close(self) -> None:
         await self._updates.close()
@@ -305,8 +306,11 @@ class TrajectoryStore:
             end = None if state.end is None else FeedError(state.end["message"]) if state.end else FeedEnd()
             return FeedSnapshot(ParseDict(state.attached, pb.Attached()), end)
 
-    async def list_threads(self, *, sandbox: str | None = None, session_id: str | None = None) -> list[ThreadView]:
-        """Newest first; each filter given narrows the list to threads matching it."""
+    async def list_threads(
+        self, *, sandbox: str | None = None, session_id: str | None = None, include_archived: bool = False
+    ) -> list[ThreadView]:
+        """Newest first; each filter given narrows the list to threads matching it. Archived
+        threads are excluded unless asked for, mirroring the Sandbox inventory's own default."""
         last = (
             select(
                 Event.thread_id, func.max(Event.sequence).label("last_sequence"), func.max(Event.at).label("last_at")
@@ -323,6 +327,8 @@ class TrajectoryStore:
             query = query.where(Thread.sandbox == sandbox)
         if session_id is not None:
             query = query.where(Thread.session_id == session_id)
+        if not include_archived:
+            query = query.where(Thread.archived.is_(False))
         async with self._sessions() as session:
             return [
                 _view(thread, last_sequence, last_at) for thread, last_sequence, last_at in await session.execute(query)
@@ -346,6 +352,24 @@ class TrajectoryStore:
             renamed = _view(thread, *await _last(session, thread_id))
             await _notify(session)
         return renamed
+
+    async def archive(self, thread_id: UUID) -> ThreadView:
+        """Hide the thread from a default listing without touching its events."""
+        return await self._set_archived(thread_id, True)
+
+    async def unarchive(self, thread_id: UUID) -> ThreadView:
+        return await self._set_archived(thread_id, False)
+
+    async def _set_archived(self, thread_id: UUID, archived: bool) -> ThreadView:
+        async with self._sessions.begin() as session:
+            thread = await session.get(Thread, thread_id)
+            if thread is None:
+                raise ThreadNotFoundError(thread_id)
+            thread.archived = archived
+            await session.flush()
+            view = _view(thread, *await _last(session, thread_id))
+            await _notify(session)
+        return view
 
     async def events(self, thread_id: UUID, *, after_sequence: int = 0, limit: int) -> list[pb.Event]:
         """Up to `limit` events after the cursor, in sequence order; a reader pages until a short page."""
@@ -416,6 +440,7 @@ def _view(thread: Thread, last_sequence: int | None, last_at: datetime | None) -
         cwd=thread.cwd,
         created_at=thread.created_at,
         name=thread.name,
+        archived=thread.archived,
         last_sequence=last_sequence or 0,
         last_event_at=last_at,
     )

@@ -22,6 +22,11 @@ export interface Scenario extends ScenarioOptions {
   preselectReconnect?: boolean;
   /** Click the nav's Settings button once it mounts: the modal has no route of its own. */
   openSettings?: boolean;
+  /** Click the sandbox Status tab's Raw switch once it mounts: no URL param toggles it, unlike the
+   * tab itself. */
+  openRawStatus?: boolean;
+  /** Once the preset's pick has landed as a pill, open the action policy sets dropdown. */
+  openActionPolicySets?: boolean;
 }
 
 /** A Pixel 6's CSS viewport: the app is used from a phone, so every page has to fit its width. */
@@ -44,6 +49,24 @@ export const SCENARIOS: Record<string, Scenario> = {
   sandboxes: { element: "#app", route: "/", viewport: { width: 1200, height: 900 } },
   sandboxes_phone: { element: "#app", route: "/", viewport: PHONE, outputName: "sandboxes-phone" },
   sandboxes_stale: { element: "#app", route: "/", viewport: { width: 1200, height: 900 }, wedgedWatch: true },
+  // The launch form with a preset picked through the URL and the sets dropdown opened by the
+  // harness, so the shot carries the namespace's options beside the pre-filled pick.
+  new_sandbox: {
+    element: "#app",
+    route: "/?preset=public-coder",
+    viewport: { width: 1200, height: 900 },
+    outputName: "new-sandbox",
+    readySelectors: [".mantine-Pill-root", '[role="listbox"]'],
+    openActionPolicySets: true,
+  },
+  new_sandbox_phone: {
+    element: "#app",
+    route: "/?preset=public-coder",
+    viewport: PHONE,
+    outputName: "new-sandbox-phone",
+    readySelectors: [".mantine-Pill-root", '[role="listbox"]'],
+    openActionPolicySets: true,
+  },
 
   actions: { element: "#app", route: "/actions", viewport: { width: 1200, height: 1100 }, readySelectors: ["details"] },
   actions_phone: {
@@ -113,6 +136,37 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: `${SANDBOX_ROUTE}?tab=egress&rules=demo-a1b2-github-public`,
     viewport: PHONE,
     outputName: "sandbox-egress-phone",
+  },
+  // The Status tab's Raw switch on, so the shot carries the syntax-highlighted whole-Sandbox JSON
+  // dump rather than only the summarized view every other sandbox scenario shows.
+  sandbox_status_raw: {
+    element: "#app",
+    route: `${SANDBOX_ROUTE}?tab=status`,
+    viewport: { width: 1200, height: 900 },
+    outputName: "sandbox-status-raw",
+    readySelectors: [".agentplane-hljs"],
+    openRawStatus: true,
+  },
+  sandbox_status_raw_phone: {
+    element: "#app",
+    route: `${SANDBOX_ROUTE}?tab=status`,
+    viewport: PHONE,
+    outputName: "sandbox-status-raw-phone",
+    readySelectors: [".agentplane-hljs"],
+    openRawStatus: true,
+  },
+  // The read-only action policy: both bindings, every set state, and the three lists.
+  sandbox_policy: {
+    element: "#app",
+    route: `${SANDBOX_ROUTE}?tab=policy`,
+    viewport: { width: 1200, height: 1100 },
+    outputName: "sandbox-policy",
+  },
+  sandbox_policy_phone: {
+    element: "#app",
+    route: `${SANDBOX_ROUTE}?tab=policy`,
+    viewport: PHONE,
+    outputName: "sandbox-policy-phone",
   },
 
   session: { element: "#app", route: SESSION_ROUTE, viewport: { width: 1200, height: 900 }, captureViewport: true },

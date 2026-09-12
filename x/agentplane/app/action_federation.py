@@ -14,6 +14,7 @@ from urllib.parse import urlsplit
 import httpx
 from authlib.integrations.base_client.errors import OAuthError
 from authlib.integrations.httpx_client import AsyncOAuth2Client
+from fastapi import Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from mcp_infra.authentik_auth.oidc_principal import (
@@ -23,7 +24,8 @@ from mcp_infra.authentik_auth.oidc_principal import (
 )
 from x.agentplane.action_service.client import OperatorActionServiceClient
 from x.agentplane.action_service.operator_oidc import OperatorOidcSettings
-from x.agentplane.app.oidc import OIDCSettings, OperatorSession
+from x.agentplane.app.identity import CallerIdentity, CallerKind
+from x.agentplane.app.oidc import OIDCSettings, OperatorSession, operator_session
 
 logger = logging.getLogger(__name__)
 
@@ -36,15 +38,25 @@ class OperatorFederationError(Exception):
         self.status_code = status_code
 
 
-def upstream_failure_detail(error: httpx.HTTPStatusError | httpx.RequestError) -> dict[str, str | int | None]:
-    """Describe a failed upstream request without credentials, query, or provider text."""
-    response_status = error.response.status_code if isinstance(error, httpx.HTTPStatusError) else None
-    return {
-        "method": error.request.method,
-        "url": str(error.request.url.copy_with(username="", password="", query=None, fragment=None)),
-        "upstream_status": response_status,
-        "error_type": type(error).__name__,
-    }
+class UpstreamFailure(BaseModel):
+    """A failed upstream request -- to the identity provider or the Action Service -- without
+    credentials, query, or provider text."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    method: str
+    url: str
+    upstream_status: int | None = Field(description="The status answered, or None when no response arrived.")
+    error_type: str = Field(description="The httpx exception class, which names the failure shape.")
+
+
+def upstream_failure_detail(error: httpx.HTTPStatusError | httpx.RequestError) -> UpstreamFailure:
+    return UpstreamFailure(
+        method=error.request.method,
+        url=str(error.request.url.copy_with(username="", password="", query=None, fragment=None)),
+        upstream_status=error.response.status_code if isinstance(error, httpx.HTTPStatusError) else None,
+        error_type=type(error).__name__,
+    )
 
 
 async def _check_token_response(response: httpx.Response) -> None:
@@ -184,3 +196,20 @@ class _SessionToken:
 
     async def token(self) -> str:
         return await self._provider.exchange(self._session)
+
+
+def operator_actions(request: Request, caller: CallerIdentity) -> OperatorActionServiceClient:
+    """The request's operator-bound client, or the `OperatorFederationError` naming why it has none:
+    the caller is not an operator session, federation is not configured, or the session has to log in
+    again. The exchange itself happens at the first request the client makes."""
+    if caller.kind is not CallerKind.OPERATOR:
+        raise OperatorFederationError("operator_session_required")
+    provider = request.app.state.operator_actions
+    if provider is None:
+        raise OperatorFederationError("operator_federation_not_configured", status_code=503)
+    if not isinstance(provider, FederatedOperatorActions):
+        raise TypeError("operator_actions must be FederatedOperatorActions")
+    session = operator_session(request)
+    if session is None:
+        raise OperatorFederationError("operator_reauthentication_required", status_code=401)
+    return provider.for_session(session)

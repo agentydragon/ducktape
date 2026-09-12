@@ -17,8 +17,8 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: agentplane-staging-actions
     namespace: ducktape-flux
   dependsOn:
     - name: gateway
