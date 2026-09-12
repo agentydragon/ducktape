@@ -3240,9 +3240,9 @@ litellm==1.82.0 \
     --hash=sha256:5496b5d4532cccdc7a095c21cbac4042f7662021c57bc1d17be4e39838929e80 \
     --hash=sha256:d388f52447daccbcaafa19a3e68d17b75f1374b5bf2cde680d65e1cd86e50d22
     # via ducktape (pyproject.toml)
-logfire-api==4.40.0 \
-    --hash=sha256:f4631d5ca6af95e9d4dadc4f63619ebb8f2300eecfca0ca99c84403d6ea605de \
-    --hash=sha256:f8b7309235a942368b927f00e0a1869ff0820833f264a30e77a35f1da829c130
+logfire-api==5.1.0 \
+    --hash=sha256:16abf9d7d35e08cda2dab66fd0883cabaa4d4206f3dcea0f5967dbc823f01d6d \
+    --hash=sha256:f3ad92eed63f7fce45580bf92ff85367c695c4a5bfee52241d71a8bacd3e3697
     # via pydantic-graph
 lxml==6.1.3 \
     --hash=sha256:032a0a97eed428bd143c75a11118238546424ceb2fa311cca5f073aa44658dc4 \
