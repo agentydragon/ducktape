@@ -885,8 +885,12 @@ def test_a_composed_world_has_only_the_domains_it_declares() -> None:
     assert not financial.tlh_financial_effects
     with pytest.raises(ValueError, match="no managed portfolio"):
         world.managed_portfolios()
+    with pytest.raises(ValueError, match="before starting"):
+        world.declare_pool(run.scenario.holding_pools[0])
     with pytest.raises(ValueError, match="missing public security series"):
-        world.declare_pool(replace(run.scenario.holding_pools[0], asset_id="test-unpriced"))
+        World(MarketPath.from_run(run, 0), horizon_months=2).declare_pool(
+            replace(run.scenario.holding_pools[0], asset_id="test-unpriced")
+        )
 
 
 class _Deadbeat(EconomicAgent):
