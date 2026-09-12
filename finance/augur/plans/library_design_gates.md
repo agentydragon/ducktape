@@ -137,6 +137,85 @@ An omitted duty must reject or produce an explicit incomplete/failure result,
 not silently certify the period. Checkpoints, nested forecasts, a many-agent
 economy and a throughput target are not prerequisites.
 
+### Proposed message shapes, for discussion before any code
+
+Sketch only; names are not API declarations. The month is open, drain, close as
+decided above. What is still open is how the pieces below look, and each question
+is settled in review of this note, not by the first implementation.
+
+```python
+# Emitted by the World at open, tier by tier: market and paths, contracts and
+# components, then agents. Carries the recipient's current view, nothing global.
+class MonthOpened:
+    month: int
+
+# Emitted by tracked components and contracts during open or drain, addressed to
+# one agent. A closed union per domain; adding a domain adds a member, never a bus.
+class ClaimDue: ...        # a contract wants paying this month (today: Observation.claims)
+class Offer: ...           # an issuer's opportunity; requires an explicit accept or decline
+class Statement: ...       # a component's own reading, e.g. a TLH portfolio's value/basis
+type Message = ClaimDue | Offer | Statement | Receipt   # Receipt: last month's own actions
+
+class EconomicAgent:
+    def decide(self, observation: Observation) -> list[Action]: ...        # month-opened handler
+    def handle(self, message: Message, observation: Observation) -> list[Action]: ...  # reactive
+
+class Mortgage:            # a tracked contract; the ledger still owns the principal
+    def open(self, month: int, view: ContractView) -> list[Message]: ...   # emits ClaimDue
+    def settled(self, receipt: Receipt) -> None: ...                       # records what was paid
+```
+
+- `World.step()`: open (deliver `MonthOpened` in tier order; components emit), drain
+  (deliver each message to its addressee only, execute the actions a handler returns
+  synchronously with fatal rejection, under a per-month message budget that raises),
+  close. `Observation.messages` replaces `claims` and `previous_receipts` as the inbox.
+- **Open question 1:** one `handle(message, observation)` with `MonthOpened` as just
+  another message, or the two methods above. Two methods keep today's `decide`
+  untouched and make the common case obvious; one method is smaller.
+- **Open question 2:** what view a component (not an agent) receives at open. A
+  contract needs its own ledger facts (principal, rented fraction), not the household's
+  observation.
+- **Open question 3:** the budget. A fixed count per month per world, or per actor;
+  and whether exceeding it is a `ValueError` on the world or a stop cause. The
+  decision above says raise, never a silent stop.
+- **Open question 4:** whether the configured runner's grouped all-or-none settlement
+  is expressed at all in this shape or simply retired with P12; a scripted counterparty
+  that "pays whatever is due" is one actor whose `decide` pays every `ClaimDue`.
+
+### COMPOSE slices and caller burn-down
+
+Each slice is its own PR and removes one dependency on the scenario bag or on the
+batch layer. The order is a dependency order, not a schedule; the rows below say
+which callers each slice moves.
+
+| Slice                                                                                                                                                                                        | Callers it moves                                                                                                                                                                                                                                                                                   |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Inbox: `Observation.messages` typed union in place of `claims` and `previous_receipts`; `decide` unchanged.                                                                                  | Every agent and batch policy that reads `observation.claims` (`x/*`, `study/trinity`, `sim/testing/*`, `product/funding.py`); one mechanical rename each.                                                                                                                                          |
+| Open/drain/close with the queue, budget and addressed delivery; only `MonthOpened`, `ClaimDue`, `Receipt` flow at first.                                                                     | None outside `sim/`: behaviour is identical when no reactive message exists. Evidence: the joint example and the session-agreement test produce the same results.                                                                                                                                  |
+| Contracts as tracked components: a month-zero `Mortgage` emits `ClaimDue`; `World.track(mortgage)`.                                                                                          | `sim/test_world_mortgages.py`; the configured runner keeps its scheduled purchases until P12. The household-servicing example from the gate evidence lands here.                                                                                                                                   |
+| Constructor over tracked components: `World(paths, tax_rules)` plus `track(...)` of accounts, lots, contracts, agents; `compile_run` becomes an import adapter that tracks the same objects. | `x/joint_spending_allocation` first (drops its `Scenario` and `compile_run`), then `x/{monthly_actions,bounded_spending,bond_policies,allocation_glide}`, `study/trinity`, `sim/testing/case.py`; `ActionSession` keeps accepting a `CompiledRun` through the adapter until its last caller moves. |
+| Untracked domains absent: no `Properties`, `PrivateEquity`, `HeldBonds`, `ManagedPortfolios` instance and no result field unless tracked.                                                    | `capture.FinancialCapture` and the app's event frames (`product/projection.py`), which must tolerate absent channels; the acceptance decoders under `sim/testing/`.                                                                                                                                |
+| Offers and reactive `handle`: PE opportunities as `Offer` messages needing an explicit response.                                                                                             | The configured PE tender path (`sim/private_equity.py`, `product/scenarios.py`); this is the GPE boundary and waits for it.                                                                                                                                                                        |
+
+Callers by surface today, so the burn-down can be checked off:
+
+- **`World.step` with a tracked agent:** `x/joint_spending_allocation` only.
+- **`ActionSession` (batch):** `x/monthly_actions`, `x/bounded_spending`, `x/bond_policies`,
+  `x/allocation_glide`, `study/trinity`, `product/funding.py` and its tests, and the
+  acceptance suites in `sim/testing/{action,asset_sales,bond,held_bond,indexed_payments,lot_basis,obligations,public_sales,security_distributions,transfers}_test.py`.
+  These stay on the batch API; the batch layer already drives N worlds through
+  delegate agents, and a vectorised policy layer replaces the delegates later.
+- **Configured runner (`sim/configured.py`):** `product/service.py`, the configured
+  acceptance suites (`sim/testing/configured_acceptance_test.py` through
+  `sim/testing/case.py` and `configured_result.py`), `sim/configured_*_test.py`. These
+  leave with P12 and APP, not with COMPOSE; until then the runner drives worlds
+  through the explicit phase methods (`begin_actions`, `execute`, `close_month`,
+  `open_month`).
+- **`Scenario`/`compile_run` authoring:** every caller above plus `product/scenarios.py`;
+  leaves with SCHEMA after the constructor slice.
+- **App recording (`capture.FinancialCapture`, `configured.product_row`):** leaves to
+  `product/` with RECORD.
+
 ## GMETRICS — decided: every caller records what it wants, between steps
 
 Selected 2026-09-12. The world exposes present state and each component's outcomes
