@@ -62,6 +62,7 @@ flowchart TB
     UISHELL_DRAWER["Planned UI<br/>pending-approval badge + drawer<br/>global subscription, non-modal"]:::future
     UISHELL_NEWTHREAD_SANDBOX["Planned UI<br/>pre-scoped '+ New thread' on a Sandbox's page<br/>Sandbox/preset already fixed"]:::future
     UISHELL_NEWTHREAD_LANDING["Planned UI<br/>sidebar '+' unscoped new-thread composer<br/>Sandbox/preset/model pickers + prompt"]:::future
+    NEWTHREAD_DURABLE["Planned backend<br/>server-owned sandbox+thread provisioning<br/>must survive a browser close or app-server restart mid-submit"]:::future
     UISHELL_SIDEBAR_LIVE["Bug + planned fix<br/>sidebar Thread/Sandbox state goes stale<br/>rename, sandbox status icon never push-update"]:::future
     UISHELL_SIDEBAR_ALL_SANDBOXES["Bug<br/>threadless Sandboxes missing from sidebar<br/>e.g. still waiting for a pod to land"]:::future
     UISHELL_SIDEBAR_SANDBOX_LINK["Planned UI<br/>sidebar Sandbox name should link to its page<br/>currently plain text"]:::future
@@ -119,10 +120,15 @@ Haku Console migration is split: Agent/conversation management and tool-call/app
 can retire on different schedules after their respective replacement surfaces exist.
 
 The session-first UI shell (`UISHELL_DRAWER`, `UISHELL_NEWTHREAD_SANDBOX`,
-`UISHELL_NEWTHREAD_LANDING`, `UISHELL_SIDEBAR_LIVE`, `UISHELL_SIDEBAR_ALL_SANDBOXES`,
+`UISHELL_NEWTHREAD_LANDING`, `NEWTHREAD_DURABLE`, `UISHELL_SIDEBAR_LIVE`, `UISHELL_SIDEBAR_ALL_SANDBOXES`,
 `UISHELL_SIDEBAR_SANDBOX_LINK`, `UISHELL_NEWSANDBOX_NAV`, `THREAD_BROWSE_PAGINATE`) is a separate
 frontend-ergonomics track: it is not gated by, and does not gate, the Action Service milestones
-above. `UISHELL_NEWTHREAD_SANDBOX` has no dependencies and ships independently. The persistent left
+above. `UISHELL_NEWTHREAD_SANDBOX` and `UISHELL_NEWTHREAD_LANDING` can each ship a working happy-path
+without `NEWTHREAD_DURABLE` (submit, stay on the page, watch it provision) — but neither is _correct_
+without it: closing the browser right after submitting, or the app server restarting before the
+sandbox is ready, must not abandon the sandbox/thread requested, and only a durably-persisted
+provisioning request (not frontend JS watching its own live stream, and not one replica's in-memory
+task) gives that guarantee. The persistent left
 sidebar (`UISHELL_SIDEBAR`) and its phone-width collapse behind a hamburger (`UISHELL_MOBILE`) have
 both landed, replacing the top nav row entirely as one atomic cutover; `UISHELL_DRAWER` and
 `UISHELL_NEWTHREAD_LANDING` (the sidebar's own "+", currently a stub that opens the Sandbox list) now
@@ -483,19 +489,59 @@ confirmed): lift `/actions/stream` into an app-shell-level provider so the badge
 **Planned UI:** a Sandbox's own page keeps the ability to start a fresh conversation directly in
 it — a "+ New thread" composer (model picker + prompt) with the Sandbox, and therefore its preset,
 already fixed. `sandbox_page.tsx` already exists and already creates Threads in a Sandbox; this is
-a composer-shape addition over data it already has. No dependency on the UI-shell cluster.
+a composer-shape addition over data it already has. No dependency on the UI-shell cluster; depends
+on `NEWTHREAD_DURABLE` for correctness (not to ship a first working version).
 
 ### `UISHELL_NEWTHREAD_LANDING` — sidebar "+" unscoped new-thread composer
 
-**Planned UI:** the sidebar's "+" opens an empty composer, not a wizard: pick an existing Sandbox or
-"+ New sandbox from preset" (which reveals a preset picker), pick a model, type a prompt, press
-Enter — the page then binds to whatever Sandbox/Thread the submission created. Reuses the same
-composer component as `UISHELL_NEWTHREAD_SANDBOX`, just unscoped.
+**Planned UI:** the sidebar's "+" and a Sandbox page's own "+ New thread" open the same page an open
+Thread already uses — same composer, same layout — just with no Sandbox/Thread bound yet. That state
+lets the operator target an existing Sandbox or describe a new one (reusing `sandboxes.tsx`'s New
+Sandbox fields and `sandbox_page.tsx`'s New Session fields, composed on one page); pressing Enter
+submits the draft immediately as a pending bubble, provisions whatever's missing, and rebinds the
+page to the real Thread in place — the composer itself never moves or remounts. Mocked in
+[`mocks/new_thread_landing.html`](mocks/new_thread_landing.html). Depends on `NEWTHREAD_DURABLE` for
+correctness, same as `UISHELL_NEWTHREAD_SANDBOX`.
 
 **Unblocked**: the sidebar (`UISHELL_SIDEBAR`) has landed, and its "+" is currently a stub that
 just opens the Sandbox list — this replaces that stub with the real composer. Whether this composer
 eventually becomes the default landing page instead of requiring the sidebar click first is an open
 question, not decided.
+
+### `NEWTHREAD_DURABLE` — server-owned sandbox+thread provisioning
+
+**Planned backend, required for `UISHELL_NEWTHREAD_LANDING`/`UISHELL_NEWTHREAD_SANDBOX` to be
+correct, not just to ship a happy path:** submitting a new-thread composer (fill Sandbox parameters,
+fill Thread parameters, enter a prompt, press Enter) must still produce a running thread that has
+processed that prompt even if the operator closes the browser immediately after submitting, **or the
+app server itself restarts before the sandbox is ready** — the provisioning sequence cannot live
+only in frontend JS watching a live stream (dies with the tab) nor only in one replica's in-memory
+task (dies with that replica).
+
+Today nothing durable does this wait: `openSession`'s own reachability check
+(`bridge.py`'s `runner_address`) already requires `state === "running"` with a pod IP before a
+session can open, and the only thing that currently waits for that and then calls `openSession` is
+the frontend (`sandbox_page.tsx`'s `createSession`). Sandbox creation itself is already durable — a
+Kubernetes object with a controller-owned lifecycle, independent of the client — so what's missing
+is specifically the "wait for the pod, open the session, send the first turn" tail, not the whole
+flow.
+
+**Surviving a browser close is not the same guarantee as surviving a server restart.** `bridge.py`'s
+existing per-sandbox watch already clears that higher bar for the state it tracks today: its
+reconcile loop (`RECONCILE_S`) re-derives ownership and in-flight sessions from `TrajectoryStore`
+(PostgreSQL) every cycle, across replicas, rather than trusting one process's memory — so any replica
+can pick up where another left off. The new-thread _request_ itself needs the same treatment, not
+just the mechanism watching it: persist it as a durable row (sandbox target/params, thread spec, the
+prompt, a status) the moment it's accepted, keyed the same way the Action Service already makes a
+submission idempotent and recoverable (`idempotency_key` in `action_service/models.py`) rather than
+inventing a new pattern. The reconcile loop picks up any row still pending, drives it to open the
+session and send the first turn, and marks it done — exactly the shape that already survives replica
+death for ingestion, extended to cover provisioning too.
+
+The client mints the session id up front (the same pattern `sandbox_page.tsx`'s `createSession`
+already uses) so it has a stable URL to bind to from the moment of submission, before the sandbox or
+session exist yet; reopening that URL later, from any device, just reconnects to the same live
+stream.
 
 ### `UISHELL_SIDEBAR_LIVE` — sidebar Thread/Sandbox state goes stale
 
