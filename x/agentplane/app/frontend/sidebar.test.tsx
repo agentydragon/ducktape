@@ -58,8 +58,8 @@ function LocationProbe(): JSX.Element {
 async function render(
   threads: ThreadView[],
   sandboxes: Record<string, SandboxView>,
-  options: { initialPath?: string; settingsOpen?: boolean } = {}
-): Promise<{ onOpenSettings: ReturnType<typeof vi.fn> }> {
+  options: { initialPath?: string; settingsOpen?: boolean; mobileOpen?: boolean } = {}
+): Promise<{ onOpenSettings: ReturnType<typeof vi.fn>; onMobileClose: ReturnType<typeof vi.fn> }> {
   fetchMock.mockImplementation((request: Request) => {
     const url = new URL(request.url);
     if (url.pathname === "/threads/with-sandboxes") {
@@ -74,11 +74,17 @@ async function render(
   document.body.append(container);
   root = createRoot(container);
   const onOpenSettings = vi.fn();
+  const onMobileClose = vi.fn();
   await act(async () =>
     root.render(
       <MantineProvider>
         <MemoryRouter initialEntries={[options.initialPath ?? "/"]}>
-          <Sidebar settingsOpen={options.settingsOpen ?? false} onOpenSettings={onOpenSettings} />
+          <Sidebar
+            settingsOpen={options.settingsOpen ?? false}
+            onOpenSettings={onOpenSettings}
+            mobileOpen={options.mobileOpen ?? false}
+            onMobileClose={onMobileClose}
+          />
           <Routes>
             <Route path="*" element={<LocationProbe />} />
           </Routes>
@@ -86,7 +92,7 @@ async function render(
       </MantineProvider>
     )
   );
-  return { onOpenSettings };
+  return { onOpenSettings, onMobileClose };
 }
 
 function rows(): HTMLElement[] {
@@ -262,4 +268,46 @@ it("persists the resized width across a remount", async () => {
   container.remove();
   await render([], {});
   expect(sidebarWidth()).toBe(256);
+});
+
+function backdrop(): HTMLElement | null {
+  return container.querySelector(".agentplane-sidebar-backdrop");
+}
+
+it("renders a backdrop and the mobile-open class only while mobileOpen is true", async () => {
+  await render([], {}, { mobileOpen: false });
+  expect(backdrop()).toBeNull();
+  expect(container.querySelector("nav.agentplane-sidebar")?.className).not.toContain("agentplane-sidebar-mobile-open");
+
+  await act(async () => root.unmount());
+  container.remove();
+  await render([], {}, { mobileOpen: true });
+  expect(backdrop()).not.toBeNull();
+  expect(container.querySelector("nav.agentplane-sidebar")?.className).toContain("agentplane-sidebar-mobile-open");
+});
+
+it("closes the mobile drawer on backdrop click and on Escape", async () => {
+  const { onMobileClose } = await render([], {}, { mobileOpen: true });
+
+  await act(async () => backdrop()?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+  expect(onMobileClose).toHaveBeenCalledOnce();
+
+  await act(async () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
+  expect(onMobileClose).toHaveBeenCalledTimes(2);
+});
+
+it("closes the mobile drawer when opening a thread, the Sandboxes stub, or a footer icon", async () => {
+  const { onMobileClose: closeOnOpenThread } = await render(
+    [thread({ id: "t-1", sandbox: "demo-a1b2", session_id: "s-1", name: "First thread" })],
+    { "demo-a1b2": sandbox("demo-a1b2") },
+    { mobileOpen: true }
+  );
+  await act(async () => row("First thread").click());
+  expect(closeOnOpenThread).toHaveBeenCalledOnce();
+
+  await act(async () => root.unmount());
+  container.remove();
+  const { onMobileClose: closeOnFooter } = await render([], {}, { mobileOpen: true });
+  await act(async () => footerButton("Sandboxes").click());
+  expect(closeOnFooter).toHaveBeenCalledOnce();
 });

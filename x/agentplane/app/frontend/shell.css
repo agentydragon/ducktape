@@ -40,3 +40,24 @@
   padding: 0 var(--mantine-spacing-md);
   height: 100%;
 }
+
+/* Hidden on desktop, where the persistent sidebar (sidebar.css) needs no toggle. Sticky rather than
+   part of the normal flow so it stays reachable while agentplane-shell-main's own content scrolls
+   under it (UISHELL_MOBILE, x/agentplane/plans/task_dag.md). */
+.agentplane-mobile-topbar {
+  display: none;
+}
+
+@media (max-width: 560px) {
+  .agentplane-mobile-topbar {
+    display: flex;
+    align-items: center;
+    flex: 0 0 auto;
+    padding: 8px;
+    border-bottom: 1px solid var(--mantine-color-default-border);
+    background: var(--mantine-color-body);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+}
