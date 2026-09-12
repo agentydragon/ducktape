@@ -415,6 +415,7 @@ resources:
   - seaweedfs/secrets/flux-kustomization.yaml
   - seaweedfs/operator/flux-kustomization.yaml
   - seaweedfs/db/flux-kustomization.yaml
+  - seaweedfs/cluster-artifact/flux-kustomization.yaml
   - seaweedfs/cluster/flux-kustomization.yaml
   - seaweedfs/vm-images-bucket/flux-kustomization.yaml
   - seaweedfs/drivefs-artifacts-bucket/flux-kustomization.yaml
