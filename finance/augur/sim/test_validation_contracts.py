@@ -8,6 +8,7 @@ import pytest
 import pytest_bazel
 
 from finance.augur.sim.books import AccountRef
+from finance.augur.sim.configured import execute
 from finance.augur.sim.prepared import (
     CompiledRun,
     PreparedBond,
@@ -23,7 +24,6 @@ from finance.augur.sim.prepared import (
     _PropertyPurchase,
 )
 from finance.augur.sim.scenario import InterestIncome
-from finance.augur.sim.session import _Session
 from finance.augur.sim.testing.accounting import CASH, EXOGENOUS, HOUSEHOLD, WORLD, prepared_scenario
 from finance.augur.sim.validation import validate
 
@@ -41,9 +41,9 @@ def run() -> CompiledRun:
 
 def rejects_before_world(run: CompiledRun, match: str) -> None:
     before = deepcopy(run)
-    with patch("finance.augur.sim.session.World") as world:
+    with patch("finance.augur.sim.configured.World") as world:
         with pytest.raises(ValueError, match=match):
-            _Session(run, None, [0], capture="forensic", configured=True)
+            execute(run, "forensic")
         world.assert_not_called()
     assert run == before
 
@@ -177,11 +177,9 @@ def test_rejects_mixed_quantity_scales_and_invalid_security_prices(public: Compi
 def test_zero_distribution_is_valid_but_negative_distribution_and_zero_price_are_not(run: CompiledRun) -> None:
     zero = PreparedSeries(series_id="security_distribution:test", snapshots=2, values=(0, 0))
     validate(replace(run, series=(zero,)))
-    session = _Session(replace(run, series=(zero,)), None, [0], capture="forensic", configured=True)
-    session.start()
-    session.close_month()
-    assert session.is_finished()
-    session.close()
+    [result] = execute(replace(run, series=(zero,)), "forensic")
+    assert result.financial is not None
+    assert result.financial.failed_month is None
     rejects_before_world(replace(run, series=(replace(zero, values=(0, -1)),)), "negative security distribution")
     rejects_before_world(
         replace(run, series=(replace(zero, series_id="security:test", values=(100, 0)),)), "non-positive"

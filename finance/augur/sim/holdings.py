@@ -6,9 +6,11 @@ from dataclasses import dataclass
 
 from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.actions import Buy, LotSale, Sell
+from finance.augur.sim.actor import Statement
 from finance.augur.sim.books import AccountRef, JournalEntry, Posting, SecurityLotState
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import apportion, checked_count, checked_wide, is_quantity_scale, position_value
+from finance.augur.sim.observations import HoldingPool, PublicPosition
 from finance.augur.sim.prepared import PreparedLot, PreparedScenario, _ScheduledSale
 
 
@@ -63,8 +65,16 @@ def private_issuer(asset: str) -> str | None:
     return None
 
 
+class PositionStatement(Statement):
+    """The owner's declared public pools at current prices and its open lots in them."""
+
+    pools: tuple[HoldingPool, ...]
+    positions: tuple[PublicPosition, ...]
+
+
 class Holdings:
     def __init__(self, scenario: PreparedScenario, accounting: Accounting) -> None:
+        self.pools = tuple(scenario.holding_pools)
         self.lots = [Lot(spec, spec.units, spec.basis) for spec in scenario.initial_lots]
         # This month's dispositions, cleared by `begin_month`; lots are the state.
         self.dispositions: list[Disposition] = []
@@ -89,6 +99,48 @@ class Holdings:
                         ],
                     )
                 )
+
+    def public_price(self, actor: str, asset: str, market: MarketPath, month: int) -> int:
+        if private_issuer(asset) is not None or not any(
+            pool.agent_id == actor and pool.asset_id == asset for pool in self.pools
+        ):
+            raise ValueError("asset has no declared public holding pool")
+        return market.value(f"security:{asset}", month)
+
+    def statement(self, actor: str, market: MarketPath, month: int) -> PositionStatement:
+        positions = []
+        for lot in self.lots:
+            spec = lot.spec
+            if spec.agent_id != actor or lot.units_remaining == 0 or private_issuer(spec.asset_id) is not None:
+                continue
+            price = self.public_price(actor, spec.asset_id, market, month)
+            positions.append(
+                PublicPosition(
+                    account_id=spec.account_id,
+                    asset_id=spec.asset_id,
+                    lot_id=spec.lot_id,
+                    purchase_month=spec.purchase_month,
+                    units=lot.units_remaining,
+                    quantity_scale=spec.quantity_scale,
+                    book_basis=lot.basis_remaining,
+                    price=price,
+                    value=position_value(price, lot.units_remaining, spec.quantity_scale),
+                )
+            )
+        return PositionStatement(
+            month=month,
+            pools=tuple(
+                HoldingPool(
+                    account_id=pool.account_id,
+                    asset_id=pool.asset_id,
+                    quantity_scale=pool.quantity_scale,
+                    price=self.public_price(actor, pool.asset_id, market, month),
+                )
+                for pool in self.pools
+                if pool.agent_id == actor and private_issuer(pool.asset_id) is None
+            ),
+            positions=tuple(positions),
+        )
 
     def begin_month(self) -> None:
         self.dispositions.clear()

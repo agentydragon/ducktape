@@ -7,6 +7,7 @@ from unittest.mock import patch
 import pytest
 import pytest_bazel
 
+from finance.augur.sim.configured import execute
 from finance.augur.sim.prepared import (
     CompiledRun,
     PreparedDistribution,
@@ -16,7 +17,7 @@ from finance.augur.sim.prepared import (
 )
 from finance.augur.sim.results import Finished
 from finance.augur.sim.scenario import InterestIncome
-from finance.augur.sim.session import ActionSession, _Session
+from finance.augur.sim.session import ActionSession
 from finance.augur.sim.tlh import TlhAssumptions
 from finance.augur.sim.validation import validate
 from finance.augur.x.monthly_actions.run import prepare
@@ -36,9 +37,16 @@ def test_invalid_terminal_price_precedes_all_world_and_component_construction(
     # The invalid mark is in the last snapshot of an unselected rollout.
     invalid = replace(run, series=(replace(price, values=(*price.values[:-1], bad_price)),))
     before = deepcopy(invalid)
-    with patch("finance.augur.sim.session.World") as world, patch("finance.augur.sim.world.TlhPortfolio") as portfolio:
+
+    def construct() -> object:
+        if configured:
+            return execute(invalid, "forensic")
+        return ActionSession(invalid, "example-household", [0])
+
+    driver = "finance.augur.sim.configured.World" if configured else "finance.augur.sim.session.World"
+    with patch(driver) as world, patch("finance.augur.sim.world.TlhPortfolio") as portfolio:
         with pytest.raises(ValueError, match="non-positive value"):
-            _Session(invalid, "example-household", [0], capture="forensic", configured=configured)
+            construct()
         world.assert_not_called()
         portfolio.assert_not_called()
     assert invalid == before

@@ -12,8 +12,11 @@ locations to `compile_run` in <compiler/execution.py>. It then either tracks an
 loops over `world.step()`, or starts the common `ActionSession` and submits one
 batch of ordered actions per decision month. Both read typed results from
 <results.py> and books from <books.py>. Exact requests are defined in
-<actions.py>, and current actor facts in <observations.py>. Sampling, fitting, policy choice and
-report definitions belong to the caller.
+<actions.py>; the statements and dues an actor is posted when a month opens are
+defined beside their emitters (`accounting.AccountStatement`,
+`holdings.PositionStatement`, `claims.BillDue`, `mortgage.InstallmentDue`, …) and
+the flat view a policy reads, assembled from them, in <observations.py>. Sampling,
+fitting, policy choice and report definitions belong to the caller.
 
 See <../x/joint_spending_allocation/README.md> for a tracked-agent
 spending/allocation comparison and <../x/monthly_actions/README.md> for explicit

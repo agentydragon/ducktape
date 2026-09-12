@@ -66,17 +66,18 @@ For each active path, the common session:
 
 1. Applies scheduled financial events and component market updates, and assembles
    due claims. TLH advances before investor operations, including scheduled ones.
-2. Exposes current actor-scoped observations, once that month.
+2. Posts each actor its mail for the month, once: every emitter's statement, its
+   typed dues and last month's receipts.
 3. Executes the submitted actions in caller order.
 4. Stops on rejection or remaining unpaid claims, otherwise closes the month
    and prepares the next decision.
 
-Observations include current owned accounts, public lots/basis, TLH statements, declared empty
-holding pools and their current prices, due claims, recorded tax facts, held
-dated-bond facts, and current/origin CPI when modeled. Missing CPI is explicit.
-They do not expose another actor's private books, future realized paths or a
-future tax assessment as a current liability. Copied observations cannot mutate
-canonical books.
+An actor's mail covers its current owned accounts, public lots/basis, TLH statements,
+declared empty holding pools and their current prices, due claims, recorded tax
+facts, held dated-bond facts, and current/origin CPI when modeled. Missing CPI is
+explicit. It does not expose another actor's private books, future realized paths or
+a future tax assessment as a current liability. Statements are copies; nothing an
+actor receives can mutate canonical books.
 
 Exact lot sales, quantity purchases, cash transfers, claim payments and chosen
 consumption are economic requests. Helpers may propose funding or rebalancing

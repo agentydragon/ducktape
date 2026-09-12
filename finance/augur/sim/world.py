@@ -18,7 +18,8 @@ from finance.augur.sim.actions import (
     Transfer,
     Withdraw,
 )
-from finance.augur.sim.agent import EconomicAgent
+from finance.augur.sim.actor import MonthOpened
+from finance.augur.sim.agent import EconomicAgent, Mail
 from finance.augur.sim.books import (
     AccountBalance,
     AccountRef,
@@ -32,11 +33,12 @@ from finance.augur.sim.compiler.income_sources import income_source_wire_id
 from finance.augur.sim.distributions import Distributions
 from finance.augur.sim.held_bonds import HeldBonds
 from finance.augur.sim.holdings import Holdings, private_issuer
+from finance.augur.sim.ids import AgentId
 from finance.augur.sim.managed import ComponentEffects, ManagedPortfolios
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import checked_count, position_value
 from finance.augur.sim.mortgage import Mortgage, MortgagePayment
-from finance.augur.sim.prepared import CompiledRun, PreparedFixedAmount, PreparedTlhPortfolio
+from finance.augur.sim.prepared import CompiledRun, PreparedTlhPortfolio
 from finance.augur.sim.private_equity import PrivateEquity
 from finance.augur.sim.property import Properties, mortgage_terms, principal
 from finance.augur.sim.tlh import (
@@ -94,7 +96,9 @@ def validate_actor(run: CompiledRun, actor: str) -> None:
 class World:
     """One rollout's present state and the clock; nothing here is a history.
 
-    Track an agent, `start`, then `step` until `finished`. The batch session drives
+    Track an agent, `start`, then `step` until `finished`. When a month opens every
+    tracked agent receives its statements, dues and last month's receipts; `step`
+    delivers `MonthOpened` and settles the actions it returns. The batch session drives
     several worlds the same way. Component outcome lists hold this month only and are
     cleared when the next month opens; whoever wants a series reads state between steps.
     """
@@ -202,7 +206,7 @@ class World:
         self.open_month()
 
     def step(self) -> None:
-        """One month: each tracked agent decides once on the opened view, actions execute in order, the month closes."""
+        """One month: each tracked agent acts once on `MonthOpened`, actions execute in order, the month closes."""
         if not self.started or self.finished:
             raise ValueError("world is not running")
         if not self.agents:
@@ -210,7 +214,7 @@ class World:
         if not self.opened:
             self.open_month()
         for agent in self.agents:
-            actions = agent.decide(self.observe(agent.agent_id))
+            actions = agent.handle(MonthOpened(month=self.month))
             self.begin_actions(actions)
             for action in actions:
                 if isinstance(self.execute(agent.agent_id, action).outcome, results.Rejected):
@@ -218,8 +222,10 @@ class World:
         self.close_month()
 
     def open_month(self) -> None:
-        """Clear last month's outcomes, advance components before any investor operation, raise this month's claims."""
-        if self.opened or self.finished:
+        """Clear last month's outcomes, advance components, raise this month's claims, then post the mail."""
+        if self.finished:
+            raise ValueError("the world is finished")
+        if self.opened:
             raise ValueError("the month is already open")
         if self.month:
             for component in (
@@ -262,6 +268,10 @@ class World:
             )
             self.portfolios[spec.portfolio_id] = candidate
         self.open_mortgages()
+        for agent in self.agents:
+            for message in self.open_mail(agent.agent_id):
+                if agent.handle(message):
+                    raise ValueError("statements and dues take no reply; act on MonthOpened")
 
     def open_mortgages(self) -> None:
         """Originate/pay off configured contracts, then quote this month's installments."""
@@ -499,103 +509,23 @@ class World:
         )
 
     def public_price(self, actor: str, asset: str, month: int) -> int:
-        if private_issuer(asset) is not None or not any(
-            pool.agent_id == actor and pool.asset_id == asset for pool in self.scenario.holding_pools
-        ):
-            raise ValueError("asset has no declared public holding pool")
-        return self.market.value(f"security:{asset}", month)
+        return self.holdings.public_price(actor, asset, self.market, month)
 
-    def observe(self, actor: str) -> observations.Observation:
+    def open_mail(self, actor: AgentId) -> list[Mail]:
+        """What the world tells `actor` at open: each emitter's statement, its dues and last month's receipts."""
         self.validate_scope(actor)
-        positions = []
-        for lot in self.holdings.lots:
-            spec = lot.spec
-            if spec.agent_id != actor or lot.units_remaining == 0 or private_issuer(spec.asset_id) is not None:
-                continue
-            price = self.public_price(actor, spec.asset_id, self.month)
-            positions.append(
-                observations.PublicPosition(
-                    account_id=spec.account_id,
-                    asset_id=spec.asset_id,
-                    lot_id=spec.lot_id,
-                    purchase_month=spec.purchase_month,
-                    units=lot.units_remaining,
-                    quantity_scale=spec.quantity_scale,
-                    book_basis=lot.basis_remaining,
-                    price=price,
-                    value=position_value(price, lot.units_remaining, spec.quantity_scale),
-                )
-            )
-        accounts = tuple(
-            (account.account.account_id, self.accounting.ledger.balance(account.account))
-            for account in self.scenario.accounts
-            if account.account.agent_id == actor
-        )
-        bonds = []
-        for bond in self.bonds.terms:
-            if bond.agent_id != actor:
-                continue
-            carrying = self.bonds.held_principal(bond, self.month + 1, self.month)
-            if carrying is None:
-                continue
-            coupon = (
-                observations.FixedCoupon(amount=bond.coupon.amount)
-                if isinstance(bond.coupon, PreparedFixedAmount)
-                else observations.IndexedCoupon(annual_rate_ppb=bond.coupon.annual_rate_ppb)
-            )
-            bonds.append(
-                observations.HeldBond(
-                    bond_id=bond.bond_id,
-                    account_id=bond.account_id,
-                    issuer_jurisdiction_id=bond.issuer_jurisdiction_id,
-                    face_value=bond.face_value,
-                    purchase_price=bond.purchase_price,
-                    coupon=coupon,
-                    coupon_period_months=bond.coupon_period_months,
-                    purchase_month=bond.purchase_month_index,
-                    maturity_month=bond.maturity_month_index,
-                    principal=carrying,
-                )
-            )
-        observation = observations.Observation(
-            agent_id=actor,
-            month=self.month,
-            cpi=(self.market.value("inflation", self.month), self.market.value("inflation", 0))
-            if "inflation" in self.market.series
-            else None,
-            cash=checked_count(sum(amount for _, amount in accounts), "actor cash"),
-            public_holdings=checked_count(sum(position.value for position in positions), "public value"),
-            accounts=accounts,
-            holding_pools=tuple(
-                observations.HoldingPool(
-                    account_id=pool.account_id,
-                    asset_id=pool.asset_id,
-                    quantity_scale=pool.quantity_scale,
-                    price=self.public_price(actor, pool.asset_id, self.month),
-                )
-                for pool in self.scenario.holding_pools
-                if pool.agent_id == actor and private_issuer(pool.asset_id) is None
-            ),
-            public_positions=tuple(positions),
-            held_bonds=tuple(bonds),
-            tlh_portfolios=tuple(row for row in self.managed.marks.values() if row.owner_agent_id == actor),
-            claims=tuple(
-                observations.Claim(
-                    month=id_.month,
-                    index=id_.index,
-                    cause_id=claim.cause_id,
-                    obligation_type=claim.obligation_type,
-                    from_account=claim.from_account,
-                    to_account=claim.to_account,
-                    amount_due=claim.amount_due,
-                )
-                for id_, claim in self.claims.due(actor)
-            ),
-            previous_receipts=tuple(self.previous_receipts),
-        )
-        for claim in observation.claims:
-            claim._bind(self, self.rollout_id)
-        return observation
+        dues = self.claims.dues(actor)
+        for due in dues:
+            due._bind(self, self.rollout_id)
+        return [
+            self.market.statement(self.month),
+            self.accounting.statement(actor, self.month),
+            self.holdings.statement(actor, self.market, self.month),
+            self.bonds.statement(actor, self.month),
+            self.managed.statement(actor, self.month),
+            *dues,
+            *self.previous_receipts,
+        ]
 
     def apply(self, actor: str, action: Action, action_index: int) -> results.Executed | results.Rejected:
         self.validate_scope(actor)

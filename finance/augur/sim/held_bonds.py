@@ -4,12 +4,20 @@ from collections.abc import Sequence
 from copy import deepcopy
 
 from finance.augur.sim.accounting import Accounting
+from finance.augur.sim.actor import Statement
 from finance.augur.sim.books import AccountRef, BondCashflowOutcome, BondState
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import checked_count, mul_div
+from finance.augur.sim.observations import FixedCoupon, HeldBond, IndexedCoupon
 from finance.augur.sim.prepared import PreparedBond, PreparedFixedAmount, PreparedIndexedCoupon
 from finance.augur.sim.scenario import InterestIncome
+
+
+class BondStatement(Statement):
+    """The owner's unredeemed bonds at carrying value."""
+
+    bonds: tuple[HeldBond, ...]
 
 
 class HeldBonds:
@@ -36,6 +44,35 @@ class HeldBonds:
         if bond.purchase_month_index > max(0, snapshot_month - 1) or bond.maturity_month_index < snapshot_month:
             return None
         return self.principal(bond, valuation_month)
+
+    def statement(self, actor: str, month: int) -> BondStatement:
+        bonds = []
+        for bond in self.terms:
+            if bond.agent_id != actor:
+                continue
+            carrying = self.held_principal(bond, month + 1, month)
+            if carrying is None:
+                continue
+            coupon = (
+                FixedCoupon(amount=bond.coupon.amount)
+                if isinstance(bond.coupon, PreparedFixedAmount)
+                else IndexedCoupon(annual_rate_ppb=bond.coupon.annual_rate_ppb)
+            )
+            bonds.append(
+                HeldBond(
+                    bond_id=bond.bond_id,
+                    account_id=bond.account_id,
+                    issuer_jurisdiction_id=bond.issuer_jurisdiction_id,
+                    face_value=bond.face_value,
+                    purchase_price=bond.purchase_price,
+                    coupon=coupon,
+                    coupon_period_months=bond.coupon_period_months,
+                    purchase_month=bond.purchase_month_index,
+                    maturity_month=bond.maturity_month_index,
+                    principal=carrying,
+                )
+            )
+        return BondStatement(month=month, bonds=tuple(bonds))
 
     def snapshots(self, snapshot_month: int, valuation_month: int) -> list[BondState]:
         rows = []
