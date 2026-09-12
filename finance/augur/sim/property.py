@@ -3,15 +3,25 @@
 from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field
+from typing import Self
 
 from finance.augur.sim.accounting import Accounting, TransferOutcome
+from finance.augur.sim.actor import Statement
 from finance.augur.sim.books import AccountRef, JournalEntry, Posting, PropertyState
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.holdings import gain_account
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import checked_count, mul_div
 from finance.augur.sim.mortgage import Mortgage, MortgageTerms
-from finance.augur.sim.prepared import PreparedScenario, _PropertyPurchase, _PropertySale
+from finance.augur.sim.prepared import (
+    PreparedScenario,
+    _CapitalImprovement,
+    _PrimaryResidence,
+    _PrimaryResidenceEvent,
+    _PropertyPurchase,
+    _PropertySale,
+    _RentedFraction,
+)
 
 
 @dataclass
@@ -118,12 +128,43 @@ def mortgage_terms(purchase: _PropertyPurchase) -> MortgageTerms:
     )
 
 
+@dataclass(frozen=True)
+class Housing:
+    """The scenario's housing tables `Properties` reads; the default `Housing()` is a world with no property domain."""
+
+    purchases: tuple[_PropertyPurchase, ...] = ()
+    sales: tuple[_PropertySale, ...] = ()
+    initial_residences: tuple[_PrimaryResidence, ...] = ()
+    residence_events: tuple[_PrimaryResidenceEvent, ...] = ()
+    rented_fraction_events: tuple[_RentedFraction, ...] = ()
+    capital_improvements: tuple[_CapitalImprovement, ...] = ()
+
+    @classmethod
+    def from_scenario(cls, scenario: PreparedScenario) -> Self:
+        return cls(
+            purchases=scenario._scheduled_property_purchases,
+            sales=scenario._property_sales,
+            initial_residences=scenario._initial_primary_residences,
+            residence_events=scenario._primary_residence_events,
+            rented_fraction_events=scenario._property_rented_fraction_events,
+            capital_improvements=scenario._capital_improvement_events,
+        )
+
+
+class PropertyStatement(Statement):
+    """What a property tells the contracts attached to it: whether it is held and how much is let."""
+
+    property_id: str
+    active: bool
+    purchase_month: int
+    rented_fraction_ppb: int
+
+
 class Properties:
-    def __init__(self, scenario: PreparedScenario, accounting: Accounting) -> None:
+    def __init__(self, housing: Housing, accounting: Accounting) -> None:
+        self.housing = housing
         self.properties: dict[str, Property] = {}
-        self.primary: dict[str, str | None] = {
-            row.agent_id: row.property_id for row in scenario._initial_primary_residences
-        }
+        self.primary: dict[str, str | None] = {row.agent_id: row.property_id for row in housing.initial_residences}
         # This month's outcomes, cleared by `begin_month`; property state lives in `properties`.
         self.purchases: list[Purchase] = []
         self.sales: list[Sale] = []
@@ -131,7 +172,7 @@ class Properties:
         self.rented_fractions: list[RentedFraction] = []
         self.improvements: list[CapitalImprovement] = []
         self.originations: list[Origination] = []
-        for purchase in scenario._scheduled_property_purchases:
+        for purchase in housing.purchases:
             for account in (
                 asset_account(purchase),
                 gain_account(purchase.buyer_agent_id),
@@ -167,6 +208,19 @@ class Properties:
         ):
             outcomes.clear()
 
+    def statement(self, property_id: str, month: int) -> PropertyStatement | None:
+        """None for a property the world never held; a sold one reports inactive."""
+        property_ = self.properties.get(property_id)
+        if property_ is None:
+            return None
+        return PropertyStatement(
+            month=month,
+            property_id=property_id,
+            active=property_.state.active,
+            purchase_month=property_.state.purchase_month,
+            rented_fraction_ppb=property_.state.rented_fraction_ppb,
+        )
+
     def snapshots(self) -> list[PropertyState]:
         return [property_.state for property_ in self.properties.values()]
 
@@ -179,44 +233,38 @@ class Properties:
             "property market value",
         )
 
-    def assign_residences(self, scenario: PreparedScenario, month: int) -> None:
+    def assign_residences(self, month: int) -> None:
         for event in sorted(
-            (event for event in scenario._primary_residence_events if event.month == month),
-            key=lambda event: event.agent_id,
+            (event for event in self.housing.residence_events if event.month == month), key=lambda event: event.agent_id
         ):
             self.primary[event.agent_id] = event.property_id
             self.residences.append(Residence(month, event.agent_id, event.property_id, event.property_id is not None))
 
     def lifecycle(
-        self,
-        scenario: PreparedScenario,
-        accounting: Accounting,
-        market: MarketPath,
-        month: int,
-        mortgages: Mapping[str, Mortgage],
+        self, accounting: Accounting, market: MarketPath, month: int, mortgages: Mapping[str, Mortgage]
     ) -> list[str]:
         ids = sorted(
-            {event.property_id for event in scenario._property_rented_fraction_events if event.month == month}
+            {event.property_id for event in self.housing.rented_fraction_events if event.month == month}
             | {
                 improvement.property_id
-                for improvement in scenario._capital_improvement_events
+                for improvement in self.housing.capital_improvements
                 if improvement.month == month
             }
-            | {sale.property_id for sale in scenario._property_sales if sale.month == month}
+            | {sale.property_id for sale in self.housing.sales if sale.month == month}
         )
-        purchases = {purchase.property_id: purchase for purchase in scenario._scheduled_property_purchases}
+        purchases = {purchase.property_id: purchase for purchase in self.housing.purchases}
         paid_off = []
         for id_ in ids:
             property_ = self.properties.get(id_)
             if property_ is None or not property_.state.active:
                 continue
-            for event in scenario._property_rented_fraction_events:
+            for event in self.housing.rented_fraction_events:
                 if event.month == month and event.property_id == id_:
                     property_.state = property_.state.model_copy(
                         update={"rented_fraction_ppb": event.rented_fraction_ppb}
                     )
                     self.rented_fractions.append(RentedFraction(month, id_, event.rented_fraction_ppb))
-            for improvement in scenario._capital_improvement_events:
+            for improvement in self.housing.capital_improvements:
                 if improvement.month != month or improvement.property_id != id_:
                     continue
                 purchase = purchases[id_]
@@ -238,16 +286,15 @@ class Properties:
                 )
                 property_.state = property_.state.model_copy(update={"building_basis": basis})
                 self.improvements.append(CapitalImprovement(month, id_, improvement.amount, ""))
-            for sale in scenario._property_sales:
+            for sale in self.housing.sales:
                 if sale.month == month and sale.property_id == id_ and property_.state.active:
-                    payoff = self.sell(scenario, accounting, market, purchases[id_], sale, mortgages)
+                    payoff = self.sell(accounting, market, purchases[id_], sale, mortgages)
                     if payoff is not None:
                         paid_off.append(payoff)
         return paid_off
 
     def sell(
         self,
-        scenario: PreparedScenario,
         accounting: Accounting,
         market: MarketPath,
         purchase: _PropertyPurchase,
@@ -283,7 +330,7 @@ class Properties:
         recapture = min(max(0, gain), state.cumulative_depreciation)
         remainder = max(0, checked_count(gain - recapture, "money subtraction"))
         profile = next(
-            (profile for profile in scenario.tax_profiles if profile.agent_id == purchase.buyer_agent_id), None
+            (profile for profile in accounting.tax.profiles if profile.agent_id == purchase.buyer_agent_id), None
         )
         cap = 0 if profile is None else profile.section_121_exclusion
         exclusion = min(remainder, cap) if sum(property_.occupied_window) >= 24 else 0
@@ -348,11 +395,9 @@ class Properties:
         )
         return paid_off
 
-    def purchase(
-        self, scenario: PreparedScenario, accounting: Accounting, month: int, originations: Mapping[str, Mortgage]
-    ) -> list[str]:
+    def purchase(self, accounting: Accounting, month: int, originations: Mapping[str, Mortgage]) -> list[str]:
         originated = []
-        for purchase in scenario._scheduled_property_purchases:
+        for purchase in self.housing.purchases:
             if purchase.month != month:
                 continue
             loan = purchase.mortgage

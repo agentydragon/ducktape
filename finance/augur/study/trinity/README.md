@@ -4,15 +4,18 @@ Cooley, Hubbard and Walz, "Retirement Savings: Choosing a Withdrawal Rate That I
 Sustainable", _AAII Journal_ XX(2), February 1998 — the paper the "4% rule" comes from. Its
 Table 3 (inflation-adjusted withdrawals, 1926 to 1995) is the target.
 
-`replay.py` builds the study's scenario, replays every 30-year window the period supplies, and
-reports success rates and SAFEMAX per allocation. Its module docstring carries the
+`replay.py` composes the study straight onto `World`s — no `Scenario`, no compiled
+execution input: `situation()` compiles the sampled paths once, `compose()` declares one
+window's books (accounts, sleeve lots, the bond payout, the indexed withdrawal claims) and
+`execute()` drives an `ActionSession` over them — replays every 30-year window the period
+supplies, and reports success rates and SAFEMAX per allocation. Its module docstring carries the
 deviations and numerical attribution from the earlier configured-runner investigation;
 those historical measurements are not a fresh sourced validation of the Python migration.
 `evidence_snapshot.py` fetches the record the replay runs on.
 
 The experiment owns a Python monthly batch loop over `ActionSession`. `policy.py`
 proposes overweight-first/FIFO sales using `policy.sleeves.withdraw`, then explicit
-payments. The scenario contains no configured allocator. Fixed indexed withdrawals
+payments. Nothing configured allocates. Fixed indexed withdrawals
 remain scheduled claims at months 0, 12, …, 348: each scales the original annual
 amount by current/origin CPI, never the previous rounded withdrawal. Distributions
 arrive before the decision, including the bond model's opening coupon. Surplus

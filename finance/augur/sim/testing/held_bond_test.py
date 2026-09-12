@@ -9,7 +9,6 @@ import pytest
 import pytest_bazel
 
 from finance.augur.model.series import InflationKey
-from finance.augur.sim import configured
 from finance.augur.sim.actions import Action, Consume, DecisionActions, PayClaim
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.observations import Decision, FixedCoupon, IndexedCoupon
@@ -27,7 +26,7 @@ def execute(
     capture: Literal["summary", "dense", "forensic"] = "summary",
     ids: list[int] | None = None,
 ) -> list[Rollout]:
-    session = ActionSession(case.compiled_run, "alice", ids or [0], capture=capture)
+    session = ActionSession.from_run(case.compiled_run, "alice", ids or [0], capture=capture)
     try:
         batch = session.start()
         while not isinstance(batch, Finished):
@@ -228,14 +227,10 @@ def test_compiled_fixed_coupon_funds_both_controls(
         ]
 
     [actor] = execute(case, spend, "dense")
-    [configured_run] = configured.execute(case.compiled_run, "dense")
-    assert configured_run.financial is not None
     expected = [(period, coupon, 0), (2 * period, coupon, face)] if coupon else [(2 * period, 0, face)]
     assert actor.trace is not None
     assert [(row.month, row.coupon, row.redemption) for row in actor.trace.bond_cashflows] == expected
     assert all(row.accretion == 0 for row in actor.trace.bond_cashflows)
-    assert [(row.month, row.coupon, row.redemption) for row in configured_run.financial.bond_cashflows] == expected
-    assert all(row.accretion == 0 for row in configured_run.financial.bond_cashflows)
     assert actor.stop is None
     assert sum(row.receipt.amount_requested for row in actor.summary.payments) == face + 2 * coupon
     assert actor.summary.cash[0].values == [0] * (2 * period + 2)

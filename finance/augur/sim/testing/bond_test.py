@@ -32,7 +32,7 @@ from finance.augur.sim.testing.case import Case, levels
 
 def execute(case: Case) -> Rollout:
     """Pay only observed due claims in order; no native configured policy or rescue."""
-    session = ActionSession(case.compiled_run, "alice", [0], capture="forensic")
+    session = ActionSession.from_run(case.compiled_run, "alice", [0], capture="forensic")
     try:
         batch = session.start()
         while not isinstance(batch, Finished):

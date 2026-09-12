@@ -4,7 +4,8 @@ A `JointHousehold` agent (an `EconomicAgent` subclass) composes the
 [bounded annual spending rule](../bounded_spending/README.md) with the
 [allocation example's cash-band/glide proposals](../allocation_glide/README.md).
 Each selected path is its own `World` tracking one fresh household; the experiment
-loops over `world.step()`, which asks the household to decide once per month, and
+loops over `world.step()`, which posts the household its statements and dues and then
+asks it to act once per month, and
 reads what it measures from world state after each step (payments, taxes, assets,
 and for replays the month's journal and dispositions). The world keeps no history.
 The household reserves due claims plus intended consumption before any purchase and
@@ -20,9 +21,11 @@ bb run //finance/augur/x/joint_spending_allocation:compare_bin -- \
 Use a new output directory. The sweep crosses initial annual spending rates of
 4%/8%, fixed-real/20%-cut-5%-raise flexibility, and constant 50/50/annual glide to
 70/30. Spending bounds apply around the previous annual amount indexed by CPI;
-they are not permanent floor/ceiling lifestyle tiers. `scenario.py:prepare` accepts
-caller-supplied paths; the CLI supplies three deterministic stress cases, not
-probability samples or a fitted market forecast.
+they are not permanent floor/ceiling lifestyle tiers. `situation.py:situation` accepts
+caller-supplied paths and `situation.py:compose` declares the household's books,
+its annual bill and its tax authority straight onto one `World` per path, with no
+`Scenario`; the CLI supplies three deterministic stress cases, not probability
+samples or a fitted market forecast.
 
 The synthetic situation starts with USD 10,000 cash and 500 units each of
 `test-growth` and `test-steady`, priced at USD 100 with USD 80/unit basis acquired
@@ -37,8 +40,8 @@ assessment and actual payment; it does not demonstrate statutory US/state/foreig
 NIIT/AMT or personalized tax coverage. No horizon-end liquidation/tax settlement
 is imposed. This is a composition example, not Guyton–Klinger or personal advice.
 
-`execution-input.json` contains the exact materialized situation, paths and tax
-rules. `experiment.json` records the grid and reporting conventions. Each cell
+`experiment.json` records the grid and reporting conventions; the situation
+itself is code, not an artifact. Each cell
 retains its measurements plus selected `[2, 0]` replays with original IDs, the
 replays carrying the journal and dispositions the experiment copied month by month.
 

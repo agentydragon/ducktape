@@ -1,6 +1,6 @@
 """Exercise real Python-owned batches, routing errors, receipt feedback and fatal stops."""
 
-from dataclasses import replace
+from collections.abc import Sequence
 from decimal import Decimal
 from typing import Any
 
@@ -8,49 +8,68 @@ import pytest
 import pytest_bazel
 
 from finance.augur.sim.actions import Action, ClaimId, Consume, DecisionActions, PayClaim, Transfer
+from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.prepared import CompiledRun
+from finance.augur.sim.fixed_point import currency_amount_to_quanta
+from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.prepared import PreparedAccount, PreparedObligation, PreparedTransfer
 from finance.augur.sim.results import Executed, Finished, RejectedAction, Rollout, UnpaidClaims
-from finance.augur.sim.scenario import ObligationType, ScheduledObligation, ScheduledTransfer
+from finance.augur.sim.scenario import ORDINARY_INCOME, ObligationType
 from finance.augur.sim.session import ActionSession
-from finance.augur.sim.testing.case import Case, scenario
-from finance.augur.sim.testing.fixtures import checking
+from finance.augur.sim.world import World
+
+QUANTUM = Decimal("0.01")
+ROLLOUT_COUNT = 2
+ALICE = AccountRef(agent_id="alice", account_id="checking")
+WORLD = AccountRef(agent_id="world", account_id="checking")
 
 
-@pytest.fixture
-def prepared() -> CompiledRun:
-    case = Case(
-        scenario(
-            checking(("alice", Decimal("0.05")), ("world", Decimal(0))),
-            horizon_months=4,
-            tax_profiles=[],
-            scheduled_transfers=[
-                ScheduledTransfer(
-                    month=0,
-                    cause_id="opening-contribution",
-                    from_agent_id="world",
-                    from_account_id="checking",
-                    to_agent_id="alice",
-                    to_account_id="checking",
-                    amount=Decimal("0.02"),
-                )
-            ],
-            scheduled_obligations=[
-                ScheduledObligation(
-                    month=0,
-                    obligation_id="one-cent-bill",
-                    obligation_type=ObligationType.OUTSIDE_RENT,
-                    agent_id="alice",
-                    from_account_id="checking",
-                    to_agent_id="world",
-                    to_account_id="checking",
-                    amount_due=Decimal("0.01"),
-                )
-            ],
-        ),
-        rollout_count=2,
+def quanta(amount: Decimal) -> int:
+    return int(currency_amount_to_quanta(amount, quantum=QUANTUM))
+
+
+def compose(rollout_id: int, *, obligation_id: str = "one-cent-bill") -> World:
+    """Five cents against a two-cent opening contribution and a one-cent bill, both at month zero.
+
+    Nominal only: no security, distribution or CPI series is supplied, so the market path
+    carries nothing and the world moves cash and settles due claims alone.
+    """
+    world = World(
+        MarketPath((), rollout_id, rollout_count=ROLLOUT_COUNT), horizon_months=4, income_sources=(ORDINARY_INCOME,)
     )
-    return case.compiled_run
+    for account, balance in ((ALICE, Decimal("0.05")), (WORLD, Decimal(0))):
+        world.declare_account(PreparedAccount(account=account, opening_balance=quanta(balance)))
+    world.scheduled_transfers = (
+        PreparedTransfer(
+            month=0,
+            cause_id="opening-contribution",
+            from_account=WORLD,
+            to_account=ALICE,
+            amount=quanta(Decimal("0.02")),
+            income_category=None,
+            deduction_category=None,
+        ),
+    )
+    world.track(
+        Biller(
+            PreparedObligation(
+                month=0,
+                obligation_id=obligation_id,
+                obligation_type=ObligationType.OUTSIDE_RENT,
+                from_account=ALICE,
+                to_account=WORLD,
+                amount_due=quanta(Decimal("0.01")),
+                property_id=None,
+                deduction_category=None,
+                deductible_fraction_ppb=1_000_000_000,
+            )
+        )
+    )
+    return world
+
+
+def session(ids: Sequence[int], **parts: Any) -> ActionSession:
+    return ActionSession({id_: compose(id_) for id_ in ids}, "alice", **parts)
 
 
 def consume(amount: int, cause: str = "chosen-spend") -> Action:
@@ -64,12 +83,12 @@ def consume(amount: int, cause: str = "chosen-spend") -> Action:
     )
 
 
-def run(prepared: CompiledRun, ids: list[int]) -> tuple[list[Rollout], dict[int, list[tuple[int, int]]]]:
-    session = ActionSession(prepared, "alice", ids)
+def run(ids: list[int]) -> tuple[list[Rollout], dict[int, list[tuple[int, int]]]]:
+    live = session(ids)
     observed: dict[int, list[tuple[int, int]]] = {id_: [] for id_ in ids}
     memory = dict.fromkeys(ids, 0)
     try:
-        batch = session.start()
+        batch = live.start()
         while not isinstance(batch, Finished):
             responses = []
             for decision in reversed(batch):
@@ -96,26 +115,26 @@ def run(prepared: CompiledRun, ids: list[int]) -> tuple[list[Rollout], dict[int,
                 ]
                 actions.append(consume(1))
                 responses.append(DecisionActions(decision.rollout_id, observation.month, actions))
-            batch = session.advance(responses)
+            batch = live.advance(responses)
         return batch.rollouts, observed
     finally:
-        session.close()
+        live.close()
 
 
-def test_current_facts_receipt_memory_and_original_replay(prepared: CompiledRun) -> None:
-    baseline, observed = run(prepared, [0, 1])
+def test_current_facts_receipt_memory_and_original_replay() -> None:
+    baseline, observed = run([0, 1])
     assert observed == {id_: [(0, 7), (1, 5), (2, 4), (3, 3)] for id_ in [0, 1]}
     for ids in [[1, 0], [1], [0], [0, 1]]:
-        actual, replay_observed = run(prepared, ids)
+        actual, replay_observed = run(ids)
         assert actual == [baseline[id_] for id_ in ids]
         assert replay_observed == {id_: observed[id_] for id_ in ids}
     assert [row.rollout_id for row in baseline] == [0, 1]
     assert all(row.stop is None for row in baseline)
 
 
-def test_action_order_prefix_retention_and_independent_continuation(prepared: CompiledRun) -> None:
-    session = ActionSession(prepared, "alice", [0, 1])
-    batch = session.start()
+def test_action_order_prefix_retention_and_independent_continuation() -> None:
+    live = session([0, 1])
+    batch = live.start()
     assert not isinstance(batch, Finished)
     responses = []
     for decision in batch:
@@ -137,12 +156,12 @@ def test_action_order_prefix_retention_and_independent_continuation(prepared: Co
                 consume(1, "unattempted-suffix"),
             ]
         responses.append(DecisionActions(decision.rollout_id, 0, actions))
-    batch = session.advance(responses)
+    batch = live.advance(responses)
     for month in range(1, 4):
         assert not isinstance(batch, Finished)
         assert [decision.rollout_id for decision in batch] == [1]
         assert batch[0].observation.month == month
-        batch = session.advance([DecisionActions(1, month, [])])
+        batch = live.advance([DecisionActions(1, month, [])])
     assert isinstance(batch, Finished)
     stopped, completed = batch.rollouts
     assert stopped.stop == RejectedAction(month=0, action_index=2)
@@ -152,13 +171,13 @@ def test_action_order_prefix_retention_and_independent_continuation(prepared: Co
     assert next(row.balance for row in closing.balances if row.account.agent_id == "alice") == 5
     assert completed.stop is None
     with pytest.raises(ValueError, match="finished, aborted or closed"):
-        session.advance([])
+        live.advance([])
 
 
-def test_unpaid_due_claim_is_not_an_implicit_payment(prepared: CompiledRun) -> None:
-    session = ActionSession(prepared, "alice", [1])
-    session.start()
-    finished = session.advance([DecisionActions(1, 0, [])])
+def test_unpaid_due_claim_is_not_an_implicit_payment() -> None:
+    live = session([1])
+    live.start()
+    finished = live.advance([DecisionActions(1, 0, [])])
     assert isinstance(finished, Finished)
     [rollout] = finished.rollouts
     assert rollout.stop == UnpaidClaims(month=0, claims=[ClaimId(month=0, index=0)])
@@ -168,22 +187,22 @@ def test_unpaid_due_claim_is_not_an_implicit_payment(prepared: CompiledRun) -> N
 
 
 @pytest.mark.parametrize("keys", [[], [(0, 0)], [(0, 0), (0, 0)], [(0, 1), (1, 0)], [(0, 0), (2, 0)]])
-def test_bad_routing_aborts_without_resubmission(prepared: CompiledRun, keys: list[tuple[int, int]]) -> None:
-    session = ActionSession(prepared, "alice", [0, 1])
-    session.start()
+def test_bad_routing_aborts_without_resubmission(keys: list[tuple[int, int]]) -> None:
+    live = session([0, 1])
+    live.start()
     with pytest.raises(ValueError, match="each active path/month"):
-        session.advance([DecisionActions(id_, month, []) for id_, month in keys])
+        live.advance([DecisionActions(id_, month, []) for id_, month in keys])
     with pytest.raises(ValueError, match="finished, aborted or closed"):
-        session.advance([DecisionActions(0, 0, []), DecisionActions(1, 0, [])])
+        live.advance([DecisionActions(0, 0, []), DecisionActions(1, 0, [])])
 
 
-def test_cross_rollout_claim_handle_is_a_routing_error(prepared: CompiledRun) -> None:
-    session = ActionSession(prepared, "alice", [0, 1])
-    batch = session.start()
+def test_cross_rollout_claim_handle_is_a_routing_error() -> None:
+    live = session([0, 1])
+    batch = live.start()
     assert not isinstance(batch, Finished)
     claim = batch[0].observation.claims[0]
     with pytest.raises(ValueError, match="different rollout"):
-        session.advance(
+        live.advance(
             [
                 DecisionActions(
                     id_,
@@ -194,18 +213,16 @@ def test_cross_rollout_claim_handle_is_a_routing_error(prepared: CompiledRun) ->
             ]
         )
     with pytest.raises(ValueError, match="finished, aborted or closed"):
-        session.start()
+        live.start()
 
 
-def test_claim_handle_cannot_alias_another_sessions_claim(prepared: CompiledRun) -> None:
-    first = ActionSession(prepared, "alice", [0])
+def test_claim_handle_cannot_alias_another_sessions_claim() -> None:
+    first = session([0])
     first_batch = first.start()
     assert not isinstance(first_batch, Finished)
     old_claim = first_batch[0].observation.claims[0]
     first.close()
-    other_claim = replace(prepared.scenario.obligations[0], obligation_id="different-bill")
-    other = replace(prepared, scenario=replace(prepared.scenario, obligations=(other_claim,)))
-    second = ActionSession(other, "alice", [0])
+    second = ActionSession({0: compose(0, obligation_id="different-bill")}, "alice")
     second_batch = second.start()
     assert not isinstance(second_batch, Finished)
     assert second_batch[0].observation.claims[0].cause_id != old_claim.cause_id
@@ -227,13 +244,13 @@ def test_claim_handle_cannot_alias_another_sessions_claim(prepared: CompiledRun)
         second.advance([])
 
 
-def test_repeated_start_and_advance_before_start_abort(prepared: CompiledRun) -> None:
-    early = ActionSession(prepared, "alice", [0])
+def test_repeated_start_and_advance_before_start_abort() -> None:
+    early = session([0])
     with pytest.raises(ValueError, match="lifecycle state"):
         early.advance([])
     with pytest.raises(ValueError, match="finished, aborted or closed"):
         early.start()
-    repeated = ActionSession(prepared, "alice", [0])
+    repeated = session([0])
     repeated.start()
     with pytest.raises(ValueError, match="lifecycle state"):
         repeated.start()
@@ -241,9 +258,9 @@ def test_repeated_start_and_advance_before_start_abort(prepared: CompiledRun) ->
         repeated.advance([])
 
 
-def test_copied_observations_do_not_mutate_books(prepared: CompiledRun) -> None:
-    session = ActionSession(prepared, "alice", [0])
-    batch = session.start()
+def test_copied_observations_do_not_mutate_books() -> None:
+    live = session([0])
+    batch = live.start()
     assert not isinstance(batch, Finished)
     observation = batch[0].observation
     copied_accounts: Any = observation.accounts
@@ -253,7 +270,7 @@ def test_copied_observations_do_not_mutate_books(prepared: CompiledRun) -> None:
     with pytest.raises(ValueError, match="frozen"):
         writable.cash = 999
     claim = observation.claims[0]
-    batch = session.advance(
+    batch = live.advance(
         [
             DecisionActions(
                 0, 0, [PayClaim(request_id=0, cause_id="pay", claim=claim, from_account=claim.from_account, amount=1)]
@@ -262,30 +279,32 @@ def test_copied_observations_do_not_mutate_books(prepared: CompiledRun) -> None:
     )
     assert not isinstance(batch, Finished)
     assert batch[0].observation.accounts == (("checking", 6),)
-    session.close()
+    live.close()
 
 
-@pytest.mark.parametrize("ids", [[], [0, 0], [2]])
-def test_invalid_selection_rejects_at_construction(prepared: CompiledRun, ids: list[int]) -> None:
-    with pytest.raises(ValueError, match="selected rollout IDs"):
-        ActionSession(prepared, "alice", ids)
+@pytest.mark.parametrize(
+    ("ids", "message"), [([], "a session needs at least one world"), ([ROLLOUT_COUNT], "invalid rollout selection")]
+)
+def test_invalid_selection_rejects_at_construction(ids: list[int], message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        session(ids)
 
 
-def test_invalid_capture_rejects_at_construction(prepared: CompiledRun) -> None:
+def test_invalid_capture_rejects_at_construction() -> None:
     invalid: Any = "invented"
     with pytest.raises(ValueError, match="capture must be"):
-        ActionSession(prepared, "alice", [0], capture=invalid)
+        session([0], capture=invalid)
 
 
-def test_extraction_error_and_explicit_close_release_the_session(prepared: CompiledRun) -> None:
-    session = ActionSession(prepared, "alice", [0])
-    session.start()
+def test_extraction_error_and_explicit_close_release_the_session() -> None:
+    live = session([0])
+    live.start()
     invalid: Any = [None]
     with pytest.raises(TypeError):
-        session.advance(invalid)
+        live.advance(invalid)
     with pytest.raises(ValueError, match="finished, aborted or closed"):
-        session.start()
-    closed = ActionSession(prepared, "alice", [0])
+        live.start()
+    closed = session([0])
     closed.close()
     closed.close()
     with pytest.raises(ValueError, match="finished, aborted or closed"):

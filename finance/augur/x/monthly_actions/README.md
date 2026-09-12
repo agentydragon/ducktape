@@ -35,9 +35,9 @@ bill payment rejects and stops that path. Its sale receipt, realized gain and
 $100 cash remain. The other path continues; no callback runs again for the stopped
 path. No action sorting or automatic funding occurs in execution.
 
-The new output directory retains `execution-input.json` with all assumptions and
-`outcomes.json` with each original path's compact summary, stop reason and optional
-detailed `trace`. The default `--capture forensic` retains ordered action receipts
+The new output directory retains `outcomes.json` with each original path's compact
+summary, stop reason and optional detailed `trace`; the assumptions live in `run.py`,
+not in a written input artifact. The default `--capture forensic` retains ordered action receipts
 and canonical financial output. `--capture summary` retains account/pool observed
 numeric series, payment request/results, canonical tax records, exact ending book
 and final attempted action prefix without historical trade/journal/monthly books.
@@ -47,12 +47,18 @@ The tests invoke the documented CLI and check its emitted financial outcomes,
 then compare reordered and selected replay through the same authoring function.
 All inputs are generated locally; the tests need no live service or evidence data.
 
-`run.py` owns the Python monthly loop over the in-process
-[action session](../../sim/docs/financial_engine.md#scoped-household-action-batches).
-Policies are ordinary Python functions; editing one requires no Rust rebuild.
-Prepared input is written once for reproduction, while current observations and
-ordered actions cross the existing extension in memory. There is no native
-example binary, per-month subprocess or second financial implementation.
+`run.py` composes the situation straight onto a `World` per path — no `Scenario`,
+no `compile_run`: `situation()` compiles the shared stipulated price paths, and
+`compose(case, rollout_id)` declares the three checking accounts, the tax authority,
+the household's holding pool and lot, and the bill onto one world. `execute` drives
+those worlds through the in-process
+[action session](../../sim/docs/financial_engine.md#scoped-household-action-batches)
+in a Python monthly loop. Policies are ordinary Python functions; editing one
+requires no Rust rebuild. Current observations and ordered actions cross the
+existing extension in memory. There is no native example binary, per-month
+subprocess or second financial implementation. The sim-level tests of the
+prepared-input path itself run the same facts compiled into a `CompiledRun` by
+`sim/testing/example_run.py`.
 
 ## Cash-only opening
 
@@ -90,8 +96,8 @@ bb run //finance/augur/x/monthly_actions:run_bin -- --output-dir /tmp/augur-acti
 bb run //finance/augur/x/monthly_actions:run_bin -- --output-dir /tmp/augur-action-replay --rollouts 1000 --horizon-months 60 --rollout 999 --rollout 12 --capture forensic
 ```
 
-The complete generated execution input is identical for population and selected
-replay with the same `--rollouts`/`--horizon-months`; selection never renumbers it.
+The composed situation is identical for population and selected replay with the
+same `--rollouts`/`--horizon-months`; selection never renumbers paths.
 
 Profile one capture choice per fresh process, keeping all other arguments equal:
 
@@ -100,12 +106,12 @@ bbr run -c opt //finance/augur/x/monthly_actions:profile_bin -- --rollouts 1000 
 ```
 
 Repeat with `--capture dense` or `forensic` and a new output directory. `report.json`
-records input and compact-result hashes, observed (not padded) path-months, wire
-bytes and one process RSS high-water mark. `execution.prof` is a real
-cProfile recording of the same Python-owned session loop: prepared-input reading,
-monthly policy/binding/native work, terminal JSON decoding and output writing,
-not isolated native evaluation. Path preparation is excluded from the profile but
-included in process RSS, alongside Python and retained native allocations. There
+records the compact-result hash, observed (not padded) path-months, wire bytes and
+one process RSS high-water mark. `execution.prof` is a real cProfile recording of
+the same Python-owned session loop: per-path world composition, monthly
+policy/binding/native work, terminal JSON decoding and output writing, not
+isolated native evaluation. Price-path preparation is excluded from the profile
+but included in process RSS, alongside Python and retained native allocations. There
 is no native child executor. No performance
 threshold or executor-language comparison is implied. The CI tests execute both
 documented entrypoints with small generated inputs and check capture/replay parity.

@@ -1,13 +1,16 @@
 """Run bond-construction and spending cells through Augur's canonical household engine.
 
 Construction functions supply unit prices and coupons; this module owns accounts,
-withdrawals, funding policy, and output. The supplied curves are stipulated stress
-paths, not sampled evidence or forecasts, so cells have no probability weights.
+withdrawals, funding policy, and output. No `Scenario`: each spending cell is a
+`Situation` composed straight onto one `World` per path. The supplied curves are
+stipulated stress paths, not sampled evidence or forecasts, so cells have no
+probability weights.
 """
 
 import argparse
 import json
 from collections.abc import Sequence
+from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
 from typing import Literal
@@ -17,23 +20,31 @@ from pydantic import TypeAdapter
 
 from finance.augur.model.series import SecurityDistributionKey, SecurityKey, SecuritySymbol
 from finance.augur.policy.funding import fund_claims
-from finance.augur.sim.artifacts import write_prepared_input
-from finance.augur.sim.books import Record
-from finance.augur.sim.compiler.execution import compile_run
+from finance.augur.sim.bills import Biller
+from finance.augur.sim.books import AccountRef, Record
+from finance.augur.sim.compiler.execution import compile_series
 from finance.augur.sim.external_series import ExternalSeriesContext
-from finance.augur.sim.prepared import CompiledRun
-from finance.augur.sim.results import Finished, Rollout, Stop, UnpaidClaim
-from finance.augur.sim.scenario import (
-    Agent,
-    DistributionTaxSlice,
-    InitialAccountBalance,
-    InitialLot,
-    ObligationType,
-    Scenario,
-    ScheduledObligation,
-    SecurityDistribution,
+from finance.augur.sim.fixed_point import (
+    currency_amount_to_quanta,
+    quantity_scale_for_asset,
+    quantity_to_quanta,
+    rate_to_ppb,
 )
+from finance.augur.sim.ids import AgentId
+from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.prepared import (
+    PreparedAccount,
+    PreparedDistribution,
+    PreparedDistributionSlice,
+    PreparedHoldingPool,
+    PreparedLot,
+    PreparedObligation,
+    PreparedSeries,
+)
+from finance.augur.sim.results import Finished, Rollout, Stop, UnpaidClaim
+from finance.augur.sim.scenario import ORDINARY_INCOME, InterestIncome, ObligationType
 from finance.augur.sim.session import ActionSession
+from finance.augur.sim.world import World
 from finance.augur.x.bond_policies.construction import (
     DatedConstruction,
     ProxyConstruction,
@@ -41,7 +52,8 @@ from finance.augur.x.bond_policies.construction import (
     stipulated_curves,
 )
 
-HOUSEHOLD = "example_household"
+QUANTUM = Decimal("0.01")
+HOUSEHOLD = AgentId("example_household")
 WORLD = "example_world"
 CHECKING = "checking"
 BROKERAGE = "brokerage"
@@ -50,15 +62,18 @@ INITIAL_WEALTH = Decimal(100_000)
 INITIAL_UNIT_PRICE = Decimal(100)
 
 
-def compile_construction(
-    construction: DatedConstruction | ProxyConstruction, *, annual_spending: Decimal
-) -> CompiledRun:
-    """Own strategy units, distribute coupons to cash, and sell units only to fund spending.
+@dataclass(frozen=True)
+class Situation:
+    """What every path of a spending cell shares; `compose` declares it onto one World per path."""
 
-    Selling units proportionally liquidates the modeled investment exposure. Only the
-    zero-withdrawal control literally retains every initial bond until the construction
-    function sells or redeems it. Taxes and transaction costs are deliberately absent.
-    """
+    series: tuple[PreparedSeries, ...]
+    rollout_count: int
+    horizon_months: int
+    annual_spending: int  # currency quanta, claimed at months 12, 24, ... inside the horizon; zero claims nothing
+
+
+def situation(construction: DatedConstruction | ProxyConstruction, *, annual_spending: Decimal) -> Situation:
+    """One cell: the construction's unit prices and coupons on every path, and the household's annual claim."""
     if not annual_spending.is_finite() or annual_spending < 0:
         raise ValueError("annual_spending must be finite and nonnegative")
     prices = np.asarray(construction.price)
@@ -66,67 +81,91 @@ def compile_construction(
     horizon_months = snapshot_count - 1
     if not np.all(prices[:, 0] == float(INITIAL_UNIT_PRICE)):
         raise ValueError("construction units must start at $100 on every path")
-    asset = SecurityKey(symbol=STRATEGY)
-    scenario = Scenario(
-        agents=[Agent(agent_id=HOUSEHOLD), Agent(agent_id=WORLD)],
-        initial_cash=[
-            InitialAccountBalance(agent_id=agent_id, account_id=CHECKING, balance=0) for agent_id in (HOUSEHOLD, WORLD)
+    paths = ExternalSeriesContext.from_level_blocks(
+        [
+            (SecurityKey(symbol=STRATEGY), prices),
+            (SecurityDistributionKey(symbol=STRATEGY), np.asarray(construction.coupon)),
         ],
-        initial_lots=[
-            InitialLot(
-                lot_id="example_initial_strategy",
-                agent_id=HOUSEHOLD,
-                account_id=BROKERAGE,
-                asset=asset,
-                purchase_month_index=-1,
-                quantity=float(INITIAL_WEALTH / INITIAL_UNIT_PRICE),
-                cost_basis=INITIAL_WEALTH,
-            )
-        ],
-        security_distributions=[
-            SecurityDistribution(
-                asset=asset,
-                agent_id=HOUSEHOLD,
-                holding_account_id=BROKERAGE,
-                to_account_id=CHECKING,
-                tax_character=(DistributionTaxSlice(fraction=1.0),),
-            )
-        ],
-        scheduled_obligations=[
-            ScheduledObligation(
-                month=month,
-                obligation_id=f"annual_spending_{month}",
-                obligation_type=ObligationType.CASH_SPEND,
-                agent_id=HOUSEHOLD,
-                from_account_id=CHECKING,
-                to_agent_id=WORLD,
-                to_account_id=CHECKING,
-                amount_due=annual_spending,
-            )
-            for month in range(12, horizon_months, 12)
-            if annual_spending > 0
-        ],
-        tax_profiles=[],
+        rollout_count=rollout_count,
         horizon_months=horizon_months,
     )
-    return compile_run(
-        scenario,
-        rollout_count=rollout_count,
-        external_series=ExternalSeriesContext.from_level_blocks(
-            [(asset, prices), (SecurityDistributionKey(symbol=STRATEGY), np.asarray(construction.coupon))],
-            rollout_count=rollout_count,
-            horizon_months=horizon_months,
+    return Situation(
+        series=compile_series(
+            paths, rollout_count=rollout_count, horizon_months=horizon_months, currency_quantum=QUANTUM
         ),
-        jurisdictions={},
-        locations={},
+        rollout_count=rollout_count,
+        horizon_months=horizon_months,
+        annual_spending=int(currency_amount_to_quanta(annual_spending, quantum=QUANTUM)),
     )
+
+
+def compose(case: Situation, rollout_id: int) -> World:
+    """Own strategy units, distribute coupons to checking, and sell units only to fund spending.
+
+    Selling units proportionally liquidates the modeled investment exposure. Only the
+    zero-withdrawal control literally retains every initial bond until the construction
+    function sells or redeems it. Taxes and transaction costs are deliberately absent;
+    the coupon distribution still names its (corporate) interest source.
+    """
+    world = World(
+        MarketPath(case.series, rollout_id, rollout_count=case.rollout_count),
+        horizon_months=case.horizon_months,
+        income_sources=(ORDINARY_INCOME, InterestIncome(issuer_jurisdiction_id=None)),
+    )
+    for agent_id in (HOUSEHOLD, WORLD):
+        world.declare_account(
+            PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=0)
+        )
+    scale = quantity_scale_for_asset(SecurityKey(symbol=STRATEGY))
+    world.declare_pool(
+        PreparedHoldingPool(agent_id=HOUSEHOLD, account_id=BROKERAGE, asset_id=str(STRATEGY), quantity_scale=scale)
+    )
+    world.hold(
+        PreparedLot(
+            lot_id="example_initial_strategy",
+            agent_id=HOUSEHOLD,
+            account_id=BROKERAGE,
+            asset_id=str(STRATEGY),
+            purchase_month=-1,
+            quantity_scale=scale,
+            units=int(quantity_to_quanta(INITIAL_WEALTH / INITIAL_UNIT_PRICE, scale=scale)),
+            basis=int(currency_amount_to_quanta(INITIAL_WEALTH, quantum=QUANTUM)),
+        )
+    )
+    world.declare_distribution(
+        PreparedDistribution(
+            agent_id=HOUSEHOLD,
+            holding_account_id=BROKERAGE,
+            asset_id=str(STRATEGY),
+            to_account_id=CHECKING,
+            tax_character=(PreparedDistributionSlice(fraction_ppb=rate_to_ppb(1.0), issuer_jurisdiction_id=None),),
+        )
+    )
+    if case.annual_spending > 0:
+        for month in range(12, case.horizon_months, 12):
+            world.track(
+                Biller(
+                    PreparedObligation(
+                        month=month,
+                        obligation_id=f"annual_spending_{month}",
+                        obligation_type=ObligationType.CASH_SPEND,
+                        from_account=AccountRef(agent_id=HOUSEHOLD, account_id=CHECKING),
+                        to_account=AccountRef(agent_id=WORLD, account_id=CHECKING),
+                        amount_due=case.annual_spending,
+                        property_id=None,
+                        deduction_category=None,
+                        deductible_fraction_ppb=rate_to_ppb(1.0),
+                    )
+                )
+            )
+    return world
 
 
 def execute(
-    run: CompiledRun, *, rollout_ids: Sequence[int], capture: Literal["summary", "dense", "forensic"] = "summary"
+    case: Situation, *, rollout_ids: Sequence[int], capture: Literal["summary", "dense", "forensic"] = "summary"
 ) -> list[Rollout]:
     """Run the monthly batch policy on selected original paths, without reinvestment."""
-    session = ActionSession(run, HOUSEHOLD, list(rollout_ids), capture=capture)
+    session = ActionSession({id_: compose(case, id_) for id_ in rollout_ids}, HOUSEHOLD, capture=capture)
     try:
         batch = session.start()
         while not isinstance(batch, Finished):
@@ -190,7 +229,7 @@ def measurements(rollout: Rollout) -> Measurements:
 def run_experiment(
     *, output_dir: Path, annual_spending: tuple[Decimal, ...], trace_rollouts: tuple[int, ...] = (4, 0)
 ) -> None:
-    """Save exact model inputs, construction traces, and canonical household outcomes."""
+    """Save the supplied curves, construction traces, and canonical household outcomes."""
     if not annual_spending or any(not value.is_finite() or value < 0 for value in annual_spending):
         raise ValueError("annual_spending must contain finite nonnegative amounts")
     curves = stipulated_curves()
@@ -250,11 +289,10 @@ def run_experiment(
         for cell_index, spending in enumerate(annual_spending):
             cell_dir = strategy_dir / f"spending_{cell_index}"
             cell_dir.mkdir()
-            run = compile_construction(construction, annual_spending=spending)
-            write_prepared_input(run, cell_dir / "execution_input.json")
-            results = execute(run, rollout_ids=range(len(curves)))
+            case = situation(construction, annual_spending=spending)
+            results = execute(case, rollout_ids=range(len(curves)))
             (cell_dir / "rollouts.json").write_text(Finished(rollouts=results).model_dump_json())
-            traces = execute(run, rollout_ids=trace_rollouts, capture="forensic") if trace_rollouts else []
+            traces = execute(case, rollout_ids=trace_rollouts, capture="forensic") if trace_rollouts else []
             if traces:
                 (cell_dir / "traces.json").write_text(Finished(rollouts=traces).model_dump_json())
             for rollout, path_name in zip(results, curves, strict=True):

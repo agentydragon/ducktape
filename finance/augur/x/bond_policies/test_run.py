@@ -9,10 +9,9 @@ import numpy as np
 import pytest
 import pytest_bazel
 
-from finance.augur.sim.artifacts import read_prepared_input
 from finance.augur.sim.results import Finished, RejectedAction
 from finance.augur.x.bond_policies.construction import ProxyConstruction, compare_constructions, stipulated_curves
-from finance.augur.x.bond_policies.run import CELLS, compile_construction, execute, measurements
+from finance.augur.x.bond_policies.run import CELLS, compose, execute, measurements, situation
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 
@@ -29,8 +28,8 @@ def controlled_construction() -> ProxyConstruction:
 def test_zero_withdrawals_preserve_units_and_pay_the_last_in_horizon_coupon(
     controlled_construction: ProxyConstruction,
 ) -> None:
-    run = compile_construction(controlled_construction, annual_spending=Decimal(0))
-    result = execute(run, rollout_ids=[0], capture="forensic")[0]
+    case = situation(controlled_construction, annual_spending=Decimal(0))
+    result = execute(case, rollout_ids=[0], capture="forensic")[0]
     summary = result.summary
     financial = result.trace
     assert financial is not None
@@ -46,8 +45,8 @@ def test_zero_withdrawals_preserve_units_and_pay_the_last_in_horizon_coupon(
 
 
 def test_current_coupon_funds_spending_before_units_are_sold(controlled_construction: ProxyConstruction) -> None:
-    run = compile_construction(controlled_construction, annual_spending=Decimal(5000))
-    result = execute(run, rollout_ids=[0], capture="forensic")[0]
+    case = situation(controlled_construction, annual_spending=Decimal(5000))
+    result = execute(case, rollout_ids=[0], capture="forensic")[0]
     financial = result.trace
     assert financial is not None
     sales = financial.events.lot_dispositions
@@ -63,8 +62,8 @@ def test_current_coupon_funds_spending_before_units_are_sold(controlled_construc
 
 def test_zero_yield_proxy_funds_withdrawals_from_principal_without_coupon_income() -> None:
     proxy = compare_constructions(np.ones((1, 74, 37)))["constant_maturity_proxy"]
-    run = compile_construction(proxy, annual_spending=Decimal(5000))
-    result = execute(run, rollout_ids=[0], capture="forensic")[0]
+    case = situation(proxy, annual_spending=Decimal(5000))
+    result = execute(case, rollout_ids=[0], capture="forensic")[0]
     summary = result.summary
     # Six $5,000 withdrawals consume $30,000 of the opening $100,000, with no income.
     assert result.trace is not None
@@ -85,9 +84,7 @@ def test_internal_sale_or_redemption_stays_in_nav_not_household_income(
     construction_name: str, last_coupon: int, coupon_cash: int, investment_value: int
 ) -> None:
     construction = compare_constructions(stipulated_curves()["flat"][None, ...])[construction_name]
-    result = execute(
-        compile_construction(construction, annual_spending=Decimal(0)), rollout_ids=[0], capture="forensic"
-    )[0]
+    result = execute(situation(construction, annual_spending=Decimal(0)), rollout_ids=[0], capture="forensic")[0]
     summary = result.summary
     financial = result.trace
     assert financial is not None
@@ -103,7 +100,7 @@ def test_nondivisible_unit_sale_keeps_exact_proceeds_and_basis() -> None:
     prices = np.full((1, 14), 3.0)
     prices[:, 0] = 100
     result = execute(
-        compile_construction(ProxyConstruction(prices, np.zeros_like(prices)), annual_spending=Decimal(1)),
+        situation(ProxyConstruction(prices, np.zeros_like(prices)), annual_spending=Decimal(1)),
         rollout_ids=[0],
         capture="forensic",
     )[0]
@@ -126,8 +123,8 @@ def test_failed_payment_preserves_sale_prefix_without_stopping_other_paths() -> 
     prices[1, 12:] = 200
     coupons = np.zeros_like(prices)
     coupons[:, 12] = 2
-    run = compile_construction(ProxyConstruction(prices, coupons), annual_spending=Decimal(120_000))
-    results = execute(run, rollout_ids=[0, 1], capture="forensic")
+    case = situation(ProxyConstruction(prices, coupons), annual_spending=Decimal(120_000))
+    results = execute(case, rollout_ids=[0, 1], capture="forensic")
     failed, completed = results
     report = measurements(failed)
     assert failed.stop == RejectedAction(month=12, action_index=1)
@@ -146,7 +143,7 @@ def test_failed_payment_preserves_sale_prefix_without_stopping_other_paths() -> 
     assert completed.stop is None
     assert measurements(completed).spending_paid_quanta == 12_000_000
     assert measurements(completed).terminal_wealth_quanta == 8_200_000
-    selected = execute(run, rollout_ids=[1, 0])
+    selected = execute(case, rollout_ids=[1, 0])
     assert [row.rollout_id for row in selected] == [1, 0]
     for original, replay in zip(reversed(results), selected, strict=True):
         assert replay.trace is None
@@ -157,7 +154,7 @@ def test_failed_payment_preserves_sale_prefix_without_stopping_other_paths() -> 
 @pytest.mark.parametrize("spending", [Decimal(-1), Decimal("NaN"), Decimal("Infinity")])
 def test_invalid_spending_is_rejected(controlled_construction: ProxyConstruction, spending: Decimal) -> None:
     with pytest.raises(ValueError, match="finite and nonnegative"):
-        compile_construction(controlled_construction, annual_spending=spending)
+        situation(controlled_construction, annual_spending=spending)
 
 
 def test_cli_exports_inputs_compact_results_and_selected_original_timelines(tmp_path: Path) -> None:
@@ -184,15 +181,17 @@ def test_cli_exports_inputs_compact_results_and_selected_original_timelines(tmp_
         assert set(curves.files) == set(config["path_names"])
         np.testing.assert_array_equal(curves["zero"][6:], 1)
     assert len(reports) == 40
+    arms = compare_constructions(np.stack(list(stipulated_curves().values())))
     for cell in reports:
         cell_dir = output / cell.output
-        prepared = read_prepared_input(cell_dir / "execution_input.json")
-        assert len(prepared.scenario.obligations) == 6
         results = Finished.model_validate_json((cell_dir / "rollouts.json").read_text()).rollouts
         assert [row.rollout_id for row in results] == list(range(5))
         assert all(row.trace is None for row in results)
         report = cell.measurements
         original = results[report.rollout_id]
+        # The cell has no input artifact; re-composing it declares the same six annual claims.
+        case = situation(arms[cell.construction], annual_spending=Decimal(cell.annual_spending_usd))
+        assert len(compose(case, report.rollout_id).billers) == 6
         assert cell.path == config["path_names"][report.rollout_id]
         assert measurements(original) == report
         if cell.annual_spending_usd == "5000":

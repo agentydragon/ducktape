@@ -90,3 +90,37 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "configured_household",
+    srcs = ["configured_household.py"],
+    deps = [
+        ":configured_allocation",
+        "//finance/augur/sim:actions",
+        "//finance/augur/sim:agent",
+        "//finance/augur/sim:ids",
+        "//finance/augur/sim:money",
+        "//finance/augur/sim:observations",
+        "//finance/augur/sim:prepared",
+    ],
+)
+
+py_test(
+    name = "test_configured_household",
+    srcs = ["test_configured_household.py"],
+    deps = [
+        ":configured_household",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/sim:bills",
+        "//finance/augur/sim:books",
+        "//finance/augur/sim:capture",
+        "//finance/augur/sim:ids",
+        "//finance/augur/sim:market_path",
+        "//finance/augur/sim:prepared",
+        "//finance/augur/sim:tlh",
+        "//finance/augur/sim:world",
+        "@pypi//more_itertools",
+        "@pypi//pytest_bazel",
+    ],
+)

@@ -1,5 +1,6 @@
 """Ordinary holding distributions, rounded once per pool and then per tax slice."""
 
+from collections.abc import Collection, Sequence
 from copy import deepcopy
 
 from finance.augur.sim.accounting import Accounting
@@ -8,27 +9,24 @@ from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.holdings import Holdings
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import checked_count, distribution_value, mul_div
-from finance.augur.sim.prepared import PreparedScenario
+from finance.augur.sim.prepared import PreparedDistribution
 from finance.augur.sim.scenario import InterestIncome
 
 
 class Distributions:
-    def __init__(self) -> None:
+    def __init__(self, specs: Sequence[PreparedDistribution], managed_slots: Collection[tuple[str, str, str]]) -> None:
+        """`managed_slots` are the `(agent_id, holding_account_id, asset_id)` holdings a TLH component settles instead."""
+        self.specs: tuple[PreparedDistribution, ...] = tuple(specs)
+        self.managed_slots: set[tuple[str, str, str]] = set(managed_slots)
         # This month's outcomes, cleared by `begin_month`.
         self.outcomes: list[DistributionOutcome] = []
 
     def begin_month(self) -> None:
         self.outcomes.clear()
 
-    def advance(
-        self, scenario: PreparedScenario, accounting: Accounting, holdings: Holdings, market: MarketPath, month: int
-    ) -> None:
-        for spec in scenario.distributions:
-            if any(
-                (row.owner_agent_id, row.account_id, row.asset_id)
-                == (spec.agent_id, spec.holding_account_id, spec.asset_id)
-                for row in scenario.tlh_portfolios
-            ):
+    def advance(self, accounting: Accounting, holdings: Holdings, market: MarketPath, month: int) -> None:
+        for spec in self.specs:
+            if (spec.agent_id, spec.holding_account_id, spec.asset_id) in self.managed_slots:
                 continue
             lots = [
                 lot

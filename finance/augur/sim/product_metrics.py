@@ -9,13 +9,16 @@ from enum import StrEnum
 import numpy as np
 from jaxtyping import Bool, Int64
 
+from finance.augur.sim.holdings import private_issuer
 from finance.augur.sim.metric_composition import (
     BASE_METRIC_NAMES,
     DERIVED_METRIC_NAMES,
     compose_metric,
     terminal_series,
 )
+from finance.augur.sim.money import checked_count, position_value
 from finance.augur.sim.quantiles import currency_quantiles
+from finance.augur.sim.world import World
 
 
 class OutcomeBasis(StrEnum):
@@ -173,4 +176,49 @@ def projection_summaries(
     return ProductProjectionSummaries(
         metric_fan=metric_fan(arrays, metric=metric, percentiles=percentiles),
         terminal_distribution=terminal_summary(arrays, metric=metric),
+    )
+
+
+def product_row(world: World, actor: str) -> tuple[int, int, int, int, int, int, int]:
+    """The app's per-month metric slab for one actor, read from world state after a close."""
+    mark = world.mark_month
+    cash = sum(
+        world.accounting.ledger.balance(account) for account in world.accounting.declared if account.agent_id == actor
+    )
+    private = sum(
+        position_value(
+            world.market.value(f"private_equity_mark:{issuer}", mark), lot.units_remaining, lot.spec.quantity_scale
+        )
+        for lot in world.holdings.lots
+        if lot.spec.agent_id == actor
+        and lot.units_remaining
+        and (issuer := private_issuer(lot.spec.asset_id)) is not None
+    )
+    properties = world.properties
+    property_value = (
+        0
+        if properties is None
+        else sum(
+            properties.market_value(purchase, world.market, mark)
+            for purchase in properties.housing.purchases
+            if purchase.buyer_agent_id == actor
+            and purchase.property_id in properties.properties
+            and properties.properties[purchase.property_id].state.active
+            and f"home_value:{purchase.location_id}" in world.market.series
+        )
+    )
+    debt = sum(loan.principal for loan in world.mortgage_snapshots() if loan.agent_id == actor)
+    bonds = (
+        0
+        if world.bonds is None
+        else sum(row.principal for row in world.bonds.snapshots(world.month, mark) if row.agent_id == actor)
+    )
+    return (
+        checked_count(cash, "product cash"),
+        world.holding_value(actor, mark),
+        checked_count(private, "product private equity"),
+        checked_count(property_value, "product property"),
+        checked_count(debt, "product mortgage"),
+        world.shortfall,
+        checked_count(bonds, "product bonds"),
     )

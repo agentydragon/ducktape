@@ -93,7 +93,9 @@ def test_carryforward_offsets_short_before_long() -> None:
 
 def test_income_retains_exempt_sources_and_resets_only_one_taxpayer(federal: PreparedTaxRules) -> None:
     state_coupon = InterestIncome(issuer_jurisdiction_id="test_state")
-    income = IncomeLedger(["test_household", "test_other"], [ORDINARY_INCOME, state_coupon])
+    income = IncomeLedger([ORDINARY_INCOME, state_coupon])
+    income.enroll("test_household")
+    income.enroll("test_other")
     income.accrue("test_household", ORDINARY_INCOME, 100)
     income.accrue("test_household", state_coupon, 20)
     income.accrue("test_other", ORDINARY_INCOME, 500)
@@ -110,7 +112,8 @@ def test_income_retains_exempt_sources_and_resets_only_one_taxpayer(federal: Pre
 
 
 def test_untaxed_recipients_do_not_acquire_income_rows() -> None:
-    income = IncomeLedger(["test_household"], [ORDINARY_INCOME])
+    income = IncomeLedger([ORDINARY_INCOME])
+    income.enroll("test_household")
     income.accrue("test_counterparty", ORDINARY_INCOME, 10)
     assert income.by_source == {("test_household", ORDINARY_INCOME): 0}
 

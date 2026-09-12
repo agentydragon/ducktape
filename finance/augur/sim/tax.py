@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from finance.augur.sim.compiler.tax import PreparedTaxBracket, PreparedTaxRules
@@ -52,8 +52,13 @@ class TaxAssessment:
 class IncomeLedger:
     """Income remains per source, including income a particular jurisdiction exempts."""
 
-    def __init__(self, taxpayers: Iterable[str], sources: Sequence[TransferIncomeCategory]) -> None:
-        self.by_source = {(agent, source): 0 for agent in taxpayers for source in sources}
+    def __init__(self, sources: Sequence[TransferIncomeCategory]) -> None:
+        self.sources = tuple(sources)
+        self.by_source: dict[tuple[str, TransferIncomeCategory], int] = {}
+
+    def enroll(self, agent_id: str) -> None:
+        for source in self.sources:
+            self.by_source[(agent_id, source)] = 0
 
     def accrue(self, agent_id: str, source: TransferIncomeCategory, amount: int) -> None:
         key = (agent_id, source)
@@ -74,7 +79,7 @@ class IncomeLedger:
     def copy(self) -> IncomeLedger:
         """Rows are ints under frozen keys, so a fresh dict detaches the copy; `deepcopy` would
         rebuild every income-source model behind those keys."""
-        clone = IncomeLedger((), ())
+        clone = IncomeLedger(self.sources)
         clone.by_source = dict(self.by_source)
         return clone
 
