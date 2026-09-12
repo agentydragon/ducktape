@@ -21,7 +21,7 @@ function preview(): ConsentPreview {
       expires_at: "2026-09-09T12:00:00Z",
       version: 1,
     },
-    identities: { public_coder: { enabled: true }, disabled: { enabled: false } },
+    service_accounts: [{ namespace: "agentplane-test", name: "public-coder" }],
     connections: [],
     csrf_token: "test-only-csrf",
     attempted_decision: null,
@@ -49,11 +49,13 @@ function button(container: HTMLElement, label: string): HTMLButtonElement {
   return found;
 }
 
-async function chooseIdentity(container: HTMLElement): Promise<void> {
-  const select = container.querySelector<HTMLSelectElement>('select[name="identity"]');
-  if (!select) throw new Error("missing Identity select");
+const PUBLIC_CODER = { namespace: "agentplane-test", name: "public-coder" };
+
+async function chooseServiceAccount(container: HTMLElement): Promise<void> {
+  const select = container.querySelector<HTMLSelectElement>('select[name="service_account"]');
+  if (!select) throw new Error("missing ServiceAccount select");
   await act(async () => {
-    select.value = "public_coder";
+    select.value = "agentplane-test/public-coder";
     select.dispatchEvent(new Event("change", { bubbles: true }));
   });
 }
@@ -78,16 +80,17 @@ describe("ConnectionConsent", () => {
       selection.value = connection.id;
       selection.dispatchEvent(new Event("change", { bubbles: true }));
     });
-    await chooseIdentity(container);
-    expect(container.textContent).toContain("Old tokens never switch Identity");
+    await chooseServiceAccount(container);
+    expect(container.textContent).toContain("Old tokens never switch ServiceAccount");
     expect(container.textContent).toContain("registered-client-123");
+    expect(container.textContent).toContain("Acts as agentplane-test/personal");
     expect(button(container, "Authorize").disabled).toBe(true);
     const confirmation = container.querySelector<HTMLInputElement>('input[type="checkbox"]');
     if (!confirmation) throw new Error("missing authority confirmation");
     await act(async () => confirmation.click());
     expect(button(container, "Authorize").disabled).toBe(false);
-    // Changing the selected Identity requires reviewing the warning again.
-    await chooseIdentity(container);
+    // Changing the selected ServiceAccount requires reviewing the warning again.
+    await chooseServiceAccount(container);
     expect(button(container, "Authorize").disabled).toBe(true);
     await act(async () => confirmation.click());
     await act(async () => button(container, "Authorize").click());
@@ -95,7 +98,7 @@ describe("ConnectionConsent", () => {
     expect(decide).toHaveBeenCalledWith("opaque-handle", {
       verdict: "allow",
       csrf_token: "test-only-csrf",
-      identity_id: "public_coder",
+      service_account: PUBLIC_CODER,
       connection: {
         kind: "reconnect",
         connection_id: connection.id,
@@ -109,7 +112,7 @@ describe("ConnectionConsent", () => {
     expect(decide.mock.calls[1]).toEqual(decide.mock.calls[0]);
   });
 
-  it("requires an explicit enabled Identity and continues only after authorization", async () => {
+  it("requires an explicit labeled ServiceAccount and continues only after authorization", async () => {
     const navigate = vi.fn();
     const service: ConsentService = {
       preview: vi.fn(async () => preview()),
@@ -122,28 +125,28 @@ describe("ConnectionConsent", () => {
     expect(service.preview).toHaveBeenCalledWith("opaque-handle");
     expect(container.textContent).toContain("registered-client-id");
     expect(container.textContent).toContain("https://client.test/oauth/callback");
-    expect(container.querySelector('option[value="disabled"]')).toBeNull();
+    expect(container.querySelector('option[value="agentplane-test/public-coder"]')).not.toBeNull();
     expect(button(container, "Authorize").disabled).toBe(true);
-    await chooseIdentity(container);
+    await chooseServiceAccount(container);
     await act(async () => button(container, "Authorize").click());
     expect(service.decide).toHaveBeenCalledWith("opaque-handle", {
       verdict: "allow",
       csrf_token: "test-only-csrf",
       connection: { kind: "new", display_name: "Claude on wyrm2" },
-      identity_id: "public_coder",
+      service_account: PUBLIC_CODER,
     });
     expect(navigate).toHaveBeenCalledOnce();
     expect(navigate).toHaveBeenCalledWith("https://idp.test/held-authorization");
   });
 
-  it("can deny without a configured Identity and never follows the client redirect", async () => {
+  it("can deny without a labeled ServiceAccount and never follows the client redirect", async () => {
     const navigate = vi.fn();
     const service: ConsentService = {
-      preview: async () => ({ ...preview(), identities: {} }),
+      preview: async () => ({ ...preview(), service_accounts: [] }),
       decide: vi.fn<ConsentService["decide"]>(async () => ({ verdict: "deny", redirect_url: null })),
     };
     const container = await render(service, navigate);
-    expect(container.textContent).toContain("No enabled identities");
+    expect(container.textContent).toContain("No labeled caller ServiceAccounts");
     await act(async () => button(container, "Deny").click());
     expect(service.decide).toHaveBeenCalledWith("opaque-handle", { verdict: "deny", csrf_token: "test-only-csrf" });
     expect(container.textContent).toContain("Connection denied");
@@ -170,7 +173,7 @@ describe("ConnectionConsent", () => {
       .mockRejectedValueOnce(new Error("service unavailable"))
       .mockResolvedValue({ verdict: "allow", redirect_url: "https://idp.test/resume" });
     const container = await render({ preview: async () => preview(), decide });
-    await chooseIdentity(container);
+    await chooseServiceAccount(container);
     await act(async () => button(container, "Authorize").click());
     expect(container.textContent).toContain("service unavailable");
     expect(container.querySelector("input")?.disabled).toBe(true);
@@ -184,7 +187,7 @@ describe("ConnectionConsent", () => {
       verdict: "allow" as const,
       csrf_token: "test-only-csrf",
       connection: { kind: "new" as const, display_name: "Saved connection" },
-      identity_id: "public_coder",
+      service_account: PUBLIC_CODER,
     };
     const decide = vi
       .fn<ConsentService["decide"]>()

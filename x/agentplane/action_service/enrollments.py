@@ -12,16 +12,16 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 
-from x.agentplane.action_service.catalog import Key
 from x.agentplane.action_service.connections import (
     ConnectionAuthority,
     ConnectionConflictError,
     GrantBinding,
+    GrantRejectedError,
     NewConnection,
     ReconnectConnection,
 )
 from x.agentplane.action_service.db import EnrollmentRow, SessionMaker
-from x.agentplane.action_service.models import Principal, PrincipalRole, Verdict
+from x.agentplane.action_service.models import Principal, PrincipalRole, ServiceAccountRef, Verdict
 
 
 class EnrollmentInput(BaseModel):
@@ -71,7 +71,7 @@ type EnrollmentConnection = Annotated[NewConnection | ConfirmedReconnectConnecti
 class EnrollmentAllow(EnrollmentDecisionBase):
     verdict: Literal["allow"] = "allow"
     connection: EnrollmentConnection
-    identity_id: Key
+    service_account: ServiceAccountRef
 
 
 class EnrollmentDeny(EnrollmentDecisionBase):
@@ -175,8 +175,8 @@ class EnrollmentAuthority:
             if row.version != request.expected_version:
                 raise EnrollmentConflictError("enrollment version changed")
             if isinstance(request, EnrollmentAllow):
-                self._require_identity(request.identity_id)
-                row.identity_id = request.identity_id
+                self._require_caller(request.service_account)
+                row.caller = request.service_account.model_dump(mode="json")
                 match request.connection:
                     case NewConnection(display_name=name):
                         row.display_name = name
@@ -207,13 +207,14 @@ class EnrollmentAuthority:
                 )
             )
             row = _require_live(row)
-            if row.verdict != Verdict.ALLOW or row.identity_id is None:
+            if row.verdict != Verdict.ALLOW or row.caller is None:
                 raise EnrollmentRejectedError("enrollment was not approved")
             if (row.operator_issuer, row.operator_subject) != (operator.issuer, operator.subject):
                 raise EnrollmentRejectedError("issuing operator does not match consent")
             if row.exchange_claimed_at is not None:
                 raise EnrollmentRejectedError("token exchange already claimed; restart authorization")
-            self._require_identity(row.identity_id)
+            caller = ServiceAccountRef.model_validate(row.caller)
+            self._require_caller(caller)
             connection: NewConnection | ReconnectConnection
             if row.connection_id is not None and row.connection_version is not None:
                 connection = ReconnectConnection(
@@ -225,7 +226,7 @@ class EnrollmentAuthority:
                 raise EnrollmentRejectedError("enrollment has no Connection selection")
             return GrantBinding(
                 grant_id=row.id,
-                identity_id=row.identity_id,
+                service_account=caller,
                 issuer=row.issuer,
                 client_id=row.client_id,
                 activation_deadline=row.expires_at,
@@ -236,15 +237,16 @@ class EnrollmentAuthority:
         """One token family per consent; ambiguous post-claim failures need fresh OAuth."""
         async with self._sessions.begin() as db:
             row = _require_live(await db.get(EnrollmentRow, grant_id, with_for_update=True))
-            if row.verdict != Verdict.ALLOW or row.identity_id is None or row.exchange_claimed_at is not None:
+            if row.verdict != Verdict.ALLOW or row.caller is None or row.exchange_claimed_at is not None:
                 raise EnrollmentRejectedError("enrollment cannot issue another token family")
-            self._require_identity(row.identity_id)
+            self._require_caller(ServiceAccountRef.model_validate(row.caller))
             row.exchange_claimed_at = datetime.now(UTC)
 
-    def _require_identity(self, identity_id: str) -> None:
-        identity = self._connections.identities().get(identity_id)
-        if identity is None or not identity.enabled:
-            raise EnrollmentRejectedError("configured Identity is missing or disabled")
+    def _require_caller(self, caller: ServiceAccountRef) -> ServiceAccountRef:
+        try:
+            return self._connections.require_caller(caller)
+        except GrantRejectedError as error:
+            raise EnrollmentRejectedError(str(error)) from error
 
 
 def _digest(value: str) -> str:

@@ -80,3 +80,12 @@ oci_image(
     user = "1000:1000",
     visibility = ["//visibility:public"],
 )
+
+py_library(
+    name = "callers",
+    srcs = ["callers.py"],
+    deps = [
+        "//x/agentplane/action_service:models",
+        "//x/agentplane/action_service:policy_informer",
+    ],
+)

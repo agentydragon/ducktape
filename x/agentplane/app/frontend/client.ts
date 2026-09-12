@@ -39,7 +39,16 @@ export type ActionRequestView = components["schemas"]["ActionRequestView"];
 export type ActionState = components["schemas"]["ActionState"];
 export type Verdict = components["schemas"]["Verdict"];
 export type Connection = components["schemas"]["Connection"];
-export type ConnectionIdentity = components["schemas"]["Identity"];
+export type CallerServiceAccount = components["schemas"]["ServiceAccountRef"];
+
+/** `namespace/name`, as kubectl spells a ServiceAccount; the key a picker selects by. */
+export function serviceAccountKey(account: CallerServiceAccount): string {
+  return `${account.namespace}/${account.name}`;
+}
+
+export function isEligibleCaller(caller: CallerServiceAccount, accounts: CallerServiceAccount[]): boolean {
+  return accounts.some((account) => serviceAccountKey(account) === serviceAccountKey(caller));
+}
 export type McpLinkageView = components["schemas"]["McpLinkageView"];
 export type McpLinkageStartView = components["schemas"]["McpLinkageStartView"];
 export class ConnectionRequestError extends Error {
@@ -53,7 +62,7 @@ export class ConnectionRequestError extends Error {
 
 export interface ConnectionService {
   list(): Promise<Connection[]>;
-  identities(): Promise<Record<string, ConnectionIdentity>>;
+  callerServiceAccounts(): Promise<CallerServiceAccount[]>;
   rename(connection: Connection, displayName: string): Promise<Connection>;
   unbind(connection: Connection): Promise<Connection>;
 }
@@ -65,8 +74,8 @@ export const connectionService: ConnectionService = {
     if (error) throw new ConnectionRequestError(status, displayableError(error));
     return data;
   },
-  async identities() {
-    const { data, error, response } = await api.GET("/connection-identities");
+  async callerServiceAccounts() {
+    const { data, error, response } = await api.GET("/connection-service-accounts");
     const status = response.status;
     if (error) throw new ConnectionRequestError(status, displayableError(error));
     return data;

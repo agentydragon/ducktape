@@ -17,10 +17,16 @@ from google.protobuf.json_format import MessageToDict
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from x.agentplane.action_service.client import OperatorActionServiceClient
-from x.agentplane.action_service.connections import Connection, ConnectionRename, ConnectionVersion, Identity
+from x.agentplane.action_service.connections import Connection, ConnectionRename, ConnectionVersion
 from x.agentplane.action_service.enrollments import EnrollmentDecisionResult
 from x.agentplane.action_service.mcp_linkage import McpLinkageStart, McpLinkageStartView, McpLinkageView
-from x.agentplane.action_service.models import ActionEventView, ActionRequestView, ActionState, DecisionInput
+from x.agentplane.action_service.models import (
+    ActionEventView,
+    ActionRequestView,
+    ActionState,
+    DecisionInput,
+    ServiceAccountRef,
+)
 from x.agentplane.app import auth_routes, bridge as runner_bridge
 from x.agentplane.app.action_federation import (
     FederatedOperatorActions,
@@ -360,9 +366,9 @@ async def disconnect_mcp_linkage(server_id: str, client: OperatorActions) -> Mcp
     return await client.disconnect_mcp_linkage(server_id)
 
 
-@connections_router.get("/connection-identities")
-async def connection_identities(client: OperatorActions) -> dict[str, Identity]:
-    return await client.list_identities()
+@connections_router.get("/connection-service-accounts")
+async def connection_service_accounts(client: OperatorActions) -> list[ServiceAccountRef]:
+    return await client.caller_service_accounts()
 
 
 @connections_router.get("/connections")

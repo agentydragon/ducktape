@@ -27,13 +27,7 @@ from util.testing.asgi import serve_app
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair, sign_jwt
 from x.agentplane.action_service import api as service_api
 from x.agentplane.action_service.catalog import ActionCatalog, ActionGroup, ActionIdentity, McpExecutorBinding
-from x.agentplane.action_service.connections import (
-    ConnectionAuthority,
-    GrantBinding,
-    GrantStatus,
-    Identity,
-    NewConnection,
-)
+from x.agentplane.action_service.connections import ConnectionAuthority, GrantBinding, GrantStatus, NewConnection
 from x.agentplane.action_service.database_migrate import apply_migrations
 from x.agentplane.action_service.db import ActionStore, make_engine, make_sessionmaker
 from x.agentplane.action_service.enrollments import ConfirmedReconnectConnection, EnrollmentAuthority, EnrollmentInput
@@ -47,6 +41,7 @@ from x.agentplane.action_service.models import (
 )
 from x.agentplane.action_service.operator_oidc import OidcOperatorAuthenticator, OperatorOidcSettings
 from x.agentplane.action_service.service import ActionService
+from x.agentplane.action_service.test_fixtures.callers import PERSONAL, eligible_callers
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.app.action_federation import ExchangeFederationSettings, FederatedOperatorActions
 from x.agentplane.app.api import Provider, create_app
@@ -125,9 +120,7 @@ async def review(
         idp_url = f"{idp_origin}/application/o/login/"
         target_issuer = f"{idp_origin}/application/o/actions/"
         target = OperatorOidcSettings(issuer=target_issuer, audience="test-actions", jwks_uri=f"{idp_url}jwks/")
-        connections = ConnectionAuthority(
-            make_sessionmaker(engine), {"public_coder": Identity(), "disabled": Identity(enabled=False)}
-        )
+        connections = ConnectionAuthority(make_sessionmaker(engine), eligible_callers(PERSONAL))
         enrollments = EnrollmentAuthority(make_sessionmaker(engine), connections)
         downstream = service_api.create_app(
             service,
@@ -292,7 +285,7 @@ async def test_connection_management_preserves_federation_csrf_versions_and_hist
     grant = await review.connections.bind(
         GrantBinding(
             grant_id=uuid4(),
-            identity_id="public_coder",
+            service_account=PERSONAL,
             issuer="https://test-actions.invalid",
             client_id="test-external-client",
             activation_deadline=datetime.now(UTC) + timedelta(minutes=10),
@@ -303,7 +296,7 @@ async def test_connection_management_preserves_federation_csrf_versions_and_hist
     original = await review.connections.get(grant.connection_id)
     path = f"/connections/{original.id}"
     browser = review.browser
-    for endpoint in ["/connections", "/connection-identities", path]:
+    for endpoint in ["/connections", "/connection-service-accounts", path]:
         assert (await browser.get(endpoint)).status_code == 401
         assert (await browser.get(endpoint, headers=AGENT_AUTH)).status_code == 403
     for method, endpoint, body in [
@@ -313,10 +306,7 @@ async def test_connection_management_preserves_federation_csrf_versions_and_hist
         assert (await browser.request(method, endpoint, json=body)).status_code == 401
         assert (await browser.request(method, endpoint, json=body, headers=AGENT_AUTH)).status_code == 403
     await browser.get("/auth/login")
-    assert (await browser.get("/connection-identities")).json() == {
-        "public_coder": {"enabled": True},
-        "disabled": {"enabled": False},
-    }
+    assert (await browser.get("/connection-service-accounts")).json() == [PERSONAL.model_dump()]
     assert (await browser.get("/connections")).json() == [original.model_dump(mode="json")]
     assert (await browser.get(path)).json() == original.model_dump(mode="json")
     rename = {"display_name": " Renamed ", "expected_version": original.version}
@@ -332,7 +322,7 @@ async def test_connection_management_preserves_federation_csrf_versions_and_hist
     assert (await browser.post(f"{path}/unbind", json={"expected_version": original.version})).status_code == 403
     browser.headers["Origin"] = saved_origin
     assert await review.connections.get(original.id) == original
-    assert (await browser.patch(path, json={**rename, "identity_id": "disabled"})).status_code == 422
+    assert (await browser.patch(path, json={**rename, "service_account": PERSONAL.model_dump()})).status_code == 422
     assert (await browser.patch(path, json={**rename, "expected_version": 0})).status_code == 422
     renamed = await browser.patch(path, json=rename)
     assert renamed.status_code == 200
@@ -358,7 +348,7 @@ async def test_connection_management_fails_closed_without_valid_federation(
     await review.browser.get("/auth/login")
     expected = 503 if operator_connection == "disabled" else 403
     assert (await review.browser.get("/connections")).status_code == expected
-    assert (await review.browser.get("/connection-identities")).status_code == expected
+    assert (await review.browser.get("/connection-service-accounts")).status_code == expected
 
 
 async def test_operator_decision_reaches_canonical_service_and_mcp_once(review: Review) -> None:
@@ -609,7 +599,7 @@ async def test_consent_requires_operator_same_origin_and_preview_csrf(review: Re
     preview = response.json()
     assert preview["enrollment"]["client_id"] == "test-external-client"
     assert preview["enrollment"]["redirect_uri"] == "https://external-client.test/callback"
-    assert preview["identities"] == {"public_coder": {"enabled": True}, "disabled": {"enabled": False}}
+    assert preview["service_accounts"] == [PERSONAL.model_dump()]
     assert preview["attempted_decision"] is None
     assert "browser_binding" not in response.text
     assert "access_token" not in response.text
@@ -634,7 +624,7 @@ async def test_consent_allow_round_trip_replays_across_app_replicas(review: Revi
         "verdict": "allow",
         "csrf_token": preview["csrf_token"],
         "connection": {"kind": "new", "display_name": "My Claude on wyrm2"},
-        "identity_id": "public_coder",
+        "service_account": PERSONAL.model_dump(),
     }
     result = await browser.post(f"{path}/decision", json=body)
     assert result.status_code == 200, result.text
@@ -661,7 +651,7 @@ async def test_consent_allow_round_trip_replays_across_app_replicas(review: Revi
         code_challenge="test-pkce-test-external-client",
         operator=Principal(issuer=review.issuer, subject=SUBJECT_A, role=PrincipalRole.OPERATOR),
     )
-    assert approved.identity_id == "public_coder"
+    assert approved.service_account == PERSONAL
     assert review.exchanged_subjects
     assert set(review.exchanged_subjects) == {SUBJECT_A}
 
@@ -685,7 +675,7 @@ async def test_existing_connection_consent_requires_confirmation_and_preserves_r
     old = await review.connections.bind(
         GrantBinding(
             grant_id=uuid4(),
-            identity_id="public_coder",
+            service_account=PERSONAL,
             issuer="https://actions.test",
             client_id="test-old-client",
             activation_deadline=datetime.now(UTC) + timedelta(minutes=10),
@@ -702,7 +692,7 @@ async def test_existing_connection_consent_requires_confirmation_and_preserves_r
     body = ConsentAllow(
         verdict="allow",
         csrf_token=preview["csrf_token"],
-        identity_id="public_coder",
+        service_account=PERSONAL,
         connection=ConfirmedReconnectConnection(
             connection_id=connection.id, expected_version=connection.version, authority_change_confirmed=True
         ),
@@ -742,7 +732,7 @@ async def test_consent_interactions_have_distinct_csrf_and_reject_extra_authorit
     for extra in (
         {"redirect_url": "https://evil.test"},
         {"browser_binding": "attacker-supplied"},
-        {"identity_id": "public_coder"},
+        {"service_account": PERSONAL.model_dump()},
     ):
         response = await browser.post(
             f"{first}/decision", json={"verdict": "deny", "csrf_token": one["csrf_token"], **extra}

@@ -26,13 +26,14 @@ from x.agentplane.action_service.connections import (
     GrantBinding,
     GrantRejectedError,
     GrantStatus,
-    Identity,
     NewConnection,
     ReconnectConnection,
 )
 from x.agentplane.action_service.db import ActionNotFoundError, ActionStore, Base, ConnectionGrantRow, make_sessionmaker
-from x.agentplane.action_service.models import ActionRequestInput, Principal, PrincipalRole
+from x.agentplane.action_service.models import ActionRequestInput, Principal, PrincipalRole, ServiceAccountRef
+from x.agentplane.action_service.policy_informer import PolicyIndex, namespaced_key
 from x.agentplane.action_service.service import ActionService
+from x.agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, UNLABELED, eligible_callers
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
@@ -40,10 +41,10 @@ from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 ISSUER = "https://actions.example.test"
 
 
-def binding(*, identity: str = "personal", client: str = "client-1") -> GrantBinding:
+def binding(*, service_account: ServiceAccountRef = PERSONAL, client: str = "client-1") -> GrantBinding:
     return GrantBinding(
         grant_id=uuid4(),
-        identity_id=identity,
+        service_account=service_account,
         issuer=ISSUER,
         client_id=client,
         activation_deadline=datetime.now(UTC) + timedelta(minutes=10),
@@ -52,7 +53,7 @@ def binding(*, identity: str = "personal", client: str = "client-1") -> GrantBin
 
 
 def authority(engine: AsyncEngine) -> ConnectionAuthority:
-    return ConnectionAuthority(make_sessionmaker(engine), {"personal": Identity(), "work": Identity()})
+    return ConnectionAuthority(make_sessionmaker(engine), eligible_callers(PERSONAL, OTHER))
 
 
 async def test_binding_retries_are_atomic_and_survive_authority_replacement(engine: AsyncEngine) -> None:
@@ -82,11 +83,11 @@ async def test_binding_retries_are_atomic_and_survive_authority_replacement(engi
             await replacement.resolve(request.grant_id, issuer=issuer, client_id=client_id)
 
 
-async def test_same_identity_shares_receipts_while_distinct_identities_are_isolated(engine: AsyncEngine) -> None:
+async def test_same_service_account_shares_receipts_while_distinct_accounts_are_isolated(engine: AsyncEngine) -> None:
     service = authority(engine)
     principals = []
     submitted_grants = []
-    for request in [binding(), binding(client="client-2"), binding(identity="work", client="client-3")]:
+    for request in [binding(), binding(client="client-2"), binding(service_account=OTHER, client="client-3")]:
         await service.bind(request)
         submitted_grants.append(await service.activate(request.grant_id))
         principals.append(
@@ -131,7 +132,7 @@ async def test_rename_unbind_and_reconnect_preserve_immutable_grants(engine: Asy
     renamed = await service.rename(connection.id, expected_version=connection.version, display_name=" New name ")
     assert renamed.display_name == "New name"
     assert renamed.grants == [active]
-    reconnect = binding(identity="work", client="client-2").model_copy(
+    reconnect = binding(service_account=OTHER, client="client-2").model_copy(
         update={"connection": ReconnectConnection(connection_id=connection.id, expected_version=renamed.version)}
     )
     replacement = await service.bind(reconnect)
@@ -149,9 +150,9 @@ async def test_rename_unbind_and_reconnect_preserve_immutable_grants(engine: Asy
     ).status is GrantStatus.ACTIVE
     current = await service.get(connection.id)
     old, new = current.grants
-    assert (old.identity_id, old.issuer, old.client_id, old.revision) == ("personal", ISSUER, "client-1", 1)
+    assert (old.caller, old.issuer, old.client_id, old.revision) == (PERSONAL, ISSUER, "client-1", 1)
     assert old.status is GrantStatus.REVOKED
-    assert (new.identity_id, new.client_id) == ("work", "client-2")
+    assert (new.caller, new.client_id) == (OTHER, "client-2")
     unbound = await service.unbind(connection.id, expected_version=current.version)
     assert all(grant.status is GrantStatus.REVOKED for grant in unbound.grants)
     assert await service.unbind(connection.id, expected_version=current.version) == unbound
@@ -177,7 +178,7 @@ async def test_concurrent_reconnect_has_one_winner_and_stale_edits_conflict(engi
         await service.rename(connection.id, expected_version=connection.version, display_name="Stale")
 
 
-async def test_disabled_removed_and_expired_grants_do_not_authorize(engine: AsyncEngine) -> None:
+async def test_unlabeled_removed_unsynced_and_expired_grants_do_not_authorize(engine: AsyncEngine) -> None:
     service = authority(engine)
     request = binding()
     grant = await service.bind(request)
@@ -192,17 +193,19 @@ async def test_disabled_removed_and_expired_grants_do_not_authorize(engine: Asyn
     expired = binding().model_copy(update={"activation_deadline": datetime.now(UTC) - timedelta(seconds=1)})
     with pytest.raises(GrantRejectedError):
         await service.bind(expired)
-    for identities in [{}, {"personal": Identity(enabled=False)}]:
-        changed = ConnectionAuthority(make_sessionmaker(engine), identities)
+    unsynced = PolicyIndex()
+    unsynced.service_accounts[namespaced_key(PERSONAL.namespace, PERSONAL.name)] = PERSONAL
+    for callers in [eligible_callers(), eligible_callers(OTHER, UNLABELED), unsynced]:
+        changed = ConnectionAuthority(make_sessionmaker(engine), callers)
         with pytest.raises(GrantRejectedError):
             await changed.bind(binding())
         with pytest.raises(GrantRejectedError):
             await changed.activate(grant.id)
     live = await service.bind(binding(client="still-issued"))
     await service.activate(live.id)
-    disabled = ConnectionAuthority(make_sessionmaker(engine), {"personal": Identity(enabled=False)})
+    unlabeled = ConnectionAuthority(make_sessionmaker(engine), eligible_callers(OTHER))
     with pytest.raises(GrantRejectedError):
-        await disabled.resolve(live.id, issuer=ISSUER, client_id=live.client_id)
+        await unlabeled.resolve(live.id, issuer=ISSUER, client_id=live.client_id)
 
 
 async def test_operator_routes_do_not_expose_binding_or_accept_workload_credentials(
@@ -227,10 +230,10 @@ async def test_operator_routes_do_not_expose_binding_or_accept_workload_credenti
             await http.get("/v1/operator/connections", headers={"Authorization": "Bearer workload"})
         ).status_code == 401
         http.headers["Authorization"] = f"Bearer {token}"
-        assert (await http.get("/v1/operator/identities")).json() == {
-            "personal": {"enabled": True},
-            "work": {"enabled": True},
-        }
+        assert (await http.get("/v1/operator/caller-service-accounts")).json() == [
+            OTHER.model_dump(),
+            PERSONAL.model_dump(),
+        ]
         response = await http.get(f"/v1/operator/connections/{grant.connection_id}")
         assert response.status_code == 200
         assert response.json()["grants"][0]["client_id"] == "client-1"
@@ -240,7 +243,7 @@ async def test_operator_routes_do_not_expose_binding_or_accept_workload_credenti
         assert renamed.status_code == 200
         forged = await http.patch(
             f"/v1/operator/connections/{grant.connection_id}",
-            json={"display_name": "Forged", "expected_version": 2, "identity_id": "work"},
+            json={"display_name": "Forged", "expected_version": 2, "service_account": OTHER.model_dump()},
         )
         assert forged.status_code == 422
         assert (await http.post("/v1/operator/connections", json={})).status_code == 405

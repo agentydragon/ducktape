@@ -4,7 +4,7 @@ metadata:
   name: agentplane-crds
   namespace: ducktape-flux
   annotations:
-    description: Agentplane's own CRDs (EgressPolicy, EgressBinding), cluster-scoped and shared by every Agentplane namespace; the staging seed and the proxy depend on this.
+    description: Agentplane's own CRDs (EgressPolicy, EgressBinding, EgressCredential, ActionPolicySet, ActionPolicyBinding), cluster-scoped and shared by every Agentplane namespace; the environment seeds, the egress proxy and the Action Service depend on this.
 spec:
   retryInterval: 1m
   interval: 10m

@@ -3,6 +3,7 @@ kind: Kustomization
 namespace: agentplane-staging
 resources:
   - serviceaccount.yaml
+  - serviceaccount-claude-ai.yaml
   - rbac.yaml
   - configmap-action-federation.yaml
   - deployment.yaml

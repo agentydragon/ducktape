@@ -8,9 +8,6 @@ web_push:
   allowed_push_hosts:
     - fcm.googleapis.com
     - updates.push.services.mozilla.com
-identities:
-  personal:
-    enabled: true
 mcp_servers:
   github:
     server_id: github

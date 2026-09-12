@@ -34,7 +34,6 @@ flowchart TB
     MCPAUTH["Remaining acceptance<br/>credentialed MCP account<br/>OAuth linkage + provider proof"]:::active
     CRED["Deferred decision<br/>static credential + binding design<br/>ownership, lifecycle, revocation"]:::future
     MCPDEPLOY["Remaining acceptance<br/>staged MCP endpoint rollout<br/>public MCP and Sandbox reachability"]:::active
-    CALLERPOLICY["In flight<br/>ActionPolicySet/Binding CRDs, ServiceAccount callers<br/>evaluate-once auto-approval"]:::active
     SBPOLICY["Planned behavior<br/>app-written Sandbox bindings<br/>and read-only effective policy view"]:::future
     ELEVATE["Planned behavior<br/>agent-requested temporary permission<br/>ServiceAccount and Sandbox callers, operator-approved"]:::future
     FORK["Deferred design<br/>per-task identity fork<br/>sub-identity scoped by token possession"]:::future
@@ -66,7 +65,6 @@ flowchart TB
 
     CRED --> MCPAUTH
     MCPAUTH --> PROD
-    CALLERPOLICY --> SBPOLICY
     SBPOLICY --> ELEVATE
     APPROVALUI --> ELEVATE
     ELEVATE --> FORK
@@ -106,17 +104,17 @@ provenance display are implemented. The remaining first-delivery work is staging
 (`MCPDEPLOY`) and real operator/client proof (`APPROVALUI` / `CLAUDEAI`). `EXTERNALMCP` additionally proves independently
 running Claude Code. The [external connection plan](external_mcp_connections.md) owns remaining
 delivery and compatibility work, not a duplicate of the implemented contracts.
-The first external slice uses human approval. The policy model is decided in the
-[Action policy plan](action_policies.md) and `CALLERPOLICY` implements it; neither gates the
-human-approved client proof. Connection authority already lives in PostgreSQL. A caller
-ServiceAccount does not select backend credentials or wait for `CRED`/`PROFILES`; outbound account
-OAuth remains
-`MCPAUTH`. Initial client proof does not establish full Haku tool parity.
-Hosted harnesses continue to call Actions from their Sandbox Threads: `CALLERPOLICY -> SBPOLICY`
-adds configurable auto-approval through concrete Actions-owned Sandbox bindings. SandboxPreset stays
+An external caller is auto-approved only by an `ActionPolicyBinding` naming its ServiceAccount,
+otherwise by the operator; the Action Service evaluates such bindings at admission and records
+what it evaluated on the Decision. None of that gates the human-approved client proof. Connection
+authority already lives in PostgreSQL. A caller ServiceAccount does not select backend credentials
+or wait for `CRED`/`PROFILES`; outbound account OAuth remains `MCPAUTH`. Initial client proof does
+not establish full Haku tool parity.
+Hosted harnesses continue to call Actions from their Sandbox Threads: `SBPOLICY` adds the
+integration app's writer for the same Actions-owned Sandbox bindings. SandboxPreset stays
 an integration-app-only recipe: the app resolves preset defaults and per-Sandbox additions into each
 subsystem's bindings. Actions and egress do not resolve presets or depend on one another. The
-[Action policy plan](action_policies.md) owns shared bounds and deciders; policy representation remains open.
+[Action policy plan](action_policies.md) owns the remaining app and deny-list steps.
 SSH execution is a modular MCP backend behind the existing MCP Executor contract. The planned first
 slice uses OpenSSH with Kubernetes Secret-mounted long-lived keys and reviewed ConfigMap host/user/key bindings;
 it deliberately does not duplicate command authorization in the executor. It also exposes a reviewed
@@ -209,25 +207,11 @@ merged source PR or a healthy old pod does not establish readiness. Then run `CL
 configuration task alone cannot satisfy it. Verify Sandbox MCP reachability in parallel; that
 caller's acceptance is not a prerequisite for `CLAUDEAI`.
 
-### `CALLERPOLICY` — bounded Action deciders for external and hosted callers
-
-**Planned support:** the `exact_actions` and `argument_schema` policy kinds, the policy-set
-decision provider inside the existing DecisionProvider aggregation, a typed `DecisionContext`
-caller, and Decision evidence naming the evaluated objects. Policies are evaluated once, at
-admission; dispatch keeps only the existing caller-authority checks. `autoDenyIf` and
-`autoDenyUnless` fail closed regardless of any other provider's allow; a request matching no list
-takes the human path.
-
-**Acceptance:** per the [Action policy plan](action_policies.md): matching auto-allow, argument
-miss to human review, caller-class isolation, expiry honored at admission only, and no
-authority from forged fields, invalid sets, an unsynced informer, or a deleted binding. Trusted
-Connection and Sandbox caller resolution already exist; this task adds ServiceAccount subjects,
-policy objects and enforcement. Broad `PROFILES` and a policy DSL remain deferred.
-
 ### `SBPOLICY` — preset-selected and per-Sandbox auto-approval
 
 **Planned behavior:** an agent harness running in a Thread in a Sandbox calls the Action Service
-through its existing workload authentication. The integration app writes one `ActionPolicyBinding`
+through its existing workload authentication, which already evaluates the Sandbox's
+`ActionPolicyBinding`s at admission. The integration app writes one `ActionPolicyBinding`
 per Sandbox it creates, from the preset's set list, next to the `EgressBinding` it already writes,
 both owner-referenced to the Sandbox; later widening of one Sandbox is another binding, usually
 with `expiresAt`. Neither enforcement service knows preset names or depends on the other.
@@ -270,9 +254,10 @@ else depends on it.
 
 **Operator-priority milestone:** the operator can connect Claude.ai to the deployed Action Service
 MCP facade, name/bind the Connection through integration-app enrollment, discover Actions, and use
-them under the configured Identity with real human-approved results. Preserve service safety constraints
-and exact authenticated client provenance. Configurable per-Identity auto-approval is subsequent
-`CALLERPOLICY` work, not an acceptance requirement for this milestone.
+them under the selected caller ServiceAccount with real human-approved results. Preserve service
+safety constraints and exact authenticated client provenance. Auto-approval for that
+ServiceAccount is an `ActionPolicyBinding` naming it, not an acceptance requirement for this
+milestone.
 Registration alone, mocks, and CI composition tests do not establish this user-visible outcome.
 
 The broader `EXTERNALMCP` milestone also covers local Claude Code. The operator priority above names
@@ -311,8 +296,8 @@ start code or schema work from it until Rai confirms the design.
 
 ### `PROFILES` — cross-cutting capability profiles
 
-The Action-only reusable policy-set slice is in flight under `CALLERPOLICY`; it serves both
-Sandbox types and ServiceAccount callers without waiting for this broader profile.
+The Action-only reusable policy-set slice (`ActionPolicySet`, `ActionPolicyBinding`) has landed;
+it serves both Sandbox types and ServiceAccount callers without waiting for this broader profile.
 
 **Deferred decision — Rai confirmation required:** define a durable authority for capabilities shared by egress, approvals, MCP
 reachability, and other tool permissions. Do not widen the landed launch-preset slice merely to

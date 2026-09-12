@@ -252,6 +252,7 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
             "reason_description",
             "idempotency_key",
             "decided_at",
+            "policy_evidence",
         }
         assert len(executor.requests) == 1
         assert executor.requests[0].arguments["nested"] == {"api_key": "provider-material"}

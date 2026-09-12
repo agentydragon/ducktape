@@ -8,9 +8,10 @@ Everything reference server with streamable HTTP support. Its
 are maintained outside this repository. There is no Agentplane MCP server
 implementation, custom image build, or image publication pipeline for this test.
 
-The Action Service connects over streamable HTTP. Its opt-in decision provider permits
-only the `echo` Action in the reviewed `everything` group with one bounded string
-`message` argument. Other tools receive no automatic allow. The server has no workload
+The Action Service connects over streamable HTTP. Nothing auto-approves the group's Actions
+by default: the acceptance suite binds the Sandbox it launches to an `ActionPolicySet` that
+allows only the `echo` Action, with a bounded string `message` argument where the scenario
+needs it. Other tools receive no automatic allow. The server has no workload
 token, mounted credentials, writable root, public ingress, or outbound network access.
 The broader upstream tool catalog is not a reason to maintain our own replacement server.
 

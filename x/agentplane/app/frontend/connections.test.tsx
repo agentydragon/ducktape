@@ -38,20 +38,20 @@ function button(container: HTMLElement, name: string): HTMLButtonElement {
 function service(): ConnectionService {
   return {
     list: vi.fn(async () => [sampleConnection()]),
-    identities: vi.fn(async () => ({ personal: { enabled: false } })),
+    callerServiceAccounts: vi.fn(async () => [{ namespace: "agentplane-test", name: "other" }]),
     rename: vi.fn(),
     unbind: vi.fn(),
   };
 }
-it("renders immutable IDs and distinguishes disabled Identity from active grant", async () => {
+it("renders immutable IDs and distinguishes an unlabeled ServiceAccount from an active grant", async () => {
   const container = await render(service());
   for (const value of [
     "Claude desktop",
     sampleConnection().id,
     "registered-client-123",
     "Grant active",
-    "personal",
-    "disabled",
+    "agentplane-test/personal",
+    "not a labeled caller",
   ])
     expect(container.textContent).toContain(value);
 });

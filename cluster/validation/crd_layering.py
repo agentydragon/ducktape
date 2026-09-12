@@ -67,7 +67,7 @@ OPERATOR_CRDS: dict[str, set[str]] = {
         "VolumeUploadSource",
     },
     "openclaw-operator": {"OpenClawInstance", "OpenClawSelfConfig"},
-    "agentplane-crds": {"EgressPolicy", "EgressBinding"},
+    "agentplane-crds": {"EgressPolicy", "EgressBinding", "ActionPolicySet", "ActionPolicyBinding"},
     "sshpiper-crds": {"Pipe"},
     # TODO: if non-GHCR image automations are added, add a separate entry here
     # (e.g. "flux-image-automation-dockerhub": {"ImageRepository", ...}).

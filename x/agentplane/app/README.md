@@ -168,10 +168,11 @@ configuration, and each launch sends only resolved concrete fields to the runtim
 The Action Service's OAuth adapter sends a validated authorization request to
 `/#/connection-enrollments/{handle}`. The hash route survives the app's existing operator
 login. The page shows the client-supplied name, client ID, and validated redirect as text,
-asks for a new Connection name or existing Connection and enabled configured Identity, and offers
-Authorize/Deny. Existing selection shows its UUID, reviewed version and grant history, and requires
-explicit authority-replacement confirmation. Changing Identity clears that confirmation. A fresh
-authorization can reconnect to the same Identity or choose another; no policy editing is offered.
+asks for a new Connection name or existing Connection and a labeled caller ServiceAccount, and
+offers Authorize/Deny. Existing selection shows its UUID, reviewed version and grant history, and
+requires explicit authority-replacement confirmation. Changing the ServiceAccount clears that
+confirmation. A fresh authorization can reconnect to the same ServiceAccount or choose another; no
+policy editing is offered.
 
 Both `/connection-enrollments/{handle}/preview` and `/decision` are operator-only POSTs
 with the existing exact-Origin check and per-request federation. The BFF stores a random
@@ -185,7 +186,7 @@ response, including page reload; changing it requires a fresh OAuth authorizatio
 The existing Connection's reviewed version is part of that exact decision; a 409 never silently
 refreshes it or retries replacement. Consent does not revoke old authority: token exchange's
 version-checked reservation does, before replacement activation. Failed issuance does not restore
-old grants, and old credentials and Action provenance never change Identity.
+old grants, and old credentials and Action provenance never change ServiceAccount.
 The v2 session interaction namespace requires in-flight pre-upgrade consent pages to restart OAuth;
 ordinary operator login sessions remain valid.
 
@@ -193,8 +194,9 @@ Authorize resumes only the server-held continuation returned by the authenticate
 authority; no client or browser-provided URL is accepted. Deny grants nothing and leaves a
 terminal page. Completing consent alone does not activate a grant: the OAuth adapter still
 verifies the same upstream operator and completes issuance. Operator credentials never
-reach the external client. New external-client Actions use human approval; clients sharing
-an Identity share receipts while submitted Actions preserve exact connection provenance.
+reach the external client. An external-client Action is auto-approved only by an
+ActionPolicyBinding naming its ServiceAccount, otherwise by the operator; clients sharing a
+ServiceAccount share receipts while submitted Actions preserve exact connection provenance.
 
 ## Action review
 
@@ -206,7 +208,7 @@ unchanged, including expected versions, idempotency keys, and the human-authored
 The same note is visible to the requesting caller and operator; the existing UI displays it.
 Provider-authored bounded `reason_code`/`reason_description` are separate outcome evidence, not
 another human note. OpenAPI and frontend types are generated from the canonical models.
-External receipts display the immutable authenticated Identity, issuer/client and Connection
+External receipts display the immutable authenticated ServiceAccount, issuer/client and Connection
 from `external_grant`; the grant ID and revision are expandable audit detail. This is
 submission-time evidence, not the Connection's current authorization status. Receipts without
 that snapshot retain their caller-principal display.
@@ -233,12 +235,12 @@ redaction are unchanged. There is no app-owned Action/Decision/Execution authori
 
 `/#/connections` lists the Action Service's runtime named Connections and immutable grant history.
 The operator can rename or explicitly confirm unbind; unbind revokes active/pending authority,
-without deleting history or stopping already claimed executions. Configured Identity availability
-is displayed separately from each grant's lifecycle status. A missing Identity is not displayed as
-enabled, and an active grant does not imply its Identity remains enabled.
+without deleting history or stopping already claimed executions. Whether a grant's ServiceAccount
+is still a labeled caller is displayed separately from the grant's lifecycle status: an active grant
+does not imply its ServiceAccount remains eligible.
 
 The BFF proxies `GET /connections[/{id}]`, `PATCH /connections/{id}`,
-`POST /connections/{id}/unbind`, and `GET /connection-identities` through the same request-bound
+`POST /connections/{id}/unbind`, and `GET /connection-service-accounts` through the same request-bound
 operator federation as Action review. Unsafe browser requests require exact Origin. Canonical
 `ConnectionRename` and `ConnectionVersion` models carry the version the operator reviewed; a 409
 refreshes the inventory and asks for review, never automatically retrying a destructive operation.

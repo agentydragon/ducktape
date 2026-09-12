@@ -105,7 +105,6 @@ def test_rendered_ssh_binding_uses_shared_bearer_file(
     config: McpHttpServerConfigValue = TypeAdapter(McpHttpServerConfig).validate_python(group.executor.config)
     assert config.auth == "static_bearer"
     McpActionGroupExecutor.from_group("ssh", group)
-    assert staging_settings.fixture_auto_allow is None
     deployment = one(r for r in staging_rendered if r["kind"] == "Deployment")
     pod = deployment["spec"]["template"]["spec"]
     actions = one(pod["containers"])
@@ -176,8 +175,7 @@ def test_testing_has_no_ssh_binding_or_credentials(settings: Settings, rendered:
 
 
 def test_rendered_remote_binding_reaches_existing_service(settings: Settings, rendered: list[dict[str, Any]]) -> None:
-    assert settings.fixture_auto_allow is not None
-    group = settings.action_groups[settings.fixture_auto_allow.group]
+    group = settings.action_groups["everything"]
     config: McpHttpServerConfigValue = TypeAdapter(McpHttpServerConfig).validate_python(group.executor.config)
     endpoint = urlsplit(str(config.url))
     service = one(
@@ -202,9 +200,7 @@ def test_rendered_remote_binding_reaches_existing_service(settings: Settings, re
     assert service["metadata"]["namespace"] in settings.allowed_service_account_namespaces
     assert pod["automountServiceAccountToken"] is False
     assert not group.actions
-    catalog = ActionCatalog(groups=settings.action_groups)
-    assert len(settings.decision_providers(catalog)) == 1
-    McpActionGroupExecutor.from_group(settings.fixture_auto_allow.group, group)
+    McpActionGroupExecutor.from_group("everything", group)
 
 
 @pytest.mark.parametrize(
@@ -223,8 +219,7 @@ def test_rendered_remote_binding_reaches_existing_service(settings: Settings, re
 async def test_reviewed_binding_errors_fail_before_any_connection(
     settings: Settings, config: dict[str, JsonValue]
 ) -> None:
-    assert settings.fixture_auto_allow is not None
-    settings.action_groups[settings.fixture_auto_allow.group].executor.config = config
+    settings.action_groups["everything"].executor.config = config
     with patch.object(McpActionGroupExecutor, "start", new_callable=AsyncMock) as start:
         with pytest.raises(ValueError, match="invalid MCP binding") as error:
             async with running_executor(ActionCatalog(groups=settings.action_groups)):

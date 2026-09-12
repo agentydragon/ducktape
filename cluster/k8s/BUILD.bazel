@@ -56,6 +56,8 @@ filegroup(
 # Focused validation targets inline these direct-file inputs in their data lists.
 exports_files(
     [
+        "agentplane-crds/crd-actionpolicybindings.yaml",
+        "agentplane-crds/crd-actionpolicysets.yaml",
         "agentplane-crds/crd-egressbindings.yaml",
         "agentplane-crds/crd-egresscredentials.yaml",
         "agentplane-crds/crd-egresspolicies.yaml",

@@ -38,13 +38,7 @@ from x.agentplane.acceptance.dcr import register_client
 from x.agentplane.action_service.api import create_app
 from x.agentplane.action_service.auth import DisabledOperatorAuthenticator
 from x.agentplane.action_service.catalog import ActionCatalog
-from x.agentplane.action_service.connections import (
-    ConnectionAuthority,
-    GrantRejectedError,
-    GrantStatus,
-    Identity,
-    NewConnection,
-)
+from x.agentplane.action_service.connections import ConnectionAuthority, GrantRejectedError, GrantStatus, NewConnection
 from x.agentplane.action_service.db import ActionStore, EnrollmentRow, make_sessionmaker
 from x.agentplane.action_service.enrollments import (
     ConfirmedReconnectConnection,
@@ -53,9 +47,17 @@ from x.agentplane.action_service.enrollments import (
     EnrollmentConnection,
     EnrollmentPreviewInput,
 )
-from x.agentplane.action_service.models import ActionRequestView, CancellationResult, Executor, Principal, PrincipalRole
+from x.agentplane.action_service.models import (
+    ActionRequestView,
+    CancellationResult,
+    Executor,
+    Principal,
+    PrincipalRole,
+    ServiceAccountRef,
+)
 from x.agentplane.action_service.oauth import ActionsOAuthProxy, OAuthSettings, running_oauth
 from x.agentplane.action_service.service import ActionService
+from x.agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, eligible_callers
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
 
@@ -112,7 +114,11 @@ class OAuthFixture:
         return response.headers["location"].rsplit("/", 1)[1], verifier
 
     async def approve(
-        self, handle: str, *, connection: EnrollmentConnection | None = None, identity_id: str = "public-coder"
+        self,
+        handle: str,
+        *,
+        connection: EnrollmentConnection | None = None,
+        service_account: ServiceAccountRef = PERSONAL,
     ) -> str:
         binding = secrets.token_urlsafe(32)
         preview = await self.enrollments.preview(handle, EnrollmentPreviewInput(browser_binding=binding), OPERATOR)
@@ -123,7 +129,7 @@ class OAuthFixture:
                 expected_version=preview.version,
                 idempotency_key=secrets.token_urlsafe(16),
                 connection=connection if connection is not None else NewConnection(display_name="Test external client"),
-                identity_id=identity_id,
+                service_account=service_account,
             ),
             OPERATOR,
         )
@@ -177,7 +183,7 @@ async def oauth(engine: AsyncEngine, db_url: str, tmp_path: Path) -> AsyncIterat
         upstream_subject="test-user",
         approving_operator=OPERATOR,
     )
-    connections = ConnectionAuthority(make_sessionmaker(engine), {"public-coder": Identity(), "test-other": Identity()})
+    connections = ConnectionAuthority(make_sessionmaker(engine), eligible_callers(PERSONAL, OTHER))
     enrollments = EnrollmentAuthority(make_sessionmaker(engine), connections)
     idp = build_mock_oidc_app(
         issuer_url=issuer, private_key=private_key, public_key=public_key, authentik_compatible=True
@@ -226,7 +232,7 @@ async def test_cimd_reaches_canonical_consent_and_grants(oauth: OAuthFixture, mo
     grant = await oauth.proxy.authenticate(issued.json()["access_token"])
     assert grant is not None
     assert grant.client_id == client_id
-    assert grant.identity_id == "public-coder"
+    assert grant.caller == PERSONAL
     await oauth.connections.revoke(grant.id)
     assert await oauth.proxy.authenticate(issued.json()["access_token"]) is None
 
@@ -317,8 +323,8 @@ async def test_dcr_consent_pkce_refresh_and_revocation(oauth: OAuthFixture, db_u
     tokens = response.json()
     grant = await oauth.proxy.authenticate(tokens["access_token"])
     assert grant is not None
-    assert (grant.identity_id, grant.client_id) == ("public-coder", client_id)
-    assert grant.principal().subject == "public-coder"
+    assert (grant.caller, grant.client_id) == (PERSONAL, client_id)
+    assert grant.principal() == PERSONAL.principal()
     assert (await oauth.exchange(client_id, code, verifier)).status_code == 401
     async with make_sessionmaker(engine)() as db:
         stored_values = list(await db.scalars(text("SELECT value::text FROM agentplane_oauth_kv")))
@@ -360,10 +366,10 @@ async def test_concurrent_code_exchange_issues_at_most_one_family(oauth: OAuthFi
     assert len(await oauth.connections.list()) == 1
 
 
-@pytest.mark.parametrize("identity_id", ["public-coder", "test-other"])
+@pytest.mark.parametrize("caller", [PERSONAL, OTHER])
 @pytest.mark.parametrize("fail_activation", [False, True])
 async def test_fresh_oauth_reconnect_never_retargets_old_tokens(
-    oauth: OAuthFixture, identity_id: str, fail_activation: bool, monkeypatch: pytest.MonkeyPatch
+    oauth: OAuthFixture, caller: ServiceAccountRef, fail_activation: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     old_client = await oauth.register()
     handle, verifier = await oauth.authorize(old_client)
@@ -377,7 +383,7 @@ async def test_fresh_oauth_reconnect_never_retargets_old_tokens(
     code = await oauth.callback(
         await oauth.approve(
             handle,
-            identity_id=identity_id,
+            service_account=caller,
             connection=ConfirmedReconnectConnection(
                 connection_id=connection.id, expected_version=connection.version, authority_change_confirmed=True
             ),
@@ -399,7 +405,7 @@ async def test_fresh_oauth_reconnect_never_retargets_old_tokens(
         verified = await oauth.proxy.authenticate(result.json()["access_token"])
         assert verified is not None
         new_grant = verified
-    assert new_grant.identity_id == identity_id
+    assert new_grant.caller == caller
     assert new_grant.client_id == new_client
     assert new_grant.connection_id == old_grant.connection_id
     assert new_grant.revision == old_grant.revision + 1
@@ -496,7 +502,7 @@ async def test_token_revocation_ends_the_canonical_grant(oauth: OAuthFixture, to
     assert repeated.status_code == 200, repeated.text
 
 
-async def test_one_registration_can_authorize_distinct_connections_to_same_identity(oauth: OAuthFixture) -> None:
+async def test_one_registration_can_authorize_distinct_connections_to_same_service_account(oauth: OAuthFixture) -> None:
     client_id = await oauth.register()
     grants = []
     for _ in range(2):
@@ -544,7 +550,7 @@ async def test_consent_approver_must_match_verified_upstream_mapping(oauth: OAut
             expected_version=preview.version,
             idempotency_key="different-operator",
             connection=NewConnection(display_name="Wrong operator"),
-            identity_id="public-coder",
+            service_account=PERSONAL,
         ),
         different_operator,
     )

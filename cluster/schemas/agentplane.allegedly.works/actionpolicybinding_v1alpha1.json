@@ -1,0 +1,109 @@
+{
+  "type": "object",
+  "required": ["spec"],
+  "properties": {
+    "spec": {
+      "type": "object",
+      "required": ["subject", "policySets"],
+      "properties": {
+        "subject": {
+          "description": "Exactly one caller; the Action Service matches it to authenticated callers only.",
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 1,
+          "properties": {
+            "serviceAccount": {
+              "description": "A ServiceAccount carrying the `agentplane.allegedly.works/action-caller` label, as an external OAuth Connection acts as it.",
+              "type": "object",
+              "required": ["namespace", "name"],
+              "properties": {
+                "namespace": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "sandbox": {
+              "description": "One live Sandbox in the binding's namespace; the UID pins it, so a binding whose Sandbox is gone is inert.",
+              "type": "object",
+              "required": ["name", "uid"],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "uid": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        },
+        "policySets": {
+          "description": "ActionPolicySet names in the binding's namespace.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "expiresAt": {
+          "description": "After this instant the binding contributes nothing.",
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "status": {
+      "type": "object",
+      "properties": {
+        "conditions": {
+          "type": "array",
+          "x-kubernetes-list-type": "map",
+          "x-kubernetes-list-map-keys": ["type"],
+          "items": {
+            "description": "A metav1.Condition; the Action Service sets Ready.",
+            "type": "object",
+            "required": ["type", "status", "lastTransitionTime", "reason", "message"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "maxLength": 316,
+                "pattern": "^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$"
+              },
+              "status": {
+                "type": "string",
+                "enum": ["True", "False", "Unknown"]
+              },
+              "observedGeneration": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0
+              },
+              "lastTransitionTime": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024,
+                "pattern": "^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$"
+              },
+              "message": {
+                "type": "string",
+                "maxLength": 32768
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
