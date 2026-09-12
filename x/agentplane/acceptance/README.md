@@ -26,12 +26,24 @@ receive the Action API URL and public workload placeholder, discover the `everyt
 group's `echo` Action, submit a structured group/name request, poll until terminal,
 and report JSON. The test checks the reported result against the fresh marker's exact
 upstream echo output. It uses the existing sandbox setup/teardown and `Agent` fixtures.
-Testing GitOps (`cluster/k8s/agentplane-testing/actions/`) wires the upstream image, ActionGroup,
-narrow echo provider, and discovery egress. Run after the PR's images and manifests have rolled
-out; remote adapter tests are not evidence that the real-agent deployed test has run.
+Testing GitOps (`cluster/k8s/agentplane-testing/actions/`) wires the upstream image, ActionGroup
+and discovery egress; nothing there auto-approves. `test_agent_executes_mcp_action` first binds
+its Sandbox to an `exact_actions` set naming `everything/echo`, written through the Kubernetes
+API as below. Run after the PR's images and manifests have rolled out; remote adapter tests are
+not evidence that the real-agent deployed test has run.
+
+`test_policy_binding_auto_approves_the_bound_sandbox` writes, with the caller's own kubeconfig,
+an `ActionPolicySet` that auto-approves `everything/echo` with a string `message` of at most 200
+characters and an `ActionPolicyBinding` naming the Sandbox it launched by name and UID, then
+waits for the Action Service's `Ready` condition on both. A matching echo comes back auto-approved
+and executed, and the BFF receipt's Decision names the binding, the set and the matching policy;
+an over-long message waits for the operator; after the binding is patched to an expiry in the past
+and re-acknowledged, so does a match. The objects are deleted at teardown; the pending requests are
+denied through the BFF so nothing lingers. The role in `../../../cluster/k8s/agentplane-testing/agent-rbac/`
+grants create/get/patch/delete on the two kinds for this.
 
 `test_agent_mcp_bff_decision` adds allow/deny cases on each harness: turn 1 submits
-an echo longer than the fixture's 200-character auto-allow bound and returns only
+an echo from a Sandbox nothing binds, so it waits for the operator, and returns only
 its UUID; Python inspects and decides through the app's `/actions/{id}` BFF; the
 same Agent polls in turn 2 and returns strict JSON. Python independently checks
 durable request/Decision/Execution snapshots, exact arguments/result, operator

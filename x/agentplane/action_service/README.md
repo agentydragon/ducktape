@@ -307,19 +307,33 @@ or legacy name is accepted. Migration `0005_structured_action` removes the unuse
 without inventing a compatibility mapping. Adding the required replacement column fails
 transactionally if unexpected preexisting rows exist.
 
-## Credentialless upstream echo auto-allow
+## Action policy sets and bindings
 
-`fixture_auto_allow` defaults to absent. The testing environment
-(`cluster/k8s/agentplane-testing/actions/`) opts in for the reviewed `everything` group, bound to
-the upstream `mcp-everything` image described in [the deployment note](../docs/mcp_fixture_choice.md).
-The provider allows only that group's `echo` Action with exactly one string `message` argument
-of at most 200 characters, from an authenticated in-scope Kubernetes Sandbox UID. Unavailable
-or missing discovery, other tools, extra arguments, and untrusted identities get no allow vote.
-The MCP adapter still checks the current backend schema. Deny dominance and human fallback
-remain unchanged; opting in does not enable the operator API or grant other upstream tools.
-No custom MCP server or image is built. The real test against testing is
-`//x/agentplane/acceptance:test_mcp`: it tasks real agents with discovery, submission, event/result
-polling and a JSON report checked against the upstream echo result.
+`policy_resources` parses `ActionPolicySet` and `ActionPolicyBinding` (CRDs in
+`cluster/k8s/agentplane-crds/`) strictly: an unknown key or policy kind, an invalid JSON Schema, or
+a subject that is not exactly one of `serviceAccount`/`sandbox` makes the object an
+`InvalidResource`. `policy_informer` list-and-watches both kinds and the labeled caller
+ServiceAccounts in every `allowed_service_account_namespaces` entry into one `PolicyIndex`, and
+writes each set's and binding's `Ready` condition with `observedGeneration`, so `kubectl get`
+shows a refused edit and a writer can wait for the service to have seen a spec change. The
+status subresource is the informer's only write, and the Role in each environment's `actions/`
+manifests grants exactly that.
+
+`policy_evaluation` holds the kinds' evaluators (`exact_actions`, `argument_schema` over the
+`jsonschema` package), `resolve_bindings` (the caller's unexpired valid bindings and the valid sets
+they name, nothing before sync), and `PolicySetDecisionProvider`, the one production
+`DecisionProvider`. `ActionService` builds the `DecisionContext` at admission with the typed
+caller (`SandboxCaller` from the workload principal, `ServiceAccountCaller` from the grant) and
+those bindings; the provider's allow carries `PolicyEvidence`, persisted on the Decision
+(migration `0015_decision_policy_evidence`) and projected as `DecisionView.policy_evidence`. Deny
+lists are parsed and reported but decide nothing yet. Dispatch is unchanged: it re-checks caller
+authority, never policy.
+
+The deployed proof is `//x/agentplane/acceptance:test_mcp`, which creates the set and binding
+for the Sandbox it launches through the Kubernetes API (see [the acceptance README](../acceptance/README.md))
+against the upstream `mcp-everything` image described in
+[the deployment note](../docs/mcp_fixture_choice.md); `test_runtime` drives the same production
+composition against a fake API server.
 
 ## Authentication boundaries
 

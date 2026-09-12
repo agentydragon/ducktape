@@ -1,6 +1,8 @@
 # Action policy bindings
 
-Status: **`POLICYBIND` decided 2026-09-12; `CALLERPOLICY` and `SBPOLICY` are the steps below.**
+Status: **`POLICYBIND` decided 2026-09-12; the Action Service side has landed (CRDs, informer,
+ServiceAccount callers, evaluation, evidence, deployed acceptance); `SBPOLICY` and the deny lists
+are the steps below.**
 The single operator configures bounded auto-approval for both external MCP connections and
 harnesses running in Threads inside Sandboxes. Both use the canonical Action Service and Decision
 lifecycle. Identity/OAuth/Connection authority is implemented independently of policy
@@ -157,25 +159,10 @@ the binding revision they used.
 
 ## Steps
 
-1. **CRDs and informer.** `ActionPolicySet` and `ActionPolicyBinding` with validation status; an
-   informer on labeled ServiceAccounts; the `identities:` settings key goes; both environments'
-   `personal` entries become labeled ServiceAccounts committed beside their settings, and the
-   consent UI lists eligible ServiceAccounts instead of configured Identities. Rename "configured
-   Identity" to "ServiceAccount" in the Action Service, the app, and the docs. The persisted issuer
-   string `configured-identity` stays readable while new rows write `service-account` with the
-   namespace and name as subject.
-2. **Evaluation and acceptance.** Policy registry with `exact_actions` and `argument_schema`; the
-   set provider inside the existing aggregation; typed `DecisionContext` caller; evidence fields on
-   the Decision. In the same change, `fixture_auto_allow` is deleted and the deployed
-   `//x/agentplane/acceptance` scenario creates the set and binding it needs through the
-   Kubernetes API for the Sandbox it launches: a matching Action gets an auto-approved Execution
-   with the expected evidence, a non-matching one waits for the operator, and an expired binding
-   no longer auto-approves. The suite's credentials gain create/delete on the two kinds in its
-   namespace.
-3. **Integration app.** Write the Sandbox binding at creation from the preset's set list, and show
+1. **Integration app.** Write the Sandbox binding at creation from the preset's set list, and show
    what a Sandbox can currently do: its unexpired bindings, their sets, and the resulting lists.
    Read-only; no runtime editing surface yet.
-4. **Deny lists** when an Action needs them, `autoDenyIf` first; `autoDenyUnless` later.
+2. **Deny lists** when an Action needs them, `autoDenyIf` first; `autoDenyUnless` later.
 
 ## Later
 

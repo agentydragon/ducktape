@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from enum import StrEnum
-from typing import Annotated, Any, Protocol
+from typing import Annotated, Any, Literal, Protocol
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Discriminator, Field, JsonValue, Tag, model_validator
@@ -80,11 +80,92 @@ GrantCaller = Annotated[
 ]
 
 
+class SandboxCaller(BaseModel):
+    """The live Sandbox proven by workload authentication, as an ActionPolicyBinding names it."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    namespace: str = Field(min_length=1)
+    sandbox_uid: str = Field(min_length=1)
+
+    def principal(self) -> Principal:
+        return Principal(
+            issuer=SANDBOX_ISSUER, subject=f"{self.namespace}:{self.sandbox_uid}", role=PrincipalRole.CALLER
+        )
+
+    @classmethod
+    def from_principal(cls, principal: Principal) -> SandboxCaller:
+        """The inverse of `principal()`; only a principal workload authentication minted decodes."""
+        namespace, separator, sandbox_uid = principal.subject.partition(":")
+        if (
+            principal.issuer != SANDBOX_ISSUER
+            or principal.role is not PrincipalRole.CALLER
+            or not separator
+            or not namespace
+            or not sandbox_uid
+            or ":" in sandbox_uid
+        ):
+            raise ValueError("principal was not minted by Sandbox workload authentication")
+        return cls(namespace=namespace, sandbox_uid=sandbox_uid)
+
+
+class ServiceAccountCaller(BaseModel):
+    """An external Connection acting as a labeled ServiceAccount through one active grant revision."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    service_account: ServiceAccountRef
+    grant_revision: int = Field(ge=1)
+
+    def principal(self) -> Principal:
+        return self.service_account.principal()
+
+
 class PolicyKind(StrEnum):
     """The `type` of one ActionPolicySet policy; each names one Python evaluator."""
 
     EXACT_ACTIONS = "exact_actions"
     ARGUMENT_SCHEMA = "argument_schema"
+
+
+class BindingEvidence(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    namespace: str
+    name: str
+    resource_version: str
+
+
+class PolicySetEvidence(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    namespace: str
+    name: str
+    generation: int
+
+
+class MatchedPolicy(BaseModel):
+    """The leaf policy that produced the Decision: which set, which list, which entry, which kind."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    namespace: str
+    policy_set: str
+    source: Literal["autoApproveIf"]
+    index: int = Field(ge=0)
+    type: PolicyKind
+
+
+class PolicyEvidence(BaseModel):
+    """What a policy-set Decision evaluated, as the objects stood at admission, so the Decision still
+    explains itself after they change: every binding the caller had and its resourceVersion, every set
+    those bindings resolved and its generation, and the policy that matched."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    bindings: list[BindingEvidence]
+    policy_sets: list[PolicySetEvidence]
+    matched: MatchedPolicy
 
 
 class ExternalGrantProvenance(BaseModel):
@@ -198,6 +279,9 @@ class DecisionView(BaseModel):
     reason_description: str | None = Field(
         default=None,
         description="Bounded provider-authored explanation, safe for caller/operator projection; absent for a human Decision.",
+    )
+    policy_evidence: PolicyEvidence | None = Field(
+        default=None, description="The objects a policy-set Decision evaluated; absent for every other Decision."
     )
     idempotency_key: str
     decided_at: datetime
@@ -333,30 +417,6 @@ class ProviderOutcome(BaseModel):
     verdict: ProviderVerdict
     reason_code: str = Field(min_length=1, max_length=64)
     reason_description: str | None = Field(default=None, max_length=500)
-
-
-class DecisionContext(BaseModel):
-    """Trusted evaluation input for a DecisionProvider.
-
-    Deliberately excludes `origin`/`correlation`: identity must come only from the authenticated
-    caller and, when resolvable, a verified Agent — never inferred from caller-controlled fields.
-    """
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    request_id: UUID
-    action: ActionIdentity
-    arguments: dict[str, JsonValue]
-    caller_principal: Principal
-    agent_identity: str | None = Field(
-        default=None, description="Verified Agent identity, when the deployment can resolve one."
+    evidence: PolicyEvidence | None = Field(
+        default=None, description="Recorded on the Decision when the provider decided from policy objects."
     )
-
-
-class DecisionProvider(Protocol):
-    """A synchronous non-human policy adapter; its outcome is authoritative within the provider."""
-
-    @property
-    def name(self) -> str: ...
-
-    async def decide(self, context: DecisionContext) -> ProviderOutcome: ...

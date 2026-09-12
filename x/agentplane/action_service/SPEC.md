@@ -41,6 +41,29 @@ grant and its ServiceAccount still to authorize the Action, not a later replacem
 Loss of authority before the dispatch claim fails the unstarted Execution without changing its
 historical Decision or invoking an executor. Revocation does not stop already claimed work.
 
+## Action policies
+
+An `ActionPolicySet` holds typed policies in `autoApproveIf`, `autoDenyIf` and `autoDenyUnless`;
+an `ActionPolicyBinding` joins one subject, a labeled ServiceAccount or a live Sandbox by name and
+UID, to sets by name, optionally until `expiresAt`. Both are namespaced Kubernetes objects the
+service watches in the namespaces it accepts callers from. It reads `spec` only and reports in
+each object's `Ready` condition, stamped with the generation it judged, whether the spec parsed;
+an invalid set or binding contributes nothing.
+
+Two policy kinds exist. `exact_actions` matches a listed Action by name alone; `argument_schema`
+also requires the arguments to satisfy a JSON Schema with plain JSON Schema semantics, so
+`properties` alone never implies presence. This version decides from `autoApproveIf` only; the
+deny lists are accepted and validated and produce no Decision.
+
+Policies are evaluated once, at admission, against the objects as the service holds them then:
+the caller's unexpired bindings, whose subject is matched from the authenticated Sandbox's
+namespace and UID or the Connection's ServiceAccount and never from any request field, the
+existing valid sets they name, and the first `autoApproveIf` policy that matches. A match
+auto-approves with an Execution; no match leaves the request on the human path; until the watch
+has synced, every caller is human-only. A later edit, expiry or deletion changes the next Action's
+Decision, not this one's; dispatch re-checks only caller authority. The Decision records the
+bindings with their resource versions, the sets with their generations, and the matching policy.
+
 ## External OAuth consent
 
 An enrollment names one validated OAuth authorization and expires within fifteen minutes. The

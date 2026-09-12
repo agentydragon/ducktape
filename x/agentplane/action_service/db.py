@@ -31,6 +31,7 @@ from x.agentplane.action_service.models import (
     ExecutionState,
     ExecutionView,
     ExternalGrantProvenance,
+    PolicyEvidence,
     Principal,
     PrincipalRole,
     ReconciliationSource,
@@ -155,6 +156,8 @@ class DecisionRow(Base):
     decision_note: Mapped[str | None] = mapped_column(Text)
     reason_code: Mapped[str | None] = mapped_column(Text)
     reason_description: Mapped[str | None] = mapped_column(Text)
+    # A `models.PolicyEvidence`; only a policy-set Decision has one.
+    policy_evidence: Mapped[dict[str, JsonValue] | None] = mapped_column(JSONB(none_as_null=True))
     idempotency_key: Mapped[str] = mapped_column(Text)
     decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
@@ -498,6 +501,7 @@ class ActionStore:
         expected_version: int,
         reason_code: str,
         reason_description: str | None,
+        policy_evidence: PolicyEvidence | None,
     ) -> tuple[ActionRequestView, bool]:
         """Synchronous non-human DecisionProvider route: no operator identity, no human decision note.
 
@@ -514,6 +518,7 @@ class ActionStore:
             expected_version=expected_version,
             reason_code=reason_code,
             reason_description=reason_description,
+            policy_evidence=policy_evidence,
         )
 
     async def _commit_decision(
@@ -529,6 +534,7 @@ class ActionStore:
         decision_note: str | None = None,
         reason_code: str | None = None,
         reason_description: str | None = None,
+        policy_evidence: PolicyEvidence | None = None,
     ) -> tuple[ActionRequestView, bool]:
         async with self._sessions.begin() as session:
             row = await session.scalar(
@@ -563,6 +569,7 @@ class ActionStore:
                     decision_note=decision_note,
                     reason_code=reason_code,
                     reason_description=reason_description,
+                    policy_evidence=policy_evidence.model_dump(mode="json") if policy_evidence is not None else None,
                     idempotency_key=idempotency_key,
                     decided_at=now,
                 )
@@ -873,6 +880,7 @@ def _decision_view(row: DecisionRow | None) -> DecisionView | None:
         decision_note=row.decision_note,
         reason_code=row.reason_code,
         reason_description=row.reason_description,
+        policy_evidence=PolicyEvidence.model_validate(row.policy_evidence) if row.policy_evidence is not None else None,
         idempotency_key=row.idempotency_key,
         decided_at=row.decided_at,
     )

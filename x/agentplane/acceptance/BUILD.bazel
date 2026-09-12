@@ -144,6 +144,8 @@ py_test(
         "//:conftest",
         "//x/agentplane/action_service:mcp_linkage",
         "//x/agentplane/action_service:models",
+        "//x/agentplane/action_service:policy_evaluation",
+        "//x/agentplane/action_service:policy_resources",
         "//x/agentplane/app:api",
         "//x/agentplane/app:client",
         "//x/agentplane/app:inventory",
@@ -151,6 +153,7 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//tenacity",
     ],
 )
 

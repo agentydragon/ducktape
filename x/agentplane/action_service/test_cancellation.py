@@ -15,7 +15,6 @@ from x.agentplane.action_service.models import (
     ActionRequestView,
     ActionState,
     CancellationOutcome,
-    DecisionContext,
     DecisionInput,
     ExecutionLease,
     ExecutionRequest,
@@ -25,12 +24,14 @@ from x.agentplane.action_service.models import (
     PrincipalRole,
     ProviderOutcome,
     ProviderVerdict,
+    SandboxCaller,
     Verdict,
 )
+from x.agentplane.action_service.providers import DecisionContext
 from x.agentplane.action_service.service import ActionService
 
-CALLER = Principal(issuer="test-workload", subject="sandbox-a", role=PrincipalRole.CALLER)
-OTHER_CALLER = Principal(issuer="test-workload", subject="sandbox-b", role=PrincipalRole.CALLER)
+CALLER = SandboxCaller(namespace="agentplane-test", sandbox_uid="sandbox-a").principal()
+OTHER_CALLER = SandboxCaller(namespace="agentplane-test", sandbox_uid="sandbox-b").principal()
 OPERATOR = Principal(issuer="test-bff", subject="operator", role=PrincipalRole.OPERATOR)
 LEASE_DURATION = timedelta(seconds=30)
 

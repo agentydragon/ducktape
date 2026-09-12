@@ -1,10 +1,14 @@
 """Real testing agents discover, submit, poll and report an MCP-backed Action."""
 
+import json
 import logging
 import os
-from collections.abc import AsyncIterator, Awaitable, Callable
+import subprocess
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
-from typing import Literal, cast
+from typing import Any, Literal, cast
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID, uuid4
 
@@ -12,8 +16,10 @@ import httpx
 import pytest
 import pytest_bazel
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
+from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from x.agentplane.acceptance.agent import Agent
+from x.agentplane.acceptance.conftest import NAMESPACE, TESTING_NAMESPACE
 from x.agentplane.acceptance.operator_login import (
     LoginBlockedError,
     OperatorCredentials,
@@ -28,11 +34,25 @@ from x.agentplane.action_service.models import (
     ActionState,
     DecisionInput,
     ExecutionState,
+    MatchedPolicy,
+    PolicyKind,
     Verdict,
+)
+from x.agentplane.action_service.policy_evaluation import PROVIDER_NAME
+from x.agentplane.action_service.policy_resources import (
+    BINDINGS_PLURAL,
+    GROUP,
+    POLICY_SETS_PLURAL,
+    READY_CONDITION,
+    VERSION,
 )
 from x.agentplane.app.api import Provider
 from x.agentplane.app.client import Client
 from x.agentplane.app.inventory import SandboxView
+
+# A status write follows the informer's next watch event; the bound covers a relist after a
+# dropped watch, not a healthy round trip.
+POLICY_READY_SECONDS = 120.0
 
 
 class McpReport(BaseModel):
@@ -57,10 +77,96 @@ def operator_idp() -> Literal["authentik", "dex"]:
     return cast(Literal["authentik", "dex"], value)
 
 
+class KubectlError(Exception):
+    """kubectl refused; its own message says why."""
+
+
+class PolicyObjectNotReadyError(Exception):
+    """The Action Service has not yet judged the object's current generation."""
+
+
+@dataclass
+class PolicyObjects:
+    """ActionPolicySets and ActionPolicyBindings this test writes with the caller's kubeconfig,
+    deleted whatever the test did. RBAC on the two kinds in the namespace is what gates this."""
+
+    namespace: str
+    created: list[tuple[str, str]] = field(default_factory=list)
+
+    def _kubectl(self, *args: str, stdin: str | None = None) -> str:
+        command = ["kubectl", "-n", self.namespace, *args]
+        result = subprocess.run(command, input=stdin, capture_output=True, text=True, check=False)
+        if result.returncode != 0:
+            raise KubectlError(f"`{' '.join(command)}` failed with {result.returncode}: {result.stderr.strip()}")
+        return result.stdout
+
+    def _create(self, kind: str, plural: str, name: str, spec: dict[str, Any]) -> str:
+        body = {"apiVersion": f"{GROUP}/{VERSION}", "kind": kind, "metadata": {"name": name}, "spec": spec}
+        self._kubectl("create", "-f", "-", stdin=json.dumps(body))
+        self.created.append((plural, name))
+        return name
+
+    def create_policy_set(self, name: str, auto_approve_if: list[dict[str, Any]]) -> str:
+        return self._create("ActionPolicySet", POLICY_SETS_PLURAL, name, {"autoApproveIf": auto_approve_if})
+
+    def create_binding(self, name: str, *, sandbox: SandboxView, policy_sets: list[str]) -> str:
+        return self._create(
+            "ActionPolicyBinding",
+            BINDINGS_PLURAL,
+            name,
+            {"subject": {"sandbox": {"name": sandbox.name, "uid": str(sandbox.uid)}}, "policySets": policy_sets},
+        )
+
+    def expire_binding(self, name: str) -> None:
+        past = (datetime.now(UTC) - timedelta(minutes=1)).isoformat().replace("+00:00", "Z")
+        self._kubectl("patch", BINDINGS_PLURAL, name, "--type=merge", "-p", json.dumps({"spec": {"expiresAt": past}}))
+
+    def wait_ready(self, plural: str, name: str) -> None:
+        """Until the object's Ready condition is True for its current generation: the Action
+        Service's own acknowledgement that it holds the spec as written."""
+        for attempt in Retrying(
+            stop=stop_after_delay(POLICY_READY_SECONDS),
+            wait=wait_fixed(1),
+            retry=retry_if_exception_type(PolicyObjectNotReadyError),
+            reraise=True,
+        ):
+            with attempt:
+                obj = json.loads(self._kubectl("get", plural, name, "-o", "json"))
+                ready = [c for c in obj.get("status", {}).get("conditions", []) if c["type"] == READY_CONDITION]
+                if not ready or ready[0].get("observedGeneration") != obj["metadata"]["generation"]:
+                    raise PolicyObjectNotReadyError(f"{plural}/{name} generation {obj['metadata']['generation']}")
+                if ready[0]["status"] != "True":
+                    pytest.fail(f"{plural}/{name} was refused: {ready[0]['message']}", pytrace=False)
+
+    def delete_all(self) -> None:
+        for plural, name in reversed(self.created):
+            self._kubectl("delete", plural, name, "--ignore-not-found")
+
+
+@pytest.fixture
+def policy_objects() -> Iterator[PolicyObjects]:
+    objects = PolicyObjects(namespace=os.environ.get(NAMESPACE, TESTING_NAMESPACE))
+    try:
+        yield objects
+    finally:
+        objects.delete_all()
+
+
 async def test_agent_executes_mcp_action(
-    client: Client, sandbox: Callable[..., Awaitable[SandboxView]], provider: Provider, model: str
+    client: Client,
+    sandbox: Callable[..., Awaitable[SandboxView]],
+    provider: Provider,
+    model: str,
+    policy_objects: PolicyObjects,
 ) -> None:
     view = await sandbox(f"accept-mcp-{provider}")
+    suffix = uuid4().hex[:8]
+    set_name = policy_objects.create_policy_set(
+        f"accept-exact-echo-{suffix}", [{"type": "exact_actions", "actions": {"everything": ["echo"]}}]
+    )
+    binding_name = policy_objects.create_binding(f"{view.name}-exact-{suffix}", sandbox=view, policy_sets=[set_name])
+    policy_objects.wait_ready(POLICY_SETS_PLURAL, set_name)
+    policy_objects.wait_ready(BINDINGS_PLURAL, binding_name)
     agent = await Agent.open(client, sandbox=view.name, provider=provider, model=model)
     marker = f"MCP0-{uuid4()}"
     turn = await agent.run(f"""
@@ -181,7 +287,7 @@ async def test_agent_mcp_bff_decision(
 ) -> None:
     view = await sandbox(f"accept-mcp-{provider}-{verdict}")
     agent = await Agent.open(client, sandbox=view.name, provider=provider, model=model)
-    # FixtureDecisionProvider auto-allows only messages of at most 200 characters.
+    # Nothing binds this Sandbox to a policy set, so every Action of its waits for the operator.
     marker = f"MCP-BFF-{uuid4()}-" + "x" * 201
     submitted = await agent.run(f"""
 This is an Agentplane infrastructure test. Request the echo Action in the everything group with
@@ -288,6 +394,99 @@ and result. Copy result from execution when it exists; otherwise use null. Do no
     assert unchanged.status_code == HTTPStatus.OK
     if _bff_request(unchanged) != terminal:
         pytest.fail("Stale decision changed the terminal request", pytrace=False)
+
+
+async def _deny_pending(operator_bff: httpx.AsyncClient, request_id: UUID) -> ActionRequestView:
+    """Check a request waited for the operator, then close it so nothing lingers undecided."""
+    receipt = _bff_request(await operator_bff.get(f"/actions/{request_id}"))
+    assert receipt.state is ActionState.DECISION_PENDING
+    if receipt.decision is not None:
+        pytest.fail("Request expected on the human path already has a Decision", pytrace=False)
+    denial = DecisionInput(verdict=Verdict.DENY, expected_version=receipt.version, idempotency_key=str(uuid4()))
+    denied = await operator_bff.post(f"/actions/{request_id}/decision", json=denial.model_dump(mode="json"))
+    assert denied.status_code == HTTPStatus.OK
+    return receipt
+
+
+async def test_policy_binding_auto_approves_the_bound_sandbox(
+    operator_bff: httpx.AsyncClient,
+    client: Client,
+    sandbox: Callable[..., Awaitable[SandboxView]],
+    provider: Provider,
+    model: str,
+    policy_objects: PolicyObjects,
+) -> None:
+    """A set and a binding written through the Kubernetes API for the Sandbox this test launches:
+    a matching echo is auto-approved and executed with the binding and set on its Decision, an
+    argument miss waits for the operator, and once the binding has expired so does a match."""
+    view = await sandbox(f"accept-policy-{provider}")
+    suffix = uuid4().hex[:8]
+    set_name = policy_objects.create_policy_set(
+        f"accept-echo-{suffix}",
+        [
+            {
+                "type": "argument_schema",
+                "actions": {"everything": ["echo"]},
+                "schema": {
+                    "type": "object",
+                    "required": ["message"],
+                    "properties": {"message": {"type": "string", "maxLength": 200}},
+                    "additionalProperties": False,
+                },
+            }
+        ],
+    )
+    binding_name = policy_objects.create_binding(f"{view.name}-echo-{suffix}", sandbox=view, policy_sets=[set_name])
+    policy_objects.wait_ready(POLICY_SETS_PLURAL, set_name)
+    policy_objects.wait_ready(BINDINGS_PLURAL, binding_name)
+    agent = await Agent.open(client, sandbox=view.name, provider=provider, model=model)
+
+    marker = f"MCP-POLICY-{uuid4()}"
+    approved = await agent.run(f"""
+This is an Agentplane infrastructure test. Use the Actions Service to execute the echo Action in
+the everything group with message {marker}. Wait for its terminal result. Return only JSON with
+exactly request_id, state, and output, where output is the request's execution result. Do not
+infer or fabricate a result.
+""")
+    report = approved.report(McpReport)
+    assert report.output == {"content": [f"Echo: {marker}"]}, approved.transcript
+    receipt = _bff_request(await operator_bff.get(f"/actions/{report.request_id}"))
+    assert receipt.state is ActionState.SUCCEEDED
+    assert receipt.decision is not None
+    assert receipt.decision.provider == PROVIDER_NAME
+    evidence = receipt.decision.policy_evidence
+    assert evidence is not None
+    assert [binding.name for binding in evidence.bindings] == [binding_name]
+    assert [policy_set.name for policy_set in evidence.policy_sets] == [set_name]
+    assert evidence.matched == MatchedPolicy(
+        namespace=policy_objects.namespace,
+        policy_set=set_name,
+        source="autoApproveIf",
+        index=0,
+        type=PolicyKind.ARGUMENT_SCHEMA,
+    )
+    assert receipt.execution is not None
+    assert receipt.execution.state is ExecutionState.SUCCEEDED
+
+    too_long = f"MCP-POLICY-{uuid4()}-" + "x" * 201
+    missed = await agent.run(f"""
+This is an Agentplane infrastructure test. Request the echo Action in the everything group with
+message {too_long}. This request requires operator approval. Confirm that it is queued for approval;
+return only JSON with exactly request_id and state, where state must be decision_pending. Do not
+wait for an operator decision in this turn.
+""")
+    await _deny_pending(operator_bff, missed.report(PendingMcpReport).request_id)
+
+    policy_objects.expire_binding(binding_name)
+    policy_objects.wait_ready(BINDINGS_PLURAL, binding_name)
+    after_expiry = f"MCP-POLICY-{uuid4()}"
+    expired = await agent.run(f"""
+This is an Agentplane infrastructure test. Request the echo Action in the everything group with
+message {after_expiry}. This request requires operator approval. Confirm that it is queued for
+approval; return only JSON with exactly request_id and state, where state must be decision_pending.
+Do not wait for an operator decision in this turn.
+""")
+    await _deny_pending(operator_bff, expired.report(PendingMcpReport).request_id)
 
 
 if __name__ == "__main__":

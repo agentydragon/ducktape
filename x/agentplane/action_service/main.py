@@ -27,10 +27,10 @@ from x.agentplane.action_service.catalog import ActionCatalog, ActionGroup, Key
 from x.agentplane.action_service.connections import ConnectionAuthority
 from x.agentplane.action_service.db import ActionStore, make_engine, make_sessionmaker, verify_schema
 from x.agentplane.action_service.enrollments import EnrollmentAuthority
-from x.agentplane.action_service.fixture_policy import FixtureAutoAllow, FixtureDecisionProvider
 from x.agentplane.action_service.mcp_linkage import McpLinkageAuthority, McpOAuthServer
 from x.agentplane.action_service.oauth import OAuthSettings, running_oauth
 from x.agentplane.action_service.operator_oidc import OidcOperatorAuthenticator, OperatorOidcSettings
+from x.agentplane.action_service.policy_evaluation import PolicySetDecisionProvider
 from x.agentplane.action_service.policy_informer import PolicyIndex, PolicyInformer
 from x.agentplane.action_service.push import ActionPushNotifier, PushIdentity, PushSubscriptionStore, WebPushSettings
 from x.agentplane.action_service.runtime import running_executor
@@ -94,11 +94,6 @@ class Settings(BaseSettings):
         default_factory=dict, description="Reviewed ActionGroup catalog, keyed by stable namespaced group key."
     )
     mcp_servers: dict[Key, McpOAuthServer] = Field(default_factory=dict)
-
-    fixture_auto_allow: FixtureAutoAllow | None = Field(
-        default=None,
-        description="Opt in to auto-allow only bounded echo(message) on a reviewed credentialless MCP group.",
-    )
     web_push: WebPushSettings | None = Field(default=None, description="Optional Web Push delivery identity.")
 
     @model_validator(mode="after")
@@ -106,17 +101,6 @@ class Settings(BaseSettings):
         if self.operator_oidc is not None and self.operator_bearer_file is not None:
             raise ValueError("configure operator_oidc or legacy operator_bearer_file, never both")
         return self
-
-    def decision_providers(self, catalog: ActionCatalog) -> list[FixtureDecisionProvider]:
-        if self.fixture_auto_allow is None:
-            return []
-        return [
-            FixtureDecisionProvider(
-                self.fixture_auto_allow,
-                catalog,
-                allowed_service_account_namespaces=self.allowed_service_account_namespaces,
-            )
-        ]
 
     @classmethod
     def settings_customise_sources(
@@ -151,7 +135,6 @@ async def async_main(settings: Settings) -> None:
         configuration = k8s_client.Configuration()
         k8s_config.load_incluster_config(client_configuration=configuration)
         catalog = ActionCatalog(groups=settings.action_groups)
-        providers = settings.decision_providers(catalog)
         api = await stack.enter_async_context(ApiClient(configuration=configuration))
         policy_index = PolicyIndex()
         informer_task = asyncio.create_task(
@@ -196,7 +179,8 @@ async def async_main(settings: Settings) -> None:
             ActionStore(make_sessionmaker(engine), external_grants=connections),
             catalog,
             executors,
-            providers=providers,
+            providers=[PolicySetDecisionProvider()],
+            policies=policy_index,
             on_drain=drain_backends,
         )
         # Stop dispatch/lease tasks before closing the adapters, including failed service startup.

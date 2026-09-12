@@ -1,5 +1,6 @@
 """Authenticated grant snapshots and transactional admission/dispatch authorization."""
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -34,7 +35,6 @@ from x.agentplane.action_service.models import (
     ActionRequestView,
     ActionState,
     ConfiguredIdentityRef,
-    DecisionContext,
     DecisionInput,
     ExecutionResult,
     ExecutionState,
@@ -43,8 +43,14 @@ from x.agentplane.action_service.models import (
     PrincipalRole,
     ProviderOutcome,
     ProviderVerdict,
+    ServiceAccountCaller,
+    ServiceAccountRef,
     Verdict,
 )
+from x.agentplane.action_service.policy_evaluation import PROVIDER_NAME, PolicySetDecisionProvider
+from x.agentplane.action_service.policy_informer import PolicyIndex, namespaced_key
+from x.agentplane.action_service.policy_resources import parse_binding, parse_policy_set
+from x.agentplane.action_service.providers import DecisionContext
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, eligible_callers
 
@@ -63,11 +69,11 @@ def store(engine: AsyncEngine, authority: ConnectionAuthority) -> ActionStore:
     return ActionStore(make_sessionmaker(engine), external_grants=authority)
 
 
-async def activated(authority: ConnectionAuthority, client_id: str) -> Grant:
+async def activated_as(authority: ConnectionAuthority, service_account: ServiceAccountRef, client_id: str) -> Grant:
     bound = await authority.bind(
         GrantBinding(
             grant_id=uuid4(),
-            service_account=PERSONAL,
+            service_account=service_account,
             issuer=ISSUER,
             client_id=client_id,
             activation_deadline=datetime.now(UTC) + timedelta(minutes=10),
@@ -75,6 +81,10 @@ async def activated(authority: ConnectionAuthority, client_id: str) -> Grant:
         )
     )
     return await authority.activate(bound.id)
+
+
+async def activated(authority: ConnectionAuthority, client_id: str) -> Grant:
+    return await activated_as(authority, PERSONAL, client_id)
 
 
 @pytest.fixture
@@ -319,23 +329,85 @@ async def test_service_preserves_human_approval_and_canonical_external_provenanc
     echo_catalog: ActionCatalog,
     echo_executor: RecordingExecutor,
 ) -> None:
-    class ExistingWorkloadProvider:
-        name = "existing-workload-provider"
-        called = False
+    """Providers see an external submission as its ServiceAccount caller; the provenance rides
+    through to the executor untouched."""
+
+    class RecordingProvider:
+        name = "recording-provider"
+
+        def __init__(self) -> None:
+            self.contexts: list[DecisionContext] = []
 
         async def decide(self, context: DecisionContext) -> ProviderOutcome:
-            self.called = True
-            return ProviderOutcome(
-                verdict=ProviderVerdict.ALLOW, reason_code="workload_autoallow", reason_description=None
-            )
+            self.contexts.append(context)
+            return ProviderOutcome(verdict=ProviderVerdict.ALLOW, reason_code="scripted_allow", reason_description=None)
 
-    provider = ExistingWorkloadProvider()
+    provider = RecordingProvider()
     service = ActionService(store, echo_catalog, {"agentplane": echo_executor}, providers=[provider])
-    receipt = await service.submit(envelope, grant.principal(), external_grant=grant.provenance())
-    assert receipt.state is ActionState.DECISION_PENDING
-    assert receipt.external_grant == grant.provenance()
-    assert echo_executor.requests == []
-    assert not provider.called
+    try:
+        receipt = await service.submit(envelope, grant.principal(), external_grant=grant.provenance())
+        assert receipt.state is ActionState.ALLOWED
+        assert receipt.external_grant == grant.provenance()
+        (context,) = provider.contexts
+        assert context.caller == ServiceAccountCaller(service_account=PERSONAL, grant_revision=grant.revision)
+        assert context.bindings == ()
+        async with asyncio.timeout(10):
+            view = await service.get(receipt.id, grant.principal())
+            while view.state is not ActionState.SUCCEEDED:
+                await asyncio.sleep(0.01)
+                view = await service.get(receipt.id, grant.principal())
+    finally:
+        await service.close()
+    (executed,) = echo_executor.requests
+    assert executed.external_grant == grant.provenance()
+    assert executed.caller_principal == grant.principal().key
+
+
+async def test_bound_service_account_is_auto_approved_by_its_binding_only(
+    engine: AsyncEngine,
+    authority: ConnectionAuthority,
+    store: ActionStore,
+    grant: Grant,
+    envelope: ActionRequestInput,
+    echo_catalog: ActionCatalog,
+    echo_executor: RecordingExecutor,
+) -> None:
+    namespace = PERSONAL.namespace
+    index = PolicyIndex(synced=True)
+    index.policy_sets[namespaced_key(namespace, "echo")] = parse_policy_set(
+        {
+            "metadata": {"name": "echo", "namespace": namespace, "uid": "u1", "generation": 1, "resourceVersion": "1"},
+            "spec": {"autoApproveIf": [{"type": "exact_actions", "actions": {"agentplane": ["echo"]}}]},
+        }
+    )
+    index.bindings[namespaced_key(namespace, "personal-echo")] = parse_binding(
+        {
+            "metadata": {
+                "name": "personal-echo",
+                "namespace": namespace,
+                "uid": "u2",
+                "generation": 1,
+                "resourceVersion": "2",
+            },
+            "spec": {"subject": {"serviceAccount": PERSONAL.model_dump()}, "policySets": ["echo"]},
+        }
+    )
+    service = ActionService(
+        store, echo_catalog, {"agentplane": echo_executor}, providers=[PolicySetDecisionProvider()], policies=index
+    )
+    try:
+        allowed = await service.submit(envelope, grant.principal(), external_grant=grant.provenance())
+        assert allowed.state is ActionState.ALLOWED
+        assert allowed.decision is not None
+        assert allowed.decision.provider == PROVIDER_NAME
+        assert allowed.decision.policy_evidence is not None
+        assert [binding.name for binding in allowed.decision.policy_evidence.bindings] == ["personal-echo"]
+        other = await activated_as(authority, OTHER, "other-client")
+        unbound = await service.submit(envelope, other.principal(), external_grant=other.provenance())
+        assert unbound.state is ActionState.DECISION_PENDING
+        assert unbound.decision is None
+    finally:
+        await service.close()
 
 
 if __name__ == "__main__":

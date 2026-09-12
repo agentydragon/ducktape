@@ -18,22 +18,21 @@ import contextlib
 import logging
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import jsonschema
 
 from x.agentplane.action_service.catalog import ActionCatalog, ActionIdentity, UnknownActionError
-from x.agentplane.action_service.db import ActionConflictError, ActionStore
+from x.agentplane.action_service.db import ActionConflictError, ActionStore, ExternalGrantNotAuthorizedError
 from x.agentplane.action_service.models import (
     ActionEventView,
     ActionRequestInput,
     ActionRequestView,
     ActionState,
     CancellationResult,
-    DecisionContext,
+    ConfiguredIdentityRef,
     DecisionInput,
-    DecisionProvider,
     ExecutionClaim,
     ExecutionResult,
     ExecutionState,
@@ -42,9 +41,15 @@ from x.agentplane.action_service.models import (
     Principal,
     ProviderOutcome,
     ProviderVerdict,
+    SandboxCaller,
+    ServiceAccountCaller,
+    ServiceAccountRef,
     UnknownOutcomeReason,
     Verdict,
 )
+from x.agentplane.action_service.policy_evaluation import resolve_bindings
+from x.agentplane.action_service.policy_informer import PolicyIndex
+from x.agentplane.action_service.providers import DecisionContext, DecisionProvider
 
 # types-jsonschema stubs import referencing; the mypy aspect needs that typed package directly.
 # gazelle:include_dep @pypi//referencing
@@ -86,6 +91,20 @@ class InvalidActionArgumentsError(Exception):
     """Arguments do not match the advertised Action schema; nothing was persisted."""
 
 
+def _caller(
+    principal: Principal, external_grant: ExternalGrantProvenance | None
+) -> SandboxCaller | ServiceAccountCaller:
+    """The typed caller providers see: the grant's ServiceAccount, else the Sandbox the principal
+    was minted for. Admission already refused any grant a ServiceAccount does not back."""
+    if external_grant is None:
+        return SandboxCaller.from_principal(principal)
+    match external_grant.caller:
+        case ServiceAccountRef() as account:
+            return ServiceAccountCaller(service_account=account, grant_revision=external_grant.revision)
+        case ConfiguredIdentityRef():
+            raise ExternalGrantNotAuthorizedError("a configured Identity grant cannot be evaluated")
+
+
 class _StoreBackedLease:
     """The seam a future out-of-process worker would present over the wire, called in-process for v0."""
 
@@ -117,6 +136,8 @@ class ActionService:
         executors: Mapping[str, Executor],
         *,
         providers: Sequence[DecisionProvider] = (),
+        policies: PolicyIndex | None = None,
+        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
         provider_timeout_seconds: float = DEFAULT_PROVIDER_TIMEOUT_SECONDS,
         executor_id: str | None = None,
         lease_duration: timedelta = DEFAULT_LEASE_DURATION,
@@ -139,6 +160,9 @@ class ActionService:
         self._catalog = catalog
         self._executors = dict(executors)
         self._providers = tuple(providers)
+        # None: this deployment watches no policy objects, so every caller is human-only.
+        self._policies = policies
+        self._clock = clock
         self._provider_timeout_seconds = provider_timeout_seconds
         self._executor_id = executor_id or f"executor-{uuid4()}"
         self._lease_duration = lease_duration
@@ -222,9 +246,9 @@ class ActionService:
         except jsonschema.ValidationError:
             raise InvalidActionArgumentsError("arguments do not match the advertised Action schema") from None
         view, created = await self._store.submit(body, principal, external_grant=external_grant)
-        if not created or external_grant is not None:
+        if not created:
             return view
-        return await self._auto_decide(view, body, principal)
+        return await self._auto_decide(view, body, principal, external_grant)
 
     def _resolve_executor(self, identity: ActionIdentity) -> Executor:
         group_key, action_key = identity.group, identity.name
@@ -238,13 +262,23 @@ class ActionService:
         return executor
 
     async def _auto_decide(
-        self, view: ActionRequestView, body: ActionRequestInput, principal: Principal
+        self,
+        view: ActionRequestView,
+        body: ActionRequestInput,
+        principal: Principal,
+        external_grant: ExternalGrantProvenance | None,
     ) -> ActionRequestView:
-        """Evaluate configured synchronous providers; defer to the human path on no decisive outcome."""
+        """Evaluate configured synchronous providers once, against the policy objects as they stand
+        now; defer to the human path on no decisive outcome."""
         if not self._providers:
             return view
+        caller = _caller(principal, external_grant)
         context = DecisionContext(
-            request_id=view.id, action=body.action, arguments=body.arguments, caller_principal=principal
+            request_id=view.id,
+            action=body.action,
+            arguments=body.arguments,
+            caller=caller,
+            bindings=resolve_bindings(self._policies, caller, self._clock()) if self._policies is not None else (),
         )
         vote = await self._evaluate_providers(context)
         if vote is None:
@@ -259,6 +293,7 @@ class ActionService:
                 expected_version=view.version,
                 reason_code=vote.outcome.reason_code,
                 reason_description=vote.outcome.reason_description,
+                policy_evidence=vote.outcome.evidence,
             )
         except ActionConflictError:
             # A human Decision or caller cancellation may commit during provider evaluation.
