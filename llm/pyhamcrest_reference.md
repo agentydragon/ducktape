@@ -278,10 +278,10 @@ with assert_raises(ValueError):
 class IsEven(BaseMatcher):
     def _matches(self, item):
         return item % 2 == 0
-    
+
     def describe_to(self, description):
         description.append_text("an even number")
-    
+
     def describe_mismatch(self, item, mismatch_description):
         mismatch_description.append_text(f"{item} is odd")
 
@@ -296,10 +296,10 @@ assert_that(5, is_not(even()))
 class DivisibleBy(BaseMatcher):
     def __init__(self, divisor):
         self.divisor = divisor
-    
+
     def _matches(self, item):
         return item % self.divisor == 0
-    
+
     def describe_to(self, description):
         description.append_text(f"divisible by {self.divisor}")
 
@@ -319,7 +319,7 @@ assert_that(15, is_(divisible_by(5)))
 # In pytest
 def test_user_creation():
     user = create_user("John", 30)
-    
+
     assert_that(user, has_properties(
         name="John",
         age=30,
@@ -330,7 +330,7 @@ def test_user_creation():
 # Multiple assertions
 def test_api_response():
     response = api_call()
-    
+
     assert_that(response, all_of(
         has_property("status", equal_to(200)),
         has_property("data", has_key("users")),
@@ -439,11 +439,13 @@ assert_that(log_entries, has_item(contains_string("ERROR")))
 ### Guidelines
 
 **Use `==` when:**
+
 - You know the complete, exact expected value
 - You want the test to fail if ANYTHING differs
 - The structure is simple and fixed
 
 **Use PyHamcrest when:**
+
 - The value might have unknown additional elements
 - You only care about specific parts
 - You need flexible matching (contains, greater than, etc.)
@@ -520,6 +522,7 @@ assert len(data['ast']['nodes']) > 0
 ## Integration with Test Frameworks
 
 ### pytest
+
 ```python
 import pytest
 from hamcrest import *
@@ -534,6 +537,7 @@ assert_that(str(exc_info.value), contains_string("invalid"))
 ```
 
 ### unittest
+
 ```python
 import unittest
 from hamcrest import *
@@ -545,16 +549,16 @@ class TestSomething(unittest.TestCase):
 
 ## Quick Reference Table
 
-| Matcher | Example | Description |
-|---------|---------|-------------|
-| `equal_to(x)` | `assert_that(5, equal_to(5))` | Exact equality |
-| `close_to(x, delta)` | `assert_that(3.14, close_to(3.1, 0.1))` | Numeric proximity |
-| `contains_string(s)` | `assert_that("hello", contains_string("ell"))` | Substring check |
-| `has_length(n)` | `assert_that([1,2,3], has_length(3))` | Collection/string length |
-| `has_item(x)` | `assert_that([1,2,3], has_item(2))` | Collection contains item |
-| `has_entry(k, v)` | `assert_that({"a": 1}, has_entry("a", 1))` | Dict has key-value |
-| `instance_of(type)` | `assert_that("hi", instance_of(str))` | Type check |
-| `none()` | `assert_that(None, is_(none()))` | None check |
-| `empty()` | `assert_that([], is_(empty()))` | Empty collection |
-| `all_of(*matchers)` | `assert_that(5, all_of(greater_than(0), less_than(10)))` | All conditions |
-| `any_of(*matchers)` | `assert_that(5, any_of(equal_to(5), equal_to(10)))` | Any condition |
+| Matcher              | Example                                                  | Description              |
+| -------------------- | -------------------------------------------------------- | ------------------------ |
+| `equal_to(x)`        | `assert_that(5, equal_to(5))`                            | Exact equality           |
+| `close_to(x, delta)` | `assert_that(3.14, close_to(3.1, 0.1))`                  | Numeric proximity        |
+| `contains_string(s)` | `assert_that("hello", contains_string("ell"))`           | Substring check          |
+| `has_length(n)`      | `assert_that([1,2,3], has_length(3))`                    | Collection/string length |
+| `has_item(x)`        | `assert_that([1,2,3], has_item(2))`                      | Collection contains item |
+| `has_entry(k, v)`    | `assert_that({"a": 1}, has_entry("a", 1))`               | Dict has key-value       |
+| `instance_of(type)`  | `assert_that("hi", instance_of(str))`                    | Type check               |
+| `none()`             | `assert_that(None, is_(none()))`                         | None check               |
+| `empty()`            | `assert_that([], is_(empty()))`                          | Empty collection         |
+| `all_of(*matchers)`  | `assert_that(5, all_of(greater_than(0), less_than(10)))` | All conditions           |
+| `any_of(*matchers)`  | `assert_that(5, any_of(equal_to(5), equal_to(10)))`      | Any condition            |
