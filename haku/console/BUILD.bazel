@@ -301,7 +301,7 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
-        "//third_party/containers:rlocations",
+        "//third_party/containers:pgvector_pg18",
     ],
 )
 
@@ -469,7 +469,6 @@ py_library(
         "//haku/console/identity:operator_identity_store",
         ":tool_call_actor",
         "//haku/console/identity:authorization",
-        "//third_party/containers:rlocations",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
         "@ducktape_haku//haku/console:tool_calls",
@@ -486,6 +485,7 @@ py_library(
         "@pypi//psycopg",
         "@pypi//httpx",
         ":settings",
+        "//third_party/containers:pgvector_pg18",
     ],
 )
 

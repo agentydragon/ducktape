@@ -14,7 +14,7 @@ import pytest
 from opentelemetry import trace
 
 from grocy_mcp.grocy_container import configure_grocy_container, grocy_custom_init_dir, grocy_url, wait_for_grocy_ready
-from third_party.containers.rlocations import GROCY
+from third_party.containers import grocy
 from util.oci import load_oci_image
 from util.testing.container_logs import LoggedContainer
 
@@ -23,9 +23,9 @@ tracer = trace.get_tracer(__name__)
 
 @contextmanager
 def run_logged_grocy_container() -> Generator[LoggedContainer]:
-    load_oci_image(GROCY)
+    load_oci_image(grocy.IMAGE)
     with grocy_custom_init_dir() as init_dir:
-        container = LoggedContainer(GROCY.tag, test_name="grocy")
+        container = LoggedContainer(grocy.IMAGE.tag, test_name="grocy")
         configure_grocy_container(container, init_dir=init_dir, data_dir=None)
         with tracer.start_as_current_span("grocy_container_start"):
             container.__enter__()

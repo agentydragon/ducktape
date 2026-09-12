@@ -70,7 +70,7 @@ from haku.console.identity.operator_identity_store import PostgresOperatorIdenti
 from haku.console.mcp.approval import PostgresToolCallLedger
 from haku.console.tool_call_actor import AgentActor
 from mcp_infra.authentik_auth.oidc_principal import VerifiedOidcPrincipal
-from third_party.containers.rlocations import PGVECTOR_PG18
+from third_party.containers import pgvector_pg18
 from util.testing.postgres import create_database_sync, force_drop_database_sync
 from util.testing.postgres_fixtures import start_postgres_container
 
@@ -79,7 +79,7 @@ from util.testing.postgres_fixtures import start_postgres_container
 def postgres_container() -> Any:
     """Postgres **with pgvector**: this file migrates a fresh database to head, and the baseline creates
     `vector` columns. The deployed database gets the extension from CNPG's `Database` CR."""
-    container = start_postgres_container(PGVECTOR_PG18)
+    container = start_postgres_container(pgvector_pg18.IMAGE)
     try:
         yield container
     finally:

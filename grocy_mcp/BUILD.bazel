@@ -112,7 +112,7 @@ py_library(
     visibility = ["//grocy_mcp:__subpackages__"],
     deps = [
         ":mcp_types",
-        "//third_party/containers:rlocations",
+        "//third_party/containers:grocy",
         "//util:oci",
         "@pypi//httpx",
         "@pypi//opentelemetry_api",
@@ -129,7 +129,7 @@ py_library(
     visibility = ["//grocy_mcp:__subpackages__"],
     deps = [
         ":grocy_container",
-        "//third_party/containers:rlocations",
+        "//third_party/containers:grocy",
         "//util:oci",
         "//util/testing:container_logs",
         "@pypi//opentelemetry_api",

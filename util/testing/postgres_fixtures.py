@@ -22,7 +22,7 @@ from collections.abc import Generator, Iterator
 import pytest
 from testcontainers.postgres import PostgresContainer
 
-from third_party.containers.rlocations import POSTGRES_18, RYUK
+from third_party.containers import postgres_18, ryuk
 from util.oci import OciImage, load_oci_image
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -55,7 +55,7 @@ def _onto_disk() -> Iterator[None]:
         handler.close()
 
 
-def start_postgres_container(image: OciImage = POSTGRES_18) -> PostgresContainer:
+def start_postgres_container(image: OciImage = postgres_18.IMAGE) -> PostgresContainer:
     """Preload Ryuk + the Postgres image (skipping any the daemon already has), then start it.
 
     `image` selects a different Postgres build — e.g. `PGVECTOR_PG18` for packages whose schema
@@ -68,7 +68,7 @@ def start_postgres_container(image: OciImage = POSTGRES_18) -> PostgresContainer
     daemon's own container start, so the least this can do is name where the time went.
     """
     with _onto_disk():
-        for preloaded in (RYUK, image):
+        for preloaded in (ryuk.IMAGE, image):
             load_oci_image(preloaded)
         container = PostgresContainer(image=image.tag, username="postgres", password="postgres", dbname="postgres")
         started = time.monotonic()

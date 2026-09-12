@@ -20,7 +20,7 @@ from skills.eval_infra.skill_staging import stage_skill
 from skills.info_gathering.evals.replay_client import ReplayChatClient
 from skills.info_gathering.evals.twenty_questions.result_types import RunSummary
 from skills.info_gathering.evals.twenty_questions.x.agent_framework.twenty_questions import run_game
-from third_party.containers.rlocations import PYTHON_3_13_SLIM
+from third_party.containers import python_3_13_slim
 from util.oci import load_oci_image
 
 
@@ -80,7 +80,7 @@ async def _run_with_replay(
     layer breaks.
     """
     client = ReplayChatClient(responses=completions)
-    load_oci_image(PYTHON_3_13_SLIM)
+    load_oci_image(python_3_13_slim.IMAGE)
 
     staged = stage_skill(EMPTY_SKILL_SPEC, tmp_path / "skill_extract")
 

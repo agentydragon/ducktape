@@ -25,7 +25,6 @@ py_test(
         "//haku/console:conftest",
         "//haku/console:database_migrate",
         "//haku/recall_index:schema",
-        "//third_party/containers:rlocations",
         "@pypi//alembic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
