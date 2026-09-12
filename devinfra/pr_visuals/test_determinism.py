@@ -1,10 +1,11 @@
 import json
 import subprocess
 from pathlib import Path
+from uuid import UUID
 
 import pytest_bazel
 
-from devinfra.pr_visuals.determinism import Observation, Render, durations, observe, report, run_once
+from devinfra.pr_visuals.determinism import Observation, Render, observe, observe_targets, report, run_once
 
 
 def _listing(by_invocation: dict[str, list[dict[str, str]]]):
@@ -73,28 +74,72 @@ def test_non_png_outputs_are_not_renders() -> None:
     assert observations == {}
 
 
-def test_run_once_reports_the_invocation_and_what_each_target_cost() -> None:
-    """bbr announces the invocation only on its closing line; durations come from Bazel's."""
-    output = (
-        "//props/frontend:visual                        \x1b[32mPASSED \x1b[0min 10.1s\n"
-        "//x/agentplane/app/frontend:visual             \x1b[32mPASSED \x1b[0min 14.5s\n"
-        "Executed 2 out of 2 tests: 2 tests pass.\n"
-        "bbr: invocation 4493681a-c750-49ba-af99-d756df6e956e  (bbapi ...)\n"
-    )
+def test_run_once_hands_the_invocation_id_to_bbr_rather_than_reading_it_back() -> None:
+    """The run's identity is minted here, so nothing has to parse bbr's console output."""
+    seen: list[list[str]] = []
 
     def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        assert "--nocache_test_results" in [str(part) for part in command]
-        assert "--noremote_accept_cached" in [str(part) for part in command]
-        return subprocess.CompletedProcess(command, 0, output, "")
+        seen.append([str(part) for part in command])
+        return subprocess.CompletedProcess(command, 0, "", "")
 
-    executed = run_once(["//props/frontend:visual"], bbr=Path("bbr"), run=fake_run)
+    invocation = run_once(["//props/frontend:visual"], bbr=Path("bbr"), run=fake_run)
 
-    assert executed.invocation == "4493681a-c750-49ba-af99-d756df6e956e"
-    assert executed.durations == {"//props/frontend:visual": 10.1, "//x/agentplane/app/frontend:visual": 14.5}
+    assert f"--invocation_id={invocation}" in seen[0]
+    assert UUID(invocation).version == 4
+    # Without both, a later run replays the first run's result and every scene looks stable.
+    assert "--nocache_test_results" in seen[0]
+    assert "--noremote_accept_cached" in seen[0]
 
 
-def test_durations_ignores_a_line_that_is_not_a_target_result() -> None:
-    assert durations("Stats over 6 runs: max = 15.8s, min = 10.1s\n") == {}
+def _test_row(label: str, *, status: str = "PASSED", shards: int | None = None, seconds: float) -> dict[str, object]:
+    summary: dict[str, object] = {
+        "firstStartTime": "2026-09-12T09:29:00.000Z",
+        "lastStopTime": f"2026-09-12T09:29:{seconds:06.3f}Z",
+    }
+    if shards is not None:
+        summary["shardCount"] = shards
+    return {"metadata": {"label": label}, "status": status, "testSummary": summary}
+
+
+def test_durations_come_from_buildbuddy_as_wall_time_not_summed_shards() -> None:
+    """A sharded target's four 10s shards are 10s of timeout budget, not 40s."""
+    listing = {
+        "targetGroups": [
+            {
+                "targets": [
+                    # The build row for the same target: no test summary, nothing to time.
+                    {"metadata": {"label": "//ui:visual"}, "status": "BUILT"},
+                    _test_row("//ui:visual", shards=4, seconds=11.1),
+                ]
+            }
+        ]
+    }
+
+    def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(command, 0, json.dumps(listing), "")
+
+    targets = observe_targets(["run-1"], bbapi=Path("bbapi"), run=fake_run)
+
+    assert [test_run.summary.shard_count for test_run in targets["//ui:visual"]] == [4]
+    summary = report({}, ["run-1"], targets)
+    assert "| `//ui:visual` | 4 | 11.1s | 11.1s | PASSED |" in summary
+
+
+def test_a_target_that_did_not_pass_says_so_in_the_report() -> None:
+    """Nothing dispatches on the status, but a reader comparing renders needs to see it."""
+
+    def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        label = "//ui:visual"
+        payload = {
+            "targetGroups": [
+                {"targets": [_test_row(label, status="PASSED" if "run-1" in command else "FLAKY", seconds=9.0)]}
+            ]
+        }
+        return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
+
+    summary = report({}, ["run-1", "run-2"], observe_targets(["run-1", "run-2"], bbapi=Path("bbapi"), run=fake_run))
+
+    assert "FLAKY, PASSED" in summary
 
 
 if __name__ == "__main__":

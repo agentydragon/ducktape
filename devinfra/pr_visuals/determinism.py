@@ -18,18 +18,14 @@ timeout that once went red.
 from __future__ import annotations
 
 import argparse
-import re
 import subprocess
+import uuid
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
 from devinfra.pr_visuals.artifacts import Runner, list_ci_artifacts
-
-# bbr's closing line, the only place it reports which invocation the run became.
-INVOCATION_LINE = re.compile(r"^bbr: invocation ([0-9a-f-]{36})", re.MULTILINE)
-# Bazel's per-target result line: "//pkg:target    PASSED in 12.3s", with ANSI in between.
-RESULT_LINE = re.compile(r"^(//[^\s]+?)\s+.*?(PASSED|FAILED|TIMEOUT|FLAKY).*?in ([\d.]+)s", re.MULTILINE)
+from devinfra.pr_visuals.targets import TestRun, list_test_runs
 
 # What a rendered scene is published as; anything else in the outputs is not a render.
 RENDER_SUFFIX = ".png"
@@ -59,38 +55,28 @@ class Observation:
         return sum(len(invocations) for invocations in self.by_digest.values())
 
 
-@dataclass(frozen=True)
-class Run:
-    """What one execution tells us: where its artifacts are, and what each target cost."""
+def run_once(targets: list[str], *, bbr: Path, run: Runner) -> str:
+    """One full, uncached execution of `targets`, returning the invocation it became.
 
-    invocation: str
-    durations: dict[str, float]
-
-
-def run_once(targets: list[str], *, bbr: Path, run: Runner) -> Run:
-    """One full, uncached execution of `targets`.
+    The ID is minted here and handed to the run rather than read back out of it: `bbr` honours
+    an explicit `--invocation_id` (devinfra/bbr.py), so the run's identity is known by
+    construction, and what it did is then read from BuildBuddy instead of from its console.
 
     Both cache flags are needed and neither is redundant: without `--nocache_test_results`
     Bazel replays the previous result, and without `--noremote_accept_cached` it takes a
     peer's. Either way a later run would observe the first run's bytes and every scene
     would look perfectly reproducible.
+
+    A failing target is not an error here -- its status reaches the report, where a reader can
+    see it -- so only a `bbr` that could not run at all raises.
     """
-    result = run(
-        [bbr, "test", "--nocache_test_results", "--noremote_accept_cached", *targets],
+    invocation = str(uuid.uuid4())
+    run(
+        [bbr, "test", f"--invocation_id={invocation}", "--nocache_test_results", "--noremote_accept_cached", *targets],
         check=False,
         text=True,
-        capture_output=True,
     )
-    combined = result.stdout + result.stderr
-    found = INVOCATION_LINE.search(combined)
-    if found is None:
-        raise RuntimeError(f"no invocation id in bbr output (exit {result.returncode}):\n{combined[-2000:]}")
-    return Run(found.group(1), durations(combined))
-
-
-def durations(output: str) -> dict[str, float]:
-    """Per-target wall time, for sizing. A target appears once per run."""
-    return {target: float(seconds) for target, _status, seconds in RESULT_LINE.findall(output)}
+    return invocation
 
 
 def observe(invocations: list[str], *, bbapi: Path, run: Runner) -> dict[Render, Observation]:
@@ -105,7 +91,16 @@ def observe(invocations: list[str], *, bbapi: Path, run: Runner) -> dict[Render,
     return dict(seen)
 
 
-def report(observations: dict[Render, Observation], invocations: list[str], timings: dict[str, list[float]]) -> str:
+def observe_targets(invocations: list[str], *, bbapi: Path, run: Runner) -> dict[str, list[TestRun]]:
+    """Every run's view of each target, keyed by label."""
+    by_label: dict[str, list[TestRun]] = defaultdict(list)
+    for invocation in invocations:
+        for test_run in list_test_runs(invocation, bbapi=bbapi, run=run):
+            by_label[test_run.label].append(test_run)
+    return dict(by_label)
+
+
+def report(observations: dict[Render, Observation], invocations: list[str], targets: dict[str, list[TestRun]]) -> str:
     """A markdown report: what drifted, what went missing, and what each target cost.
 
     Every render stays in BuildBuddy as the run's undeclared test outputs, so the report
@@ -149,10 +144,17 @@ def report(observations: dict[Render, Observation], invocations: list[str], timi
         ]
         lines.append("")
 
-    lines += ["## Durations", "", "| target | min | max |", "|---|---|---|"]
-    lines += [
-        f"| `{target}` | {min(seconds):.1f}s | {max(seconds):.1f}s |" for target, seconds in sorted(timings.items())
-    ]
+    # Wall time per run, not summed over shards: it is what one shard had to finish inside, so
+    # it is the number `size` is set from. A status other than PASSED is worth seeing beside it.
+    lines += ["## Durations", "", "| target | shards | min | max | statuses |", "|---|---|---|---|---|"]
+    for label, runs_of_target in sorted(targets.items()):
+        seconds = [test_run.summary.wall_time.total_seconds() for test_run in runs_of_target]
+        shards = sorted({test_run.summary.shard_count for test_run in runs_of_target})
+        statuses = sorted({test_run.status for test_run in runs_of_target})
+        lines.append(
+            f"| `{label}` | {', '.join(str(count) for count in shards)} "
+            f"| {min(seconds):.1f}s | {max(seconds):.1f}s | {', '.join(statuses)} |"
+        )
     return "\n".join(lines) + "\n"
 
 
@@ -168,20 +170,16 @@ def main() -> None:
     if args.runs < 2:
         raise SystemExit("--runs must be at least 2; a single run cannot show reproducibility")
 
-    invocations: list[str] = []
-    timings: dict[str, list[float]] = defaultdict(list)
+    invocations = []
     for index in range(args.runs):
         print(f"run {index + 1}/{args.runs}: {' '.join(args.targets)}", flush=True)
-        executed = run_once(args.targets, bbr=args.bbr, run=subprocess.run)
-        invocations.append(executed.invocation)
-        for target, seconds in executed.durations.items():
-            timings[target].append(seconds)
+        invocations.append(run_once(args.targets, bbr=args.bbr, run=subprocess.run))
 
     observations = observe(invocations, bbapi=args.bbapi, run=subprocess.run)
     if not observations:
         raise SystemExit(f"no renders published by {args.targets}; nothing to compare")
 
-    summary = report(observations, invocations, dict(timings))
+    summary = report(observations, invocations, observe_targets(invocations, bbapi=args.bbapi, run=subprocess.run))
     print(summary)
     if args.summary:
         args.summary.write_text(summary)
