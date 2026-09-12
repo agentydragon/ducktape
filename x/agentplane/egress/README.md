@@ -224,13 +224,7 @@ It neither persists conditions nor claims other replicas observed that generatio
 Kubernetes desired bindings as “configured”, not an enforcement acknowledgement. Expiry is
 computed on every observation, with no timer-owned status or transition timestamps.
 
-Staging declares two replicas, RollingUpdate `maxUnavailable: 1`/`maxSurge: 1`, a
-`minAvailable: 1` PDB, and hostname topology spread within the existing OVH node selector.
-The PDB limits voluntary evictions, not involuntary failures; topology spread is limited to
+Staging spreads the two replicas across hostnames within the existing OVH node selector; the
+PDB limits voluntary evictions, not involuntary failures, and topology spread is limited to
 eligible scheduling domains. Testing retains one replica and `Recreate`. Both use a 60-second
 termination grace, readiness on `/healthz` and event-loop liveness on `/livez`.
-
-CLEANUP(added 2026-09-11): Remove the CRD's legacy status schema/printer column and proxy
-status-patch RBAC only after every running proxy uses an image containing the read-only informer.
-An old informer treats a rejected status patch as a fatal task-group error. Scaling remains
-gated on the new proxy image, not just the presence of shared diagnostic history.

@@ -1,7 +1,6 @@
 # Attaches EgressPolicies to subjects: named Sandboxes in this slice. The
 # binding's existence is the grant: creating one allows, deleting one takes that back, and it
-# contributes nothing after it expires; the proxy writes back whether it is active and how many
-# referenced policies resolved. Shared contract with the proxy (x/agentplane/egress/SPEC.md);
+# contributes nothing after it expires. Shared contract with the proxy (x/agentplane/egress/SPEC.md);
 # the kubeconform schema under cluster/schemas/ is this file's openAPIV3Schema, pinned by
 # cluster/validation/test_agentplane_crd_schemas.py.
 apiVersion: apiextensions.k8s.io/v1
@@ -20,15 +19,10 @@ spec:
     - name: v1alpha1
       served: true
       storage: true
-      subresources:
-        status: {}
       additionalPrinterColumns:
         - name: Expires
           type: string
           jsonPath: .spec.expiresAt
-        - name: Active
-          type: string
-          jsonPath: .status.conditions[?(@.type=="Active")].status
         - name: Age
           type: date
           jsonPath: .metadata.creationTimestamp
@@ -67,44 +61,3 @@ spec:
                   description: After this instant the binding contributes nothing.
                   type: string
                   format: date-time
-            status:
-              type: object
-              properties:
-                observedGeneration:
-                  type: integer
-                  format: int64
-                conditions:
-                  type: array
-                  x-kubernetes-list-type: map
-                  x-kubernetes-list-map-keys: [type]
-                  items:
-                    description: A metav1.Condition; the proxy sets Active.
-                    type: object
-                    required: [type, status, lastTransitionTime, reason, message]
-                    properties:
-                      type:
-                        type: string
-                        maxLength: 316
-                        pattern: '^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$'
-                      status:
-                        type: string
-                        enum: ["True", "False", Unknown]
-                      observedGeneration:
-                        type: integer
-                        format: int64
-                        minimum: 0
-                      lastTransitionTime:
-                        type: string
-                        format: date-time
-                      reason:
-                        type: string
-                        minLength: 1
-                        maxLength: 1024
-                        pattern: "^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$"
-                      message:
-                        type: string
-                        maxLength: 32768
-                resolvedPolicies:
-                  description: How many of spec.policies name an existing EgressPolicy.
-                  type: integer
-                  minimum: 0
