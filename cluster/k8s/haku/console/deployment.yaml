@@ -81,7 +81,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: server
-          image: git.allegedly.works/ducktape-ci/haku-console:devel-20260912150940-3579607 # {"$imagepolicy": "flux-system:haku-console"}
+          image: git.allegedly.works/ducktape-ci/haku-console:devel-20260912160749-509d192 # {"$imagepolicy": "flux-system:haku-console"}
           imagePullPolicy: Always
           ports:
             - name: api
@@ -91,7 +91,7 @@ spec:
             # policies as the images, preserving reproducible image contents while exposing the
             # commits selected by this pod manifest.
             - name: HAKU_CONSOLE__IMAGE_TAG
-              value: devel-20260912150940-3579607 # {"$imagepolicy": "flux-system:haku-console:tag"}
+              value: devel-20260912160749-509d192 # {"$imagepolicy": "flux-system:haku-console:tag"}
             - name: HAKU_CONSOLE__AIQUOTA_URL
               value: "http://aiquota-api.cli-proxy-api.svc.cluster.local:8080"
             - name: HAKU_CONSOLE__AIQUOTA_BEARER_TOKEN
