@@ -248,18 +248,19 @@ or written at runtime by the integration app or kubectl is decided per object. T
 Sandbox bindings from its presets with owner references; the Action Service never reads preset
 language. Runtime Connections and grants stay in the Action Service's PostgreSQL. The
 [Action policy plan](action_policies.md) holds the model, the worked external-plus-Sandbox example,
-the evidence and dispatch-revalidation contract, and the implementation steps.
+the evaluate-once evidence contract, and the implementation steps.
 
 ### `CALLERPOLICY` — bounded Action deciders for external and hosted callers
 
 **Planned support:** the `exact_actions` and `argument_schema` policy kinds, the policy-set
 decision provider inside the existing DecisionProvider aggregation, a typed `DecisionContext`
-caller, Decision evidence naming the evaluated objects, and dispatch revalidation with
-`policy_not_authorized`. `autoDenyIf` and `autoDenyUnless` fail closed regardless of any other
-provider's allow; a request matching no list takes the human path.
+caller, and Decision evidence naming the evaluated objects. Policies are evaluated once, at
+admission; dispatch keeps only the existing caller-authority checks. `autoDenyIf` and
+`autoDenyUnless` fail closed regardless of any other provider's allow; a request matching no list
+takes the human path.
 
 **Acceptance:** per the [Action policy plan](action_policies.md): matching auto-allow, argument
-miss to human review, caller-class isolation, expiry honored between admission and claim, and no
+miss to human review, caller-class isolation, expiry honored at admission only, and no
 authority from forged fields, invalid sets, an unsynced informer, or a deleted binding. Trusted
 static identity and Sandbox caller resolution already exist; this task adds policy objects and
 enforcement. Broad `PROFILES` and a policy DSL remain deferred.

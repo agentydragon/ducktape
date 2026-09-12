@@ -72,11 +72,12 @@ at dispatch. Sandbox subjects pin the live UID, so a binding whose Sandbox is go
   then run `autoApproveIf` policies through the existing `DecisionProvider` aggregation. The
   fixture provider becomes an `exact_actions` policy on the fixture group. A request matching no
   list stays on the human path.
-- **Dispatch**: before the claim, one live GET of the bindings and sets, not an informer read.
-  Expired or deleted bindings, and a disabled static identity, fail the unstarted Execution with
-  `policy_not_authorized`, mirroring `external_grant_not_authorized`. A committed allow Decision is
-  not re-litigated, the same as a human approval; a deletion racing the GET can leak at most one
-  dispatch.
+- **Evaluate once.** Policies are evaluated at admission against the objects as they are then,
+  and never again for that Action. A later edit, expiry, or deletion changes the next Action's
+  Decision, not this one's, the same as a human approval is not withdrawn by a later change of
+  mind. Dispatch keeps the caller-authority checks that exist today, an active grant and a present
+  identity, and adds no policy re-evaluation. Stopping approved-but-unclaimed work is an operator
+  cancel, a separate general feature, not a policy concern.
 - **Evidence**: the Decision records binding names and `resourceVersion`s, set generations, and
   the leaf policy that matched, so a Decision explains itself after the objects change.
 - **Freshness**: until the informer has synced, every caller is human-only. A set or binding that
@@ -155,12 +156,11 @@ the binding revision they used.
    stays readable while new rows write `static-identity`.
 2. **Evaluation.** Policy registry with `exact_actions` and `argument_schema`; the set provider
    inside the existing aggregation; typed `DecisionContext` caller; evidence fields on the Decision.
-3. **Dispatch revalidation** with the live GET, expiry, and `policy_not_authorized`.
-4. **Integration app.** Write the Sandbox binding at creation from the preset's set list; a runtime
+3. **Integration app.** Write the Sandbox binding at creation from the preset's set list; a runtime
    form for additional bindings with `expiresAt`; optionally create a `StaticIdentity` during
    enrollment instead of a Git edit.
-5. **Deny lists** when an Action needs them, `autoDenyIf` first; `autoDenyUnless` later.
-6. **Deployed acceptance.** Extend `//x/agentplane/acceptance` with a vertical scenario: the
+4. **Deny lists** when an Action needs them, `autoDenyIf` first; `autoDenyUnless` later.
+5. **Deployed acceptance.** Extend `//x/agentplane/acceptance` with a vertical scenario: the
    test creates a set and a binding for the Sandbox it launches, the harness submits a matching
    Action and gets an auto-approved Execution with the expected evidence, a non-matching one waits
    for the operator, and an expired binding no longer auto-approves.
@@ -186,8 +186,8 @@ Per-Sandbox bindings stay per Sandbox either way; a shared ServiceAccount is not
 - Several `public-coder` Sandboxes and the `personal` static identity reference one set; one
   edit reaches both caller classes without touching bindings, and the Decisions record which set
   generation they evaluated.
-- An expiring binding auto-approves before `expiresAt` and not after, including for an Action
-  admitted before expiry and claimed after it.
+- An expiring binding auto-approves an Action admitted before `expiresAt` and not one admitted
+  after; the earlier Action still executes if it is claimed after expiry.
 - Forged type/preset/identity fields, an invalid set, an unsynced informer, and a deleted binding
   grant nothing; a static identity whose binding names a missing set is human-only, never allowed.
 - The Sandbox slice is proven independently of external enrollment; the first human-approved
