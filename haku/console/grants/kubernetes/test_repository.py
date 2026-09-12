@@ -66,7 +66,7 @@ class _RepositoryClient:
 
     def call[T](self, func: Callable[..., Awaitable[T]], *args: Any) -> T:
         assert self.client.portal is not None
-        return self.client.portal.call(func, *args)
+        return cast(T, self.client.portal.call(func, *args))
 
 
 @pytest.fixture

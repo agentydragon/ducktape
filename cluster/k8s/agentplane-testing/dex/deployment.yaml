@@ -7,7 +7,7 @@ metadata:
     app.kubernetes.io/name: agentplane-testing-dex
   annotations:
     # Dex reads its generated config and client secret only at startup.
-    secret.reloader.stakater.com/reload: agentplane-testing-dex,agentplane-oidc
+    secret.reloader.stakater.com/reload: agentplane-testing-dex,agentplane-oidc,agentplane-mcp-oauth
 spec:
   replicas: 1
   strategy:
@@ -41,6 +41,11 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: agentplane-oidc
+                  key: client-secret
+            - name: MCP_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: agentplane-mcp-oauth
                   key: client-secret
           ports:
             - name: http

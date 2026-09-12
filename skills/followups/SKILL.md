@@ -54,12 +54,48 @@ Answering rules:
 - **Disagree plainly.** Answers may contradict the session's direction — that's
   the point. Don't soften a real concern into a hedge.
 
+## Recover the complete conversation first
+
+Before generating followups, read the `session_logs` skill and recover the
+transcript from this agent's own harness. Do not choose the other harness just
+because its directory also exists: Claude agents use `~/.claude`, and Codex
+agents use `~/.codex`.
+
+Run the paved helper for the applicable harness, then read its entire output:
+
+```bash
+# Claude Code 2.1.260
+CLAUDE_SESSION=$(~/.claude/skills/session_logs/find-current-session.sh claude)
+~/.claude/skills/session_logs/conversation.sh claude "$CLAUDE_SESSION"
+
+# Codex CLI 0.153.4
+CODEX_SESSION=$(~/.codex/skills/session_logs/find-current-session.sh codex)
+~/.codex/skills/session_logs/conversation.sh codex "$CODEX_SESSION"
+```
+
+The helper emits every user message together with the two preceding agent
+messages so the response context for each request is visible. It also emits
+each compaction boundary and continues through it. Read the first user message
+and everything after every boundary; never use only the current in-context
+summary, `head`, `tail`, or a post-compaction segment. If the output is large,
+read it in sequential chunks and verify the final user-message number.
+
+Use this recovered transcript as an explicit input to loose-thread collection:
+reconstruct the original problem, all user pivots and requests, unanswered
+questions, promises, and discussed-but-unfinished work. This is required even
+when the current context appears coherent, because multiple compactions may
+have dropped the original problem or older pending work from the agent's
+working context. If discovery is unavailable, state that visibility limit and
+do not claim that the loose-thread scan was complete. See `/session_logs` for
+the schema details and older-session invocation.
+
 ## Process
 
 `/followups` is a **loop, not a one-shot menu**: as long as the user keeps
 selecting items, keep executing, re-thinking, and re-presenting.
 
-1. **Ground** — establish what actually happened vs. what was merely discussed.
+1. **Ground** — after the transcript recovery above, establish what actually
+   happened vs. what was merely discussed.
    Verify session work is on disk (not stashed/reverted by a parallel process):
    `git status` and `git log --oneline origin/HEAD..HEAD`. Classify:
    uncommitted / committed-not-pushed / pushed-not-deployed (e.g., Flux

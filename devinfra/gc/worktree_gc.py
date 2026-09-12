@@ -16,8 +16,9 @@ including read-only files (pygit2's `Worktree.prune()` does neither by default).
 
 from __future__ import annotations
 
+import logging
 import os
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
@@ -26,6 +27,8 @@ import pygit2
 
 from devinfra.gc.git_repo import Worktree, content_in_main, git, patches_landed_in_main
 from devinfra.gc.pull_request import PrInfo, PrState, pr_phrase
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,13 +55,13 @@ class ReviewWorktree:
 type Classification = PrunableWorktree | RetainedWorktree | ReviewWorktree
 
 
-def _dirty(pg: pygit2.Repository) -> bool:
+def _dirty(status: Mapping[str, int]) -> bool:
     # status() reports tracked changes and untracked files (ignored excluded by default);
     # any entry means the tree is not clean.
-    return bool(pg.status())
+    return bool(status)
 
 
-def _last_activity(pg: pygit2.Repository, path: Path) -> datetime | None:
+def _last_activity(pg: pygit2.Repository, path: Path, status: Iterable[str]) -> datetime | None:
     """Most recent sign of work: the HEAD commit or the newest mtime among uncommitted
     (changed or untracked) files, so a dirty tree reflects when it was last *touched*."""
     times: list[datetime] = []
@@ -66,7 +69,7 @@ def _last_activity(pg: pygit2.Repository, path: Path) -> datetime | None:
         commit = pg[pg.head.target].peel(pygit2.Commit)
         tz = timezone(timedelta(minutes=commit.commit_time_offset))
         times.append(datetime.fromtimestamp(commit.commit_time, tz=tz))
-    for rel in pg.status():
+    for rel in status:
         try:
             times.append(datetime.fromtimestamp((path / rel).lstat().st_mtime, tz=UTC))
         except OSError:
@@ -78,9 +81,17 @@ def processes_by_worktree(paths: Iterable[Path], *, proc_root: Path = Path("/pro
     """Map each worktree path to the PIDs whose cwd is inside it (best-effort)."""
     live: dict[Path, list[int]] = {}
     resolved = {path: path.resolve() for path in paths}
+    if not resolved:
+        logger.info("No worktrees need a process working-directory scan")
+        return live
+    logger.info("Scanning process working directories for %d worktrees", len(resolved))
+    process_count = 0
     for entry in proc_root.iterdir():
         if not entry.name.isdigit():
             continue
+        process_count += 1
+        if process_count % 500 == 0:
+            logger.info("Scanned %d process working directories", process_count)
         try:
             cwd = (entry / "cwd").resolve()
         except OSError:
@@ -88,6 +99,7 @@ def processes_by_worktree(paths: Iterable[Path], *, proc_root: Path = Path("/pro
         for path, target in resolved.items():
             if cwd == target or target in cwd.parents:
                 live.setdefault(path, []).append(int(entry.name))
+    logger.info("Process working-directory scan complete: %d processes, %d worktrees active", process_count, len(live))
     return live
 
 
@@ -108,7 +120,10 @@ def classify_worktree(
         # under it (or whose gitdir link rotted) — nothing to check, and `git worktree
         # remove` cleans up the administrative files fine even though the directory is gone.
         return PrunableWorktree(worktree, "worktree directory is missing", None)
-    activity = _last_activity(pg, path)
+    logger.info("Scanning worktree %s: reading Git status", path)
+    status = pg.status()
+    logger.info("Scanning worktree %s: Git status complete (%d entries)", path, len(status))
+    activity = _last_activity(pg, path, status)
 
     def keep(reason: str) -> RetainedWorktree:
         return RetainedWorktree(worktree, reason, activity)
@@ -126,7 +141,7 @@ def classify_worktree(
     if live_pids:
         return keep(f"a process is working in it (pid {live_pids[0]})")
     pr = pr_states.get(worktree.branch) if worktree.branch else None
-    if _dirty(pg):
+    if _dirty(status):
         # Uncommitted work is never auto-pruned, but surface the branch's PR so a dirty
         # tree whose PR already merged reads as stale scratch, not live work.
         return keep("uncommitted changes" + (f" ({pr_phrase(pr)})" if pr is not None else ""))

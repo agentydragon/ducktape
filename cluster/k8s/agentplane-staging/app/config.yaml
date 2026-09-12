@@ -37,6 +37,14 @@ sandbox_presets:
     policies:
       - basic
       - github-public
+    # What the console's `public_coder_github_reads` grants public-coder-agent
+    # (cluster/k8s/haku/console/config.yaml), as this namespace's sets: reads of confirmed-public
+    # repositories, of ducktape and its forks, and of the private Gaffer repository.
+    action_policy_sets:
+      - public-github-reads
+      - public-ducktape-reads
+      - public-ducktape-fork-reads
+      - public-gaffer-private-reads
     thread_preset: public-coder-codex
     bootstrap: |
       marker=/state/workspaces/.agentplane-public-coder-ready

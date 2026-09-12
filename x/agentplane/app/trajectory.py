@@ -133,6 +133,10 @@ class ThreadView(BaseModel):
     archived: bool
     last_sequence: int = Field(description="The highest stored sequence; 0 while nothing is stored.")
     last_event_at: datetime | None = None
+    harness: str = Field(
+        description="The protocol's HarnessState enum member, by name: HARNESS_STATE_RUNNING, "
+        "HARNESS_STATE_STOPPED, or HARNESS_STATE_UNSPECIFIED while no feed has ever attached to this thread."
+    )
 
 
 class ThreadNotFoundError(Exception):
@@ -319,8 +323,9 @@ class TrajectoryStore:
             .subquery()
         )
         query = (
-            select(Thread, last.c.last_sequence, last.c.last_at)
+            select(Thread, last.c.last_sequence, last.c.last_at, FeedState.attached)
             .outerjoin(last, last.c.thread_id == Thread.id)
+            .outerjoin(FeedState, FeedState.thread_id == Thread.id)
             .order_by(Thread.created_at.desc())
         )
         if sandbox is not None:
@@ -331,7 +336,8 @@ class TrajectoryStore:
             query = query.where(Thread.archived.is_(False))
         async with self._sessions() as session:
             return [
-                _view(thread, last_sequence, last_at) for thread, last_sequence, last_at in await session.execute(query)
+                _view(thread, last_sequence, last_at, attached)
+                for thread, last_sequence, last_at, attached in await session.execute(query)
             ]
 
     async def get_thread(self, thread_id: UUID) -> ThreadView | None:
@@ -422,15 +428,19 @@ def _project_attached(attached: pb.Attached, event: pb.Event) -> None:
             attached.spec.model = event.model_switch_succeeded.model
 
 
-async def _last(session: AsyncSession, thread_id: UUID) -> tuple[int | None, datetime | None]:
+async def _last(session: AsyncSession, thread_id: UUID) -> tuple[int | None, datetime | None, dict[str, object] | None]:
     last = await session.execute(
         select(func.max(Event.sequence), func.max(Event.at)).where(Event.thread_id == thread_id)
     )
     last_sequence, last_at = last.one()
-    return last_sequence, last_at
+    state = await session.get(FeedState, thread_id)
+    return last_sequence, last_at, (state.attached if state is not None else None)
 
 
-def _view(thread: Thread, last_sequence: int | None, last_at: datetime | None) -> ThreadView:
+def _view(
+    thread: Thread, last_sequence: int | None, last_at: datetime | None, attached: dict[str, object] | None
+) -> ThreadView:
+    harness = ParseDict(attached, pb.Attached()).harness if attached is not None else pb.HARNESS_STATE_UNSPECIFIED
     return ThreadView(
         id=thread.id,
         sandbox=thread.sandbox,
@@ -443,4 +453,5 @@ def _view(thread: Thread, last_sequence: int | None, last_at: datetime | None) -
         archived=thread.archived,
         last_sequence=last_sequence or 0,
         last_event_at=last_at,
+        harness=pb.HarnessState.Name(harness),
     )

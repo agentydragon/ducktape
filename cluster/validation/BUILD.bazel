@@ -8,6 +8,15 @@ package(default_visibility = [
 ])
 
 py_test(
+    name = "test_cluster",
+    srcs = ["test_cluster.py"],
+    deps = [
+        ":cluster",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_actions_artifact",
     srcs = ["test_actions_artifact.py"],
     data = [
@@ -106,6 +115,7 @@ py_library(
     deps = [
         ":cluster",
         ":crd_layering",
+        ":flux",
         "@pypi//networkx",
         "@pypi//numpy",
         "@pypi//types_networkx",

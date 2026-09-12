@@ -1,189 +1,110 @@
 ---
 name: session_logs
-description: Discover and analyze Claude Code session logs from ~/.claude/projects, including finding the current session and extracting tool calls, user messages, and conversation history
+description: Discover and read the complete current Claude Code or Codex CLI conversation, including user turns, nearby agent context, tool activity, and compaction boundaries.
 ---
 
-# Claude Code Session Logs Skill
+# Session transcript recovery
 
-This skill helps discover and analyze Claude Code session logs stored in `~/.claude/projects/`. Use this when you need to:
+Use this skill when a task depends on what the user said earlier, when `/followups`
+needs to find loose threads, or when the in-context conversation may have been
+compacted. The harness transcript is the durable source for the conversation.
 
-- Find the current session log
-- Extract conversation history for analysis
-- Verify what tools were used in a session
-- Mine session data for followup suggestions
-- Debug session state or tool execution
+The procedure is intentionally local and read-only. Find the transcript belonging
+to this agent's own harness, then read every human/user turn together with the two
+preceding assistant/agent messages. Use the result as conversation context; do not
+only inspect the last few turns or trust a compaction summary to preserve the
+original problem.
 
-## Finding the Current Session
+## Paved commands
 
-Sessions are stored per-project in `~/.claude/projects/` with directory names based on the working directory path.
-
-**Project directory naming:**
-
-- `/code/gitlab.com/agentydragon/ducktape` → `~/.claude/projects/-code-gitlab-com-agentydragon-ducktape/`
-- All `/` become `-`, path is prefixed with `-`
-
-**Important:** The current `pwd` may differ from the session's original `cwd` if directories were changed during the session. The helper script accounts for this by:
-
-1. Searching recent sessions from ALL projects (last hour)
-2. Scoring by **recency first** (most important signal)
-3. Using git branch and cwd as secondary signals
-
-**Discovery script:**
+The packaged skill contains three executable helpers:
 
 ```bash
-# Find current project directory
-PROJECT_DIR=$(pwd | sed 's|/|-|g')
-SESSION_DIR=~/.claude/projects/$PROJECT_DIR
-
-# Get 5 recently modified session files
-# NOTE: Current session may not be #1 (parallel instances, background tasks)
-find $SESSION_DIR -type f -name "*.jsonl" -printf "%T@ %p\n" 2>/dev/null | \
-  sort -rn | head -5 | cut -d' ' -f2-
-
-# Check each candidate to identify current session
-# Match by: recent timestamp, matching cwd, matching git branch
-for session in $(find $SESSION_DIR -type f -name "*.jsonl" -printf "%T@ %p\n" 2>/dev/null | sort -rn | head -5 | cut -d' ' -f2-); do
-  echo "=== $session ==="
-  tail -1 "$session" | jq -r '{timestamp, cwd, gitBranch, sessionId}'
-done
+find-current-session.sh [claude|codex]
+analyze-session.sh [claude|codex|TRANSCRIPT.jsonl]
+conversation.sh [claude|codex] [TRANSCRIPT.jsonl]
 ```
 
-Use the helper script for convenience:
+`conversation.sh` prints every user window in chronological order. Each window
+contains the complete user text and up to two preceding assistant messages. It
+also prints compaction markers and continues scanning after them. Do not pipe it
+through `head`, `tail`, or a truncating pager when doing the recovery pass. For a
+large transcript, read the output in sequential chunks and verify the final user
+message number.
+
+When running from a checkout rather than an installed package, use
+`skills/session_logs` in place of the installed skill directory below.
+
+### Claude Code 2.1.260
+
+Validated on this machine with Claude Code `2.1.260`:
 
 ```bash
-~/.claude/skills/session_logs/find-current-session.sh
+CLAUDE_SESSION=$(~/.claude/skills/session_logs/find-current-session.sh claude)
+~/.claude/skills/session_logs/analyze-session.sh "$CLAUDE_SESSION"
+~/.claude/skills/session_logs/conversation.sh claude "$CLAUDE_SESSION"
 ```
 
-## Session Log Format
+Claude stores project transcripts as JSONL under
+`~/.claude/projects/<pwd-with-slashes-replaced-by-dashes>/`. Root session files
+are the conversation; `subagents/` files are separate agent conversations and
+must not be substituted for the current session. In Claude Code 2.1.260,
+human text is in `type: "user"` entries whose content is a string or text block;
+`tool_result` entries, task notifications, and system reminders are harness
+traffic rather than user turns. Compaction is recorded as
+`type: "system", subtype: "compact_boundary"` in the same JSONL file.
 
-**Structure:** JSONL (one JSON object per line)
+### Codex CLI 0.153.4
 
-**Key fields in each entry:**
-
-- `type`: Entry type (`"user"`, `"assistant"`, `"tool_use"`, `"tool_result"`, etc.)
-- `message`: Contains the actual content (nested structure)
-- `timestamp`: ISO 8601 timestamp (e.g., `"2025-12-01T19:35:59.995Z"`)
-- `sessionId`: UUID of the session
-- `cwd`: Working directory at time of entry
-- `gitBranch`: Current git branch
-
-**Tool use entries:**
-
-```json
-{
-  "type": "assistant",
-  "message": {
-    "content": [
-      {
-        "type": "tool_use",
-        "id": "toolu_...",
-        "name": "Edit",
-        "input": {
-          "file_path": "/path/to/file.py",
-          "old_string": "...",
-          "new_string": "..."
-        }
-      }
-    ]
-  },
-  "timestamp": "2025-12-01T19:32:48.590Z",
-  "sessionId": "9aea9a46-9010-4876-ac8c-27b08cc9cee1"
-}
-```
-
-**User message entries:**
-
-```json
-{
-  "type": "user",
-  "message": {
-    "content": [
-      {
-        "type": "text",
-        "text": "User's message here"
-      }
-    ]
-  },
-  "timestamp": "2025-12-01T19:25:00.000Z"
-}
-```
-
-## Common Queries
-
-### Show recent Edit operations
+Validated on this machine with Codex CLI `0.153.4`:
 
 ```bash
-CURRENT_SESSION=$(~/.claude/skills/session_logs/find-current-session.sh | head -1)
-
-grep '"type":"tool_use"' "$CURRENT_SESSION" | \
-  jq -r 'select(.message.content[0].name == "Edit") |
-    "\(.timestamp): Edit \(.message.content[0].input.file_path)"'
+CODEX_SESSION=$(~/.codex/skills/session_logs/find-current-session.sh codex)
+~/.codex/skills/session_logs/analyze-session.sh "$CODEX_SESSION"
+~/.codex/skills/session_logs/conversation.sh codex "$CODEX_SESSION"
 ```
 
-### Show recent Bash commands
+Codex stores transcripts as
+`~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`. The current CLI exports
+`CODEX_THREAD_ID` (also accepted: `CODEX_SESSION_ID`); the canonical parent
+filename ends in that id. Approval flows can create a smaller paired JSONL file
+with the same session id, so the helper selects the larger parent transcript.
+Codex user turns are `response_item` records with
+`payload.type: "message", payload.role: "user"`; do not also read
+`event_msg` `user_message` records because they duplicate those turns. Codex
+compaction is `event_msg.payload.type: "context_compacted"` in the same file.
+Harness-injected role-user setup blocks are retained for completeness and should
+be distinguished from the user's actual request while interpreting the result.
+
+If the session-id environment variable is missing or the helper reports an
+ambiguous candidate, inspect `analyze-session.sh` output and choose the file
+whose session id, working directory, and activity match this agent. Never guess
+from a post-compaction summary alone.
+
+## Using the recovered conversation
+
+After running `conversation.sh`:
+
+1. Read all emitted user windows, including the first one and everything after
+   every compaction marker.
+2. Use the two preceding agent messages to understand what each user turn was
+   responding to. Treat an absent preceding message at the beginning as normal.
+3. Reconstruct the original problem, pivots, explicit requests, unanswered
+   questions, promises, and work that was discussed but not completed.
+4. Use that reconstruction as an input to loose-thread and followup analysis.
+   Do not silently discard a thread just because the current context no longer
+   contains it.
+
+## Other queries
+
+For a compact inventory rather than the full conversation:
 
 ```bash
-grep '"type":"tool_use"' "$CURRENT_SESSION" | \
-  jq -r 'select(.message.content[0].name == "Bash") |
-    "\(.message.content[0].input.description): \(.message.content[0].input.command[0:80])"'
+~/.codex/skills/session_logs/analyze-session.sh codex
+~/.claude/skills/session_logs/analyze-session.sh claude
 ```
 
-### Extract all tool calls
-
-```bash
-grep '"type":"tool_use"' "$CURRENT_SESSION" | \
-  jq -r '.message.content[0].name' | sort | uniq -c | sort -rn
-```
-
-### Get user messages
-
-```bash
-grep '"type":"user"' "$CURRENT_SESSION" | \
-  jq -r '.message.content[0].text' | head -20
-```
-
-### Find files modified in session
-
-```bash
-grep '"type":"tool_use"' "$CURRENT_SESSION" | \
-  jq -r 'select(.message.content[0].name == "Edit" or .message.content[0].name == "Write") |
-    .message.content[0].input.file_path' | sort -u
-```
-
-### Session statistics
-
-```bash
-echo "Session: $CURRENT_SESSION"
-echo "Session ID: $(tail -1 "$CURRENT_SESSION" | jq -r .sessionId)"
-echo "Total entries: $(wc -l < "$CURRENT_SESSION")"
-echo "Tool uses: $(grep -c '"type":"tool_use"' "$CURRENT_SESSION")"
-echo "User messages: $(grep -c '"type":"user"' "$CURRENT_SESSION")"
-```
-
-## Use Cases
-
-**For /followups command:**
-
-- Verify files modified in session still exist on disk
-- Extract conversation TODOs and incomplete actions
-- Find all Edit/Write operations to check against git status
-
-**For debugging:**
-
-- Check what Bash commands were executed
-- Verify tool parameters that were used
-- Trace conversation flow and reasoning
-
-**For delegation:**
-
-- Provide session logs to subagents for analysis
-- Extract specific conversation segments
-- Mine historical context for decision-making
-
-## Notes
-
-- Session logs update in real-time as the session progresses
-- Multiple sessions can be active simultaneously (parallel instances)
-- Agent subprocesses create separate session files (prefixed with `agent-`)
-- Session files persist across Claude Code restarts
-- Very large sessions may have truncated context but full tool history
+Pass an explicit transcript path to either helper when reviewing an older
+session. The scripts distinguish the two JSONL schemas and count actual user
+turns, agent messages, tool calls, and compaction markers without relying on
+raw `grep` counts.
