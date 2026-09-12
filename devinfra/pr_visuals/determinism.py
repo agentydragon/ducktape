@@ -27,6 +27,7 @@ from pathlib import Path
 
 from devinfra.pr_visuals.artifacts import Runner, list_ci_artifacts
 from devinfra.pr_visuals.targets import TestRun, list_test_runs
+from util.bazel.workspace import get_build_workspace_directory
 
 # What a rendered scene is published as; anything else in the outputs is not a render.
 RENDER_SUFFIX = ".png"
@@ -65,6 +66,9 @@ class Observation:
 def visual_fleet(*, bbr: Path, run: Runner) -> list[str]:
     """Every browser target in the repo, asked of Bazel.
 
+    Run from the workspace, like every `bbr` call here: `bbr` reads the git repository at its
+    working directory, and under `bazel run` that is this binary's runfiles tree, which is not one.
+
     `streamed_jsonproto` rather than the default label output, because the runner's own progress
     shares this stdout: one target per line as JSON is a payload a log line cannot imitate, so a
     line either parses into a rule record or is not one. Reading labels as text would instead need
@@ -73,8 +77,16 @@ def visual_fleet(*, bbr: Path, run: Runner) -> list[str]:
     escape sequence glued to its front and no leading "//" at all.
     """
     result = run(
-        [bbr, "query", "--output=streamed_jsonproto", VISUAL_FLEET], check=True, text=True, capture_output=True
+        [bbr, "query", "--output=streamed_jsonproto", VISUAL_FLEET],
+        check=False,
+        text=True,
+        capture_output=True,
+        cwd=get_build_workspace_directory(),
     )
+    if result.returncode != 0:
+        # Captured, so nothing `bbr` said has reached the log on its own: repeat it here, or the
+        # failure reads as a bare exit status with no cause.
+        raise SystemExit(f"`bbr query` exited {result.returncode}:\n{result.stderr}")
     labels = sorted({name for line in result.stdout.splitlines() if (name := _rule_label(line)) is not None})
     if not labels:
         raise SystemExit(f"`{VISUAL_FLEET}` matched nothing -- that tag is how the fleet is found")
@@ -114,6 +126,7 @@ def run_once(targets: list[str], *, bbr: Path, run: Runner) -> str:
         [bbr, "test", f"--invocation_id={invocation}", "--nocache_test_results", "--noremote_accept_cached", *targets],
         check=False,
         text=True,
+        cwd=get_build_workspace_directory(),
     )
     return invocation
 
@@ -130,11 +143,17 @@ def observe(invocations: list[str], *, bbapi: Path, run: Runner) -> dict[Render,
     return dict(seen)
 
 
-def observe_targets(invocations: list[str], *, bbapi: Path, run: Runner) -> dict[str, list[TestRun]]:
-    """Every run's view of each target, keyed by label."""
+def observe_targets(
+    invocations: list[str], targets: list[str], *, bbapi: Path, run: Runner
+) -> dict[str, list[TestRun]]:
+    """Every run's view of each target, keyed by label.
+
+    `targets` is what was swept, so a listing that came back short can be completed rather than
+    quietly reporting on fewer targets than ran.
+    """
     by_label: dict[str, list[TestRun]] = defaultdict(list)
     for invocation in invocations:
-        for test_run in list_test_runs(invocation, bbapi=bbapi, run=run):
+        for test_run in list_test_runs(invocation, targets, bbapi=bbapi, run=run):
             by_label[test_run.label].append(test_run)
     return dict(by_label)
 
@@ -207,10 +226,12 @@ def main() -> None:
     parser.add_argument("--bbapi", type=Path, default=Path("bbapi"))
     parser.add_argument("--summary", type=Path, help="Write the markdown report here as well as to stdout.")
     args = parser.parse_args()
-    targets = args.targets or visual_fleet(bbr=args.bbr, run=subprocess.run)
-
+    # Before the query: resolving the fleet is a remote Bazel round trip, and spending it only to
+    # reject an argument makes a typo cost a minute and look like a tool failure.
     if args.runs < 2:
         raise SystemExit("--runs must be at least 2; a single run cannot show reproducibility")
+
+    targets = args.targets or visual_fleet(bbr=args.bbr, run=subprocess.run)
 
     invocations = []
     for index in range(args.runs):
@@ -221,7 +242,9 @@ def main() -> None:
     if not observations:
         raise SystemExit(f"no renders published by {targets}; nothing to compare")
 
-    summary = report(observations, invocations, observe_targets(invocations, bbapi=args.bbapi, run=subprocess.run))
+    summary = report(
+        observations, invocations, observe_targets(invocations, targets, bbapi=args.bbapi, run=subprocess.run)
+    )
     print(summary)
     if args.summary:
         args.summary.write_text(summary)
