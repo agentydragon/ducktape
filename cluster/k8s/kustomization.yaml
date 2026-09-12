@@ -35,6 +35,7 @@ resources:
   - descheduler/flux-kustomization.yaml
   - cnpg/flux-kustomization.yaml
   - valkey/flux-kustomization.yaml
+  - reflector-artifact/flux-kustomization.yaml
   - reflector/flux-kustomization.yaml
   - node-feature-discovery/flux-kustomization.yaml
   - nvidia-device-plugin/flux-kustomization.yaml
