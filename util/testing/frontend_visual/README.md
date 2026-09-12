@@ -1,8 +1,8 @@
 # frontend_visual
 
-Shared Puppeteer/Playwright infrastructure for per-scenario visual render-health
-tests (see `visual-test-lib.mjs` for the JS/Puppeteer path used by
-`study_casino/frontend`, `props/frontend`, and `airlock/frontend`, and
+Shared Puppeteer/Playwright infrastructure for visual render-health tests (see
+`visual-test-lib.mjs` for the JS/Puppeteer path used by `study_casino/frontend`,
+`props/frontend`, `airlock/frontend` and `x/agentplane/app/frontend`, and
 `frontend_visual.py` for the Python/Playwright path used by `study_casino/tests`
 and `finance/augur`). `capture.mjs` holds the lower-level page-prep/capture
 primitives (`prepareDeterministicPage`, `screenshotElement`, `waitForStable`) that
@@ -16,6 +16,25 @@ There are no checked-in pixel baselines: these tests gate render health (the
 harness loads, the scenario mounts, zero uncaught page errors) and publish the
 rendered PNG for PR visual review instead — see
 `devinfra/pr_visuals/plans/goldens_to_pr_visuals.md`.
+
+## One target per scenario, or one target for all of them
+
+`visual-test-lib.mjs` offers two entry points over the same capture path, and a package picks by
+where it wants its scenario list to live.
+
+- **`main(name, options)`** — one `js_test` per scenario, each with its own entry-point `.mjs`.
+  Scenario names are then in BUILD as well as in the harness. `props/frontend`,
+  `airlock/frontend` and `study_casino/frontend` work this way.
+- **`runScenarios(table, {title})`** — one `js_test` over a whole table, split with `shard_count`.
+  The list lives only in the table; BUILD carries a shard count, which needs no edit when the
+  table grows. One browser serves every scenario in a shard, and a failure is recorded and the
+  sweep continues, so a run enumerates every broken scene rather than stopping at the first.
+  `x/agentplane/app/frontend` works this way.
+
+Under `runScenarios`, `--test_filter=<scenario>` (Bazel's `TESTBRIDGE_TEST_ONLY`) addresses a
+single scenario — the substitute for a per-scenario target name. Filtering happens before
+sharding, so the match runs wherever it lands and the other shards pass on nothing; a filter
+matching no scenario fails rather than passing vacuously.
 
 ## Screenshot target: element, not viewport
 
@@ -46,7 +65,7 @@ the screenshot tracks the true CSS instead of a number that can drift from it.
 
 ## Waiting for a scene
 
-`main()` takes `readySelectors`: the scene's own readiness conditions, waited for
+Every scenario takes `readySelectors`: the scene's own readiness conditions, waited for
 before the capture. `waitForStable` (fonts applied, images decoded, a frame
 painted) knows nothing about a scene's content, so anything that arrives after
 mount — a mocked fetch's result, a lazily-mounted component — needs a selector

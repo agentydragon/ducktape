@@ -40,6 +40,17 @@ import {
   type SessionSummary,
 } from "../protocol_pb";
 import { routes } from "./network";
+import { SCENARIOS, type Scenario } from "./scenarios";
+
+/** Resolved before any fixture is built: the scenario's fields are what the fixtures vary on. */
+function resolveScenario(): Scenario {
+  const name = new URLSearchParams(window.location.search).get("page") ?? "sandboxes";
+  const found: Scenario | undefined = SCENARIOS[name];
+  if (found === undefined) throw new Error(`unknown harness scenario ${name}`);
+  return found;
+}
+
+const scenario = resolveScenario();
 
 // visual-test-lib freezes the wall clock before this bundle runs, so relative ages stay put.
 const NOW = Date.now();
@@ -814,7 +825,7 @@ const WEDGED: WatchHealth = {
 };
 
 function watch(): WatchHealth {
-  return new URLSearchParams(window.location.search).get("page")?.endsWith("_stale") ? WEDGED : FRESH;
+  return scenario.wedgedWatch ? WEDGED : FRESH;
 }
 
 /**
@@ -875,48 +886,7 @@ class HarnessEventSource extends EventTarget {
 
 window.EventSource = HarnessEventSource as unknown as typeof EventSource;
 
-const PAGES: Record<string, string> = {
-  sandboxes: "/",
-  // The launch form with the preset picked through the URL, as the form itself records a pick:
-  // egress policies and action policy sets pre-filled, thread defaults inherited.
-  new_sandbox: "/?preset=public-coder",
-  // The same list under a watch that has stopped: the banner is the page saying so.
-  sandboxes_stale: "/",
-  actions: "/actions",
-  actions_phone: "/actions",
-  actions_history: "/actions/history",
-  actions_history_phone: "/actions/history",
-  consent: "/connection-enrollments/test-only-opaque-handle",
-  consent_phone: "/connection-enrollments/test-only-opaque-handle",
-  consent_reconnect: "/connection-enrollments/test-only-opaque-handle",
-  consent_reconnect_phone: "/connection-enrollments/test-only-opaque-handle",
-  connections: "/",
-  connections_phone: "/",
-  sandbox: "/sandboxes/demo-a1b2",
-  // With the github-public binding's rules open, so the shot carries the credential detail — its
-  // description, where the proxy puts it, and which secret it comes from — and the other
-  // binding, still folded, shows the row the button starts as.
-  sandbox_egress: "/sandboxes/demo-a1b2?tab=egress&rules=demo-a1b2-github-public",
-  // The read-only action policy: both bindings, every set state, and the three lists.
-  sandbox_policy: "/sandboxes/demo-a1b2?tab=policy",
-  session: "/sandboxes/demo-a1b2/sessions/s-1",
-  // `%23` is the `#` of the item id: the view scrolls to the newest event, so the block this
-  // scenario has to show open is the second turn's, and the first stays folded beside it.
-  session_reasoning: "/sandboxes/demo-a1b2/sessions/s-1?reasoning=r%231",
-  // The raw scenario opens it too: a reader following the frames wants the thinking they produced.
-  session_raw: "/sandboxes/demo-a1b2/sessions/s-1?raw=1&reasoning=r%231",
-  // A standalone failed tool call, a run whose reasoning is still streaming beside a tool call that
-  // already failed, and a message queued mid-turn -- every status this session's badge-to-dot
-  // restyle touches that the main `session` fixture doesn't produce on its own. The run's own
-  // open/closed state isn't URL-synced (unlike a reasoning block's), so it renders folded, which is
-  // fine here: its summary is exactly where the streaming/failed dots this scenario exists for show.
-  session_states: "/sandboxes/demo-a1b2/sessions/s-2",
-};
-
-const page = new URLSearchParams(window.location.search).get("page") ?? "sandboxes";
-const path = PAGES[page];
-if (path === undefined) throw new Error(`unknown harness page ${page}`);
-if (page.startsWith("consent_reconnect")) {
+if (scenario.preselectReconnect) {
   const selectExisting = new MutationObserver(() => {
     const connection = document.querySelector<HTMLSelectElement>('select[name="connection"]');
     const account = document.querySelector<HTMLSelectElement>('select[name="service_account"]');
@@ -929,7 +899,7 @@ if (page.startsWith("consent_reconnect")) {
   });
   selectExisting.observe(document, { childList: true, subtree: true });
 }
-if (page === "new_sandbox") {
+if (scenario.openActionPolicySets) {
   // Once the preset's pick has landed as a pill, open the sets dropdown so the shot carries the
   // namespace's options beside the pre-filled pick.
   const openSets = new MutationObserver(() => {
@@ -946,6 +916,8 @@ if (page === "new_sandbox") {
 }
 
 if (page.startsWith("connections")) {
+}
+if (scenario.openSettings) {
   // There's no dedicated route for the Settings modal; open it the way an operator would, by
   // clicking the nav button, rather than a URL that only exists for this test.
   const openSettings = new MutationObserver(() => {
@@ -956,7 +928,7 @@ if (page.startsWith("connections")) {
   });
   openSettings.observe(document, { childList: true, subtree: true });
 }
-window.location.hash = path;
+window.location.hash = scenario.route;
 
 const container = document.getElementById("app");
 if (!container) throw new Error("missing #app");

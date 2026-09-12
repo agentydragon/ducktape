@@ -51,6 +51,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":client",
+        ":operator_login",
         "//:node_modules/vitest",
     ],
 )
@@ -639,8 +640,16 @@ vitest_bin.vitest_test(
 )
 
 # Visual render-health tests: the app mounted by visual/harness.tsx on canned inventory and runner
-# events (fetch and EventSource stubbed, nothing on the network), one scenario per js_test, the
-# PNG published for PR visual review on the shared //util/testing/frontend_visual machinery.
+# events (fetch and EventSource stubbed, nothing on the network), one scenario per row of
+# visual/scenarios.ts, the PNGs published for PR visual review on the shared
+# //util/testing/frontend_visual machinery.
+ts_library(
+    name = "visual_scenarios",
+    testonly = True,
+    srcs = ["visual/scenarios.ts"],
+    tsconfig = TSCONFIG,
+)
+
 ts_library(
     name = "visual_harness_lib",
     testonly = True,
@@ -655,6 +664,7 @@ ts_library(
         ":connections_fixture",
         ":live",
         ":protocol_pb",
+        ":visual_scenarios",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -703,54 +713,27 @@ VISUAL_DATA = [
     "@playwright_browsers//:chromium-headless-shell",
 ]
 
-# medium: a scenario launches Chromium and mounts the unbundled app; alone on a worker it takes
-# 30-40s, and under RBE contention longer still.
-[
-    js_test(
-        name = "visual_%s" % scenario,
-        size = "medium",
-        data = VISUAL_DATA,
-        entry_point = "visual/visual_test_%s.mjs" % scenario,
-        env = {
-            "HARNESS_PATH": "$(rootpath :visual_bundle_js)",
-            "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
-            "FONTCONFIG_FILE": "$(rootpath //util/testing/frontend_visual:fonts_conf)",
-            "FREETYPE_PROPERTIES": "cff:no-stem-darkening=1",
-        },
-        no_copy_to_bin = VISUAL_DATA,
-    )
-    for scenario in [
-        "actions",
-        "actions_phone",
-        "actions_history",
-        "actions_history_phone",
-        "connections",
-        "connections_phone",
-        "consent",
-        "consent_phone",
-        "consent_reconnect",
-        "consent_reconnect_phone",
-        "new_sandbox",
-        "new_sandbox_phone",
-        "sandboxes",
-        "sandboxes_stale",
-        "sandbox",
-        "sandbox_egress",
-        "sandbox_policy",
-        "session",
-        "session_raw",
-        "session_reasoning",
-        "session_states",
-        "sandboxes_phone",
-        "sandbox_phone",
-        "sandbox_egress_phone",
-        "sandbox_policy_phone",
-        "session_phone",
-        "session_raw_phone",
-        "session_reasoning_phone",
-        "session_states_phone",
-    ]
-]
+# Every scenario in visual/scenarios.ts, swept on one browser per shard -- `shard_count` buys the
+# parallelism per-scenario targets used to give, without BUILD repeating the scenario list. Run one
+# with `--test_filter=<scenario>`; see AGENTS.md.
+#
+# medium: a shard renders 4-5 scenarios on one Chromium, measured at 10-16s per shard
+# (invocation 4493681a-c750-49ba-af99-d756df6e956e) -- against 30-40s for a single scenario when
+# each one paid its own browser launch and input staging.
+js_test(
+    name = "visual",
+    size = "medium",
+    data = VISUAL_DATA + [":visual_scenarios"],
+    entry_point = "visual/runner.mjs",
+    env = {
+        "HARNESS_PATH": "$(rootpath :visual_bundle_js)",
+        "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
+        "FONTCONFIG_FILE": "$(rootpath //util/testing/frontend_visual:fonts_conf)",
+        "FREETYPE_PROPERTIES": "cff:no-stem-darkening=1",
+    },
+    no_copy_to_bin = VISUAL_DATA,
+    shard_count = 6,
+)
 
 js_test(
     name = "sw_test",
