@@ -51,7 +51,6 @@ flowchart TB
     ING["Deferred support<br/>Event & Notification Hub<br/>external events -> Agent/Thread ingress"]:::future
     DT["Deferred<br/>driver-provided declarations/background control"]:::future
     AG["Deferred<br/>hosted Thread lifecycle<br/>cross-Identity read policy"]:::future
-    IDENTITY_SCOPE["Deferred discussion<br/>cross-service static Identity access<br/>MCP and binding-authority placement"]:::future
     PROD["Milestone<br/>production-capable governed action execution"]:::milestone
     ACTION_PROVENANCE_PRUNE["Deferred idea<br/>prune ActionRequestInput origin/correlation<br/>collapse to one client-authored identifier?"]:::future
     CONNECTION_SA_REBIND["Planned mutation<br/>rebind a Connection's ServiceAccount in place<br/>no mutation exists; only a fresh OAuth consent does"]:::future
@@ -408,23 +407,6 @@ No acknowledgement, retry, steering, cancellation, or completion may be invented
 Decide the narrow common contract only after these observations; keep unsupported operations native
 or explicitly unavailable. **Deferred:** generic queue management and unproven per-input cancellation.
 
-### `IDENTITY_SCOPE` — cross-service Identity authority and MCP placement
-
-**Deferred discussion:** hosted agents will access multiple Agentplane services through Sandbox-token
-authentication; external harnesses should likewise be eligible for explicitly authorized access
-beyond Actions without becoming hosted Sandboxes. Conversation search/reading is one example,
-not the scope of the feature. Reconsider whether the MCP frontend and Connection-to-Identity binding
-authority should move out of the Action Service. Compare shared-facade and direct-service access;
-each resource-owning service retains its authorization, independent of caller authentication.
-Sharing an Identity's Action scope does not by itself grant access to another service.
-
-Discuss resource-specific permissions, credential audiences, trusted identity propagation, revocation, and preservation
-of exact client provenance across services. The in-process placement is the first delivery slice,
-not an ownership decision: other services need not become Action executors to be accessible, and
-sharing authentication infrastructure does not require one bearer accepted everywhere. This is not
-a decision to extract now, and not a reason to add speculative service interfaces or preset
-coupling.
-
 ### `ING` — Event & Notification Hub
 
 **Deferred support:** consume Action events and external sources such as GitHub/Calendar, match
@@ -441,6 +423,9 @@ Action outbox or event store; cross-Identity delivery requires an explicit read 
 - delegated-versus-brokered external-access policy and grant/revocation semantics — see
   [`external_access.md`](external_access.md);
 - MCP registry, dynamic action marketplace, standing grants, and cross-agent permissions;
+- access to Agentplane services beyond Actions for hosted agents and external harnesses — the
+  constraints are in
+  [workload authentication § Access beyond Actions](../docs/workload_authentication.md#access-beyond-actions);
 - per-destination workload audiences until recipient isolation is required;
 - per-ServiceAccount backend credential bindings — every caller of an ActionGroup shares its
   executor's credential today;
