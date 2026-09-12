@@ -135,8 +135,8 @@ importers:
         specifier: ^3.3.3
         version: 3.3.4(webpack@5.110.3(postcss@8.5.13))
       typeface-varela-round:
-        specifier: 0.0.54
-        version: 0.0.54
+        specifier: 0.0.71
+        version: 0.0.71
       uuid:
         specifier: ^7.0.3
         version: 7.0.3
@@ -7370,8 +7370,8 @@ packages:
   typedarray@0.0.6:
     resolution: {integrity: sha512-/aCDEGatGvZ2BIk+HmLf4ifCJFwvKFNb9/JeZPMulfgFracn9QFcAf5GO8B/mweUjSoblS5In0cWhqpfs/5PQA==}
 
-  typeface-varela-round@0.0.54:
-    resolution: {integrity: sha512-HqFwlenpXJglZgxyHWQm6J8FPCT90OA7dt5MAABkZftiAfaVSlOsZp1m5xEG9qhIt1Shp+FozOTCHY3ceQaKVw==}
+  typeface-varela-round@0.0.71:
+    resolution: {integrity: sha512-wxFtFZ0lp82cM1i7ec2kACtRwBz0H986zaDlqDtLXSpCX83Rujr2VAkVtud7zvKTeUILADuf/JYk67zgO5+zsg==}
 
   typescript@5.9.3:
     resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
@@ -16324,7 +16324,7 @@ snapshots:
 
   typedarray@0.0.6: {}
 
-  typeface-varela-round@0.0.54: {}
+  typeface-varela-round@0.0.71: {}
 
   typescript@5.9.3: {}
 
