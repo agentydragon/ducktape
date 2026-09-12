@@ -50,8 +50,6 @@ flowchart TB
     RETIRE_TOOLS["Deferred migration<br/>retire Haku Console tool-call/<br/>approval management"]:::future
     INPUT_DELIVERY["P0 behavior, independent<br/>input delivery/replay semantics<br/>provider research and captures first"]:::active
     T3["Deferred product work<br/>trajectory search and lookup<br/>later prioritization"]:::future
-    PR["Remaining deployment acceptance<br/>egress safety image + two staging replicas<br/>bounded drain and watch-loss proof"]:::active
-    APP_ROLL["Remaining deployment acceptance<br/>integration app on two rolling replicas<br/>staging rollout proof"]:::active
     PC_EGRESS["Milestone<br/>public-coder-agent egress migration<br/>prod Agentplane proxy"]:::milestone
     PROFILES["Deferred decision<br/>capability profiles<br/>Rai design confirmation required"]:::future
     ACCESS["Deferred design<br/>delegated vs brokered external access<br/>grants and revocation"]:::future
@@ -88,9 +86,6 @@ flowchart TB
 
     INPUT_DELIVERY -. reliable Thread ingress .-> ING
     T3 -. product work .-> PROD
-    PR -. independent reliability .-> PROD
-    PR --> PC_EGRESS
-    APP_ROLL -. independent reliability .-> PROD
 
     ACCESS -. authority choice .-> EGRESS_CHANGE
 ```
@@ -133,20 +128,6 @@ Haku Console migration is split: Agent/conversation management and tool-call/app
 can retire on different schedules after their respective replacement surfaces exist. Neither is a
 prerequisite for the first Action/MCP acceptance.
 
-### `PR` — egress rollout acceptance
-
-The remaining work is delivery and live evidence, not another diagnostic history store, binding
-status controller, or leader election. Runtime contracts belong in the [egress specification](../egress/SPEC.md).
-
-- Verify every old proxy retires on the published safety image **before** removing the shared
-  CRD status schema and status-patch RBAC;
-  old informers fail their task group when a status patch is rejected.
-- Observe two ready Service endpoints on the safety image, shared committed decisions, a rollout
-  retaining an available endpoint, and bounded admitted-stream completion/interruption. Exercise
-  revocation/watch staleness on an already-open connection without replaying side-effecting requests.
-- Remove this entry only after deployed acceptance. PDBs do not protect against involuntary loss,
-  independent watches do not provide linearizable revocation, and existing TCP streams do not migrate.
-
 ### `BB` — BuildBuddy hosted-run credential boundary
 
 **Deferred decision:** accept the weaker hosted-runner boundary — a narrow `runner.RunRequest`
@@ -154,20 +135,6 @@ rewrite that keeps the real key out of the local Sandbox but hands it to agent-c
 BuildBuddy's runner — or wait for a stronger seam (a per-run BuildBuddy credential or a run-scoped
 gateway). The boundary, wire shape and required evidence are in
 [`buildbuddy_remote_auth.md`](../docs/buildbuddy_remote_auth.md).
-
-### `APP_ROLL` — integration app on two rolling replicas
-
-**Remaining deployment acceptance:** staging declares two replicas with RollingUpdate
-`maxUnavailable: 0`/`maxSurge: 1`, hostname spread and a PDB `minAvailable: 1`, matching the
-Actions Deployment; testing stays at one replica. Everything it waited on has landed:
-PostgreSQL-leased runner ingestion and database-backed browser delivery, independent runner
-attachments, a bounded shutdown that drains streams and fails readiness first, and no sandbox from
-before the independent-attachment protocol (all were deleted on 2026-09-11).
-
-**Acceptance evidence:** a rollout keeps an available endpoint throughout; a live session with an
-open browser stream survives the ingestion owner's exit and the stream reconnects from the
-database-backed cursor; an operator login made on one replica is valid on the other; no duplicate
-ingestion of one session's events. Remove this entry after the deployed rollout is observed.
 
 ### `EGRESS_CHANGE` — agent-requested egress policy expansion
 
