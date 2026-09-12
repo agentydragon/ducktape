@@ -53,8 +53,9 @@ jobs:
       # Word-split unquoted, because the whole value is one space-separated target list.
       - name: Run each target repeatedly and compare renders
         env:
-          # Every target that renders a browser scene. Hand-listed because each of these
-          # is wired by hand today, with no shared macro and so no tag to query for.
+          # Every target that renders a browser scene. Hand-listed only until this asks
+          # Bazel instead: #6336 tagged all fifteen `visual`, so
+          # `attr(tags, visual, //...)` already returns exactly this list.
           TARGETS: >-
             ${{ inputs.targets
               || '//aiquota/frontend:screenshots
