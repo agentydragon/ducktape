@@ -2,7 +2,7 @@ import { Accordion, Badge, Code, Group, Paper, Stack, Text, Title } from "@manti
 
 import { ActionCaller, ActionContext, RequestAuditDetails, stateLabel, useActionRequests } from "./actions";
 import { actionService, type ActionRequestView, type ActionService } from "./client";
-import { JsonView } from "./json_view";
+import { JsonView, unwrapMcpContent } from "./json_view";
 
 /** A decided/terminal ActionRequest, kept as a durable receipt: the decision it's a record of leads
  * the card, with the exact arguments folded behind a disclosure rather than shown unconditionally
@@ -53,7 +53,9 @@ function HistoryCard({ request }: { request: ActionRequestView }): JSX.Element {
             <Text size="sm" fw={600} mb={4}>
               Result
             </Text>
-            <JsonView value={request.execution.result} />
+            {/* Not every result is an MCP tool call's content-block shape; unwrapMcpContent leaves
+                anything else untouched. */}
+            <JsonView value={unwrapMcpContent(request.execution.result)} />
           </div>
         )}
         {request.execution?.error && (
