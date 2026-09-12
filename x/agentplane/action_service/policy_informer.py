@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable, Collection
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from functools import partial
@@ -127,7 +127,8 @@ class PolicyInformer:
         self._index = index
         self._custom_objects = custom_objects
         self._clock = clock
-        # What this replica last wrote, so a write is not repeated while its own MODIFIED event is in flight.
+        # What this replica last wrote, by object UID, so a write is not repeated while its own MODIFIED
+        # event is in flight and a recreated object (same name, new UID) is judged afresh.
         self._written: dict[str, Condition] = {}
         kinds: list[WatchedKind] = []
         for namespace in sorted(namespaces):
@@ -176,17 +177,22 @@ class PolicyInformer:
 
     async def _reconcile_status(self) -> None:
         now = self._clock()
-        live: set[str] = set()
-        for plural, store in ((POLICY_SETS_PLURAL, self._index.policy_sets), (BINDINGS_PLURAL, self._index.bindings)):
-            for key, obj in list(store.items()):
-                live.add(key)
+        for plural, store in self._stores():
+            for obj in list(store.values()):
                 desired = ready_condition(obj, now)
-                if _same(obj.status.ready(), desired) or _same(self._written.get(key), desired):
+                if _same(obj.status.ready(), desired) or _same(self._written.get(obj.metadata.uid), desired):
                     continue
-                self._written[key] = desired
+                self._written[obj.metadata.uid] = desired
                 await self._write(plural, obj.metadata, desired)
-        for key in set(self._written) - live:
-            del self._written[key]
+        # Forget objects that are gone, judged against the stores as they stand after the awaits above:
+        # a snapshot taken before them would forget another kind's write still in flight, and the next
+        # event would repeat it.
+        held = {obj.metadata.uid for _, store in self._stores() for obj in store.values()}
+        for uid in set(self._written) - held:
+            del self._written[uid]
+
+    def _stores(self) -> tuple[tuple[str, Mapping[str, ActionPolicySet | ActionPolicyBinding | InvalidResource]], ...]:
+        return ((POLICY_SETS_PLURAL, self._index.policy_sets), (BINDINGS_PLURAL, self._index.bindings))
 
     async def _write(self, plural: str, metadata: ObjectMeta, condition: Condition) -> None:
         body = {"status": {"conditions": [condition.model_dump(mode="json", by_alias=True, exclude_none=True)]}}
@@ -198,7 +204,7 @@ class PolicyInformer:
             # The object may be gone or edited meanwhile; the next event re-judges it. Nothing else
             # depends on the write, so an outage here is loud but not fatal.
             logger.warning("Ready status write for %s/%s failed: %s", plural, metadata.name, error.reason)
-            self._written.pop(namespaced_key(metadata.namespace, metadata.name), None)
+            self._written.pop(metadata.uid, None)
 
 
 def _same(observed: Condition | None, desired: Condition) -> bool:

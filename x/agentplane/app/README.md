@@ -231,13 +231,20 @@ multi-replica/two-operator test targets. Existing browser sessions must log in a
 Only operator Action arguments are unredacted; caller arguments and execution result/error
 redaction are unchanged. There is no app-owned Action/Decision/Execution authority.
 
-## Connection management
+## Settings
 
-`/#/connections` lists the Action Service's runtime named Connections and immutable grant history.
-The operator can rename or explicitly confirm unbind; unbind revokes active/pending authority,
-without deleting history or stopping already claimed executions. Whether a grant's ServiceAccount
-is still a labeled caller is displayed separately from the grant's lifecycle status: an active grant
-does not imply its ServiceAccount remains eligible.
+The nav row's Settings button opens a modal with OAuth clients/MCP servers/Notifications tabs; it
+has no dedicated route of its own. The one exception is `/#/mcp-servers`, the MCP-linkage OAuth
+callback's redirect target (see below): landing there opens the modal pre-selected to that tab
+instead of showing the Sandboxes list as if the linkage completed silently.
+
+The OAuth clients tab lists the Action Service's runtime named Connections, each row showing its
+most recent grant's OAuth client ID and the ServiceAccount it acts as; superseded grants stay in
+the Action Service's own history but are not listed here. The operator can explicitly confirm
+unlink, which revokes active/pending authority without deleting history or stopping already claimed
+executions. Whether that grant's ServiceAccount is still a labeled caller is displayed separately
+from the grant's lifecycle status: an active grant does not imply its ServiceAccount remains
+eligible. The tab does not offer renaming a Connection.
 
 The BFF proxies `GET /connections[/{id}]`, `PATCH /connections/{id}`,
 `POST /connections/{id}/unbind`, and `GET /connection-service-accounts` through the same request-bound
@@ -248,8 +255,8 @@ The app owns no Connection state. Reconnect/rebind begins with fresh authorizati
 client and selecting this Connection on the consent page; management has no direct retarget action.
 Policy editing and deployment are outside this surface.
 
-`/#/mcp-servers` lists the Action Service's OAuth-linked MCP server groups and links or disconnects
-each one. The BFF proxies `GET /mcp-servers`, `GET /mcp-servers/{id}/linkage`,
+The MCP servers tab lists the Action Service's OAuth-linked MCP server groups and links or
+disconnects each one. The BFF proxies `GET /mcp-servers`, `GET /mcp-servers/{id}/linkage`,
 `POST /mcp-servers/{id}/linkage/start`, and `POST /mcp-servers/{id}/linkage/disconnect` through the
 same operator federation; the provider's redirect lands on `GET /mcp-linkage/callback`, which
 completes the link and returns the browser to `/#/mcp-servers`. What a link authorizes and when a
@@ -316,8 +323,8 @@ stream is shown as disconnected rather than silently presenting stale state as l
 bounds stream lifetime to 30 seconds so each reconnect checks current browser-session state,
 including logout in another replica. These reconnects are authentication checks, not state polling.
 
-`/#/notifications` registers the current browser, lists registered browsers, identifies this one,
-and forgets registrations. Forgetting the current browser also unsubscribes locally. The stable
+The Settings modal's Notifications tab (`/#/notifications`, see [Settings](#settings)) registers the
+current browser, lists registered browsers, identifies this one, and forgets registrations. Forgetting the current browser also unsubscribes locally. The stable
 `/sw.js` service worker receives background Web Push, offers Approve/Deny, and opens the Actions
 page on a body tap or failed decision. Buttons use the existing operator session and an expected
 Action version, never authority supplied by the push message. A resolved notification has no

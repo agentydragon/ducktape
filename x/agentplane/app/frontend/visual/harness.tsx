@@ -333,6 +333,80 @@ const ACTIONS: ActionRequestView[] = [
       reconciled_at: null,
     },
   },
+  {
+    id: "70000000-0000-4000-8000-000000000003",
+    action: { group: "everything", name: "echo" },
+    arguments: { repository: "test-owner/other-repository" },
+    origin: { thread_id: THREADS[1].id },
+    correlation: {},
+    idempotency_key: "visual-denied",
+    caller_principal: "service-account:agentplane-visual:test-public-coder",
+    external_grant: {
+      caller: { namespace: "agentplane-visual", name: "test-public-coder" },
+      issuer: "https://test-actions.example/oauth",
+      client_id: "test-external-client",
+      connection_id: "73000000-0000-4000-8000-000000000003",
+      grant_id: "74000000-0000-4000-8000-000000000003",
+      revision: 1,
+    },
+    state: "denied",
+    version: 2,
+    created_at: ago(80 * 60_000),
+    updated_at: ago(79 * 60_000),
+    decision: {
+      id: "71000000-0000-4000-8000-000000000003",
+      verdict: "deny",
+      provider: "human_operator",
+      issuer: "test-operator",
+      decision_note: "Out of scope for this workload's binding.",
+      idempotency_key: "visual-deny",
+      decided_at: ago(79 * 60_000),
+    },
+    execution: null,
+  },
+  {
+    id: "70000000-0000-4000-8000-000000000004",
+    action: { group: "github", name: "search_code" },
+    arguments: { repository: "agentydragon/ducktape", query: "auto_allow" },
+    origin: { thread_id: THREADS[2].id },
+    correlation: {},
+    idempotency_key: "visual-auto-approved",
+    caller_principal: "kubernetes-sandbox:demo-a1b2",
+    state: "succeeded",
+    version: 3,
+    created_at: ago(15 * 60_000),
+    updated_at: ago(14 * 60_000),
+    decision: {
+      id: "71000000-0000-4000-8000-000000000004",
+      verdict: "allow",
+      provider: "policy_engine",
+      issuer: "policy_engine",
+      decision_note: null,
+      idempotency_key: "visual-policy-allow",
+      decided_at: ago(14 * 60_000),
+      policy_evidence: {
+        bindings: [{ namespace: "agentplane-visual", name: "demo-a1b2-github-public", resource_version: "12345" }],
+        policy_sets: [{ namespace: "agentplane-visual", name: "fixture_auto_allow", generation: 1 }],
+        matched: {
+          namespace: "agentplane-visual",
+          policy_set: "fixture_auto_allow",
+          source: "autoApproveIf",
+          index: 0,
+          type: "exact_actions",
+        },
+      },
+    },
+    execution: {
+      id: "72000000-0000-4000-8000-000000000004",
+      state: "succeeded",
+      result: { matches: 3 },
+      error: null,
+      created_at: ago(14 * 60_000),
+      started_at: ago(14 * 60_000 - 500),
+      completed_at: ago(14 * 60_000 - 900),
+      reconciled_at: null,
+    },
+  },
 ];
 
 const ATTACHED: Attached = create(AttachedSchema, {
@@ -553,6 +627,11 @@ routes.push(
     ],
   ],
   ["GET", /^\/connection-service-accounts$/, () => [{ namespace: "agentplane-visual", name: "operator-assistant" }]],
+  // The Settings modal mounts all three tabs at once (Mantine keepMounted); MCP servers and
+  // Notifications fetch on mount even while the OAuth clients tab is the one shown in the shot.
+  ["GET", /^\/mcp-servers$/, () => []],
+  ["GET", /^\/push\/config$/, () => ({ application_server_key: null })],
+  ["GET", /^\/push\/subscriptions$/, () => []],
   [
     "POST",
     /^\/connection-enrollments\/[^/]+\/preview$/,
@@ -672,12 +751,14 @@ const PAGES: Record<string, string> = {
   sandboxes_stale: "/",
   actions: "/actions",
   actions_phone: "/actions",
+  actions_history: "/actions/history",
+  actions_history_phone: "/actions/history",
   consent: "/connection-enrollments/test-only-opaque-handle",
   consent_phone: "/connection-enrollments/test-only-opaque-handle",
   consent_reconnect: "/connection-enrollments/test-only-opaque-handle",
   consent_reconnect_phone: "/connection-enrollments/test-only-opaque-handle",
-  connections: "/connections",
-  connections_phone: "/connections",
+  connections: "/",
+  connections_phone: "/",
   sandbox: "/sandboxes/demo-a1b2",
   // With the github-public binding's rules open, so the shot carries the credential detail — its
   // description, where the proxy puts it, and which secret it comes from — and the other
@@ -712,6 +793,17 @@ if (page.startsWith("consent_reconnect")) {
     account.dispatchEvent(new Event("change", { bubbles: true }));
   });
   selectExisting.observe(document, { childList: true, subtree: true });
+}
+if (page.startsWith("connections")) {
+  // There's no dedicated route for the Settings modal; open it the way an operator would, by
+  // clicking the nav button, rather than a URL that only exists for this test.
+  const openSettings = new MutationObserver(() => {
+    const button = [...document.querySelectorAll("button")].find((candidate) => candidate.textContent === "Settings");
+    if (!button) return;
+    openSettings.disconnect();
+    button.click();
+  });
+  openSettings.observe(document, { childList: true, subtree: true });
 }
 window.location.hash = path;
 

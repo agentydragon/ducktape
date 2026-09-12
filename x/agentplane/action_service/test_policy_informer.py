@@ -153,6 +153,7 @@ async def test_ready_is_written_once_per_generation_and_names_the_fault(
             _ready(index, VALID_SET, "True", 1)
             and _ready(index, GITHUB_SET, "True", 1)
             and _ready(index, INVALID_SET, "False", 1)
+            and index.bindings[key(BINDING)].status.ready() is not None
         )
     )
     written = {name: patch["conditions"][0] for name, patch in fake.status_patches}
