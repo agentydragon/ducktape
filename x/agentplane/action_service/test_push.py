@@ -51,7 +51,12 @@ async def test_replica_delivery_and_recovery(engine: AsyncEngine, db_url: str) -
         )
     store = ActionStore(sessions)
     request, _ = await store.submit(
-        ActionRequestInput(action=ActionIdentity(group="test", name="echo"), arguments={}, idempotency_key="push"),
+        ActionRequestInput(
+            action=ActionIdentity(group="test", name="echo"),
+            arguments={},
+            idempotency_key="push",
+            title="test title for push",
+        ),
         CALLER,
     )
     recorded: list[tuple[str, str]] = []

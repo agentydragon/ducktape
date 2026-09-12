@@ -223,6 +223,26 @@ class ActionRequestInput(BaseModel):
     idempotency_key: str = Field(min_length=1, max_length=200)
     action: ActionIdentity
     arguments: dict[str, JsonValue]
+    title: str = Field(
+        min_length=1,
+        max_length=60,
+        description=(
+            "One plain-language line saying what this request does, for the operator deciding it; "
+            'commit-subject length, e.g. "delete crashlooping backend pod". '
+            "Not the Action's group/name, which is shown already, and not a decision note, which the "
+            "operator writes back when deciding."
+        ),
+    )
+    description: str | None = Field(
+        default=None,
+        max_length=250,
+        description=(
+            "Optional detail or justification the title leaves out, for the operator deciding; build "
+            "on the title instead of restating it. "
+            "Not the Action's group/name, and not a decision note, which the operator writes back "
+            "when deciding."
+        ),
+    )
     origin: dict[str, JsonValue] = Field(default_factory=dict)
     correlation: dict[str, JsonValue] = Field(default_factory=dict)
 
@@ -285,6 +305,10 @@ class ActionRequestView(BaseModel):
     idempotency_key: str
     action: ActionIdentity
     arguments: dict[str, JsonValue]
+    title: str = Field(description="The caller-authored one-line summary, projected unchanged.")
+    description: str | None = Field(
+        description="The caller-authored added detail, projected unchanged; absent when the caller supplied none."
+    )
     origin: dict[str, JsonValue]
     correlation: dict[str, JsonValue]
     caller_principal: str | None

@@ -67,6 +67,7 @@ async def _allowed_execution(service: ActionService, *, idempotency_key: str) ->
     view = await service.submit(
         ActionRequestInput(
             idempotency_key=idempotency_key,
+            title=f"test title for {idempotency_key}",
             action=ActionIdentity(group=GROUP_KEY, name="echo_once"),
             arguments={"text": "hi"},
         ),
@@ -284,7 +285,10 @@ async def test_execution_refuses_arguments_incompatible_with_the_current_live_sc
 
         submitted = await service.submit(
             ActionRequestInput(
-                idempotency_key="schema-drift", action=ActionIdentity(group=GROUP_KEY, name="foo"), arguments={"x": 1}
+                idempotency_key="schema-drift",
+                title="test title for schema-drift",
+                action=ActionIdentity(group=GROUP_KEY, name="foo"),
+                arguments={"x": 1},
             ),
             CALLER,
         )
@@ -355,6 +359,7 @@ async def test_ambiguous_transport_loss_becomes_execution_unknown_without_retry(
         view = await service.submit(
             ActionRequestInput(
                 idempotency_key="transport-loss",
+                title="test title for transport-loss",
                 action=ActionIdentity(group="slow", name="slow_echo"),
                 arguments={"marker_path": str(marker_path), "seconds": 30.0, "text": "hi"},
             ),
@@ -406,6 +411,7 @@ async def test_runtime_binds_configured_mcp_group(engine: AsyncEngine, tmp_path:
             view = await service.submit(
                 ActionRequestInput(
                     idempotency_key="runtime",
+                    title="test title for runtime",
                     action=ActionIdentity(group="runtime", name="slow_echo"),
                     arguments={"marker_path": str(marker), "seconds": 0, "text": "bound"},
                 ),
@@ -675,6 +681,7 @@ async def test_approved_work_stays_unclaimed_during_outage_then_recovers(
         view = await service.submit(
             ActionRequestInput(
                 idempotency_key="outage",
+                title="test title for outage",
                 action=ActionIdentity(group=GROUP_KEY, name="echo_once"),
                 arguments={"text": "once"},
             ),

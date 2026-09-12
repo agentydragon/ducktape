@@ -484,6 +484,7 @@ async def test_main_oauth_serves_during_backend_outage_and_recovers(
             pending = await service.submit(
                 ActionRequestInput(
                     idempotency_key="after-outage",
+                    title="test title for after-outage",
                     action=ActionIdentity(group="remote", name="echo"),
                     arguments={"text": "recovered"},
                 ),
@@ -528,7 +529,10 @@ async def test_production_http_composition_one_execution_no_replay(
             view.model_dump_json() for view in catalog.group_views()
         )
         body = ActionRequestInput(
-            idempotency_key="http-once", action=ActionIdentity(group="remote", name="echo"), arguments={"text": "hi"}
+            idempotency_key="http-once",
+            title="test title for http-once",
+            action=ActionIdentity(group="remote", name="echo"),
+            arguments={"text": "hi"},
         )
         pending = await service.submit(body, caller)
         assert pending.state is ActionState.DECISION_PENDING

@@ -56,7 +56,10 @@ class SlowSilentExecutor:
 
 async def _allowed_execution(store: ActionStore, *, idempotency_key: str) -> Any:
     view, _ = await store.submit(
-        ActionRequestInput(idempotency_key=idempotency_key, action=ACTION_ID, arguments={}), CALLER
+        ActionRequestInput(
+            idempotency_key=idempotency_key, title=f"test title for {idempotency_key}", action=ACTION_ID, arguments={}
+        ),
+        CALLER,
     )
     await store.decide(
         view.id,
@@ -255,7 +258,13 @@ async def test_action_service_restarts_and_worker_liveness_never_double_dispatch
     await service.start()
     try:
         pending = await service.submit(
-            ActionRequestInput(idempotency_key="no-double-dispatch", action=ACTION_ID, arguments={}), CALLER
+            ActionRequestInput(
+                idempotency_key="no-double-dispatch",
+                title="test title for no-double-dispatch",
+                action=ACTION_ID,
+                arguments={},
+            ),
+            CALLER,
         )
         await service.decide(
             pending.id,
@@ -306,7 +315,10 @@ async def test_drain_fences_queued_dispatch_and_another_replica_claims_it(
         assert await store.pending_dispatches() == [request_id]
         assert executor.calls == 0
         with pytest.raises(ServiceDrainingError):
-            await first.submit(ActionRequestInput(idempotency_key="late", action=ACTION_ID, arguments={}), CALLER)
+            await first.submit(
+                ActionRequestInput(idempotency_key="late", title="test title for late", action=ACTION_ID, arguments={}),
+                CALLER,
+            )
         await second.start()
         await _poll_state(store, request_id, want=ActionState.SUCCEEDED)
         assert executor.calls == 1

@@ -257,6 +257,7 @@ async def test_submission_wait_receipts_events_and_owner_scope(frontend: Fronten
     async with frontend.client() as caller, frontend.client("test-token-b") as other:
         envelope = {
             "idempotency_key": "test-submit",
+            "title": "test title for test-submit",
             "action": {"group": "test-group", "name": "alpha"},
             "arguments": {"message": "test-message"},
         }
@@ -339,6 +340,7 @@ async def test_tools_act_as_the_identity_the_transport_verified(frontend: Fronte
                 {
                     "request": {
                         "idempotency_key": f"test-identity-{token}",
+                        "title": "test title for test-identity",
                         "action": {"group": "test-group", "name": "alpha"},
                         "arguments": {"message": "test-identity"},
                     }
@@ -358,6 +360,7 @@ async def test_revalidates_live_pod_and_rejects_duplicate_auth_and_forgery(front
             {
                 "request": {
                     "idempotency_key": "test-forgery",
+                    "title": "test title for test-forgery",
                     "action": {"group": "test-group", "name": "alpha"},
                     "arguments": {"message": "test"},
                     "caller_principal": "test-other",
@@ -403,6 +406,7 @@ async def test_submission_deadline_and_wait_validation(frontend: Frontend) -> No
     async with frontend.client() as client:
         request = {
             "idempotency_key": "test-bounded-submit",
+            "title": "test title for test-bounded-submit",
             "action": {"group": "test-group", "name": "alpha"},
             "arguments": {"message": "test-wait"},
         }
@@ -428,6 +432,7 @@ async def test_allowed_action_executes_and_returns_canonical_result(frontend: Fr
             {
                 "request": {
                     "idempotency_key": "test-execute",
+                    "title": "test title for test-execute",
                     "action": {"group": "test-group", "name": "alpha"},
                     "arguments": {"message": "test-result"},
                 }
@@ -490,6 +495,7 @@ async def test_http_disconnect_releases_wait_without_cancelling_action(
                         "arguments": {
                             "request": {
                                 "idempotency_key": "test-disconnect",
+                                "title": "test title for test-disconnect",
                                 "action": {"group": "test-group", "name": "alpha"},
                                 "arguments": {"message": "test-disconnect"},
                             },
@@ -546,6 +552,7 @@ async def test_cancellation_preserves_canonical_cutoff_ownership_and_retry(
     async with frontend.client() as caller, frontend.client("test-token-b") as other:
         request = {
             "idempotency_key": "test-cancel",
+            "title": "test title for test-cancel",
             "action": {"group": "test-group", "name": "alpha"},
             "arguments": {"message": "test-cancel"},
         }
@@ -606,6 +613,7 @@ async def test_cancellation_wakes_mcp_receipt_wait(frontend: Frontend, subscript
                     {
                         "request": {
                             "idempotency_key": "test-cancel-wake",
+                            "title": "test title for test-cancel-wake",
                             "action": {"group": "test-group", "name": "alpha"},
                             "arguments": {"message": "test-cancel-wake"},
                         }

@@ -78,6 +78,26 @@ describe("ActionRequests", () => {
     expect(container.textContent).toContain("test-exact-password");
   });
 
+  it("renders the caller's own title and description verbatim, as plain text", async () => {
+    const row = {
+      ...request("decision_pending", 1),
+      title: "delete the <b>crashlooping</b> test pod",
+      description: "Restarted 14 times in *5* minutes; the rest of the test deployment is healthy.",
+    };
+    const container = await render({ list: async () => [row], decide: vi.fn() }, ActionRequests);
+    expect(container.textContent).toContain(row.title);
+    expect(container.textContent).toContain(row.description);
+    expect(container.innerHTML).not.toContain("<b>");
+    expect(container.querySelector("em")).toBeNull();
+  });
+
+  it("renders a request whose caller supplied no description", async () => {
+    const row = { ...request("decision_pending", 1), description: null };
+    const container = await render({ list: async () => [row], decide: vi.fn() }, ActionRequests);
+    expect(container.textContent).toContain(row.title);
+    expect(container.textContent).not.toContain("null");
+  });
+
   it.each([
     ["Allow", "allow", "allowed"],
     ["Deny", "deny", "denied"],

@@ -93,6 +93,7 @@ async def grant(authority: ConnectionAuthority) -> Grant:
 def envelope() -> ActionRequestInput:
     return ActionRequestInput(
         idempotency_key="key",
+        title="test title for key",
         action=ActionIdentity(group="agentplane", name="echo"),
         arguments={},
         origin={"client_id": "forged", "grant_id": "forged", "issuer": "forged"},
