@@ -8,8 +8,8 @@ spec:
   path: ./cluster/k8s/flux-webhook
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: flux-webhook
     namespace: ducktape-flux
   timeout: 5m
   decryption:

@@ -3220,6 +3220,206 @@ spec:
 apiVersion: source.extensions.fluxcd.io/v1beta1
 kind: ArtifactGenerator
 metadata:
+  name: egress-proxy-rugged
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: egress-proxy-rugged
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/egress-proxy-rugged/**"
+          to: "@artifact/cluster/k8s/egress-proxy-rugged/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: evidence-market-roster
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: evidence-market-roster
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/evidence/market-roster/**"
+          to: "@artifact/cluster/k8s/evidence/market-roster/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: evidence-namespace
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: evidence-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/evidence/namespace/**"
+          to: "@artifact/cluster/k8s/evidence/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: firecrawl
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: firecrawl
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/firecrawl/app/**"
+          to: "@artifact/cluster/k8s/firecrawl/app/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: firecrawl-db
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: firecrawl-db
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/firecrawl/db/**"
+          to: "@artifact/cluster/k8s/firecrawl/db/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: flux-grafana-secrets
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: flux-grafana-secrets
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/flux-grafana-secrets/**"
+          to: "@artifact/cluster/k8s/flux-grafana-secrets/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: flux-image-automation-forgejo
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: flux-image-automation-forgejo
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/flux-image-automation-forgejo/**"
+          to: "@artifact/cluster/k8s/flux-image-automation-forgejo/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: flux-monitoring
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: flux-monitoring
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/flux-monitoring/**"
+          to: "@artifact/cluster/k8s/flux-monitoring/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: flux-webhook
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: flux-webhook
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/flux-webhook/**"
+          to: "@artifact/cluster/k8s/flux-webhook/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: flux-webhook-token
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: flux-webhook-token
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/flux-webhook-token/**"
+          to: "@artifact/cluster/k8s/flux-webhook-token/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
   name: activitywatch
   namespace: ducktape-flux
 spec:
