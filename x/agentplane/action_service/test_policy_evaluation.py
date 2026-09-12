@@ -1,8 +1,10 @@
-"""Each policy kind's own test, how a caller's bindings resolve from the index at one instant, and
-what the caller and the operator read of that resolution."""
+"""How a caller's bindings resolve from the index at one instant, what the caller and the operator
+read of that resolution, and the provider deciding the GitHub repository kinds over it: a match
+carries the repository in evidence, every miss is no opinion."""
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
@@ -11,17 +13,18 @@ import pytest
 import pytest_bazel
 from pydantic import JsonValue
 
+from github_policy.visibility import RepositoryVisibilityService
 from x.agentplane.action_service.catalog import ActionIdentity
-from x.agentplane.action_service.models import PolicyKind, SandboxCaller, ServiceAccountCaller, ServiceAccountRef
-from x.agentplane.action_service.policy_evaluation import (
-    Matched,
-    NotMatched,
-    PolicySetDecisionProvider,
-    evaluate,
-    resolve_bindings,
+from x.agentplane.action_service.models import (
+    MatchedPolicy,
+    MatchedRepository,
+    PolicyKind,
+    ProviderVerdict,
+    SandboxCaller,
+    ServiceAccountCaller,
+    ServiceAccountRef,
 )
-from x.agentplane.action_service.policy_informer import PolicyIndex, namespaced_key
-from x.agentplane.action_service.policy_resources import (
+from x.agentplane.action_service.policies.resources import (
     ActionPolicyBinding,
     ActionPolicySet,
     InvalidResource,
@@ -30,16 +33,27 @@ from x.agentplane.action_service.policy_resources import (
     parse_binding,
     parse_policy_set,
 )
-from x.agentplane.action_service.policy_view import ArgumentSchemaView, ExactActionsView, caller_view, subject_view
-from x.agentplane.action_service.providers import DecisionContext
+from x.agentplane.action_service.policy_evaluation import (
+    AUTO_APPROVE_REASON,
+    PolicySetDecisionProvider,
+    resolve_bindings,
+)
+from x.agentplane.action_service.policy_informer import PolicyIndex, namespaced_key
+from x.agentplane.action_service.policy_view import (
+    ArgumentSchemaView,
+    ExactActionsView,
+    GitHubPublicRepositoryView,
+    GitHubRepositoryView,
+    caller_view,
+    subject_view,
+)
+from x.agentplane.action_service.providers import DecisionContext, ResolvedBinding
 
 NAMESPACE = "agentplane-test"
 NOW = datetime(2026, 9, 12, 12, 0, tzinfo=UTC)
 SANDBOX = SandboxCaller(namespace=NAMESPACE, sandbox_uid="sandbox-uid-1")
 ACCOUNT = ServiceAccountRef(namespace=NAMESPACE, name="test-caller")
 CALLER = ServiceAccountCaller(service_account=ACCOUNT, grant_revision=1)
-ECHO = ActionIdentity(group="everything", name="echo")
-
 SCHEMA_POLICY: dict[str, Any] = {
     "type": "argument_schema",
     "actions": {"everything": ["echo"]},
@@ -89,39 +103,6 @@ def index_of(*objects: ActionPolicySet | ActionPolicyBinding | InvalidResource, 
         else:
             index.bindings[key] = obj
     return index
-
-
-@pytest.mark.parametrize(
-    ("arguments", "matched"),
-    [
-        ({"message": "hi"}, True),
-        ({"message": "hi", "count": 2}, True),
-        ({}, False),  # `required` decides presence; `properties` alone never does.
-        ({"message": "too long"}, False),
-        ({"message": "hi", "count": "2"}, False),
-        ({"message": "hi", "extra": True}, False),
-    ],
-)
-def test_argument_schema_has_plain_json_schema_semantics(arguments: dict[str, JsonValue], matched: bool) -> None:
-    parsed = policy_set("set-a", [SCHEMA_POLICY])
-    assert isinstance(parsed, ActionPolicySet)
-    (policy,) = parsed.spec.auto_approve_if
-    assert isinstance(evaluate(policy, ECHO, arguments), Matched if matched else NotMatched)
-
-
-@pytest.mark.parametrize(
-    ("action", "matched"),
-    [
-        (ECHO, True),
-        (ActionIdentity(group="everything", name="add"), False),
-        (ActionIdentity(group="other", name="echo"), False),
-    ],
-)
-def test_exact_actions_matches_by_name_alone(action: ActionIdentity, matched: bool) -> None:
-    parsed = policy_set("set-a", [{"type": "exact_actions", "actions": {"everything": ["echo"]}}])
-    assert isinstance(parsed, ActionPolicySet)
-    (policy,) = parsed.spec.auto_approve_if
-    assert isinstance(evaluate(policy, action, {"anything": [1, 2]}), Matched if matched else NotMatched)
 
 
 def test_resolution_takes_unexpired_valid_bindings_naming_the_caller_with_their_existing_sets() -> None:
@@ -181,6 +162,27 @@ def test_nothing_resolves_before_the_informer_has_synced() -> None:
     assert resolve_bindings(index, SANDBOX, NOW) == ()
     index.synced = True
     assert len(resolve_bindings(index, SANDBOX, NOW)) == 1
+
+
+def test_every_kind_projects_to_its_own_view() -> None:
+    index = index_of(
+        policy_set(
+            "set-kinds",
+            [
+                {"type": "exact_actions", "actions": {"everything": ["echo"]}},
+                SCHEMA_POLICY,
+                {"type": "github_repository", "actions": {"github": ["search_code"]}, "owner": "o", "repository": "r"},
+                {"type": "github_public_repository", "actions": {"github": ["get_file_contents"]}},
+            ],
+        ),
+        binding("b-kinds", {"sandbox": {"name": "coder", "uid": SANDBOX.sandbox_uid}}, ["set-kinds"]),
+    )
+    views = [entry.policy for entry in caller_view(index, SANDBOX, NOW).auto_approve_if]
+    assert [view.type for view in views] == list(PolicyKind)
+    assert isinstance(views[2], GitHubRepositoryView)
+    assert (views[2].owner, views[2].repository, views[2].actions) == ("o", "r", {"github": ["search_code"]})
+    assert isinstance(views[3], GitHubPublicRepositoryView)
+    assert views[3].actions == {"github": ["get_file_contents"]}
 
 
 @pytest.fixture
@@ -276,11 +278,13 @@ def test_both_views_say_nothing_auto_decides_before_sync(mixed_index: PolicyInde
         assert (view.bindings, view.auto_approve_if) == ([], [])
 
 
-async def test_an_entry_is_named_as_the_decision_names_the_policy_that_matched(mixed_index: PolicyIndex) -> None:
+async def test_an_entry_is_named_as_the_decision_names_the_policy_that_matched(
+    mixed_index: PolicyIndex, github_visibility: Callable[..., RepositoryVisibilityService]
+) -> None:
     """A caller reads a Decision's evidence and its own policy in one vocabulary: the entry the
     provider records in `MatchedPolicy` is the first `auto_approve_if` entry that matches."""
     view = caller_view(mixed_index, SANDBOX, NOW)
-    outcome = await PolicySetDecisionProvider().decide(
+    outcome = await PolicySetDecisionProvider(visibility=github_visibility()).decide(
         DecisionContext(
             request_id=uuid4(),
             action=ActionIdentity(group="everything", name="add"),
@@ -305,6 +309,123 @@ def test_invalid_resource_keeps_metadata_for_status_reporting() -> None:
         name="b-invalid", namespace=NAMESPACE, uid="uid-b-invalid", generation=1, resource_version="1"
     )
     assert broken.status == Status()
+
+
+GITHUB_READ_ACTIONS = {"github": ["get_file_contents", "search_pull_requests", "search_code"]}
+GET_FILE = ActionIdentity(group="github", name="get_file_contents")
+REPOSITORY_SET = policy_set(
+    "set-repository",
+    [{"type": "github_repository", "actions": GITHUB_READ_ACTIONS, "owner": "test-owner", "repository": "test-repo"}],
+)
+PUBLIC_SET = policy_set("set-public", [{"type": "github_public_repository", "actions": GITHUB_READ_ACTIONS}])
+
+
+def _context(action: ActionIdentity, arguments: dict[str, JsonValue], *sets: ActionPolicySet) -> DecisionContext:
+    bound = binding(
+        "b-github", {"sandbox": {"name": "coder", "uid": SANDBOX.sandbox_uid}}, [s.metadata.name for s in sets]
+    )
+    assert isinstance(bound, ActionPolicyBinding)
+    return DecisionContext(
+        request_id=uuid4(),
+        action=action,
+        arguments=arguments,
+        caller=SANDBOX,
+        bindings=(ResolvedBinding(binding=bound, policy_sets=sets),),
+    )
+
+
+async def test_github_repository_set_auto_approves_its_repository_with_the_repository_in_evidence(
+    github_visibility: Callable[..., RepositoryVisibilityService],
+) -> None:
+    assert isinstance(REPOSITORY_SET, ActionPolicySet)
+    provider = PolicySetDecisionProvider(visibility=github_visibility())
+    outcome = await provider.decide(
+        _context(GET_FILE, {"owner": "Test-Owner", "repo": "test-repo", "path": "README.md"}, REPOSITORY_SET)
+    )
+    assert outcome.verdict is ProviderVerdict.ALLOW
+    assert outcome.reason_code == AUTO_APPROVE_REASON
+    assert outcome.evidence is not None
+    assert outcome.evidence.matched == MatchedPolicy(
+        namespace=NAMESPACE,
+        policy_set="set-repository",
+        source="autoApproveIf",
+        index=0,
+        type=PolicyKind.GITHUB_REPOSITORY,
+        repository=MatchedRepository(owner="Test-Owner", repository="test-repo", confirmed_public=False),
+    )
+
+
+@pytest.mark.parametrize(
+    ("action", "arguments"),
+    [
+        pytest.param(GET_FILE, {"owner": "test-owner", "repo": "other", "path": "x"}, id="other-repository"),
+        pytest.param(GET_FILE, {"owner": "test-owner", "path": "x"}, id="no-repository"),
+        pytest.param(
+            ActionIdentity(group="github", name="search_pull_requests"),
+            {"owner": "test-owner", "repo": "test-repo", "query": "repo:someone/else is:open"},
+            id="smuggled-pull-request-qualifier",
+        ),
+        pytest.param(
+            ActionIdentity(group="github", name="search_code"),
+            {"query": "repo:test-owner/test-repo repo:someone/else x"},
+            id="two-code-search-qualifiers",
+        ),
+        pytest.param(
+            ActionIdentity(group="github", name="issue_read"),
+            {"owner": "test-owner", "repo": "test-repo", "issue_number": 1},
+            id="unlisted-action",
+        ),
+    ],
+)
+async def test_github_repository_set_misses_take_the_human_path(
+    action: ActionIdentity,
+    arguments: dict[str, JsonValue],
+    github_visibility: Callable[..., RepositoryVisibilityService],
+) -> None:
+    assert isinstance(REPOSITORY_SET, ActionPolicySet)
+    provider = PolicySetDecisionProvider(visibility=github_visibility())
+    outcome = await provider.decide(_context(action, arguments, REPOSITORY_SET))
+    assert outcome.verdict is ProviderVerdict.NO_OPINION
+    assert outcome.evidence is None
+
+
+async def test_github_public_repository_set_auto_approves_a_confirmed_public_repository(
+    github_visibility: Callable[..., RepositoryVisibilityService],
+) -> None:
+    assert isinstance(PUBLIC_SET, ActionPolicySet)
+    provider = PolicySetDecisionProvider(visibility=github_visibility(("someone", "public-thing")))
+    outcome = await provider.decide(
+        _context(GET_FILE, {"owner": "someone", "repo": "public-thing", "path": "README.md"}, PUBLIC_SET)
+    )
+    assert outcome.verdict is ProviderVerdict.ALLOW
+    assert outcome.evidence is not None
+    assert outcome.evidence.matched.type is PolicyKind.GITHUB_PUBLIC_REPOSITORY
+    assert outcome.evidence.matched.repository == MatchedRepository(
+        owner="someone", repository="public-thing", confirmed_public=True
+    )
+    assert outcome.reason_description is not None
+    assert "confirmed-public repository someone/public-thing" in outcome.reason_description
+
+
+@pytest.mark.parametrize(
+    ("public", "unavailable"),
+    [
+        pytest.param((), False, id="not-public"),
+        pytest.param((("someone", "public-thing"),), True, id="lookup-unavailable"),
+    ],
+)
+async def test_github_public_repository_set_never_approves_without_a_confirmed_lookup(
+    public: tuple[tuple[str, str], ...],
+    unavailable: bool,
+    github_visibility: Callable[..., RepositoryVisibilityService],
+) -> None:
+    assert isinstance(PUBLIC_SET, ActionPolicySet)
+    provider = PolicySetDecisionProvider(visibility=github_visibility(*public, unavailable=unavailable))
+    outcome = await provider.decide(
+        _context(GET_FILE, {"owner": "someone", "repo": "public-thing", "path": "README.md"}, PUBLIC_SET)
+    )
+    assert outcome.verdict is ProviderVerdict.NO_OPINION
+    assert outcome.evidence is None
 
 
 if __name__ == "__main__":

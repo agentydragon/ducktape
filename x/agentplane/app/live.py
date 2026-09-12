@@ -38,7 +38,7 @@ from kubernetes_asyncio.client import CoreV1Api
 from pydantic import BaseModel, ConfigDict, Field
 
 from util.kubernetes import CustomObjectsClient
-from x.agentplane.action_service import policy_resources
+from x.agentplane.action_service.policies import resources as policy_resources
 from x.agentplane.app.action_federation import OperatorFederationError, operator_actions, upstream_failure_detail
 from x.agentplane.app.action_policy import (
     ACTION_POLICY_API,

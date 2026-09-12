@@ -48,10 +48,16 @@ service watches in the namespaces it accepts callers from. It reads `spec` only 
 each object's `Ready` condition, stamped with the generation it judged, whether the spec parsed;
 an invalid set or binding contributes nothing.
 
-Two policy kinds exist. `exact_actions` matches a listed Action by name alone; `argument_schema`
+Four policy kinds exist. `exact_actions` matches a listed Action by name alone; `argument_schema`
 also requires the arguments to satisfy a JSON Schema with plain JSON Schema semantics, so
-`properties` alone never implies presence. This version decides from `autoApproveIf` only; the
-deny lists are accepted and validated and produce no Decision.
+`properties` alone never implies presence. `github_repository` requires a listed GitHub MCP call to
+target one configured `owner`/`repository`: string `owner`/`repo` arguments compared
+case-insensitively, a pull-request search with no query-level `repo:` qualifier, a code search
+with exactly one unquoted `repo:owner/repo` qualifier. `github_public_repository` derives the
+target the same way and requires a live unauthenticated GitHub lookup to confirm it public; a
+lookup that fails or is unavailable matches nothing, so the request stays on the human path and is
+never denied for it. This version decides from `autoApproveIf` only; the deny lists are accepted
+and validated and produce no Decision.
 
 Policies are evaluated once, at admission, against the objects as the service holds them then:
 the caller's unexpired bindings, whose subject is matched from the authenticated Sandbox's
@@ -62,11 +68,12 @@ has synced, every caller is human-only. A later edit, expiry or deletion changes
 Decision, not this one's; dispatch re-checks only caller authority. The Decision records the
 bindings with their resource versions, the sets with their generations, and the matching policy.
 
-A caller can read its own effective policy: the bindings admission would resolve for it now, the
-sets that resolved, and the three lists in evaluation order, each entry named as a Decision's
-evidence names the matching policy. The read and the Decision come from one resolution, so they
-cannot disagree; it answers only for the authenticated caller's own subject, never for another;
-and it carries `synced`, which is false until the watch has synced -- then nothing auto-decides
+A caller can read an effective policy: the bindings admission would resolve now for its own
+subject, or for a Sandbox or ServiceAccount it names, the sets that resolved, and the three lists
+in evaluation order, each entry named as a Decision's evidence names the matching policy. The read
+and the Decision come from one resolution, so they cannot disagree; the answer says whose it is; a
+subject the service does not watch reads as no bindings; and it carries `synced`, which is false
+until the watch has synced -- then nothing auto-decides
 and every request takes the human path, whatever the objects say. A set that is missing or
 refused contributes nothing and is simply absent from the caller's view; verdicts, validation
 reports and labels are shown only to the operator, who can read the same resolution for any

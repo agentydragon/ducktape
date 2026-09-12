@@ -154,7 +154,7 @@ auto_approval_policies:
   # Any repository confirmed genuinely public — not bounded to a fixed owner/repo allowlist.
   # `type: github_public_repository` positively confirms the target repository's visibility with a
   # live, unauthenticated GitHub API call before approving (see
-  # haku/console/auto_approval/github.py) rather than inferring "public" from the absence
+  # github_policy/repository.py) rather than inferring "public" from the absence
   # of a restriction: the operator's GitHub OAuth token behind this connection can also reach
   # private repos it can see (agentydragon/gaffer-private included), so a bare owner/repo match
   # here would let a call read any of those just by naming it. The target repository is derived

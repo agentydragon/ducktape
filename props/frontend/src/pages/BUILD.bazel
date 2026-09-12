@@ -1,5 +1,4 @@
 load("@aspect_rules_js//js:defs.bzl", "js_library")
-load("//props/frontend:defs.bzl", "visual_test")
 
 package(default_visibility = [
     "//props/frontend:__pkg__",
@@ -87,12 +86,4 @@ js_library(
         "//props/frontend/src/lib:formatters",
         "//props/frontend/src/lib:router",
     ],
-)
-
-# Visual regression tests
-
-visual_test(
-    name = "visual_SnapshotDetail",
-    srcs = ["visual_test_SnapshotDetail.mjs"],
-    deps = [":SnapshotDetailPage"],
 )

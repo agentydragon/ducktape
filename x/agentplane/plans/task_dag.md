@@ -63,6 +63,7 @@ flowchart TB
     PROD["Milestone<br/>production-capable governed action execution"]:::milestone
     ACTION_PROVENANCE_PRUNE["Deferred idea<br/>prune ActionRequestInput origin/correlation<br/>collapse to one client-authored identifier?"]:::future
     CONNECTION_SA_REBIND["Planned mutation<br/>rebind a Connection's ServiceAccount in place<br/>no mutation exists; only a fresh OAuth consent does"]:::future
+    SANDBOX_SA["Deferred design<br/>one ServiceAccount per Sandbox<br/>a native Kubernetes identity to separate and grant on"]:::future
 
     CRED --> MCPAUTH
     MCPAUTH --> PROD
@@ -173,6 +174,23 @@ reconnect; and does it require re-running eligibility checks (the ServiceAccount
 `agentplane.allegedly.works/action-caller: "true"`) at rebind time, not just at original consent.
 No dependency on anything else; nothing waits on this. Once it exists, the settings table's
 ServiceAccount column becomes a real dropdown instead of static text.
+
+### `SANDBOX_SA` — one ServiceAccount per Sandbox
+
+**Deferred design:** every Sandbox Pod runs as the shared `agentplane-runner` ServiceAccount
+(`sandboxtemplate-agentplane-runner.yaml`), so a Sandbox has no Kubernetes identity of its own: the
+Action Service tells Sandboxes apart by namespace and UID from workload authentication, and an
+`ActionPolicyBinding` names one with the `sandbox {name, uid}` subject rather than a ServiceAccount.
+Running each Sandbox under its own ServiceAccount would give it a native identity to separate
+permissions on, and letting an agent act in Kubernetes directly would become a Kubernetes-native
+RoleBinding on its Sandbox's ServiceAccount rather than a governed Action or a policy exception.
+
+**Questions, not yet settled:** who creates and garbage-collects the per-Sandbox ServiceAccount (the
+integration app at launch, with an `ownerReference` like the bindings it writes, or the Sandbox
+controller); whether the ServiceAccount then becomes the one policy subject for both caller classes,
+collapsing the `sandbox` and `serviceAccount` subject forms and the two operator policy-read routes
+into one; and how the workload token's pinning of the live Sandbox (name and UID from TokenReview
+and the Pod) carries over. No dependency on anything else; nothing waits on this.
 
 ## Named gates and acceptance evidence
 

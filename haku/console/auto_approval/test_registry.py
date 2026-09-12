@@ -13,8 +13,8 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
+from github_policy.visibility import RepositoryVisibilityService
 from gmail_api.labels import GmailLabel, LabelType
-from haku.console.auto_approval.github import GitHubRepositoryVisibilityService
 from haku.console.auto_approval.registry import (
     AGENT_AUTO_APPROVAL_ID,
     AutoApprovalPolicyRegistry,
@@ -627,7 +627,7 @@ def _github_visibility_handler(*public_repositories: tuple[str, str], unavailabl
 def _policies_with_visibility(handler) -> AutoApprovalPolicyRegistry:
     http_client = httpx.AsyncClient(base_url="https://api.github.com", transport=httpx.MockTransport(handler))
     return AutoApprovalPolicyRegistry(
-        _CONFIG, github_repository_visibility=GitHubRepositoryVisibilityService(http_client, ttl_seconds=3600.0)
+        _CONFIG, github_repository_visibility=RepositoryVisibilityService(http_client, ttl_seconds=3600.0)
     )
 
 

@@ -14,8 +14,7 @@ from kubernetes_asyncio.client import ApiClient, CoreV1Api, CustomObjectsApi
 
 from util.kubernetes import CustomObjectsClient
 from x.agentplane.action_service.models import ServiceAccountRef
-from x.agentplane.action_service.policy_informer import PolicyIndex, PolicyInformer, namespaced_key
-from x.agentplane.action_service.policy_resources import (
+from x.agentplane.action_service.policies.resources import (
     BINDINGS_PLURAL,
     CALLER_LABEL,
     GROUP,
@@ -26,10 +25,12 @@ from x.agentplane.action_service.policy_resources import (
     ActionPolicySet,
     InvalidResource,
 )
+from x.agentplane.action_service.policy_informer import PolicyIndex, PolicyInformer, namespaced_key
 from x.agentplane.egress.testing.fake_apiserver import FakeApiServer, fake_apiserver
 
 NAMESPACE = "agentplane-policy-test"
 VALID_SET = "reads"
+GITHUB_SET = "github-reads"
 INVALID_SET = "broken"
 BINDING = "caller-reads"
 CALLER = "test-caller"
@@ -67,6 +68,18 @@ def seed(fake: FakeApiServer) -> None:
     fake.put(
         POLICY_SETS_PLURAL,
         policy_set(VALID_SET, {"autoApproveIf": [{"type": "exact_actions", "actions": {"g": ["a"]}}]}),
+    )
+    fake.put(
+        POLICY_SETS_PLURAL,
+        policy_set(
+            GITHUB_SET,
+            {
+                "autoApproveIf": [
+                    {"type": "github_repository", "actions": {"g": ["a"]}, "owner": "test-owner", "repository": "r"},
+                    {"type": "github_public_repository", "actions": {"g": ["a"]}},
+                ]
+            },
+        ),
     )
     fake.put(
         POLICY_SETS_PLURAL,
@@ -121,6 +134,7 @@ def _ready(index: PolicyIndex, name: str, status: str, generation: int) -> bool:
 
 async def test_initial_sync_keeps_invalid_objects_and_only_labeled_callers(index: PolicyIndex) -> None:
     assert isinstance(index.policy_sets[key(VALID_SET)], ActionPolicySet)
+    assert isinstance(index.policy_sets[key(GITHUB_SET)], ActionPolicySet)
     broken = index.policy_sets[key(INVALID_SET)]
     assert isinstance(broken, InvalidResource)
     assert "autoApproveIf.0" in broken.message
@@ -137,18 +151,20 @@ async def test_ready_is_written_once_per_generation_and_names_the_fault(
     await index.wait_for(
         lambda: (
             _ready(index, VALID_SET, "True", 1)
+            and _ready(index, GITHUB_SET, "True", 1)
             and _ready(index, INVALID_SET, "False", 1)
             and index.bindings[key(BINDING)].status.ready() is not None
         )
     )
     written = {name: patch["conditions"][0] for name, patch in fake.status_patches}
     assert written[VALID_SET]["reason"] == "Valid"
+    assert written[GITHUB_SET]["reason"] == "Valid"
     assert written[INVALID_SET]["reason"] == "Invalid"
     assert "no_such_kind" in written[INVALID_SET]["message"]
     assert written[INVALID_SET]["observedGeneration"] == 1
     assert written[VALID_SET]["lastTransitionTime"] == "2026-09-12T12:00:00Z"
     # The MODIFIED event carrying the written status is not a reason to write it again.
-    assert sorted(name for name, _ in fake.status_patches) == sorted([BINDING, INVALID_SET, VALID_SET])
+    assert sorted(name for name, _ in fake.status_patches) == sorted([BINDING, GITHUB_SET, INVALID_SET, VALID_SET])
 
     fake.put(
         POLICY_SETS_PLURAL,

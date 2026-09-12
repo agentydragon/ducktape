@@ -10,12 +10,19 @@ from pathlib import Path
 from types import FrameType
 from typing import cast
 
+import httpx
 import uvicorn
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api, CustomObjectsApi
-from pydantic import Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 
+from github_policy.visibility import (
+    API_BASE_URL,
+    CACHE_TTL_SECONDS,
+    REQUEST_TIMEOUT_SECONDS,
+    RepositoryVisibilityService,
+)
 from util.kubernetes import CustomObjectsClient
 from x.agentplane.action_service.api import create_app
 from x.agentplane.action_service.auth import (
@@ -57,6 +64,19 @@ class ActionServer(uvicorn.Server):
         super().handle_exit(sig, frame)
 
 
+class GitHubVisibilitySettings(BaseModel):
+    """The unauthenticated GitHub REST lookup behind `github_public_repository` policies."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    api_base_url: str = API_BASE_URL
+    cache_ttl_seconds: float = Field(
+        default=CACHE_TTL_SECONDS,
+        ge=0,
+        description="How long one repository's confirmed visibility is reused before GitHub is asked again.",
+    )
+
+
 class Settings(BaseSettings):
     """The service's configuration.
 
@@ -86,6 +106,7 @@ class Settings(BaseSettings):
     policy_resync_seconds: int = Field(
         default=300, gt=0, description="Policy watch lifetime; every watched kind is relisted this often."
     )
+    github_visibility: GitHubVisibilitySettings = Field(default_factory=GitHubVisibilitySettings)
     operator_bearer_file: Path | None = None
     operator_oidc: OperatorOidcSettings | None = None
     oauth: OAuthSettings | None = None
@@ -135,6 +156,11 @@ async def async_main(settings: Settings) -> None:
         configuration = k8s_client.Configuration()
         k8s_config.load_incluster_config(client_configuration=configuration)
         catalog = ActionCatalog(groups=settings.action_groups)
+        visibility = RepositoryVisibilityService(
+            httpx.AsyncClient(base_url=settings.github_visibility.api_base_url, timeout=REQUEST_TIMEOUT_SECONDS),
+            ttl_seconds=settings.github_visibility.cache_ttl_seconds,
+        )
+        stack.push_async_callback(visibility.aclose)
         api = await stack.enter_async_context(ApiClient(configuration=configuration))
         policy_index = PolicyIndex()
         informer_task = asyncio.create_task(
@@ -179,7 +205,7 @@ async def async_main(settings: Settings) -> None:
             ActionStore(make_sessionmaker(engine), external_grants=connections),
             catalog,
             executors,
-            providers=[PolicySetDecisionProvider()],
+            providers=[PolicySetDecisionProvider(visibility=visibility)],
             policies=policy_index,
             on_drain=drain_backends,
         )

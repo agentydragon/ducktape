@@ -1,22 +1,15 @@
-"""Policy kinds as Python evaluators, a caller's bindings as they stand at admission, and the provider.
+"""A caller's bindings as they stand at admission, and the provider that decides from them.
 
-Each policy kind is one function over the typed union in `policy_resources`; adding a constraint
-the YAML cannot express means adding a kind here, never a DSL. Evaluation happens once, at
-admission, against the objects the informer holds then; a later edit, expiry or deletion changes
-the next Action's Decision, not this one's, so the Decision records what it saw.
+The kinds themselves live in `policies/`. Evaluation happens once, at admission, against the
+objects the informer holds then; a later edit, expiry or deletion changes the next Action's
+Decision, not this one's, so the Decision records what it saw.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import dataclass
 from datetime import datetime
 
-import jsonschema
-from jsonschema.exceptions import best_match
-from pydantic import JsonValue
-
-from x.agentplane.action_service.catalog import ActionIdentity
+from github_policy.visibility import RepositoryVisibilityService
 from x.agentplane.action_service.models import (
     BindingEvidence,
     MatchedPolicy,
@@ -28,55 +21,23 @@ from x.agentplane.action_service.models import (
     ServiceAccountCaller,
     ServiceAccountRef,
 )
-from x.agentplane.action_service.policy_informer import PolicyIndex, namespaced_key
-from x.agentplane.action_service.policy_resources import (
+from x.agentplane.action_service.policies.kind import Matched, NotMatched
+from x.agentplane.action_service.policies.registry import evaluate
+from x.agentplane.action_service.policies.resources import (
     ActionPolicyBinding,
     ActionPolicySet,
-    ArgumentSchemaPolicy,
-    ExactActionsPolicy,
     InvalidResource,
-    Policy,
     SandboxSubject,
     ServiceAccountSubject,
 )
+from x.agentplane.action_service.policy_informer import PolicyIndex, namespaced_key
 from x.agentplane.action_service.providers import DecisionContext, ResolvedBinding
-
-# types-jsonschema stubs import referencing; the mypy aspect needs that typed package directly.
-# gazelle:include_dep @pypi//referencing
 
 PROVIDER_NAME = "action_policy_set"
 AUTO_APPROVE_REASON = "policy_set_auto_approve"
 NO_MATCH_REASON = "no_auto_approve_match"
 # ProviderOutcome bounds the explanation; object names alone can approach it.
 _DESCRIPTION_LIMIT = 500
-
-
-@dataclass(frozen=True, slots=True)
-class Matched:
-    explanation: str
-
-
-@dataclass(frozen=True, slots=True)
-class NotMatched:
-    reason: str
-
-
-type PolicyDecision = Matched | NotMatched
-
-
-def evaluate(policy: Policy, action: ActionIdentity, arguments: Mapping[str, JsonValue]) -> PolicyDecision:
-    """One policy against one request: the Action must be listed, and the kind's own test must pass."""
-    if action.name not in policy.actions.get(action.group, frozenset()):
-        return NotMatched(f"{action.group}/{action.name} is not listed")
-    match policy:
-        case ExactActionsPolicy():
-            return Matched(f"exact action {action.group}/{action.name} is listed")
-        case ArgumentSchemaPolicy(argument_schema=schema):
-            validator = jsonschema.validators.validator_for(schema)(schema)
-            error = best_match(validator.iter_errors(dict(arguments)))
-            if error is None:
-                return Matched(f"arguments of {action.group}/{action.name} satisfy the schema")
-            return NotMatched(f"arguments do not satisfy the schema: {error.message}")
 
 
 def _names(
@@ -162,12 +123,15 @@ class PolicySetDecisionProvider:
 
     name = PROVIDER_NAME
 
+    def __init__(self, *, visibility: RepositoryVisibilityService) -> None:
+        self._visibility = visibility
+
     async def decide(self, context: DecisionContext) -> ProviderOutcome:
         for resolved in context.bindings:
             for policy_set in resolved.policy_sets:
                 for index, policy in enumerate(policy_set.spec.auto_approve_if):
-                    match evaluate(policy, context.action, context.arguments):
-                        case Matched(explanation=explanation):
+                    match await evaluate(policy, context.action, context.arguments, self._visibility):
+                        case Matched(explanation=explanation, repository=repository):
                             binding, metadata = resolved.binding.metadata, policy_set.metadata
                             return ProviderOutcome(
                                 verdict=ProviderVerdict.ALLOW,
@@ -184,6 +148,7 @@ class PolicySetDecisionProvider:
                                         source="autoApproveIf",
                                         index=index,
                                         type=policy.type,
+                                        repository=repository,
                                     ),
                                 ),
                             )
