@@ -9,8 +9,8 @@ spec:
   path: ./cluster/k8s/kubevirt/app
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: kubevirt
     namespace: ducktape-flux
   wait: true
   timeout: 10m

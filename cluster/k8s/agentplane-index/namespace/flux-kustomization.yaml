@@ -11,6 +11,6 @@ spec:
   prune: true
   wait: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: agentplane-index-namespace
     namespace: ducktape-flux

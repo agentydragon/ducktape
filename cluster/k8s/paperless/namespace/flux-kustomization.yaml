@@ -9,7 +9,7 @@ spec:
   path: ./cluster/k8s/paperless/namespace
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: paperless-namespace
 
     namespace: ducktape-flux

@@ -12,9 +12,9 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   sourceRef:
-    kind: GitRepository
-    name: flux-system
-    namespace: flux-system
+    kind: ExternalArtifact
+    name: external-creds
+    namespace: ducktape-flux
   dependsOn:
     - name: claude-rbac
   timeout: 5m
