@@ -150,6 +150,7 @@ resources:
   - agentplane-testing/actions/flux-kustomization.yaml
 
   # --- kyverno ---
+  - kyverno/app-artifact/flux-kustomization.yaml
   - kyverno/app/flux-kustomization.yaml
   - kyverno/policies/flux-kustomization.yaml
 

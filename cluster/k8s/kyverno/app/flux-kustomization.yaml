@@ -9,7 +9,7 @@ spec:
   path: ./cluster/k8s/kyverno/app
   prune: true
   sourceRef:
-    kind: GitRepository
+    kind: ExternalArtifact
     name: ducktape
     namespace: ducktape-flux
   timeout: 10m0s
