@@ -61,6 +61,7 @@ function thread(overrides: Partial<ThreadView> & Pick<ThreadView, "id" | "sessio
     name: null,
     archived: false,
     last_sequence: 0,
+    harness: "HARNESS_STATE_UNSPECIFIED",
     ...overrides,
   };
 }

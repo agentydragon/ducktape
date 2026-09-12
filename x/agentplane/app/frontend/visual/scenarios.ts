@@ -41,9 +41,19 @@ const SESSION_STATES_ROUTE = `${SANDBOX_ROUTE}/sessions/s-2`;
 const REASONING = "reasoning=r%231";
 
 export const SCENARIOS: Record<string, Scenario> = {
-  sandboxes: { element: "#app", route: "/", viewport: { width: 1200, height: 900 } },
-  sandboxes_phone: { element: "#app", route: "/", viewport: PHONE, outputName: "sandboxes-phone" },
-  sandboxes_stale: { element: "#app", route: "/", viewport: { width: 1200, height: 900 }, wedgedWatch: true },
+  // The sidebar's landing state (UISHELL_SIDEBAR): every group state icon (running, pending,
+  // suspended, deleted) and the struck-through read-only group, with no thread open yet.
+  threads: { element: "#app", route: "/", viewport: { width: 1200, height: 900 } },
+  threads_phone: { element: "#app", route: "/", viewport: PHONE, outputName: "threads-phone" },
+
+  sandboxes: { element: "#app", route: "/sandboxes", viewport: { width: 1200, height: 900 } },
+  sandboxes_phone: { element: "#app", route: "/sandboxes", viewport: PHONE, outputName: "sandboxes-phone" },
+  sandboxes_stale: {
+    element: "#app",
+    route: "/sandboxes",
+    viewport: { width: 1200, height: 900 },
+    wedgedWatch: true,
+  },
 
   actions: { element: "#app", route: "/actions", viewport: { width: 1200, height: 1100 }, readySelectors: ["details"] },
   actions_phone: {

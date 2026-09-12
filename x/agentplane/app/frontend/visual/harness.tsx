@@ -259,6 +259,7 @@ const THREADS: ThreadView[] = [
     archived: false,
     last_sequence: 14,
     last_event_at: ago(60_000),
+    harness: "HARNESS_STATE_RUNNING",
   },
   {
     id: "5f1c4a2e-0000-4000-8000-000000000000",
@@ -272,6 +273,7 @@ const THREADS: ThreadView[] = [
     archived: false,
     last_sequence: 31,
     last_event_at: ago(90 * 60_000),
+    harness: "HARNESS_STATE_STOPPED",
   },
   {
     id: "5f1c4a2e-0000-4000-8000-000000000002",
@@ -285,6 +287,72 @@ const THREADS: ThreadView[] = [
     archived: false,
     last_sequence: 23,
     last_event_at: ago(10_000),
+    harness: "HARNESS_STATE_RUNNING",
+  },
+];
+
+/**
+ * The sidebar's own cross-sandbox fixture (`GET /threads/with-sandboxes`): the three THREADS above
+ * (all `demo-a1b2`), one each for the pending and suspended sandboxes, one archived, and one whose
+ * `sandbox` names no live SandboxView at all -- the struck-through, read-only group.
+ */
+const THREADS_WITH_SANDBOXES: ThreadView[] = [
+  ...THREADS,
+  {
+    id: "5f1c4a2e-0000-4000-8000-000000000003",
+    sandbox: "codex-c3d4",
+    session_id: "s-3",
+    provider: "PROVIDER_CODEX",
+    model: "harness-codex-model",
+    cwd: "/state/work",
+    created_at: ago(5 * 60_000),
+    name: "Watch the image build",
+    archived: false,
+    last_sequence: 2,
+    last_event_at: ago(5 * 60_000),
+    harness: "HARNESS_STATE_STOPPED",
+  },
+  {
+    id: "5f1c4a2e-0000-4000-8000-000000000004",
+    sandbox: "old-e5f6",
+    session_id: "s-4",
+    provider: "PROVIDER_CLAUDE",
+    model: "harness-claude-model",
+    cwd: "/state/work",
+    created_at: ago(47 * HOUR),
+    name: "Investigate flaky CI",
+    archived: false,
+    last_sequence: 9,
+    last_event_at: ago(46 * HOUR),
+    harness: "HARNESS_STATE_STOPPED",
+  },
+  {
+    id: "5f1c4a2e-0000-4000-8000-000000000005",
+    sandbox: "old-debug-3f9c",
+    session_id: "s-5",
+    provider: "PROVIDER_CLAUDE",
+    model: "harness-claude-model",
+    cwd: "/state/work",
+    created_at: ago(72 * HOUR),
+    name: "Why did the migration hang",
+    archived: false,
+    last_sequence: 4,
+    last_event_at: ago(70 * HOUR),
+    harness: "HARNESS_STATE_STOPPED",
+  },
+  {
+    id: "5f1c4a2e-0000-4000-8000-000000000006",
+    sandbox: "demo-a1b2",
+    session_id: "s-6",
+    provider: "PROVIDER_CLAUDE",
+    model: "harness-claude-model",
+    cwd: "/state/work",
+    created_at: ago(96 * HOUR),
+    name: "Old flaky-test spike",
+    archived: true,
+    last_sequence: 3,
+    last_event_at: ago(95 * HOUR),
+    harness: "HARNESS_STATE_STOPPED",
   },
 ];
 
@@ -687,6 +755,19 @@ routes.push(
           (!query.has("sandbox") || thread.sandbox === query.get("sandbox")) &&
           (!query.has("session_id") || thread.session_id === query.get("session_id"))
       ),
+  ],
+  [
+    "GET",
+    /^\/threads\/with-sandboxes$/,
+    (_match, query) => {
+      const includeArchived = query.get("include_archived") === "true";
+      const threads = THREADS_WITH_SANDBOXES.filter((thread) => includeArchived || !thread.archived);
+      const referenced = new Set(threads.map((thread) => thread.sandbox));
+      const sandboxes = Object.fromEntries(
+        SANDBOXES.filter((candidate) => referenced.has(candidate.name)).map((candidate) => [candidate.name, candidate])
+      );
+      return { threads, sandboxes };
+    },
   ]
 );
 
@@ -779,12 +860,12 @@ if (scenario.preselectReconnect) {
 }
 if (scenario.openSettings) {
   // There's no dedicated route for the Settings modal; open it the way an operator would, by
-  // clicking the nav button, rather than a URL that only exists for this test.
+  // clicking the sidebar's gear button, rather than a URL that only exists for this test.
   const openSettings = new MutationObserver(() => {
-    const button = [...document.querySelectorAll("button")].find((candidate) => candidate.textContent === "Settings");
+    const button = document.querySelector('button[aria-label="Settings"]');
     if (!button) return;
     openSettings.disconnect();
-    button.click();
+    (button as HTMLButtonElement).click();
   });
   openSettings.observe(document, { childList: true, subtree: true });
 }

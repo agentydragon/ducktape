@@ -363,6 +363,75 @@ ts_library(
 )
 
 ts_library(
+    name = "thread_groups",
+    srcs = ["thread_groups.ts"],
+    tsconfig = TSCONFIG,
+    deps = [":client"],
+)
+
+ts_library(
+    name = "thread_groups_test",
+    testonly = True,
+    srcs = ["thread_groups.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":thread_groups",
+        "//:node_modules/vitest",
+    ],
+)
+
+# sidebar.tsx imports this for the bundler, the way frame.tsx does its own stylesheet.
+js_library(
+    name = "sidebar_css",
+    srcs = ["sidebar.css"],
+)
+
+ts_library(
+    name = "sidebar",
+    srcs = [
+        "sidebar.tsx",
+        # `declare module "*.css"` for the stylesheet import above.
+        "css.d.ts",
+        # Ambient module declarations for the @tabler/icons-react per-icon subpaths this file
+        # imports. A declaration file is type-only, so it joins this target's program without
+        # being emitted.
+        "tabler_icons.d.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":sandboxes",
+        ":sidebar_css",
+        ":thread_groups",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-router",
+    ],
+)
+
+ts_library(
+    name = "sidebar_test",
+    testonly = True,
+    srcs = ["sidebar.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":sidebar",
+        ":thread_groups",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/react-router",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
     name = "egress",
     srcs = ["egress.tsx"],
     tsconfig = TSCONFIG,
@@ -540,6 +609,7 @@ ts_library(
         ":sandboxes",
         ":session",
         ":settings",
+        ":sidebar",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -606,6 +676,8 @@ vitest_bin.vitest_test(
         ":sandboxes_test",
         ":session_test",
         ":settings_test",
+        ":sidebar_test",
+        ":thread_groups_test",
         "//:node_modules/happy-dom",
         "//:node_modules/vitest",
     ],
