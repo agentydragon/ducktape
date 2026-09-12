@@ -1,7 +1,6 @@
 # Action-request plaintext context
 
-Status: **captured, not designed.** A submitting caller cannot say what an Action is _for_ today;
-decide whether to add that, and where it renders, before touching schema or UI.
+Status: **decided 2026-09-12; not yet implemented.**
 
 ## Gap
 
@@ -20,20 +19,32 @@ note") — that's the **operator's** plaintext note attached when deciding, flow
 What's missing is the reverse: the **caller's** plaintext context attached when submitting,
 flowing to the operator deciding.
 
-## Proposal to evaluate
+## Decision
 
-Add an optional plaintext field to `ActionRequestInput` (a `title` and/or `description`, naming
-TBD so it doesn't collide with `decision_note`'s vocabulary) that the calling client fills in when
-it submits an Action, threaded through `ActionRequestView` to the approver. Render it in
-`ActionCard` — both the live pending-approval surface and the decided-Actions history — alongside
-group/name and arguments, the way the App Shell mock's approval cards already reserve a line for
-it.
+Add two fields to `ActionRequestInput`:
+
+- `title: str`, **required**, `Field(max_length=60)`. A short, plain-language summary of what the
+  action does, written to fit on one line on mobile — roughly a git-commit-subject-line length,
+  e.g. "delete crashlooping backend pod." Required rather than optional: the caller is always an
+  LLM invoking `request_action` as an MCP tool, so there is no legacy application code to break —
+  the required field's own `Field(description=...)` is what prompts the calling model to fill it
+  in, not a breaking change to any caller's source. A title that's sometimes present and sometimes
+  missing is a worse approval-review experience than one that's always there.
+- `description: str | None = None`, optional, `Field(max_length=250)`. Added detail or
+  justification building on the title, not restating it — a documentation-level instruction to the
+  calling model via its own `Field(description=...)` text, not something a validator can enforce.
+
+Each field's own `Field(description=...)` should say explicitly that `title` is not `Action.name`
+(the tool name) and is not the reverse-direction `DecisionInput.decision_note` (the operator's note
+attached when deciding) — the vocabulary is close enough that a calling model could otherwise
+conflate them.
+
+Thread both through `ActionRequestView` to the approver and render them in `ActionCard` — both the
+live pending-approval surface and the decided-Actions history — alongside group/name and
+arguments, the way the App Shell mock's approval cards already reserve a line for it.
 
 ## Open questions
 
-- Optional or required? Requiring it blocks existing clients until they're updated; leaving it
-  optional means some requests still arrive with nothing to show.
-- One field (a single caller note) or two (a short `title` for the compact list row, a longer
-  `description` for the expanded view).
 - Same untrusted-metadata handling as `origin`/`correlation`, or does a field meant for display
-  need its own treatment (length limits, sanitization before rendering as plain text)?
+  need its own treatment (sanitization before rendering as plain text, beyond the length limits
+  above)?
