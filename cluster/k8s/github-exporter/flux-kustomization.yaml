@@ -12,8 +12,8 @@ spec:
   prune: true
   wait: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: github-exporter
     namespace: ducktape-flux
   timeout: 5m
   healthChecks:

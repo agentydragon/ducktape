@@ -3820,6 +3820,218 @@ spec:
 apiVersion: source.extensions.fluxcd.io/v1beta1
 kind: ArtifactGenerator
 metadata:
+  name: github-exporter
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: github-exporter
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/github-exporter/**"
+          to: "@artifact/cluster/k8s/github-exporter/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: github-secrets-sync
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: github-secrets-sync
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/github-secrets-sync/**"
+          to: "@artifact/cluster/k8s/github-secrets-sync/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: goldilocks
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: goldilocks
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/goldilocks/**"
+          to: "@artifact/cluster/k8s/goldilocks/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: grocy-mcp-sf
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: grocy-mcp-sf
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/grocy/sf/mcp/**"
+          to: "@artifact/cluster/k8s/grocy/sf/mcp/"
+          exclude:
+            - flux-kustomization.yaml
+        - from: "@repo/cluster/k8s/grocy/mcp-base/**"
+          to: "@artifact/cluster/k8s/grocy/mcp-base/"
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: grocy-mcp-sf-servicemonitor
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: grocy-mcp-sf-servicemonitor
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/grocy/sf/mcp-servicemonitor/**"
+          to: "@artifact/cluster/k8s/grocy/sf/mcp-servicemonitor/"
+          exclude:
+            - flux-kustomization.yaml
+        - from: "@repo/cluster/k8s/grocy/mcp-servicemonitor-base/**"
+          to: "@artifact/cluster/k8s/grocy/mcp-servicemonitor-base/"
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: grocy-sf-user-perms
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: grocy-sf-user-perms
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/grocy/sf/user-perms/**"
+          to: "@artifact/cluster/k8s/grocy/sf/user-perms/"
+          exclude:
+            - flux-kustomization.yaml
+        - from: "@repo/cluster/k8s/grocy/user-perms-base/**"
+          to: "@artifact/cluster/k8s/grocy/user-perms-base/"
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: grocy-mcp-vallejo
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: grocy-mcp-vallejo
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/grocy/vallejo/mcp/**"
+          to: "@artifact/cluster/k8s/grocy/vallejo/mcp/"
+          exclude:
+            - flux-kustomization.yaml
+        - from: "@repo/cluster/k8s/grocy/mcp-base/**"
+          to: "@artifact/cluster/k8s/grocy/mcp-base/"
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: grocy-mcp-vallejo-servicemonitor
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: grocy-mcp-vallejo-servicemonitor
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/grocy/vallejo/mcp-servicemonitor/**"
+          to: "@artifact/cluster/k8s/grocy/vallejo/mcp-servicemonitor/"
+          exclude:
+            - flux-kustomization.yaml
+        - from: "@repo/cluster/k8s/grocy/mcp-servicemonitor-base/**"
+          to: "@artifact/cluster/k8s/grocy/mcp-servicemonitor-base/"
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: grocy-vallejo-user-perms
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: grocy-vallejo-user-perms
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/grocy/vallejo/user-perms/**"
+          to: "@artifact/cluster/k8s/grocy/vallejo/user-perms/"
+          exclude:
+            - flux-kustomization.yaml
+        - from: "@repo/cluster/k8s/grocy/user-perms-base/**"
+          to: "@artifact/cluster/k8s/grocy/user-perms-base/"
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: haku-cloud-agent
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: haku-cloud-agent
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/haku/cloud-agent-tf/**"
+          to: "@artifact/cluster/k8s/haku/cloud-agent-tf/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
   name: activitywatch
   namespace: ducktape-flux
 spec:
