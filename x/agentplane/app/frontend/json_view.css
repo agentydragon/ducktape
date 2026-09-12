@@ -1,0 +1,42 @@
+/* Shared highlighted-JSON styling: wrapping so a payload reads where it sits instead of scrolling
+   sideways, and highlight.js's `json` grammar token colours. Mantine's palette variables, so the
+   hues match the rest of the app; the dark set follows the scheme attribute Mantine puts on the
+   document. Reused by every highlighted-JSON site: `json_view.tsx`'s `JsonView`/`HighlightedText`,
+   and `frame.tsx`'s raw frame view alongside its own `.agentplane-frame` class. */
+
+.agentplane-hljs {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.agentplane-hljs .hljs-attr {
+  color: var(--mantine-color-blue-8);
+}
+
+.agentplane-hljs .hljs-string {
+  color: var(--mantine-color-green-9);
+}
+
+.agentplane-hljs .hljs-number {
+  color: var(--mantine-color-orange-9);
+}
+
+.agentplane-hljs .hljs-literal {
+  color: var(--mantine-color-grape-8);
+}
+
+[data-mantine-color-scheme="dark"] .agentplane-hljs .hljs-attr {
+  color: var(--mantine-color-blue-3);
+}
+
+[data-mantine-color-scheme="dark"] .agentplane-hljs .hljs-string {
+  color: var(--mantine-color-green-3);
+}
+
+[data-mantine-color-scheme="dark"] .agentplane-hljs .hljs-number {
+  color: var(--mantine-color-orange-3);
+}
+
+[data-mantine-color-scheme="dark"] .agentplane-hljs .hljs-literal {
+  color: var(--mantine-color-grape-3);
+}

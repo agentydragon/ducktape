@@ -1,7 +1,8 @@
 import { Accordion, Badge, Code, Group, Paper, Stack, Text, Title } from "@mantine/core";
 
-import { ActionContext, ExternalGrantDetails, JsonProjection, stateLabel, useActionRequests } from "./actions";
+import { ActionCaller, ActionContext, RequestAuditDetails, stateLabel, useActionRequests } from "./actions";
 import { actionService, type ActionRequestView, type ActionService } from "./client";
+import { JsonView, unwrapMcpContent } from "./json_view";
 
 /** A decided/terminal ActionRequest, kept as a durable receipt: the decision it's a record of leads
  * the card, with the exact arguments folded behind a disclosure rather than shown unconditionally
@@ -17,7 +18,7 @@ function HistoryCard({ request }: { request: ActionRequestView }): JSX.Element {
             <Text fw={600} ff="monospace">
               {request.action.group} / {request.action.name}
             </Text>
-            <Text size="sm" c="dimmed">
+            <Text size="xs" c="dimmed">
               requested by {request.caller_principal}
             </Text>
             {decision && (
@@ -28,9 +29,10 @@ function HistoryCard({ request }: { request: ActionRequestView }): JSX.Element {
           </Group>
           <ActionContext request={request} />
           <Text size="xs" c="dimmed">
-            Request {request.id} · {stateLabel(request.state)}
+            {stateLabel(request.state)}
           </Text>
-          {request.external_grant && <ExternalGrantDetails grant={request.external_grant} />}
+          {request.external_grant && <ActionCaller request={request} />}
+          <RequestAuditDetails request={request} />
         </Stack>
         {decision?.decision_note && <Text size="sm">{decision.decision_note}</Text>}
         {policySet && (
@@ -42,7 +44,7 @@ function HistoryCard({ request }: { request: ActionRequestView }): JSX.Element {
           <Accordion.Item value="arguments">
             <Accordion.Control>Arguments</Accordion.Control>
             <Accordion.Panel>
-              <JsonProjection value={request.arguments} />
+              <JsonView value={request.arguments} />
             </Accordion.Panel>
           </Accordion.Item>
         </Accordion>
@@ -51,7 +53,9 @@ function HistoryCard({ request }: { request: ActionRequestView }): JSX.Element {
             <Text size="sm" fw={600} mb={4}>
               Result
             </Text>
-            <JsonProjection value={request.execution.result} />
+            {/* Not every result is an MCP tool call's content-block shape; unwrapMcpContent leaves
+                anything else untouched. */}
+            <JsonView value={unwrapMcpContent(request.execution.result)} />
           </div>
         )}
         {request.execution?.error && (
@@ -59,7 +63,7 @@ function HistoryCard({ request }: { request: ActionRequestView }): JSX.Element {
             <Text size="sm" fw={600} mb={4}>
               Execution error
             </Text>
-            <JsonProjection value={request.execution.error} />
+            <JsonView value={request.execution.error} />
           </div>
         )}
       </Stack>

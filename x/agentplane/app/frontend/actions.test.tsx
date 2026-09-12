@@ -64,7 +64,13 @@ describe("ActionRequests", () => {
       expect(container.textContent).toContain(row.caller_principal);
       expect(container.textContent).not.toContain("Authenticated external caller");
       expect(container.textContent).not.toContain("forged-origin-identity");
-      expect(container.querySelector("details")).toBeNull();
+      // The request-id disclosure exists regardless of external_grant, but carries only the id --
+      // no grant provenance to fold in without one.
+      const details = container.querySelector("details");
+      expect(details?.textContent).not.toContain("Authenticated external caller");
+      expect(details?.querySelector("summary")?.textContent).toBe("Request audit details");
+      expect(details?.open).toBe(false);
+      expect(details?.textContent).toContain(row.id);
       expect(button(container, "Allow").disabled).toBe(false);
     }
   );
