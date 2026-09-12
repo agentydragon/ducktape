@@ -19,11 +19,31 @@ const PROVENANCE: Record<ActionPolicyBindingView["provenance"], string> = {
 // a phone; the badge's own text width is the floor instead.
 const WHOLE_BADGE = { minWidth: "max-content" } as const;
 
+export interface Readiness {
+  label: string;
+  color: string;
+  /** What a hover explains; nothing to explain about a current Ready. */
+  hint: string | null;
+}
+
 /**
- * The Action Service's verdict on an object's spec. Absent until its informer has judged the object
- * at all; behind the object's generation while an edit is unjudged, which the page says rather
- * than showing a stale True as current.
+ * The Action Service's verdict on an object's spec, as words. Absent until its informer has judged
+ * the object at all; behind the object's generation while an edit is unjudged, which reads as
+ * "edited" rather than a stale True.
  */
+export function readiness(ready: ReadyConditionView | null | undefined, generation?: number): Readiness {
+  if (!ready) return { label: "unjudged", color: "gray", hint: "The Action Service has not judged this object yet" };
+  if (ready.status !== "True") return { label: ready.reason, color: "red", hint: ready.message };
+  if (generation !== undefined && ready.observed_generation !== generation) {
+    return {
+      label: "edited",
+      color: "orange",
+      hint: `Judged at generation ${ready.observed_generation ?? "?"}; the spec is at ${generation}`,
+    };
+  }
+  return { label: "Ready", color: "green", hint: null };
+}
+
 function Ready({
   ready,
   generation,
@@ -31,40 +51,17 @@ function Ready({
   ready: ReadyConditionView | null | undefined;
   generation?: number;
 }): JSX.Element {
-  if (!ready) {
-    return (
-      <Tooltip label="The Action Service has not judged this object yet" withArrow>
-        <Badge color="gray" variant="light" style={WHOLE_BADGE}>
-          unjudged
-        </Badge>
-      </Tooltip>
-    );
-  }
-  if (ready.status !== "True") {
-    return (
-      <Tooltip label={ready.message} withArrow multiline w={320}>
-        <Badge color="red" style={WHOLE_BADGE}>
-          {ready.reason}
-        </Badge>
-      </Tooltip>
-    );
-  }
-  if (generation !== undefined && ready.observed_generation !== generation) {
-    return (
-      <Tooltip
-        label={`Judged at generation ${ready.observed_generation ?? "?"}; the spec is at ${generation}`}
-        withArrow
-      >
-        <Badge color="orange" style={WHOLE_BADGE}>
-          edited
-        </Badge>
-      </Tooltip>
-    );
-  }
-  return (
-    <Badge color="green" style={WHOLE_BADGE}>
-      Ready
+  const { label, color, hint } = readiness(ready, generation);
+  const badge = (
+    <Badge color={color} style={WHOLE_BADGE}>
+      {label}
     </Badge>
+  );
+  if (!hint) return badge;
+  return (
+    <Tooltip label={hint} withArrow multiline w={320}>
+      {badge}
+    </Tooltip>
   );
 }
 

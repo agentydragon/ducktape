@@ -179,11 +179,18 @@ const ACTION_POLICY: ActionPolicyView = {
       provenance: "app",
       expires_at: null,
       ready: { status: "True", reason: "Valid", message: "spec accepted", observed_generation: 1 },
+      // The preset names public-coder alone; harness-reviews was picked at launch.
       policy_sets: [
         {
           name: "public-coder",
           generation: 2,
           ready: { status: "True", reason: "Valid", message: "spec accepted", observed_generation: 2 },
+          refused: null,
+        },
+        {
+          name: "harness-reviews",
+          generation: 1,
+          ready: { status: "True", reason: "Valid", message: "spec accepted", observed_generation: 1 },
           refused: null,
         },
       ],
@@ -235,6 +242,12 @@ const ACTION_POLICY: ActionPolicyView = {
           required: ["owner", "repo"],
         },
       },
+    },
+    {
+      binding: "demo-a1b2-k2m9x",
+      policy_set: "harness-reviews",
+      index: 0,
+      policy: { type: "exact_actions", actions: { github: ["pull_request_read", "list_pull_requests"] } },
     },
     {
       binding: "demo-a1b2-push-afternoon",
@@ -618,6 +631,7 @@ routes.push(
         title: "Public coder",
         template: "agentplane-runner",
         policies: ["github-public"],
+        action_policy_sets: ["public-coder"],
         thread_preset: "public-coder-codex",
         thread_defaults: {
           provider: "codex",
@@ -630,6 +644,7 @@ routes.push(
     ],
   ],
   ["GET", /^\/egress\/policies$/, () => POLICIES],
+  ["GET", /^\/action-policy\/sets$/, () => ACTION_POLICY.bindings.flatMap((binding) => binding.policy_sets)],
   ["GET", /^\/actions$/, () => ACTIONS],
   [
     "GET",
@@ -782,6 +797,9 @@ window.EventSource = HarnessEventSource as unknown as typeof EventSource;
 
 const PAGES: Record<string, string> = {
   sandboxes: "/",
+  // The launch form with the preset picked through the URL, as the form itself records a pick:
+  // egress policies and action policy sets pre-filled, thread defaults inherited.
+  new_sandbox: "/?preset=public-coder",
   // The same list under a watch that has stopped: the banner is the page saying so.
   sandboxes_stale: "/",
   actions: "/actions",
@@ -828,6 +846,21 @@ if (page.startsWith("consent_reconnect")) {
     account.dispatchEvent(new Event("change", { bubbles: true }));
   });
   selectExisting.observe(document, { childList: true, subtree: true });
+}
+if (page === "new_sandbox") {
+  // Once the preset's pick has landed as a pill, open the sets dropdown so the shot carries the
+  // namespace's options beside the pre-filled pick.
+  const openSets = new MutationObserver(() => {
+    const pill = [...document.querySelectorAll(".mantine-Pill-root")].find(
+      (node) => node.textContent?.trim() === "public-coder"
+    );
+    const label = [...document.querySelectorAll("label")].find((node) => node.textContent === "Action policy sets");
+    const control = label?.control;
+    if (!pill || !(control instanceof HTMLInputElement)) return;
+    openSets.disconnect();
+    control.click();
+  });
+  openSets.observe(document, { childList: true, subtree: true });
 }
 window.location.hash = path;
 
