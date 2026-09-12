@@ -69,6 +69,10 @@ flowchart TB
     UISHELL_DRAWER["Planned UI<br/>pending-approval badge + drawer<br/>global subscription, non-modal"]:::future
     UISHELL_NEWTHREAD_SANDBOX["Planned UI<br/>pre-scoped '+ New thread' on a Sandbox's page<br/>Sandbox/preset already fixed"]:::future
     UISHELL_NEWTHREAD_LANDING["Planned UI<br/>sidebar '+' unscoped new-thread composer<br/>Sandbox/preset/model pickers + prompt"]:::future
+    UISHELL_SIDEBAR_LIVE["Bug + planned fix<br/>sidebar Thread/Sandbox state goes stale<br/>rename, sandbox status icon never push-update"]:::future
+    UISHELL_SIDEBAR_ALL_SANDBOXES["Bug<br/>threadless Sandboxes missing from sidebar<br/>e.g. still waiting for a pod to land"]:::future
+    UISHELL_SIDEBAR_SANDBOX_LINK["Planned UI<br/>sidebar Sandbox name should link to its page<br/>currently plain text"]:::future
+    UISHELL_NEWSANDBOX_NAV["Planned UI<br/>'New sandbox' should open the created Sandbox's page<br/>currently just resets the form"]:::future
     THREAD_BROWSE_PAGINATE["Deferred, way later<br/>paginated/searchable all-threads page<br/>find an old Thread once the sidebar list outgrows it"]:::future
     NO_MANUAL_REFRESH["Planned principle<br/>no page in the app needs a Refresh button<br/>push (WS or SSE) everywhere, not just Sandboxes/Actions"]:::future
     ACTION_JSON_POLISH["Planned UI polish<br/>parse MCP content blocks in Action results<br/>rest landed via #6303 (#6309 open)"]:::future
@@ -131,16 +135,19 @@ can retire on different schedules after their respective replacement surfaces ex
 prerequisite for the first Action/MCP acceptance.
 
 The session-first UI shell (`UISHELL_DRAWER`, `UISHELL_NEWTHREAD_SANDBOX`,
-`UISHELL_NEWTHREAD_LANDING`, `THREAD_BROWSE_PAGINATE`) is a separate frontend-ergonomics track: it
-is not gated by, and does not gate, the Action Service milestones above. `UISHELL_NEWTHREAD_SANDBOX`
-has no dependencies and ships independently. The persistent left sidebar (`UISHELL_SIDEBAR`) and its
-phone-width collapse behind a hamburger (`UISHELL_MOBILE`) have both landed, replacing the top nav
-row entirely as one atomic cutover; `UISHELL_DRAWER` and `UISHELL_NEWTHREAD_LANDING` (the sidebar's
-own "+", currently a stub that opens the Sandbox list) now build on that chrome. `THREAD_BROWSE_PAGINATE`
-is explicitly deferred, not designed: finding one old Thread once the sidebar's working-set list
-outgrows it needs its own paginated/searchable page eventually, flagged now only so the
-with-sandboxes endpoint isn't assumed to stay one unpaginated call forever. See
-[session-first navigation](session_first_navigation.md).
+`UISHELL_NEWTHREAD_LANDING`, `UISHELL_SIDEBAR_LIVE`, `UISHELL_SIDEBAR_ALL_SANDBOXES`,
+`UISHELL_SIDEBAR_SANDBOX_LINK`, `UISHELL_NEWSANDBOX_NAV`, `THREAD_BROWSE_PAGINATE`) is a separate
+frontend-ergonomics track: it is not gated by, and does not gate, the Action Service milestones
+above. `UISHELL_NEWTHREAD_SANDBOX` has no dependencies and ships independently. The persistent left
+sidebar (`UISHELL_SIDEBAR`) and its phone-width collapse behind a hamburger (`UISHELL_MOBILE`) have
+both landed, replacing the top nav row entirely as one atomic cutover; `UISHELL_DRAWER` and
+`UISHELL_NEWTHREAD_LANDING` (the sidebar's own "+", currently a stub that opens the Sandbox list) now
+build on that chrome, as do four correctness/completeness gaps found in the landed sidebar itself:
+`UISHELL_SIDEBAR_LIVE`, `UISHELL_SIDEBAR_ALL_SANDBOXES`, `UISHELL_SIDEBAR_SANDBOX_LINK`, and
+`UISHELL_NEWSANDBOX_NAV`. `THREAD_BROWSE_PAGINATE` is explicitly deferred, not designed: finding one
+old Thread once the sidebar's working-set list outgrows it needs its own paginated/searchable page
+eventually, flagged now only so the with-sandboxes endpoint isn't assumed to stay one unpaginated
+call forever. See [session-first navigation](session_first_navigation.md).
 
 ### `BB` — BuildBuddy hosted-run credential boundary
 
@@ -630,6 +637,51 @@ composer component as `UISHELL_NEWTHREAD_SANDBOX`, just unscoped.
 just opens the Sandbox list — this replaces that stub with the real composer. Whether this composer
 eventually becomes the default landing page instead of requiring the sidebar click first is an open
 question, not decided.
+
+### `UISHELL_SIDEBAR_LIVE` — sidebar Thread/Sandbox state goes stale
+
+**Bug, reported on staging:** the sidebar's Thread list and per-Sandbox status icon
+(`GroupStateIcon` in `sidebar.tsx`) both come from one `useThreadsWithSandboxes()` fetch on mount
+(`listThreadsWithSandboxes`), with a manual-refresh generation counter and no push update after
+that — renaming a Thread (`session.tsx`'s `ThreadTitle`) only updates the open session's own local
+state, and a Sandbox's operating-mode change (running/suspended/pending) never reaches the sidebar
+until a full remount. Observed concretely: a Sandbox suspended on `agentplane-staging`
+(`s-mtwsuqj1`) still showed its harness as running in the sidebar. Checking the cluster afterward
+found no Pod for that Sandbox in `agent-workspaces` at all, consistent with the suspend contract
+documented in `cluster/k8s/agents/agent-sandbox/README.md` ("pause: pod goes away") — so the leading
+hypothesis is that this was the sidebar's own stale fetch, not a controller/harness bug, though the
+state at the moment it was actually observed wasn't captured, so that isn't fully confirmed.
+
+**Fix:** `sandboxes.tsx`/`sandbox_page.tsx` already get live Sandbox state via `live.tsx`'s
+`useLive`/`/live/sandboxes`; the sidebar needs to consume the same stream instead of its own
+one-shot fetch. Thread rename has no live source at all yet — the with-sandboxes endpoint needs the
+same `Changes`-backed push treatment (`live.py`) that [the push mechanism plan](push_mechanism.md)
+(not yet confirmed) designs for other resources, before the sidebar can reflect a rename without a
+remount.
+
+### `UISHELL_SIDEBAR_ALL_SANDBOXES` — sidebar hides Sandboxes with no Thread yet
+
+**Bug:** `thread_groups.ts`'s `groupThreads` builds one row per Sandbox a _Thread_ names — a Sandbox
+with no Thread yet (e.g. still provisioning: `WAITING_FOR_POD`/`WAITING_FOR_POD_READY` in
+`inventory.py`) never gets a group and is invisible in the sidebar, even though `sandboxes.tsx`'s own
+list page already shows it. The sidebar should show every Sandbox, not only ones a Thread happens to
+name.
+
+**No dependency** on `UISHELL_SIDEBAR_LIVE` above: this widens what `groupThreads`/the
+with-sandboxes response covers to Sandboxes with zero Threads, independent of whether the state shown
+for them is push-updated.
+
+### `UISHELL_SIDEBAR_SANDBOX_LINK` — Sandbox name in the sidebar should link to its page
+
+**Bug:** `ThreadGroupSection`'s `group.sandboxName` (`sidebar.tsx`) renders as plain text; clicking it
+does nothing. It should link to that Sandbox's own page (`/sandboxes/:name`), the same destination
+`sandboxes.tsx`'s own list already links to.
+
+### `UISHELL_NEWSANDBOX_NAV` — "New sandbox" should open the created Sandbox's page
+
+**Bug:** `sandboxes.tsx`'s `create()` POSTs `/sandboxes` and, on success, only resets the form — it
+never navigates anywhere. Clicking "New sandbox" should take the operator straight to the new
+Sandbox's own page instead of leaving them on the list.
 
 ### `THREAD_BROWSE_PAGINATE` — paginated/searchable all-threads page
 
