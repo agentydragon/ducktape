@@ -64,7 +64,7 @@ def _sell_and_pay(decisions: list[Decision], sale_month: int) -> list[DecisionAc
 
 
 def _run(case: Case, *, sale_month: int, rollout_ids: list[int]) -> Finished:
-    session = ActionSession(case.compiled_run, "alice", rollout_ids)
+    session = ActionSession.from_run(case.compiled_run, "alice", rollout_ids)
     try:
         batch = session.start()
         while not isinstance(batch, Finished):
@@ -75,7 +75,7 @@ def _run(case: Case, *, sale_month: int, rollout_ids: list[int]) -> Finished:
 
 
 def test_sale_receipt_cannot_be_rewritten_through_policy_memory() -> None:
-    session = ActionSession(_gain_case(wages=Decimal(0)).compiled_run, "alice", [0])
+    session = ActionSession.from_run(_gain_case(wages=Decimal(0)).compiled_run, "alice", [0])
     try:
         batch = session.start()
         assert not isinstance(batch, Finished)
@@ -301,7 +301,7 @@ def test_selected_reordered_replay_matches_original_paths(
 
 
 def test_rejected_sale_preserves_successful_prefix_and_stops_only_its_path(independent_paths: Case) -> None:
-    session = ActionSession(independent_paths.compiled_run, "alice", [TAXED, QUIET])
+    session = ActionSession.from_run(independent_paths.compiled_run, "alice", [TAXED, QUIET])
     observed: dict[int, list[int]] = {TAXED: [], QUIET: []}
     try:
         batch = session.start()

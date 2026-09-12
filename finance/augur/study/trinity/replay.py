@@ -339,7 +339,7 @@ def execute(
     capture: Literal["summary", "dense", "forensic"] = "summary",
 ) -> list[Rollout]:
     """Python owns the monthly batch loop; native execution owns all financial effects."""
-    session = ActionSession(run, RETIREE, list(rollout_ids), capture=capture)
+    session = ActionSession.from_run(run, RETIREE, list(rollout_ids), capture=capture)
     try:
         batch = session.start()
         while not isinstance(batch, Finished):

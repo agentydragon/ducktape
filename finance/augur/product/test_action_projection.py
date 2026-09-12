@@ -41,7 +41,7 @@ def _run(
     *,
     actor_id: str = "example-household",
 ) -> list[Rollout]:
-    session = ActionSession(compiled, actor_id, ids, capture=capture)
+    session = ActionSession.from_run(compiled, actor_id, ids, capture=capture)
     try:
         batch = session.start()
         while not isinstance(batch, Finished):

@@ -248,7 +248,7 @@ def test_declarations_reject_missing_prices_and_do_not_fall_back_to_initial_lots
     else:
         run = replace(run, scenario=replace(run.scenario, initial_lots=(), holding_pools=(pool, pool)))
     with pytest.raises(ValueError, match=r"holding pool|missing series"):
-        ActionSession(run, HOUSEHOLD, [0])
+        ActionSession.from_run(run, HOUSEHOLD, [0])
 
 
 def test_cashflows_claims_sales_and_cross_year_tax_share_financial_books() -> None:
@@ -386,7 +386,7 @@ def test_compact_capture_replays_observed_prefixes_and_canonical_payment_identit
     outputs = []
     modes: tuple[Capture, ...] = ("summary", "dense", "forensic")
     for mode in modes:
-        session = ActionSession(run, HOUSEHOLD, [0], capture=mode)
+        session = ActionSession.from_run(run, HOUSEHOLD, [0], capture=mode)
         batch = session.start()
         for month in range(2):
             assert not isinstance(batch, Finished)
@@ -722,7 +722,7 @@ def test_tracked_agent_steps_agree_with_the_batch_session() -> None:
         world.step()
         balances.append(checking(world))
     assert agent.months == [0, 1, 2]
-    session = ActionSession(run, HOUSEHOLD, [1], capture="forensic")
+    session = ActionSession.from_run(run, HOUSEHOLD, [1], capture="forensic")
     batch = session.start()
     while not isinstance(batch, Finished):
         [decision] = batch

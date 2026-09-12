@@ -96,7 +96,7 @@ def execute(
     rollout_ids: list[int],
     capture: Literal["summary", "dense", "forensic"] = "summary",
 ) -> list[Rollout]:
-    session = ActionSession(prepared, "test-retiree", rollout_ids, capture=capture)
+    session = ActionSession.from_run(prepared, "test-retiree", rollout_ids, capture=capture)
     try:
         batch = session.start()
         while not isinstance(batch, Finished):

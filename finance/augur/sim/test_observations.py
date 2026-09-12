@@ -208,7 +208,7 @@ def test_actor_books_reject_unpriced_public_positions_before_inspection(scoped: 
     invalid = replace(scoped, series=tuple(s for s in scoped.series if s.series_id != "security:second"))
     with patch("finance.augur.sim.session.World") as world:
         with pytest.raises(ValueError, match="security:second"):
-            ActionSession(invalid, HOUSEHOLD, [0])
+            ActionSession.from_run(invalid, HOUSEHOLD, [0])
         world.assert_not_called()
     with pytest.raises(ValueError, match="unknown actor"):
         world_for(scoped).open_mail(AgentId("absent-actor"))

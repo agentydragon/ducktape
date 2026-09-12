@@ -88,7 +88,7 @@ def test_session_does_not_accept_a_parallel_raw_input_surface(tmp_path: Path) ->
     invalid_inputs: list[Any] = [path.read_text(), json.loads(path.read_text())]
     for raw in invalid_inputs:
         with pytest.raises(TypeError, match="CompiledRun"):
-            ActionSession(raw, "example-household", [0])
+            ActionSession.from_run(raw, "example-household", [0])
 
 
 def test_experiment_defined_claim_label_reaches_the_policy_after_file_loading(tmp_path: Path) -> None:
@@ -97,7 +97,7 @@ def test_experiment_defined_claim_label_reaches_the_policy_after_file_loading(tm
     prepared = replace(original, scenario=replace(original.scenario, obligations=(claim,)))
     path = tmp_path / "custom-claim.json"
     write_prepared_input(prepared, path)
-    session = ActionSession(read_prepared_input(path), "example-household", [0])
+    session = ActionSession.from_run(read_prepared_input(path), "example-household", [0])
     try:
         batch = session.start()
         assert not isinstance(batch, Finished)

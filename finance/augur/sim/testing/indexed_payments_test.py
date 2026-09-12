@@ -57,7 +57,7 @@ def _run(scenario: Scenario, levels: list[list[float]]) -> list[Rollout]:
             [(RENT, np.asarray(levels, dtype=np.float64))], rollout_count=len(levels), horizon_months=len(levels[0]) - 1
         ),
     )
-    session = ActionSession(case.compiled_run, "alice", list(range(case.rollout_count)), capture="forensic")
+    session = ActionSession.from_run(case.compiled_run, "alice", list(range(case.rollout_count)), capture="forensic")
     try:
         batch = session.start()
         while not isinstance(batch, Finished):

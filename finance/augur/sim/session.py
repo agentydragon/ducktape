@@ -5,6 +5,10 @@ carrying the caller's submitted actions, and records between steps the summary a
 trace its `Finished` promises; the world keeps none of that history.
 """
 
+from __future__ import annotations
+
+from collections.abc import Mapping
+
 from finance.augur.sim import capture, results
 from finance.augur.sim.actions import Action, DecisionActions
 from finance.augur.sim.agent import EconomicAgent, assemble
@@ -136,7 +140,29 @@ class ActionSession:
     preserving earlier effects; no retries or engine-selected rescue actions occur.
     """
 
-    def __init__(self, run: CompiledRun, actor: str, rollout_ids: list[int], *, capture: Capture = "forensic") -> None:
+    def __init__(self, worlds: Mapping[int, World], actor: str, *, capture: Capture = "forensic") -> None:
+        """Own composed, unstarted worlds keyed by path id; each gets a delegate household for `actor`."""
+        if not worlds:
+            raise ValueError("a session needs at least one world")
+        if capture not in ("summary", "dense", "forensic"):
+            raise ValueError("capture must be summary, dense or forensic")
+        self._actor = AgentId(actor)
+        self._month = 0
+        self._started = False
+        self._closed = False
+        self._paths = dict(worlds)
+        self._delegates: dict[int, _Delegate] = {}
+        for rollout_id, world in self._paths.items():
+            delegate = _Delegate(self._actor)
+            world._track(delegate)
+            self._delegates[rollout_id] = delegate
+        self._records = {id_: _Record(world, actor, capture) for id_, world in self._paths.items()}
+
+    @classmethod
+    def from_run(
+        cls, run: CompiledRun, actor: str, rollout_ids: list[int], *, capture: Capture = "forensic"
+    ) -> ActionSession:
+        """The import adapter: one world per selected path of a prepared run, validated first."""
         if not isinstance(run, CompiledRun):
             raise TypeError("execution requires a CompiledRun, not serialized input")
         if (
@@ -152,17 +178,7 @@ class ActionSession:
             raise ValueError("capture must be summary, dense or forensic")
         validate_actor(run, actor)
         validate(run)
-        self._actor = AgentId(actor)
-        self._month = 0
-        self._started = False
-        self._closed = False
-        self._paths = {rollout_id: World.from_run(run, rollout_id) for rollout_id in rollout_ids}
-        self._delegates: dict[int, _Delegate] = {}
-        for rollout_id, world in self._paths.items():
-            delegate = _Delegate(self._actor)
-            world._track(delegate)
-            self._delegates[rollout_id] = delegate
-        self._records = {id_: _Record(world, actor, capture) for id_, world in self._paths.items()}
+        return cls({rollout_id: World.from_run(run, rollout_id) for rollout_id in rollout_ids}, actor, capture=capture)
 
     def _active(self) -> dict[int, World]:
         return {id_: path for id_, path in self._paths.items() if not path.finished}

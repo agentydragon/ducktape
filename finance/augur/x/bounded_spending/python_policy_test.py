@@ -176,7 +176,7 @@ def test_current_cpi_is_routed_without_future_values() -> None:
         rollout_count=2,
         series={InflationKey(): np.array([[2.0, 3.0, 90.0], [4.0, 5.0, 70.0]])},
     )
-    session = ActionSession(case.compiled_run, "retiree", [1, 0], capture="summary")
+    session = ActionSession.from_run(case.compiled_run, "retiree", [1, 0], capture="summary")
     batch = session.start()
     assert not isinstance(batch, Finished)
     assert [row.observation.cpi for row in batch] == [(4_000_000_000, 4_000_000_000), (2_000_000_000, 2_000_000_000)]

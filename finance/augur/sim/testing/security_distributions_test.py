@@ -34,7 +34,7 @@ from finance.augur.sim.testing.security_distributions import (
 
 def _run(case: Case) -> Rollout:
     """Receive modeled payouts and explicitly pay observed claims; never trade or retry."""
-    session = ActionSession(case.compiled_run, "alice", [0], capture="forensic")
+    session = ActionSession.from_run(case.compiled_run, "alice", [0], capture="forensic")
     try:
         batch = session.start()
         while not isinstance(batch, Finished):

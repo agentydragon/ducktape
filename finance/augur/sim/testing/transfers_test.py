@@ -13,7 +13,7 @@ from finance.augur.sim.testing.case import sampled
 
 def _run(scenario: Scenario, *, rollout_count: int = 1) -> list[Rollout]:
     case = sampled(scenario, rollout_count=rollout_count, locations={})
-    session = ActionSession(case.compiled_run, "alice", list(range(rollout_count)), capture="forensic")
+    session = ActionSession.from_run(case.compiled_run, "alice", list(range(rollout_count)), capture="forensic")
     try:
         batch = session.start()
         while not isinstance(batch, Finished):
