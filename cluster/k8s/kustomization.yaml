@@ -411,6 +411,7 @@ resources:
   - study-casino/app/flux-kustomization.yaml
 
   # --- seaweedfs (trial) ---
+  - seaweedfs/namespace-artifact/flux-kustomization.yaml
   - seaweedfs/namespace/flux-kustomization.yaml
   - seaweedfs/secrets/flux-kustomization.yaml
   - seaweedfs/operator/flux-kustomization.yaml
