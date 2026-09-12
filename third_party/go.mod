@@ -2,6 +2,16 @@ module github.com/agentydragon/ducktape
 
 go 1.26.2
 
+// Compile and exercise Flux health expressions in cluster/validation.
+require github.com/google/cel-go v0.26.0
+
+require (
+	cel.dev/expr v0.24.0 // indirect
+	github.com/antlr4-go/antlr/v4 v4.13.0 // indirect
+	github.com/stoewer/go-strcase v1.3.0 // indirect
+	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56 // indirect
+)
+
 // Direct dependencies for skills/.../genkit (20q eval)
 require (
 	github.com/docker/docker v28.5.2+incompatible
