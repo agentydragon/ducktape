@@ -63,6 +63,14 @@ flowchart TB
     IDENTITY_SCOPE["Deferred discussion<br/>cross-service static Identity access<br/>MCP and binding-authority placement"]:::future
     PROD["Milestone<br/>production-capable governed action execution"]:::milestone
 
+    UISHELL_SETTINGS["Planned UI<br/>Settings modal consolidation<br/>OAuth clients table + ServiceAccount dropdown"]:::future
+    UISHELL_HISTORY["Planned UI<br/>Action history full page<br/>caller, arguments, decision evidence"]:::future
+    ACTION_CONTEXT["Planned schema<br/>caller-supplied Action title/description<br/>ActionRequestInput + ActionCard rendering"]:::future
+    THREAD_LIST_API["Planned support<br/>cross-sandbox Thread-listing endpoint<br/>Sandbox id/state, deleted-Sandbox tolerance"]:::future
+    UISHELL_SIDEBAR["Planned milestone<br/>session-first sidebar shell<br/>Threads grouped by Sandbox, replaces top nav"]:::milestone
+    UISHELL_DRAWER["Planned UI<br/>pending-approval badge + drawer<br/>global subscription, non-modal"]:::future
+    UISHELL_MOBILE["Planned UI<br/>mobile sidebar collapse<br/>hamburger toggle, badge stays in top bar"]:::future
+
     CRED --> MCPAUTH
     MCPAUTH --> PROD
     SBPOLICY --> ELEVATE
@@ -86,6 +94,10 @@ flowchart TB
     T3 -. product work .-> PROD
 
     ACCESS -. authority choice .-> EGRESS_CHANGE
+
+    THREAD_LIST_API --> UISHELL_SIDEBAR
+    UISHELL_SIDEBAR --> UISHELL_DRAWER
+    UISHELL_SIDEBAR --> UISHELL_MOBILE
 ```
 
 The credentialless MCP vertical is complete and is intentionally removed from this remaining-work
@@ -125,6 +137,18 @@ the complete target and command. The executor code, rather than runtime configur
 Haku Console migration is split: Agent/conversation management and tool-call/approval management
 can retire on different schedules after their respective replacement surfaces exist. Neither is a
 prerequisite for the first Action/MCP acceptance.
+
+The session-first UI shell (`UISHELL_SETTINGS`, `UISHELL_HISTORY`, `ACTION_CONTEXT`,
+`THREAD_LIST_API`, `UISHELL_SIDEBAR`, `UISHELL_DRAWER`, `UISHELL_MOBILE`) is a separate
+frontend-ergonomics track: it is not gated by, and does not gate, the Action Service milestones
+above. `UISHELL_SETTINGS`, `UISHELL_HISTORY`, and `ACTION_CONTEXT` have no dependencies and ship
+independently and in parallel. `THREAD_LIST_API` is the one real blocker for the sidebar: a Thread
+is reachable today only through its owning Sandbox's own session list, and the sidebar needs one
+cross-sandbox listing call that also tolerates a Thread whose Sandbox no longer exists.
+`UISHELL_SIDEBAR` then replaces the top nav row entirely as one atomic cutover, not a transitional
+shim running both navs at once; `UISHELL_DRAWER` and `UISHELL_MOBILE` build on its chrome after it
+lands. See [mobile density](mobile_density.md), [session-first navigation](session_first_navigation.md),
+and [Action-request plaintext context](action_request_context.md).
 
 ### `BB` — BuildBuddy hosted-run credential boundary
 
@@ -516,6 +540,70 @@ subscription matching, deduplication, batching/debounce, rate limits, backpressu
 and Thread wake/queue semantics. It is not an executor or an Action decision authority. It consumes
 the canonical Action event sequence, preserving individual events and ordering, and adds no second
 Action outbox or event store; cross-Identity delivery requires an explicit read policy.
+
+### `UISHELL_SIDEBAR` — session-first sidebar shell
+
+**Planned milestone:** replace `app.tsx`'s always-visible five-button nav row with a persistent
+left sidebar: a single Threads list grouped by the Sandbox that hosts them (state icon, name,
+thread count per group; a per-thread status dot for harness-running/idle/needs-approval), including
+a struck-through group for a Thread whose Sandbox was deleted (read-only, no folder-link, no
+composer). Sandboxes get no separate browse-by-sandbox tab — that identity/state/count already
+lives in the group headers. See the App Shell mock captured for
+[session-first navigation](session_first_navigation.md) for the settled layout. Ship as one atomic
+cutover; no transitional shim keeping both navs live.
+
+**Depends on** `THREAD_LIST_API`. **Acceptance:** every Thread across every Sandbox appears exactly
+once, grouped correctly; a Thread survives its Sandbox's deletion and renders read-only; per-thread
+status reflects real harness/pending-approval state, not a cached snapshot.
+
+### `THREAD_LIST_API` — cross-sandbox Thread-listing endpoint
+
+**Needed support:** today a Thread is reachable only through its owning Sandbox's own session list;
+`UISHELL_SIDEBAR` needs one call returning every Thread the operator can see, each annotated with
+its Sandbox's id and current state, tolerant of a Thread whose Sandbox row is gone. This is the one
+real technical blocker in the UI-shell cluster; nothing else in it waits on this.
+
+### `UISHELL_DRAWER` — pending-approval badge and drawer
+
+**Planned UI:** a persistent badge, reachable from any route regardless of sidebar tab or phone
+collapse state, opens a non-modal drawer over the current page showing pending Action approvals
+(group/name, caller, collapsible arguments, Approve/Deny) — the shape
+`haku/console/frontend/shell_chrome.tsx` already ships for its own approval queue. Needs a
+top-level push/subscription mechanism (alongside wherever `live.tsx`'s mechanism already lives) to
+raise the badge without a page visit.
+
+**Depends on** `UISHELL_SIDEBAR` for chrome placement; the subscription plumbing itself can be
+built in parallel.
+
+### `UISHELL_HISTORY` — Action history full page
+
+**Planned UI:** move decided Actions off `actions.tsx`'s current single list into their own page
+(reached from a sidebar-footer icon or the drawer's "view history" link, never a tab list) with the
+same per-entry detail as the pending drawer, plus the decision, `decision_note`, and — for a
+policy-matched Decision — which `ActionPolicySet` decided it. No dependency on `UISHELL_SIDEBAR`;
+`actions.tsx` already exists as a routed page today.
+
+### `UISHELL_SETTINGS` — Settings modal consolidation
+
+**Planned UI:** merge the Connections/MCP servers/Notifications pages into one tabbed modal behind
+a single affordance; rename "Connections" to "OAuth clients" and reshape the list into a 3-column
+table (client, ServiceAccount as a dropdown, Unlink) — the model already specified in
+[Action policies](action_policies.md), not a redesign of the `Connection` type. No dependency on
+the sidebar; today's nav row can host the same modal.
+
+### `UISHELL_MOBILE` — mobile sidebar collapse
+
+**Planned UI:** collapse the sidebar behind a hamburger toggle at phone width; the pending-approval
+badge stays reachable in the top bar regardless of which sidebar view was last open.
+
+**Depends on** `UISHELL_SIDEBAR`; this is a breakpoint on its layout, not new logic.
+
+### `ACTION_CONTEXT` — caller-supplied Action title/description
+
+**Planned schema change:** `ActionRequestInput` carries no plaintext field a caller can submit for
+an approver to read, unlike the operator-authored `decision_note` that already flows the reverse
+direction. See [Action-request plaintext context](action_request_context.md) for the exact gap and
+the open field-shape questions. No dependency on the UI-shell cluster; ships independently.
 
 ## Deferred
 
