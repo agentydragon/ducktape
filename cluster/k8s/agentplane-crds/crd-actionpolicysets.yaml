@@ -47,9 +47,12 @@ spec:
                       type:
                         description: >-
                           The evaluator. `exact_actions` matches by Action name alone;
-                          `argument_schema` also requires the arguments to satisfy `schema`.
+                          `argument_schema` also requires the arguments to satisfy `schema`;
+                          `github_repository` requires a GitHub MCP call to target
+                          `owner`/`repository`; `github_public_repository` requires it to
+                          target a repository an unauthenticated GitHub lookup confirms public.
                         type: string
-                        enum: [exact_actions, argument_schema]
+                        enum: [exact_actions, argument_schema, github_repository, github_public_repository]
                       actions:
                         description: Action names by ActionGroup key; the policy matches only these.
                         type: object
@@ -67,6 +70,14 @@ spec:
                           Read only by `argument_schema` policies.
                         type: object
                         x-kubernetes-preserve-unknown-fields: true
+                      owner:
+                        description: The GitHub repository owner; read only by `github_repository` policies.
+                        type: string
+                        minLength: 1
+                      repository:
+                        description: The GitHub repository name; read only by `github_repository` policies.
+                        type: string
+                        minLength: 1
                 autoDenyIf:
                   description: A request matching any policy here is auto-denied.
                   type: array

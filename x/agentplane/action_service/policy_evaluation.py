@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from github_policy.visibility import RepositoryVisibilityService
 from x.agentplane.action_service.models import (
     BindingEvidence,
     MatchedPolicy,
@@ -119,12 +120,15 @@ class PolicySetDecisionProvider:
 
     name = PROVIDER_NAME
 
+    def __init__(self, *, visibility: RepositoryVisibilityService) -> None:
+        self._visibility = visibility
+
     async def decide(self, context: DecisionContext) -> ProviderOutcome:
         for resolved in context.bindings:
             for policy_set in resolved.policy_sets:
                 for index, policy in enumerate(policy_set.spec.auto_approve_if):
-                    match evaluate(policy, context.action, context.arguments):
-                        case Matched(explanation=explanation):
+                    match await evaluate(policy, context.action, context.arguments, self._visibility):
+                        case Matched(explanation=explanation, repository=repository):
                             binding, metadata = resolved.binding.metadata, policy_set.metadata
                             return ProviderOutcome(
                                 verdict=ProviderVerdict.ALLOW,
@@ -141,6 +145,7 @@ class PolicySetDecisionProvider:
                                         source="autoApproveIf",
                                         index=index,
                                         type=policy.type,
+                                        repository=repository,
                                     ),
                                 ),
                             )

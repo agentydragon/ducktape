@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import pytest
 import pytest_bazel
 from pydantic import JsonValue, ValidationError
 
+from github_policy.visibility import RepositoryVisibilityService
 from x.agentplane.action_service.catalog import ActionIdentity
 from x.agentplane.action_service.policies.argument_schema import ArgumentSchema
 from x.agentplane.action_service.policies.kind import Matched, NotMatched
@@ -37,8 +40,11 @@ POLICY = ArgumentSchema.model_validate(
         ({"message": "hi", "extra": True}, False),
     ],
 )
-def test_plain_json_schema_semantics(arguments: dict[str, JsonValue], matched: bool) -> None:
-    assert isinstance(evaluate(POLICY, ECHO, arguments), Matched if matched else NotMatched)
+async def test_plain_json_schema_semantics(
+    arguments: dict[str, JsonValue], matched: bool, github_visibility: Callable[..., RepositoryVisibilityService]
+) -> None:
+    decision = await evaluate(POLICY, ECHO, arguments, github_visibility())
+    assert isinstance(decision, Matched if matched else NotMatched)
 
 
 def test_invalid_json_schema_is_refused_at_parse() -> None:

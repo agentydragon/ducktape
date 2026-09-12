@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from x.agentplane.action_service.catalog import Key
+from x.agentplane.action_service.models import MatchedRepository
 
 
 class Spec(BaseModel):
@@ -39,6 +40,7 @@ class Kind(Spec):
 @dataclass(frozen=True, slots=True)
 class Matched:
     explanation: str
+    repository: MatchedRepository | None = None
 
 
 @dataclass(frozen=True, slots=True)
