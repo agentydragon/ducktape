@@ -267,7 +267,7 @@ flowchart TB
     GX{"GX: backstop jurisdiction and realism"}
     GL{"GL: future measured workload tuning; parked"}
     RUNTIME["RUNTIME: future bottleneck investigation; parked"] --> GE{"GE: future optimization choice; parked"}
-    IDTYPES["IDTYPES: distinct entity IDs; deferred"]
+    IDTYPES["IDTYPES: typed actor and entity IDs"] --> COMPOSE
 
     ACCEPT["ACCEPT: legacy acceptance-suite readers"] --> P12["P12: delete remaining configured drivers and schemas"]
 
@@ -449,7 +449,7 @@ atomic caller updates and deletion criteria.
 
 | Unit    | Change                                                                    | Needs                                          |
 | ------- | ------------------------------------------------------------------------- | ---------------------------------------------- |
-| IDTYPES | Distinct entity IDs, not prefix renaming; deferred until a concrete need. | None; not a gate to product composition        |
+| IDTYPES | Distinct entity IDs, not prefix renaming; messages are addressed by them. | None; lands with COMPOSE's queue slice         |
 | ACCEPT  | Move remaining acceptance suites to common typed traces/receipts.         | Expanded capabilities only for affected suites |
 
 Reuse the typed `CompiledRun` and exact total opening basis from
@@ -620,7 +620,7 @@ all the others to be solved first.
    the capabilities they actually need; do not remove those regressions or add
    a compatibility driver to claim convergence. Public reader deletions proceed.
    **GL and RUNTIME/GE remain parked** without outgoing gates to this work.
-   **IDTYPES is deferred**, the “exogenous” rename is only a consideration, and
+   **IDTYPES lands with COMPOSE's queue slice**, the “exogenous” rename is only a consideration, and
    constituent-level managed portfolios wait for decision-relevant fidelity gaps.
    New evidence-fetch/cache infrastructure waits for observed throttling; richer
    PE app controls are dropped, not a deferred product feature.
