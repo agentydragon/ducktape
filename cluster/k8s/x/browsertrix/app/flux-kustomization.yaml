@@ -16,8 +16,8 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: browsertrix-app
     namespace: ducktape-flux
   dependsOn:
     - name: browsertrix-namespace

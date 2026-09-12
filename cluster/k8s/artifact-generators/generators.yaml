@@ -6028,3 +6028,203 @@ spec:
           to: "@artifact/cluster/k8s/x/authelia/namespace/"
           exclude:
             - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: browsertrix-app
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: browsertrix-app
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/x/browsertrix/app/**"
+          to: "@artifact/cluster/k8s/x/browsertrix/app/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: browsertrix-bucket
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: browsertrix-bucket
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/x/browsertrix/bucket/**"
+          to: "@artifact/cluster/k8s/x/browsertrix/bucket/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: browsertrix-namespace
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: browsertrix-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/x/browsertrix/namespace/**"
+          to: "@artifact/cluster/k8s/x/browsertrix/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: browsertrix-retained
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: browsertrix-retained
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/x/browsertrix/retained/**"
+          to: "@artifact/cluster/k8s/x/browsertrix/retained/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: google-workspace-mcp
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: google-workspace-mcp
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/x/google-workspace-mcp/**"
+          to: "@artifact/cluster/k8s/x/google-workspace-mcp/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: haku-dispatch-dispatcher
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: haku-dispatch-dispatcher
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/x/haku/dispatch/dispatcher/**"
+          to: "@artifact/cluster/k8s/x/haku/dispatch/dispatcher/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: haku-dispatch-litellm
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: haku-dispatch-litellm
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/x/haku/dispatch/litellm/**"
+          to: "@artifact/cluster/k8s/x/haku/dispatch/litellm/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: openhands-app
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: openhands-app
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/x/openhands/app/**"
+          to: "@artifact/cluster/k8s/x/openhands/app/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: openhands-namespace
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: openhands-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/x/openhands/namespace/**"
+          to: "@artifact/cluster/k8s/x/openhands/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: openhands-sandboxes
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: openhands-sandboxes
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/x/openhands/sandboxes/**"
+          to: "@artifact/cluster/k8s/x/openhands/sandboxes/"
+          exclude:
+            - flux-kustomization.yaml
