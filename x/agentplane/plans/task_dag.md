@@ -34,7 +34,6 @@ flowchart TB
     MCPAUTH["Remaining acceptance<br/>credentialed MCP account<br/>OAuth linkage + provider proof"]:::active
     CRED["Deferred decision<br/>static credential + binding design<br/>ownership, lifecycle, revocation"]:::future
     MCPDEPLOY["Remaining acceptance<br/>staged MCP endpoint rollout<br/>public MCP and Sandbox reachability"]:::active
-    SBPOLICY["Planned behavior<br/>app-written Sandbox bindings<br/>and read-only effective policy view"]:::future
     ELEVATE["Planned behavior<br/>agent-requested temporary permission<br/>ServiceAccount and Sandbox callers, operator-approved"]:::future
     FORK["Deferred design<br/>per-task identity fork<br/>sub-identity scoped by token possession"]:::future
     CLAUDEAI["Priority milestone<br/>working Claude.ai MCP facade<br/>deployed Action execution"]:::active
@@ -65,7 +64,6 @@ flowchart TB
 
     CRED --> MCPAUTH
     MCPAUTH --> PROD
-    SBPOLICY --> ELEVATE
     APPROVALUI --> ELEVATE
     ELEVATE --> FORK
     MCPDEPLOY --> CLAUDEAI
@@ -110,11 +108,11 @@ what it evaluated on the Decision. None of that gates the human-approved client 
 authority already lives in PostgreSQL. A caller ServiceAccount does not select backend credentials
 or wait for `CRED`/`PROFILES`; outbound account OAuth remains `MCPAUTH`. Initial client proof does
 not establish full Haku tool parity.
-Hosted harnesses continue to call Actions from their Sandbox Threads: `SBPOLICY` adds the
-integration app's writer for the same Actions-owned Sandbox bindings. SandboxPreset stays
-an integration-app-only recipe: the app resolves preset defaults and per-Sandbox additions into each
-subsystem's bindings. Actions and egress do not resolve presets or depend on one another. The
-[Action policy plan](action_policies.md) owns the remaining app and deny-list steps.
+Hosted harnesses call Actions from their Sandbox Threads under the `ActionPolicyBinding` the
+integration app writes at launch. SandboxPreset stays an integration-app-only recipe: the app
+resolves preset defaults and per-Sandbox additions into each subsystem's bindings. Actions and
+egress do not resolve presets or depend on one another. The
+[Action policy plan](action_policies.md) owns the remaining deny-list step.
 SSH execution is a modular MCP backend behind the existing MCP Executor contract. The planned first
 slice uses OpenSSH with Kubernetes Secret-mounted long-lived keys and reviewed ConfigMap host/user/key bindings;
 it deliberately does not duplicate command authorization in the executor. It also exposes a reviewed
@@ -207,21 +205,6 @@ merged source PR or a healthy old pod does not establish readiness. Then run `CL
 configuration task alone cannot satisfy it. Verify Sandbox MCP reachability in parallel; that
 caller's acceptance is not a prerequisite for `CLAUDEAI`.
 
-### `SBPOLICY` — preset-selected and per-Sandbox auto-approval
-
-**Planned behavior:** an agent harness running in a Thread in a Sandbox calls the Action Service
-through its existing workload authentication, which already evaluates the Sandbox's
-`ActionPolicyBinding`s at admission. The integration app writes one `ActionPolicyBinding`
-per Sandbox it creates, from the preset's set list, next to the `EgressBinding` it already writes,
-both owner-referenced to the Sandbox; later widening of one Sandbox is another binding, usually
-with `expiresAt`. Neither enforcement service knows preset names or depends on the other.
-
-**Acceptance:** matching and different Sandbox bindings and arguments, forged references, app
-outage (enforcement continues from applied bindings), instance additions surviving a preset
-re-resolution, and policy changes before dispatch. Same-preset Sandboxes retain separate caller
-reads/idempotency; Threads within one Sandbox retain current shared workload scope. See
-[Action policies](action_policies.md).
-
 ### `ELEVATE` — agent-requested temporary permission
 
 **Planned behavior:** a caller that knows it will need an Action outside its current policy asks
@@ -237,7 +220,7 @@ so the request itself can be auto-approved by policy later, never by default. A 
 evaluated like any other, once per subsequent Action at admission. Prove: a Sandbox requests a set,
 the operator approves, the next matching Action auto-approves and the Decision names the new
 binding; the same request from a different subject grants nothing to the requester; expiry ends it.
-Depends on `SBPOLICY` for bindings on both caller classes and on `APPROVALUI` for the rendering path.
+Depends on `APPROVALUI` for the rendering path.
 
 ### `FORK` — per-task identity fork
 

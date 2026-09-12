@@ -1,8 +1,8 @@
 # Action policy bindings
 
 Status: **decided 2026-09-12; the Action Service side has landed (CRDs, informer, ServiceAccount
-callers, evaluation, evidence, the acceptance scenario); `SBPOLICY` and the deny lists are the steps
-below.**
+callers, evaluation, evidence, the acceptance scenario), and so has the integration app's binding
+writer and read-only view; the deny lists are the step below.**
 The single operator configures bounded auto-approval for both external MCP connections and
 harnesses running in Threads inside Sandboxes. Both use the canonical Action Service and Decision
 lifecycle. Identity/OAuth/Connection authority is implemented independently of policy
@@ -159,10 +159,7 @@ the binding revision they used.
 
 ## Steps
 
-1. **Integration app.** Write the Sandbox binding at creation from the preset's set list, and show
-   what a Sandbox can currently do: its unexpired bindings, their sets, and the resulting lists.
-   Read-only; no runtime editing surface yet.
-2. **Deny lists** when an Action needs them, `autoDenyIf` first; `autoDenyUnless` later.
+1. **Deny lists** when an Action needs them, `autoDenyIf` first; `autoDenyUnless` later.
 
 ## Later
 

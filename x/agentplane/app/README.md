@@ -29,13 +29,20 @@ bbr test //x/agentplane/app/...
   repository's to remove, so revoking one is refused with 409 rather than deleting an object the
   next reconcile re-creates. `decisions.py` reads the proxy's recent decisions off its admin port,
   and an unreachable proxy leaves the rules readable.
+- `action_policy.py`: the sandbox namespace's `ActionPolicySet` and `ActionPolicyBinding` resources
+  as the app writes and shows them. A preset's `action_policy_sets` become one binding per Sandbox
+  the app launches, owner-referenced to it and labelled `app.agentplane.allegedly.works/managed-by:
+integration-app`; the Action Service evaluates bindings and reads `spec` only, so no preset name
+  reaches it. The read side projects what the service would resolve at admission (below). Nothing
+  edits a binding at runtime; kubectl does.
 - `bridge.py`: runner-first commands, leased ingestion per sandbox, and database-backed browser
   SSE; `api.py` is the REST surface and the OpenAPI schema `export_schema.py` emits
   for the frontend's generated client.
 - `client.py`: a Python client over the app's HTTP surface, speaking the app's own request and
   response models and the runner protocol's `Event` messages.
-- `live.py`: one list-and-watch over Sandboxes, their Pods, and the egress objects
-  (`../kubernetes_watch.py`), and the SSE streams that push a snapshot of it to every open tab.
+- `live.py`: one list-and-watch over Sandboxes, their Pods, the egress objects and the action policy
+  objects (`../kubernetes_watch.py`), and the SSE streams that push a snapshot of it to every open
+  tab.
 - `changes.py`: the payload-free wake-up a reader of the cluster index or the trajectory store waits
   on; a burst of changes coalesces into one re-read.
 - `identity.py`: whether a request proved itself, by whichever credential it carried; `oidc.py` and
@@ -84,9 +91,9 @@ Staging runs two app replicas on separate nodes with `RollingUpdate` (`maxUnavai
 
 `/live/sandboxes` and `/live/sandboxes/{name}` are SSE, authenticated like every other route. Each
 carries a whole `snapshot` of what it covers whenever that changes, and a `health` frame through
-the quiet in between. What is pushed: the sandbox rows, one sandbox's egress bindings, and its
-threads, the last of these from the store rather than a watch, since the app is the only writer of
-a thread's name.
+the quiet in between. What is pushed: the sandbox rows, one sandbox's egress bindings, its action
+policy, and its threads, the last of these from the store rather than a watch, since the app is the
+only writer of a thread's name.
 
 Two things stay request-shaped, both because their source offers no stream. The proxy's recent
 decisions live in its memory and the egress tab still asks for them on an interval; the runner
@@ -262,7 +269,11 @@ linked group becomes available is the Action Service's contract
 `POST /sandboxes` keeps its no-preset shape and additionally accepts an optional preset: omitted
 fields inherit, while explicit policies and thread fields replace preset values. The Sandbox
 annotation stores the preset name and only explicit thread edits, so later sessions resolve against
-the current configured default instead of freezing a copied form.
+the current configured default instead of freezing a copied form. A preset's `action_policy_sets`
+have no per-launch override: the launch writes one `ActionPolicyBinding` naming them for the new
+Sandbox, and a set name the namespace does not hold is refused with 422 before the Sandbox exists,
+as an unknown egress policy is. A Sandbox launched without a preset has no binding until the
+operator writes one.
 
 Before opening a session on a bound Sandbox, the app sends the SandboxPreset's configured bootstrap
 content to the runner under a stable preset identity. The runner executes it idempotently on the
@@ -274,6 +285,22 @@ configuration. A configured `agent_instructions` key replaces that image default
 explicitly empty value. The
 shared block teaches agents the platform's egress and Actions Service protocol; a preset and the
 per-turn task remain the place for workload-specific constraints and the requested outcome.
+
+## Action policy
+
+The Sandbox page's "Action policy" tab, and `GET /sandboxes/{name}/action-policy` behind it, show what
+the Action Service auto-decides for one Sandbox from the objects as they stand: the unexpired
+`ActionPolicyBinding`s whose subject pins the Sandbox's UID, each with its provenance (git, this app
+at launch, or the operator with kubectl), expiry and the service's `Ready` verdict; every
+`ActionPolicySet` those name, as present, edited since the service judged it, refused with the
+validation report, or missing; and the resulting `autoApproveIf`, `autoDenyIf` and `autoDenyUnless`
+lists in the order the service walks them, each entry naming the binding, set and index a Decision's
+evidence names. The lists are the app's own projection through the service's resource models, not
+a query of the service, so they say what an admission would see now and nothing about past
+Decisions; the Actions page holds those. The tab is read-only. The binding expiry is judged when a
+frame is built, so a binding lapsing while nothing else changes leaves the page at the next frame.
+Which lists the service enforces is its contract
+([SPEC § Action policies](../action_service/SPEC.md#action-policies)).
 
 ## Decisions
 
