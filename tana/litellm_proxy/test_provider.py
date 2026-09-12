@@ -12,7 +12,7 @@ import httpx
 import litellm
 import pytest
 import pytest_bazel
-from litellm.types.utils import Choices, GenericStreamingChunk, ModelResponse, Usage
+from litellm.types.utils import ChatCompletionMessageToolCall, Choices, GenericStreamingChunk, ModelResponse, Usage
 
 from tana.litellm_proxy.custom_handler import tana_handler
 from tana.litellm_proxy.provider import (
@@ -1000,6 +1000,7 @@ def test_litellm_handler_returns_tool_calls() -> None:
     assert choice.finish_reason == "tool_calls"
     assert choice.message.tool_calls is not None
     tool_call = choice.message.tool_calls[0]
+    assert isinstance(tool_call, ChatCompletionMessageToolCall)
     assert tool_call.id == "call-1"
     assert tool_call.type == "function"
     assert tool_call.function.name == "lookup_demo_fact"
