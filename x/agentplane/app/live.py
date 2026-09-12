@@ -26,6 +26,7 @@ from contextlib import ExitStack
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Annotated, Any
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
@@ -34,6 +35,8 @@ from kubernetes_asyncio.client import CoreV1Api
 from pydantic import BaseModel, ConfigDict, Field
 
 from util.kubernetes import CustomObjectsClient
+from x.agentplane.action_service import policy_resources
+from x.agentplane.app.action_policy import ACTION_POLICY_API, ActionPolicyView, action_policy_view
 from x.agentplane.app.changes import Changes
 from x.agentplane.app.egress import (
     BINDINGS_PLURAL,
@@ -88,12 +91,16 @@ class SandboxesSnapshot(BaseModel):
 
 
 class SandboxSnapshot(BaseModel):
-    """A frame of one sandbox's stream: the sandbox itself, what may leave it, and its threads."""
+    """A frame of one sandbox's stream: the sandbox itself, what may leave it, what the Action
+    Service auto-decides for it, and its threads."""
 
     model_config = ConfigDict(extra="forbid")
 
     sandbox: SandboxView | None = Field(description="None once the sandbox is gone: deleted, or never there.")
     bindings: list[BindingView]
+    action_policy: ActionPolicyView | None = Field(
+        description="None with the sandbox: a policy subject pins its UID, so a gone sandbox has none."
+    )
     threads: list[ThreadView]
     watch: WatchHealth
 
@@ -112,6 +119,8 @@ class LiveIndex:
     bindings: dict[str, object] = field(default_factory=dict)
     policies: dict[str, object] = field(default_factory=dict)
     credentials: dict[str, object] = field(default_factory=dict)
+    action_policy_sets: dict[str, dict[str, Any]] = field(default_factory=dict)
+    action_policy_bindings: dict[str, dict[str, Any]] = field(default_factory=dict)
     refreshed: dict[str, datetime] = field(default_factory=dict)
     changes: Changes = field(default_factory=Changes)
 
@@ -125,6 +134,13 @@ class LiveIndex:
     def bindings_for(self, name: str) -> list[BindingView]:
         return matching_bindings(
             self.bindings.values(), self.policies.values(), self.credentials.values(), sandbox=name
+        )
+
+    def action_policy_for(self, sandbox_uid: UUID, now: datetime) -> ActionPolicyView:
+        """Expiry is judged at `now`, the frame's time: a binding lapsing while nothing else changes
+        leaves the page at the next frame, not at the instant."""
+        return action_policy_view(
+            self.action_policy_bindings.values(), self.action_policy_sets.values(), sandbox_uid=sandbox_uid, now=now
         )
 
     def health(self, now: datetime) -> WatchHealth:
@@ -156,10 +172,11 @@ def watch_for(
     resync_seconds: int,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> ListWatch:
-    """The four kinds the app's views are built from, folded into `index` as they change.
+    """The kinds the app's views are built from, folded into `index` as they change.
 
-    Sandboxes and their Pods come from the namespace they run in; the policy objects from the app's
-    own, which is the same split `main.py` gives the inventory and the egress reader.
+    Sandboxes, their Pods and the action policy objects come from the namespace the sandboxes run
+    in; the egress objects from the app's own, which is the same split `main.py` gives the
+    inventory, the egress reader and the action policy reader.
     """
 
     async def changed(_kind: WatchedKind) -> None:
@@ -211,6 +228,22 @@ def watch_for(
                 parse=_named,
                 names=lambda: set(index.credentials),
                 apply=lambda name, obj: apply_to(index.credentials, name, obj),
+            ),
+            WatchedKind(
+                name=policy_resources.POLICY_SETS_PLURAL,
+                list=custom_objects.list_namespaced_custom_object,
+                args=(*ACTION_POLICY_API, sandbox_namespace, policy_resources.POLICY_SETS_PLURAL),
+                parse=_named,
+                names=lambda: set(index.action_policy_sets),
+                apply=lambda name, obj: apply_to(index.action_policy_sets, name, obj),
+            ),
+            WatchedKind(
+                name=policy_resources.BINDINGS_PLURAL,
+                list=custom_objects.list_namespaced_custom_object,
+                args=(*ACTION_POLICY_API, sandbox_namespace, policy_resources.BINDINGS_PLURAL),
+                parse=_named,
+                names=lambda: set(index.action_policy_bindings),
+                apply=lambda name, obj: apply_to(index.action_policy_bindings, name, obj),
             ),
         ),
         resync_seconds=resync_seconds,
@@ -305,16 +338,18 @@ async def live_sandboxes(
 
 @router.get("/sandboxes/{name}", responses=_SANDBOX_FRAMES)
 async def live_sandbox(index: Index, store: Store, shutdown: Shutdown, name: str) -> StreamingResponse:
-    """One sandbox page, pushed: the sandbox, its bindings, and its threads.
+    """One sandbox page, pushed: the sandbox, its bindings, its action policy, and its threads.
 
     Threads are not Kubernetes and no watch reaches them; the store notifies when it creates or
     renames one, which is every change a page shows.
     """
 
     async def snapshot() -> SandboxSnapshot:
+        sandbox = index.sandbox_view(name)
         return SandboxSnapshot(
-            sandbox=index.sandbox_view(name),
+            sandbox=sandbox,
             bindings=index.bindings_for(name),
+            action_policy=None if sandbox is None else index.action_policy_for(sandbox.uid, datetime.now(UTC)),
             threads=await store.list_threads(sandbox=name),
             watch=_health(index),
         )

@@ -29,6 +29,7 @@ const live = vi.hoisted(
         },
         threads: [],
         bindings: [],
+        action_policy: null,
         watch: { fresh: true, stale_after_seconds: 60, refreshed_seconds_ago: {} },
       },
       connection: "connected",

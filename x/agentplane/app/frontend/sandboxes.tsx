@@ -212,6 +212,11 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
       </Group>
       {form.preset && (
         <Stack gap="xs">
+          <Text size="sm" c="dimmed">
+            Action policy sets:{" "}
+            {presets.find((preset) => preset.name === form.preset)?.action_policy_sets.join(", ") ||
+              "none; every Action waits for the operator"}
+          </Text>
           <Text size="sm" fw={600}>
             Inherited thread defaults · editable
           </Text>

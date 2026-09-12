@@ -513,6 +513,7 @@ py_library(
     name = "live",
     srcs = ["live.py"],
     deps = [
+        ":action_policy",
         ":changes",
         ":egress",
         ":inventory",
@@ -520,6 +521,7 @@ py_library(
         ":trajectory",
         "//util:kubernetes",
         "//x/agentplane:kubernetes_watch",
+        "//x/agentplane/action_service:policy_resources",
         "@pypi//fastapi",
         "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",

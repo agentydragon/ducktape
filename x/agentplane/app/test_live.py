@@ -23,6 +23,8 @@ from x.agentplane.app.live import PODS_PLURAL, LiveIndex, SandboxesSnapshot, Wat
 from x.agentplane.app.testing.kubernetes import (
     FakeCoreV1Api,
     FakeCustomObjectsApi,
+    action_policy_binding,
+    action_policy_set,
     egress_binding,
     egress_policy,
     pod,
@@ -54,6 +56,15 @@ def seeded(custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api, live_in
     custom_objects.objects[("egressbindings", "elsewhere")] = egress_binding(
         "elsewhere", subjects=[{"sandbox": {"name": "shelved"}}], policies=["github"]
     )
+    custom_objects.objects[("actionpolicysets", "reads")] = action_policy_set(
+        "reads",
+        auto_approve_if=[{"type": "exact_actions", "actions": {"github": ["search_code"]}}],
+        ready=("True", "Valid", "spec accepted"),
+    )
+    runner_uid = custom_objects.objects[(SANDBOXES_PLURAL, "runner-1")]["metadata"]["uid"]
+    custom_objects.objects[("actionpolicybindings", "runner-1-reads")] = action_policy_binding(
+        "runner-1-reads", subject={"sandbox": {"name": "runner-1", "uid": runner_uid}}, policy_sets=["reads"]
+    )
     for (kind, name), obj in custom_objects.objects.items():
         match kind:
             case "sandboxes":
@@ -62,6 +73,10 @@ def seeded(custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api, live_in
                 live_index.bindings[name] = obj
             case "egresspolicies":
                 live_index.policies[name] = obj
+            case "actionpolicysets":
+                live_index.action_policy_sets[name] = obj
+            case "actionpolicybindings":
+                live_index.action_policy_bindings[name] = obj
     live_index.pods.update(core_v1.pods)
     return live_index
 
@@ -78,6 +93,14 @@ async def test_the_index_projects_the_rows_a_listing_would_return(
 async def test_the_index_selects_the_bindings_a_request_would(seeded: LiveIndex, egress: EgressInventory) -> None:
     assert seeded.bindings_for("runner-1") == await egress.bindings_for("runner-1")
     assert [binding.name for binding in seeded.bindings_for("runner-1")] == ["runner-1-picked"]
+
+
+async def test_the_index_resolves_the_action_policy_a_request_would(
+    seeded: LiveIndex, inventory: SandboxInventory, action_policy: ActionPolicyInventory
+) -> None:
+    uid = (await inventory.get("runner-1")).uid
+    assert seeded.action_policy_for(uid, NOW) == await action_policy.for_sandbox(uid)
+    assert [binding.name for binding in seeded.action_policy_for(uid, NOW).bindings] == ["runner-1-reads"]
 
 
 def test_a_sandbox_the_watch_has_dropped_is_gone_rather_than_missing(seeded: LiveIndex) -> None:
