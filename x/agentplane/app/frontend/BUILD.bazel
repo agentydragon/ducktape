@@ -116,10 +116,54 @@ ts_library(
 
 ts_library(
     name = "actions_test",
+    testonly = True,
     srcs = ["actions.test.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":actions",
+        ":actions_testing",
+        ":client",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "actions_history",
+    srcs = ["actions_history.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":actions",
+        ":client",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "actions_history_test",
+    testonly = True,
+    srcs = ["actions_history.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":actions",
+        ":actions_history",
+        ":actions_testing",
+        ":client",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "actions_testing",
+    testonly = True,
+    srcs = ["actions_testing.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
         ":client",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -177,6 +221,36 @@ ts_library(
     srcs = ["connections_fixture.ts"],
     tsconfig = TSCONFIG,
     deps = [":client"],
+)
+
+ts_library(
+    name = "settings",
+    srcs = ["settings.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":connections",
+        ":mcp_servers",
+        ":push",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "settings_test",
+    testonly = True,
+    srcs = ["settings.test.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":settings",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+    ],
 )
 
 ts_library(
@@ -483,13 +557,12 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":actions",
-        ":connections",
+        ":actions_history",
         ":consent",
-        ":mcp_servers",
-        ":push",
         ":sandbox_page",
         ":sandboxes",
         ":session",
+        ":settings",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -544,6 +617,7 @@ vitest_bin.vitest_test(
     data = [
         "vitest.config.ts",
         ":action_policy_test",
+        ":actions_history_test",
         ":actions_test",
         ":client_test",
         ":connections_test",
@@ -555,6 +629,7 @@ vitest_bin.vitest_test(
         ":sandbox_page_test",
         ":sandboxes_test",
         ":session_test",
+        ":settings_test",
         "//:node_modules/happy-dom",
         "//:node_modules/vitest",
     ],
@@ -644,6 +719,8 @@ VISUAL_DATA = [
     for scenario in [
         "actions",
         "actions_phone",
+        "actions_history",
+        "actions_history_phone",
         "connections",
         "connections_phone",
         "consent",

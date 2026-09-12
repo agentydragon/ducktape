@@ -1,4 +1,4 @@
-import { Alert, Badge, Button, Group, Paper, Stack, Text, TextInput, Title } from "@mantine/core";
+import { Alert, Button, Group, Stack, Table, Text, Title } from "@mantine/core";
 import { useCallback, useEffect, useState } from "react";
 
 import {
@@ -12,7 +12,15 @@ import {
   type ConnectionService,
 } from "./client";
 
-type Edit = { kind: "rename" | "unbind"; connection: Connection };
+type Grant = Connection["grants"][number];
+
+/** The grant a row's Client/Service account columns describe: the connection's latest revision. */
+function currentGrant(connection: Connection): Grant | undefined {
+  return connection.grants.reduce<Grant | undefined>(
+    (latest, grant) => (latest === undefined || grant.revision > latest.revision ? grant : latest),
+    undefined
+  );
+}
 
 export function Connections({ service = connectionService }: { service?: ConnectionService }): JSX.Element {
   const [rows, setRows] = useState<Connection[]>([]);
@@ -20,8 +28,7 @@ export function Connections({ service = connectionService }: { service?: Connect
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [edit, setEdit] = useState<Edit | null>(null);
-  const [name, setName] = useState("");
+  const [unlinking, setUnlinking] = useState<Connection | null>(null);
 
   const load = useCallback(async (): Promise<void> => {
     const [connections, callers] = await Promise.all([service.list(), service.callerServiceAccounts()]);
@@ -32,7 +39,7 @@ export function Connections({ service = connectionService }: { service?: Connect
 
   const refresh = useCallback(async (): Promise<void> => {
     setBusy(true);
-    setEdit(null);
+    setUnlinking(null);
     try {
       await load();
       setError(null);
@@ -47,20 +54,17 @@ export function Connections({ service = connectionService }: { service?: Connect
     void refresh();
   }, [refresh]);
 
-  async function save(): Promise<void> {
-    if (edit === null) return;
+  async function confirmUnlink(): Promise<void> {
+    if (unlinking === null) return;
     setBusy(true);
     try {
-      const updated =
-        edit.kind === "rename"
-          ? await service.rename(edit.connection, name.trim())
-          : await service.unbind(edit.connection);
+      const updated = await service.unbind(unlinking);
       setRows((current) => current.map((row) => (row.id === updated.id ? updated : row)));
-      setEdit(null);
+      setUnlinking(null);
       setError(null);
     } catch (failure) {
       if (failure instanceof ConnectionRequestError && failure.status === 409) {
-        setEdit(null);
+        setUnlinking(null);
         try {
           await load();
           setError(
@@ -82,116 +86,94 @@ export function Connections({ service = connectionService }: { service?: Connect
   return (
     <Stack>
       <Group justify="space-between">
-        <Title order={2}>Connections</Title>
+        <Title order={2}>OAuth clients</Title>
         <Button variant="light" loading={busy} onClick={() => void refresh()}>
           Refresh
         </Button>
       </Group>
       <Text c="dimmed" size="sm">
-        Named external clients and their grant history. Whether a grant’s ServiceAccount is still a labeled caller and
-        the grant’s own status are separate. Unbind revokes authority without deleting history or stopping already
-        claimed work.
+        Named external clients and the ServiceAccount their most recent grant acts as. Unlink revokes authority without
+        deleting history or stopping already claimed work; changing the bound ServiceAccount requires a fresh
+        authorization.
       </Text>
       {error && (
         <Alert color="red" role="alert">
           {error}
         </Alert>
       )}
-      {!loaded && !error && <Text>Loading Connections…</Text>}
-      {loaded && rows.length === 0 && <Text c="dimmed">No Connections yet. Authorize a client to create one.</Text>}
-      {rows.map((row) => (
-        <Paper key={row.id} withBorder p="md" data-connection-id={row.id}>
-          <Stack gap="sm">
-            <Group justify="space-between" align="flex-start">
-              <div>
-                <Text fw={600}>{row.display_name}</Text>
-                <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-                  Connection {row.id} · version {row.version}
-                </Text>
-              </div>
-              {row.grants.every((grant) => grant.status === "revoked") && <Badge color="gray">Unbound</Badge>}
-            </Group>
-            {row.grants.map((grant) => (
-              <Paper key={grant.id} withBorder p="sm">
-                <Stack gap={4}>
-                  <Group gap="xs">
-                    <Badge color={grant.status === "active" ? "blue" : grant.status === "pending" ? "yellow" : "gray"}>
-                      Grant {grant.status}
-                    </Badge>
-                    <Text size="sm">Acts as: {serviceAccountKey(grant.caller)}</Text>
-                    <Text size="sm" c={isEligibleCaller(grant.caller, accounts) ? "dimmed" : "orange"}>
-                      (
-                      {isEligibleCaller(grant.caller, accounts)
-                        ? "labeled Action caller"
-                        : "ServiceAccount not labeled as an Action caller"}
-                      )
+      {!loaded && !error && <Text>Loading OAuth clients…</Text>}
+      {loaded && rows.length === 0 && <Text c="dimmed">No OAuth clients yet. Authorize a client to create one.</Text>}
+      {loaded && rows.length > 0 && (
+        <Table>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th>Client</Table.Th>
+              <Table.Th>Service account</Table.Th>
+              <Table.Th />
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
+            {rows.map((row) => {
+              const grant = currentGrant(row);
+              const unbound = row.grants.every((candidate) => candidate.status === "revoked");
+              return (
+                <Table.Tr key={row.id} data-connection-id={row.id}>
+                  <Table.Td>
+                    <Text style={{ overflowWrap: "anywhere" }}>{grant?.client_id ?? "—"}</Text>
+                    <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+                      {row.display_name} · {row.id}
                     </Text>
-                  </Group>
-                  <Text size="xs" style={{ overflowWrap: "anywhere" }}>
-                    Client: {grant.client_id} · Issuer: {grant.issuer}
-                  </Text>
-                  <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-                    Grant {grant.id} · revision {grant.revision}
-                  </Text>
-                </Stack>
-              </Paper>
-            ))}
-            {edit?.connection.id === row.id ? (
-              <Stack gap="sm">
-                {edit.kind === "rename" ? (
-                  <TextInput
-                    label="Connection name"
-                    value={name}
-                    maxLength={200}
-                    disabled={busy}
-                    onChange={(event) => setName(event.currentTarget.value)}
-                  />
-                ) : (
-                  <Alert color="orange" title={`Unbind ${edit.connection.display_name}?`}>
-                    Revoke this Connection’s active and pending grants. Its name, immutable IDs, and grant history
-                    remain. Already claimed executions are not stopped. Fresh authorization is required to regain
-                    access.
-                  </Alert>
-                )}
-                <Group justify="flex-end">
-                  <Button variant="subtle" disabled={busy} onClick={() => setEdit(null)}>
-                    Cancel
-                  </Button>
-                  <Button
-                    color={edit.kind === "unbind" ? "red" : "blue"}
-                    loading={busy}
-                    disabled={edit.kind === "rename" && name.trim().length === 0}
-                    onClick={() => void save()}
-                  >
-                    {edit.kind === "rename" ? "Save name" : "Confirm unbind"}
-                  </Button>
-                </Group>
-              </Stack>
-            ) : (
-              <Group justify="flex-end">
-                <Button
-                  variant="light"
-                  disabled={busy}
-                  onClick={() => {
-                    setName(row.display_name);
-                    setEdit({ kind: "rename", connection: row });
-                  }}
-                >
-                  Rename
-                </Button>
-                <Button
-                  color="red"
-                  variant="light"
-                  disabled={busy || row.grants.every((grant) => grant.status === "revoked")}
-                  onClick={() => setEdit({ kind: "unbind", connection: row })}
-                >
-                  Unbind
-                </Button>
-              </Group>
-            )}
-          </Stack>
-        </Paper>
-      ))}
+                  </Table.Td>
+                  <Table.Td>
+                    {grant ? (
+                      <>
+                        <Text>{serviceAccountKey(grant.caller)}</Text>
+                        {!isEligibleCaller(grant.caller, accounts) && (
+                          <Text size="xs" c="orange">
+                            ServiceAccount not labeled as an Action caller
+                          </Text>
+                        )}
+                      </>
+                    ) : (
+                      "—"
+                    )}
+                  </Table.Td>
+                  <Table.Td>
+                    {unlinking?.id === row.id ? (
+                      <Group gap="xs" justify="flex-end" wrap="nowrap">
+                        <Button variant="subtle" size="xs" disabled={busy} onClick={() => setUnlinking(null)}>
+                          Cancel
+                        </Button>
+                        <Button color="red" size="xs" loading={busy} onClick={() => void confirmUnlink()}>
+                          Confirm unlink
+                        </Button>
+                      </Group>
+                    ) : (
+                      <Group justify="flex-end">
+                        <Button
+                          color="red"
+                          variant="light"
+                          size="xs"
+                          disabled={busy || unbound}
+                          onClick={() => setUnlinking(row)}
+                        >
+                          Unlink
+                        </Button>
+                      </Group>
+                    )}
+                  </Table.Td>
+                </Table.Tr>
+              );
+            })}
+          </Table.Tbody>
+        </Table>
+      )}
+      {unlinking && (
+        <Alert color="orange" title={`Unlink ${unlinking.display_name}?`}>
+          Revoke this Connection’s active and pending grants. Its name, immutable IDs, and grant history remain. Already
+          claimed executions are not stopped. Fresh authorization is required to regain access.
+        </Alert>
+      )}
     </Stack>
   );
 }

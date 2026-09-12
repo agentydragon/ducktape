@@ -50,6 +50,7 @@ from x.agentplane.action_service.mcp_frontend import ActionsMcp, create_server
 from x.agentplane.action_service.mcp_linkage import (
     McpLinkageAuthority,
     McpLinkageConflictError,
+    McpLinkageError,
     McpLinkageNotFoundError,
     McpLinkageStart,
     McpLinkageStartView,
@@ -516,6 +517,13 @@ def _error(status_code: int, detail: str) -> JSONResponse:
 
 
 def _mcp_linkage_routes(app: FastAPI, authority: McpLinkageAuthority) -> None:
+    @app.exception_handler(McpLinkageError)
+    async def mcp_linkage_failed(request: Request, error: McpLinkageError) -> JSONResponse:
+        # A provider that refused or could not answer the token exchange; the more specific
+        # subclasses below keep their own status codes.
+        del request
+        return _error(status.HTTP_502_BAD_GATEWAY, str(error))
+
     @app.exception_handler(McpLinkageConflictError)
     async def mcp_linkage_conflict(request: Request, error: McpLinkageConflictError) -> JSONResponse:
         del request

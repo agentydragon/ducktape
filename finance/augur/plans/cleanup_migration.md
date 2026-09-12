@@ -80,7 +80,6 @@ each row when the disposition is resolved; do not preserve another history ledge
 
 | PR                                                          | Disposition and surviving requirement                                                                                                                                                                                                                                        |
 | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [#4624](https://github.com/agentydragon/ducktape/pull/4624) | The current SPEC/requirements reconciliation supersedes this proposal; closure remains an owner action. Preserve accountable financial histories and independent controls; drop its mandatory 100,000-path latency/memory gate.                                              |
 | [#5859](https://github.com/agentydragon/ducktape/pull/5859) | Keep as review-only study input, not another supported interface package. Consume its studies through STUDY/RUN/HOUSE/SCORE/ROBUST; inner-forecast continuation remains future scope. Replace sketches with runnable consumers rather than implementing every proposed stub. |
 
 The remaining PR dispositions do not gate implementation or create another DOCS

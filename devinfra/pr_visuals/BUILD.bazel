@@ -32,6 +32,7 @@ py_library(
         "@pypi//boto3",
         "@pypi//botocore",
         "@pypi//jinja2",
+        "@pypi//more_itertools",
         "@pypi//pydantic",
         "@pypi//pygithub",
         "@pypi//tenacity",
