@@ -124,7 +124,7 @@ def test_source_watcher_is_bootstrapped_with_shared_permissions() -> None:
     documents = list(yaml.safe_load_all(components.read_text()))
     deployment = next(d for d in documents if d["kind"] == "Deployment" and d["metadata"]["name"] == "source-watcher")
     assert deployment["metadata"]["namespace"] == "flux-system"
-    assert deployment["spec"]["template"]["spec"]["containers"][0]["image"] == "ghcr.io/fluxcd/source-watcher:v2.1.1"
+    assert deployment["spec"]["template"]["spec"]["containers"][0]["image"] == "ghcr.io/fluxcd/source-watcher:v2.2.4"
     assert any(
         d["kind"] == "CustomResourceDefinition" and d["spec"]["names"]["kind"] == "ArtifactGenerator" for d in documents
     )
