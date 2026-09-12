@@ -1,14 +1,13 @@
-"""Remaining configured caller: Python allocation, grouped claims, then PE operations.
+"""The configured runner its remaining test suites drive: Python allocation, grouped claims, scheduled sales.
 
-This preserves the configured consumers' financial ordering, without giving the
-financial kernel another policy or population loop.
+The app runs on `product.simulation`; this preserves the configured suites' financial
+ordering until each moves onto a composed world.
 """
 
 from collections import defaultdict
 from copy import deepcopy
 from typing import Any
 
-import numpy as np
 from pydantic import JsonValue
 
 from finance.augur.policy.configured_allocation import PendingBuy, materialize_buy, plan, validate_prepared
@@ -16,61 +15,13 @@ from finance.augur.sim import results
 from finance.augur.sim.actions import Action, Buy
 from finance.augur.sim.agent import assemble
 from finance.augur.sim.capture import FinancialCapture, WorldResult, event_log
-from finance.augur.sim.events import EVENT_FRAME_SPECS, EventLog
-from finance.augur.sim.holdings import private_issuer
+from finance.augur.sim.events import EVENT_FRAME_SPECS
 from finance.augur.sim.ids import AgentId
-from finance.augur.sim.metric_composition import BASE_METRIC_NAMES
-from finance.augur.sim.money import checked_count, position_value
 from finance.augur.sim.observations import Observation
 from finance.augur.sim.prepared import CompiledRun
-from finance.augur.sim.product_metrics import ProductMetricArrays
+from finance.augur.sim.product_metrics import product_row
 from finance.augur.sim.validation import validate
 from finance.augur.sim.world import Capture, World, acting_agent
-
-
-def product_row(world: World, actor: str) -> tuple[int, int, int, int, int, int, int]:
-    """The app's per-month metric slab for one actor, read from world state after a close."""
-    mark = world.mark_month
-    cash = sum(
-        world.accounting.ledger.balance(account) for account in world.accounting.declared if account.agent_id == actor
-    )
-    private = sum(
-        position_value(
-            world.market.value(f"private_equity_mark:{issuer}", mark), lot.units_remaining, lot.spec.quantity_scale
-        )
-        for lot in world.holdings.lots
-        if lot.spec.agent_id == actor
-        and lot.units_remaining
-        and (issuer := private_issuer(lot.spec.asset_id)) is not None
-    )
-    properties = world.properties
-    property_value = (
-        0
-        if properties is None
-        else sum(
-            properties.market_value(purchase, world.market, mark)
-            for purchase in properties.housing.purchases
-            if purchase.buyer_agent_id == actor
-            and purchase.property_id in properties.properties
-            and properties.properties[purchase.property_id].state.active
-            and f"home_value:{purchase.location_id}" in world.market.series
-        )
-    )
-    debt = sum(loan.principal for loan in world.mortgage_snapshots() if loan.agent_id == actor)
-    bonds = (
-        0
-        if world.bonds is None
-        else sum(row.principal for row in world.bonds.snapshots(world.month, mark) if row.agent_id == actor)
-    )
-    return (
-        checked_count(cash, "product cash"),
-        world.holding_value(actor, mark),
-        checked_count(private, "product private equity"),
-        checked_count(property_value, "product property"),
-        checked_count(debt, "product mortgage"),
-        world.shortfall,
-        checked_count(bonds, "product bonds"),
-    )
 
 
 def observe(world: World, actor: str) -> Observation:
@@ -211,54 +162,3 @@ def export_results(run: CompiledRun, capture: Capture) -> dict[str, Any]:
     if capture == "summary":
         return {"schema_version": run._schema_version, "rollouts": rollouts}
     return {"schema_version": run._schema_version, "rollouts": rollouts, "event_frames": frames}
-
-
-def simulate_events(run: CompiledRun) -> EventLog:
-    """Dense canonical frames without the forensic journal."""
-
-    return project_events(execute(run, "dense"))
-
-
-def project_events(completed: tuple[WorldResult, ...]) -> EventLog:
-    logs = []
-    for result in completed:
-        if result.events is None:
-            raise RuntimeError("event projection requires dense or forensic capture")
-        logs.append(result.events)
-    return EventLog.concat(logs)
-
-
-def simulate_product_metrics(run: CompiledRun, primary_agent_id: str) -> ProductMetricArrays:
-    return project_product_metrics(run, execute(run, "summary", primary_agent_id))
-
-
-def project_product_metrics(run: CompiledRun, completed: tuple[WorldResult, ...]) -> ProductMetricArrays:
-    rollout_count = len(completed)
-    snapshots = run.scenario.horizon_months + 1
-    base_series = [[0] * (snapshots * rollout_count) for _ in BASE_METRIC_NAMES]
-    failures = []
-    for column, result in enumerate(completed):
-        rows = result.product_metrics
-        if result.financial is not None:
-            failed = result.financial.failed_month
-        elif result.configured_summary is not None:
-            failed = result.configured_summary.failed_month
-        else:
-            raise RuntimeError("product aggregation requires configured financial capture")
-        expected = snapshots if failed is None else failed + 2
-        if len(rows) != expected:
-            raise ValueError(f"rollout produced {len(rows)} product snapshots, expected {expected}")
-        failures.append(-1 if failed is None else failed)
-        for snapshot, row in enumerate(rows):
-            for metric, value in enumerate(row):
-                base_series[metric][snapshot * rollout_count + column] = value
-    return ProductMetricArrays(
-        rollout_ids=tuple(result.rollout_id for result in completed),
-        month_index=np.arange(snapshots, dtype=np.int64),
-        failed_month=np.asarray(failures, dtype=np.int64),
-        currency_code=run.currency_code,
-        currency_quantum=run.currency_quantum,
-        base_series=tuple(
-            np.asarray(block, dtype=np.int64).reshape((snapshots, rollout_count)) for block in base_series
-        ),
-    )

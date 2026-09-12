@@ -122,8 +122,9 @@ amounts. Imports, execution and recorded lot state retain the total without
 deriving and re-quantizing a per-unit basis; sales apportion it and full
 liquidation consumes the remainder.
 
-The configured runner retains all-or-none funding groups and automatic allocation
-controls. Those are not common-session settlement requirements.
+All-or-none funding of a month's claims is a household's choice, not a settlement
+rule: the world settles each payment on its own, and the app household declines
+every claim on an account whose month it cannot fund in full.
 
 A reduced-form TLH portfolio owns its internal holdings and adjusted basis in
 Python. The household observes its value and reported tax basis, and chooses

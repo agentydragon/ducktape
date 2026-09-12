@@ -32,6 +32,7 @@ from finance.augur.sim.books import (
     JournalEntry,
     MortgageState,
     Posting,
+    TaxPaymentOutcome,
     TlhPortfolioState,
 )
 from finance.augur.sim.compiler.income_sources import income_source_wire_id
@@ -73,7 +74,6 @@ from finance.augur.sim.tlh import (
     TlhOpeningPosition,
     TlhPortfolio,
 )
-from finance.augur.sim.validation import validate
 
 type Capture = Literal["summary", "dense", "forensic"]
 
@@ -149,7 +149,6 @@ class World:
         self.rollout_id = market.rollout_id
         self.horizon_months = horizon_months
         # Set by `from_run`; a composed world has no prepared input for `track` to check an agent against.
-        self.run: CompiledRun | None = None
         self.agents: list[EconomicAgent] = []
         self.specs: dict[str, PreparedTlhPortfolio] = {}
         self.portfolios: dict[str, TlhPortfolio] = {}
@@ -200,7 +199,6 @@ class World:
             income_sources=scenario.income_sources,
             jurisdictions=scenario.jurisdictions,
         )
-        world.run = run
         for account in scenario.accounts:
             world.declare_account(account)
         for profile in scenario.tax_profiles:
@@ -382,9 +380,6 @@ class World:
             raise TypeError(
                 "only EconomicAgent subclasses, Mortgage contracts, Billers and TaxAuthorities can be tracked"
             )
-        if self.run is not None:
-            validate_actor(self.run, actor.agent_id)
-            validate(self.run)
         self._track(actor)
 
     def _track_biller(self, biller: Biller) -> None:
@@ -446,7 +441,6 @@ class World:
         self.mortgages[terms.liability_id] = mortgage
 
     def _track(self, agent: EconomicAgent) -> None:
-        """Registration without re-validating the run; the batch session validated it once."""
         if self.started:
             raise ValueError("track components before starting the world")
         if self.agents:
@@ -650,6 +644,7 @@ class World:
             raise ValueError("the month is not open")
         for agent in self.agents:
             unpaid = self.unpaid_claims(agent.agent_id)
+            self.shortfall = sum(claim.amount_due for claim in unpaid)
             if unpaid and self.stop is None:
                 self.failed = True
                 self.stop = results.UnpaidClaims(month=self.month, claims=[claim.id for claim in unpaid])
@@ -974,6 +969,18 @@ class World:
         if self.agents:
             for claim in self.claims.entries:
                 if not claim.paid:
+                    if isinstance(claim.effect, claims.TaxPayment | claims.TaxTrueUp):
+                        self.accounting.tax_payments.append(
+                            TaxPaymentOutcome(
+                                month=self.month,
+                                cause_id=claim.cause_id,
+                                agent_id=claim.from_account.agent_id,
+                                obligation_type=claim.obligation_type,
+                                amount_due=claim.amount_due,
+                                amount_paid=0,
+                                shortfall=claim.amount_due,
+                            )
+                        )
                     self.obligations.append(
                         payments.ObligationOutcome(
                             self.month,

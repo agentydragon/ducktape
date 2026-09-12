@@ -29,9 +29,10 @@ Shared proposal helpers live in <../policy/>; they do not settle trades or taxes
 `CompiledRun` in <prepared.py> owns typed resolved facts: exact integer money,
 quantities, tax rules and supplied paths. The compiler constructs these directly;
 file serialization is private to the I/O boundaries. Sessions accept the prepared value,
-not a mutable wire dictionary. The app and remaining legacy acceptance
-consumers use the same prepared facts through <configured.py>;
-it is not the interface new experiments should extend.
+not a mutable wire dictionary. The app composes its worlds from the same prepared
+facts and tracks its household (<../product/household.py>) on each; the remaining
+configured suites drive theirs through <configured.py>, which is not an interface
+new experiments should extend.
 
 ## Outcomes and failure
 
@@ -46,10 +47,10 @@ zero-valued observations. Policy intentions, attempted requests and actual paid
 consumption are distinct. Tax and contractual liabilities are not inferred from
 a generic spending shortfall.
 
-The configured runner still has grouped funding and target-allocation
-behavior not supported by the common action session. Moving a caller requires
-explicit treatment of those differences, not a compatibility wrapper or removal
-of its financial coverage.
+The configured runner still has grouped funding, purchases and unit-denominated
+managed redemptions its suites depend on and the common action session does not
+offer. Moving a caller requires explicit treatment of those differences, not a
+compatibility wrapper or removal of its financial coverage.
 
 ## References
 

@@ -33,6 +33,7 @@ from finance.augur.product.scenarios import (
     required_private_equity_issuers,
     security_distributions_from_portfolio,
 )
+from finance.augur.product.simulation import execute, project_events, project_product_metrics, simulate_product_metrics
 from finance.augur.product.wire import (
     EndingMetrics,
     MetricFanResponse,
@@ -47,7 +48,6 @@ from finance.augur.product.wire import (
 )
 from finance.augur.sim.compiler.execution import compile_run
 from finance.augur.sim.compiler.series import scenario_level_series_keys
-from finance.augur.sim.configured import execute, project_events, project_product_metrics, simulate_product_metrics
 from finance.augur.sim.external_series import materialize_sampled_exogenous
 from finance.augur.sim.locations import Location
 from finance.augur.sim.prepared import CompiledRun
@@ -156,7 +156,7 @@ class ProductService:
 
     def _rollout_response(self, scenario: ScenarioKey, seed: int) -> RolloutResponse:
         run, model_id = self._compile_product_run(scenario, (seed,))
-        completed = execute(run, "dense", product_actor=self._primary_agent_id)
+        completed = execute(run, "dense", self._primary_agent_id)
         projection = project_product_rollout(
             project_events(completed),
             project_product_metrics(run, completed),
