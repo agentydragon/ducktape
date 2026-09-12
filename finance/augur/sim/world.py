@@ -220,8 +220,10 @@ class World:
         world.recurring_transfers = scenario.recurring_transfers
         world.scheduled_property_cashflows = scenario.scheduled_property_cashflows
         world.recurring_property_cashflows = scenario.recurring_property_cashflows
-        for spec in (*scenario.obligations, *scenario.recurring_obligations):
-            world.billers.append(Biller(spec))
+        for obligation in scenario.obligations:
+            world.billers.append(Biller(obligation))
+        for recurring in scenario.recurring_obligations:
+            world.billers.append(Biller(recurring))
         return world
 
     def _composing(self) -> None:
