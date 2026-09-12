@@ -9,8 +9,8 @@ spec:
   path: ./cluster/k8s/authentik/app
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: authentik
     namespace: ducktape-flux
   timeout: 10m0s
   wait: true

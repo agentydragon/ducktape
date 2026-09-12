@@ -9,8 +9,8 @@ spec:
   path: ./cluster/k8s/tofu-controller
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: tofu-controller
     namespace: ducktape-flux
   timeout: 10m0s
   wait: true

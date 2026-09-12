@@ -1,12 +1,12 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: cert-manager-issuer-config-artifact
+  name: artifact-generators
   namespace: ducktape-flux
 spec:
   retryInterval: 1m
   interval: 10m
-  path: ./cluster/k8s/cert-manager/issuer-config-artifact
+  path: ./cluster/k8s/artifact-generators
   prune: true
   wait: true
   sourceRef:

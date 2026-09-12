@@ -9,8 +9,8 @@ spec:
   path: ./cluster/k8s/valkey
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: valkey
     namespace: ducktape-flux
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
