@@ -20,6 +20,9 @@ npm_link_all_packages(name = "node_modules")
 
 vue_cli_service_bin.vue_cli_service_binary(
     name = "vue_cli_service",
+    # postcss-loader discovers autoprefixer dynamically at runtime; keep the
+    # public-hoisted plugin in the binary's declared runfiles under rules_js 3.
+    data = ["@ducktape_activitywatch//:node_modules/autoprefixer"],
     visibility = ["//visibility:public"],
 )
 

@@ -25,7 +25,6 @@ npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", isolate = Tru
 npm.npm_translate_lock(
     name = "npm_cli_proxy_webui",
     lifecycle_hooks = {"*": []},
-    link_workspace = "cli_proxy_webui",
     pnpm_lock = "//:pnpm-lock.yaml",
     # Upstream imports these transitive dependencies from its flat Bun install.
     public_hoist_packages = {

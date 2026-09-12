@@ -27,7 +27,6 @@ npm_manifold_mcp_server.npm_translate_lock(
         "//:package.json",
         "//:pnpm-workspace.yaml",
     ],
-    link_workspace = "ducktape_manifold_mcp_server",
     npmrc = "//:.npmrc",
     pnpm_lock = "//:pnpm-lock.yaml",
     update_pnpm_lock = True,
