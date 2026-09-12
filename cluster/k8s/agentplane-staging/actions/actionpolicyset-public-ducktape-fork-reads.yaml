@@ -1,0 +1,47 @@
+# The console's `public_ducktape_fork_reads` policy (cluster/k8s/haku/console/config.yaml) as an
+# Action Service set; a binding attaches it to a caller, on its own it grants nothing.
+#
+# The coder Agent's own fork, used to stage branches before opening PRs into agentydragon/ducktape.
+# It already has write access here (that's how it opens PRs), so a read grant on its own fork's
+# content adds no exposure beyond what it can already write. Same tool list/boundary as
+# public-ducktape-reads — only the trusted owner differs.
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ActionPolicySet
+metadata:
+  name: public-ducktape-fork-reads
+  namespace: agentplane-staging
+  annotations:
+    description: Reviewed GitHub reads scoped to agentydragon-agent/ducktape, the coder Agent's fork.
+spec:
+  autoApproveIf:
+    - type: github_repository
+      owner: agentydragon-agent
+      repository: ducktape
+      actions:
+        github:
+          - actions_get
+          - actions_list
+          - find_duplicate
+          - get_commit
+          - get_file_blame
+          - get_file_contents
+          - get_job_logs
+          - get_label
+          - get_latest_release
+          - get_release_by_tag
+          - get_tag
+          - issue_dependency_read
+          - issue_read
+          - list_branches
+          - list_commits
+          - list_issue_fields
+          - list_issue_types
+          - list_issues
+          - list_pull_requests
+          - list_releases
+          - list_repository_collaborators
+          - list_tags
+          - pull_request_read
+          - search_issues
+          - search_pull_requests
+          - search_code
