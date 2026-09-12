@@ -14,8 +14,11 @@ from finance.augur.sim.scenario import InterestIncome
 
 class Distributions:
     def __init__(self) -> None:
+        # This month's outcomes, cleared by `begin_month`.
         self.outcomes: list[DistributionOutcome] = []
-        self.count = 0
+
+    def begin_month(self) -> None:
+        self.outcomes.clear()
 
     def advance(
         self, scenario: PreparedScenario, accounting: Accounting, holdings: Holdings, market: MarketPath, month: int
@@ -75,6 +78,4 @@ class Distributions:
                 )
             accounting.apply_entries(entries)
             accounting.tax = tax
-            self.count += len(outcomes)
-            if accounting.capture != "summary":
-                self.outcomes.extend(outcomes)
+            self.outcomes.extend(outcomes)

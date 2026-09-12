@@ -3,7 +3,6 @@
 from collections.abc import Sequence
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Literal
 
 from finance.augur.sim.actions import Transfer
 from finance.augur.sim.books import (
@@ -51,20 +50,23 @@ class MortgagePaymentOutcome:
 
 
 class Accounting:
+    """Ledger, tax book and outstanding liabilities are state; the outcome lists hold only this month.
+
+    `journal`, `transfers`, `tax_accruals`, `tax_payments`, `tax_settlements` and
+    `mortgage_payments` are cleared by `begin_month`; a caller wanting a history copies
+    them between months.
+    """
+
     def __init__(
         self,
         accounts: Sequence[PreparedAccount],
         profiles: Sequence[PreparedTaxProfile],
         income_sources: Sequence[TransferIncomeCategory],
-        *,
-        capture: Literal["summary", "dense", "forensic"],
     ) -> None:
         self.declared = frozenset(account.account for account in accounts)
         self.ledger = Ledger(self.declared)
         self.tax = TaxBook(profiles, income_sources)
-        self.capture = capture
         self.journal: list[JournalEntry] = []
-        self.journal_entry_count = 0
         self.transfers: list[TransferOutcome] = []
         self.tax_accruals: list[TaxAccrual] = []
         self.tax_liabilities: list[TaxLiabilityState] = []
@@ -97,26 +99,24 @@ class Accounting:
                         AccountRef(agent_id=profile.agent_id, account_id=f"{kind}:tax:{rules.jurisdiction_id}")
                     )
 
+    def begin_month(self) -> None:
+        self.journal.clear()
+        self.transfers.clear()
+        self.tax_accruals.clear()
+        self.tax_payments.clear()
+        self.tax_settlements.clear()
+        self.mortgage_payments.clear()
+
     def apply(self, entry: JournalEntry) -> None:
-        count = self.journal_entry_count + 1
-        if count >= 1 << 64:
-            raise OverflowError("integer overflow during journal entry count")
         self.ledger.apply(entry)
-        self.journal_entry_count = count
-        if self.capture == "forensic":
-            self.journal.append(entry)
+        self.journal.append(entry)
 
     def apply_entries(self, entries: Sequence[JournalEntry]) -> None:
-        count = self.journal_entry_count + len(entries)
-        if count >= 1 << 64:
-            raise OverflowError("integer overflow during journal entry count")
         candidate = deepcopy(self.ledger)
         for entry in entries:
             candidate.apply(entry)
         self.ledger = candidate
-        self.journal_entry_count = count
-        if self.capture == "forensic":
-            self.journal.extend(entries)
+        self.journal.extend(entries)
 
     def move(self, month: int, cause_id: str, source: AccountRef, destination: AccountRef, amount: int) -> None:
         self.apply(
@@ -159,19 +159,18 @@ class Accounting:
             candidate.deduct_from_ordinary(request.from_account.agent_id, request.amount)
         self.move(month, request.cause_id, request.from_account, request.to_account, request.amount)
         self.tax.income = candidate
-        if self.capture != "summary":
-            self.transfers.append(
-                TransferOutcome(
-                    month,
-                    request.cause_id,
-                    request.from_account,
-                    request.to_account,
-                    request.amount,
-                    income_source_wire_id(income)
-                    if income is not None and request.to_account.agent_id in self.tax.years
-                    else None,
-                )
+        self.transfers.append(
+            TransferOutcome(
+                month,
+                request.cause_id,
+                request.from_account,
+                request.to_account,
+                request.amount,
+                income_source_wire_id(income)
+                if income is not None and request.to_account.agent_id in self.tax.years
+                else None,
             )
+        )
 
     def close_tax_year(self, scenario: PreparedScenario, month: int, mortgages: Sequence[Mortgage]) -> None:
         assessments = self.tax.assessments(scenario, month, mortgages)
@@ -198,13 +197,8 @@ class Accounting:
                 )
                 candidate.apply(entry)
                 entries.append(entry)
-        count = self.journal_entry_count + len(entries)
-        if count >= 1 << 64:
-            raise OverflowError("integer overflow during journal entry count")
         self.ledger = candidate
-        self.journal_entry_count = count
-        if self.capture == "forensic":
-            self.journal.extend(entries)
+        self.journal.extend(entries)
         self.tax_accruals.extend(assessments)
         self.tax_liabilities.extend(
             TaxLiabilityState(

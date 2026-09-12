@@ -36,10 +36,7 @@ def test_invalid_terminal_price_precedes_all_world_and_component_construction(
     # The invalid mark is in the last snapshot of an unselected rollout.
     invalid = replace(run, series=(replace(price, values=(*price.values[:-1], bad_price)),))
     before = deepcopy(invalid)
-    with (
-        patch("finance.augur.sim.session.World") as world,
-        patch("finance.augur.sim.session.TlhPortfolio") as portfolio,
-    ):
+    with patch("finance.augur.sim.session.World") as world, patch("finance.augur.sim.world.TlhPortfolio") as portfolio:
         with pytest.raises(ValueError, match="non-positive value"):
             _Session(invalid, "example-household", [0], capture="forensic", configured=configured)
         world.assert_not_called()
