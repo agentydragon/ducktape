@@ -1,37 +1,17 @@
 # External MCP connections: remaining delivery
 
-Configured static Identities, PostgreSQL Connection/grant authority, generic FastMCP tools,
-OAuth/DCR, transaction-bound integration-app consent with naming/Identity selection, reconnect/rebind,
-Action provenance display, and Connection list/rename/unbind UI are implemented. Their contracts live in the
+The Identity, Connection, OAuth/DCR, consent, and generic MCP contracts live in the
 [Action Service specification](../action_service/SPEC.md),
 [service README](../action_service/README.md#external-oauth), and
-[app README](../app/README.md). This plan tracks unfinished delivery, not another authority contract.
+[app README](../app/README.md). This plan tracks unfinished delivery, not another authority
+contract: independently running Claude Code (for example on wyrm2) is `EXTERNALMCP`; the
+[task DAG](task_dag.md) owns dependencies and status, and records what staging has proven.
 
-**Operator priority:** working deployed Claude.ai access (`CLAUDEAI`) is the current priority.
-Transcript search (`T3`) is deliberately deferred product work and is not part of this execution
-sequence. Independently running Claude Code (for example on wyrm2) extends the client evidence to
-`EXTERNALMCP`; the [task DAG](task_dag.md) owns dependencies and status.
-
-The first external requests require human approval. Configurable
-[Action policies](../docs/action_policies.md), backend-account OAuth, and the broader Thread model do not
-gate this delivery. Identity means configured authority, Connection means runtime client enrollment,
+Backend-account OAuth and the broader Thread model do not gate this delivery. Identity means configured authority, Connection means runtime client enrollment,
 and Thread means execution/conversation state. This remains single-operator, with no multi-operator
 management. Sandbox callers use the same MCP frontend with workload bearers, without DCR.
 
-## Staging rollout (`MCPDEPLOY`)
-
-Staging carries the reviewed GitHub and Kubernetes MCP server configuration, reflected GitHub
-client credentials, the staging OAuth callback route, and Action Service egress. Do not enable
-enrollment against images older than the merged OAuth/consent code or infer rollout from merged
-source.
-
-After operator-approved rollout, verify migration completion, required reflected configuration,
-canonical discovery/resource/callback URLs, and external MCP reachability. Check the workload path
-in parallel, without gating Claude.ai acceptance on it. Do not expose operator REST or
-enrollment-management routes through the public MCP route. A healthy deployment is intermediate
-evidence, not real-client acceptance.
-
-## Real-client acceptance (`CLAUDEAI`, then `EXTERNALMCP`)
+## Real-client acceptance (`EXTERNALMCP`)
 
 Use a harmless credentialless Action and independently inspect canonical requests, Decisions,
 Executions, events, and results; neither model prose nor signed protocol fixtures prove deployment.
@@ -47,7 +27,7 @@ OAuth/MCP client contract while the Action Service remains the authority for gra
 An access-token-only pass is sufficient for the first call; refresh/reconnect acceptance must also
 exercise the provider's refresh path. Do not print or persist token values.
 
-1. Connect Claude.ai through public discovery and DCR. Complete the real integration-app login,
+1. Connect the client through public discovery and DCR. Complete the real integration-app login,
    Connection naming, Identity picker, and consent. Verify return to the client's validated callback,
    code exchange, and authenticated generic-tool discovery. Registration alone grants no authority;
    denying consent creates no active grant.
@@ -55,7 +35,7 @@ exercise the provider's refresh path. Do not print or persist token values.
    with a retained idempotency key. Get a durable pending receipt without automatic execution.
    In the deployed app, inspect exact arguments and Identity/client/Connection provenance; exercise
    both Allow and Deny browser controls. Allow yields one Execution and the expected safe result;
-   deny yields none. Claude.ai must recover those receipts/results.
+   deny yields none. The client must recover those receipts/results.
 3. Exercise bounded waits and interrupted/retried tool responses against the real client. Recover
    by request ID, event cursor, or a lookup by the original submission key rather than creating
    another execution; a repeated key is refused.
@@ -68,19 +48,15 @@ exercise the provider's refresh path. Do not print or persist token values.
    After unbind/revocation, old tokens fail and unclaimed work cannot borrow replacement authority.
    Already-claimed execution is not killed.
 
-`APPROVALUI` tracks the real operator federation/browser proof; the Authentik reachability defect
-that blocked it is fixed cluster-wide
-([root cause and rollout](../../../cluster/debug/agentplane_oidc/local_gateway_tls_rca.md)).
-Provenance presentation is already implemented, not another UI task.
-
-Record Claude.ai success separately as `CLAUDEAI`. Then repeat the client flow with Claude Code
-running on an operator machine, not an Agentplane-hosted harness, to establish `EXTERNALMCP`.
-Its native callback, registration, refresh, and fresh authorization need their own evidence.
-Existing-Connection reconnect acceptance is part of the real-client connection evidence, not a separate implementation gate.
-
-**Parallel Sandbox proof, not a Claude.ai prerequisite:** verify the same generic workflow from a
-real Sandbox through workload bearer substitution, retaining per-Sandbox ownership without OAuth
-enrollment. Service token validation alone does not establish staging egress usability.
+The Claude.ai connector has covered steps 1 and 2's Allow path and step 3's repeated-key refusal
+and recovery; the Deny path, retention across
+refresh and restart, and step 4 have no recorded evidence for any external client. The client
+under this plan is Claude Code running on an operator machine, not an Agentplane-hosted harness;
+its native callback, registration, refresh, and fresh authorization need their own evidence.
+Existing-Connection reconnect acceptance is part of that evidence, not a separate implementation
+gate. Confirm operator REST and enrollment-management routes are not exposed through the public
+MCP route. The Sandbox path is proven separately by the
+[acceptance suite](../acceptance/README.md#mcp-integration).
 
 ### Compatibility and context budget
 
@@ -95,13 +71,7 @@ Per-Action MCP projection is optional and may never be needed. New metadata, inc
 schemas, is deferred and is not an acceptance requirement. Notification-driven wait internals and
 race tests already exist; fix regressions found in delivery rather than planning another wait loop.
 
-## Later policy and lifecycle work
-
-Policy definitions and ServiceAccount/Sandbox-to-policy assignments are the landed
-[Action policies](../docs/action_policies.md) model. Runtime Connection/grant/enrollment storage is already PostgreSQL, with encrypted
-PostgreSQL storage for SDK OAuth state; do not reopen it as part of policy selection. Reusable
-policy references must allow an external Identity and a class of Sandboxes to share permissions
-without sharing caller ownership or copying rules. SandboxPreset remains an app-only recipe.
+## Enrollment retention cleanup
 
 Before adding registration/enrollment retention cleanup, identify actual growth and choose bounded
 expiry/cleanup behavior that preserves immutable historical attribution and replay tombstones.
