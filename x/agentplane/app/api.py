@@ -506,9 +506,7 @@ async def list_threads_with_sandboxes(store: Store, inventory: Inventory) -> Thr
     `sandboxes` and treat a miss as deleted."""
     thread_views = await store.list_threads()
     referenced = {thread.sandbox for thread in thread_views}
-    sandboxes = {
-        view.name: view for view in await inventory.list_sandboxes(include_archived=True) if view.name in referenced
-    }
+    sandboxes = {view.name: view for view in await inventory.list_sandboxes() if view.name in referenced}
     return ThreadsWithSandboxes(threads=thread_views, sandboxes=sandboxes)
 
 
