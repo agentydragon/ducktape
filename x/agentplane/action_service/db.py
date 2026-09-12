@@ -114,6 +114,8 @@ class ActionRequestRow(Base):
     idempotency_key: Mapped[str] = mapped_column(Text)
     action: Mapped[dict[str, str]] = mapped_column(JSONB)
     arguments: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
+    title: Mapped[str] = mapped_column(Text)
+    description: Mapped[str | None] = mapped_column(Text)
     origin: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
     correlation: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
     caller_principal: Mapped[str] = mapped_column(Text)
@@ -367,6 +369,8 @@ class ActionStore:
                     idempotency_key=body.idempotency_key,
                     action=body.action.model_dump(),
                     arguments=body.arguments,
+                    title=body.title,
+                    description=body.description,
                     origin=body.origin,
                     correlation=body.correlation,
                     caller_principal=principal.key,
@@ -832,6 +836,8 @@ class ActionStore:
             idempotency_key=row.idempotency_key,
             action=ActionIdentity.model_validate(row.action),
             arguments=row.arguments if operator else _redact(row.arguments),
+            title=row.title,
+            description=row.description,
             origin=_redact(row.origin),
             correlation=_redact(row.correlation),
             caller_principal=row.caller_principal if operator else None,
@@ -851,6 +857,8 @@ def _same_request(row: ActionRequestRow, body: ActionRequestInput) -> bool:
     return (
         row.action == body.action.model_dump()
         and row.arguments == body.arguments
+        and row.title == body.title
+        and row.description == body.description
         and row.origin == body.origin
         and row.correlation == body.correlation
     )

@@ -14,6 +14,13 @@
 
 - [ ] Add a pre-commit linter to enforce the link style convention from STYLE.md: detect `[path](path)` duplicate-path links in markdown and suggest using `@path` transclusion or `<path>` angle bracket syntax instead
 - [ ] Reconsider `<path.md>` angle-bracket convention for local file links — GitHub doesn't render these as clickable links. May want to switch to `[path.md](path.md)` and update STYLE.md accordingly
+- [ ] Catch **over-declared** `ts_library`/`js_library` deps. Under-declaration already fails the
+      build — `ts_library` compiles each target's srcs as its own program against its deps' `.d.ts`,
+      so a missing dep is a TS2307 — but a dep nothing imports is invisible, and it widens the
+      action's inputs and its cache key. Nothing in the repo checks for it today; gazelle here is
+      Python-only. The candidate is `aspect-build/aspect-gazelle`'s `language/js`, which generates
+      JS/TS deps from the import graph and so would remove the class rather than lint it. Deliberately
+      not hand-rolled — a bespoke import scanner would be a third parser of the same TypeScript.
 
 ## System Configuration
 

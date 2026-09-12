@@ -9,7 +9,7 @@
   "devDependencies": {
     "esbuild": "^0.25.1",
     "esbuild-plugin-tailwindcss": "^2.0.3",
-    "esbuild-svelte": "^0.9.4",
+    "esbuild-svelte": "^0.9.5",
     "openapi-typescript": "^7.10.1",
     "pixelmatch": "^6.0.0",
     "pngjs": "^7.0.0",

@@ -517,10 +517,11 @@ async def list_threads(
     store: Store,
     sandbox: Annotated[str | None, Query(description="Only threads of this sandbox.")] = None,
     session_id: Annotated[str | None, Query(description="Only threads of this session id.")] = None,
+    include_archived: Annotated[bool, Query(description="Also list archived threads.")] = False,
 ) -> list[ThreadView]:
     """Every persisted thread, newest first; a thread outlives its sandbox. Both filters together
     name at most one thread: a session's."""
-    return await store.list_threads(sandbox=sandbox, session_id=session_id)
+    return await store.list_threads(sandbox=sandbox, session_id=session_id, include_archived=include_archived)
 
 
 class ThreadsWithSandboxes(BaseModel):
@@ -536,12 +537,16 @@ class ThreadsWithSandboxes(BaseModel):
 
 
 @threads.get("/with-sandboxes")
-async def list_threads_with_sandboxes(store: Store, inventory: Inventory) -> ThreadsWithSandboxes:
+async def list_threads_with_sandboxes(
+    store: Store,
+    inventory: Inventory,
+    include_archived: Annotated[bool, Query(description="Also list archived threads.")] = False,
+) -> ThreadsWithSandboxes:
     """Every Thread across every Sandbox the operator can see, newest first, with each Thread's own
     still-existing Sandbox included once regardless of how many Threads it hosts. A Thread survives
     its Sandbox's deletion here rather than disappearing with it; look it up by `thread.sandbox` in
     `sandboxes` and treat a miss as deleted."""
-    thread_views = await store.list_threads()
+    thread_views = await store.list_threads(include_archived=include_archived)
     referenced = {thread.sandbox for thread in thread_views}
     sandboxes = {view.name: view for view in await inventory.list_sandboxes() if view.name in referenced}
     return ThreadsWithSandboxes(threads=thread_views, sandboxes=sandboxes)
@@ -558,6 +563,18 @@ async def get_thread(store: Store, thread_id: UUID) -> ThreadView:
 @threads.patch("/{thread_id}")
 async def rename_thread(store: Store, thread_id: UUID, body: ThreadRename) -> ThreadView:
     return await store.rename(thread_id, body.name)
+
+
+@threads.post("/{thread_id}/archive", status_code=status.HTTP_204_NO_CONTENT)
+async def archive_thread(store: Store, thread_id: UUID) -> Response:
+    await store.archive(thread_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@threads.post("/{thread_id}/unarchive", status_code=status.HTTP_204_NO_CONTENT)
+async def unarchive_thread(store: Store, thread_id: UUID) -> Response:
+    await store.unarchive(thread_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @threads.get("/{thread_id}/events")

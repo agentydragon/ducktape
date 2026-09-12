@@ -45,6 +45,7 @@ def store(engine: AsyncEngine) -> ActionStore:
 def envelope() -> ActionRequestInput:
     return ActionRequestInput(
         idempotency_key="test-cancellation",
+        title="test title for test-cancellation",
         action=ActionIdentity(group="agentplane", name="echo"),
         arguments={},
         origin={"thread_id": "untrusted-thread", "caller_principal": OTHER_CALLER.key},

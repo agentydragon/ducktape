@@ -55,7 +55,7 @@ http_archive(
 oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
 oci.pull(
     name = "cli_proxy_distroless_cc",
-    digest = "sha256:e1cc90d06703f5dc30ae869fbfce78fce688f21a97efecd226375233a882e62f",
+    digest = "sha256:9b615fff20e1a4fad29c2b30562580b212c7dd5e2225236735cca0070ed11c78",
     image = "gcr.io/distroless/cc-debian13",
     platforms = ["linux/amd64"],
 )

@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   abortUnexpectedRequests,
+  assertNoPageErrors,
   prepareDeterministicPage,
   screenshotElement,
   waitForStable,
@@ -62,8 +63,6 @@ try {
     // One broken scene must not hide the rest: record it and carry on, so a single run
     // enumerates everything that is wrong.
     try {
-      const pageErrors = [];
-      page.on("pageerror", (error) => pageErrors.push(error));
       await prepareDeterministicPage(page, { viewport: { ...viewport, deviceScaleFactor: 2 }, colorScheme: theme });
       // The harness is entirely local; anything reaching for the network is a hole in it.
       const escaped = await abortUnexpectedRequests(page, (request) => request.url().startsWith("file://"));
@@ -75,7 +74,7 @@ try {
       await page.waitForSelector(".aiquota-card", { timeout: WAIT_TIMEOUT_MS });
       await waitForStable(page);
       if (escaped.length > 0) throw new Error(`requests escaped the harness:\n  ${escaped.join("\n  ")}`);
-      if (pageErrors.length > 0) throw new Error(pageErrors.map((error) => error.stack ?? String(error)).join("\n"));
+      assertNoPageErrors(page, { context: name });
 
       const file = `${name}.png`;
       writeFileSync(join(outDir, file), await screenshotElement(page, "#app", { context: name }));

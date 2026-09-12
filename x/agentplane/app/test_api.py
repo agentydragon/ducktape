@@ -645,6 +645,38 @@ async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
         assert missing.status_code == 404
 
 
+async def test_a_thread_archives_and_unarchives_and_hides_from_the_default_listing(
+    inventory: SandboxInventory,
+    bridge: RunnerBridge,
+    store: TrajectoryStore,
+    egress: EgressInventory,
+    decisions: DecisionsClient,
+    live_index: LiveIndex,
+    action_policy: ActionPolicyInventory,
+    reviewer: TokenReviewer,
+) -> None:
+    spec = pb.SessionSpec(provider=pb.PROVIDER_CLAUDE, cwd="/w", model="test-model")
+    thread_id = str(await store.thread("live", "s-1", spec))
+    app = create_app(
+        inventory, bridge, store, TEST_MODELS, egress, decisions, live_index, action_policy, reviewer=reviewer
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
+    ) as http:
+        assert (await http.post(f"/threads/{thread_id}/archive")).status_code == 204
+        assert (await http.get("/threads", params={"sandbox": "live"})).json() == []
+        [archived] = (await http.get("/threads", params={"sandbox": "live", "include_archived": "true"})).json()
+        assert archived["archived"] is True
+        assert (await http.get(f"/threads/{thread_id}")).json()["archived"] is True
+
+        assert (await http.post(f"/threads/{thread_id}/unarchive")).status_code == 204
+        [unarchived] = (await http.get("/threads", params={"sandbox": "live"})).json()
+        assert unarchived["archived"] is False
+
+        assert (await http.post("/threads/00000000-0000-0000-0000-000000000000/archive")).status_code == 404
+        assert (await http.post("/threads/00000000-0000-0000-0000-000000000000/unarchive")).status_code == 404
+
+
 async def test_threads_with_sandboxes_pairs_each_thread_with_its_sandbox_or_none(
     inventory: SandboxInventory,
     bridge: RunnerBridge,
@@ -665,17 +697,26 @@ async def test_threads_with_sandboxes_pairs_each_thread_with_its_sandbox_or_none
     live_thread = await store.thread("live", "s-1", spec)
     other_live_thread = await store.thread("live", "s-2", spec)
     gone_thread = await store.thread("gone", "s-3", spec)
+    await store.archive(gone_thread)
     app = create_app(
         inventory, bridge, store, TEST_MODELS, egress, decisions, live_index, action_policy, reviewer=reviewer
     )
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
     ) as http:
-        body = (await http.get("/threads/with-sandboxes")).json()
-        thread_ids = {row["id"] for row in body["threads"]}
-        assert thread_ids == {str(live_thread), str(other_live_thread), str(gone_thread)}
-        assert set(body["sandboxes"]) == {"live"}
-        assert (body["sandboxes"]["live"]["name"], body["sandboxes"]["live"]["state"]) == ("live", "running")
+        default_body = (await http.get("/threads/with-sandboxes")).json()
+        default_thread_ids = {row["id"] for row in default_body["threads"]}
+        assert default_thread_ids == {str(live_thread), str(other_live_thread)}
+        assert set(default_body["sandboxes"]) == {"live"}
+        assert (default_body["sandboxes"]["live"]["name"], default_body["sandboxes"]["live"]["state"]) == (
+            "live",
+            "running",
+        )
+
+        all_body = (await http.get("/threads/with-sandboxes", params={"include_archived": "true"})).json()
+        all_thread_ids = {row["id"] for row in all_body["threads"]}
+        assert all_thread_ids == {str(live_thread), str(other_live_thread), str(gone_thread)}
+        assert set(all_body["sandboxes"]) == {"live"}, "the deleted 'gone' sandbox must not appear"
 
 
 def test_healthz_answers_outside_the_schema(client: TestClient) -> None:
@@ -722,6 +763,8 @@ def test_openapi_schema_keeps_expected_operations(client: TestClient) -> None:
         "/threads",
         "/threads/with-sandboxes",
         "/threads/{thread_id}",
+        "/threads/{thread_id}/archive",
+        "/threads/{thread_id}/unarchive",
         "/threads/{thread_id}/events",
         "/live/sandboxes",
         "/live/sandboxes/{name}",

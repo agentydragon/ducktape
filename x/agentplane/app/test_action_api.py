@@ -43,7 +43,7 @@ from x.agentplane.action_service.models import (
 )
 from x.agentplane.action_service.operator_oidc import OidcOperatorAuthenticator, OperatorOidcSettings
 from x.agentplane.action_service.policies.resources import parse_binding, parse_policy_set
-from x.agentplane.action_service.policy_informer import PolicyIndex, namespaced_key
+from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.test_fixtures.callers import PERSONAL, eligible_callers
 from x.agentplane.action_service.updates import ActionUpdates
@@ -367,22 +367,24 @@ def _bind_live_sandbox(policies: PolicyIndex, sandbox_uid: str) -> None:
     """What the Action Service's informer would hold: a set and a binding pinning the Sandbox's UID,
     plus a binding for another Sandbox of the same name that must not show."""
     metadata = {"namespace": NAMESPACE, "uid": "test-uid", "generation": 1, "resourceVersion": "1"}
-    policies.policy_sets[namespaced_key(NAMESPACE, "test-reads")] = parse_policy_set(
+    policy_set = parse_policy_set(
         {
             "metadata": {"name": "test-reads", **metadata},
             "spec": {"autoApproveIf": [{"type": "exact_actions", "actions": {"test_review": ["record"]}}]},
         }
     )
+    policies.policy_sets[policy_set.namespaced_name] = policy_set
     for name, uid, labels in (
         ("live-launch", sandbox_uid, {MANAGED_BY_LABEL: MANAGED_BY_APP}),
         ("live-previous", str(uuid4()), {}),
     ):
-        policies.bindings[namespaced_key(NAMESPACE, name)] = parse_binding(
+        binding = parse_binding(
             {
                 "metadata": {"name": name, "labels": labels, **metadata},
                 "spec": {"subject": {"sandbox": {"name": "live", "uid": uid}}, "policySets": ["test-reads", "gone"]},
             }
         )
+        policies.bindings[binding.namespaced_name] = binding
 
 
 @asynccontextmanager
@@ -473,6 +475,7 @@ async def test_operator_decision_reaches_canonical_service_and_mcp_once(review: 
     pending = await service.submit(
         ActionRequestInput(
             idempotency_key="test-submit",
+            title="test title for test-submit",
             action=ActionIdentity(group="test_review", name="record"),
             arguments={"message": "hi"},
         ),
@@ -566,6 +569,7 @@ async def test_unconfigured_or_rejected_service_auth_fails_closed(review: Review
     pending = await review.service.submit(
         ActionRequestInput(
             idempotency_key="test-blocked",
+            title="test title for test-blocked",
             action=ActionIdentity(group="test_review", name="record"),
             arguments={"message": "no"},
         ),
@@ -653,6 +657,7 @@ async def test_two_replicas_share_login_callback_and_logout_and_keep_two_operato
         pending = await review.service.submit(
             ActionRequestInput(
                 idempotency_key=f"submit-{identity}-{len(review.exchanged_subjects)}",
+                title=f"test title for {f'submit-{identity}-{len(review.exchanged_subjects)}'}",
                 action=ActionIdentity(group="test_review", name="record"),
                 arguments={"message": "not run"},
             ),
