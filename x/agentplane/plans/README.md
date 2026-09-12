@@ -9,7 +9,7 @@ Current priority: working Claude.ai access to the Action Service MCP facade (`CL
 Transcript search/lookup (`T3`) is deliberately deferred product work and is not in the current
 execution sequence. This is a priority decision, not a technical dependency.
 The first external OAuth slice uses human-approved Actions; configurable policy representation and
-per-Identity auto-approval do not gate it. SandboxPresets remain integration-app-only composition.
+per-ServiceAccount auto-approval do not gate it. SandboxPresets remain integration-app-only composition.
 
 ## Open plans and gates
 
