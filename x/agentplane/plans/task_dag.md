@@ -17,10 +17,11 @@ reconnect/replay from durable state rather than process-local memory. A single-r
 is an explicit temporary operational constraint, never an implicit correctness assumption.
 
 Deployed Claude.ai access to the Action Service MCP facade, the first priority, is met (§ Tested
-on staging); no next priority is set here. Transcript
-search/lookup (`T3`) is deliberately deferred until a later product-planning point; it is not in
-the current execution sequence. Search is technically independent, so this deferral is a priority
-decision rather than a claim that its implementation depends on MCP. Full Haku migration is not
+on staging). Next is console policy parity (`CONSOLE_POLICIES`), then retiring the Haku Console
+MCP aggregator behind Agentplane's (`MCPAGG`, `RETIRE_TOOLS`). Transcript search/lookup (`T3`) is
+deliberately deferred until a later product-planning point; it is not in the current execution
+sequence. Search is technically independent, so this deferral is a priority decision rather than a
+claim that its implementation depends on MCP. Agent/conversation migration (`RETIRE_AGENT`) is not
 prioritized.
 
 ## DAG
@@ -91,10 +92,10 @@ reconciliation after reconnect.
 
 The external-client track is complete and single-operator: Identity (configured authority),
 Connection (runtime named client enrollment), and Thread (execution/conversation state), with no
-multi-operator management or per-operator ownership model. Credentials bind to a ServiceAccount,
-the principal policies bind to; the backend credentials in use are the ActionGroup executor's auth
-modes ([MCP executor transports](../action_service/README.md#mcp-executor-transports)), shared by
-every caller of the group, and no linked token, static bearer, or kubeconfig reaches the MCP
+multi-operator management or per-operator ownership model. A Connection binds to a ServiceAccount,
+the principal policies bind to; backend credentials are the ActionGroup executor's auth modes
+([MCP executor transports](../action_service/README.md#mcp-executor-transports)), shared by every
+caller of the group, and no linked token, static bearer, or kubeconfig reaches the MCP
 client, Sandbox, transcript, or Action prompt; outbound account OAuth remains `MCPAUTH`. Generic
 tool discovery stays compact; a client that needs more opts into a schema or description per
 Action. The Kubernetes, SSH, and
@@ -407,6 +408,27 @@ No acknowledgement, retry, steering, cancellation, or completion may be invented
 Decide the narrow common contract only after these observations; keep unsupported operations native
 or explicitly unavailable. **Deferred:** generic queue management and unproven per-input cancellation.
 
+### `PROD` — production-capable governed action execution
+
+**Milestone:** a production Agentplane instance, distinct from staging, governing Actions for real
+operator work; `PC_EGRESS` needs the same instance. Gated on `MCPAUTH`'s remaining upstream
+acceptance; `T3` is product work that lands on it, not a prerequisite. What "production-capable"
+requires beyond the staging deployment is not defined.
+
+### `AG` — hosted Agent and Thread model
+
+**Deferred:** the hosted Agent/Thread model beyond today's Sandbox-bound Threads: a durable Thread
+lifecycle that outlives a Sandbox, conversation read and control surfaces, and an explicit policy
+for reading across Identities, which `ING` needs for cross-Identity delivery. Nothing waits on it
+except `RETIRE_AGENT`, whose replacement runtime it is.
+
+### `DT` — driver-provided declarations and background control
+
+**Deferred pending a real consumer:** a driver may declare model-visible tools and control
+background work, but any such runner surface reuses the Action Service contracts rather than a
+second tool-request lifecycle; the settled provider behavior and the seam are in
+[driver tools and background work](driver_tools_and_background.md).
+
 ### `ING` — Event & Notification Hub
 
 **Deferred support:** consume Action events and external sources such as GitHub/Calendar, match
@@ -427,8 +449,6 @@ Action outbox or event store; cross-Identity delivery requires an explicit read 
   constraints are in
   [workload authentication § Access beyond Actions](../docs/workload_authentication.md#access-beyond-actions);
 - per-destination workload audiences until recipient isolation is required;
-- per-ServiceAccount backend credential bindings — every caller of an ActionGroup shares its
-  executor's credential today;
 - per-Action MCP projection and new generic-tool metadata such as output schemas;
 - registration/enrollment retention cleanup, once actual growth is measured — bounded expiry that
   preserves historical attribution and replay tombstones, never a gate for client use;
