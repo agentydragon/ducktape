@@ -102,7 +102,7 @@ spec:
     crawler_storage: 25Gi
     crawler_channels:
       - id: default
-        image: docker.io/webrecorder/browsertrix-crawler:1.14.2
+        image: docker.io/webrecorder/browsertrix-crawler:1.14.3
         imagePullPolicy: IfNotPresent
     crawler_pull_policy: IfNotPresent
     crawler_namespace: browsertrix-crawlers
