@@ -72,6 +72,7 @@ flowchart TB
     UISHELL_NEWTHREAD_SANDBOX["Planned UI<br/>pre-scoped '+ New thread' on a Sandbox's page<br/>Sandbox/preset already fixed"]:::future
     UISHELL_NEWTHREAD_LANDING["Planned UI<br/>sidebar '+' unscoped new-thread composer<br/>Sandbox/preset/model pickers + prompt"]:::future
     THREAD_BROWSE_PAGINATE["Deferred, way later<br/>paginated/searchable all-threads page<br/>find an old Thread once the sidebar list outgrows it"]:::future
+    NO_MANUAL_REFRESH["Planned principle<br/>no page in the app needs a Refresh button<br/>push (WS or SSE) everywhere, not just Sandboxes/Actions"]:::future
 
     CRED --> MCPAUTH
     MCPAUTH --> PROD
@@ -655,6 +656,23 @@ assumed to stay one unpaginated call forever.
 
 **Depends on** the cross-sandbox Thread-listing endpoint (extends it with cursor pagination and,
 eventually, search). Nothing above waits on this.
+
+### `NO_MANUAL_REFRESH` — no page in the app should ever need a Refresh button
+
+**Planned principle:** every page in the integration app should stay automatically up to date by
+listening for changes — push (WebSocket, SSE, or similar), not a manual Refresh button and not a
+poll timer. Concretely missing it today: the Settings modal's OAuth-clients tab
+(`settings/connections.tsx`), MCP-servers tab (`settings/mcp_servers.tsx`), and Notifications tab
+(`settings/push.tsx`) all fetch once on mount and rely on an explicit "Refresh" button for anything
+that changes afterward. This is not starting from nothing: `sandboxes.tsx`/`sandbox_page.tsx`
+already push via `live.tsx`'s `useLive`/`EventSource` mechanism (`/live/sandboxes`,
+`/live/sandboxes/:name`), and `actions.tsx` already opens its own `/actions/stream` `EventSource`
+independently of that. The shape to extend is one of those two, not a third one invented from
+scratch — whether that means a `live.tsx`-style snapshot-on-change stream for each Settings tab's
+own resource (Connections, MCP linkages, push subscriptions) or something coarser is not decided
+here.
+
+**No dependency** on the UI-shell cluster above; ships independently, one tab/page at a time.
 
 ## Deferred
 
