@@ -14,8 +14,7 @@ from kubernetes_asyncio.client import ApiClient, CoreV1Api, CustomObjectsApi
 
 from util.kubernetes import CustomObjectsClient
 from x.agentplane.action_service.models import ServiceAccountRef
-from x.agentplane.action_service.policy_informer import PolicyIndex, PolicyInformer, namespaced_key
-from x.agentplane.action_service.policy_resources import (
+from x.agentplane.action_service.policies.resources import (
     BINDINGS_PLURAL,
     CALLER_LABEL,
     GROUP,
@@ -26,6 +25,7 @@ from x.agentplane.action_service.policy_resources import (
     ActionPolicySet,
     InvalidResource,
 )
+from x.agentplane.action_service.policy_informer import PolicyIndex, PolicyInformer, namespaced_key
 from x.agentplane.egress.testing.fake_apiserver import FakeApiServer, fake_apiserver
 
 NAMESPACE = "agentplane-policy-test"

@@ -8,11 +8,11 @@ import pytest
 import pytest_bazel
 
 from x.agentplane.action_service.models import PolicyKind
-from x.agentplane.action_service.policy_resources import (
+from x.agentplane.action_service.policies.argument_schema import ArgumentSchema
+from x.agentplane.action_service.policies.exact_actions import ExactActions
+from x.agentplane.action_service.policies.resources import (
     ActionPolicyBinding,
     ActionPolicySet,
-    ArgumentSchemaPolicy,
-    ExactActionsPolicy,
     InvalidResource,
     SandboxSubject,
     ServiceAccountSubject,
@@ -65,9 +65,9 @@ def test_policy_set_parses_each_kind_and_keeps_deny_lists() -> None:
     )
     assert isinstance(parsed, ActionPolicySet)
     exact, by_schema = parsed.spec.auto_approve_if
-    assert isinstance(exact, ExactActionsPolicy)
+    assert isinstance(exact, ExactActions)
     assert exact.actions == {"github": frozenset({"get_file_contents", "search_code"})}
-    assert isinstance(by_schema, ArgumentSchemaPolicy)
+    assert isinstance(by_schema, ArgumentSchema)
     assert by_schema.argument_schema["required"] == ["owner"]
     assert [policy.type for policy in parsed.spec.auto_deny_if] == [PolicyKind.EXACT_ACTIONS]
     assert parsed.spec.auto_deny_unless == []

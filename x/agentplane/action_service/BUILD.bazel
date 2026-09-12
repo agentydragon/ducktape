@@ -386,10 +386,10 @@ py_test(
         ":models",
         ":policy_evaluation",
         ":policy_informer",
-        ":policy_resources",
         ":providers",
         ":service",
         "//:conftest",
+        "//x/agentplane/action_service/policies:resources",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -425,12 +425,12 @@ py_test(
         ":models",
         ":policy_evaluation",
         ":policy_informer",
-        ":policy_resources",
         ":runtime",
         ":service",
         ":updates",
         "//:conftest",
         "//util/bazel:runfiles",
+        "//x/agentplane/action_service/policies:resources",
         "//x/agentplane/action_service/test_fixtures:lifecycle",
         "//x/agentplane/egress/testing:fake_apiserver",
         "//x/agentplane/sandbox_auth:http",
@@ -681,10 +681,10 @@ py_test(
         ":models",
         ":policy_evaluation",
         ":policy_informer",
-        ":policy_resources",
         ":providers",
         ":service",
         "//:conftest",
+        "//x/agentplane/action_service/policies:resources",
         "//x/agentplane/action_service/test_fixtures:callers",
         "@pypi//pydantic",
         "@pypi//pytest",
@@ -899,22 +899,10 @@ py_library(
     srcs = ["policy_informer.py"],
     deps = [
         ":models",
-        ":policy_resources",
         "//util:kubernetes",
         "//x/agentplane:kubernetes_watch",
+        "//x/agentplane/action_service/policies:resources",
         "@pypi//kubernetes_asyncio",
-    ],
-)
-
-py_library(
-    name = "policy_resources",
-    srcs = ["policy_resources.py"],
-    deps = [
-        ":catalog",
-        ":models",
-        "@pypi//jsonschema",
-        "@pypi//pydantic",
-        "@pypi//referencing",
     ],
 )
 
@@ -925,24 +913,11 @@ py_test(
         ":conftest",
         ":models",
         ":policy_informer",
-        ":policy_resources",
         "//:conftest",
         "//util:kubernetes",
+        "//x/agentplane/action_service/policies:resources",
         "//x/agentplane/egress/testing:fake_apiserver",
         "@pypi//kubernetes_asyncio",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_policy_resources",
-    srcs = ["test_policy_resources.py"],
-    deps = [
-        ":conftest",
-        ":models",
-        ":policy_resources",
-        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -952,14 +927,12 @@ py_library(
     name = "policy_evaluation",
     srcs = ["policy_evaluation.py"],
     deps = [
-        ":catalog",
         ":models",
         ":policy_informer",
-        ":policy_resources",
         ":providers",
-        "@pypi//jsonschema",
-        "@pypi//pydantic",
-        "@pypi//referencing",
+        "//x/agentplane/action_service/policies:kind",
+        "//x/agentplane/action_service/policies:registry",
+        "//x/agentplane/action_service/policies:resources",
     ],
 )
 
@@ -969,7 +942,7 @@ py_library(
     deps = [
         ":catalog",
         ":models",
-        ":policy_resources",
+        "//x/agentplane/action_service/policies:resources",
         "@pypi//pydantic",
     ],
 )
@@ -978,15 +951,12 @@ py_test(
     name = "test_policy_evaluation",
     srcs = ["test_policy_evaluation.py"],
     deps = [
-        ":catalog",
         ":conftest",
         ":models",
         ":policy_evaluation",
         ":policy_informer",
-        ":policy_resources",
         "//:conftest",
-        "@pypi//pydantic",
-        "@pypi//pytest",
+        "//x/agentplane/action_service/policies:resources",
         "@pypi//pytest_bazel",
     ],
 )

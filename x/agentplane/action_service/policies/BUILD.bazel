@@ -1,0 +1,119 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//x/agentplane:__subpackages__"])
+
+py_library(
+    name = "argument_schema",
+    srcs = ["argument_schema.py"],
+    deps = [
+        ":kind",
+        "//x/agentplane/action_service:catalog",
+        "//x/agentplane/action_service:models",
+        "@pypi//jsonschema",
+        "@pypi//pydantic",
+        "@pypi//referencing",
+    ],
+)
+
+py_library(
+    name = "exact_actions",
+    srcs = ["exact_actions.py"],
+    deps = [
+        ":kind",
+        "//x/agentplane/action_service:catalog",
+        "//x/agentplane/action_service:models",
+    ],
+)
+
+py_library(
+    name = "kind",
+    srcs = ["kind.py"],
+    deps = [
+        "//x/agentplane/action_service:catalog",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "registry",
+    srcs = ["registry.py"],
+    deps = [
+        ":argument_schema",
+        ":exact_actions",
+        ":kind",
+        "//x/agentplane/action_service:catalog",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "resources",
+    srcs = ["resources.py"],
+    deps = [
+        ":kind",
+        ":registry",
+        "//x/agentplane/action_service:models",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_argument_schema",
+    srcs = ["test_argument_schema.py"],
+    deps = [
+        ":argument_schema",
+        ":kind",
+        ":registry",
+        "//:conftest",
+        "//x/agentplane/action_service:catalog",
+        "//x/agentplane/action_service:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_exact_actions",
+    srcs = ["test_exact_actions.py"],
+    deps = [
+        ":exact_actions",
+        ":kind",
+        ":registry",
+        "//:conftest",
+        "//x/agentplane/action_service:catalog",
+        "//x/agentplane/action_service:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_registry",
+    srcs = ["test_registry.py"],
+    deps = [
+        ":kind",
+        ":registry",
+        "//:conftest",
+        "//x/agentplane/action_service:catalog",
+        "//x/agentplane/action_service:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_resources",
+    srcs = ["test_resources.py"],
+    deps = [
+        ":argument_schema",
+        ":exact_actions",
+        ":resources",
+        "//:conftest",
+        "//x/agentplane/action_service:conftest",
+        "//x/agentplane/action_service:models",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

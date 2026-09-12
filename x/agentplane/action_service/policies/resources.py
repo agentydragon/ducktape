@@ -14,24 +14,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal
 
-import jsonschema
-from pydantic import (
-    AwareDatetime,
-    BaseModel,
-    ConfigDict,
-    Discriminator,
-    Field,
-    JsonValue,
-    Tag,
-    ValidationError,
-    field_validator,
-)
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Discriminator, Field, Tag, ValidationError
 
-from x.agentplane.action_service.catalog import Key
-from x.agentplane.action_service.models import PolicyKind, ServiceAccountRef
-
-# types-jsonschema stubs import referencing; the mypy aspect needs that typed package directly.
-# gazelle:include_dep @pypi//referencing
+from x.agentplane.action_service.models import ServiceAccountRef
+from x.agentplane.action_service.policies.kind import Spec
+from x.agentplane.action_service.policies.registry import Policy
 
 GROUP = "agentplane.allegedly.works"
 VERSION = "v1alpha1"
@@ -49,12 +36,6 @@ class _Wire(BaseModel):
     """Server-stamped envelope fields, read off the API server; constructed by field name in tests."""
 
     model_config = ConfigDict(extra="ignore", populate_by_name=True, frozen=True)
-
-
-class _Spec(BaseModel):
-    """Operator-authored fields: an unknown key is a mistake, never ignored."""
-
-    model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
 
 class ObjectMeta(_Wire):
@@ -85,49 +66,7 @@ class Status(_Wire):
         return next((condition for condition in self.conditions if condition.type == READY_CONDITION), None)
 
 
-class _Policy(_Spec):
-    actions: dict[Key, frozenset[Key]] = Field(
-        min_length=1, description="Action names by ActionGroup key; the policy matches only these."
-    )
-
-    @field_validator("actions")
-    @classmethod
-    def _named_actions(cls, value: dict[Key, frozenset[Key]]) -> dict[Key, frozenset[Key]]:
-        for group, names in value.items():
-            if not names:
-                raise ValueError(f"group {group!r} lists no actions")
-        return value
-
-
-class ExactActionsPolicy(_Policy):
-    """Matches a listed Action by name alone."""
-
-    type: Literal[PolicyKind.EXACT_ACTIONS]
-
-
-class ArgumentSchemaPolicy(_Policy):
-    """Matches a listed Action whose arguments satisfy `schema`, with plain JSON Schema semantics."""
-
-    type: Literal[PolicyKind.ARGUMENT_SCHEMA]
-    argument_schema: dict[str, JsonValue] = Field(
-        alias="schema",
-        description="A JSON Schema over the arguments object; `properties` alone never implies presence.",
-    )
-
-    @field_validator("argument_schema")
-    @classmethod
-    def _valid_schema(cls, value: dict[str, JsonValue]) -> dict[str, JsonValue]:
-        try:
-            jsonschema.validators.validator_for(value).check_schema(value)
-        except jsonschema.SchemaError as error:
-            raise ValueError(f"schema is not a valid JSON Schema: {error.message}") from error
-        return value
-
-
-Policy = Annotated[ExactActionsPolicy | ArgumentSchemaPolicy, Field(discriminator="type")]
-
-
-class PolicySetSpec(_Spec):
+class PolicySetSpec(Spec):
     auto_approve_if: list[Policy] = Field(
         default_factory=list, alias="autoApproveIf", description="A request matching any policy here is auto-approved."
     )
@@ -147,16 +86,16 @@ class ActionPolicySet(_Wire):
     status: Status = Field(default_factory=Status)
 
 
-class SandboxRef(_Spec):
+class SandboxRef(Spec):
     name: str = Field(min_length=1)
     uid: str = Field(min_length=1, description="Pins the live Sandbox; a binding whose Sandbox is gone is inert.")
 
 
-class ServiceAccountSubject(_Spec):
+class ServiceAccountSubject(Spec):
     service_account: ServiceAccountRef = Field(alias="serviceAccount")
 
 
-class SandboxSubject(_Spec):
+class SandboxSubject(Spec):
     sandbox: SandboxRef
 
 
@@ -181,7 +120,7 @@ Subject = Annotated[
 ]
 
 
-class BindingSpec(_Spec):
+class BindingSpec(Spec):
     subject: Subject
     policy_sets: list[str] = Field(
         alias="policySets", min_length=1, description="ActionPolicySet names in the binding's namespace."

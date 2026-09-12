@@ -20,7 +20,7 @@ from kubernetes_asyncio.client import CoreV1Api
 
 from util.kubernetes import CustomObjectsClient
 from x.agentplane.action_service.models import ServiceAccountRef
-from x.agentplane.action_service.policy_resources import (
+from x.agentplane.action_service.policies.resources import (
     BINDINGS_PLURAL,
     CALLER_LABEL_SELECTOR,
     GROUP,

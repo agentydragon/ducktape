@@ -1,19 +1,14 @@
-"""Each policy kind's own test, and how a caller's bindings resolve from the index at one instant."""
+"""How a caller's bindings resolve from the index at one instant."""
 
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-import pytest
 import pytest_bazel
-from pydantic import JsonValue
 
-from x.agentplane.action_service.catalog import ActionIdentity
 from x.agentplane.action_service.models import SandboxCaller, ServiceAccountCaller, ServiceAccountRef
-from x.agentplane.action_service.policy_evaluation import Matched, NotMatched, evaluate, resolve_bindings
-from x.agentplane.action_service.policy_informer import PolicyIndex, namespaced_key
-from x.agentplane.action_service.policy_resources import (
+from x.agentplane.action_service.policies.resources import (
     ActionPolicyBinding,
     ActionPolicySet,
     InvalidResource,
@@ -22,24 +17,14 @@ from x.agentplane.action_service.policy_resources import (
     parse_binding,
     parse_policy_set,
 )
+from x.agentplane.action_service.policy_evaluation import resolve_bindings
+from x.agentplane.action_service.policy_informer import PolicyIndex, namespaced_key
 
 NAMESPACE = "agentplane-test"
 NOW = datetime(2026, 9, 12, 12, 0, tzinfo=UTC)
 SANDBOX = SandboxCaller(namespace=NAMESPACE, sandbox_uid="sandbox-uid-1")
 ACCOUNT = ServiceAccountRef(namespace=NAMESPACE, name="test-caller")
 CALLER = ServiceAccountCaller(service_account=ACCOUNT, grant_revision=1)
-ECHO = ActionIdentity(group="everything", name="echo")
-
-SCHEMA_POLICY: dict[str, Any] = {
-    "type": "argument_schema",
-    "actions": {"everything": ["echo"]},
-    "schema": {
-        "type": "object",
-        "required": ["message"],
-        "properties": {"message": {"type": "string", "maxLength": 5}, "count": {"type": "integer"}},
-        "additionalProperties": False,
-    },
-}
 
 
 def _meta(name: str, *, generation: int = 1, version: str = "1") -> dict[str, Any]:
@@ -76,39 +61,6 @@ def index_of(*objects: ActionPolicySet | ActionPolicyBinding | InvalidResource, 
         else:
             index.bindings[key] = obj
     return index
-
-
-@pytest.mark.parametrize(
-    ("arguments", "matched"),
-    [
-        ({"message": "hi"}, True),
-        ({"message": "hi", "count": 2}, True),
-        ({}, False),  # `required` decides presence; `properties` alone never does.
-        ({"message": "too long"}, False),
-        ({"message": "hi", "count": "2"}, False),
-        ({"message": "hi", "extra": True}, False),
-    ],
-)
-def test_argument_schema_has_plain_json_schema_semantics(arguments: dict[str, JsonValue], matched: bool) -> None:
-    parsed = policy_set("set-a", [SCHEMA_POLICY])
-    assert isinstance(parsed, ActionPolicySet)
-    (policy,) = parsed.spec.auto_approve_if
-    assert isinstance(evaluate(policy, ECHO, arguments), Matched if matched else NotMatched)
-
-
-@pytest.mark.parametrize(
-    ("action", "matched"),
-    [
-        (ECHO, True),
-        (ActionIdentity(group="everything", name="add"), False),
-        (ActionIdentity(group="other", name="echo"), False),
-    ],
-)
-def test_exact_actions_matches_by_name_alone(action: ActionIdentity, matched: bool) -> None:
-    parsed = policy_set("set-a", [{"type": "exact_actions", "actions": {"everything": ["echo"]}}])
-    assert isinstance(parsed, ActionPolicySet)
-    (policy,) = parsed.spec.auto_approve_if
-    assert isinstance(evaluate(policy, action, {"anything": [1, 2]}), Matched if matched else NotMatched)
 
 
 def test_resolution_takes_unexpired_valid_bindings_naming_the_caller_with_their_existing_sets() -> None:
