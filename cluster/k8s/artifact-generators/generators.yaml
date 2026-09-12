@@ -3020,6 +3020,206 @@ spec:
 apiVersion: source.extensions.fluxcd.io/v1beta1
 kind: ArtifactGenerator
 metadata:
+  name: cli-proxy-api
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: cli-proxy-api
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/cli-proxy-api/**"
+          to: "@artifact/cluster/k8s/cli-proxy-api/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: clickhouse-namespace
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: clickhouse-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/clickhouse/namespace/**"
+          to: "@artifact/cluster/k8s/clickhouse/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: clickhouse-operator
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: clickhouse-operator
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/clickhouse/operator/**"
+          to: "@artifact/cluster/k8s/clickhouse/operator/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: clickhouse-schema
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: clickhouse-schema
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/clickhouse/schema/**"
+          to: "@artifact/cluster/k8s/clickhouse/schema/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: coredns-custom
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: coredns-custom
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/coredns-custom/**"
+          to: "@artifact/cluster/k8s/coredns-custom/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: cpap-sync
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: cpap-sync
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/cpap-sync/**"
+          to: "@artifact/cluster/k8s/cpap-sync/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: dcgm-exporter
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: dcgm-exporter
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/dcgm-exporter/**"
+          to: "@artifact/cluster/k8s/dcgm-exporter/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: descheduler
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: descheduler
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/descheduler/**"
+          to: "@artifact/cluster/k8s/descheduler/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: dns-automation
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: dns-automation
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/dns-automation/**"
+          to: "@artifact/cluster/k8s/dns-automation/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: docker-ci
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: docker-ci
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/docker-ci/**"
+          to: "@artifact/cluster/k8s/docker-ci/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
   name: activitywatch
   namespace: ducktape-flux
 spec:

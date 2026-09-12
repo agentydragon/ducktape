@@ -9,8 +9,8 @@ spec:
   path: ./cluster/k8s/clickhouse/schema
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: clickhouse-schema
     namespace: ducktape-flux
   timeout: 20m
   wait: true
