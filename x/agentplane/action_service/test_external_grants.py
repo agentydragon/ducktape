@@ -36,7 +36,6 @@ from x.agentplane.action_service.models import (
     ExecutionResult,
     ExecutionState,
     ExternalGrantProvenance,
-    NamespacedName,
     Principal,
     PrincipalRole,
     ProviderOutcome,
@@ -327,13 +326,14 @@ async def test_bound_service_account_is_auto_approved_by_its_binding_only(
 ) -> None:
     namespace = PERSONAL.namespace
     index = PolicyIndex(synced=True)
-    index.policy_sets[NamespacedName(namespace, "echo")] = parse_policy_set(
+    policy_set = parse_policy_set(
         {
             "metadata": {"name": "echo", "namespace": namespace, "uid": "u1", "generation": 1, "resourceVersion": "1"},
             "spec": {"autoApproveIf": [{"type": "exact_actions", "actions": {"agentplane": ["echo"]}}]},
         }
     )
-    index.bindings[NamespacedName(namespace, "personal-echo")] = parse_binding(
+    index.policy_sets[policy_set.namespaced_name] = policy_set
+    binding = parse_binding(
         {
             "metadata": {
                 "name": "personal-echo",
@@ -345,6 +345,7 @@ async def test_bound_service_account_is_auto_approved_by_its_binding_only(
             "spec": {"subject": {"serviceAccount": PERSONAL.model_dump()}, "policySets": ["echo"]},
         }
     )
+    index.bindings[binding.namespaced_name] = binding
     service = ActionService(
         store,
         echo_catalog,

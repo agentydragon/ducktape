@@ -18,7 +18,6 @@ from x.agentplane.action_service.catalog import ActionIdentity
 from x.agentplane.action_service.models import (
     MatchedPolicy,
     MatchedRepository,
-    NamespacedName,
     PolicyKind,
     ProviderVerdict,
     SandboxCaller,
@@ -75,7 +74,7 @@ def binding(
 def index_of(*objects: ActionPolicySet | ActionPolicyBinding | InvalidResource, synced: bool = True) -> PolicyIndex:
     index = PolicyIndex(synced=synced)
     for obj in objects:
-        key = NamespacedName(obj.metadata.namespace, obj.metadata.name)
+        key = obj.namespaced_name
         if isinstance(obj, ActionPolicySet) or (
             isinstance(obj, InvalidResource) and obj.metadata.name.startswith("set")
         ):

@@ -25,7 +25,6 @@ from x.agentplane.action_service.models import (
     BindingEvidence,
     DecisionInput,
     MatchedPolicy,
-    NamespacedName,
     PolicyKind,
     PolicySetEvidence,
     Principal,
@@ -357,13 +356,11 @@ def _index(
     """An index from raw specs, parsed the way the informer parses them, so invalid ones stay invalid."""
     index = PolicyIndex(synced=synced)
     for name, spec in (sets or {}).items():
-        index.policy_sets[NamespacedName(NAMESPACE, name)] = parse_policy_set(
-            {"metadata": _meta(name, generation=4, version="40"), "spec": spec}
-        )
+        policy_set = parse_policy_set({"metadata": _meta(name, generation=4, version="40"), "spec": spec})
+        index.policy_sets[policy_set.namespaced_name] = policy_set
     for name, spec in (bindings or {}).items():
-        index.bindings[NamespacedName(NAMESPACE, name)] = parse_binding(
-            {"metadata": _meta(name, version="7"), "spec": spec}
-        )
+        binding = parse_binding({"metadata": _meta(name, version="7"), "spec": spec})
+        index.bindings[binding.namespaced_name] = binding
     return index
 
 
