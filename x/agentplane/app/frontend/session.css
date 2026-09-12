@@ -83,3 +83,11 @@
   background-color: var(--mantine-color-blue-light);
   max-width: min(34rem, 80%);
 }
+
+/* Still submitted, not yet accepted into a turn: the same "in progress" yellow used for
+   streaming/pending everywhere else in this app, on the bubble itself rather than a dot on top
+   of it. */
+.agentplane-user-bubble-sending {
+  background-color: var(--mantine-color-yellow-light);
+  color: var(--mantine-color-yellow-light-color);
+}

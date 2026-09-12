@@ -16,6 +16,7 @@ import {
   Textarea,
   TextInput,
   Tooltip,
+  VisuallyHidden,
 } from "@mantine/core";
 import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
 import IconPlayerStop from "@tabler/icons-react/dist/esm/icons/IconPlayerStop.mjs";
@@ -92,16 +93,20 @@ function StatusDot({
 }
 
 /** Role reads from position and color, not a label: the assistant's items are already full-width
- * (`ItemView`), so only user input needs a distinct treatment -- a right-aligned bubble. */
+ * (`ItemView`), so only user input needs a distinct treatment -- a right-aligned bubble. Sending
+ * reads from the bubble's own color, not a dot on top of it -- a still-submitted input keeps the
+ * "in progress" yellow this app already uses for streaming/pending elsewhere, switching to the
+ * settled blue once the runner accepts it into a turn. */
 function InputView({ input }: { input: InputState }): JSX.Element {
+  const sending = input.state === "submitted";
   return (
     <Group justify="flex-end">
-      <Paper className="agentplane-user-bubble" p="sm">
-        {input.state === "submitted" && (
-          <Group gap="xs" justify="flex-end">
-            <StatusDot color="yellow" label="Sending" />
-          </Group>
-        )}
+      <Paper
+        className={sending ? "agentplane-user-bubble agentplane-user-bubble-sending" : "agentplane-user-bubble"}
+        p="sm"
+      >
+        {/* The color change alone would be invisible to a screen reader. */}
+        {sending && <VisuallyHidden>Sending. </VisuallyHidden>}
         {/* An input logged before the runner carried its text shows as its id. */}
         <Text style={{ whiteSpace: "pre-wrap" }}>{input.text || `input ${input.id}`}</Text>
       </Paper>
