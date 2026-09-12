@@ -68,10 +68,11 @@ LOOPBACK = frozenset({"127.0.0.1", "localhost"})
 # libraries do by default, reaches the proxy and hangs until timeout.
 CLUSTER_ADDRESSING = frozenset({".svc", ".svc.cluster.local", "kubernetes.default.svc", "10.0.0.0/8"})
 
-# The one group that is NOT shared, and must not be: `*.allegedly.works` would
-# break `claude-sandbox`'s docker-ci path, which is supposed to go *through* the
-# proxy to be raw-tunnelled. In-cluster Forgejo is bypassed by neither: haku's
-# sandbox carries a credential placeholder that only the fence can redeem.
+# The one group that is NOT shared: `claude-sandbox` deliberately keeps
+# `*.allegedly.works` routed through mitmproxy, and whether to unify it is an
+# open decision (inject-mitmproxy.yaml). In-cluster Forgejo is bypassed by
+# neither: haku's sandbox carries a credential placeholder that only the fence
+# can redeem.
 OWN_DOMAINS = frozenset({"*.allegedly.works", ".allegedly.works"})
 
 

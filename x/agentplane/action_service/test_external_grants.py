@@ -1,5 +1,7 @@
 """Authenticated grant snapshots and transactional admission/dispatch authorization."""
 
+import asyncio
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -10,13 +12,13 @@ from sqlalchemy import select
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
+from github_policy.visibility import RepositoryVisibilityService
 from x.agentplane.action_service.catalog import ActionCatalog, ActionIdentity
 from x.agentplane.action_service.conftest import RecordingExecutor
 from x.agentplane.action_service.connections import (
     ConnectionAuthority,
     Grant,
     GrantBinding,
-    Identity,
     NewConnection,
     ReconnectConnection,
 )
@@ -30,7 +32,6 @@ from x.agentplane.action_service.models import (
     ActionRequestInput,
     ActionRequestView,
     ActionState,
-    DecisionContext,
     DecisionInput,
     ExecutionResult,
     ExecutionState,
@@ -39,9 +40,16 @@ from x.agentplane.action_service.models import (
     PrincipalRole,
     ProviderOutcome,
     ProviderVerdict,
+    ServiceAccountCaller,
+    ServiceAccountRef,
     Verdict,
 )
+from x.agentplane.action_service.policies.resources import parse_binding, parse_policy_set
+from x.agentplane.action_service.policy_evaluation import PROVIDER_NAME, PolicySetDecisionProvider
+from x.agentplane.action_service.policy_informer import PolicyIndex, namespaced_key
+from x.agentplane.action_service.providers import DecisionContext
 from x.agentplane.action_service.service import ActionService
+from x.agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, eligible_callers
 
 ISSUER = "https://actions.example.test"
 OPERATOR = Principal(issuer="operator", subject="single", role=PrincipalRole.OPERATOR)
@@ -50,7 +58,7 @@ LEASE_DURATION = timedelta(seconds=30)
 
 @pytest.fixture
 def authority(engine: AsyncEngine) -> ConnectionAuthority:
-    return ConnectionAuthority(make_sessionmaker(engine), {"personal": Identity(), "test-other": Identity()})
+    return ConnectionAuthority(make_sessionmaker(engine), eligible_callers(PERSONAL, OTHER))
 
 
 @pytest.fixture
@@ -58,11 +66,11 @@ def store(engine: AsyncEngine, authority: ConnectionAuthority) -> ActionStore:
     return ActionStore(make_sessionmaker(engine), external_grants=authority)
 
 
-async def activated(authority: ConnectionAuthority, client_id: str) -> Grant:
+async def activated_as(authority: ConnectionAuthority, service_account: ServiceAccountRef, client_id: str) -> Grant:
     bound = await authority.bind(
         GrantBinding(
             grant_id=uuid4(),
-            identity_id="personal",
+            service_account=service_account,
             issuer=ISSUER,
             client_id=client_id,
             activation_deadline=datetime.now(UTC) + timedelta(minutes=10),
@@ -70,6 +78,10 @@ async def activated(authority: ConnectionAuthority, client_id: str) -> Grant:
         )
     )
     return await authority.activate(bound.id)
+
+
+async def activated(authority: ConnectionAuthority, client_id: str) -> Grant:
+    return await activated_as(authority, PERSONAL, client_id)
 
 
 @pytest.fixture
@@ -97,7 +109,7 @@ async def allow(store: ActionStore, request: ActionRequestView) -> ActionRequest
     return result
 
 
-async def test_shared_identity_retry_keeps_first_snapshot_after_rename_and_revoke(
+async def test_shared_service_account_retry_keeps_first_snapshot_after_rename_and_revoke(
     engine: AsyncEngine, authority: ConnectionAuthority, store: ActionStore, grant: Grant, envelope: ActionRequestInput
 ) -> None:
     first, _ = await store.submit(envelope, grant.principal(), external_grant=grant.provenance())
@@ -122,7 +134,7 @@ async def test_admission_fails_closed_on_missing_disabled_revoked_or_mismatched_
     invalid_snapshots: list[dict[str, object]] = [
         {"issuer": "other"},
         {"client_id": "other"},
-        {"identity_id": "other"},
+        {"caller": OTHER},
         {"connection_id": uuid4()},
         {"grant_id": uuid4()},
         {"revision": 2},
@@ -136,7 +148,7 @@ async def test_admission_fails_closed_on_missing_disabled_revoked_or_mismatched_
         await store.submit(envelope, grant.principal())
     with pytest.raises(ExternalGrantNotAuthorizedError):
         await store.submit(envelope, OPERATOR, external_grant=grant.provenance())
-    for checker in [None, ConnectionAuthority(make_sessionmaker(engine), {"personal": Identity(enabled=False)})]:
+    for checker in [None, ConnectionAuthority(make_sessionmaker(engine), eligible_callers(OTHER))]:
         with pytest.raises(ExternalGrantNotAuthorizedError):
             await ActionStore(make_sessionmaker(engine), external_grants=checker).submit(
                 envelope, grant.principal(), external_grant=grant.provenance()
@@ -150,8 +162,9 @@ async def test_admission_fails_closed_on_missing_disabled_revoked_or_mismatched_
 
 
 @pytest.mark.parametrize(
-    "invalidate", ["revoke", "disable", "remove", "missing_authority", "reconnect_same", "reconnect_other"]
+    "invalidate", ["revoke", "unlabel", "remove", "missing_authority", "reconnect_same", "reconnect_other"]
 )
+@pytest.mark.parametrize("available", [True, False])
 async def test_original_authority_is_rechecked_before_dispatch_without_rewriting_decision(
     engine: AsyncEngine,
     authority: ConnectionAuthority,
@@ -159,22 +172,23 @@ async def test_original_authority_is_rechecked_before_dispatch_without_rewriting
     grant: Grant,
     envelope: ActionRequestInput,
     invalidate: str,
+    available: bool,
 ) -> None:
     request, _ = await store.submit(envelope, grant.principal(), external_grant=grant.provenance())
     allowed = await allow(store, request)
     if invalidate == "revoke":
         await authority.revoke(grant.id)
         await activated(authority, "new-authority-does-not-replace-original")
-    elif invalidate == "disable":
-        authority = ConnectionAuthority(make_sessionmaker(engine), {"personal": Identity(enabled=False)})
+    elif invalidate == "unlabel":
+        authority = ConnectionAuthority(make_sessionmaker(engine), eligible_callers(OTHER))
     elif invalidate == "remove":
-        authority = ConnectionAuthority(make_sessionmaker(engine), {})
+        authority = ConnectionAuthority(make_sessionmaker(engine), eligible_callers())
     elif invalidate in {"reconnect_same", "reconnect_other"}:
         connection = await authority.get(grant.connection_id)
         replacement = await authority.bind(
             GrantBinding(
                 grant_id=uuid4(),
-                identity_id="personal" if invalidate == "reconnect_same" else "test-other",
+                service_account=PERSONAL if invalidate == "reconnect_same" else OTHER,
                 issuer=ISSUER,
                 client_id="test-reconnected-client",
                 activation_deadline=datetime.now(UTC) + timedelta(minutes=10),
@@ -185,7 +199,12 @@ async def test_original_authority_is_rechecked_before_dispatch_without_rewriting
     restarted = ActionStore(
         make_sessionmaker(engine), external_grants=None if invalidate == "missing_authority" else authority
     )
-    assert await restarted.claim_execution(request.id, executor_id="worker", lease_duration=LEASE_DURATION) is None
+    assert (
+        await restarted.claim_execution(
+            request.id, executor_id="worker", lease_duration=LEASE_DURATION, can_dispatch=lambda identity: available
+        )
+        is None
+    )
     failed = await restarted.get(request.id, OPERATOR)
     assert failed.state is ActionState.FAILED
     assert failed.decision == allowed.decision
@@ -200,7 +219,12 @@ async def test_original_authority_is_rechecked_before_dispatch_without_rewriting
         ActionState.ALLOWED,
         ActionState.FAILED,
     ]
-    assert await restarted.claim_execution(request.id, executor_id="worker", lease_duration=LEASE_DURATION) is None
+    assert (
+        await restarted.claim_execution(
+            request.id, executor_id="worker", lease_duration=LEASE_DURATION, can_dispatch=lambda identity: available
+        )
+        is None
+    )
     assert await restarted.pending_dispatches() == []
 
 
@@ -256,23 +280,90 @@ async def test_service_preserves_human_approval_and_canonical_external_provenanc
     echo_catalog: ActionCatalog,
     echo_executor: RecordingExecutor,
 ) -> None:
-    class ExistingWorkloadProvider:
-        name = "existing-workload-provider"
-        called = False
+    """Providers see an external submission as its ServiceAccount caller; the provenance rides
+    through to the executor untouched."""
+
+    class RecordingProvider:
+        name = "recording-provider"
+
+        def __init__(self) -> None:
+            self.contexts: list[DecisionContext] = []
 
         async def decide(self, context: DecisionContext) -> ProviderOutcome:
-            self.called = True
-            return ProviderOutcome(
-                verdict=ProviderVerdict.ALLOW, reason_code="workload_autoallow", reason_description=None
-            )
+            self.contexts.append(context)
+            return ProviderOutcome(verdict=ProviderVerdict.ALLOW, reason_code="scripted_allow", reason_description=None)
 
-    provider = ExistingWorkloadProvider()
+    provider = RecordingProvider()
     service = ActionService(store, echo_catalog, {"agentplane": echo_executor}, providers=[provider])
-    receipt = await service.submit(envelope, grant.principal(), external_grant=grant.provenance())
-    assert receipt.state is ActionState.DECISION_PENDING
-    assert receipt.external_grant == grant.provenance()
-    assert echo_executor.requests == []
-    assert not provider.called
+    try:
+        receipt = await service.submit(envelope, grant.principal(), external_grant=grant.provenance())
+        assert receipt.state is ActionState.ALLOWED
+        assert receipt.external_grant == grant.provenance()
+        (context,) = provider.contexts
+        assert context.caller == ServiceAccountCaller(service_account=PERSONAL, grant_revision=grant.revision)
+        assert context.bindings == ()
+        async with asyncio.timeout(10):
+            view = await service.get(receipt.id, grant.principal())
+            while view.state is not ActionState.SUCCEEDED:
+                await asyncio.sleep(0.01)
+                view = await service.get(receipt.id, grant.principal())
+    finally:
+        await service.close()
+    (executed,) = echo_executor.requests
+    assert executed.external_grant == grant.provenance()
+    assert executed.caller_principal == grant.principal().key
+
+
+async def test_bound_service_account_is_auto_approved_by_its_binding_only(
+    engine: AsyncEngine,
+    authority: ConnectionAuthority,
+    store: ActionStore,
+    grant: Grant,
+    envelope: ActionRequestInput,
+    echo_catalog: ActionCatalog,
+    echo_executor: RecordingExecutor,
+    github_visibility: Callable[..., RepositoryVisibilityService],
+) -> None:
+    namespace = PERSONAL.namespace
+    index = PolicyIndex(synced=True)
+    index.policy_sets[namespaced_key(namespace, "echo")] = parse_policy_set(
+        {
+            "metadata": {"name": "echo", "namespace": namespace, "uid": "u1", "generation": 1, "resourceVersion": "1"},
+            "spec": {"autoApproveIf": [{"type": "exact_actions", "actions": {"agentplane": ["echo"]}}]},
+        }
+    )
+    index.bindings[namespaced_key(namespace, "personal-echo")] = parse_binding(
+        {
+            "metadata": {
+                "name": "personal-echo",
+                "namespace": namespace,
+                "uid": "u2",
+                "generation": 1,
+                "resourceVersion": "2",
+            },
+            "spec": {"subject": {"serviceAccount": PERSONAL.model_dump()}, "policySets": ["echo"]},
+        }
+    )
+    service = ActionService(
+        store,
+        echo_catalog,
+        {"agentplane": echo_executor},
+        providers=[PolicySetDecisionProvider(visibility=github_visibility())],
+        policies=index,
+    )
+    try:
+        allowed = await service.submit(envelope, grant.principal(), external_grant=grant.provenance())
+        assert allowed.state is ActionState.ALLOWED
+        assert allowed.decision is not None
+        assert allowed.decision.provider == PROVIDER_NAME
+        assert allowed.decision.policy_evidence is not None
+        assert [binding.name for binding in allowed.decision.policy_evidence.bindings] == ["personal-echo"]
+        other = await activated_as(authority, OTHER, "other-client")
+        unbound = await service.submit(envelope, other.principal(), external_grant=other.provenance())
+        assert unbound.state is ActionState.DECISION_PENDING
+        assert unbound.decision is None
+    finally:
+        await service.close()
 
 
 if __name__ == "__main__":

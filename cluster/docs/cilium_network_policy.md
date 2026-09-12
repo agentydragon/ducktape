@@ -144,3 +144,37 @@ the whole diagnosis. A true-world address is simply absent from the ipcache.
 
 Origin: public-coder-agent's Haku Console MCP server timing out at 30s while the
 same proxy reached GitHub and BuildBuddy fine (2026-08-01).
+
+## Egress through the Gateway Service: checked against the backend, with the client's SNI
+
+A pod connecting to the Gateway's ClusterIP
+(`gateway-system/cilium-gateway-cluster-gateway`, `10.106.122.5:443`) is not
+policy-checked as pod → Service. `bpf_lxc.c` hands L7 Service traffic to the
+node's Envoy before ordinary egress policy runs; the proxy captures the original
+SNI (`cilium/network_filter.cc`) and applies the source pod's egress policy in the
+upstream callback (`cilium/filter_state_cilium_policy.cc`) against the **selected
+backend's** identity and `targetPort`, with that SNI. A rule admitting
+`host`/`remote-node`:443 with `serverNames` therefore covers the node-IP path only;
+through the Service the TLS handshake completes and the request gets HTTP 403
+(`server: envoy`, `Access denied`).
+
+### Pattern: select the backend with the same SNI
+
+Keep the node-entity rule and add the backend pods on their `targetPort` with the
+same `serverNames` — the Authentik server pods on 9000 in
+<../k8s/agentplane-staging/app/networkpolicy.yaml>. Verify all three from the
+client's network namespace: canonical SNI → 200, wrong SNI with the canonical
+`Host` → 403, direct plaintext to `backend:9000` → reset (SNI scoping is intact).
+
+### Gotchas
+
+- The generated Service's EndpointSlice lists `192.192.192.192:9999`; that is a
+  placeholder, not the datapath backend. `cilium-dbg service list` on the node
+  shows the real local proxy backend, and a node the Gateway does not select has
+  the Service entry with **no** backends: clients there fail with `EHOSTUNREACH`
+  (errno 113), which is why <../terraform/main/cilium-values.yaml> selects every
+  node for the Gateway.
+- A TLS handshake succeeding through the Service proves nothing about the request:
+  a wrong SNI completes TLS there and is only denied at HTTP.
+
+Origin: agentplane-staging OIDC clients (2026-09-10, #6007, #6012).

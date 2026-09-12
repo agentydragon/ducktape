@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 
 from finance.augur.sim.books import AccountRef, MortgageState
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
+from finance.augur.sim.money import round_ratio
 
 _CONTRACT_SCALE = 10**18
 
@@ -20,10 +21,6 @@ def _count(value: int, name: str) -> int:
     if value >= 1 << 63:
         raise OverflowError(f"{name} does not fit signed 64-bit counts")
     return value
-
-
-def _round_ratio(numerator: int, denominator: int) -> int:
-    return (2 * numerator + denominator) // (2 * denominator)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -62,12 +59,12 @@ class MortgageTerms:
 
 def _monthly_payment(terms: MortgageTerms) -> int:
     if not terms.annual_interest_rate_ppb:
-        return _round_ratio(terms.origination_principal, terms.term_months)
-    rate = _round_ratio(terms.annual_interest_rate_ppb * _CONTRACT_SCALE, 12 * MONEY_FACTOR_SCALE)
+        return round_ratio(terms.origination_principal, terms.term_months)
+    rate = round_ratio(terms.annual_interest_rate_ppb * _CONTRACT_SCALE, 12 * MONEY_FACTOR_SCALE)
     discount = _CONTRACT_SCALE
     for _ in range(terms.term_months):
-        discount = _round_ratio(discount * _CONTRACT_SCALE, _CONTRACT_SCALE + rate)
-    return _count(_round_ratio(terms.origination_principal * rate, _CONTRACT_SCALE - discount), "monthly payment")
+        discount = round_ratio(discount * _CONTRACT_SCALE, _CONTRACT_SCALE + rate)
+    return _count(round_ratio(terms.origination_principal * rate, _CONTRACT_SCALE - discount), "monthly payment")
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -110,7 +107,7 @@ class Mortgage:
         if not self.active or month <= self.terms.origination_month or not principal:
             return None
         interest = _count(
-            _round_ratio(principal * self.terms.annual_interest_rate_ppb, 12 * MONEY_FACTOR_SCALE), "interest"
+            round_ratio(principal * self.terms.annual_interest_rate_ppb, 12 * MONEY_FACTOR_SCALE), "interest"
         )
         total = min(self.monthly_payment, _count(principal + interest, "principal plus interest"))
         principal_paid = min(principal, max(0, total - interest))
@@ -121,7 +118,7 @@ class Mortgage:
             interest=interest,
             principal=principal_paid,
             total=total,
-            rental_interest=_round_ratio(interest * rented_fraction_ppb, MONEY_FACTOR_SCALE),
+            rental_interest=round_ratio(interest * rented_fraction_ppb, MONEY_FACTOR_SCALE),
         )
 
     def record_payment(self, payment: MortgagePayment, principal_after: int) -> None:

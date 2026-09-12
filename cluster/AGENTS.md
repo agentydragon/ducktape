@@ -189,6 +189,15 @@ caught by `//cluster/validation:test_crd_layering`.
 - Flat example: `k8s/aiquota/` — single flux-kustomization, all manifests at root
 - Grouped example: `k8s/langfuse/{namespace,secrets,db,app}/` — multi-layer with dependsOn
 
+## Kustomize configuration inputs
+
+Keep YAML configuration inputs as `.yaml` files; do not disguise YAML as `.txt` merely to avoid
+manifest validation. When a YAML file is consumed by `configMapGenerator` rather than applied as a
+Kubernetes resource, keep the `.yaml` extension, add a `cluster-manifest-ignored=true` entry in the
+root `.gitattributes`, and add the matching path to the kubeconform exclusion in
+`.pre-commit-config.yaml`. Mark the file itself as a `configMapGenerator` input so its purpose is
+clear to later readers.
+
 ## Reference Documentation
 
 Read on demand:

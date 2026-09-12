@@ -6,31 +6,39 @@ external harnesses remain clients rather than state owners.
 
 ## External Connections
 
-`identities: {personal: {enabled: true}}` configures static external authority names in the service
-settings YAML. `connections.ConnectionAuthority` persists runtime named Connections and immutable
-grant revisions in the existing database (migration `0008_external_connections`). The operator API
-exposes `GET /v1/operator/identities`, list/detail at `/v1/operator/connections`, `PATCH` of a name
-with `expected_version`, and `POST .../{id}/unbind` with `expected_version`.
+An external caller is a ServiceAccount labeled `agentplane.allegedly.works/action-caller: "true"`
+in one of `allowed_service_account_namespaces`; staging commits `claude-ai`, the principal for
+Connections enrolled from the Claude.ai MCP connector, next to its settings
+(`cluster/k8s/agentplane-staging/actions/serviceaccount-claude-ai.yaml`). Testing commits none:
+nothing there enrolls an external Connection, and the acceptance suite creates the objects it
+needs at run time. `policy_informer.PolicyInformer` watches them with a label selector into the `PolicyIndex`,
+and `connections.ConnectionAuthority` resolves grants against that index: a grant whose
+ServiceAccount is missing, unlabeled, or not yet listed by the watch refuses resolution.
+`ConnectionAuthority` persists runtime named Connections and immutable grant revisions in the
+existing database (migration `0008_external_connections`; `0014_action_policies` stores the
+ServiceAccount as a typed `caller` JSON value). The operator API exposes
+`GET /v1/operator/caller-service-accounts`, list/detail at `/v1/operator/connections`, `PATCH` of
+a name with `expected_version`, and `POST .../{id}/unbind` with `expected_version`.
 
 Only the internal OAuth adapter may call `bind`, `activate`, `resolve`, or grant-specific `revoke`;
-there is no HTTP endpoint accepting client-provided Identity/issuer/client/grant bindings. Bind is
-idempotent by its consent grant UUID, reconnect locks the Connection and ends the old grant, and
-activation is bounded by its deadline. The [app consent UI](../app/README.md) and
+there is no HTTP endpoint accepting client-provided ServiceAccount/issuer/client/grant bindings.
+Bind is idempotent by its consent grant UUID, reconnect locks the Connection and ends the old
+grant, and activation is bounded by its deadline. The [app consent UI](../app/README.md) and
 [OAuth adapter](#external-oauth) use this authority. An authenticated external adapter submits a resolved
 `Grant.provenance()` through the trusted `ActionService.submit(..., external_grant=...)` keyword,
 never a caller-envelope field. Admission stores the exact issuer/client/Connection/grant/revision
-snapshot atomically with the first request. Shared-Identity idempotent retries preserve the original
-snapshot, including after rename or reconnect. Existing workload requests retain a null snapshot.
-External submissions initially require human approval; existing synchronous automatic providers
-are not consulted for them.
+snapshot atomically with the first request. Shared-ServiceAccount idempotent retries preserve the
+original snapshot, including after rename or reconnect. Existing workload requests retain a null
+snapshot.
 
-`ActionStore` validates that snapshot against the original active grant and current configured
-Identity under the Connection row lock, both during admission and before the dispatch claim. A
-revoked, missing or disabled original authority prevents dispatch even if another grant now binds
-the same Identity: the unstarted Execution fails with `external_grant_not_authorized`, retaining
-the historical Decision. Already claimed work is not stopped. Receipt and executor projections carry
-the original snapshot; no credentials are stored in it. Migration `0009_action_external_grant`
-adds its nullable column without inventing provenance for pre-existing requests.
+`ActionStore` validates that snapshot against the original active grant and its ServiceAccount's
+current eligibility under the Connection row lock, both during admission and before the dispatch
+claim. A revoked, missing or unlabeled original authority prevents dispatch even if another grant
+now acts as the same ServiceAccount: the unstarted Execution fails with
+`external_grant_not_authorized`, retaining the historical Decision. Already claimed work is not
+stopped. Receipt and executor projections carry the original snapshot; no credentials are stored
+in it. Migration `0009_action_external_grant` adds its nullable column without inventing
+provenance for pre-existing requests.
 
 Action Service/PostgreSQL owns Connection authority; the integration app owns its operator UI.
 Configurable policies and the Thread lifecycle are separate from this authority.
@@ -70,10 +78,10 @@ the independently verified operator principal. The app enforces browser Origin/C
 the service compares the browser-binding hash and operator on every decision.
 
 Preview returns client presentation and expiry, not the held upstream URL or PKCE challenge.
-Allow stores the configured Identity and either a new name or an explicitly confirmed
+Allow stores the selected ServiceAccount and either a new name or an explicitly confirmed
 `ReconnectConnection` target/version, then releases only the stored framework
 URL. Deny returns no redirect. Exact decision retries recover the original response; conflicting
-or stale decisions cannot overwrite it. The configured Identity catalog supplies the UI picker.
+or stale decisions cannot overwrite it. The watched labeled ServiceAccounts supply the UI picker.
 The service validates the existing Connection version at decision and the binding authority checks
 it again when reserving the replacement at code exchange. A concurrent rename, unbind, activation,
 or competing reconnect requires fresh authorization rather than updating the reviewed version.
@@ -146,11 +154,12 @@ rather than an outbox.
 `waits.ActionWaiter` provides bounded, notification-driven receipt reads for transports that offer
 waiting. `WaitOptions` defaults to immediate reads and caps waits at 30 seconds, with `decision`
 and `terminal` predicates. Each ORM insertion of a canonical Action event emits a UUID-only
-PostgreSQL `NOTIFY` in the same transaction. `updates.ActionUpdates` owns one dedicated listener
-connection per service instance and coalesces wakeups per waiting request. It subscribes before
-rechecking durable state and releases registrations on every exit path. A lost listener fails
-bounded waits explicitly until the listener is restarted; it never falls back to timed queries.
-The consumer owns listener startup/shutdown, separate from the dispatch coordinator.
+PostgreSQL `NOTIFY` in the same transaction. Each `updates.ActionUpdates` owns one dedicated
+listener connection and coalesces wakeups per waiting request: the API holds one per service
+instance, and `push.ActionPushNotifier` opens a second when `web_push` is configured. It
+subscribes before rechecking durable state and releases registrations on every exit path. A lost
+listener fails bounded waits explicitly until the listener is restarted; it never falls back to
+timed queries. The consumer owns listener startup/shutdown, separate from the dispatch coordinator.
 
 ## Generic MCP frontend
 
@@ -159,10 +168,17 @@ the PostgreSQL update listener and MCP transport and unwinds both on shutdown/st
 This is the production `main.py` composition, not a sidecar, upstream-tool proxy, or second store.
 Requests use the same Sandbox bearer/egress placeholder substitution as the REST workload API.
 Operator/OIDC bearers remain confined to `/v1/operator/...`; configured external OAuth grants are
-also accepted by `/mcp`. No public ingress or harness deployment is added here. FastMCP's automatic Host/Origin
-guard protects loopback access without categorically rejecting requests carrying Origin; authority
-comes from the explicit validated bearer, not Origin or browser cookies. Browser CORS policy can
-be configured alongside future external exposure.
+also accepted by `/mcp`. Both are verified by FastMCP's own bearer layer (`CallerTokenVerifier` in
+`caller_auth.py`): a request without a bearer gets 401 with the protected-resource metadata
+challenge, a refused bearer 401 `invalid_token`, and tools receive the verified identity through
+FastMCP's `CurrentAccessToken` dependency, never from request state. Staging and testing publish
+`/mcp`, `/register`, `/authorize`, `/token`, `/revoke`, `/auth/callback`, and the OAuth well-known
+paths through an `HTTPRoute` at
+`agentplane-actions-{staging,testing}.allegedly.works`
+(`cluster/k8s/agentplane-{staging,testing}/actions/httproute.yaml`); REST and operator endpoints
+stay off that origin. FastMCP's automatic Host/Origin guard protects loopback access without
+categorically rejecting requests carrying Origin; authority comes from the explicit validated
+bearer, not Origin or browser cookies.
 Staging's current `egresspolicy-basic.yaml` permits the REST and `/mcp` paths with the same
 workload credential substitution. The protocol tests exercise substitution at that boundary.
 
@@ -171,15 +187,15 @@ workload credential substitution. The protocol tests exercise substitution at th
 The optional `oauth` settings enable FastMCP 3.4.4's DCR, discovery, authorization, callback,
 token and revocation routes in this process. `ActionsOAuthProxy` holds the validated upstream
 redirect in the durable enrollment authority and sends the browser to the integration app's
-consent page. The page chooses a new name or existing Connection and configured Identity; raw client
-registration and upstream login alone create no caller authority.
+consent page. The page chooses a new name or existing Connection and a labeled caller
+ServiceAccount; raw client registration and upstream login alone create no caller authority.
 
 After consent, the adapter verifies the upstream issuer/subject against the explicitly configured
 single-operator mapping, validates the pending binding, and atomically claims the enrollment
 before FastMCP consumes its code. Only one token family may issue per enrollment. Failures before
 the claim can be retried; an ambiguous failure after it requires fresh OAuth, not another issuance.
 Tokens contain an opaque grant reference. Every bearer admission and refresh resolves the current
-canonical grant; unbind/revocation cannot silently retarget an old token to a new Identity.
+canonical grant; unbind/revocation cannot silently retarget an old token to a new ServiceAccount.
 The local revocation endpoint ends the canonical grant independently of upstream IdP revocation;
 it does not forward local credentials upstream or revoke an upstream account. Encrypted SDK
 metadata remains bounded by its existing TTL after the grant is ended.
@@ -191,7 +207,7 @@ subjects are never assumed equal. `jwt_signing_key_file` supplies a stable key a
 database (`agentplane_oauth_kv`). Neither key is generated at startup. Runtime settings add no
 deployment, Authentik client, ingress, or browser CORS policy automatically.
 
-External MCP callers share receipt ownership/idempotency within the configured Identity while
+External MCP callers share receipt ownership/idempotency within the ServiceAccount while
 each Action retains immutable submitting Connection/grant/revision/issuer/client provenance.
 Production admission and dispatch use the same Connection authority. Sandbox bearers still use
 live workload validation and egress substitution; OAuth does not grant an operator bearer bypass.
@@ -260,16 +276,29 @@ executor, never a production default or factory option.
 An empty catalog starts with no offered actions. An explicitly configured missing/non-file YAML
 path aborts startup rather than silently selecting that empty catalog. Missing bindings and unsupported kinds fail
 settings validation without echoing input values. All bindings are validated before any server is
-launched. Credentialless MCP groups must connect and complete initial `tools/list` before HTTP
-serving or pending-request recovery; a failure aborts startup. OAuth-linked groups are different:
-an unlinked or expired provider starts unavailable, and its supervisor connects only after the
-shared linkage authority reports a current link. It keeps the group unavailable across connection,
-catalog, and authorization failures and creates a fresh FastMCP client for the next connection.
-The HTTP auth hook resolves the current linkage token for every request, so ordinary token refresh
-does not require restarting the service. Startup unwinds already-opened adapters, including a
-partially started adapter; shutdown stops service tasks before closing MCP clients/refresh tasks,
-then Kubernetes and database resources. After startup, catalog-refresh failures retain the landed
-adapter's unavailable-and-retry behavior.
+launched. All MCP groups start unavailable with independent supervisors; HTTP startup does not
+await a backend. Connection/initialization and discovery are bounded to 15 seconds; retries use
+exponential jitter (up to 30 seconds), reset after 30 seconds of stable availability. Mounted
+credentials and OAuth linkage recover without restarting the service. Invalid catalogs clear
+offered Actions and retry on the connected session; transport failures replace the client and
+retire that generation without cancelling concurrent calls. Connected sessions refresh periodically
+and on tools-list/linkage notifications. Group diagnostics expose replica-local lifecycle, safe
+reason, last successful discovery, consecutive failures, and next retry time.
+
+Authorized pending dispatches stay unclaimed while their group is unavailable; the existing
+recovery loop retries eligibility. Canonical grant checks precede the availability gate under
+the claim's row locks, so revocation still fails unstarted work. Removed groups/Actions and
+incompatible schemas remain terminal. New requests to known unavailable groups return an explicit
+unavailable error (HTTP 503), not unknown-action. Replica-local health is never stored in Postgres.
+
+Operators manage linkage at `GET /v1/operator/mcp-servers`
+(every configured server's status), `GET /v1/operator/mcp-servers/{server_id}/linkage`, and
+`POST .../linkage/start` and `POST .../linkage/disconnect`; the provider returns to the
+unauthenticated `GET /v1/mcp-linkage/callback?state&code`, which accepts only an unconsumed,
+unexpired flow matching `state`. Startup unwinds already-opened adapters, including a
+partially started adapter. Drain fences claims and reconnects but retains published connections
+through execution completion persistence. Shutdown joins supervisors and bounded connection cleanup
+after draining service tasks, then closes Kubernetes and database resources.
 
 Requests, execution payloads and durable rows use `action: {"group": "everything", "name": "echo"}`.
 The fields remain separate throughout discovery, validation and dispatch; no concatenated identity
@@ -277,18 +306,41 @@ or legacy name is accepted. Migration `0005_structured_action` removes the unuse
 without inventing a compatibility mapping. Adding the required replacement column fails
 transactionally if unexpected preexisting rows exist.
 
-## Credentialless upstream echo auto-allow
+## Action policy sets and bindings
 
-`fixture_auto_allow` defaults to absent. Staging opts in for the reviewed `everything` group,
-bound to the existing upstream image described in [the deployment note](../docs/mcp_fixture_choice.md).
-The provider allows only that group's `echo` Action with exactly one string `message` argument
-of at most 200 characters, from an authenticated in-scope Kubernetes Sandbox UID. Unavailable
-or missing discovery, other tools, extra arguments, and untrusted identities get no allow vote.
-The MCP adapter still checks the current backend schema. Deny dominance and human fallback
-remain unchanged; opting in does not enable the operator API or grant other upstream tools.
-No custom MCP server or image is built. The real staging test is
-`//x/agentplane/acceptance:test_mcp`: it tasks real agents with discovery, submission, event/result
-polling and a JSON report checked against the upstream echo result.
+`policies/resources` parses `ActionPolicySet` and `ActionPolicyBinding` (CRDs in
+`cluster/k8s/agentplane-crds/`) strictly: an unknown key or policy kind, an invalid JSON Schema, or
+a subject that is not exactly one of `serviceAccount`/`sandbox` makes the object an
+`InvalidResource`. `policy_informer` list-and-watches both kinds and the labeled caller
+ServiceAccounts in every `allowed_service_account_namespaces` entry into one `PolicyIndex`, and
+writes each set's and binding's `Ready` condition with `observedGeneration`, so `kubectl get`
+shows a refused edit and a writer can wait for the service to have seen a spec change. The
+status subresource is the informer's only write, and the Role in each environment's `actions/`
+manifests grants exactly that.
+
+Each policy kind is one module under `policies/` holding its wire model and its evaluator
+(`exact_actions`; `argument_schema` over the `jsonschema` package; `github_repository` and
+`github_public_repository` over the `github_policy` package the Haku console's GitHub policies
+also use, so the search-qualifier boundaries and the unauthenticated visibility lookup exist once);
+`policies/registry` assembles the `type`-discriminated union and dispatches evaluation after the
+shared "is the Action listed" gate. `policy_evaluation` holds `resolve_bindings` (the caller's
+unexpired valid bindings and the valid sets they name, nothing before sync) and
+`PolicySetDecisionProvider`, the one production `DecisionProvider`, which `main` builds with the
+`RepositoryVisibilityService` the `github_visibility` settings describe (`api_base_url`,
+`cache_ttl_seconds`); staging's network policy admits `api.github.com:443` for that lookup.
+`ActionService` builds the `DecisionContext` at admission with the typed caller (`SandboxCaller`
+from the workload principal, `ServiceAccountCaller` from the grant) and those bindings; the
+provider's allow carries `PolicyEvidence`, persisted on the Decision (migration
+`0014_action_policies`) and projected as `DecisionView.policy_evidence`, whose `matched.repository`
+names the repository a GitHub kind resolved and whether the public lookup confirmed it. Deny lists
+are parsed and reported but decide nothing yet. Dispatch is unchanged: it re-checks caller
+authority, never policy.
+
+The deployed proof is `//x/agentplane/acceptance:test_mcp`, which creates the set and binding
+for the Sandbox it launches through the Kubernetes API (see [the acceptance README](../acceptance/README.md))
+against the upstream `mcp-everything` image described in
+[the deployment note](../docs/mcp_fixture_choice.md); `test_runtime` drives the same production
+composition against a fake API server.
 
 ## Authentication boundaries
 
@@ -314,27 +366,34 @@ Its minimal v0 file-backed bearer adapter retains only a digest and is not a cla
 Kubernetes ServiceAccount lists are the final operator design.
 
 Migrations run separately through `:migrate`; the server verifies the migrated schema and never
-creates tables at startup. `:image` and `:migration_image` are separate OCI targets. The staging
-manifests give the service its own PostgreSQL cluster and credentials rather than coupling it to the
-integration app database.
+creates tables at startup. `:image` and `:migration_image` are separate OCI targets. Each deployed
+environment gives the service its own `actions` database and login role on the namespace's shared
+CNPG cluster `postgres` (`cluster/k8s/agentplane-staging/db/{postgres-cluster,databases}.yaml`),
+separate from the integration app's database.
 
 ## MCP executor transports
 
 `McpActionGroupExecutor.from_group` owns one persistent MCP connection for a group. Its
 `McpExecutorBinding.config` accepts a stdio launch (`command`, optional `args`, `env`, `cwd`, and
-`transport: stdio`) or a credentialless streamable-HTTP endpoint:
+`transport: stdio`) or a streamable-HTTP endpoint:
 
 ```yaml
 transport: streamable-http
 url: http://127.0.0.1:8000/mcp
+auth: none # or `oauth` with `server_id`, or `static_bearer` with `bearer_file`
 ```
 
 HTTP uses the pinned FastMCP `StreamableHttpTransport` and MCP session implementation, including
 JSON/SSE responses and session shutdown. Both transports use the same catalog refresh, live schema
 validation, safe tool-error mapping, and ambiguous-call failure path; a failed `tools/call` transport
-exchange is not retried. HTTP config rejects userinfo, URL queries/fragments, launch fields, and authentication
-or header settings. The production composition uses this same transport selection. OAuth and
-credential profiles are outside this seam. Invalid discovered schemas or duplicate supported tool names
+exchange is not retried. HTTP config rejects userinfo, URL queries/fragments, launch fields, and
+header settings. `auth: none` sends no credentials. `auth: oauth` names a configured `mcp_servers`
+linkage through `server_id`; `from_group_with_linkage` attaches an `httpx` auth hook that resolves
+that linkage's current access token on every request, and the group stays unavailable until the
+linkage authority reports a current link ([§ Action catalog](#action-catalog)). `auth: static_bearer`
+reads `bearer_file`, a mounted secret, once when the transport is built and sends it as the bearer
+on every request; an unreadable or empty file makes the group unavailable. The production
+composition uses this same transport selection. Invalid discovered schemas or duplicate supported tool names
 make the entire group unavailable, clearing stale Actions. Invalid live schemas are refused before
 `tools/call`. Production startup and shutdown report only the group and failure category, not raw
 transport exceptions or endpoint values.
@@ -344,8 +403,11 @@ transport exceptions or endpoint values.
 `operator_oidc` selects pinned RS256 JWT verification for the Action audience. Authentik's target
 provider policy governs who can obtain that audience; the service does not maintain a second subject
 allowlist. It is mutually exclusive with the legacy file-backed adapter; there is no fallback. The
-destination records the actual token issuer and subject, not a shared BFF identity. Deployment is
-still disabled until the explicit Authentik federation target is configured. See
+destination records the actual token issuer and subject, not a shared BFF identity. Both deployed
+environments set `AGENTPLANE_ACTIONS_OPERATOR_OIDC` from the `operator-oidc` key of their
+`agentplane-action-federation` ConfigMap
+(`cluster/k8s/agentplane-{staging,testing}/actions/configmap-action-federation.yaml`); staging
+targets the Authentik `agentplane-actions` provider. See
 [`../docs/operator_federation.md`](../docs/operator_federation.md) for settings and test evidence.
 
 ## Action live updates and approval Web Push
@@ -363,8 +425,13 @@ The optional `web_push` configuration enables browser subscription storage and b
 - `public_base_url`: integration-app origin used for Action links;
 - `allowed_push_hosts`: exact reviewed HTTPS browser push-service hostnames.
 
-No push configuration is enabled by this code change. Browser subscriptions are registered through
-operator-authenticated `/v1/operator/push/subscriptions`; the integration app forwards its browser
+Staging enables it (`cluster/k8s/agentplane-staging/actions/settings.yaml`): the VAPID key comes
+from the SOPS Secret `agentplane-staging-web-push-vapid` through
+`AGENTPLANE_ACTIONS_WEB_PUSH__PRIVATE_KEY_PEM`, `public_base_url` is the staging app origin, and
+the allowed hosts are FCM and Mozilla's push service. Testing configures no `web_push`; its
+registration route answers 503. Browser subscriptions are registered through operator-authenticated
+`POST /v1/operator/push/subscriptions`, listed by `GET`, and removed by `DELETE ...?endpoint=`
+(404 when the caller holds no such subscription); the integration app forwards its browser
 management requests through federation, so Authentik controls access at registration and on later
 operator API requests. Stored subscriptions are notification-only and do not confer decision
 authority. Background delivery has no operator bearer with which to recheck Authentik policy, so

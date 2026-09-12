@@ -14,7 +14,7 @@ from typing import Literal
 import numpy as np
 
 from finance.augur.model.series import InflationKey, SecurityKey
-from finance.augur.rust.invocation import write_prepared_input
+from finance.augur.sim.artifacts import write_prepared_input
 from finance.augur.sim.compiler.execution import compile_run
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.prepared import CompiledRun

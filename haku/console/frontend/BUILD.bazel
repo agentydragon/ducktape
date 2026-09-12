@@ -994,6 +994,11 @@ spa_bundle(
 # AGENTS.md). Browser rendering runs on the RBE worker's display stack — a local Bazel
 # can't fetch repos in web sessions — so it is a js_test, not a `bb run` binary. It is a
 # generator, not a pixel-diff gate: it passes as long as every scene renders.
+#
+# medium: 58 shots (29 scenes x light/dark) split four ways, measured 26-35s per shard against 78s
+# for the whole sweep on one browser (invocations d7a23bd4 and 2759e0d4). `--test_filter=<stem>`
+# renders one shot -- 11s rather than the full sweep -- where before there was no way to ask for
+# less than all 58.
 
 ts_library(
     name = "screenshot_harness_lib",
@@ -1062,13 +1067,14 @@ filegroup(
 
 js_test(
     name = "screenshots",
-    size = "large",
+    size = "medium",
     data = [
         "screenshots/mock_haku_ui.html",
         ":screenshot_harness_js",
         ":styles_css",
         "//util/testing/frontend_visual:capture",
         "//util/testing/frontend_visual:launcher",
+        "//util/testing/frontend_visual:sharding",
         "//util/testing/frontend_visual:visual_review_manifest",
         "@playwright_browsers//:chromium-headless-shell",
     ],
@@ -1083,9 +1089,11 @@ js_test(
         ":screenshot_harness_js",
         "//util/testing/frontend_visual:capture",
         "//util/testing/frontend_visual:launcher",
+        "//util/testing/frontend_visual:sharding",
         "//util/testing/frontend_visual:visual_review_manifest",
         "@playwright_browsers//:chromium-headless-shell",
     ],
+    shard_count = 4,
 )
 
 # ── Unit tests ─────────────────────────────────────────────────────────────────
@@ -1433,8 +1441,6 @@ vitest_bin.vitest_test(
         "//haku/console/frontend/tool_rendering/grocy:requests_test",
         "//haku/console/frontend/tool_rendering/grocy:responses_test",
         "//haku/console/frontend/tool_rendering/haku_routine:requests_test",
-        "//haku/console/frontend/tool_rendering/hostexec:requests_test",
-        "//haku/console/frontend/tool_rendering/hostexec:responses_test",
         "//haku/console/frontend/tool_rendering/kubectl:requests_test",
         "//haku/console/frontend/tool_rendering/tana:requests_test",
     ],

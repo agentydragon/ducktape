@@ -3,8 +3,7 @@
 Status: **deferred access-model notes, not on the current Action implementation path.** The next
 concrete work is the Action schema and Executor wiring gates in [`task_dag.md`](task_dag.md). This
 file preserves the delegated-versus-brokered vocabulary for choosing the first real adapter without
-turning that adapter into a broad identity, grant, or privilege framework. Companion to
-[`async_approvals.md`](async_approvals.md), which covers the still-open delivery path.
+turning that adapter into a broad identity, grant, or privilege framework.
 
 ## Two base models
 
@@ -95,7 +94,7 @@ of the unary `runner.RunRequest.steps[].run` protobuf field can keep the real ke
 Sandbox, but it delivers the key to agent-controlled code on the hosted runner; that is a weaker
 boundary, not full credentiallessness. The implemented transport contract is canonical in the
 [egress SPEC](../egress/SPEC.md); the candidate rewrite and its required evidence are in
-[`buildbuddy_remote_auth.md`](buildbuddy_remote_auth.md).
+[`buildbuddy_remote_auth.md`](../docs/buildbuddy_remote_auth.md).
 
 ## Choosing
 

@@ -16,9 +16,9 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import jsonschema
@@ -31,9 +31,7 @@ from x.agentplane.action_service.models import (
     ActionRequestView,
     ActionState,
     CancellationResult,
-    DecisionContext,
     DecisionInput,
-    DecisionProvider,
     ExecutionClaim,
     ExecutionResult,
     ExecutionState,
@@ -42,9 +40,14 @@ from x.agentplane.action_service.models import (
     Principal,
     ProviderOutcome,
     ProviderVerdict,
+    SandboxCaller,
+    ServiceAccountCaller,
     UnknownOutcomeReason,
     Verdict,
 )
+from x.agentplane.action_service.policy_evaluation import resolve_bindings
+from x.agentplane.action_service.policy_informer import PolicyIndex
+from x.agentplane.action_service.providers import DecisionContext, DecisionProvider
 
 # types-jsonschema stubs import referencing; the mypy aspect needs that typed package directly.
 # gazelle:include_dep @pypi//referencing
@@ -86,6 +89,16 @@ class InvalidActionArgumentsError(Exception):
     """Arguments do not match the advertised Action schema; nothing was persisted."""
 
 
+def _caller(
+    principal: Principal, external_grant: ExternalGrantProvenance | None
+) -> SandboxCaller | ServiceAccountCaller:
+    """The typed caller providers see: the grant's ServiceAccount, else the Sandbox the principal
+    was minted for. Admission already refused any grant a ServiceAccount does not back."""
+    if external_grant is None:
+        return SandboxCaller.from_principal(principal)
+    return ServiceAccountCaller(service_account=external_grant.caller, grant_revision=external_grant.revision)
+
+
 class _StoreBackedLease:
     """The seam a future out-of-process worker would present over the wire, called in-process for v0."""
 
@@ -117,6 +130,8 @@ class ActionService:
         executors: Mapping[str, Executor],
         *,
         providers: Sequence[DecisionProvider] = (),
+        policies: PolicyIndex | None = None,
+        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
         provider_timeout_seconds: float = DEFAULT_PROVIDER_TIMEOUT_SECONDS,
         executor_id: str | None = None,
         lease_duration: timedelta = DEFAULT_LEASE_DURATION,
@@ -125,10 +140,12 @@ class ActionService:
         executor_health_timeout: timedelta = DEFAULT_EXECUTOR_HEALTH_TIMEOUT,
         dispatch_poll_interval: timedelta = DEFAULT_DISPATCH_POLL_INTERVAL,
         drain_timeout: timedelta = DEFAULT_DRAIN_TIMEOUT,
+        on_drain: Callable[[], None] | None = None,
         stop_timeout: timedelta = DEFAULT_STOP_TIMEOUT,
     ) -> None:
         if lease_duration <= timedelta(0) or drain_timeout < timedelta(0) or stop_timeout <= timedelta(0):
             raise ValueError("lease/stop timeouts must be positive and drain timeout nonnegative")
+        self._on_drain = on_drain
         self._drain_timeout = drain_timeout
         self._stop_timeout = stop_timeout
         self._drain_deadline: float | None = None
@@ -137,6 +154,9 @@ class ActionService:
         self._catalog = catalog
         self._executors = dict(executors)
         self._providers = tuple(providers)
+        # None: this deployment watches no policy objects, so every caller is human-only.
+        self._policies = policies
+        self._clock = clock
         self._provider_timeout_seconds = provider_timeout_seconds
         self._executor_id = executor_id or f"executor-{uuid4()}"
         self._lease_duration = lease_duration
@@ -172,6 +192,8 @@ class ActionService:
         # Claims already awaiting the database remain in _tasks and belong to the drain.
         if self._drain_deadline is None:
             self._drain_deadline = asyncio.get_running_loop().time() + self._drain_timeout.total_seconds()
+            if self._on_drain is not None:
+                self._on_drain()
             self._close_task = asyncio.create_task(self._close(), name="action-service-drain")
 
     async def close(self) -> None:
@@ -218,9 +240,9 @@ class ActionService:
         except jsonschema.ValidationError:
             raise InvalidActionArgumentsError("arguments do not match the advertised Action schema") from None
         view, created = await self._store.submit(body, principal, external_grant=external_grant)
-        if not created or external_grant is not None:
+        if not created:
             return view
-        return await self._auto_decide(view, body, principal)
+        return await self._auto_decide(view, body, principal, external_grant)
 
     def _resolve_executor(self, identity: ActionIdentity) -> Executor:
         group_key, action_key = identity.group, identity.name
@@ -234,13 +256,23 @@ class ActionService:
         return executor
 
     async def _auto_decide(
-        self, view: ActionRequestView, body: ActionRequestInput, principal: Principal
+        self,
+        view: ActionRequestView,
+        body: ActionRequestInput,
+        principal: Principal,
+        external_grant: ExternalGrantProvenance | None,
     ) -> ActionRequestView:
-        """Evaluate configured synchronous providers; defer to the human path on no decisive outcome."""
+        """Evaluate configured synchronous providers once, against the policy objects as they stand
+        now; defer to the human path on no decisive outcome."""
         if not self._providers:
             return view
+        caller = _caller(principal, external_grant)
         context = DecisionContext(
-            request_id=view.id, action=body.action, arguments=body.arguments, caller_principal=principal
+            request_id=view.id,
+            action=body.action,
+            arguments=body.arguments,
+            caller=caller,
+            bindings=resolve_bindings(self._policies, caller, self._clock()) if self._policies is not None else (),
         )
         vote = await self._evaluate_providers(context)
         if vote is None:
@@ -255,6 +287,7 @@ class ActionService:
                 expected_version=view.version,
                 reason_code=vote.outcome.reason_code,
                 reason_description=vote.outcome.reason_description,
+                policy_evidence=vote.outcome.evidence,
             )
         except ActionConflictError:
             # A human Decision or caller cancellation may commit during provider evaluation.
@@ -369,11 +402,21 @@ class ActionService:
                 logger.warning("lease sweep failed; will retry", exc_info=True)
             await asyncio.sleep(self._lease_sweep_interval.total_seconds())
 
+    def _can_dispatch(self, identity: ActionIdentity) -> bool:
+        if self.draining:
+            return False
+        group = self._catalog.groups.get(identity.group)
+        # Removed groups/actions are terminal, not an outage to park indefinitely.
+        return group is None or identity.group not in self._executors or group.available
+
     async def _dispatch_once(self, request_id: UUID) -> None:
         if self.draining:
             return
         claim = await self._store.claim_execution(
-            request_id, executor_id=self._executor_id, lease_duration=self._lease_duration
+            request_id,
+            executor_id=self._executor_id,
+            lease_duration=self._lease_duration,
+            can_dispatch=self._can_dispatch,
         )
         if claim is None:
             return

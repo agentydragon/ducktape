@@ -154,7 +154,7 @@ auto_approval_policies:
   # Any repository confirmed genuinely public — not bounded to a fixed owner/repo allowlist.
   # `type: github_public_repository` positively confirms the target repository's visibility with a
   # live, unauthenticated GitHub API call before approving (see
-  # haku/console/auto_approval/github.py) rather than inferring "public" from the absence
+  # github_policy/repository.py) rather than inferring "public" from the absence
   # of a restriction: the operator's GitHub OAuth token behind this connection can also reach
   # private repos it can see (agentydragon/gaffer-private included), so a bare owner/repo match
   # here would let a call read any of those just by naming it. The target repository is derived
@@ -563,6 +563,13 @@ mcp:
           client_registration:
             kind: dynamic
             client_name: Haku Console
+    ssh:
+      id: ssh
+      backend:
+        kind: remote_mcp
+        url: http://ssh-mcp.ssh-mcp.svc.cluster.local:8080/mcp
+        auth:
+          kind: static_bearer
     # Writable Home Assistant management through homeassistant-ai/ha-mcp. The upstream Home
     # Assistant token remains in the ha-mcp pod; haku-console authenticates with a static bearer
     # reflected from ha-mcp/ha-mcp-bearer, exactly like tana-rw. Read tools
@@ -653,47 +660,3 @@ mcp:
         credential:
           kind: operator_connection
           connection: google_calendar
-    # `hostexec` (haku/console/tools/hostexec.py): run an approved shell command on an
-    # operator machine (wyrm2/rugged/atlas) under the operator's OWN
-    # Authentik identity. There is no standing credential: `operator_login_identity` makes each
-    # call resolve the acting Operator's stored console-login token (captured via
-    # offline_access) and exchange it (jwt-bearer) for a short-lived, single-use, per-host
-    # token that hostexecd verifies against Authentik's JWKS. This catalog entry only selects
-    # the auth mode; the in-scope hosts + their exec URLs / audiences are the top-level
-    # `hostexec:` block below. Every call is manual-approval by default; see
-    # haku/hostexec/README.md and haku/console/auto_approval/hostexec.py.
-    hostexec:
-      id: hostexec
-      backend:
-        kind: in_process
-        credential:
-          kind: operator_login_identity
-# In-scope operator machines for the `hostexec` in-process server (catalog entry above). Non-secret
-# deploy topology. Each host maps to an outbound daemon identity; no node listener or address is
-# configured in the console.
-# `audience_client_id` is the Authentik `hostexec-<host>` provider the operator's token is exchanged
-# for (tf/gitops/agent-machine-access/hostexec.tf).
-hostexec:
-  hosts:
-    wyrm2:
-      daemon_id: wyrm2
-      audience_client_id: hostexec-wyrm2
-    rugged:
-      daemon_id: rugged
-      audience_client_id: hostexec-rugged
-    # atlas: Proxmox VE (Debian), not NixOS — hostexecd is installed by the ansible/roles/hostexecd
-    # role (ansible/atlas.yaml) rather than nix/nixos/modules/hostexecd.nix.
-    atlas:
-      daemon_id: atlas
-      audience_client_id: hostexec-atlas
-node_daemons:
-  daemons:
-    wyrm2:
-      display_name: wyrm2
-      backends: [hostexec]
-    rugged:
-      display_name: rugged
-      backends: [hostexec]
-    atlas:
-      display_name: atlas
-      backends: [hostexec]

@@ -1,221 +1,109 @@
-import gzip
-import hashlib
-import io
-import tarfile
-from collections.abc import Callable
-from typing import cast
-from unittest.mock import AsyncMock
+from pathlib import Path
 
-import httpx
+import pathspec
+import pygit2
 import pytest
 import pytest_bazel
 
-from util.kubernetes import CustomObjectsClient
-from x.agentplane.indexing.source import ArchiveLimits, FluxSource, SourceNotReadyError, read_archive
+from x.agentplane.indexing.conftest import Upstream
+from x.agentplane.indexing.source import GitSource, SnapshotLimits
+
+NO_IGNORE = pathspec.GitIgnoreSpec.from_lines([])
+SUBMODULE_COMMIT = "1" * 40
 
 
-def archive_bytes(entries: list[tuple[str, bytes, bytes]]) -> bytes:
-    output = io.BytesIO()
-    with tarfile.open(fileobj=output, mode="w:gz") as archive:
-        for name, contents, kind in entries:
-            member = tarfile.TarInfo(name)
-            member.type = kind
-            member.size = len(contents)
-            if kind == tarfile.SYMTYPE:
-                member.linkname = "../../outside"
-            archive.addfile(member, io.BytesIO(contents))
-    return output.getvalue()
-
-
-@pytest.fixture
-def archive() -> bytes:
-    return archive_bytes(
-        [
-            ("./src/", b"", tarfile.DIRTYPE),
-            ("./src/example.py", b"print('test')\n", tarfile.REGTYPE),
-            ("empty.txt", b"", tarfile.REGTYPE),
-            ("symlink", b"", tarfile.SYMTYPE),
-        ]
+def source(
+    upstream: Upstream, path: Path, *, ignore: pathspec.GitIgnoreSpec = NO_IGNORE, limits: SnapshotLimits | None = None
+) -> GitSource:
+    return GitSource(
+        url=upstream.url, branch="main", path=path, credentials=None, ignore=ignore, limits=limits or SnapshotLimits()
     )
 
 
-@pytest.fixture
-def custom_objects(archive: bytes) -> AsyncMock:
-    api = AsyncMock(spec=CustomObjectsClient)
-    api.get_namespaced_custom_object.return_value = {
-        "metadata": {"generation": 2},
-        "spec": {"url": "https://git.test/example.git"},
-        "status": {
-            "observedGeneration": 2,
-            "conditions": [{"type": "Ready", "status": "True"}],
-            "artifact": {
-                "url": "http://source.test/snapshot.tar.gz",
-                "digest": "sha256:" + hashlib.sha256(archive).hexdigest(),
-                "revision": "test@sha1:0123456789",
-            },
-        },
+async def test_snapshot_reads_regular_files_only(upstream: Upstream, tmp_path: Path) -> None:
+    revision = upstream.commit(
+        {"src/example.py": b"print('test')\n", "empty.txt": b"", "bin/tool": b"#!/bin/sh\n"},
+        executable=frozenset({"bin/tool"}),
+        symlinks={"link": "empty.txt"},
+        submodules={"vendor/dependency": SUBMODULE_COMMIT},
+    )
+    snapshot = await source(upstream, tmp_path / "clone").snapshot(
+        current_tree_id=None, current_revision=None, current_repository_url=None
+    )
+    assert snapshot is not None
+    assert snapshot.files == {"src/example.py": b"print('test')\n", "empty.txt": b"", "bin/tool": b"#!/bin/sh\n"}
+    assert snapshot.revision == revision
+    assert snapshot.tree_id == upstream.tree_id(revision)
+    assert snapshot.repository_url == upstream.url
+    assert not (tmp_path / "clone" / "src").exists(), "the clone is bare"
+
+
+async def test_skip_unchanged_and_follow_new_commits(upstream: Upstream, tmp_path: Path) -> None:
+    upstream.commit({"doc.txt": b"one\n", "gone.txt": b"bye\n"})
+    reader = source(upstream, tmp_path / "clone")
+    first = await reader.snapshot(current_tree_id=None, current_revision=None, current_repository_url=None)
+    assert first is not None
+    current = {
+        "current_tree_id": first.tree_id,
+        "current_revision": first.revision,
+        "current_repository_url": first.repository_url,
     }
-    return api
+    assert await reader.snapshot(**current) is None
+    revision = upstream.commit({"doc.txt": b"two\n", "gone.txt": None})
+    second = await reader.snapshot(**current)
+    assert second is not None
+    assert second.revision == revision
+    assert second.files == {"doc.txt": b"two\n"}
 
 
-def test_read_archive(archive: bytes) -> None:
-    assert read_archive(archive, ArchiveLimits()) == {"src/example.py": b"print('test')\n", "empty.txt": b""}
-
-
-@pytest.mark.parametrize("path", ["../escape", "/absolute", "nested/../../escape", "bad\\path", "."])
-def test_reject_unsafe_paths(path: str) -> None:
-    with pytest.raises(ValueError, match="archive path"):
-        read_archive(archive_bytes([(path, b"contents", tarfile.REGTYPE)]), ArchiveLimits())
-
-
-def test_reject_duplicate_normalized_paths() -> None:
-    with pytest.raises(ValueError, match="duplicate"):
-        read_archive(
-            archive_bytes([("./same", b"one", tarfile.REGTYPE), ("same", b"two", tarfile.REGTYPE)]), ArchiveLimits()
-        )
-
-
-@pytest.mark.parametrize("kind", [tarfile.LNKTYPE, tarfile.CHRTYPE, tarfile.FIFOTYPE])
-def test_reject_special_entries(kind: bytes) -> None:
-    with pytest.raises(ValueError, match="Unsupported"):
-        read_archive(archive_bytes([("special", b"", kind)]), ArchiveLimits())
+async def test_ignore_patterns_prune_directories_and_match_globs(upstream: Upstream, tmp_path: Path) -> None:
+    upstream.commit(
+        {
+            "props/specimens/x/y.txt": b"copy\n",
+            "notes/blob.gz": b"\x1f\x8b",
+            "keep.txt": b"keep\n",
+            "props/a.md": b"a\n",
+        }
+    )
+    snapshot = await source(
+        upstream, tmp_path / "clone", ignore=pathspec.GitIgnoreSpec.from_lines(["props/specimens/", "*.gz"])
+    ).snapshot(current_tree_id=None, current_revision=None, current_repository_url=None)
+    assert snapshot is not None
+    assert snapshot.files == {"keep.txt": b"keep\n", "props/a.md": b"a\n"}
 
 
 @pytest.mark.parametrize(
-    "limits",
+    ("limits", "message"),
     [
-        ArchiveLimits(compressed_bytes=1),
-        ArchiveLimits(expanded_bytes=1024),
-        ArchiveLimits(file_bytes=1),
-        ArchiveLimits(entries=1),
+        (SnapshotLimits(file_bytes=3), "File exceeds byte limit"),
+        (SnapshotLimits(total_bytes=5), "total byte limit"),
+        (SnapshotLimits(entries=1), "entry limit"),
     ],
 )
-def test_archive_limits(archive: bytes, limits: ArchiveLimits) -> None:
-    with pytest.raises(ValueError, match="limit"):
-        read_archive(archive, limits)
-
-
-def test_bounds_decompression_before_processing_tar_headers() -> None:
-    with pytest.raises(ValueError, match="expanded byte limit"):
-        read_archive(gzip.compress(b"\0" * 100_000), ArchiveLimits(expanded_bytes=1024))
-
-
-@pytest.fixture
-def source_factory(custom_objects: AsyncMock) -> Callable[[httpx.AsyncClient, ArchiveLimits], FluxSource]:
-    def create(http: httpx.AsyncClient, limits: ArchiveLimits) -> FluxSource:
-        return FluxSource(
-            custom_objects=cast(CustomObjectsClient, custom_objects),
-            http=http,
-            namespace="test-flux",
-            name="test-repository",
-            limits=limits,
-        )
-
-    return create
-
-
-async def test_fetch_snapshot_and_skip_unchanged(
-    archive: bytes, custom_objects: AsyncMock, source_factory: Callable[[httpx.AsyncClient, ArchiveLimits], FluxSource]
+async def test_limits_reject_the_whole_snapshot(
+    upstream: Upstream, tmp_path: Path, limits: SnapshotLimits, message: str
 ) -> None:
-    requests: list[httpx.Request] = []
-
-    def serve(request: httpx.Request) -> httpx.Response:
-        requests.append(request)
-        assert request.headers["accept-encoding"] == "identity"
-        return httpx.Response(200, stream=httpx.ByteStream(archive))
-
-    async with httpx.AsyncClient(transport=httpx.MockTransport(serve)) as http:
-        source = source_factory(http, ArchiveLimits())
-        snapshot = await source.snapshot(current_digest=None)
-        assert snapshot is not None
-        assert snapshot.files == {"src/example.py": b"print('test')\n", "empty.txt": b""}
-        assert snapshot.revision == "test@sha1:0123456789"
-        assert snapshot.repository_url == "https://git.test/example.git"
-        assert (
-            await source.snapshot(
-                current_digest=snapshot.digest,
-                current_revision=snapshot.revision,
-                current_repository_url=snapshot.repository_url,
-            )
-            is None
-        )
-        assert len(requests) == 1
-        custom_objects.get_namespaced_custom_object.return_value["status"]["artifact"]["revision"] = (
-            "test@sha1:9876543210"
-        )
-        next_snapshot = await source.snapshot(
-            current_digest=snapshot.digest,
-            current_revision=snapshot.revision,
-            current_repository_url=snapshot.repository_url,
-        )
-        assert next_snapshot is not None
-        assert next_snapshot.revision == "test@sha1:9876543210"
-        assert next_snapshot.files == snapshot.files
-        custom_objects.get_namespaced_custom_object.return_value["spec"]["url"] = "https://git.test/moved.git"
-        relocated = await source.snapshot(
-            current_digest=next_snapshot.digest,
-            current_revision=next_snapshot.revision,
-            current_repository_url=next_snapshot.repository_url,
-        )
-        assert relocated is not None
-        assert relocated.repository_url == "https://git.test/moved.git"
-        custom_objects.get_namespaced_custom_object.assert_awaited_with(
-            group="source.toolkit.fluxcd.io",
-            version="v1",
-            namespace="test-flux",
-            plural="gitrepositories",
-            name="test-repository",
+    upstream.commit({"a.txt": b"aaaa", "b.txt": b"bb"})
+    with pytest.raises(ValueError, match=message):
+        await source(upstream, tmp_path / "clone", limits=limits).snapshot(
+            current_tree_id=None, current_revision=None, current_repository_url=None
         )
 
 
-@pytest.mark.parametrize("problem", ["missing", "failed", "stale"])
-async def test_unready_source_does_not_download(
-    custom_objects: AsyncMock, source_factory: Callable[[httpx.AsyncClient, ArchiveLimits], FluxSource], problem: str
-) -> None:
-    resource = custom_objects.get_namespaced_custom_object.return_value
-    match problem:
-        case "missing":
-            resource["status"].pop("artifact")
-        case "failed":
-            resource["status"]["conditions"] = [{"type": "Ready", "status": "False", "message": "fetch failed"}]
-        case "stale":
-            resource["metadata"]["generation"] = 3
-    async with httpx.AsyncClient(
-        transport=httpx.MockTransport(lambda request: pytest.fail("unexpected download"))
-    ) as http:
-        with pytest.raises(SourceNotReadyError):
-            await source_factory(http, ArchiveLimits()).snapshot(current_digest=None)
-
-
-async def test_reject_digest_mismatch(source_factory: Callable[[httpx.AsyncClient, ArchiveLimits], FluxSource]) -> None:
-    async with httpx.AsyncClient(
-        transport=httpx.MockTransport(lambda request: httpx.Response(200, stream=httpx.ByteStream(b"wrong")))
-    ) as http:
-        with pytest.raises(ValueError, match="digest mismatch"):
-            await source_factory(http, ArchiveLimits()).snapshot(current_digest=None)
-
-
-async def test_bound_download(
-    archive: bytes, source_factory: Callable[[httpx.AsyncClient, ArchiveLimits], FluxSource]
-) -> None:
-    async with httpx.AsyncClient(
-        transport=httpx.MockTransport(lambda request: httpx.Response(200, stream=httpx.ByteStream(archive)))
-    ) as http:
-        with pytest.raises(ValueError, match="compressed byte limit"):
-            await source_factory(http, ArchiveLimits(compressed_bytes=1)).snapshot(current_digest=None)
-
-
-async def test_reject_http_content_encoding(
-    source_factory: Callable[[httpx.AsyncClient, ArchiveLimits], FluxSource],
-) -> None:
-    def encoded_response(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
-            200, headers={"Content-Encoding": "gzip"}, stream=httpx.ByteStream(b"unread encoded body")
-        )
-
-    async with httpx.AsyncClient(transport=httpx.MockTransport(encoded_response)) as http:
-        with pytest.raises(ValueError, match="identity content encoding"):
-            await source_factory(http, ArchiveLimits()).snapshot(current_digest=None)
+async def test_relocated_remote_refetches_from_the_new_url(upstream: Upstream, tmp_path: Path) -> None:
+    upstream.commit({"doc.txt": b"old home\n"})
+    first = await source(upstream, tmp_path / "clone").snapshot(
+        current_tree_id=None, current_revision=None, current_repository_url=None
+    )
+    assert first is not None
+    moved = Upstream(pygit2.init_repository(str(tmp_path / "moved"), initial_head="main"))
+    moved.commit({"doc.txt": b"new home\n"})
+    second = await source(moved, tmp_path / "clone").snapshot(
+        current_tree_id=first.tree_id, current_revision=first.revision, current_repository_url=first.repository_url
+    )
+    assert second is not None
+    assert second.repository_url == moved.url
+    assert second.files == {"doc.txt": b"new home\n"}
 
 
 if __name__ == "__main__":

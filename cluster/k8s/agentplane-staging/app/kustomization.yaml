@@ -12,6 +12,7 @@ resources:
   - rolebinding-agentplane-app.yaml
   - clusterrole-agentplane-staging-app-token-reviewer.yaml
   - deployment-agentplane-app.yaml
+  - poddisruptionbudget-agentplane-app.yaml
   - service-agentplane-app.yaml
   - httproute.yaml
   - networkpolicy.yaml

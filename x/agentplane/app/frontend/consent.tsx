@@ -13,7 +13,7 @@ import {
 } from "@mantine/core";
 import { useEffect, useState } from "react";
 
-import { displayableError } from "./client";
+import { displayableError, serviceAccountKey } from "./client";
 import { consentService, type ConsentDecision, type ConsentPreview, type ConsentService } from "./consent_client";
 
 function continueAuthorization(url: string): void {
@@ -32,7 +32,7 @@ export function ConnectionConsent({
 }): JSX.Element {
   const [preview, setPreview] = useState<ConsentPreview | null>(null);
   const [name, setName] = useState("");
-  const [identity, setIdentity] = useState("");
+  const [account, setAccount] = useState("");
   const [connectionId, setConnectionId] = useState("new");
   const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,7 +53,11 @@ export function ConnectionConsent({
             ? value.attempted_decision.connection.display_name
             : (value.enrollment.client_name ?? "")
         );
-        setIdentity(value.attempted_decision?.verdict === "allow" ? value.attempted_decision.identity_id : "");
+        setAccount(
+          value.attempted_decision?.verdict === "allow"
+            ? serviceAccountKey(value.attempted_decision.service_account)
+            : ""
+        );
         if (value.attempted_decision?.verdict === "allow" && value.attempted_decision.connection.kind === "reconnect") {
           setConnectionId(value.attempted_decision.connection.connection_id);
           setConfirmed(true);
@@ -96,7 +100,8 @@ export function ConnectionConsent({
     );
   }
 
-  const identities = Object.entries(preview?.identities ?? {}).filter(([, value]) => value.enabled);
+  const accounts = preview?.service_accounts ?? [];
+  const selectedAccount = accounts.find((candidate) => serviceAccountKey(candidate) === account);
   const existing = preview?.connections.find((connection) => connection.id === connectionId);
   const reviewedVersion =
     attempt?.verdict === "allow" && attempt.connection.kind === "reconnect"
@@ -171,13 +176,15 @@ export function ConnectionConsent({
                     </Text>
                     {existing.grants.map((grant) => (
                       <Text key={grant.id} size="sm" style={{ overflowWrap: "anywhere" }}>
-                        Identity {grant.identity_id} · {grant.status} · client {grant.client_id} · issuer {grant.issuer}
+                        Acts as {serviceAccountKey(grant.caller)} · {grant.status} · client {grant.client_id} · issuer{" "}
+                        {grant.issuer}
                       </Text>
                     ))}
                     <Text size="sm">
-                      Fresh OAuth replaces this Connection’s authority with Identity {identity || "(choose below)"}. Old
-                      grants are revoked when token exchange reserves the replacement, even if issuance then fails. Old
-                      tokens never switch Identity. History is preserved; already claimed work is not stopped.
+                      Fresh OAuth replaces this Connection’s authority with ServiceAccount {account || "(choose below)"}
+                      . Old grants are revoked when token exchange reserves the replacement, even if issuance then
+                      fails. Old tokens never switch ServiceAccount. History is preserved; already claimed work is not
+                      stopped.
                     </Text>
                     <Checkbox
                       label="I confirm replacing this Connection’s authority"
@@ -190,27 +197,31 @@ export function ConnectionConsent({
               )
             )}
             <NativeSelect
-              label="Identity"
-              name="identity"
-              description="The configured identity this connection will act as."
+              label="ServiceAccount"
+              name="service_account"
+              description="The labeled Kubernetes ServiceAccount this connection will act as."
               data={[
-                { value: "", label: "Choose an identity" },
-                ...identities.map(([key]) => ({ value: key, label: key })),
+                { value: "", label: "Choose a ServiceAccount" },
+                ...accounts.map((candidate) => ({
+                  value: serviceAccountKey(candidate),
+                  label: serviceAccountKey(candidate),
+                })),
               ]}
-              value={identity}
+              value={account}
               onChange={(event) => {
-                setIdentity(event.currentTarget.value);
+                setAccount(event.currentTarget.value);
                 setConfirmed(false);
               }}
               disabled={attempt !== null}
               required
             />
-            {identities.length === 0 && (
-              <Text c="orange">No enabled identities are configured. You can deny this request.</Text>
+            {accounts.length === 0 && (
+              <Text c="orange">No labeled caller ServiceAccounts exist. You can deny this request.</Text>
             )}
             <Text size="sm">
-              Connections using the same Identity share its Action receipts. This does not auto-approve Actions: new
-              external clients use human approval. Each submitted Action records the specific client connection.
+              Connections acting as the same ServiceAccount share its Action receipts. What it may do without an
+              operator is whatever ActionPolicyBindings name it; everything else waits for human approval. Each
+              submitted Action records the specific client connection.
             </Text>
             <Group justify="flex-end">
               {attempt !== null ? (
@@ -227,8 +238,9 @@ export function ConnectionConsent({
                     Deny
                   </Button>
                   <Button
-                    disabled={!identity || (connectionId === "new" ? !name.trim() : !existing || !confirmed)}
-                    onClick={() =>
+                    disabled={!selectedAccount || (connectionId === "new" ? !name.trim() : !existing || !confirmed)}
+                    onClick={() => {
+                      if (!selectedAccount) return;
                       void decide({
                         verdict: "allow",
                         csrf_token: preview.csrf_token,
@@ -240,9 +252,9 @@ export function ConnectionConsent({
                               authority_change_confirmed: true,
                             }
                           : { kind: "new", display_name: name.trim() },
-                        identity_id: identity,
-                      })
-                    }
+                        service_account: { namespace: selectedAccount.namespace, name: selectedAccount.name },
+                      });
+                    }}
                   >
                     Authorize
                   </Button>

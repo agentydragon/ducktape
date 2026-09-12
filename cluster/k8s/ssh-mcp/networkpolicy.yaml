@@ -1,0 +1,70 @@
+# Cluster-internal MCP backend. Only haku-console and Agentplane staging are callers; SSH egress is
+# constrained to port 22 on the specific targets settings.yaml configures -- cluster nodes reached
+# over Nebula (nebula-mesh.json at the repo root) and, for public-coder-devbox, an ordinary pod.
+# Reaching any of them still requires a key the Secret holds.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: ssh-mcp
+  namespace: ssh-mcp
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: ssh-mcp
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+            app.kubernetes.io/name: agentplane-actions
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: haku-console
+            app.kubernetes.io/name: haku-console
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # Gotcha: wyrm2 and rugged are cluster nodes whose InternalIPs are their Nebula addresses
+    # (10.42.0.20 / 10.42.0.30). Cilium gives node IPs the host/remote-node identity, and a
+    # CIDR selector does not match those unless the agent runs with
+    # `policy-cidr-match-mode: nodes` -- which this cluster does not set. A `toCIDR` rule
+    # naming those addresses therefore selects nothing and every SSH connection times out.
+    # Keep this as entities until that flag is set cluster-wide.
+    - toEntities:
+        - host
+        - remote-node
+      toPorts:
+        - ports:
+            - port: "22"
+              protocol: TCP
+    # public-coder-devbox is a KubeVirt VM running as an ordinary pod, not a cluster node, so it
+    # gets a normal cross-namespace toEndpoints rule instead of the host/remote-node entities above.
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: public-coder-agent
+            app.kubernetes.io/name: public-coder-devbox
+      toPorts:
+        - ports:
+            - port: "22"
+              protocol: TCP
+    # atlas is a Nebula peer like wyrm2/rugged, but unlike them it is not a Kubernetes node
+    # (nebula-mesh.json: role "non-k8s") -- its address never gets the host/remote-node identity
+    # the gotcha above describes, so an entities rule would select nothing here. A plain toCIDR
+    # rule is the correct selector for a genuinely external destination; unlike the entities rule
+    # above, this one is unverified against the live cluster (see cluster/k8s/ssh-mcp/README.md).
+    - toCIDR:
+        - 10.42.0.5/32
+      toPorts:
+        - ports:
+            - port: "22"
+              protocol: TCP

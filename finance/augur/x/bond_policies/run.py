@@ -17,7 +17,7 @@ from pydantic import TypeAdapter
 
 from finance.augur.model.series import SecurityDistributionKey, SecurityKey, SecuritySymbol
 from finance.augur.policy.funding import fund_claims
-from finance.augur.rust.invocation import write_prepared_input
+from finance.augur.sim.artifacts import write_prepared_input
 from finance.augur.sim.books import Record
 from finance.augur.sim.compiler.execution import compile_run
 from finance.augur.sim.external_series import ExternalSeriesContext

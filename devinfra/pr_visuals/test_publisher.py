@@ -86,6 +86,17 @@ def _listing(artifacts: list[dict[str, str]]) -> Callable[..., subprocess.Comple
     return fake_run
 
 
+def _listing_per_invocation(
+    by_invocation: dict[str, list[dict[str, str]]],
+) -> Callable[..., subprocess.CompletedProcess[str]]:
+    """`bbapi artifact list <invocation> --json`, answered differently per invocation."""
+
+    def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(command, 0, json.dumps(by_invocation[str(command[3])]), "")
+
+    return fake_run
+
+
 def test_the_full_sweep_wins_over_an_affected_set_run_at_the_same_commit() -> None:
     """The case that made #4927 insufficient: one commit, several CI runs. Only the
     `//...` sweep carries the visual manifests; an affected-set run at the same commit
@@ -271,13 +282,112 @@ def test_download_visual_tests_deduplicates_equivalent_manifests(tmp_path: Path)
     assert (tests[0].directory / "screen.png").read_bytes() == b"png"
 
 
-def test_download_visual_tests_rejects_conflicting_manifests(tmp_path: Path) -> None:
+def test_download_visual_tests_unions_a_sharded_targets_manifests(tmp_path: Path) -> None:
+    """One `shard_count` target, one manifest per shard, each naming only its own scenes.
+
+    The target's review is their union — the shards are one test, not competing answers.
+    """
+    artifacts = [
+        {"label": "//ui:visual", "name": "test.outputs/visual-review.json", "uri": "bytestream://shard-0"},
+        {"label": "//ui:visual", "name": "test.outputs/visual-review.json", "uri": "bytestream://shard-1"},
+        {"label": "//ui:visual", "name": "test.outputs/list.png", "uri": "bytestream://list"},
+        {"label": "//ui:visual", "name": "test.outputs/detail.png", "uri": "bytestream://detail"},
+    ]
+
+    tests = download_visual_tests(
+        ["invocation"],
+        tmp_path / "tests",
+        api_key="key",
+        fetch=_cas(
+            {
+                "bytestream://shard-0": _manifest("UI", "list.png"),
+                "bytestream://shard-1": _manifest("UI", "detail.png"),
+                "bytestream://list": b"list-png",
+                "bytestream://detail": b"detail-png",
+            }
+        ),
+        run=_listing(artifacts),
+    )
+
+    assert len(tests) == 1
+    assert {asset.path for asset in tests[0].manifest.assets} == {"list.png", "detail.png"}
+    assert (tests[0].directory / "list.png").read_bytes() == b"list-png"
+    assert (tests[0].directory / "detail.png").read_bytes() == b"detail-png"
+
+
+def test_download_visual_tests_rejects_a_sweep_and_an_affected_set_run_disagreeing(tmp_path: Path) -> None:
+    """Shards union; whole rosters from separate invocations must agree.
+
+    A full `//...` sweep and an affected-set run at one commit publish different rosters for the
+    same target. Unioning them yields a review that looks complete while taking each shot from
+    whichever run was listed first, so it stays an error -- which is what find_test_invocations'
+    "the two are not combined" relies on.
+    """
+    manifest_artifact = {"label": "//ui:visual", "name": "test.outputs/visual-review.json"}
+    by_invocation = {
+        "sweep": [
+            {**manifest_artifact, "uri": "bytestream://sweep-manifest"},
+            {"label": "//ui:visual", "name": "test.outputs/list.png", "uri": "bytestream://list"},
+            {"label": "//ui:visual", "name": "test.outputs/detail.png", "uri": "bytestream://detail"},
+        ],
+        "affected": [
+            {**manifest_artifact, "uri": "bytestream://affected-manifest"},
+            {"label": "//ui:visual", "name": "test.outputs/list.png", "uri": "bytestream://list"},
+        ],
+    }
+
+    with pytest.raises(ValueError, match="different visual-review rosters"):
+        download_visual_tests(
+            ["sweep", "affected"],
+            tmp_path / "tests",
+            api_key="key",
+            fetch=_cas(
+                {
+                    "bytestream://sweep-manifest": _manifest("UI", "list.png", "detail.png"),
+                    "bytestream://affected-manifest": _manifest("UI", "list.png"),
+                    "bytestream://list": b"list-png",
+                    "bytestream://detail": b"detail-png",
+                }
+            ),
+            run=_listing_per_invocation(by_invocation),
+        )
+
+
+def test_download_visual_tests_unions_shards_across_a_retried_invocation(tmp_path: Path) -> None:
+    """A sharded target listed through two invocations: each unions to the same roster, so it publishes."""
+    shards = [
+        {"label": "//ui:visual", "name": "test.outputs/visual-review.json", "uri": "bytestream://shard-0"},
+        {"label": "//ui:visual", "name": "test.outputs/visual-review.json", "uri": "bytestream://shard-1"},
+        {"label": "//ui:visual", "name": "test.outputs/list.png", "uri": "bytestream://list"},
+        {"label": "//ui:visual", "name": "test.outputs/detail.png", "uri": "bytestream://detail"},
+    ]
+
+    tests = download_visual_tests(
+        ["primary", "child"],
+        tmp_path / "tests",
+        api_key="key",
+        fetch=_cas(
+            {
+                "bytestream://shard-0": _manifest("UI", "list.png"),
+                "bytestream://shard-1": _manifest("UI", "detail.png"),
+                "bytestream://list": b"list-png",
+                "bytestream://detail": b"detail-png",
+            }
+        ),
+        run=_listing_per_invocation({"primary": shards, "child": shards}),
+    )
+
+    assert len(tests) == 1
+    assert {asset.path for asset in tests[0].manifest.assets} == {"list.png", "detail.png"}
+
+
+def test_download_visual_tests_rejects_conflicting_titles(tmp_path: Path) -> None:
     artifacts = [
         {"label": "//ui:screenshots", "name": "test.outputs/visual-review.json", "uri": "manifest-one"},
         {"label": "//ui:screenshots", "name": "test.outputs/visual-review.json", "uri": "manifest-two"},
     ]
 
-    with pytest.raises(ValueError, match="exposed conflicting visual manifests from 2 results"):
+    with pytest.raises(ValueError, match="conflicting visual-review titles"):
         download_visual_tests(
             ["invocation"],
             tmp_path / "tests",
@@ -285,6 +395,30 @@ def test_download_visual_tests_rejects_conflicting_manifests(tmp_path: Path) -> 
             fetch=_cas(
                 {"manifest-one": _manifest("UI 1", "screen-1.png"), "manifest-two": _manifest("UI 2", "screen-2.png")}
             ),
+            run=_listing(artifacts),
+        )
+
+
+def test_download_visual_tests_rejects_one_asset_described_two_ways(tmp_path: Path) -> None:
+    """Union resolves disjoint and identical manifests; it cannot resolve disagreement."""
+    artifacts = [
+        {"label": "//ui:screenshots", "name": "test.outputs/visual-review.json", "uri": "manifest-one"},
+        {"label": "//ui:screenshots", "name": "test.outputs/visual-review.json", "uri": "manifest-two"},
+    ]
+    relabelled = json.dumps(
+        {
+            "schema": "ducktape.visual-review.v1",
+            "title": "UI",
+            "assets": [{"path": "screen.png", "label": "a different label"}],
+        }
+    ).encode()
+
+    with pytest.raises(ValueError, match=r"conflicting visual-review entries for screen\.png"):
+        download_visual_tests(
+            ["invocation"],
+            tmp_path / "tests",
+            api_key="key",
+            fetch=_cas({"manifest-one": _manifest("UI", "screen.png"), "manifest-two": relabelled}),
             run=_listing(artifacts),
         )
 

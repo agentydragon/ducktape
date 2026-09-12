@@ -57,8 +57,25 @@ spec:
           serverNames:
             - fcm.googleapis.com
             - updates.push.services.mozilla.com
+    # Claude's credentialless CIMD document; no wildcard hosts, ports, or redirects.
+    - toFQDNs:
+        - matchName: claude.ai
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - claude.ai
     - toEntities:
         - kube-apiserver
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: ssh-mcp
+            app.kubernetes.io/name: ssh-mcp
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
     - toEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: agentplane-staging
@@ -78,7 +95,28 @@ spec:
               protocol: TCP
           serverNames:
             - auth.allegedly.works
-    # Remote MCP OAuth metadata/token and MCP traffic use the public Gateway/remote-node path.
+    # GitHub MCP discovery advertises github.com as its OAuth authorization server.
+    - toFQDNs:
+        - matchName: api.githubcopilot.com
+        - matchName: github.com
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - api.githubcopilot.com
+            - github.com
+    # `github_public_repository` policies confirm a repository is public with an unauthenticated
+    # GitHub REST call (github_policy/visibility.py); no credential rides this path.
+    - toFQDNs:
+        - matchName: api.github.com
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - api.github.com
+    # The Kubernetes MCP server uses the public Gateway/remote-node path.
     - toEntities:
         - remote-node
         - host
@@ -87,10 +125,10 @@ spec:
             - port: "443"
               protocol: TCP
           serverNames:
-            - api.githubcopilot.com
             - kubectl-passthrough-mcp.allegedly.works
     # Gateway Service traffic is checked against the selected backend, with
-    # the client's original SNI. See cluster/debug/agentplane_oidc/gateway_service_probe.md.
+    # the client's original SNI. See cluster/docs/cilium_network_policy.md
+    # § Egress through the Gateway Service.
     - toEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: authentik

@@ -26,21 +26,43 @@ receive the Action API URL and public workload placeholder, discover the `everyt
 group's `echo` Action, submit a structured group/name request, poll until terminal,
 and report JSON. The test checks the reported result against the fresh marker's exact
 upstream echo output. It uses the existing sandbox setup/teardown and `Agent` fixtures.
-Staging GitOps wires the upstream image, ActionGroup, narrow echo provider, and discovery
-egress. Run after the PR's images and manifests have rolled out; remote adapter tests
-are not evidence that the real-agent staging test has run.
+Testing GitOps (`cluster/k8s/agentplane-testing/actions/`) wires the upstream image, ActionGroup
+and discovery egress; nothing there auto-approves. `test_agent_executes_mcp_action` first binds
+its Sandbox to an `exact_actions` set naming `everything/echo`, written through the Kubernetes
+API as below. Run after the PR's images and manifests have rolled out; remote adapter tests are
+not evidence that the real-agent deployed test has run.
+
+`test_policy_binding_auto_approves_the_bound_sandbox` writes, with the caller's own kubeconfig,
+an `ActionPolicySet` that auto-approves `everything/echo` with a string `message` of at most 200
+characters and an `ActionPolicyBinding` naming the Sandbox it launched by name and UID, then
+waits for the Action Service's `Ready` condition on both. A matching echo comes back auto-approved
+and executed, and the BFF receipt's Decision names the binding, the set and the matching policy;
+an over-long message waits for the operator; after the binding is patched to an expiry in the past
+and re-acknowledged, so does a match. The objects are deleted at teardown; the pending requests are
+denied through the BFF so nothing lingers. The role in `../../../cluster/k8s/agentplane-testing/agent-rbac/`
+grants create/get/patch/delete on the two kinds for this.
 
 `test_agent_mcp_bff_decision` adds allow/deny cases on each harness: turn 1 submits
-an echo longer than the fixture's 200-character auto-allow bound and returns only
+an echo from a Sandbox nothing binds, so it waits for the operator, and returns only
 its UUID; Python inspects and decides through the app's `/actions/{id}` BFF; the
 same Agent polls in turn 2 and returns strict JSON. Python independently checks
 durable request/Decision/Execution snapshots, exact arguments/result, operator
-identity, duplicate-decision idempotency and stale-version rejection. Full Action
-events are currently **not exposed by the BFF**: the agent reads them, but Python
-does not independently verify history. No canonical operator API fallback is used.
+identity, duplicate-decision idempotency and stale-version rejection. Python also
+reads the full event history through the BFF's `GET /actions/{id}/events` and asserts
+the contiguous sequence and state progression. No canonical operator API fallback is used.
 
-These cases read only `public-coder-agent/agentplane-acceptance-operator` via
-`kubectl get --raw=/api/v1/namespaces/public-coder-agent/secrets/agentplane-acceptance-operator`
+`test_operator_links_oauth_mcp_server` exercises the operator-managed MCP OAuth linkage flow
+end to end against a real, deployed, OAuth-protected MCP server -- the `example` server, a
+self-contained fixture (in-memory authorization server and one `echo` tool in one process, no
+external IdP) deployed the same way as `everything`. It starts the linkage through the BFF,
+follows the redirect the authorization endpoint returns the same way a browser would, completes
+the callback through the BFF, and asserts the server reaches `linked` status. Unlike the real
+GitHub/Kubernetes providers linked in staging, nothing here is mocked or fabricated: this is the
+same code path an operator uses to link any OAuth MCP server, run against a server this repo
+controls end to end.
+
+These cases read only `public-coder-agent/agentplane-testing-acceptance-operator` via
+`kubectl get --raw=/api/v1/namespaces/public-coder-agent/secrets/agentplane-testing-acceptance-operator`
 using the existing kubeconfig and Haku Console Kubernetes proxy
 (`https://haku-kubeapi.allegedly.works`). No operator environment variables or
 pre-issued cookie are used. Missing proxy/RBAC/reflection or malformed Secret data
@@ -95,9 +117,10 @@ Override any of it through the environment:
 
 Staging remains available for ad hoc click-through tests by overriding the URL, namespace,
 IDP, and operator Secret path to the Authentik deployment. The shipped default is Dex/testing.
-The testing environment is Flux-managed and exposes only the app and Dex HTTPS routes needed
-for the browser authorization-code flow; the MCP fixture itself is cluster-internal. Do not copy credentials into
-the checkout or pass them as command-line arguments.
+The testing environment is Flux-managed and exposes the app and Dex HTTPS routes needed for the
+browser authorization-code flow plus the Action Service's `/mcp` and OAuth surface at
+`agentplane-actions-testing.allegedly.works`; the `mcp-everything` fixture itself is
+cluster-internal. Do not copy credentials into the checkout or pass them as command-line arguments.
 
 ### Controlled-host preflight
 

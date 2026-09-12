@@ -17,8 +17,6 @@ spec:
     name: ducktape
     namespace: ducktape-flux
   dependsOn:
-    - name: agentplane-staging-actions # destination verifier ready before the BFF
-      namespace: ducktape-flux
     - name: external-secrets-config
       namespace: ducktape-flux
     - name: agent-sandbox-controller # CRDs + controller
@@ -29,15 +27,16 @@ spec:
       namespace: ducktape-flux
     - name: forgejo-images # reflects the runner image's pull credential
       namespace: ducktape-flux
-    - name: litellm-keys-tf # writes the standing cheap-experiments key copy
+    - name: litellm-keys-tf # writes the staging subscription key
       namespace: ducktape-flux
     - name: agentplane-staging-egress # the proxy the sidecar relays to and the CA bundle the runner mounts
       namespace: ducktape-flux
     - name: gateway # the HTTPRoute's parent
       namespace: ducktape-flux
     # TF mints the OAuth2 provider and agentplane-oidc Secret; Reflector mirrors the Secret into
-    # this namespace. The Actions Kustomization owns the non-secret federation ConfigMap, which
-    # this Deployment reads after its dependency has reconciled.
+    # this namespace. The Actions Kustomization is deliberately not a dependency: the app only
+    # calls Actions per request, so it must come up and stay applied while Actions is down. The
+    # kubelet holds the Pod until the federation ConfigMap the Actions layer owns exists.
     - name: sso-providers-tf
       namespace: ducktape-flux
     - name: reflector

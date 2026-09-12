@@ -14,7 +14,7 @@ py_library(
     deps = [
         ":policy",
         "//finance/augur/model:series",
-        "//finance/augur/rust:invocation",
+        "//finance/augur/sim:artifacts",
         "//finance/augur/sim:external_series",
         "//finance/augur/sim:prepared",
         "//finance/augur/sim:results",
@@ -33,7 +33,7 @@ py_test(
         ":compare",
         "//:conftest",
         "//finance/augur:conftest",
-        "//finance/augur/rust:invocation",
+        "//finance/augur/sim:artifacts",
         "//finance/augur/sim:results",
         "//util/bazel:runfiles",
         "@pypi//pytest",

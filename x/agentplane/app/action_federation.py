@@ -6,6 +6,7 @@ providers use the same Authentik subject mode, and the app verifies subject cont
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import Annotated, Literal
 from urllib.parse import urlsplit
@@ -24,6 +25,8 @@ from x.agentplane.action_service.client import OperatorActionServiceClient
 from x.agentplane.action_service.operator_oidc import OperatorOidcSettings
 from x.agentplane.app.oidc import OIDCSettings, OperatorSession
 
+logger = logging.getLogger(__name__)
+
 
 class OperatorFederationError(Exception):
     """Fixed public failure codes only; never provider bodies or token material."""
@@ -31,6 +34,17 @@ class OperatorFederationError(Exception):
     def __init__(self, code: str, *, status_code: int = 403) -> None:
         super().__init__(code)
         self.status_code = status_code
+
+
+def upstream_failure_detail(error: httpx.HTTPStatusError | httpx.RequestError) -> dict[str, str | int | None]:
+    """Describe a failed upstream request without credentials, query, or provider text."""
+    response_status = error.response.status_code if isinstance(error, httpx.HTTPStatusError) else None
+    return {
+        "method": error.request.method,
+        "url": str(error.request.url.copy_with(username="", password="", query=None, fragment=None)),
+        "upstream_status": response_status,
+        "error_type": type(error).__name__,
+    }
 
 
 async def _check_token_response(response: httpx.Response) -> None:
@@ -140,13 +154,26 @@ class FederatedOperatorActions:
             if not isinstance(access_token, str):
                 raise OperatorFederationError("operator_federation_token_invalid")
             return access_token
-        except InvalidOidcPrincipalError:
+        except OperatorFederationError as error:
+            logger.warning(f"operator federation refused for {session.subject=}: {error}")
+            raise
+        except InvalidOidcPrincipalError as error:
+            logger.warning(f"operator federation rejected the login token: {type(error).__name__}")
             raise OperatorFederationError("operator_federation_token_invalid") from None
         except OidcPrincipalVerificationUnavailableError as error:
             if error.http_error is not None:
+                logger.warning(
+                    f"operator federation signing-key fetch failed: {upstream_failure_detail(error.http_error)}"
+                )
                 raise error.http_error from None
+            logger.warning("operator federation cannot verify tokens: signing keys unavailable")
             raise OperatorFederationError("operator_federation_verification_unavailable", status_code=503) from None
-        except (OAuthError, ValueError):
+        except (httpx.HTTPStatusError, httpx.RequestError) as error:
+            logger.warning(f"operator federation exchange request failed: {upstream_failure_detail(error)}")
+            raise
+        except (OAuthError, ValueError) as error:
+            # Provider text stays out of logs; the class names the failure shape.
+            logger.warning(f"operator federation exchange failed: {type(error).__name__}")
             raise OperatorFederationError("operator_federation_exchange_failed", status_code=502) from None
 
 

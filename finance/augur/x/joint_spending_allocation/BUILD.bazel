@@ -14,7 +14,6 @@ py_test(
     data = [":compare_bin"],
     deps = [
         ":compare",
-        ":policy",
         ":scenario",
         "//:conftest",
         "//finance/augur:conftest",
@@ -32,10 +31,13 @@ py_library(
     deps = [
         ":policy",
         ":scenario",
-        "//finance/augur/rust:invocation",
+        "//finance/augur/sim:artifacts",
         "//finance/augur/sim:books",
+        "//finance/augur/sim:holdings",
+        "//finance/augur/sim:prepared",
         "//finance/augur/sim:quantiles",
         "//finance/augur/sim:results",
+        "//finance/augur/sim:world",
         "//finance/augur/x/bounded_spending:python_policy",
         "@pypi//numpy",
     ],
@@ -46,6 +48,7 @@ py_library(
     srcs = ["policy.py"],
     deps = [
         "//finance/augur/sim:actions",
+        "//finance/augur/sim:agent",
         "//finance/augur/sim:books",
         "//finance/augur/sim:observations",
         "//finance/augur/x/allocation_glide:policy",

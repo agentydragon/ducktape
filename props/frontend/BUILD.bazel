@@ -22,13 +22,18 @@ exports_files(
 # ============================================================
 
 js_library(
+    name = "app_css",
+    srcs = ["src/app.css"],
+)
+
+js_library(
     name = "app",
     srcs = [
         "src/App.svelte",
-        "src/app.css",
         "src/main.ts",
     ],
     deps = [
+        ":app_css",
         ":node_modules/svelte",
         "//props/frontend/src/components:RunTriggerModal",
         "//props/frontend/src/lib:router",
@@ -129,13 +134,32 @@ svelte_check_bin.svelte_check_test(
 # ============================================================
 
 js_library(
+    name = "scenarios",
+    srcs = ["tests/harness/scenarios.mjs"],
+    visibility = ["//props/frontend/src:__subpackages__"],
+)
+
+js_library(
     name = "harness_lib",
     srcs = [
         "tests/harness/harness.ts",
         "tests/harness/index.html",
-    ],
+    ] + glob(["tests/harness/fixtures/*.ts"]),
     tags = ["no-lint"],
-    deps = [":app"],
+    deps = [
+        ":app_css",
+        ":node_modules/svelte",
+        ":scenarios",
+        "//props/frontend/src/components:DefinitionDetail",
+        "//props/frontend/src/components:FileViewer",
+        "//props/frontend/src/components:LLMRequestViewer",
+        "//props/frontend/src/components:RunDetail",
+        "//props/frontend/src/components:RunsBrowser",
+        "//props/frontend/src/components/stats:CoverageHeatmap",
+        "//props/frontend/src/components/stats:DistributionChart",
+        "//props/frontend/src/components/stats:OccurrenceStats",
+        "//props/frontend/src/pages:SnapshotDetailPage",
+    ],
 )
 
 js_binary(
@@ -183,11 +207,10 @@ js_test(
 # ============================================================
 # Visual regression tests
 #
-# Each scenario lives in the sub-package next to its component.
-# Shared infrastructure (Puppeteer, baselines, harness) is here.
+# Every scenario in tests/harness/scenarios.mjs, swept on one browser per shard.
 #
-# Run all:  bazel test //props/frontend:visual_tests
-# Run one:  bazel test //props/frontend/src/components:visual_DefinitionDetail
+# Run all:  bazel test //props/frontend:visual
+# Run one:  bazel test //props/frontend:visual --test_filter=DefinitionDetail
 # ============================================================
 
 filegroup(
@@ -196,20 +219,31 @@ filegroup(
     visibility = ["//props/frontend/src:__subpackages__"],
 )
 
-test_suite(
-    name = "visual_tests",
-    tests = [
-        "//props/frontend/src/components:visual_DefinitionDetail",
-        "//props/frontend/src/components:visual_FileViewerAnnotated",
-        "//props/frontend/src/components:visual_FileViewerGroundTruth",
-        "//props/frontend/src/components:visual_LLMRequests",
-        "//props/frontend/src/components:visual_LLMRequestsToolCall",
-        "//props/frontend/src/components:visual_RunDetailCritic",
-        "//props/frontend/src/components:visual_RunsBrowser",
-        "//props/frontend/src/components/stats:visual_CoverageHeatmap",
-        "//props/frontend/src/components/stats:visual_DistributionChartRecall",
-        "//props/frontend/src/components/stats:visual_DistributionChartTP",
-        "//props/frontend/src/components/stats:visual_OccurrenceStatsTable",
-        "//props/frontend/src/pages:visual_SnapshotDetail",
-    ],
+VISUAL_DATA = [
+    ":harness_bundle",
+    ":harness_js",
+    ":visual_test_assets",
+    "//util/testing/frontend_visual:fonts",
+    "//util/testing/frontend_visual:fonts_conf",
+    "//util/testing/frontend_visual:visual_test_lib",
+    "@playwright_browsers//:chromium-headless-shell",
+]
+
+# small: a shard renders 3 scenarios on one Chromium. The 12 per-scenario targets this replaces
+# were 6.0-9.4s each, almost all of it browser launch and input staging paid once per scenario.
+js_test(
+    name = "visual",
+    size = "small",
+    # :scenarios is copied to bin beside the runner that imports it, unlike the prebuilt harness
+    # assets, which are read where they lie.
+    data = VISUAL_DATA + [":scenarios"],
+    entry_point = "tests/visual_runner.mjs",
+    env = {
+        "HARNESS_PATH": "$(rootpath :harness_js)",
+        "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
+        "FONTCONFIG_FILE": "$(rootpath //util/testing/frontend_visual:fonts_conf)",
+        "FREETYPE_PROPERTIES": "cff:no-stem-darkening=1",
+    },
+    no_copy_to_bin = VISUAL_DATA,
+    shard_count = 4,
 )

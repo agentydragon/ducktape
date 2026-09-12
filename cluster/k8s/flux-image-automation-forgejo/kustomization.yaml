@@ -45,11 +45,14 @@ resources:
   - haku-managed-agent-image.yaml
   - agentplane-runner-image.yaml
   - agentplane-app-image.yaml
+  - agentplane-app-migrate-image.yaml
   - agentplane-action-service-image.yaml
+  - ssh-mcp-image.yaml
   - agentplane-action-service-migrate-image.yaml
   - agentplane-egress-migrate-image.yaml
   - agentplane-egress-image.yaml
   - agentplane-egress-sidecar-image.yaml
   - agentplane-llm-ingress-image.yaml
+  - agentplane-oauth-fixture-image.yaml
   - github-graphql-rate-exporter-image.yaml
   - github-api-proxy-image.yaml

@@ -18,8 +18,11 @@
 # non-root "buildbuddy" user with passwordless sudo.
 #
 # We layer on: libssl-dev + pkg-config (Rust toolchain), libtinfo5 (GHC
-# toolchain), and Chromium shared libraries (headless_shell from
-# rules_playwright for visual regression tests).
+# toolchain), Chromium shared libraries (headless_shell from rules_playwright
+# for visual regression tests), and Liberation fonts (so headless_shell has a
+# real "sans-serif"/"monospace" to substitute -- with zero fonts installed it
+# renders every generic family, monospace included, as the same undifferentiated
+# fallback glyph, which is misleading in a screenshot).
 #
 # The Nix equivalents of these system libraries are in
 # nix/packages/system-libs.nix (shared by devShell and nix RBE image).
@@ -66,6 +69,10 @@ RUN sed -i 's/^Components: main$/Components: main universe/' /etc/apt/sources.li
         libxrandr2 \
         libxfixes3 \
         libxshmfence1 \
+        # Liberation Mono/Sans/Serif: metric-compatible Linux substitutes for
+        # Consolas/Arial/Times, and the fallback several stacks in this repo
+        # already name explicitly (e.g. "Liberation Mono")
+        fonts-liberation \
     && rm -rf /var/lib/apt/lists/* \
     # libtinfo5: dropped from noble (24.04), fetch from jammy (22.04) archive.
     # GHC 9.0.2 bindist requires libtinfo.so.5 for ghc-pkg during toolchain setup.

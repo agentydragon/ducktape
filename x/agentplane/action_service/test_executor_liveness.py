@@ -6,6 +6,7 @@ State-transition diagram and reason-code catalog: docs/executor_liveness.md.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from datetime import timedelta
 from typing import Any
 from unittest.mock import patch
@@ -322,8 +323,17 @@ async def test_drain_includes_a_claim_whose_database_reply_is_still_in_flight(
     claimed, return_claim = asyncio.Event(), asyncio.Event()
     claim_execution = store.claim_execution
 
-    async def delayed_claim(request_id: UUID, *, executor_id: str, lease_duration: timedelta) -> ExecutionClaim | None:
-        result = await claim_execution(request_id, executor_id=executor_id, lease_duration=lease_duration)
+    async def delayed_claim(
+        request_id: UUID,
+        *,
+        executor_id: str,
+        lease_duration: timedelta,
+        can_dispatch: Callable[[ActionIdentity], bool] | None = None,
+    ) -> ExecutionClaim | None:
+        result = await claim_execution(
+            request_id, executor_id=executor_id, lease_duration=lease_duration, can_dispatch=can_dispatch
+        )
+        assert result is not None
         claimed.set()
         await return_claim.wait()
         return result

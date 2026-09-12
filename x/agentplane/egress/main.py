@@ -39,9 +39,8 @@ class Settings(BaseSettings):
 
     namespace: str = Field(description="Namespace holding the policies and bindings the proxy enforces.")
     sandbox_namespace: str = Field(
-        description="Namespace the sandbox Pods run in: the Sandboxes a decision names, and the Pods whose "
-        "sidecar tokens the proxy verifies. Separate from the policy namespace so a sandbox is never in "
-        "reach of the rules that govern it."
+        description="Namespace the sandbox Pods run in: the Sandboxes bindings name as subjects, and the Pods "
+        "whose sidecar tokens the proxy verifies. May equal the rule namespace, as it does in both deployments."
     )
     credentials_namespace: str = Field(
         default="agentplane-egress-credentials", description="Namespace the rules' Secrets are read from."

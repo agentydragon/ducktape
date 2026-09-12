@@ -8,7 +8,6 @@ from typing import Any, cast
 
 import httpx
 import pytest_bazel
-from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from x.agentplane.action_service.api import create_app
@@ -37,8 +36,12 @@ from x.agentplane.action_service.models import (
 )
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.updates import ActionUpdates
-from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
-from x.agentplane.sandbox_auth.principal import SandboxPrincipal
+from x.agentplane.sandbox_auth.principal import (
+    RejectionReason,
+    SandboxPrincipal,
+    SandboxPrincipalRejectedError,
+    SandboxPrincipalResolver,
+)
 
 NAMESPACE = "agentplane-staging"
 SERVICE_ACCOUNT_SUBJECT = f"system:serviceaccount:{NAMESPACE}:agentplane-runner"
@@ -66,12 +69,11 @@ OPERATOR = Principal(issuer="test-bff", subject="operator", role=PrincipalRole.O
 WORKLOAD_TOKENS = {"workload-a": SANDBOX_A, "workload-b": SANDBOX_B}
 
 
-class FakeSandboxAuthenticator:
-    async def __call__(self, request: Any) -> SandboxPrincipal:
-        value = request.headers.get("authorization", "")
-        if not value.startswith("Bearer ") or value.removeprefix("Bearer ") not in WORKLOAD_TOKENS:
-            raise HTTPException(401, "invalid workload bearer")
-        return WORKLOAD_TOKENS[value.removeprefix("Bearer ")]
+class FakeSandboxResolver:
+    async def resolve(self, token: str) -> SandboxPrincipal:
+        if token not in WORKLOAD_TOKENS:
+            raise SandboxPrincipalRejectedError(RejectionReason.TOKEN_REJECTED, "test: unknown workload bearer")
+        return WORKLOAD_TOKENS[token]
 
 
 class FakeOperatorAuthenticator:
@@ -100,7 +102,7 @@ class LeakyFailingExecutor(CountingExecutor):
 async def _client(service: ActionService, *, catalog: ActionCatalog | None = None) -> httpx.AsyncClient:
     app = create_app(
         service,
-        cast(SandboxPrincipalAuthenticator, FakeSandboxAuthenticator()),
+        cast(SandboxPrincipalResolver, FakeSandboxResolver()),
         cast(OperatorAuthenticator, FakeOperatorAuthenticator()),
         catalog or ActionCatalog(),
         updates=ActionUpdates("postgresql://unused-test-listener"),
@@ -252,6 +254,7 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
             "reason_description",
             "idempotency_key",
             "decided_at",
+            "policy_evidence",
         }
         assert len(executor.requests) == 1
         assert executor.requests[0].arguments["nested"] == {"api_key": "provider-material"}
@@ -492,6 +495,7 @@ async def test_configured_catalog_is_discoverable_and_unknown_lookups_fail_clear
                 "executor_kind": "mcp",
                 "executor_description": "Connected as Rai's GitHub account.",
                 "available": True,
+                "health": None,
                 "actions": [
                     {
                         "group": "github",
@@ -536,7 +540,7 @@ async def test_catalog_admission_and_group_routing(engine: AsyncEngine, echo_cat
     await service.start()
     client = await _client(service, catalog=echo_catalog)
     try:
-        for group, name in [("missing", "echo"), ("agentplane", "missing"), ("unbound", "echo"), ("offline", "echo")]:
+        for group, name in [("missing", "echo"), ("agentplane", "missing"), ("unbound", "echo")]:
             response = await client.post(
                 "/v1/action-requests",
                 json={"idempotency_key": group, "action": {"group": group, "name": name}, "arguments": {}},
@@ -544,6 +548,13 @@ async def test_catalog_admission_and_group_routing(engine: AsyncEngine, echo_cat
             )
             assert response.status_code == 422
             assert "unsupported group/action" in response.text
+        offline = await client.post(
+            "/v1/action-requests",
+            json={"idempotency_key": "offline", "action": {"group": "offline", "name": "echo"}, "arguments": {}},
+            headers=_workload("workload-a"),
+        )
+        assert offline.status_code == 503
+        assert "temporarily unavailable" in offline.text
         for malformed in ["agentplane.echo", "agentplane:v0.echo", {"group": "agentplane", "name": "echo.extra"}]:
             response = await client.post(
                 "/v1/action-requests",

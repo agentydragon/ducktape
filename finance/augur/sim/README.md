@@ -1,25 +1,28 @@
 # augur/sim
 
 Typed financial declarations, execution preparation, fixed-point helpers and
-shared result types. Financial settlement currently executes in <../rust/README.md>;
+shared result types. Financial settlement executes in the Python <world.py> (see <docs/financial_engine.md>);
 experiment policies and their outer time loops are Python code.
 
 ## Experiment path
 
 An experiment supplies a `Scenario`, market paths, jurisdiction rules and
-locations to `compile_run` in <compiler/execution.py>. It starts the common `ActionSession`,
-submits one batch of ordered actions per decision month, and reads typed results
-from <results.py> and books from <books.py>. Exact requests are defined in
+locations to `compile_run` in <compiler/execution.py>. It then either tracks an
+`EconomicAgent` subclass (<agent.py>) on one `World` (<world.py>) per path and
+loops over `world.step()`, or starts the common `ActionSession` and submits one
+batch of ordered actions per decision month. Both read typed results from
+<results.py> and books from <books.py>. Exact requests are defined in
 <actions.py>, and current actor facts in <observations.py>. Sampling, fitting, policy choice and
 report definitions belong to the caller.
 
-See <../x/monthly_actions/README.md> for explicit actions and
-<../x/joint_spending_allocation/README.md> for a spending/allocation comparison.
+See <../x/joint_spending_allocation/README.md> for a tracked-agent
+spending/allocation comparison and <../x/monthly_actions/README.md> for explicit
+batch actions.
 Shared proposal helpers live in <../policy/>; they do not settle trades or taxes.
 
 `CompiledRun` in <prepared.py> owns typed resolved facts: exact integer money,
 quantities, tax rules and supplied paths. The compiler constructs these directly;
-file/native serialization is private to the I/O boundaries. Sessions accept the prepared value,
+file serialization is private to the I/O boundaries. Sessions accept the prepared value,
 not a mutable wire dictionary. The app and remaining legacy acceptance
 consumers use the same prepared facts through <configured.py>;
 it is not the interface new experiments should extend.

@@ -59,7 +59,7 @@ from haku.console.tool_calls import (
 from haku.console.tools import gmail as gmail_tools, google_calendar as calendar_tools
 from haku.console.tools.google_calendar_client import CalendarEvent
 from mcp_infra.persistence import PostgresPersistence
-from util.net import pick_free_port
+from util.net import bind_free_port
 from util.testing.asgi import serve_app_sync, serve_fastmcp
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 
@@ -301,7 +301,6 @@ async def _operator_post(
 
 async def test_tool_surface_splits_pass_through_and_request(agent_client: Client, harness: _Harness) -> None:
     tools = {t.name: t for t in await agent_client.list_tools()}
-    daemon_status = await agent_client.call_tool("list_node_daemons", {})
 
     # Gmail reads are transparent pass-through: server-prefixed name, no envelope nesting.
     assert "gmail__labels_list" in tools
@@ -345,13 +344,7 @@ async def test_tool_surface_splits_pass_through_and_request(agent_client: Client
         "approval_mode": "approval_required",
     }
     # The read tools are present.
-    assert {
-        "get_mcp_server_status",
-        "get_tool_call",
-        "list_node_daemons",
-        "list_tool_calls",
-        "list_mcp_servers",
-    } <= tools.keys()
+    assert {"get_mcp_server_status", "get_tool_call", "list_tool_calls", "list_mcp_servers"} <= tools.keys()
     assert "actor" not in tools["get_tool_call"].inputSchema.get("properties", {})
     assert "actor" not in tools["list_tool_calls"].inputSchema.get("properties", {})
     assert "actor" not in tools["list_mcp_servers"].inputSchema.get("properties", {})
@@ -363,16 +356,9 @@ async def test_tool_surface_splits_pass_through_and_request(agent_client: Client
     assert get_fields["default"] == [ToolCallPayloadField.RESULT]
     assert list_fields["items"]["enum"] == [field.value for field in ToolCallPayloadField]
     assert list_fields["default"] == []
-    assert daemon_status.structured_content == {"daemons": []}
     # Native read tools advertise read-only + closed-world so clients (claude.ai) treat them as
     # passive reads and skip approvals. See mcp_infra/docs/tool_annotations.md.
-    for meta_tool in (
-        "get_mcp_server_status",
-        "get_tool_call",
-        "list_node_daemons",
-        "list_tool_calls",
-        "list_mcp_servers",
-    ):
+    for meta_tool in ("get_mcp_server_status", "get_tool_call", "list_tool_calls", "list_mcp_servers"):
         ann = tools[meta_tool].annotations
         assert ann is not None
         assert ann.readOnlyHint is True
@@ -1039,17 +1025,17 @@ def _console_config(tmp_path: Path, upstream_url: str) -> Path:
 
 async def test_e2e_request_approve_execute_over_http(migrated_db_url: str, migrated_sessions, tmp_path: Path) -> None:
     with _serve_upstream() as upstream_url:
-        console_port = pick_free_port()
+        console_sock = bind_free_port()
         settings = console_settings(
             migrated_db_url,
             config_file=_console_config(tmp_path, upstream_url),
-            public_base_url=f"http://127.0.0.1:{console_port}",
+            public_base_url=f"http://127.0.0.1:{console_sock.getsockname()[1]}",
         )
         app = create_app(settings)
         operator_identity = await resolve_operator_identity(
             migrated_sessions, issuer=settings.operator_oidc.issuer, subject="42"
         )
-        with serve_app_sync(app, port=console_port) as base:
+        with serve_app_sync(app, sock=console_sock) as base:
             async with httpx.AsyncClient() as anon:
                 # No bearer -> unauthorized at the exact canonical resource URL.
                 unauth = await anon.post(
@@ -1815,8 +1801,8 @@ class _MockOidc:
 def _serve_mock_oidc() -> Generator[_MockOidc]:
     """A signed OIDC provider whose stable subject represents the authorizing operator."""
     private_key, public_key = generate_rsa_keypair()
-    oidc_port = pick_free_port()
-    oidc_origin = f"http://127.0.0.1:{oidc_port}"
+    oidc_sock = bind_free_port()
+    oidc_origin = f"http://127.0.0.1:{oidc_sock.getsockname()[1]}"
     issuer = f"{oidc_origin}/application/o/haku-agent/"
     app = build_mock_oidc_app(
         issuer_url=issuer,
@@ -1826,7 +1812,7 @@ def _serve_mock_oidc() -> Generator[_MockOidc]:
         extra_id_token_claims={"preferred_username": "Rai"},
         authentik_compatible=True,
     )
-    with serve_app_sync(app, port=oidc_port) as base:
+    with serve_app_sync(app, sock=oidc_sock) as base:
         yield _MockOidc(origin=base, issuer=issuer)
 
 
@@ -1877,12 +1863,12 @@ def test_mcp_oauth_reads_nested_shared_persistence_env(monkeypatch: pytest.Monke
 
 async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path: Path) -> None:
     with _serve_mock_oidc() as oidc, _serve_upstream() as upstream_url:
-        # public_base_url is the console's own URL, so choose its port before building the app.
-        console_port = pick_free_port()
+        # public_base_url is the console's own URL, so bind its port before building the app.
+        console_sock = bind_free_port()
         settings = console_settings(
             migrated_db_url,
             config_file=_console_config(tmp_path, upstream_url),
-            public_base_url=f"http://127.0.0.1:{console_port}",
+            public_base_url=f"http://127.0.0.1:{console_sock.getsockname()[1]}",
             mcp_oauth=McpOAuthConfig(
                 oidc_issuer=oidc.issuer,
                 oidc_client_id="console",
@@ -1902,7 +1888,7 @@ async def test_oauth_composes_with_static_bearer(migrated_db_url: str, tmp_path:
             ),
         )
         app = create_app(settings)
-        with serve_app_sync(app, port=console_port) as base:
+        with serve_app_sync(app, sock=console_sock) as base:
             # The static bearer still authenticates (MultiAuth composes OAuth + static).
             async with Client(f"{base}/mcp", auth=_AGENT_TOKEN) as client:
                 assert "standin__echo" in {t.name for t in await client.list_tools()}

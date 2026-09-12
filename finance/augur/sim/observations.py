@@ -1,6 +1,5 @@
 """Current actor facts, with no future market path or other actors' books."""
 
-from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Annotated, Literal
 
@@ -99,13 +98,3 @@ class Observation(Record):
 class Decision:
     rollout_id: int
     observation: Observation
-
-
-def observation_from_json(
-    document: str, *, owner: object, rollout_id: int, previous_receipts: Sequence[Receipt]
-) -> Observation:
-    """Decode native current facts; only the owning session grants executable claim identity."""
-    observation = Observation.model_validate_json(document)
-    for claim in observation.claims:
-        claim._bind(owner, rollout_id)
-    return observation.model_copy(update={"previous_receipts": tuple(previous_receipts)})

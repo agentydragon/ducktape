@@ -25,7 +25,6 @@ describe("generated MCP tool result schemas", () => {
     expect(keys).toContain("grocy-sf.shopping_lists_list");
     expect(keys).toContain("haku-console.list_mcp_servers");
     expect(keys).toContain("haku-console.get_mcp_server_status");
-    expect(keys).toContain("haku-console.list_node_daemons");
   });
 
   it("parses an unprovisioned connected-account status", () => {

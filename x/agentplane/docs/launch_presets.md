@@ -10,8 +10,9 @@ An operator can launch a useful agent without reconstructing its sandbox and thr
 hand, while retaining the existing free-form controls. Selecting a preset fills fields; it does not
 lock them or grant capabilities beyond the caller's authority.
 
-The first concrete preset is `public-coder`: a Codex runner Sandbox with the public-coder egress
-policy, a runner-owned workspace initialization script, and a Codex Thread default.
+The first concrete preset is `public-coder`: a Codex runner Sandbox composing the `basic` and
+`github-public` egress policies, a runner-owned workspace initialization script, and a Codex Thread
+default.
 
 ## Split and ownership
 
@@ -29,27 +30,17 @@ A `ThreadPreset` owns what is selected when a native Thread is opened:
 - native session options exposed by the integration app.
 
 A SandboxPreset may name one default ThreadPreset. This is one explicit association, not arbitrary
-preset inheritance. Preset definitions, revisions, Sandbox-to-preset bindings, and override intent
-belong to the integration app's product layer. Agentplane runtime APIs receive the resolved concrete
+preset inheritance. Preset definitions, Sandbox-to-preset bindings, and override intent belong to
+the integration app's product layer. Agentplane runtime APIs receive the resolved concrete
 configuration and remain unaware of preset names.
 
-## Live binding and history
+## Live binding
 
-The integration app stores a stable Sandbox-to-SandboxPreset binding. The binding follows later
-accepted revisions for future Threads and settings that can be reconciled in place. It stores
-explicit Sandbox overrides separately from the preset so a changed preset cannot overwrite a field
-the operator customized.
-
-A Sandbox may explicitly choose a different ThreadPreset. With no such override, it follows the
-current default ThreadPreset named by its SandboxPreset.
-
-Each Thread records the SandboxPreset and ThreadPreset revisions used at launch, plus its explicit
-Thread overrides. This is historical provenance, not a request to rewrite an existing Thread when a
-preset changes. A resumed Thread keeps the effective configuration with which it was opened.
-
-Accepted revisions are immutable and shared across references. If definitions initially come from a
-ConfigMap, the ConfigMap remains the authoring source and the integration app records accepted
-revisions in its durable store; a Kubernetes `resourceVersion` is not the application's history.
+The Sandbox annotation stores the SandboxPreset name, an optional ThreadPreset override, and only
+the operator's explicit sandbox-level Thread edits. Later Threads resolve against the currently
+configured presets, so a changed preset changes future defaults without overwriting a field the
+operator customized. With no ThreadPreset override, a Sandbox follows the default ThreadPreset its
+SandboxPreset names. A Thread keeps the effective configuration it was opened with.
 
 ## Resolution
 
@@ -62,13 +53,13 @@ explicit launch field > live preset field > platform default
 At the Sandbox level:
 
 ```text
-SandboxPreset revision + Sandbox overrides
+SandboxPreset + Sandbox overrides
 ```
 
 At the Thread level:
 
 ```text
-selected ThreadPreset revision + Sandbox Thread overrides + Thread overrides
+selected ThreadPreset + Sandbox Thread overrides + Thread overrides
 ```
 
 A list supplied explicitly replaces the preset list. An explicit empty value clears a preset field
@@ -77,29 +68,27 @@ fields remain available when no preset is selected.
 
 ## Update rules
 
-Preset changes reconcile through the integration app, which is the desired-state authority. The
-runtime reports what was applied.
+Preset configuration is live: a bound Sandbox is resolved against the currently configured presets
+at every session open.
 
 - New Thread defaults update automatically.
 - Existing Threads do not change.
 - Mutable egress/runtime settings update only through existing supported runtime operations.
-- Pod template or mount-topology changes report that a new Sandbox is required.
-- A changed bootstrap script becomes a pending update; it is never rerun automatically on a live
-  Sandbox. Applying it is an explicit runner initialization operation.
-- A removed or invalid preset leaves the last valid Sandbox state usable and surfaces the broken
-  binding rather than deleting or silently mutating the Sandbox.
+- A binding naming a SandboxPreset or ThreadPreset that is no longer configured makes
+  `POST /sandboxes/{name}/sessions` answer 422 (`UnknownPresetError`); the Sandbox is neither
+  deleted nor mutated. `POST /sandboxes` answers 422 for an unknown preset at creation.
+- A changed bootstrap script is refused on a live Sandbox (below).
 
 ## Bootstrap
 
-Bootstrap belongs to the SandboxPreset and is executed by the runner after the Sandbox Pod is ready
-and before the first Thread is opened. The integration app resolves either inline configured source
-or a configured file/ConfigMap path to content, then sends the content to the runner; the app never
-executes shell.
-
-The runner validates and executes the requested initialization, returns bounded structured status,
-and writes an idempotence marker on persistent state. The first slice may use configured script
-content. Arbitrary user-provided shell, automatic reruns after source changes, and a general script
-registry remain out of scope.
+Bootstrap belongs to the SandboxPreset as inline script content. Before every session open on a
+bound Sandbox, the app sends that content to the runner (`bridge.initialize`); the app never
+executes shell. The runner pins the SHA-256 of the first script it is given under its state
+directory, runs it with `/bin/sh -eu`, and keeps a replayable log of output and result: the same
+script re-sent is a no-op once completed and a retry after a failure, while a different script is
+refused (`FAILED_PRECONDITION`), so a changed preset bootstrap never reruns on a live Sandbox. A
+refused or non-zero-exit bootstrap fails the session open with 409. Arbitrary user-provided shell,
+automatic reruns after source changes, and a script registry are out of scope.
 
 ## UX
 
@@ -111,20 +100,9 @@ Add a `Create Sandbox and Launch Thread` action for the common case. Creating on
 the live preset binding and the edited defaults. Launching a Thread later starts from the Sandbox's
 current effective Thread defaults, while per-Thread edits remain local to that Thread.
 
-An existing Sandbox page shows the binding and reconciliation state, for example:
-
-```text
-Sandbox preset: Public coder · live
-Thread default: Public coder / Codex · inherited
-Applied revision: 8
-```
-
-A Thread shows the revisions and overrides that produced it. If a different preset requires a new
-Sandbox template or bootstrap/runtime shape, the UI must say so and offer creating a new Sandbox;
-it must not silently apply only half of the preset.
-
-Initialization is visible in the Sandbox lifecycle (`Initializing workspace`) and a failed required
-bootstrap prevents the Thread launch action until the operator retries or creates a fresh Sandbox.
+An existing Sandbox page shows the bound preset and whether its Thread default is inherited or
+overridden, for example `Public coder · inherited`. A failed bootstrap fails the Thread launch; the
+operator retries it or creates a fresh Sandbox.
 
 ## Implemented first slice
 
@@ -136,13 +114,6 @@ bootstrap prevents the Thread launch action until the operator retries or create
 4. Send the configured bootstrap source to the runner before opening the first Thread.
 5. Add the preset selector and inherited-default presentation to the existing UI.
 6. Add the one-action Sandbox-plus-Thread launch path.
-
-**Remaining support / deployment evidence**
-
-- Durable app records for preset revisions, Sandbox bindings, and Thread launch provenance.
-- A runner initialization operation with idempotence and bounded result reporting.
-- Reconciliation for changed preset revisions where the runtime supports it.
-- A dedicated `public-coder` egress policy and a real acceptance fixture.
 
 **Live acceptance target**
 

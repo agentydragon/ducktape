@@ -411,6 +411,21 @@ py_test(
 )
 
 py_test(
+    name = "test_ssh_mcp_known_hosts",
+    srcs = ["test_ssh_mcp_known_hosts.py"],
+    data = [
+        "//cluster/k8s:cluster_all_files",
+        "//ssh_keys:public-coder-devbox-host.pub",
+    ],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//more_itertools",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
     name = "test_cluster_integration",
     srcs = ["test_cluster_integration.py"],
     data = [
@@ -546,13 +561,18 @@ py_test(
 py_test(
     name = "test_haku_deployment_config_contract",
     srcs = ["test_haku_deployment_config_contract.py"],
-    data = ["//cluster/k8s:haku_manifest_contract_files"],
+    data = [
+        "//cluster/k8s:agentplane_actions_remote_mcp",
+        "//cluster/k8s:haku_manifest_contract_files",
+    ],
     deps = [
         ":conftest",
         "//:conftest",
         "//haku/console:config",
         "//haku/console:mcp_config",
         "//haku/console:settings",
+        "//haku/console:tool_call_actor",
+        "//haku/console/auto_approval:registry",
         "//util/bazel:runfiles",
         "@pypi//pydantic",
         "@pypi//pytest",
@@ -596,6 +616,8 @@ py_test(
     name = "test_agentplane_crd_schemas",
     srcs = ["test_agentplane_crd_schemas.py"],
     data = [
+        "//cluster/k8s:agentplane-crds/crd-actionpolicybindings.yaml",
+        "//cluster/k8s:agentplane-crds/crd-actionpolicysets.yaml",
         "//cluster/k8s:agentplane-crds/crd-egressbindings.yaml",
         "//cluster/k8s:agentplane-crds/crd-egresscredentials.yaml",
         "//cluster/k8s:agentplane-crds/crd-egresspolicies.yaml",
@@ -603,6 +625,19 @@ py_test(
     ],
     deps = [
         "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_agentplane_action_policies",
+    srcs = ["test_agentplane_action_policies.py"],
+    data = ["//cluster/k8s:cluster_yaml_files"],
+    deps = [
+        "//util/bazel:runfiles",
+        "//x/agentplane/action_service/policies:resources",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",

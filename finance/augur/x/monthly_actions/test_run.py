@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from finance.augur.rust.invocation import read_prepared_input
+from finance.augur.sim.artifacts import read_prepared_input
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.results import (
     Executed,

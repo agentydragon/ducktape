@@ -92,3 +92,16 @@ def pick_free_port(host: str = "127.0.0.1", *, preferred: int | None = None, max
         if (bound := _try_bind(host, p)) is not None:
             return bound
     return preferred
+
+
+def bind_free_port(host: str = "127.0.0.1") -> socket.socket:
+    """A listening socket on an OS-assigned port, to hand to the server that will accept on it.
+
+    Unlike ``pick_free_port`` the port is held from the moment it's chosen, so nothing else on a busy
+    host can take it before the server binds; read it back with ``sock.getsockname()[1]``.
+    """
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind((host, 0))
+    sock.listen()
+    return sock

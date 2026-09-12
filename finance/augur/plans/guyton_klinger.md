@@ -15,7 +15,7 @@ as its slices land; the [roadmap](roadmap.md) owns cross-component dependencies.
   The current <../model/historical_windows.py> macro/product composition has one
   equity index; do not force six equity histories into it or synthesize bonds
   from yields when the study source is an observed total-return series.
-- <../rust/simulator.pyi> supplies current lots/prices/basis, cash, CPI and typed
+- <../sim/observations.py> supplies current lots/prices/basis, cash, CPI and typed
   receipts; exact sell/buy/consume actions own canonical settlement. Policies
   see observations, never the prepared future path arrays.
 - <../policy/sleeves.py> supplies FIFO funding proposals and exact quantity

@@ -18,8 +18,14 @@ from starlette.middleware.base import RequestResponseEndpoint
 from starlette.routing import Route
 
 from x.agentplane.action_service.auth import OperatorAuthenticator, workload_principal
-from x.agentplane.action_service.caller_auth import CallerAuthenticator
-from x.agentplane.action_service.catalog import ActionCatalog, ActionGroupView, ActionView, UnknownActionError
+from x.agentplane.action_service.caller_auth import CallerTokenVerifier
+from x.agentplane.action_service.catalog import (
+    ActionCatalog,
+    ActionGroupView,
+    ActionUnavailableError,
+    ActionView,
+    UnknownActionError,
+)
 from x.agentplane.action_service.connections import (
     Connection,
     ConnectionAuthority,
@@ -27,7 +33,6 @@ from x.agentplane.action_service.connections import (
     ConnectionNotFoundError,
     ConnectionRename,
     ConnectionVersion,
-    Identity,
 )
 from x.agentplane.action_service.db import ActionConflictError, ActionNotFoundError, ExternalGrantNotAuthorizedError
 from x.agentplane.action_service.enrollments import (
@@ -41,10 +46,11 @@ from x.agentplane.action_service.enrollments import (
     EnrollmentPreviewInput,
     EnrollmentRejectedError,
 )
-from x.agentplane.action_service.mcp_frontend import ActionsMcp, create_server
+from x.agentplane.action_service.mcp_frontend import TransportDisconnects, create_server
 from x.agentplane.action_service.mcp_linkage import (
     McpLinkageAuthority,
     McpLinkageConflictError,
+    McpLinkageError,
     McpLinkageNotFoundError,
     McpLinkageStart,
     McpLinkageStartView,
@@ -59,6 +65,7 @@ from x.agentplane.action_service.models import (
     DecisionInput,
     Principal,
     PrincipalRole,
+    ServiceAccountRef,
 )
 from x.agentplane.action_service.oauth import ActionsOAuthProxy
 from x.agentplane.action_service.push import PushIdentity, PushSubscriptionStore
@@ -70,6 +77,7 @@ from x.agentplane.action_service.service import (
 )
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
+from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 
 
 class PushSubscriptionInput(BaseModel):
@@ -130,7 +138,7 @@ async def _operator(
 
 def create_app(
     service: ActionService,
-    workload_authenticator: SandboxPrincipalAuthenticator,
+    workload_resolver: SandboxPrincipalResolver,
     operator_authenticator: OperatorAuthenticator,
     catalog: ActionCatalog,
     *,
@@ -142,8 +150,7 @@ def create_app(
     push_subscriptions: PushSubscriptionStore | None = None,
     mcp_linkage: McpLinkageAuthority | None = None,
 ) -> FastAPI:
-    caller_authenticator = CallerAuthenticator(workload_authenticator, oauth)
-    mcp_app = create_server(service, catalog, updates, caller_authenticator).http_app(
+    mcp_app = create_server(service, catalog, updates, CallerTokenVerifier(workload_resolver, oauth=oauth)).http_app(
         path="/mcp", stateless_http=True, json_response=False, host_origin_protection="auto"
     )
 
@@ -161,7 +168,7 @@ def create_app(
 
     app = FastAPI(title="Agentplane Action Service", version="v1", lifespan=lifespan)
     app.state.action_service = service
-    app.state.workload_authenticator = workload_authenticator
+    app.state.workload_authenticator = SandboxPrincipalAuthenticator(workload_resolver)
     app.state.operator_authenticator = operator_authenticator
     app.state.action_catalog = catalog
     app.state.action_updates = updates
@@ -177,6 +184,11 @@ def create_app(
     async def not_found(request: Request, error: ActionNotFoundError) -> JSONResponse:
         del request, error
         return _error(status.HTTP_404_NOT_FOUND, "action request not found")
+
+    @app.exception_handler(ActionUnavailableError)
+    async def unavailable_action(request: Request, error: ActionUnavailableError) -> JSONResponse:
+        del request, error
+        return _error(status.HTTP_503_SERVICE_UNAVAILABLE, "ActionGroup is temporarily unavailable")
 
     @app.exception_handler(UnknownActionError)
     async def unknown_action(request: Request, error: UnknownActionError) -> JSONResponse:
@@ -403,7 +415,7 @@ def create_app(
     # Match only the transport endpoint, without a slash redirect or intercepting unknown REST paths.
     if oauth is not None:
         app.router.routes.extend(oauth.get_routes(mcp_path="/mcp"))
-    app.router.routes.append(Route("/mcp", ActionsMcp(mcp_app, caller_authenticator)))
+    app.router.routes.append(Route("/mcp", TransportDisconnects(mcp_app)))
     return app
 
 
@@ -418,9 +430,9 @@ def _connection_routes(app: FastAPI, authority: ConnectionAuthority) -> None:
         del request
         return _error(status.HTTP_409_CONFLICT, str(error))
 
-    @app.get("/v1/operator/identities", dependencies=[Depends(_operator)])
-    async def identities() -> dict[str, Identity]:
-        return authority.identities()
+    @app.get("/v1/operator/caller-service-accounts", dependencies=[Depends(_operator)])
+    async def caller_service_accounts() -> list[ServiceAccountRef]:
+        return authority.caller_service_accounts()
 
     @app.get("/v1/operator/connections", dependencies=[Depends(_operator)])
     async def connections() -> list[Connection]:
@@ -474,6 +486,13 @@ def _error(status_code: int, detail: str) -> JSONResponse:
 
 
 def _mcp_linkage_routes(app: FastAPI, authority: McpLinkageAuthority) -> None:
+    @app.exception_handler(McpLinkageError)
+    async def mcp_linkage_failed(request: Request, error: McpLinkageError) -> JSONResponse:
+        # A provider that refused or could not answer the token exchange; the more specific
+        # subclasses below keep their own status codes.
+        del request
+        return _error(status.HTTP_502_BAD_GATEWAY, str(error))
+
     @app.exception_handler(McpLinkageConflictError)
     async def mcp_linkage_conflict(request: Request, error: McpLinkageConflictError) -> JSONResponse:
         del request

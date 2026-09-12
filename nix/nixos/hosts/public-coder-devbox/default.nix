@@ -183,7 +183,12 @@ in
   # outside the guest by the Cilium policy on virt-launcher.
   services.openssh.settings.PermitRootLogin = lib.mkForce "prohibit-password";
 
-  users.users.root.openssh.authorizedKeys.keys = [ keys.publicCoderDevbox ];
+  users.users.root.openssh.authorizedKeys.keys = [
+    keys.publicCoderDevbox
+    # ssh-mcp's dedicated key for this (host, user) target (cluster/k8s/ssh-mcp), distinct from
+    # the operator's own key above so revoking one never revokes the other.
+    keys.publicCoderDevboxMcpRoot
+  ];
 
   # `coder` is the unprivileged account used for public-coder-agent's SSH build sessions.
   users.users.coder = {
@@ -196,6 +201,8 @@ in
       # and not for root: the piper re-originates the Agent's session as this account. Nothing
       # about the Pipe's own configuration is load-bearing for that.
       keys.publicCoderAgentSshpiper
+      # ssh-mcp's dedicated key for this (host, user) target, same reasoning as root's above.
+      keys.publicCoderDevboxMcpCoder
     ];
   };
 
@@ -229,6 +236,15 @@ in
     autoFormat = true;
     autoResize = true;
   };
+
+  # The cache PVC is mounted during local-fs.target, before tmpfiles runs. Keep
+  # its top-level mount root owned by root, but create exactly the three Bazel
+  # working directories for coder; this avoids a world-writable cache volume.
+  systemd.tmpfiles.rules = [
+    "d ${bazelOutputUserRoot} 0700 coder users -"
+    "d ${bazelRepositoryCache} 0700 coder users -"
+    "d ${bazelDiskCache} 0700 coder users -"
+  ];
 
   environment.systemPackages = with pkgs; [
     htop

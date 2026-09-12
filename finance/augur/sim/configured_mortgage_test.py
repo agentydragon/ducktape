@@ -6,7 +6,8 @@ from decimal import Decimal
 import pytest
 import pytest_bazel
 
-from finance.augur.sim.configured import execute
+from finance.augur.sim.configured import execute, simulate_product_metrics
+from finance.augur.sim.metric_composition import BASE_METRIC_NAMES
 from finance.augur.sim.scenario import MortgageFinancing, PropertySaleEvent, ScheduledObligation
 from finance.augur.sim.testing.case import Case, levels, scenario
 from finance.augur.sim.testing.fixtures import SF, SF_HOME, checking, financed_property_case, home_purchase
@@ -68,9 +69,27 @@ def test_sale_pays_off_ledger_principal_before_sale_month_installment(closing_co
         },
     )
     results = execute(case.compiled_run, "forensic")
+    metrics = simulate_product_metrics(case.compiled_run, "alice")
+    property_marks = metrics.base_series[BASE_METRIC_NAMES.index("property_value_quanta")]
+    assert len(results) == 2
     for result in results:
         assert result.financial is not None
+        assert result.financial.failed_month is None
+        [purchase_outcome] = result.financial.property_purchases
+        assert purchase_outcome.purchase_price == 100_000
         books = result.financial.months
+        assert books[3].properties[0].adjusted_basis == 100_000
+        assert property_marks[:, result.rollout_id].tolist() == [0, 0, 0, 120_000, 150_000, 180_000, 0]
+        [sale] = result.financial.property_sales
+        seller_cost = 18_000 if closing_cost_pct else 0
+        payoff = 58_000 if financed else 0
+        assert sale.gross_proceeds == 180_000 - seller_cost
+        assert sale.mortgage_payoff == payoff
+        assert sale.net_cash_to_owner == 180_000 - seller_cost - payoff
+        assert sale.realized_gain == 80_000 - seller_cost
+        assert sale.depreciation_recapture == sale.section_121_exclusion == 0
+        assert sale.gross_proceeds + seller_cost == property_marks[5, result.rollout_id]
+        assert all(sum(posting.amount for posting in entry.postings) == 0 for entry in result.financial.journal)
         assert not books[2].mortgages
         ending = books[-1]
         if financed:

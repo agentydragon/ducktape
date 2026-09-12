@@ -32,6 +32,17 @@ import {
   type SessionSummary,
 } from "../protocol_pb";
 import { routes } from "./network";
+import { SCENARIOS, type Scenario } from "./scenarios";
+
+/** Resolved before any fixture is built: the scenario's fields are what the fixtures vary on. */
+function resolveScenario(): Scenario {
+  const name = new URLSearchParams(window.location.search).get("page") ?? "sandboxes";
+  const found: Scenario | undefined = SCENARIOS[name];
+  if (found === undefined) throw new Error(`unknown harness scenario ${name}`);
+  return found;
+}
+
+const scenario = resolveScenario();
 
 // visual-test-lib freezes the wall clock before this bundle runs, so relative ages stay put.
 const NOW = Date.now();
@@ -45,7 +56,6 @@ const SANDBOXES: SandboxView[] = [
   {
     name: "demo-a1b2",
     uid: "0f9c1d2e-0000-4000-8000-00000000a1b2",
-    archived: false,
     state: "running",
     created_at: ago(3 * HOUR),
     operating_mode: "Running",
@@ -67,7 +77,6 @@ const SANDBOXES: SandboxView[] = [
   {
     name: "codex-c3d4",
     uid: "0f9c1d2e-0000-4000-8000-00000000c3d4",
-    archived: false,
     state: "waiting_for_pod_ready",
     created_at: ago(2 * 60_000),
     operating_mode: "Running",
@@ -95,7 +104,6 @@ const SANDBOXES: SandboxView[] = [
   {
     name: "old-e5f6",
     uid: "0f9c1d2e-0000-4000-8000-00000000e5f6",
-    archived: false,
     state: "suspended",
     created_at: ago(48 * HOUR),
     operating_mode: "Suspended",
@@ -263,6 +271,18 @@ const THREADS: ThreadView[] = [
     last_sequence: 31,
     last_event_at: ago(90 * 60_000),
   },
+  {
+    id: "5f1c4a2e-0000-4000-8000-000000000002",
+    sandbox: "demo-a1b2",
+    session_id: "s-2",
+    provider: "PROVIDER_CLAUDE",
+    model: "harness-claude-model",
+    cwd: "/state/work",
+    created_at: ago(30 * 60_000),
+    name: "Clean up the stale branch",
+    last_sequence: 23,
+    last_event_at: ago(10_000),
+  },
 ];
 
 const ACTIONS: ActionRequestView[] = [
@@ -273,9 +293,9 @@ const ACTIONS: ActionRequestView[] = [
     origin: { thread_id: THREADS[0].id },
     correlation: {},
     idempotency_key: "visual-pending",
-    caller_principal: "configured-identity:test_public_coder",
+    caller_principal: "service-account:agentplane-visual:test-public-coder",
     external_grant: {
-      identity_id: "test_public_coder",
+      caller: { namespace: "agentplane-visual", name: "test-public-coder" },
       issuer: "https://test-actions.example/oauth",
       client_id: "test-external-client",
       connection_id: "73000000-0000-4000-8000-000000000001",
@@ -321,12 +341,93 @@ const ACTIONS: ActionRequestView[] = [
       reconciled_at: null,
     },
   },
+  {
+    id: "70000000-0000-4000-8000-000000000003",
+    action: { group: "everything", name: "echo" },
+    arguments: { repository: "test-owner/other-repository" },
+    origin: { thread_id: THREADS[1].id },
+    correlation: {},
+    idempotency_key: "visual-denied",
+    caller_principal: "service-account:agentplane-visual:test-public-coder",
+    external_grant: {
+      caller: { namespace: "agentplane-visual", name: "test-public-coder" },
+      issuer: "https://test-actions.example/oauth",
+      client_id: "test-external-client",
+      connection_id: "73000000-0000-4000-8000-000000000003",
+      grant_id: "74000000-0000-4000-8000-000000000003",
+      revision: 1,
+    },
+    state: "denied",
+    version: 2,
+    created_at: ago(80 * 60_000),
+    updated_at: ago(79 * 60_000),
+    decision: {
+      id: "71000000-0000-4000-8000-000000000003",
+      verdict: "deny",
+      provider: "human_operator",
+      issuer: "test-operator",
+      decision_note: "Out of scope for this workload's binding.",
+      idempotency_key: "visual-deny",
+      decided_at: ago(79 * 60_000),
+    },
+    execution: null,
+  },
+  {
+    id: "70000000-0000-4000-8000-000000000004",
+    action: { group: "github", name: "search_code" },
+    arguments: { repository: "agentydragon/ducktape", query: "auto_allow" },
+    origin: { thread_id: THREADS[2].id },
+    correlation: {},
+    idempotency_key: "visual-auto-approved",
+    caller_principal: "kubernetes-sandbox:demo-a1b2",
+    state: "succeeded",
+    version: 3,
+    created_at: ago(15 * 60_000),
+    updated_at: ago(14 * 60_000),
+    decision: {
+      id: "71000000-0000-4000-8000-000000000004",
+      verdict: "allow",
+      provider: "policy_engine",
+      issuer: "policy_engine",
+      decision_note: null,
+      idempotency_key: "visual-policy-allow",
+      decided_at: ago(14 * 60_000),
+      policy_evidence: {
+        bindings: [{ namespace: "agentplane-visual", name: "demo-a1b2-github-public", resource_version: "12345" }],
+        policy_sets: [{ namespace: "agentplane-visual", name: "fixture_auto_allow", generation: 1 }],
+        matched: {
+          namespace: "agentplane-visual",
+          policy_set: "fixture_auto_allow",
+          source: "autoApproveIf",
+          index: 0,
+          type: "exact_actions",
+        },
+      },
+    },
+    execution: {
+      id: "72000000-0000-4000-8000-000000000004",
+      state: "succeeded",
+      result: { matches: 3 },
+      error: null,
+      created_at: ago(14 * 60_000),
+      started_at: ago(14 * 60_000 - 500),
+      completed_at: ago(14 * 60_000 - 900),
+      reconciled_at: null,
+    },
+  },
 ];
 
 const ATTACHED: Attached = create(AttachedSchema, {
   sessionId: "s-1",
   spec: SPEC,
   lastSequence: 14n,
+  harness: HarnessState.RUNNING,
+});
+
+const ATTACHED_STATES: Attached = create(AttachedSchema, {
+  sessionId: "s-2",
+  spec: SPEC,
+  lastSequence: 23n,
   harness: HarnessState.RUNNING,
 });
 
@@ -430,6 +531,63 @@ const EVENTS: Event[] = [
   event(34, { case: "textDelta", value: { itemId: "m#1", text: "Reading `src` now" } }, [32]),
 ];
 
+/**
+ * A second canned script, not a second turn of the same conversation: every state the transcript
+ * restyle (role-as-bubble, status-as-dot) touches that the main script above doesn't produce on
+ * its own -- a failed tool call standing alone, a run whose reasoning is still streaming beside a
+ * tool call that already failed, and a message still queued mid-turn. Not meant to read as a
+ * plausible conversation; each piece exists to make one dot's rendering show up in a diff.
+ */
+const EVENTS_STATES: Event[] = [
+  event(1, { case: "harnessStarted", value: { resumed: false, pid: 9 } }),
+  event(2, { case: "inputSubmitted", value: { inputId: "i1", text: "Delete the stale branch." } }),
+  event(3, { case: "turnStarted", value: { turnId: "t1" } }),
+  event(4, { case: "inputAccepted", value: { inputId: "i1", turnId: "t1" } }),
+  event(5, { case: "itemStarted", value: { itemId: "tool#0", kind: ItemKind.TOOL_CALL, toolName: "Bash" } }),
+  event(6, { case: "toolArguments", value: { itemId: "tool#0", argumentsJson: '{"command": "git branch -d stale"}' } }),
+  event(7, {
+    case: "itemCompleted",
+    value: {
+      itemId: "tool#0",
+      outcome: { case: "tool", value: { output: "fatal: branch 'stale' not found.", succeeded: false } },
+    },
+  }),
+  event(8, { case: "itemStarted", value: { itemId: "m#0", kind: ItemKind.ASSISTANT_TEXT } }),
+  event(9, { case: "textDelta", value: { itemId: "m#0", text: "That branch doesn't exist." } }),
+  event(10, {
+    case: "itemCompleted",
+    value: { itemId: "m#0", outcome: { case: "text", value: "That branch doesn't exist." } },
+  }),
+  event(11, { case: "turnCompleted", value: { turnId: "t1", status: TurnStatus.COMPLETED } }),
+  event(12, {
+    case: "inputSubmitted",
+    value: { inputId: "i2", text: "Run the test suite twice, thinking it over first." },
+  }),
+  event(13, { case: "turnStarted", value: { turnId: "t2" } }),
+  event(14, { case: "inputAccepted", value: { inputId: "i2", turnId: "t2" } }),
+  event(15, { case: "itemStarted", value: { itemId: "r#0", kind: ItemKind.REASONING } }),
+  event(16, {
+    case: "textDelta",
+    value: { itemId: "r#0", text: "Running it once could hide a flaky failure; twice tells the difference." },
+  }),
+  // r#0 never completes: the run it starts is still thinking while its own tool calls finish.
+  event(17, { case: "itemStarted", value: { itemId: "tool#1", kind: ItemKind.TOOL_CALL, toolName: "Bash" } }),
+  event(18, { case: "toolArguments", value: { itemId: "tool#1", argumentsJson: '{"command": "bazel test //..."}' } }),
+  event(19, {
+    case: "itemCompleted",
+    value: { itemId: "tool#1", outcome: { case: "tool", value: { output: "42 passed", succeeded: true } } },
+  }),
+  event(20, { case: "itemStarted", value: { itemId: "tool#2", kind: ItemKind.TOOL_CALL, toolName: "Bash" } }),
+  event(21, { case: "toolArguments", value: { itemId: "tool#2", argumentsJson: '{"command": "bazel test //..."}' } }),
+  event(22, {
+    case: "itemCompleted",
+    value: { itemId: "tool#2", outcome: { case: "tool", value: { output: "1 test regressed", succeeded: false } } },
+  }),
+  // Turn t2 stays active: the run above (r#0, tool#1, tool#2) is what an in-progress, partly-failed
+  // step looks like. i3 is never accepted: this is what a message queued mid-turn looks like.
+  event(23, { case: "inputSubmitted", value: { inputId: "i3", text: "One more thing before you go." } }),
+];
+
 // Only what a page still asks for: the sandboxes, their bindings and their threads arrive on the
 // live streams above.
 routes.push(
@@ -469,14 +627,19 @@ routes.push(
           ...grant,
           id: "20000000-0000-4000-8000-000000000002",
           connection_id: "10000000-0000-4000-8000-000000000002",
-          identity_id: "retired",
+          caller: { namespace: "agentplane-visual", name: "retired" },
           status: "revoked",
           revoked_at: "2026-09-09T12:03:00Z",
         })),
       },
     ],
   ],
-  ["GET", /^\/connection-identities$/, () => ({ personal: { enabled: false } })],
+  ["GET", /^\/connection-service-accounts$/, () => [{ namespace: "agentplane-visual", name: "operator-assistant" }]],
+  // The Settings modal mounts all three tabs at once (Mantine keepMounted); MCP servers and
+  // Notifications fetch on mount even while the OAuth clients tab is the one shown in the shot.
+  ["GET", /^\/mcp-servers$/, () => []],
+  ["GET", /^\/push\/config$/, () => ({ application_server_key: null })],
+  ["GET", /^\/push\/subscriptions$/, () => []],
   [
     "POST",
     /^\/connection-enrollments\/[^/]+\/preview$/,
@@ -488,7 +651,10 @@ routes.push(
         expires_at: new Date(NOW + 10 * 60_000).toISOString(),
         version: 1,
       },
-      identities: { public_coder: { enabled: true }, operator_assistant: { enabled: true } },
+      service_accounts: [
+        { namespace: "agentplane-visual", name: "public-coder" },
+        { namespace: "agentplane-visual", name: "operator-assistant" },
+      ],
       connections: [sampleConnection()],
       csrf_token: "test-only-csrf",
       attempted_decision: null,
@@ -527,7 +693,7 @@ const WEDGED: WatchHealth = {
 };
 
 function watch(): WatchHealth {
-  return new URLSearchParams(window.location.search).get("page")?.endsWith("_stale") ? WEDGED : FRESH;
+  return scenario.wedgedWatch ? WEDGED : FRESH;
 }
 
 /**
@@ -567,8 +733,13 @@ class HarnessEventSource extends EventTarget {
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
       return;
     }
-    this.dispatchEvent(new MessageEvent("attached", { data: toJsonString(AttachedSchema, ATTACHED) }));
-    for (const event of EVENTS) {
+    // The only other stream shape: a session's own events. Which script depends on which session
+    // the URL names -- everything but `s-2` gets the original two-turn script above.
+    const isStatesSession = url.pathname.endsWith(`/sessions/${ATTACHED_STATES.sessionId}/events`);
+    const attached = isStatesSession ? ATTACHED_STATES : ATTACHED;
+    const events = isStatesSession ? EVENTS_STATES : EVENTS;
+    this.dispatchEvent(new MessageEvent("attached", { data: toJsonString(AttachedSchema, attached) }));
+    for (const event of events) {
       this.dispatchEvent(
         new MessageEvent("event", { data: toJsonString(EventSchema, event), lastEventId: String(event.sequence) })
       );
@@ -582,48 +753,31 @@ class HarnessEventSource extends EventTarget {
 
 window.EventSource = HarnessEventSource as unknown as typeof EventSource;
 
-const PAGES: Record<string, string> = {
-  sandboxes: "/",
-  // The same list under a watch that has stopped: the banner is the page saying so.
-  sandboxes_stale: "/",
-  actions: "/actions",
-  actions_phone: "/actions",
-  consent: "/connection-enrollments/test-only-opaque-handle",
-  consent_phone: "/connection-enrollments/test-only-opaque-handle",
-  consent_reconnect: "/connection-enrollments/test-only-opaque-handle",
-  consent_reconnect_phone: "/connection-enrollments/test-only-opaque-handle",
-  connections: "/connections",
-  connections_phone: "/connections",
-  sandbox: "/sandboxes/demo-a1b2",
-  // With the github-public binding's rules open, so the shot carries the credential detail — its
-  // description, where the proxy puts it, and which secret it comes from — and the other
-  // binding, still folded, shows the row the button starts as.
-  sandbox_egress: "/sandboxes/demo-a1b2?tab=egress&rules=demo-a1b2-github-public",
-  session: "/sandboxes/demo-a1b2/sessions/s-1",
-  // `%23` is the `#` of the item id: the view scrolls to the newest event, so the block this
-  // scenario has to show open is the second turn's, and the first stays folded beside it.
-  session_reasoning: "/sandboxes/demo-a1b2/sessions/s-1?reasoning=r%231",
-  // The raw scenario opens it too: a reader following the frames wants the thinking they produced.
-  session_raw: "/sandboxes/demo-a1b2/sessions/s-1?raw=1&reasoning=r%231",
-};
-
-const page = new URLSearchParams(window.location.search).get("page") ?? "sandboxes";
-const path = PAGES[page];
-if (path === undefined) throw new Error(`unknown harness page ${page}`);
-if (page.startsWith("consent_reconnect")) {
+if (scenario.preselectReconnect) {
   const selectExisting = new MutationObserver(() => {
     const connection = document.querySelector<HTMLSelectElement>('select[name="connection"]');
-    const identity = document.querySelector<HTMLSelectElement>('select[name="identity"]');
-    if (!connection || !identity) return;
+    const account = document.querySelector<HTMLSelectElement>('select[name="service_account"]');
+    if (!connection || !account) return;
     selectExisting.disconnect();
     connection.value = sampleConnection().id;
     connection.dispatchEvent(new Event("change", { bubbles: true }));
-    identity.value = "operator_assistant";
-    identity.dispatchEvent(new Event("change", { bubbles: true }));
+    account.value = "agentplane-visual/operator-assistant";
+    account.dispatchEvent(new Event("change", { bubbles: true }));
   });
   selectExisting.observe(document, { childList: true, subtree: true });
 }
-window.location.hash = path;
+if (scenario.openSettings) {
+  // There's no dedicated route for the Settings modal; open it the way an operator would, by
+  // clicking the nav button, rather than a URL that only exists for this test.
+  const openSettings = new MutationObserver(() => {
+    const button = [...document.querySelectorAll("button")].find((candidate) => candidate.textContent === "Settings");
+    if (!button) return;
+    openSettings.disconnect();
+    button.click();
+  });
+  openSettings.observe(document, { childList: true, subtree: true });
+}
+window.location.hash = scenario.route;
 
 const container = document.getElementById("app");
 if (!container) throw new Error("missing #app");

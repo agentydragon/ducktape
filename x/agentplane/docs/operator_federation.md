@@ -9,9 +9,9 @@ holds Authlib's state/nonce/PKCE verifier while login is pending, then verified 
 lifetime is known) the access token. ID tokens and refresh tokens are not retained. Neither identity
 nor OAuth/token material is encoded in the cookie. The row key is a SHA-256 digest of the handle.
 
-The app follows its existing `TrajectoryStore.ensure_schema()` startup DDL pattern: it creates the
-new table and expiry index with SQLAlchemy, under a PostgreSQL transaction advisory lock shared
-by app startups. There is no separate app Alembic runner today. The Action schema is unchanged.
+The table and its expiry index come from the app's own Alembic history
+(`x/agentplane/app/migrations/`), applied by the `migrate` init container before the app starts; the
+app itself never creates or checks tables. The Action schema is unchanged.
 Existing signed-payload cookies are deliberately invalid after rollout: log in again. Replicas
 must use the same app database, OIDC configuration, public origin, and session signing secret.
 
@@ -160,16 +160,15 @@ preserve this source contract or update and revalidate the subject mode.
    signing Secret. Its `AGENTPLANE_ACTION_FEDERATION` JSON comes from the same federation ConfigMap.
    The stable ConfigMap name plus reloader annotations rolls both processes when its pins change;
    generated application settings ConfigMaps retain their Kustomize name hashes.
-   No replicas are added by this migration. Runner ingestion now supports replicas through database
-   leases and shared event delivery; changing deployment scale/strategy still requires upgrading
-   existing sandbox runners to the independent-attachment protocol first.
+   No replicas are added by this migration. Runner ingestion supports replicas through database
+   leases and shared event delivery.
 4. Use app, Action Service, and migration images published from `df4a440` (#5820) or a descendant.
    The devel CI run [34167823523](https://github.com/agentydragon/ducktape/actions/runs/34167823523)
    published all three; existing Flux image markers/policies remain enabled. Do not enable this
    configuration on the previous `5686ff8` app image (it lacks persistent sessions/federation).
-   Existing cookies require a new login. App startup creates `operator_browser_session` and its
-   expiry index via the existing shared-Postgres advisory-lock DDL path; no separate app migration,
-   DB, signing-secret rotation, or session-replica expansion is introduced.
+   Existing cookies require a new login. The app's `migrate` init container creates
+   `operator_browser_session` and its expiry index; no separate DB, signing-secret rotation, or
+   session-replica expansion is introduced.
 
 The BFF already reaches Action on the destination Pod port 8080, and Action admits it separately
 from the workload proxy. Both now reach the public Authentik origin on host/remote-node TCP 443,
@@ -184,8 +183,8 @@ by L7 HTTP inspection of encrypted TLS. A different Gateway/DNS/L7-proxy setup r
 ### Live acceptance after merge/reconciliation (not performed in this PR)
 
 - Confirm the Terraform resource and both Flux layers are ready, configuration ConfigMap references
-  resolved, the intended image revisions running, Action migration healthy, and app startup completed
-  its session-table DDL. Inspect status, not secret payloads or a credential-bearing Terraform plan.
+  resolved, the intended image revisions running, both Action and app migrations healthy, and the
+  app started successfully. Inspect status, not secret payloads or a credential-bearing Terraform plan.
 - Verify public discovery/JWKS issuer and RS256 metadata against the configured login and target
   pins. Verify Hubble shows the BFF token/JWKS and Action JWKS connections admitted; a TLS connection
   with a different SNI on the same gateway must be denied. Do not weaken egress if this fails.
@@ -230,10 +229,15 @@ acceptance above remains required even when every offline target is green.
   `operator_reauthentication_required`.
 - Token/session or source/target subject mismatch: 403 with `operator_federation_identity_mismatch`.
 - Signature/issuer/audience/azp/expiry/required-claim rejection: 403 with `operator_federation_token_invalid`.
-- Exchange/JWKS/network/provider failure: 403 with `operator_federation_exchange_failed`.
+- Signing keys unusable with no HTTP failure to report: 503 with
+  `operator_federation_verification_unavailable`.
+- Exchange response rejected by the OAuth client or malformed: 502 with
+  `operator_federation_exchange_failed`.
   These are intentionally fixed public codes; provider bodies/exceptions and tokens are not returned.
-- Destination rejection retains its HTTP status with the existing generic rejection message;
-  destination transport failure remains 503 `Action Service is unavailable`, not a configuration error.
+- An HTTP failure against either provider's JWKS, the token endpoint, or the Action Service re-raises
+  with the upstream status (503 when no response arrived) and
+  `detail={method, url, upstream_status, error_type}`; the URL is stripped of credentials, query,
+  and fragment, and no body or token is echoed.
 
 There is still one Action authority. Only Action **arguments** are exact in authenticated operator
 list/detail/decision receipts. Caller/workload arguments remain recursively key-redacted; origin,
@@ -257,5 +261,6 @@ A result echoing an argument does not become an operator credential-disclosure p
 The single human-authored `decision_note` is shared unchanged with caller and operator through
 canonical polling/BFF projections; provider outcome reason fields remain separate. There is no
 private human-note path. [Caller cancellation](../action_service/README.md#cancellation) is available
-before dispatch claim; the operator/BFF surface has no cancellation override. Push/Event Hub
-notification remains deferred.
+before dispatch claim; the operator/BFF surface has no cancellation override. Approval Web Push is
+served by the app (`/push/*`, the service worker at `/sw.js`); only the Event & Notification Hub is
+deferred.

@@ -4,7 +4,7 @@ import pytest_bazel
 
 from finance.augur.sim.actions import ClaimId, PayClaim
 from finance.augur.sim.books import AccountRef
-from finance.augur.sim.observations import Claim, Observation, observation_from_json
+from finance.augur.sim.observations import Claim, Observation
 
 
 def test_observed_claim_request_roundtrip_loses_opaque_owner() -> None:
@@ -33,10 +33,8 @@ def test_observed_claim_request_roundtrip_loses_opaque_owner() -> None:
         ),
     )
     owner = object()
-    observed = observation_from_json(
-        facts.model_dump_json(by_alias=True), owner=owner, rollout_id=7, previous_receipts=()
-    )
-    [claim] = observed.claims
+    [claim] = facts.claims
+    claim._bind(owner, 7)
     request = PayClaim(request_id=0, cause_id="pay", claim=claim, from_account=account, amount=10)
     assert request.claim._belongs_to(owner, 7)
     assert not request.claim._belongs_to(owner, 0)

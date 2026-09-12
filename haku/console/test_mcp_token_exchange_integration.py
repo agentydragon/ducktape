@@ -39,7 +39,7 @@ from haku.console.mcp_config import (
 )
 from mcp_infra.authentik_auth.config import AuthentikAuthConfig
 from mcp_infra.persistence import PostgresPersistence
-from util.net import pick_free_port
+from util.net import bind_free_port
 from util.testing.asgi import serve_app
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 
@@ -235,12 +235,11 @@ async def token_chain_harness(
     migrated_db_url: str, migrated_sessions, tmp_path: Path, oidc_key_pair: tuple[RSAPrivateKey, RSAPublicKey]
 ) -> AsyncIterator[_TokenChainHarness]:
     private_key, public_key = oidc_key_pair
-    idp_port, backend_port, downstream_port, console_port = (pick_free_port() for _ in range(4))
-    idp_base = f"http://127.0.0.1:{idp_port}"
+    idp_sock, backend_sock, downstream_sock, console_sock = (bind_free_port() for _ in range(4))
+    idp_base, backend_url, downstream_url, console_url = (
+        f"http://127.0.0.1:{sock.getsockname()[1]}" for sock in (idp_sock, backend_sock, downstream_sock, console_sock)
+    )
     issuer = f"{idp_base}/application/o/grocy-test/"
-    backend_url = f"http://127.0.0.1:{backend_port}"
-    downstream_url = f"http://127.0.0.1:{downstream_port}"
-    console_url = f"http://127.0.0.1:{console_port}"
     exchange_gate = _ExchangeGate()
     exchanged_assertions: list[str] = []
     backend_calls: list[_ProtectedBackendCall] = []
@@ -259,7 +258,7 @@ async def token_chain_harness(
     backend = _protected_backend(issuer=issuer, audience=_PROXY_CLIENT_ID, public_key=public_key, calls=backend_calls)
 
     async with AsyncExitStack() as stack:
-        await stack.enter_async_context(serve_app(idp, port=idp_port))
+        await stack.enter_async_context(serve_app(idp, sock=idp_sock))
         auth_config = AuthentikAuthConfig(
             oidc_issuer=issuer,
             oidc_client_id="grocy-mcp",
@@ -281,9 +280,9 @@ async def token_chain_harness(
             ),
         )
         console = create_app(settings)
-        await stack.enter_async_context(serve_app(backend, port=backend_port))
-        await stack.enter_async_context(serve_app(downstream_app, port=downstream_port))
-        await stack.enter_async_context(serve_app(console, port=console_port))
+        await stack.enter_async_context(serve_app(backend, sock=backend_sock))
+        await stack.enter_async_context(serve_app(downstream_app, sock=downstream_sock))
+        await stack.enter_async_context(serve_app(console, sock=console_sock))
         operator = await stack.enter_async_context(
             httpx.AsyncClient(base_url=console_url, follow_redirects=True, headers={"Origin": console_url})
         )

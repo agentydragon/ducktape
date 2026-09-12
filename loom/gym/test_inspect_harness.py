@@ -168,7 +168,7 @@ def test_egress_ca_mount_skipped_for_remote_daemon(tmp_path: Path, monkeypatch: 
     ca.write_text("x")
     monkeypatch.setattr("loom.gym.inspect_harness.HOST_CA_BUNDLE", ca)
 
-    monkeypatch.setenv("DOCKER_HOST", "tcp://docker-ci.allegedly.works:2376")
+    monkeypatch.setenv("DOCKER_HOST", "tcp://remote-dind.test.invalid:2376")
     remote = yaml.safe_load(write_sandbox_compose(tmp_path, date(2020, 2, 1), "http://up:9999").read_text())
     remote_proxy = remote["services"]["proxy"]
     assert all("proxy-egress-ca" not in volume for volume in remote_proxy["volumes"])

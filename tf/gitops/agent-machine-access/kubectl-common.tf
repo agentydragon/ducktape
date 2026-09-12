@@ -54,6 +54,10 @@ resource "authentik_provider_oauth2" "kubectl_passthrough_mcp" {
       matching_mode = "strict"
       url           = "https://haku.allegedly.works/api/mcp/operator-auth/callback"
     },
+    {
+      matching_mode = "strict"
+      url           = "https://agentplane-staging.allegedly.works/mcp-linkage/callback"
+    },
   ]
 }
 

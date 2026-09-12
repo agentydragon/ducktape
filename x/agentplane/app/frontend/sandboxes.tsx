@@ -7,7 +7,6 @@ import {
   MultiSelect,
   Select,
   Stack,
-  Switch,
   Table,
   Text,
   Textarea,
@@ -38,7 +37,6 @@ const EMPTY_THREAD: ThreadDefaults = {};
 const STATE_COLORS: Record<string, string> = {
   running: "green",
   suspended: "gray",
-  archived: "gray",
   waiting_for_pod: "yellow",
   waiting_for_pod_ready: "yellow",
 };
@@ -79,18 +77,19 @@ function StateBadge({ row }: { row: SandboxView }): JSX.Element {
 }
 
 export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX.Element {
-  const [includeArchived, setIncludeArchived] = useState(false);
   // The list is pushed; an action's own failure is what this holds.
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<NewSandbox>(EMPTY_FORM);
   const [presets, setPresets] = useState<SandboxPresetView[]>([]);
   const [inheritedThread, setInheritedThread] = useState<ThreadDefaults>(EMPTY_THREAD);
   const [thread, setThread] = useState<ThreadDefaults>(EMPTY_THREAD);
+  const [modelCatalog, setModelCatalog] = useState<Record<string, string[]> | null>(null);
+  const modelOptions = thread.provider ? (modelCatalog?.[thread.provider] ?? []) : [];
   // The namespace's policies; ticking some grants them to this sandbox alone.
   const [policies, setPolicies] = useState<string[]>([]);
   // The sandbox whose deletion is being confirmed, by name; deleting takes its volume with it.
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
-  const live = useLive<SandboxesSnapshot>(liveSandboxesUrl(includeArchived));
+  const live = useLive<SandboxesSnapshot>(liveSandboxesUrl());
   const rows: SandboxView[] = live.snapshot?.sandboxes ?? [];
 
   useEffect(() => {
@@ -103,9 +102,29 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
     })();
   }, []);
 
+  useEffect(() => {
+    void api.GET("/models").then(
+      ({ data, error: failure }) => {
+        if (failure) setError(displayableError(failure));
+        else setModelCatalog(data);
+      },
+      (reason: unknown) => setError(displayableError(reason))
+    );
+  }, []);
+
+  useEffect(() => {
+    if (!modelCatalog) return;
+    setThread((current) => {
+      if (!current.provider) return current;
+      const offered = modelCatalog[current.provider];
+      if (current.model && offered.includes(current.model)) return current;
+      return { ...current, model: offered[0] ?? null };
+    });
+  }, [modelCatalog, thread.provider, thread.model]);
+
   // No refresh after an action: the change reaches the API server, and the watch behind the
   // stream brings the new row back on its own.
-  async function act(name: string, action: "suspend" | "resume" | "archive" | "unarchive" | "delete"): Promise<void> {
+  async function act(name: string, action: "suspend" | "resume" | "delete"): Promise<void> {
     const params = { params: { path: { name } } };
     const { error: failure } =
       action === "delete"
@@ -181,7 +200,10 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           onChange={(picked) => setForm({ ...form, policies: picked })}
           style={{ flex: "1 1 12rem" }}
         />
-        <Button onClick={() => void create()} disabled={!form.slug}>
+        <Button
+          onClick={() => void create()}
+          disabled={!form.slug || Boolean(form.preset && (!thread.model || !modelOptions.includes(thread.model)))}
+        >
           New sandbox
         </Button>
       </Group>
@@ -193,16 +215,22 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           <Group align="flex-end">
             <Select
               label="Harness"
+              allowDeselect={false}
               data={["claude", "codex"]}
               value={thread.provider ?? null}
               onChange={(provider) =>
                 setThread({ ...thread, provider: (provider ?? undefined) as ThreadDefaults["provider"] })
               }
             />
-            <TextInput
+            <Select
               label="Model"
-              value={thread.model ?? ""}
-              onChange={(event) => setThread({ ...thread, model: event.currentTarget.value })}
+              searchable
+              allowDeselect={false}
+              data={modelOptions}
+              value={thread.model ?? null}
+              onChange={(model) => setThread({ ...thread, model })}
+              disabled={modelOptions.length === 0}
+              placeholder={modelCatalog ? "No models available" : "Loading models…"}
               style={{ flex: "1 1 20rem" }}
             />
             <Select
@@ -222,14 +250,6 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           />
         </Stack>
       )}
-      <Group justify="flex-end">
-        <Switch
-          size="md"
-          label="Show archived"
-          checked={includeArchived}
-          onChange={(e) => setIncludeArchived(e.currentTarget.checked)}
-        />
-      </Group>
       <Table>
         <Table.Thead>
           <Table.Tr>
@@ -269,11 +289,6 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
                         </ActionIcon>
                       </Menu.Target>
                       <Menu.Dropdown>
-                        {row.archived ? (
-                          <Menu.Item onClick={() => void act(row.name, "unarchive")}>Unarchive</Menu.Item>
-                        ) : (
-                          <Menu.Item onClick={() => void act(row.name, "archive")}>Archive</Menu.Item>
-                        )}
                         {/* The API refuses a running sandbox (inventory.py); suspend is one click left. */}
                         <Menu.Item color="red" disabled={!deletable(row)} onClick={() => setConfirmingDelete(row.name)}>
                           Delete

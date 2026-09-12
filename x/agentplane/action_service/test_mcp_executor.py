@@ -41,6 +41,7 @@ from x.agentplane.action_service.models import (
 )
 from x.agentplane.action_service.runtime import running_executor
 from x.agentplane.action_service.service import ActionService, ExecutionOutcomeUnknownError
+from x.agentplane.action_service.test_fixtures.lifecycle import wait_available
 
 CALLER = Principal(issuer="test-workload", subject="sandbox-a", role=PrincipalRole.CALLER)
 OPERATOR = Principal(issuer="test-bff", subject="operator", role=PrincipalRole.OPERATOR)
@@ -104,6 +105,7 @@ async def test_start_mirrors_tool_catalog_into_the_action_group() -> None:
     group = _group()
     executor = McpActionGroupExecutor(GROUP_KEY, group, mcp)
     await executor.start()
+    await wait_available(executor._group)
     try:
         assert set(group.actions) == {"add", "greet"}
         assert group.actions["add"].description == "Add two numbers."
@@ -123,6 +125,7 @@ async def test_explicit_refresh_picks_up_added_removed_and_changed_tools() -> No
     group = _group()
     executor = McpActionGroupExecutor(GROUP_KEY, group, mcp, catalog_refresh_interval=timedelta(hours=1))
     await executor.start()
+    await wait_available(executor._group)
     try:
         assert set(group.actions) == {"stale"}
 
@@ -163,6 +166,7 @@ async def test_missed_notification_is_recovered_by_explicit_refresh() -> None:
     group = _group()
     executor = McpActionGroupExecutor(GROUP_KEY, group, mcp, catalog_refresh_interval=timedelta(hours=1))
     await executor.start()
+    await wait_available(executor._group)
     try:
         assert set(group.actions) == {"original"}
 
@@ -201,6 +205,7 @@ async def test_one_allowed_execution_calls_the_backend_tool_exactly_once(engine:
         executor_health_timeout=timedelta(seconds=30),
     )
     await executor.start()
+    await wait_available(executor._group)
     await service.start()
     try:
         request_id = await _allowed_execution(service, idempotency_key="one-call")
@@ -228,7 +233,7 @@ async def test_one_allowed_execution_calls_the_backend_tool_exactly_once(engine:
         await executor.close()
 
 
-async def test_tool_error_maps_to_safe_failed_result_without_leaking_tool_text(execution_lease: ExecutionLease) -> None:
+async def test_tool_error_output_is_a_successful_result(execution_lease: ExecutionLease) -> None:
     mcp = FastMCP("demo")
 
     @mcp.tool
@@ -238,13 +243,17 @@ async def test_tool_error_maps_to_safe_failed_result_without_leaking_tool_text(e
     group = _group()
     executor = McpActionGroupExecutor(GROUP_KEY, group, mcp)
     await executor.start()
+    await wait_available(executor._group)
     try:
         result = await executor.execute(
             _request(action=ActionIdentity(group=GROUP_KEY, name="explode"), arguments={}), execution_lease
         )
-        assert result.state is ExecutionState.FAILED
-        assert result.error == {"kind": "mcp_tool_error", "message": "MCP tool reported an error"}
-        assert "xyz-secret-123" not in str(result.error)
+        assert result.state is ExecutionState.SUCCEEDED
+        assert result.error is None
+        assert result.result == {"is_error": True, "content": ["credential xyz-secret-123 rejected by upstream"]}
+        assert group.available
+        assert executor._connection is not None
+        assert executor._connection.client.is_connected()
     finally:
         await executor.close()
 
@@ -266,6 +275,7 @@ async def test_execution_refuses_arguments_incompatible_with_the_current_live_sc
     group = _group()
     executor = McpActionGroupExecutor(GROUP_KEY, group, mcp)
     await executor.start()
+    await wait_available(executor._group)
     store = ActionStore(make_sessionmaker(engine))
     service = ActionService(store, ActionCatalog(groups={GROUP_KEY: group}), {GROUP_KEY: executor})
     try:
@@ -320,6 +330,7 @@ async def test_ambiguous_transport_loss_becomes_execution_unknown_without_retry(
             kind="mcp",
             description="subprocess test server",
             config={
+                "transport": "stdio",
                 "command": sys.executable,
                 "args": [str(server_path)],
                 "env": {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)},
@@ -338,6 +349,7 @@ async def test_ambiguous_transport_loss_becomes_execution_unknown_without_retry(
         executor_health_timeout=timedelta(seconds=30),
     )
     await executor.start()
+    await wait_available(executor._group)
     await service.start()
     try:
         view = await service.submit(
@@ -377,6 +389,7 @@ async def test_ambiguous_transport_loss_becomes_execution_unknown_without_retry(
 async def test_runtime_binds_configured_mcp_group(engine: AsyncEngine, tmp_path: Path) -> None:
     group = _group()
     group.executor.config = {
+        "transport": "stdio",
         "command": sys.executable,
         "args": [str(get_required_path(FAKE_SERVER))],
         "env": {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)},
@@ -385,6 +398,7 @@ async def test_runtime_binds_configured_mcp_group(engine: AsyncEngine, tmp_path:
     store = ActionStore(make_sessionmaker(engine))
     marker = tmp_path / "called"
     async with running_executor(catalog) as executors:
+        await wait_available(group)
         assert set(catalog.groups["runtime"].actions) == {"slow_echo"}
         service = ActionService(store, catalog, executors)
         await service.start()
@@ -454,6 +468,7 @@ async def test_mcp_renewal_failure_stops_waiting_without_retry(failure: str) -> 
     lease = ControlledLease(started, failure)
     executor = McpActionGroupExecutor(GROUP_KEY, _group(), server)
     await executor.start()
+    await wait_available(executor._group)
     try:
         async with asyncio.timeout(5):
             with pytest.raises(ExecutionOutcomeUnknownError, match="lease") as error:
@@ -481,8 +496,9 @@ async def test_discovery_wait_renews_and_lost_lease_prevents_tool_call() -> None
     lease = ControlledLease(listing, "healthy")
     executor = McpActionGroupExecutor(GROUP_KEY, _group(), server)
     await executor.start()
-    client = executor._client
-    assert client is not None
+    await wait_available(executor._group)
+    assert executor._connection is not None
+    client = executor._connection.client
     list_tools = client.list_tools
 
     async def gated_list():
@@ -522,6 +538,7 @@ async def test_mcp_cancellation_joins_renewal_task() -> None:
     lease = ControlledLease(started, "healthy")
     executor = McpActionGroupExecutor(GROUP_KEY, _group(), server)
     await executor.start()
+    await wait_available(executor._group)
     try:
         task = asyncio.create_task(
             executor.execute(_request(action=ActionIdentity(group=GROUP_KEY, name="blocked"), arguments={}), lease)
@@ -547,6 +564,7 @@ async def test_mcp_deadline_stops_healthy_renewal(execution_lease: ExecutionLeas
 
     executor = McpActionGroupExecutor(GROUP_KEY, _group(), server, execution_timeout=timedelta(milliseconds=30))
     await executor.start()
+    await wait_available(executor._group)
     try:
         async with asyncio.timeout(5):
             with pytest.raises(ExecutionOutcomeUnknownError, match="deadline"):
@@ -577,6 +595,7 @@ async def test_long_mcp_call_drains_with_live_execution_and_executor_leases(engi
         store,
         ActionCatalog(groups={GROUP_KEY: group}),
         {GROUP_KEY: executor},
+        on_drain=executor.begin_drain,
         lease_duration=timedelta(milliseconds=300),
         executor_heartbeat_interval=timedelta(milliseconds=30),
     )
@@ -599,6 +618,7 @@ async def test_long_mcp_call_drains_with_live_execution_and_executor_leases(engi
             process_heartbeat.set()
 
     await executor.start()
+    await wait_available(executor._group)
     try:
         with (
             patch.object(store, "heartbeat_execution", renew),
@@ -626,6 +646,171 @@ async def test_long_mcp_call_drains_with_live_execution_and_executor_leases(engi
         release.set()
         await service.close()
         await executor.close()
+
+
+@pytest.mark.parametrize("remove_action", [False, True])
+async def test_approved_work_stays_unclaimed_during_outage_then_recovers(
+    engine: AsyncEngine, remove_action: bool
+) -> None:
+    server = FastMCP("outage")
+    calls: list[str] = []
+
+    @server.tool
+    def echo_once(text: str) -> str:
+        calls.append(text)
+        return text
+
+    group = _group()
+    executor = McpActionGroupExecutor(GROUP_KEY, group, server)
+    store = ActionStore(make_sessionmaker(engine))
+    service = ActionService(
+        store,
+        ActionCatalog(groups={GROUP_KEY: group}),
+        {GROUP_KEY: executor},
+        dispatch_poll_interval=timedelta(milliseconds=10),
+    )
+    await executor.start()
+    await wait_available(group)
+    try:
+        view = await service.submit(
+            ActionRequestInput(
+                idempotency_key="outage",
+                action=ActionIdentity(group=GROUP_KEY, name="echo_once"),
+                arguments={"text": "once"},
+            ),
+            CALLER,
+        )
+        executor._mark_unavailable()
+        allowed, _ = await store.decide(
+            view.id,
+            DecisionInput(verdict=Verdict.ALLOW, expected_version=view.version, idempotency_key="allow-outage"),
+            OPERATOR,
+            provider="human",
+        )
+        for _ in range(3):
+            await service._dispatch_once(view.id)
+        waiting = await store.get(view.id, CALLER)
+        assert waiting.execution is not None
+        assert waiting.execution.state is ExecutionState.PENDING_DISPATCH
+        assert waiting.execution.started_at is None
+        assert waiting.version == allowed.version
+        assert waiting.decision == allowed.decision
+        assert calls == []
+        if remove_action:
+            server.local_provider.remove_tool("echo_once")
+        await executor.refresh_catalog()
+        await service.start()
+        await _poll_state(store, view.id, want=ActionState.FAILED if remove_action else ActionState.SUCCEEDED)
+        assert calls == ([] if remove_action else ["once"])
+    finally:
+        await service.close()
+        await executor.close()
+
+
+async def test_failed_discovery_reconnects_without_tearing_down_an_active_call(execution_lease: ExecutionLease) -> None:
+    server = FastMCP("retirement")
+    started, release = asyncio.Event(), asyncio.Event()
+    calls: list[str] = []
+
+    @server.tool
+    async def gated() -> str:
+        calls.append("called")
+        started.set()
+        await release.wait()
+        return "completed"
+
+    group = _group()
+    executor = McpActionGroupExecutor(GROUP_KEY, group, server)
+    await executor.start()
+    await wait_available(group)
+    old = executor._connection
+    assert old is not None
+    task = asyncio.create_task(
+        executor.execute(_request(action=ActionIdentity(group=GROUP_KEY, name="gated"), arguments={}), execution_lease)
+    )
+    try:
+        async with asyncio.timeout(5):
+            await started.wait()
+        with patch.object(old.client, "list_tools", side_effect=OSError("test-only transport failure")):
+            await executor.refresh_catalog()
+            assert not group.available
+            await wait_available(group)
+        assert executor._connection is not old
+        assert old.client.is_connected()
+        assert not task.done()
+        release.set()
+        assert (await task).state is ExecutionState.SUCCEEDED
+        assert calls == ["called"]
+    finally:
+        release.set()
+        await asyncio.gather(task, return_exceptions=True)
+        await executor.close()
+    assert not old.client.is_connected()
+    assert not any(task.get_name().startswith(("mcp-wakeup-", "mcp-retire-")) for task in asyncio.all_tasks())
+
+
+async def test_execution_never_switches_generation_after_schema_check(execution_lease: ExecutionLease) -> None:
+    server = FastMCP("generation")
+    listing, release = asyncio.Event(), asyncio.Event()
+    calls: list[str] = []
+
+    @server.tool
+    def echo() -> str:
+        calls.append("called")
+        return "echo"
+
+    group = _group()
+    executor = McpActionGroupExecutor(GROUP_KEY, group, server)
+    await executor.start()
+    await wait_available(group)
+    old = executor._connection
+    assert old is not None
+    list_tools = old.client.list_tools
+
+    async def list_then_fail():
+        if listing.is_set():
+            raise OSError("test-only disconnected generation")
+        tools = await list_tools()
+        listing.set()
+        await release.wait()
+        return tools
+
+    try:
+        with patch.object(old.client, "list_tools", list_then_fail):
+            task = asyncio.create_task(
+                executor.execute(
+                    _request(action=ActionIdentity(group=GROUP_KEY, name="echo"), arguments={}), execution_lease
+                )
+            )
+            async with asyncio.timeout(5):
+                await listing.wait()
+                await executor.refresh_catalog()
+                await wait_available(group)
+                assert executor._connection is not old
+                release.set()
+                result = await task
+        assert result.state is ExecutionState.FAILED
+        assert result.error is not None
+        assert result.error["kind"] == "mcp_unavailable"
+        assert calls == []
+    finally:
+        release.set()
+        await executor.close()
+
+
+async def test_supervisor_death_revokes_availability_and_joins_wakeup_tasks() -> None:
+    group = _group()
+    executor = McpActionGroupExecutor(GROUP_KEY, group, FastMCP("supervisor"))
+    await executor.start()
+    await wait_available(group)
+    assert executor._supervisor is not None
+    executor._supervisor.cancel()
+    await asyncio.gather(executor._supervisor, return_exceptions=True)
+    assert not group.available
+    assert group.health is not None
+    assert group.health.reason == "supervisor_stopped"
+    await executor.close()
+    assert not any(task.get_name().startswith("mcp-wakeup-") for task in asyncio.all_tasks())
 
 
 if __name__ == "__main__":

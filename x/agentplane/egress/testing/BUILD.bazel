@@ -9,6 +9,7 @@ py_library(
     name = "fake_apiserver",
     srcs = ["fake_apiserver.py"],
     visibility = [
+        "//x/agentplane/action_service:__pkg__",
         "//x/agentplane/egress:__pkg__",
         "//x/agentplane/llm_ingress:__pkg__",
     ],

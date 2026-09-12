@@ -2,7 +2,7 @@
 
 from typing import Annotated, Any, Literal, Self
 
-from pydantic import Field, InstanceOf, JsonValue, TypeAdapter, field_serializer, field_validator, model_validator
+from pydantic import Field, InstanceOf, JsonValue, field_serializer, field_validator, model_validator
 
 from finance.augur.sim.actions import Action, ClaimId
 from finance.augur.sim.books import (
@@ -115,14 +115,6 @@ class Receipt(Record):
     outcome: Annotated[Executed | Rejected, Field(discriminator="kind")]
 
 
-_RECEIPTS = TypeAdapter(list[Receipt])
-
-
-def receipts_from_json(document: str) -> list[Receipt]:
-    """One decode for the previous month's receipts at the native observation boundary."""
-    return _RECEIPTS.validate_json(document)
-
-
 class CashSeries(Record):
     account: AccountRef
     values: list[int]
@@ -179,7 +171,7 @@ class Summary(Record):
 
 
 class EventPayload(Record):
-    """File/native transport only; immediately converted to the existing columnar EventLog."""
+    """File transport only; immediately converted to the existing columnar EventLog."""
 
     rollout_ids: list[int]
     frames: dict[str, list[dict[str, JsonValue]]]

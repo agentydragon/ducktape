@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import CoreV1Api
@@ -51,6 +51,7 @@ from x.agentplane.app.inventory import (
     sandbox_view,
     sandbox_views,
 )
+from x.agentplane.app.shutdown import Shutdown
 from x.agentplane.app.trajectory import ThreadView, TrajectoryStore
 from x.agentplane.kubernetes_watch import ListWatch, WatchedKind, apply_to
 
@@ -114,8 +115,8 @@ class LiveIndex:
     refreshed: dict[str, datetime] = field(default_factory=dict)
     changes: Changes = field(default_factory=Changes)
 
-    def sandbox_views(self, *, include_archived: bool) -> list[SandboxView]:
-        return sandbox_views(self.sandboxes.values(), self.pods.values(), include_archived=include_archived)
+    def sandbox_views(self) -> list[SandboxView]:
+        return sandbox_views(self.sandboxes.values(), self.pods.values())
 
     def sandbox_view(self, name: str) -> SandboxView | None:
         raw = self.sandboxes.get(name)
@@ -289,19 +290,17 @@ def _stream(source: AsyncIterator[bytes]) -> StreamingResponse:
 
 
 @router.get("/sandboxes", responses=_SANDBOXES_FRAMES)
-async def live_sandboxes(
-    index: Index, include_archived: Annotated[bool, Query(description="Also carry archived sandboxes.")] = False
-) -> StreamingResponse:
+async def live_sandboxes(index: Index, shutdown: Shutdown) -> StreamingResponse:
     """The sandbox list, pushed."""
 
     async def snapshot() -> SandboxesSnapshot:
-        return SandboxesSnapshot(sandboxes=index.sandbox_views(include_archived=include_archived), watch=_health(index))
+        return SandboxesSnapshot(sandboxes=index.sandbox_views(), watch=_health(index))
 
-    return _stream(frames(snapshot, lambda: _health(index), index.changes))
+    return _stream(shutdown.until(frames(snapshot, lambda: _health(index), index.changes)))
 
 
 @router.get("/sandboxes/{name}", responses=_SANDBOX_FRAMES)
-async def live_sandbox(index: Index, store: Store, name: str) -> StreamingResponse:
+async def live_sandbox(index: Index, store: Store, shutdown: Shutdown, name: str) -> StreamingResponse:
     """One sandbox page, pushed: the sandbox, its bindings, and its threads.
 
     Threads are not Kubernetes and no watch reaches them; the store notifies when it creates or
@@ -316,4 +315,4 @@ async def live_sandbox(index: Index, store: Store, name: str) -> StreamingRespon
             watch=_health(index),
         )
 
-    return _stream(frames(snapshot, lambda: _health(index), index.changes, store.changes))
+    return _stream(shutdown.until(frames(snapshot, lambda: _health(index), index.changes, store.changes)))

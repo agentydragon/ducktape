@@ -142,7 +142,10 @@ py_test(
         ":conftest",
         ":operator_login",
         "//:conftest",
+        "//x/agentplane/action_service:mcp_linkage",
         "//x/agentplane/action_service:models",
+        "//x/agentplane/action_service:policy_evaluation",
+        "//x/agentplane/action_service/policies:resources",
         "//x/agentplane/app:api",
         "//x/agentplane/app:client",
         "//x/agentplane/app:inventory",
@@ -150,6 +153,7 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//tenacity",
     ],
 )
 
@@ -180,5 +184,36 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+# Real testing ingress; never send registrations to staging or run this implicitly in CI.
+py_test(
+    name = "test_dcr",
+    size = "medium",
+    srcs = ["test_dcr.py"],
+    tags = [
+        "manual",
+        "no-cache",
+        "no-remote-exec",
+    ],
+    deps = [
+        ":conftest",
+        ":dcr",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "dcr",
+    srcs = ["dcr.py"],
+    deps = [
+        "@pypi//fastmcp_slim",
+        "@pypi//httpx",
+        "@pypi//mcp",
+        "@pypi//py_key_value_aio",
+        "@pypi//pydantic",
     ],
 )

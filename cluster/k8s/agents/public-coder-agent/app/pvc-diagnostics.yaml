@@ -1,0 +1,36 @@
+# Node's diagnostic output for the gateway: heap snapshots and fatal-error
+# reports, written here by the --diagnostic-dir/--report-directory flags in
+# openclaw/default.nix.
+#
+# A claim rather than the /tmp emptyDir those flags used to target. An emptyDir
+# survives a container restart but dies with the Pod, and Flux rolls a new image
+# every few hours -- so a capture taken to investigate a slow leak would be
+# collected by the very next roll, which is the case it exists for.
+#
+# local-path rather than the seaweedfs-ovh default (cluster/README.md § Storage
+# Selection): that default buys reschedulability, and this Pod cannot reschedule
+# -- deployment.yaml pins it to ovh-ns102453 by required nodeAffinity and its
+# state claim is local-path on that node. A replicated claim would add a second,
+# networked dependency to the gateway's startup path, since a volume that will
+# not mount blocks the Pod, in exchange for mobility it does not have. RWO is no
+# obstacle to reading a snapshot out: a throwaway Pod on the same node mounts it
+# alongside the gateway.
+#
+# Deliberately outside the volsync backup set (../backup/volsync-backup.yaml,
+# which covers the state claim): disposable investigation artifacts.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: public-coder-agent-diagnostics
+  namespace: public-coder-agent
+  annotations:
+    description: Heap snapshots and Node diagnostic reports for the OpenClaw gateway
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path-ovh-hdd
+  resources:
+    requests:
+      # A snapshot is roughly heap-sized and the heap is capped at 2 GiB, so this
+      # holds several plus the reports. Snapshots are read in pairs and deleted
+      # once analysed; local-path does not enforce the request as a quota.
+      storage: 20Gi

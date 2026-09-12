@@ -18,7 +18,7 @@ bbr test //x/agentplane/app/...
   resolution. Preset names stop at the app boundary; Kubernetes and the runner receive resolved
   fields.
 - `inventory.py`: the sandbox inventory read from and written to Kubernetes (create, suspend,
-  resume, archive, delete), with the parsed subset of each CR it needs. It works in
+  resume, delete), with the parsed subset of each CR it needs. It works in
   `--sandbox-namespace`, which is not the app's own: a sandbox is the blast radius, and it shares a
   namespace with neither the app, its database, nor the rules below.
 - `egress.py`: the app namespace's `EgressPolicy` and `EgressBinding` resources as the app shows and
@@ -32,8 +32,12 @@ bbr test //x/agentplane/app/...
 - `bridge.py`: runner-first commands, leased ingestion per sandbox, and database-backed browser
   SSE; `api.py` is the REST surface and the OpenAPI schema `export_schema.py` emits
   for the frontend's generated client.
+- `client.py`: a Python client over the app's HTTP surface, speaking the app's own request and
+  response models and the runner protocol's `Event` messages.
 - `live.py`: one list-and-watch over Sandboxes, their Pods, and the egress objects
   (`../kubernetes_watch.py`), and the SSE streams that push a snapshot of it to every open tab.
+- `changes.py`: the payload-free wake-up a reader of the cluster index or the trajectory store waits
+  on; a burst of changes coalesces into one re-read.
 - `identity.py`: whether a request proved itself, by whichever credential it carried; `oidc.py` and
   `auth_routes.py` are the browser's half of that (see below).
 - `trajectory.py`: the PostgreSQL store of threads, events, feed state, and ingestion leases.
@@ -41,6 +45,10 @@ bbr test //x/agentplane/app/...
 - `action_federation.py`: request-bound operator federation into the canonical Action Service.
 - `consent.py`: browser-session-bound enrollment BFF; the Action Service owns consent and grants.
 - `operator_sessions.py`: PostgreSQL browser identity and pending OAuth state, shared across replicas.
+- `database_migrate.py` and `migrations/`: the Alembic history covering the shared `Base` declared
+  in `operator_sessions.py` and reused by `trajectory.py`'s tables. Migrations run separately through
+  `:migrate`; the server itself never creates or checks tables at startup. `:image` and
+  `:migration_image` are separate OCI targets.
 - `frontend/`: the React SPA on the repo's `ts_library` and esbuild toolchain, with the visual
   scenarios under `frontend/visual/`.
 
@@ -72,8 +80,9 @@ authoritative, and listener reconnects and keepalives trigger catch-up reads. St
 readable while the runner is unreachable.
 
 Rollout prerequisite: existing sandbox runners must support independent attachments before the new
-app bridge is deployed. This change does not increase deployment replicas or change rollout strategy;
-old runner processes are not upgraded merely by publishing the new image.
+app bridge is deployed; old runner processes are not upgraded merely by publishing the new image.
+Staging runs two app replicas on separate nodes with `RollingUpdate` (`maxUnavailable: 0`,
+`maxSurge: 1`) and a PodDisruptionBudget of one available; testing stays at one replica.
 
 ### Inventory snapshots
 
@@ -87,6 +96,8 @@ Two things stay request-shaped, both because their source offers no stream. The 
 decisions live in its memory and the egress tab still asks for them on an interval; the runner
 answers `ListSessions` per request, so the sandbox page re-reads the session table when the
 sandbox's Pod comes or goes and when a session opens (which reaches it as a new thread).
+An unavailable runner shows a waiting state and retries until it answers, without requiring a
+reload. Session creation displays progress and prevents duplicate clicks while the request runs.
 
 A snapshot is not a delta, and there is no resumable id: a relist replaces a kind wholesale and a
 `resourceVersion` expires, so a reconnecting tab is served a fresh snapshot instead. That leaves
@@ -97,8 +108,9 @@ stopped moving says so rather than showing it as live.
 
 ## Authentication and authorization
 
-Every route needs a caller; only `/healthz` and the `/auth/*` endpoints answer without one. There
-are two credentials, and both are cryptographic:
+Every API route needs a caller; only `/healthz`, `/readyz`, the `/auth/*` endpoints, the service
+worker at `/sw.js`, and the SPA's static files mounted at `/` answer without one. There are two credentials,
+and both are cryptographic:
 
 - **An operator's OIDC session.** `AGENTPLANE_OIDC_ISSUER` and its siblings register the app as an
   Authentik client; `/auth/login` runs an authorization-code flow with PKCE and stores the
@@ -127,6 +139,15 @@ headers, so anyone with `services/proxy` on the Service could grant themselves e
 Owning the login also drops the outpost's 15-second stall on every SSE stream, whose response
 writer implements no `Flush()`.
 
+## Shutdown
+
+SIGTERM begins a drain as Uvicorn's shutdown starts: `/readyz` answers 503 (`/healthz` stays a
+liveness check), every other new request is refused, and every open SSE stream -- the live views,
+a session's events, the Actions stream -- ends where it is waiting rather than at its next frame.
+Uvicorn waits at most `--shutdown-timeout` (5 s) for what is still open, then cancels it. Only after
+that does the bridge release its ingestion leases and the store close its connections, which is what
+the rest of the Deployments' 60-second grace period is for. No preStop delay consumes that budget.
+
 ## Shape
 
 ```text
@@ -141,8 +162,8 @@ Sandbox -> Pod, PVC               |
                     model traffic to LiteLLM through the egress proxy, which holds the key
 ```
 
-Kubernetes is the sandbox inventory, including the archived flag and a compact annotation holding
-its live preset association plus explicit thread-default edits; the runner holds the live session;
+Kubernetes is the sandbox inventory, including a compact annotation holding its live preset
+association plus explicit thread-default edits; the runner holds the live session;
 PostgreSQL holds the copy of every event that outlives the sandbox. Preset definitions remain app
 configuration, and each launch sends only resolved concrete fields to the runtime.
 
@@ -151,10 +172,11 @@ configuration, and each launch sends only resolved concrete fields to the runtim
 The Action Service's OAuth adapter sends a validated authorization request to
 `/#/connection-enrollments/{handle}`. The hash route survives the app's existing operator
 login. The page shows the client-supplied name, client ID, and validated redirect as text,
-asks for a new Connection name or existing Connection and enabled configured Identity, and offers
-Authorize/Deny. Existing selection shows its UUID, reviewed version and grant history, and requires
-explicit authority-replacement confirmation. Changing Identity clears that confirmation. A fresh
-authorization can reconnect to the same Identity or choose another; no policy editing is offered.
+asks for a new Connection name or existing Connection and a labeled caller ServiceAccount, and
+offers Authorize/Deny. Existing selection shows its UUID, reviewed version and grant history, and
+requires explicit authority-replacement confirmation. Changing the ServiceAccount clears that
+confirmation. A fresh authorization can reconnect to the same ServiceAccount or choose another; no
+policy editing is offered.
 
 Both `/connection-enrollments/{handle}/preview` and `/decision` are operator-only POSTs
 with the existing exact-Origin check and per-request federation. The BFF stores a random
@@ -168,7 +190,7 @@ response, including page reload; changing it requires a fresh OAuth authorizatio
 The existing Connection's reviewed version is part of that exact decision; a 409 never silently
 refreshes it or retries replacement. Consent does not revoke old authority: token exchange's
 version-checked reservation does, before replacement activation. Failed issuance does not restore
-old grants, and old credentials and Action provenance never change Identity.
+old grants, and old credentials and Action provenance never change ServiceAccount.
 The v2 session interaction namespace requires in-flight pre-upgrade consent pages to restart OAuth;
 ordinary operator login sessions remain valid.
 
@@ -176,8 +198,9 @@ Authorize resumes only the server-held continuation returned by the authenticate
 authority; no client or browser-provided URL is accepted. Deny grants nothing and leaves a
 terminal page. Completing consent alone does not activate a grant: the OAuth adapter still
 verifies the same upstream operator and completes issuance. Operator credentials never
-reach the external client. New external-client Actions use human approval; clients sharing
-an Identity share receipts while submitted Actions preserve exact connection provenance.
+reach the external client. An external-client Action is auto-approved only by an
+ActionPolicyBinding naming its ServiceAccount, otherwise by the operator; clients sharing a
+ServiceAccount share receipts while submitted Actions preserve exact connection provenance.
 
 ## Action review
 
@@ -189,7 +212,7 @@ unchanged, including expected versions, idempotency keys, and the human-authored
 The same note is visible to the requesting caller and operator; the existing UI displays it.
 Provider-authored bounded `reason_code`/`reason_description` are separate outcome evidence, not
 another human note. OpenAPI and frontend types are generated from the canonical models.
-External receipts display the immutable authenticated Identity, issuer/client and Connection
+External receipts display the immutable authenticated ServiceAccount, issuer/client and Connection
 from `external_grant`; the grant ID and revision are expandable audit detail. This is
 submission-time evidence, not the Connection's current authorization status. Receipts without
 that snapshot retain their caller-principal display.
@@ -198,34 +221,51 @@ non-negative cursor (default 0).
 The service owns persistence, authorization, Decisions, dispatch, and recovery. Workload
 submission and owner-scoped reads use the service's `/v1/action-requests` API, not the app.
 
-**Production federation remains disabled** until explicit Authentik target, subject mappings,
-allowlists, and network reachability are configured. The app now composes a request-bound
+Staging configures federation: the Deployment reads `AGENTPLANE_ACTION_FEDERATION` from the
+Git-owned `agentplane-action-federation` ConfigMap
+(`cluster/k8s/agentplane-staging/actions/configmap-action-federation.yaml`), and the app's network
+policy admits Authentik by TLS SNI and the Action Service on 8080. The app composes a request-bound
 JWT-bearer exchanger; the service independently validates the exchanged operator JWT. No static BFF
 bearer or workload-token promotion is used. Missing configuration is specifically
 `503 detail.code=operator_federation_not_configured`; token callers get 403.
 
 See [`../docs/operator_federation.md`](../docs/operator_federation.md) for exact settings, PostgreSQL
-startup schema creation, opaque session lifecycle/CSRF/invalidation, failure codes, and signed
+session storage, opaque session lifecycle/CSRF/invalidation, failure codes, and signed
 multi-replica/two-operator test targets. Existing browser sessions must log in again after rollout.
 Only operator Action arguments are unredacted; caller arguments and execution result/error
 redaction are unchanged. There is no app-owned Action/Decision/Execution authority.
 
-## Connection management
+## Settings
 
-`/#/connections` lists the Action Service's runtime named Connections and immutable grant history.
-The operator can rename or explicitly confirm unbind; unbind revokes active/pending authority,
-without deleting history or stopping already claimed executions. Configured Identity availability
-is displayed separately from each grant's lifecycle status. A missing Identity is not displayed as
-enabled, and an active grant does not imply its Identity remains enabled.
+The nav row's Settings button opens a modal with OAuth clients/MCP servers/Notifications tabs; it
+has no dedicated route of its own. The one exception is `/#/mcp-servers`, the MCP-linkage OAuth
+callback's redirect target (see below): landing there opens the modal pre-selected to that tab
+instead of showing the Sandboxes list as if the linkage completed silently.
+
+The OAuth clients tab lists the Action Service's runtime named Connections, each row showing its
+most recent grant's OAuth client ID and the ServiceAccount it acts as; superseded grants stay in
+the Action Service's own history but are not listed here. The operator can explicitly confirm
+unlink, which revokes active/pending authority without deleting history or stopping already claimed
+executions. Whether that grant's ServiceAccount is still a labeled caller is displayed separately
+from the grant's lifecycle status: an active grant does not imply its ServiceAccount remains
+eligible. The tab does not offer renaming a Connection.
 
 The BFF proxies `GET /connections[/{id}]`, `PATCH /connections/{id}`,
-`POST /connections/{id}/unbind`, and `GET /connection-identities` through the same request-bound
+`POST /connections/{id}/unbind`, and `GET /connection-service-accounts` through the same request-bound
 operator federation as Action review. Unsafe browser requests require exact Origin. Canonical
 `ConnectionRename` and `ConnectionVersion` models carry the version the operator reviewed; a 409
 refreshes the inventory and asks for review, never automatically retrying a destructive operation.
 The app owns no Connection state. Reconnect/rebind begins with fresh authorization from the external
 client and selecting this Connection on the consent page; management has no direct retarget action.
 Policy editing and deployment are outside this surface.
+
+The MCP servers tab lists the Action Service's OAuth-linked MCP server groups and links or
+disconnects each one. The BFF proxies `GET /mcp-servers`, `GET /mcp-servers/{id}/linkage`,
+`POST /mcp-servers/{id}/linkage/start`, and `POST /mcp-servers/{id}/linkage/disconnect` through the
+same operator federation; the provider's redirect lands on `GET /mcp-linkage/callback`, which
+completes the link and returns the browser to `/#/mcp-servers`. What a link authorizes and when a
+linked group becomes available is the Action Service's contract
+([its README](../action_service/README.md#action-catalog)).
 
 ## Launch presets
 
@@ -251,8 +291,8 @@ per-turn task remain the place for workload-specific constraints and the request
 - **Connection direction:** the app dials the runner Pod's address directly, re-resolving on
   reconnect; Pod replacement changes the address and the session log makes the cursor valid across
   it. A Service per sandbox is not needed until something outside the cluster must reach a runner.
-- **Staging first, on the cheap key:** the first instance exists for the agent to test against
-  autonomously, so its sandboxes spend the `cheap-experiments` LiteLLM budget. The Pod holds no
+- **Model credentials:** staging uses a dedicated OpenAI/Claude subscription key; testing uses
+  the `cheap-experiments` LiteLLM key. The Pod holds no
   key or workload token: a harness sends the inert placeholder the `agentplane-workload`
   EgressCredential derives from its name, central substitutes the sidecar-only Pod-bound token,
   and the authenticated LLM ingress replaces it with its one server-held key after resolving the
@@ -287,8 +327,8 @@ stream is shown as disconnected rather than silently presenting stale state as l
 bounds stream lifetime to 30 seconds so each reconnect checks current browser-session state,
 including logout in another replica. These reconnects are authentication checks, not state polling.
 
-`/#/notifications` registers the current browser, lists registered browsers, identifies this one,
-and forgets registrations. Forgetting the current browser also unsubscribes locally. The stable
+The Settings modal's Notifications tab (`/#/notifications`, see [Settings](#settings)) registers the
+current browser, lists registered browsers, identifies this one, and forgets registrations. Forgetting the current browser also unsubscribes locally. The stable
 `/sw.js` service worker receives background Web Push, offers Approve/Deny, and opens the Actions
 page on a body tap or failed decision. Buttons use the existing operator session and an expected
 Action version, never authority supplied by the push message. A resolved notification has no

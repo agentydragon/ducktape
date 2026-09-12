@@ -357,12 +357,6 @@ bulk channels.
    haku-ui_ above) — never in haku-state-served code.
 8. If haku-state ever vendors third-party content, re-examine every "haku-state is
    single-author, so rendering it live is safe" assumption (garden MDX eval).
-9. A node daemon's standing bearer authenticates only heartbeat, claim, and result traffic. It
-   must never become execution authority: every `hostexec` command still carries a bound
-   Operator's independently verified, short-lived per-host Authentik token, minted fresh at
-   execution time regardless of whether a human clicked approve or a configured auto-approval
-   policy matched instead. Manual Operator approval is the only execution path for every host.
-   Node daemons initiate outbound HTTPS and expose no command listener.
 
 ## Known gaps (tracked)
 

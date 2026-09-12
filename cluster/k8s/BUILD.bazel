@@ -29,6 +29,12 @@ filegroup(
 )
 
 filegroup(
+    name = "agentplane_staging_model_config",
+    srcs = ["agentplane-staging/app/config.yaml"],
+    visibility = ["//cluster/k8s/litellm/app:__pkg__"],
+)
+
+filegroup(
     name = "openclaw_model_config",
     srcs = [
         "agents/haku-openclaw-spike/app/deployment.yaml",
@@ -50,6 +56,8 @@ filegroup(
 # Focused validation targets inline these direct-file inputs in their data lists.
 exports_files(
     [
+        "agentplane-crds/crd-actionpolicybindings.yaml",
+        "agentplane-crds/crd-actionpolicysets.yaml",
         "agentplane-crds/crd-egressbindings.yaml",
         "agentplane-crds/crd-egresscredentials.yaml",
         "agentplane-crds/crd-egresspolicies.yaml",
@@ -97,6 +105,7 @@ filegroup(
         "agents/haku-egress-proxy/ccnp-haku-proxy-egress.yaml",
         "agents/haku-egress-proxy/claude-networkpolicy.yaml",
         "agents/haku-egress-proxy/trust-bundle.yaml",
+        "agents/machine-access-tf/flux-kustomization.yaml",
         "agents/public-coder-agent/app/agent-kubeconfig.yaml",
         "agents/public-coder-agent/app/deployment.yaml",
         "agents/public-coder-agent/app/networkpolicy-egress.yaml",
@@ -134,6 +143,7 @@ filegroup(
         "haku/console-namespace/forgejo-images-creds-eso.yaml",
         "haku/console/agent-diagnostics-rbac.yaml",
         "haku/console/config.yaml",
+        "haku/console/db/flux-kustomization.yaml",
         "haku/console/db/indexer-role-secret.yaml",
         "haku/console/db/kustomization.yaml",
         "haku/console/db/postgres-cluster.yaml",
@@ -270,6 +280,10 @@ filegroup(
     srcs = glob([
         "agentplane-staging/actions/*.yaml",
         "agentplane-testing/actions/*.yaml",
+        "ssh-mcp/**/*",
     ]),
-    visibility = ["//x/agentplane/action_service:__pkg__"],
+    visibility = [
+        "//cluster/validation:__pkg__",
+        "//x/agentplane/action_service:__pkg__",
+    ],
 )

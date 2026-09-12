@@ -220,6 +220,11 @@
       "test": "//x/agentplane/app/...",
       "registry": "forgejo"
     },
+    "agentplane-app-migrate": {
+      "target": "//x/agentplane/app:migration_image",
+      "test": "//x/agentplane/app/...",
+      "registry": "forgejo"
+    },
     "agentplane-action-service": {
       "target": "//x/agentplane/action_service:image",
       "test": "//x/agentplane/action_service/...",
@@ -228,6 +233,11 @@
     "agentplane-action-service-migrate": {
       "target": "//x/agentplane/action_service:migration_image",
       "test": "//x/agentplane/action_service/...",
+      "registry": "forgejo"
+    },
+    "ssh-mcp": {
+      "target": "//x/ssh_mcp_server:image",
+      "test": "//x/ssh_mcp_server/...",
       "registry": "forgejo"
     },
     "agentplane-egress": {
@@ -248,6 +258,11 @@
     "agentplane-llm-ingress": {
       "target": "//x/agentplane/llm_ingress:image",
       "test": "//x/agentplane/llm_ingress/...",
+      "registry": "forgejo"
+    },
+    "agentplane-oauth-fixture": {
+      "target": "//x/agentplane/action_service/test_fixtures:oauth_mcp_server_image",
+      "test": "//x/agentplane/action_service/test_fixtures/...",
       "registry": "forgejo"
     }
   }

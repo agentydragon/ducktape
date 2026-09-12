@@ -214,6 +214,7 @@ manifest:
     huggingface_hub: huggingface_hub
     humanize: humanize
     hyperframe: hyperframe
+    hypothesis: hypothesis
     identify: identify
     idna: idna
     ijson: ijson
@@ -589,4 +590,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 939528d88b953866dcb5da858a27b68bcb36b36fdcd1bd694e66bb86e0c986c7
+integrity: 96c406238eff2ea969f5596afc95ef9c2065590d8fca9959ce778f70737b8a90

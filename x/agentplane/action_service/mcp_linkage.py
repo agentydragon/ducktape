@@ -53,6 +53,7 @@ MCP_OAUTH_TOKEN_REQUEST_DURATION = Histogram(
 class McpProvider(StrEnum):
     GITHUB = "github"
     KUBERNETES = "kubernetes"
+    EXAMPLE = "example"
 
 
 class McpOAuthServer(BaseModel):
@@ -281,7 +282,7 @@ class McpLinkageAuthority:
                 else None
             )
             if token_state is None:
-                token_state = McpOAuthTokenStateRow(id=uuid4(), server_id=server.server_id)
+                token_state = McpOAuthTokenStateRow(id=uuid4(), server_id=server.server_id, token_revision=0)
                 db.add(token_state)
             _replace_token_state(token_state, token, scopes, now)
             if current is None:
@@ -586,7 +587,8 @@ class McpLinkageAuthority:
         client = self._http or httpx.AsyncClient(timeout=15)
         close = self._http is None
         try:
-            response = await client.post(token_endpoint, data=data)
+            # GitHub's token endpoint answers form-encoded unless asked for JSON.
+            response = await client.post(token_endpoint, data=data, headers={"Accept": "application/json"})
             if response.status_code == 400:
                 _observe_oauth_metric(operation, "rejected", started)
                 raise _RefreshError("MCP OAuth provider rejected the token", action="reconnect")
@@ -600,6 +602,10 @@ class McpLinkageAuthority:
         finally:
             if close:
                 await client.aclose()
+        # GitHub reports a bad or reused code as 200 with an error object.
+        if isinstance(body, dict) and "error" in body:
+            _observe_oauth_metric(operation, "rejected", started)
+            raise _RefreshError("MCP OAuth provider rejected the token", action="reconnect")
         if not isinstance(body, dict) or not isinstance(body.get("access_token"), str):
             _observe_oauth_metric(operation, "invalid_response", started)
             raise _RefreshError("MCP OAuth provider returned no access token", action="reconnect")

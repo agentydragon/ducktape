@@ -83,7 +83,8 @@ This support is deliberately **local-client only**. `bb remote` first authentica
 control call with this metadata, but it also copies the API key into the Bazel command executed by
 BuildBuddy's hosted runner. That nested Bazel process is outside Agentplane egress, so a placeholder
 would remain inert there. Do not configure credentialless `bb remote` until BuildBuddy offers a
-runner-side credential reference or Agentplane owns an equivalent broker at that boundary.
+runner-side credential reference or Agentplane owns an equivalent broker at that boundary; the
+boundary and the candidate rewrite are in <../docs/buildbuddy_remote_auth.md>.
 
 ## Authenticated workload credentials
 
@@ -151,7 +152,7 @@ an informational snapshot of the answering replica, not a global acknowledgement
 ## ServiceAccount permissions
 
 In the sandbox namespace: `get`, `list`, `watch` on `egresspolicies`, `egressbindings`,
-`egresscredentials` and `sandboxes.agents.x-k8s.io`; `get` on `pods`. In the
+`egresscredentials`, `sandboxes.agents.x-k8s.io` and `pods`. In the
 credentials namespace (`--credentials-namespace`, `agentplane-egress-credentials` by default):
 `get`, `list`, `watch` on `secrets`, and nothing in the sandbox namespace. Cluster-wide: `create`
 on `tokenreviews.authentication.k8s.io`. There are no Kubernetes status writes or leader election.
@@ -159,6 +160,34 @@ on `tokenreviews.authentication.k8s.io`. There are no Kubernetes status writes o
 Substituted credentials live in a namespace of their own because RBAC cannot filter Secrets by
 label: a namespace-wide read in the sandbox namespace would hand the proxy the model key and the
 database credential along with the ones it is meant to substitute.
+
+## Decision history
+
+`DecisionLog.record` puts an immutable `DecisionRecord` on a bounded `asyncio.Queue` (2,000 by
+default, `--decision-queue-size`) and returns; admission never awaits database IO. One writer task
+drains up to 100 records per batch (`--decision-batch-size`), waking at least once a minute when
+idle, and writes through an async SQLAlchemy/asyncpg engine with a pool of two connections, no
+overflow, and two-second pool, connect and command timeouts. A batch gets three attempts with
+exponential backoff (1–4 s); a retry reuses the batch's event IDs and decision timestamps, and the
+insert is `ON CONFLICT (event_id) DO NOTHING`. Records already past the retention window are dropped
+before the write and counted as expired. Shutdown flushes for `--decision-flush-seconds` (5 s by
+default) and counts what remains as shutdown loss.
+
+After every batch or idle wake the writer deletes at most 1,000 expired rows, selected `FOR UPDATE
+SKIP LOCKED` on the `(decided_at, event_id)` index so concurrent replicas neither block nor
+contend. Indexed deletion is used rather than time partitions: no measured volume justifies
+partition management, and event-ID idempotence stays global. Monitor database size and
+`cleanup_failures`; sustained ingestion beyond cleanup capacity is the signal to revisit that.
+
+The API's `at` field is the `decided_at` column; `ingested_at` is the row's insertion timestamp.
+`DecisionStore.recent` takes the newest `--decision-history-size` rows (200 by default, at most
+1,000) inside the retention window and returns them oldest first.
+
+The schema lives in `migrations/` with its own Alembic version table (`egress_alembic_version`);
+`database_migrate.py` serialises concurrent runs with a transaction-scoped advisory lock. Staging
+and testing each hold an `egress` database in their CNPG cluster and run the separately published
+`agentplane-egress-migrate` image as the proxy Pod's init container, so a failed migration keeps
+that Pod unready while the previous proxies keep enforcing.
 
 ## Open questions
 
@@ -185,6 +214,9 @@ The process closes the rules/admin APIs with five-second server grace periods an
 lossy decision queue for at most its configured budget (five seconds by default). Deployment
 termination grace must cover those budgets plus master shutdown (20 seconds).
 There is no transparent TCP/HTTP2 migration, request replay, or promise to finish an unbounded stream.
+Staging runs two replicas on separate nodes with `RollingUpdate` (`maxUnavailable: 0`,
+`maxSurge: 1`) and a PodDisruptionBudget of one available, so an image roll never takes a ready
+endpoint away before its replacement is ready, and a voluntary eviction keeps one.
 
 The admin-only `/bindings` endpoint reports `scope: replica-local`, observation time, readiness,
 and derived binding name/UID/generation, resolution reason, and present/missing policy names.
@@ -192,13 +224,7 @@ It neither persists conditions nor claims other replicas observed that generatio
 Kubernetes desired bindings as “configured”, not an enforcement acknowledgement. Expiry is
 computed on every observation, with no timer-owned status or transition timestamps.
 
-Staging declares two replicas, RollingUpdate `maxUnavailable: 1`/`maxSurge: 1`, a
-`minAvailable: 1` PDB, and hostname topology spread within the existing OVH node selector.
-The PDB limits voluntary evictions, not involuntary failures; topology spread is limited to
+Staging spreads the two replicas across hostnames within the existing OVH node selector; the
+PDB limits voluntary evictions, not involuntary failures, and topology spread is limited to
 eligible scheduling domains. Testing retains one replica and `Recreate`. Both use a 60-second
 termination grace, readiness on `/healthz` and event-loop liveness on `/livez`.
-
-CLEANUP(added 2026-09-11): Remove the CRD's legacy status schema/printer column and proxy
-status-patch RBAC only after every running proxy uses an image containing the read-only informer.
-An old informer treats a rejected status patch as a fatal task-group error. Scaling remains
-gated on the new proxy image, not just the presence of shared diagnostic history.

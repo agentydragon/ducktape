@@ -7,7 +7,7 @@ py_library(
     srcs = ["profile.py"],
     deps = [
         ":run",
-        "//finance/augur/rust:invocation",
+        "//finance/augur/sim:artifacts",
     ],
 )
 
@@ -29,7 +29,7 @@ py_library(
     deps = [
         ":policy",
         "//finance/augur/model:series",
-        "//finance/augur/rust:invocation",
+        "//finance/augur/sim:artifacts",
         "//finance/augur/sim:external_series",
         "//finance/augur/sim:jurisdictions",
         "//finance/augur/sim:prepared",
@@ -52,7 +52,7 @@ py_test(
         ":run",
         "//:conftest",
         "//finance/augur:conftest",
-        "//finance/augur/rust:invocation",
+        "//finance/augur/sim:artifacts",
         "//finance/augur/sim:books",
         "//finance/augur/sim:results",
         "//util/bazel:runfiles",

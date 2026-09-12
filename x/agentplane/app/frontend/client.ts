@@ -18,10 +18,12 @@ export const api: ReturnType<typeof createClient<paths>> = createClient<paths>({
 
 // A 401 means the session expired or never existed; the app owns its login, so the browser goes
 // there rather than the page rendering an error it cannot act on. Inert where something in front
-// of the app does the authenticating, since then no request of ours is ever answered 401.
+// of the app does the authenticating, since then no request of ours is ever answered 401. While
+// the login navigation is in flight the document is being replaced, so the request never settles:
+// the page keeps its loading state instead of flashing the 401 it cannot act on.
 api.use({
   onResponse({ response }) {
-    if (response.status === 401) redirectToLogin();
+    if (response.status === 401 && redirectToLogin()) return new Promise<never>(() => {});
     return response;
   },
 });
@@ -39,7 +41,16 @@ export type ActionRequestView = components["schemas"]["ActionRequestView"];
 export type ActionState = components["schemas"]["ActionState"];
 export type Verdict = components["schemas"]["Verdict"];
 export type Connection = components["schemas"]["Connection"];
-export type ConnectionIdentity = components["schemas"]["Identity"];
+export type CallerServiceAccount = components["schemas"]["ServiceAccountRef"];
+
+/** `namespace/name`, as kubectl spells a ServiceAccount; the key a picker selects by. */
+export function serviceAccountKey(account: CallerServiceAccount): string {
+  return `${account.namespace}/${account.name}`;
+}
+
+export function isEligibleCaller(caller: CallerServiceAccount, accounts: CallerServiceAccount[]): boolean {
+  return accounts.some((account) => serviceAccountKey(account) === serviceAccountKey(caller));
+}
 export type McpLinkageView = components["schemas"]["McpLinkageView"];
 export type McpLinkageStartView = components["schemas"]["McpLinkageStartView"];
 export class ConnectionRequestError extends Error {
@@ -53,7 +64,7 @@ export class ConnectionRequestError extends Error {
 
 export interface ConnectionService {
   list(): Promise<Connection[]>;
-  identities(): Promise<Record<string, ConnectionIdentity>>;
+  callerServiceAccounts(): Promise<CallerServiceAccount[]>;
   rename(connection: Connection, displayName: string): Promise<Connection>;
   unbind(connection: Connection): Promise<Connection>;
 }
@@ -65,8 +76,8 @@ export const connectionService: ConnectionService = {
     if (error) throw new ConnectionRequestError(status, displayableError(error));
     return data;
   },
-  async identities() {
-    const { data, error, response } = await api.GET("/connection-identities");
+  async callerServiceAccounts() {
+    const { data, error, response } = await api.GET("/connection-service-accounts");
     const status = response.status;
     if (error) throw new ConnectionRequestError(status, displayableError(error));
     return data;
@@ -162,8 +173,16 @@ export function displayableError(error: unknown): string {
  * The bridge's session routes carry proto-JSON of the runner protocol's messages, typed here by
  * protobuf-es from protocol.proto itself; the OpenAPI document knows them only as objects.
  */
+export class RunnerUnavailableError extends Error {}
+
 export async function listSessions(sandbox: string): Promise<SessionSummary[]> {
-  const { data, error } = await api.GET("/sandboxes/{name}/sessions", { params: { path: { name: sandbox } } });
+  const { data, error, response } = await api.GET("/sandboxes/{name}/sessions", {
+    params: { path: { name: sandbox } },
+  });
+  // These routes report a missing Pod address as 409 and an unavailable runner as 503.
+  if (error && (response.status === 409 || response.status === 503)) {
+    throw new RunnerUnavailableError(displayableError(error));
+  }
   if (error) throw new Error(displayableError(error));
   return data.map((row) => fromJson(SessionSummarySchema, row as JsonValue));
 }

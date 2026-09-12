@@ -50,11 +50,6 @@
       "output": "bb-out/bazel-out/k8-fastbuild/bin/haku/console/gnome/haku-approvals.zip",
       "release": "haku-approvals"
     },
-    "haku-runner": {
-      "target": "//haku/runner:runner_bin",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/haku/runner/runner_bin",
-      "release": "haku-runner"
-    },
     "bbapi": {
       "target": "//devinfra/buildbuddy_cli:bbapi",
       "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/buildbuddy_cli/bbapi_/bbapi",
@@ -64,11 +59,6 @@
       "target": "//devinfra/claude/claude_hook:claude_hook",
       "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/claude/claude_hook/claude_hook",
       "release": "claude-hook-rs"
-    },
-    "hostexecd": {
-      "target": "//haku/hostexec/hostexecd:hostexecd",
-      "output": "bb-out/bazel-out/k8-fastbuild/bin/haku/hostexec/hostexecd/hostexecd",
-      "release": "hostexecd"
     },
     "debundle": {
       "target": "//devinfra/js/debundle:debundle",
@@ -123,20 +113,12 @@
       "tests": "//haku/console/frontend/...",
       "nixPackage": true
     },
-    "haku-runner": {
-      "tests": "//haku/runner/...",
-      "nixPackage": false
-    },
     "bbapi": {
       "tests": "//devinfra/buildbuddy_cli/...",
       "nixPackage": false
     },
     "claude-hook-rs": {
       "tests": "//devinfra/claude/claude_hook/...",
-      "nixPackage": false
-    },
-    "hostexecd": {
-      "tests": "//haku/hostexec/hostexecd/...",
       "nixPackage": false
     },
     "debundle": {

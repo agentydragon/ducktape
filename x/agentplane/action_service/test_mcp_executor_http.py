@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import asyncio
 import json
-import traceback
+import secrets
 from collections.abc import AsyncIterator, Iterator
 from datetime import timedelta
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock, Mock, patch
@@ -20,8 +21,8 @@ import httpx
 import pytest
 import pytest_bazel
 import uvicorn
+from cryptography.fernet import Fernet
 from fastapi import FastAPI
-from httpx import HTTPStatusError
 from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -30,8 +31,16 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
+from util.net import bind_free_port
 from util.testing.asgi import serve_app_sync
-from x.agentplane.action_service.catalog import ActionCatalog, ActionGroup, ActionIdentity, McpExecutorBinding
+from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
+from x.agentplane.action_service.catalog import (
+    ActionCatalog,
+    ActionGroup,
+    ActionIdentity,
+    ActionUnavailableError,
+    McpExecutorBinding,
+)
 from x.agentplane.action_service.db import ExecutionRow, make_sessionmaker
 from x.agentplane.action_service.main import Settings, async_main
 from x.agentplane.action_service.mcp_executor import McpActionGroupExecutor, _LinkageBearerAuth
@@ -45,10 +54,13 @@ from x.agentplane.action_service.models import (
     ExecutionState,
     Principal,
     PrincipalRole,
+    SandboxCaller,
     Verdict,
 )
+from x.agentplane.action_service.oauth import OAuthSettings
 from x.agentplane.action_service.runtime import running_executor
 from x.agentplane.action_service.service import ActionService, ExecutionOutcomeUnknownError
+from x.agentplane.action_service.test_fixtures.lifecycle import wait_available, wait_retry
 
 
 class FakeMcpServer:
@@ -106,7 +118,7 @@ class FakeMcpServer:
                 # The peer accepted the call; a missing result cannot prove it did not execute.
                 return Response(status_code=503)
             result = {
-                "content": [{"type": "text", "text": "test-only private backend error" if self.tool_error else "hi"}],
+                "content": [{"type": "text", "text": "backend tool error text" if self.tool_error else "hi"}],
                 "isError": self.tool_error,
             }
             if not self.tool_error:
@@ -141,8 +153,35 @@ def http_group(fake_server: FakeMcpServer) -> Iterator[ActionGroup]:
             executor=McpExecutorBinding(
                 kind="mcp",
                 description="HTTP test peer",
-                config={"transport": "streamable-http", "url": f"{url}/test-mcp"},
+                config={"transport": "streamable-http", "url": f"{url}/test-mcp", "auth": "none"},
             ),
+        )
+
+
+@pytest.fixture
+def oauth_settings(tmp_path: Path) -> Iterator[OAuthSettings]:
+    private_key, public_key = generate_rsa_keypair()
+    sock = bind_free_port()
+    issuer = f"http://127.0.0.1:{sock.getsockname()[1]}/application/o/test-actions/"
+    secret, signing, encryption = (tmp_path / name for name in ("upstream-secret", "jwt-key", "encryption-key"))
+    secret.write_text("test-only-upstream-secret")
+    signing.write_text(secrets.token_urlsafe(48))
+    encryption.write_bytes(Fernet.generate_key())
+    idp = build_mock_oidc_app(
+        issuer_url=issuer, private_key=private_key, public_key=public_key, authentik_compatible=True
+    )
+    with serve_app_sync(idp, sock=sock):
+        yield OAuthSettings(
+            config_url=f"{issuer}.well-known/openid-configuration",
+            upstream_client_id="test-actions-client",
+            upstream_client_secret_file=secret,
+            base_url="https://actions.example.test",
+            integration_app_url="https://integration.example.test",
+            jwt_signing_key_file=signing,
+            encryption_key_file=encryption,
+            upstream_issuer=issuer,
+            upstream_subject="test-user",
+            approving_operator=Principal(issuer="test-http", subject="operator", role=PrincipalRole.OPERATOR),
         )
 
 
@@ -151,14 +190,10 @@ async def executor(http_group: ActionGroup, fake_server: FakeMcpServer) -> Async
     executor = McpActionGroupExecutor.from_group("remote", http_group, catalog_refresh_interval=timedelta(hours=1))
     try:
         await executor.start()
+        await wait_available(http_group)
         yield executor
     finally:
-        if fake_server.list_unavailable or fake_server.call_unavailable:
-            # The pinned client re-raises its terminal HTTP failure when joining the session task.
-            with pytest.raises(HTTPStatusError, match="503 Service Unavailable"):
-                await executor.close()
-        else:
-            await executor.close()
+        await executor.close()
 
 
 @pytest.fixture
@@ -182,6 +217,7 @@ async def test_http_session_discovery_call_and_shutdown(
     executor = McpActionGroupExecutor.from_group("remote", http_group)
     try:
         await executor.start()
+        await wait_available(http_group)
         assert http_group.available
         assert set(http_group.actions) == {"echo"}
         assert http_group.actions["echo"].description == "Echo text over HTTP."
@@ -249,7 +285,7 @@ async def test_http_list_failure_refuses_dispatch(
     assert fake_server.calls == []
 
 
-async def test_http_tool_error_is_safe_failure(
+async def test_http_tool_error_output_is_a_successful_result(
     execution_lease: ExecutionLease,
     executor: McpActionGroupExecutor,
     fake_server: FakeMcpServer,
@@ -257,8 +293,9 @@ async def test_http_tool_error_is_safe_failure(
 ) -> None:
     fake_server.tool_error = True
     result = await executor.execute(execution_request, execution_lease)
-    assert result.state is ExecutionState.FAILED
-    assert result.error == {"kind": "mcp_tool_error", "message": "MCP tool reported an error"}
+    assert result.state is ExecutionState.SUCCEEDED
+    assert result.error is None
+    assert result.result == {"is_error": True, "content": ["backend tool error text"]}
     assert len(fake_server.calls) == 1
 
 
@@ -388,23 +425,88 @@ async def test_invalid_live_schema_refuses_before_call(
 
 
 @pytest.mark.parametrize("failure", ["unavailable", "invalid_schema"])
-async def test_runtime_rejects_remote_discovery_without_leaking_transport(
+async def test_runtime_serves_unavailable_group_and_recovers_without_restart(
     http_group: ActionGroup, fake_server: FakeMcpServer, failure: str
 ) -> None:
     if failure == "unavailable":
         fake_server.list_unavailable = True
     else:
         fake_server.tools[0]["inputSchema"] = {"type": "test-invalid-type"}
-    with pytest.raises(RuntimeError) as error:
-        async with running_executor(ActionCatalog(groups={"remote": http_group})):
-            pytest.fail("unavailable remote was served")
-    rendered = "".join(traceback.format_exception(error.value))
-    assert "ActionGroup 'remote'" in rendered
-    assert str(http_group.executor.config["url"]) not in rendered
-    assert "HTTPStatusError" not in rendered
-    assert not http_group.available
-    assert http_group.actions == {}
-    assert fake_server.calls == []
+    async with running_executor(ActionCatalog(groups={"remote": http_group})):
+        assert not http_group.available
+        await wait_retry(http_group)
+        assert http_group.health is not None
+        assert http_group.actions == {}
+        assert str(http_group.executor.config["url"]) not in http_group.health.model_dump_json()
+        assert fake_server.calls == []
+        fake_server.list_unavailable = False
+        fake_server.tools[0]["inputSchema"] = {"type": "object"}
+        await wait_available(http_group)
+        assert set(http_group.actions) == {"echo"}
+
+
+async def test_main_oauth_serves_during_backend_outage_and_recovers(
+    db_url: str, http_group: ActionGroup, fake_server: FakeMcpServer, oauth_settings: OAuthSettings
+) -> None:
+    """Real production startup, OAuth persistence, and MCP transport; no backend-readiness startup gate."""
+    fake_server.list_unavailable = True
+    settings = Settings(
+        database_url=db_url, action_groups={"remote": http_group}, oauth=oauth_settings, _cli_parse_args=False
+    )
+
+    async def serve(server: uvicorn.Server) -> None:
+        app = cast(FastAPI, server.config.app)
+        service = cast(ActionService, app.state.action_service)
+        await wait_retry(http_group)
+        assert not http_group.available
+        assert fake_server.calls == []
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url=oauth_settings.base_url) as client:
+            assert (await client.get("/healthz")).status_code == 200
+            assert (await client.get("/readyz")).status_code == 200
+            metadata = await client.get("/.well-known/oauth-authorization-server")
+            assert metadata.status_code == 200
+            registration = await client.post(
+                metadata.json()["registration_endpoint"],
+                json={
+                    "client_name": "Test outage client",
+                    "redirect_uris": ["https://client.example.test/callback"],
+                    "grant_types": ["authorization_code", "refresh_token"],
+                    "response_types": ["code"],
+                    "token_endpoint_auth_method": "none",
+                    "scope": "openid email profile offline_access",
+                },
+            )
+            assert registration.status_code == 201
+            assert registration.json()["client_id"]
+            fake_server.list_unavailable = False
+            await wait_available(http_group)
+            caller = SandboxCaller(namespace="agentplane-test", sandbox_uid="sandbox-uid").principal()
+            pending = await service.submit(
+                ActionRequestInput(
+                    idempotency_key="after-outage",
+                    action=ActionIdentity(group="remote", name="echo"),
+                    arguments={"text": "recovered"},
+                ),
+                caller,
+            )
+            await service.decide(
+                pending.id,
+                DecisionInput(verdict=Verdict.ALLOW, expected_version=pending.version, idempotency_key="allow"),
+                oauth_settings.approving_operator,
+            )
+            async with asyncio.timeout(10):
+                while (final := await service.get(pending.id, caller)).state is not ActionState.SUCCEEDED:
+                    pass  # Database reads yield until the durable result is published.
+            assert final.execution is not None
+            assert final.execution.result == {"echoed": "recovered", "api_key": "[redacted]"}
+            assert len(fake_server.calls) == 1
+            assert (await client.get("/.well-known/oauth-authorization-server")).json() == metadata.json()
+
+    with (
+        patch("x.agentplane.action_service.main.k8s_config.load_incluster_config"),
+        patch.object(uvicorn.Server, "serve", serve),
+    ):
+        await async_main(settings)
 
 
 @pytest.mark.parametrize("outcome", ["success", "tool_error", "unknown", "schema_mismatch", "invalid_schema"])
@@ -412,7 +514,7 @@ async def test_production_http_composition_one_execution_no_replay(
     db_url: str, engine: AsyncEngine, http_group: ActionGroup, fake_server: FakeMcpServer, outcome: str
 ) -> None:
     """Real main, HTTP MCP, and PostgreSQL; only Kubernetes setup and the serving loop are replaced."""
-    caller = Principal(issuer="test-http", subject="sandbox", role=PrincipalRole.CALLER)
+    caller = SandboxCaller(namespace="agentplane-test", sandbox_uid="sandbox-uid").principal()
     operator = Principal(issuer="test-http", subject="operator", role=PrincipalRole.OPERATOR)
     settings = Settings(database_url=db_url, action_groups={"remote": http_group}, _cli_parse_args=False)
 
@@ -420,6 +522,7 @@ async def test_production_http_composition_one_execution_no_replay(
         app = cast(FastAPI, server.config.app)
         service = cast(ActionService, app.state.action_service)
         catalog = cast(ActionCatalog, app.state.action_catalog)
+        await wait_available(http_group)
         assert catalog.action_view("remote", "echo").input_schema == fake_server.tools[0]["inputSchema"]
         assert str(http_group.executor.config["url"]) not in "".join(
             view.model_dump_json() for view in catalog.group_views()
@@ -440,7 +543,7 @@ async def test_production_http_composition_one_execution_no_replay(
         await service.decide(pending.id, decision, operator)
         expected = {
             "success": ActionState.SUCCEEDED,
-            "tool_error": ActionState.FAILED,
+            "tool_error": ActionState.SUCCEEDED,
             "unknown": ActionState.EXECUTION_UNKNOWN,
             "schema_mismatch": ActionState.FAILED,
             "invalid_schema": ActionState.FAILED,
@@ -449,13 +552,15 @@ async def test_production_http_composition_one_execution_no_replay(
             while (final := await service.get(pending.id, caller)).state is not expected:
                 pass  # Each database read yields; wait for durable completion, not an elapsed delay.
         assert final.execution is not None
-        assert final.execution.result == ({"echoed": "hi", "api_key": "[redacted]"} if outcome == "success" else None)
-        if outcome != "success":
+        assert final.execution.result == {
+            "success": {"echoed": "hi", "api_key": "[redacted]"},
+            "tool_error": {"is_error": True, "content": ["backend tool error text"]},
+        }.get(outcome)
+        if outcome not in {"success", "tool_error"}:
             assert final.execution.error is not None
             assert (
                 final.execution.error["kind"]
                 == {
-                    "tool_error": "mcp_tool_error",
                     "unknown": "execution_outcome_unknown",
                     "schema_mismatch": "incompatible_action_schema",
                     "invalid_schema": "mcp_invalid_schema",
@@ -465,6 +570,13 @@ async def test_production_http_composition_one_execution_no_replay(
             view = await service.get(pending.id, principal)
             assert "test-only" not in view.model_dump_json()
             assert str(http_group.executor.config["url"]) not in view.model_dump_json()
+        if outcome == "invalid_schema":
+            # Execution-time detection cleared the offered catalog; new submissions see the outage
+            # until the backend publishes a valid schema again.
+            with pytest.raises(ActionUnavailableError):
+                await service.submit(body, caller)
+            fake_server.tools[0]["inputSchema"] = {"type": "object"}
+            await wait_available(http_group)
         assert (await service.submit(body, caller)).execution == final.execution
         assert (await service.decide(pending.id, decision, operator)).execution == final.execution
         # Duplicate dispatch and restart recovery must both respect the durable single-Execution claim.
@@ -482,13 +594,41 @@ async def test_production_http_composition_one_execution_no_replay(
         patch("x.agentplane.action_service.main.k8s_config.load_incluster_config"),
         patch.object(uvicorn.Server, "serve", serve),
     ):
-        if outcome == "unknown":
-            # Closing the pinned client re-raises its terminal HTTP failure, safely wrapped by composition.
-            with pytest.raises(RuntimeError, match="MCP shutdown failed"):
-                await async_main(settings)
-        else:
-            await async_main(settings)
+        await async_main(settings)
     assert not any(task.get_name().startswith("mcp-executor-refresh-") for task in asyncio.all_tasks())
+
+
+async def test_static_credential_mount_recovers(http_group: ActionGroup, tmp_path: Path) -> None:
+    token_file = tmp_path / "bearer"
+    http_group.executor.config.update(auth="static_bearer", bearer_file=str(token_file))
+    async with running_executor(ActionCatalog(groups={"remote": http_group})):
+        await wait_retry(http_group)
+        assert http_group.health is not None
+        assert not http_group.available
+        token_file.write_text("test-only-mounted-token")
+        await wait_available(http_group)
+        assert set(http_group.actions) == {"echo"}
+
+
+async def test_established_http_failure_reconnects_fresh_session(
+    executor: McpActionGroupExecutor,
+    http_group: ActionGroup,
+    fake_server: FakeMcpServer,
+    execution_request: ExecutionRequest,
+    execution_lease: ExecutionLease,
+) -> None:
+    old = executor._connection
+    fake_server.list_unavailable = True
+    result = await executor.execute(execution_request, execution_lease)
+    assert result.state is ExecutionState.FAILED
+    assert fake_server.calls == []
+    assert not http_group.available
+    fake_server.list_unavailable = False
+    await wait_available(http_group)
+    assert executor._connection is not old
+    assert sum(post["method"] == "initialize" for post in fake_server.posts) >= 2
+    assert (await executor.execute(execution_request, execution_lease)).state is ExecutionState.SUCCEEDED
+    assert len(fake_server.calls) == 1
 
 
 if __name__ == "__main__":

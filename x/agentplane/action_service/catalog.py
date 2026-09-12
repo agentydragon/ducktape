@@ -6,6 +6,8 @@ The same group/action lookup drives discovery and ActionService admission and ro
 
 from __future__ import annotations
 
+from datetime import datetime
+from enum import StrEnum
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints
@@ -54,6 +56,34 @@ class McpExecutorBinding(BaseModel):
     )
 
 
+class McpLifecycle(StrEnum):
+    DISCONNECTED = "disconnected"
+    CONNECTING = "connecting"
+    DISCOVERING = "discovering"
+    AVAILABLE = "available"
+    DRAINING = "draining"
+    STOPPED = "stopped"
+
+
+class McpUnavailableReason(StrEnum):
+    CONNECT_FAILED = "connect_failed"
+    DISCOVERY_FAILED = "discovery_failed"
+    INVALID_CATALOG = "invalid_catalog"
+    LINKAGE_UNAVAILABLE = "linkage_unavailable"
+    SESSION_FAILED = "session_failed"
+    SUPERVISOR_STOPPED = "supervisor_stopped"
+
+
+class McpHealth(BaseModel):
+    """Replica-local diagnostics; never contains backend exception text or configuration."""
+
+    state: McpLifecycle = McpLifecycle.DISCONNECTED
+    reason: McpUnavailableReason | None = None
+    last_discovery_at: datetime | None = None
+    retry_at: datetime | None = None
+    failures: int = 0
+
+
 class ActionGroup(BaseModel):
     """The discovery and ownership unit: one executor binding, many namespaced child Actions."""
 
@@ -63,6 +93,7 @@ class ActionGroup(BaseModel):
     description: str = Field(min_length=1, max_length=2000)
     executor: McpExecutorBinding = Field(discriminator="kind")
     available: bool = Field(default=True, description="Whether this group is currently offered to Agents.")
+    health: McpHealth | None = Field(default=None, exclude=True)
     actions: dict[Key, ActionDefinition] = Field(default_factory=dict)
 
 
@@ -84,6 +115,7 @@ class ActionGroupView(BaseModel):
     executor_kind: str
     executor_description: str
     available: bool
+    health: McpHealth | None = None
     actions: list[ActionView]
 
 
@@ -92,6 +124,10 @@ class UnknownActionError(Exception):
         super().__init__(f"unknown group/action {(group_key, action_key)!r}")
         self.group_key = group_key
         self.action_key = action_key
+
+
+class ActionUnavailableError(Exception):
+    """A known group has no currently validated catalog; nothing was dispatched."""
 
 
 class ActionCatalog(BaseModel):
@@ -103,6 +139,8 @@ class ActionCatalog(BaseModel):
 
     def resolve(self, group_key: str, action_key: str) -> tuple[ActionGroup, ActionDefinition]:
         group = self.groups.get(group_key)
+        if group is not None and not group.available:
+            raise ActionUnavailableError("ActionGroup is temporarily unavailable")
         action = group.actions.get(action_key) if group is not None else None
         if group is None or action is None:
             raise UnknownActionError(group_key, action_key)
@@ -130,5 +168,8 @@ def _group_view(group_key: str, group: ActionGroup) -> ActionGroupView:
         executor_kind=group.executor.kind,
         executor_description=group.executor.description,
         available=group.available,
-        actions=[_action_view(group_key, name, action) for name, action in group.actions.items()],
+        health=group.health,
+        actions=[_action_view(group_key, name, action) for name, action in group.actions.items()]
+        if group.available
+        else [],
     )

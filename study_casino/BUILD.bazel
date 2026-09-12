@@ -364,7 +364,8 @@ py_test(
 
 py_test(
     name = "visual_test",
-    size = "large",
+    # medium: 12 cases against a real server and a Postgres container, measured 52.5s.
+    size = "medium",
     srcs = ["visual_test.py"],
     data = [
         "//study_casino/frontend:bundle",

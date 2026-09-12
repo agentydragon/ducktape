@@ -10,9 +10,8 @@ from uuid import uuid4
 from fastapi import HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
-from x.agentplane.action_service.catalog import Key
 from x.agentplane.action_service.client import OperatorActionServiceClient
-from x.agentplane.action_service.connections import Connection, Identity
+from x.agentplane.action_service.connections import Connection
 from x.agentplane.action_service.enrollments import (
     EnrollmentAllow,
     EnrollmentConnection,
@@ -21,6 +20,7 @@ from x.agentplane.action_service.enrollments import (
     EnrollmentPreview,
     EnrollmentPreviewInput,
 )
+from x.agentplane.action_service.models import ServiceAccountRef
 
 EnrollmentHandle = Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{43}$")]
 _SESSION_KEY = "connection_enrollments_v2"
@@ -33,7 +33,7 @@ class ConsentAllow(BaseModel):
     verdict: Literal["allow"]
     csrf_token: str = Field(min_length=1, max_length=100)
     connection: EnrollmentConnection
-    identity_id: Key
+    service_account: ServiceAccountRef
 
 
 class ConsentDeny(BaseModel):
@@ -48,7 +48,9 @@ ConsentDecision = Annotated[ConsentAllow | ConsentDeny, Field(discriminator="ver
 
 class ConsentPreview(BaseModel):
     enrollment: EnrollmentPreview
-    identities: dict[str, Identity]
+    service_accounts: list[ServiceAccountRef] = Field(
+        description="The labeled caller ServiceAccounts the Action Service currently sees; the picker's choices."
+    )
     connections: list[Connection]
     csrf_token: str
     attempted_decision: ConsentDecision | None
@@ -98,7 +100,7 @@ async def preview_enrollment(request: Request, handle: str, client: OperatorActi
     _save(request, entries)
     return ConsentPreview(
         enrollment=preview,
-        identities=await client.list_identities(),
+        service_accounts=await client.caller_service_accounts(),
         connections=await client.connections(),
         csrf_token=interaction.csrf_token,
         attempted_decision=interaction.attempted_decision,
@@ -126,7 +128,9 @@ async def decide_enrollment(
         "idempotency_key": interaction.idempotency_key,
     }
     decision = (
-        EnrollmentAllow.model_validate({**common, "connection": body.connection, "identity_id": body.identity_id})
+        EnrollmentAllow.model_validate(
+            {**common, "connection": body.connection, "service_account": body.service_account}
+        )
         if isinstance(body, ConsentAllow)
         else EnrollmentDeny.model_validate(common)
     )

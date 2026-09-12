@@ -1,5 +1,15 @@
 # Staging Action Service
 
+## Action policies
+
+`actionpolicyset-*.yaml` are this environment's Git-managed `ActionPolicySet`s and
+`actionpolicybinding-*.yaml` the bindings for labeled caller ServiceAccounts such as
+`claude-ai`; a new set, or a binding for a ServiceAccount, is a PR here. Bindings for
+Sandbox subjects are written by the integration app when it creates the Sandbox and are
+never checked in. `//cluster/validation:test_agentplane_action_policies` parses every set
+and binding with the Action Service's own models, so a spec the service would refuse fails
+CI instead of reporting `Ready=False` on the cluster.
+
 ## Browser notifications
 
 `web-push-vapid.sops.yaml` owns a staging-only P-256 VAPID identity. The
@@ -23,3 +33,21 @@ Action identity/version, not Action arguments or results.
 
 To disable delivery, remove the `web_push` settings and the private-key environment
 variable together; retain the encrypted key so re-enabling preserves subscriptions.
+
+## MCP OAuth callbacks
+
+MCP OAuth redirects in `settings.yaml` must return to the staging integration app's
+`/mcp-linkage/callback`. The app forwards completion to the Action Service using the
+operator's authenticated session, then returns the browser to the MCP servers page.
+
+Kubernetes uses the public `kubectl-passthrough-mcp` client. Its exact callback allowlist
+is managed in `tf/gitops/agent-machine-access/kubectl-common.tf`; that Terraform change
+must reconcile before linking Kubernetes through this origin.
+
+GitHub uses the existing GitHub App credentials reflected from
+`haku-console/haku-console-github-mcp-client-credentials`. The App registration is managed
+outside this repository. Its owner must include
+`https://agentplane-staging.allegedly.works/mcp-linkage/callback` among the user-authorization
+callback URLs, retaining Haku Console's existing callback. GitHub Apps support
+[multiple callback URLs](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/about-the-user-authorization-callback-url).
+Changing this deployment's `redirect_uri` does not update the registration.

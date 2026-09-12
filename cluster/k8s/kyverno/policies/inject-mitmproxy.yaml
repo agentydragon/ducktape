@@ -63,10 +63,10 @@
 # asserted by //cluster/validation:test_proxy_injection. One group that
 # inject-haku-egress-proxy carries is deliberately absent here:
 #
-#   *.allegedly.works  Must NOT be unified: the loom/gym eval driver is supposed
-#                      to reach docker-ci.allegedly.works *through* this proxy,
-#                      which raw-tunnels it so docker mTLS survives end to end.
-#                      Bypassing our own public names here would break that path.
+#   *.allegedly.works  Deliberately still routed through this proxy. Whether to
+#                      unify it with the other injection policies' bypass set is
+#                      an open decision; nothing in claude-sandbox depends on the
+#                      current routing.
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:

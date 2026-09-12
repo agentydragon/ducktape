@@ -249,14 +249,6 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       intentionally disabled. No implicit default. Enforce via review/docs and
       add missing `reloader.stakater.com/auto: "true"` or an explicit opt-out
       comment/setting on existing Deployments, StatefulSets, and Helm releases.
-- [ ] Restore docker-ci Gateway routing: docker-ci needs TLS passthrough on port 2376.
-      Previously used a dedicated `docker-ci-tls` Gateway listener + TLSRoute, but Cilium
-      bug [#42159](https://github.com/cilium/cilium/issues/42159) caused that listener's
-      `allowedRoutes.kinds: [TLSRoute]` to bleed into all listeners, blocking all HTTPRoutes.
-      Options: (a) move docker-ci to HTTPS on port 443 with a subdomain, (b) separate Gateway
-      resource for docker-ci only, (c) wait for Cilium fix and re-add the listener with
-      `sectionName` on all HTTPRoute parentRefs. Also consider deriving Gateway IP pools
-      from OVH node inventory rather than hardcoding addresses.
 - [ ] Autopopulate `tf/gitops/dns-records` IP lists from cluster state instead of a
       hand-edited literal. After every `talos-* → ovh-ns*` rename the comments rot
       (none of those rename commits touched the DNS TF) and IPs of nodes whose Cilium

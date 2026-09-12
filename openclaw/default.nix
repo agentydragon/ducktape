@@ -158,7 +158,7 @@ pkgs.dockerTools.buildLayeredImage {
       "NODE_ENV=production"
       # --report-on-signal makes a wedged gateway diagnosable: `kill -USR2 1` writes
       # a diagnostic report (JS stack, native stack per thread, libuv handles) to
-      # /tmp. Node generates it from a dedicated thread, which is the point --
+      # the diagnostics volume. Node generates it from a dedicated thread, which is the point --
       # public-coder hung with its main thread blocked in synchronous node:sqlite
       # work, so the event loop never turned, SIGUSR1 never opened the inspector,
       # and /proc/<pid>/{syscall,stack} were refused by PodSecurity baseline.
@@ -167,7 +167,40 @@ pkgs.dockerTools.buildLayeredImage {
       # Deliberately not --inspect: these containers execute agent-authored
       # commands, and an always-listening inspector on loopback would let any of
       # them attach to the gateway process and read its credentials.
-      "NODE_OPTIONS=--import=file://${proxySetup}/lib/openclaw/proxy-setup.mjs --report-on-signal --report-directory=/tmp"
+      #
+      # --report-on-fatalerror covers what --report-on-signal cannot. A heap-limit
+      # abort has nobody present to send SIGUSR2, and the SIGABRT otherwise leaves
+      # no report at all -- only the container exit code 134.
+      #
+      # --max-old-space-size is set rather than derived. Node sizes V8's old space
+      # at about half of uv_get_constrained_memory(), which inside a container is
+      # the cgroup memory limit -- so left implicit, `limits.memory` silently
+      # decides the heap, and editing the limit for an unrelated reason moves the
+      # heap with it. 2048 is what the current 4Gi limit already derives -- both
+      # give heap_size_limit 2096 MiB -- so this changes nothing today and only
+      # stops the heap drifting when the limit next moves. Keep it in step with
+      # `limits.memory` in
+      # cluster/k8s/agents/public-coder-agent/app/deployment.yaml.
+      #
+      # --heapsnapshot-signal is the on-demand trigger: `kill -s PWR 1` writes a
+      # snapshot without the process having to be near death. Two taken an hour
+      # apart diff into what is accumulating, which is the question a single
+      # snapshot cannot answer. SIGPWR because SIGUSR2 is already the report
+      # signal above and SIGUSR1 is Node's inspector, which the previous
+      # paragraph rules out.
+      #
+      # --heapsnapshot-near-heap-limit=1 covers the unattended case, capturing
+      # the state at the abort itself. Note it is the riskier of the two: V8
+      # raises its own limit to serialize, so the spike has to fit inside
+      # `limits.memory` or the kernel turns a clean abort into an OOMKill.
+      #
+      # Both directories are /diag, the dedicated claim mounted by
+      # cluster/k8s/agents/public-coder-agent/app/deployment.yaml -- not /tmp,
+      # whose emptyDir the next Flux roll discards along with the capture, and
+      # not the state PVC, which volsync backs up. That mount is a precondition,
+      # not a preference: without it Node writes a roughly heap-sized snapshot
+      # into the container layer.
+      "NODE_OPTIONS=--import=file://${proxySetup}/lib/openclaw/proxy-setup.mjs --report-on-signal --report-directory=/diag --report-on-fatalerror --heapsnapshot-signal=SIGPWR --heapsnapshot-near-heap-limit=1 --diagnostic-dir=/diag --max-old-space-size=2048"
       "NPM_CONFIG_PREFIX=/home/openclaw/.local"
       "NPM_CONFIG_CACHE=/home/openclaw/.cache/npm"
       "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt"

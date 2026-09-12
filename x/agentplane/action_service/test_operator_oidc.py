@@ -10,7 +10,7 @@ import pytest
 import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from util.net import pick_free_port
+from util.net import bind_free_port
 from util.testing.asgi import serve_app
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair, sign_jwt
 from x.agentplane.action_service.api import create_app
@@ -19,20 +19,20 @@ from x.agentplane.action_service.db import ActionStore, make_sessionmaker
 from x.agentplane.action_service.operator_oidc import OidcOperatorAuthenticator, OperatorOidcSettings
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.updates import ActionUpdates
-from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
+from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 
 
 @pytest.mark.parametrize("failure", [None, "issuer", "audience", "expired", "signature", "azp", "missing-sub"])
 async def test_signed_operator_admission(engine: AsyncEngine, failure: str | None) -> None:
     private, public = generate_rsa_keypair()
-    port = pick_free_port()
-    issuer = f"http://127.0.0.1:{port}"
+    sock = bind_free_port()
+    issuer = f"http://127.0.0.1:{sock.getsockname()[1]}"
     idp = build_mock_oidc_app(issuer_url=issuer, private_key=private, public_key=public)
     catalog = ActionCatalog()
     service = ActionService(ActionStore(make_sessionmaker(engine)), catalog, {})
     app = create_app(
         service,
-        cast(SandboxPrincipalAuthenticator, None),
+        cast(SandboxPrincipalResolver, None),
         OidcOperatorAuthenticator(OperatorOidcSettings(issuer=issuer, audience="actions", jwks_uri=f"{issuer}/jwks")),
         catalog,
         updates=ActionUpdates("postgresql://unused-test-listener"),
@@ -59,7 +59,7 @@ async def test_signed_operator_admission(engine: AsyncEngine, failure: str | Non
     elif failure == "missing-sub":
         del claims["sub"]
     async with (
-        serve_app(idp, port=port),
+        serve_app(idp, sock=sock),
         httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://actions.test") as client,
     ):
         response = await client.get(

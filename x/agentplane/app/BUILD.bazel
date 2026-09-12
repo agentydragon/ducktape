@@ -41,6 +41,7 @@ py_library(
         ":oidc",
         ":operator_sessions",
         ":presets",
+        ":shutdown",
         ":trajectory",
         "//x/agentplane/action_service:client",
         "//x/agentplane/action_service:connections",
@@ -93,6 +94,7 @@ py_library(
         ":live",
         ":oidc",
         ":presets",
+        ":shutdown",
         ":trajectory",
         "//util:kubernetes",
         "//util/bazel:runfiles",
@@ -113,6 +115,7 @@ py_library(
     srcs = ["conftest.py"],
     deps = [
         ":bridge",
+        ":database_migrate",
         ":decisions",
         ":egress",
         ":identity",
@@ -165,7 +168,8 @@ py_test(
         "//x/agentplane/action_service:operator_oidc",
         "//x/agentplane/action_service:service",
         "//x/agentplane/action_service:updates",
-        "//x/agentplane/sandbox_auth:http",
+        "//x/agentplane/action_service/test_fixtures:callers",
+        "//x/agentplane/sandbox_auth:principal",
         "@pypi//fastmcp_slim",
         "@pypi//httpx",
         "@pypi//pyjwt",
@@ -236,6 +240,7 @@ py_library(
         ":inventory",
         ":live",
         ":presets",
+        ":shutdown",
         ":trajectory",
         "//x/agentplane/runner:client",
         "//x/agentplane/runner:protocol_pb2",
@@ -333,6 +338,50 @@ oci_image(
 )
 
 py_library(
+    name = "database_migrate",
+    srcs = ["database_migrate.py"],
+    data = ["//x/agentplane/app/migrations:files"],
+    deps = [
+        ":trajectory",
+        "@pypi//alembic",
+        "@pypi//psycopg",
+        "@pypi//pydantic_settings",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_binary(
+    name = "migrate",
+    main_module = "x.agentplane.app.database_migrate",
+    deps = [":database_migrate"],
+)
+
+# The migration runner, published as agentplane-app-migrate (devinfra/ci/image_targets.json) and run
+# as the `migrate` init container ahead of the app.
+aspect_py_binary(
+    name = "migration_image_bin",
+    main = "database_migrate.py",
+    deps = [":database_migrate"],
+)
+
+py_image_layer(
+    name = "migration_layers",
+    binary = ":migration_image_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "migration_image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("migration_image_bin"),
+    env = py_image_env(binary_name = "migration_image_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":migration_layers"],
+    user = "1000:1000",
+)
+
+py_library(
     name = "trajectory",
     srcs = ["trajectory.py"],
     deps = [
@@ -368,14 +417,27 @@ py_test(
     size = "medium",
     srcs = ["test_main.py"],
     deps = [
+        ":api",
+        ":bridge",
         ":conftest",
+        ":decisions",
+        ":egress",
+        ":identity",
+        ":inventory",
+        ":live",
         ":main",
         ":oidc",
+        ":shutdown",
+        ":trajectory",
         "//:conftest",
+        "//util:net",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+        "@pypi//tenacity",
+        "@pypi//uvicorn",
     ],
 )
 
@@ -464,7 +526,6 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//starlette",
-        "@pypi//tenacity",
         "@pypi//uvicorn",
     ],
 )
@@ -491,6 +552,7 @@ py_library(
         ":changes",
         ":egress",
         ":inventory",
+        ":shutdown",
         ":trajectory",
         "//util:kubernetes",
         "//x/agentplane:kubernetes_watch",
@@ -567,10 +629,10 @@ py_library(
     name = "consent",
     srcs = ["consent.py"],
     deps = [
-        "//x/agentplane/action_service:catalog",
         "//x/agentplane/action_service:client",
         "//x/agentplane/action_service:connections",
         "//x/agentplane/action_service:enrollments",
+        "//x/agentplane/action_service:models",
         "@pypi//fastapi",
         "@pypi//pydantic",
     ],
@@ -585,6 +647,7 @@ py_test(
         "//:conftest",
         "//x/agentplane/action_service:client",
         "//x/agentplane/action_service:connections",
+        "//x/agentplane/action_service:models",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pytest",
@@ -602,6 +665,7 @@ py_test(
         ":conftest",
         ":identity",
         ":oidc",
+        ":shutdown",
         "//:conftest",
         "//x/agentplane/action_service:client",
         "@pypi//fastapi",
@@ -618,6 +682,42 @@ py_library(
     deps = [
         ":changes",
         "@pypi//asyncpg",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "shutdown",
+    srcs = ["shutdown.py"],
+    deps = [
+        "@pypi//fastapi",
+        "@pypi//starlette",
+    ],
+)
+
+py_test(
+    name = "test_shutdown",
+    srcs = ["test_shutdown.py"],
+    deps = [
+        ":conftest",
+        ":shutdown",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_database_migrate",
+    size = "medium",
+    srcs = ["test_database_migrate.py"],
+    deps = [
+        ":conftest",
+        ":database_migrate",
+        ":trajectory",
+        "//:conftest",
+        "@pypi//alembic",
+        "@pypi//psycopg",
+        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )

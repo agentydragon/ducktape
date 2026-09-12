@@ -8,14 +8,13 @@
 # environment provenance never covered the image tag either way
 # (haku/sandbox/config.py), so no drift detection is lost.
 #
-# TWO IMAGES RUN THIS, and a change here lands in both:
-#   - the haku-sandbox exec target (this directory's Dockerfile), via Console's bootstrap;
-#   - the Console-owned Claude runner (//haku/runner:runner_image),
-#     which runs it itself before launching Claude Code, so that session comes up with
-#     Haku's manual and its git credential rather than an empty /workspace.
 # The steps a given box does not want are switched off by env, below — never by a second
 # copy of this file, because "similar setup to the haku sandbox" is the whole requirement
 # and two copies would drift out of it.
+#
+# CLEANUP(added 2026-09-11): §0 (the session-bound egress fence) and HAKU_SETUP_BAZEL_TRUST=0
+#   served only the Console-owned Claude runner image, gone with the hosted-agent runtime (#5992)
+#   along with their only setter. Drop both once nothing sets HAKU_SESSION_TOKEN / HAKU_RUNNER_TOKEN.
 #
 # Idempotent: safe to re-run against an already-set-up box.
 set -euo pipefail
@@ -151,11 +150,7 @@ fi
 # credential it could exfiltrate, and `kubectl attach` / `kubectl proxy`, which the proxy
 # answers 501 (exec, port-forward, logs -f and watch all stream).
 #
-# The bearer goes in a mode-0600 tokenFile rather than inline, mirroring the Claude runner's
-# _materialize_proxy_kubeconfig (haku/runner/runner.py). Both conditions must hold,
-# which is also what keeps the two writers apart: the runner Pod has the proxy URL from its
-# claim env but no HAKU_CONSOLE_TOKEN, so it skips this and materializes its own kubeconfig
-# from the exact-session bearer instead.
+# The bearer goes in a mode-0600 tokenFile rather than inline.
 if [ -n "${HAKU_KUBERNETES_PROXY_URL:-}" ] && [ -n "${HAKU_CONSOLE_TOKEN:-}" ]; then
   kube_dir="$HOME/.kube"
   mkdir -p "$kube_dir"

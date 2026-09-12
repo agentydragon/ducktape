@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agentplane-oauth-fixture
+  namespace: agentplane-testing
+  annotations:
+    description: Self-contained OAuth-protected MCP server for acceptance-testing MCP OAuth linkage; the in-memory authorization server and the MCP tool are the same process, no external IdP.
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-oauth-fixture
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agentplane-oauth-fixture
+    spec:
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      containers:
+        - name: fixture
+          image: git.allegedly.works/ducktape-ci/agentplane-oauth-fixture:devel-20260911213301-65189c0 # {"$imagepolicy": "flux-system:agentplane-oauth-fixture"}
+          env:
+            # Cluster-internal only (see oauth-fixture-networkpolicy.yaml): both the Action
+            # Service's discovery/token exchange and the acceptance test's own "browser" GET to
+            # /authorize reach this hostname directly -- the acceptance suite runs from the
+            # public-coder-devbox KubeVirt VM, a genuine pod-network endpoint, not an external host.
+            - name: OAUTH_FIXTURE_BASE_URL
+              value: http://agentplane-oauth-fixture.agentplane-testing.svc.cluster.local:8080
+            - name: OAUTH_FIXTURE_REDIRECT_URI
+              value: https://agentplane-testing.allegedly.works/mcp-linkage/callback
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 25m
+              memory: 128Mi
+              ephemeral-storage: 16Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+              ephemeral-storage: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            # No readOnlyRootFilesystem: the aspect_rules_py launcher materialises its venv at
+            # startup inside the image's own runfiles directory, so the root filesystem must stay
+            # writable (see cluster/k8s/ssh-mcp/deployment.yaml for the same constraint).
+            capabilities:
+              drop: ["ALL"]
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault

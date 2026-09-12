@@ -52,9 +52,10 @@ tana-litellm (`claude-sonnet-4-6/medium`, `gpt-5.1/medium`); clients carry the m
 the request body (Claude Code, Codex, OpenClaw), and on this stack a model name never
 rides in a URL path or a Kubernetes resource name.
 
-The provider segment rides in front, not behind, because key allowlists match
-`model_name` prefixes (the `anthropic-api/ant-messages/*` wildcard in
-tf/gitops/litellm-keys/main.tf). Deliberately not renamed: the raw upstream model slugs
+The provider segment rides in front, not behind, because a key allowlist is a provider
+lane: each `litellm_key.models` list in tf/gitops/litellm-keys/main.tf enumerates one
+provider's names explicitly, so the lane is the common prefix (and a LiteLLM prefix
+wildcard would carve the same lane). Deliberately not renamed: the raw upstream model slugs
 inside the exposed names, and the two groq whisper entries, whose `audio_transcription`
 mode no shape slug covers yet. The bare `gemini-embedding-2`
 alias is exempt too: it predates the scheme and public-coder-agent's durable memory index

@@ -1,4 +1,4 @@
-"""Real native handoffs preserve exact money, rejected prefixes, and file replay identity."""
+"""Typed results preserve exact money, rejected prefixes, and file replay identity."""
 
 from typing import Literal
 
@@ -13,7 +13,7 @@ from finance.augur.x.monthly_actions.run import prepare
 
 
 @pytest.mark.parametrize("capture", ["summary", "forensic"])
-def test_native_results_and_file_replay_keep_exact_successful_prefix(capture: Literal["summary", "forensic"]) -> None:
+def test_results_and_file_replay_keep_exact_successful_prefix(capture: Literal["summary", "forensic"]) -> None:
     session = ActionSession(prepare(), "example-household", [1, 0], capture=capture)
     try:
         batch = session.start()
@@ -40,7 +40,7 @@ def test_native_results_and_file_replay_keep_exact_successful_prefix(capture: Li
 
 
 def test_fractional_money_cannot_enter_a_typed_payment_result() -> None:
-    # Native Money is integer quanta; a file with fractional quanta must not be rounded/coerced.
+    # Money is integer quanta; a file with fractional quanta must not be rounded/coerced.
     with pytest.raises(ValidationError):
         PaymentReceipt.model_validate_json(
             '{"request_id":0,"target":{"kind":"Consumption","component_id":"test"},'

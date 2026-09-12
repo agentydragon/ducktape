@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import AsyncExitStack
@@ -21,18 +22,12 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
-from util.net import pick_free_port
+from util.net import bind_free_port, pick_free_port
 from util.testing.asgi import serve_app
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair, sign_jwt
 from x.agentplane.action_service import api as service_api
 from x.agentplane.action_service.catalog import ActionCatalog, ActionGroup, ActionIdentity, McpExecutorBinding
-from x.agentplane.action_service.connections import (
-    ConnectionAuthority,
-    GrantBinding,
-    GrantStatus,
-    Identity,
-    NewConnection,
-)
+from x.agentplane.action_service.connections import ConnectionAuthority, GrantBinding, GrantStatus, NewConnection
 from x.agentplane.action_service.database_migrate import apply_migrations
 from x.agentplane.action_service.db import ActionStore, make_engine, make_sessionmaker
 from x.agentplane.action_service.enrollments import ConfirmedReconnectConnection, EnrollmentAuthority, EnrollmentInput
@@ -46,6 +41,7 @@ from x.agentplane.action_service.models import (
 )
 from x.agentplane.action_service.operator_oidc import OidcOperatorAuthenticator, OperatorOidcSettings
 from x.agentplane.action_service.service import ActionService
+from x.agentplane.action_service.test_fixtures.callers import PERSONAL, eligible_callers
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.app.action_federation import ExchangeFederationSettings, FederatedOperatorActions
 from x.agentplane.app.api import Provider, create_app
@@ -59,7 +55,7 @@ from x.agentplane.app.inventory import SandboxInventory
 from x.agentplane.app.live import LiveIndex
 from x.agentplane.app.oidc import OIDCSettings
 from x.agentplane.app.trajectory import TrajectoryStore
-from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
+from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 
 CALLER = Principal(issuer="test-workload", subject="test-sandbox", role=PrincipalRole.CALLER)
 SUBJECT_A = "test-operator-subject"
@@ -119,18 +115,16 @@ async def review(
         stack.push_async_callback(service.close)
         await service.start()
         private_key, public_key = generate_rsa_keypair()
-        idp_port = pick_free_port()
-        idp_origin, app_url = f"http://127.0.0.1:{idp_port}", "http://test-app.invalid"
+        idp_sock = bind_free_port()
+        idp_origin, app_url = f"http://127.0.0.1:{idp_sock.getsockname()[1]}", "http://test-app.invalid"
         idp_url = f"{idp_origin}/application/o/login/"
         target_issuer = f"{idp_origin}/application/o/actions/"
         target = OperatorOidcSettings(issuer=target_issuer, audience="test-actions", jwks_uri=f"{idp_url}jwks/")
-        connections = ConnectionAuthority(
-            make_sessionmaker(engine), {"public_coder": Identity(), "disabled": Identity(enabled=False)}
-        )
+        connections = ConnectionAuthority(make_sessionmaker(engine), eligible_callers(PERSONAL))
         enrollments = EnrollmentAuthority(make_sessionmaker(engine), connections)
         downstream = service_api.create_app(
             service,
-            cast(SandboxPrincipalAuthenticator, None),
+            cast(SandboxPrincipalResolver, None),
             OidcOperatorAuthenticator(target),
             catalog,
             connections=connections,
@@ -243,7 +237,7 @@ async def review(
             reviewer,
             operator_actions=operator_client,
         )
-        await stack.enter_async_context(serve_app(idp, port=idp_port))
+        await stack.enter_async_context(serve_app(idp, sock=idp_sock))
         browser = await stack.enter_async_context(
             httpx.AsyncClient(base_url=app_url, follow_redirects=True, mounts={app_url: httpx.ASGITransport(app=app)})
         )
@@ -251,7 +245,6 @@ async def review(
         # A distinct app/store/connection pool, sharing only PostgreSQL and cookie configuration.
         replica_store = TrajectoryStore.connect(db_url)
         stack.push_async_callback(replica_store.close)
-        await replica_store.ensure_schema()
         replica = create_app(
             inventory,
             bridge,
@@ -291,7 +284,7 @@ async def test_connection_management_preserves_federation_csrf_versions_and_hist
     grant = await review.connections.bind(
         GrantBinding(
             grant_id=uuid4(),
-            identity_id="public_coder",
+            service_account=PERSONAL,
             issuer="https://test-actions.invalid",
             client_id="test-external-client",
             activation_deadline=datetime.now(UTC) + timedelta(minutes=10),
@@ -302,7 +295,7 @@ async def test_connection_management_preserves_federation_csrf_versions_and_hist
     original = await review.connections.get(grant.connection_id)
     path = f"/connections/{original.id}"
     browser = review.browser
-    for endpoint in ["/connections", "/connection-identities", path]:
+    for endpoint in ["/connections", "/connection-service-accounts", path]:
         assert (await browser.get(endpoint)).status_code == 401
         assert (await browser.get(endpoint, headers=AGENT_AUTH)).status_code == 403
     for method, endpoint, body in [
@@ -312,10 +305,7 @@ async def test_connection_management_preserves_federation_csrf_versions_and_hist
         assert (await browser.request(method, endpoint, json=body)).status_code == 401
         assert (await browser.request(method, endpoint, json=body, headers=AGENT_AUTH)).status_code == 403
     await browser.get("/auth/login")
-    assert (await browser.get("/connection-identities")).json() == {
-        "public_coder": {"enabled": True},
-        "disabled": {"enabled": False},
-    }
+    assert (await browser.get("/connection-service-accounts")).json() == [PERSONAL.model_dump()]
     assert (await browser.get("/connections")).json() == [original.model_dump(mode="json")]
     assert (await browser.get(path)).json() == original.model_dump(mode="json")
     rename = {"display_name": " Renamed ", "expected_version": original.version}
@@ -331,7 +321,7 @@ async def test_connection_management_preserves_federation_csrf_versions_and_hist
     assert (await browser.post(f"{path}/unbind", json={"expected_version": original.version})).status_code == 403
     browser.headers["Origin"] = saved_origin
     assert await review.connections.get(original.id) == original
-    assert (await browser.patch(path, json={**rename, "identity_id": "disabled"})).status_code == 422
+    assert (await browser.patch(path, json={**rename, "service_account": PERSONAL.model_dump()})).status_code == 422
     assert (await browser.patch(path, json={**rename, "expected_version": 0})).status_code == 422
     renamed = await browser.patch(path, json=rename)
     assert renamed.status_code == 200
@@ -357,7 +347,7 @@ async def test_connection_management_fails_closed_without_valid_federation(
     await review.browser.get("/auth/login")
     expected = 503 if operator_connection == "disabled" else 403
     assert (await review.browser.get("/connections")).status_code == expected
-    assert (await review.browser.get("/connection-identities")).status_code == expected
+    assert (await review.browser.get("/connection-service-accounts")).status_code == expected
 
 
 async def test_operator_decision_reaches_canonical_service_and_mcp_once(review: Review) -> None:
@@ -492,9 +482,10 @@ async def test_unconfigured_or_rejected_service_auth_fails_closed(review: Review
     ],
 )
 async def test_provider_availability_is_not_operator_rejection(
-    review: Review, expected: int, upstream_path: str | None, error_type: str | None
+    review: Review, expected: int, upstream_path: str | None, error_type: str | None, caplog: pytest.LogCaptureFixture
 ) -> None:
     await review.browser.get("/auth/login")
+    caplog.set_level(logging.WARNING, logger="x.agentplane.app.action_federation")
     for path in ("/actions", "/mcp-servers", "/push/config"):
         response = await review.browser.get(path)
         assert response.status_code == expected, response.text
@@ -512,7 +503,12 @@ async def test_provider_availability_is_not_operator_rejection(
         assert "test-private" not in response.text
         assert "access_token" not in response.text
         assert SUBJECT_A not in response.text
-    assert review.calls == []
+    # Every failure leaves a cause in the log, and the log leaks no more than the response does.
+    federation_warnings = [r for r in caplog.records if r.name == "x.agentplane.app.action_federation"]
+    assert len(federation_warnings) == 3
+    assert "test-private" not in caplog.text
+    assert "access_token" not in caplog.text
+    assert SUBJECT_A not in caplog.text
 
 
 async def test_two_replicas_share_login_callback_and_logout_and_keep_two_operators_distinct(review: Review) -> None:
@@ -602,7 +598,7 @@ async def test_consent_requires_operator_same_origin_and_preview_csrf(review: Re
     preview = response.json()
     assert preview["enrollment"]["client_id"] == "test-external-client"
     assert preview["enrollment"]["redirect_uri"] == "https://external-client.test/callback"
-    assert preview["identities"] == {"public_coder": {"enabled": True}, "disabled": {"enabled": False}}
+    assert preview["service_accounts"] == [PERSONAL.model_dump()]
     assert preview["attempted_decision"] is None
     assert "browser_binding" not in response.text
     assert "access_token" not in response.text
@@ -627,7 +623,7 @@ async def test_consent_allow_round_trip_replays_across_app_replicas(review: Revi
         "verdict": "allow",
         "csrf_token": preview["csrf_token"],
         "connection": {"kind": "new", "display_name": "My Claude on wyrm2"},
-        "identity_id": "public_coder",
+        "service_account": PERSONAL.model_dump(),
     }
     result = await browser.post(f"{path}/decision", json=body)
     assert result.status_code == 200, result.text
@@ -654,7 +650,7 @@ async def test_consent_allow_round_trip_replays_across_app_replicas(review: Revi
         code_challenge="test-pkce-test-external-client",
         operator=Principal(issuer=review.issuer, subject=SUBJECT_A, role=PrincipalRole.OPERATOR),
     )
-    assert approved.identity_id == "public_coder"
+    assert approved.service_account == PERSONAL
     assert review.exchanged_subjects
     assert set(review.exchanged_subjects) == {SUBJECT_A}
 
@@ -678,7 +674,7 @@ async def test_existing_connection_consent_requires_confirmation_and_preserves_r
     old = await review.connections.bind(
         GrantBinding(
             grant_id=uuid4(),
-            identity_id="public_coder",
+            service_account=PERSONAL,
             issuer="https://actions.test",
             client_id="test-old-client",
             activation_deadline=datetime.now(UTC) + timedelta(minutes=10),
@@ -695,7 +691,7 @@ async def test_existing_connection_consent_requires_confirmation_and_preserves_r
     body = ConsentAllow(
         verdict="allow",
         csrf_token=preview["csrf_token"],
-        identity_id="public_coder",
+        service_account=PERSONAL,
         connection=ConfirmedReconnectConnection(
             connection_id=connection.id, expected_version=connection.version, authority_change_confirmed=True
         ),
@@ -735,7 +731,7 @@ async def test_consent_interactions_have_distinct_csrf_and_reject_extra_authorit
     for extra in (
         {"redirect_url": "https://evil.test"},
         {"browser_binding": "attacker-supplied"},
-        {"identity_id": "public_coder"},
+        {"service_account": PERSONAL.model_dump()},
     ):
         response = await browser.post(
             f"{first}/decision", json={"verdict": "deny", "csrf_token": one["csrf_token"], **extra}

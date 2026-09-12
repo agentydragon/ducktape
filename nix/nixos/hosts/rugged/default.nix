@@ -5,7 +5,6 @@
 # - Transfer over Ansible Vault password into libwallet
 #
 # TODO: Consider moving some packages from home-manager to system level (zsh, compilers like rustc/go/gcc)
-# TODO: SSH authorized_keys - add keys to openssh.authorizedKeys.keys
 # TODO: Improved OSK extension - waiting for GNOME 49 support (currently only 43-44)
 # TODO: auto-cpufreq - services.auto-cpufreq for dynamic CPU governor (power saving on battery, performance on AC)
 # TODO: Vulkan crash on Lunar Lake - Snapshot (and likely other GTK4 apps) segfault with VK_ERROR_DEVICE_LOST.
@@ -33,7 +32,6 @@ in
     ../../modules/claude-desktop.nix
     ../../modules/system-inspection-sudo.nix
     ../../modules/k8s-worker.nix
-    ../../modules/hostexecd.nix
     ../../modules/github-api-recorder.nix
     ./ipu7-camera.nix
     ./foxconn-wwan.nix
@@ -68,11 +66,6 @@ in
     };
     nodeTaints = [ "node-role.kubernetes.io/roaming=true:NoSchedule" ];
   };
-
-  # hostexecd: haku-console runs approved commands here under the operator's own
-  # Authentik identity and outbound daemon id derive from networking.hostName.
-  # See nix/nixos/modules/hostexecd.nix.
-  ducktape.hostexec.enable = true;
 
   # Attribution for the GitHub GraphQL quota drain; see the module header.
   ducktape.githubApiRecorder.enable = true;
@@ -231,8 +224,12 @@ in
       iguana
       wyrm2
       atlas
+      ruggedMcpAgentydragon
     ];
   };
+
+  users.users.root.openssh.authorizedKeys.keys = [ keys.ruggedMcpRoot ];
+  services.openssh.settings.PermitRootLogin = lib.mkForce "prohibit-password";
 
   # SPICE USB redirection helper (setuid root for USB device passthrough)
   security.wrappers.spice-client-glib-usb-acl-helper = {

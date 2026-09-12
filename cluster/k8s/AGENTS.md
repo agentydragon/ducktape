@@ -23,4 +23,5 @@ TLS handshake. For SNI-restricted access, verify that wrong SNI and direct
 plaintext backend requests are rejected. A missing backend permission can yield
 an HTTP 403 after successful TLS; distinguish that from a transport failure.
 
-Example and evidence: <../debug/agentplane_oidc/gateway_service_probe.md>.
+Mechanism and verification recipe: <../docs/cilium_network_policy.md> § Egress
+through the Gateway Service.

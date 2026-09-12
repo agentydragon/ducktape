@@ -1,10 +1,9 @@
 """Canonical construction of haku-console's same-process MCP servers.
 
 The registry holds *builders* (`InProcessServers`): the gmail/google_calendar servers are
-built per execution from the acting Operator's Google access token, hostexec from the acting
-Operator's Authentik access token, while routine and index are credential-free. Trusted caller
-context for the profile-scoped servers travels in MCP request metadata. See
-`execution.McpExecutionContext`.
+built per execution from the acting Operator's Google access token, while routine and index
+are credential-free. Trusted caller context for the profile-scoped servers travels in MCP
+request metadata. See `execution.McpExecutionContext`.
 """
 
 from __future__ import annotations
@@ -14,11 +13,9 @@ from dataclasses import dataclass
 import haku.console.tools.gmail as gmail_tools
 import haku.console.tools.google_calendar as google_calendar_tools
 import haku.console.tools.grants as grants_tools
-import haku.console.tools.hostexec as hostexec_tools
 import haku.console.tools.recall_index as recall_index_tools
 import haku.console.tools.routine as routine_tools
 import haku.console.tools.sandbox as sandbox_tools
-from haku.console.config import HostexecConfig
 from haku.console.mcp.in_process_server_access import InProcessServerAccessPolicy
 from haku.console.mcp_config import (
     AccessProfile,
@@ -28,19 +25,7 @@ from haku.console.mcp_config import (
     const_in_process_server,
 )
 from haku.console.recall_index_access import RecallIndexAccessPolicy
-from haku.console.tools.hostexec_client import HostexecClient, NodeDaemonBroker
-from haku.console.tools.hostexec_token import HostexecJwtBearerExchanger
 from haku.sandbox.config import SandboxEnvironmentConfig
-
-
-@dataclass(frozen=True, slots=True)
-class HostexecServerConfig:
-    """Everything the hostexec builder needs beyond the per-call operator token: the in-scope hosts
-    and the Authentik token endpoint (derived once from the operator OIDC issuer at composition)."""
-
-    config: HostexecConfig
-    token_endpoint: str
-    broker: NodeDaemonBroker
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,11 +41,10 @@ class InProcessServerDependencies:
     """Runtime collaborators for the in-process servers.
 
     gmail/google_calendar need none (built per call from the acting Operator's token); routine is
-    registered only when its launcher is configured; hostexec only when its config is set.
+    registered only when its launcher is configured.
     """
 
     routine_launcher: routine_tools.RoutineLauncher | None = None
-    hostexec: HostexecServerConfig | None = None
     # The semantic index over haku-state's files — set only when `config.yaml` lists the server,
     # which is also what requires an embedder to be configured.
     index: recall_index_tools.IndexSearcher | None = None
@@ -114,23 +98,5 @@ def build_in_process_servers(dependencies: InProcessServerDependencies) -> InPro
             builder=lambda _token: sandbox_tools.build_mcp(sandbox.client, sandbox.environment),
             credential_kind=InProcessCredentialKind.NONE,
             authorizer=in_process_access.authorizer_for(sandbox_tools.SANDBOX_SERVER_ID),
-        )
-    if (hostexec := dependencies.hostexec) is not None:
-        daemon_ids = {host: entry.daemon_id for host, entry in hostexec.config.hosts.items()}
-        audience_client_ids = {host: entry.audience_client_id for host, entry in hostexec.config.hosts.items()}
-        servers[hostexec_tools.HOSTEXEC_SERVER_ID] = InProcessServerRegistration(
-            builder=lambda token: hostexec_tools.build_mcp(
-                HostexecClient(
-                    daemon_ids=daemon_ids,
-                    exchange=HostexecJwtBearerExchanger(
-                        operator_token=token,
-                        token_endpoint=hostexec.token_endpoint,
-                        audience_client_ids=audience_client_ids,
-                        scope=hostexec.config.exchange_scope,
-                    ).exchange,
-                    broker=hostexec.broker,
-                )
-            ),
-            credential_kind=InProcessCredentialKind.OPERATOR_LOGIN_IDENTITY,
         )
     return servers

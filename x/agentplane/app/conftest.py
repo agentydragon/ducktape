@@ -14,6 +14,7 @@ from testcontainers.postgres import PostgresContainer
 from util.testing.postgres import create_database_sync, force_drop_database_sync
 from util.testing.postgres_fixtures import postgres_container
 from x.agentplane.app.bridge import RunnerBridge, SandboxNotReachableError
+from x.agentplane.app.database_migrate import apply_migrations
 from x.agentplane.app.decisions import DecisionsClient
 from x.agentplane.app.egress import EgressInventory
 from x.agentplane.app.identity import TokenReviewer
@@ -38,21 +39,22 @@ from x.agentplane.runner.conftest import config, model, provider, runner, spec, 
 
 @pytest.fixture
 def db_url(postgres_container: PostgresContainer, request: pytest.FixtureRequest) -> Iterator[str]:
-    """A pristine per-test database on the shared container, as an asyncpg URL."""
+    """A pristine, migrated per-test database on the shared container, as an asyncpg URL."""
     admin_url = (
         f"postgresql+psycopg://postgres:postgres@{postgres_container.get_container_host_ip()}"
         f":{postgres_container.get_exposed_port(5432)}/postgres"
     )
     db_name = re.sub(r"[^a-z0-9_]", "_", request.node.name.lower())[:45].rstrip("_")
     url = create_database_sync(admin_url, db_name)
-    yield make_url(url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
+    async_url = make_url(url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
+    apply_migrations(async_url)
+    yield async_url
     force_drop_database_sync(admin_url, db_name)
 
 
 @pytest.fixture
 async def store(db_url: str) -> AsyncIterator[TrajectoryStore]:
     store = TrajectoryStore.connect(db_url)
-    await store.ensure_schema()
     await store.start_updates()
     try:
         yield store

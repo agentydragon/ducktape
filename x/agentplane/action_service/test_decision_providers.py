@@ -1,44 +1,51 @@
-"""Synchronous DecisionProvider aggregation: matrix, deny dominance, races, timeout, human fallback."""
+"""Synchronous DecisionProvider aggregation: matrix, deny dominance, races, timeout, human fallback,
+and the policy-set provider deciding from the caller's bindings at admission."""
 
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
-from pathlib import Path
-from uuid import uuid4
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
+from typing import Any
+from uuid import UUID
 
 import pytest
 import pytest_bazel
-from fastmcp import FastMCP
 from pydantic import JsonValue, ValidationError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from x.agentplane.action_service.catalog import (
-    ActionCatalog,
-    ActionDefinition,
-    ActionGroup,
-    ActionIdentity,
-    McpExecutorBinding,
-)
+from github_policy.visibility import RepositoryVisibilityService
+from x.agentplane.action_service.catalog import ActionCatalog, ActionIdentity
 from x.agentplane.action_service.db import ActionConflictError, ActionStore, make_sessionmaker
-from x.agentplane.action_service.fixture_policy import FixtureAutoAllow, FixtureDecisionProvider
-from x.agentplane.action_service.main import Settings
 from x.agentplane.action_service.mcp_executor import McpActionGroupExecutor
 from x.agentplane.action_service.models import (
     ActionRequestInput,
+    ActionRequestView,
     ActionState,
-    DecisionContext,
+    BindingEvidence,
     DecisionInput,
+    MatchedPolicy,
+    PolicyKind,
+    PolicySetEvidence,
     Principal,
     PrincipalRole,
     ProviderOutcome,
     ProviderVerdict,
+    SandboxCaller,
     Verdict,
 )
+from x.agentplane.action_service.policies.resources import parse_binding, parse_policy_set
+from x.agentplane.action_service.policy_evaluation import AUTO_APPROVE_REASON, PROVIDER_NAME, PolicySetDecisionProvider
+from x.agentplane.action_service.policy_informer import PolicyIndex, namespaced_key
+from x.agentplane.action_service.providers import DecisionContext
 from x.agentplane.action_service.service import ActionService, InvalidActionArgumentsError
 
-CALLER = Principal(issuer="kubernetes-sandbox", subject="agentplane-staging:sandbox-a-uid", role=PrincipalRole.CALLER)
+NAMESPACE = "agentplane-test"
+SANDBOX = SandboxCaller(namespace=NAMESPACE, sandbox_uid="sandbox-a-uid")
+CALLER = SANDBOX.principal()
 OPERATOR = Principal(issuer="test-bff", subject="operator", role=PrincipalRole.OPERATOR)
+NOW = datetime(2026, 9, 12, 12, 0, tzinfo=UTC)
+ECHO = ActionIdentity(group="agentplane", name="echo")
 
 
 class ScriptedProvider:
@@ -106,10 +113,17 @@ class RacingHumanProvider:
         return ProviderOutcome(verdict=self._verdict, reason_code="late-vote")
 
 
-def body(idempotency_key: str) -> ActionRequestInput:
-    return ActionRequestInput(
-        idempotency_key=idempotency_key, action=ActionIdentity(group="agentplane", name="echo"), arguments={"n": 1}
-    )
+def body(idempotency_key: str, n: int = 1) -> ActionRequestInput:
+    return ActionRequestInput(idempotency_key=idempotency_key, action=ECHO, arguments={"n": n})
+
+
+async def _succeeded(service: ActionService, request_id: UUID) -> ActionRequestView:
+    async with asyncio.timeout(10):
+        view = await service.get(request_id, CALLER)
+        while view.state is not ActionState.SUCCEEDED:
+            await asyncio.sleep(0.01)
+            view = await service.get(request_id, CALLER)
+    return view
 
 
 def test_provider_outcome_bounds_the_reason_description() -> None:
@@ -273,7 +287,7 @@ async def test_stale_auto_decision_after_human_already_decided(
         await service.close()
 
 
-async def test_decision_context_carries_only_trusted_identity(
+async def test_decision_context_carries_only_the_authenticated_caller(
     mcp_executor: McpActionGroupExecutor, engine: AsyncEngine, echo_catalog: ActionCatalog
 ) -> None:
     store = ActionStore(make_sessionmaker(engine))
@@ -282,16 +296,15 @@ async def test_decision_context_carries_only_trusted_identity(
     try:
         forged = ActionRequestInput(
             idempotency_key="identity-context",
-            action=ActionIdentity(group="agentplane", name="echo"),
+            action=ECHO,
             arguments={"n": 1},
-            origin={"agent_id": "forged-agent", "owner": "forged-owner"},
-            correlation={"turn_ref": "forged-turn"},
+            origin={"agent_id": "forged-agent", "owner": "forged-owner", "sandbox_uid": "forged-uid"},
+            correlation={"turn_ref": "forged-turn", "binding": "forged-binding"},
         )
         await service.submit(forged, CALLER)
-        assert len(provider.contexts) == 1
-        context = provider.contexts[0]
-        assert context.caller_principal == CALLER
-        assert context.agent_identity is None
+        (context,) = provider.contexts
+        assert context.caller == SANDBOX
+        assert context.bindings == ()
     finally:
         await service.close()
 
@@ -313,6 +326,7 @@ async def test_provider_reason_is_projected_separately_from_human_note(
         assert result.decision.reason_description == "policy decided"
         # Provider outcome evidence is separate from the human-authored note.
         assert result.decision.decision_note is None
+        assert result.decision.policy_evidence is None
 
         operator_view = await store.get(result.id, OPERATOR)
         assert operator_view.decision is not None
@@ -323,241 +337,240 @@ async def test_provider_reason_is_projected_separately_from_human_note(
         await service.close()
 
 
-@pytest.fixture
-def fixture_catalog() -> ActionCatalog:
-    return ActionCatalog(
-        groups={
-            "test_fixture": ActionGroup(
-                title="Test fixture",
-                description="Credentialless test fixture",
-                executor=McpExecutorBinding(description="Test server"),
-                actions={"echo": ActionDefinition(description="Fixed marker")},
-            )
+def _meta(name: str, *, generation: int = 1, version: str = "1") -> dict[str, Any]:
+    return {
+        "name": name,
+        "namespace": NAMESPACE,
+        "uid": f"uid-{name}",
+        "generation": generation,
+        "resourceVersion": version,
+    }
+
+
+def _index(
+    *,
+    sets: dict[str, dict[str, Any]] | None = None,
+    bindings: dict[str, dict[str, Any]] | None = None,
+    synced: bool = True,
+) -> PolicyIndex:
+    """An index from raw specs, parsed the way the informer parses them, so invalid ones stay invalid."""
+    index = PolicyIndex(synced=synced)
+    for name, spec in (sets or {}).items():
+        index.policy_sets[namespaced_key(NAMESPACE, name)] = parse_policy_set(
+            {"metadata": _meta(name, generation=4, version="40"), "spec": spec}
+        )
+    for name, spec in (bindings or {}).items():
+        index.bindings[namespaced_key(NAMESPACE, name)] = parse_binding(
+            {"metadata": _meta(name, version="7"), "spec": spec}
+        )
+    return index
+
+
+BOUNDED_ECHO: dict[str, Any] = {
+    "autoApproveIf": [
+        {
+            "type": "argument_schema",
+            "actions": {"agentplane": ["echo"]},
+            "schema": {"type": "object", "required": ["n"], "properties": {"n": {"type": "integer", "maximum": 5}}},
         }
-    )
+    ]
+}
+OWN_SANDBOX: dict[str, Any] = {"sandbox": {"name": "coder", "uid": SANDBOX.sandbox_uid}}
 
 
-@pytest.fixture
-def fixture_provider(fixture_catalog: ActionCatalog) -> FixtureDecisionProvider:
-    return FixtureDecisionProvider(
-        FixtureAutoAllow(group="test_fixture"),
-        fixture_catalog,
-        allowed_service_account_namespaces=frozenset({"agentplane-staging"}),
-    )
-
-
-@pytest.fixture
-def fixture_context() -> DecisionContext:
-    return DecisionContext(
-        request_id=uuid4(),
-        action=ActionIdentity(group="test_fixture", name="echo"),
-        arguments={"message": "ok"},
-        caller_principal=CALLER,
-    )
-
-
-async def test_fixture_allow_is_exact_and_reasons_are_constant(
-    fixture_provider: FixtureDecisionProvider, fixture_context: DecisionContext
-) -> None:
-    outcome = await fixture_provider.decide(fixture_context)
-    assert outcome.verdict is ProviderVerdict.ALLOW
-    assert outcome.reason_code == "credentialless_fixture"
-    assert outcome.reason_description is not None
-    assert len(outcome.reason_description) <= 500
-    assert CALLER.subject not in outcome.reason_description
-
-
-@pytest.mark.parametrize(
-    "action",
-    [
-        ActionIdentity(group="other", name="echo"),
-        ActionIdentity(group="test_fixture", name="other"),
-        ActionIdentity(group="agentplane", name="echo"),
-    ],
-)
-async def test_fixture_never_allows_other_actions(
-    fixture_provider: FixtureDecisionProvider, fixture_context: DecisionContext, action: ActionIdentity
-) -> None:
-    fixture_context = fixture_context.model_copy(update={"action": action})
-    assert (await fixture_provider.decide(fixture_context)).verdict is ProviderVerdict.NO_OPINION
-
-
-@pytest.mark.parametrize(
-    "arguments",
-    [
-        {},
-        {"text": "anything"},
-        {"message": 1},
-        {"message": "x" * 201},
-        {"message": "ok", "extra": True},
-        {"caller_principal": CALLER.key},
-        {"x": None},
-    ],
-)
-async def test_fixture_never_allows_arguments(
-    fixture_provider: FixtureDecisionProvider, fixture_context: DecisionContext, arguments: dict[str, JsonValue]
-) -> None:
-    fixture_context = fixture_context.model_copy(update={"arguments": arguments})
-    assert (await fixture_provider.decide(fixture_context)).verdict is ProviderVerdict.NO_OPINION
-
-
-@pytest.mark.parametrize(
-    "principal",
-    [
-        OPERATOR,
-        CALLER.model_copy(update={"role": PrincipalRole.OPERATOR}),
-        CALLER.model_copy(update={"issuer": "untrusted"}),
-        CALLER.model_copy(update={"subject": "other-namespace:sandbox-uid"}),
-        CALLER.model_copy(update={"subject": "agentplane-staging:"}),
-        CALLER.model_copy(update={"subject": "agentplane-staging:uid:extra"}),
-    ],
-)
-async def test_fixture_requires_trusted_sandbox_context(
-    fixture_provider: FixtureDecisionProvider, fixture_context: DecisionContext, principal: Principal
-) -> None:
-    fixture_context = fixture_context.model_copy(update={"caller_principal": principal})
-    assert (await fixture_provider.decide(fixture_context)).verdict is ProviderVerdict.NO_OPINION
-
-
-@pytest.mark.parametrize("unavailable", [True, False])
-async def test_fixture_discovery_loss_removes_auto_allow(
-    fixture_provider: FixtureDecisionProvider,
-    fixture_context: DecisionContext,
-    fixture_catalog: ActionCatalog,
-    unavailable: bool,
-) -> None:
-    if unavailable:
-        fixture_catalog.groups["test_fixture"].available = False
-    else:
-        fixture_catalog.groups["test_fixture"].actions.clear()
-    assert (await fixture_provider.decide(fixture_context)).verdict is ProviderVerdict.NO_OPINION
-
-
-async def test_fixture_policy_is_opt_in_through_runtime_yaml(
-    fixture_catalog: ActionCatalog, fixture_context: DecisionContext, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    config = tmp_path / "actions.yaml"
-    config.write_text("database_url: postgresql://test.invalid/test\n")
-    monkeypatch.setenv("AGENTPLANE_ACTIONS_CONFIG_FILE", str(config))
-    assert Settings(_cli_parse_args=False).decision_providers(fixture_catalog) == []
-    config.write_text("database_url: postgresql://test.invalid/test\nfixture_auto_allow:\n  group: test_fixture\n")
-    providers = Settings(_cli_parse_args=False).decision_providers(fixture_catalog)
-    assert len(providers) == 1
-    assert (await providers[0].decide(fixture_context)).verdict is ProviderVerdict.ALLOW
-
-
-@pytest.mark.parametrize("config", [{"group": "*"}, {"group": "test_fixture", "actions": ["*"]}])
-def test_fixture_configuration_cannot_expand_tool_scope(config: dict[str, JsonValue]) -> None:
-    with pytest.raises(ValidationError):
-        FixtureAutoAllow.model_validate(config)
-
-
-def test_fixture_provider_rejects_missing_group(fixture_catalog: ActionCatalog) -> None:
-    fixture_catalog.groups.clear()
-    with pytest.raises(ValueError, match="requires a configured MCP ActionGroup"):
-        FixtureDecisionProvider(
-            FixtureAutoAllow(group="test_fixture"),
-            fixture_catalog,
-            allowed_service_account_namespaces=frozenset({"agentplane-staging"}),
-        )
-
-
-def test_fixture_catalog_rejects_non_mcp_binding() -> None:
-    with pytest.raises(ValidationError):
-        ActionGroup.model_validate(
-            {
-                "title": "Not MCP",
-                "description": "Invalid binding",
-                "executor": {"kind": "hostexec", "description": "Not allowed"},
-            }
-        )
-
-
-@pytest.fixture
-async def fixture_mcp_executor(fixture_catalog: ActionCatalog) -> AsyncIterator[McpActionGroupExecutor]:
-    server = FastMCP("fixture-policy-test")
-
-    @server.tool
-    def echo(message: str) -> str:
-        return message
-
-    executor = McpActionGroupExecutor("test_fixture", fixture_catalog.groups["test_fixture"], server)
-    await executor.start()
-    try:
-        yield executor
-    finally:
-        await executor.close()
-
-
-@pytest.mark.parametrize("deny", [False, True])
-async def test_fixture_provider_uses_existing_deny_dominant_decision_path(
-    fixture_mcp_executor: McpActionGroupExecutor,
+def _service(
     engine: AsyncEngine,
-    fixture_provider: FixtureDecisionProvider,
-    fixture_catalog: ActionCatalog,
-    deny: bool,
-) -> None:
-    store = ActionStore(make_sessionmaker(engine))
-    service = ActionService(
-        store,
-        fixture_catalog,
-        {"test_fixture": fixture_mcp_executor},
-        providers=[
-            fixture_provider,
-            ScriptedProvider("other", ProviderVerdict.DENY if deny else ProviderVerdict.NO_OPINION),
-        ],
+    catalog: ActionCatalog,
+    executor: McpActionGroupExecutor,
+    index: PolicyIndex | None,
+    visibility: RepositoryVisibilityService,
+) -> ActionService:
+    return ActionService(
+        ActionStore(make_sessionmaker(engine)),
+        catalog,
+        {"agentplane": executor},
+        providers=[PolicySetDecisionProvider(visibility=visibility)],
+        policies=index,
+        clock=lambda: NOW,
     )
+
+
+async def test_bound_sandbox_is_auto_approved_with_evidence_and_an_execution(
+    mcp_executor: McpActionGroupExecutor,
+    engine: AsyncEngine,
+    echo_catalog: ActionCatalog,
+    github_visibility: Callable[..., RepositoryVisibilityService],
+) -> None:
+    index = _index(
+        sets={"bounded-echo": BOUNDED_ECHO, "unused": {"autoApproveIf": []}},
+        bindings={
+            "coder-bounded": {"subject": OWN_SANDBOX, "policySets": ["bounded-echo", "missing"]},
+            "coder-unused": {"subject": OWN_SANDBOX, "policySets": ["unused"]},
+        },
+    )
+    service = _service(engine, echo_catalog, mcp_executor, index, github_visibility())
     try:
-        result = await service.submit(
-            ActionRequestInput(
-                idempotency_key="fixture",
-                action=ActionIdentity(group="test_fixture", name="echo"),
-                arguments={"message": "ok"},
-            ),
-            CALLER,
+        allowed = await service.submit(body("bound", n=3), CALLER)
+        assert allowed.state is ActionState.ALLOWED
+        assert allowed.decision is not None
+        assert allowed.decision.provider == PROVIDER_NAME
+        assert allowed.decision.reason_code == AUTO_APPROVE_REASON
+        assert allowed.decision.reason_description is not None
+        assert "coder-bounded" in allowed.decision.reason_description
+        assert allowed.decision.policy_evidence is not None
+        assert allowed.decision.policy_evidence.bindings == [
+            BindingEvidence(namespace=NAMESPACE, name="coder-bounded", resource_version="7"),
+            BindingEvidence(namespace=NAMESPACE, name="coder-unused", resource_version="7"),
+        ]
+        assert allowed.decision.policy_evidence.policy_sets == [
+            PolicySetEvidence(namespace=NAMESPACE, name="bounded-echo", generation=4),
+            PolicySetEvidence(namespace=NAMESPACE, name="unused", generation=4),
+        ]
+        assert allowed.decision.policy_evidence.matched == MatchedPolicy(
+            namespace=NAMESPACE,
+            policy_set="bounded-echo",
+            source="autoApproveIf",
+            index=0,
+            type=PolicyKind.ARGUMENT_SCHEMA,
         )
-        assert result.state is (ActionState.DENIED if deny else ActionState.ALLOWED)
-        assert result.decision is not None
-        assert result.decision.provider == ("other" if deny else "mcp_fixture")
-        if deny:
-            assert result.execution is None
+        assert allowed.execution is not None
+        view = await _succeeded(service, allowed.id)
+        assert view.execution is not None
+        assert view.execution.result == {"n": 3}
+        # The same evidence is the operator's, and a retry recovers the same Decision.
+        assert (await service.get(allowed.id, OPERATOR)).decision == allowed.decision
+        assert (await service.submit(body("bound", n=3), CALLER)).decision == allowed.decision
+        # An argument miss takes the human path with no evidence recorded.
+        pending = await service.submit(body("argument-miss", n=9), CALLER)
+        assert pending.state is ActionState.DECISION_PENDING
+        assert pending.decision is None
     finally:
         await service.close()
 
 
-async def test_outside_fixture_scope_keeps_human_fallback_despite_spoofed_provenance(
-    fixture_mcp_executor: McpActionGroupExecutor,
-    engine: AsyncEngine,
-    fixture_provider: FixtureDecisionProvider,
-    fixture_catalog: ActionCatalog,
-) -> None:
-    service = ActionService(
-        ActionStore(make_sessionmaker(engine)),
-        fixture_catalog,
-        {"test_fixture": fixture_mcp_executor},
-        providers=[fixture_provider],
-    )
-    try:
-        result = await service.submit(
-            ActionRequestInput(
-                idempotency_key="fixture-spoof",
-                action=ActionIdentity(group="test_fixture", name="echo"),
-                arguments={"message": "ok"},
-                origin={"caller_principal": CALLER.key},
-                correlation={"agent_identity": CALLER.key},
+@pytest.mark.parametrize(
+    "index",
+    [
+        pytest.param(lambda: None, id="no-policy-objects"),
+        pytest.param(
+            lambda: _index(
+                sets={"bounded-echo": BOUNDED_ECHO},
+                bindings={"coder": {"subject": OWN_SANDBOX, "policySets": ["bounded-echo"]}},
+                synced=False,
             ),
-            CALLER.model_copy(update={"issuer": "untrusted"}),
+            id="unsynced",
+        ),
+        pytest.param(lambda: _index(sets={"bounded-echo": BOUNDED_ECHO}), id="no-binding"),
+        pytest.param(
+            lambda: _index(
+                sets={"bounded-echo": BOUNDED_ECHO},
+                bindings={"coder": {"subject": OWN_SANDBOX, "policySets": ["other"]}},
+            ),
+            id="missing-set",
+        ),
+        pytest.param(
+            lambda: _index(
+                sets={"broken": {"autoApproveIf": [{"type": "anything"}]}},
+                bindings={"coder": {"subject": OWN_SANDBOX, "policySets": ["broken"]}},
+            ),
+            id="invalid-set",
+        ),
+        pytest.param(
+            lambda: _index(
+                sets={"bounded-echo": BOUNDED_ECHO},
+                bindings={"coder": {"subject": {"sandbox": {"name": "coder"}}, "policySets": ["bounded-echo"]}},
+            ),
+            id="invalid-binding",
+        ),
+        pytest.param(
+            lambda: _index(
+                sets={"bounded-echo": BOUNDED_ECHO},
+                bindings={
+                    "coder": {
+                        "subject": OWN_SANDBOX,
+                        "policySets": ["bounded-echo"],
+                        "expiresAt": (NOW - timedelta(minutes=1)).isoformat(),
+                    }
+                },
+            ),
+            id="expired-binding",
+        ),
+        pytest.param(
+            lambda: _index(
+                sets={"bounded-echo": BOUNDED_ECHO},
+                bindings={
+                    "other": {
+                        "subject": {"sandbox": {"name": "coder", "uid": "other-sandbox-uid"}},
+                        "policySets": ["bounded-echo"],
+                    }
+                },
+            ),
+            id="another-sandbox",
+        ),
+        pytest.param(
+            lambda: _index(
+                sets={"bounded-echo": BOUNDED_ECHO},
+                bindings={
+                    "account": {
+                        "subject": {"serviceAccount": {"namespace": NAMESPACE, "name": "sandbox-a-uid"}},
+                        "policySets": ["bounded-echo"],
+                    }
+                },
+            ),
+            id="service-account-not-sandbox",
+        ),
+        pytest.param(
+            lambda: _index(
+                sets={"deny-only": {"autoDenyIf": BOUNDED_ECHO["autoApproveIf"], "autoDenyUnless": []}},
+                bindings={"coder": {"subject": OWN_SANDBOX, "policySets": ["deny-only"]}},
+            ),
+            id="deny-lists-decide-nothing-yet",
+        ),
+    ],
+)
+async def test_nothing_grants_without_a_matching_valid_unexpired_binding(
+    mcp_executor: McpActionGroupExecutor,
+    engine: AsyncEngine,
+    echo_catalog: ActionCatalog,
+    index: Callable[[], PolicyIndex | None],
+    github_visibility: Callable[..., RepositoryVisibilityService],
+) -> None:
+    service = _service(engine, echo_catalog, mcp_executor, index(), github_visibility())
+    try:
+        pending = await service.submit(
+            ActionRequestInput(
+                idempotency_key="unbound",
+                action=ECHO,
+                arguments={"n": 1},
+                origin={"binding": "coder", "sandbox_uid": SANDBOX.sandbox_uid, "policy_set": "bounded-echo"},
+            ),
+            CALLER,
         )
-        assert result.state is ActionState.DECISION_PENDING
-        assert result.decision is None
-        assert result.execution is None
-        decided = await service.decide(
-            result.id,
-            DecisionInput(verdict=Verdict.DENY, expected_version=result.version, idempotency_key="human-fallback"),
-            OPERATOR,
-        )
-        assert decided.decision is not None
-        assert decided.decision.provider == ActionService.HUMAN_PROVIDER
+        assert pending.state is ActionState.DECISION_PENDING
+        assert pending.decision is None
+        assert pending.execution is None
+    finally:
+        await service.close()
+
+
+async def test_binding_change_after_admission_leaves_the_decision_alone(
+    mcp_executor: McpActionGroupExecutor,
+    engine: AsyncEngine,
+    echo_catalog: ActionCatalog,
+    github_visibility: Callable[..., RepositoryVisibilityService],
+) -> None:
+    index = _index(
+        sets={"bounded-echo": BOUNDED_ECHO},
+        bindings={"coder": {"subject": OWN_SANDBOX, "policySets": ["bounded-echo"]}},
+    )
+    service = _service(engine, echo_catalog, mcp_executor, index, github_visibility())
+    try:
+        allowed = await service.submit(body("before-removal"), CALLER)
+        assert allowed.state is ActionState.ALLOWED
+        index.bindings.clear()
+        assert (await service.submit(body("after-removal"), CALLER)).state is ActionState.DECISION_PENDING
+        view = await _succeeded(service, allowed.id)
+        assert view.decision == allowed.decision
     finally:
         await service.close()
 
@@ -581,12 +594,7 @@ async def test_invalid_arguments_are_rejected_before_persistence_and_provider_ev
     try:
         with pytest.raises(InvalidActionArgumentsError, match="advertised Action schema"):
             await service.submit(
-                ActionRequestInput(
-                    idempotency_key="schema-check",
-                    action=ActionIdentity(group="agentplane", name="echo"),
-                    arguments=arguments,
-                ),
-                CALLER,
+                ActionRequestInput(idempotency_key="schema-check", action=ECHO, arguments=arguments), CALLER
             )
         assert provider.contexts == []
         assert await store.list_requests(CALLER) == []

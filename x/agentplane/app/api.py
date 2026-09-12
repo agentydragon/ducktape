@@ -17,12 +17,22 @@ from google.protobuf.json_format import MessageToDict
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from x.agentplane.action_service.client import OperatorActionServiceClient
-from x.agentplane.action_service.connections import Connection, ConnectionRename, ConnectionVersion, Identity
+from x.agentplane.action_service.connections import Connection, ConnectionRename, ConnectionVersion
 from x.agentplane.action_service.enrollments import EnrollmentDecisionResult
 from x.agentplane.action_service.mcp_linkage import McpLinkageStart, McpLinkageStartView, McpLinkageView
-from x.agentplane.action_service.models import ActionEventView, ActionRequestView, ActionState, DecisionInput
+from x.agentplane.action_service.models import (
+    ActionEventView,
+    ActionRequestView,
+    ActionState,
+    DecisionInput,
+    ServiceAccountRef,
+)
 from x.agentplane.app import auth_routes, bridge as runner_bridge
-from x.agentplane.app.action_federation import FederatedOperatorActions, OperatorFederationError
+from x.agentplane.app.action_federation import (
+    FederatedOperatorActions,
+    OperatorFederationError,
+    upstream_failure_detail,
+)
 from x.agentplane.app.consent import (
     ConsentDecision,
     ConsentPreview,
@@ -59,6 +69,7 @@ from x.agentplane.app.presets import (
     ThreadDefaults,
     UnknownPresetError,
 )
+from x.agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown
 from x.agentplane.app.trajectory import ThreadNotFoundError, ThreadView, TrajectoryStore
 from x.agentplane.runner.client import RunnerError
 
@@ -145,10 +156,8 @@ Decisions = Annotated[DecisionsClient, Depends(_decisions)]
 
 
 @router.get("")
-async def list_sandboxes(
-    inventory: Inventory, include_archived: Annotated[bool, Query(description="Also list archived sandboxes.")] = False
-) -> list[SandboxView]:
-    return await inventory.list_sandboxes(include_archived=include_archived)
+async def list_sandboxes(inventory: Inventory) -> list[SandboxView]:
+    return await inventory.list_sandboxes()
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -193,18 +202,6 @@ async def suspend_sandbox(inventory: Inventory, name: str) -> Response:
 @router.post("/{name}/resume", status_code=status.HTTP_204_NO_CONTENT)
 async def resume_sandbox(inventory: Inventory, name: str) -> Response:
     await inventory.resume(name)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@router.post("/{name}/archive", status_code=status.HTTP_204_NO_CONTENT)
-async def archive_sandbox(inventory: Inventory, name: str) -> Response:
-    await inventory.archive(name)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@router.post("/{name}/unarchive", status_code=status.HTTP_204_NO_CONTENT)
-async def unarchive_sandbox(inventory: Inventory, name: str) -> Response:
-    await inventory.unarchive(name)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -304,15 +301,10 @@ async def _operator_actions(
 
 def upstream_http_error(error: httpx.HTTPStatusError | httpx.RequestError) -> HTTPException:
     """Describe the failed request, which may be to the identity provider or the service."""
-    response_status = error.response.status_code if isinstance(error, httpx.HTTPStatusError) else None
+    detail = upstream_failure_detail(error)
+    response_status = detail["upstream_status"]
     return HTTPException(
-        response_status if response_status is not None else status.HTTP_503_SERVICE_UNAVAILABLE,
-        {
-            "method": error.request.method,
-            "url": str(error.request.url.copy_with(username="", password="", query=None, fragment=None)),
-            "upstream_status": response_status,
-            "error_type": type(error).__name__,
-        },
+        response_status if isinstance(response_status, int) else status.HTTP_503_SERVICE_UNAVAILABLE, detail
     )
 
 
@@ -360,9 +352,9 @@ async def disconnect_mcp_linkage(server_id: str, client: OperatorActions) -> Mcp
     return await client.disconnect_mcp_linkage(server_id)
 
 
-@connections_router.get("/connection-identities")
-async def connection_identities(client: OperatorActions) -> dict[str, Identity]:
-    return await client.list_identities()
+@connections_router.get("/connection-service-accounts")
+async def connection_service_accounts(client: OperatorActions) -> list[ServiceAccountRef]:
+    return await client.caller_service_accounts()
 
 
 @connections_router.get("/connections")
@@ -405,13 +397,13 @@ async def _action_chunks(client: OperatorActions) -> AsyncIterator[AsyncIterator
 
 @actions_router.get("/stream")
 async def action_stream(
-    request: Request, chunks: Annotated[AsyncIterator[bytes], Depends(_action_chunks)]
+    request: Request, shutdown: Shutdown, chunks: Annotated[AsyncIterator[bytes], Depends(_action_chunks)]
 ) -> StreamingResponse:
     async def body() -> AsyncIterator[bytes]:
         # Force periodic reauthentication (including logout in another replica), not state polling.
         try:
             async with asyncio.timeout(30):
-                async for chunk in chunks:
+                async for chunk in shutdown.until(chunks):
                     if operator_session(request) is None or await request.is_disconnected():
                         return
                     yield chunk
@@ -494,6 +486,30 @@ async def list_threads(
     return await store.list_threads(sandbox=sandbox, session_id=session_id)
 
 
+class ThreadsWithSandboxes(BaseModel):
+    """Every Thread across every Sandbox the operator can see, plus each Thread's own still-existing
+    Sandbox, keyed by name. Normalized rather than one Sandbox view per Thread that shares it: a
+    Sandbox with many Threads would otherwise have its view duplicated once per Thread. A Thread's
+    own `sandbox` name absent from `sandboxes` means that Sandbox row is gone."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    threads: list[ThreadView]
+    sandboxes: dict[str, SandboxView]
+
+
+@threads.get("/with-sandboxes")
+async def list_threads_with_sandboxes(store: Store, inventory: Inventory) -> ThreadsWithSandboxes:
+    """Every Thread across every Sandbox the operator can see, newest first, with each Thread's own
+    still-existing Sandbox included once regardless of how many Threads it hosts. A Thread survives
+    its Sandbox's deletion here rather than disappearing with it; look it up by `thread.sandbox` in
+    `sandboxes` and treat a miss as deleted."""
+    thread_views = await store.list_threads()
+    referenced = {thread.sandbox for thread in thread_views}
+    sandboxes = {view.name: view for view in await inventory.list_sandboxes() if view.name in referenced}
+    return ThreadsWithSandboxes(threads=thread_views, sandboxes=sandboxes)
+
+
 @threads.get("/{thread_id}")
 async def get_thread(store: Store, thread_id: UUID) -> ThreadView:
     view = await store.get_thread(thread_id)
@@ -553,6 +569,7 @@ def create_app(
     app.state.oidc = oidc
     app.state.reviewer = reviewer
     app.state.operator_actions = operator_actions
+    app.state.drain = Drain()
     # Every route needs a caller. There is no unauthenticated path into the API: /healthz is
     # declared below, outside these routers.
     for api_router in (
@@ -581,6 +598,8 @@ def create_app(
         app.state.oauth = build_oauth(oidc)
         # Unguarded, because these are how a browser with no credential acquires one.
         app.include_router(auth_routes.router)
+    # Outermost, so a request the drain refuses touches nothing below it.
+    app.add_middleware(DrainMiddleware, drain=app.state.drain, liveness_path="/healthz")
 
     @app.exception_handler(ThreadNotFoundError)
     async def _thread_not_found(_request: Request, error: ThreadNotFoundError) -> JSONResponse:
@@ -588,7 +607,13 @@ def create_app(
 
     @app.get("/healthz", include_in_schema=False)
     async def healthz() -> Response:
-        # The Deployment's probe: the process serves; the inventory's own reachability is per request.
+        # The Deployment's liveness probe: the process serves; the inventory's own reachability is
+        # per request. Answered through the drain, unlike everything else.
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    @app.get("/readyz", include_in_schema=False)
+    async def readyz() -> Response:
+        # The Deployment's readiness probe: the drain middleware answers 503 here once shutdown begins.
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     @app.exception_handler(SandboxNotFoundError)

@@ -10,15 +10,16 @@ from typing import Any
 import jsonschema
 from fastmcp import FastMCP
 
-from haku.console.auto_approval.decision import AutoApprovalDecision, AutoApproved, AutoDenied, NotAutoApproved
-from haku.console.auto_approval.github import (
-    GitHubRepositoryVisibilityService,
+from github_policy.repository import (
+    RepositoryMatch,
+    RepositoryMismatch,
     evaluate_fixed_repository,
     evaluate_public_repository,
 )
+from github_policy.visibility import RepositoryVisibilityService
+from haku.console.auto_approval.decision import AutoApprovalDecision, AutoApproved, AutoDenied, NotAutoApproved
 from haku.console.auto_approval.gmail import LABEL_NAMESPACE_TOOLS, evaluate_label_namespace
 from haku.console.auto_approval.home_assistant import CALL_SERVICE_TOOL, evaluate_entity_control
-from haku.console.auto_approval.hostexec import BASH_TOOL, evaluate_host_scoped
 from haku.console.auto_approval.kubernetes import evaluate_passthrough_redundancy
 from haku.console.grants.kubernetes.authorization_service import KubernetesAuthorizationService
 from haku.console.mcp_config import (
@@ -31,7 +32,6 @@ from haku.console.mcp_config import (
     GmailLabelNamespaceAutoApprovalPolicy,
     GrantSelfListAutoApprovalPolicy,
     HomeAssistantEntityControlAutoApprovalPolicy,
-    HostexecHostScopedAutoApprovalPolicy,
     KubernetesPassthroughAutoApprovalPolicy,
     NeverAutoApprovalPolicy,
 )
@@ -113,7 +113,7 @@ class AutoApprovalPolicyRegistry:
         config: ConsoleConfigFile,
         *,
         kubernetes_authorization: KubernetesAuthorizationService | None = None,
-        github_repository_visibility: GitHubRepositoryVisibilityService | None = None,
+        github_repository_visibility: RepositoryVisibilityService | None = None,
     ) -> None:
         self._config = config
         self._profiles = {profile.id: profile for profile in config.access_profiles}
@@ -178,12 +178,6 @@ class AutoApprovalPolicyRegistry:
                 return (
                     ToolAutoApprovalMode.CONDITIONALLY_AUTO_APPROVED
                     if server_id == server and tool_name == CALL_SERVICE_TOOL
-                    else ToolAutoApprovalMode.MANUAL_APPROVAL_REQUIRED
-                )
-            case HostexecHostScopedAutoApprovalPolicy(server=server):
-                return (
-                    ToolAutoApprovalMode.CONDITIONALLY_AUTO_APPROVED
-                    if server_id == server and tool_name == BASH_TOOL
                     else ToolAutoApprovalMode.MANUAL_APPROVAL_REQUIRED
                 )
             case KubernetesPassthroughAutoApprovalPolicy():
@@ -269,12 +263,24 @@ class AutoApprovalPolicyRegistry:
             case GitHubRepositoryAutoApprovalPolicy(server=server, owner=owner, repository=repository, tools=tools):
                 if server_id != server or tool_name not in tools:
                     return
-                evaluation.record(current_path, evaluate_fixed_repository(tool_name, arguments, owner, repository))
+                evaluation.record(
+                    current_path,
+                    _repository_decision(evaluate_fixed_repository(tool_name, arguments, owner, repository)),
+                )
             case GitHubPublicRepositoryAutoApprovalPolicy(server=server, tools=tools):
                 if server_id != server or tool_name not in tools:
                     return
-                decision = await evaluate_public_repository(tool_name, arguments, self._github_repository_visibility)
-                evaluation.record(current_path, decision)
+                if self._github_repository_visibility is None:
+                    evaluation.record(
+                        current_path, NotAutoApproved("GitHub repository visibility checking is not configured")
+                    )
+                    return
+                evaluation.record(
+                    current_path,
+                    _repository_decision(
+                        await evaluate_public_repository(tool_name, arguments, self._github_repository_visibility)
+                    ),
+                )
             case GrantSelfListAutoApprovalPolicy(server=server):
                 if server_id != server or tool_name != _LIST_GRANTS_TOOL:
                     return
@@ -296,10 +302,6 @@ class AutoApprovalPolicyRegistry:
                 if server_id != server or tool_name != CALL_SERVICE_TOOL:
                     return
                 evaluation.record(current_path, evaluate_entity_control(tool_name, arguments, entities))
-            case HostexecHostScopedAutoApprovalPolicy(server=server, hosts=hosts, run_as=run_as):
-                if server_id != server or tool_name != BASH_TOOL:
-                    return
-                evaluation.record(current_path, evaluate_host_scoped(tool_name, arguments, hosts, run_as))
             case KubernetesPassthroughAutoApprovalPolicy(server=server):
                 if server_id != server:
                     return
@@ -322,6 +324,14 @@ class AutoApprovalPolicyRegistry:
                     )
             case NeverAutoApprovalPolicy():
                 evaluation.record(current_path, NotAutoApproved("policy never auto-approves"))
+
+
+def _repository_decision(decision: RepositoryMatch | RepositoryMismatch) -> AutoApprovalDecision:
+    match decision:
+        case RepositoryMatch(explanation=explanation):
+            return AutoApproved(explanation)
+        case RepositoryMismatch(reason=reason):
+            return NotAutoApproved(reason)
 
 
 async def _validate_arguments(mcp: FastMCP, tool_name: str, arguments: dict[str, Any]) -> PolicyDenial | str | None:

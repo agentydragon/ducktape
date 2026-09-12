@@ -15,6 +15,7 @@ exports_files(
         "0011_enrollment_reconnect.py",
         "0012_action_push_subscription.py",
         "0013_mcp_server_linkage.py",
+        "0014_action_policies.py",
     ],
     visibility = ["//x/agentplane/action_service/migrations:__pkg__"],
 )
@@ -127,6 +128,15 @@ py_library(
 py_library(
     name = "0013_mcp_server_linkage",
     srcs = ["0013_mcp_server_linkage.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "0014_action_policies",
+    srcs = ["0014_action_policies.py"],
     deps = [
         "@pypi//alembic",
         "@pypi//sqlalchemy",

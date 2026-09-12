@@ -33,10 +33,10 @@ flowchart TB
 
     MCPAUTH["Remaining acceptance<br/>credentialed MCP account<br/>OAuth linkage + provider proof"]:::active
     CRED["Deferred decision<br/>static credential + binding design<br/>ownership, lifecycle, revocation"]:::future
-    POLICYBIND["Design gate<br/>shared ActionPolicySets + bindings<br/>model, storage, ownership"]:::decision
-    MCPDEPLOY["In progress<br/>OAuth-capable images + staging wiring<br/>public MCP and Sandbox reachability"]:::active
-    CALLERPOLICY["Planned support<br/>configured caller Action bounds<br/>and auto-approval deciders"]:::future
-    SBPOLICY["Planned behavior<br/>auto-approve configured Actions<br/>through concrete Sandbox bindings"]:::future
+    MCPDEPLOY["Remaining acceptance<br/>staged MCP endpoint rollout<br/>public MCP and Sandbox reachability"]:::active
+    SBPOLICY["Planned behavior<br/>app-written Sandbox bindings<br/>and read-only effective policy view"]:::future
+    ELEVATE["Planned behavior<br/>agent-requested temporary permission<br/>ServiceAccount and Sandbox callers, operator-approved"]:::future
+    FORK["Deferred design<br/>per-task identity fork<br/>sub-identity scoped by token possession"]:::future
     CLAUDEAI["Priority milestone<br/>working Claude.ai MCP facade<br/>deployed Action execution"]:::active
     EXTERNALMCP["Planned milestone<br/>Claude.ai + external Claude Code<br/>identity-bound Action execution"]:::future
     MCPAGG["Deferred migration<br/>replace Haku Console MCP aggregator<br/>real Claude.ai/Claude Code proof"]:::future
@@ -49,7 +49,6 @@ flowchart TB
     RETIRE_TOOLS["Deferred migration<br/>retire Haku Console tool-call/<br/>approval management"]:::future
     INPUT_DELIVERY["P0 behavior, independent<br/>input delivery/replay semantics<br/>provider research and captures first"]:::active
     T3["Deferred product work<br/>trajectory search and lookup<br/>later prioritization"]:::future
-    PR["Remaining deployment acceptance<br/>egress safety image + two staging replicas<br/>bounded drain and watch-loss proof"]:::active
     PC_EGRESS["Milestone<br/>public-coder-agent egress migration<br/>prod Agentplane proxy"]:::milestone
     PROFILES["Deferred decision<br/>capability profiles<br/>Rai design confirmation required"]:::future
     ACCESS["Deferred design<br/>delegated vs brokered external access<br/>grants and revocation"]:::future
@@ -63,11 +62,15 @@ flowchart TB
     AG["Deferred<br/>hosted Thread lifecycle<br/>cross-Identity read policy"]:::future
     IDENTITY_SCOPE["Deferred discussion<br/>cross-service static Identity access<br/>MCP and binding-authority placement"]:::future
     PROD["Milestone<br/>production-capable governed action execution"]:::milestone
+    ACTION_PROVENANCE_PRUNE["Deferred idea<br/>prune ActionRequestInput origin/correlation<br/>collapse to one client-authored identifier?"]:::future
+    CONNECTION_SA_REBIND["Planned mutation<br/>rebind a Connection's ServiceAccount in place<br/>no mutation exists; only a fresh OAuth consent does"]:::future
+    SANDBOX_SA["Deferred design<br/>one ServiceAccount per Sandbox<br/>a native Kubernetes identity to separate and grant on"]:::future
 
     CRED --> MCPAUTH
     MCPAUTH --> PROD
-    POLICYBIND --> CALLERPOLICY
-    CALLERPOLICY --> SBPOLICY
+    SBPOLICY --> ELEVATE
+    APPROVALUI --> ELEVATE
+    ELEVATE --> FORK
     MCPDEPLOY --> CLAUDEAI
     APPROVALUI --> CLAUDEAI
     CLAUDEAI --> EXTERNALMCP
@@ -84,8 +87,6 @@ flowchart TB
 
     INPUT_DELIVERY -. reliable Thread ingress .-> ING
     T3 -. product work .-> PROD
-    PR -. independent reliability .-> PROD
-    PR --> PC_EGRESS
 
     ACCESS -. authority choice .-> EGRESS_CHANGE
 ```
@@ -106,18 +107,19 @@ provenance display are implemented. The remaining first-delivery work is staging
 (`MCPDEPLOY`) and real operator/client proof (`APPROVALUI` / `CLAUDEAI`). `EXTERNALMCP` additionally proves independently
 running Claude Code. The [external connection plan](external_mcp_connections.md) owns remaining
 delivery and compatibility work, not a duplicate of the implemented contracts.
-The first external slice uses human approval. `POLICYBIND` settles policy-definition/assignment
-storage before `CALLERPOLICY`; neither gates the human-approved client proof. Connection authority
-already lives in PostgreSQL and is not part of that open storage decision. Static Identity does
-not select backend credentials or wait for `CRED`/`PROFILES`; outbound account OAuth remains
-`MCPAUTH`. Initial client proof does not establish full Haku tool parity.
-Hosted harnesses continue to call Actions from their Sandbox Threads: `CALLERPOLICY -> SBPOLICY`
-adds configurable auto-approval through concrete Actions-owned Sandbox bindings. SandboxPreset stays
+An external caller is auto-approved only by an `ActionPolicyBinding` naming its ServiceAccount,
+otherwise by the operator; the Action Service evaluates such bindings at admission and records
+what it evaluated on the Decision. None of that gates the human-approved client proof. Connection
+authority already lives in PostgreSQL. A caller ServiceAccount does not select backend credentials
+or wait for `CRED`/`PROFILES`; outbound account OAuth remains `MCPAUTH`. Initial client proof does
+not establish full Haku tool parity.
+Hosted harnesses continue to call Actions from their Sandbox Threads: `SBPOLICY` adds the
+integration app's writer for the same Actions-owned Sandbox bindings. SandboxPreset stays
 an integration-app-only recipe: the app resolves preset defaults and per-Sandbox additions into each
 subsystem's bindings. Actions and egress do not resolve presets or depend on one another. The
-[Action policy plan](action_policies.md) owns shared bounds and deciders; policy representation remains open.
-SSH execution is another adapter behind the existing Executor contract. The planned first slice uses
-OpenSSH with Kubernetes Secret-mounted long-lived keys and reviewed ConfigMap host/user/key bindings;
+[Action policy plan](action_policies.md) owns the remaining app and deny-list steps.
+SSH execution is a modular MCP backend behind the existing MCP Executor contract. The planned first
+slice uses OpenSSH with Kubernetes Secret-mounted long-lived keys and reviewed ConfigMap host/user/key bindings;
 it deliberately does not duplicate command authorization in the executor. It also exposes a reviewed
 read-only target-inventory Action so callers can see which configured machine/user pairs are available
 without receiving credential configuration. The existing decider and human approval path authorize
@@ -127,23 +129,13 @@ Haku Console migration is split: Agent/conversation management and tool-call/app
 can retire on different schedules after their respective replacement surfaces exist. Neither is a
 prerequisite for the first Action/MCP acceptance.
 
-### `PR` — egress rollout acceptance
+### `BB` — BuildBuddy hosted-run credential boundary
 
-The remaining work is delivery and live evidence, not another diagnostic history store, binding
-status controller, or leader election. Runtime contracts belong in the [egress specification](../egress/SPEC.md).
-
-- Verify every old proxy retires on the published safety image **before** removing the shared
-  CRD status schema and status-patch RBAC;
-  old informers fail their task group when a status patch is rejected.
-- Verify the database and per-Pod migration init container, and clear the egress Flux dependency
-  gates; then deliver staging's
-  two replicas with RollingUpdate `maxUnavailable: 1`/`maxSurge: 1`, PDB `minAvailable: 1`, hostname
-  spread and 60-second termination grace. Testing stays at one replica.
-- Observe two ready Service endpoints on the safety image, shared committed decisions, a rollout
-  retaining an available endpoint, and bounded admitted-stream completion/interruption. Exercise
-  revocation/watch staleness on an already-open connection without replaying side-effecting requests.
-- Remove this entry only after deployed acceptance. PDBs do not protect against involuntary loss,
-  independent watches do not provide linearizable revocation, and existing TCP streams do not migrate.
+**Deferred decision:** accept the weaker hosted-runner boundary — a narrow `runner.RunRequest`
+rewrite that keeps the real key out of the local Sandbox but hands it to agent-controlled code on
+BuildBuddy's runner — or wait for a stronger seam (a per-run BuildBuddy credential or a run-scoped
+gateway). The boundary, wire shape and required evidence are in
+[`buildbuddy_remote_auth.md`](../docs/buildbuddy_remote_auth.md).
 
 ### `EGRESS_CHANGE` — agent-requested egress policy expansion
 
@@ -152,6 +144,55 @@ The request may become a policy-gated Action with operator approval, or use anot
 configuration path. Keep the authority, approval, persistence, and rollback model open until a
 concrete caller and policy owner are chosen. This does not grant agents a direct policy mutation
 path and does not block current credential-placeholder egress.
+
+### `ACTION_PROVENANCE_PRUNE` — prune `ActionRequestInput.origin`/`correlation`
+
+**Deferred idea:** `origin` and `correlation` on `ActionRequestInput` are two open-ended
+`dict[str, JsonValue]` bags with exactly one real consumer today — idempotency-retry equality
+matching in `action_service/db.py` (a resubmitted `idempotency_key` with different `origin`/
+`correlation` is treated as a conflicting request, not a matching retry). Beyond that check,
+nothing in the Action Service parses or acts on their contents; they are stored, returned in
+`ActionRequestView` (redacted for non-operators), and otherwise inert. Consider collapsing both
+down to one client-authored identifier field, or confirm no simplification is warranted.
+
+This is a breaking schema change to already-shipped, in-production surface — a real Pydantic
+model, real DB columns, real tests, and documented invariants (`action_service/SPEC.md`,
+`action_service/README.md`) — not something to fold into a separate, unrelated addition of new
+caller-facing fields to the same model. No dependency on anything else; nothing waits on this.
+
+### `CONNECTION_SA_REBIND` — rebind a Connection's ServiceAccount in place
+
+**Planned mutation:** no mutation exists today, frontend or backend, to change which ServiceAccount
+an existing Connection acts as. `connections.py`'s `ConnectionAuthority` and the exposed
+`ConnectionService` (`list`/`callerServiceAccounts`/`rename`/`unbind` in `client.ts`) cover listing,
+renaming, and unbinding, but the only way to change a Connection's bound ServiceAccount is a fresh
+OAuth consent authorization (`consent.tsx`) that creates a new grant — a new revision, prior grants
+revoked, not an in-place edit. The frontend's OAuth-clients settings table currently shows the
+ServiceAccount as read-only text for exactly this reason.
+
+**Design questions, not yet settled:** should rebinding revoke the prior grant's revision the same
+way a fresh consent does, or coexist with it; does it need its own audit trail distinct from a
+reconnect; and does it require re-running eligibility checks (the ServiceAccount must still carry
+`agentplane.allegedly.works/action-caller: "true"`) at rebind time, not just at original consent.
+No dependency on anything else; nothing waits on this. Once it exists, the settings table's
+ServiceAccount column becomes a real dropdown instead of static text.
+
+### `SANDBOX_SA` — one ServiceAccount per Sandbox
+
+**Deferred design:** every Sandbox Pod runs as the shared `agentplane-runner` ServiceAccount
+(`sandboxtemplate-agentplane-runner.yaml`), so a Sandbox has no Kubernetes identity of its own: the
+Action Service tells Sandboxes apart by namespace and UID from workload authentication, and an
+`ActionPolicyBinding` names one with the `sandbox {name, uid}` subject rather than a ServiceAccount.
+Running each Sandbox under its own ServiceAccount would give it a native identity to separate
+permissions on, and letting an agent act in Kubernetes directly would become a Kubernetes-native
+RoleBinding on its Sandbox's ServiceAccount rather than a governed Action or a policy exception.
+
+**Questions, not yet settled:** who creates and garbage-collects the per-Sandbox ServiceAccount (the
+integration app at launch, with an `ownerReference` like the bindings it writes, or the Sandbox
+controller); whether the ServiceAccount then becomes the one policy subject for both caller classes,
+collapsing the `sandbox` and `serviceAccount` subject forms and the two operator policy-read routes
+into one; and how the workload token's pinning of the live Sandbox (name and UID from TokenReview
+and the Pod) carries over. No dependency on anything else; nothing waits on this.
 
 ## Named gates and acceptance evidence
 
@@ -209,77 +250,66 @@ test.
 
 ### `MCPDEPLOY` — stage the external MCP endpoint
 
-**In progress:** [#6093](https://github.com/agentydragon/ducktape/pull/6093) adds the reviewed GitHub
-and Kubernetes MCP server configuration, reflected GitHub client credentials, callback route, and
-Action Service egress. Keep deployment acceptance open until published Action Service, migration,
-and integration-app images contain the merged consent/OAuth implementation and the deployment pins
-are compatible. A merged source PR or a healthy old pod does not establish readiness.
-
-**Acceptance:** after operator-approved rollout, verify migrations, required reflected configuration,
-public discovery/callback/resource URLs, and external MCP reachability. Follow the rollout runbook
-in that PR. Then run `CLAUDEAI`; this configuration task alone cannot satisfy it. Verify Sandbox
-MCP reachability in parallel; that caller's acceptance is not a prerequisite for `CLAUDEAI`.
-
-### `POLICYBIND` — policy-binding model and storage
-
-**Open design decision:** identify where policy definitions, Identity-to-policy bindings, and
-concrete Sandbox-to-policy bindings live and how they are modeled. Distinguish configured policy
-bindings from runtime named Connection-to-Identity bindings created/edited during enrollment and
-management. Keep SandboxPreset resolution and per-Sandbox additions in the integration app;
-downstream services only consume their own policy bindings. Choose
-cardinality/precedence, stable IDs, mutation ownership, and rollout/revocation semantics. This is
-single-operator; multiple-operator management is out of scope.
-
-**Required reuse:** a `public-coder` Sandbox type and a distinct external `claude-wyrm2` Identity can
-reference the same canonical ActionPolicySet (working name). One edit changes their Action policy
-under the chosen consistency contract without copying rules into each caller's configuration.
-Explicit references share permissions, not caller identity, receipt ownership, or upstream credentials.
-The first slice does not require a general inheritance system; the [Action policy plan](action_policies.md)
-owns the worked example, composition choices, and shared-policy acceptance.
-
-The [Action policy plan](action_policies.md) compares app configuration, Kubernetes resources,
-PostgreSQL, and mixed ownership. No option is selected. For Kubernetes, define resource shape,
-RBAC, references, and informer freshness. Runtime Connections/grants already use the Action
-Service's PostgreSQL authority. Walk one external and one hosted request through policy resolution,
-policy edit, and dispatch before implementing `CALLERPOLICY` persistence. Existing human-approved
-external access, Sandbox authentication, and Action execution remain usable while this design is open.
-
-### `CALLERPOLICY` — bounded Action deciders for external and hosted callers
-
-**Planned support:** configure exact Actions/argument conditions and auto-approval deciders selected
-through reusable policy-set bindings for an external Identity or an authenticated Sandbox.
-The integration app may derive concrete Sandbox bindings from its presets and instance additions;
-the Action Service does not interpret presets. Reuse the existing DecisionProvider aggregation and
-the canonical Decision/Execution lifecycle. Mandatory authorization bounds must fail closed even
-when another provider allows; permitted requests without auto-approval may take the human path.
-
-**Design gate / acceptance:** after `POLICYBIND`, the [Action policy plan](action_policies.md) owns typed caller
-selectors, mandatory bounds, decider composition, and policy changes between submission and dispatch.
-Prove matching auto-allow, changed-argument review/deny, caller-class isolation, and rejection on
-failed mandatory bounds. Trusted external Identity and Sandbox caller resolution already exist;
-this task adds policy associations and enforcement. Broad `PROFILES` and a policy DSL remain deferred.
+**Remaining acceptance:** staging carries the reviewed GitHub and Kubernetes MCP server
+configuration, reflected GitHub client credentials, callback route, and Action Service egress.
+After operator-approved rollout, verify migrations, required reflected configuration, public
+discovery/callback/resource URLs, and external MCP reachability on published Action Service,
+migration, and integration-app images that contain the merged consent/OAuth implementation; a
+merged source PR or a healthy old pod does not establish readiness. Then run `CLAUDEAI`; this
+configuration task alone cannot satisfy it. Verify Sandbox MCP reachability in parallel; that
+caller's acceptance is not a prerequisite for `CLAUDEAI`.
 
 ### `SBPOLICY` — preset-selected and per-Sandbox auto-approval
 
 **Planned behavior:** an agent harness running in a Thread in a Sandbox calls the Action Service
-through its existing workload authentication. The integration app resolves SandboxPreset defaults
-and per-Sandbox additions into concrete Actions-owned policy bindings, independently of the egress
-bindings it also manages. Neither enforcement service knows preset names or depends on the other.
-Sandbox authentication already exists; configurable bindings are new work.
+through its existing workload authentication, which already evaluates the Sandbox's
+`ActionPolicyBinding`s at admission. The integration app writes one `ActionPolicyBinding`
+per Sandbox it creates, from the preset's set list, next to the `EgressBinding` it already writes,
+both owner-referenced to the Sandbox; later widening of one Sandbox is another binding, usually
+with `expiresAt`. Neither enforcement service knows preset names or depends on the other.
 
-**Design gate / acceptance:** choose policy reference/addition semantics, binding writer authority,
-ownership/reconciliation and update/revocation rules. Verify matching/different Sandbox bindings and
-arguments, forged references, app outage, instance additions surviving preset updates, and policy
-changes before dispatch. Same-preset Sandboxes retain separate caller reads/idempotency; Threads
-within one Sandbox retain current shared workload scope. See [Action policies](action_policies.md).
+**Acceptance:** matching and different Sandbox bindings and arguments, forged references, app
+outage (enforcement continues from applied bindings), instance additions surviving a preset
+re-resolution, and policy changes before dispatch. Same-preset Sandboxes retain separate caller
+reads/idempotency; Threads within one Sandbox retain current shared workload scope. See
+[Action policies](action_policies.md).
+
+### `ELEVATE` — agent-requested temporary permission
+
+**Planned behavior:** a caller that knows it will need an Action outside its current policy asks
+for it through an Action of its own: the request names the set to add (or the binding to remove),
+the subject (its own ServiceAccount or Sandbox; never another caller), and an `expiresAt`. The
+operator sees it rendered as that specific request, with the set's lists shown, not as a generic
+approval card. Approval writes the `ActionPolicyBinding` with the requested expiry through the same
+authority the app uses; denial writes nothing. Both caller classes get this: a ServiceAccount-bound
+OAuth client and a harness in a Sandbox.
+
+**Design gate / acceptance:** the requesting Action is an ordinary Action with an ordinary Decision,
+so the request itself can be auto-approved by policy later, never by default. A granted binding is
+evaluated like any other, once per subsequent Action at admission. Prove: a Sandbox requests a set,
+the operator approves, the next matching Action auto-approves and the Decision names the new
+binding; the same request from a different subject grants nothing to the requester; expiry ends it.
+Depends on `SBPOLICY` for bindings on both caller classes and on `APPROVALUI` for the rendering path.
+
+### `FORK` — per-task identity fork
+
+**Deferred design:** a wide ServiceAccount-bound identity such as "Claude Code web via OIDC" may
+serve several concurrent agent threads managed outside Agentplane. An agent forks its identity into
+a per-task sub-identity, requests permission for that sub-identity through `ELEVATE`, and uses the
+sub-identity's credential for the task. Scope then follows possession of that credential: a thread
+that never receives it never gains the permission. Open questions: how a sub-identity is
+represented (a derived ServiceAccount, or a child Connection under the parent's OAuth grant),
+whether the parent's permissions flow down, and how the sub-identity ends. Low priority; nothing
+else depends on it.
 
 ### `CLAUDEAI` — working Claude.ai MCP facade
 
 **Operator-priority milestone:** the operator can connect Claude.ai to the deployed Action Service
 MCP facade, name/bind the Connection through integration-app enrollment, discover Actions, and use
-them under the configured Identity with real human-approved results. Preserve service safety constraints
-and exact authenticated client provenance. Configurable per-Identity auto-approval is subsequent
-`CALLERPOLICY` work, not an acceptance requirement for this milestone.
+them under the selected caller ServiceAccount with real human-approved results. Preserve service
+safety constraints and exact authenticated client provenance. Auto-approval for that
+ServiceAccount is an `ActionPolicyBinding` naming it, not an acceptance requirement for this
+milestone.
 Registration alone, mocks, and CI composition tests do not establish this user-visible outcome.
 
 The broader `EXTERNALMCP` milestone also covers local Claude Code. The operator priority above names
@@ -318,8 +348,8 @@ start code or schema work from it until Rai confirms the design.
 
 ### `PROFILES` — cross-cutting capability profiles
 
-The Action-only reusable policy-set slice is planned under `POLICYBIND`/`CALLERPOLICY`; it can serve
-both Sandbox types and external Identities without waiting for this broader profile.
+The Action-only reusable policy-set slice (`ActionPolicySet`, `ActionPolicyBinding`) has landed;
+it serves both Sandbox types and ServiceAccount callers without waiting for this broader profile.
 
 **Deferred decision — Rai confirmation required:** define a durable authority for capabilities shared by egress, approvals, MCP
 reachability, and other tool permissions. Do not widen the landed launch-preset slice merely to
@@ -377,9 +407,10 @@ Tool-call/approval management retirement remains the separate `RETIRE_TOOLS` mil
 
 ### `SSHEXEC` — SSH-backed Action execution
 
-**Planned support:** add an SSH Executor adapter behind the existing Action Service execution
-contract. OpenSSH performs non-interactive execution using private keys mounted from Kubernetes
-Secrets; a reviewed ConfigMap maps each key to the machine and Unix user for which it may be used.
+**Implementation in progress:** add a standalone bearer-protected SSH MCP server and connect it via
+the existing Action Service MCP Executor. OpenSSH performs non-interactive execution using private
+keys mounted into the SSH MCP pod; a reviewed ConfigMap maps each key to the machine and Unix user
+for which it may be used.
 The executor code owns the `list_targets` and `exec` Action schemas; reviewed configuration supplies
 only target/key/transport data and the maximum execution timeout. `exec` may request a shorter
 per-Execution timeout but never a longer one. The executor performs target/key lookup and transport
@@ -431,10 +462,11 @@ controls and live-update path; this is not a missing UI implementation.
 
 **Needed live evidence:** verify actual deployment, provider claims, allowed/denied operator access,
 VAPID configuration, reviewed push-service egress, and browser/service-worker behavior. Execute the
-existing BFF approval acceptance without widening allowlists for a test. [#5922](https://github.com/agentydragon/ducktape/pull/5922)
-fixed login-client CSRF handling and the source-subject mapping, but its live run did not complete
-the approval gate; verify the corrected configuration has rolled out before rerunning. Signed mock
-integration and CI are evidence for code paths, not deployed Authentik, SSE, or OS push proof.
+existing BFF approval acceptance without widening allowlists for a test. The local-Gateway TLS
+reset that made federation fail intermittently is fixed cluster-wide
+([root cause and rollout](../../../cluster/debug/agentplane_oidc/local_gateway_tls_rca.md)); a
+federation failure now logs its cause. Signed mock integration and CI are evidence for code paths,
+not deployed Authentik, SSE, or OS push proof.
 
 ### `RETIRE_AGENT` — Haku Console Agent/conversation management migration
 
@@ -533,7 +565,9 @@ to extract now, and not a reason to add speculative service interfaces or preset
 **Deferred support:** consume Action events and external sources such as GitHub/Calendar, match
 user/Agent subscriptions, and deliver structured events into an Agent/Thread ingress. The Hub owns
 subscription matching, deduplication, batching/debounce, rate limits, backpressure, offline delivery,
-and Thread wake/queue semantics. It is not an executor or an Action decision authority.
+and Thread wake/queue semantics. It is not an executor or an Action decision authority. It consumes
+the canonical Action event sequence, preserving individual events and ordering, and adds no second
+Action outbox or event store; cross-Identity delivery requires an explicit read policy.
 
 ## Deferred
 
@@ -544,5 +578,9 @@ and Thread wake/queue semantics. It is not an executor or an Action decision aut
 - MCP registry, dynamic action marketplace, standing grants, and cross-agent permissions;
 - per-destination workload audiences until recipient isolation is required;
 - broad profiles beyond the landed launch-preset slice;
-- live browser/OS push acceptance and production VAPID/egress rollout; and
+- live browser/OS push acceptance and production VAPID/egress rollout;
+- separating the egress proxy's rule namespace from its Sandbox namespace — both deployments pass
+  one namespace for both today, the reason separation mattered is not recorded, and a split has to
+  replace the app's binding-to-Sandbox ownerReference cascade with a sweep
+  (`x/agentplane/app/egress.py`); and
 - cryptographic Decision signing until Decisions cross a boundary that requires it.

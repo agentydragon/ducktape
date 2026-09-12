@@ -19,7 +19,7 @@ instrument or that its forecasts are adequate for a particular decision.
 
 Preparation resolves the authored scenario, rules and supplied paths into one
 self-contained typed value of exact monetary terms, resolved tax rules and paths.
-Sessions and reports consume these facts directly; file/native serialization is
+Sessions and reports consume these facts directly; file serialization is
 private, not a parallel mutable domain API. Execution does not reread the original
 scenario or load evidence/tax configuration. Missing or non-finite required paths reject;
 they are not synthesized as zero observations. Ordinary public-security and
@@ -45,8 +45,14 @@ out-of-sample predictive quality.
 ## Common policy and session contract
 
 There is one policy shape: a batch of active actor/path observations produces a
-keyed batch of ordered action lists. The caller owns policy memory and the Python
-monthly loop. Scalar authoring adapters use that same interface; there is no
+keyed batch of ordered action lists. A single-path `World` tracks one
+`EconomicAgent`, whose state lives on the instance, and its `step()` invokes that
+agent's `decide` once per month; the batch session runs the same mechanics over
+several worlds for a caller-owned batch policy. The experiment owns the loop. The
+world holds present state only: each component keeps what it needs to compute later
+months plus this month's outcomes, and no capture mode, subject actor or history.
+Whoever wants a series reads state between steps; the batch session records the
+summary and trace its `Finished` promises, and the app records its own projections. Scalar authoring adapters use that same interface; there is no
 separate native spending-amount or allocation-weight callback API.
 
 The action session supports one decision-making household with scripted

@@ -1,5 +1,7 @@
 # Destination-side SandboxPrincipal resolution: TokenReview proves the Pod-bound bearer, then the
-# live Pod owner reference proves the Sandbox. No Thread/Agent reads and no Secrets.
+# live Pod owner reference proves the Sandbox. No Thread/Agent reads and no Secrets. The policy
+# informer watches the sets and bindings it evaluates and the labeled caller ServiceAccounts, and
+# writes back only each object's Ready condition.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -9,6 +11,15 @@ rules:
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["serviceaccounts"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["agentplane.allegedly.works"]
+    resources: ["actionpolicysets", "actionpolicybindings"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["agentplane.allegedly.works"]
+    resources: ["actionpolicysets/status", "actionpolicybindings/status"]
+    verbs: ["patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

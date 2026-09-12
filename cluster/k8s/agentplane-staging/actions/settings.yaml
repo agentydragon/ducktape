@@ -8,9 +8,6 @@ web_push:
   allowed_push_hosts:
     - fcm.googleapis.com
     - updates.push.services.mozilla.com
-identities:
-  personal:
-    enabled: true
 mcp_servers:
   github:
     server_id: github
@@ -18,13 +15,13 @@ mcp_servers:
     server_url: https://api.githubcopilot.com/mcp/
     client_id: configured-by-secret
     client_secret_file: /etc/agentplane-github/client_secret
-    redirect_uri: https://haku.allegedly.works/mcp-linkage/callback
+    redirect_uri: https://agentplane-staging.allegedly.works/mcp-linkage/callback
   kubernetes:
     server_id: kubernetes
     provider: kubernetes
     server_url: https://kubectl-passthrough-mcp.allegedly.works/mcp
     client_id: kubectl-passthrough-mcp
-    redirect_uri: https://haku.allegedly.works/mcp-linkage/callback
+    redirect_uri: https://agentplane-staging.allegedly.works/mcp-linkage/callback
 action_groups:
   github:
     title: GitHub MCP
@@ -48,3 +45,14 @@ action_groups:
         url: https://kubectl-passthrough-mcp.allegedly.works/mcp
         server_id: kubernetes
         auth: oauth
+  ssh:
+    title: SSH
+    description: SSH commands on configured targets; every Action remains subject to operator approval.
+    executor:
+      kind: mcp
+      description: Standalone SSH MCP backend; Agentplane retains approval and execution authority.
+      config:
+        transport: streamable-http
+        url: http://ssh-mcp.ssh-mcp.svc.cluster.local:8080/mcp
+        auth: static_bearer
+        bearer_file: /run/secrets/ssh-mcp/bearer-token

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 from uuid import UUID, uuid4
@@ -16,7 +16,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Mapper, mapped_column
 
 from x.agentplane.action_service.catalog import ActionIdentity
 from x.agentplane.action_service.models import (
-    CONFIGURED_IDENTITY_ISSUER,
+    SERVICE_ACCOUNT_ISSUER,
     ActionEventView,
     ActionRequestInput,
     ActionRequestView,
@@ -31,6 +31,7 @@ from x.agentplane.action_service.models import (
     ExecutionState,
     ExecutionView,
     ExternalGrantProvenance,
+    PolicyEvidence,
     Principal,
     PrincipalRole,
     ReconciliationSource,
@@ -68,7 +69,8 @@ class EnrollmentRow(Base):
     operator_subject: Mapped[str | None] = mapped_column(Text)
     verdict: Mapped[str | None] = mapped_column(Text)
     decision_digest: Mapped[str | None] = mapped_column(Text)
-    identity_id: Mapped[str | None] = mapped_column(Text)
+    # A `models.ServiceAccountRef`, set by an allow decision.
+    caller: Mapped[dict[str, JsonValue] | None] = mapped_column(JSONB(none_as_null=True))
     display_name: Mapped[str | None] = mapped_column(Text)
     connection_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("external_connection.id"))
     connection_version: Mapped[int | None] = mapped_column(Integer)
@@ -92,7 +94,8 @@ class ConnectionGrantRow(Base):
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     connection_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("external_connection.id"))
     revision: Mapped[int] = mapped_column(Integer)
-    identity_id: Mapped[str] = mapped_column(Text)
+    # A `models.ServiceAccountRef`: the ServiceAccount the grant acts as.
+    caller: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
     issuer: Mapped[str] = mapped_column(Text)
     client_id: Mapped[str] = mapped_column(Text)
     request_digest: Mapped[str] = mapped_column(Text)
@@ -152,6 +155,8 @@ class DecisionRow(Base):
     decision_note: Mapped[str | None] = mapped_column(Text)
     reason_code: Mapped[str | None] = mapped_column(Text)
     reason_description: Mapped[str | None] = mapped_column(Text)
+    # A `models.PolicyEvidence`; only a policy-set Decision has one.
+    policy_evidence: Mapped[dict[str, JsonValue] | None] = mapped_column(JSONB(none_as_null=True))
     idempotency_key: Mapped[str] = mapped_column(Text)
     decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
@@ -351,8 +356,8 @@ class ActionStore:
             if external_grant is not None:
                 if principal != external_grant.principal() or not await self._grant_authorized(session, external_grant):
                     raise ExternalGrantNotAuthorizedError("external grant is not authorized")
-            elif principal.issuer == CONFIGURED_IDENTITY_ISSUER:
-                raise ExternalGrantNotAuthorizedError("configured Identity requires an authenticated external grant")
+            elif principal.issuer == SERVICE_ACCOUNT_ISSUER:
+                raise ExternalGrantNotAuthorizedError("an external caller requires an authenticated grant")
             now = datetime.now(UTC)
             request_id = uuid4()
             inserted_id = await session.scalar(
@@ -495,6 +500,7 @@ class ActionStore:
         expected_version: int,
         reason_code: str,
         reason_description: str | None,
+        policy_evidence: PolicyEvidence | None,
     ) -> tuple[ActionRequestView, bool]:
         """Synchronous non-human DecisionProvider route: no operator identity, no human decision note.
 
@@ -511,6 +517,7 @@ class ActionStore:
             expected_version=expected_version,
             reason_code=reason_code,
             reason_description=reason_description,
+            policy_evidence=policy_evidence,
         )
 
     async def _commit_decision(
@@ -526,6 +533,7 @@ class ActionStore:
         decision_note: str | None = None,
         reason_code: str | None = None,
         reason_description: str | None = None,
+        policy_evidence: PolicyEvidence | None = None,
     ) -> tuple[ActionRequestView, bool]:
         async with self._sessions.begin() as session:
             row = await session.scalar(
@@ -560,6 +568,7 @@ class ActionStore:
                     decision_note=decision_note,
                     reason_code=reason_code,
                     reason_description=reason_description,
+                    policy_evidence=policy_evidence.model_dump(mode="json") if policy_evidence is not None else None,
                     idempotency_key=idempotency_key,
                     decided_at=now,
                 )
@@ -585,7 +594,12 @@ class ActionStore:
             )
 
     async def claim_execution(
-        self, request_id: UUID, *, executor_id: str, lease_duration: timedelta
+        self,
+        request_id: UUID,
+        *,
+        executor_id: str,
+        lease_duration: timedelta,
+        can_dispatch: Callable[[ActionIdentity], bool] | None = None,
     ) -> ExecutionClaim | None:
         """Atomically reserve the only execution and grant its first lease window."""
         async with self._sessions.begin() as session:
@@ -613,6 +627,9 @@ class ActionStore:
                 row.version += 1
                 row.updated_at = now
                 _record_event(session, row, now)
+                return None
+            # Authority is checked even during outages. Replica-local availability is not stored.
+            if can_dispatch is not None and not can_dispatch(ActionIdentity.model_validate(row.action)):
                 return None
             lease_token = uuid4()
             lease_expires_at = now + lease_duration
@@ -862,6 +879,7 @@ def _decision_view(row: DecisionRow | None) -> DecisionView | None:
         decision_note=row.decision_note,
         reason_code=row.reason_code,
         reason_description=row.reason_description,
+        policy_evidence=PolicyEvidence.model_validate(row.policy_evidence) if row.policy_evidence is not None else None,
         idempotency_key=row.idempotency_key,
         decided_at=row.decided_at,
     )

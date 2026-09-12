@@ -9,7 +9,7 @@ import pstats
 import resource
 from pathlib import Path
 
-from finance.augur.rust.invocation import write_prepared_input
+from finance.augur.sim.artifacts import write_prepared_input
 from finance.augur.sim.results import Finished
 from finance.augur.x.bounded_spending.python_policy import BatchPolicy, Parameters, ScalarAdapter, SpendingPolicy, run
 from finance.augur.x.bounded_spending.stress_paths import prepare

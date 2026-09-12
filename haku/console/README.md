@@ -64,9 +64,7 @@ without conflating their authorship. `auto_approval_evaluation` retains the poli
 
 The browser reads pending calls and the audit ledger through `/api/approvals/pending` and
 `/api/tool-calls`; `POST /api/tool-calls/{tool_call_id}/decision` is exact-Origin-gated. The event
-WebSocket is only a lossy invalidation channel: REST remains authoritative. `list_node_daemons`
-reflects persisted heartbeat/lease state; the separately authenticated `/api/node-daemons/v1/*`
-machine API owns heartbeat, durable work claims, lease renewal, and idempotent results. Operator
+WebSocket is only a lossy invalidation channel: REST remains authoritative. Operator
 OAuth and provider associations are managed by `mcp/operator_oauth.py` and
 `oauth/provider_connection.py`; browser rendering and callback-result handling are specified in
 <docs/oauth_browser_surfaces.md>.
@@ -147,8 +145,6 @@ Built-ins are assembled in `mcp/in_process_servers.py`:
   Their tool schemas/descriptions are the API contract; `TODO.md` inventories intentionally
   unexposed provider affordances. Auto-approval policy lives in the reviewed deployment config.
 - `haku_routine` launches the reviewed routine through ordinary approval.
-- `hostexec` exchanges the acting Operator's login authority only during approved execution; its
-  host-side trust boundary is documented in <../hostexec/README.md>.
 
 Recall indexing is currently disabled in deployment. The `recall_index` database schema and data
 remain available for a future re-enable, but the deployed catalog registers no `haku_index` server,

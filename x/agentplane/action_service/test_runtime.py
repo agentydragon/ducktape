@@ -7,6 +7,7 @@ import os
 import signal
 import sys
 import textwrap
+from datetime import timedelta
 from pathlib import Path
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -18,6 +19,7 @@ import pytest_bazel
 import uvicorn
 from fastapi import FastAPI
 from fastmcp import FastMCP
+from kubernetes_asyncio import client as k8s_client
 from pydantic import JsonValue, ValidationError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -26,7 +28,6 @@ from x.agentplane.action_service.api import create_app
 from x.agentplane.action_service.auth import DisabledOperatorAuthenticator
 from x.agentplane.action_service.catalog import ActionCatalog, ActionGroup, ActionIdentity, McpExecutorBinding
 from x.agentplane.action_service.db import ActionStore, make_sessionmaker
-from x.agentplane.action_service.fixture_policy import FixtureAutoAllow
 from x.agentplane.action_service.main import ActionServer, Settings, async_main
 from x.agentplane.action_service.mcp_executor import McpActionGroupExecutor
 from x.agentplane.action_service.models import (
@@ -38,14 +39,26 @@ from x.agentplane.action_service.models import (
     ExecutionState,
     Principal,
     PrincipalRole,
+    SandboxCaller,
     Verdict,
 )
+from x.agentplane.action_service.policies.resources import (
+    BINDINGS_PLURAL,
+    GROUP,
+    POLICY_SETS_PLURAL,
+    SERVICE_ACCOUNTS_PLURAL,
+    VERSION,
+)
+from x.agentplane.action_service.policy_evaluation import PROVIDER_NAME
+from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.runtime import running_executor
 from x.agentplane.action_service.service import ActionService, UnsupportedActionError
+from x.agentplane.action_service.test_fixtures.lifecycle import wait_available
 from x.agentplane.action_service.updates import ActionUpdates
-from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
+from x.agentplane.egress.testing.fake_apiserver import fake_apiserver
+from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 
-CALLER = Principal(issuer="test", subject="sandbox", role=PrincipalRole.CALLER)
+CALLER = SandboxCaller(namespace="agentplane-test", sandbox_uid="sandbox-uid").principal()
 OPERATOR = Principal(issuer="test", subject="operator", role=PrincipalRole.OPERATOR)
 
 
@@ -82,7 +95,9 @@ def test_missing_binding_is_rejected() -> None:
 
 @pytest.mark.parametrize("config", [{}, {"command": ""}, {"command": 42}])
 async def test_invalid_binding_fails_before_any_adapter_starts(config: dict[str, JsonValue]) -> None:
-    catalog = ActionCatalog(groups={"first": _group({"command": "unused"}), "invalid": _group(config)})
+    catalog = ActionCatalog(
+        groups={"first": _group({"transport": "stdio", "command": "unused"}), "invalid": _group(config)}
+    )
     with patch.object(McpActionGroupExecutor, "start", new_callable=AsyncMock) as start:
         with pytest.raises(ValueError, match="ActionGroup 'invalid'"):
             async with running_executor(catalog):
@@ -131,6 +146,7 @@ def test_config_file_loads_reviewed_group_and_rejects_malformed_binding(
               config:
                 transport: streamable-http
                 url: http://test-peer.invalid/mcp
+                auth: none
     """)
     )
     monkeypatch.setenv("AGENTPLANE_ACTIONS_CONFIG_FILE", str(path))
@@ -138,6 +154,7 @@ def test_config_file_loads_reviewed_group_and_rejects_malformed_binding(
     assert settings.action_groups["remote"].executor.config == {
         "transport": "streamable-http",
         "url": "http://test-peer.invalid/mcp",
+        "auth": "none",
     }
     path.write_text(
         path.read_text()
@@ -156,7 +173,9 @@ def test_invalid_group_key_rejected_by_settings() -> None:
 
 async def test_runtime_sanitizes_connect_and_cleanup_failures() -> None:
     catalog = ActionCatalog(
-        groups={"remote": _group({"transport": "streamable-http", "url": "http://test-peer.invalid/mcp"})}
+        groups={
+            "remote": _group({"transport": "streamable-http", "url": "http://test-peer.invalid/mcp", "auth": "none"})
+        }
     )
     with (
         patch.object(McpActionGroupExecutor, "start", AsyncMock(side_effect=RuntimeError("private connect material"))),
@@ -181,6 +200,8 @@ async def test_live_catalog_and_exact_group_dispatch(execution_lease: ExecutionL
     with patch.object(McpActionGroupExecutor, "from_group", side_effect=lambda key, group: adapters[key]):
         async with running_executor(catalog) as executors:
             assert set(executors) == {"one", "two"}
+            for group in catalog.groups.values():
+                await wait_available(group)
             assert all(set(group.actions) == {"owner"} for group in catalog.groups.values())
             for key in servers:
                 result = await executors[key].execute(
@@ -198,9 +219,9 @@ async def test_live_catalog_and_exact_group_dispatch(execution_lease: ExecutionL
             assert catalog.groups["one"].actions == {}
 
 
-@pytest.mark.parametrize("failure", ["connect", "discovery", "cancel"])
+@pytest.mark.parametrize("failure", ["connect", "cancel"])
 async def test_partial_startup_closes_current_and_previous_adapter(failure: str) -> None:
-    catalog = ActionCatalog(groups={key: _group({"command": "unused"}) for key in ("one", "two")})
+    catalog = ActionCatalog(groups={key: _group({"transport": "stdio", "command": "unused"}) for key in ("one", "two")})
     events: list[str] = []
     adapters = {key: McpActionGroupExecutor.from_group(key, group) for key, group in catalog.groups.items()}
     names = {adapter: key for key, adapter in adapters.items()}
@@ -233,6 +254,7 @@ async def test_main_serves_real_stdio_execution_and_closes_in_order(db_url: str,
     """Only Kubernetes configuration and the HTTP server loop are replaced; composition is real."""
     group = _group(
         {
+            "transport": "stdio",
             "command": sys.executable,
             "args": [str(get_required_path("_main/x/agentplane/action_service/test_fixtures/fake_mcp_server.py"))],
             "env": {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)},
@@ -256,6 +278,7 @@ async def test_main_serves_real_stdio_execution_and_closes_in_order(db_url: str,
         service = cast(ActionService, app.state.action_service)
         catalog = cast(ActionCatalog, app.state.action_catalog)
         assert catalog.groups["demo"] is group
+        await wait_available(group)
         assert set(group.actions) == {"slow_echo"}
         with pytest.raises(UnsupportedActionError):
             await service.submit(
@@ -345,54 +368,109 @@ async def test_main_failure_disposes_engine_after_owned_resources(failure: str) 
     engine.dispose.assert_awaited_once()
 
 
-async def test_main_auto_allows_upstream_everything(db_url: str, everything_url: str) -> None:
-    """Real production composition + fixture HTTP; only Kubernetes setup and uvicorn loop are replaced."""
-    caller = Principal(issuer="kubernetes-sandbox", subject="agentplane-staging:fixture-uid", role=PrincipalRole.CALLER)
+async def test_main_auto_approves_the_bound_sandbox_from_watched_policy_objects(
+    db_url: str, everything_url: str
+) -> None:
+    """Real production composition + fixture HTTP + the fake API server the informer watches; only
+    the in-cluster client configuration and the uvicorn loop are replaced."""
+    namespace = "agentplane-runtime-test"
+    bound = SandboxCaller(namespace=namespace, sandbox_uid="fixture-uid")
+    unbound = SandboxCaller(namespace=namespace, sandbox_uid="other-uid")
     settings = Settings(
         database_url=db_url,
-        action_groups={"fixture": _group({"transport": "streamable-http", "url": everything_url})},
-        fixture_auto_allow=FixtureAutoAllow(group="fixture"),
+        action_groups={"fixture": _group({"transport": "streamable-http", "url": everything_url, "auth": "none"})},
+        allowed_service_account_namespaces=frozenset({namespace}),
         _cli_parse_args=False,
     )
+    index = PolicyIndex()
 
     async def serve(server: uvicorn.Server) -> None:
         app = cast(FastAPI, server.config.app)
         service = cast(ActionService, app.state.action_service)
         catalog = cast(ActionCatalog, app.state.action_catalog)
+        await wait_available(catalog.groups["fixture"])
         assert "echo" in catalog.groups["fixture"].actions
+        await index.wait_for(lambda: index.synced)
         body = ActionRequestInput(
             idempotency_key="fixture-once",
             action=ActionIdentity(group="fixture", name="echo"),
             arguments={"message": "MCP0-ok"},
         )
-        view = await service.submit(body, caller)
+        view = await service.submit(body, bound.principal())
         assert view.decision is not None
-        assert view.decision.provider == "mcp_fixture"
+        assert view.decision.provider == PROVIDER_NAME
+        assert view.decision.policy_evidence is not None
+        assert [b.name for b in view.decision.policy_evidence.bindings] == ["fixture-echo"]
+        assert view.decision.policy_evidence.matched.policy_set == "bounded-echo"
         async with asyncio.timeout(10):
             while view.state is not ActionState.SUCCEEDED:
                 await asyncio.sleep(0.01)
-                view = await service.get(view.id, caller)
+                view = await service.get(view.id, bound.principal())
         assert view.execution is not None
         assert view.execution.result == {"content": ["Echo: MCP0-ok"]}
-        assert (await service.submit(body, caller)).execution == view.execution
-        # Agent claims cannot opt an untrusted caller into the fixture policy.
-        pending = await service.submit(
-            ActionRequestInput(
-                idempotency_key="untrusted",
-                action=body.action,
-                arguments={"message": "MCP0-ok"},
-                origin={"caller": caller.key},
-            ),
-            CALLER,
-        )
-        assert pending.state is ActionState.DECISION_PENDING
-        assert pending.execution is None
+        assert (await service.submit(body, bound.principal())).execution == view.execution
+        # An argument outside the schema, and a Sandbox nothing names, take the human path whatever
+        # the envelope claims.
+        for key, caller, message in [("too-long", bound, "x" * 201), ("unbound", unbound, "MCP0-ok")]:
+            pending = await service.submit(
+                ActionRequestInput(
+                    idempotency_key=key,
+                    action=body.action,
+                    arguments={"message": message},
+                    origin={"caller": bound.principal().key, "binding": "fixture-echo"},
+                ),
+                caller.principal(),
+            )
+            assert pending.state is ActionState.DECISION_PENDING
+            assert pending.execution is None
 
-    with (
-        patch("x.agentplane.action_service.main.k8s_config.load_incluster_config"),
-        patch.object(uvicorn.Server, "serve", serve),
-    ):
-        await async_main(settings)
+    async with fake_apiserver(
+        namespace_of={POLICY_SETS_PLURAL: namespace, BINDINGS_PLURAL: namespace, SERVICE_ACCOUNTS_PLURAL: namespace}
+    ) as fake:
+        fake.put(
+            POLICY_SETS_PLURAL,
+            {
+                "apiVersion": f"{GROUP}/{VERSION}",
+                "kind": "ActionPolicySet",
+                "metadata": {"name": "bounded-echo", "namespace": namespace},
+                "spec": {
+                    "autoApproveIf": [
+                        {
+                            "type": "argument_schema",
+                            "actions": {"fixture": ["echo"]},
+                            "schema": {
+                                "type": "object",
+                                "required": ["message"],
+                                "properties": {"message": {"type": "string", "maxLength": 200}},
+                                "additionalProperties": False,
+                            },
+                        }
+                    ]
+                },
+            },
+        )
+        fake.put(
+            BINDINGS_PLURAL,
+            {
+                "apiVersion": f"{GROUP}/{VERSION}",
+                "kind": "ActionPolicyBinding",
+                "metadata": {"name": "fixture-echo", "namespace": namespace},
+                "spec": {
+                    "subject": {"sandbox": {"name": "fixture", "uid": bound.sandbox_uid}},
+                    "policySets": ["bounded-echo"],
+                },
+            },
+        )
+
+        def in_cluster(client_configuration: k8s_client.Configuration) -> None:
+            client_configuration.host = f"http://127.0.0.1:{fake.port}"
+
+        with (
+            patch("x.agentplane.action_service.main.k8s_config.load_incluster_config", side_effect=in_cluster),
+            patch("x.agentplane.action_service.main.PolicyIndex", return_value=index),
+            patch.object(uvicorn.Server, "serve", serve),
+        ):
+            await async_main(settings)
 
 
 async def test_sigterm_fences_readiness_and_traffic_before_http_shutdown(engine: AsyncEngine, db_url: str) -> None:
@@ -400,7 +478,7 @@ async def test_sigterm_fences_readiness_and_traffic_before_http_shutdown(engine:
     service = ActionService(ActionStore(make_sessionmaker(engine)), catalog, {})
     app = create_app(
         service,
-        MagicMock(spec=SandboxPrincipalAuthenticator),
+        MagicMock(spec=SandboxPrincipalResolver),
         DisabledOperatorAuthenticator(),
         catalog,
         updates=ActionUpdates(db_url),
@@ -423,6 +501,63 @@ async def test_sigterm_fences_readiness_and_traffic_before_http_shutdown(engine:
         await service.close()
     finally:
         signal.signal(signal.SIGTERM, original_handler)
+
+
+async def test_http_serves_before_optional_backend_connects(db_url: str, tmp_path: Path) -> None:
+    group = _group(
+        {
+            "transport": "streamable-http",
+            "url": "https://test-offline.invalid/mcp",
+            "auth": "static_bearer",
+            "bearer_file": str(tmp_path / "not-mounted"),
+        }
+    )
+    settings = Settings(database_url=db_url, action_groups={"offline": group}, _cli_parse_args=False)
+
+    async def serve(server: uvicorn.Server) -> None:
+        app = cast(FastAPI, server.config.app)
+        assert not group.available
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test-actions") as client:
+            assert (await client.get("/healthz")).status_code == 200
+            assert (await client.get("/readyz")).status_code == 200
+
+    with (
+        patch("x.agentplane.action_service.main.k8s_config.load_incluster_config"),
+        patch.object(uvicorn.Server, "serve", serve),
+    ):
+        await async_main(settings)
+
+
+async def test_hung_group_does_not_block_healthy_group_or_runtime(execution_lease: ExecutionLease) -> None:
+    healthy, blocked = FastMCP("healthy"), FastMCP("blocked")
+    entered = asyncio.Event()
+
+    @healthy.tool
+    def echo() -> str:
+        return "healthy"
+
+    groups = {key: _group({}) for key in ("healthy", "blocked")}
+    adapters = {
+        key: McpActionGroupExecutor(key, groups[key], peer, lifecycle_timeout=timedelta(milliseconds=50))
+        for key, peer in (("healthy", healthy), ("blocked", blocked))
+    }
+
+    async def hung_connect() -> None:
+        entered.set()
+        await asyncio.Event().wait()
+
+    with (
+        patch.object(McpActionGroupExecutor, "from_group", side_effect=lambda key, group: adapters[key]),
+        patch.object(adapters["blocked"], "_connect_client", hung_connect),
+    ):
+        async with running_executor(ActionCatalog(groups=groups)) as executors:
+            await wait_available(groups["healthy"])
+            await entered.wait()
+            result = await executors["healthy"].execute(
+                _request(ActionIdentity(group="healthy", name="echo")), execution_lease
+            )
+            assert result.state is ExecutionState.SUCCEEDED
+            assert not groups["blocked"].available
 
 
 if __name__ == "__main__":

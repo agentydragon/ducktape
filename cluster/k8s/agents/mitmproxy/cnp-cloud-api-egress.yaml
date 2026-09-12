@@ -36,7 +36,6 @@ spec:
               - matchName: code.forgejo.org
               - matchName: codeload.github.com
               - matchName: data.forgejo.org
-              - matchName: docker-ci.allegedly.works
               - matchName: files.pythonhosted.org
               - matchName: ftp.gnu.org
               - matchName: generativelanguage.googleapis.com
@@ -116,24 +115,4 @@ spec:
             - port: "8000"
               protocol: TCP
             - port: "8080"
-              protocol: TCP
-    # The loom/gym eval driver (in claude-sandbox) reaches the docker-ci DinD by
-    # its public name through this proxy, which raw-tunnels it (ignore_hosts in
-    # deployment.yaml) so docker mTLS passes end-to-end. Allow mitmproxy to reach
-    # the daemon's mTLS port to establish that CONNECT tunnel.
-    #
-    # SUSPECTED DEAD RULE (2026-08-04, unverified): docker-ci.allegedly.works is
-    # a TLSRoute on the hostNetwork Gateway, so it resolves to node IPs carrying
-    # reserved:remote-node — which toFQDNs cannot select
-    # (cluster/docs/cilium_network_policy.md). Unlike the *.allegedly.works names
-    # in agents/haku-egress-proxy, port 2376 is NOT in the `toEntities: cluster`
-    # port list above, so nothing else admits it and this path should be timing
-    # out. Either the eval driver is not currently exercising it, or it reaches
-    # the daemon some other way. Diagnose before "fixing": if the path is wanted,
-    # the fix is adding 2376 to the toEntities rule, not editing this block.
-    - toFQDNs:
-        - matchName: docker-ci.allegedly.works
-      toPorts:
-        - ports:
-            - port: "2376"
               protocol: TCP

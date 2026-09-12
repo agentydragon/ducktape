@@ -13,7 +13,10 @@ from starlette.requests import Request
 
 from x.agentplane.action_service.client import CredentialPlaceholder, OperatorActionServiceClient
 from x.agentplane.action_service.connections import NewConnection
+from x.agentplane.action_service.models import ServiceAccountRef
 from x.agentplane.app.consent import ConsentAllow, ConsentDeny, decide_enrollment, preview_enrollment
+
+PUBLIC_CODER = ServiceAccountRef(namespace="agentplane-test", name="test-public-coder")
 
 
 async def test_lost_response_preserves_binding_and_exact_decision() -> None:
@@ -22,8 +25,8 @@ async def test_lost_response_preserves_binding_and_exact_decision() -> None:
 
     def downstream(request: httpx.Request) -> httpx.Response:
         assert request.headers["Authorization"] == "Bearer test-only-token"
-        if request.url.path.endswith("/identities"):
-            return httpx.Response(200, json={"public_coder": {"enabled": True}})
+        if request.url.path.endswith("/caller-service-accounts"):
+            return httpx.Response(200, json=[PUBLIC_CODER.model_dump()])
         if request.url.path.endswith("/connections"):
             return httpx.Response(200, json=[])
         body = json.loads(request.content)
@@ -57,7 +60,7 @@ async def test_lost_response_preserves_binding_and_exact_decision() -> None:
             verdict="allow",
             csrf_token=preview.csrf_token,
             connection=NewConnection(display_name="My client"),
-            identity_id="public_coder",
+            service_account=PUBLIC_CODER,
         )
         with pytest.raises(httpx.ReadError):
             await decide_enrollment(browser, "handle", decision, client)
@@ -77,8 +80,8 @@ async def test_lost_response_preserves_binding_and_exact_decision() -> None:
 
 async def test_session_storage_is_bounded_and_expired_interactions_are_pruned() -> None:
     def downstream(request: httpx.Request) -> httpx.Response:
-        if request.url.path.endswith("/identities"):
-            return httpx.Response(200, json={})
+        if request.url.path.endswith("/caller-service-accounts"):
+            return httpx.Response(200, json=[])
         if request.url.path.endswith("/connections"):
             return httpx.Response(200, json=[])
         return httpx.Response(

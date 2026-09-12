@@ -124,7 +124,6 @@ resources:
   - agentplane-index/namespace/flux-kustomization.yaml
   - agentplane-index/db/flux-kustomization.yaml
   - agentplane-index/secrets/flux-kustomization.yaml
-  - agentplane-index/sources/flux-kustomization.yaml
   - agentplane-index/app/flux-kustomization.yaml
   - agentplane-crds/flux-kustomization.yaml
   - agentplane-egress-credentials/namespace/flux-kustomization.yaml
@@ -136,6 +135,9 @@ resources:
   - agentplane-staging/app/flux-kustomization.yaml
   - agentplane-staging/egress/flux-kustomization.yaml
   - agentplane-staging/actions/flux-kustomization.yaml
+  - ssh-mcp/namespace-flux-kustomization.yaml
+  - ssh-mcp/secrets/flux-kustomization.yaml
+  - ssh-mcp/flux-kustomization.yaml
   - agentplane-testing/namespace/flux-kustomization.yaml
   - agentplane-testing/agent-rbac/flux-kustomization.yaml
   - agentplane-testing/db/flux-kustomization.yaml

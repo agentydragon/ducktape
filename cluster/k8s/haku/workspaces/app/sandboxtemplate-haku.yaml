@@ -68,7 +68,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: workspace
-          image: git.allegedly.works/ducktape-ci/haku-sandbox-image:devel-20260910004218-9d1a996 # {"$imagepolicy": "flux-system:haku-sandbox-image"}
+          image: git.allegedly.works/ducktape-ci/haku-sandbox-image:devel-20260911073848-93937c5 # {"$imagepolicy": "flux-system:haku-sandbox-image"}
           command: ["sleep", "infinity"]
           workingDir: /workspace
           securityContext:

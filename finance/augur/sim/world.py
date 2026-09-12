@@ -1,0 +1,784 @@
+"""One rollout: financial books, tracked components, receipts and the monthly clock."""
+
+from collections.abc import Mapping, Sequence
+from copy import deepcopy
+from typing import Literal
+
+from finance.augur.sim import claims, observations, payments, results
+from finance.augur.sim.accounting import Accounting
+from finance.augur.sim.actions import (
+    Action,
+    Buy,
+    ClaimId,
+    Consume,
+    Contribute,
+    Liquidate,
+    PayClaim,
+    Sell,
+    Transfer,
+    Withdraw,
+)
+from finance.augur.sim.agent import EconomicAgent
+from finance.augur.sim.books import (
+    AccountBalance,
+    AccountRef,
+    Book,
+    CapitalGainState,
+    IncomeState,
+    MortgageState,
+    TlhPortfolioState,
+)
+from finance.augur.sim.compiler.income_sources import income_source_wire_id
+from finance.augur.sim.distributions import Distributions
+from finance.augur.sim.held_bonds import HeldBonds
+from finance.augur.sim.holdings import Holdings, private_issuer
+from finance.augur.sim.managed import ComponentEffects, ManagedPortfolios
+from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.money import checked_count, position_value
+from finance.augur.sim.mortgage import Mortgage, MortgagePayment
+from finance.augur.sim.prepared import CompiledRun, PreparedFixedAmount, PreparedTlhPortfolio
+from finance.augur.sim.private_equity import PrivateEquity
+from finance.augur.sim.property import Properties, mortgage_terms, principal
+from finance.augur.sim.tlh import (
+    ModeledRealizations,
+    TlhMarketUpdate,
+    TlhObservation,
+    TlhOpening,
+    TlhOpeningPosition,
+    TlhPortfolio,
+)
+from finance.augur.sim.validation import validate
+
+type Capture = Literal["summary", "dense", "forensic"]
+
+_NO_REALIZATIONS = ModeledRealizations()
+
+
+def acting_agent(action: Action) -> str:
+    """The agent an action is requested on behalf of, for callers that route actions without a tracked agent."""
+    if isinstance(action, Transfer | PayClaim | Consume):
+        return action.from_account.agent_id
+    return action.agent_id
+
+
+def validate_actor(run: CompiledRun, actor: str) -> None:
+    """Reject prepared input whose configured strategies or unsupported domains overlap actor decisions."""
+    scenario = run.scenario
+    if scenario._target_allocation_policies or scenario._private_equity_tender_policies or scenario._scheduled_sales:
+        raise ValueError("configured allocation, tender policies and scheduled sales overlap actor decisions")
+    if (
+        scenario._scheduled_property_purchases
+        or scenario.scheduled_property_cashflows
+        or scenario.recurring_property_cashflows
+        or scenario._initial_primary_residences
+        or scenario._primary_residence_events
+        or scenario._property_rented_fraction_events
+        or scenario._capital_improvement_events
+        or scenario._property_sales
+        or scenario._mortgage_interest_deduction_policies
+        or scenario._property_tax_policies
+        or scenario._federal_salt_deduction_policies
+        or any(pool.asset_id.startswith("private_equity:") for pool in scenario.holding_pools)
+    ):
+        raise ValueError(
+            "the scoped actor control supports public securities, cash and due claims, not housing or private equity"
+        )
+    if any(
+        claim.from_account.agent_id != actor for claim in (*scenario.obligations, *scenario.recurring_obligations)
+    ) or any(profile.agent_id != actor for profile in scenario.tax_profiles):
+        raise ValueError(
+            "only the decision-making household may have payment claims; counterparties use scheduled cashflows"
+        )
+
+
+class World:
+    """One rollout's present state and the clock; nothing here is a history.
+
+    Track an agent, `start`, then `step` until `finished`. The batch session drives
+    several worlds the same way. Component outcome lists hold this month only and are
+    cleared when the next month opens; whoever wants a series reads state between steps.
+    """
+
+    def __init__(self, run: CompiledRun, rollout_id: int) -> None:
+        if not isinstance(run, CompiledRun):
+            raise TypeError("execution requires a CompiledRun, not serialized input")
+        self.run = run
+        self.scenario = run.scenario
+        self.market = MarketPath(run, rollout_id)
+        self.rollout_id = rollout_id
+        self.agents: list[EconomicAgent] = []
+        self.specs = {spec.portfolio_id: spec for spec in self.scenario.tlh_portfolios}
+        self.portfolios = {
+            spec.portfolio_id: TlhPortfolio(
+                spec.assumptions,
+                TlhOpening(
+                    month=-1,
+                    price=self.market.value(f"security:{spec.asset_id}", 0),
+                    quantity_scale=spec.quantity_scale,
+                    positions=tuple(
+                        TlhOpeningPosition(lot.units, lot.basis, lot.purchase_month) for lot in spec.initial_cohorts
+                    ),
+                ),
+            )
+            for spec in self.specs.values()
+        }
+        opening = [self.statement(spec, self.portfolios[spec.portfolio_id].observe()) for spec in self.specs.values()]
+        self.accounting = Accounting(run.scenario.accounts, run.scenario.tax_profiles, run.scenario.income_sources)
+        self.holdings = Holdings(run.scenario, self.accounting)
+        self.managed = ManagedPortfolios(run.scenario, self.accounting, opening)
+        self.properties = Properties(run.scenario, self.accounting)
+        self.bonds = HeldBonds(run.scenario.initial_bonds, self.market)
+        self.distributions = Distributions()
+        self.private_equity = PrivateEquity()
+        self.claims = claims.Claims(0, [])
+        self.month = 0
+        self.failed_month: int | None = None
+        # This month's settlement outcomes, cleared when the next month opens.
+        self.obligations: list[payments.ObligationOutcome] = []
+        self.payments: list[results.Payment] = []
+        self.mortgages: dict[str, Mortgage] = {}
+        self.mortgage_payments: dict[str, MortgagePayment] = {}
+        self.previous_receipts: list[results.Receipt] = []
+        self.stop: results.Stop | None = None
+        self.failed = False
+        self.shortfall = 0  # The configured runner's grouped-settlement shortfall for this month.
+        self.started = False
+        self.opened = False
+        self.finished = False
+
+    @staticmethod
+    def statement(spec: PreparedTlhPortfolio, value: TlhObservation) -> observations.TlhPortfolioObservation:
+        return observations.TlhPortfolioObservation(
+            portfolio_id=spec.portfolio_id,
+            owner_agent_id=spec.owner_agent_id,
+            account_id=spec.account_id,
+            asset_id=spec.asset_id,
+            value=value.value,
+            reported_tax_basis=value.reported_tax_basis,
+        )
+
+    def effects(
+        self,
+        spec: PreparedTlhPortfolio,
+        candidate: TlhPortfolio,
+        cash_account_id: str | None,
+        cash_amount: int,
+        realizations: ModeledRealizations = _NO_REALIZATIONS,
+    ) -> ComponentEffects:
+        return ComponentEffects(
+            observation=self.statement(spec, candidate.observe()),
+            cash_account_id=cash_account_id,
+            cash_amount=cash_amount,
+            short_term_gain=realizations.short_term_gain,
+            long_term_gain=realizations.long_term_gain,
+        )
+
+    def track(self, agent: EconomicAgent) -> None:
+        """Register a decision-making agent; the prepared input is checked against it here."""
+        if not isinstance(agent, EconomicAgent):
+            raise TypeError("only EconomicAgent subclasses can be tracked")
+        validate_actor(self.run, agent.agent_id)
+        validate(self.run)
+        self._track(agent)
+
+    def _track(self, agent: EconomicAgent) -> None:
+        """Registration without re-validating the run; the batch session validated it once."""
+        if self.started:
+            raise ValueError("track components before starting the world")
+        if self.agents:
+            raise ValueError("one decision-making agent per world until multi-actor sequencing is decided")
+        self.validate_scope(agent.agent_id)
+        self.agents.append(agent)
+
+    @property
+    def mark_month(self) -> int:
+        """The month whose prices value the current books: a stopped world keeps its stop month."""
+        return self.month if self.failed_month is None else self.failed_month
+
+    def start(self) -> None:
+        if self.started:
+            raise ValueError("invalid world lifecycle state: already started")
+        self.started = True
+        self.open_month()
+
+    def step(self) -> None:
+        """One month: each tracked agent decides once on the opened view, actions execute in order, the month closes."""
+        if not self.started or self.finished:
+            raise ValueError("world is not running")
+        if not self.agents:
+            raise ValueError("step needs a tracked agent; scripted-only paths run through the batch session")
+        if not self.opened:
+            self.open_month()
+        for agent in self.agents:
+            actions = agent.decide(self.observe(agent.agent_id))
+            self.begin_actions(actions)
+            for action in actions:
+                if isinstance(self.execute(agent.agent_id, action).outcome, results.Rejected):
+                    break
+        self.close_month()
+
+    def open_month(self) -> None:
+        """Clear last month's outcomes, advance components before any investor operation, raise this month's claims."""
+        if self.opened or self.finished:
+            raise ValueError("the month is already open")
+        if self.month:
+            for component in (
+                self.accounting,
+                self.holdings,
+                self.managed,
+                self.properties,
+                self.bonds,
+                self.distributions,
+                self.private_equity,
+            ):
+                component.begin_month()
+            self.obligations.clear()
+            self.payments.clear()
+            self.shortfall = 0
+        self.opened = True
+        for spec in self.specs.values():
+            current = self.portfolios[spec.portfolio_id]
+            for index, distribution in enumerate(self.scenario.distributions):
+                if (distribution.agent_id, distribution.holding_account_id, distribution.asset_id) != (
+                    spec.owner_agent_id,
+                    spec.account_id,
+                    spec.asset_id,
+                ):
+                    continue
+                rate = self.market.value(f"security_distribution:{spec.asset_id}", self.month)
+                self.managed.distribute(self.scenario, self.accounting, self.month, index, current._distribution(rate))
+            candidate = deepcopy(current)
+            realized = candidate.advance(
+                TlhMarketUpdate(self.month, self.market.value(f"security:{spec.asset_id}", self.month))
+            )
+            self.managed.settle(
+                self.scenario,
+                self.accounting,
+                self.month,
+                spec.owner_agent_id,
+                f"tlh:{spec.portfolio_id}:advance:m{self.month}",
+                self.effects(spec, candidate, None, 0, realized),
+                operation="modeled_realization",
+            )
+            self.portfolios[spec.portfolio_id] = candidate
+        self.open_mortgages()
+
+    def open_mortgages(self) -> None:
+        """Originate/pay off configured contracts, then quote this month's installments."""
+        candidates = {}
+        for purchase in self.scenario._scheduled_property_purchases:
+            financing = purchase.mortgage
+            if purchase.month != self.month or financing is None:
+                continue
+            candidates[financing.liability_id] = Mortgage(mortgage_terms(purchase))
+        originated, paid_off = self.prepare_month(self.month, candidates, self.mortgages)
+        for id_ in paid_off:
+            self.mortgages[id_].payoff()
+        for id_ in originated:
+            self.mortgages[id_] = candidates[id_]
+        self.mortgage_payments = {}
+        for id_, loan in self.mortgages.items():
+            if not loan.active:
+                continue
+            payment = loan.payment(
+                self.month, self.mortgage_principal(id_), self.property_rented_fraction(loan.terms.property_id)
+            )
+            if payment is not None:
+                self.mortgage_payments[id_] = payment
+        self.assemble_claims(list(self.mortgage_payments.values()))
+
+    def mortgage_snapshots(self) -> list[MortgageState]:
+        return [loan.observe(self.mortgage_principal(id_)) for id_, loan in self.mortgages.items()]
+
+    def check_claims(self, actions: Sequence[Action]) -> None:
+        for action in actions:
+            if isinstance(action, PayClaim) and not action.claim._belongs_to(self, self.rollout_id):
+                raise ValueError("claim belongs to a different rollout or session")
+
+    def begin_actions(self, actions: Sequence[Action]) -> None:
+        """Validate the month's claim handles before any action executes; last month's receipts are consumed."""
+        self.check_claims(actions)
+        self.previous_receipts = []
+
+    def execute(self, actor: str, action: Action) -> results.Receipt:
+        """Execute one action on behalf of `actor`; a rejection stops this path."""
+        if self.failed:
+            raise ValueError("cannot act on a stopped rollout")
+        if not self.opened:
+            raise ValueError("open the month before acting")
+        index = len(self.previous_receipts)
+        if isinstance(action, Contribute | Withdraw | Liquidate):
+            outcome = self._component_action(actor, action)
+        else:
+            outcome = self.apply(actor, action, index)
+        historical_action = action
+        if isinstance(action, PayClaim):
+            historical_action = action.model_copy(
+                update={"claim": ClaimId(month=action.claim.month, index=action.claim.index)}
+            )
+        receipt = results.Receipt(month=self.month, action_index=index, action=historical_action, outcome=outcome)
+        self.previous_receipts.append(receipt)
+        if isinstance(outcome, results.Rejected):
+            self.failed = True
+            self.stop = results.RejectedAction(month=self.month, action_index=index)
+        return receipt
+
+    def _component_action(
+        self, actor: str, action: Contribute | Withdraw | Liquidate
+    ) -> results.Executed | results.Rejected:
+        def reject(detail: str) -> results.Rejected:
+            return results.Rejected(reason=results.InvalidRequest(detail=detail))
+
+        spec = self.specs.get(action.portfolio_id)
+        if spec is None or action.agent_id != spec.owner_agent_id or actor != action.agent_id:
+            return reject("unknown or unowned TLH portfolio")
+        if not action.cause_id:
+            return reject("TLH cause identifier must not be empty")
+        available = self.account_balance(actor, action.cash_account_id)
+        if available is None:
+            return reject("unknown TLH cash account")
+        current = self.portfolios[spec.portfolio_id]
+        if isinstance(action, Contribute | Withdraw):
+            if action.amount < 0:
+                return reject("TLH amount must be nonnegative")
+            if isinstance(action, Contribute) and action.amount > available:
+                return reject("TLH contribution exceeds available cash")
+            if isinstance(action, Withdraw) and action.amount > current.observe().value:
+                return reject("TLH withdrawal exceeds portfolio value")
+        candidate = deepcopy(current)
+        if isinstance(action, Contribute):
+            contribution = candidate.contribute(action.amount)
+            effects = self.effects(spec, candidate, action.cash_account_id, -contribution.cash_paid)
+        else:
+            withdrawal = candidate.withdraw(action.amount) if isinstance(action, Withdraw) else candidate.liquidate()
+            effects = self.effects(
+                spec, candidate, action.cash_account_id, withdrawal.cash_received, withdrawal.realizations
+            )
+        self.managed.validate_request(action, effects)
+        self.managed.settle(
+            self.scenario,
+            self.accounting,
+            self.month,
+            actor,
+            action.cause_id,
+            effects,
+            operation="contribution" if isinstance(action, Contribute) else "redemption",
+        )
+        self.portfolios[spec.portfolio_id] = candidate
+        return results.Executed()
+
+    def close_month(self) -> None:
+        """Stop on a tracked agent's unpaid claims, mark components, close the books; the next month opens lazily."""
+        if not self.opened:
+            raise ValueError("the month is not open")
+        for agent in self.agents:
+            unpaid = self.unpaid_claims(agent.agent_id)
+            if unpaid and self.stop is None:
+                self.failed = True
+                self.stop = results.UnpaidClaims(month=self.month, claims=[claim.id for claim in unpaid])
+        marks = [
+            self.statement(
+                spec,
+                self.portfolios[spec.portfolio_id]._observe_at_price(
+                    self.market.value(f"security:{spec.asset_id}", self.month + (not self.failed))
+                ),
+            )
+            for spec in self.specs.values()
+        ]
+        self.managed.mark(self.scenario, marks)
+        for id_ in (
+            claim.effect.terms.liability_id
+            for claim in self.claims.entries
+            if claim.paid and isinstance(claim.effect, MortgagePayment)
+        ):
+            self.mortgages[id_].record_payment(self.mortgage_payments[id_], self.mortgage_principal(id_))
+        reset_year = not self.failed and (self.month + 1) % 12 == 0
+        self.close_books(failed=self.failed, mortgages=list(self.mortgages.values()))
+        if reset_year:
+            for loan in self.mortgages.values():
+                loan.reset_year()
+        self.opened = False
+        self.finished = self.failed or self.month == self.scenario.horizon_months
+
+    def validate_scope(self, actor: str) -> None:
+        if not any(account.agent_id == actor for account in self.accounting.declared):
+            raise ValueError(f"unknown actor {actor!r}")
+        for pool in self.scenario.holding_pools:
+            if (
+                pool.agent_id == actor
+                and private_issuer(pool.asset_id) is None
+                and f"security:{pool.asset_id}" not in self.market.series
+            ):
+                raise ValueError(f"missing public security series for {pool.asset_id!r}")
+
+    def account_balance(self, actor: str, account: str) -> int | None:
+        key = AccountRef(agent_id=actor, account_id=account)
+        return self.accounting.ledger.balance(key) if key in self.accounting.declared else None
+
+    def mortgage_principal(self, liability_id: str) -> int:
+        purchase = next(
+            (
+                purchase
+                for purchase in self.scenario._scheduled_property_purchases
+                if purchase.mortgage is not None and purchase.mortgage.liability_id == liability_id
+            ),
+            None,
+        )
+        if purchase is None:
+            raise ValueError("unknown mortgage liability")
+        return principal(self.accounting, purchase)
+
+    def property_rented_fraction(self, property_id: str) -> int:
+        return self.properties.properties[property_id].state.rented_fraction_ppb
+
+    def prepare_month(
+        self, month: int, originations: Mapping[str, Mortgage], mortgages: Mapping[str, Mortgage]
+    ) -> tuple[list[str], list[str]]:
+        if month != self.month or month >= self.scenario.horizon_months:
+            raise ValueError("invalid financial month")
+        self.claims = claims.Claims(month, [])
+        self.properties.assign_residences(self.scenario, month)
+        paid_off = self.properties.lifecycle(self.scenario, self.accounting, self.market, month, mortgages)
+        self.bonds.advance(self.accounting, month)
+        self.distributions.advance(self.scenario, self.accounting, self.holdings, self.market, month)
+        originated = self.properties.purchase(self.scenario, self.accounting, month, originations)
+        active = {row.property_id for row in self.properties.snapshots() if row.active}
+        flows = [flow for flow in self.scenario.scheduled_transfers if flow.month == month]
+        recurring = [
+            flow
+            for flow in self.scenario.recurring_transfers
+            if flow.start_month <= month and (flow.end_month is None or month <= flow.end_month)
+        ]
+        property_flows = [
+            flow
+            for flow in self.scenario.scheduled_property_cashflows
+            if flow.month == month and flow.property_id in active
+        ]
+        property_recurring = [
+            flow
+            for flow in self.scenario.recurring_property_cashflows
+            if flow.start_month <= month
+            and (flow.end_month is None or month <= flow.end_month)
+            and flow.property_id in active
+        ]
+        for flow in (*flows, *recurring, *property_flows, *property_recurring):
+            self.accounting.transfer(
+                month,
+                Transfer(
+                    cause_id=flow.cause_id,
+                    from_account=flow.from_account,
+                    to_account=flow.to_account,
+                    amount=self.market.amount(flow.amount, month),
+                ),
+                actor=None,
+                income=flow.income_category,
+                deduction=flow.deduction_category,
+            )
+        return originated, paid_off
+
+    def assemble_claims(self, installments: Sequence[MortgagePayment]) -> None:
+        seen = set()
+        for installment in installments:
+            id_ = installment.terms.liability_id
+            if (
+                id_ in seen
+                or installment.terms.origination_month >= self.month
+                or not 0 <= installment.principal <= self.mortgage_principal(id_)
+                or self.mortgage_principal(id_) <= 0
+                or not 0 <= installment.rental_interest <= installment.interest
+            ):
+                raise ValueError("invalid mortgage installment")
+            seen.add(id_)
+        self.claims = claims.assemble(
+            self.scenario,
+            self.market,
+            self.month,
+            self.properties.snapshots(),
+            installments,
+            self.accounting.tax_liabilities,
+        )
+
+    def public_price(self, actor: str, asset: str, month: int) -> int:
+        if private_issuer(asset) is not None or not any(
+            pool.agent_id == actor and pool.asset_id == asset for pool in self.scenario.holding_pools
+        ):
+            raise ValueError("asset has no declared public holding pool")
+        return self.market.value(f"security:{asset}", month)
+
+    def observe(self, actor: str) -> observations.Observation:
+        self.validate_scope(actor)
+        positions = []
+        for lot in self.holdings.lots:
+            spec = lot.spec
+            if spec.agent_id != actor or lot.units_remaining == 0 or private_issuer(spec.asset_id) is not None:
+                continue
+            price = self.public_price(actor, spec.asset_id, self.month)
+            positions.append(
+                observations.PublicPosition(
+                    account_id=spec.account_id,
+                    asset_id=spec.asset_id,
+                    lot_id=spec.lot_id,
+                    purchase_month=spec.purchase_month,
+                    units=lot.units_remaining,
+                    quantity_scale=spec.quantity_scale,
+                    book_basis=lot.basis_remaining,
+                    price=price,
+                    value=position_value(price, lot.units_remaining, spec.quantity_scale),
+                )
+            )
+        accounts = tuple(
+            (account.account.account_id, self.accounting.ledger.balance(account.account))
+            for account in self.scenario.accounts
+            if account.account.agent_id == actor
+        )
+        bonds = []
+        for bond in self.bonds.terms:
+            if bond.agent_id != actor:
+                continue
+            carrying = self.bonds.held_principal(bond, self.month + 1, self.month)
+            if carrying is None:
+                continue
+            coupon = (
+                observations.FixedCoupon(amount=bond.coupon.amount)
+                if isinstance(bond.coupon, PreparedFixedAmount)
+                else observations.IndexedCoupon(annual_rate_ppb=bond.coupon.annual_rate_ppb)
+            )
+            bonds.append(
+                observations.HeldBond(
+                    bond_id=bond.bond_id,
+                    account_id=bond.account_id,
+                    issuer_jurisdiction_id=bond.issuer_jurisdiction_id,
+                    face_value=bond.face_value,
+                    purchase_price=bond.purchase_price,
+                    coupon=coupon,
+                    coupon_period_months=bond.coupon_period_months,
+                    purchase_month=bond.purchase_month_index,
+                    maturity_month=bond.maturity_month_index,
+                    principal=carrying,
+                )
+            )
+        observation = observations.Observation(
+            agent_id=actor,
+            month=self.month,
+            cpi=(self.market.value("inflation", self.month), self.market.value("inflation", 0))
+            if "inflation" in self.market.series
+            else None,
+            cash=checked_count(sum(amount for _, amount in accounts), "actor cash"),
+            public_holdings=checked_count(sum(position.value for position in positions), "public value"),
+            accounts=accounts,
+            holding_pools=tuple(
+                observations.HoldingPool(
+                    account_id=pool.account_id,
+                    asset_id=pool.asset_id,
+                    quantity_scale=pool.quantity_scale,
+                    price=self.public_price(actor, pool.asset_id, self.month),
+                )
+                for pool in self.scenario.holding_pools
+                if pool.agent_id == actor and private_issuer(pool.asset_id) is None
+            ),
+            public_positions=tuple(positions),
+            held_bonds=tuple(bonds),
+            tlh_portfolios=tuple(row for row in self.managed.marks.values() if row.owner_agent_id == actor),
+            claims=tuple(
+                observations.Claim(
+                    month=id_.month,
+                    index=id_.index,
+                    cause_id=claim.cause_id,
+                    obligation_type=claim.obligation_type,
+                    from_account=claim.from_account,
+                    to_account=claim.to_account,
+                    amount_due=claim.amount_due,
+                )
+                for id_, claim in self.claims.due(actor)
+            ),
+            previous_receipts=tuple(self.previous_receipts),
+        )
+        for claim in observation.claims:
+            claim._bind(self, self.rollout_id)
+        return observation
+
+    def apply(self, actor: str, action: Action, action_index: int) -> results.Executed | results.Rejected:
+        self.validate_scope(actor)
+        if not action.cause_id:
+            return results.Rejected(reason=results.InvalidRequest(detail="empty cause ID"))
+        if isinstance(action, PayClaim | Consume):
+            receipt = payments.execute(self.accounting, self.month, self.claims, actor, action)
+            target = None
+            if isinstance(action, Consume):
+                target = results.PaymentTarget(
+                    to_account=action.to_account,
+                    obligation_type="cash_spend",
+                    label=action.component_id,
+                    is_tax_payment=False,
+                )
+            elif action.claim.month == self.month and 0 <= action.claim.index < len(self.claims.entries):
+                claim = self.claims.entries[action.claim.index]
+                target = results.PaymentTarget(
+                    to_account=claim.to_account,
+                    obligation_type=claim.obligation_type,
+                    label=claim.cause_id,
+                    is_tax_payment=isinstance(claim.effect, claims.TaxPayment | claims.TaxTrueUp),
+                )
+            self.payments.append(
+                results.Payment(
+                    month=self.month,
+                    action_index=action_index,
+                    cause_id=action.cause_id,
+                    from_account=action.from_account,
+                    target=target,
+                    receipt=receipt,
+                )
+            )
+            if target is not None and (
+                isinstance(receipt.outcome, results.Paid)
+                or (isinstance(action, Consume) and isinstance(receipt.outcome.reason, results.InsufficientCash))
+            ):
+                self.obligations.append(
+                    payments.ObligationOutcome(
+                        self.month,
+                        action.cause_id,
+                        target.label,
+                        target.obligation_type,
+                        action.from_account,
+                        target.to_account,
+                        receipt.amount_requested,
+                        receipt.amount_paid,
+                        receipt.amount_requested - receipt.amount_paid,
+                        isinstance(receipt.outcome, results.PaymentRejected),
+                    )
+                )
+            if isinstance(receipt.outcome, results.PaymentRejected):
+                return results.Rejected(reason=results.PaymentRejection(detail=receipt.outcome.reason))
+            return results.Executed()
+        # Financial request validators raise ValueError; arithmetic failures propagate and close the session.
+        try:
+            if isinstance(action, Transfer):
+                self.accounting.transfer(self.month, action, actor=actor)
+            elif isinstance(action, Buy | Sell):
+                if action.agent_id != actor:
+                    raise ValueError("wrong actor")
+                price = self.public_price(actor, action.asset_id, self.month)
+                if isinstance(action, Buy):
+                    self.holdings.buy(self.scenario, self.accounting, self.month, action, price=price)
+                else:
+                    self.holdings.sell(self.accounting, self.month, action, price=price)
+            else:
+                raise ValueError("component request requires modeled financial effects")
+        except ValueError as error:
+            return results.Rejected(reason=results.InvalidRequest(detail=str(error)))
+        return results.Executed()
+
+    def unpaid_claims(self, actor: str) -> list[results.UnpaidClaim]:
+        return [
+            results.UnpaidClaim(
+                id=id_,
+                cause_id=claim.cause_id,
+                obligation_type=claim.obligation_type,
+                from_account=claim.from_account,
+                to_account=claim.to_account,
+                amount_due=claim.amount_due,
+            )
+            for id_, claim in self.claims.due(actor)
+            if claim.amount_due > 0
+        ]
+
+    def settle_claims(self, product_actor: str | None = None) -> payments.Settlement:
+        """The configured runner's grouped all-or-none settlement; `product_actor` scopes its shortfall."""
+        settlement = payments.settle_grouped(self.accounting, self.claims, product_actor)
+        self.obligations.extend(settlement.obligations)
+        return settlement
+
+    def close_books(self, *, failed: bool, mortgages: Sequence[Mortgage]) -> None:
+        """Accrue, close the tax year on a successful December, and advance the month counter."""
+        if self.agents:
+            for claim in self.claims.entries:
+                if not claim.paid:
+                    self.obligations.append(
+                        payments.ObligationOutcome(
+                            self.month,
+                            claim.cause_id,
+                            claim.cause_id,
+                            claim.obligation_type,
+                            claim.from_account,
+                            claim.to_account,
+                            claim.amount_due,
+                            0,
+                            claim.amount_due,
+                            claim.amount_due > 0,
+                        )
+                    )
+        if failed:
+            self.failed_month = self.month
+        else:
+            self.properties.accrue(self.accounting, self.month)
+            if (self.month + 1) % 12 == 0:
+                self.accounting.close_tax_year(self.scenario, self.month, mortgages)
+                self.properties.reset_year()
+        self.month += 1
+
+    def book(self) -> Book:
+        """The current books as a snapshot: state, not a stored history."""
+        return Book(
+            month=self.month,
+            balances=[
+                AccountBalance(account=account, balance=value)
+                for account, value in sorted(
+                    self.accounting.ledger.balances.items(), key=lambda item: (item[0].agent_id, item[0].account_id)
+                )
+            ],
+            income=[
+                IncomeState(agent_id=agent, income_source=income_source_wire_id(source), income=amount)
+                for (agent, source), amount in self.accounting.tax.income.by_source.items()
+            ],
+            lots=[lot.snapshot() for lot in self.holdings.lots],
+            bonds=self.bonds.snapshots(self.month, self.mark_month),
+            properties=self.properties.snapshots(),
+            mortgages=self.mortgage_snapshots(),
+            tax_liabilities=list(self.accounting.tax_liabilities),
+            capital_gains=[
+                CapitalGainState(
+                    agent_id=agent, short_term_gain=year.short_term_gain, long_term_gain=year.long_term_gain
+                )
+                for agent, year in self.accounting.tax.years.items()
+            ],
+            tlh_portfolios=[
+                TlhPortfolioState(
+                    portfolio_id=row.portfolio_id,
+                    owner_agent_id=row.owner_agent_id,
+                    account_id=row.account_id,
+                    asset_id=row.asset_id,
+                    value=row.value,
+                    reported_tax_basis=row.reported_tax_basis,
+                )
+                for row in self.managed.marks.values()
+            ],
+            failed=self.failed_month is not None,
+        )
+
+    def holding_value(self, actor: str, month: int, account: str | None = None, asset: str | None = None) -> int:
+        total = 0
+        for lot in self.holdings.lots:
+            spec = lot.spec
+            if (
+                spec.agent_id != actor
+                or private_issuer(spec.asset_id) is not None
+                or not lot.units_remaining
+                or (account is not None and spec.account_id != account)
+                or (asset is not None and spec.asset_id != asset)
+            ):
+                continue
+            total = checked_count(
+                total
+                + position_value(
+                    self.public_price(actor, spec.asset_id, month), lot.units_remaining, spec.quantity_scale
+                ),
+                "public value",
+            )
+        for row in self.managed.marks.values():
+            if (
+                row.owner_agent_id == actor
+                and (account is None or row.account_id == account)
+                and (asset is None or row.asset_id == asset)
+            ):
+                total = checked_count(total + row.value, "public value")
+        return total

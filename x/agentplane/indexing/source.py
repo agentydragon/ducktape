@@ -1,172 +1,121 @@
-"""Flux GitRepository artifacts as validated, source-independent file snapshots."""
+"""One branch of one Git remote as validated, source-independent file snapshots."""
+
+from __future__ import annotations
 
 import asyncio
-import gzip
-import hashlib
-import io
-import tarfile
 from collections.abc import Mapping
 from dataclasses import dataclass
-from pathlib import PurePosixPath
+from pathlib import Path
 from types import MappingProxyType
 
-import httpx
+import pathspec
+import pygit2
 from pydantic import BaseModel, ConfigDict, Field
-
-from util.kubernetes import CustomObjectsClient
+from pygit2.enums import FetchPrune, FileMode
 
 
 @dataclass(frozen=True)
 class Snapshot:
     revision: str
-    digest: str
+    tree_id: str
     repository_url: str
     files: Mapping[str, bytes]
 
 
-class ArchiveLimits(BaseModel):
+class SnapshotLimits(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    compressed_bytes: int = Field(default=128 * 1024 * 1024, gt=0)
-    expanded_bytes: int = Field(default=512 * 1024 * 1024, gt=0)
+    total_bytes: int = Field(default=512 * 1024 * 1024, gt=0)
     file_bytes: int = Field(default=8 * 1024 * 1024, gt=0)
     entries: int = Field(default=100_000, gt=0)
 
 
-class Artifact(BaseModel):
-    url: str
-    digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
-    revision: str
-
-
-class Condition(BaseModel):
-    type: str
-    status: str
-    message: str = ""
-
-
-class RepositoryStatus(BaseModel):
-    observed_generation: int | None = Field(default=None, alias="observedGeneration")
-    artifact: Artifact | None = None
-    conditions: list[Condition] = Field(default_factory=list)
-
-
-class RepositorySpec(BaseModel):
-    url: str
-
-
-class RepositoryMetadata(BaseModel):
-    generation: int
-
-
-class Repository(BaseModel):
-    metadata: RepositoryMetadata
-    spec: RepositorySpec
-    status: RepositoryStatus = Field(default_factory=RepositoryStatus)
-
-
-class SourceNotReadyError(Exception):
-    """Flux has not published a ready artifact for the requested configuration."""
-
-
-def read_archive(data: bytes, limits: ArchiveLimits) -> Mapping[str, bytes]:
-    """Read regular files without extracting paths; bound headers as well as file bodies."""
-    if len(data) > limits.compressed_bytes:
-        raise ValueError("Artifact exceeds compressed byte limit")
-    # Bound decompression before tarfile processes PAX/long-name headers, which can
-    # themselves consume substantial memory before a member becomes visible.
-    with gzip.GzipFile(fileobj=io.BytesIO(data)) as compressed:
-        expanded = compressed.read(limits.expanded_bytes + 1)
-    if len(expanded) > limits.expanded_bytes:
-        raise ValueError("Artifact exceeds expanded byte limit")
+def read_tree(
+    repository: pygit2.Repository, tree: pygit2.Tree, *, ignore: pathspec.GitIgnoreSpec, limits: SnapshotLimits
+) -> Mapping[str, bytes]:
+    """Regular files of a tree; an ignored directory is never descended, as in git itself."""
     files: dict[str, bytes] = {}
-    seen: set[str] = set()
-    with tarfile.open(fileobj=io.BytesIO(expanded), mode="r:") as archive:
-        for count, member in enumerate(archive, start=1):
-            if count > limits.entries:
-                raise ValueError("Artifact exceeds entry limit")
-            path = PurePosixPath(member.name)
-            if path.is_absolute() or ".." in path.parts or "\\" in member.name:
-                raise ValueError(f"Unsafe archive path: {member.name!r}")
-            if str(path) == "." and member.isdir():
+    total = 0
+    pending: list[tuple[str, pygit2.Tree]] = [("", tree)]
+    while pending:
+        prefix, current = pending.pop()
+        for entry in current:
+            path = f"{prefix}{entry.name}"
+            if entry.filemode == FileMode.TREE:
+                if not ignore.match_file(f"{path}/"):
+                    subtree = repository[entry.id]
+                    assert isinstance(subtree, pygit2.Tree)
+                    pending.append((f"{path}/", subtree))
                 continue
-            if str(path) == "." or str(path) in seen:
-                raise ValueError(f"Empty or duplicate archive path: {member.name!r}")
-            seen.add(str(path))
-            # Git symlinks are not documents and must never be followed.
-            if member.isdir() or member.issym():
+            # Symlinks are not documents and must never be followed; a submodule entry names a
+            # commit this repository does not hold.
+            if entry.filemode in (FileMode.LINK, FileMode.COMMIT) or ignore.match_file(path):
                 continue
-            if not member.isfile() or member.issparse():
-                raise ValueError(f"Unsupported archive entry: {member.name!r}")
-            if member.size < 0 or member.size > limits.file_bytes:
-                raise ValueError(f"File exceeds byte limit: {member.name!r}")
-            contents = archive.extractfile(member)
-            assert contents is not None
-            with contents:
-                files[str(path)] = contents.read()
+            if len(files) >= limits.entries:
+                raise ValueError("Snapshot exceeds entry limit")
+            blob = repository[entry.id]
+            assert isinstance(blob, pygit2.Blob)
+            if blob.size > limits.file_bytes:
+                raise ValueError(f"File exceeds byte limit: {path!r}")
+            total += blob.size
+            if total > limits.total_bytes:
+                raise ValueError("Snapshot exceeds total byte limit")
+            files[path] = blob.data
     return MappingProxyType(files)
 
 
-class FluxSource:
+class GitSource:
+    """A bare clone of one branch, fetched incrementally on every poll.
+
+    Reads go straight to the tree objects, so the clone never has a working tree. libgit2 has
+    no repack, so fetches accumulate pack files until the pod's emptyDir is recreated.
+    """
+
     def __init__(
         self,
         *,
-        custom_objects: CustomObjectsClient,
-        http: httpx.AsyncClient,
-        namespace: str,
-        name: str,
-        limits: ArchiveLimits,
+        url: str,
+        branch: str,
+        path: Path,
+        credentials: pygit2.UserPass | None,
+        ignore: pathspec.GitIgnoreSpec,
+        limits: SnapshotLimits,
     ) -> None:
-        self._custom_objects = custom_objects
-        self._http = http
-        self._namespace = namespace
-        self._name = name
+        self._url = url
+        self._branch = branch
+        self._path = path
+        self._callbacks = pygit2.RemoteCallbacks(credentials=credentials)
+        self._ignore = ignore
         self._limits = limits
+        self._refspec = f"+refs/heads/{branch}:refs/remotes/origin/{branch}"
 
     async def snapshot(
-        self,
-        *,
-        current_digest: str | None,
-        current_revision: str | None = None,
-        current_repository_url: str | None = None,
+        self, *, current_tree_id: str | None, current_revision: str | None, current_repository_url: str | None
     ) -> Snapshot | None:
-        resource = Repository.model_validate(
-            await self._custom_objects.get_namespaced_custom_object(
-                group="source.toolkit.fluxcd.io",
-                version="v1",
-                namespace=self._namespace,
-                plural="gitrepositories",
-                name=self._name,
-            )
-        )
-        ready = next((condition for condition in resource.status.conditions if condition.type == "Ready"), None)
-        if ready is None or ready.status != "True":
-            raise SourceNotReadyError(ready.message if ready else "GitRepository has no Ready condition")
-        if resource.status.observed_generation != resource.metadata.generation:
-            raise SourceNotReadyError("GitRepository has not reconciled its current configuration")
-        artifact = resource.status.artifact
-        if artifact is None:
-            raise SourceNotReadyError("GitRepository has no published artifact")
-        if (
-            artifact.digest == current_digest
-            and artifact.revision == current_revision
-            and resource.spec.url == current_repository_url
-        ):
+        return await asyncio.to_thread(self._snapshot, current_tree_id, current_revision, current_repository_url)
+
+    def _repository(self) -> pygit2.Repository:
+        if (self._path / "HEAD").exists():
+            repository = pygit2.Repository(str(self._path))
+            if repository.remotes["origin"].url != self._url:
+                repository.remotes.set_url("origin", self._url)
+            return repository
+        repository = pygit2.init_repository(str(self._path), bare=True)
+        repository.remotes.create("origin", self._url, self._refspec)
+        return repository
+
+    def _snapshot(
+        self, current_tree_id: str | None, current_revision: str | None, current_repository_url: str | None
+    ) -> Snapshot | None:
+        repository = self._repository()
+        repository.remotes["origin"].fetch(refspecs=[self._refspec], callbacks=self._callbacks, prune=FetchPrune.PRUNE)
+        commit = repository.lookup_reference(f"refs/remotes/origin/{self._branch}").peel(pygit2.Commit)
+        revision, tree_id = str(commit.id), str(commit.tree_id)
+        if (tree_id, revision, self._url) == (current_tree_id, current_revision, current_repository_url):
             return None
-        data = bytearray()
-        async with self._http.stream(
-            "GET", artifact.url, headers={"Accept-Encoding": "identity"}, follow_redirects=False
-        ) as response:
-            response.raise_for_status()
-            if response.headers.get("content-encoding", "identity").lower() != "identity":
-                raise ValueError("Artifact response must use identity content encoding")
-            async for chunk in response.aiter_raw(chunk_size=64 * 1024):
-                data.extend(chunk)
-                if len(data) > self._limits.compressed_bytes:
-                    raise ValueError("Artifact exceeds compressed byte limit")
-        if "sha256:" + hashlib.sha256(data).hexdigest() != artifact.digest:
-            raise ValueError("Artifact digest mismatch")
-        files = await asyncio.to_thread(read_archive, bytes(data), self._limits)
         return Snapshot(
-            revision=artifact.revision, digest=artifact.digest, repository_url=resource.spec.url, files=files
+            revision=revision,
+            tree_id=tree_id,
+            repository_url=self._url,
+            files=read_tree(repository, commit.tree, ignore=self._ignore, limits=self._limits),
         )

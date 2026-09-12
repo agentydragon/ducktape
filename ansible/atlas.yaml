@@ -9,8 +9,6 @@
     nebula_ca_cert_file: "{{ playbook_dir }}/../secrets/nebula/ca.crt"
     nebula_host_cert_file: "{{ playbook_dir }}/../secrets/nebula/atlas.crt"
     nebula_host_key_sops_file: "{{ playbook_dir }}/../secrets/nebula/atlas.sops.key"
-    hostexecd_host: atlas
-    hostexecd_daemon_token_sops_file: "{{ playbook_dir }}/../cluster/k8s/haku/console/node-daemon-atlas.sops.yaml"
   remote_user: root
 
   tasks:
@@ -155,9 +153,22 @@
         content: |
           ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBoGigbjJZfs1+M6yUCJSBzUlu2mFcakFTmuxrN425fO agentydragon@atlas
           ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICweiJQQidbhojDI7tXuSuntptCc6Dy4stIGzDlI9z0b agentydragon@rugged
+          ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIsN/0hOlPmLCZjxMzNxNp9MHntw2SUJMEU5YVNfKw+2 ssh-mcp -> atlas (root)
         mode: "0600"
         owner: root
         group: root
+      tags: [users, ssh]
+
+    # ssh-mcp (cluster/k8s/ssh-mcp) targets this account's SSH access separately from root, with
+    # its own dedicated key -- see ssh_keys/atlas-mcp-agentydragon.pub. Uses
+    # ansible.posix.authorized_key (idempotent add) rather than the copy pattern above: unlike
+    # root's authorized_keys, which this playbook already fully owns, this session does not know
+    # what agentydragon's authorized_keys on atlas already contains, and must not overwrite it.
+    - name: Authorize ssh-mcp's dedicated key for agentydragon
+      ansible.posix.authorized_key:
+        user: "{{ my_user }}"
+        key: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBClY6ojj++s8Mtmv74ulDT0sEmFFrqiFO3u9gUbNMjw ssh-mcp -> atlas (agentydragon)
+        state: present
       tags: [users, ssh]
 
     - name: Allow input group access to /dev/uinput
@@ -184,11 +195,6 @@
       ansible.builtin.import_role:
         name: nebula
       tags: [nebula]
-
-    - name: Apply hostexecd role
-      ansible.builtin.import_role:
-        name: hostexecd
-      tags: [hostexecd]
 
     - name: Apply Nix role
       ansible.builtin.import_role:
