@@ -603,14 +603,14 @@ Action outbox or event store; cross-Identity delivery requires an explicit read 
 **Planned UI:** a persistent badge, reachable from any route regardless of phone collapse state,
 opens a non-modal drawer over the current page showing pending Action approvals
 (group/name, caller, collapsible arguments, Approve/Deny) — the shape
-`haku/console/frontend/shell_chrome.tsx` already ships for its own approval queue. Needs a
-top-level push/subscription mechanism (alongside wherever `live.tsx`'s mechanism already lives) to
-raise the badge without a page visit.
+`haku/console/frontend/shell_chrome.tsx` already ships for its own approval queue.
 
 **Unblocked**: both the sidebar's chrome (`UISHELL_SIDEBAR`) and its phone-width collapse
 (`UISHELL_MOBILE`) have landed — `app.tsx`'s `.agentplane-mobile-topbar` (`shell.css`) is the
 sticky top bar to add the badge to at phone width; it currently holds only the hamburger. The
-subscription plumbing is the remaining work.
+subscription plumbing is designed in [the push mechanism plan](push_mechanism.md) (not yet
+confirmed): lift `/actions/stream` into an app-shell-level provider so the badge and the
+`/actions`/`/actions/history` pages share one subscription instead of each opening their own.
 
 ### `UISHELL_NEWTHREAD_SANDBOX` — pre-scoped "+ New thread" on a Sandbox's page
 
@@ -651,10 +651,10 @@ poll timer. Concretely missing it today: the Settings modal's OAuth-clients tab
 that changes afterward. This is not starting from nothing: `sandboxes.tsx`/`sandbox_page.tsx`
 already push via `live.tsx`'s `useLive`/`EventSource` mechanism (`/live/sandboxes`,
 `/live/sandboxes/:name`), and `actions.tsx` already opens its own `/actions/stream` `EventSource`
-independently of that. The shape to extend is one of those two, not a third one invented from
-scratch — whether that means a `live.tsx`-style snapshot-on-change stream for each Settings tab's
-own resource (Connections, MCP linkages, push subscriptions) or something coarser is not decided
-here.
+independently of that. [The push mechanism plan](push_mechanism.md) (not yet confirmed) designs a
+`live.tsx`-style snapshot-on-change stream for each Settings tab's own resource (Connections, MCP
+linkages, push subscriptions), reusing `live.py`'s generic `frames()` helper on the Action Service
+side rather than a third hand-rolled implementation.
 
 **No dependency** on the UI-shell cluster above; ships independently, one tab/page at a time.
 
