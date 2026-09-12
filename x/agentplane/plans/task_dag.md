@@ -67,7 +67,6 @@ flowchart TB
     CONSOLE_POLICIES["Deferred migration<br/>console auto-approval policies not yet sets<br/>each needs an ActionGroup, a kind, or DENY_LISTS"]:::future
 
     UISHELL_DRAWER["Planned UI<br/>pending-approval badge + drawer<br/>global subscription, non-modal"]:::future
-    UISHELL_MOBILE["Planned UI<br/>mobile sidebar collapse<br/>hamburger toggle, badge stays in top bar"]:::future
     UISHELL_NEWTHREAD_SANDBOX["Planned UI<br/>pre-scoped '+ New thread' on a Sandbox's page<br/>Sandbox/preset already fixed"]:::future
     UISHELL_NEWTHREAD_LANDING["Planned UI<br/>sidebar '+' unscoped new-thread composer<br/>Sandbox/preset/model pickers + prompt"]:::future
     THREAD_BROWSE_PAGINATE["Deferred, way later<br/>paginated/searchable all-threads page<br/>find an old Thread once the sidebar list outgrows it"]:::future
@@ -131,16 +130,17 @@ Haku Console migration is split: Agent/conversation management and tool-call/app
 can retire on different schedules after their respective replacement surfaces exist. Neither is a
 prerequisite for the first Action/MCP acceptance.
 
-The session-first UI shell (`UISHELL_DRAWER`, `UISHELL_MOBILE`, `UISHELL_NEWTHREAD_SANDBOX`,
+The session-first UI shell (`UISHELL_DRAWER`, `UISHELL_NEWTHREAD_SANDBOX`,
 `UISHELL_NEWTHREAD_LANDING`, `THREAD_BROWSE_PAGINATE`) is a separate frontend-ergonomics track: it
 is not gated by, and does not gate, the Action Service milestones above. `UISHELL_NEWTHREAD_SANDBOX`
-has no dependencies and ships independently. The persistent left sidebar (`UISHELL_SIDEBAR`) has
-landed, replacing the top nav row entirely as one atomic cutover; `UISHELL_DRAWER`, `UISHELL_MOBILE`,
-and `UISHELL_NEWTHREAD_LANDING` (the sidebar's own "+", currently a stub that opens the Sandbox
-list) now build on its chrome. `THREAD_BROWSE_PAGINATE` is explicitly deferred, not designed:
-finding one old Thread once the sidebar's working-set list outgrows it needs its own
-paginated/searchable page eventually, flagged now only so the with-sandboxes endpoint isn't assumed
-to stay one unpaginated call forever. See [session-first navigation](session_first_navigation.md).
+has no dependencies and ships independently. The persistent left sidebar (`UISHELL_SIDEBAR`) and its
+phone-width collapse behind a hamburger (`UISHELL_MOBILE`) have both landed, replacing the top nav
+row entirely as one atomic cutover; `UISHELL_DRAWER` and `UISHELL_NEWTHREAD_LANDING` (the sidebar's
+own "+", currently a stub that opens the Sandbox list) now build on that chrome. `THREAD_BROWSE_PAGINATE`
+is explicitly deferred, not designed: finding one old Thread once the sidebar's working-set list
+outgrows it needs its own paginated/searchable page eventually, flagged now only so the
+with-sandboxes endpoint isn't assumed to stay one unpaginated call forever. See
+[session-first navigation](session_first_navigation.md).
 
 ### `BB` — BuildBuddy hosted-run credential boundary
 
@@ -607,17 +607,10 @@ opens a non-modal drawer over the current page showing pending Action approvals
 top-level push/subscription mechanism (alongside wherever `live.tsx`'s mechanism already lives) to
 raise the badge without a page visit.
 
-**Unblocked**: the sidebar's chrome (`UISHELL_SIDEBAR`) has landed; the subscription plumbing is
-the remaining work.
-
-### `UISHELL_MOBILE` — mobile sidebar collapse
-
-**Planned UI:** collapse the sidebar behind a hamburger toggle at phone width; the pending-approval
-badge stays reachable in the top bar regardless of which sidebar view was last open.
-
-**Unblocked**: the sidebar (`UISHELL_SIDEBAR`) has landed; this is a breakpoint on its layout, not
-new logic. The sidebar is also independently resizable by drag or arrow keys at desktop width
-(persisted per viewer), unrelated to this collapse behavior.
+**Unblocked**: both the sidebar's chrome (`UISHELL_SIDEBAR`) and its phone-width collapse
+(`UISHELL_MOBILE`) have landed — `app.tsx`'s `.agentplane-mobile-topbar` (`shell.css`) is the
+sticky top bar to add the badge to at phone width; it currently holds only the hamburger. The
+subscription plumbing is the remaining work.
 
 ### `UISHELL_NEWTHREAD_SANDBOX` — pre-scoped "+ New thread" on a Sandbox's page
 
