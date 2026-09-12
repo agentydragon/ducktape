@@ -53,9 +53,13 @@ on:
         value: ${{ jobs.bazel-ci.outputs.bazel_invocation_ids }}
   workflow_dispatch:
 
+# A PR run is superseded by the next push to that PR, so it is cancelled. A push run is
+# for a commit that ships, so it queues behind the run in flight instead; GitHub keeps one
+# pending run per group, so a merge burst costs the run in flight plus the newest commit's.
+# Cancelling push runs is what starved devel of images (see ci.yml).
 concurrency:
   group: bazel-ci-${{ inputs.pr_head_sha || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || inputs.pr_head_sha != '' }}
 
 permissions:
   contents: read
