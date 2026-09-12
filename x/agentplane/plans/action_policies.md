@@ -2,8 +2,8 @@
 
 Status: **decided 2026-09-12; the Action Service side has landed (CRDs, informer, ServiceAccount
 callers, evaluation, evidence, the caller and operator reads of the effective policy, the acceptance
-scenario), and so has the integration app's binding writer and Sandbox page; the deny lists are the
-step below.**
+scenario), and so has the integration app's binding writer and Sandbox page; the deny lists are
+deferred as `DENY_LISTS` in the task DAG.**
 The single operator configures bounded auto-approval for both external MCP connections and
 harnesses running in Threads inside Sandboxes. Both use the canonical Action Service and Decision
 lifecycle. Identity/OAuth/Connection authority is implemented independently of policy
@@ -162,10 +162,6 @@ alike; removing that action from `public-coder` makes the next one wait for the 
 with no binding edited; at 20:01 the push grant is gone and the Decisions it produced still name
 the binding revision they used.
 
-## Steps
-
-1. **Deny lists** when an Action needs them, `autoDenyIf` first; `autoDenyUnless` later.
-
 ## Console policies the Action Service cannot express yet
 
 The Haku console's `auto_approval_policies` (`cluster/k8s/haku/console/config.yaml`) is the
@@ -198,8 +194,8 @@ with what it needs; an entry leaves when its set can be written.
 - **Schema auto-denial** (`autoDenyIf` equivalent): the console records a call whose arguments
   fail the registered tool schema as born-denied. The Action Service refuses such a request at
   admission before persisting anything, so the audit row the console keeps does not exist here;
-  matching it needs `autoDenyIf` semantics (step 2) and a recorded, denied Decision for the
-  schema miss.
+  matching it needs `autoDenyIf` semantics (`DENY_LISTS` in the task DAG) and a recorded, denied
+  Decision for the schema miss.
 - **Kubectl passthrough redundancy check** (`kubectl_passthrough_redundancy_check`, commented out
   in the console): auto-deny a `kubectl-passthrough-mcp` call the caller's own Kubernetes identity
   already covers by SubjectAccessReview, pointing at the direct path. A kind with an injected
