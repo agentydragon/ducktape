@@ -27,6 +27,9 @@ class HeldBonds:
         # This month's cashflows, cleared by `begin_month`; terms plus the ledger are the state.
         self.cashflows: list[BondCashflowOutcome] = []
 
+    def hold(self, bond: PreparedBond) -> None:
+        self.terms = (*self.terms, bond)
+
     def begin_month(self) -> None:
         self.cashflows.clear()
 

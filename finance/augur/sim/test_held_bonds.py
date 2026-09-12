@@ -16,7 +16,7 @@ from finance.augur.sim.prepared import (
     PreparedSeries,
 )
 from finance.augur.sim.scenario import InterestIncome
-from finance.augur.sim.testing.accounting import CASH, HOUSEHOLD, prepared_scenario
+from finance.augur.sim.testing.accounting import CASH, HOUSEHOLD, prepared_books, prepared_scenario
 
 
 @pytest.fixture
@@ -37,7 +37,7 @@ def nominal() -> PreparedBond:
 
 def bond_books(bond: PreparedBond, levels: tuple[int, ...]) -> tuple[Accounting, HeldBonds]:
     scenario = replace(prepared_scenario(), horizon_months=len(levels) - 1, initial_bonds=(bond,))
-    accounting = Accounting(scenario.accounts, scenario.tax_profiles, scenario.income_sources)
+    accounting = prepared_books(scenario)
     run = CompiledRun(
         currency_code="USD",
         currency_quantum="0.01",
@@ -45,7 +45,7 @@ def bond_books(bond: PreparedBond, levels: tuple[int, ...]) -> tuple[Accounting,
         scenario=scenario,
         series=(PreparedSeries(series_id="inflation", snapshots=len(levels), values=levels),),
     )
-    return accounting, HeldBonds((bond,), MarketPath(run, 0))
+    return accounting, HeldBonds((bond,), MarketPath.from_run(run, 0))
 
 
 def test_no_month_zero_coupon_and_redemption_keeps_the_maturity_coupon(nominal: PreparedBond) -> None:

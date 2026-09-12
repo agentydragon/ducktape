@@ -13,8 +13,8 @@ from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.holdings import gain_account
 from finance.augur.sim.money import checked_count, mul_div
 from finance.augur.sim.observations import TlhPortfolioObservation
-from finance.augur.sim.prepared import PreparedScenario
-from finance.augur.sim.scenario import InterestIncome
+from finance.augur.sim.prepared import PreparedDistribution, PreparedJurisdiction, PreparedTlhPortfolio
+from finance.augur.sim.scenario import InterestIncome, TransferIncomeCategory
 
 type Operation = Literal["modeled_realization", "contribution", "redemption", "distribution"]
 
@@ -57,6 +57,18 @@ def basis_account(observation: TlhPortfolioObservation) -> AccountRef:
     )
 
 
+def _validate_against(spec: PreparedTlhPortfolio, row: TlhPortfolioObservation) -> None:
+    if (
+        row.value < 0
+        or row.reported_tax_basis < 0
+        or (spec.portfolio_id, spec.owner_agent_id, spec.account_id, spec.asset_id)
+        != (row.portfolio_id, row.owner_agent_id, row.account_id, row.asset_id)
+    ):
+        raise ValueError("component observation has unknown ownership or negative value/basis")
+    checked_count(row.value, "component value")
+    checked_count(row.reported_tax_basis, "component basis")
+
+
 class TlhStatement(Statement):
     """The owner's managed portfolios at their current marks."""
 
@@ -65,35 +77,37 @@ class TlhStatement(Statement):
 
 class ManagedPortfolios:
     def __init__(
-        self, scenario: PreparedScenario, accounting: Accounting, observations: Sequence[TlhPortfolioObservation]
+        self, income_sources: Sequence[TransferIncomeCategory], jurisdictions: Sequence[PreparedJurisdiction]
     ) -> None:
+        self.income_sources = income_sources
+        self.jurisdictions = jurisdictions
+        self.specs: dict[str, PreparedTlhPortfolio] = {}
         self.marks: dict[str, TlhPortfolioObservation] = {}
         # This month's outcomes, cleared by `begin_month`; marks are the state.
         self.effects: list[FinancialEffect] = []
         self.distributions: list[DistributionOutcome] = []
-        if len({row.portfolio_id for row in observations}) != len(observations) or len(observations) != len(
-            scenario.tlh_portfolios
-        ):
-            raise ValueError("opening component observations must cover exactly the declared portfolios")
-        entries = []
-        for row in observations:
-            self.validate_observation(scenario, row)
-            accounting.ledger.ensure_account(basis_account(row))
-            accounting.ledger.ensure_account(gain_account(row.owner_agent_id))
-            equity = AccountRef(agent_id=row.owner_agent_id, account_id="equity:opening")
-            accounting.ledger.ensure_account(equity)
-            entries.append(
-                JournalEntry(
-                    month=0,
-                    cause_id=f"opening-component:{row.portfolio_id}",
-                    postings=[
-                        Posting(account=basis_account(row), amount=row.reported_tax_basis),
-                        Posting(account=equity, amount=checked_count(-row.reported_tax_basis, "money negation")),
-                    ],
-                )
+
+    def open(self, accounting: Accounting, spec: PreparedTlhPortfolio, observation: TlhPortfolioObservation) -> None:
+        """Register a declared portfolio and post its opening basis against the owner's opening equity."""
+        if spec.portfolio_id in self.specs:
+            raise ValueError(f"portfolio {spec.portfolio_id!r} is already open")
+        _validate_against(spec, observation)
+        self.specs[spec.portfolio_id] = spec
+        accounting.ledger.ensure_account(basis_account(observation))
+        accounting.ledger.ensure_account(gain_account(observation.owner_agent_id))
+        equity = AccountRef(agent_id=observation.owner_agent_id, account_id="equity:opening")
+        accounting.ledger.ensure_account(equity)
+        accounting.apply(
+            JournalEntry(
+                month=0,
+                cause_id=f"opening-component:{observation.portfolio_id}",
+                postings=[
+                    Posting(account=basis_account(observation), amount=observation.reported_tax_basis),
+                    Posting(account=equity, amount=checked_count(-observation.reported_tax_basis, "money negation")),
+                ],
             )
-        accounting.apply_entries(entries)
-        self.marks = {row.portfolio_id: row for row in observations}
+        )
+        self.marks[observation.portfolio_id] = observation
 
     def statement(self, actor: str, month: int) -> TlhStatement:
         return TlhStatement(
@@ -104,26 +118,17 @@ class ManagedPortfolios:
         self.effects.clear()
         self.distributions.clear()
 
-    @staticmethod
-    def validate_observation(scenario: PreparedScenario, row: TlhPortfolioObservation) -> None:
-        if (
-            row.value < 0
-            or row.reported_tax_basis < 0
-            or not any(
-                (spec.portfolio_id, spec.owner_agent_id, spec.account_id, spec.asset_id)
-                == (row.portfolio_id, row.owner_agent_id, row.account_id, row.asset_id)
-                for spec in scenario.tlh_portfolios
-            )
-        ):
+    def validate_observation(self, row: TlhPortfolioObservation) -> None:
+        spec = self.specs.get(row.portfolio_id)
+        if spec is None:
             raise ValueError("component observation has unknown ownership or negative value/basis")
-        checked_count(row.value, "component value")
-        checked_count(row.reported_tax_basis, "component basis")
+        _validate_against(spec, row)
 
-    def mark(self, scenario: PreparedScenario, observations: Sequence[TlhPortfolioObservation]) -> None:
+    def mark(self, observations: Sequence[TlhPortfolioObservation]) -> None:
         if len({row.portfolio_id for row in observations}) != len(observations) or len(observations) != len(self.marks):
             raise ValueError("component marks must cover exactly the existing portfolios")
         for row in observations:
-            self.validate_observation(scenario, row)
+            self.validate_observation(row)
             if (
                 row.portfolio_id not in self.marks
                 or row.reported_tax_basis != self.marks[row.portfolio_id].reported_tax_basis
@@ -153,7 +158,6 @@ class ManagedPortfolios:
 
     def settle(
         self,
-        scenario: PreparedScenario,
         accounting: Accounting,
         month: int,
         actor: str,
@@ -169,17 +173,17 @@ class ManagedPortfolios:
             self.validate_request(action, effects)
             operation = "contribution" if isinstance(action, Contribute) else "redemption"
         row = effects.observation
-        self.validate_observation(scenario, row)
+        self.validate_observation(row)
         for interest in effects.interest:
             source = InterestIncome(issuer_jurisdiction_id=interest.issuer_jurisdiction_id)
             if (
                 interest.amount < 0
-                or source not in scenario.income_sources
+                or source not in self.income_sources
                 or (
                     interest.issuer_jurisdiction_id is not None
                     and not any(
                         jurisdiction.jurisdiction_id == interest.issuer_jurisdiction_id
-                        for jurisdiction in scenario.jurisdictions
+                        for jurisdiction in self.jurisdictions
                     )
                 )
             ):
@@ -248,12 +252,7 @@ class ManagedPortfolios:
             )
         )
 
-    def distribute(
-        self, scenario: PreparedScenario, accounting: Accounting, month: int, index: int, total: int
-    ) -> None:
-        if total < 0 or not 0 <= index < len(scenario.distributions):
-            raise ValueError("negative or unknown component distribution")
-        spec = scenario.distributions[index]
+    def distribute(self, accounting: Accounting, month: int, spec: PreparedDistribution, total: int) -> None:
         observation = next(
             (
                 row
@@ -263,8 +262,8 @@ class ManagedPortfolios:
             ),
             None,
         )
-        if observation is None:
-            raise ValueError("distribution has no managed holding")
+        if total < 0 or observation is None:
+            raise ValueError("negative or unknown component distribution")
         outcomes, credits = [], []
         cash = 0
         for slice_index, slice_ in enumerate(spec.tax_character):
@@ -285,7 +284,6 @@ class ManagedPortfolios:
                 )
             )
         self.settle(
-            scenario,
             accounting,
             month,
             spec.agent_id,

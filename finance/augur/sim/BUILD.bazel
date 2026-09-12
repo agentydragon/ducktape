@@ -676,7 +676,6 @@ py_test(
     name = "test_tax_year",
     srcs = ["test_tax_year.py"],
     deps = [
-        ":accounting",
         ":ledger",
         ":prepared",
         ":scenario",
@@ -837,6 +836,7 @@ py_library(
         ":money",
         ":mortgage",
         ":prepared",
+        "//finance/augur/sim/compiler:tax",
     ],
 )
 
@@ -866,6 +866,7 @@ py_library(
         ":property",
         ":property_tax",
         ":results",
+        ":scenario",
         ":tax_authority",
         ":tlh",
         ":validation",

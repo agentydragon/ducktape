@@ -1,5 +1,7 @@
 """One rollout: financial books, tracked components, receipts and the monthly clock."""
 
+from __future__ import annotations
+
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from typing import Literal
@@ -41,10 +43,25 @@ from finance.augur.sim.managed import ComponentEffects, ManagedPortfolios
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import checked_count, position_value
 from finance.augur.sim.mortgage import InstallmentPaid, Mortgage, MortgagePayment, ServicingStatement
-from finance.augur.sim.prepared import CompiledRun, PreparedTlhPortfolio
+from finance.augur.sim.prepared import (
+    CompiledRun,
+    PreparedAccount,
+    PreparedBond,
+    PreparedHoldingPool,
+    PreparedJurisdiction,
+    PreparedLocation,
+    PreparedLot,
+    PreparedPropertyCashflow,
+    PreparedRecurringPropertyCashflow,
+    PreparedRecurringTransfer,
+    PreparedTlhPortfolio,
+    PreparedTransfer,
+    _PropertyTax,
+)
 from finance.augur.sim.private_equity import PrivateEquity
-from finance.augur.sim.property import Properties, mortgage_terms
+from finance.augur.sim.property import Housing, Properties, mortgage_terms
 from finance.augur.sim.property_tax import PropertyTaxAuthority, PropertyTaxBill
+from finance.augur.sim.scenario import TransferIncomeCategory
 from finance.augur.sim.tax_authority import Assessment, TaxAuthority
 from finance.augur.sim.tlh import (
     ModeledRealizations,
@@ -111,51 +128,46 @@ class World:
     series reads state between steps.
     """
 
-    def __init__(self, run: CompiledRun, rollout_id: int) -> None:
-        if not isinstance(run, CompiledRun):
-            raise TypeError("execution requires a CompiledRun, not serialized input")
-        self.run = run
-        self.scenario = run.scenario
-        self.market = MarketPath(run, rollout_id)
-        self.rollout_id = rollout_id
+    def __init__(
+        self,
+        market: MarketPath,
+        *,
+        horizon_months: int,
+        income_sources: Sequence[TransferIncomeCategory] = (),
+        jurisdictions: Sequence[PreparedJurisdiction] = (),
+    ) -> None:
+        """An empty world on one market path; declare books and track actors before `start`.
+
+        `income_sources` and `jurisdictions` are the tax vocabulary every taxpayer shares;
+        an untaxed composition leaves both empty.
+        """
+        if horizon_months <= 0:
+            raise ValueError("horizon must be positive")
+        self.market = market
+        self.rollout_id = market.rollout_id
+        self.horizon_months = horizon_months
+        # Set by `from_run`; a composed world has no prepared input for `track` to check an agent against.
+        self.run: CompiledRun | None = None
         self.agents: list[EconomicAgent] = []
-        self.specs = {spec.portfolio_id: spec for spec in self.scenario.tlh_portfolios}
-        self.portfolios = {
-            spec.portfolio_id: TlhPortfolio(
-                spec.assumptions,
-                TlhOpening(
-                    month=-1,
-                    price=self.market.value(f"security:{spec.asset_id}", 0),
-                    quantity_scale=spec.quantity_scale,
-                    positions=tuple(
-                        TlhOpeningPosition(lot.units, lot.basis, lot.purchase_month) for lot in spec.initial_cohorts
-                    ),
-                ),
-            )
-            for spec in self.specs.values()
-        }
-        opening = [self.statement(spec, self.portfolios[spec.portfolio_id].observe()) for spec in self.specs.values()]
-        self.accounting = Accounting(run.scenario.accounts, run.scenario.tax_profiles, run.scenario.income_sources)
-        self.holdings = Holdings(run.scenario, self.accounting)
-        self.managed = ManagedPortfolios(run.scenario, self.accounting, opening)
-        self.properties = Properties(run.scenario, self.accounting)
-        self.bonds = HeldBonds(run.scenario.initial_bonds, self.market)
-        self.distributions = Distributions()
-        self.private_equity = PrivateEquity()
+        self.specs: dict[str, PreparedTlhPortfolio] = {}
+        self.portfolios: dict[str, TlhPortfolio] = {}
+        self.accounting = Accounting(income_sources, jurisdictions)
+        self.holdings = Holdings()
+        self.managed = ManagedPortfolios(income_sources, jurisdictions)
+        self.properties = Properties(Housing(), self.accounting)
+        self.bonds = HeldBonds((), market)
+        self.distributions = Distributions((), set())
+        self.private_equity = PrivateEquity(())
+        # Configured cashflow tables the import adapter attaches; a composed world moves cash through actions.
+        self.scheduled_transfers: tuple[PreparedTransfer, ...] = ()
+        self.recurring_transfers: tuple[PreparedRecurringTransfer, ...] = ()
+        self.scheduled_property_cashflows: tuple[PreparedPropertyCashflow, ...] = ()
+        self.recurring_property_cashflows: tuple[PreparedRecurringPropertyCashflow, ...] = ()
         self.claims = claims.Claims(0, [])
-        # The scenario's counterparties, in the order their demands are registered.
-        self.billers = [Biller(spec) for spec in self.scenario.obligations] + [
-            Biller(spec) for spec in self.scenario.recurring_obligations
-        ]
-        purchases = {purchase.property_id: purchase for purchase in self.scenario._scheduled_property_purchases}
-        locations = {location.location_id: location for location in self.scenario.locations}
-        self.property_tax_authorities = [
-            PropertyTaxAuthority(
-                policy, purchases[policy.property_id], locations[purchases[policy.property_id].location_id]
-            )
-            for policy in self.scenario._property_tax_policies
-        ]
-        self.tax_authorities = [TaxAuthority(profile) for profile in self.scenario.tax_profiles]
+        # Counterparties, in the order their demands are registered.
+        self.billers: list[Biller] = []
+        self.property_tax_authorities: list[PropertyTaxAuthority] = []
+        self.tax_authorities: list[TaxAuthority] = []
         self.month = 0
         self.failed_month: int | None = None
         # This month's settlement outcomes, cleared when the next month opens.
@@ -170,6 +182,106 @@ class World:
         self.started = False
         self.opened = False
         self.finished = False
+
+    @classmethod
+    def from_run(cls, run: CompiledRun, rollout_id: int) -> World:
+        """The import adapter: declare and track everything the prepared scenario describes."""
+        if not isinstance(run, CompiledRun):
+            raise TypeError("execution requires a CompiledRun, not serialized input")
+        scenario = run.scenario
+        world = cls(
+            MarketPath.from_run(run, rollout_id),
+            horizon_months=scenario.horizon_months,
+            income_sources=scenario.income_sources,
+            jurisdictions=scenario.jurisdictions,
+        )
+        world.run = run
+        for account in scenario.accounts:
+            world.declare_account(account)
+        for profile in scenario.tax_profiles:
+            world.track(TaxAuthority(profile))
+        world.accounting.tax.salt_policies = scenario._federal_salt_deduction_policies
+        world.accounting.tax.mortgage_interest_policies = scenario._mortgage_interest_deduction_policies
+        for pool in scenario.holding_pools:
+            world.declare_pool(pool)
+        for lot in scenario.initial_lots:
+            world.hold(lot)
+        for spec in scenario.tlh_portfolios:
+            world.declare_portfolio(spec)
+        for bond in scenario.initial_bonds:
+            world.hold(bond)
+        world.attach_housing(Housing.from_scenario(scenario), scenario._property_tax_policies, scenario.locations)
+        world.distributions = Distributions(
+            scenario.distributions,
+            {(spec.owner_agent_id, spec.account_id, spec.asset_id) for spec in scenario.tlh_portfolios},
+        )
+        world.private_equity = PrivateEquity(scenario._private_equity_tender_policies)
+        world.scheduled_transfers = scenario.scheduled_transfers
+        world.recurring_transfers = scenario.recurring_transfers
+        world.scheduled_property_cashflows = scenario.scheduled_property_cashflows
+        world.recurring_property_cashflows = scenario.recurring_property_cashflows
+        for spec in (*scenario.obligations, *scenario.recurring_obligations):
+            world.billers.append(Biller(spec))
+        return world
+
+    def _composing(self) -> None:
+        if self.started:
+            raise ValueError("declare and track components before starting the world")
+
+    def declare_account(self, account: PreparedAccount) -> None:
+        self._composing()
+        self.accounting.declare(account)
+
+    def declare_pool(self, pool: PreparedHoldingPool) -> None:
+        """A place the owner may hold a security; a public one needs its price series on the path."""
+        self._composing()
+        if private_issuer(pool.asset_id) is None and f"security:{pool.asset_id}" not in self.market.series:
+            raise ValueError(f"missing public security series for {pool.asset_id!r}")
+        self.holdings.declare_pool(self.accounting, pool)
+
+    def hold(self, holding: PreparedLot | PreparedBond) -> None:
+        """A lot or dated bond held at month zero."""
+        self._composing()
+        if isinstance(holding, PreparedLot):
+            self.holdings.hold(self.accounting, holding)
+        else:
+            self.bonds.hold(holding)
+
+    def declare_portfolio(self, spec: PreparedTlhPortfolio) -> None:
+        """A managed TLH portfolio held at month zero, marked at the path's opening price."""
+        self._composing()
+        if spec.portfolio_id in self.specs:
+            raise ValueError(f"duplicate TLH portfolio {spec.portfolio_id!r}")
+        portfolio = TlhPortfolio(
+            spec.assumptions,
+            TlhOpening(
+                month=-1,
+                price=self.market.value(f"security:{spec.asset_id}", 0),
+                quantity_scale=spec.quantity_scale,
+                positions=tuple(
+                    TlhOpeningPosition(lot.units, lot.basis, lot.purchase_month) for lot in spec.initial_cohorts
+                ),
+            ),
+        )
+        self.managed.open(self.accounting, spec, self.statement(spec, portfolio.observe()))
+        self.holdings.reserve(spec.owner_agent_id, spec.account_id, spec.asset_id)
+        self.specs[spec.portfolio_id] = spec
+        self.portfolios[spec.portfolio_id] = portfolio
+
+    def attach_housing(
+        self, housing: Housing, tax_policies: Sequence[_PropertyTax], locations: Sequence[PreparedLocation]
+    ) -> None:
+        """The configured property domain and the authorities that tax it; composed worlds have none yet."""
+        self._composing()
+        self.properties = Properties(housing, self.accounting)
+        purchases = {purchase.property_id: purchase for purchase in housing.purchases}
+        located = {location.location_id: location for location in locations}
+        self.property_tax_authorities = [
+            PropertyTaxAuthority(
+                policy, purchases[policy.property_id], located[purchases[policy.property_id].location_id]
+            )
+            for policy in tax_policies
+        ]
 
     @staticmethod
     def statement(spec: PreparedTlhPortfolio, value: TlhObservation) -> observations.TlhPortfolioObservation:
@@ -198,18 +310,26 @@ class World:
             long_term_gain=realizations.long_term_gain,
         )
 
-    def track(self, actor: EconomicAgent | Mortgage | Biller) -> None:
-        """Register a decision-making agent, a month-zero contract or a bill; the prepared input is checked against an agent here."""
+    def track(self, actor: EconomicAgent | Mortgage | Biller | TaxAuthority) -> None:
+        """Register an agent, a month-zero contract, a bill or a tax authority; prepared input is checked against an agent."""
         if isinstance(actor, Mortgage):
             self._track_mortgage(actor)
             return
         if isinstance(actor, Biller):
             self._track_biller(actor)
             return
+        if isinstance(actor, TaxAuthority):
+            self._composing()
+            self.accounting.enroll(actor.profile)
+            self.tax_authorities.append(actor)
+            return
         if not isinstance(actor, EconomicAgent):
-            raise TypeError("only EconomicAgent subclasses, Mortgage contracts and Billers can be tracked")
-        validate_actor(self.run, actor.agent_id)
-        validate(self.run)
+            raise TypeError(
+                "only EconomicAgent subclasses, Mortgage contracts, Billers and TaxAuthorities can be tracked"
+            )
+        if self.run is not None:
+            validate_actor(self.run, actor.agent_id)
+            validate(self.run)
         self._track(actor)
 
     def _track_biller(self, biller: Biller) -> None:
@@ -232,7 +352,7 @@ class World:
             raise ValueError("a tracked mortgage needs the principal outstanding at month zero")
         if terms.liability_id in self.mortgages or any(
             purchase.mortgage is not None and purchase.mortgage.liability_id == terms.liability_id
-            for purchase in self.scenario._scheduled_property_purchases
+            for purchase in self.properties.housing.purchases
         ):
             raise ValueError(f"duplicate mortgage liability {terms.liability_id!r}")
         self.validate_scope(terms.borrower.agent_id)
@@ -327,7 +447,7 @@ class World:
         self.opened = True
         for spec in self.specs.values():
             current = self.portfolios[spec.portfolio_id]
-            for index, distribution in enumerate(self.scenario.distributions):
+            for distribution in self.distributions.specs:
                 if (distribution.agent_id, distribution.holding_account_id, distribution.asset_id) != (
                     spec.owner_agent_id,
                     spec.account_id,
@@ -335,13 +455,12 @@ class World:
                 ):
                     continue
                 rate = self.market.value(f"security_distribution:{spec.asset_id}", self.month)
-                self.managed.distribute(self.scenario, self.accounting, self.month, index, current._distribution(rate))
+                self.managed.distribute(self.accounting, self.month, distribution, current._distribution(rate))
             candidate = deepcopy(current)
             realized = candidate.advance(
                 TlhMarketUpdate(self.month, self.market.value(f"security:{spec.asset_id}", self.month))
             )
             self.managed.settle(
-                self.scenario,
                 self.accounting,
                 self.month,
                 spec.owner_agent_id,
@@ -359,7 +478,7 @@ class World:
     def open_mortgages(self) -> None:
         """Originate/pay off configured contracts, then post each active contract its servicing mail and collect its quote."""
         candidates = {}
-        for purchase in self.scenario._scheduled_property_purchases:
+        for purchase in self.properties.housing.purchases:
             financing = purchase.mortgage
             if purchase.month != self.month or financing is None:
                 continue
@@ -453,7 +572,6 @@ class World:
             )
         self.managed.validate_request(action, effects)
         self.managed.settle(
-            self.scenario,
             self.accounting,
             self.month,
             actor,
@@ -482,7 +600,7 @@ class World:
             )
             for spec in self.specs.values()
         ]
-        self.managed.mark(self.scenario, marks)
+        self.managed.mark(marks)
         for id_ in (
             claim.effect.terms.liability_id
             for claim in self.claims.entries
@@ -497,12 +615,12 @@ class World:
             for loan in self.mortgages.values():
                 loan.reset_year()
         self.opened = False
-        self.finished = self.failed or self.month == self.scenario.horizon_months
+        self.finished = self.failed or self.month == self.horizon_months
 
     def validate_scope(self, actor: str) -> None:
         if not any(account.agent_id == actor for account in self.accounting.declared):
             raise ValueError(f"unknown actor {actor!r}")
-        for pool in self.scenario.holding_pools:
+        for pool in self.holdings.pools:
             if (
                 pool.agent_id == actor
                 and private_issuer(pool.asset_id) is None
@@ -523,7 +641,7 @@ class World:
             purchase = next(
                 (
                     purchase
-                    for purchase in self.scenario._scheduled_property_purchases
+                    for purchase in self.properties.housing.purchases
                     if purchase.mortgage is not None and purchase.mortgage.liability_id == liability_id
                 ),
                 None,
@@ -546,29 +664,27 @@ class World:
     def prepare_month(
         self, month: int, originations: Mapping[str, Mortgage], mortgages: Mapping[str, Mortgage]
     ) -> tuple[list[str], list[str]]:
-        if month != self.month or month >= self.scenario.horizon_months:
+        if month != self.month or month >= self.horizon_months:
             raise ValueError("invalid financial month")
         self.claims = claims.Claims(month, [])
-        self.properties.assign_residences(self.scenario, month)
-        paid_off = self.properties.lifecycle(self.scenario, self.accounting, self.market, month, mortgages)
+        self.properties.assign_residences(month)
+        paid_off = self.properties.lifecycle(self.accounting, self.market, month, mortgages)
         self.bonds.advance(self.accounting, month)
-        self.distributions.advance(self.scenario, self.accounting, self.holdings, self.market, month)
-        originated = self.properties.purchase(self.scenario, self.accounting, month, originations)
+        self.distributions.advance(self.accounting, self.holdings, self.market, month)
+        originated = self.properties.purchase(self.accounting, month, originations)
         active = {row.property_id for row in self.properties.snapshots() if row.active}
-        flows = [flow for flow in self.scenario.scheduled_transfers if flow.month == month]
+        flows = [flow for flow in self.scheduled_transfers if flow.month == month]
         recurring = [
             flow
-            for flow in self.scenario.recurring_transfers
+            for flow in self.recurring_transfers
             if flow.start_month <= month and (flow.end_month is None or month <= flow.end_month)
         ]
         property_flows = [
-            flow
-            for flow in self.scenario.scheduled_property_cashflows
-            if flow.month == month and flow.property_id in active
+            flow for flow in self.scheduled_property_cashflows if flow.month == month and flow.property_id in active
         ]
         property_recurring = [
             flow
-            for flow in self.scenario.recurring_property_cashflows
+            for flow in self.recurring_property_cashflows
             if flow.start_month <= month
             and (flow.end_month is None or month <= flow.end_month)
             and flow.property_id in active
@@ -740,7 +856,7 @@ class World:
                     raise ValueError("wrong actor")
                 price = self.public_price(actor, action.asset_id, self.month)
                 if isinstance(action, Buy):
-                    self.holdings.buy(self.scenario, self.accounting, self.month, action, price=price)
+                    self.holdings.buy(self.accounting, self.month, action, price=price)
                 else:
                     self.holdings.sell(self.accounting, self.month, action, price=price)
             else:
@@ -793,7 +909,7 @@ class World:
         else:
             self.properties.accrue(self.accounting, self.month)
             if (self.month + 1) % 12 == 0:
-                self.accounting.close_tax_year(self.scenario, self.month, mortgages)
+                self.accounting.close_tax_year(self.month, mortgages)
                 self.properties.reset_year()
         self.month += 1
 
