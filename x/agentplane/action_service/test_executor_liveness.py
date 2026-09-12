@@ -55,7 +55,7 @@ class SlowSilentExecutor:
 
 
 async def _allowed_execution(store: ActionStore, *, idempotency_key: str) -> Any:
-    view, _ = await store.submit(
+    view = await store.submit(
         ActionRequestInput(
             idempotency_key=idempotency_key, title=f"test title for {idempotency_key}", action=ACTION_ID, arguments={}
         ),

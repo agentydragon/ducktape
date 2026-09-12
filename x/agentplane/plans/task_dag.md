@@ -148,12 +148,10 @@ path and does not block current credential-placeholder egress.
 ### `ACTION_PROVENANCE_PRUNE` — prune `ActionRequestInput.origin`/`correlation`
 
 **Deferred idea:** `origin` and `correlation` on `ActionRequestInput` are two open-ended
-`dict[str, JsonValue]` bags with exactly one real consumer today — idempotency-retry equality
-matching in `action_service/db.py` (a resubmitted `idempotency_key` with different `origin`/
-`correlation` is treated as a conflicting request, not a matching retry). Beyond that check,
-nothing in the Action Service parses or acts on their contents; they are stored, returned in
-`ActionRequestView` (redacted for non-operators), and otherwise inert. Consider collapsing both
-down to one client-authored identifier field, or confirm no simplification is warranted.
+`dict[str, JsonValue]` bags with no consumer: nothing in the Action Service parses or acts on
+their contents; they are stored, returned in `ActionRequestView` (redacted for non-operators),
+and otherwise inert. Consider collapsing both down to one client-authored identifier field, or
+confirm no simplification is warranted.
 
 This is a breaking schema change to already-shipped, in-production surface — a real Pydantic
 model, real DB columns, real tests, and documented invariants (`action_service/SPEC.md`,

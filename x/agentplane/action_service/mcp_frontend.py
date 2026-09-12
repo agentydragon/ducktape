@@ -16,6 +16,7 @@ from fastmcp.exceptions import ToolError
 from fastmcp.server.auth.auth import AccessToken
 from fastmcp.server.dependencies import CurrentAccessToken, get_access_token, get_http_request
 from fastmcp.tools import ToolResult
+from more_itertools import one
 from pydantic import BaseModel, Field, JsonValue
 from starlette.requests import Request
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -44,6 +45,9 @@ PageSize = Annotated[int, Field(ge=1, le=100, description="Maximum entries in th
 WaitSeconds = Annotated[
     float,
     Field(ge=0, le=30, allow_inf_nan=False, description="Wait at most this many seconds; zero returns immediately."),
+]
+IdempotencyKey = Annotated[
+    str, Field(min_length=1, max_length=200, description="The idempotency_key this caller submitted the request under.")
 ]
 
 
@@ -134,7 +138,7 @@ def _tool_errors[**P, R](tool: Callable[P, Awaitable[R]]) -> Callable[P, Awaitab
             return await tool(*args, **kwargs)
         except ActionNotFoundError:
             raise ToolError(
-                "Action request not found for this caller; use a request ID returned to this connection."
+                "Action request not found for this caller; use a request ID or idempotency key this caller submitted."
             ) from None
         except (
             ActionUnavailableError,
@@ -173,8 +177,9 @@ def create_server(
     waiter = ActionWaiter(service, updates)
     server = FastMCP(
         "Agentplane Actions",
-        instructions="Discover Action identifiers, fetch details only when needed, then submit with a stable idempotency key. "
-        "A pending receipt is not execution success. Recover with get_action_request; do not create a replacement key.",
+        instructions="Discover Action identifiers, fetch details only when needed, then submit each request once under "
+        "a fresh idempotency key. A pending receipt is not execution success. A repeated key is refused; recover a "
+        "lost response with get_action_request(idempotency_key=...), never with a replacement key.",
         auth=verifier,
         mask_error_details=True,
         strict_input_validation=True,
@@ -261,7 +266,7 @@ def create_server(
         """Submit one Action for policy evaluation, human decision if needed, and single-shot execution.
         Supply a stable idempotency_key with structured action group/name, validated arguments, and a title the deciding operator reads.
         Returns the durable receipt immediately by default; optionally wait up to 30 seconds for decision or terminal state.
-        Pending is not success. After response loss reuse the identical request/key or read its ID, never submit a new key.
+        Pending is not success. A key this caller already used is refused; after response loss read the request with get_action_request(idempotency_key=...), never submit a new key.
         """
         principal = caller.principal
         view = await service.submit(request, principal, external_grant=caller.external_grant)
@@ -275,17 +280,25 @@ def create_server(
     @server.tool(annotations={"readOnlyHint": True})
     @_tool_errors
     async def get_action_request(
-        request_id: UUID,
+        request_id: UUID | None = None,
+        idempotency_key: IdempotencyKey | None = None,
         wait_seconds: WaitSeconds = 0,
         wait_until: WaitUntil = WaitUntil.TERMINAL,
         caller: Caller = CALLER,
     ) -> ToolResult:
         """Read your submitted Action's current receipt, Decision, and safe execution result/error.
-        Use the durable request ID returned by request_action, not a catalog group/name.
+        Name the request by exactly one of the request ID returned by request_action or the idempotency_key you submitted it under; the key recovers a submission whose response was lost.
         Optionally wait up to 30 seconds for decision or terminal state; a deadline returns the current pending receipt.
-        This never submits, retries, or cancels execution, and other callers' request IDs are not readable.
+        This never submits, retries, or cancels execution, and other callers' requests are not readable.
         """
         principal = caller.principal
+        if (request_id is None) == (idempotency_key is None):
+            raise ToolError("Name the request by exactly one of request_id or idempotency_key.")
+        if request_id is None:
+            request_id = one(
+                await service.list_requests(principal, idempotency_key=idempotency_key),
+                too_short=ActionNotFoundError(idempotency_key),
+            ).id
         view = await wait_for_receipt(
             request_id, principal, WaitOptions(wait_seconds=wait_seconds, wait_until=wait_until)
         )
@@ -299,7 +312,7 @@ def create_server(
         """Withdraw your Action request only before its execution has been claimed for dispatch.
         Provide the durable request ID; no version is required, and another caller's requests are inaccessible.
         Returns cancelled, already_cancelled, already_finished, or too_late together with the current receipt.
-        Dispatching/running or unknown executions cannot be stopped; retrying the original submission key retains its receipt.
+        Dispatching/running or unknown executions cannot be stopped; the cancelled receipt stays readable by request ID or idempotency key.
         """
         return _result(await service.cancel(request_id, caller.principal))
 

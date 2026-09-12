@@ -11,6 +11,7 @@ from uuid import UUID
 
 import pytest
 import pytest_bazel
+from more_itertools import one
 from pydantic import JsonValue, ValidationError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -440,9 +441,11 @@ async def test_bound_sandbox_is_auto_approved_with_evidence_and_an_execution(
         view = await _succeeded(service, allowed.id)
         assert view.execution is not None
         assert view.execution.result == {"n": 3}
-        # The same evidence is the operator's, and a retry recovers the same Decision.
+        # The same evidence is the operator's; a repeat of the key is refused and the lookup keeps the Decision.
         assert (await service.get(allowed.id, OPERATOR)).decision == allowed.decision
-        assert (await service.submit(body("bound", n=3), CALLER)).decision == allowed.decision
+        with pytest.raises(ActionConflictError):
+            await service.submit(body("bound", n=3), CALLER)
+        assert one(await service.list_requests(CALLER, idempotency_key="bound")).decision == allowed.decision
         # An argument miss takes the human path with no evidence recorded.
         pending = await service.submit(body("argument-miss", n=9), CALLER)
         assert pending.state is ActionState.DECISION_PENDING

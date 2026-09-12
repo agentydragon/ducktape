@@ -20,6 +20,7 @@ import uvicorn
 from fastapi import FastAPI
 from fastmcp import FastMCP
 from kubernetes_asyncio import client as k8s_client
+from more_itertools import one
 from pydantic import JsonValue, ValidationError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -27,7 +28,7 @@ from util.bazel.runfiles import get_required_path
 from x.agentplane.action_service.api import create_app
 from x.agentplane.action_service.auth import DisabledOperatorAuthenticator
 from x.agentplane.action_service.catalog import ActionCatalog, ActionGroup, ActionIdentity, McpExecutorBinding
-from x.agentplane.action_service.db import ActionStore, make_sessionmaker
+from x.agentplane.action_service.db import ActionConflictError, ActionStore, make_sessionmaker
 from x.agentplane.action_service.main import ActionServer, Settings, async_main
 from x.agentplane.action_service.mcp_executor import McpActionGroupExecutor
 from x.agentplane.action_service.models import (
@@ -418,7 +419,10 @@ async def test_main_auto_approves_the_bound_sandbox_from_watched_policy_objects(
                 view = await service.get(view.id, bound.principal())
         assert view.execution is not None
         assert view.execution.result == {"content": ["Echo: MCP0-ok"]}
-        assert (await service.submit(body, bound.principal())).execution == view.execution
+        with pytest.raises(ActionConflictError):
+            await service.submit(body, bound.principal())
+        recovered = one(await service.list_requests(bound.principal(), idempotency_key=body.idempotency_key))
+        assert recovered.execution == view.execution
         # An argument outside the schema, and a Sandbox nothing names, take the human path whatever
         # the envelope claims.
         for key, caller, message in [("too-long", bound, "x" * 201), ("unbound", unbound, "MCP0-ok")]:

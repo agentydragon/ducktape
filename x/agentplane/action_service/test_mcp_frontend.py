@@ -17,6 +17,7 @@ import pytest_bazel
 from fastapi import FastAPI
 from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
+from fastmcp.exceptions import ToolError
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import AuthenticationV1Api, CoreV1Api
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -255,8 +256,9 @@ async def test_compact_catalog_opt_in_pagination_and_small_generic_schema(fronte
 
 async def test_submission_wait_receipts_events_and_owner_scope(frontend: Frontend) -> None:
     async with frontend.client() as caller, frontend.client("test-token-b") as other:
+        key = "test-submit"
         envelope = {
-            "idempotency_key": "test-submit",
+            "idempotency_key": key,
             "title": "test title for test-submit",
             "action": {"group": "test-group", "name": "alpha"},
             "arguments": {"message": "test-message"},
@@ -264,14 +266,21 @@ async def test_submission_wait_receipts_events_and_owner_scope(frontend: Fronten
         result = await caller.call_tool("request_action", {"request": envelope})
         receipt = ActionRequestView.model_validate(result.structured_content)
         assert receipt.state is ActionState.DECISION_PENDING
-        repeated = await caller.call_tool("request_action", {"request": envelope})
-        assert repeated.structured_content == result.structured_content
-        for name in ("get_action_request", "list_action_request_events"):
-            denied = await other.call_tool(name, {"request_id": str(receipt.id)}, raise_on_error=False)
+        with pytest.raises(ToolError, match="idempotency key already used"):
+            await caller.call_tool("request_action", {"request": envelope})
+        by_key = {"idempotency_key": key}
+        assert (await caller.call_tool("get_action_request", by_key)).structured_content == result.structured_content
+        for args in ({}, {"request_id": str(receipt.id), **by_key}):
+            with pytest.raises(ToolError, match="exactly one of request_id or idempotency_key"):
+                await caller.call_tool("get_action_request", args)
+        for name, args in (
+            ("get_action_request", {"request_id": str(receipt.id)}),
+            ("get_action_request", by_key),
+            ("list_action_request_events", {"request_id": str(receipt.id)}),
+        ):
+            denied = await other.call_tool(name, args, raise_on_error=False)
             assert denied.is_error
-        task = asyncio.create_task(
-            caller.call_tool("get_action_request", {"request_id": str(receipt.id), "wait_seconds": 10})
-        )
+        task = asyncio.create_task(caller.call_tool("get_action_request", {**by_key, "wait_seconds": 10}))
         # A commit before or after subscription must both be observed, without polling.
         await frontend.store.decide(
             receipt.id,
@@ -550,8 +559,9 @@ async def test_cancellation_preserves_canonical_cutoff_ownership_and_retry(
     frontend: Frontend, state: ActionState
 ) -> None:
     async with frontend.client() as caller, frontend.client("test-token-b") as other:
+        key = "test-cancel"
         request = {
-            "idempotency_key": "test-cancel",
+            "idempotency_key": key,
             "title": "test title for test-cancel",
             "action": {"group": "test-group", "name": "alpha"},
             "arguments": {"message": "test-cancel"},
@@ -596,12 +606,11 @@ async def test_cancellation_preserves_canonical_cutoff_ownership_and_retry(
             assert repeated.outcome is CancellationOutcome.ALREADY_CANCELLED
             assert cancelled.request.state is ActionState.CANCELLED
         assert repeated.request == cancelled.request
-        assert (
-            ActionRequestView.model_validate(
-                (await caller.call_tool("request_action", {"request": request})).structured_content
-            )
-            == cancelled.request
-        )
+        with pytest.raises(ToolError, match="idempotency key already used"):
+            await caller.call_tool("request_action", {"request": request})
+        by_key = {"idempotency_key": key}
+        recovered = (await caller.call_tool("get_action_request", by_key)).structured_content
+        assert ActionRequestView.model_validate(recovered) == cancelled.request
 
 
 async def test_cancellation_wakes_mcp_receipt_wait(frontend: Frontend, subscription_signals: WaitSignals) -> None:

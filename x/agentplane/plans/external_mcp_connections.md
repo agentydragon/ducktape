@@ -56,13 +56,15 @@ exercise the provider's refresh path. Do not print or persist token values.
    In the deployed app, inspect exact arguments and Identity/client/Connection provenance; exercise
    both Allow and Deny browser controls. Allow yields one Execution and the expected safe result;
    deny yields none. Claude.ai must recover those receipts/results.
-3. Exercise bounded waits and interrupted/retried tool responses against the real client. Reuse the
-   request ID, event cursor, and original submission key rather than creating another execution.
+3. Exercise bounded waits and interrupted/retried tool responses against the real client. Recover
+   by request ID, event cursor, or a lookup by the original submission key rather than creating
+   another execution; a repeated key is refused.
    Refresh must retain the grant; service/client restart must not lose pending requests or attribution.
    Do not assume Claude will autonomously poll or wake once its conversation stops.
 4. Verify wrong-resource/invalid tokens, disabled Identities, unbound Connections, and another
    Identity cannot acquire caller or operator authority. Same-Identity clients share receipt and
-   idempotency scope but retain distinct exact submission provenance; a retry cannot rewrite it.
+   idempotency scope but retain distinct exact submission provenance; a repeated key is refused
+   and cannot rewrite it.
    After unbind/revocation, old tokens fail and unclaimed work cannot borrow replacement authority.
    Already-claimed execution is not killed.
 

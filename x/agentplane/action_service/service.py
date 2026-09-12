@@ -239,9 +239,7 @@ class ActionService:
             jsonschema.validate(body.arguments, action.input_schema)
         except jsonschema.ValidationError:
             raise InvalidActionArgumentsError("arguments do not match the advertised Action schema") from None
-        view, created = await self._store.submit(body, principal, external_grant=external_grant)
-        if not created:
-            return view
+        view = await self._store.submit(body, principal, external_grant=external_grant)
         return await self._auto_decide(view, body, principal, external_grant)
 
     def _resolve_executor(self, identity: ActionIdentity) -> Executor:
@@ -323,9 +321,9 @@ class ActionService:
         return _ProviderVote(provider=provider.name, outcome=outcome)
 
     async def list_requests(
-        self, principal: Principal, *, states: tuple[ActionState, ...] = ()
+        self, principal: Principal, *, states: tuple[ActionState, ...] = (), idempotency_key: str | None = None
     ) -> list[ActionRequestView]:
-        return await self._store.list_requests(principal, states=states)
+        return await self._store.list_requests(principal, states=states, idempotency_key=idempotency_key)
 
     async def get(self, request_id: UUID, principal: Principal) -> ActionRequestView:
         return await self._store.get(request_id, principal)

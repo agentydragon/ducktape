@@ -2,8 +2,9 @@
 
 The service owns durable ActionRequests, Decisions, and single-shot Executions. Authenticated
 callers see only their own requests; the separate operator interface can review and decide them.
-Caller-provided provenance never assigns authority. Retry with the same caller-scoped idempotency
-key recovers the same request, not another execution.
+Caller-provided provenance never assigns authority. A caller-scoped idempotency key is accepted
+once: a repeated key is refused, and the request it named is recovered by looking it up by key,
+never by another submission.
 
 ## External Connection authority
 
@@ -32,8 +33,9 @@ independently of the OAuth adapter; no external bearer admission is enabled by t
 endpoints.
 
 Each externally admitted Action retains an immutable snapshot of its submitting grant independently
-of caller-supplied metadata. Shared-ServiceAccount duplicate submissions return the first Action and
-its original provenance; rename, reconnect, refresh and revocation cannot rewrite that evidence.
+of caller-supplied metadata. A shared-ServiceAccount repeat of a key is refused, and the lookup by
+key returns the first Action with its original provenance; rename, reconnect, refresh and
+revocation cannot rewrite that evidence.
 Admission and dispatch authorization are atomic with revocation. Dispatch requires the original
 grant and its ServiceAccount still to authorize the Action, not a later replacement binding.
 Loss of authority before the dispatch claim fails the unstarted Execution without changing its
@@ -98,8 +100,8 @@ execution-unknown requests refuse cancellation. No interruption is propagated to
 
 Already-cancelled requests return idempotent success; denied, succeeded and failed requests return
 unchanged finished receipts. Cancellation preserves prior Decisions and records the authenticated
-actor and time in the canonical event history. Reusing the original submission idempotency key
-recovers the cancelled request; an intentional new attempt requires a new key.
+actor and time in the canonical event history. The cancelled request stays readable by its
+submission idempotency key; an intentional new attempt requires a new key.
 
 ## Bounded receipt waits
 
