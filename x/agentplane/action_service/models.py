@@ -229,8 +229,7 @@ class ActionRequestInput(BaseModel):
         description=(
             "One plain-language line saying what this request does, for the operator deciding it; "
             'commit-subject length, e.g. "delete crashlooping backend pod". '
-            "Not the Action's group/name, which is shown already, and not a decision note, which the "
-            "operator writes back when deciding."
+            "Not the Action's group/name, which is shown already."
         ),
     )
     description: str | None = Field(
@@ -238,9 +237,7 @@ class ActionRequestInput(BaseModel):
         max_length=250,
         description=(
             "Optional detail or justification the title leaves out, for the operator deciding; build "
-            "on the title instead of restating it. "
-            "Not the Action's group/name, and not a decision note, which the operator writes back "
-            "when deciding."
+            "on the title instead of restating it. Not the Action's group/name."
         ),
     )
     origin: dict[str, JsonValue] = Field(default_factory=dict)
