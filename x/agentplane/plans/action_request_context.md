@@ -43,8 +43,7 @@ Thread both through `ActionRequestView` to the approver and render them in `Acti
 live pending-approval surface and the decided-Actions history — alongside group/name and
 arguments, the way the App Shell mock's approval cards already reserve a line for it.
 
-## Open questions
-
-- Same untrusted-metadata handling as `origin`/`correlation`, or does a field meant for display
-  need its own treatment (sanitization before rendering as plain text, beyond the length limits
-  above)?
+Render both as plain text, verbatim — no sanitization pass, no markdown interpretation, nothing
+clever beyond the length limits already enforced at submission. Leave an inline `// TODO:` at the
+`ActionCard` render call noting that markdown rendering is a possible later addition, not a
+decision made now.
