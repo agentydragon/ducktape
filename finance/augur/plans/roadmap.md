@@ -17,11 +17,12 @@ and responsibility docstrings beside the implementing modules.
 
 ## Committed library cleanups and open designs
 
-The post-port cleanup direction is agreed; the public composition and metrics
-mechanisms are not. [Library design gates](library_design_gates.md) owns the
-alternatives, questions and bounded evidence for GWORLD and GMETRICS. This roadmap
+The post-port cleanup direction is agreed and the public composition is decided:
+a coordinating `World` over tracked components, recorded in
+[the design gates](library_design_gates.md), which also owns the alternatives,
+questions and bounded evidence for the still-open GMETRICS. This roadmap
 alone owns dispatch and dependencies. Do not interpret current implementation
-classes or older interface sketches as decisions those gates have already made.
+classes or older interface sketches as decisions that gate has already made.
 
 Committed: remove the mandatory whole-Scenario authoring path, retire configured
 implicit strategies and legacy acceptance projections, make stateful components
@@ -30,11 +31,10 @@ Keep useful preparation, canonical accounting, explicit tax treatment and
 independent financial assertions. These cleanups do not authorize new financial
 features or silent timing changes.
 
-**World remains an open design choice.** A coordinating World that registers or
-owns economic objects, steps them and checks consistency across all participating
-actors is compatible with an experiment-owned outer loop. So are lighter guarded
-composition alternatives. Do not prematurely remove World or make it the final
-public API. **Metrics collection also remains open:** caller-authored per-step
+**World is the selected composition.** The experiment tracks agents, contracts
+and components on an empty `World` and loops over `World.step()`, which invokes
+each tracked `EconomicAgent`'s `decide` once per month; untracked domains are
+absent, not empty. COMPOSE lands it. **Metrics collection also remains open:** caller-authored per-step
 `metrics.append(...)`, observers/recorders and hybrids are candidates, not selected
 interfaces. Financial duties must not depend on a collector being enabled.
 
@@ -48,24 +48,23 @@ reader migrations remain allowed. It does not block preserving supported behavio
 - Do not add new implicit policies or consumers of the configured runner; existing
   consumers remain supported until their named migration can preserve behavior.
 - Do not extend the central component constructor/dispatch for a new experiment
-  before the scoped GWORLD decision. Keep one owner per financial fact.
+  outside COMPOSE's tracked-component constructor. Keep one owner per financial fact.
 - Do not add new product-specific counters/slabs to `World` or grow legacy
   `ConfiguredSummary`/`ConfiguredResult` into a general experiment result API.
 - Do not expand artifact-to-frame test adapters when canonical typed facts already
   serve the assertion. Delete replaced readers with their last callers.
 
-| Unit      | Scope                                                                                                                               | Immediate prerequisite and completion evidence                                                                                                                                                                                  |
-| --------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GWORLD    | Choose component composition, lifecycle coordination and cross-actor invariant ownership.                                           | No implementation prerequisite; bounded alternatives and operator selection in the gate note. A World is a candidate, not a predetermined answer.                                                                               |
-| GMETRICS  | Choose experiment measurement and optional recording interfaces.                                                                    | No wholesale World redesign prerequisite; compare pull, observer and hybrid consumers. Settle any dependency on new lifecycle hooks jointly with the relevant GWORLD slice.                                                     |
-| COMPOSE   | Implement the selected component/step boundary with one real supplied-path experiment.                                              | GWORLD's scoped contract. Compose actual component instances and explicit tax treatment without mandatory Scenario import; preserve books, receipts, failure and independent paths. No second evaluator.                        |
-| SCHEMA    | Turn Scenario/compiler use into import/initialization adapters over the same domain objects; migrate consumers in bounded PRs.      | COMPOSE's applicable constructors. Remove superseded fields/lowering with their readers; keep useful quantization, validation and external artifact persistence. No replacement giant config schema.                            |
-| RECORD    | Move app metrics and recording choices out of financial state and retire replaced capture shapes/projections.                       | GMETRICS; new lifecycle-coupled hooks additionally need GWORLD. Same financial outcomes with collection on/off; preserve required facts, time/units, stopped validity and current app behavior. Does not imply deleting World.  |
-| ACCEPT    | Migrate supported legacy acceptance readers to existing typed books/receipts/events and delete their adapters with the last reader. | Ready for cases already covered by current interfaces. Existing capability/timing gates apply only to affected cases; neither new design gate blocks all reader cleanup.                                                        |
-| P12 / APP | Retire configured strategy orchestration and app-specific execution dependencies.                                                   | Continue independently landable slices on settled contracts; full P12 still needs the last ACCEPT/APP readers. A newly invented public composition API must wait for GWORLD, but ordinary existing-interface migrations do not. |
+| Unit      | Scope                                                                                                                               | Immediate prerequisite and completion evidence                                                                                                                                                                                                  |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GMETRICS  | Choose experiment measurement and optional recording interfaces.                                                                    | No wholesale World redesign prerequisite; compare pull, observer and hybrid consumers. Settle any dependency on new lifecycle hooks jointly with the relevant COMPOSE slice.                                                                    |
+| COMPOSE   | Implement the selected component/step boundary with one real supplied-path experiment.                                              | None; the contract is recorded in the gate note. Compose actual component instances and explicit tax treatment without mandatory Scenario import; preserve books, receipts, failure and independent paths. No second evaluator.                 |
+| SCHEMA    | Turn Scenario/compiler use into import/initialization adapters over the same domain objects; migrate consumers in bounded PRs.      | COMPOSE's applicable constructors. Remove superseded fields/lowering with their readers; keep useful quantization, validation and external artifact persistence. No replacement giant config schema.                                            |
+| RECORD    | Move app metrics and recording choices out of financial state and retire replaced capture shapes/projections.                       | GMETRICS; new lifecycle-coupled hooks additionally need COMPOSE's step boundary. Same financial outcomes with collection on/off; preserve required facts, time/units, stopped validity and current app behavior. Does not imply deleting World. |
+| ACCEPT    | Migrate supported legacy acceptance readers to existing typed books/receipts/events and delete their adapters with the last reader. | Ready for cases already covered by current interfaces. Existing capability/timing gates apply only to affected cases; neither new design gate blocks all reader cleanup.                                                                        |
+| P12 / APP | Retire configured strategy orchestration and app-specific execution dependencies.                                                   | Continue independently landable slices on settled contracts; full P12 still needs the last ACCEPT/APP readers. A newly invented public composition API belongs to COMPOSE, but ordinary existing-interface migrations do not wait for it.       |
 
-Start supported ACCEPT slices and both bounded design comparisons in parallel.
-Then COMPOSE and RECORD can proceed under their respective chosen contracts;
+Start supported ACCEPT slices, COMPOSE and the GMETRICS comparison in parallel.
+RECORD proceeds under its chosen contract;
 SCHEMA follows only the constructors its consumer needs. Keep older financial
 capability branches scoped as below. MA3 or a spending/allocation example can
 provide COMPOSE evidence, but existing studies need not wait for a new library API.
@@ -99,9 +98,9 @@ outer loops everywhere**, including examples and the app. A Python
 `run(...)` convenience function uses the same session as an experiment-owned loop.
 The current Python session owns phase ordering and rollout lifecycle; its Python
 world retains financial books, settlement and taxes. This describes the current
-implementation, not the finalized public World/step design: GWORLD chooses that
-boundary. In every candidate the experiment owns its outer loop without having
-to reproduce accounting rules or silently skip mandatory financial duties.
+implementation; the selected World/step boundary is recorded in the gate note and
+COMPOSE lands it. The experiment owns its outer loop without having to reproduce
+accounting rules or silently skip mandatory financial duties.
 P12 cuts over the remaining configured Python consumers to ordinary batch actions
 and common results, then deletes their implicit strategy and legacy adapters.
 Native full-run helpers have been removed. Retained configured acceptance readers
@@ -254,12 +253,10 @@ under that ID. The acceptance table identifies the first slices.
 
 ```mermaid
 flowchart TB
-    GWORLD{"GWORLD: composition, lifecycle and invariant ownership"}
     GMETRICS{"GMETRICS: metrics observation and recording design"}
-    GWORLD --> COMPOSE["COMPOSE: direct component composition + real consumer"]
+    COMPOSE["COMPOSE: direct component composition + real consumer"]
     COMPOSE --> SCHEMA["SCHEMA: migrate Scenario/compiler consumers"]
     GMETRICS --> RECORD["RECORD: separate metrics/capture from financial state"]
-    GWORLD -. new lifecycle-coupled recording hooks only .-> RECORD
 
     BIND["BIND: explicit financial-product bindings"]
     GP{"GP: expanded product and actor timing"}
@@ -308,14 +305,14 @@ flowchart TB
     MOVE -. relocation comparisons .-> ROBUST
 ```
 
-**Design-gate non-edges:** GWORLD and GMETRICS do not block supported ACCEPT
+**Design-gate non-edges:** COMPOSE and GMETRICS do not block supported ACCEPT
 migrations, existing policy-loop experiments, CAP's specific factual observations,
-or P12 slices using already-settled interfaces. They gate the new public
-composition/lifecycle and recording choices, respectively. RECORD needs GWORLD
+or P12 slices using already-settled interfaces. They own the new public
+composition/lifecycle and recording choices, respectively. RECORD needs COMPOSE
 only for a slice introducing lifecycle-coupled hooks. SCHEMA migrates individual
 consumers as the relevant COMPOSE constructors exist; it is not a prerequisite
 for every configured-reader deletion. Existing GHOUSE/GPE/GP/GT decisions remain
-scoped to their affected capabilities, not prerequisites for the two design studies.
+scoped to their affected capabilities, not prerequisites for COMPOSE or GMETRICS.
 
 **Deliberate non-edges:** GL and RUNTIME/GE have no edge to near-term domain/API
 work, TLH portfolios, FIRE studies or P12. Large-N cost is not a current
@@ -401,8 +398,8 @@ and ownership are documented in [the simulator design](../sim/DESIGN.md).
 Remaining work is consumer/capability driven: P12/APP retire configured policy
 inputs and preserve unsupported common-action domains, while CAP adds only facts
 needed by an actual consumer. COMPOSE/SCHEMA address the mandatory construction
-path; RECORD addresses app-specific capture after its design gate. The existence
-of today's Python World does not settle GWORLD. No new evaluator or native
+path; RECORD addresses app-specific capture after its design gate. Today's Python
+World is COMPOSE's starting point, not its finished shape. No new evaluator or native
 fallback is implied.
 
 ### Policy-interface PRs and acceptance
