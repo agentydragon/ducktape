@@ -33,8 +33,8 @@
       "sha256": "nZmSwtodI8AoCJKSmoy/KaCkds+23SdSw9Hy/PS4tZY="
     },
     "claude-hook-rs": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hook-rs-ad562815b047/claude_hook",
-      "sha256": "rVYoFbBHY/GZ0rleIL5ZDMo1wDHUXFwJYY7CXt8lc6I="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hook-rs-3e687d47afe0/claude_hook",
+      "sha256": "Pmh9R6/gLEIYf0iKAa0r4JO5QqXpC1eVW0v2bYcJKcY="
     },
     "aiquota-extension": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-3725f35b2fbf/aiquota.zip",
@@ -49,8 +49,8 @@
       "sha256": "O0pp9MFtXy2UA3qwLlyq+PlcHweMrOfwNwp5X+brK9E="
     },
     "debundle": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-081b88e4722b/debundle",
-      "sha256": "CBuI5HIrPu0VsYHA4KwmDkvNKAb6bDwBO16ZqGi7sdg="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-428d1a4be6fd/debundle",
+      "sha256": "Qo0aS+b95wvecajiutkIJ3dpPKyscXEaDri4uawsDMw="
     },
     "skill-cluster_health": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cluster_health-dd6165877050/cluster_health.skill",
