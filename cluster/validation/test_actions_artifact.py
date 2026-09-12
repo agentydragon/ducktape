@@ -77,6 +77,16 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         ("agentplane-staging-db", "agentplane-staging/db"),
         ("agentplane-testing-db", "agentplane-testing/db"),
         ("clickhouse", "clickhouse/cluster"),
+        ("forgejo-namespace", "forgejo/namespace"),
+        ("atuin-namespace", "atuin/namespace"),
+        ("budget-namespace", "budget/namespace"),
+        ("github-secrets-sync-secrets", "github-secrets-sync/secrets"),
+        ("grafana-instance", "monitoring/grafana-instance"),
+        ("ha-mcp-namespace", "agents/ha-mcp/namespace"),
+        ("haku-egress-proxy", "agents/haku-egress-proxy"),
+        ("haku-rbac", "haku/rbac"),
+        ("langfuse-secrets", "langfuse/secrets"),
+        ("litellm-namespace", "litellm/namespace"),
     )
 
     assert set(generators) == {artifact_name for artifact_name, _ in cases}

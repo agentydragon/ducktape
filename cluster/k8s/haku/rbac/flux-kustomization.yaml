@@ -8,8 +8,8 @@ spec:
   path: ./cluster/k8s/haku/rbac
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: haku-rbac
     namespace: ducktape-flux
   timeout: 2m
   dependsOn:
