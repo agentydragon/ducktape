@@ -654,7 +654,6 @@ py_test(
         ":ledger",
         ":prepared",
         ":scenario",
-        ":tax_year",
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/sim/testing:accounting",
