@@ -9,8 +9,8 @@ spec:
   path: ./cluster/k8s/authentik/sso-providers-tf
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: sso-providers-tf
     namespace: ducktape-flux
   healthChecks:
     - apiVersion: infra.contrib.fluxcd.io/v1alpha2
