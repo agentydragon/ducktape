@@ -22,10 +22,11 @@ from finance.augur.sim.scenario import (
     TaxProfile,
     TlhPortfolioSpec,
 )
-from finance.augur.sim.session import ActionSession, Capture
+from finance.augur.sim.session import ActionSession
 from finance.augur.sim.testing.case import Case, levels, scenario
 from finance.augur.sim.testing.fixtures import checking
 from finance.augur.sim.tlh import TlhAssumptions, TlhMarketUpdate, TlhPortfolio
+from finance.augur.sim.world import Capture
 
 ASSET = SecurityKey(symbol=SecuritySymbol("managed-index"))
 

@@ -98,8 +98,13 @@ def liquid_net_worth(
 
 class PrivateEquity:
     def __init__(self) -> None:
+        # This month's protocol outcomes, cleared by `begin_month`.
         self.events: list[ProtocolEvent] = []
         self.opportunities: list[Opportunity] = []
+
+    def begin_month(self) -> None:
+        self.events.clear()
+        self.opportunities.clear()
 
     def advance(
         self,

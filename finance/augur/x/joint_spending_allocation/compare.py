@@ -9,12 +9,17 @@ from pathlib import Path
 import numpy as np
 
 from finance.augur.sim.artifacts import write_prepared_input
-from finance.augur.sim.books import Record
+from finance.augur.sim.books import JournalEntry, Record
+from finance.augur.sim.holdings import Disposition
+from finance.augur.sim.prepared import CompiledRun
 from finance.augur.sim.quantiles import currency_quantiles
-from finance.augur.sim.results import Finished, Stop, UnpaidClaim
-from finance.augur.x.bounded_spending.python_policy import Parameters, consumption, run
-from finance.augur.x.joint_spending_allocation.policy import JointPolicy
+from finance.augur.sim.results import ConsumptionTarget, Payment, Stop, UnpaidClaim
+from finance.augur.sim.world import World
+from finance.augur.x.bounded_spending.python_policy import Parameters
+from finance.augur.x.joint_spending_allocation.policy import JointHousehold
 from finance.augur.x.joint_spending_allocation.scenario import prepare, sample
+
+RETIREE = "retiree"
 
 
 class Month(Record):
@@ -28,13 +33,17 @@ class Month(Record):
 
 
 class PathMeasurements(Record):
+    """What this experiment chose to read from one world between steps."""
+
     rollout_id: int
     stop: Stop | None
+    closed_months: int
     ending_mark_month: int
     ending_assets: int
     terminal_assets: int | None
     tax_assessed: int
     tax_paid: int
+    payments: list[Payment]
     unpaid_claims: list[UnpaidClaim]
     months: list[Month]
 
@@ -45,49 +54,97 @@ class Measurements(Record):
     terminal_assets_percentiles: tuple[int, ...] | None
 
 
-class Output(Finished):
-    measurements: Measurements
+class Replay(Record):
+    """A selected path's measurements plus the journal and dispositions it copied each month."""
+
+    measurements: PathMeasurements
+    journal: list[JournalEntry]
+    dispositions: list[Disposition]
 
 
-def measurements(output: Finished, policy: JointPolicy) -> Measurements:
-    requests, paid = consumption(output)
-    paths = []
-    for rollout, path_requests, path_paid in zip(output.rollouts, requests, paid, strict=True):
-        id_ = rollout.rollout_id
-        summary = rollout.summary
-        intentions = policy.intentions.get(id_, {})
-        months = []
-        for month, (requested, actual) in enumerate(zip(path_requests, path_paid, strict=True)):
-            intent = intentions.get(month)
-            months.append(
-                Month(
-                    month=month,
-                    intended_consumption=intent.consumption if intent is not None else None,
-                    fixed_real_anchor=intent.fixed_real_anchor if intent is not None else None,
-                    cut_from_fixed_real_anchor=max(0, intent.fixed_real_anchor - intent.consumption)
-                    if intent is not None
-                    else None,
-                    consumption_requested=requested,
-                    consumption_paid=actual,
-                    consumption_shortfall=max(0, intent.consumption - actual)
-                    if intent is not None and actual is not None
-                    else None,
-                )
-            )
-        assets = sum(row.values[-1] for row in [*summary.cash, *summary.public_holdings])
-        paths.append(
-            PathMeasurements(
-                rollout_id=id_,
-                stop=rollout.stop,
-                ending_mark_month=summary.ending_mark_month,
-                ending_assets=assets,
-                terminal_assets=assets if rollout.stop is None else None,
-                tax_assessed=sum(row.total_tax for row in summary.tax_accruals),
-                tax_paid=sum(row.amount_paid for row in summary.tax_payments),
-                unpaid_claims=summary.unpaid_claims,
-                months=months,
+class Traces(Record):
+    replays: list[Replay]
+
+
+def assets(world: World) -> int:
+    """Cash plus marked public holdings, before unsettled taxes and unpaid claims."""
+    cash = sum(
+        world.accounting.ledger.balance(account) for account in world.accounting.declared if account.agent_id == RETIREE
+    )
+    return cash + world.holding_value(RETIREE, world.mark_month)
+
+
+def run_path(
+    prepared: CompiledRun, rollout_id: int, *, parameters: Parameters, annual_step: int, replay: bool
+) -> tuple[PathMeasurements, Replay | None]:
+    """One world with a fresh household; the experiment owns the loop and records between steps."""
+    world = World(prepared, rollout_id)
+    household = JointHousehold(parameters, annual_step=annual_step)
+    world.track(household)
+    world.start()
+    months: list[Month] = []
+    payments: list[Payment] = []
+    journal: list[JournalEntry] = []
+    dispositions: list[Disposition] = []
+    tax_assessed = tax_paid = 0
+    while not world.finished:
+        world.step()
+        month = world.month - 1
+        intent = household.intentions.get(month)
+        consumption = [
+            payment.receipt
+            for payment in world.payments
+            if isinstance(payment.receipt.target, ConsumptionTarget)
+            and payment.receipt.target.component_id == "annual_consumption"
+        ]
+        # An unattempted request is absent; on a stopped month the completed prefix still
+        # proves actual payment is zero, so paid is known while requested is not.
+        requested = consumption[0].amount_requested if consumption else None
+        paid = consumption[0].amount_paid if consumption else 0
+        months.append(
+            Month(
+                month=month,
+                intended_consumption=intent.consumption if intent is not None else None,
+                fixed_real_anchor=intent.fixed_real_anchor if intent is not None else None,
+                cut_from_fixed_real_anchor=max(0, intent.fixed_real_anchor - intent.consumption)
+                if intent is not None
+                else None,
+                consumption_requested=requested,
+                consumption_paid=paid,
+                consumption_shortfall=max(0, intent.consumption - paid) if intent is not None else None,
             )
         )
+        payments.extend(world.payments)
+        tax_assessed += sum(row.total_tax for row in world.accounting.tax_accruals)
+        tax_paid += sum(row.amount_paid for row in world.accounting.tax_payments)
+        if replay:
+            journal.extend(world.accounting.journal)
+            dispositions.extend(world.holdings.dispositions)
+    ending = assets(world)
+    measurements = PathMeasurements(
+        rollout_id=rollout_id,
+        stop=world.stop,
+        closed_months=world.month,
+        ending_mark_month=world.mark_month,
+        ending_assets=ending,
+        terminal_assets=ending if world.stop is None else None,
+        tax_assessed=tax_assessed,
+        tax_paid=tax_paid,
+        payments=payments,
+        unpaid_claims=world.unpaid_claims(RETIREE),
+        months=months,
+    )
+    return measurements, Replay(
+        measurements=measurements, journal=journal, dispositions=dispositions
+    ) if replay else None
+
+
+def run_cell(
+    prepared: CompiledRun, rollout_ids: list[int], *, parameters: Parameters, annual_step: int
+) -> Measurements:
+    paths = [
+        run_path(prepared, id_, parameters=parameters, annual_step=annual_step, replay=False)[0] for id_ in rollout_ids
+    ]
     terminal = [path.terminal_assets for path in paths if path.terminal_assets is not None]
     return Measurements(
         paths=paths,
@@ -96,6 +153,16 @@ def measurements(output: Finished, policy: JointPolicy) -> Measurements:
         if terminal
         else None,
     )
+
+
+def replay_cell(prepared: CompiledRun, rollout_ids: list[int], *, parameters: Parameters, annual_step: int) -> Traces:
+    replays = []
+    for id_ in rollout_ids:
+        _, replay = run_path(prepared, id_, parameters=parameters, annual_step=annual_step, replay=True)
+        if replay is None:
+            raise RuntimeError("replay requested without a trace")
+        replays.append(replay)
+    return Traces(replays=replays)
 
 
 def compare(output_dir: Path) -> None:
@@ -110,16 +177,12 @@ def compare(output_dir: Path) -> None:
     ):
         name = f"r{rate}-{flex_name}-{allocation_name}"
         parameters = Parameters(rate, cut, raise_)
-        policy = JointPolicy(parameters, rollout_count=3, annual_step=step)
-        output = run(prepared, policy, [0, 1, 2])
-        measured = Output(rollouts=output.rollouts, measurements=measurements(output, policy))
+        measured = run_cell(prepared, [0, 1, 2], parameters=parameters, annual_step=step)
         (output_dir / f"{name}.json").write_text(measured.model_dump_json())
-        replay_policy = JointPolicy(parameters, rollout_count=3, annual_step=step)
-        replay = run(prepared, replay_policy, [2, 0], capture="forensic")
-        detailed = Output(rollouts=replay.rollouts, measurements=measurements(replay, replay_policy))
-        (output_dir / f"{name}-traces.json").write_text(detailed.model_dump_json())
+        traces = replay_cell(prepared, [2, 0], parameters=parameters, annual_step=step)
+        (output_dir / f"{name}-traces.json").write_text(traces.model_dump_json())
         cells.append({"name": name, "spending": asdict(parameters), "annual_allocation_step_percent": step})
-        print(f"{name}: completed={measured.measurements.completed_paths}/3; paired stipulated cases, not probability")
+        print(f"{name}: completed={measured.completed_paths}/3; paired stipulated cases, not probability")
     (output_dir / "experiment.json").write_text(
         json.dumps(
             {
@@ -142,6 +205,7 @@ def compare(output_dir: Path) -> None:
                 "terminal_measure": "cash plus marked public holdings, before unsettled taxes and unpaid claims; completed horizon only; stopped assets have their own mark month",
                 "percentiles": [0, 50, 100],
                 "distribution_scope": "empirical summaries of these three cases, conditional on completion; no probabilities, independent-sampling error bars or policy ranking",
+                "measurements": "read from world state between steps by this experiment; the world keeps no history",
                 "cells": cells,
                 "trace_rollouts": [2, 0],
             },

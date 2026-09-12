@@ -6,7 +6,7 @@ from typing import Any
 import polars as pl
 from pydantic import TypeAdapter
 
-from finance.augur.sim import private_equity, results
+from finance.augur.sim import private_equity
 from finance.augur.sim.accounting import MortgagePaymentOutcome, TransferOutcome
 from finance.augur.sim.books import (
     AccountBalance,
@@ -29,6 +29,7 @@ from finance.augur.sim.managed import FinancialEffect
 from finance.augur.sim.observations import TlhPortfolioObservation
 from finance.augur.sim.payments import ObligationOutcome
 from finance.augur.sim.property import CapitalImprovement, Origination, Purchase, RentedFraction, Residence, Sale
+from finance.augur.sim.world import Capture, World
 
 
 @dataclass(frozen=True)
@@ -137,35 +138,161 @@ _CONFIGURED_SUMMARY = TypeAdapter(ConfiguredSummary)
 
 @dataclass(frozen=True)
 class WorldResult:
+    """The configured runner's per-path record: the app's projections read this, never the world."""
+
     rollout_id: int
-    summary: results.Summary | None
     financial: FinancialOutput | None
     events: EventLog | None
     configured_summary: ConfiguredSummary | None
     product_metrics: list[tuple[int, int, int, int, int, int, int]]
 
-    def rollout(
-        self, receipts: list[results.Receipt], last_receipts: list[results.Receipt], stop: results.Stop | None
-    ) -> results.Rollout:
-        if self.summary is None:
-            raise RuntimeError("actor capture requires a financial summary")
-        trace = None
-        if self.financial is not None:
-            if self.events is None:
-                raise RuntimeError("detailed capture requires financial event frames")
-            trace = results.Trace(
-                events=self.events,
-                books=self.financial.months,
-                journal=self.financial.journal,
-                bond_cashflows=self.financial.bond_cashflows,
-                distributions=self.financial.distributions,
-                receipts=receipts,
-            )
-        return results.Rollout(
-            rollout_id=self.rollout_id,
-            summary=self.summary.model_copy(update={"last_receipts": last_receipts}),
-            trace=trace,
-            stop=stop,
+
+class FinancialCapture:
+    """Copy one world's month-scoped outcomes into a `FinancialOutput` as the caller steps it.
+
+    The world keeps nothing past the current month; this is the configured runner's and the
+    batch session's own record. `summary` keeps counts only, `dense` keeps everything but the
+    journal, `forensic` keeps the journal too.
+    """
+
+    def __init__(self, world: World, *, capture: Capture) -> None:
+        self.world = world
+        self.capture = capture
+        self.months: list[Book] = [world.book()] if capture != "summary" else []
+        self.journal: list[JournalEntry] = []
+        self.transfers: list[TransferOutcome] = []
+        self.dispositions: list[Disposition] = []
+        self.tlh_financial_effects: list[FinancialEffect] = []
+        self.private_equity_events: list[private_equity.ProtocolEvent] = []
+        self.private_equity_opportunities: list[private_equity.Opportunity] = []
+        self.obligations: list[ObligationOutcome] = []
+        self.tax_accruals: list[TaxAccrual] = []
+        self.tax_payments: list[TaxPaymentOutcome] = []
+        self.tax_settlements: list[TaxSettlementOutcome] = []
+        self.bond_cashflows: list[BondCashflowOutcome] = []
+        self.distributions: list[DistributionOutcome] = []
+        self.property_purchases: list[Purchase] = []
+        self.primary_residence_events: list[Residence] = []
+        self.property_rented_fraction_events: list[RentedFraction] = []
+        self.capital_improvements: list[CapitalImprovement] = []
+        self.property_sales: list[Sale] = []
+        self.mortgage_originations: list[Origination] = []
+        self.mortgage_payments: list[MortgagePaymentOutcome] = []
+        self.journal_entry_count = 0
+        self.disposition_count = 0
+        self.private_equity_event_count = 0
+        self.private_equity_opportunity_count = 0
+        self.tax_accrual_count = 0
+        self.tax_payment_count = 0
+        self.tax_settlement_count = 0
+        self.bond_cashflow_count = 0
+        self.distribution_count = 0
+        self.property_purchase_count = 0
+        self.primary_residence_event_count = 0
+        self.property_rented_fraction_event_count = 0
+        self.capital_improvement_count = 0
+        self.property_sale_count = 0
+        self.mortgage_payment_count = 0
+
+    def record(self) -> None:
+        """Call after the world closes a month and before the next one opens."""
+        world = self.world
+        accounting = world.accounting
+        properties = world.properties
+        distributions = [*world.distributions.outcomes, *world.managed.distributions]
+        self.journal_entry_count += len(accounting.journal)
+        self.disposition_count += len(world.holdings.dispositions)
+        self.private_equity_event_count += len(world.private_equity.events)
+        self.private_equity_opportunity_count += len(world.private_equity.opportunities)
+        self.tax_accrual_count += len(accounting.tax_accruals)
+        self.tax_payment_count += len(accounting.tax_payments)
+        self.tax_settlement_count += len(accounting.tax_settlements)
+        self.bond_cashflow_count += len(world.bonds.cashflows)
+        self.distribution_count += len(distributions)
+        self.property_purchase_count += len(properties.purchases)
+        self.primary_residence_event_count += len(properties.residences)
+        self.property_rented_fraction_event_count += len(properties.rented_fractions)
+        self.capital_improvement_count += len(properties.improvements)
+        self.property_sale_count += len(properties.sales)
+        self.mortgage_payment_count += len(accounting.mortgage_payments)
+        if self.capture == "summary":
+            return
+        self.months.append(world.book())
+        if self.capture == "forensic":
+            self.journal.extend(accounting.journal)
+        self.transfers.extend(accounting.transfers)
+        self.dispositions.extend(world.holdings.dispositions)
+        self.tlh_financial_effects.extend(world.managed.effects)
+        self.private_equity_events.extend(world.private_equity.events)
+        self.private_equity_opportunities.extend(world.private_equity.opportunities)
+        self.obligations.extend(world.obligations)
+        self.tax_accruals.extend(accounting.tax_accruals)
+        self.tax_payments.extend(accounting.tax_payments)
+        self.tax_settlements.extend(accounting.tax_settlements)
+        self.bond_cashflows.extend(world.bonds.cashflows)
+        self.distributions.extend(distributions)
+        self.property_purchases.extend(properties.purchases)
+        self.primary_residence_events.extend(properties.residences)
+        self.property_rented_fraction_events.extend(properties.rented_fractions)
+        self.capital_improvements.extend(properties.improvements)
+        self.property_sales.extend(properties.sales)
+        self.mortgage_originations.extend(properties.originations)
+        self.mortgage_payments.extend(accounting.mortgage_payments)
+
+    def financial(self) -> FinancialOutput | None:
+        if self.capture == "summary":
+            return None
+        return FinancialOutput(
+            rollout_id=self.world.rollout_id,
+            months=self.months,
+            journal=self.journal,
+            transfers=self.transfers,
+            dispositions=self.dispositions,
+            tlh_financial_effects=self.tlh_financial_effects,
+            private_equity_events=self.private_equity_events,
+            private_equity_opportunities=self.private_equity_opportunities,
+            obligations=self.obligations,
+            tax_accruals=self.tax_accruals,
+            tax_payments=self.tax_payments,
+            tax_settlements=self.tax_settlements,
+            bond_cashflows=self.bond_cashflows,
+            distributions=self.distributions,
+            property_purchases=self.property_purchases,
+            primary_residence_events=self.primary_residence_events,
+            property_rented_fraction_events=self.property_rented_fraction_events,
+            capital_improvements=self.capital_improvements,
+            property_sales=self.property_sales,
+            mortgage_originations=self.mortgage_originations,
+            mortgage_payments=self.mortgage_payments,
+            failed_month=self.world.failed_month,
+        )
+
+    def configured_summary(self) -> ConfiguredSummary:
+        book = self.world.book()
+        return ConfiguredSummary(
+            rollout_id=self.world.rollout_id,
+            ending_balances=book.balances,
+            ending_bonds=book.bonds,
+            ending_properties=book.properties,
+            ending_mortgages=book.mortgages,
+            ending_tax_liabilities=book.tax_liabilities,
+            ending_tlh_portfolios=list(self.world.managed.marks.values()),
+            journal_entry_count=self.journal_entry_count,
+            disposition_count=self.disposition_count,
+            private_equity_event_count=self.private_equity_event_count,
+            private_equity_opportunity_count=self.private_equity_opportunity_count,
+            tax_accrual_count=self.tax_accrual_count,
+            tax_payment_count=self.tax_payment_count,
+            tax_settlement_count=self.tax_settlement_count,
+            bond_cashflow_count=self.bond_cashflow_count,
+            distribution_count=self.distribution_count,
+            property_purchase_count=self.property_purchase_count,
+            primary_residence_event_count=self.primary_residence_event_count,
+            property_rented_fraction_event_count=self.property_rented_fraction_event_count,
+            capital_improvement_count=self.capital_improvement_count,
+            property_sale_count=self.property_sale_count,
+            mortgage_payment_count=self.mortgage_payment_count,
+            failed_month=self.world.failed_month,
         )
 
 
