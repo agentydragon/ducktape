@@ -22,6 +22,40 @@ _CONDA_FREECADCMD_RLOCATION = f"{_CONDA_ENV_REPO}/bin/freecadcmd"
 tracer = trace.get_tracer(__name__)
 
 
+def _write_fontconfig(conda_root: Path, freecad_home: Path) -> Path:
+    """Create a fontconfig file that exposes only FreeCAD's bundled TechDraw font."""
+    font_dir = conda_root / "share" / "Mod" / "TechDraw" / "Resources" / "fonts"
+    if not font_dir.is_dir():
+        raise RuntimeError(f"FreeCAD TechDraw font directory not found: {font_dir}")
+
+    config_path = freecad_home / "fonts.conf"
+    config_path.write_text(
+        f"""<?xml version=\"1.0\"?>
+<!DOCTYPE fontconfig SYSTEM \"fonts.dtd\">
+<fontconfig>
+  <dir>{font_dir}</dir>
+  <alias>
+    <family>sans-serif</family>
+    <prefer><family>osifont</family></prefer>
+  </alias>
+  <alias>
+    <family>Sans Serif</family>
+    <prefer><family>osifont</family></prefer>
+  </alias>
+  <alias>
+    <family>serif</family>
+    <prefer><family>osifont</family></prefer>
+  </alias>
+  <alias>
+    <family>monospace</family>
+    <prefer><family>osifont</family></prefer>
+  </alias>
+</fontconfig>
+"""
+    )
+    return config_path
+
+
 def pytest_configure(config: pytest.Config) -> None:
     configure_tracing(config)
 
@@ -59,6 +93,13 @@ def freecad_env(conda_root: Path, freecad_home: Path, *, display: str | None = N
         # FreeCAD isolation
         "HOME": str(freecad_home),
         "FREECAD_USER_HOME": str(freecad_home),
+        # Do not inherit the RBE worker's system font inventory.  The worker
+        # image may change generic-family resolution (for example when a new
+        # Liberation package is installed), which changes TechDraw text
+        # metrics.  Use only the font bundled with the pinned FreeCAD env.
+        "FONTCONFIG_FILE": str(_write_fontconfig(conda_root, freecad_home)),
+        "FONTCONFIG_PATH": str(freecad_home),
+        "XDG_CACHE_HOME": str(freecad_home / ".cache"),
     }
     if display:
         env["DISPLAY"] = display

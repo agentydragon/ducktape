@@ -117,16 +117,16 @@
    <g fill="#212529" fill-opacity="1" font-family="Sans Serif" font-size="31.75" font-style="normal" font-weight="400" stroke="#212529" stroke-linecap="round" stroke-linejoin="bevel" stroke-opacity="1" stroke-width="3.5" transform="matrix(1,0,0,1,1307,1148.45)">
     <path d="M0,0 L-5.83333,35 L5.83333,35 L0,0" fill-rule="evenodd" vector-effect="none"/>
    </g>
-   <g fill="none" font-family="Sans Serif" font-size="31.75" font-style="normal" font-weight="400" stroke="#212529" stroke-linecap="square" stroke-linejoin="bevel" stroke-opacity="1" stroke-width="1" transform="matrix(1,0,0,1,1196,1778.5)">
+   <g fill="none" font-family="Sans Serif" font-size="31.75" font-style="normal" font-weight="400" stroke="#212529" stroke-linecap="square" stroke-linejoin="bevel" stroke-opacity="1" stroke-width="1" transform="matrix(1,0,0,1,1195.5,1778.5)">
     <text fill="#212529" fill-opacity="1" font-family="osifont" font-size="81" font-style="normal" font-weight="400" stroke="none" x="4" xml:space="preserve" y="111">Mounting Bracket</text>
    </g>
-   <g fill="none" font-family="Sans Serif" font-size="31.75" font-style="normal" font-weight="400" stroke="#000000" stroke-linecap="square" stroke-linejoin="bevel" stroke-opacity="1" stroke-width="1" transform="matrix(1,0,0,1,1196,1778.5)">
+   <g fill="none" font-family="Sans Serif" font-size="31.75" font-style="normal" font-weight="400" stroke="#000000" stroke-linecap="square" stroke-linejoin="bevel" stroke-opacity="1" stroke-width="1" transform="matrix(1,0,0,1,1195.5,1778.5)">
     <text fill="#000000" fill-opacity="1" font-family="Sans Serif" font-size="31.75" font-style="normal" font-weight="400" stroke="none" x="600" xml:space="preserve" y="111"/>
    </g>
-   <g fill="none" font-family="Sans Serif" font-size="31.75" font-style="normal" font-weight="400" stroke="#212529" stroke-linecap="square" stroke-linejoin="bevel" stroke-opacity="1" stroke-width="1" transform="matrix(1,0,0,1,1266,1722)">
+   <g fill="none" font-family="Sans Serif" font-size="31.75" font-style="normal" font-weight="400" stroke="#212529" stroke-linecap="square" stroke-linejoin="bevel" stroke-opacity="1" stroke-width="1" transform="matrix(1,0,0,1,1265.5,1722)">
     <text fill="#212529" fill-opacity="1" font-family="osifont" font-size="53" font-style="normal" font-weight="400" stroke="none" x="4" xml:space="preserve" y="74">Material: Steel, 3mm</text>
    </g>
-   <g fill="none" font-family="Sans Serif" font-size="31.75" font-style="normal" font-weight="400" stroke="#000000" stroke-linecap="square" stroke-linejoin="bevel" stroke-opacity="1" stroke-width="1" transform="matrix(1,0,0,1,1266,1722)">
+   <g fill="none" font-family="Sans Serif" font-size="31.75" font-style="normal" font-weight="400" stroke="#000000" stroke-linecap="square" stroke-linejoin="bevel" stroke-opacity="1" stroke-width="1" transform="matrix(1,0,0,1,1265.5,1722)">
     <text fill="#000000" fill-opacity="1" font-family="Sans Serif" font-size="31.75" font-style="normal" font-weight="400" stroke="none" x="460" xml:space="preserve" y="74"/>
    </g>
   </g>
