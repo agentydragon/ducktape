@@ -3620,6 +3620,206 @@ spec:
 apiVersion: source.extensions.fluxcd.io/v1beta1
 kind: ArtifactGenerator
 metadata:
+  name: gatus
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: gatus
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/gatus/app/**"
+          to: "@artifact/cluster/k8s/gatus/app/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: gatus-db
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: gatus-db
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/gatus/db/**"
+          to: "@artifact/cluster/k8s/gatus/db/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: gatus-servicemonitor
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: gatus-servicemonitor
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/gatus/servicemonitor/**"
+          to: "@artifact/cluster/k8s/gatus/servicemonitor/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: gatus-sso-tf
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: gatus-sso-tf
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/gatus/sso-tf/**"
+          to: "@artifact/cluster/k8s/gatus/sso-tf/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: gecko
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: gecko
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/gecko/app/**"
+          to: "@artifact/cluster/k8s/gecko/app/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: gecko-namespace
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: gecko-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/gecko/namespace/**"
+          to: "@artifact/cluster/k8s/gecko/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: github-api-proxy
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: github-api-proxy
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/github-api-proxy/app/**"
+          to: "@artifact/cluster/k8s/github-api-proxy/app/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: github-api-proxy-identity
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: github-api-proxy-identity
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/github-api-proxy/identity/**"
+          to: "@artifact/cluster/k8s/github-api-proxy/identity/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: github-api-proxy-secrets
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: github-api-proxy-secrets
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/github-api-proxy/secrets/**"
+          to: "@artifact/cluster/k8s/github-api-proxy/secrets/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: github-branch-protection
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: github-branch-protection
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/github-branch-protection/**"
+          to: "@artifact/cluster/k8s/github-branch-protection/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
   name: activitywatch
   namespace: ducktape-flux
 spec:
