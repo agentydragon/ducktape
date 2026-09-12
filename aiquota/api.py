@@ -242,13 +242,13 @@ class _CapturingClientFactory:
                                 raw_content_type = raw_content_type[0]
                             if isinstance(raw_content_type, str):
                                 content_type = raw_content_type
-                except (TypeError, ValueError, json.JSONDecodeError):
+                except TypeError, ValueError, json.JSONDecodeError:
                     pass
             truncated = len(content) > _MAX_CAPTURE_BYTES
             captured = content[:_MAX_CAPTURE_BYTES]
             try:
                 body: object = json.loads(captured)
-            except (json.JSONDecodeError, UnicodeDecodeError):
+            except json.JSONDecodeError, UnicodeDecodeError:
                 body = captured.decode("utf-8", errors="replace")
             self.responses[capture_key] = RawUpstreamResponse(
                 status_code=status_code,
