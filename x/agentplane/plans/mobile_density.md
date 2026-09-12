@@ -54,6 +54,10 @@ renders.
 
 ### Under-composer area — a natural next landing spot
 
+**Landed** (transcript-restyle PR): everything below is implemented as designed. The header is now
+back button + thread title only; the composer bar holds the combined status dot, model picker,
+kebab menu (raw frames, shutdown), and interrupt.
+
 Once the model picker/stop row exists under the composer, the operator's next observation: that
 row is where several of the still-header-bound items above could consolidate, rather than a
 separate settings surface:
