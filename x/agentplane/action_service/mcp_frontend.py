@@ -109,6 +109,10 @@ def _principal() -> Principal:
     return cast(Principal, get_http_request().state.action_principal)
 
 
+def _external_grant() -> ExternalGrantProvenance | None:
+    return cast(ExternalGrantProvenance | None, get_http_request().state.action_external_grant)
+
+
 def _tool_errors[**P, R](tool: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
     @wraps(tool)
     async def wrapped(*args: P.args, **kwargs: P.kwargs) -> R:
@@ -234,6 +238,18 @@ def create_server(
             _summary(catalog, ActionIdentity(group=group, name=name), include_fields or set()), exclude_none=True
         )
 
+    @server.tool(annotations={"readOnlyHint": True})
+    @_tool_errors
+    async def get_action_policy() -> ToolResult:
+        """Read what your own bindings auto-decide: the policy sets bound to you and the auto_approve_if,
+        auto_deny_if and auto_deny_unless entries in evaluation order, each naming the binding, set and index
+        a Decision's policy_evidence names. Use this before request_action to learn which Actions and
+        arguments are approved without an operator; a request matching nothing waits for one, and until
+        synced is true nothing auto-decides. This never submits an Action and says nothing about past
+        Decisions; read those with get_action_request. Other callers' bindings are never returned.
+        """
+        return _result(service.caller_action_policy(_principal(), _external_grant()))
+
     @server.tool(annotations={"readOnlyHint": False, "idempotentHint": True})
     @_tool_errors
     async def request_action(
@@ -245,8 +261,7 @@ def create_server(
         Pending is not success. After response loss reuse the identical request/key or read its ID, never submit a new key.
         """
         principal = _principal()
-        external_grant = cast(ExternalGrantProvenance | None, get_http_request().state.action_external_grant)
-        view = await service.submit(request, principal, external_grant=external_grant)
+        view = await service.submit(request, principal, external_grant=_external_grant())
         if wait_seconds:
             view = await wait_for_receipt(
                 view.id, principal, WaitOptions(wait_seconds=wait_seconds, wait_until=wait_until)

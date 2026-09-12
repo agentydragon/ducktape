@@ -38,6 +38,9 @@ from x.agentplane.action_service.models import (
     PrincipalRole,
     Verdict,
 )
+from x.agentplane.action_service.policy_informer import PolicyIndex, namespaced_key
+from x.agentplane.action_service.policy_resources import parse_binding, parse_policy_set
+from x.agentplane.action_service.policy_view import CallerActionPolicyView
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
@@ -63,6 +66,44 @@ def sandbox(label: str) -> SandboxPrincipal:
         sandbox_name=f"test-sandbox-{label}",
         sandbox_uid=f"test-sandbox-uid-{label}",
     )
+
+
+def _policy_index() -> PolicyIndex:
+    """Sandbox a bound to `test-reads`, sandbox b to nothing: what each may read of its own policy."""
+    index = PolicyIndex(synced=True)
+    for name, spec in (
+        ("test-reads", {"autoApproveIf": [{"type": "exact_actions", "actions": {"test-group": ["alpha"]}}]}),
+        ("test-other", {"autoApproveIf": [{"type": "exact_actions", "actions": {"test-group": ["beta"]}}]}),
+    ):
+        index.policy_sets[namespaced_key(NAMESPACE, name)] = parse_policy_set(
+            {
+                "metadata": {
+                    "name": name,
+                    "namespace": NAMESPACE,
+                    "uid": f"uid-{name}",
+                    "generation": 1,
+                    "resourceVersion": "1",
+                },
+                "spec": spec,
+            }
+        )
+    for name, uid, sets in (
+        ("test-a-reads", sandbox("a").sandbox_uid, ["test-reads", "test-vanished"]),
+        ("test-elsewhere", "test-sandbox-uid-elsewhere", ["test-other"]),
+    ):
+        index.bindings[namespaced_key(NAMESPACE, name)] = parse_binding(
+            {
+                "metadata": {
+                    "name": name,
+                    "namespace": NAMESPACE,
+                    "uid": f"uid-{name}",
+                    "generation": 1,
+                    "resourceVersion": "1",
+                },
+                "spec": {"subject": {"sandbox": {"name": f"test-sandbox-{name}", "uid": uid}}, "policySets": sets},
+            }
+        )
+    return index
 
 
 class EgressSubstitution(httpx.AsyncBaseTransport):
@@ -184,7 +225,7 @@ async def frontend(engine: AsyncEngine, db_url: str, echo_executor: Executor) ->
         }
     )
     store = ActionStore(make_sessionmaker(engine))
-    service = ActionService(store, catalog, {"test-group": echo_executor})
+    service = ActionService(store, catalog, {"test-group": echo_executor}, policies=_policy_index())
     updates = ActionUpdates(db_url)
     app = create_app(
         service,
@@ -228,7 +269,7 @@ async def frontend(engine: AsyncEngine, db_url: str, echo_executor: Executor) ->
 async def test_compact_catalog_opt_in_pagination_and_small_generic_schema(frontend: Frontend) -> None:
     async with frontend.client(egress=True) as client:
         tools = await client.list_tools()
-        assert len(tools) == 6
+        assert len(tools) == 7
         cancellation = next(tool for tool in tools if tool.name == "cancel_action_request")
         assert set(cancellation.inputSchema["properties"]) == {"request_id"}
         assert cancellation.inputSchema["required"] == ["request_id"]
@@ -294,6 +335,29 @@ async def test_submission_wait_receipts_events_and_owner_scope(frontend: Fronten
         assert (
             await frontend.store.get(receipt.id, workload_principal(frontend.tokens["test-token-a"]))
         ).id == receipt.id
+
+
+async def test_a_caller_reads_only_its_own_effective_policy_on_both_surfaces(frontend: Frontend) -> None:
+    """The tool and the HTTP route answer for the authenticated Sandbox alone: its bindings and the
+    sets that resolved (a name nothing answers to is simply absent), and another Sandbox's binding
+    in the same namespace never appears. Nothing is submitted by reading."""
+    async with frontend.client(egress=True) as caller, frontend.client("test-token-b") as other:
+        own = CallerActionPolicyView.model_validate((await caller.call_tool("get_action_policy")).structured_content)
+        assert own.synced is True
+        assert [(binding.name, binding.policy_sets) for binding in own.bindings] == [("test-a-reads", ["test-reads"])]
+        assert [(p.binding, p.policy_set, p.index, p.policy.actions) for p in own.auto_approve_if] == [
+            ("test-a-reads", "test-reads", 0, {"test-group": ["alpha"]})
+        ]
+        assert "test-vanished" not in str(own)
+        assert "test-elsewhere" not in str(own)
+        nothing = CallerActionPolicyView.model_validate((await other.call_tool("get_action_policy")).structured_content)
+        assert (nothing.synced, nothing.bindings, nothing.auto_approve_if) == (True, [], [])
+    assert await frontend.store.list_requests(OPERATOR) == []
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(frontend.app), base_url="http://actions.test") as http:
+        over_http = await http.get("/v1/action-policy", headers={"Authorization": "Bearer test-token-a"})
+        assert over_http.status_code == 200, over_http.text
+        assert CallerActionPolicyView.model_validate(over_http.json()) == own
+        assert (await http.get("/v1/action-policy")).status_code == 401
 
 
 @pytest.mark.parametrize("authorization", [None, "Bearer test-operator", f"Bearer {WORKLOAD_CREDENTIAL_PLACEHOLDER}"])
