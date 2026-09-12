@@ -38,7 +38,7 @@ from x.agentplane.action_service.policy_evaluation import (
     PolicySetDecisionProvider,
     resolve_bindings,
 )
-from x.agentplane.action_service.policy_informer import PolicyIndex, namespaced_key
+from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.policy_view import (
     ArgumentSchemaView,
     ExactActionsView,
@@ -95,7 +95,7 @@ def binding(
 def index_of(*objects: ActionPolicySet | ActionPolicyBinding | InvalidResource, synced: bool = True) -> PolicyIndex:
     index = PolicyIndex(synced=synced)
     for obj in objects:
-        key = namespaced_key(obj.metadata.namespace, obj.metadata.name)
+        key = obj.namespaced_name
         if isinstance(obj, ActionPolicySet) or (
             isinstance(obj, InvalidResource) and obj.metadata.name.startswith("set")
         ):
