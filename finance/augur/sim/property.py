@@ -8,7 +8,6 @@ from typing import Self
 from finance.augur.sim.accounting import Accounting, TransferOutcome
 from finance.augur.sim.actor import Statement
 from finance.augur.sim.books import AccountRef, JournalEntry, Posting, PropertyState
-from finance.augur.sim.compiler.tax import PreparedTaxProfile
 from finance.augur.sim.fixed_point import MONEY_FACTOR_SCALE
 from finance.augur.sim.holdings import gain_account
 from finance.augur.sim.market_path import MarketPath
@@ -139,7 +138,6 @@ class Housing:
     residence_events: tuple[_PrimaryResidenceEvent, ...] = ()
     rented_fraction_events: tuple[_RentedFraction, ...] = ()
     capital_improvements: tuple[_CapitalImprovement, ...] = ()
-    profiles: tuple[PreparedTaxProfile, ...] = ()
 
     @classmethod
     def from_scenario(cls, scenario: PreparedScenario) -> Self:
@@ -150,7 +148,6 @@ class Housing:
             residence_events=scenario._primary_residence_events,
             rented_fraction_events=scenario._property_rented_fraction_events,
             capital_improvements=scenario._capital_improvement_events,
-            profiles=scenario.tax_profiles,
         )
 
 
@@ -333,7 +330,7 @@ class Properties:
         recapture = min(max(0, gain), state.cumulative_depreciation)
         remainder = max(0, checked_count(gain - recapture, "money subtraction"))
         profile = next(
-            (profile for profile in self.housing.profiles if profile.agent_id == purchase.buyer_agent_id), None
+            (profile for profile in accounting.tax.profiles if profile.agent_id == purchase.buyer_agent_id), None
         )
         cap = 0 if profile is None else profile.section_121_exclusion
         exclusion = min(remainder, cap) if sum(property_.occupied_window) >= 24 else 0

@@ -1,5 +1,6 @@
 """Mortgage settlement binds servicing facts to the ledger and selected payer cash."""
 
+from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import replace
 
@@ -8,7 +9,9 @@ import pytest_bazel
 
 from finance.augur.sim.actions import ClaimId, PayClaim
 from finance.augur.sim.agent import assemble
+from finance.augur.sim.bills import Biller
 from finance.augur.sim.capture import FinancialCapture
+from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.mortgage import Mortgage, MortgagePayment, MortgageTerms
 from finance.augur.sim.prepared import (
     CompiledRun,
@@ -20,6 +23,7 @@ from finance.augur.sim.prepared import (
     _PropertySale,
     _PropertyTax,
 )
+from finance.augur.sim.property import Housing
 from finance.augur.sim.results import Executed
 from finance.augur.sim.testing.accounting import CASH, EXOGENOUS, HOUSEHOLD, RESERVE, WORLD, prepared_scenario
 from finance.augur.sim.world import World
@@ -127,6 +131,26 @@ def mortgage() -> Mortgage:
     )
 
 
+def composed(run: CompiledRun) -> World:
+    """The fixture's world declared piece by piece, as an experiment would write it."""
+    scenario = run.scenario
+    world = World(
+        MarketPath.from_run(run, 0),
+        horizon_months=scenario.horizon_months,
+        income_sources=scenario.income_sources,
+        jurisdictions=scenario.jurisdictions,
+    )
+    for account in scenario.accounts:
+        world.declare_account(account)
+    world.track(Biller(scenario.obligations[0]))
+    world.declare_housing(
+        Housing(purchases=scenario._scheduled_property_purchases, sales=scenario._property_sales),
+        scenario._property_tax_policies,
+        scenario.locations,
+    )
+    return world
+
+
 def installment(mortgage: Mortgage, month: int, principal_before: int, principal_paid: int = 1000) -> MortgagePayment:
     # Explicit settlement facts, not an amortization oracle.
     return MortgagePayment(
@@ -158,10 +182,11 @@ def fingerprint(world: World) -> tuple[object, ...]:
     )
 
 
+@pytest.mark.parametrize("build", [lambda run: World.from_run(run, 0), composed], ids=["from_run", "composed"])
 def test_mortgage_postings_use_selected_cash_and_ledger_principal_through_payoff(
-    run: CompiledRun, mortgage: Mortgage
+    run: CompiledRun, mortgage: Mortgage, build: Callable[[CompiledRun], World]
 ) -> None:
-    world = World.from_run(run, 0)
+    world = build(run)
     assert world.mortgage_principal("test-mortgage") == 0
     for month, ending_principal in enumerate((0, 0, 60_000, 59_000, 58_000, 0)):
         active = {"test-mortgage": mortgage} if month >= 2 else {}

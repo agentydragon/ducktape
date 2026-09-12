@@ -217,7 +217,7 @@ class World:
             world.hold(bond)
         housing = Housing.from_scenario(scenario)
         if housing != Housing() or scenario._property_tax_policies:
-            world.attach_housing(housing, scenario._property_tax_policies, scenario.locations)
+            world.declare_housing(housing, scenario._property_tax_policies, scenario.locations)
         for distribution in scenario.distributions:
             world.declare_distribution(distribution)
         if scenario._private_equity_tender_policies or any(
@@ -304,11 +304,14 @@ class World:
     def _purchases(self) -> tuple[_PropertyPurchase, ...]:
         return () if self.properties is None else self.properties.housing.purchases
 
-    def attach_housing(
-        self, housing: Housing, tax_policies: Sequence[_PropertyTax], locations: Sequence[PreparedLocation]
+    def declare_housing(
+        self, housing: Housing, tax_policies: Sequence[_PropertyTax] = (), locations: Sequence[PreparedLocation] = ()
     ) -> None:
-        """The configured property domain and the authorities that tax it; composed worlds have none yet."""
+        """Properties bought on a scripted schedule (month zero for one held from the start), their scripted
+        lifecycle, and the authorities that tax them. Declared once per world."""
         self._composing()
+        if self.properties is not None:
+            raise ValueError("housing is already declared")
         self.properties = Properties(housing, self.accounting)
         purchases = {purchase.property_id: purchase for purchase in housing.purchases}
         located = {location.location_id: location for location in locations}
@@ -372,8 +375,10 @@ class World:
         if self.started:
             raise ValueError("track components before starting the world")
         spec = biller.spec
-        if spec.property_id is not None:
-            raise ValueError("a bill attached to a property needs the property tracked; that waits for housing")
+        if spec.property_id is not None and spec.property_id not in {
+            purchase.property_id for purchase in self._purchases()
+        }:
+            raise ValueError("a bill attached to a property needs that property declared first")
         self.validate_scope(spec.from_account.agent_id)
         if spec.from_account not in self.accounting.declared:
             raise ValueError("bill payer account is not declared")
