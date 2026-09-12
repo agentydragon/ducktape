@@ -44,6 +44,7 @@ from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.test_fixtures.callers import PERSONAL, eligible_callers
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.app.action_federation import ExchangeFederationSettings, FederatedOperatorActions
+from x.agentplane.app.action_policy import ActionPolicyInventory
 from x.agentplane.app.api import Provider, create_app
 from x.agentplane.app.bridge import RunnerBridge
 from x.agentplane.app.conftest import AGENT_AUTH
@@ -89,6 +90,7 @@ async def review(
     egress: EgressInventory,
     decisions: DecisionsClient,
     live_index: LiveIndex,
+    action_policy: ActionPolicyInventory,
     reviewer: TokenReviewer,
     operator_connection: str,
 ) -> AsyncIterator[Review]:
@@ -233,6 +235,7 @@ async def review(
             egress,
             decisions,
             live_index,
+            action_policy,
             oidc,
             reviewer,
             operator_actions=operator_client,
@@ -254,6 +257,7 @@ async def review(
             egress,
             decisions,
             live_index,
+            action_policy,
             oidc,
             reviewer,
             operator_actions=None

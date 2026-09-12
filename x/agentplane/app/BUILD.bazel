@@ -30,6 +30,7 @@ py_library(
     srcs = ["api.py"],
     deps = [
         ":action_federation",
+        ":action_policy",
         ":auth_routes",
         ":bridge",
         ":consent",
@@ -85,6 +86,7 @@ py_library(
     ],  # keep: the SPA and service worker the server mounts
     deps = [
         ":action_federation",
+        ":action_policy",
         ":api",
         ":bridge",
         ":decisions",
@@ -114,6 +116,7 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
+        ":action_policy",
         ":bridge",
         ":decisions",
         ":egress",
@@ -141,6 +144,7 @@ py_test(
     requires_docker = True,
     deps = [
         ":action_federation",
+        ":action_policy",
         ":api",
         ":bridge",
         ":conftest",
@@ -183,6 +187,7 @@ py_test(
     size = "medium",
     srcs = ["test_api.py"],
     deps = [
+        ":action_policy",
         ":api",
         ":bridge",
         ":conftest",
@@ -265,6 +270,7 @@ py_test(
         "@platforms//os:linux",
     ],
     deps = [
+        ":action_policy",
         ":api",
         ":bridge",
         ":changes",
@@ -293,6 +299,7 @@ py_library(
     name = "export_schema",
     srcs = ["export_schema.py"],
     deps = [
+        ":action_policy",
         ":api",
         ":bridge",
         ":decisions",
@@ -372,6 +379,7 @@ py_test(
     size = "medium",
     srcs = ["test_main.py"],
     deps = [
+        ":action_policy",
         ":api",
         ":bridge",
         ":conftest",
@@ -460,6 +468,7 @@ py_test(
     size = "medium",
     srcs = ["test_auth_routes.py"],
     deps = [
+        ":action_policy",
         ":api",
         ":bridge",
         ":conftest",
@@ -522,6 +531,7 @@ py_test(
     size = "medium",
     srcs = ["test_live.py"],
     deps = [
+        ":action_policy",
         ":api",
         ":bridge",
         ":conftest",
@@ -657,6 +667,34 @@ py_test(
         ":conftest",
         ":shutdown",
         "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "action_policy",
+    srcs = ["action_policy.py"],
+    deps = [
+        ":egress",
+        ":inventory",
+        "//util:kubernetes",
+        "//x/agentplane/action_service:models",
+        "//x/agentplane/action_service:policy_resources",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_action_policy",
+    size = "medium",
+    srcs = ["test_action_policy.py"],
+    deps = [
+        ":action_policy",
+        ":conftest",
+        "//:conftest",
+        "//x/agentplane/action_service:models",
+        "//x/agentplane/app/testing:kubernetes",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

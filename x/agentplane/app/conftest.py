@@ -13,6 +13,7 @@ from testcontainers.postgres import PostgresContainer
 
 from util.testing.postgres import create_database_sync, force_drop_database_sync
 from util.testing.postgres_fixtures import postgres_container
+from x.agentplane.app.action_policy import ActionPolicyInventory
 from x.agentplane.app.bridge import RunnerBridge, SandboxNotReachableError
 from x.agentplane.app.decisions import DecisionsClient
 from x.agentplane.app.egress import EgressInventory
@@ -130,6 +131,11 @@ def egress(custom_objects: FakeCustomObjectsApi, default_policies: list[str]) ->
     return EgressInventory(
         namespace=NAMESPACE, custom_objects=cast(Any, custom_objects), default_policies=default_policies
     )
+
+
+@pytest.fixture
+def action_policy(custom_objects: FakeCustomObjectsApi) -> ActionPolicyInventory:
+    return ActionPolicyInventory(namespace=NAMESPACE, custom_objects=cast(Any, custom_objects))
 
 
 @pytest.fixture

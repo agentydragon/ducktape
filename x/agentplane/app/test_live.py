@@ -12,6 +12,7 @@ import pytest_bazel
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from x.agentplane.app.action_policy import ActionPolicyInventory
 from x.agentplane.app.api import Provider, create_app
 from x.agentplane.app.bridge import RunnerBridge, SandboxNotReachableError
 from x.agentplane.app.decisions import DecisionsClient
@@ -122,6 +123,7 @@ def app(
     egress: EgressInventory,
     decisions: DecisionsClient,
     live_index: LiveIndex,
+    action_policy: ActionPolicyInventory,
     reviewer: TokenReviewer,
 ) -> FastAPI:
     """Neither test below reaches a database or a runner -- the guard answers before a route body
@@ -132,7 +134,7 @@ def app(
 
     store = TrajectoryStore.connect("postgresql+asyncpg://live-test@127.0.0.1:1/live-test")
     bridge = RunnerBridge(address_of=unreachable, store=store)
-    return create_app(inventory, bridge, store, MODELS, egress, decisions, live_index, reviewer=reviewer)
+    return create_app(inventory, bridge, store, MODELS, egress, decisions, live_index, action_policy, reviewer=reviewer)
 
 
 def test_the_streams_need_a_caller(app: FastAPI) -> None:

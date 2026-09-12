@@ -63,7 +63,11 @@ class SandboxPreset(BaseModel):
 
     title: str
     template: str
-    policies: list[str] = Field(default_factory=list)
+    policies: list[str] = Field(default_factory=list, description="EgressPolicy names every launch is granted.")
+    action_policy_sets: list[str] = Field(
+        default_factory=list,
+        description="ActionPolicySet names every launch is bound to: what its harness may do without the operator.",
+    )
     thread_preset: str
     bootstrap: str = Field(default="", max_length=65_536)
 
@@ -85,6 +89,7 @@ class SandboxPresetView(BaseModel):
     title: str
     template: str
     policies: list[str]
+    action_policy_sets: list[str]
     thread_preset: str
     thread_defaults: ThreadDefaults
 
@@ -128,6 +133,7 @@ class PresetCatalog(BaseModel):
                 title=preset.title,
                 template=preset.template,
                 policies=preset.policies,
+                action_policy_sets=preset.action_policy_sets,
                 thread_preset=preset.thread_preset,
                 thread_defaults=self.thread(preset.thread_preset).defaults(),
             )

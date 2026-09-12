@@ -82,7 +82,15 @@ class FakeCustomObjectsApi:
             raise k8s_client.ApiException(status=409)
         stored = {
             **body,
-            "metadata": {**metadata, "name": name, "uid": str(uuid4()), "creationTimestamp": "2026-09-02T10:00:00Z"},
+            "metadata": {
+                **metadata,
+                "name": name,
+                "namespace": namespace,
+                "uid": str(uuid4()),
+                "generation": 1,
+                "resourceVersion": "1",
+                "creationTimestamp": "2026-09-02T10:00:00Z",
+            },
         }
         self.objects[key] = stored
         return stored
@@ -211,6 +219,88 @@ def egress_binding(
             if active is not None
             else {}
         ),
+    }
+
+
+def _ready_status(ready: tuple[str, str, str] | None, observed_generation: int) -> dict[str, Any]:
+    """The Action Service's Ready condition as it stamps it, from (status, reason, message)."""
+    if ready is None:
+        return {}
+    status, reason, message = ready
+    return {
+        "status": {
+            "conditions": [
+                {
+                    "type": "Ready",
+                    "status": status,
+                    "reason": reason,
+                    "message": message,
+                    "observedGeneration": observed_generation,
+                    "lastTransitionTime": "2026-09-01T11:46:00Z",
+                }
+            ]
+        }
+    }
+
+
+def action_policy_set(
+    name: str,
+    *,
+    auto_approve_if: list[dict[str, Any]] | None = None,
+    auto_deny_if: list[dict[str, Any]] | None = None,
+    auto_deny_unless: list[dict[str, Any]] | None = None,
+    generation: int = 1,
+    ready: tuple[str, str, str] | None = None,
+    observed_generation: int | None = None,
+) -> dict[str, Any]:
+    """A set as the API server holds it, with the server-stamped metadata the service's models
+    require; `ready` is what the Action Service last wrote, judged at `observed_generation`."""
+    return {
+        "metadata": {
+            "name": name,
+            "namespace": NAMESPACE,
+            "uid": str(uuid4()),
+            "generation": generation,
+            "resourceVersion": str(generation),
+            "labels": {FLUX_KUSTOMIZATION_LABEL: "agentplane-test-actions"},
+            "creationTimestamp": "2026-09-01T11:30:00Z",
+        },
+        "spec": {
+            **({"autoApproveIf": auto_approve_if} if auto_approve_if is not None else {}),
+            **({"autoDenyIf": auto_deny_if} if auto_deny_if is not None else {}),
+            **({"autoDenyUnless": auto_deny_unless} if auto_deny_unless is not None else {}),
+        },
+        **_ready_status(ready, generation if observed_generation is None else observed_generation),
+    }
+
+
+def action_policy_binding(
+    name: str,
+    *,
+    subject: dict[str, Any],
+    policy_sets: list[str],
+    from_git: bool = True,
+    expires_at: str | None = None,
+    ready: tuple[str, str, str] | None = None,
+) -> dict[str, Any]:
+    """A binding as the API server holds it; `from_git` stamps Flux's inventory label, and one
+    without it is what the operator writes with kubectl (the app's own carry its managed-by label)."""
+    return {
+        "metadata": {
+            "name": name,
+            "namespace": NAMESPACE,
+            "uid": str(uuid4()),
+            "generation": 1,
+            "resourceVersion": "1",
+            "labels": {FLUX_KUSTOMIZATION_LABEL: "agentplane-test-actions"} if from_git else {},
+            "creationTimestamp": "2026-09-01T11:45:00Z",
+        },
+        "spec": {
+            "subject": subject,
+            "policySets": policy_sets,
+            **({"expiresAt": expires_at} if expires_at is not None else {}),
+        },
+        **_ready_status(ready, 1),
     }
 
 

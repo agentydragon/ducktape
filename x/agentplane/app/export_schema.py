@@ -12,6 +12,7 @@ from typing import Any, cast
 
 import httpx
 
+from x.agentplane.app.action_policy import ActionPolicyInventory
 from x.agentplane.app.api import Provider, create_app
 from x.agentplane.app.bridge import RunnerBridge, SandboxNotReachableError
 from x.agentplane.app.decisions import DecisionsClient
@@ -40,6 +41,7 @@ def openapi_document() -> dict[str, Any]:
         EgressInventory(namespace="schema", custom_objects=cast(Any, None)),
         DecisionsClient(httpx.AsyncClient(base_url="http://schema.invalid")),
         LiveIndex(stale_after_seconds=900),
+        ActionPolicyInventory(namespace="schema", custom_objects=cast(Any, None)),
     ).openapi()
     return document
 

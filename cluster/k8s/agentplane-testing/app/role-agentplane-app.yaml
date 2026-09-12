@@ -2,7 +2,9 @@
 # from the template and deleted, patched for suspend, resume, and archive, and
 # the runner Pod's address is read to dial it. Egress policy is shown, and a
 # binding is created to grant and deleted to revoke -- nothing edits one in
-# place. The proxy, not the app, enforces them. No exec, logs, or Secrets.
+# place. The proxy, not the app, enforces them. Action policy is shown, and an
+# ActionPolicyBinding is created per Sandbox the app launches from a preset;
+# the Action Service, not the app, evaluates them. No exec, logs, or Secrets.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -23,4 +25,10 @@ rules:
     verbs: ["get", "list", "watch"]
   - apiGroups: ["agentplane.allegedly.works"]
     resources: ["egressbindings"]
+    verbs: ["create", "delete"]
+  - apiGroups: ["agentplane.allegedly.works"]
+    resources: ["actionpolicysets", "actionpolicybindings"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["agentplane.allegedly.works"]
+    resources: ["actionpolicybindings"]
     verbs: ["create", "delete"]

@@ -10,6 +10,7 @@ import pytest
 import pytest_bazel
 from fastapi.testclient import TestClient
 
+from x.agentplane.app.action_policy import ActionPolicyInventory
 from x.agentplane.app.api import Provider, create_app, upstream_http_error
 from x.agentplane.app.bridge import RunnerBridge
 from x.agentplane.app.conftest import AGENT_AUTH
@@ -23,6 +24,7 @@ from x.agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
 from x.agentplane.app.testing.kubernetes import (
     FakeCoreV1Api,
     FakeCustomObjectsApi,
+    action_policy_set,
     egress_binding,
     egress_policy,
     pod,
@@ -71,6 +73,7 @@ TEST_PRESETS = PresetCatalog(
             title="Public coder",
             template="agentplane-test-runner",
             policies=["github"],
+            action_policy_sets=["github-reads"],
             thread_preset="public-coder-codex",
             bootstrap="mkdir -p /state/workspaces",
         )
@@ -96,6 +99,7 @@ def client(
     egress: EgressInventory,
     decisions: DecisionsClient,
     live_index: LiveIndex,
+    action_policy: ActionPolicyInventory,
     custom_objects: FakeCustomObjectsApi,
     core_v1: FakeCoreV1Api,
     reviewer: TokenReviewer,
@@ -116,8 +120,22 @@ def client(
     custom_objects.objects[("egressbindings", "live-granted")] = egress_binding(
         "live-granted", subjects=[{"sandbox": {"name": "live"}}], policies=["pypi"], from_git=False
     )
+    custom_objects.objects[("actionpolicysets", "github-reads")] = action_policy_set(
+        "github-reads",
+        auto_approve_if=[{"type": "exact_actions", "actions": {"github": ["search_code"]}}],
+        ready=("True", "Valid", "spec accepted"),
+    )
     app = create_app(
-        inventory, bridge, store, TEST_MODELS, egress, decisions, live_index, reviewer=reviewer, presets=TEST_PRESETS
+        inventory,
+        bridge,
+        store,
+        TEST_MODELS,
+        egress,
+        decisions,
+        live_index,
+        action_policy,
+        reviewer=reviewer,
+        presets=TEST_PRESETS,
     )
     with TestClient(app, headers=AGENT_AUTH) as test_client:
         yield test_client
@@ -184,6 +202,45 @@ def test_create_with_preset_records_the_live_binding_and_allows_explicit_edits(
     assert [policy["name"] for policy in binding["policies"]] == ["github"]
     annotation = custom_objects.objects[("sandboxes", row["name"])]["metadata"]["annotations"]
     assert "agentplane.allegedly.works/launch-preset" in annotation
+
+
+def test_create_with_preset_binds_the_sandbox_to_its_action_policy_sets(
+    client: TestClient, custom_objects: FakeCustomObjectsApi
+) -> None:
+    """One ActionPolicyBinding per launched Sandbox, owned by it and naming it by UID: what its
+    harness may do without the operator, as the Action Service reads it. A Sandbox without a
+    preset gets none."""
+    row = client.post("/sandboxes", json={"slug": "coder", "preset": "public-coder"}).json()
+
+    policy = client.get(f"/sandboxes/{row['name']}/action-policy").json()
+    (binding,) = policy["bindings"]
+    assert binding["provenance"] == "app"
+    assert [policy_set["name"] for policy_set in binding["policy_sets"]] == ["github-reads"]
+    assert [(p["binding"], p["policy_set"], p["policy"]["type"]) for p in policy["auto_approve_if"]] == [
+        (binding["name"], "github-reads", "exact_actions")
+    ]
+    written = custom_objects.objects[("actionpolicybindings", binding["name"])]
+    sandbox_uid = custom_objects.objects[("sandboxes", row["name"])]["metadata"]["uid"]
+    assert written["spec"]["subject"] == {"sandbox": {"name": row["name"], "uid": sandbox_uid}}
+    assert written["metadata"]["ownerReferences"][0]["uid"] == sandbox_uid
+
+    plain = client.post("/sandboxes", json={"slug": "plain"}).json()
+    assert client.get(f"/sandboxes/{plain['name']}/action-policy").json()["bindings"] == []
+    assert client.get("/sandboxes/nope/action-policy").status_code == 404
+
+
+def test_a_preset_naming_a_missing_action_policy_set_creates_nothing(
+    client: TestClient, custom_objects: FakeCustomObjectsApi
+) -> None:
+    """Refused before the Sandbox exists, as a missing egress policy is: a launch that would grant
+    nothing leaves no Sandbox behind to puzzle over."""
+    del custom_objects.objects[("actionpolicysets", "github-reads")]
+
+    response = client.post("/sandboxes", json={"slug": "coder", "preset": "public-coder"})
+
+    assert response.status_code == 422, response.text
+    assert "github-reads" in response.json()["detail"]
+    assert [name for kind, name in custom_objects.objects if kind == "sandboxes"] == ["live", "fresh", "shelved"]
 
 
 def test_explicit_sandbox_fields_replace_preset_defaults(client: TestClient) -> None:
@@ -345,6 +402,7 @@ def test_a_runner_that_does_not_answer_is_a_503(
     egress: EgressInventory,
     decisions: DecisionsClient,
     live_index: LiveIndex,
+    action_policy: ActionPolicyInventory,
     custom_objects: FakeCustomObjectsApi,
     core_v1: FakeCoreV1Api,
     reviewer: TokenReviewer,
@@ -369,6 +427,7 @@ def test_a_runner_that_does_not_answer_is_a_503(
             egress,
             decisions,
             live_index,
+            action_policy,
             reviewer=reviewer,
         )
         with TestClient(app, headers=AGENT_AUTH) as client:
@@ -499,6 +558,7 @@ def test_presets_publish_editable_sandbox_and_thread_defaults(client: TestClient
             "title": "Public coder",
             "template": "agentplane-test-runner",
             "policies": ["github"],
+            "action_policy_sets": ["github-reads"],
             "thread_preset": "public-coder-codex",
             "thread_defaults": {
                 "provider": "codex",
@@ -523,6 +583,7 @@ async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
     egress: EgressInventory,
     decisions: DecisionsClient,
     live_index: LiveIndex,
+    action_policy: ActionPolicyInventory,
     reviewer: TokenReviewer,
 ) -> None:
     """Over ASGI on this loop, not TestClient's thread: the store's pooled asyncpg connections
@@ -530,7 +591,9 @@ async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
     spec = pb.SessionSpec(provider=pb.PROVIDER_CLAUDE, cwd="/w", model="test-model")
     thread_id = str(await store.thread("live", "s-1", spec))
     await store.thread("live", "s-2", spec)
-    app = create_app(inventory, bridge, store, TEST_MODELS, egress, decisions, live_index, reviewer=reviewer)
+    app = create_app(
+        inventory, bridge, store, TEST_MODELS, egress, decisions, live_index, action_policy, reviewer=reviewer
+    )
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
     ) as http:
@@ -583,6 +646,7 @@ def test_openapi_schema_keeps_expected_operations(client: TestClient) -> None:
         "/sandboxes/{name}/unarchive",
         "/sandboxes/{name}/egress",
         "/sandboxes/{name}/egress/decisions",
+        "/sandboxes/{name}/action-policy",
         "/egress/policies",
         "/egress/bindings/{name}",
         "/sandboxes/{name}/sessions",
@@ -614,6 +678,7 @@ def test_openapi_schema_keeps_expected_operations(client: TestClient) -> None:
     assert set(paths["/sandboxes"]) == {"get", "post"}
     assert set(paths["/sandboxes/{name}"]) == {"get", "delete"}
     assert set(paths["/sandboxes/{name}/egress"]) == {"get", "post"}
+    assert set(paths["/sandboxes/{name}/action-policy"]) == {"get"}
     assert set(paths["/threads/{thread_id}"]) == {"get", "patch"}
     assert set(paths["/egress/bindings/{name}"]) == {"delete"}
 
