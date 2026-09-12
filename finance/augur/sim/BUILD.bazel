@@ -956,6 +956,7 @@ py_test(
         ":configured",
         ":events",
         ":ids",
+        ":market_path",
         ":mortgage",
         ":observations",
         ":prepared",

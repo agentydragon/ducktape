@@ -39,7 +39,7 @@ proposals budget only unreserved cash plus their own per-lot quoted sale proceed
 Zero targets keep the sleeve sellable, receive no deposits and
 permit full exits under the quiet-band rule; at least one target must be positive.
 
-The output directory contains `execution-input.json`, `experiment.json`, compact
+The output directory contains `experiment.json`, compact
 populations (`constant.json`, `glide.json`) and selected forensic replays in
 `constant-traces.json` / `glide-traces.json`. Consumption comes from actual paid
 `cash_spend` receipts, not sale proceeds. Summaries retain observed cash/holdings,
