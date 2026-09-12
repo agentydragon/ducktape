@@ -1129,7 +1129,7 @@ dependencies = [
  "chrono",
  "reqwest 0.11.27",
  "rust_decimal",
- "rusty-money 0.4.2",
+ "rusty-money",
  "serde",
  "serde_json",
  "thiserror 1.0.69",
@@ -1408,7 +1408,7 @@ dependencies = [
  "rust_decimal_macros",
  "rustc-hash",
  "rusty-leveldb",
- "rusty-money 0.5.0",
+ "rusty-money",
  "schemars 0.9.0",
  "scraper",
  "sea-orm",
@@ -4602,15 +4602,6 @@ name = "rusty-money"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "08cda49b2c0126c2672b3886d66552ce3bfa47a9bd4473a5c53acd061270bc17"
-dependencies = [
- "rust_decimal",
-]
-
-[[package]]
-name = "rusty-money"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e8ac0a3274868e5d2615e749ad3b944d93cf846deefd46ea918a225e5d53856d"
 dependencies = [
  "rust_decimal",
 ]

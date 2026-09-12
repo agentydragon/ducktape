@@ -36,7 +36,7 @@ strum = { version = "^0.28.0", features = ["derive"] }
 #tokio = { version = "*", features = ["full", "time"] }
 warp = "^0.4.2"
 futures = "^0.3.31"
-rusty-money = "^0.5.0"
+rusty-money = "^0.4.2"
 serde_yaml = "^0.9.34"
 structopt = "^0.3.26"
 xdg = "^3.0.0"
