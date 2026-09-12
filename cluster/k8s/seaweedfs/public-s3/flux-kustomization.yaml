@@ -9,8 +9,8 @@ spec:
   path: ./cluster/k8s/seaweedfs/public-s3
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: seaweedfs-public-s3
     # Gate on Bucket CRs managed in this repo that the public identities target.
     # Claude and DriveFS identities authenticate through native IAM; static
     # gateway configuration now contains only the credential-free anonymous read.

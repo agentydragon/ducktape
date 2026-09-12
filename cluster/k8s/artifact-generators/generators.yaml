@@ -1412,3 +1412,607 @@ spec:
           to: "@artifact/cluster/k8s/agentplane-testing/llm-ingress/"
           exclude:
             - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: litellm-secrets
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: litellm-secrets
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/litellm/secrets/**"
+          to: "@artifact/cluster/k8s/litellm/secrets/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: matrix-namespace
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: matrix-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/matrix/namespace/**"
+          to: "@artifact/cluster/k8s/matrix/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: matrix-secrets
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: matrix-secrets
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/matrix/secrets/**"
+          to: "@artifact/cluster/k8s/matrix/secrets/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: ollama-namespace
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: ollama-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/ollama/namespace/**"
+          to: "@artifact/cluster/k8s/ollama/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: seaweedfs-csi
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: seaweedfs-csi
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/seaweedfs-csi/**"
+          to: "@artifact/cluster/k8s/seaweedfs-csi/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: seaweedfs-public-s3
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: seaweedfs-public-s3
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/seaweedfs/public-s3/**"
+          to: "@artifact/cluster/k8s/seaweedfs/public-s3/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: ssh-mcp-secrets
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: ssh-mcp-secrets
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/ssh-mcp/secrets/**"
+          to: "@artifact/cluster/k8s/ssh-mcp/secrets/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: study-casino-namespace
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: study-casino-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/study-casino/namespace/**"
+          to: "@artifact/cluster/k8s/study-casino/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: tana-mcp
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: tana-mcp
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/tana-mcp/**"
+          to: "@artifact/cluster/k8s/agents/tana-mcp/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: authentik-jwt-rotation
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: authentik-jwt-rotation
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/authentik-jwt-rotation/**"
+          to: "@artifact/cluster/k8s/agents/authentik-jwt-rotation/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: inventree-namespace
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: inventree-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/inventree/namespace/**"
+          to: "@artifact/cluster/k8s/inventree/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: authentik-sso-secrets
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: authentik-sso-secrets
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/authentik/sso-secrets/**"
+          to: "@artifact/cluster/k8s/authentik/sso-secrets/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: cdi
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: cdi
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/kubevirt/cdi/**"
+          to: "@artifact/cluster/k8s/kubevirt/cdi/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: firecrawl-namespace
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: firecrawl-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/firecrawl/namespace/**"
+          to: "@artifact/cluster/k8s/firecrawl/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: flux-image-automation-ghcr
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: flux-image-automation-ghcr
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/flux-image-automation-ghcr/**"
+          to: "@artifact/cluster/k8s/flux-image-automation-ghcr/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: gatus-namespace
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: gatus-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/gatus/namespace/**"
+          to: "@artifact/cluster/k8s/gatus/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: grafana-operator
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: grafana-operator
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/monitoring/grafana-operator/**"
+          to: "@artifact/cluster/k8s/monitoring/grafana-operator/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: grocy-sf
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: grocy-sf
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/grocy/sf/app/**"
+          to: "@artifact/cluster/k8s/grocy/sf/app/"
+          exclude:
+            - flux-kustomization.yaml
+        - from: "@repo/cluster/k8s/grocy/app-base/**"
+          to: "@artifact/cluster/k8s/grocy/app-base/"
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: grocy-vallejo
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: grocy-vallejo
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/grocy/vallejo/app/**"
+          to: "@artifact/cluster/k8s/grocy/vallejo/app/"
+          exclude:
+            - flux-kustomization.yaml
+        - from: "@repo/cluster/k8s/grocy/app-base/**"
+          to: "@artifact/cluster/k8s/grocy/app-base/"
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: haku-console-namespace
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: haku-console-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/haku/console-namespace/**"
+          to: "@artifact/cluster/k8s/haku/console-namespace/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: haku-egress-proxy-namespace
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: haku-egress-proxy-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/haku-egress-proxy-namespace/**"
+          to: "@artifact/cluster/k8s/agents/haku-egress-proxy-namespace/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: haku-mailbox-namespace
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: haku-mailbox-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/haku/mailbox-namespace/**"
+          to: "@artifact/cluster/k8s/haku/mailbox-namespace/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: haku-openclaw-spike-namespace
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: haku-openclaw-spike-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/agents/haku-openclaw-spike/namespace/**"
+          to: "@artifact/cluster/k8s/agents/haku-openclaw-spike/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: home-assistant
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: home-assistant
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/home-assistant/app/**"
+          to: "@artifact/cluster/k8s/home-assistant/app/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: inventree-secrets
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: inventree-secrets
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/inventree/secrets/**"
+          to: "@artifact/cluster/k8s/inventree/secrets/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: litellm
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: litellm
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/litellm/app/**"
+          to: "@artifact/cluster/k8s/litellm/app/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: monitoring-stack-secrets
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: monitoring-stack-secrets
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/monitoring/stack-secrets/**"
+          to: "@artifact/cluster/k8s/monitoring/stack-secrets/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: nix-cache
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: nix-cache
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/nix-cache/app/**"
+          to: "@artifact/cluster/k8s/nix-cache/app/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: nvidia-device-plugin
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: nvidia-device-plugin
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/nvidia-device-plugin/**"
+          to: "@artifact/cluster/k8s/nvidia-device-plugin/"
+          exclude:
+            - flux-kustomization.yaml
+---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: ollama-secrets
+  namespace: ducktape-flux
+spec:
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: ducktape
+      namespace: ducktape-flux
+  artifacts:
+    - name: ollama-secrets
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/ollama/secrets/**"
+          to: "@artifact/cluster/k8s/ollama/secrets/"
+          exclude:
+            - flux-kustomization.yaml

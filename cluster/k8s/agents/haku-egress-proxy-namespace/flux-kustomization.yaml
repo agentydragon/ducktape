@@ -8,7 +8,7 @@ spec:
   path: ./cluster/k8s/agents/haku-egress-proxy-namespace
   prune: false
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: haku-egress-proxy-namespace
     namespace: ducktape-flux
   timeout: 2m

@@ -8,7 +8,7 @@ spec:
   path: ./cluster/k8s/flux-image-automation-ghcr
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: flux-image-automation-ghcr
 
     namespace: ducktape-flux
