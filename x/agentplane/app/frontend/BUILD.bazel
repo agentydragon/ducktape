@@ -613,6 +613,7 @@ ts_library(
     testonly = True,
     srcs = ["visual/scenarios.ts"],
     tsconfig = TSCONFIG,
+    deps = ["//util/testing/frontend_visual:visual_test_lib"],
 )
 
 ts_library(
