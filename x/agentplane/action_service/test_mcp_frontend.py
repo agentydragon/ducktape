@@ -340,6 +340,7 @@ async def test_tools_act_as_the_identity_the_transport_verified(frontend: Fronte
                 {
                     "request": {
                         "idempotency_key": f"test-identity-{token}",
+                        "title": "test title for test-identity",
                         "action": {"group": "test-group", "name": "alpha"},
                         "arguments": {"message": "test-identity"},
                     }
