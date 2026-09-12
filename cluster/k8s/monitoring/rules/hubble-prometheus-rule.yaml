@@ -1,0 +1,25 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: hubble-alerts
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: hubble
+      rules:
+        - alert: HubbleObservationLoss
+          # These sources lose events before flow metrics are calculated.
+          # Hubble history-ring overruns happen after metrics processing.
+          expr: increase(hubble_lost_events_total{source=~"observer_events_queue|perf_event_ring_buffer"}[10m]) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: "Hubble is losing observations on {{ $labels.instance }}"
+            description: >
+              Hubble reported {{ $labels.source }} loss in the last 10 minutes.
+              Flow metrics can undercount traffic in this window. These are
+              missing observations, not evidence of dropped application packets.
+              Check Cilium CPU pressure and the Hubble event queue or perf buffer
+              before using flow counts to rule out a traffic source.
