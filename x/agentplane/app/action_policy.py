@@ -7,7 +7,7 @@ resolve at admission -- the same resolution a Decision uses, read through the op
 The one thing the app adds is who wrote each binding, decided from labels the service reports and
 does not interpret. Nothing here is in the decision path, and nothing edits a binding at runtime.
 
-The kinds themselves are `x.agentplane.action_service.policy_resources`, shared with the service
+The kinds themselves are `x.agentplane.action_service.policies.resources`, shared with the service
 that enforces them, so a set the app refuses to bind is one the service would not find either.
 """
 
@@ -23,7 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from util.kubernetes import CustomObjectsClient
 from x.agentplane.action_service.client import OperatorActionServiceClient
-from x.agentplane.action_service.policy_resources import (
+from x.agentplane.action_service.policies.resources import (
     BINDINGS_PLURAL,
     GROUP,
     POLICY_SETS_PLURAL,
