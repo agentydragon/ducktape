@@ -87,10 +87,12 @@ def recovery_run(total: int, positions: tuple[tuple[int, int], ...], *, earlier_
 
 def execute(run: CompiledRun) -> tuple[World, FinancialOutput]:
     world = World.from_run(run, 0)
+    private_equity = world.private_equity
+    assert private_equity is not None
     capture = FinancialCapture(world, capture="forensic")
     world.start()
     for month in range(run.scenario.horizon_months):
-        world.private_equity.advance(world.accounting, world.holdings, world.market, [], month)
+        private_equity.advance(world.accounting, world.holdings, world.market, [], month)
         world.close_month()
         capture.record()
         if not world.finished:

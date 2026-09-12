@@ -60,7 +60,10 @@ typed dues (`BillDue`, `AssessmentDue`, `InstallmentDue`, `PropertyTaxDue`) and 
 month's `Receipt`s — and `step` delivers `MonthOpened`, whose reply is the
 household's ordered actions. The world builds no view on anyone's behalf: `EconomicAgent` assembles the
 `Observation` its `decide` reads from the mail it kept, and the batch session assembles
-the same view for its `Decision`s from its delegate's mail. `World` has no capture
+the same view for its `Decision`s from its delegate's mail. A domain nothing declared is absent from the world, not empty: `properties`,
+`bonds`, `managed`, `private_equity` and `distributions` are `None` until a
+declaration, holding, contract or attached table needs them, and every phase skips
+an absent one. `World` has no capture
 mode, no named subject and no history: component outcome lists (`accounting.journal`, `holdings.dispositions`, …)
 hold the current month and are cleared when the next month opens, so a caller that
 wants a history copies them between steps. `ActionSession` records the summary and

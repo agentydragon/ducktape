@@ -40,7 +40,7 @@ class _Record:
             if account.agent_id == actor
         ]
         self.holdings: dict[tuple[AccountRef, str], list[int]] = {}
-        self.bond_terms = [bond for bond in world.bonds.terms if bond.agent_id == actor]
+        self.bond_terms = [] if world.bonds is None else [bond for bond in world.bonds.terms if bond.agent_id == actor]
         self.bonds = [
             results.BondSeries(
                 account=AccountRef(agent_id=bond.agent_id, account_id=bond.account_id), bond_id=bond.bond_id, values=[]
@@ -60,9 +60,10 @@ class _Record:
         mark = world.mark_month
         for series in self.cash:
             series.values.append(world.accounting.ledger.balance(series.account))
-        for bond, series in zip(self.bond_terms, self.bonds, strict=True):
-            value = world.bonds.held_principal(bond, world.month, mark)
-            series.values.append(0 if value is None else value)
+        if world.bonds is not None:
+            for bond, series in zip(self.bond_terms, self.bonds, strict=True):
+                value = world.bonds.held_principal(bond, world.month, mark)
+                series.values.append(0 if value is None else value)
         keys = {
             (AccountRef(agent_id=lot.spec.agent_id, account_id=lot.spec.account_id), lot.spec.asset_id)
             for lot in world.holdings.lots
@@ -70,7 +71,7 @@ class _Record:
         }
         keys.update(
             (AccountRef(agent_id=row.owner_agent_id, account_id=row.account_id), row.asset_id)
-            for row in world.managed.marks.values()
+            for row in world.marks()
             if row.owner_agent_id == self.actor
         )
         for key in keys:
