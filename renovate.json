@@ -3,5 +3,5 @@
   "extends": ["config:recommended"],
   "dependencyDashboard": true,
   "prCreation": "approval",
-  "ignorePaths": ["props/specimens/**"]
+  "ignorePaths": ["props/specimens/**", "devinfra/claude/web_env/**"]
 }
