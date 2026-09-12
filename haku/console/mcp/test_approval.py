@@ -617,7 +617,7 @@ def _static_agent_actor(client: TestClient, bearer: str) -> AgentActor:
         )
 
     assert client.portal is not None
-    return client.portal.call(resolve)
+    return cast(AgentActor, client.portal.call(resolve))
 
 
 def _record_execution_operator_ids(monkeypatch: pytest.MonkeyPatch) -> list[UUID]:

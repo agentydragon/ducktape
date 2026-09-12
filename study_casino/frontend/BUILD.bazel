@@ -278,7 +278,6 @@ VISUAL_DATA = [
     "tests/harness/index.html",
     ":casino_fonts",
     ":visual_harness_js",
-    "//util/testing/frontend_visual:fonts_conf",
     "//util/testing/frontend_visual:visual_test_lib",
     "@playwright_browsers//:chromium-headless-shell",
 ]
@@ -291,8 +290,6 @@ js_test(
     env = {
         "HARNESS_PATH": "$(rootpath :visual_harness_js)",
         "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
-        "FONTCONFIG_FILE": "$(rootpath //util/testing/frontend_visual:fonts_conf)",
-        "FREETYPE_PROPERTIES": "cff:no-stem-darkening=1",
         "EXPECTED_FONT_FAMILY": "Outfit",
     },
     no_copy_to_bin = VISUAL_DATA,
