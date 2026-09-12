@@ -36,10 +36,10 @@ from finance.augur.sim.books import (
 )
 from finance.augur.sim.compiler.income_sources import income_source_wire_id
 from finance.augur.sim.distributions import Distributions
-from finance.augur.sim.held_bonds import HeldBonds
+from finance.augur.sim.held_bonds import BondStatement, HeldBonds
 from finance.augur.sim.holdings import Holdings, private_issuer
 from finance.augur.sim.ids import AgentId
-from finance.augur.sim.managed import ComponentEffects, ManagedPortfolios
+from finance.augur.sim.managed import ComponentEffects, ManagedPortfolios, TlhStatement
 from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.money import checked_count, position_value
 from finance.augur.sim.mortgage import InstallmentPaid, Mortgage, MortgagePayment, ServicingStatement
@@ -56,6 +56,7 @@ from finance.augur.sim.prepared import (
     PreparedRecurringTransfer,
     PreparedTlhPortfolio,
     PreparedTransfer,
+    _PropertyPurchase,
     _PropertyTax,
 )
 from finance.augur.sim.private_equity import PrivateEquity
@@ -151,13 +152,16 @@ class World:
         self.agents: list[EconomicAgent] = []
         self.specs: dict[str, PreparedTlhPortfolio] = {}
         self.portfolios: dict[str, TlhPortfolio] = {}
+        self.income_sources = tuple(income_sources)
+        self.jurisdictions = tuple(jurisdictions)
         self.accounting = Accounting(income_sources, jurisdictions)
         self.holdings = Holdings()
-        self.managed = ManagedPortfolios(income_sources, jurisdictions)
-        self.properties = Properties(Housing(), self.accounting)
-        self.bonds = HeldBonds((), market)
-        self.distributions = Distributions((), set())
-        self.private_equity = PrivateEquity(())
+        # Domains nothing declared, tracked or attached are absent, not empty.
+        self.managed: ManagedPortfolios | None = None
+        self.properties: Properties | None = None
+        self.bonds: HeldBonds | None = None
+        self.distributions: Distributions | None = None
+        self.private_equity: PrivateEquity | None = None
         # Configured cashflow tables the import adapter attaches; a composed world moves cash through actions.
         self.scheduled_transfers: tuple[PreparedTransfer, ...] = ()
         self.recurring_transfers: tuple[PreparedRecurringTransfer, ...] = ()
@@ -210,12 +214,18 @@ class World:
             world.declare_portfolio(spec)
         for bond in scenario.initial_bonds:
             world.hold(bond)
-        world.attach_housing(Housing.from_scenario(scenario), scenario._property_tax_policies, scenario.locations)
-        world.distributions = Distributions(
-            scenario.distributions,
-            {(spec.owner_agent_id, spec.account_id, spec.asset_id) for spec in scenario.tlh_portfolios},
-        )
-        world.private_equity = PrivateEquity(scenario._private_equity_tender_policies)
+        housing = Housing.from_scenario(scenario)
+        if housing != Housing() or scenario._property_tax_policies:
+            world.attach_housing(housing, scenario._property_tax_policies, scenario.locations)
+        if scenario.distributions:
+            world.distributions = Distributions(
+                scenario.distributions,
+                {(spec.owner_agent_id, spec.account_id, spec.asset_id) for spec in scenario.tlh_portfolios},
+            )
+        if scenario._private_equity_tender_policies or any(
+            private_issuer(lot.asset_id) is not None for lot in scenario.initial_lots
+        ):
+            world.private_equity = PrivateEquity(scenario._private_equity_tender_policies)
         world.scheduled_transfers = scenario.scheduled_transfers
         world.recurring_transfers = scenario.recurring_transfers
         world.scheduled_property_cashflows = scenario.scheduled_property_cashflows
@@ -246,8 +256,10 @@ class World:
         self._composing()
         if isinstance(holding, PreparedLot):
             self.holdings.hold(self.accounting, holding)
-        else:
-            self.bonds.hold(holding)
+            return
+        if self.bonds is None:
+            self.bonds = HeldBonds((), self.market)
+        self.bonds.hold(holding)
 
     def declare_portfolio(self, spec: PreparedTlhPortfolio) -> None:
         """A managed TLH portfolio held at month zero, marked at the path's opening price."""
@@ -265,10 +277,21 @@ class World:
                 ),
             ),
         )
+        if self.managed is None:
+            self.managed = ManagedPortfolios(self.income_sources, self.jurisdictions)
         self.managed.open(self.accounting, spec, self.statement(spec, portfolio.observe()))
         self.holdings.reserve(spec.owner_agent_id, spec.account_id, spec.asset_id)
         self.specs[spec.portfolio_id] = spec
         self.portfolios[spec.portfolio_id] = portfolio
+
+    def managed_portfolios(self) -> ManagedPortfolios:
+        """The managed-portfolio component, for a caller settling into one; raises when none is declared."""
+        if self.managed is None:
+            raise ValueError("no managed portfolio is declared")
+        return self.managed
+
+    def _purchases(self) -> tuple[_PropertyPurchase, ...]:
+        return () if self.properties is None else self._purchases()
 
     def attach_housing(
         self, housing: Housing, tax_policies: Sequence[_PropertyTax], locations: Sequence[PreparedLocation]
@@ -354,7 +377,7 @@ class World:
             raise ValueError("a tracked mortgage needs the principal outstanding at month zero")
         if terms.liability_id in self.mortgages or any(
             purchase.mortgage is not None and purchase.mortgage.liability_id == terms.liability_id
-            for purchase in self.properties.housing.purchases
+            for purchase in self._purchases()
         ):
             raise ValueError(f"duplicate mortgage liability {terms.liability_id!r}")
         self.validate_scope(terms.borrower.agent_id)
@@ -442,14 +465,16 @@ class World:
                 self.distributions,
                 self.private_equity,
             ):
-                component.begin_month()
+                if component is not None:
+                    component.begin_month()
             self.obligations.clear()
             self.payments.clear()
             self.shortfall = 0
         self.opened = True
+        distributions = () if self.distributions is None else self.distributions.specs
         for spec in self.specs.values():
             current = self.portfolios[spec.portfolio_id]
-            for distribution in self.distributions.specs:
+            for distribution in distributions:
                 if (distribution.agent_id, distribution.holding_account_id, distribution.asset_id) != (
                     spec.owner_agent_id,
                     spec.account_id,
@@ -457,12 +482,14 @@ class World:
                 ):
                     continue
                 rate = self.market.value(f"security_distribution:{spec.asset_id}", self.month)
-                self.managed.distribute(self.accounting, self.month, distribution, current._distribution(rate))
+                self.managed_portfolios().distribute(
+                    self.accounting, self.month, distribution, current._distribution(rate)
+                )
             candidate = deepcopy(current)
             realized = candidate.advance(
                 TlhMarketUpdate(self.month, self.market.value(f"security:{spec.asset_id}", self.month))
             )
-            self.managed.settle(
+            self.managed_portfolios().settle(
                 self.accounting,
                 self.month,
                 spec.owner_agent_id,
@@ -480,7 +507,7 @@ class World:
     def open_mortgages(self) -> None:
         """Originate/pay off configured contracts, then post each active contract its servicing mail and collect its quote."""
         candidates = {}
-        for purchase in self.properties.housing.purchases:
+        for purchase in self._purchases():
             financing = purchase.mortgage
             if purchase.month != self.month or financing is None:
                 continue
@@ -572,8 +599,9 @@ class World:
             effects = self.effects(
                 spec, candidate, action.cash_account_id, withdrawal.cash_received, withdrawal.realizations
             )
-        self.managed.validate_request(action, effects)
-        self.managed.settle(
+        managed = self.managed_portfolios()
+        managed.validate_request(action, effects)
+        managed.settle(
             self.accounting,
             self.month,
             actor,
@@ -602,7 +630,8 @@ class World:
             )
             for spec in self.specs.values()
         ]
-        self.managed.mark(marks)
+        if self.managed is not None:
+            self.managed.mark(marks)
         for id_ in (
             claim.effect.terms.liability_id
             for claim in self.claims.entries
@@ -643,7 +672,7 @@ class World:
             purchase = next(
                 (
                     purchase
-                    for purchase in self.properties.housing.purchases
+                    for purchase in self._purchases()
                     if purchase.mortgage is not None and purchase.mortgage.liability_id == liability_id
                 ),
                 None,
@@ -660,7 +689,7 @@ class World:
 
     def property_rented_fraction(self, property_id: str) -> int:
         # A tracked contract's property is not a component yet, so none of it is rented out.
-        property_ = self.properties.properties.get(property_id)
+        property_ = None if self.properties is None else self.properties.properties.get(property_id)
         return 0 if property_ is None else property_.state.rented_fraction_ppb
 
     def prepare_month(
@@ -669,12 +698,19 @@ class World:
         if month != self.month or month >= self.horizon_months:
             raise ValueError("invalid financial month")
         self.claims = claims.Claims(month, [])
-        self.properties.assign_residences(month)
-        paid_off = self.properties.lifecycle(self.accounting, self.market, month, mortgages)
-        self.bonds.advance(self.accounting, month)
-        self.distributions.advance(self.accounting, self.holdings, self.market, month)
-        originated = self.properties.purchase(self.accounting, month, originations)
-        active = {row.property_id for row in self.properties.snapshots() if row.active}
+        paid_off: list[str] = []
+        originated: list[str] = []
+        active: set[str] = set()
+        if self.properties is not None:
+            self.properties.assign_residences(month)
+            paid_off = self.properties.lifecycle(self.accounting, self.market, month, mortgages)
+        if self.bonds is not None:
+            self.bonds.advance(self.accounting, month)
+        if self.distributions is not None:
+            self.distributions.advance(self.accounting, self.holdings, self.market, month)
+        if self.properties is not None:
+            originated = self.properties.purchase(self.accounting, month, originations)
+            active = {row.property_id for row in self.properties.snapshots() if row.active}
         flows = [flow for flow in self.scheduled_transfers if flow.month == month]
         recurring = [
             flow
@@ -725,7 +761,11 @@ class World:
         opened = MonthOpened(month=month)
         for biller in self.billers:
             property_id = biller.spec.property_id
-            statement = None if property_id is None else self.properties.statement(property_id, month)
+            statement = (
+                None
+                if property_id is None or self.properties is None
+                else self.properties.statement(property_id, month)
+            )
             if statement is not None and biller.handle(statement):
                 raise ValueError("a property statement takes no reply")
             for bill in biller.handle(opened):
@@ -733,7 +773,11 @@ class World:
         for installment in installments:
             self.register(installment)
         for property_authority in self.property_tax_authorities:
-            statement = self.properties.statement(property_authority.policy.property_id, month)
+            statement = (
+                None
+                if self.properties is None
+                else self.properties.statement(property_authority.policy.property_id, month)
+            )
             if statement is not None and property_authority.handle(statement):
                 raise ValueError("a property statement takes no reply")
             for property_bill in property_authority.handle(opened):
@@ -790,8 +834,12 @@ class World:
             self.market.statement(self.month),
             self.accounting.statement(actor, self.month),
             self.holdings.statement(actor, self.market, self.month),
-            self.bonds.statement(actor, self.month),
-            self.managed.statement(actor, self.month),
+            BondStatement(month=self.month, bonds=())
+            if self.bonds is None
+            else self.bonds.statement(actor, self.month),
+            TlhStatement(month=self.month, portfolios=())
+            if self.managed is None
+            else self.managed.statement(actor, self.month),
             *dues,
             *self.previous_receipts,
         ]
@@ -909,11 +957,17 @@ class World:
         if failed:
             self.failed_month = self.month
         else:
-            self.properties.accrue(self.accounting, self.month)
+            if self.properties is not None:
+                self.properties.accrue(self.accounting, self.month)
             if (self.month + 1) % 12 == 0:
                 self.accounting.close_tax_year(self.month, mortgages)
-                self.properties.reset_year()
+                if self.properties is not None:
+                    self.properties.reset_year()
         self.month += 1
+
+    def marks(self) -> list[observations.TlhPortfolioObservation]:
+        """Current managed-portfolio marks; none when no portfolio is declared."""
+        return [] if self.managed is None else list(self.managed.marks.values())
 
     def book(self) -> Book:
         """The current books as a snapshot: state, not a stored history."""
@@ -930,8 +984,8 @@ class World:
                 for (agent, source), amount in self.accounting.tax.income.by_source.items()
             ],
             lots=[lot.snapshot() for lot in self.holdings.lots],
-            bonds=self.bonds.snapshots(self.month, self.mark_month),
-            properties=self.properties.snapshots(),
+            bonds=[] if self.bonds is None else self.bonds.snapshots(self.month, self.mark_month),
+            properties=[] if self.properties is None else self.properties.snapshots(),
             mortgages=self.mortgage_snapshots(),
             tax_liabilities=list(self.accounting.tax_liabilities),
             capital_gains=[
@@ -949,7 +1003,7 @@ class World:
                     value=row.value,
                     reported_tax_basis=row.reported_tax_basis,
                 )
-                for row in self.managed.marks.values()
+                for row in self.marks()
             ],
             failed=self.failed_month is not None,
         )
@@ -973,7 +1027,7 @@ class World:
                 ),
                 "public value",
             )
-        for row in self.managed.marks.values():
+        for row in self.marks():
             if (
                 row.owner_agent_id == actor
                 and (account is None or row.account_id == account)

@@ -141,6 +141,8 @@ def installment(mortgage: Mortgage, month: int, principal_before: int, principal
 
 
 def fingerprint(world: World) -> tuple[object, ...]:
+    properties = world.properties
+    assert properties is not None
     return deepcopy(
         (
             world.book(),
@@ -149,9 +151,9 @@ def fingerprint(world: World) -> tuple[object, ...]:
             world.accounting.journal,
             world.accounting.transfers,
             world.accounting.mortgage_payments,
-            world.properties.purchases,
-            world.properties.sales,
-            world.properties.originations,
+            properties.purchases,
+            properties.sales,
+            properties.originations,
         )
     )
 
@@ -222,17 +224,19 @@ def test_mid_horizon_property_mark_and_sale_share_the_purchase_anchor(run: Compi
     )
     for rollout in range(2):
         world = World.from_run(run, rollout)
+        properties = world.properties
+        assert properties is not None
         for month in range(6):
             world.prepare_month(month, {}, {})
             world.assemble_claims([])
             if month in (2, 3, 4, 5):
-                state = world.properties.snapshots()[0]
+                state = properties.snapshots()[0]
                 expected_mark = (0, 0, 0, 120_000, 150_000, 180_000)[month]
                 if month >= 3:
-                    assert world.properties.market_value(purchase, world.market, month) == expected_mark
+                    assert properties.market_value(purchase, world.market, month) == expected_mark
                     assert state.adjusted_basis == 100_000
             world.close_books(failed=False, mortgages=[])
-        sale = world.properties.sales[0]
+        sale = properties.sales[0]
         assert (sale.gross_proceeds, sale.net_cash_to_owner, sale.realized_gain) == (180_000, 180_000, 80_000)
         assert world.account_balance(HOUSEHOLD, "checking") == 280_000
 

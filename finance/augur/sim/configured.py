@@ -43,16 +43,25 @@ def product_row(world: World, actor: str) -> tuple[int, int, int, int, int, int,
         and lot.units_remaining
         and (issuer := private_issuer(lot.spec.asset_id)) is not None
     )
-    property_value = sum(
-        world.properties.market_value(purchase, world.market, mark)
-        for purchase in world.properties.housing.purchases
-        if purchase.buyer_agent_id == actor
-        and purchase.property_id in world.properties.properties
-        and world.properties.properties[purchase.property_id].state.active
-        and f"home_value:{purchase.location_id}" in world.market.series
+    properties = world.properties
+    property_value = (
+        0
+        if properties is None
+        else sum(
+            properties.market_value(purchase, world.market, mark)
+            for purchase in properties.housing.purchases
+            if purchase.buyer_agent_id == actor
+            and purchase.property_id in properties.properties
+            and properties.properties[purchase.property_id].state.active
+            and f"home_value:{purchase.location_id}" in world.market.series
+        )
     )
     debt = sum(loan.principal for loan in world.mortgage_snapshots() if loan.agent_id == actor)
-    bonds = sum(row.principal for row in world.bonds.snapshots(world.month, mark) if row.agent_id == actor)
+    bonds = (
+        0
+        if world.bonds is None
+        else sum(row.principal for row in world.bonds.snapshots(world.month, mark) if row.agent_id == actor)
+    )
     return (
         checked_count(cash, "product cash"),
         world.holding_value(actor, mark),
@@ -113,7 +122,7 @@ def execute(run: CompiledRun, capture: Capture, product_actor: str | None = None
                     continue
                 candidate = deepcopy(path.portfolios[spec.portfolio_id])
                 withdrawal = candidate._withdraw_units(sale.units)
-                path.managed.settle(
+                path.managed_portfolios().settle(
                     path.accounting,
                     month,
                     spec.owner_agent_id,
@@ -160,10 +169,8 @@ def execute(run: CompiledRun, capture: Capture, product_actor: str | None = None
                 if isinstance(buy_action, Buy):
                     lot_sequences[key] += 1
         for path in paths.values():
-            if not path.failed:
-                path.private_equity.advance(
-                    path.accounting, path.holdings, path.market, list(path.managed.marks.values()), month
-                )
+            if not path.failed and path.private_equity is not None:
+                path.private_equity.advance(path.accounting, path.holdings, path.market, path.marks(), month)
         for rollout_id, path in paths.items():
             path.close_month()
             captures[rollout_id].record()

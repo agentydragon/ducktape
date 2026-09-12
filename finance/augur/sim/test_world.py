@@ -17,6 +17,7 @@ from finance.augur.sim.compiler.tax import PreparedTaxBracket
 from finance.augur.sim.configured import execute, product_row
 from finance.augur.sim.events import EVENT_FRAME_SPECS
 from finance.augur.sim.ids import AgentId
+from finance.augur.sim.market_path import MarketPath
 from finance.augur.sim.mortgage import Mortgage, MortgageTerms
 from finance.augur.sim.observations import Observation
 from finance.augur.sim.prepared import (
@@ -855,6 +856,37 @@ def test_a_tracked_bill_is_demanded_in_its_months_and_paid_by_the_household() ->
     assert world.stop is None
     assert household.dues == [(1, "rent", 500), (2, "rent", 500)]
     assert checking(world) == 9000
+
+
+def test_a_composed_world_has_only_the_domains_it_declares() -> None:
+    run = actor_run(horizon=2)
+    world = World(MarketPath.from_run(run, 0), horizon_months=2)
+    for account in run.scenario.accounts:
+        world.declare_account(account)
+    for pool in run.scenario.holding_pools:
+        world.declare_pool(pool)
+    for lot in run.scenario.initial_lots:
+        world.hold(lot)
+    world.track(_Household({0: 500}))
+    capture = FinancialCapture(world, capture="forensic")
+    world.start()
+    assert (world.bonds, world.properties, world.managed, world.private_equity, world.distributions) == (None,) * 5
+    while not world.finished:
+        world.step()
+        capture.record()
+    assert world.stop is None
+    assert checking(world) == 9500
+    book = world.book()
+    assert (book.bonds, book.properties, book.mortgages, book.tlh_portfolios) == ([], [], [], [])
+    financial = capture.financial()
+    assert financial is not None
+    assert not financial.bond_cashflows
+    assert not financial.property_purchases
+    assert not financial.tlh_financial_effects
+    with pytest.raises(ValueError, match="no managed portfolio"):
+        world.managed_portfolios()
+    with pytest.raises(ValueError, match="missing public security series"):
+        world.declare_pool(replace(run.scenario.holding_pools[0], asset_id="test-unpriced"))
 
 
 class _Deadbeat(EconomicAgent):

@@ -92,9 +92,9 @@ def fingerprint(world: World) -> tuple[object, ...]:
             world.accounting.tax.income.by_source,
             world.accounting.journal,
             world.accounting.transfers,
-            world.managed.marks,
-            world.managed.effects,
-            world.managed.distributions,
+            world.managed_portfolios().marks,
+            world.managed_portfolios().effects,
+            world.managed_portfolios().distributions,
             world.holdings.lots,
         )
     )
@@ -107,11 +107,15 @@ def harvest(opening: TlhPortfolioObservation) -> ComponentEffects:
 def test_basis_statement_cash_and_tax_reconcile_without_ordinary_lots(
     world: World, opening: TlhPortfolioObservation
 ) -> None:
-    world.managed.settle(world.accounting, 0, HOUSEHOLD, "manager", harvest(opening), operation="modeled_realization")
+    world.managed_portfolios().settle(
+        world.accounting, 0, HOUSEHOLD, "manager", harvest(opening), operation="modeled_realization"
+    )
     contribution = ComponentEffects(
         opening.model_copy(update={"value": 120, "reported_tax_basis": 90}), "checking", -20, 0, 0
     )
-    world.managed.settle(world.accounting, 0, HOUSEHOLD, "contribution", contribution, operation="contribution")
+    world.managed_portfolios().settle(
+        world.accounting, 0, HOUSEHOLD, "contribution", contribution, operation="contribution"
+    )
     assert world.accounting.ledger.balance(CASH) == 80
     assert world.accounting.ledger.balance(basis_account(opening)) == 90
     assert not world.holdings.lots
@@ -146,7 +150,9 @@ def test_invalid_effects_and_overflow_leave_every_financial_book_unchanged(
     with pytest.raises(
         (ValueError, OverflowError), match=r"reconcile|observation|overflow|available cash|declared income"
     ):
-        world.managed.settle(world.accounting, 0, HOUSEHOLD, "manager", effects, operation="modeled_realization")
+        world.managed_portfolios().settle(
+            world.accounting, 0, HOUSEHOLD, "manager", effects, operation="modeled_realization"
+        )
     assert fingerprint(world) == before
 
 
@@ -154,7 +160,7 @@ def test_distribution_cash_uses_interest_source_not_capital_gain_journal_account
     world: World, opening: TlhPortfolioObservation
 ) -> None:
     effects = ComponentEffects(opening, "checking", 5, 0, 0, (InterestCredit(None, 5),))
-    world.managed.settle(world.accounting, 0, HOUSEHOLD, "distribution", effects, operation="distribution")
+    world.managed_portfolios().settle(world.accounting, 0, HOUSEHOLD, "distribution", effects, operation="distribution")
     assert world.accounting.ledger.balance(CASH) == 105
     assert world.accounting.ledger.balance(gain_account(HOUSEHOLD)) == 0
     assert world.accounting.ledger.balance(AccountRef(agent_id="__external__", account_id="boundary")) == -5
@@ -162,7 +168,7 @@ def test_distribution_cash_uses_interest_source_not_capital_gain_journal_account
         world.accounting.tax.years[HOUSEHOLD].short_term_gain,
         world.accounting.tax.years[HOUSEHOLD].long_term_gain,
     ) == (0, 0)
-    assert world.managed.marks["managed"].reported_tax_basis == 80
+    assert world.managed_portfolios().marks["managed"].reported_tax_basis == 80
 
 
 def test_withdrawal_receipt_does_not_recalculate_component_rounded_value(
@@ -189,7 +195,7 @@ def test_component_marks_keep_explicit_stop_marks_and_independent_books(
     stopped, live = World.from_run(run, 1), World.from_run(run, 0)
     stopped.prepare_month(0, {}, {})
     stopped.assemble_claims([])
-    stopped.managed.mark([opening])
+    stopped.managed_portfolios().mark([opening])
     stopped_values = [stopped.holding_value(HOUSEHOLD, stopped.mark_month)]
     stopped.close_books(failed=True, mortgages=[])
     stopped_values.append(stopped.holding_value(HOUSEHOLD, stopped.mark_month))
@@ -197,7 +203,7 @@ def test_component_marks_keep_explicit_stop_marks_and_independent_books(
     for month in range(2):
         live.prepare_month(month, {}, {})
         live.assemble_claims([])
-        live.managed.mark([opening.model_copy(update={"value": 110 + 10 * month})])
+        live.managed_portfolios().mark([opening.model_copy(update={"value": 110 + 10 * month})])
         live.close_books(failed=False, mortgages=[])
         live_values.append(live.holding_value(HOUSEHOLD, live.mark_month))
     assert (stopped.rollout_id, live.rollout_id) == (1, 0)
@@ -206,7 +212,7 @@ def test_component_marks_keep_explicit_stop_marks_and_independent_books(
     assert (stopped.mark_month, live.mark_month) == (0, 2)
     [mark] = stopped.book().tlh_portfolios
     assert (mark.value, mark.reported_tax_basis, mark.portfolio_id) == (100, 80, "managed")
-    assert stopped.managed.marks == {"managed": opening}
+    assert stopped.managed_portfolios().marks == {"managed": opening}
     assert stopped.book().failed
     assert not live.book().failed
 
