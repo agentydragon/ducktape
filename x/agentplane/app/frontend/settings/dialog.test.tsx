@@ -4,7 +4,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { Settings, type SettingsTab } from "./settings";
+import { Settings, type SettingsTab } from "./dialog";
 
 // Settings only wires the Modal/Tabs shell; each panel's own behavior is covered by its own test.
 vi.mock("./connections", () => ({ Connections: () => <div>oauth-clients-panel</div> }));
