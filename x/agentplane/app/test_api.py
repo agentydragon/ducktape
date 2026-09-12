@@ -125,6 +125,9 @@ def client(
         auto_approve_if=[{"type": "exact_actions", "actions": {"github": ["search_code"]}}],
         ready=("True", "Valid", "spec accepted"),
     )
+    custom_objects.objects[("actionpolicysets", "github-writes")] = action_policy_set(
+        "github-writes", auto_approve_if=[{"type": "exact_actions", "actions": {"github": ["push_files"]}}]
+    )
     app = create_app(
         inventory,
         bridge,
@@ -244,10 +247,42 @@ def test_a_preset_naming_a_missing_action_policy_set_creates_nothing(
 
 
 def test_explicit_sandbox_fields_replace_preset_defaults(client: TestClient) -> None:
-    row = client.post("/sandboxes", json={"slug": "coder", "preset": "public-coder", "policies": ["pypi"]}).json()
+    row = client.post(
+        "/sandboxes",
+        json={"slug": "coder", "preset": "public-coder", "policies": ["pypi"], "action_policy_sets": ["github-writes"]},
+    ).json()
 
     (binding,) = client.get(f"/sandboxes/{row['name']}/egress").json()
     assert [policy["name"] for policy in binding["policies"]] == ["pypi"]
+    (bound,) = client.get(f"/sandboxes/{row['name']}/action-policy").json()["bindings"]
+    assert [policy_set["name"] for policy_set in bound["policy_sets"]] == ["github-writes"]
+
+
+def test_the_launch_pick_of_action_policy_sets_is_the_operators(
+    client: TestClient, custom_objects: FakeCustomObjectsApi
+) -> None:
+    """A preset pre-fills the pick and nothing more: an explicit empty list binds nothing, and a
+    launch without a preset may pick sets of its own, the same 422 guarding a dangling name."""
+    unbound = client.post("/sandboxes", json={"slug": "coder", "preset": "public-coder", "action_policy_sets": []})
+    assert unbound.status_code == 201, unbound.text
+    assert client.get(f"/sandboxes/{unbound.json()['name']}/action-policy").json()["bindings"] == []
+
+    picked = client.post("/sandboxes", json={"slug": "plain", "action_policy_sets": ["github-reads", "github-writes"]})
+    assert picked.status_code == 201, picked.text
+    (bound,) = client.get(f"/sandboxes/{picked.json()['name']}/action-policy").json()["bindings"]
+    assert [policy_set["name"] for policy_set in bound["policy_sets"]] == ["github-reads", "github-writes"]
+
+    sandboxes_before = [name for kind, name in custom_objects.objects if kind == "sandboxes"]
+    refused = client.post("/sandboxes", json={"slug": "plain", "action_policy_sets": ["vanished"]})
+    assert refused.status_code == 422, refused.text
+    assert [name for kind, name in custom_objects.objects if kind == "sandboxes"] == sandboxes_before
+
+
+def test_policy_sets_list_the_namespace_for_the_create_form(client: TestClient) -> None:
+    sets = {policy_set["name"]: policy_set for policy_set in client.get("/action-policy/sets").json()}
+    assert set(sets) == {"github-reads", "github-writes"}
+    assert sets["github-reads"]["ready"]["status"] == "True"
+    assert (sets["github-writes"]["ready"], sets["github-writes"]["refused"]) == (None, None)
 
 
 def test_create_with_picked_policies_grants_one_binding_the_sandbox_owns(
@@ -647,6 +682,7 @@ def test_openapi_schema_keeps_expected_operations(client: TestClient) -> None:
         "/sandboxes/{name}/egress",
         "/sandboxes/{name}/egress/decisions",
         "/sandboxes/{name}/action-policy",
+        "/action-policy/sets",
         "/egress/policies",
         "/egress/bindings/{name}",
         "/sandboxes/{name}/sessions",
@@ -679,6 +715,7 @@ def test_openapi_schema_keeps_expected_operations(client: TestClient) -> None:
     assert set(paths["/sandboxes/{name}"]) == {"get", "delete"}
     assert set(paths["/sandboxes/{name}/egress"]) == {"get", "post"}
     assert set(paths["/sandboxes/{name}/action-policy"]) == {"get"}
+    assert set(paths["/action-policy/sets"]) == {"get"}
     assert set(paths["/threads/{thread_id}"]) == {"get", "patch"}
     assert set(paths["/egress/bindings/{name}"]) == {"delete"}
 

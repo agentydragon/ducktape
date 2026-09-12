@@ -193,6 +193,10 @@ class ActionPolicyInventory:
         """Every name must resolve to a set the namespace holds, or nothing is written."""
         _require_known(names, await self._policy_sets_by_name())
 
+    async def list_policy_sets(self) -> list[ActionPolicySetView]:
+        """Every set in the namespace, refused ones included, in name order."""
+        return [_set_view(policy_set) for name, policy_set in sorted((await self._policy_sets_by_name()).items())]
+
     async def for_sandbox(self, sandbox_uid: UUID) -> ActionPolicyView:
         """The Sandbox's policy as the Action Service resolves it; the UID is what a subject pins."""
         bindings, policy_sets = await asyncio.gather(self._list(BINDINGS_PLURAL), self._list(POLICY_SETS_PLURAL))

@@ -86,6 +86,11 @@ class NewSandbox(BaseModel):
         default_factory=list,
         description="EgressPolicy names to grant. When a preset is selected, omission inherits its list.",
     )
+    action_policy_sets: list[str] = Field(
+        default_factory=list,
+        description="ActionPolicySet names to bind. When a preset is selected, omission inherits its list; an "
+        "explicit list, empty included, is bound as given.",
+    )
     thread_preset: str | None = Field(
         default=None, description="Optional ThreadPreset override for this Sandbox's future sessions."
     )
