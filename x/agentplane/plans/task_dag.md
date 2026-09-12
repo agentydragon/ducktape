@@ -408,6 +408,27 @@ No acknowledgement, retry, steering, cancellation, or completion may be invented
 Decide the narrow common contract only after these observations; keep unsupported operations native
 or explicitly unavailable. **Deferred:** generic queue management and unproven per-input cancellation.
 
+### `PROD` — production-capable governed action execution
+
+**Milestone:** a production Agentplane instance, distinct from staging, governing Actions for real
+operator work; `PC_EGRESS` needs the same instance. Gated on `MCPAUTH`'s remaining upstream
+acceptance; `T3` is product work that lands on it, not a prerequisite. What "production-capable"
+requires beyond the staging deployment is not defined.
+
+### `AG` — hosted Agent and Thread model
+
+**Deferred:** the hosted Agent/Thread model beyond today's Sandbox-bound Threads: a durable Thread
+lifecycle that outlives a Sandbox, conversation read and control surfaces, and an explicit policy
+for reading across Identities, which `ING` needs for cross-Identity delivery. Nothing waits on it
+except `RETIRE_AGENT`, whose replacement runtime it is.
+
+### `DT` — driver-provided declarations and background control
+
+**Deferred pending a real consumer:** a driver may declare model-visible tools and control
+background work, but any such runner surface reuses the Action Service contracts rather than a
+second tool-request lifecycle; the settled provider behavior and the seam are in
+[driver tools and background work](driver_tools_and_background.md).
+
 ### `ING` — Event & Notification Hub
 
 **Deferred support:** consume Action events and external sources such as GitHub/Calendar, match
