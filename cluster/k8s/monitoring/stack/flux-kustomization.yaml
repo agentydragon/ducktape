@@ -9,8 +9,8 @@ spec:
   path: ./cluster/k8s/monitoring/stack
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: monitoring-stack
     namespace: ducktape-flux
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2

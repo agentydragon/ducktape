@@ -52,7 +52,7 @@ from haku.console.identity.operator_identity_store import PostgresOperatorIdenti
 from haku.console.settings import Settings
 from haku.console.tool_call_actor import OperatorActor
 from haku.console.tool_calls import ToolCallStatus
-from third_party.containers.rlocations import PGVECTOR_PG18
+from third_party.containers import pgvector_pg18
 from util.testing.postgres import create_database_sync, force_drop_database_sync
 from util.testing.postgres_fixtures import start_postgres_container
 
@@ -287,7 +287,7 @@ def postgres_container() -> Generator[PostgresContainer]:
     The baseline creates `vector` columns, so every test that migrates to head needs an image
     that has the extension — the same capability production gets from the CNPG image.
     """
-    container = start_postgres_container(PGVECTOR_PG18)
+    container = start_postgres_container(pgvector_pg18.IMAGE)
     try:
         yield container
     finally:

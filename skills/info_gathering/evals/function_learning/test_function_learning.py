@@ -28,7 +28,7 @@ from skills.info_gathering.evals.function_learning.function_learning import run_
 from skills.info_gathering.evals.function_learning.functions import PARITY_GROUPS
 from skills.info_gathering.evals.function_learning.result_types import RunSummary
 from skills.info_gathering.evals.replay_client import ReplayChatClient
-from third_party.containers.rlocations import PYTHON_3_13_SLIM
+from third_party.containers import python_3_13_slim
 from util.oci import load_oci_image
 
 _TEST_TURNS = 3
@@ -59,7 +59,7 @@ async def _run_with_replay(
     turn_limit: int = _TEST_TURNS,
 ) -> RunSummary:
     client = ReplayChatClient(responses=completions)
-    image_tag = load_oci_image(PYTHON_3_13_SLIM)
+    image_tag = load_oci_image(python_3_13_slim.IMAGE)
 
     # Stage the empty skill so the sandbox shape matches production: prompt
     # claims `SKILL_PATH` is mounted, and it really is.

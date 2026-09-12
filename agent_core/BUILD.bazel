@@ -246,7 +246,7 @@ py_test(
         ":model",
         "//:conftest",
         "//openai_utils:model",
-        "@pypi//httpx",
+        "@pypi//httpx2",
         "@pypi//openai",
         "@pypi//pytest_bazel",
     ],

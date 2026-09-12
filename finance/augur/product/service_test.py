@@ -605,6 +605,119 @@ def test_combined_product_projection_simulates_once(
     assert response.terminal_distribution.terminal_metric_samples["seed"] == [7, 8]
 
 
+def _projection_request(
+    scenario: ScenarioKey, *, first_seed: int = 7, rollout_count: int = 2, metric: MetricName = "cash"
+) -> ProductProjectionRequest:
+    return ProductProjectionRequest(
+        scenario=scenario,
+        first_seed=first_seed,
+        rollout_count=rollout_count,
+        metric=metric,
+        fan_percentiles=(5, 50, 95),
+        terminal_percentiles=(0, 50, 100),
+    )
+
+
+def _with_cache_entries(config: Config, entries: int) -> Config:
+    return config.model_copy(update={"projection_cache_entries": entries})
+
+
+@dataclass
+class SimulationSpy:
+    """Counts the simulations the projection cache exists to skip, one counter per entry point."""
+
+    summaries: int = 0
+    rollouts: int = 0
+
+
+@pytest.fixture
+def simulations(monkeypatch: pytest.MonkeyPatch) -> SimulationSpy:
+    spy = SimulationSpy()
+    simulate_summaries, execute_rollout = service.simulate_product_metrics, service.execute
+
+    def counted_summary(*args, **kwargs):
+        spy.summaries += 1
+        return simulate_summaries(*args, **kwargs)
+
+    def counted_rollout(*args, **kwargs):
+        spy.rollouts += 1
+        return execute_rollout(*args, **kwargs)
+
+    monkeypatch.setattr(service, "simulate_product_metrics", counted_summary)
+    monkeypatch.setattr(service, "execute", counted_rollout)
+    return spy
+
+
+def test_repeated_projection_and_rollout_requests_reuse_one_simulation(
+    product: service.ProductService, scenario_key: ScenarioKey, simulations: SimulationSpy
+) -> None:
+    """The frontend re-sends byte-identical bodies on reload and chart toggles."""
+
+    projection, rollout = _projection_request(scenario_key), _rollout_request(scenario_key)
+
+    assert product.projection_summary(projection) == product.projection_summary(projection)
+    assert product.rollout(rollout) == product.rollout(rollout)
+    assert (simulations.summaries, simulations.rollouts) == (1, 1)
+
+
+def test_a_request_differing_in_any_field_simulates_again(
+    product: service.ProductService, scenario_key: ScenarioKey, simulations: SimulationSpy
+) -> None:
+    product.projection_summary(_projection_request(scenario_key))
+    product.projection_summary(_projection_request(scenario_key, metric="net_worth"))
+    product.projection_summary(_projection_request(scenario_key, first_seed=11))
+    product.projection_summary(_projection_request(_scenario_key(horizon_months=4)))
+
+    assert simulations.summaries == 4
+
+
+def test_the_projection_cache_evicts_least_recently_used_entries(
+    counting_model: CountingModel,
+    augur_config: Config,
+    make_product_service: MakeProductService,
+    scenario_key: ScenarioKey,
+    simulations: SimulationSpy,
+) -> None:
+    product = make_product_service(counting_model, config=_with_cache_entries(augur_config, 1))
+    cash, net_worth = _projection_request(scenario_key), _projection_request(scenario_key, metric="net_worth")
+
+    product.projection_summary(cash)
+    product.projection_summary(net_worth)
+    product.projection_summary(cash)
+
+    # The one-entry bound dropped the cash projection when the net-worth one arrived.
+    assert simulations.summaries == 3
+
+
+def test_zero_cache_entries_simulates_every_request(
+    counting_model: CountingModel,
+    augur_config: Config,
+    make_product_service: MakeProductService,
+    scenario_key: ScenarioKey,
+    simulations: SimulationSpy,
+) -> None:
+    product = make_product_service(counting_model, config=_with_cache_entries(augur_config, 0))
+    request = _projection_request(scenario_key)
+
+    product.projection_summary(request)
+    product.projection_summary(request)
+
+    assert simulations.summaries == 2
+
+
+def test_a_caller_cannot_corrupt_a_cached_projection(
+    product: service.ProductService, scenario_key: ScenarioKey
+) -> None:
+    """Responses are frozen models, but the `Frame` payloads inside them are mutable."""
+
+    request = _projection_request(scenario_key)
+    first = product.projection_summary(request)
+    simulated = first.metric_fan.monthly_metric_fan["value_quanta"][0]
+    first.metric_fan.monthly_metric_fan["value_quanta"][0] = "999"
+
+    assert product.projection_summary(request).metric_fan.monthly_metric_fan["value_quanta"][0] == simulated
+
+
 def test_metric_fan_runs_reduced_product_projection_once_per_batch(
     product: service.ProductService, monkeypatch: pytest.MonkeyPatch, scenario_key: ScenarioKey
 ) -> None:

@@ -5,6 +5,7 @@ skill_package(
     srcs = [
         "SKILL.md",
         "analyze-session.sh",
+        "conversation.sh",
         "find-current-session.sh",
     ],
 )

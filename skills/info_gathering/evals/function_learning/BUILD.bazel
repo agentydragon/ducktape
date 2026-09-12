@@ -124,7 +124,6 @@ py_test(
 py_test(
     name = "test_function_learning",
     srcs = ["test_function_learning.py"],
-    data = ["//third_party/containers:python_3_13_slim"],
     requires_docker = True,
     deps = [
         ":conftest",
@@ -136,7 +135,7 @@ py_test(
         "//skills/eval_infra:skill_staging",
         "//skills/eval_infra/empty_skill:empty_skill_skill_spec",
         "//skills/info_gathering/evals:replay_client",
-        "//third_party/containers:rlocations",
+        "//third_party/containers:python_3_13_slim",
         "//util:oci",
         "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present

@@ -56,10 +56,6 @@ py_test(
     name = "test_connection_metrics",
     size = "medium",
     srcs = ["test_connection_metrics.py"],
-    data = [
-        "//third_party/containers:pgvector_pg18",
-        "//third_party/containers:ryuk",
-    ],
     requires_docker = True,
     deps = [
         ":connection_metrics",
@@ -79,10 +75,6 @@ py_test(
     name = "test_console_events",
     size = "medium",
     srcs = ["test_console_events.py"],
-    data = [
-        "//third_party/containers:pgvector_pg18",
-        "//third_party/containers:ryuk",
-    ],
     requires_docker = True,
     deps = [
         ":console_events",
@@ -100,10 +92,6 @@ py_test(
     name = "test_push",
     size = "medium",
     srcs = ["test_push.py"],
-    data = [
-        "//third_party/containers:pgvector_pg18",
-        "//third_party/containers:ryuk",
-    ],
     requires_docker = True,
     deps = [
         ":push",
@@ -122,10 +110,6 @@ py_test(
     name = "test_push_routes",
     size = "medium",
     srcs = ["test_push_routes.py"],
-    data = [
-        "//third_party/containers:pgvector_pg18",
-        "//third_party/containers:ryuk",
-    ],
     requires_docker = True,
     deps = [
         "//:conftest",

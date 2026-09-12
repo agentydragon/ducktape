@@ -216,10 +216,6 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
-    data = [
-        "//third_party/containers:postgres_18",
-        "//third_party/containers:ryuk",
-    ],
     visibility = ["//:__subpackages__"],
     deps = [
         "//util/testing:postgres",
@@ -375,6 +371,7 @@ py_test(
         "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
     },
     requires_docker = True,
+    tags = ["visual"],
     deps = [
         ":app",
         ":changelog",

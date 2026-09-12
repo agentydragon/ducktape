@@ -8,7 +8,7 @@ py_library(
     deps = [
         "//openai_utils:client_factory",
         "//openai_utils:model",
-        "@pypi//httpx",
+        "@pypi//httpx2",
         "@pypi//openai",
         "@pypi//pytest",
     ],

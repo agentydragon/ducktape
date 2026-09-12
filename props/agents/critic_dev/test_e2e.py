@@ -46,7 +46,7 @@ from props.core.models.examples import ExampleKind, WholeSnapshotExample
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus, GradingEdge, ReportedIssue
 from props.testing.constants import DEFAULT_TEST_MODEL
-from props.testing.mocks import get_system_message_text
+from props.testing.mocks import get_system_prompt_text
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +112,7 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
         first_request = yield None
 
         # Verify we received a non-empty system message
-        system_text = get_system_message_text(first_request)
+        system_text = get_system_prompt_text(first_request)
         assert system_text, "Expected non-empty system message"
         assert "critic" in system_text.lower(), (
             f"Expected system message to mention 'critic'. Got: {system_text[:200]}..."

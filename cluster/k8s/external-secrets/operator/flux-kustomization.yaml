@@ -10,7 +10,7 @@ spec:
   prune: true
   sourceRef:
     kind: ExternalArtifact
-    name: ducktape
+    name: external-secrets-operator
     namespace: ducktape-flux
   timeout: 5m0s
   wait: true

@@ -76,15 +76,7 @@ filegroup(
     name = "fonts",
     srcs = [
         "fonts/Inter.woff2",
-        "fonts/fonts.conf",
         "test-fonts.css",
     ],
-    visibility = ["//visibility:public"],
-)
-
-# Single-file target for FONTCONFIG_FILE env var (rootpath needs a single file).
-filegroup(
-    name = "fonts_conf",
-    srcs = ["fonts/fonts.conf"],
     visibility = ["//visibility:public"],
 )

@@ -196,10 +196,6 @@ py_test(
     name = "test_authorization",
     size = "medium",
     srcs = ["test_authorization.py"],
-    data = [
-        "//third_party/containers:pgvector_pg18",
-        "//third_party/containers:ryuk",
-    ],
     requires_docker = True,
     deps = [
         ":agent",
@@ -215,7 +211,7 @@ py_test(
         "//haku/console:tool_call_actor",
         "//haku/console/mcp:approval",
         "//mcp_infra/authentik_auth:oidc_principal",
-        "//third_party/containers:rlocations",
+        "//third_party/containers:pgvector_pg18",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
         "@pypi//pytest",
@@ -291,10 +287,6 @@ py_test(
     name = "test_authentik_operator_token",
     size = "medium",
     srcs = ["test_authentik_operator_token.py"],
-    data = [
-        "//third_party/containers:pgvector_pg18",
-        "//third_party/containers:ryuk",
-    ],
     requires_docker = True,
     deps = [
         ":authentik_operator_token",

@@ -87,6 +87,24 @@ The landed tests prove:
 
 The PR descriptions contain the exact remote test/build invocations and BuildBuddy evidence links.
 
+## Access beyond Actions
+
+Hosted agents reach other Agentplane services with the same Sandbox-token authentication, and an
+external harness may be granted access beyond Actions without becoming a hosted Sandbox or Thread;
+conversation search and reading are examples, not the boundary. The constraints on that extension:
+
+- Each resource-owning service keeps its own authorization, independent of how the caller
+  authenticated. An Identity's Action scope grants nothing on another service, and shared
+  authentication infrastructure does not mean one bearer accepted everywhere.
+- The MCP frontend and the Connection-to-Identity binding authority live in the Action Service as
+  the first delivery slice, not as an ownership decision. Whether they move to a shared facade, or
+  services expose direct endpoints, is decided when a second service needs them; other services
+  need not become Action executors to be reachable.
+- Resource-specific permissions and selectors, credential audiences and service boundaries, trusted
+  identity propagation, revocation consistency, and immutable caller/client provenance are settled
+  before any cross-service extension. No speculative service interfaces or preset coupling before
+  then; SandboxPreset stays integration-app-owned and downstream services never interpret it.
+
 ## Deferred
 
 - per-destination audiences if recipient isolation becomes a requirement;

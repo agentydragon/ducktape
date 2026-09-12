@@ -13,8 +13,8 @@ spec:
   prune: true
   wait: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: forgejo-images
     namespace: ducktape-flux
   decryption:
     provider: sops

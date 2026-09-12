@@ -567,7 +567,6 @@ manifest:
     truststore: truststore
     typer: typer
     typer_di: typer_di
-    typesafety.test_container: punq
     typing_extensions: typing_extensions
     typing_inspection: typing_inspection
     tzdata: tzdata
@@ -606,4 +605,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: ce54f1baf9a8811c1730bebc0acab769c8b20582bc689b3f4e7a8d7af2fde575
+integrity: bcf6af1460fafa40f93cd2f928fb3ff54e38fdded2e84fa17d6aa01dc10e21d6

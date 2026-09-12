@@ -38,7 +38,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: static
-          image: git.allegedly.works/ducktape-ci/haku-console-static:devel-20260912093829-b1fb784 # {"$imagepolicy": "flux-system:haku-console-static"}
+          image: git.allegedly.works/ducktape-ci/haku-console-static:devel-20260912140333-67e9660 # {"$imagepolicy": "flux-system:haku-console-static"}
           imagePullPolicy: Always
           env:
             # The nginx entrypoint renders /etc/nginx/templates/default.conf.template

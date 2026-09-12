@@ -1,7 +1,6 @@
 """Canonical cash, balanced journal, and tax effects of settled financial transactions."""
 
 from collections.abc import Sequence
-from copy import deepcopy
 from dataclasses import dataclass
 
 from finance.augur.sim.actions import Transfer
@@ -144,10 +143,7 @@ class Accounting:
         self.journal.append(entry)
 
     def apply_entries(self, entries: Sequence[JournalEntry]) -> None:
-        candidate = deepcopy(self.ledger)
-        for entry in entries:
-            candidate.apply(entry)
-        self.ledger = candidate
+        self.ledger.apply_all(entries)
         self.journal.extend(entries)
 
     def move(self, month: int, cause_id: str, source: AccountRef, destination: AccountRef, amount: int) -> None:
@@ -184,7 +180,7 @@ class Accounting:
             raise ValueError("amount must be positive and covered by available cash")
         if deduction is not None and deduction != "ordinary":
             raise ValueError("unsupported deduction category")
-        candidate = deepcopy(self.tax.income)
+        candidate = self.tax.income.copy()
         if income is not None:
             candidate.accrue(request.to_account.agent_id, income, request.amount)
         if deduction == "ordinary":
@@ -206,12 +202,10 @@ class Accounting:
 
     def close_tax_year(self, month: int, mortgages: Sequence[Mortgage]) -> None:
         assessments = self.tax.assessments(month, mortgages)
-        # Stage all postings first: a bad jurisdiction must not commit earlier jurisdictions.
-        candidate = deepcopy(self.ledger)
-        entries = []
-        for row in assessments:
-            if row.total_tax:
-                entry = JournalEntry(
+        # One group, so a bad jurisdiction does not commit the jurisdictions assessed before it.
+        self.apply_entries(
+            [
+                JournalEntry(
                     month=month,
                     cause_id=row.cause_id,
                     postings=[
@@ -227,10 +221,10 @@ class Accounting:
                         ),
                     ],
                 )
-                candidate.apply(entry)
-                entries.append(entry)
-        self.ledger = candidate
-        self.journal.extend(entries)
+                for row in assessments
+                if row.total_tax
+            ]
+        )
         self.tax_accruals.extend(assessments)
         self.tax_liabilities.extend(
             TaxLiabilityState(

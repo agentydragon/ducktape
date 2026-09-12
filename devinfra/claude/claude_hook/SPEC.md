@@ -53,7 +53,8 @@ These guarantees hold for both CLI and web profiles.
 The CLI profile expects the user's normal shell, Nix devshell, and direnv
 configuration to provide credentials and tools. Its checked-in profile enables
 the git safety shim for `git commit --amend` and `git add -A` / `git add .`,
-leaves `git stash` unblocked for pre-commit compatibility, and exports a direnv
+leaves `git stash` unblocked (pre-commit does not use it; commits once died under the
+block, unexplained -- see the profile), and exports a direnv
 bridge so Bash tool calls pick up the cwd's `.envrc`.
 
 ## Web Profile

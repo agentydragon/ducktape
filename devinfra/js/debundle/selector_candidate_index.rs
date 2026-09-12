@@ -104,7 +104,7 @@ impl CandidateSet {
     /// already ascending and unique; `RoaringBitmap::push` appends in O(1) under
     /// exactly that precondition (and returns `false` if it is violated).
     pub fn push_ascending(&mut self, body_idx: usize) {
-        let appended = self.body_indices.push(body_idx as u32);
+        let appended = self.body_indices.try_push(body_idx as u32).is_ok();
         debug_assert!(
             appended,
             "push_ascending requires strictly increasing indices"

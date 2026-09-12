@@ -204,7 +204,6 @@ py_test(
 py_test(
     name = "test_resources_flow",
     srcs = ["test_resources_flow.py"],
-    data = ["//third_party/containers:debian_slim"],
     requires_docker = True,
     deps = [
         ":conftest",

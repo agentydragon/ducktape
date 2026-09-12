@@ -1,8 +1,9 @@
 """One taxpayer's annual facts, with jurisdiction-specific assessment at year close."""
 
+from __future__ import annotations
+
 from collections.abc import Sequence
-from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from finance.augur.sim.books import TaxAccrual
 from finance.augur.sim.compiler.tax import PreparedTaxProfile
@@ -49,6 +50,16 @@ class TaxBook:
         self.years[profile.agent_id] = TaxYear()
         self.income.enroll(profile.agent_id)
 
+    def copy(self) -> TaxBook:
+        """Years and income rows hold only ints: fresh containers detach the copy from the book."""
+        clone = TaxBook(self.income.sources, self.jurisdictions)
+        clone.profiles = list(self.profiles)
+        clone.years = {agent: replace(year) for agent, year in self.years.items()}
+        clone.income = self.income.copy()
+        clone.salt_policies = self.salt_policies
+        clone.mortgage_interest_policies = self.mortgage_interest_policies
+        return clone
+
     def gain(self, agent: str, amount: int, *, long_term: bool) -> None:
         if agent not in self.years:
             return
@@ -68,7 +79,7 @@ class TaxBook:
 
     def assessments(self, month: int, mortgages: Sequence[Mortgage]) -> list[TaxAccrual]:
         """Quote the whole close without mutating income, carryovers, or financial balances."""
-        income = deepcopy(self.income)
+        income = self.income.copy()
         rows: list[TaxAccrual] = []
         levels = {jurisdiction.jurisdiction_id: jurisdiction.level for jurisdiction in self.jurisdictions}
         for profile in self.profiles:

@@ -47,7 +47,7 @@ from mcp_infra.authentik_auth.provider import build_authentik_auth
 from mcp_infra.authentik_auth.token_exchange import AuthentikTokenExchanger, build_authentik_backend_token_provider
 from mcp_infra.persistence import build_client_storage
 from mcp_infra.request_scoped_openapi import HTTPClientProvider, RequestScopedOpenAPIClients
-from util.bazel.runfiles import get_required_path
+from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +65,7 @@ def _load_openapi_spec() -> dict[str, object]:
     entity path parameters) that are fixed at build time by the
     :grocy_openapi_fixed genrule. See <fix_openapi_spec.py>.
     """
-    spec_path = get_required_path("_main/grocy_mcp/grocy.openapi.fixed.json")
+    spec_path = get_required_path(own_repo_rlocation("grocy_mcp/grocy.openapi.fixed.json"))
     result: dict[str, object] = json.loads(spec_path.read_text())
     return result
 
@@ -77,7 +77,7 @@ def _load_server_instructions() -> str:
     <server_instructions.md> for the content; the file is data-dep'd into
     the server target.
     """
-    return get_required_path("_main/grocy_mcp/server_instructions.md").read_text()
+    return get_required_path(own_repo_rlocation("grocy_mcp/server_instructions.md")).read_text()
 
 
 def _authentik_client_provider(

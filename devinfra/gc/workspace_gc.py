@@ -122,9 +122,12 @@ def pr_states(repo: Path, branches: set[str]) -> dict[str, PrInfo]:
     owner, name = slug.split("/", 1)
     headers = {"Authorization": f"bearer {token}", "User-Agent": "workspace-gc"}
     states: dict[str, PrInfo] = {}
+    batches = list(itertools.batched(sorted(branches), _GRAPHQL_BATCH, strict=False))
+    logger.info("Checking GitHub PR state for %d branches in %d batches", len(branches), len(batches))
     try:
         with httpx.Client(headers=headers, timeout=30) as client:
-            for batch in itertools.batched(sorted(branches), _GRAPHQL_BATCH, strict=False):
+            for index, batch in enumerate(batches, start=1):
+                logger.info("Checking GitHub PR state batch %d/%d (%d branches)", index, len(batches), len(batch))
                 query, alias_to_branch = _pr_query(owner, name, list(batch))
                 payload = client.post(_GRAPHQL_URL, json={"query": query}).raise_for_status().json()
                 data = payload.get("data")
@@ -147,6 +150,8 @@ def pr_states(repo: Path, branches: set[str]) -> dict[str, PrInfo]:
                     connection = repository.get(alias)
                     if connection is not None and (info := _most_decisive(connection["nodes"])) is not None:
                         states[branch] = info
+                logger.info("Finished GitHub PR state batch %d/%d", index, len(batches))
+        logger.info("GitHub PR state complete: %d/%d branches resolved", len(states), len(branches))
         return states
     except Exception:
         logger.warning("PR check skipped: GitHub API error", exc_info=True)
@@ -246,7 +251,11 @@ def _apply_worktree_removals(repo: Path, worktrees: list[Classification]) -> int
     candidates = [item for item in worktrees if isinstance(item, PrunableWorktree)]
     if not candidates:
         return 0
-    results = [worktree_gc.remove_worktree(repo, item.worktree.path) for item in candidates]
+    logger.info("Removing %d worktrees", len(candidates))
+    results = []
+    for index, item in enumerate(candidates, start=1):
+        logger.info("Removing worktree %d/%d %s", index, len(candidates), item.worktree.path)
+        results.append(worktree_gc.remove_worktree(repo, item.worktree.path))
     for result in results:
         if isinstance(result, RemovedWorktree):
             print(f"REMOVED worktree {_short(result.path)}")
@@ -262,7 +271,11 @@ def _apply_branch_deletions(repo: Path, branches: list[BranchClassification]) ->
     candidates = [item for item in branches if isinstance(item, PrunableBranch)]
     if not candidates:
         return 0
-    results = [branch_gc.delete_branch(repo, item.branch.name) for item in candidates]
+    logger.info("Deleting %d branches", len(candidates))
+    results = []
+    for index, item in enumerate(candidates, start=1):
+        logger.info("Deleting branch %d/%d %s", index, len(candidates), item.branch.name)
+        results.append(branch_gc.delete_branch(repo, item.branch.name))
     for result in results:
         if isinstance(result, RemovedBranch):
             print(f"DELETED branch {result.name}")

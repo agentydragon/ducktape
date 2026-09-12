@@ -53,10 +53,10 @@ the contiguous sequence and state progression. No canonical operator API fallbac
 
 `test_operator_links_oauth_mcp_server` exercises the operator-managed MCP OAuth linkage flow
 end to end against a real, deployed, OAuth-protected MCP server -- the `example` server, a
-self-contained fixture (in-memory authorization server and one `echo` tool in one process, no
-external IdP) deployed the same way as `everything`. It starts the linkage through the BFF,
-follows the redirect the authorization endpoint returns the same way a browser would, completes
-the callback through the BFF, and asserts the server reaches `linked` status. Unlike the real
+Dex-backed fixture with one `echo` tool, deployed the same way as `everything`. It starts the
+linkage through the BFF, follows Dex's authorization redirects using the Dex session established
+by the existing operator login, completes the callback through the BFF, asserts the server reaches
+`linked` status, and executes the protected tool through a real Agentplane agent. Unlike the real
 GitHub/Kubernetes providers linked in staging, nothing here is mocked or fabricated: this is the
 same code path an operator uses to link any OAuth MCP server, run against a server this repo
 controls end to end.

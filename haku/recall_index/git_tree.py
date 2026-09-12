@@ -66,8 +66,8 @@ def remote_tip(
     ask "has anything moved?" as often as it likes and only pay for objects when the answer is
     yes. None means the remote has no such branch.
     """
-    refs = repo.remotes["origin"].ls_remotes(callbacks=_callbacks(username, password))
-    return next((str(ref["oid"]) for ref in refs if ref["name"] == f"refs/heads/{branch}"), None)
+    refs = repo.remotes["origin"].list_heads(callbacks=_callbacks(username, password))
+    return next((str(ref.oid) for ref in refs if ref.name == f"refs/heads/{branch}"), None)
 
 
 def fetch_branch(

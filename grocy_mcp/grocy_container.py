@@ -15,7 +15,7 @@ from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_f
 from testcontainers.core.container import DockerContainer
 
 from grocy_mcp.mcp_types import ServerSettings
-from third_party.containers.rlocations import GROCY
+from third_party.containers import grocy
 from util.oci import load_oci_image
 
 logger = logging.getLogger(__name__)
@@ -149,9 +149,9 @@ def wait_for_grocy_ready(container: DockerContainer, *, timeout_s: float = 60) -
 @contextmanager
 def run_grocy_container(*, data_dir: Path | None = None) -> Generator[DockerContainer]:
     """Run a fresh Grocy container with auth disabled; yield it once ready."""
-    load_oci_image(GROCY)
+    load_oci_image(grocy.IMAGE)
     with grocy_custom_init_dir() as init_dir:
-        container = DockerContainer(GROCY.tag)
+        container = DockerContainer(grocy.IMAGE.tag)
         configure_grocy_container(container, init_dir=init_dir, data_dir=data_dir)
         with container:
             wait_for_grocy_ready(container)

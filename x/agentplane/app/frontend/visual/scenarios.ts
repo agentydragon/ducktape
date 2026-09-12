@@ -27,6 +27,9 @@ export interface Scenario extends ScenarioOptions {
   openRawStatus?: boolean;
   /** Once the preset's pick has landed as a pill, open the action policy sets dropdown. */
   openActionPolicySets?: boolean;
+  /** Click the phone-width hamburger once it mounts: the sidebar drawer has no route of its own
+   * (UISHELL_MOBILE). */
+  openMobileSidebar?: boolean;
 }
 
 /** A Pixel 6's CSS viewport: the app is used from a phone, so every page has to fit its width. */
@@ -46,14 +49,35 @@ const SESSION_STATES_ROUTE = `${SANDBOX_ROUTE}/sessions/s-2`;
 const REASONING = "reasoning=r%231";
 
 export const SCENARIOS: Record<string, Scenario> = {
-  sandboxes: { element: "#app", route: "/", viewport: { width: 1200, height: 900 } },
-  sandboxes_phone: { element: "#app", route: "/", viewport: PHONE, outputName: "sandboxes-phone" },
-  sandboxes_stale: { element: "#app", route: "/", viewport: { width: 1200, height: 900 }, wedgedWatch: true },
+  // The sidebar's landing state (UISHELL_SIDEBAR): every group state icon (running, pending,
+  // suspended, deleted) and the struck-through read-only group, with no thread open yet.
+  threads: { element: "#app", route: "/", viewport: { width: 1200, height: 900 } },
+  threads_phone: { element: "#app", route: "/", viewport: PHONE, outputName: "threads-phone" },
+  // The phone-width sidebar drawer opened over the landing view (UISHELL_MOBILE): the hamburger,
+  // the backdrop, and the same group/thread list the desktop sidebar shows.
+  threads_phone_drawer: {
+    element: "#app",
+    route: "/",
+    viewport: PHONE,
+    outputName: "threads-phone-drawer",
+    readySelectors: [".agentplane-sidebar-backdrop"],
+    openMobileSidebar: true,
+  },
+
+  sandboxes: { element: "#app", route: "/sandboxes", viewport: { width: 1200, height: 900 } },
+  sandboxes_phone: { element: "#app", route: "/sandboxes", viewport: PHONE, outputName: "sandboxes-phone" },
+  sandboxes_stale: {
+    element: "#app",
+    route: "/sandboxes",
+    viewport: { width: 1200, height: 900 },
+    wedgedWatch: true,
+  },
   // The launch form with a preset picked through the URL and the sets dropdown opened by the
-  // harness, so the shot carries the namespace's options beside the pre-filled pick.
+  // harness, so the shot carries the namespace's options beside the pre-filled pick. `/sandboxes`,
+  // not `/`: UISHELL_SIDEBAR moved the Sandbox list off the landing route.
   new_sandbox: {
     element: "#app",
-    route: "/?preset=public-coder",
+    route: "/sandboxes?preset=public-coder",
     viewport: { width: 1200, height: 900 },
     outputName: "new-sandbox",
     readySelectors: [".mantine-Pill-root", '[role="listbox"]'],
@@ -61,7 +85,7 @@ export const SCENARIOS: Record<string, Scenario> = {
   },
   new_sandbox_phone: {
     element: "#app",
-    route: "/?preset=public-coder",
+    route: "/sandboxes?preset=public-coder",
     viewport: PHONE,
     outputName: "new-sandbox-phone",
     readySelectors: [".mantine-Pill-root", '[role="listbox"]'],

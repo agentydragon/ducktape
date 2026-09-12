@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from third_party.containers.rlocations import DEBIAN_SLIM
+from third_party.containers import debian_slim
 from util.oci import load_oci_image
 from util.testing.container_logs import LoggedContainer, LoggedContainerFactory
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -16,8 +16,8 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 @pytest.fixture(scope="module")
 def image_tag() -> str:
     """Load debian-slim and return its tag."""
-    load_oci_image(DEBIAN_SLIM)
-    return DEBIAN_SLIM.tag
+    load_oci_image(debian_slim.IMAGE)
+    return debian_slim.IMAGE.tag
 
 
 @pytest.fixture

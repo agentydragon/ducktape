@@ -6,11 +6,10 @@ resources:
   # Public-repository Flux control objects live separately from gaffer-private
   # so diagnostic RBAC can be scoped to the public reconciliation graph.
   - ducktape-flux/
+  - artifact-generators/flux-kustomization.yaml
   - flux-webhook-token/flux-kustomization.yaml
   - flux-webhook/flux-kustomization.yaml
   - flux-monitoring/flux-kustomization.yaml
-  - agentplane-staging/actions-artifact/flux-kustomization.yaml
-  - agentplane-testing/actions-artifact/flux-kustomization.yaml
   - flux-grafana-secrets/flux-kustomization.yaml
   - flux-image-automation-ghcr/flux-kustomization.yaml
   - flux-image-automation-forgejo/flux-kustomization.yaml
@@ -22,7 +21,6 @@ resources:
   - reloader/flux-kustomization.yaml
   - coredns-custom/flux-kustomization.yaml
   - talos-cloud-controller-manager/flux-kustomization.yaml
-  - local-path-provisioner-artifact/flux-kustomization.yaml
   - local-path-provisioner/flux-kustomization.yaml
   - snapshot-controller/gitrepository.yaml
   - snapshot-controller/crds/flux-kustomization.yaml
@@ -34,10 +32,8 @@ resources:
   - goldilocks/flux-kustomization.yaml
   - kube-system/flux-kustomization.yaml
   - descheduler/flux-kustomization.yaml
-  - cnpg-artifact/flux-kustomization.yaml
   - cnpg/flux-kustomization.yaml
   - valkey/flux-kustomization.yaml
-  - reflector-artifact/flux-kustomization.yaml
   - reflector/flux-kustomization.yaml
   - node-feature-discovery/flux-kustomization.yaml
   - nvidia-device-plugin/flux-kustomization.yaml
@@ -152,29 +148,23 @@ resources:
   - agentplane-testing/actions/flux-kustomization.yaml
 
   # --- kyverno ---
-  - kyverno/app-artifact/flux-kustomization.yaml
   - kyverno/app/flux-kustomization.yaml
   - kyverno/policies/flux-kustomization.yaml
 
   # --- external-secrets ---
   - external-secrets/crds/gitrepository.yaml
   - external-secrets/crds/flux-kustomization.yaml
-  - external-secrets/operator-artifact/flux-kustomization.yaml
   - external-secrets/operator/flux-kustomization.yaml
-  - external-secrets/config-artifact/flux-kustomization.yaml
   - external-secrets/config/flux-kustomization.yaml
 
   # --- cert-manager ---
-  - cert-manager/issuer-config-artifact/flux-kustomization.yaml
   - cert-manager/issuer-config/flux-kustomization.yaml
-  - cert-manager/app-artifact/flux-kustomization.yaml
   - cert-manager/app/flux-kustomization.yaml
   - cert-manager/servicemonitor/flux-kustomization.yaml
   - cert-manager/trust/flux-kustomization.yaml
   - cert-manager/environment/flux-kustomization.yaml
 
   # --- gateway ---
-  - gateway-artifact/flux-kustomization.yaml
   - gateway/flux-kustomization.yaml
 
   # --- monitoring ---
@@ -416,15 +406,10 @@ resources:
   - study-casino/app/flux-kustomization.yaml
 
   # --- seaweedfs (trial) ---
-  - seaweedfs/namespace-artifact/flux-kustomization.yaml
   - seaweedfs/namespace/flux-kustomization.yaml
-  - seaweedfs/secrets-artifact/flux-kustomization.yaml
   - seaweedfs/secrets/flux-kustomization.yaml
-  - seaweedfs/operator-artifact/flux-kustomization.yaml
   - seaweedfs/operator/flux-kustomization.yaml
-  - seaweedfs/db-artifact/flux-kustomization.yaml
   - seaweedfs/db/flux-kustomization.yaml
-  - seaweedfs/cluster-artifact/flux-kustomization.yaml
   - seaweedfs/cluster/flux-kustomization.yaml
   - seaweedfs/vm-images-bucket/flux-kustomization.yaml
   - seaweedfs/drivefs-artifacts-bucket/flux-kustomization.yaml

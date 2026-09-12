@@ -21,7 +21,7 @@ import pytest
 import pytest_bazel
 
 from loom.wayback.proxy import fake_ia
-from third_party.containers.rlocations import PYTHON_3_13_SLIM
+from third_party.containers import python_3_13_slim
 from util.bazel.runfiles import get_required_path
 from util.oci import OciImage, load_oci_image
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -61,7 +61,7 @@ async def fake_upstream_port() -> AsyncIterator[int]:
 @pytest.fixture
 async def compose_stack(fake_upstream_port: int) -> AsyncIterator[ComposeStack]:
     load_oci_image(WAYBACK_PROXY_IMAGE)
-    load_oci_image(PYTHON_3_13_SLIM)
+    load_oci_image(python_3_13_slim.IMAGE)
     compose_file = get_required_path(COMPOSE_RLOCATION)
     project = f"wayback-e2e-{uuid.uuid4().hex[:8]}"
     stack = ComposeStack(

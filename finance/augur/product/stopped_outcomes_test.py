@@ -45,6 +45,7 @@ def _product(*, future_cpi: float = 10) -> ProductService:
         models={"synthetic": ConstantFrameModel(levels={InflationKey(): inflation})},
         max_rollout_samples=2,
         max_horizon_months=3,
+        result_cache_entries=4,
     )
 
 

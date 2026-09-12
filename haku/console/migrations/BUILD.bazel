@@ -15,17 +15,12 @@ py_test(
     name = "test_recall_index_schema",
     size = "medium",
     srcs = ["test_recall_index_schema.py"],
-    data = [
-        "//third_party/containers:pgvector_pg18",
-        "//third_party/containers:ryuk",
-    ],
     requires_docker = True,
     deps = [
         "//:conftest",
         "//haku/console:conftest",
         "//haku/console:database_migrate",
         "//haku/recall_index:schema",
-        "//third_party/containers:rlocations",
         "@pypi//alembic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

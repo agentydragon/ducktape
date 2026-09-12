@@ -7,6 +7,7 @@ metadata:
     app.kubernetes.io/name: agentplane-actions
   annotations:
     configmap.reloader.stakater.com/reload: agentplane-action-federation
+    secret.reloader.stakater.com/reload: agentplane-mcp-oauth
 spec:
   replicas: 1
   strategy:
@@ -35,7 +36,7 @@ spec:
           type: RuntimeDefault
       initContainers:
         - name: migrate
-          image: git.allegedly.works/ducktape-ci/agentplane-action-service-migrate:devel-20260912093801-b1fb784 # {"$imagepolicy": "flux-system:agentplane-action-service-migrate"}
+          image: git.allegedly.works/ducktape-ci/agentplane-action-service-migrate:devel-20260912112814-12cdb93 # {"$imagepolicy": "flux-system:agentplane-action-service-migrate"}
           imagePullPolicy: Always
           env: &database-env
             - name: AGENTPLANE_ACTIONS_OPERATOR_OIDC
@@ -84,7 +85,7 @@ spec:
               drop: ["ALL"]
       containers:
         - name: actions
-          image: git.allegedly.works/ducktape-ci/agentplane-action-service:devel-20260912093737-b1fb784 # {"$imagepolicy": "flux-system:agentplane-action-service"}
+          image: git.allegedly.works/ducktape-ci/agentplane-action-service:devel-20260912122305-e2303e4 # {"$imagepolicy": "flux-system:agentplane-action-service"}
           imagePullPolicy: Always
           args:
             - --host=0.0.0.0
@@ -92,6 +93,9 @@ spec:
             - --token-audience=agentplane-egress
           env: *database-env
           volumeMounts:
+            - name: oauth
+              mountPath: /etc/agentplane-mcp
+              readOnly: true
             - name: settings
               mountPath: /etc/agentplane-actions
               readOnly: true
@@ -121,6 +125,13 @@ spec:
               memory: 512Mi
           securityContext: *container-security
       volumes:
+        - name: oauth
+          secret:
+            secretName: agentplane-mcp-oauth
+            defaultMode: 0440
+            items:
+              - key: client-secret
+                path: client-secret
         - name: settings
           configMap:
             name: agentplane-actions-settings
