@@ -16,8 +16,8 @@ from finance.augur.sim.scenario import InterestIncome
 class Distributions:
     def __init__(self, specs: Sequence[PreparedDistribution], managed_slots: Collection[tuple[str, str, str]]) -> None:
         """`managed_slots` are the `(agent_id, holding_account_id, asset_id)` holdings a TLH component settles instead."""
-        self.specs = specs
-        self.managed_slots = managed_slots
+        self.specs: tuple[PreparedDistribution, ...] = tuple(specs)
+        self.managed_slots: set[tuple[str, str, str]] = set(managed_slots)
         # This month's outcomes, cleared by `begin_month`.
         self.outcomes: list[DistributionOutcome] = []
 

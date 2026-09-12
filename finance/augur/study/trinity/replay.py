@@ -117,7 +117,7 @@ import asyncio
 import json
 import logging
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
@@ -141,22 +141,32 @@ from finance.augur.model.series import (
     SecuritySymbol,
 )
 from finance.augur.policy.funding import fund_claims
-from finance.augur.sim.compiler.execution import compile_run
+from finance.augur.sim.bills import Biller
+from finance.augur.sim.books import AccountRef
+from finance.augur.sim.compiler.execution import compile_series
 from finance.augur.sim.external_series import ExternalSeriesContext, materialize_sampled_exogenous
-from finance.augur.sim.prepared import CompiledRun
-from finance.augur.sim.results import Finished, Rollout
-from finance.augur.sim.scenario import (
-    Agent,
-    DistributionTaxSlice,
-    InitialAccountBalance,
-    InitialLot,
-    ObligationType,
-    Scenario,
-    ScheduledObligation,
-    SecurityDistribution,
-    SeriesIndexedAmount,
+from finance.augur.sim.fixed_point import (
+    currency_amount_to_quanta,
+    quantity_scale_for_asset,
+    quantity_to_quanta,
+    rate_to_ppb,
 )
+from finance.augur.sim.ids import AgentId
+from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.prepared import (
+    PreparedAccount,
+    PreparedDistribution,
+    PreparedDistributionSlice,
+    PreparedHoldingPool,
+    PreparedIndexedAmount,
+    PreparedLot,
+    PreparedObligation,
+    PreparedSeries,
+)
+from finance.augur.sim.results import Finished, Rollout
+from finance.augur.sim.scenario import ORDINARY_INCOME, InterestIncome, ObligationType
 from finance.augur.sim.session import ActionSession
+from finance.augur.sim.world import World
 from finance.augur.study.trinity.evidence_snapshot import snapshot_evidence
 from finance.augur.study.trinity.synthetic import synthetic_history
 
@@ -171,7 +181,8 @@ HORIZON_MONTHS = PAYOUT_YEARS * MONTHS_PER_YEAR
 STUDY_FIRST_MONTH = date(1926, 1, 1)
 STUDY_LAST_MONTH = date(1995, 12, 1)
 
-RETIREE = "retiree"
+QUANTUM = Decimal("0.01")
+RETIREE = AgentId("retiree")
 WORLD = "world"
 BROKERAGE = "brokerage"
 CHECKING = "checking"
@@ -260,86 +271,136 @@ def sleeve_targets(equity_share: float) -> dict[tuple[str, str], int]:
     }
 
 
-def build_scenario(*, equity_share: float, withdrawal_rate: float) -> Scenario:
-    """One Trinity cell: `equity_share` of a $1M portfolio, drawn down at `withdrawal_rate`.
+@dataclass(frozen=True)
+class Situation:
+    """What every window of every cell shares: the supplied paths and the horizon.
 
-    The withdrawal is `withdrawal_rate` of the INITIAL portfolio, taken at the start of each
-    of the 30 years and indexed to CPI thereafter — the paper's inflation-adjusted Table 3
-    rather than its constant-dollar Table 1.
-
-    Fixed indexed withdrawals are genuine scheduled claims; their funding is chosen by
-    the Python policy. Exact exhaustion after the final paid withdrawal is a success.
+    The books are declared per window by `compose`; a cell differs from its neighbour only
+    in what it declares, never in the paths underneath.
     """
 
-    annual_withdrawal = INITIAL_PORTFOLIO * Decimal(str(withdrawal_rate))
-    sleeve_shares = ((EQUITY, equity_share), (BONDS, 1.0 - equity_share))
-    holds_bonds = equity_share < 1.0
-    if not 0 <= equity_share <= 1:
-        raise ValueError("equity_share must be finite and in [0, 1]")
+    series: tuple[PreparedSeries, ...]
+    rollout_count: int
+    horizon_months: int
 
-    return Scenario(
-        agents=[Agent(agent_id=RETIREE), Agent(agent_id=WORLD)],
-        initial_cash=[
-            InitialAccountBalance(agent_id=RETIREE, account_id=CHECKING, balance=0),
-            InitialAccountBalance(agent_id=WORLD, account_id=CHECKING, balance=0),
-        ],
-        initial_lots=[
-            InitialLot(
-                lot_id=f"{symbol}_initial",
-                agent_id=RETIREE,
-                account_id=BROKERAGE,
-                asset=SecurityKey(symbol=symbol),
-                purchase_month_index=-1,
-                quantity=float(INITIAL_PORTFOLIO * Decimal(str(share)) / UNIT_PRICE),
-                cost_basis=(INITIAL_PORTFOLIO * Decimal(str(share))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
-            )
-            for symbol, share in sleeve_shares
-            if share > 0.0
-        ],
-        scheduled_obligations=[
-            ScheduledObligation(
-                month=year * MONTHS_PER_YEAR,
-                obligation_id=f"withdrawal_year_{year}",
-                obligation_type=ObligationType.CASH_SPEND,
-                agent_id=RETIREE,
-                from_account_id=CHECKING,
-                to_agent_id=WORLD,
-                to_account_id=CHECKING,
-                amount_due=SeriesIndexedAmount(
-                    base_amount=annual_withdrawal, series=InflationKey(), adjustment_period_months=MONTHS_PER_YEAR
-                ),
-            )
-            for year in range(PAYOUT_YEARS)
-        ],
-        # The all-stock cell excludes the bond product, including its payout declaration.
-        security_distributions=[
-            SecurityDistribution(
-                asset=SecurityKey(symbol=BONDS),
-                agent_id=RETIREE,
-                holding_account_id=BROKERAGE,
-                to_account_id=CHECKING,
-                # The scenario carries no tax profile, so the character is inert here; it is
-                # required because a payout that allocates less than all of itself would pay
-                # out less than the fund distributes.
-                tax_character=(DistributionTaxSlice(fraction=1.0),),
-            )
-        ]
-        if holds_bonds
-        else [],
-        tax_profiles=[],
-        horizon_months=HORIZON_MONTHS,
+
+def situation(
+    external_series: ExternalSeriesContext, *, rollout_count: int, horizon_months: int = HORIZON_MONTHS
+) -> Situation:
+    return Situation(
+        series=compile_series(
+            external_series, rollout_count=rollout_count, horizon_months=horizon_months, currency_quantum=QUANTUM
+        ),
+        rollout_count=rollout_count,
+        horizon_months=horizon_months,
     )
 
 
-def execute(
-    run: CompiledRun,
+def opening_lots(equity_share: float, *, portfolio: Decimal = INITIAL_PORTFOLIO) -> tuple[PreparedLot, ...]:
+    """`equity_share` of `portfolio` in stocks and the rest in bonds, bought at `UNIT_PRICE` the month before."""
+    if not 0 <= equity_share <= 1:
+        raise ValueError("equity_share must be finite and in [0, 1]")
+    lots = []
+    for symbol, share in ((EQUITY, equity_share), (BONDS, 1.0 - equity_share)):
+        if share <= 0.0:
+            continue
+        value = portfolio * Decimal(str(share))
+        scale = quantity_scale_for_asset(SecurityKey(symbol=symbol))
+        lots.append(
+            PreparedLot(
+                lot_id=f"{symbol}_initial",
+                agent_id=RETIREE,
+                account_id=BROKERAGE,
+                asset_id=str(symbol),
+                purchase_month=-1,
+                quantity_scale=scale,
+                units=int(quantity_to_quanta(float(value / UNIT_PRICE), scale=scale)),
+                basis=int(
+                    currency_amount_to_quanta(value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), quantum=QUANTUM)
+                ),
+            )
+        )
+    return tuple(lots)
+
+
+def compose(case: Situation, rollout_id: int, *, lots: Sequence[PreparedLot], annual_withdrawal: Decimal) -> World:
+    """One window's books: `lots` in the brokerage, drawn down by `annual_withdrawal` at the start of
+    each year and indexed to CPI thereafter — the paper's inflation-adjusted Table 3 rather than
+    its constant-dollar Table 1.
+
+    The withdrawals are genuine scheduled claims; their funding is chosen by the Python
+    policy. Exact exhaustion after the final paid withdrawal is a success. The all-stock
+    cell holds no bond lot and so declares no payout.
+    """
+    holds_bonds = any(lot.asset_id == str(BONDS) for lot in lots)
+    world = World(
+        MarketPath(case.series, rollout_id, rollout_count=case.rollout_count),
+        horizon_months=case.horizon_months,
+        # The bond payout names its (corporate) interest source; nothing here is taxed.
+        income_sources=(ORDINARY_INCOME, InterestIncome(issuer_jurisdiction_id=None))
+        if holds_bonds
+        else (ORDINARY_INCOME,),
+    )
+    for agent_id in (RETIREE, WORLD):
+        world.declare_account(
+            PreparedAccount(account=AccountRef(agent_id=agent_id, account_id=CHECKING), opening_balance=0)
+        )
+    for lot in lots:
+        world.declare_pool(
+            PreparedHoldingPool(
+                agent_id=lot.agent_id,
+                account_id=lot.account_id,
+                asset_id=lot.asset_id,
+                quantity_scale=lot.quantity_scale,
+            )
+        )
+    for lot in lots:
+        world.hold(lot)
+    for month in range(0, case.horizon_months, MONTHS_PER_YEAR):
+        world.track(
+            Biller(
+                PreparedObligation(
+                    month=month,
+                    obligation_id=f"withdrawal_year_{month // MONTHS_PER_YEAR}",
+                    obligation_type=ObligationType.CASH_SPEND,
+                    from_account=AccountRef(agent_id=RETIREE, account_id=CHECKING),
+                    to_account=AccountRef(agent_id=WORLD, account_id=CHECKING),
+                    amount_due=PreparedIndexedAmount(
+                        base_amount=int(currency_amount_to_quanta(annual_withdrawal, quantum=QUANTUM)),
+                        series_id=InflationKey().wire_id,
+                        base_month_index=0,
+                        adjustment_period_months=MONTHS_PER_YEAR,
+                    ),
+                    property_id=None,
+                    deduction_category=None,
+                    deductible_fraction_ppb=rate_to_ppb(1.0),
+                )
+            )
+        )
+    if holds_bonds:
+        world.declare_distribution(
+            PreparedDistribution(
+                agent_id=RETIREE,
+                holding_account_id=BROKERAGE,
+                asset_id=str(BONDS),
+                to_account_id=CHECKING,
+                # Nobody is taxed here, so the character is inert; it is required because a
+                # payout that allocates less than all of itself would pay out less than the
+                # fund distributes.
+                tax_character=(PreparedDistributionSlice(fraction_ppb=rate_to_ppb(1.0), issuer_jurisdiction_id=None),),
+            )
+        )
+    return world
+
+
+def drive(
+    worlds: Mapping[int, World],
     *,
     targets: dict[tuple[str, str], int],
-    rollout_ids: Sequence[int],
     capture: Literal["summary", "dense", "forensic"] = "summary",
 ) -> list[Rollout]:
-    """Python owns the monthly batch loop; native execution owns all financial effects."""
-    session = ActionSession.from_run(run, RETIREE, list(rollout_ids), capture=capture)
+    """Python owns the monthly batch loop; the worlds own every financial effect."""
+    session = ActionSession(worlds, RETIREE, capture=capture)
     try:
         batch = session.start()
         while not isinstance(batch, Finished):
@@ -347,6 +408,25 @@ def execute(
         return batch.rollouts
     finally:
         session.close()
+
+
+def execute(
+    case: Situation,
+    *,
+    equity_share: float,
+    withdrawal_rate: float,
+    rollout_ids: Sequence[int],
+    capture: Literal["summary", "dense", "forensic"] = "summary",
+) -> list[Rollout]:
+    """One Trinity cell — `equity_share` of a $1M portfolio, drawn down at `withdrawal_rate` of
+    that initial value — on the selected windows of `case`."""
+    lots = opening_lots(equity_share)
+    annual_withdrawal = INITIAL_PORTFOLIO * Decimal(str(withdrawal_rate))
+    return drive(
+        {id_: compose(case, id_, lots=lots, annual_withdrawal=annual_withdrawal) for id_ in rollout_ids},
+        targets=sleeve_targets(equity_share),
+        capture=capture,
+    )
 
 
 @dataclass(frozen=True)
@@ -357,7 +437,7 @@ class Replay:
     portfolio: re-sampling per cell would let the sample vary underneath the comparison.
     """
 
-    external_series: ExternalSeriesContext
+    situation: Situation
     window_starts: tuple[date, ...]
     record_start: date
     record_end: date
@@ -378,17 +458,10 @@ class Replay:
         capture: Literal["summary", "dense", "forensic"] = "summary",
     ) -> list[Rollout]:
         """Run a cell or selected original window IDs on the same supplied population."""
-        scenario = build_scenario(equity_share=equity_share, withdrawal_rate=withdrawal_rate)
-        run = compile_run(
-            scenario,
-            rollout_count=self.window_count,
-            external_series=self.external_series,
-            jurisdictions={},
-            locations={},
-        )
         return execute(
-            run,
-            targets=sleeve_targets(equity_share),
+            self.situation,
+            equity_share=equity_share,
+            withdrawal_rate=withdrawal_rate,
             rollout_ids=range(self.window_count) if rollout_ids is None else rollout_ids,
             capture=capture,
         )
@@ -467,7 +540,7 @@ def replay_model(model: HistoricalWindowsModel) -> Replay:
     window_starts = model.window_starts(HORIZON_MONTHS)
     bundle = model.materialize(window_starts=window_starts, horizon_months=HORIZON_MONTHS)
     return Replay(
-        external_series=materialize_sampled_exogenous(bundle),
+        situation=situation(materialize_sampled_exogenous(bundle), rollout_count=len(window_starts)),
         window_starts=window_starts,
         record_start=model.history.months[0],
         record_end=model.history.months[-1],

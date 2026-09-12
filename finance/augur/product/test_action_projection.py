@@ -28,9 +28,9 @@ from finance.augur.sim.scenario import BondHolding, InitialAccountBalance
 from finance.augur.sim.session import ActionSession
 from finance.augur.sim.testing.bonds import CPI_DOUBLING, bond_case
 from finance.augur.sim.testing.case import Case, scenario
+from finance.augur.sim.testing.example_run import prepare
 from finance.augur.sim.testing.fixtures import checking
 from finance.augur.x.monthly_actions.policy import decide
-from finance.augur.x.monthly_actions.run import prepare
 
 
 def _run(

@@ -18,9 +18,9 @@ from finance.augur.sim.prepared import (
 from finance.augur.sim.results import Finished
 from finance.augur.sim.scenario import InterestIncome
 from finance.augur.sim.session import ActionSession
+from finance.augur.sim.testing.example_run import prepare
 from finance.augur.sim.tlh import TlhAssumptions
 from finance.augur.sim.validation import validate
-from finance.augur.x.monthly_actions.run import prepare
 
 
 @pytest.fixture

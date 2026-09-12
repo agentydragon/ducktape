@@ -2,7 +2,6 @@
 
 import json
 import subprocess
-from decimal import Decimal
 from pathlib import Path
 
 import numpy as np
@@ -10,12 +9,17 @@ import pytest
 import pytest_bazel
 
 from finance.augur.model.series import InflationKey, SecurityKey
+from finance.augur.sim.bills import Biller
+from finance.augur.sim.books import AccountRef
+from finance.augur.sim.compiler.execution import compile_series
 from finance.augur.sim.external_series import ExternalSeriesContext
+from finance.augur.sim.fixed_point import quantity_scale_for_asset, quantity_to_quanta, rate_to_ppb
+from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.prepared import PreparedAccount, PreparedHoldingPool, PreparedLot, PreparedObligation
 from finance.augur.sim.results import Finished, RejectedAction, Rollout
-from finance.augur.sim.scenario import InitialLot, ObligationType, ScheduledObligation
-from finance.augur.sim.testing.case import Case, scenario
-from finance.augur.sim.testing.fixtures import checking
-from finance.augur.study.trinity.replay import EQUITY, HORIZON_MONTHS
+from finance.augur.sim.scenario import ORDINARY_INCOME, ObligationType
+from finance.augur.sim.world import World
+from finance.augur.study.trinity.replay import EQUITY, HORIZON_MONTHS, QUANTUM, Situation, situation
 from finance.augur.x.bounded_spending.compare import _write_consumption_distribution, compare
 from finance.augur.x.bounded_spending.python_policy import BatchPolicy, Parameters, SpendingPolicy, consumption, run
 from util.bazel.runfiles import get_required_path
@@ -24,42 +28,62 @@ from util.bazel.runfiles import get_required_path
 @pytest.fixture
 def early_claim_failure() -> Finished:
     stock = SecurityKey(symbol="test-bill-funding")
-    case = Case(
-        scenario(
-            checking(("retiree", Decimal(0)), ("world", Decimal(0))),
+    series = compile_series(
+        ExternalSeriesContext.from_level_blocks(
+            [(stock, np.array([[100.0] * 3, [300.0] * 3])), (InflationKey(), np.ones((2, 3)))],
+            rollout_count=2,
             horizon_months=2,
-            tax_profiles=[],
-            initial_lots=[
-                InitialLot(
-                    lot_id="test-bill-lot",
-                    agent_id="retiree",
-                    account_id="brokerage",
-                    asset=stock,
-                    purchase_month_index=-24,
-                    quantity=1,
-                    cost_basis=100,
-                )
-            ],
-            scheduled_obligations=[
-                ScheduledObligation(
+        ),
+        rollout_count=2,
+        horizon_months=2,
+        currency_quantum=QUANTUM,
+    )
+    scale = quantity_scale_for_asset(stock)
+
+    def compose(rollout_id: int) -> World:
+        world = World(
+            MarketPath(series, rollout_id, rollout_count=2), horizon_months=2, income_sources=(ORDINARY_INCOME,)
+        )
+        for name in ("retiree", "world"):
+            world.declare_account(
+                PreparedAccount(account=AccountRef(agent_id=name, account_id="checking"), opening_balance=0)
+            )
+        world.declare_pool(
+            PreparedHoldingPool(
+                agent_id="retiree", account_id="brokerage", asset_id=str(stock.symbol), quantity_scale=scale
+            )
+        )
+        world.hold(
+            PreparedLot(
+                lot_id="test-bill-lot",
+                agent_id="retiree",
+                account_id="brokerage",
+                asset_id=str(stock.symbol),
+                purchase_month=-24,
+                quantity_scale=scale,
+                units=int(quantity_to_quanta(1, scale=scale)),
+                basis=10_000,
+            )
+        )
+        world.track(
+            Biller(
+                PreparedObligation(
                     month=0,
                     obligation_id="test-large-bill",
                     obligation_type=ObligationType.OUTSIDE_RENT,
-                    agent_id="retiree",
-                    from_account_id="checking",
-                    to_agent_id="world",
-                    to_account_id="checking",
-                    amount_due=Decimal(200),
+                    from_account=AccountRef(agent_id="retiree", account_id="checking"),
+                    to_account=AccountRef(agent_id="world", account_id="checking"),
+                    amount_due=20_000,
+                    property_id=None,
+                    deduction_category=None,
+                    deductible_fraction_ppb=rate_to_ppb(1.0),
                 )
-            ],
-        ),
-        rollout_count=2,
-        series={stock: np.array([[100.0] * 3, [300.0] * 3]), InflationKey(): np.ones((2, 3))},
-    )
+            )
+        )
+        return world
+
     return run(
-        case.compiled_run,
-        SpendingPolicy(BatchPolicy(Parameters(400, 0, 0), 2), {("brokerage", str(stock.symbol)): 1}),
-        [0, 1],
+        compose, SpendingPolicy(BatchPolicy(Parameters(400, 0, 0), 2), {("brokerage", str(stock.symbol)): 1}), [0, 1]
     )
 
 
@@ -90,8 +114,7 @@ def test_paid_distribution_keeps_zero_when_request_is_unattempted(
 def test_invalid_equity_share_is_rejected_before_compilation(tmp_path: Path, equity_share: float) -> None:
     with pytest.raises(ValueError, match="equity_share"):
         compare(
-            external_series=ExternalSeriesContext(),
-            rollout_count=1,
+            case=Situation(series=(), rollout_count=1, horizon_months=HORIZON_MONTHS),
             equity_share=equity_share,
             rate_bps=400,
             max_cut_bps=1000,
@@ -114,8 +137,7 @@ def test_bounded_spending_reacts_to_each_path_and_preserves_the_fixed_real_contr
     )
     output = tmp_path / "comparison"
     compare(
-        external_series=paths,
-        rollout_count=3,
+        case=situation(paths, rollout_count=3),
         equity_share=1.0,
         rate_bps=400,
         max_cut_bps=1000,
@@ -173,8 +195,7 @@ def test_live_zero_consumption_is_not_confused_with_post_stop_absence(tmp_path: 
     )
     output = tmp_path / "stop-comparison"
     compare(
-        external_series=paths,
-        rollout_count=1,
+        case=situation(paths, rollout_count=1),
         equity_share=1.0,
         rate_bps=10_000,
         max_cut_bps=10_000,

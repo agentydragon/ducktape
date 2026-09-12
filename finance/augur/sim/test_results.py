@@ -8,8 +8,8 @@ from pydantic import ValidationError
 
 from finance.augur.sim.results import Finished, Paid, PaymentReceipt, PaymentRejected, RejectedAction
 from finance.augur.sim.session import ActionSession
+from finance.augur.sim.testing.example_run import prepare
 from finance.augur.x.monthly_actions.policy import decide
-from finance.augur.x.monthly_actions.run import prepare
 
 
 @pytest.mark.parametrize("capture", ["summary", "forensic"])
