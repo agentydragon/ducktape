@@ -12,10 +12,10 @@
 
 use crate::docker_exec::ScratchContainer;
 use chrono::Utc;
-use rig::client::{CompletionClient, ProviderClient};
-use rig::completion::{Chat, Completion, CompletionModel, CompletionResponse, ToolDefinition};
-use rig::message::{AssistantContent, Message, ToolChoice};
-use rig::tool::Tool;
+use rig_core::client::{CompletionClient, ProviderClient};
+use rig_core::completion::{Chat, Completion, CompletionModel, CompletionResponse, ToolDefinition};
+use rig_core::message::{AssistantContent, Message, ToolChoice};
+use rig_core::tool::Tool;
 use runfiles::{Runfiles, rlocation};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -673,7 +673,7 @@ pub async fn run_game(
 
     let result = match api {
         "openai" => {
-            let client = rig::providers::openai::Client::from_env();
+            let client = rig_core::providers::openai::Client::from_env();
             run_with_client(
                 &client,
                 model_name,
@@ -685,7 +685,7 @@ pub async fn run_game(
             .await
         }
         "anthropic" => {
-            let client = rig::providers::anthropic::Client::from_env();
+            let client = rig_core::providers::anthropic::Client::from_env();
             run_with_client(
                 &client,
                 model_name,
