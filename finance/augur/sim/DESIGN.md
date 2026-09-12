@@ -67,7 +67,7 @@ an absent one. `World` has no capture
 mode, no named subject and no history: component outcome lists (`accounting.journal`, `holdings.dispositions`, …)
 hold the current month and are cleared when the next month opens, so a caller that
 wants a history copies them between steps. `ActionSession` records the summary and
-trace it returns; the configured runner records `WorldResult` through
+trace it returns; the app's runner records `WorldResult` through
 `capture.FinancialCapture`; an experiment records only what it measures. Each path is stateful;
 parallel paths do not make future months independent. Policies see current
 actor-scoped facts, not future sampled market trajectories. `World` owns the
@@ -115,20 +115,22 @@ book at snapshot `f + 1`, marked at the already observed month `f`; no future
 marks or decisions are invented. Reporting must retain this distinction when
 comparing stopped books with completed horizons.
 
-## Remaining configured consumers
+## The app and the remaining configured consumers
 
-`ProductService` calls <configured.py> for compact product arrays or dense event
-frames. Selected detail executes once and projects both metrics and events from
-that completed capture before applying <../product/projection.py>. In-process
-event projection consumes captured rows directly, without a JSON export/decode
-round trip. Explicit JSON exports, prepared-input file serialization and
-the legacy acceptance result adapter remain separate boundaries.
+`ProductService` runs <../product/simulation.py>: one world per path with the app
+household (<../product/household.py>) tracked on it and stepped to the horizon. The
+household consults `policy/configured_allocation.py` for its funding sales, then
+pays each account's claims all or none on the cash those sales leave, so a month
+it cannot fund stops the path with the whole due as its shortfall. Selected detail
+executes once and projects both metrics and events from that completed capture
+before applying <../product/projection.py>; in-process event projection consumes
+captured rows directly, without a JSON export/decode round trip. The app's
+projections do not define the financial capabilities or output shape required by
+every experiment.
 
-The configured runner owns full-horizon loops and
-implicit allocation/grouped-funding behavior. `policy/configured_allocation.py`
-proposes trades through shared Python helpers; Python financial operations settle them.
-The app's projections do not define
-the financial capabilities or output shape required by every experiment.
+<configured.py> remains for its own suites: full-horizon loops through the
+explicit phase methods with grouped funding, deferred purchases and
+unit-denominated managed redemptions.
 
 `sim/testing/simulation_result.py` and `sim/testing/configured_result.py` are the separate legacy
 acceptance adapter, not the common public result contract. Existing tests on

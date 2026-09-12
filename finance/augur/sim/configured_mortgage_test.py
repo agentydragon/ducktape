@@ -6,7 +6,8 @@ from decimal import Decimal
 import pytest
 import pytest_bazel
 
-from finance.augur.sim.configured import execute, simulate_product_metrics
+from finance.augur.product.simulation import simulate_product_metrics
+from finance.augur.sim.configured import execute
 from finance.augur.sim.metric_composition import BASE_METRIC_NAMES
 from finance.augur.sim.scenario import MortgageFinancing, PropertySaleEvent, ScheduledObligation
 from finance.augur.sim.testing.case import Case, levels, scenario

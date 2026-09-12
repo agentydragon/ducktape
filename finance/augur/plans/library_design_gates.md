@@ -226,12 +226,17 @@ Callers by surface today, so the burn-down can be checked off:
   acceptance suites in `sim/testing/{action,asset_sales,bond,held_bond,indexed_payments,lot_basis,obligations,public_sales,security_distributions,transfers}_test.py`.
   These stay on the batch API; the batch layer already drives N worlds through
   delegate agents, and a vectorised policy layer replaces the delegates later.
-- **Configured runner (`sim/configured.py`):** `product/service.py`, the configured
-  acceptance suites (`sim/testing/configured_acceptance_test.py` through
-  `sim/testing/case.py` and `configured_result.py`), `sim/configured_*_test.py`. These
-  leave with P12 and APP, not with COMPOSE; until then the runner drives worlds
-  through the explicit phase methods (`begin_actions`, `execute`, `close_month`,
-  `open_month`).
+- **App (`product/service.py`) — landed on `product/simulation.py`:** one world per
+  path, the `ConfiguredHousehold` tracked on it and `step()` to the horizon; it
+  consults `configured_allocation.plan` for its sales and pays claims all or none
+  per account. `product/service_test.py` pins agreement with the configured runner
+  on spending, ruin, hand-to-mouth and indexed-band cases while that runner exists.
+- **Configured runner (`sim/configured.py`):** the configured acceptance suites
+  (`sim/testing/configured_acceptance_test.py` through `sim/testing/case.py` and
+  `configured_result.py`), `sim/configured_*_test.py`, `tlh_session_test.py`. These
+  leave with P12: purchases and unit-denominated managed redemptions need an action
+  shape before their household exists. Until then the runner drives worlds through
+  the explicit phase methods (`begin_actions`, `execute`, `close_month`, `open_month`).
 - **`Scenario`/`compile_run` authoring:** every caller above plus `product/scenarios.py`;
   leaves with SCHEMA after the constructor slice.
 - **App recording (`capture.FinancialCapture`, `configured.product_row`):** leaves to
@@ -243,7 +248,7 @@ Selected 2026-09-12. The world exposes present state and each component's outcom
 for the current month; it assembles no frame, log, summary or metric on anyone's
 behalf. A caller reads the values it cares about before or after `step()` and keeps
 them itself: the batch session builds the `Summary` and `Trace` its `Finished`
-promises, the configured runner builds `WorldResult` through
+promises, the app's runner builds `WorldResult` through
 `capture.FinancialCapture`, an experiment records only what it measures. Inside a
 component the rule is: a field stays if a later month reads it to compute the
 future; a log nothing reads is history and leaves. No observer class, collector
