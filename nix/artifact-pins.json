@@ -129,8 +129,8 @@
       "sha256": "L+Iyw5EfBUjjtOs5cM+xn8nJGShZLSAPh0kbSWEOR4g="
     },
     "skill-followups": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-followups-2a195c353a3a/followups.skill",
-      "sha256": "KhlcNTo6naD13xkiksatq5Gw7TONWwaHBega3rVZkBU="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-followups-d35fc8600c4e/followups.skill",
+      "sha256": "01/IYAxOqUoBL1TGwANBKCaYRX/rHCgbQsBX7+NkyK4="
     },
     "skill-forensic_surgeon": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-forensic_surgeon-7eccbb9a17c3/forensic_surgeon.skill",
@@ -189,8 +189,8 @@
       "sha256": "BLRbTVupl++pIpqmQZ7WZVzCw1IGy/JDG50ZOqc7HGg="
     },
     "skill-session_logs": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-session_logs-a6074d10de1d/session_logs.skill",
-      "sha256": "pgdNEN4dMujoPlcHiYzx+JP8fMmGaXPsm4W2WfmY0LQ="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-session_logs-8cebe9a51d3c/session_logs.skill",
+      "sha256": "jOvppR085Heh0KxuZZB6npaskGHC8C+RCTGDelN6XCI="
     },
     "skill-superforecaster": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-superforecaster-6619e2155fb3/superforecaster.skill",
