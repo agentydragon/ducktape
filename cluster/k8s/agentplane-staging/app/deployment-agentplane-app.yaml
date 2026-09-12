@@ -174,7 +174,7 @@ spec:
         # The app's Alembic history (x/agentplane/app/migrations). The app itself creates no tables;
         # it verifies the migrated schema at startup and fails if this has not run.
         - name: migrate
-          image: git.allegedly.works/ducktape-ci/agentplane-app-migrate:devel-20260912055426-3935916 # {"$imagepolicy": "flux-system:agentplane-app-migrate"}
+          image: git.allegedly.works/ducktape-ci/agentplane-app-migrate:devel-20260912085242-1ba0e9e # {"$imagepolicy": "flux-system:agentplane-app-migrate"}
           imagePullPolicy: Always
           env: *app-env
           resources:
