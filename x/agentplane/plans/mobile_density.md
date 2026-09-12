@@ -44,8 +44,13 @@ renders.
   **Landed** (transcript-restyle PR): the model picker and stop control now sit in a row under the
   composer textarea on every width, not just narrow ones.
 
-- Shutdown (`IconPower`) and the harness badge are lower-frequency actions/status — candidates for
-  the same overflow treatment as the raw-frames switch.
+- Shutdown (`IconPower`, `aria-label="Shut down harness"`, `session.tsx:461-470`) and the harness
+  badge are lower-frequency actions/status — candidates for the same overflow treatment as the
+  raw-frames switch. **Not to be confused with the interrupt button below** — two separate
+  "stop"-shaped controls, different scope: this one tears down the whole harness process; the one
+  under the composer only stops the current turn. Its low frequency plus destructiveness makes it a
+  _better_ overflow-menu fit than the interrupt button, not a worse one — extra friction before a
+  destructive, rarely-needed action is a feature.
 
 ### Under-composer area — a natural next landing spot
 
@@ -59,17 +64,18 @@ separate settings surface:
   `role="img"`/`aria-label`/`Tooltip` pattern this PR round already used for streaming/failed/sending
   (`StatusDot` in `session.tsx`). Two independent state machines (session attachment, harness
   process) folding into one glanceable indicator, with the breakdown one hover away.
-- **Hamburger/overflow menu near the composer**, holding the "Raw frames" switch and (see below)
-  the stop control, plus room for the combined-status bubble's detail if it reads better as a menu
-  item than a tooltip on small touch targets.
-- **Stop button in the menu — needs a label, and needs to not bury a time-critical action.** An
-  item inside a menu reads by its text, not an icon alone, so "Interrupt"/"Stop" would need a
-  visible label there (unlike today's icon-only `ActionIcon`). But stop is the one control here
-  that's genuinely time-sensitive — the operator reaches for it _during_ an active turn, not at
-  rest — so tucking it two taps deep (open menu, then tap Stop) trades away exactly the
-  responsiveness the current always-visible icon gives it. Worth evaluating a hybrid: stop stays a
-  visible icon whenever a turn is active (`activeTurn !== undefined`, `session.tsx:401`) and only
-  folds into the menu when there's nothing to stop — rather than always living inside it.
+- **Hamburger/overflow menu near the composer**, holding the "Raw frames" switch and — per the
+  header-row bullet above — the harness **shutdown** button (`IconPower`), plus room for the
+  combined-status bubble's detail if it reads better as a menu item than a tooltip on small touch
+  targets. A menu item reads by its text, not an icon alone, so "Shut down harness" would need its
+  full label there (unlike today's icon-only `ActionIcon` with just a tooltip).
+- **Interrupt (`IconPlayerStop`, stops the current turn) is the one control here that should stay
+  out of the menu while it can be used.** It's genuinely time-sensitive — the operator reaches for
+  it _during_ an active turn, not at rest — so tucking it a menu-tap deep trades away exactly the
+  responsiveness the current always-visible icon gives it. A hybrid reads better than folding it in
+  unconditionally: interrupt stays a visible icon whenever a turn is active
+  (`activeTurn !== undefined`, `session.tsx:401`), and only that control — not shutdown — could
+  additionally fold into the menu (with a label) once there's nothing to interrupt.
 
 ## Badges → dots, and message role → layout
 
@@ -152,5 +158,7 @@ It drafts the mock; it doesn't touch `x/agentplane` code.
   shared component infra exists).
 - Whether the pending-approval overlay preempts the operator's current page/input, or docks
   non-modally (a toast/banner) so it can't interrupt something like an in-progress composer edit.
-- Whether stop always lives in the under-composer overflow menu (simplest, but two taps deep during
-  an active turn) or only folds in there when idle, staying a visible icon while a turn is running.
+- Whether interrupt always lives in the under-composer overflow menu (simplest, but two taps deep
+  during an active turn) or only folds in there when idle, staying a visible icon while a turn is
+  running. Shutdown is the more clear-cut menu candidate of the two "stop"-shaped controls — see
+  the session-header-row section above for why.
