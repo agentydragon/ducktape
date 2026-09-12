@@ -24,7 +24,7 @@ from x.agentplane.action_service.auth import (
     OperatorAuthenticator,
 )
 from x.agentplane.action_service.catalog import ActionCatalog, ActionGroup, Key
-from x.agentplane.action_service.connections import ConnectionAuthority, Identity
+from x.agentplane.action_service.connections import ConnectionAuthority
 from x.agentplane.action_service.db import ActionStore, make_engine, make_sessionmaker, verify_schema
 from x.agentplane.action_service.enrollments import EnrollmentAuthority
 from x.agentplane.action_service.fixture_policy import FixtureAutoAllow, FixtureDecisionProvider
@@ -92,10 +92,6 @@ class Settings(BaseSettings):
     operator_subject: str = "configured-bff"
     action_groups: dict[Key, ActionGroup] = Field(
         default_factory=dict, description="Reviewed ActionGroup catalog, keyed by stable namespaced group key."
-    )
-    identities: dict[Key, Identity] = Field(
-        default_factory=dict,
-        description="Configured external caller Identities; runtime Connections bind to these keys.",
     )
     mcp_servers: dict[Key, McpOAuthServer] = Field(default_factory=dict)
 
@@ -174,7 +170,7 @@ async def async_main(settings: Settings) -> None:
             await asyncio.gather(informer_task, return_exceptions=True)
 
         stack.push_async_callback(stop_informer)
-        connections = ConnectionAuthority(make_sessionmaker(engine), settings.identities)
+        connections = ConnectionAuthority(make_sessionmaker(engine), policy_index)
         enrollments = EnrollmentAuthority(make_sessionmaker(engine), connections)
         mcp_linkage = McpLinkageAuthority(make_sessionmaker(engine), settings.mcp_servers, engine=engine)
         await mcp_linkage.cleanup_removed_servers()

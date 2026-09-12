@@ -11,7 +11,7 @@ from uuid import UUID
 import httpx
 from anyio import CancelScope
 
-from x.agentplane.action_service.connections import Connection, ConnectionRename, ConnectionVersion, Identity
+from x.agentplane.action_service.connections import Connection, ConnectionRename, ConnectionVersion
 from x.agentplane.action_service.enrollments import (
     EnrollmentDecisionInput,
     EnrollmentDecisionResult,
@@ -26,6 +26,7 @@ from x.agentplane.action_service.models import (
     ActionState,
     CancellationResult,
     DecisionInput,
+    ServiceAccountRef,
 )
 
 WORKLOAD_CREDENTIAL_PLACEHOLDER = "agentplane-credential-agentplane-workload"
@@ -109,9 +110,9 @@ class OperatorActionServiceClient(_BearerClient):
         response = await self._request("POST", f"/v1/operator/mcp-servers/{server_id}/linkage/disconnect")
         return McpLinkageView.model_validate(response.json())
 
-    async def list_identities(self) -> dict[str, Identity]:
-        response = await self._request("GET", "/v1/operator/identities")
-        return {key: Identity.model_validate(value) for key, value in response.json().items()}
+    async def caller_service_accounts(self) -> list[ServiceAccountRef]:
+        response = await self._request("GET", "/v1/operator/caller-service-accounts")
+        return [ServiceAccountRef.model_validate(row) for row in response.json()]
 
     async def preview_enrollment(self, handle: str, body: EnrollmentPreviewInput) -> EnrollmentPreview:
         response = await self._request(

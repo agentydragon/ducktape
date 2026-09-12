@@ -3,9 +3,6 @@
 # Keep this endpoint aligned with the existing mcp-everything Service (no runner MCP access).
 allowed_service_account_namespaces:
   - agentplane-testing
-identities:
-  personal:
-    enabled: true
 mcp_servers:
   example:
     server_id: example

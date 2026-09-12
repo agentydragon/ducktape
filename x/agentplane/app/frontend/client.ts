@@ -39,7 +39,24 @@ export type ActionRequestView = components["schemas"]["ActionRequestView"];
 export type ActionState = components["schemas"]["ActionState"];
 export type Verdict = components["schemas"]["Verdict"];
 export type Connection = components["schemas"]["Connection"];
-export type ConnectionIdentity = components["schemas"]["Identity"];
+export type CallerServiceAccount = components["schemas"]["ServiceAccountRef"];
+export type GrantCaller = Connection["grants"][number]["caller"];
+
+/** `namespace/name`, as kubectl spells a ServiceAccount; the key a picker selects by. */
+export function serviceAccountKey(account: CallerServiceAccount): string {
+  return `${account.namespace}/${account.name}`;
+}
+
+/** Who a grant acts as, including the pre-ServiceAccount configured Identity nothing resolves any more. */
+export function callerLabel(caller: GrantCaller): string {
+  return "identity_id" in caller ? `configured Identity ${caller.identity_id}` : serviceAccountKey(caller);
+}
+
+export function isEligibleCaller(caller: GrantCaller, accounts: CallerServiceAccount[]): boolean {
+  return (
+    !("identity_id" in caller) && accounts.some((account) => serviceAccountKey(account) === serviceAccountKey(caller))
+  );
+}
 export type McpLinkageView = components["schemas"]["McpLinkageView"];
 export type McpLinkageStartView = components["schemas"]["McpLinkageStartView"];
 export class ConnectionRequestError extends Error {
@@ -53,7 +70,7 @@ export class ConnectionRequestError extends Error {
 
 export interface ConnectionService {
   list(): Promise<Connection[]>;
-  identities(): Promise<Record<string, ConnectionIdentity>>;
+  callerServiceAccounts(): Promise<CallerServiceAccount[]>;
   rename(connection: Connection, displayName: string): Promise<Connection>;
   unbind(connection: Connection): Promise<Connection>;
 }
@@ -65,8 +82,8 @@ export const connectionService: ConnectionService = {
     if (error) throw new ConnectionRequestError(status, displayableError(error));
     return data;
   },
-  async identities() {
-    const { data, error, response } = await api.GET("/connection-identities");
+  async callerServiceAccounts() {
+    const { data, error, response } = await api.GET("/connection-service-accounts");
     const status = response.status;
     if (error) throw new ConnectionRequestError(status, displayableError(error));
     return data;

@@ -96,7 +96,7 @@ describe("ActionRequests", () => {
     "shows the immutable authenticated submitter for %s receipts",
     async (state) => {
       const grant = {
-        identity_id: "test_identity",
+        caller: { namespace: "agentplane-test", name: "test-caller" },
         issuer: "https://test-issuer.example/oauth",
         client_id: "test-external-client",
         connection_id: "40000000-0000-4000-8000-000000000001",
@@ -105,7 +105,7 @@ describe("ActionRequests", () => {
       };
       const row = {
         ...request(state, 1),
-        caller_principal: "configured-identity:test_identity",
+        caller_principal: "service-account:agentplane-test:test-caller",
         external_grant: grant,
         origin: { identity_id: "forged-origin-identity", client_id: "forged-origin-client" },
         correlation: { connection_id: "forged-correlation-connection", display_name: "mutable-connection-name" },
@@ -113,7 +113,7 @@ describe("ActionRequests", () => {
       const container = await render({ list: async () => [row], decide: vi.fn() });
 
       expect(container.textContent).toContain("Authenticated external caller at submission");
-      for (const value of [grant.identity_id, grant.issuer, grant.client_id, grant.connection_id]) {
+      for (const value of ["agentplane-test/test-caller", grant.issuer, grant.client_id, grant.connection_id]) {
         expect(container.textContent).toContain(value);
       }
       expect(container.textContent).not.toContain("forged-");

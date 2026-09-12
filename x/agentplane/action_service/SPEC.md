@@ -7,32 +7,37 @@ key recovers the same request, not another execution.
 
 ## External Connection authority
 
-Configured Identities are reusable authority names, independent of runtime Connections and Threads.
-The single operator can inspect Connections, rename them, and unbind them. A Connection's UUID
-does not change on rename; names are presentation and need not be unique.
+An external caller is a Kubernetes ServiceAccount carrying the label
+`agentplane.allegedly.works/action-caller: "true"` in a namespace the service accepts callers
+from; the service watches those ServiceAccounts and lists the eligible ones to the operator. The
+single operator can inspect Connections, rename them, and unbind them. A Connection's UUID does
+not change on rename; names are presentation and need not be unique.
 
 The trusted OAuth adapter reserves a pending grant only after consent, then activates it after
 verified issuance. A pending grant has an activation deadline and cannot authorize calls. Exact
 binding retries recover the same grant and Connection; conflicting retries are refused.
-Each grant retains its configured Identity, exact verified downstream issuer/client pair,
-Connection UUID and binding revision. Those fields do not change on rename or reconnect.
+Each grant retains the ServiceAccount it acts as, its exact verified downstream issuer/client
+pair, Connection UUID and binding revision. Those fields do not change on rename or reconnect.
 
 Reconnect revokes the previous grant and creates a new pending revision. Existing credentials never
-acquire the replacement Identity's authority. Unbind and grant revocation take effect on the next
-authority resolution; a missing or disabled configured Identity also refuses resolution. Revoking
-an old grant cannot revoke its replacement. No grant or Connection history is deleted.
+acquire the replacement ServiceAccount's authority. Unbind and grant revocation take effect on the
+next authority resolution; a ServiceAccount that is missing, unlabeled, or not yet seen by the
+watch also refuses resolution. Revoking an old grant cannot revoke its replacement. No grant or
+Connection history is deleted. A grant bound to a configured Identity, the pre-ServiceAccount
+authority, stays readable in the inventory and on its Actions' provenance and never resolves
+again; fresh OAuth selecting a ServiceAccount is how such a Connection regains authority.
 
-Resolved external principals use configured Identity as their receipt/idempotency scope: Connections
-bound to the same Identity share reads, while different Identities remain isolated. The submitting
-grant is separate provenance. The Connection authority is implemented independently of the OAuth
-adapter; no external bearer admission is enabled by these management endpoints.
+Resolved external principals use the ServiceAccount as their receipt/idempotency scope:
+Connections acting as the same ServiceAccount share reads, while different ServiceAccounts remain
+isolated. The submitting grant is separate provenance. The Connection authority is implemented
+independently of the OAuth adapter; no external bearer admission is enabled by these management
+endpoints.
 
 Each externally admitted Action retains an immutable snapshot of its submitting grant independently
-of caller-supplied metadata. Shared-Identity duplicate submissions return the first Action and its
-original provenance; rename, reconnect, refresh and revocation cannot rewrite that evidence.
-External Actions initially require human approval, independent of existing workload auto-decisions.
+of caller-supplied metadata. Shared-ServiceAccount duplicate submissions return the first Action and
+its original provenance; rename, reconnect, refresh and revocation cannot rewrite that evidence.
 Admission and dispatch authorization are atomic with revocation. Dispatch requires the original
-grant and configured Identity still to authorize the Action, not a later replacement binding.
+grant and its ServiceAccount still to authorize the Action, not a later replacement binding.
 Loss of authority before the dispatch claim fails the unstarted Execution without changing its
 historical Decision or invoking an executor. Revocation does not stop already claimed work.
 
@@ -40,12 +45,12 @@ historical Decision or invoking an executor. Revocation does not stop already cl
 
 An enrollment names one validated OAuth authorization and expires within fifteen minutes. The
 operator previews and decides it through an authenticated, browser-bound interface. Only that
-browser and operator can decide or recover its result. Approval selects a configured enabled
-Identity and either a new Connection name or an explicitly confirmed existing Connection and its
-reviewed version; denial grants no authority. A changed or stale decision cannot
+browser and operator can decide or recover its result. Approval selects a labeled caller
+ServiceAccount and either a new Connection name or an explicitly confirmed existing Connection and
+its reviewed version; denial grants no authority. A changed or stale decision cannot
 overwrite the original, and an exact retry recovers it.
 
-Existing-Connection selection supports reconnecting to the same Identity or changing Identity
+Existing-Connection selection supports reconnecting to the same ServiceAccount or changing it
 only through fresh OAuth. Version changes after consent refuse replacement. Reserving the new
 grant at token exchange revokes prior grants before activation; failed issuance never restores
 them. Consent alone does not revoke the existing grant, and old credentials never retarget.
@@ -100,14 +105,16 @@ grant authority or categorically disqualify a caller; FastMCP provides automatic
 protection for loopback access. Browser cookies are not authentication on this endpoint.
 When external OAuth is configured, the frontend also accepts verified, active Connection grants.
 Clients may use DCR registration or HTTPS Client ID Metadata Documents (CIMD).
-Neither registration nor metadata discovery is authority. Consent binds one configured Identity and named Connection
-to the validated authorization interaction and approving operator; upstream issuer/subject must
-match the explicit operator mapping before token issuance. One consent permits at most one token
-family. Ambiguous post-claim issuance requires fresh authorization.
+Neither registration nor metadata discovery is authority. Consent binds one labeled caller
+ServiceAccount and named Connection to the validated authorization interaction and approving
+operator; upstream issuer/subject must match the explicit operator mapping before token issuance.
+One consent permits at most one token family. Ambiguous post-claim issuance requires fresh
+authorization.
 
 Refresh and bearer admission resolve current canonical grant validity. Ended bindings cannot
-acquire replacement Identity authority. External receipts/idempotency are Identity-scoped while
-each Action permanently records exact submitting Connection/grant/revision/issuer/client evidence.
+acquire replacement ServiceAccount authority. External receipts/idempotency are
+ServiceAccount-scoped while each Action permanently records exact submitting
+Connection/grant/revision/issuer/client evidence.
 Sandbox authentication remains live-workload-based; neither path accepts operator credentials as
 a caller bypass. OAuth protocol state shares durable encrypted storage and stable configured keys
 across replacement/replicas. Enabling these contracts does not imply deployed client acceptance.

@@ -273,9 +273,9 @@ const ACTIONS: ActionRequestView[] = [
     origin: { thread_id: THREADS[0].id },
     correlation: {},
     idempotency_key: "visual-pending",
-    caller_principal: "configured-identity:test_public_coder",
+    caller_principal: "service-account:agentplane-visual:test-public-coder",
     external_grant: {
-      identity_id: "test_public_coder",
+      caller: { namespace: "agentplane-visual", name: "test-public-coder" },
       issuer: "https://test-actions.example/oauth",
       client_id: "test-external-client",
       connection_id: "73000000-0000-4000-8000-000000000001",
@@ -469,14 +469,14 @@ routes.push(
           ...grant,
           id: "20000000-0000-4000-8000-000000000002",
           connection_id: "10000000-0000-4000-8000-000000000002",
-          identity_id: "retired",
+          caller: { identity_id: "retired" },
           status: "revoked",
           revoked_at: "2026-09-09T12:03:00Z",
         })),
       },
     ],
   ],
-  ["GET", /^\/connection-identities$/, () => ({ personal: { enabled: false } })],
+  ["GET", /^\/connection-service-accounts$/, () => [{ namespace: "agentplane-visual", name: "operator-assistant" }]],
   [
     "POST",
     /^\/connection-enrollments\/[^/]+\/preview$/,
@@ -488,7 +488,10 @@ routes.push(
         expires_at: new Date(NOW + 10 * 60_000).toISOString(),
         version: 1,
       },
-      identities: { public_coder: { enabled: true }, operator_assistant: { enabled: true } },
+      service_accounts: [
+        { namespace: "agentplane-visual", name: "public-coder" },
+        { namespace: "agentplane-visual", name: "operator-assistant" },
+      ],
       connections: [sampleConnection()],
       csrf_token: "test-only-csrf",
       attempted_decision: null,
@@ -613,13 +616,13 @@ if (path === undefined) throw new Error(`unknown harness page ${page}`);
 if (page.startsWith("consent_reconnect")) {
   const selectExisting = new MutationObserver(() => {
     const connection = document.querySelector<HTMLSelectElement>('select[name="connection"]');
-    const identity = document.querySelector<HTMLSelectElement>('select[name="identity"]');
-    if (!connection || !identity) return;
+    const account = document.querySelector<HTMLSelectElement>('select[name="service_account"]');
+    if (!connection || !account) return;
     selectExisting.disconnect();
     connection.value = sampleConnection().id;
     connection.dispatchEvent(new Event("change", { bubbles: true }));
-    identity.value = "operator_assistant";
-    identity.dispatchEvent(new Event("change", { bubbles: true }));
+    account.value = "agentplane-visual/operator-assistant";
+    account.dispatchEvent(new Event("change", { bubbles: true }));
   });
   selectExisting.observe(document, { childList: true, subtree: true });
 }

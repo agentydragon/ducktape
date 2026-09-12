@@ -16,7 +16,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Mapper, mapped_column
 
 from x.agentplane.action_service.catalog import ActionIdentity
 from x.agentplane.action_service.models import (
-    CONFIGURED_IDENTITY_ISSUER,
+    EXTERNAL_ISSUERS,
     ActionEventView,
     ActionRequestInput,
     ActionRequestView,
@@ -68,7 +68,8 @@ class EnrollmentRow(Base):
     operator_subject: Mapped[str | None] = mapped_column(Text)
     verdict: Mapped[str | None] = mapped_column(Text)
     decision_digest: Mapped[str | None] = mapped_column(Text)
-    identity_id: Mapped[str | None] = mapped_column(Text)
+    # A `models.GrantCaller`, set by an allow decision.
+    caller: Mapped[dict[str, JsonValue] | None] = mapped_column(JSONB(none_as_null=True))
     display_name: Mapped[str | None] = mapped_column(Text)
     connection_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("external_connection.id"))
     connection_version: Mapped[int | None] = mapped_column(Integer)
@@ -92,7 +93,9 @@ class ConnectionGrantRow(Base):
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     connection_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("external_connection.id"))
     revision: Mapped[int] = mapped_column(Integer)
-    identity_id: Mapped[str] = mapped_column(Text)
+    # A `models.GrantCaller`: the ServiceAccount the grant acts as, or the configured Identity a
+    # pre-ServiceAccount grant was bound to.
+    caller: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
     issuer: Mapped[str] = mapped_column(Text)
     client_id: Mapped[str] = mapped_column(Text)
     request_digest: Mapped[str] = mapped_column(Text)
@@ -351,8 +354,8 @@ class ActionStore:
             if external_grant is not None:
                 if principal != external_grant.principal() or not await self._grant_authorized(session, external_grant):
                     raise ExternalGrantNotAuthorizedError("external grant is not authorized")
-            elif principal.issuer == CONFIGURED_IDENTITY_ISSUER:
-                raise ExternalGrantNotAuthorizedError("configured Identity requires an authenticated external grant")
+            elif principal.issuer in EXTERNAL_ISSUERS:
+                raise ExternalGrantNotAuthorizedError("an external caller requires an authenticated grant")
             now = datetime.now(UTC)
             request_id = uuid4()
             inserted_id = await session.scalar(

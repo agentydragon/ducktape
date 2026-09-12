@@ -1,7 +1,9 @@
 """Single-operator Connection authority, independent of OAuth protocol and browser ceremony.
 
 Only an in-process OAuth adapter may bind/activate grants after verifying consent and the
-upstream principal. The operator API exposes inventory, rename and revocation only.
+upstream principal. The operator API exposes inventory, rename and revocation only. A grant acts
+as one labeled ServiceAccount, checked against the policy informer's index on every resolution:
+removing the label or the ServiceAccount is the disable.
 """
 
 from __future__ import annotations
@@ -16,9 +18,9 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StringConstrai
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from x.agentplane.action_service.catalog import Key
 from x.agentplane.action_service.db import ConnectionGrantRow, ConnectionRow, SessionMaker
-from x.agentplane.action_service.models import ExternalGrantProvenance, Principal
+from x.agentplane.action_service.models import ExternalGrantProvenance, GrantCaller, Principal, ServiceAccountRef
+from x.agentplane.action_service.policy_informer import PolicyIndex
 
 ConnectionName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
 
@@ -31,12 +33,6 @@ class ConnectionVersion(BaseModel):
 
 class ConnectionRename(ConnectionVersion):
     display_name: ConnectionName
-
-
-class Identity(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    enabled: bool = True
 
 
 class GrantStatus(StrEnum):
@@ -70,7 +66,7 @@ class GrantBinding(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     grant_id: UUID
-    identity_id: Key
+    service_account: ServiceAccountRef
     issuer: str = Field(min_length=1)
     client_id: str = Field(min_length=1)
     activation_deadline: AwareDatetime
@@ -83,7 +79,7 @@ class Grant(BaseModel):
     id: UUID
     connection_id: UUID
     revision: int
-    identity_id: str
+    caller: GrantCaller
     issuer: str
     client_id: str
     status: GrantStatus
@@ -93,14 +89,14 @@ class Grant(BaseModel):
     revoked_at: datetime | None
 
     def principal(self) -> Principal:
-        """Configured Identity owns receipts; submitting grant remains separate evidence."""
+        """The ServiceAccount owns receipts; the submitting grant remains separate evidence."""
         if self.status is not GrantStatus.ACTIVE:
             raise GrantRejectedError("grant is not active")
         return self.provenance().principal()
 
     def provenance(self) -> ExternalGrantProvenance:
         return ExternalGrantProvenance(
-            identity_id=self.identity_id,
+            caller=self.caller,
             issuer=self.issuer,
             client_id=self.client_id,
             connection_id=self.connection_id,
@@ -133,17 +129,19 @@ class GrantRejectedError(Exception):
 
 
 class ConnectionAuthority:
-    def __init__(self, sessions: SessionMaker, identities: dict[Key, Identity]) -> None:
+    def __init__(self, sessions: SessionMaker, callers: PolicyIndex) -> None:
         self._sessions = sessions
-        self._identities = dict(identities)
+        self._callers = callers
 
-    def identities(self) -> dict[str, Identity]:
-        return dict(self._identities)
+    def caller_service_accounts(self) -> list[ServiceAccountRef]:
+        """The ServiceAccounts a new grant may act as, as the informer currently sees them."""
+        return self._callers.caller_service_accounts()
 
-    def _require_identity(self, identity_id: str) -> None:
-        identity = self._identities.get(identity_id)
-        if identity is None or not identity.enabled:
-            raise GrantRejectedError("configured Identity is missing or disabled")
+    def require_caller(self, caller: GrantCaller) -> ServiceAccountRef:
+        """Refuse unless the caller is a ServiceAccount the informer currently lists as labeled."""
+        if isinstance(caller, ServiceAccountRef) and self._callers.eligible(caller):
+            return caller
+        raise GrantRejectedError("caller ServiceAccount is missing or not labeled as an Action caller")
 
     async def bind(self, request: GrantBinding) -> Grant:
         """Reserve one immutable grant; exact retries cannot create another Connection.
@@ -160,7 +158,7 @@ class ConnectionAuthority:
                 if existing.request_digest != digest:
                     raise ConnectionConflictError("grant retry differs from the original binding")
                 return Grant.model_validate(existing)
-            self._require_identity(request.identity_id)
+            self.require_caller(request.service_account)
             now = datetime.now(UTC)
             if request.activation_deadline <= now:
                 raise GrantRejectedError("grant activation deadline has expired")
@@ -182,7 +180,7 @@ class ConnectionAuthority:
                 id=request.grant_id,
                 connection_id=connection.id,
                 revision=revision,
-                identity_id=request.identity_id,
+                caller=request.service_account.model_dump(mode="json"),
                 issuer=request.issuer,
                 client_id=request.client_id,
                 request_digest=digest,
@@ -204,7 +202,7 @@ class ConnectionAuthority:
         """
         async with self._sessions.begin() as db:
             grant = await self._locked_grant(db, grant_id)
-            self._require_identity(grant.identity_id)
+            self._require_row_caller(grant)
             if (
                 grant.status != GrantStatus.PENDING
                 or (grant.issuer, grant.client_id) != (issuer, client_id)
@@ -217,7 +215,7 @@ class ConnectionAuthority:
         """OAuth adapter calls after verified issuance; pending/revoked tokens never resolve."""
         async with self._sessions.begin() as db:
             grant = await self._locked_grant(db, grant_id)
-            self._require_identity(grant.identity_id)
+            self._require_row_caller(grant)
             if grant.status == GrantStatus.REVOKED:
                 raise GrantRejectedError("grant is revoked")
             if grant.status == GrantStatus.PENDING:
@@ -234,7 +232,7 @@ class ConnectionAuthority:
         """Resolve current authority from verified token claims on each admission."""
         async with self._sessions.begin() as db:
             grant = await self._locked_grant(db, grant_id)
-            self._require_identity(grant.identity_id)
+            self._require_row_caller(grant)
             if grant.status != GrantStatus.ACTIVE or (grant.issuer, grant.client_id) != (issuer, client_id):
                 raise GrantRejectedError("grant is not authorized")
             return Grant.model_validate(grant)
@@ -261,10 +259,13 @@ class ConnectionAuthority:
         """
         try:
             row = await self._locked_grant(session, grant.grant_id)
-            self._require_identity(row.identity_id)
+            self._require_row_caller(row)
         except (GrantRejectedError, ConnectionNotFoundError):
             return False
         return row.status == GrantStatus.ACTIVE and Grant.model_validate(row).provenance() == grant
+
+    def _require_row_caller(self, row: ConnectionGrantRow) -> None:
+        self.require_caller(Grant.model_validate(row).caller)
 
     async def _locked_grant(self, db: AsyncSession, grant_id: UUID) -> ConnectionGrantRow:
         grant = await db.get(ConnectionGrantRow, grant_id)

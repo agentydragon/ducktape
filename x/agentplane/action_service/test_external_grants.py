@@ -16,20 +16,24 @@ from x.agentplane.action_service.connections import (
     ConnectionAuthority,
     Grant,
     GrantBinding,
-    Identity,
+    GrantRejectedError,
+    GrantStatus,
     NewConnection,
     ReconnectConnection,
 )
 from x.agentplane.action_service.db import (
     ActionStore,
+    ConnectionGrantRow,
     ConnectionRow,
     ExternalGrantNotAuthorizedError,
     make_sessionmaker,
 )
 from x.agentplane.action_service.models import (
+    CONFIGURED_IDENTITY_ISSUER,
     ActionRequestInput,
     ActionRequestView,
     ActionState,
+    ConfiguredIdentityRef,
     DecisionContext,
     DecisionInput,
     ExecutionResult,
@@ -42,6 +46,7 @@ from x.agentplane.action_service.models import (
     Verdict,
 )
 from x.agentplane.action_service.service import ActionService
+from x.agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, eligible_callers
 
 ISSUER = "https://actions.example.test"
 OPERATOR = Principal(issuer="operator", subject="single", role=PrincipalRole.OPERATOR)
@@ -50,7 +55,7 @@ LEASE_DURATION = timedelta(seconds=30)
 
 @pytest.fixture
 def authority(engine: AsyncEngine) -> ConnectionAuthority:
-    return ConnectionAuthority(make_sessionmaker(engine), {"personal": Identity(), "test-other": Identity()})
+    return ConnectionAuthority(make_sessionmaker(engine), eligible_callers(PERSONAL, OTHER))
 
 
 @pytest.fixture
@@ -62,7 +67,7 @@ async def activated(authority: ConnectionAuthority, client_id: str) -> Grant:
     bound = await authority.bind(
         GrantBinding(
             grant_id=uuid4(),
-            identity_id="personal",
+            service_account=PERSONAL,
             issuer=ISSUER,
             client_id=client_id,
             activation_deadline=datetime.now(UTC) + timedelta(minutes=10),
@@ -97,7 +102,7 @@ async def allow(store: ActionStore, request: ActionRequestView) -> ActionRequest
     return result
 
 
-async def test_shared_identity_retry_keeps_first_snapshot_after_rename_and_revoke(
+async def test_shared_service_account_retry_keeps_first_snapshot_after_rename_and_revoke(
     engine: AsyncEngine, authority: ConnectionAuthority, store: ActionStore, grant: Grant, envelope: ActionRequestInput
 ) -> None:
     first, _ = await store.submit(envelope, grant.principal(), external_grant=grant.provenance())
@@ -122,7 +127,7 @@ async def test_admission_fails_closed_on_missing_disabled_revoked_or_mismatched_
     invalid_snapshots: list[dict[str, object]] = [
         {"issuer": "other"},
         {"client_id": "other"},
-        {"identity_id": "other"},
+        {"caller": OTHER},
         {"connection_id": uuid4()},
         {"grant_id": uuid4()},
         {"revision": 2},
@@ -136,7 +141,7 @@ async def test_admission_fails_closed_on_missing_disabled_revoked_or_mismatched_
         await store.submit(envelope, grant.principal())
     with pytest.raises(ExternalGrantNotAuthorizedError):
         await store.submit(envelope, OPERATOR, external_grant=grant.provenance())
-    for checker in [None, ConnectionAuthority(make_sessionmaker(engine), {"personal": Identity(enabled=False)})]:
+    for checker in [None, ConnectionAuthority(make_sessionmaker(engine), eligible_callers(OTHER))]:
         with pytest.raises(ExternalGrantNotAuthorizedError):
             await ActionStore(make_sessionmaker(engine), external_grants=checker).submit(
                 envelope, grant.principal(), external_grant=grant.provenance()
@@ -150,7 +155,7 @@ async def test_admission_fails_closed_on_missing_disabled_revoked_or_mismatched_
 
 
 @pytest.mark.parametrize(
-    "invalidate", ["revoke", "disable", "remove", "missing_authority", "reconnect_same", "reconnect_other"]
+    "invalidate", ["revoke", "unlabel", "remove", "missing_authority", "reconnect_same", "reconnect_other"]
 )
 @pytest.mark.parametrize("available", [True, False])
 async def test_original_authority_is_rechecked_before_dispatch_without_rewriting_decision(
@@ -167,16 +172,16 @@ async def test_original_authority_is_rechecked_before_dispatch_without_rewriting
     if invalidate == "revoke":
         await authority.revoke(grant.id)
         await activated(authority, "new-authority-does-not-replace-original")
-    elif invalidate == "disable":
-        authority = ConnectionAuthority(make_sessionmaker(engine), {"personal": Identity(enabled=False)})
+    elif invalidate == "unlabel":
+        authority = ConnectionAuthority(make_sessionmaker(engine), eligible_callers(OTHER))
     elif invalidate == "remove":
-        authority = ConnectionAuthority(make_sessionmaker(engine), {})
+        authority = ConnectionAuthority(make_sessionmaker(engine), eligible_callers())
     elif invalidate in {"reconnect_same", "reconnect_other"}:
         connection = await authority.get(grant.connection_id)
         replacement = await authority.bind(
             GrantBinding(
                 grant_id=uuid4(),
-                identity_id="personal" if invalidate == "reconnect_same" else "test-other",
+                service_account=PERSONAL if invalidate == "reconnect_same" else OTHER,
                 issuer=ISSUER,
                 client_id="test-reconnected-client",
                 activation_deadline=datetime.now(UTC) + timedelta(minutes=10),
@@ -259,6 +264,52 @@ async def test_admission_and_claim_hold_revocation_lock_until_transaction_end(
     await allow(store, request)
     assert await store.claim_execution(request.id, executor_id="worker", lease_duration=LEASE_DURATION) is not None
     assert checker.calls == 2
+
+
+async def test_pre_service_account_grant_stays_readable_but_never_authorizes(
+    engine: AsyncEngine, authority: ConnectionAuthority, store: ActionStore, envelope: ActionRequestInput
+) -> None:
+    """Rows migrated from configured Identities keep their history and provenance; only fresh OAuth
+    selecting a ServiceAccount regains authority."""
+    now = datetime.now(UTC)
+    connection_id, grant_id = uuid4(), uuid4()
+    async with make_sessionmaker(engine).begin() as db:
+        db.add(ConnectionRow(id=connection_id, display_name="Legacy", version=2, created_at=now, updated_at=now))
+        await db.flush()
+        db.add(
+            ConnectionGrantRow(
+                id=grant_id,
+                connection_id=connection_id,
+                revision=1,
+                caller={"identity_id": "legacy-personal"},
+                issuer=ISSUER,
+                client_id="legacy-client",
+                request_digest="legacy-digest",
+                activation_deadline=now + timedelta(minutes=10),
+                status=GrantStatus.ACTIVE,
+                created_at=now,
+                activated_at=now,
+                revoked_at=None,
+            )
+        )
+    (legacy,) = (await authority.get(connection_id)).grants
+    assert legacy.caller == ConfiguredIdentityRef(identity_id="legacy-personal")
+    assert legacy.principal().issuer == CONFIGURED_IDENTITY_ISSUER
+    with pytest.raises(GrantRejectedError):
+        await authority.resolve(grant_id, issuer=ISSUER, client_id="legacy-client")
+    with pytest.raises(ExternalGrantNotAuthorizedError):
+        await store.submit(envelope, legacy.principal(), external_grant=legacy.provenance())
+    persisted = ExternalGrantProvenance.model_validate(
+        {
+            "identity_id": "legacy-personal",
+            "issuer": ISSUER,
+            "client_id": "legacy-client",
+            "connection_id": str(connection_id),
+            "grant_id": str(grant_id),
+            "revision": 1,
+        }
+    )
+    assert persisted == legacy.provenance()
 
 
 async def test_service_preserves_human_approval_and_canonical_external_provenance(

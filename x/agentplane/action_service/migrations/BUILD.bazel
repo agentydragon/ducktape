@@ -18,6 +18,7 @@ filegroup(
         "//x/agentplane/action_service/migrations/versions:0011_enrollment_reconnect.py",
         "//x/agentplane/action_service/migrations/versions:0012_action_push_subscription.py",
         "//x/agentplane/action_service/migrations/versions:0013_mcp_server_linkage.py",
+        "//x/agentplane/action_service/migrations/versions:0014_grant_caller.py",
     ],
     visibility = ["//x/agentplane/action_service:__pkg__"],
 )

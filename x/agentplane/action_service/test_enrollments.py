@@ -27,7 +27,6 @@ from x.agentplane.action_service.connections import (
     GrantBinding,
     GrantRejectedError,
     GrantStatus,
-    Identity,
     NewConnection,
     ReconnectConnection,
 )
@@ -44,8 +43,9 @@ from x.agentplane.action_service.enrollments import (
     EnrollmentPreviewInput,
     EnrollmentRejectedError,
 )
-from x.agentplane.action_service.models import Principal, PrincipalRole, Verdict
+from x.agentplane.action_service.models import Principal, PrincipalRole, ServiceAccountRef, Verdict
 from x.agentplane.action_service.service import ActionService
+from x.agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, UNLABELED, eligible_callers
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
@@ -64,10 +64,7 @@ class Consent:
 
 @pytest.fixture
 async def consent(engine: AsyncEngine) -> Consent:
-    connections = ConnectionAuthority(
-        make_sessionmaker(engine),
-        {"test-personal": Identity(), "test-other": Identity(), "test-off": Identity(enabled=False)},
-    )
+    connections = ConnectionAuthority(make_sessionmaker(engine), eligible_callers(PERSONAL, OTHER))
     authority = EnrollmentAuthority(make_sessionmaker(engine), connections)
     request = EnrollmentInput(
         issuer="https://test-actions.example",
@@ -87,7 +84,7 @@ async def consent(engine: AsyncEngine) -> Consent:
         expected_version=preview.version,
         idempotency_key="test-decision",
         connection=NewConnection(display_name="My test connection"),
-        identity_id="test-personal",
+        service_account=PERSONAL,
     )
     return Consent(authority, connections, request, created.handle, browser, operator, allow)
 
@@ -112,7 +109,7 @@ async def test_consent_survives_replacement_and_creates_only_one_grant(consent: 
     )
     grant = await consent.connections.bind(binding)
     assert await consent.connections.bind(binding) == grant
-    assert grant.identity_id == "test-personal"
+    assert grant.caller == PERSONAL
     assert grant.client_id == consent.request.client_id
     assert grant.issuer == consent.request.issuer
     claims = await asyncio.gather(*(replacement.claim_exchange(grant.id) for _ in range(4)), return_exceptions=True)
@@ -171,19 +168,18 @@ async def test_deny_and_conflicting_replay_never_release_upstream_url(consent: C
     assert await consent.connections.list() == []
 
 
-async def test_picker_rejects_disabled_and_missing_identities(consent: Consent, engine: AsyncEngine) -> None:
-    for identity in ["test-off", "test-missing"]:
+async def test_picker_rejects_unlabeled_and_missing_service_accounts(consent: Consent, engine: AsyncEngine) -> None:
+    for caller in [UNLABELED, ServiceAccountRef(namespace="agentplane-other", name=PERSONAL.name)]:
         with pytest.raises(EnrollmentRejectedError):
             await consent.authority.decide(
-                consent.handle, consent.allow.model_copy(update={"identity_id": identity}), consent.operator
+                consent.handle, consent.allow.model_copy(update={"service_account": caller}), consent.operator
             )
     await consent.authority.decide(consent.handle, consent.allow, consent.operator)
-    disabled = EnrollmentAuthority(
-        make_sessionmaker(engine),
-        ConnectionAuthority(make_sessionmaker(engine), {"test-personal": Identity(enabled=False)}),
+    unlabeled = EnrollmentAuthority(
+        make_sessionmaker(engine), ConnectionAuthority(make_sessionmaker(engine), eligible_callers(OTHER))
     )
     with pytest.raises(EnrollmentRejectedError):
-        await disabled.approved(
+        await unlabeled.approved(
             client_id=consent.request.client_id,
             redirect_uri=consent.request.redirect_uri,
             code_challenge=consent.request.code_challenge,
@@ -291,14 +287,14 @@ async def test_enrollment_migration_matches_metadata(engine: AsyncEngine) -> Non
         await connection.run_sync(_schema_matches)
 
 
-@pytest.mark.parametrize("identity", ["test-personal", "test-other"])
+@pytest.mark.parametrize("caller", [PERSONAL, OTHER])
 async def test_reconnect_consent_preserves_selection_and_revokes_before_activation(
-    consent: Consent, engine: AsyncEngine, identity: str
+    consent: Consent, engine: AsyncEngine, caller: ServiceAccountRef
 ) -> None:
     old = await consent.connections.bind(
         GrantBinding(
             grant_id=uuid4(),
-            identity_id="test-personal",
+            service_account=PERSONAL,
             issuer=consent.request.issuer,
             client_id="test-old-registration",
             activation_deadline=consent.request.expires_at,
@@ -310,7 +306,7 @@ async def test_reconnect_consent_preserves_selection_and_revokes_before_activati
     selection = ConfirmedReconnectConnection(
         connection_id=connection.id, expected_version=connection.version, authority_change_confirmed=True
     )
-    allow = consent.allow.model_copy(update={"identity_id": identity, "connection": selection})
+    allow = consent.allow.model_copy(update={"service_account": caller, "connection": selection})
     result = await consent.authority.decide(consent.handle, allow, consent.operator)
     assert await consent.connections.resolve(old.id, issuer=old.issuer, client_id=old.client_id) == old
     replacement = EnrollmentAuthority(make_sessionmaker(engine), consent.connections)
@@ -324,7 +320,7 @@ async def test_reconnect_consent_preserves_selection_and_revokes_before_activati
     assert binding.connection == ReconnectConnection(connection_id=connection.id, expected_version=connection.version)
     new = await consent.connections.bind(binding)
     assert new.status == GrantStatus.PENDING
-    assert new.identity_id == identity
+    assert new.caller == caller
     assert new.connection_id == old.connection_id
     assert new.revision == old.revision + 1
     assert await consent.connections.bind(binding) == new
@@ -345,7 +341,7 @@ async def test_reconnect_rechecks_version_after_consent_and_serializes_competing
     old = await consent.connections.bind(
         GrantBinding(
             grant_id=uuid4(),
-            identity_id="test-personal",
+            service_account=PERSONAL,
             issuer=consent.request.issuer,
             client_id="test-old-registration",
             activation_deadline=consent.request.expires_at,

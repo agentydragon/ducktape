@@ -6,31 +6,44 @@ external harnesses remain clients rather than state owners.
 
 ## External Connections
 
-`identities: {personal: {enabled: true}}` configures static external authority names in the service
-settings YAML. `connections.ConnectionAuthority` persists runtime named Connections and immutable
-grant revisions in the existing database (migration `0008_external_connections`). The operator API
-exposes `GET /v1/operator/identities`, list/detail at `/v1/operator/connections`, `PATCH` of a name
-with `expected_version`, and `POST .../{id}/unbind` with `expected_version`.
+An external caller is a ServiceAccount labeled `agentplane.allegedly.works/action-caller: "true"`
+in one of `allowed_service_account_namespaces`; staging commits `claude-ai`, the principal for
+Connections enrolled from the Claude.ai MCP connector, next to its settings
+(`cluster/k8s/agentplane-staging/actions/serviceaccount-claude-ai.yaml`). Testing commits none:
+nothing there enrolls an external Connection, and the acceptance suite creates the objects it
+needs at run time. `policy_informer.PolicyInformer` watches them with a label selector into the `PolicyIndex`,
+and `connections.ConnectionAuthority` resolves grants against that index: a grant whose
+ServiceAccount is missing, unlabeled, or not yet listed by the watch refuses resolution.
+`ConnectionAuthority` persists runtime named Connections and immutable grant revisions in the
+existing database (migration `0008_external_connections`; `0014_grant_caller` stores the
+ServiceAccount as a typed `caller` JSON value). The operator API exposes
+`GET /v1/operator/caller-service-accounts`, list/detail at `/v1/operator/connections`, `PATCH` of
+a name with `expected_version`, and `POST .../{id}/unbind` with `expected_version`.
 
 Only the internal OAuth adapter may call `bind`, `activate`, `resolve`, or grant-specific `revoke`;
-there is no HTTP endpoint accepting client-provided Identity/issuer/client/grant bindings. Bind is
-idempotent by its consent grant UUID, reconnect locks the Connection and ends the old grant, and
-activation is bounded by its deadline. The [app consent UI](../app/README.md) and
+there is no HTTP endpoint accepting client-provided ServiceAccount/issuer/client/grant bindings.
+Bind is idempotent by its consent grant UUID, reconnect locks the Connection and ends the old
+grant, and activation is bounded by its deadline. The [app consent UI](../app/README.md) and
 [OAuth adapter](#external-oauth) use this authority. An authenticated external adapter submits a resolved
 `Grant.provenance()` through the trusted `ActionService.submit(..., external_grant=...)` keyword,
 never a caller-envelope field. Admission stores the exact issuer/client/Connection/grant/revision
-snapshot atomically with the first request. Shared-Identity idempotent retries preserve the original
-snapshot, including after rename or reconnect. Existing workload requests retain a null snapshot.
-External submissions initially require human approval; existing synchronous automatic providers
-are not consulted for them.
+snapshot atomically with the first request. Shared-ServiceAccount idempotent retries preserve the
+original snapshot, including after rename or reconnect. Existing workload requests retain a null
+snapshot.
 
-`ActionStore` validates that snapshot against the original active grant and current configured
-Identity under the Connection row lock, both during admission and before the dispatch claim. A
-revoked, missing or disabled original authority prevents dispatch even if another grant now binds
-the same Identity: the unstarted Execution fails with `external_grant_not_authorized`, retaining
-the historical Decision. Already claimed work is not stopped. Receipt and executor projections carry
-the original snapshot; no credentials are stored in it. Migration `0009_action_external_grant`
-adds its nullable column without inventing provenance for pre-existing requests.
+`ActionStore` validates that snapshot against the original active grant and its ServiceAccount's
+current eligibility under the Connection row lock, both during admission and before the dispatch
+claim. A revoked, missing or unlabeled original authority prevents dispatch even if another grant
+now acts as the same ServiceAccount: the unstarted Execution fails with
+`external_grant_not_authorized`, retaining the historical Decision. Already claimed work is not
+stopped. Receipt and executor projections carry the original snapshot; no credentials are stored
+in it. Migration `0009_action_external_grant` adds its nullable column without inventing
+provenance for pre-existing requests.
+
+Grants and snapshots from before ServiceAccount callers carry the configured Identity they were
+bound to (`models.ConfiguredIdentityRef`, persisted as `{"identity_id": ...}` and as the
+`configured-identity` principal issuer). They stay readable everywhere and never resolve; fresh
+OAuth selecting a ServiceAccount is the migration path for such a Connection.
 
 Action Service/PostgreSQL owns Connection authority; the integration app owns its operator UI.
 Configurable policies and the Thread lifecycle are separate from this authority.
@@ -70,10 +83,10 @@ the independently verified operator principal. The app enforces browser Origin/C
 the service compares the browser-binding hash and operator on every decision.
 
 Preview returns client presentation and expiry, not the held upstream URL or PKCE challenge.
-Allow stores the configured Identity and either a new name or an explicitly confirmed
+Allow stores the selected ServiceAccount and either a new name or an explicitly confirmed
 `ReconnectConnection` target/version, then releases only the stored framework
 URL. Deny returns no redirect. Exact decision retries recover the original response; conflicting
-or stale decisions cannot overwrite it. The configured Identity catalog supplies the UI picker.
+or stale decisions cannot overwrite it. The watched labeled ServiceAccounts supply the UI picker.
 The service validates the existing Connection version at decision and the binding authority checks
 it again when reserving the replacement at code exchange. A concurrent rename, unbind, activation,
 or competing reconnect requires fresh authorization rather than updating the reviewed version.
@@ -175,15 +188,15 @@ workload credential substitution. The protocol tests exercise substitution at th
 The optional `oauth` settings enable FastMCP 3.4.4's DCR, discovery, authorization, callback,
 token and revocation routes in this process. `ActionsOAuthProxy` holds the validated upstream
 redirect in the durable enrollment authority and sends the browser to the integration app's
-consent page. The page chooses a new name or existing Connection and configured Identity; raw client
-registration and upstream login alone create no caller authority.
+consent page. The page chooses a new name or existing Connection and a labeled caller
+ServiceAccount; raw client registration and upstream login alone create no caller authority.
 
 After consent, the adapter verifies the upstream issuer/subject against the explicitly configured
 single-operator mapping, validates the pending binding, and atomically claims the enrollment
 before FastMCP consumes its code. Only one token family may issue per enrollment. Failures before
 the claim can be retried; an ambiguous failure after it requires fresh OAuth, not another issuance.
 Tokens contain an opaque grant reference. Every bearer admission and refresh resolves the current
-canonical grant; unbind/revocation cannot silently retarget an old token to a new Identity.
+canonical grant; unbind/revocation cannot silently retarget an old token to a new ServiceAccount.
 The local revocation endpoint ends the canonical grant independently of upstream IdP revocation;
 it does not forward local credentials upstream or revoke an upstream account. Encrypted SDK
 metadata remains bounded by its existing TTL after the grant is ended.
@@ -195,7 +208,7 @@ subjects are never assumed equal. `jwt_signing_key_file` supplies a stable key a
 database (`agentplane_oauth_kv`). Neither key is generated at startup. Runtime settings add no
 deployment, Authentik client, ingress, or browser CORS policy automatically.
 
-External MCP callers share receipt ownership/idempotency within the configured Identity while
+External MCP callers share receipt ownership/idempotency within the ServiceAccount while
 each Action retains immutable submitting Connection/grant/revision/issuer/client provenance.
 Production admission and dispatch use the same Connection authority. Sandbox bearers still use
 live workload validation and egress substitution; OAuth does not grant an operator bearer bypass.

@@ -33,7 +33,6 @@ from x.agentplane.action_service.connections import (
     ConnectionNotFoundError,
     ConnectionRename,
     ConnectionVersion,
-    Identity,
 )
 from x.agentplane.action_service.db import ActionConflictError, ActionNotFoundError, ExternalGrantNotAuthorizedError
 from x.agentplane.action_service.enrollments import (
@@ -65,6 +64,7 @@ from x.agentplane.action_service.models import (
     DecisionInput,
     Principal,
     PrincipalRole,
+    ServiceAccountRef,
 )
 from x.agentplane.action_service.oauth import ActionsOAuthProxy
 from x.agentplane.action_service.push import PushIdentity, PushSubscriptionStore
@@ -429,9 +429,9 @@ def _connection_routes(app: FastAPI, authority: ConnectionAuthority) -> None:
         del request
         return _error(status.HTTP_409_CONFLICT, str(error))
 
-    @app.get("/v1/operator/identities", dependencies=[Depends(_operator)])
-    async def identities() -> dict[str, Identity]:
-        return authority.identities()
+    @app.get("/v1/operator/caller-service-accounts", dependencies=[Depends(_operator)])
+    async def caller_service_accounts() -> list[ServiceAccountRef]:
+        return authority.caller_service_accounts()
 
     @app.get("/v1/operator/connections", dependencies=[Depends(_operator)])
     async def connections() -> list[Connection]:

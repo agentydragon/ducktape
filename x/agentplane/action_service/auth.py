@@ -7,7 +7,7 @@ import hmac
 from pathlib import Path
 from typing import Protocol
 
-from x.agentplane.action_service.models import Principal, PrincipalRole
+from x.agentplane.action_service.models import SANDBOX_ISSUER, Principal, PrincipalRole
 from x.agentplane.sandbox_auth.principal import SandboxPrincipal
 
 
@@ -57,5 +57,5 @@ class ConfiguredOperatorBearerAuthenticator:
 def workload_principal(principal: SandboxPrincipal) -> Principal:
     """Derive durable ownership only from the destination-resolved live Sandbox identity."""
     return Principal(
-        issuer="kubernetes-sandbox", subject=f"{principal.namespace}:{principal.sandbox_uid}", role=PrincipalRole.CALLER
+        issuer=SANDBOX_ISSUER, subject=f"{principal.namespace}:{principal.sandbox_uid}", role=PrincipalRole.CALLER
     )

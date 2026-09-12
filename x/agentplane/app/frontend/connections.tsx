@@ -3,10 +3,12 @@ import { useCallback, useEffect, useState } from "react";
 
 import {
   ConnectionRequestError,
+  callerLabel,
   connectionService,
   displayableError,
+  isEligibleCaller,
+  type CallerServiceAccount,
   type Connection,
-  type ConnectionIdentity,
   type ConnectionService,
 } from "./client";
 
@@ -14,7 +16,7 @@ type Edit = { kind: "rename" | "unbind"; connection: Connection };
 
 export function Connections({ service = connectionService }: { service?: ConnectionService }): JSX.Element {
   const [rows, setRows] = useState<Connection[]>([]);
-  const [identities, setIdentities] = useState<Record<string, ConnectionIdentity>>({});
+  const [accounts, setAccounts] = useState<CallerServiceAccount[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -22,9 +24,9 @@ export function Connections({ service = connectionService }: { service?: Connect
   const [name, setName] = useState("");
 
   const load = useCallback(async (): Promise<void> => {
-    const [connections, catalog] = await Promise.all([service.list(), service.identities()]);
+    const [connections, callers] = await Promise.all([service.list(), service.callerServiceAccounts()]);
     setRows(connections);
-    setIdentities(catalog);
+    setAccounts(callers);
     setLoaded(true);
   }, [service]);
 
@@ -86,8 +88,9 @@ export function Connections({ service = connectionService }: { service?: Connect
         </Button>
       </Group>
       <Text c="dimmed" size="sm">
-        Named external clients and their grant history. Identity availability and grant status are separate. Unbind
-        revokes authority without deleting history or stopping already claimed work.
+        Named external clients and their grant history. Whether a grant’s ServiceAccount is still a labeled caller and
+        the grant’s own status are separate. Unbind revokes authority without deleting history or stopping already
+        claimed work.
       </Text>
       {error && (
         <Alert color="red" role="alert">
@@ -115,15 +118,9 @@ export function Connections({ service = connectionService }: { service?: Connect
                     <Badge color={grant.status === "active" ? "blue" : grant.status === "pending" ? "yellow" : "gray"}>
                       Grant {grant.status}
                     </Badge>
-                    <Text size="sm">Identity: {grant.identity_id}</Text>
-                    <Text size="sm" c={identities[grant.identity_id]?.enabled ? "dimmed" : "orange"}>
-                      (
-                      {identities[grant.identity_id] === undefined
-                        ? "not configured"
-                        : identities[grant.identity_id].enabled
-                          ? "enabled"
-                          : "disabled"}
-                      )
+                    <Text size="sm">Acts as: {callerLabel(grant.caller)}</Text>
+                    <Text size="sm" c={isEligibleCaller(grant.caller, accounts) ? "dimmed" : "orange"}>
+                      ({isEligibleCaller(grant.caller, accounts) ? "labeled caller" : "not a labeled caller"})
                     </Text>
                   </Group>
                   <Text size="xs" style={{ overflowWrap: "anywhere" }}>

@@ -569,7 +569,7 @@ def test_openapi_schema_keeps_expected_operations(client: TestClient) -> None:
         "/push/subscriptions",
         "/connection-enrollments/{handle}/preview",
         "/connection-enrollments/{handle}/decision",
-        "/connection-identities",
+        "/connection-service-accounts",
         "/connections",
         "/connections/{connection_id}",
         "/connections/{connection_id}/unbind",
