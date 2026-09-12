@@ -279,4 +279,5 @@ js_test(
         "TZ": "UTC",
     },
     no_copy_to_bin = SCREENSHOT_DATA,
+    tags = ["visual"],
 )

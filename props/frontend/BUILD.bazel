@@ -2,6 +2,7 @@ load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary"
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
 load("@npm_ducktape//:svelte-check/package_json.bzl", svelte_check_bin = "bin")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
+load("//util/testing/frontend_visual:visual_test.bzl", "visual_test")
 
 # Link npm packages for this workspace member
 npm_link_all_packages(name = "node_modules")
@@ -219,28 +220,17 @@ filegroup(
     visibility = ["//props/frontend/src:__subpackages__"],
 )
 
-VISUAL_DATA = [
-    ":harness_bundle",
-    ":harness_js",
-    ":visual_test_assets",
-    "//util/testing/frontend_visual:fonts",
-    "//util/testing/frontend_visual:visual_test_lib",
-    "@playwright_browsers//:chromium-headless-shell",
-]
-
 # small: a shard renders 3 scenarios on one Chromium. The 12 per-scenario targets this replaces
 # were 6.0-9.4s each, almost all of it browser launch and input staging paid once per scenario.
-js_test(
+visual_test(
     name = "visual",
     size = "small",
-    # :scenarios is copied to bin beside the runner that imports it, unlike the prebuilt harness
-    # assets, which are read where they lie.
-    data = VISUAL_DATA + [":scenarios"],
+    assets = [
+        ":harness_bundle",
+        ":visual_test_assets",
+    ],
     entry_point = "tests/visual_runner.mjs",
-    env = {
-        "HARNESS_PATH": "$(rootpath :harness_js)",
-        "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
-    },
-    no_copy_to_bin = VISUAL_DATA,
+    harness = ":harness_js",
+    scenarios = ":scenarios",
     shard_count = 4,
 )

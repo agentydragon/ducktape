@@ -1,6 +1,7 @@
-load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary", "js_test")
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
+load("//util/testing/frontend_visual:visual_test.bzl", "visual_test")
 
 npm_link_all_packages(name = "node_modules")
 
@@ -274,24 +275,14 @@ filegroup(
 
 # Every scenario in tests/harness/scenarios.mjs, swept on one browser per shard. BUILD carries a
 # shard count, not a scenario list. Run one with `--test_filter=<scenario>`.
-VISUAL_DATA = [
-    "tests/harness/index.html",
-    ":casino_fonts",
-    ":visual_harness_js",
-    "//util/testing/frontend_visual:visual_test_lib",
-    "@playwright_browsers//:chromium-headless-shell",
-]
-
-js_test(
+visual_test(
     name = "visual",
     size = "small",
-    data = VISUAL_DATA + [":visual_scenarios"],
+    assets = ["tests/harness/index.html"],
     entry_point = "tests/visual_runner.mjs",
-    env = {
-        "HARNESS_PATH": "$(rootpath :visual_harness_js)",
-        "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
-        "EXPECTED_FONT_FAMILY": "Outfit",
-    },
-    no_copy_to_bin = VISUAL_DATA,
+    font_family = "Outfit",
+    fonts = ":casino_fonts",
+    harness = ":visual_harness_js",
+    scenarios = ":visual_scenarios",
     shard_count = 2,
 )
