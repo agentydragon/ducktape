@@ -305,5 +305,61 @@ def test_invalid_mortgage_effects_do_not_change_cash_or_principal(
     assert not world.accounting.mortgage_payments
 
 
+def test_a_building_basis_rounds_in_the_engine_not_in_the_authoring() -> None:
+    """Authored money is exact; the land share multiplies it here, rounding to the quantum once."""
+    run_ = replace(
+        prepared_scenario(),
+        horizon_months=1,
+        tax_profiles=(),
+        locations=(
+            PreparedLocation(
+                location_id="test-market",
+                display_name="Test market",
+                jurisdiction_ids=(),
+                annual_property_tax_rate_ppb=0,
+                annual_special_assessment=0,
+            ),
+        ),
+    )
+    world = World(
+        MarketPath(
+            (PreparedSeries(series_id="home_value:test-market", snapshots=2, values=(10_001, 10_001)),),
+            0,
+            rollout_count=1,
+        ),
+        horizon_months=1,
+        income_sources=run_.income_sources,
+    )
+    for account in run_.accounts:
+        world.declare_account(replace(account, opening_balance=200_00 if account.account == CASH else 0))
+    world.declare_housing(
+        Housing(
+            purchases=(
+                _PropertyPurchase(
+                    month=0,
+                    cause_id="test-purchase",
+                    property_id="test-home",
+                    location_id="test-market",
+                    buyer_agent_id=HOUSEHOLD,
+                    buyer_account_id="checking",
+                    seller_agent_id=WORLD,
+                    seller_account_id="cash",
+                    purchase_price=10_001,
+                    down_payment=10_001,
+                    buyer_closing_cost=0,
+                    rented_fraction_ppb=0,
+                    land_value_fraction_ppb=200_000_000,
+                    mortgage=None,
+                ),
+            )
+        ),
+        locations=run_.locations,
+    )
+    world.prepare_month(0, {}, {})
+    properties = world.properties
+    assert properties is not None
+    assert properties.properties["test-home"].state.building_basis == 8001
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
