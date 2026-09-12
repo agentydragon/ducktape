@@ -109,19 +109,6 @@ py_library(
 )
 
 py_library(
-    name = "target_allocation",
-    srcs = ["target_allocation.py"],
-    deps = [
-        ":case",
-        ":fixtures",
-        ":simulation_result",
-        "//finance/augur/sim:scenario",
-        "@pypi//polars",
-        "@pypi//pytest",
-    ],
-)
-
-py_library(
     name = "bonds",
     srcs = ["bonds.py"],
     deps = [
@@ -340,7 +327,6 @@ py_test(
         ":property_stakes",
         ":rental_lifecycle",
         ":simulation_result",
-        ":target_allocation",
         "//:conftest",
         "//finance/augur:conftest",
         "@pypi//pytest",
@@ -593,6 +579,31 @@ py_test(
         "@pypi//more_itertools",
         "@pypi//numpy",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "target_allocation_test",
+    srcs = ["target_allocation_test.py"],
+    deps = [
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "//finance/augur/policy:configured_household",
+        "//finance/augur/sim:bills",
+        "//finance/augur/sim:books",
+        "//finance/augur/sim:capture",
+        "//finance/augur/sim:external_series",
+        "//finance/augur/sim:fixed_point",
+        "//finance/augur/sim:holdings",
+        "//finance/augur/sim:ids",
+        "//finance/augur/sim:market_path",
+        "//finance/augur/sim:prepared",
+        "//finance/augur/sim:world",
+        "//finance/augur/sim/compiler:execution",
+        "@pypi//more_itertools",
+        "@pypi//numpy",
         "@pypi//pytest_bazel",
     ],
 )

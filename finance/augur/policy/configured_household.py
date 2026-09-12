@@ -37,8 +37,15 @@ class ConfiguredHousehold(EconomicAgent):
         self.scheduled_sales = scheduled_sales
         # One lot-identity counter per (policy, sleeve), advanced only by an emitted Buy.
         self.lot_sequences: defaultdict[tuple[int, int], int] = defaultdict(int)
+        # The CPI level of every month this household has seen, so an indexed band bound can be
+        # read at its own reset month rather than only at the current one.
+        self.cpi_levels: list[int] = []
 
     def decide(self, observation: Observation) -> list[Action]:
+        if observation.cpi is not None:
+            if len(self.cpi_levels) != observation.month:
+                raise ValueError("the household reads every month's CPI once, in order")
+            self.cpi_levels.append(observation.cpi[0])
         prices = {pool.asset_id: pool.price for pool in observation.holding_pools}
         actions: list[Action] = [
             self._scheduled(sale, observation) for sale in self.scheduled_sales if sale.month == observation.month
@@ -131,19 +138,26 @@ class ConfiguredHousehold(EconomicAgent):
             lots=tuple(lots),
         )
 
-    @staticmethod
-    def _bound(amount: PreparedAmount, observation: Observation) -> int:
-        """A band bound as money this month; an indexed one rides the CPI the market statement reports."""
+    def _bound(self, amount: PreparedAmount, observation: Observation) -> int:
+        """A band bound as money this month; an indexed one rides the CPI level of its last reset."""
         if isinstance(amount, int):
             return amount
         if isinstance(amount, PreparedFixedAmount):
             return amount.amount
-        if amount.series_id != "inflation" or amount.base_month_index != 0 or amount.adjustment_period_months != 1:
-            raise ValueError("the configured household indexes a band bound to monthly CPI from month zero only")
+        if amount.series_id != "inflation":
+            raise ValueError("the configured household indexes a band bound to CPI only")
         if observation.cpi is None:
             raise ValueError("an inflation-indexed band bound needs a modeled CPI")
-        current, origin = observation.cpi
-        return mul_div(amount.base_amount, current, origin, "series-indexed amount")
+        elapsed = observation.month - amount.base_month_index
+        if elapsed < 0 or amount.base_month_index >= len(self.cpi_levels):
+            raise ValueError("an indexed band bound must not precede its base month")
+        reset = amount.base_month_index + elapsed // amount.adjustment_period_months * amount.adjustment_period_months
+        return mul_div(
+            amount.base_amount,
+            self.cpi_levels[reset],
+            self.cpi_levels[amount.base_month_index],
+            "series-indexed amount",
+        )
 
     @staticmethod
     def _proceeds(action: Action, observation: Observation) -> tuple[str, int]:

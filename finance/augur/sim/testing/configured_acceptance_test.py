@@ -25,7 +25,6 @@ from finance.augur.sim.testing.rental_lifecycle import (
     RentalLifecycleCashflowsAcceptance,
 )
 from finance.augur.sim.testing.simulation_result import Backend
-from finance.augur.sim.testing.target_allocation import TargetAllocationAcceptance
 
 
 class TestConfiguredIncomeSources(IncomeSourceAcceptance):
@@ -47,12 +46,6 @@ class TestConfiguredPrivateEquity(PrivateEquityAcceptance):
 
 
 class TestConfiguredDeductions(DeductionAcceptance):
-    @pytest.fixture
-    def backend(self) -> Backend:
-        return run_case
-
-
-class TestConfiguredTargetAllocation(TargetAllocationAcceptance):
     @pytest.fixture
     def backend(self) -> Backend:
         return run_case

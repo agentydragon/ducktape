@@ -233,10 +233,9 @@ Callers by surface today, so the burn-down can be checked off:
   on spending, ruin, hand-to-mouth and indexed-band cases while that runner exists.
 - **Configured runner (`sim/configured.py`):** the configured acceptance suites
   (`sim/testing/configured_acceptance_test.py` through `sim/testing/case.py` and
-  `configured_result.py`), `sim/configured_*_test.py`, `tlh_session_test.py`. These
-  leave with P12: purchases clamped to post-settlement cash need an action shape
-  before their household exists. Until then the runner drives worlds through
-  the explicit phase methods (`begin_actions`, `execute`, `close_month`, `open_month`).
+  `configured_result.py`) and `sim/configured_mortgage_test.py`. These leave with
+  SUITES-A. Until then the runner drives worlds through the explicit phase methods
+  (`begin_actions`, `execute`, `close_month`, `open_month`).
 - **`Scenario`/`compile_run` authoring:** every caller above plus `product/scenarios.py`;
   leaves with SCHEMA after the constructor slice.
 - **App recording (`capture.FinancialCapture`, `configured.product_row`):** leaves to
@@ -251,9 +250,7 @@ parallel. Each node leaves this section when it lands.
 ```mermaid
 graph TD
     TLH_MONEY["TLH-MONEY: the managed portfolio is denominated in money, not proxy units"]
-    INVEST["INVEST: the household sizes exact purchases from its projected cash"]
     SUITES_NOBUY["SUITES-A: configured suites that never purchase move onto a household"]
-    SUITES_BUY["SUITES-B: configured suites that purchase move onto a household"]
     CONFIGURED_GONE["CONFIGURED: delete sim/configured.py, case.py, the legacy result adapters"]
     APP_COMPOSE["APP-COMPOSE: product/scenarios.py declares worlds, no authored Scenario"]
     SIMTESTS["SIMTESTS: the prepared-input sim tests compose their worlds"]
@@ -265,9 +262,7 @@ graph TD
     SEASONED["SEASONED: tracked contracts originated before month zero (GHOUSE)"]
     PROPERTY["PROPERTY: a tracked property component; rented share on tracked loans (GHOUSE)"]
     VECTOR["VECTOR: World gains a rollout axis; ActionSession and its delegates go"]
-    INVEST --> SUITES_BUY
     SUITES_NOBUY --> CONFIGURED_GONE
-    SUITES_BUY --> CONFIGURED_GONE
     CONFIGURED_GONE --> RUN_GONE
     APP_COMPOSE --> RUN_GONE
     SIMTESTS --> RUN_GONE
@@ -287,32 +282,19 @@ graph TD
   cohort instead of proxy lots. The harvest curve already works from embedded-gain
   fraction, drawdown and cohort age. `quantity_scale`, `_cash` and the round-up
   loop go; `tlh_test`, `harvest_test`, `tlh_session_test` and
-  `configured_allocation_test` update the rounding they pinned. The app declares no
+  `allocation_household_test` update the rounding they pinned. The app declares no
   managed sleeve, so its output is untouched.
-- **INVEST — decided 2026-09-12: orders are exact, sizing is the policy's.** The
-  configured runner buys after settlement, sized to the cash actually left. There is
-  no clamped order: a household deciding once a month sizes exact `Buy` and
-  `Contribute` orders itself from the cash its observation shows plus what its own
-  sales and claim payments in the same batch leave, which is exact because a sale
-  settles at the quoted price and a withdrawal delivers its amount. An order the
-  account cannot fund is rejected and stops the path, as any invalid request does.
-  `product/household.py` already projects cash this way for its claim payments; the
-  configured suites' household extends it to purchases. Until TLH-MONEY a managed
-  contribution keeps its rounding to whole units of the underlying, as the runner's
-  `materialize_buy` does.
 - **SUITES-A.** `TestConfigured{IncomeSources,PropertyStakes,PrivateEquity,Deductions,
 CashConservation,FrozenRollout,Rental*,YearEndTax,PropertyCarryingCost,ScanPhase,
 ValidationEdge}` and `configured_mortgage_test` use grouped settlement and scheduled
   sales but no purchases: each composes its worlds as `harvest_test` does and states
   its sales and payments as actions. Grouped all-or-none settlement is the household's
-  choice per account, as in `product/household.py`.
-- **SUITES-B.** `TestConfiguredTargetAllocation`, `configured_allocation_test`,
-  `tlh_session_test`: the same, once the invest order exists.
+  choice per account, as in `policy/configured_household.py`.
 - **CONFIGURED.** With no suite left, `sim/configured.py`, `sim/testing/case.py`,
   `configured_result.py`, `simulation_result.py`, `product/service_test`'s agreement
   test against the runner, and `configured_allocation.validate_prepared`'s reader of
-  the prepared run go. `policy/configured_allocation.plan` stays as the household's
-  helper.
+  the prepared run with `sim/prepared_allocation_test.py` go.
+  `policy/configured_allocation.plan` stays as the household's helper.
 - **APP-COMPOSE.** `product/scenarios.py` builds an authored `Scenario` that
   `compile_run` lowers; instead it declares accounts, pools, lots, bonds, housing,
   distributions, tender and funding policies on each `World` through the compiler's
