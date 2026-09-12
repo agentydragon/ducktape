@@ -64,19 +64,22 @@ async def test_image_boots_with_readonly_secrets_and_persistent_capture(tmp_path
         assert initializer.get_wrapped_container().wait(timeout=5)["StatusCode"] == 0
     previous = b""
     for attempt in range(2):
-        with LoggedContainer(
-            tag,
-            test_name=f"proxy-mounted-boot-{attempt}",
-            command=["--config", "/run/config/config.json"],
-            volumes=[
-                (str(public_tls), "/run/public-tls", "ro"),
-                (str(interception_ca), "/run/interception-ca", "ro"),
-                (str(client), "/run/client", "ro"),
-                (str(configuration), "/run/config", "ro"),
-                (str(capture), "/capture", "rw"),
-            ],
-            tmpfs={"/private-conf": "rw,noexec,nosuid,size=32m,uid=1000,gid=1000,mode=0700"},
-        ).with_exposed_ports(8080, 9090) as container:
+        with (
+            LoggedContainer(
+                tag,
+                test_name=f"proxy-mounted-boot-{attempt}",
+                command=["--config", "/run/config/config.json"],
+                volumes=[
+                    (str(public_tls), "/run/public-tls", "ro"),
+                    (str(interception_ca), "/run/interception-ca", "ro"),
+                    (str(client), "/run/client", "ro"),
+                    (str(configuration), "/run/config", "ro"),
+                    (str(capture), "/capture", "rw"),
+                ],
+            )
+            .with_tmpfs_mount("/private-conf", "rw,noexec,nosuid,size=32m,uid=1000,gid=1000,mode=0700")
+            .with_exposed_ports(8080, 9090) as container
+        ):
             host = container.get_container_host_ip()
             health_url = f"http://{host}:{container.get_exposed_port(9090)}/healthz"
             async with asyncio.timeout(15):
