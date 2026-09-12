@@ -5,7 +5,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, expect, it } from "vitest";
 
 import { ActionPolicySection } from "./action_policy";
-import type { ActionPolicyView } from "./client";
+import type { ActionPolicyUnavailable, ActionPolicyView } from "./client";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: ReturnType<typeof createRoot>;
@@ -15,7 +15,7 @@ afterEach(async () => {
   container.remove();
 });
 
-async function render(policy: ActionPolicyView | null): Promise<void> {
+async function render(policy: ActionPolicyView | ActionPolicyUnavailable | null): Promise<void> {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -28,12 +28,42 @@ async function render(policy: ActionPolicyView | null): Promise<void> {
   );
 }
 
-const EMPTY: ActionPolicyView = { bindings: [], auto_approve_if: [], auto_deny_if: [], auto_deny_unless: [] };
+const EMPTY: ActionPolicyView = {
+  synced: true,
+  bindings: [],
+  auto_approve_if: [],
+  auto_deny_if: [],
+  auto_deny_unless: [],
+};
 
 it("says an unbound sandbox waits for the operator on every Action", async () => {
   await render(EMPTY);
   expect(container.textContent).toContain("No binding names this sandbox");
   expect(container.textContent).toContain("every Action from this sandbox waits for the operator");
+  expect(container.querySelector("[role=alert]")).toBeNull();
+});
+
+it("says nothing auto-decides while the service's watch has not synced", async () => {
+  await render({ ...EMPTY, synced: false });
+  expect(container.querySelector("[role=alert]")?.textContent).toContain("has not synced");
+});
+
+it("says why there is no policy when the service could not be asked", async () => {
+  await render({
+    kind: "unavailable",
+    code: "upstream_request_failed",
+    upstream: {
+      method: "GET",
+      url: "http://test-actions.invalid/v1/operator/action-policy",
+      upstream_status: 503,
+      error_type: "HTTPStatusError",
+    },
+  });
+  const alert = container.querySelector("[role=alert]")?.textContent ?? "";
+  expect(alert).toContain("could not be asked");
+  expect(alert).toContain("upstream_request_failed");
+  expect(alert).toContain("503");
+  expect(container.querySelector("table")).toBeNull();
 });
 
 it("renders nothing until the stream has delivered a snapshot", async () => {
@@ -44,6 +74,7 @@ it("renders nothing until the stream has delivered a snapshot", async () => {
 
 it("shows each set's state, the missing one, and the effective lists in evaluation order", async () => {
   await render({
+    synced: true,
     bindings: [
       {
         name: "test-sandbox-launch",

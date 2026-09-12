@@ -62,9 +62,11 @@ locals {
     encryption_key_file         = "/etc/agentplane-mcp/encryption-key"
     upstream_issuer             = local.agentplane_mcp_issuer
     upstream_subject            = data.authentik_user.agentplane_operator.uuid
+    # The Actions provider issues `sub_mode = "hashed_user_id"` tokens, whose subject is the
+    # user's `uid`, not the `uuid` the MCP provider above issues.
     approving_operator = {
       issuer  = local.agentplane_actions_issuer
-      subject = data.authentik_user.agentplane_operator.uuid
+      subject = data.authentik_user.agentplane_operator.uid
       role    = "operator"
     }
   }
@@ -91,8 +93,8 @@ resource "kubernetes_secret" "agentplane_mcp_oauth" {
   }
   lifecycle {
     precondition {
-      condition     = data.authentik_user.agentplane_operator.uuid != ""
-      error_message = "The MCP operator must have an authoritative Authentik UUID subject."
+      condition     = data.authentik_user.agentplane_operator.uuid != "" && data.authentik_user.agentplane_operator.uid != ""
+      error_message = "The MCP operator must have authoritative Authentik uuid and uid subjects."
     }
   }
 }

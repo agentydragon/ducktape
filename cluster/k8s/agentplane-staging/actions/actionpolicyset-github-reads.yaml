@@ -1,0 +1,46 @@
+# The console's `github_reads` policy (cluster/k8s/haku/console/config.yaml) as an Action policy
+# set. GitHub MCP's normal endpoint exposes its default catalog, including writes. This is the
+# explicit 2026-08-14 upstream read-only subset: new upstream tools intentionally stay manual
+# until reviewed here. `ui_get` reads an MCP App UI resource, not GitHub repository state.
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ActionPolicySet
+metadata:
+  name: github-reads
+  namespace: agentplane-staging
+  annotations:
+    description: The reviewed read-only subset of GitHub MCP's default catalog; every other GitHub Action stays on the human path.
+spec:
+  autoApproveIf:
+    - type: exact_actions
+      actions:
+        github:
+          - get_me
+          - get_team_members
+          - get_teams
+          - ui_get
+          - find_duplicate
+          - get_label
+          - issue_dependency_read
+          - issue_read
+          - list_issue_fields
+          - list_issue_types
+          - list_issues
+          - search_issues
+          - list_pull_requests
+          - pull_request_read
+          - search_pull_requests
+          - get_commit
+          - get_file_blame
+          - get_file_contents
+          - get_latest_release
+          - get_release_by_tag
+          - get_tag
+          - list_branches
+          - list_commits
+          - list_releases
+          - list_repository_collaborators
+          - list_tags
+          - search_code
+          - search_commits
+          - search_repositories
+          - search_users

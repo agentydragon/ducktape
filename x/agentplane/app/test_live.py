@@ -1,25 +1,41 @@
-"""The pushed views against the fetched ones, the staleness verdict, and the frames a tab reads."""
+"""The pushed views against the fetched ones, the staleness verdict, the frames a tab reads, and
+what a sandbox frame says when the Action Service cannot be asked."""
 
 from __future__ import annotations
 
 import asyncio
 import json
+import time
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
+from uuid import UUID, uuid4
 
+import httpx
 import pytest
 import pytest_bazel
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
-from x.agentplane.app.action_policy import ActionPolicyInventory
+from util.net import pick_free_port
+from x.agentplane.action_service.operator_oidc import OperatorOidcSettings
+from x.agentplane.app.action_federation import DirectFederationSettings, FederatedOperatorActions
+from x.agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnavailable, ActionPolicyView
 from x.agentplane.app.api import Provider, create_app
 from x.agentplane.app.bridge import RunnerBridge, SandboxNotReachableError
 from x.agentplane.app.decisions import DecisionsClient
 from x.agentplane.app.egress import EgressInventory
-from x.agentplane.app.identity import TokenReviewer
+from x.agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer
 from x.agentplane.app.inventory import ARCHIVED_LABEL, SANDBOXES_PLURAL, ProvisioningState, SandboxInventory
-from x.agentplane.app.live import PODS_PLURAL, LiveIndex, SandboxesSnapshot, WatchHealth, frames
+from x.agentplane.app.live import (
+    PODS_PLURAL,
+    ActionPolicyFrames,
+    LiveIndex,
+    SandboxesSnapshot,
+    WatchHealth,
+    action_policy_frame,
+    frames,
+)
+from x.agentplane.app.oidc import OIDCSettings
 from x.agentplane.app.testing.kubernetes import (
     FakeCoreV1Api,
     FakeCustomObjectsApi,
@@ -74,9 +90,9 @@ def seeded(custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api, live_in
             case "egresspolicies":
                 live_index.policies[name] = obj
             case "actionpolicysets":
-                live_index.action_policy_sets[name] = obj
+                live_index.action_policy_seen(live_index.action_policy_sets, name, obj)
             case "actionpolicybindings":
-                live_index.action_policy_bindings[name] = obj
+                live_index.action_policy_seen(live_index.action_policy_bindings, name, obj)
     live_index.pods.update(core_v1.pods)
     return live_index
 
@@ -95,12 +111,100 @@ async def test_the_index_selects_the_bindings_a_request_would(seeded: LiveIndex,
     assert [binding.name for binding in seeded.bindings_for("runner-1")] == ["runner-1-picked"]
 
 
-async def test_the_index_resolves_the_action_policy_a_request_would(
-    seeded: LiveIndex, inventory: SandboxInventory, action_policy: ActionPolicyInventory
+EMPTY_POLICY = ActionPolicyView(synced=True, bindings=[], auto_approve_if=[], auto_deny_if=[], auto_deny_unless=[])
+
+
+async def test_the_sandbox_stream_asks_the_service_again_only_when_a_policy_object_changed(seeded: LiveIndex) -> None:
+    """Every other change -- a Pod, a thread -- repeats the last answer; a failure is never repeated,
+    and another incarnation of the sandbox (a new UID) is asked about afresh."""
+    answers: list[ActionPolicyView | ActionPolicyUnavailable] = [
+        ActionPolicyUnavailable(code="test-first-attempt-failed"),
+        EMPTY_POLICY,
+        EMPTY_POLICY.model_copy(update={"synced": False}),
+        EMPTY_POLICY,
+    ]
+    asked: list[UUID] = []
+
+    async def fetch(uid: UUID) -> ActionPolicyView | ActionPolicyUnavailable:
+        asked.append(uid)
+        return answers.pop(0)
+
+    uid, reborn = uuid4(), uuid4()
+    policy = ActionPolicyFrames(seeded, fetch)
+
+    assert await policy.for_sandbox(uid) == ActionPolicyUnavailable(code="test-first-attempt-failed")
+    assert await policy.for_sandbox(uid) == EMPTY_POLICY  # retried: the failure was not kept
+    assert await policy.for_sandbox(uid) == EMPTY_POLICY  # nothing changed: repeated, not asked
+    seeded.action_policy_seen(seeded.action_policy_bindings, "runner-1-reads", None)
+    assert await policy.for_sandbox(uid) == EMPTY_POLICY.model_copy(update={"synced": False})
+    assert await policy.for_sandbox(reborn) == EMPTY_POLICY
+    assert asked == [uid, uid, uid, reborn]
+
+
+def _request(app: FastAPI, session: dict[str, object]) -> Request:
+    """A request as the session middleware hands it on: the login's own dict under `user`."""
+    return Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/live/sandboxes/runner-1",
+            "headers": [],
+            "app": app,
+            "session": {"user": session},
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    ("caller", "configured", "code"),
+    [
+        (CallerIdentity(CallerKind.TOKEN, "test-agent"), True, "operator_session_required"),
+        (CallerIdentity(CallerKind.OPERATOR, "test-operator"), False, "operator_federation_not_configured"),
+        (CallerIdentity(CallerKind.OPERATOR, "test-operator"), True, "operator_federation_token_invalid"),
+    ],
+)
+async def test_a_policy_the_service_cannot_be_asked_for_is_said_so_in_the_frame(
+    app: FastAPI, action_policy: ActionPolicyInventory, caller: CallerIdentity, configured: bool, code: str
 ) -> None:
-    uid = (await inventory.get("runner-1")).uid
-    assert seeded.action_policy_for(uid, NOW) == await action_policy.for_sandbox(uid)
-    assert [binding.name for binding in seeded.action_policy_for(uid, NOW).bindings] == ["runner-1-reads"]
+    """The failure the route would answer with, as a frame variant a tab can show: a token caller
+    is not an operator, an app without federation has nobody to ask as, and a session whose token
+    the provider refuses is refused with that code and nothing of the provider's own text."""
+    oidc = OIDCSettings(
+        issuer="https://login.test.invalid/application/o/test-app/",
+        client_id="test-app",
+        client_secret="test-only-client-secret",
+        session_secret="test-only-session-secret",
+        public_base_url="http://test-app.invalid",
+    )
+    app.state.operator_actions = (
+        FederatedOperatorActions(
+            DirectFederationSettings(
+                service_url="http://test-actions.invalid",
+                login_jwks_uri=f"http://127.0.0.1:{pick_free_port()}/jwks",
+                target=OperatorOidcSettings(
+                    issuer="https://login.test.invalid/application/o/actions/",
+                    audience="test-actions",
+                    jwks_uri=f"http://127.0.0.1:{pick_free_port()}/jwks",
+                ),
+                scope="openid",
+            ),
+            oidc,
+            httpx.AsyncClient(base_url="http://test-actions.invalid"),
+        )
+        if configured
+        else None
+    )
+    session: dict[str, object] = {
+        "issuer": oidc.issuer,
+        "subject": "test-operator-subject",
+        "username": "test-operator",
+        "access_token": "test-not-a-jwt",
+        "expires_at": time.time() + 600,
+    }
+
+    frame = await action_policy_frame(_request(app, session), caller, action_policy, uuid4())
+
+    assert frame == ActionPolicyUnavailable(code=code)
 
 
 def test_a_sandbox_the_watch_has_dropped_is_gone_rather_than_missing(seeded: LiveIndex) -> None:
@@ -171,7 +275,7 @@ def test_the_frame_models_are_published_in_the_document(app: FastAPI) -> None:
     with TestClient(app) as client:
         schemas = client.get("/openapi.json").json()["components"]["schemas"]
 
-    assert {"SandboxesSnapshot", "SandboxSnapshot", "WatchHealth"} <= set(schemas)
+    assert {"SandboxesSnapshot", "SandboxSnapshot", "WatchHealth", "ActionPolicyUnavailable"} <= set(schemas)
 
 
 async def _snapshot(index: LiveIndex) -> SandboxesSnapshot:

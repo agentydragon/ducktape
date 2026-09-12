@@ -1,0 +1,18 @@
+# What the console's `haku_v1` grants for GitHub (`github_reads` and `github_identity_reads`),
+# attached to the Claude.ai connector's principal. The binding's existence is the grant: deleting
+# it, or the label on the ServiceAccount, puts every GitHub Action back on the human path.
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ActionPolicyBinding
+metadata:
+  name: claude-ai-github-reads
+  namespace: agentplane-staging
+  annotations:
+    description: Auto-approves the reviewed GitHub reads for Connections acting as the claude-ai ServiceAccount.
+spec:
+  subject:
+    serviceAccount:
+      namespace: agentplane-staging
+      name: claude-ai
+  policySets:
+    - github-reads
+    - github-identity-reads

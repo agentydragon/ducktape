@@ -212,24 +212,24 @@ def test_create_with_preset_binds_the_sandbox_to_its_action_policy_sets(
 ) -> None:
     """One ActionPolicyBinding per launched Sandbox, owned by it and naming it by UID: what its
     harness may do without the operator, as the Action Service reads it. A Sandbox without a
-    preset gets none."""
+    preset gets none. Reading the policy back is the Action Service's answer through the operator
+    federation (`test_action_api.py`), so a token caller is refused it."""
     row = client.post("/sandboxes", json={"slug": "coder", "preset": "public-coder"}).json()
 
-    policy = client.get(f"/sandboxes/{row['name']}/action-policy").json()
-    (binding,) = policy["bindings"]
-    assert binding["provenance"] == "app"
-    assert [policy_set["name"] for policy_set in binding["policy_sets"]] == ["github-reads"]
-    assert [(p["binding"], p["policy_set"], p["policy"]["type"]) for p in policy["auto_approve_if"]] == [
-        (binding["name"], "github-reads", "exact_actions")
-    ]
-    written = custom_objects.objects[("actionpolicybindings", binding["name"])]
     sandbox_uid = custom_objects.objects[("sandboxes", row["name"])]["metadata"]["uid"]
-    assert written["spec"]["subject"] == {"sandbox": {"name": row["name"], "uid": sandbox_uid}}
+    (written,) = [obj for (kind, _), obj in custom_objects.objects.items() if kind == "actionpolicybindings"]
+    assert written["metadata"]["name"].startswith(f"{row['name']}-")
+    assert written["metadata"]["labels"] == {"app.agentplane.allegedly.works/managed-by": "integration-app"}
     assert written["metadata"]["ownerReferences"][0]["uid"] == sandbox_uid
+    assert written["spec"] == {
+        "subject": {"sandbox": {"name": row["name"], "uid": sandbox_uid}},
+        "policySets": ["github-reads"],
+    }
 
-    plain = client.post("/sandboxes", json={"slug": "plain"}).json()
-    assert client.get(f"/sandboxes/{plain['name']}/action-policy").json()["bindings"] == []
-    assert client.get("/sandboxes/nope/action-policy").status_code == 404
+    client.post("/sandboxes", json={"slug": "plain"})
+    assert len([kind for kind, _ in custom_objects.objects if kind == "actionpolicybindings"]) == 1
+    refused = client.get(f"/sandboxes/{row['name']}/action-policy")
+    assert (refused.status_code, refused.json()["detail"]) == (403, {"code": "operator_session_required"})
 
 
 def test_a_preset_naming_a_missing_action_policy_set_creates_nothing(

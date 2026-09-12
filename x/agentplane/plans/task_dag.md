@@ -61,6 +61,8 @@ flowchart TB
     AG["Deferred<br/>hosted Thread lifecycle<br/>cross-Identity read policy"]:::future
     IDENTITY_SCOPE["Deferred discussion<br/>cross-service static Identity access<br/>MCP and binding-authority placement"]:::future
     PROD["Milestone<br/>production-capable governed action execution"]:::milestone
+    ACTION_PROVENANCE_PRUNE["Deferred idea<br/>prune ActionRequestInput origin/correlation<br/>collapse to one client-authored identifier?"]:::future
+    CONNECTION_SA_REBIND["Planned mutation<br/>rebind a Connection's ServiceAccount in place<br/>no mutation exists; only a fresh OAuth consent does"]:::future
 
     CRED --> MCPAUTH
     MCPAUTH --> PROD
@@ -139,6 +141,38 @@ The request may become a policy-gated Action with operator approval, or use anot
 configuration path. Keep the authority, approval, persistence, and rollback model open until a
 concrete caller and policy owner are chosen. This does not grant agents a direct policy mutation
 path and does not block current credential-placeholder egress.
+
+### `ACTION_PROVENANCE_PRUNE` — prune `ActionRequestInput.origin`/`correlation`
+
+**Deferred idea:** `origin` and `correlation` on `ActionRequestInput` are two open-ended
+`dict[str, JsonValue]` bags with exactly one real consumer today — idempotency-retry equality
+matching in `action_service/db.py` (a resubmitted `idempotency_key` with different `origin`/
+`correlation` is treated as a conflicting request, not a matching retry). Beyond that check,
+nothing in the Action Service parses or acts on their contents; they are stored, returned in
+`ActionRequestView` (redacted for non-operators), and otherwise inert. Consider collapsing both
+down to one client-authored identifier field, or confirm no simplification is warranted.
+
+This is a breaking schema change to already-shipped, in-production surface — a real Pydantic
+model, real DB columns, real tests, and documented invariants (`action_service/SPEC.md`,
+`action_service/README.md`) — not something to fold into a separate, unrelated addition of new
+caller-facing fields to the same model. No dependency on anything else; nothing waits on this.
+
+### `CONNECTION_SA_REBIND` — rebind a Connection's ServiceAccount in place
+
+**Planned mutation:** no mutation exists today, frontend or backend, to change which ServiceAccount
+an existing Connection acts as. `connections.py`'s `ConnectionAuthority` and the exposed
+`ConnectionService` (`list`/`callerServiceAccounts`/`rename`/`unbind` in `client.ts`) cover listing,
+renaming, and unbinding, but the only way to change a Connection's bound ServiceAccount is a fresh
+OAuth consent authorization (`consent.tsx`) that creates a new grant — a new revision, prior grants
+revoked, not an in-place edit. The frontend's OAuth-clients settings table currently shows the
+ServiceAccount as read-only text for exactly this reason.
+
+**Design questions, not yet settled:** should rebinding revoke the prior grant's revision the same
+way a fresh consent does, or coexist with it; does it need its own audit trail distinct from a
+reconnect; and does it require re-running eligibility checks (the ServiceAccount must still carry
+`agentplane.allegedly.works/action-caller: "true"`) at rebind time, not just at original consent.
+No dependency on anything else; nothing waits on this. Once it exists, the settings table's
+ServiceAccount column becomes a real dropdown instead of static text.
 
 ## Named gates and acceptance evidence
 

@@ -33,8 +33,12 @@ from x.agentplane.action_service.models import (
     ExecutionState,
     Principal,
     PrincipalRole,
+    ServiceAccountRef,
     Verdict,
 )
+from x.agentplane.action_service.policy_informer import PolicyIndex, namespaced_key
+from x.agentplane.action_service.policy_resources import parse_binding, parse_policy_set
+from x.agentplane.action_service.policy_view import SubjectActionPolicyView
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
@@ -522,6 +526,63 @@ async def test_configured_catalog_is_discoverable_and_unknown_lookups_fail_clear
             "/v1/action-groups/github/actions/does-not-exist", headers=_workload("workload-a")
         )
         assert missing_action.status_code == 404
+    finally:
+        await client.aclose()
+        await service.close()
+
+
+async def test_operator_reads_a_named_subjects_effective_policy(
+    engine: AsyncEngine, echo_catalog: ActionCatalog
+) -> None:
+    """The operator asks about a subject by what a binding pins -- a Sandbox's namespace and UID, or
+    a ServiceAccount -- and gets the same resolution admission uses, with each named set's standing.
+    A workload bearer is not an operator on this surface either."""
+    index = PolicyIndex(synced=True)
+    metadata = {"namespace": NAMESPACE, "uid": "test-uid", "generation": 2, "resourceVersion": "9"}
+    index.policy_sets[namespaced_key(NAMESPACE, "reads")] = parse_policy_set(
+        {
+            "metadata": {"name": "reads", **metadata},
+            "spec": {"autoApproveIf": [{"type": "exact_actions", "actions": {"agentplane": ["echo"]}}]},
+        }
+    )
+    account = ServiceAccountRef(namespace=NAMESPACE, name="test-client")
+    for name, subject in (
+        ("sandbox-a-reads", {"sandbox": {"name": SANDBOX_A.sandbox_name, "uid": SANDBOX_A.sandbox_uid}}),
+        ("client-reads", {"serviceAccount": account.model_dump()}),
+    ):
+        index.bindings[namespaced_key(NAMESPACE, name)] = parse_binding(
+            {
+                "metadata": {"name": name, "labels": {"test.example/writer": name}, **metadata},
+                "spec": {"subject": subject, "policySets": ["reads", "gone"]},
+            }
+        )
+    service = ActionService(
+        ActionStore(make_sessionmaker(engine)), echo_catalog, {"agentplane": CountingExecutor()}, policies=index
+    )
+    client = await _client(service)
+    try:
+        sandbox_path = f"/v1/operator/action-policy/sandboxes/{NAMESPACE}/{SANDBOX_A.sandbox_uid}"
+        response = await client.get(sandbox_path, headers=_operator())
+        assert response.status_code == 200, response.text
+        view = SubjectActionPolicyView.model_validate(response.json())
+        (binding,) = view.bindings
+        assert (binding.name, binding.labels, binding.missing_policy_sets) == (
+            "sandbox-a-reads",
+            {"test.example/writer": "sandbox-a-reads"},
+            ["gone"],
+        )
+        assert [(policy_set.name, policy_set.generation) for policy_set in binding.policy_sets] == [("reads", 2)]
+        assert [(p.binding, p.policy_set, p.index) for p in view.auto_approve_if] == [("sandbox-a-reads", "reads", 0)]
+        other = await client.get(
+            f"/v1/operator/action-policy/sandboxes/{NAMESPACE}/{SANDBOX_B.sandbox_uid}", headers=_operator()
+        )
+        assert SubjectActionPolicyView.model_validate(other.json()).bindings == []
+        by_account = await client.get(
+            f"/v1/operator/action-policy/service-accounts/{account.namespace}/{account.name}", headers=_operator()
+        )
+        assert [b.name for b in SubjectActionPolicyView.model_validate(by_account.json()).bindings] == ["client-reads"]
+        assert (await client.get(sandbox_path)).status_code == 401
+        assert (await client.get(sandbox_path, headers=_workload("workload-a"))).status_code == 401
     finally:
         await client.aclose()
         await service.close()

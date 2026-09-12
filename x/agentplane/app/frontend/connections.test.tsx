@@ -43,19 +43,36 @@ function service(): ConnectionService {
     unbind: vi.fn(),
   };
 }
-it("renders immutable IDs and distinguishes an unlabeled ServiceAccount from an active grant", async () => {
+it("renders the Client/Service account table with the immutable client ID and an unlabeled caller flagged", async () => {
   const container = await render(service());
-  for (const value of [
-    "Claude desktop",
-    sampleConnection().id,
-    "registered-client-123",
-    "Grant active",
-    "agentplane-test/personal",
-    "ServiceAccount not labeled as an Action caller",
-  ])
+  expect(container.textContent).toContain("Client");
+  expect(container.textContent).toContain("Service account");
+  for (const value of ["registered-client-123", "Claude desktop", sampleConnection().id, "agentplane-test/personal"])
     expect(container.textContent).toContain(value);
+  expect(container.textContent).toContain("ServiceAccount not labeled as an Action caller");
 });
-it("requires confirmation, permits cancelling, and preserves the row after unbind", async () => {
+it("shows the most recent grant when a connection has more than one", async () => {
+  const row = sampleConnection();
+  const superseded = row.grants[0];
+  row.grants = [
+    superseded,
+    {
+      ...superseded,
+      id: "20000000-0000-4000-8000-000000000002",
+      revision: superseded.revision + 1,
+      client_id: "registered-client-456",
+      caller: { namespace: "agentplane-test", name: "other" },
+    },
+  ];
+  const api = service();
+  api.list = vi.fn(async () => [row]);
+  const container = await render(api);
+  expect(container.textContent).toContain("registered-client-456");
+  expect(container.textContent).not.toContain("registered-client-123");
+  expect(container.textContent).toContain("agentplane-test/other");
+  expect(container.textContent).not.toContain("ServiceAccount not labeled as an Action caller");
+});
+it("requires confirmation, permits cancelling, and preserves the row after unlink", async () => {
   const api = service();
   const row = sampleConnection();
   api.unbind = vi.fn(async () => ({
@@ -64,37 +81,18 @@ it("requires confirmation, permits cancelling, and preserves the row after unbin
     grants: row.grants.map((grant) => ({ ...grant, status: "revoked" as const })),
   }));
   const container = await render(api);
-  await act(async () => button(container, "Unbind").click());
+  await act(async () => button(container, "Unlink").click());
   expect(api.unbind).not.toHaveBeenCalled();
   expect(container.textContent).toContain("Already claimed executions are not stopped");
   await act(async () => button(container, "Cancel").click());
   expect(api.unbind).not.toHaveBeenCalled();
-  await act(async () => button(container, "Unbind").click());
-  await act(async () => button(container, "Confirm unbind").click());
+  await act(async () => button(container, "Unlink").click());
+  await act(async () => button(container, "Confirm unlink").click());
   expect(api.unbind).toHaveBeenCalledOnce();
   expect(api.unbind).toHaveBeenCalledWith(row);
-  expect(container.textContent).toContain("Grant revoked");
-  expect(container.textContent).toContain(row.id);
-  expect(button(container, "Unbind").disabled).toBe(true);
+  expect(button(container, "Unlink").disabled).toBe(true);
 });
-it("sends a trimmed rename with the displayed version", async () => {
-  const api = service();
-  const row = sampleConnection();
-  api.rename = vi.fn(async () => ({ ...row, display_name: "Renamed", version: 3 }));
-  const container = await render(api);
-  await act(async () => button(container, "Rename").click());
-  const input = container.querySelector("input");
-  if (!input) throw new Error("missing name input");
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, " Renamed ");
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-  await act(async () => button(container, "Save name").click());
-  expect(api.rename).toHaveBeenCalledOnce();
-  expect(api.rename).toHaveBeenCalledWith(row, "Renamed");
-  expect(container.textContent).toContain("Renamed");
-});
-it("refreshes stale unbind state without destructive automatic retry", async () => {
+it("refreshes stale unlink state without destructive automatic retry", async () => {
   const api = service();
   let rows = [sampleConnection()];
   api.list = vi.fn(async () => rows);
@@ -103,13 +101,13 @@ it("refreshes stale unbind state without destructive automatic retry", async () 
     throw new ConnectionRequestError(409, "stale");
   });
   const container = await render(api);
-  await act(async () => button(container, "Unbind").click());
-  await act(async () => button(container, "Confirm unbind").click());
+  await act(async () => button(container, "Unlink").click());
+  await act(async () => button(container, "Confirm unlink").click());
   expect(api.unbind).toHaveBeenCalledOnce();
   expect(api.list).toHaveBeenCalledTimes(2);
   expect(container.textContent).toContain("Changed elsewhere");
   expect(container.textContent).toContain("Nothing was retried");
-  expect(container.textContent).not.toContain("Confirm unbind");
+  expect(container.textContent).not.toContain("Confirm unlink");
 });
 it("distinguishes loading failures from an empty inventory", async () => {
   const api = service();
@@ -118,5 +116,5 @@ it("distinguishes loading failures from an empty inventory", async () => {
   });
   const container = await render(api);
   expect(container.textContent).toContain("Service unavailable");
-  expect(container.textContent).not.toContain("No Connections yet");
+  expect(container.textContent).not.toContain("No OAuth clients yet");
 });

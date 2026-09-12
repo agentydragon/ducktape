@@ -50,6 +50,7 @@ from x.agentplane.action_service.mcp_frontend import ActionsMcp, create_server
 from x.agentplane.action_service.mcp_linkage import (
     McpLinkageAuthority,
     McpLinkageConflictError,
+    McpLinkageError,
     McpLinkageNotFoundError,
     McpLinkageStart,
     McpLinkageStartView,
@@ -64,9 +65,11 @@ from x.agentplane.action_service.models import (
     DecisionInput,
     Principal,
     PrincipalRole,
+    SandboxCaller,
     ServiceAccountRef,
 )
 from x.agentplane.action_service.oauth import ActionsOAuthProxy
+from x.agentplane.action_service.policy_view import CallerActionPolicyView, SubjectActionPolicyView
 from x.agentplane.action_service.push import PushIdentity, PushSubscriptionStore
 from x.agentplane.action_service.service import (
     ActionService,
@@ -298,6 +301,15 @@ def create_app(
         del principal
         return action_catalog.action_view(group_key, action_key)
 
+    # The caller's own effective policy, from the resolution admission uses. This surface only ever
+    # sees a Sandbox principal; an external grant reaches the service through `/mcp`, whose tool
+    # reads the grant `CallerAuthenticator` set.
+    @app.get("/v1/action-policy", response_model=CallerActionPolicyView)
+    async def own_action_policy(
+        principal: Annotated[Principal, Depends(_workload)], action_service: Annotated[ActionService, Depends(_service)]
+    ) -> CallerActionPolicyView:
+        return action_service.caller_action_policy(principal, external_grant=None)
+
     # Operator/BFF surface: deliberately different paths and authenticator. A workload bearer can
     # never acquire operator-all read or decision authority merely by authenticating as a Sandbox.
     @app.get("/v1/operator/action-requests", response_model=list[ActionRequestView])
@@ -349,6 +361,26 @@ def create_app(
         action_service: Annotated[ActionService, Depends(_service)],
     ) -> ActionRequestView:
         return await action_service.get(request_id, principal)
+
+    @app.get("/v1/operator/action-policy/sandboxes/{namespace}/{sandbox_uid}", response_model=SubjectActionPolicyView)
+    async def operator_sandbox_action_policy(
+        namespace: str,
+        sandbox_uid: str,
+        principal: Annotated[Principal, Depends(_operator)],
+        action_service: Annotated[ActionService, Depends(_service)],
+    ) -> SubjectActionPolicyView:
+        del principal
+        return action_service.subject_action_policy(SandboxCaller(namespace=namespace, sandbox_uid=sandbox_uid))
+
+    @app.get("/v1/operator/action-policy/service-accounts/{namespace}/{name}", response_model=SubjectActionPolicyView)
+    async def operator_service_account_action_policy(
+        namespace: str,
+        name: str,
+        principal: Annotated[Principal, Depends(_operator)],
+        action_service: Annotated[ActionService, Depends(_service)],
+    ) -> SubjectActionPolicyView:
+        del principal
+        return action_service.subject_action_policy(ServiceAccountRef(namespace=namespace, name=name))
 
     @app.get("/v1/operator/push/config")
     async def push_config(principal: Annotated[Principal, Depends(_operator)]) -> dict[str, str | None]:
@@ -485,6 +517,13 @@ def _error(status_code: int, detail: str) -> JSONResponse:
 
 
 def _mcp_linkage_routes(app: FastAPI, authority: McpLinkageAuthority) -> None:
+    @app.exception_handler(McpLinkageError)
+    async def mcp_linkage_failed(request: Request, error: McpLinkageError) -> JSONResponse:
+        # A provider that refused or could not answer the token exchange; the more specific
+        # subclasses below keep their own status codes.
+        del request
+        return _error(status.HTTP_502_BAD_GATEWAY, str(error))
+
     @app.exception_handler(McpLinkageConflictError)
     async def mcp_linkage_conflict(request: Request, error: McpLinkageConflictError) -> JSONResponse:
         del request

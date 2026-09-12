@@ -27,7 +27,7 @@ export function stateLabel(state: ActionState): string {
   return state.replaceAll("_", " ");
 }
 
-function JsonProjection({ value }: { value: unknown }): JSX.Element {
+export function JsonProjection({ value }: { value: unknown }): JSX.Element {
   return (
     <Code block style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
       {JSON.stringify(value, null, 2)}
@@ -35,14 +35,11 @@ function JsonProjection({ value }: { value: unknown }): JSX.Element {
   );
 }
 
-function ActionCaller({ request }: { request: ActionRequestView }): JSX.Element {
-  const grant = request.external_grant;
-  if (!grant)
-    return (
-      <Text size="xs" c="dimmed">
-        {request.caller_principal}
-      </Text>
-    );
+export function ExternalGrantDetails({
+  grant,
+}: {
+  grant: NonNullable<ActionRequestView["external_grant"]>;
+}): JSX.Element {
   return (
     <Stack gap={2} style={{ overflowWrap: "anywhere" }}>
       <Text size="xs" fw={600}>
@@ -74,74 +71,26 @@ function ActionCaller({ request }: { request: ActionRequestView }): JSX.Element 
   );
 }
 
-function ActionCard({
-  request,
-  deciding,
-  onDecide,
-}: {
-  request: ActionRequestView;
-  deciding: boolean;
-  onDecide: (request: ActionRequestView, verdict: Verdict) => void;
-}): JSX.Element {
-  return (
-    <Paper withBorder p="md">
-      <Stack gap="sm">
-        <Stack gap={2}>
-          <Group justify="space-between" align="flex-start">
-            <Text fw={600}>
-              {request.action.group} / {request.action.name}
-            </Text>
-            <Badge color={STATE_COLORS[request.state] ?? "gray"}>{stateLabel(request.state)}</Badge>
-          </Group>
-          <Text size="xs" c="dimmed">
-            Request {request.id}
-          </Text>
-          <ActionCaller request={request} />
-        </Stack>
-        <div>
-          <Text size="sm" fw={600} mb={4}>
-            Exact arguments (unredacted)
-          </Text>
-          <JsonProjection value={request.arguments} />
-        </div>
-        {request.decision && (
-          <Text size="sm">
-            Decision: <b>{request.decision.verdict}</b> by {request.decision.issuer}
-            {request.decision.decision_note ? ` · ${request.decision.decision_note}` : ""}
-          </Text>
-        )}
-        {request.execution?.result !== null && request.execution?.result !== undefined && (
-          <div>
-            <Text size="sm" fw={600} mb={4}>
-              Result
-            </Text>
-            <JsonProjection value={request.execution.result} />
-          </div>
-        )}
-        {request.execution?.error && (
-          <div>
-            <Text size="sm" fw={600} mb={4}>
-              Execution error
-            </Text>
-            <JsonProjection value={request.execution.error} />
-          </div>
-        )}
-        {request.state === "decision_pending" && (
-          <Group justify="flex-end">
-            <Button color="red" variant="light" loading={deciding} onClick={() => onDecide(request, "deny")}>
-              Deny
-            </Button>
-            <Button loading={deciding} onClick={() => onDecide(request, "allow")}>
-              Allow
-            </Button>
-          </Group>
-        )}
-      </Stack>
-    </Paper>
-  );
+function ActionCaller({ request }: { request: ActionRequestView }): JSX.Element {
+  const grant = request.external_grant;
+  if (!grant)
+    return (
+      <Text size="xs" c="dimmed">
+        {request.caller_principal}
+      </Text>
+    );
+  return <ExternalGrantDetails grant={grant} />;
 }
 
-export function ActionRequests({ service = actionService }: { service?: ActionService }): JSX.Element {
+/** Shared fetch/decide plumbing for the pending and history views: one live snapshot (the real
+ * service pushes over `/actions/stream`) or one polled `list()` (any other service, e.g. tests). */
+export function useActionRequests(service: ActionService): {
+  requests: ActionRequestView[];
+  error: string | null;
+  loading: boolean;
+  deciding: string | null;
+  decide: (request: ActionRequestView, verdict: Verdict) => void;
+} {
   const [requests, setRequests] = useState<ActionRequestView[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -187,7 +136,7 @@ export function ActionRequests({ service = actionService }: { service?: ActionSe
     return () => source.close();
   }, [refresh, service]);
 
-  async function decide(request: ActionRequestView, verdict: Verdict): Promise<void> {
+  async function decideRequest(request: ActionRequestView, verdict: Verdict): Promise<void> {
     setDeciding(request.id);
     try {
       const updated = await service.decide(request, verdict);
@@ -203,16 +152,65 @@ export function ActionRequests({ service = actionService }: { service?: ActionSe
     }
   }
 
+  return { requests, error, loading, deciding, decide: (request, verdict) => void decideRequest(request, verdict) };
+}
+
+function PendingActionCard({
+  request,
+  deciding,
+  onDecide,
+}: {
+  request: ActionRequestView;
+  deciding: boolean;
+  onDecide: (request: ActionRequestView, verdict: Verdict) => void;
+}): JSX.Element {
+  return (
+    <Paper withBorder p="md">
+      <Stack gap="sm">
+        <Stack gap={2}>
+          <Group justify="space-between" align="flex-start">
+            <Text fw={600}>
+              {request.action.group} / {request.action.name}
+            </Text>
+            <Badge color={STATE_COLORS[request.state] ?? "gray"}>{stateLabel(request.state)}</Badge>
+          </Group>
+          <Text size="xs" c="dimmed">
+            Request {request.id}
+          </Text>
+          <ActionCaller request={request} />
+        </Stack>
+        <div>
+          <Text size="sm" fw={600} mb={4}>
+            Exact arguments (unredacted)
+          </Text>
+          <JsonProjection value={request.arguments} />
+        </div>
+        <Group justify="flex-end">
+          <Button color="red" variant="light" loading={deciding} onClick={() => onDecide(request, "deny")}>
+            Deny
+          </Button>
+          <Button loading={deciding} onClick={() => onDecide(request, "allow")}>
+            Allow
+          </Button>
+        </Group>
+      </Stack>
+    </Paper>
+  );
+}
+
+/** The primary, actionable view: ActionRequests still awaiting an operator decision. Decided and
+ * terminal requests live on the separate `ActionHistory` view (`actions_history.tsx`) instead of
+ * alongside these. */
+export function ActionRequests({ service = actionService }: { service?: ActionService }): JSX.Element {
+  const { requests, error, loading, deciding, decide } = useActionRequests(service);
   const pending = requests.filter((request) => request.state === "decision_pending");
-  const decided = requests.filter((request) => request.state !== "decision_pending");
 
   return (
     <Stack>
       <div>
         <Title order={2}>Actions</Title>
         <Text c="dimmed" size="sm">
-          Review pending ActionRequests. Allow dispatches the single permitted Execution automatically; denied and
-          terminal requests remain visible as durable receipts.
+          Review pending ActionRequests. Allow dispatches the single permitted Execution automatically.
         </Text>
       </div>
       {error && <Text c="red">{error}</Text>}
@@ -220,22 +218,7 @@ export function ActionRequests({ service = actionService }: { service?: ActionSe
       <Title order={3}>{loading || error ? "Pending" : `Pending (${pending.length})`}</Title>
       {!loading && !error && pending.length === 0 && <Text c="dimmed">No requests are waiting for a decision.</Text>}
       {pending.map((request) => (
-        <ActionCard
-          key={request.id}
-          request={request}
-          deciding={deciding === request.id}
-          onDecide={(item, verdict) => void decide(item, verdict)}
-        />
-      ))}
-      <Title order={3}>Recent requests</Title>
-      {!loading && !error && decided.length === 0 && <Text c="dimmed">No decided requests yet.</Text>}
-      {decided.map((request) => (
-        <ActionCard
-          key={request.id}
-          request={request}
-          deciding={deciding === request.id}
-          onDecide={(item, verdict) => void decide(item, verdict)}
-        />
+        <PendingActionCard key={request.id} request={request} deciding={deciding === request.id} onDecide={decide} />
       ))}
     </Stack>
   );

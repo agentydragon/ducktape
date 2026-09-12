@@ -28,6 +28,7 @@ from x.agentplane.action_service.models import (
     DecisionInput,
     ServiceAccountRef,
 )
+from x.agentplane.action_service.policy_view import CallerActionPolicyView, SubjectActionPolicyView
 
 WORKLOAD_CREDENTIAL_PLACEHOLDER = "agentplane-credential-agentplane-workload"
 
@@ -82,9 +83,24 @@ class ActionServiceClient(_BearerClient):
         )
         return [ActionEventView.model_validate(event) for event in response.json()]
 
+    async def action_policy(self) -> CallerActionPolicyView:
+        """What this caller's own bindings auto-decide, as admission would resolve them now."""
+        response = await self._request("GET", "/v1/action-policy")
+        return CallerActionPolicyView.model_validate(response.json())
+
 
 class OperatorActionServiceClient(_BearerClient):
     """BFF-facing client; its authenticator and paths are distinct from Sandbox workload auth."""
+
+    async def sandbox_action_policy(self, *, namespace: str, sandbox_uid: str) -> SubjectActionPolicyView:
+        response = await self._request("GET", f"/v1/operator/action-policy/sandboxes/{namespace}/{sandbox_uid}")
+        return SubjectActionPolicyView.model_validate(response.json())
+
+    async def service_account_action_policy(self, account: ServiceAccountRef) -> SubjectActionPolicyView:
+        response = await self._request(
+            "GET", f"/v1/operator/action-policy/service-accounts/{account.namespace}/{account.name}"
+        )
+        return SubjectActionPolicyView.model_validate(response.json())
 
     async def complete_mcp_linkage(self, state: str, code: str) -> McpLinkageView:
         response = await self._request("GET", "/v1/mcp-linkage/callback", params={"state": state, "code": code})

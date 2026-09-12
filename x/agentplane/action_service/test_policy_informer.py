@@ -134,7 +134,13 @@ async def test_initial_sync_keeps_invalid_objects_and_only_labeled_callers(index
 async def test_ready_is_written_once_per_generation_and_names_the_fault(
     fake: FakeApiServer, index: PolicyIndex
 ) -> None:
-    await index.wait_for(lambda: _ready(index, VALID_SET, "True", 1) and _ready(index, INVALID_SET, "False", 1))
+    await index.wait_for(
+        lambda: (
+            _ready(index, VALID_SET, "True", 1)
+            and _ready(index, INVALID_SET, "False", 1)
+            and index.bindings[key(BINDING)].status.ready() is not None
+        )
+    )
     written = {name: patch["conditions"][0] for name, patch in fake.status_patches}
     assert written[VALID_SET]["reason"] == "Valid"
     assert written[INVALID_SET]["reason"] == "Invalid"
