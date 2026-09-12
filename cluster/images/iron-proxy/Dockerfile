@@ -11,7 +11,7 @@
 #   v0.49.0 (latest stable) + 1 commit and is already in v0.50.0-rc.1/rc.2, so
 #   the only thing keeping this here is the lack of a non-RC tag. Note the
 #   official image also picks up the two rc commits.
-FROM golang:1.26.1-alpine3.23@sha256:2389ebfa5b7f43eeafbd6be0c3700cc46690ef842ad962f6c5bd6be49ed82039 AS build
+FROM golang:1.27.1-alpine3.24@sha256:cf6fca6641884b8433441b2b0652976f975e1d0fdd26d177eaaf8596087f3125 AS build
 
 ARG IRON_PROXY_REVISION
 WORKDIR /src
@@ -20,7 +20,7 @@ RUN CGO_ENABLED=0 go build -trimpath \
       -ldflags="-s -w -X github.com/ironsh/iron-proxy/internal/version.Version=${IRON_PROXY_REVISION}" \
       -o /out/iron-proxy ./cmd/iron-proxy
 
-FROM alpine:3.23@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40
+FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 ARG IRON_PROXY_REVISION
 RUN apk add --no-cache ca-certificates openssl
 COPY --from=build /out/iron-proxy /usr/local/bin/iron-proxy

@@ -54,7 +54,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.26.1"
+          go-version: "1.27.1"
           cache-dependency-path: .build/iron-proxy/go.sum
 
       - name: Test HTTP/2 MITM support
