@@ -291,7 +291,7 @@ class World:
         return self.managed
 
     def _purchases(self) -> tuple[_PropertyPurchase, ...]:
-        return () if self.properties is None else self._purchases()
+        return () if self.properties is None else self.properties.housing.purchases
 
     def attach_housing(
         self, housing: Housing, tax_policies: Sequence[_PropertyTax], locations: Sequence[PreparedLocation]
