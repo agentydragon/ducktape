@@ -1,6 +1,6 @@
-"""How a caller's bindings resolve from the index at one instant, and the provider deciding the
-GitHub repository kinds over them: a match carries the repository in evidence, every miss is no
-opinion."""
+"""How a caller's bindings resolve from the index at one instant, what the caller and the operator
+read of that resolution, and the provider deciding the GitHub repository kinds over it: a match
+carries the repository in evidence, every miss is no opinion."""
 
 from __future__ import annotations
 
@@ -39,6 +39,14 @@ from x.agentplane.action_service.policy_evaluation import (
     resolve_bindings,
 )
 from x.agentplane.action_service.policy_informer import PolicyIndex
+from x.agentplane.action_service.policy_view import (
+    ArgumentSchemaView,
+    ExactActionsView,
+    GitHubPublicRepositoryView,
+    GitHubRepositoryView,
+    caller_view,
+    subject_view,
+)
 from x.agentplane.action_service.providers import DecisionContext, ResolvedBinding
 
 NAMESPACE = "agentplane-test"
@@ -46,15 +54,28 @@ NOW = datetime(2026, 9, 12, 12, 0, tzinfo=UTC)
 SANDBOX = SandboxCaller(namespace=NAMESPACE, sandbox_uid="sandbox-uid-1")
 ACCOUNT = ServiceAccountRef(namespace=NAMESPACE, name="test-caller")
 CALLER = ServiceAccountCaller(service_account=ACCOUNT, grant_revision=1)
+SCHEMA_POLICY: dict[str, Any] = {
+    "type": "argument_schema",
+    "actions": {"everything": ["echo"]},
+    "schema": {
+        "type": "object",
+        "required": ["message"],
+        "properties": {"message": {"type": "string", "maxLength": 5}, "count": {"type": "integer"}},
+        "additionalProperties": False,
+    },
+}
 
 
-def _meta(name: str, *, generation: int = 1, version: str = "1") -> dict[str, Any]:
+def _meta(
+    name: str, *, generation: int = 1, version: str = "1", labels: dict[str, str] | None = None
+) -> dict[str, Any]:
     return {
         "name": name,
         "namespace": NAMESPACE,
         "uid": f"uid-{name}",
         "generation": generation,
         "resourceVersion": version,
+        **({"labels": labels} if labels is not None else {}),
     }
 
 
@@ -141,6 +162,144 @@ def test_nothing_resolves_before_the_informer_has_synced() -> None:
     assert resolve_bindings(index, SANDBOX, NOW) == ()
     index.synced = True
     assert len(resolve_bindings(index, SANDBOX, NOW)) == 1
+
+
+def test_every_kind_projects_to_its_own_view() -> None:
+    index = index_of(
+        policy_set(
+            "set-kinds",
+            [
+                {"type": "exact_actions", "actions": {"everything": ["echo"]}},
+                SCHEMA_POLICY,
+                {"type": "github_repository", "actions": {"github": ["search_code"]}, "owner": "o", "repository": "r"},
+                {"type": "github_public_repository", "actions": {"github": ["get_file_contents"]}},
+            ],
+        ),
+        binding("b-kinds", {"sandbox": {"name": "coder", "uid": SANDBOX.sandbox_uid}}, ["set-kinds"]),
+    )
+    views = [entry.policy for entry in caller_view(index, SANDBOX, NOW).auto_approve_if]
+    assert [view.type for view in views] == list(PolicyKind)
+    assert isinstance(views[2], GitHubRepositoryView)
+    assert (views[2].owner, views[2].repository, views[2].actions) == ("o", "r", {"github": ["search_code"]})
+    assert isinstance(views[3], GitHubPublicRepositoryView)
+    assert views[3].actions == {"github": ["get_file_contents"]}
+
+
+@pytest.fixture
+def mixed_index() -> PolicyIndex:
+    """One Sandbox with a valid, a refused and a missing set on one binding, a second binding of
+    its own, and the bindings the resolution skips: expired, another Sandbox's, a ServiceAccount's."""
+    return index_of(
+        policy_set("set-reads", [{"type": "exact_actions", "actions": {"everything": ["echo", "add"]}}]),
+        policy_set("set-echo", [SCHEMA_POLICY], generation=3),
+        policy_set("set-broken", [{"type": "nope", "actions": {"everything": ["echo"]}}]),
+        binding(
+            "b-sandbox",
+            {"sandbox": {"name": "coder", "uid": SANDBOX.sandbox_uid}},
+            ["set-reads", "set-broken", "set-missing"],
+            labels={"test.example/managed-by": "test-writer"},
+        ),
+        binding(
+            "b-afternoon",
+            {"sandbox": {"name": "coder", "uid": SANDBOX.sandbox_uid}},
+            ["set-echo"],
+            expires_at=(NOW + timedelta(hours=1)).isoformat(),
+        ),
+        binding(
+            "b-expired",
+            {"sandbox": {"name": "coder", "uid": SANDBOX.sandbox_uid}},
+            ["set-reads"],
+            expires_at=(NOW - timedelta(seconds=1)).isoformat(),
+        ),
+        binding("b-other-uid", {"sandbox": {"name": "coder", "uid": "someone-else"}}, ["set-reads"]),
+        binding("b-account", {"serviceAccount": {"namespace": NAMESPACE, "name": ACCOUNT.name}}, ["set-echo"]),
+    )
+
+
+def test_a_caller_reads_its_own_resolution_and_nothing_of_the_sets_it_cannot_use(mixed_index: PolicyIndex) -> None:
+    """The caller view names the bindings admission resolves and, per binding, only the sets that
+    contribute: a refused or missing set is simply not there, and another subject's bindings never are."""
+    view = caller_view(mixed_index, SANDBOX, NOW)
+
+    assert view.synced is True
+    assert [(b.name, b.policy_sets) for b in view.bindings] == [
+        ("b-afternoon", ["set-echo"]),
+        ("b-sandbox", ["set-reads"]),
+    ]
+    assert view.bindings[0].expires_at == NOW + timedelta(hours=1)
+    assert [(p.binding, p.policy_set, p.index, p.policy.type) for p in view.auto_approve_if] == [
+        ("b-afternoon", "set-echo", 0, PolicyKind.ARGUMENT_SCHEMA),
+        ("b-sandbox", "set-reads", 0, PolicyKind.EXACT_ACTIONS),
+    ]
+    echo, reads = (p.policy for p in view.auto_approve_if)
+    assert isinstance(echo, ArgumentSchemaView)
+    assert (echo.actions, echo.argument_schema) == ({"everything": ["echo"]}, SCHEMA_POLICY["schema"])
+    assert isinstance(reads, ExactActionsView)
+    assert reads.actions == {"everything": ["add", "echo"]}
+    assert (view.auto_deny_if, view.auto_deny_unless) == ([], [])
+    assert "set-broken" not in view.model_dump_json()
+    assert "set-missing" not in view.model_dump_json()
+
+    other = caller_view(mixed_index, SandboxCaller(namespace=NAMESPACE, sandbox_uid="someone-else"), NOW)
+    assert [b.name for b in other.bindings] == ["b-other-uid"]
+    assert [b.name for b in caller_view(mixed_index, CALLER, NOW).bindings] == ["b-account"]
+
+
+def test_the_operator_reads_the_same_resolution_with_each_named_set_standing(mixed_index: PolicyIndex) -> None:
+    """The subject view keeps the caller's lists and adds what the caller is not shown: labels, the
+    Ready verdicts, the refused set's report, and the names nothing answers to."""
+    view = subject_view(mixed_index, SANDBOX, NOW)
+
+    assert view.auto_approve_if == caller_view(mixed_index, SANDBOX, NOW).auto_approve_if
+    afternoon, sandbox = view.bindings
+    assert (sandbox.name, sandbox.labels, sandbox.ready) == (
+        "b-sandbox",
+        {"test.example/managed-by": "test-writer"},
+        None,
+    )
+    reads, broken = sandbox.policy_sets
+    assert (reads.name, reads.generation, reads.refused) == ("set-reads", 1, None)
+    assert broken.name == "set-broken"
+    assert broken.refused is not None
+    assert "nope" in broken.refused
+    assert sandbox.missing_policy_sets == ["set-missing"]
+    assert (afternoon.name, afternoon.labels, afternoon.missing_policy_sets) == ("b-afternoon", {}, [])
+    assert [(s.name, s.generation) for s in afternoon.policy_sets] == [("set-echo", 3)]
+
+    account = subject_view(mixed_index, ACCOUNT, NOW)
+    assert [b.name for b in account.bindings] == ["b-account"]
+    assert account.auto_approve_if == caller_view(mixed_index, CALLER, NOW).auto_approve_if
+
+
+def test_both_views_say_nothing_auto_decides_before_sync(mixed_index: PolicyIndex) -> None:
+    mixed_index.synced = False
+    for view in (caller_view(mixed_index, SANDBOX, NOW), subject_view(mixed_index, SANDBOX, NOW)):
+        assert view.synced is False
+        assert (view.bindings, view.auto_approve_if) == ([], [])
+
+
+async def test_an_entry_is_named_as_the_decision_names_the_policy_that_matched(
+    mixed_index: PolicyIndex, github_visibility: Callable[..., RepositoryVisibilityService]
+) -> None:
+    """A caller reads a Decision's evidence and its own policy in one vocabulary: the entry the
+    provider records in `MatchedPolicy` is the first `auto_approve_if` entry that matches."""
+    view = caller_view(mixed_index, SANDBOX, NOW)
+    outcome = await PolicySetDecisionProvider(visibility=github_visibility()).decide(
+        DecisionContext(
+            request_id=uuid4(),
+            action=ActionIdentity(group="everything", name="add"),
+            arguments={},
+            caller=SANDBOX,
+            bindings=resolve_bindings(mixed_index, SANDBOX, NOW),
+        )
+    )
+
+    assert outcome.evidence is not None
+    matched = outcome.evidence.matched
+    # `add` is not in set-echo's schema policy, so the second entry is the one that decided.
+    entry = view.auto_approve_if[1]
+    assert (matched.policy_set, matched.index, matched.type) == (entry.policy_set, entry.index, entry.policy.type)
+    assert entry.binding in {b.name for b in outcome.evidence.bindings}
 
 
 def test_invalid_resource_keeps_metadata_for_status_reporting() -> None:

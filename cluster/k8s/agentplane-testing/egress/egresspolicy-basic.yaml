@@ -23,6 +23,7 @@ spec:
         - /openapi.json
         - /v1/action-groups
         - /v1/action-groups/**
+        - /v1/action-policy
         - /v1/action-requests
         - /v1/action-requests/**
       credentialRef:
