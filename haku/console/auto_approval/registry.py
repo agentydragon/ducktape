@@ -10,12 +10,14 @@ from typing import Any
 import jsonschema
 from fastmcp import FastMCP
 
-from haku.console.auto_approval.decision import AutoApprovalDecision, AutoApproved, AutoDenied, NotAutoApproved
-from haku.console.auto_approval.github import (
-    GitHubRepositoryVisibilityService,
+from github_policy.repository import (
+    RepositoryMatch,
+    RepositoryMismatch,
     evaluate_fixed_repository,
     evaluate_public_repository,
 )
+from github_policy.visibility import RepositoryVisibilityService
+from haku.console.auto_approval.decision import AutoApprovalDecision, AutoApproved, AutoDenied, NotAutoApproved
 from haku.console.auto_approval.gmail import LABEL_NAMESPACE_TOOLS, evaluate_label_namespace
 from haku.console.auto_approval.home_assistant import CALL_SERVICE_TOOL, evaluate_entity_control
 from haku.console.auto_approval.kubernetes import evaluate_passthrough_redundancy
@@ -111,7 +113,7 @@ class AutoApprovalPolicyRegistry:
         config: ConsoleConfigFile,
         *,
         kubernetes_authorization: KubernetesAuthorizationService | None = None,
-        github_repository_visibility: GitHubRepositoryVisibilityService | None = None,
+        github_repository_visibility: RepositoryVisibilityService | None = None,
     ) -> None:
         self._config = config
         self._profiles = {profile.id: profile for profile in config.access_profiles}
@@ -261,12 +263,24 @@ class AutoApprovalPolicyRegistry:
             case GitHubRepositoryAutoApprovalPolicy(server=server, owner=owner, repository=repository, tools=tools):
                 if server_id != server or tool_name not in tools:
                     return
-                evaluation.record(current_path, evaluate_fixed_repository(tool_name, arguments, owner, repository))
+                evaluation.record(
+                    current_path,
+                    _repository_decision(evaluate_fixed_repository(tool_name, arguments, owner, repository)),
+                )
             case GitHubPublicRepositoryAutoApprovalPolicy(server=server, tools=tools):
                 if server_id != server or tool_name not in tools:
                     return
-                decision = await evaluate_public_repository(tool_name, arguments, self._github_repository_visibility)
-                evaluation.record(current_path, decision)
+                if self._github_repository_visibility is None:
+                    evaluation.record(
+                        current_path, NotAutoApproved("GitHub repository visibility checking is not configured")
+                    )
+                    return
+                evaluation.record(
+                    current_path,
+                    _repository_decision(
+                        await evaluate_public_repository(tool_name, arguments, self._github_repository_visibility)
+                    ),
+                )
             case GrantSelfListAutoApprovalPolicy(server=server):
                 if server_id != server or tool_name != _LIST_GRANTS_TOOL:
                     return
@@ -310,6 +324,14 @@ class AutoApprovalPolicyRegistry:
                     )
             case NeverAutoApprovalPolicy():
                 evaluation.record(current_path, NotAutoApproved("policy never auto-approves"))
+
+
+def _repository_decision(decision: RepositoryMatch | RepositoryMismatch) -> AutoApprovalDecision:
+    match decision:
+        case RepositoryMatch(explanation=explanation):
+            return AutoApproved(explanation)
+        case RepositoryMismatch(reason=reason):
+            return NotAutoApproved(reason)
 
 
 async def _validate_arguments(mcp: FastMCP, tool_name: str, arguments: dict[str, Any]) -> PolicyDenial | str | None:
