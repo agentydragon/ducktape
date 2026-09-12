@@ -166,6 +166,7 @@ resources:
   - cert-manager/environment/flux-kustomization.yaml
 
   # --- gateway ---
+  - gateway-artifact/flux-kustomization.yaml
   - gateway/flux-kustomization.yaml
 
   # --- monitoring ---
