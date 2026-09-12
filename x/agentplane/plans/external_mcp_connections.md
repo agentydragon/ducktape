@@ -95,7 +95,7 @@ race tests already exist; fix regressions found in delivery rather than planning
 
 ## Later policy and lifecycle work
 
-Policy definitions and static identity/Sandbox-to-policy assignments are the decided `POLICYBIND`
+Policy definitions and ServiceAccount/Sandbox-to-policy assignments are the decided `POLICYBIND`
 model in [Action policies](action_policies.md). Runtime Connection/grant/enrollment storage is already PostgreSQL, with encrypted
 PostgreSQL storage for SDK OAuth state; do not reopen it as part of policy selection. Reusable
 policy references must allow an external Identity and a class of Sandboxes to share permissions

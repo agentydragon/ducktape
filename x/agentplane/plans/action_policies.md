@@ -8,20 +8,27 @@ representation; this work does not block the human-approved Claude.ai connection
 
 ## Model
 
-Three namespaced Kubernetes resources in `agentplane.allegedly.works/v1alpha1`, watched by the
-Action Service. Each object is owned either by Git through Flux or by a runtime writer (the
-integration app, or the operator with kubectl); the split is per object, never per kind.
+Two namespaced Kubernetes resources in `agentplane.allegedly.works/v1alpha1`, watched by the
+Action Service, plus ordinary ServiceAccounts as the external-caller principal. Each object is
+owned either by Git through Flux or by a runtime writer (the integration app, or the operator with
+kubectl); the split is per object, never per kind.
 
-| Kind                  | Spec                                                                                                          | Replaces                                                  |
-| --------------------- | ------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| `StaticIdentity`      | `enabled`                                                                                                     | the `identities:` map in the Action Service settings YAML |
-| `ActionPolicySet`     | `autoApproveIf`, `autoDenyIf`, `autoDenyUnless`: lists of typed policies                                      | `fixture_auto_allow`                                      |
-| `ActionPolicyBinding` | `subject` (`staticIdentity` or `sandbox {name, uid}`), `policySets`, the same three inline lists, `expiresAt` | nothing; today external callers are human-only            |
+| Kind                  | Spec                                                                                                                            | Replaces                                       |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `ActionPolicySet`     | `autoApproveIf`, `autoDenyIf`, `autoDenyUnless`: lists of typed policies                                                        | `fixture_auto_allow`                           |
+| `ActionPolicyBinding` | `subject` (`serviceAccount {namespace, name}` or `sandbox {name, uid}`), `policySets`, the same three inline lists, `expiresAt` | nothing; today external callers are human-only |
 
-A **static identity** is the authority an OAuth Connection binds to; the name distinguishes it from
-Sandbox callers, which are also identities. Connections keep referencing it by name from the
-Action Service's PostgreSQL. A missing or disabled static identity refuses resolution at admission
-and at the dispatch claim, as today; deleting the object is the disable.
+An **external caller is a Kubernetes ServiceAccount**, replacing the `identities:` map in the
+Action Service settings. One principal then carries both native permissions through ordinary
+RoleBindings and Action permissions through an `ActionPolicyBinding`; Sandbox callers are already
+ServiceAccount-backed principals, so there is one identity vocabulary. A ServiceAccount is eligible
+as a caller when it carries the label `agentplane.allegedly.works/action-caller: "true"`; the app's
+consent UI lists eligible ServiceAccounts and the operator picks one, because MCP clients speak
+OAuth and that "OAuth, then pick a principal" path stays. The Connection stores the ServiceAccount's
+namespace and name in the Action Service's PostgreSQL. A missing or unlabeled ServiceAccount refuses
+resolution at admission and at the dispatch claim, as a missing configured Identity does today;
+removing the label or the object is the disable. A client that can hold a ServiceAccount token with
+a dedicated audience may later authenticate by TokenReview, as Sandboxes do, without OAuth.
 
 A **policy** is one typed evaluator: YAML carries `type` and parameters, Python owns the
 semantics, as in the Haku console's `auto_approval_policies`. Adding a constraint the YAML cannot
@@ -53,17 +60,17 @@ at dispatch. Sandbox subjects pin the live UID, so a binding whose Sandbox is go
 
 ## Ownership
 
-- Policy sets and static identities normally live in Git next to the environment's Action Service
-  settings; a set created at runtime by the app or kubectl is simply not Flux-owned.
+- Policy sets and caller ServiceAccounts normally live in Git next to the environment's Action
+  Service settings; one created at runtime by the app or kubectl is simply not Flux-owned.
 - The integration app writes one `ActionPolicyBinding` per Sandbox it creates, alongside the
   `EgressBinding` it already writes, with an `ownerReference` to the Sandbox so both are garbage
   collected with it. Which sets a preset selects is the app's knowledge, kept in the app's own
   labels and annotations; the Action Service reads `spec` only and never sees preset language.
 - Widening one Sandbox later is another binding for the same subject, written through the app or
   kubectl, usually with `expiresAt`. Re-resolving a preset touches only the bindings the app owns.
-- Static identity bindings are ordinarily Git-managed; a runtime, expiring one works the same way.
+- ServiceAccount bindings are ordinarily Git-managed; a runtime, expiring one works the same way.
 - No caller-controlled field selects a binding: subjects resolve from the authenticated
-  `SandboxPrincipal` or the Connection's static identity, never from `origin`, `correlation`,
+  `SandboxPrincipal` or the Connection's ServiceAccount, never from `origin`, `correlation`,
   Thread ID, or a claimed type.
 
 ## Evaluation and evidence
@@ -75,15 +82,15 @@ at dispatch. Sandbox subjects pin the live UID, so a binding whose Sandbox is go
 - **Evaluate once.** Policies are evaluated at admission against the objects as they are then,
   and never again for that Action. A later edit, expiry, or deletion changes the next Action's
   Decision, not this one's, the same as a human approval is not withdrawn by a later change of
-  mind. Dispatch keeps the caller-authority checks that exist today, an active grant and a present
-  identity, and adds no policy re-evaluation. Stopping approved-but-unclaimed work is an operator
+  mind. Dispatch keeps the caller-authority checks that exist today, an active grant and an
+  eligible ServiceAccount, and adds no policy re-evaluation. Stopping approved-but-unclaimed work is an operator
   cancel, a separate general feature, not a policy concern.
 - **Evidence**: the Decision records binding names and `resourceVersion`s, set generations, and
   the leaf policy that matched, so a Decision explains itself after the objects change.
 - **Freshness**: until the informer has synced, every caller is human-only. A set or binding that
   fails Python validation contributes nothing and reports `Ready=False` with the message in its
   status, so a bad runtime edit is visible in `kubectl get`.
-- **Context**: `DecisionContext` gets a typed caller, `SandboxCaller` or `StaticIdentityCaller`
+- **Context**: `DecisionContext` gets a typed caller, `SandboxCaller` or `ServiceAccountCaller`
   with its grant revision, plus the resolved bindings, replacing the optional `agent_identity`.
 
 ## Worked example
@@ -103,16 +110,18 @@ spec:
           owner: { const: agentydragon }
           repo: { const: ducktape }
 ---
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: StaticIdentity
-metadata: { name: personal, namespace: agentplane-staging }
-spec: { enabled: true }
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: claude-code-web
+  namespace: agentplane-staging
+  labels: { agentplane.allegedly.works/action-caller: "true" }
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicyBinding
-metadata: { name: personal-public-coder, namespace: agentplane-staging }
+metadata: { name: claude-code-web-public-coder, namespace: agentplane-staging }
 spec:
-  subject: { staticIdentity: personal }
+  subject: { serviceAccount: { namespace: agentplane-staging, name: claude-code-web } }
   policySets: [public-coder]
 ---
 # Written by the integration app when it creates Sandbox coder-7f3a from its preset.
@@ -148,34 +157,23 @@ the binding revision they used.
 
 ## Steps
 
-1. **CRDs and informer.** `StaticIdentity`, `ActionPolicySet`, `ActionPolicyBinding` with
-   validation status; the Action Service resolves static identities from the informer; the
-   `identities:` settings key and `fixture_auto_allow` go; both environments' `personal` entries
-   become objects committed beside their settings. Rename "configured Identity" to "static identity"
-   in the Action Service, the app, and the docs. The persisted issuer string `configured-identity`
-   stays readable while new rows write `static-identity`.
+1. **CRDs and informer.** `ActionPolicySet` and `ActionPolicyBinding` with validation status; an
+   informer on labeled ServiceAccounts; the `identities:` settings key and `fixture_auto_allow` go;
+   both environments' `personal` entries become labeled ServiceAccounts committed beside their
+   settings, and the consent UI lists eligible ServiceAccounts instead of configured Identities.
+   Rename "configured Identity" to "ServiceAccount" in the Action Service, the app, and the docs.
+   The persisted issuer string `configured-identity` stays readable while new rows write
+   `service-account` with the namespace and name as subject.
 2. **Evaluation.** Policy registry with `exact_actions` and `argument_schema`; the set provider
    inside the existing aggregation; typed `DecisionContext` caller; evidence fields on the Decision.
 3. **Integration app.** Write the Sandbox binding at creation from the preset's set list; a runtime
-   form for additional bindings with `expiresAt`; optionally create a `StaticIdentity` during
-   enrollment instead of a Git edit.
+   form for additional bindings with `expiresAt`; optionally create a labeled ServiceAccount
+   during enrollment instead of a Git edit.
 4. **Deny lists** when an Action needs them, `autoDenyIf` first; `autoDenyUnless` later.
 5. **Deployed acceptance.** Extend `//x/agentplane/acceptance` with a vertical scenario: the
    test creates a set and a binding for the Sandbox it launches, the harness submits a matching
    Action and gets an auto-approved Execution with the expected evidence, a non-matching one waits
    for the operator, and an expired binding no longer auto-approves.
-
-## Later: ServiceAccounts instead of static identities
-
-An external client such as Claude Code web could be a Kubernetes ServiceAccount rather than a
-`StaticIdentity`: one principal that Kubernetes RBAC already binds native permissions to and that
-an `ActionPolicyBinding` binds Action permissions to, with the OAuth Connection bound to the
-ServiceAccount by name. Sandbox callers are already ServiceAccount-backed principals, so this would
-leave one identity vocabulary. Decide before step 1 builds the `StaticIdentity` CRD, since the
-cheaper form of this change is to never create it: the binding subject becomes
-`serviceAccount {namespace, name}`, existence is the enable, and a ServiceAccount bearer with a
-dedicated audience becomes a second admission path beside OAuth for clients that can hold one.
-Per-Sandbox bindings stay per Sandbox either way; a shared ServiceAccount is not a caller.
 
 ## Acceptance
 
@@ -183,12 +181,12 @@ Per-Sandbox bindings stay per Sandbox either way; a shared ServiceAccount is not
   binding and in-list arguments produce auto-approval and one Execution. The same request from a
   Sandbox with a different binding does not inherit that allow; an argument miss takes the human
   path. Same-preset Sandboxes retain separate reads and idempotency.
-- Several `public-coder` Sandboxes and the `personal` static identity reference one set; one
+- Several `public-coder` Sandboxes and the `claude-code-web` ServiceAccount reference one set; one
   edit reaches both caller classes without touching bindings, and the Decisions record which set
   generation they evaluated.
 - An expiring binding auto-approves an Action admitted before `expiresAt` and not one admitted
   after; the earlier Action still executes if it is claimed after expiry.
 - Forged type/preset/identity fields, an invalid set, an unsynced informer, and a deleted binding
-  grant nothing; a static identity whose binding names a missing set is human-only, never allowed.
+  grant nothing; a ServiceAccount whose binding names a missing set is human-only, never allowed.
 - The Sandbox slice is proven independently of external enrollment; the first human-approved
   external connection does not wait on it.

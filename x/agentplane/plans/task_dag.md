@@ -33,7 +33,7 @@ flowchart TB
 
     MCPAUTH["Remaining acceptance<br/>credentialed MCP account<br/>OAuth linkage + provider proof"]:::active
     CRED["Deferred decision<br/>static credential + binding design<br/>ownership, lifecycle, revocation"]:::future
-    POLICYBIND["Decided 2026-09-12<br/>StaticIdentity, ActionPolicySet, ActionPolicyBinding CRDs<br/>informer-resolved, Git or runtime per object"]:::active
+    POLICYBIND["Decided 2026-09-12<br/>ServiceAccount subjects, ActionPolicySet + ActionPolicyBinding CRDs<br/>informer-resolved, Git or runtime per object"]:::active
     MCPDEPLOY["Remaining acceptance<br/>staged MCP endpoint rollout<br/>public MCP and Sandbox reachability"]:::active
     CALLERPOLICY["Planned support<br/>configured caller Action bounds<br/>and auto-approval deciders"]:::future
     SBPOLICY["Planned behavior<br/>auto-approve configured Actions<br/>through concrete Sandbox bindings"]:::future
@@ -240,9 +240,10 @@ caller's acceptance is not a prerequisite for `CLAUDEAI`.
 
 ### `POLICYBIND` — policy-binding model and storage
 
-**Decided (2026-09-12):** three namespaced CRDs watched by the Action Service — `StaticIdentity`
-(replacing the `identities:` settings map), `ActionPolicySet` (typed, Python-evaluated policies in
-`autoApproveIf`/`autoDenyIf`/`autoDenyUnless` lists), and `ActionPolicyBinding` (a static identity
+**Decided (2026-09-12):** external callers are labeled Kubernetes ServiceAccounts, replacing the
+`identities:` settings map while keeping the OAuth consent path that picks one; two namespaced
+CRDs watched by the Action Service — `ActionPolicySet` (typed, Python-evaluated policies in
+`autoApproveIf`/`autoDenyIf`/`autoDenyUnless` lists) and `ActionPolicyBinding` (a ServiceAccount
 or a live Sandbox UID to sets, optionally expiring). Whether an object is Git-managed through Flux
 or written at runtime by the integration app or kubectl is decided per object. The app writes
 Sandbox bindings from its presets with owner references; the Action Service never reads preset
@@ -262,8 +263,8 @@ takes the human path.
 **Acceptance:** per the [Action policy plan](action_policies.md): matching auto-allow, argument
 miss to human review, caller-class isolation, expiry honored at admission only, and no
 authority from forged fields, invalid sets, an unsynced informer, or a deleted binding. Trusted
-static identity and Sandbox caller resolution already exist; this task adds policy objects and
-enforcement. Broad `PROFILES` and a policy DSL remain deferred.
+Connection and Sandbox caller resolution already exist; this task adds ServiceAccount subjects,
+policy objects and enforcement. Broad `PROFILES` and a policy DSL remain deferred.
 
 ### `SBPOLICY` — preset-selected and per-Sandbox auto-approval
 
