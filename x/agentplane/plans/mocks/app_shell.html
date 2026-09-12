@@ -1576,10 +1576,9 @@
           <code>x/agentplane/plans/action_policies.md</code>'s own evidence contract. Reached from either the
           sidebar-footer clock icon or the pending drawer's "View history" link, never a sidebar tab. The denied card's
           second line is <code>decision_note</code> — a plaintext note the operator already can attach when deciding
-          (real, shipped field: <code>actions.tsx:107-110</code>). What's still missing is the reverse direction, a
-          plaintext title/description the <i>caller</i> submits with the request — captured in
-          <code>x/agentplane/plans/action_request_context.md</code>, not mocked here since it doesn't exist yet to
-          render.
+          (real, shipped field: <code>actions.tsx:107-110</code>). The reverse direction — a plaintext title/description
+          the <i>caller</i> submits with the request — has since shipped too (<code>ActionContext</code> in
+          <code>actions.tsx</code>); this mock predates it and doesn't render it.
         </p>
       </section>
 

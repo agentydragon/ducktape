@@ -66,8 +66,6 @@ flowchart TB
     CONNECTION_SA_REBIND["Planned mutation<br/>rebind a Connection's ServiceAccount in place<br/>no mutation exists; only a fresh OAuth consent does"]:::future
     SANDBOX_SA["Deferred design<br/>one ServiceAccount per Sandbox<br/>a native Kubernetes identity to separate and grant on"]:::future
 
-    ACTION_CONTEXT["Planned schema<br/>caller-supplied Action title/description<br/>ActionRequestInput + ActionCard rendering"]:::future
-    THREAD_ARCHIVE["Planned support<br/>per-Thread archived flag + filter<br/>archive/unarchive wired into current UI"]:::future
     UISHELL_SIDEBAR["Planned milestone<br/>session-first sidebar shell<br/>Threads grouped by Sandbox, replaces top nav"]:::milestone
     UISHELL_DRAWER["Planned UI<br/>pending-approval badge + drawer<br/>global subscription, non-modal"]:::future
     UISHELL_MOBILE["Planned UI<br/>mobile sidebar collapse<br/>hamburger toggle, badge stays in top bar"]:::future
@@ -142,22 +140,20 @@ Haku Console migration is split: Agent/conversation management and tool-call/app
 can retire on different schedules after their respective replacement surfaces exist. Neither is a
 prerequisite for the first Action/MCP acceptance.
 
-The session-first UI shell (`ACTION_CONTEXT`, `THREAD_ARCHIVE`, `UISHELL_SIDEBAR`, `UISHELL_DRAWER`,
-`UISHELL_MOBILE`, `UISHELL_NEWTHREAD_SANDBOX`, `UISHELL_NEWTHREAD_LANDING`, `THREAD_BROWSE_PAGINATE`)
-is a separate frontend-ergonomics track: it is not gated by, and does not gate, the Action Service
-milestones above. `ACTION_CONTEXT`, `THREAD_ARCHIVE`, and `UISHELL_NEWTHREAD_SANDBOX` have no
-dependencies and ship independently and in parallel. The cross-sandbox Thread-listing endpoint
-(`GET /threads/with-sandboxes`) that was the sidebar's one real blocker has landed — a Thread was
-previously reachable only through its owning Sandbox's own session list — tolerant of a Thread whose
-Sandbox no longer exists, and reusing the same `include_archived` filter `THREAD_ARCHIVE` adds
-rather than a second one. `UISHELL_SIDEBAR` is unblocked and replaces the top nav row entirely as
-one atomic cutover, not a transitional shim running both navs at once; `UISHELL_DRAWER`,
-`UISHELL_MOBILE`, and `UISHELL_NEWTHREAD_LANDING` (the sidebar's own "+") build on its chrome after
-it lands. `THREAD_BROWSE_PAGINATE` is explicitly deferred, not designed: finding one old Thread once
-the sidebar's working-set list outgrows it needs its own paginated/searchable page eventually,
-flagged now only so the with-sandboxes endpoint isn't assumed to stay one unpaginated call forever.
-See [session-first navigation](session_first_navigation.md) and
-[Action-request plaintext context](action_request_context.md).
+The session-first UI shell (`UISHELL_SIDEBAR`, `UISHELL_DRAWER`, `UISHELL_MOBILE`,
+`UISHELL_NEWTHREAD_SANDBOX`, `UISHELL_NEWTHREAD_LANDING`, `THREAD_BROWSE_PAGINATE`) is a separate
+frontend-ergonomics track: it is not gated by, and does not gate, the Action Service milestones
+above. `UISHELL_NEWTHREAD_SANDBOX` has no dependencies and ships independently. The cross-sandbox
+Thread-listing endpoint (`GET /threads/with-sandboxes`) that was the sidebar's one real blocker has
+landed — a Thread was previously reachable only through its owning Sandbox's own session list —
+tolerant of a Thread whose Sandbox no longer exists, and reusing the same `include_archived` filter
+Thread archiving already added, rather than a second one. `UISHELL_SIDEBAR` is unblocked and
+replaces the top nav row entirely as one atomic cutover, not a transitional shim running both navs
+at once; `UISHELL_DRAWER`, `UISHELL_MOBILE`, and `UISHELL_NEWTHREAD_LANDING` (the sidebar's own "+")
+build on its chrome after it lands. `THREAD_BROWSE_PAGINATE` is explicitly deferred, not designed:
+finding one old Thread once the sidebar's working-set list outgrows it needs its own
+paginated/searchable page eventually, flagged now only so the with-sandboxes endpoint isn't assumed
+to stay one unpaginated call forever. See [session-first navigation](session_first_navigation.md).
 
 ### `BB` — BuildBuddy hosted-run credential boundary
 
@@ -613,14 +609,6 @@ Ship as one atomic cutover; no transitional shim keeping both navs live.
 survives its Sandbox's deletion and renders read-only; per-thread status reflects real
 harness/pending-approval state, not a cached snapshot.
 
-### `THREAD_ARCHIVE` — per-Thread archived flag and filter
-
-**Needed support:** add an `archived` flag to Thread, an archive/unarchive mutation, and a
-default-false filter on the Thread listing; wire Archive/Unarchive into whatever lists a Sandbox's
-Threads today (there's no sidebar yet to host it). This is unrelated to Sandbox-level archiving,
-which has since been removed as a separate, redundant mechanism. Ships independently; the
-cross-sandbox Thread-listing endpoint reuses this filter once both land.
-
 ### `UISHELL_DRAWER` — pending-approval badge and drawer
 
 **Planned UI:** a persistent badge, reachable from any route regardless of phone collapse state,
@@ -639,13 +627,6 @@ built in parallel.
 badge stays reachable in the top bar regardless of which sidebar view was last open.
 
 **Depends on** `UISHELL_SIDEBAR`; this is a breakpoint on its layout, not new logic.
-
-### `ACTION_CONTEXT` — caller-supplied Action title/description
-
-**Planned schema change:** `ActionRequestInput` carries no plaintext field a caller can submit for
-an approver to read, unlike the operator-authored `decision_note` that already flows the reverse
-direction. See [Action-request plaintext context](action_request_context.md) for the exact gap and
-the open field-shape questions. No dependency on the UI-shell cluster; ships independently.
 
 ### `UISHELL_NEWTHREAD_SANDBOX` — pre-scoped "+ New thread" on a Sandbox's page
 

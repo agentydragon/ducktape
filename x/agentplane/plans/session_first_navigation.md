@@ -50,9 +50,9 @@ operator can see (paginated newest-first is still open) paired with each Thread'
 Sandbox — normalized, not fanning `listSessions` out across every Sandbox, and tolerant of a Thread
 whose Sandbox no longer exists (a miss in the returned `sandboxes` map reads as deleted). What's
 still open: the response doesn't yet carry cursor pagination (see `THREAD_BROWSE_PAGINATE` in
-[the task DAG](task_dag.md) for when that's needed), and the trajectory store's schema is moving
-onto real Alembic migrations (in flight) rather than the ad hoc idempotent-DDL pattern its docstring
-used to call out as a staging-only stopgap.
+[the task DAG](task_dag.md) for when that's needed). The trajectory store's schema now owns real
+Alembic migrations rather than the ad hoc idempotent-DDL pattern its docstring used to call out as
+a staging-only stopgap, and `Thread` already carries an `archived` flag.
 
 ## Open questions (not decided here)
 
