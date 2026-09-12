@@ -1,6 +1,6 @@
 import { Accordion, Badge, Code, Group, Paper, Stack, Text, Title } from "@mantine/core";
 
-import { ExternalGrantDetails, JsonProjection, stateLabel, useActionRequests } from "./actions";
+import { ActionContext, ExternalGrantDetails, JsonProjection, stateLabel, useActionRequests } from "./actions";
 import { actionService, type ActionRequestView, type ActionService } from "./client";
 
 /** A decided/terminal ActionRequest, kept as a durable receipt: the decision it's a record of leads
@@ -26,6 +26,7 @@ function HistoryCard({ request }: { request: ActionRequestView }): JSX.Element {
               </Badge>
             )}
           </Group>
+          <ActionContext request={request} />
           <Text size="xs" c="dimmed">
             Request {request.id} · {stateLabel(request.state)}
           </Text>

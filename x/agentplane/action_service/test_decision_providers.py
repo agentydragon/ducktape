@@ -114,7 +114,9 @@ class RacingHumanProvider:
 
 
 def body(idempotency_key: str, n: int = 1) -> ActionRequestInput:
-    return ActionRequestInput(idempotency_key=idempotency_key, action=ECHO, arguments={"n": n})
+    return ActionRequestInput(
+        idempotency_key=idempotency_key, title=f"test title for {idempotency_key}", action=ECHO, arguments={"n": n}
+    )
 
 
 async def _succeeded(service: ActionService, request_id: UUID) -> ActionRequestView:
@@ -296,6 +298,7 @@ async def test_decision_context_carries_only_the_authenticated_caller(
     try:
         forged = ActionRequestInput(
             idempotency_key="identity-context",
+            title="test title for identity-context",
             action=ECHO,
             arguments={"n": 1},
             origin={"agent_id": "forged-agent", "owner": "forged-owner", "sandbox_uid": "forged-uid"},
@@ -538,6 +541,7 @@ async def test_nothing_grants_without_a_matching_valid_unexpired_binding(
         pending = await service.submit(
             ActionRequestInput(
                 idempotency_key="unbound",
+                title="test title for unbound",
                 action=ECHO,
                 arguments={"n": 1},
                 origin={"binding": "coder", "sandbox_uid": SANDBOX.sandbox_uid, "policy_set": "bounded-echo"},
@@ -592,7 +596,13 @@ async def test_invalid_arguments_are_rejected_before_persistence_and_provider_ev
     try:
         with pytest.raises(InvalidActionArgumentsError, match="advertised Action schema"):
             await service.submit(
-                ActionRequestInput(idempotency_key="schema-check", action=ECHO, arguments=arguments), CALLER
+                ActionRequestInput(
+                    idempotency_key="schema-check",
+                    title="test title for schema-check",
+                    action=ECHO,
+                    arguments=arguments,
+                ),
+                CALLER,
             )
         assert provider.contexts == []
         assert await store.list_requests(CALLER) == []

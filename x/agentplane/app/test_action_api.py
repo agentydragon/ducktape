@@ -355,6 +355,7 @@ async def test_operator_decision_reaches_canonical_service_and_mcp_once(review: 
     pending = await service.submit(
         ActionRequestInput(
             idempotency_key="test-submit",
+            title="test title for test-submit",
             action=ActionIdentity(group="test_review", name="record"),
             arguments={"message": "hi"},
         ),
@@ -448,6 +449,7 @@ async def test_unconfigured_or_rejected_service_auth_fails_closed(review: Review
     pending = await review.service.submit(
         ActionRequestInput(
             idempotency_key="test-blocked",
+            title="test title for test-blocked",
             action=ActionIdentity(group="test_review", name="record"),
             arguments={"message": "no"},
         ),
@@ -535,6 +537,7 @@ async def test_two_replicas_share_login_callback_and_logout_and_keep_two_operato
         pending = await review.service.submit(
             ActionRequestInput(
                 idempotency_key=f"submit-{identity}-{len(review.exchanged_subjects)}",
+                title=f"test title for {f'submit-{identity}-{len(review.exchanged_subjects)}'}",
                 action=ActionIdentity(group="test_review", name="record"),
                 arguments={"message": "not run"},
             ),

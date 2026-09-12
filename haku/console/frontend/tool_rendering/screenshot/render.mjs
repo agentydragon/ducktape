@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import {
   abortUnexpectedRequests,
   assertNetworkSettled,
+  assertNoPageErrors,
   prepareDeterministicPage,
   screenshotElement,
   waitForStable,
@@ -135,6 +136,7 @@ try {
         if (escapedRequests.length > 0) {
           throw new Error(`${context}: requests escaped the harness mocks:\n  ${escapedRequests.join("\n  ")}`);
         }
+        assertNoPageErrors(page, { context });
         await waitForStable(page);
         const file = `preview-${slug}-${variant}-${colorScheme}.png`;
         writeFileSync(join(outDir, file), await screenshotElement(page, ".haku-preview-card", { context }));
