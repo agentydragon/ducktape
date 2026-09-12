@@ -17,10 +17,11 @@ reconnect/replay from durable state rather than process-local memory. A single-r
 is an explicit temporary operational constraint, never an implicit correctness assumption.
 
 Deployed Claude.ai access to the Action Service MCP facade, the first priority, is met (§ Tested
-on staging); no next priority is set here. Transcript
-search/lookup (`T3`) is deliberately deferred until a later product-planning point; it is not in
-the current execution sequence. Search is technically independent, so this deferral is a priority
-decision rather than a claim that its implementation depends on MCP. Full Haku migration is not
+on staging). Next is console policy parity (`CONSOLE_POLICIES`), then retiring the Haku Console
+MCP aggregator behind Agentplane's (`MCPAGG`, `RETIRE_TOOLS`). Transcript search/lookup (`T3`) is
+deliberately deferred until a later product-planning point; it is not in the current execution
+sequence. Search is technically independent, so this deferral is a priority decision rather than a
+claim that its implementation depends on MCP. Agent/conversation migration (`RETIRE_AGENT`) is not
 prioritized.
 
 ## DAG
