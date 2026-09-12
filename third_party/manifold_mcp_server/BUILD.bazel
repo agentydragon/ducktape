@@ -46,7 +46,7 @@ pkg_tar(
 
 oci_image(
     name = "image",
-    base = "@node_20_bookworm_slim_linux_amd64",
+    base = "@node_24_bookworm_slim_linux_amd64",
     entrypoint = ["/app/bridge"],
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
     tars = [":bridge_layer"],

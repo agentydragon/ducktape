@@ -36,15 +36,15 @@ use_repo(npm_manifold_mcp_server, "npm_manifold_mcp_server")
 
 oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
 
-# Node 20 base image for the manifold-mcp-server sidecar runtime.
+# Node 24 base image for the manifold-mcp-server sidecar runtime.
 #
 # Digest is the multi-platform manifest list (image index); rules_oci resolves
 # the platform-specific digest from `platforms` at fetch time.
 oci.pull(
-    name = "node_20_bookworm_slim",
-    digest = "sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0",
+    name = "node_24_bookworm_slim",
+    digest = "sha256:2fe369e969550cde8e867afc3fe370b260140cab4a23d467074295b42163d553",
     image = "docker.io/library/node",
     platforms = ["linux/amd64"],
-    tag = "20-bookworm-slim",
+    tag = "24-bookworm-slim",
 )
-use_repo(oci, "node_20_bookworm_slim", "node_20_bookworm_slim_linux_amd64")
+use_repo(oci, "node_24_bookworm_slim", "node_24_bookworm_slim_linux_amd64")
