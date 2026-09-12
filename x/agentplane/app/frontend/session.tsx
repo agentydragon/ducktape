@@ -132,15 +132,23 @@ function ReasoningView({ item }: { item: Item }): JSX.Element {
 
 function ItemView({ item }: { item: Item }): JSX.Element {
   if (item.kind === ItemKind.REASONING) return <ReasoningView item={item} />;
+  // Assistant text needs no kind label: it's the only unlabeled content in the transcript besides
+  // the user's own bubble, so the absence of a badge already reads as "the reply" -- a status dot,
+  // when there is one, is all it still needs.
+  const isAssistant = item.kind === ItemKind.ASSISTANT_TEXT;
   const label = KIND_LABELS[item.kind] ?? ItemKind[item.kind];
+  const streaming = !item.completed;
+  const failed = item.succeeded === false;
   return (
     <Paper withBorder p="sm">
-      <Group gap="xs">
-        <Badge variant="light">{label}</Badge>
-        {item.toolName && <Text fw={600}>{item.toolName}</Text>}
-        {!item.completed && <StatusDot color="yellow" label="Streaming" />}
-        {item.succeeded === false && <StatusDot color="red" label="Failed" />}
-      </Group>
+      {(!isAssistant || streaming || failed) && (
+        <Group gap="xs">
+          {!isAssistant && <Badge variant="light">{label}</Badge>}
+          {item.toolName && <Text fw={600}>{item.toolName}</Text>}
+          {streaming && <StatusDot color="yellow" label="Streaming" />}
+          {failed && <StatusDot color="red" label="Failed" />}
+        </Group>
+      )}
       {item.text &&
         (item.kind === ItemKind.ASSISTANT_TEXT ? (
           <Markdown source={item.text} />
