@@ -6,8 +6,7 @@ this backlog. See the [Action Service specification](../action_service/SPEC.md),
 [service integration details](../action_service/README.md),
 [workload authentication](../docs/workload_authentication.md),
 [operator federation](../docs/operator_federation.md),
-[launch presets](../docs/launch_presets.md), [action policies](../docs/action_policies.md), and the
-[staging evidence](../docs/staging_evidence.md).
+[launch presets](../docs/launch_presets.md), and [action policies](../docs/action_policies.md).
 
 ## Operator priority
 
@@ -17,8 +16,8 @@ the authority's notification/watch mechanism (PostgreSQL `NOTIFY` for Action Ser
 reconnect/replay from durable state rather than process-local memory. A single-replica deployment
 is an explicit temporary operational constraint, never an implicit correctness assumption.
 
-Deployed Claude.ai access to the Action Service MCP facade, the first priority, is met
-([staging evidence](../docs/staging_evidence.md)); no next priority is set here. Transcript
+Deployed Claude.ai access to the Action Service MCP facade, the first priority, is met (§ Tested
+on staging); no next priority is set here. Transcript
 search/lookup (`T3`) is deliberately deferred until a later product-planning point; it is not in
 the current execution sequence. Search is technically independent, so this deferral is a priority
 decision rather than a claim that its implementation depends on MCP. Local Claude Code acceptance
@@ -82,9 +81,20 @@ flowchart TB
 
 Completed work is off this board: the credentialless MCP vertical, whose deployed Claude/Codex
 proof is the [acceptance suite](../acceptance/README.md), and the first external client, operator
-approval, and Web Push proofs, recorded in the [staging evidence](../docs/staging_evidence.md).
-Credentialed upstream access is `MCPAUTH`. Input delivery and proxy survivability proceed
-independently of the external-client track.
+approval, and Web Push proofs below. Credentialed upstream access is `MCPAUTH`. Input delivery and
+proxy survivability proceed independently of the external-client track.
+
+### Tested on staging
+
+On 2026-09-12 the deployed MCP facade accepted a Claude.ai OAuth Connection bound to a labeled
+ServiceAccount, policy bindings auto-approved GitHub reads that executed through the
+operator-linked GitHub upstream, a repeated idempotency key was refused and recovered by key, a
+pending Action was approved by the operator through Authentik federation and executed, and a
+browser push arrived and was decided from its buttons. Not tested: the Deny control, grant
+retention across refresh and restart, negative isolation and revocation for an external client
+(`EXTERNALMCP`); upstream refresh, rotation, and the Kubernetes provider (`MCPAUTH`); and, left to
+bug reports, duplicate Decision or Execution under retries or reconnect, push subscription
+revocation, unavailable-push and SSE fallbacks, and Web Push reconciliation after reconnect.
 
 The external-client track is single-operator and independent of the credentialless MCP vertical
 and the broader `AG` model. Its product terms are Identity (configured authority), Connection
@@ -255,8 +265,8 @@ behind a rollback switch before retiring Haku Console's corresponding tool surfa
 ### `MCPAUTH` — credentialed MCP account and OAuth boundary
 
 Operator-linked OAuth upstreams are implemented ([service README](../action_service/README.md)),
-and staging's GitHub upstream has been linked, discovered, and executed against
-([staging evidence](../docs/staging_evidence.md)).
+and staging's GitHub upstream has been linked, discovered, and executed against (§ Tested on
+staging).
 
 **Remaining acceptance:** on the staging GitHub provider, refresh without MCP calls, observe
 refresh failure and degraded/reconnect behavior, and prove token rotation is used without

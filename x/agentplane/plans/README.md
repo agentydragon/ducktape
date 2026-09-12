@@ -28,5 +28,4 @@ generic MCP, configured Identities, Connection grants, and OAuth/consent. The
 [workload authentication](../docs/workload_authentication.md),
 [launch presets](../docs/launch_presets.md), and [action policies](../docs/action_policies.md) own
 the other implemented contracts.
-Deployed acceptance is tracked in the DAG and recorded in the [staging evidence](../docs/staging_evidence.md);
-code or CI evidence alone does not satisfy it.
+Deployed acceptance is tracked in the DAG; code or CI evidence alone does not satisfy it.

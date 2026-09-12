@@ -3,10 +3,9 @@
 The Identity, Connection, OAuth/DCR, consent, and generic MCP contracts live in the
 [Action Service specification](../action_service/SPEC.md),
 [service README](../action_service/README.md#external-oauth), and
-[app README](../app/README.md); the first deployed client, operator approval, and Web Push proofs
-are in the [staging evidence](../docs/staging_evidence.md). This plan tracks unfinished delivery,
-not another authority contract: independently running Claude Code (for example on wyrm2) is
-`EXTERNALMCP`; the [task DAG](task_dag.md) owns dependencies and status.
+[app README](../app/README.md). This plan tracks unfinished delivery, not another authority
+contract: independently running Claude Code (for example on wyrm2) is `EXTERNALMCP`; the
+[task DAG](task_dag.md) owns dependencies and status, and records what staging has proven.
 
 Backend-account OAuth and the broader Thread model do not gate this delivery. Identity means configured authority, Connection means runtime client enrollment,
 and Thread means execution/conversation state. This remains single-operator, with no multi-operator
@@ -50,7 +49,7 @@ exercise the provider's refresh path. Do not print or persist token values.
    Already-claimed execution is not killed.
 
 The Claude.ai connector has covered steps 1 and 2's Allow path and step 3's repeated-key refusal
-and recovery ([staging evidence](../docs/staging_evidence.md)); the Deny path, retention across
+and recovery; the Deny path, retention across
 refresh and restart, and step 4 have no recorded evidence for any external client. The client
 under this plan is Claude Code running on an operator machine, not an Agentplane-hosted harness;
 its native callback, registration, refresh, and fresh authorization need their own evidence.
