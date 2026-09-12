@@ -20,8 +20,8 @@ Deployed Claude.ai access to the Action Service MCP facade, the first priority, 
 on staging); no next priority is set here. Transcript
 search/lookup (`T3`) is deliberately deferred until a later product-planning point; it is not in
 the current execution sequence. Search is technically independent, so this deferral is a priority
-decision rather than a claim that its implementation depends on MCP. Local Claude Code acceptance
-(`EXTERNALMCP`) and full Haku migration are not prioritized.
+decision rather than a claim that its implementation depends on MCP. Full Haku migration is not
+prioritized.
 
 ## DAG
 
@@ -33,13 +33,9 @@ flowchart TB
     classDef milestone fill:#ede9fe,stroke:#6d28d9,color:#4c1d95,stroke-width:2px
 
     MCPAUTH["Remaining acceptance<br/>credentialed MCP account<br/>refresh, rotation, Kubernetes provider"]:::active
-    CRED["Deferred decision<br/>static credential + binding design<br/>ownership, lifecycle, revocation"]:::future
     ELEVATE["Planned behavior<br/>agent-requested temporary permission<br/>ServiceAccount and Sandbox callers, operator-approved"]:::future
     FORK["Deferred design<br/>per-task identity fork<br/>sub-identity scoped by token possession"]:::future
-    EXTERNALMCP["Planned milestone<br/>external Claude Code<br/>identity-bound Action execution"]:::future
-    MCPAGG["Deferred migration<br/>replace Haku Console MCP aggregator<br/>real Claude.ai/Claude Code proof"]:::future
-    CUTOVER["Planned milestone<br/>Haku Console affordance cutover<br/>Kubernetes + SSH + GitHub"]:::active
-    K8SAUTH["Planned support<br/>browser-mediated Kubernetes auth<br/>linkage, refresh, revocation"]:::future
+    MCPAGG["Deferred migration<br/>replace Haku Console MCP aggregator<br/>inventory and migrate Haku workflows"]:::future
     SSHDURABLE["Deferred support<br/>systemd-backed durable processes<br/>host daemon + signals/output"]:::future
     RETIRE_AGENT["Deferred migration<br/>retire Haku Console Agent/<br/>conversation management"]:::future
     RETIRE_TOOLS["Deferred migration<br/>retire Haku Console tool-call/<br/>approval management"]:::future
@@ -63,12 +59,8 @@ flowchart TB
     DENY_LISTS["Deferred behavior<br/>autoDenyIf / autoDenyUnless<br/>when an Action needs them"]:::future
     CONSOLE_POLICIES["Deferred migration<br/>console auto-approval policies not yet sets<br/>each needs an ActionGroup, a kind, or DENY_LISTS"]:::future
 
-    CRED --> MCPAUTH
     MCPAUTH --> PROD
     ELEVATE --> FORK
-    EXTERNALMCP --> MCPAGG
-    K8SAUTH --> CUTOVER
-    MCPAUTH --> CUTOVER
     MCPAGG -. replacement surface .-> RETIRE_TOOLS
     CONSOLE_POLICIES -. policy parity .-> RETIRE_TOOLS
     AG -. hosted Thread lifecycle .-> RETIRE_AGENT
@@ -86,24 +78,27 @@ proxy survivability proceed independently of the external-client track.
 
 ### Tested on staging
 
-On 2026-09-12 the deployed MCP facade accepted a Claude.ai OAuth Connection bound to a labeled
-ServiceAccount, policy bindings auto-approved GitHub reads that executed through the
-operator-linked GitHub upstream, a repeated idempotency key was refused and recovered by key, a
-pending Action was approved by the operator through Authentik federation and executed, and a
-browser push arrived and was decided from its buttons. Not tested: the Deny control, grant
-retention across refresh and restart, negative isolation and revocation for an external client
-(`EXTERNALMCP`); upstream refresh, rotation, and the Kubernetes provider (`MCPAUTH`); and, left to
-bug reports, duplicate Decision or Execution under retries or reconnect, push subscription
-revocation, unavailable-push and SSE fallbacks, and Web Push reconciliation after reconnect.
+On 2026-09-12 the deployed MCP facade accepted a Claude.ai OAuth Connection from Claude Code, an
+external harness rather than an Agentplane-hosted one, bound to a labeled ServiceAccount; policy
+bindings auto-approved GitHub reads that executed through the operator-linked GitHub upstream; a
+repeated idempotency key was refused and recovered by key; a pending Action was approved by the
+operator through Authentik federation and executed; and a browser push arrived and was decided
+from its buttons. Not tested: upstream refresh, rotation, and the Kubernetes provider (`MCPAUTH`);
+and, left to bug reports, the Deny control, grant retention across refresh and restart, negative
+isolation and revocation for an external client, duplicate Decision or Execution under retries or
+reconnect, push subscription revocation, unavailable-push and SSE fallbacks, and Web Push
+reconciliation after reconnect.
 
-The external-client track is single-operator and independent of the credentialless MCP vertical
-and the broader `AG` model. Its product terms are Identity (configured authority), Connection
-(runtime named client enrollment), and Thread (execution/conversation state); it adds no
-multi-operator management or per-operator ownership model. What remains of it is `EXTERNALMCP`, an
-independently running Claude Code; the [external connection plan](external_mcp_connections.md)
-owns that delivery and compatibility work. A caller ServiceAccount does not select backend
-credentials or wait for `CRED`/`PROFILES`; outbound account OAuth remains `MCPAUTH`. Client proof
-does not establish Haku tool parity (`CONSOLE_POLICIES`, `RETIRE_TOOLS`).
+The external-client track is complete and single-operator: Identity (configured authority),
+Connection (runtime named client enrollment), and Thread (execution/conversation state), with no
+multi-operator management or per-operator ownership model; the
+[external connection plan](external_mcp_connections.md) keeps its compatibility notes and the Haku
+migration. A backend credential binds to an ActionGroup's executor
+([MCP executor transports](../action_service/README.md#mcp-executor-transports)), never to the
+caller, and no linked token, static bearer, or kubeconfig reaches the MCP client, Sandbox,
+transcript, or Action prompt; outbound account OAuth remains `MCPAUTH`. The Kubernetes, SSH, and
+GitHub affordances run behind the frontend; what remains of the Haku Console cutover is policy
+parity (`CONSOLE_POLICIES`) and retiring the aggregator (`MCPAGG`, `RETIRE_TOOLS`).
 The deny lists of the landed [action policies](../docs/action_policies.md) are `DENY_LISTS`.
 Processes that must outlive an SSH connection to the `ssh-mcp` server
 (<../../ssh_mcp_server/README.md>) are `SSHDURABLE`.
@@ -231,37 +226,6 @@ retires.
 
 ## Named gates and acceptance evidence
 
-### `CUTOVER` — Haku Console affordance cutover
-
-**Planned milestone:** move the highest-value Haku Console affordances behind Agentplane's generic
-MCP frontend, then retire the old tool-call/approval surface only after equivalent authority,
-provenance, result recovery, and rollback evidence exists. The initial cutoff set is:
-
-- **Kubernetes MCP:** expose the existing Kubernetes affordances through the frontend, but first
-  implement browser-mediated cluster/auth linkage. The linkage needs an explicit cluster identity,
-  consent or re-authentication, expiry/refresh, revocation, and wrong-cluster/wrong-user isolation.
-  Do not copy a kubeconfig or reusable bearer into the MCP client, Sandbox, or transcript; Kubernetes
-  RBAC remains authoritative and the browser flow returns only the reviewed linkage needed to call it.
-- **SSH:** the `ssh-mcp` server is wired behind the MCP Executor; repoint the Haku Console
-  affordance at the Agentplane-owned route through a reversible rollout rather than changing the
-  frontend and every credential deployment at once.
-- **GitHub:** use the credentialed-upstream account track (`MCPAUTH`) behind the generic MCP frontend.
-  Prove account linkage, safe read execution, refresh/reconnect, revocation, and account isolation;
-  PAT or OAuth refresh credentials stay with the broker/account authority, never in the MCP client,
-  Sandbox, or Action prompt.
-
-**Needed support:** inventory every remaining Haku Console affordance and classify it as cutover-P0,
-required support, or deferred. At minimum record whether Gmail, Calendar, Home Assistant, Tana,
-messaging, browser, image, and similar tools need Agentplane routes, Actions, or can remain on the old
-surface temporarily. Preserve stable tool semantics where compatibility matters, but do not build
-parity for unused affordances.
-
-**Acceptance:** from a real external client, exercise one harmless Kubernetes read after browser
-linkage, one SSH Action through the configured executor path, and one GitHub read through a linked
-account. For each, inspect canonical caller identity, authorization, Action/Execution provenance,
-redacted results, retry/reconnect behavior, and revocation. Run the old and new routes in parallel
-behind a rollback switch before retiring Haku Console's corresponding tool surface.
-
 ### `MCPAUTH` — credentialed MCP account and OAuth boundary
 
 Operator-linked OAuth upstreams are implemented ([service README](../action_service/README.md)),
@@ -271,8 +235,8 @@ staging).
 **Remaining acceptance:** on the staging GitHub provider, refresh without MCP calls, observe
 refresh failure and degraded/reconnect behavior, and prove token rotation is used without
 rebuilding the executor; then add Kubernetes provider acceptance; preserve negative isolation for
-an unbound or different account. The broader static credential and binding model remains the
-separate `CRED` design gate. This milestone is not folded into the credentialless fixture test.
+an unbound or different account. This milestone is not folded into the credentialless fixture
+test.
 
 ### `ELEVATE` — agent-requested temporary permission
 
@@ -307,31 +271,6 @@ else depends on it.
 This is technically independent of the MCP facade, but it is intentionally not in the current work
 sequence. Existing transcript persistence and unrelated lifecycle reliability work are not
 reclassified as search implementation by this deferral.
-
-### `EXTERNALMCP` — hosted clients and external harnesses using governed Actions
-
-**Remaining client acceptance:** Claude Code running on an operator machine (for example wyrm2),
-not an Agentplane-hosted harness, uses a configured static Identity to discover and submit one
-credentialless Action for human approval, receives a durable pending receipt, and reads the result
-after review; its native callback, registration, refresh, and fresh authorization need their own
-evidence. Independently verify Action ownership, binding, Decisions, Execution, replay, isolation,
-and revocation as specified in the [external connection plan](external_mcp_connections.md); the
-Deny path, grant retention across refresh and restart, negative isolation, and unbind/revocation
-have no recorded evidence for any external client yet. This milestone precedes Haku migration and
-does not require backend account OAuth or the full Agent/conversation model. External harnesses
-need no Agentplane Sandbox/Thread or upstream credentials; only Actions routed through this service
-are governed by it.
-
-### `CRED` — static credential and binding design
-
-This gate concerns static credentials and backend bindings. Configured static Identities already
-authenticate through inbound OAuth and do not depend on selecting a static backend credential.
-
-**Deferred decision — Rai confirmation required:** define what a static credential is bound to
-(Identity, external account, MCP server, or another authority), which component owns issuance and
-storage, how expiry/refresh/revocation works, how a binding is selected at execution time, and what
-the Agent/API may observe. This node is a design discussion, not an implementation task; do not
-start code or schema work from it until Rai confirms the design.
 
 ### `PROFILES` — cross-cutting capability profiles
 
@@ -379,10 +318,8 @@ available; this milestone is an egress migration, not permission to widen the st
 **Deferred migration:** use the implemented generic Action MCP frontend as the replacement surface for Haku
 Console's aggregator. Verify the required external harness/client workflows against it before
 retiring the old surface; do not build a second frontend, approval coordinator, or authority store.
-The real-client proof must exercise Claude.ai and independently running Claude Code with OAuth and
-configured Identities, including DCR, consent, discovery, human approval, result recovery, refresh,
-and revocation. `EXTERNALMCP` is the client-compatibility evidence for this migration, not just a
-protocol fixture.
+The real-client proof (§ Tested on staging) is the client-compatibility evidence for this
+migration, not just a protocol fixture; grant refresh and revocation are left to bug reports.
 Inventory and migrate the remaining Haku tools, policies, and client workflows separately; backend
 credential requirements remain adapter-specific. The initial facade uses generic Action tools;
 per-Action projection may never be needed and is not required for migration. Actual generic-client

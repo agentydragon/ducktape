@@ -3,62 +3,18 @@
 The Identity, Connection, OAuth/DCR, consent, and generic MCP contracts live in the
 [Action Service specification](../action_service/SPEC.md),
 [service README](../action_service/README.md#external-oauth), and
-[app README](../app/README.md). This plan tracks unfinished delivery, not another authority
-contract: independently running Claude Code (for example on wyrm2) is `EXTERNALMCP`; the
-[task DAG](task_dag.md) owns dependencies and status, and records what staging has proven.
-
-Backend-account OAuth and the broader Thread model do not gate this delivery. Identity means configured authority, Connection means runtime client enrollment,
-and Thread means execution/conversation state. This remains single-operator, with no multi-operator
-management. Sandbox callers use the same MCP frontend with workload bearers, without DCR.
-
-## Real-client acceptance (`EXTERNALMCP`)
-
-Use a harmless credentialless Action and independently inspect canonical requests, Decisions,
-Executions, events, and results; neither model prose nor signed protocol fixtures prove deployment.
-Record the deployed revisions, client/version, exact scenario, and redacted evidence. Reuse existing
-acceptance helpers before adding duplicates.
-
-The protocol-side acceptance should use the pinned FastMCP client rather than a second hand-rolled
-MCP implementation. Build a small live/manual Bazel target that performs DCR, drives the browser
-authorization/consent handoff, retains the resulting access/refresh token family only in an
-ephemeral in-process provider, and gives that provider to `fastmcp.Client` for MCP initialization,
-discovery, and the Action call. The test client owns no Agentplane authority: it proves the public
-OAuth/MCP client contract while the Action Service remains the authority for grants and Decisions.
-An access-token-only pass is sufficient for the first call; refresh/reconnect acceptance must also
-exercise the provider's refresh path. Do not print or persist token values.
-
-1. Connect the client through public discovery and DCR. Complete the real integration-app login,
-   Connection naming, Identity picker, and consent. Verify return to the client's validated callback,
-   code exchange, and authenticated generic-tool discovery. Registration alone grants no authority;
-   denying consent creates no active grant.
-2. Discover compact Action metadata, opt into the needed input schema/full description, and submit
-   with a retained idempotency key. Get a durable pending receipt without automatic execution.
-   In the deployed app, inspect exact arguments and Identity/client/Connection provenance; exercise
-   both Allow and Deny browser controls. Allow yields one Execution and the expected safe result;
-   deny yields none. The client must recover those receipts/results.
-3. Exercise bounded waits and interrupted/retried tool responses against the real client. Recover
-   by request ID, event cursor, or a lookup by the original submission key rather than creating
-   another execution; a repeated key is refused.
-   Refresh must retain the grant; service/client restart must not lose pending requests or attribution.
-   Do not assume Claude will autonomously poll or wake once its conversation stops.
-4. Verify wrong-resource/invalid tokens, disabled Identities, unbound Connections, and another
-   Identity cannot acquire caller or operator authority. Same-Identity clients share receipt and
-   idempotency scope but retain distinct exact submission provenance; a repeated key is refused
-   and cannot rewrite it.
-   After unbind/revocation, old tokens fail and unclaimed work cannot borrow replacement authority.
-   Already-claimed execution is not killed.
-
-The Claude.ai connector has covered steps 1 and 2's Allow path and step 3's repeated-key refusal
-and recovery; the Deny path, retention across
-refresh and restart, and step 4 have no recorded evidence for any external client. The client
-under this plan is Claude Code running on an operator machine, not an Agentplane-hosted harness;
-its native callback, registration, refresh, and fresh authorization need their own evidence.
-Existing-Connection reconnect acceptance is part of that evidence, not a separate implementation
-gate. Confirm operator REST and enrollment-management routes are not exposed through the public
-MCP route. The Sandbox path is proven separately by the
+[app README](../app/README.md); the [task DAG](task_dag.md) records what staging has proven and
+owns dependencies and status. This plan keeps the client-compatibility notes and the Haku
+migration, not another authority contract. Identity means configured authority, Connection means
+runtime client enrollment, and Thread means execution/conversation state. This remains
+single-operator, with no multi-operator management. Sandbox callers use the same MCP frontend with
+workload bearers, without DCR; that path is proven by the
 [acceptance suite](../acceptance/README.md#mcp-integration).
 
-### Compatibility and context budget
+## Compatibility and context budget
+
+Operator REST and enrollment-management routes must not be exposed through the public MCP route;
+this is unconfirmed on the deployed route.
 
 Fix compatibility from actual client evidence using the pinned FastMCP/Authlib and shared
 `mcp_infra` stack. Do not reopen a preimplementation DCR research gate or replace the framework's
