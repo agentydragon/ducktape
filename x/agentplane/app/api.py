@@ -501,13 +501,16 @@ async def list_threads(
     return await store.list_threads(sandbox=sandbox, session_id=session_id, include_archived=include_archived)
 
 
-class ThreadWithSandbox(BaseModel):
-    """One Thread paired with its Sandbox's own view; the cross-sandbox listing's row."""
+class ThreadsWithSandboxes(BaseModel):
+    """Every Thread across every Sandbox the operator can see, plus each Thread's own still-existing
+    Sandbox, keyed by name. Normalized rather than one Sandbox view per Thread that shares it: a
+    Sandbox with many Threads would otherwise have its view duplicated once per Thread. A Thread's
+    own `sandbox` name absent from `sandboxes` means that Sandbox row is gone."""
 
     model_config = ConfigDict(extra="forbid")
 
-    thread: ThreadView
-    sandbox: SandboxView | None = Field(description="None once the Sandbox row is gone: deleted, or never there.")
+    threads: list[ThreadView]
+    sandboxes: dict[str, SandboxView]
 
 
 @threads.get("/with-sandboxes")
@@ -515,15 +518,17 @@ async def list_threads_with_sandboxes(
     store: Store,
     inventory: Inventory,
     include_archived: Annotated[bool, Query(description="Also list archived threads.")] = False,
-) -> list[ThreadWithSandbox]:
-    """Every Thread across every Sandbox the operator can see, newest first, each paired with that
-    Sandbox's own current view. The Sandbox is None once its row is gone, so a Thread survives its
-    Sandbox's deletion here rather than disappearing with it."""
-    sandboxes = {view.name: view for view in await inventory.list_sandboxes(include_archived=True)}
-    return [
-        ThreadWithSandbox(thread=thread, sandbox=sandboxes.get(thread.sandbox))
-        for thread in await store.list_threads(include_archived=include_archived)
-    ]
+) -> ThreadsWithSandboxes:
+    """Every Thread across every Sandbox the operator can see, newest first, with each Thread's own
+    still-existing Sandbox included once regardless of how many Threads it hosts. A Thread survives
+    its Sandbox's deletion here rather than disappearing with it; look it up by `thread.sandbox` in
+    `sandboxes` and treat a miss as deleted."""
+    thread_views = await store.list_threads(include_archived=include_archived)
+    referenced = {thread.sandbox for thread in thread_views}
+    sandboxes = {
+        view.name: view for view in await inventory.list_sandboxes(include_archived=True) if view.name in referenced
+    }
+    return ThreadsWithSandboxes(threads=thread_views, sandboxes=sandboxes)
 
 
 @threads.get("/{thread_id}")

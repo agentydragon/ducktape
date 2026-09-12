@@ -590,29 +590,32 @@ async def test_threads_with_sandboxes_pairs_each_thread_with_its_sandbox_or_none
     custom_objects: FakeCustomObjectsApi,
     core_v1: FakeCoreV1Api,
 ) -> None:
-    """The cross-sandbox listing: a Thread survives its Sandbox's deletion, listed with `sandbox: None`."""
+    """The cross-sandbox listing: a Thread survives its Sandbox's deletion, and a Sandbox with
+    several Threads is not duplicated once per Thread."""
     custom_objects.objects[("sandboxes", "live")] = sandbox("live")
     core_v1.pods["live"] = pod("live", phase="Running", ready=True, ip="10.0.0.7")
     spec = pb.SessionSpec(provider=pb.PROVIDER_CLAUDE, cwd="/w", model="test-model")
     live_thread = await store.thread("live", "s-1", spec)
-    gone_thread = await store.thread("gone", "s-2", spec)
+    other_live_thread = await store.thread("live", "s-2", spec)
+    gone_thread = await store.thread("gone", "s-3", spec)
     await store.archive(gone_thread)
     app = create_app(inventory, bridge, store, TEST_MODELS, egress, decisions, live_index, reviewer=reviewer)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
     ) as http:
-        default_rows = {
-            row["thread"]["id"]: row["sandbox"] for row in (await http.get("/threads/with-sandboxes")).json()
-        }
-        assert set(default_rows) == {str(live_thread)}
-        assert (default_rows[str(live_thread)]["name"], default_rows[str(live_thread)]["state"]) == ("live", "running")
+        default_body = (await http.get("/threads/with-sandboxes")).json()
+        default_thread_ids = {row["id"] for row in default_body["threads"]}
+        assert default_thread_ids == {str(live_thread), str(other_live_thread)}
+        assert set(default_body["sandboxes"]) == {"live"}
+        assert (default_body["sandboxes"]["live"]["name"], default_body["sandboxes"]["live"]["state"]) == (
+            "live",
+            "running",
+        )
 
-        all_rows = {
-            row["thread"]["id"]: row["sandbox"]
-            for row in (await http.get("/threads/with-sandboxes", params={"include_archived": "true"})).json()
-        }
-        assert set(all_rows) == {str(live_thread), str(gone_thread)}
-        assert all_rows[str(gone_thread)] is None
+        all_body = (await http.get("/threads/with-sandboxes", params={"include_archived": "true"})).json()
+        all_thread_ids = {row["id"] for row in all_body["threads"]}
+        assert all_thread_ids == {str(live_thread), str(other_live_thread), str(gone_thread)}
+        assert set(all_body["sandboxes"]) == {"live"}, "the deleted 'gone' sandbox must not appear"
 
 
 def test_healthz_answers_outside_the_schema(client: TestClient) -> None:
