@@ -6,7 +6,8 @@ this backlog. See the [Action Service specification](../action_service/SPEC.md),
 [service integration details](../action_service/README.md),
 [workload authentication](../docs/workload_authentication.md),
 [operator federation](../docs/operator_federation.md),
-[launch presets](../docs/launch_presets.md), and [action policies](../docs/action_policies.md).
+[launch presets](../docs/launch_presets.md), [action policies](../docs/action_policies.md), and the
+[staging evidence](../docs/staging_evidence.md).
 
 ## Operator priority
 
@@ -16,11 +17,12 @@ the authority's notification/watch mechanism (PostgreSQL `NOTIFY` for Action Ser
 reconnect/replay from durable state rather than process-local memory. A single-replica deployment
 is an explicit temporary operational constraint, never an implicit correctness assumption.
 
-Prioritize working deployed Claude.ai access to the Action Service MCP facade (`CLAUDEAI`).
-Transcript search/lookup (`T3`) is deliberately deferred until a later product-planning point; it
-is not in the current execution sequence. Search is technically independent, so this deferral is a
-priority decision rather than a claim that its implementation depends on MCP. Additional local
-Claude Code acceptance and full Haku migration are not part of the current priority condition.
+Deployed Claude.ai access to the Action Service MCP facade, the first priority, is met
+([staging evidence](../docs/staging_evidence.md)); no next priority is set here. Transcript
+search/lookup (`T3`) is deliberately deferred until a later product-planning point; it is not in
+the current execution sequence. Search is technically independent, so this deferral is a priority
+decision rather than a claim that its implementation depends on MCP. Local Claude Code acceptance
+(`EXTERNALMCP`) and full Haku migration are not prioritized.
 
 ## DAG
 
@@ -31,18 +33,15 @@ flowchart TB
     classDef future fill:#f3f4f6,stroke:#6b7280,color:#374151
     classDef milestone fill:#ede9fe,stroke:#6d28d9,color:#4c1d95,stroke-width:2px
 
-    MCPAUTH["Remaining acceptance<br/>credentialed MCP account<br/>OAuth linkage + provider proof"]:::active
+    MCPAUTH["Remaining acceptance<br/>credentialed MCP account<br/>refresh, rotation, Kubernetes provider"]:::active
     CRED["Deferred decision<br/>static credential + binding design<br/>ownership, lifecycle, revocation"]:::future
-    MCPDEPLOY["Remaining acceptance<br/>staged MCP endpoint rollout<br/>public MCP and Sandbox reachability"]:::active
     ELEVATE["Planned behavior<br/>agent-requested temporary permission<br/>ServiceAccount and Sandbox callers, operator-approved"]:::future
     FORK["Deferred design<br/>per-task identity fork<br/>sub-identity scoped by token possession"]:::future
-    CLAUDEAI["Priority milestone<br/>working Claude.ai MCP facade<br/>deployed Action execution"]:::active
-    EXTERNALMCP["Planned milestone<br/>Claude.ai + external Claude Code<br/>identity-bound Action execution"]:::future
+    EXTERNALMCP["Planned milestone<br/>external Claude Code<br/>identity-bound Action execution"]:::future
     MCPAGG["Deferred migration<br/>replace Haku Console MCP aggregator<br/>real Claude.ai/Claude Code proof"]:::future
     CUTOVER["Planned milestone<br/>Haku Console affordance cutover<br/>Kubernetes + SSH + GitHub"]:::active
     K8SAUTH["Planned support<br/>browser-mediated Kubernetes auth<br/>linkage, refresh, revocation"]:::future
     SSHDURABLE["Deferred support<br/>systemd-backed durable processes<br/>host daemon + signals/output"]:::future
-    APPROVALUI["Needed live evidence<br/>deployed SSE/push operator federation + BFF<br/>identity and approval proof"]:::active
     RETIRE_AGENT["Deferred migration<br/>retire Haku Console Agent/<br/>conversation management"]:::future
     RETIRE_TOOLS["Deferred migration<br/>retire Haku Console tool-call/<br/>approval management"]:::future
     INPUT_DELIVERY["P0 behavior, independent<br/>input delivery/replay semantics<br/>provider research and captures first"]:::active
@@ -54,7 +53,6 @@ flowchart TB
     LIVE_CLEAN["Deferred cleanup<br/>executor heartbeat identity/<br/>row retention"]:::future
 
     BB["Deferred decision<br/>BuildBuddy hosted-run credential boundary"]:::future
-    NOTIFY["Observed evidence<br/>web push approval notifications<br/>delivered and decided on staging"]:::milestone
     ING["Deferred support<br/>Event & Notification Hub<br/>external events -> Agent/Thread ingress"]:::future
     DT["Deferred<br/>driver-provided declarations/background control"]:::future
     AG["Deferred<br/>hosted Thread lifecycle<br/>cross-Identity read policy"]:::future
@@ -68,18 +66,11 @@ flowchart TB
 
     CRED --> MCPAUTH
     MCPAUTH --> PROD
-    APPROVALUI --> ELEVATE
     ELEVATE --> FORK
-    MCPDEPLOY --> CLAUDEAI
-    APPROVALUI --> CLAUDEAI
-    CLAUDEAI --> EXTERNALMCP
     EXTERNALMCP --> MCPAGG
-    CLAUDEAI --> CUTOVER
-    APPROVALUI --> CUTOVER
     K8SAUTH --> CUTOVER
     MCPAUTH --> CUTOVER
     MCPAGG -. replacement surface .-> RETIRE_TOOLS
-    APPROVALUI -. replacement surface .-> RETIRE_TOOLS
     CONSOLE_POLICIES -. policy parity .-> RETIRE_TOOLS
     AG -. hosted Thread lifecycle .-> RETIRE_AGENT
 
@@ -89,39 +80,25 @@ flowchart TB
     ACCESS -. authority choice .-> EGRESS_CHANGE
 ```
 
-The credentialless MCP vertical is complete and is intentionally removed from this remaining-work
-board. Its deployed Claude/Codex evidence is recorded in the component and acceptance docs. The
-remaining operator-decision, browser/BFF, and Web Push evidence is tracked under `APPROVALUI` and
-`NOTIFY`; credentialed upstream access is separate (`MCPAUTH`). Input delivery and proxy survivability
-can proceed independently of the external-client track.
+Completed work is off this board: the credentialless MCP vertical, whose deployed Claude/Codex
+proof is the [acceptance suite](../acceptance/README.md), and the first external client, operator
+approval, and Web Push proofs, recorded in the [staging evidence](../docs/staging_evidence.md).
+Credentialed upstream access is `MCPAUTH`. Input delivery and proxy survivability proceed
+independently of the external-client track.
 
-The external-client track is single-operator and independent of the completed credentialless MCP
-vertical and the broader `AG` model.
-Its product terms are Identity (configured authority), Connection (runtime named client enrollment), and Thread
-(execution/conversation state); it adds no multi-operator management or per-operator ownership model.
-Configured static Identities, runtime Connection/grant authority, OAuth/DCR enrollment with app
-consent, the generic MCP frontend, Connection list/rename/unbind UI, reconnect/rebind, and
-provenance display are implemented. The remaining first-delivery work is staging rollout
-(`MCPDEPLOY`) and real operator/client proof (`APPROVALUI` / `CLAUDEAI`). `EXTERNALMCP` additionally proves independently
-running Claude Code. The [external connection plan](external_mcp_connections.md) owns remaining
-delivery and compatibility work, not a duplicate of the implemented contracts.
-An external caller is auto-approved only by an `ActionPolicyBinding` naming its ServiceAccount,
-otherwise by the operator; the Action Service evaluates such bindings at admission and records
-what it evaluated on the Decision. None of that gates the human-approved client proof. Connection
-authority already lives in PostgreSQL. A caller ServiceAccount does not select backend credentials
-or wait for `CRED`/`PROFILES`; outbound account OAuth remains `MCPAUTH`. Initial client proof does
-not establish full Haku tool parity.
-Hosted harnesses call Actions from their Sandbox Threads under the `ActionPolicyBinding` the
-integration app writes at launch. SandboxPreset stays an integration-app-only recipe: the app
-resolves preset defaults and per-Sandbox additions into each subsystem's bindings. Actions and
-egress do not resolve presets or depend on one another. The deny lists are `DENY_LISTS`.
-SSH execution is the independent `ssh-mcp` server (<../../ssh_mcp_server/README.md>) behind the
-existing MCP Executor contract; the Action Service holds only its bearer, and the decider and human
-approval path authorize the complete target and command. Processes that must outlive an SSH
-connection are `SSHDURABLE`.
+The external-client track is single-operator and independent of the credentialless MCP vertical
+and the broader `AG` model. Its product terms are Identity (configured authority), Connection
+(runtime named client enrollment), and Thread (execution/conversation state); it adds no
+multi-operator management or per-operator ownership model. What remains of it is `EXTERNALMCP`, an
+independently running Claude Code; the [external connection plan](external_mcp_connections.md)
+owns that delivery and compatibility work. A caller ServiceAccount does not select backend
+credentials or wait for `CRED`/`PROFILES`; outbound account OAuth remains `MCPAUTH`. Client proof
+does not establish Haku tool parity (`CONSOLE_POLICIES`, `RETIRE_TOOLS`).
+The deny lists of the landed [action policies](../docs/action_policies.md) are `DENY_LISTS`.
+Processes that must outlive an SSH connection to the `ssh-mcp` server
+(<../../ssh_mcp_server/README.md>) are `SSHDURABLE`.
 Haku Console migration is split: Agent/conversation management and tool-call/approval management
-can retire on different schedules after their respective replacement surfaces exist. Neither is a
-prerequisite for the first Action/MCP acceptance.
+can retire on different schedules after their respective replacement surfaces exist.
 
 ### `BB` — BuildBuddy hosted-run credential boundary
 
@@ -277,34 +254,15 @@ behind a rollback switch before retiring Haku Console's corresponding tool surfa
 
 ### `MCPAUTH` — credentialed MCP account and OAuth boundary
 
-**Implemented support:** PostgreSQL-backed, server-scoped OAuth linkage now owns discovery,
-PKCE/token exchange, normalized token state, background refresh, advisory-lock leadership,
-refresh claims, failure/backoff state, execution-time credential resolution, metrics, and
-configuration cleanup. The Action Service receives credentials only at execution time; they are
-not placed in the harness, Action prompt, or durable Action payload.
+Operator-linked OAuth upstreams are implemented ([service README](../action_service/README.md)),
+and staging's GitHub upstream has been linked, discovered, and executed against
+([staging evidence](../docs/staging_evidence.md)).
 
-**Remaining acceptance:** run the staged GitHub provider scenario first: link the account, discover
-the catalog/resource, execute one safe read, refresh without MCP calls, observe refresh failure and
-degraded/reconnect behavior, and prove token rotation is used without rebuilding the executor.
-Then add Kubernetes provider acceptance. Preserve negative isolation for an unbound or different
-account. The broader static credential and binding model remains the separate `CRED` design gate.
-
-**Acceptance evidence:** a separate credentialed live scenario proves account linkage, catalog
-refresh, one safe GitHub read, token refresh/reconnect, and negative isolation for an unbound or
-different account. This milestone must not block the completed credentialless MCP vertical or be folded into the credentialless fixture
-test.
-
-### `MCPDEPLOY` — stage the external MCP endpoint
-
-**Observed 2026-09-12T12:57:45Z:** verified deployed Action Service image
-`git.allegedly.works/ducktape-ci/agentplane-action-service:devel-20260912122305-e2303e4` and
-MCP endpoint serving externally via `Agentplane_staging` MCP server. Deployment
-`agentplane-staging/agentplane-actions` reports generation 73, 2 ready replicas, both updated.
-Public MCP connection accepts OAuth-authenticated requests and resolves effective policy for the
-claude-ai ServiceAccount with binding `claude-ai-github-reads` (resourceVersion 286352196) and
-policy sets `github-reads` (generation 1), `github-identity-reads` (generation 1).
-
-**Not verified:** Sandbox MCP reachability independent of external Connection path.
+**Remaining acceptance:** on the staging GitHub provider, refresh without MCP calls, observe
+refresh failure and degraded/reconnect behavior, and prove token rotation is used without
+rebuilding the executor; then add Kubernetes provider acceptance; preserve negative isolation for
+an unbound or different account. The broader static credential and binding model remains the
+separate `CRED` design gate. This milestone is not folded into the credentialless fixture test.
 
 ### `ELEVATE` — agent-requested temporary permission
 
@@ -321,7 +279,6 @@ so the request itself can be auto-approved by policy later, never by default. A 
 evaluated like any other, once per subsequent Action at admission. Prove: a Sandbox requests a set,
 the operator approves, the next matching Action auto-approves and the Decision names the new
 binding; the same request from a different subject grants nothing to the requester; expiry ends it.
-Depends on `APPROVALUI` for the rendering path.
 
 ### `FORK` — per-task identity fork
 
@@ -334,41 +291,26 @@ represented (a derived ServiceAccount, or a child Connection under the parent's 
 whether the parent's permissions flow down, and how the sub-identity ends. Low priority; nothing
 else depends on it.
 
-### `CLAUDEAI` — working Claude.ai MCP facade
-
-**Observed 2026-09-12T12:57-12:58Z:** Action Service MCP facade accepts authenticated external
-Connections. Verified auto-approval policy evaluation: `get_action_policy(target="self")` returns
-binding `claude-ai-github-reads` with unexpired sets `github-reads` and `github-identity-reads`.
-Auto-approved requests: (1) `github/get_me` (request ID `da669074-b55d-4b6f-a59d-784413c1e405`,
-2026-09-12T12:57:45.264395Z) with Decision policy_evidence binding resourceVersion 286352196,
-matched set `github-reads` generation 1; (2) `github/search_code` (request ID
-`1e780054-0f39-416e-b3d6-bb75edcfb3f3`, 2026-09-12T12:58:33.111358Z) with same binding/set.
-Idempotency enforcement: repeat submission of same key refused with "already used by this caller";
-`get_action_request(idempotency_key=...)` recovered original request. External caller identity:
-Connection `088a0679-f6e3-4f97-b63c-c9fce3fc84ad`, grant revision 1, ServiceAccount
-`agentplane-staging/claude-ai`.
-
-**Not verified:** Sandbox authentication independent of external Connection.
-
 ### `T3` — trajectory search and lookup
 
 **Deferred product work:** search and look up stored trajectories at a later product-planning point.
-This is technically independent of `CLAUDEAI`, but it is intentionally not in the current work
+This is technically independent of the MCP facade, but it is intentionally not in the current work
 sequence. Existing transcript persistence and unrelated lifecycle reliability work are not
 reclassified as search implementation by this deferral.
 
 ### `EXTERNALMCP` — hosted clients and external harnesses using governed Actions
 
-**Remaining client acceptance:** use the implemented OAuth, generic MCP, Executor, and operator-review
-paths. Real Claude.ai and local Claude Code connections (for example on wyrm2)
-use selected static Identities to discover and submit one credentialless Action for human approval,
-receive a durable pending receipt
-and read the result after human review. Independently verify Action ownership, binding, Decisions,
-Execution, replay, isolation, and revocation as specified in the
-[external connection plan](external_mcp_connections.md). This milestone precedes Haku migration and
-does not require backend account OAuth or the full Agent/conversation model. Verify each client's
-OAuth/redirect/refresh/reconnect and approval/result flows. External harnesses need no Agentplane
-Sandbox/Thread or upstream credentials; only Actions routed through this service are governed by it.
+**Remaining client acceptance:** Claude Code running on an operator machine (for example wyrm2),
+not an Agentplane-hosted harness, uses a configured static Identity to discover and submit one
+credentialless Action for human approval, receives a durable pending receipt, and reads the result
+after review; its native callback, registration, refresh, and fresh authorization need their own
+evidence. Independently verify Action ownership, binding, Decisions, Execution, replay, isolation,
+and revocation as specified in the [external connection plan](external_mcp_connections.md); the
+Deny path, grant retention across refresh and restart, negative isolation, and unbind/revocation
+have no recorded evidence for any external client yet. This milestone precedes Haku migration and
+does not require backend account OAuth or the full Agent/conversation model. External harnesses
+need no Agentplane Sandbox/Thread or upstream credentials; only Actions routed through this service
+are governed by it.
 
 ### `CRED` — static credential and binding design
 
@@ -382,9 +324,6 @@ the Agent/API may observe. This node is a design discussion, not an implementati
 start code or schema work from it until Rai confirms the design.
 
 ### `PROFILES` — cross-cutting capability profiles
-
-The Action-only reusable policy-set slice (`ActionPolicySet`, `ActionPolicyBinding`) has landed;
-it serves both Sandbox types and ServiceAccount callers without waiting for this broader profile.
 
 **Deferred decision — Rai confirmation required:** define a durable authority for capabilities shared by egress, approvals, MCP
 reachability, and other tool permissions. Do not widen the landed launch-preset slice merely to
@@ -464,36 +403,6 @@ process lifetime. Once deployment scale makes that accumulation meaningful, choo
 identity or bounded expiry/compaction policy and add retention tests; do not change the exactly-one
 claim or unknown-outcome semantics while doing so.
 
-### `APPROVALUI` — verify the deployed integration-app operator approval path
-
-**Observed evidence:** PostgreSQL sessions, request-bound federation, Authentik configuration,
-dedicated acceptance-operator bootstrap, canonical BFF review/events, authenticated SSE snapshots,
-listener recovery, browser registration management, and durable Web Push reconciliation are
-implemented. The app's Actions page lists pending/recent requests, exact arguments and caller
-principal, shows Decision/result/error state, and offers Allow/Deny for pending requests. `/actions`
-BFF routes, `/actions/stream`, `/push/*` routes, frontend tests, and service-worker tests cover the
-controls and live-update path; this is not a missing UI implementation.
-
-**Observed 2026-09-12T13:03Z:** human operator approval of a pending Action on staging. Request
-`github/create_branch` (request ID `d7e43a95-4dc3-4015-9895-7179dbd71fec`, created
-2026-09-12T12:58:16.505543Z; arguments `agentydragon/ducktape`, branch `test-branch` from `devel`)
-waited in `decision_pending` until the operator allowed it on the integration-app Actions page:
-Decision provider `human_operator`, issuer the Authentik `agentplane-actions` application, decided
-2026-09-12T13:03:12.977810Z; the event sequence then ran `allowed`, `dispatching`, `running`,
-`succeeded` (13:03:14.902620Z), and the Execution result names `refs/heads/test-branch` at
-`9392be47`.
-
-**Operator-reported 2026-09-12:** a browser push for a pending Action arrived, and the request was
-decided from the notification's buttons.
-
-**Not verified, by the operator's choice (defects surface as bug reports):** credential/push-service
-egress policy; fallback-to-SSE behavior under push service unavailability; Web Push reconciliation
-after disconnect/reconnect. The local-Gateway TLS reset that made federation fail intermittently is
-fixed cluster-wide
-([root cause and rollout](../../../cluster/debug/agentplane_oidc/local_gateway_tls_rca.md)); a
-federation failure now logs its cause. Signed mock integration and CI are evidence for code paths,
-not deployed SSE proof.
-
 ### `RETIRE_AGENT` — Haku Console Agent/conversation management migration
 
 **Deferred migration:** retire Haku Console's own Agent and conversation management only after
@@ -511,27 +420,6 @@ required workflows.
 This track may move independently of Agent/conversation management: Haku Console may continue to own
 conversations while Agentplane owns external tool calls, or the reverse during a staged migration.
 Preserve tool-call audit/export and rollback evidence before removing the old owner.
-
-### `NOTIFY` — web push approval notification delivery
-
-**Observed evidence:** PR #5937 implements the Action Service sender and integration-app browser
-surface. PostgreSQL `NOTIFY` wakes replicas while durable Action state and delivery rows provide
-recovery; subscription-row locking prevents concurrent replicas from sending the same logical
-notification simultaneously. Failed sends remain retryable, dead subscriptions are cleaned up,
-and startup/reconnect reconciliation repairs missed notifications. Push endpoints are constrained
-to reviewed HTTPS service hosts, registrations are operator-scoped, payloads omit Action arguments,
-results, credentials, and unrestricted errors, and the service worker rechecks canonical state
-before presenting approval buttons. Approve/Deny uses the existing authenticated Decision route;
-body taps only open review, and resolved/stale notifications do not offer decisions.
-
-**Operator-reported 2026-09-12:** on staging, a browser push for a pending Action arrived, and the
-request was decided from the notification's buttons. Not exercised, by the operator's choice, with
-defects to surface as bug reports: the canonical Action state update after a button decision;
-duplicate Decision or Execution under retries, refresh, reconnect, or an already-decided request;
-subscription revocation; unavailable-push fallback to the existing app UI.
-Crash-after-send-before-commit may resend under the same notification tag; this is retryable
-delivery, not exactly-once push. Production VAPID keys and reviewed push-service egress remain
-before treating Agentplane push delivery as a replacement for the Haku Console experience.
 
 ### `INPUT_DELIVERY` — native queue evidence before common-protocol changes
 
@@ -604,7 +492,6 @@ Action outbox or event store; cross-Identity delivery requires an explicit read 
 - MCP registry, dynamic action marketplace, standing grants, and cross-agent permissions;
 - per-destination workload audiences until recipient isolation is required;
 - broad profiles beyond the landed launch-preset slice;
-- production VAPID/egress rollout for push delivery;
 - separating the egress proxy's rule namespace from its Sandbox namespace — both deployments pass
   one namespace for both today, the reason separation mattered is not recorded, and a split has to
   replace the app's binding-to-Sandbox ownerReference cascade with a sweep
