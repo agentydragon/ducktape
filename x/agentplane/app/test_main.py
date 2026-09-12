@@ -98,13 +98,12 @@ def test_the_two_settings_models_read_one_environment_without_colliding(monkeypa
 
 def test_image_owned_agent_instructions_render_deployment_service_urls() -> None:
     instructions = resolved_agent_instructions(
-        None,
-        egress_rules_url="http://egress.test.invalid/v1/rules",
-        actions_service_url="http://actions.test.invalid:8080",
+        None, egress_api_url="http://egress.test.invalid", actions_service_url="http://actions.test.invalid:8080"
     )
 
     assert "http://egress.test.invalid/v1/rules" in instructions
-    assert "http://actions.test.invalid:8080" in instructions
+    assert "http://egress.test.invalid/openapi.json" in instructions
+    assert "http://actions.test.invalid:8080/openapi.json" in instructions
 
 
 def test_without_an_issuer_there_is_no_login(monkeypatch: pytest.MonkeyPatch) -> None:

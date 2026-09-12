@@ -41,7 +41,6 @@ async def lease(store: TrajectoryStore) -> IngestionLease:
 @pytest.fixture
 async def replica(db_url: str) -> AsyncIterator[TrajectoryStore]:
     replica = TrajectoryStore.connect(db_url)
-    await replica.ensure_schema()
     await replica.start_updates()
     try:
         yield replica
@@ -136,22 +135,6 @@ async def test_a_thread_is_unnamed_until_renamed_and_keeps_its_progress(
     assert (await store.rename(thread, None)).name is None
     with pytest.raises(ThreadNotFoundError):
         await store.rename(UUID(int=0), "nobody")
-
-
-async def test_ensure_schema_adds_the_name_column_to_a_table_created_without_it(db_url: str) -> None:
-    """create_all never alters an existing table, and staging already had threads before names."""
-    store = TrajectoryStore.connect(db_url)
-    try:
-        await store.ensure_schema()
-        older = create_async_engine(db_url)
-        async with older.begin() as connection:
-            await connection.execute(text("ALTER TABLE thread DROP COLUMN name"))
-        await older.dispose()
-        await store.ensure_schema()
-        thread = await store.thread("sb-1", "s-1", SPEC)
-        assert (await store.rename(thread, "after the alter")).name == "after the alter"
-    finally:
-        await store.close()
 
 
 async def test_concurrent_replicas_create_one_thread(store: TrajectoryStore, replica: TrajectoryStore) -> None:
