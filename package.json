@@ -81,7 +81,7 @@
     "happy-dom": "^20.11.6",
     "http-server": "^14.1.1",
     "jsdom": "^25.0.0",
-    "@hey-api/openapi-ts": "^0.99.0",
+    "@hey-api/openapi-ts": "0.97.1",
     "json-schema-to-typescript": "^15.0.4",
     "openapi-typescript": "^7.10.1",
     "prettier": "^3.9.6",
