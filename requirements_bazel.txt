@@ -6250,8 +6250,8 @@ ruff==0.16.7 \
     --hash=sha256:ef140c6eb935fa9a84c9c607dfb2cb1b85843c192e79265b0c54f35f557ea8e5
     # via ducktape (pyproject.toml)
 s3fs==2026.6.0 \
-    --hash=sha256:8612885105ce14d609c5b807553f9f9956b45541576a17ff337d9435ed3eb01f \
-    --hash=sha256:89d51e0744256baad7ae5410304a368ca195affd93a07795bc8ba9c00c9effbb
+    --hash=sha256:60576e31bb31193c1f643f32b4c6439548720ea6918ac702e21cd757c80b5db8 \
+    --hash=sha256:b28de7082d0a4f72392884bdc497e34a4a1582f675d214c7da0acf6e950a0083
     # via inspect-ai
 s3transfer==0.14.0 \
     --hash=sha256:ea3b790c7077558ed1f02a3072fb3cb992bbbd253392f4b6e9e8976941c7d456 \
@@ -6539,8 +6539,8 @@ svg-py==1.10.0 \
     --hash=sha256:54c7470347d5d79b30d059584a4f449da08b462903e8ce262981338bab755560
     # via ducktape (pyproject.toml)
 syrupy==6.0.0 \
-    --hash=sha256:0b260a0c9dad55e1fb83818973dc36fbc1aea3fd5381592f442a986686c4171a \
-    --hash=sha256:fa21e4ae77c89ec5abfca513338d8a7eb916da6618ca0f8db301476e0768e57a
+    --hash=sha256:3efa16d767bd8614413cc20057552e4aec14428c6e5ea788c1f7e03047e8a5e4 \
+    --hash=sha256:bf4f5f662a7b23a9e5711bd5597e301cd09c00f31be5fa4095f79da7b0585f3d
     # via ducktape (pyproject.toml)
 tabulate==0.10.0 \
     --hash=sha256:e2cfde8f79420f6deeffdeda9aaec3b6bc5abce947655d17ac662b126e48a60d \
