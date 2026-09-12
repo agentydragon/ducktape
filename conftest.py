@@ -25,6 +25,12 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "live_openai_api: tests requiring OPENAI_API_KEY")
 
 
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    """An empty Bazel shard passes: pytest-shard assigns cases by hash, so some shards get none."""
+    if exitstatus == pytest.ExitCode.NO_TESTS_COLLECTED and (session.config.getoption("num_shards", None) or 0) > 1:
+        session.exitstatus = pytest.ExitCode.OK
+
+
 def pytest_runtest_setup(item: pytest.Item) -> None:
     """Fail explicitly-run live tests without their required API key."""
     # fail() not skip(): pytest.skip surfaces as success at the Bazel level, hiding

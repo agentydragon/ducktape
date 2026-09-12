@@ -106,6 +106,9 @@ py_library(
     ],
 )
 
+# Eight cases, four of them two-minute simulations; a shard pays only a server boot and a browser
+# launch on top of its cases. pytest-shard hashes case ids, so seven is the count that leaves no
+# shard with two heavy cases; the empty shard it also leaves passes (root conftest).
 py_test(
     name = "visual_test",
     size = "large",
@@ -125,6 +128,7 @@ py_test(
         "FONTCONFIG_FILE": "$(rootpath //util/testing/frontend_visual:fonts_conf)",
         "FREETYPE_PROPERTIES": "cff:no-stem-darkening=1",
     },
+    shard_count = 7,
     deps = [
         ":conftest",
         ":dev_server",
