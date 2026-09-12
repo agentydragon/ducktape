@@ -10,10 +10,12 @@ import numpy as np
 
 from finance.augur.sim.artifacts import write_prepared_input
 from finance.augur.sim.books import Record
+from finance.augur.sim.prepared import CompiledRun
 from finance.augur.sim.quantiles import currency_quantiles
 from finance.augur.sim.results import Finished, Stop, UnpaidClaim
-from finance.augur.x.bounded_spending.python_policy import Parameters, consumption, run
-from finance.augur.x.joint_spending_allocation.policy import JointPolicy
+from finance.augur.sim.world import Capture, World
+from finance.augur.x.bounded_spending.python_policy import Parameters, consumption
+from finance.augur.x.joint_spending_allocation.policy import JointHousehold
 from finance.augur.x.joint_spending_allocation.scenario import prepare, sample
 
 
@@ -49,13 +51,36 @@ class Output(Finished):
     measurements: Measurements
 
 
-def measurements(output: Finished, policy: JointPolicy) -> Measurements:
+def run_cell(
+    prepared: CompiledRun,
+    rollout_ids: list[int],
+    *,
+    parameters: Parameters,
+    annual_step: int,
+    capture: Capture = "summary",
+) -> tuple[Finished, dict[int, JointHousehold]]:
+    """Each selected path is its own world with a fresh household; the experiment owns the loop."""
+    rollouts = []
+    households = {}
+    for rollout_id in rollout_ids:
+        world = World(prepared, rollout_id, capture_mode=capture, actor="retiree")
+        household = JointHousehold(parameters, annual_step=annual_step)
+        world.track(household)
+        world.start()
+        while not world.finished:
+            world.step()
+        rollouts.append(world.rollout())
+        households[rollout_id] = household
+    return Finished(rollouts=rollouts), households
+
+
+def measurements(output: Finished, households: dict[int, JointHousehold]) -> Measurements:
     requests, paid = consumption(output)
     paths = []
     for rollout, path_requests, path_paid in zip(output.rollouts, requests, paid, strict=True):
         id_ = rollout.rollout_id
         summary = rollout.summary
-        intentions = policy.intentions.get(id_, {})
+        intentions = households[id_].intentions
         months = []
         for month, (requested, actual) in enumerate(zip(path_requests, path_paid, strict=True)):
             intent = intentions.get(month)
@@ -110,13 +135,11 @@ def compare(output_dir: Path) -> None:
     ):
         name = f"r{rate}-{flex_name}-{allocation_name}"
         parameters = Parameters(rate, cut, raise_)
-        policy = JointPolicy(parameters, rollout_count=3, annual_step=step)
-        output = run(prepared, policy, [0, 1, 2])
-        measured = Output(rollouts=output.rollouts, measurements=measurements(output, policy))
+        output, households = run_cell(prepared, [0, 1, 2], parameters=parameters, annual_step=step)
+        measured = Output(rollouts=output.rollouts, measurements=measurements(output, households))
         (output_dir / f"{name}.json").write_text(measured.model_dump_json())
-        replay_policy = JointPolicy(parameters, rollout_count=3, annual_step=step)
-        replay = run(prepared, replay_policy, [2, 0], capture="forensic")
-        detailed = Output(rollouts=replay.rollouts, measurements=measurements(replay, replay_policy))
+        replay, replayed = run_cell(prepared, [2, 0], parameters=parameters, annual_step=step, capture="forensic")
+        detailed = Output(rollouts=replay.rollouts, measurements=measurements(replay, replayed))
         (output_dir / f"{name}-traces.json").write_text(detailed.model_dump_json())
         cells.append({"name": name, "spending": asdict(parameters), "annual_allocation_step_percent": step})
         print(f"{name}: completed={measured.measurements.completed_paths}/3; paired stipulated cases, not probability")

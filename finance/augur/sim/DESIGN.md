@@ -26,6 +26,14 @@ or HTTP modules.
 ```text
 authored scenario + supplied paths/rules
     -> compile_run
+    -> World(run, rollout_id, actor=...); world.track(agent); world.start()
+    -> world.step()  # agent.decide(observation) once, ordered actions, close
+    -> world.finished -> world.rollout()
+```
+
+The batch form drives one such world per selected path:
+
+```text
     -> ActionSession.start()
     -> current scoped observations
     -> Python batch policy
@@ -33,7 +41,8 @@ authored scenario + supplied paths/rules
     -> next observations or typed Finished
 ```
 
-The caller owns the time loop and optional policy memory. Each path is stateful;
+The caller owns the time loop; a tracked agent owns its memory, a batch policy's
+memory belongs to the caller. Each path is stateful;
 parallel paths do not make future months independent. Policies see current
 actor-scoped facts, not future sampled market trajectories. The Python session
 owns month/phase sequencing, active paths, receipts and fatal-stop lifecycle.
@@ -46,8 +55,9 @@ ledger. The session supplies immutable payment and year-end facts to Python acco
 capture DTOs do not maintain another mutable mortgage. Configured purchase/sale
 timing is documented in <../docs/rental_and_lifecycle.md>.
 
-`sim/session.py` owns component state and invokes one Python
-`sim/world.py::World` per selected path. `actions.py` owns exact requests;
+`sim/world.py::World` owns one path's books, TLH portfolios, mortgages,
+receipts and stop state, and opens, acts and closes its months; `sim/session.py`
+drives one world per selected path under the batch routing envelope. `actions.py` owns exact requests;
 `observations.py` owns frozen current facts and private claim authority. There is
 no second public native action/observation representation or native session driver.
 Configured allocators, housing and PE behavior are not silently enabled through

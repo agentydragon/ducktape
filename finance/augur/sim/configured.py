@@ -19,7 +19,8 @@ from finance.augur.sim.events import EVENT_FRAME_SPECS, EventLog
 from finance.augur.sim.metric_composition import BASE_METRIC_NAMES
 from finance.augur.sim.prepared import CompiledRun
 from finance.augur.sim.product_metrics import ProductMetricArrays
-from finance.augur.sim.session import Capture, _Session
+from finance.augur.sim.session import _Session
+from finance.augur.sim.world import Capture
 
 
 def execute(run: CompiledRun, capture: Capture, product_actor: str | None = None) -> tuple[WorldResult, ...]:
@@ -48,24 +49,24 @@ def execute(run: CompiledRun, capture: Capture, product_actor: str | None = None
                     spec = next(
                         (
                             spec
-                            for spec in session.specs.values()
+                            for spec in path.specs.values()
                             if (spec.owner_agent_id, spec.account_id, spec.asset_id)
                             == (sale.agent_id, sale.account_id, sale.asset_id)
                         ),
                         None,
                     )
                     if spec is None:
-                        path.world.holdings.scheduled_sale(path.world.accounting, path.world.market, sale)
+                        path.holdings.scheduled_sale(path.accounting, path.market, sale)
                         continue
                     candidate = deepcopy(path.portfolios[spec.portfolio_id])
                     withdrawal = candidate._withdraw_units(sale.units)
-                    path.world.managed.settle(
+                    path.managed.settle(
                         run.scenario,
-                        path.world.accounting,
+                        path.accounting,
                         session.month,
                         spec.owner_agent_id,
                         sale.cause_id,
-                        session.effects(
+                        path.effects(
                             spec, candidate, sale.proceeds_account_id, withdrawal.cash_received, withdrawal.realizations
                         ),
                         operation="redemption",
@@ -76,10 +77,10 @@ def execute(run: CompiledRun, capture: Capture, product_actor: str | None = None
                         session.observe(rollout_id, policy.agent_id),
                         policy,
                         policy_index=index,
-                        floor=path.world.market.amount(policy.cash_floor, session.month),
-                        ceiling=path.world.market.amount(policy.cash_ceiling, session.month),
+                        floor=path.market.amount(policy.cash_floor, session.month),
+                        ceiling=path.market.amount(policy.cash_ceiling, session.month),
                         prices={
-                            sleeve.asset_id: session.price(f"security:{sleeve.asset_id}", rollout_id, session.month)
+                            sleeve.asset_id: path.market.value(f"security:{sleeve.asset_id}", session.month)
                             for sleeve in policy.sleeves
                         },
                     )
@@ -92,7 +93,7 @@ def execute(run: CompiledRun, capture: Capture, product_actor: str | None = None
                     pending.extend((rollout_id, buy) for buy in proposal.buys)
             for path in paths.values():
                 if not path.failed:
-                    settlement = path.world.settle_claims()
+                    settlement = path.settle_claims()
                     path.failed = settlement.failed
                     path.shortfall = settlement.product_shortfall
             for rollout_id, pending_buy in pending:
@@ -109,12 +110,12 @@ def execute(run: CompiledRun, capture: Capture, product_actor: str | None = None
                         lot_sequences[key] += 1
             for path in paths.values():
                 if not path.failed:
-                    path.world.private_equity.advance(
+                    path.private_equity.advance(
                         run.scenario,
-                        path.world.accounting,
-                        path.world.holdings,
-                        path.world.market,
-                        list(path.world.managed.marks.values()),
+                        path.accounting,
+                        path.holdings,
+                        path.market,
+                        list(path.managed.marks.values()),
                         session.month,
                     )
             session.close_month()

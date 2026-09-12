@@ -83,11 +83,11 @@ def scoped() -> CompiledRun:
 
 
 def world_for(run: CompiledRun) -> World:
-    return World(run, 0, [], capture_mode="forensic", actor=HOUSEHOLD, product_actor=HOUSEHOLD)
+    return World(run, 0, capture_mode="forensic", actor=HOUSEHOLD, product_actor=HOUSEHOLD)
 
 
 def close(world: World) -> None:
-    world.close_month(failed=False, shortfall=0, mortgages=[], snapshots=[])
+    world.close_books(failed=False, shortfall=0, mortgages=[], snapshots=[])
 
 
 def test_scoped_observations_match_output_at_same_marks_and_round_each_lot(scoped: CompiledRun) -> None:

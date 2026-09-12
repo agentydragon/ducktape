@@ -85,12 +85,12 @@ def recovery_run(total: int, positions: tuple[tuple[int, int], ...], *, earlier_
 
 
 def execute(run: CompiledRun) -> World:
-    world = World(run, 0, [], capture_mode="forensic", actor=None, product_actor=None)
+    world = World(run, 0, capture_mode="forensic", actor=None)
     for month in range(run.scenario.horizon_months):
         world.prepare_month(month, {}, {})
         world.private_equity.advance(world.scenario, world.accounting, world.holdings, world.market, [], month)
         world.assemble_claims([])
-        world.close_month(failed=False, shortfall=0, mortgages=[], snapshots=[])
+        world.close_books(failed=False, shortfall=0, mortgages=[], snapshots=[])
     return world
 
 

@@ -45,8 +45,10 @@ out-of-sample predictive quality.
 ## Common policy and session contract
 
 There is one policy shape: a batch of active actor/path observations produces a
-keyed batch of ordered action lists. The caller owns policy memory and the Python
-monthly loop. Scalar authoring adapters use that same interface; there is no
+keyed batch of ordered action lists. A single-path `World` tracks one
+`EconomicAgent`, whose state lives on the instance, and its `step()` invokes that
+agent's `decide` once per month; the batch session runs the same mechanics over
+several worlds for a caller-owned batch policy. The experiment owns the loop. Scalar authoring adapters use that same interface; there is no
 separate native spending-amount or allocation-weight callback API.
 
 The action session supports one decision-making household with scripted

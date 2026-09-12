@@ -1,10 +1,14 @@
 # Joint spending and allocation
 
-One Python batch policy composes the [bounded annual spending rule](../bounded_spending/README.md)
-with the [allocation example's cash-band/glide proposals](../allocation_glide/README.md).
-It reserves due claims plus intended consumption before any purchase and submits
-trades → claim payments → consumption once per month. Helpers propose; the common
-action session owns exact lots, taxes, settlement and terminal rejection.
+A `JointHousehold` agent (an `EconomicAgent` subclass) composes the
+[bounded annual spending rule](../bounded_spending/README.md) with the
+[allocation example's cash-band/glide proposals](../allocation_glide/README.md).
+Each selected path is its own `World` tracking one fresh household; the experiment
+loops over `world.step()`, which asks the household to decide once per month. It
+reserves due claims plus intended consumption before any purchase and submits
+trades → claim payments → consumption. Helpers propose; the world owns exact lots,
+taxes, settlement and terminal rejection, and the household's intentions live on
+its instance.
 
 ```bash
 bb run //finance/augur/x/joint_spending_allocation:compare_bin -- \

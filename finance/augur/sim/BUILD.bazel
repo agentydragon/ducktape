@@ -317,6 +317,7 @@ py_library(
         ":product_metrics",
         ":results",
         ":session",
+        ":world",
         "//finance/augur/policy:configured_allocation",
         "@pypi//numpy",
         "@pypi//pydantic",
@@ -328,15 +329,9 @@ py_library(
     srcs = ["session.py"],
     deps = [
         ":actions",
-        ":books",
-        ":capture",
-        ":managed",
-        ":mortgage",
         ":observations",
         ":prepared",
-        ":property",
         ":results",
-        ":tlh",
         ":validation",
         ":world",
     ],
@@ -353,6 +348,7 @@ py_test(
         ":scenario",
         ":session",
         ":tlh",
+        ":world",
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/model:series",
@@ -474,7 +470,7 @@ py_test(
         ":product_metrics",
         ":runtime",
         ":scenario",
-        ":session",
+        ":world",
         "//:conftest",
         "//finance/augur:conftest",
         "//finance/augur/model:series",
@@ -831,6 +827,7 @@ py_library(
     deps = [
         ":accounting",
         ":actions",
+        ":agent",
         ":books",
         ":capture",
         ":claims",
@@ -847,6 +844,8 @@ py_library(
         ":private_equity",
         ":property",
         ":results",
+        ":tlh",
+        ":validation",
         "//finance/augur/sim/compiler:income_sources",
     ],
 )
@@ -886,6 +885,7 @@ py_test(
     name = "test_managed",
     srcs = ["test_managed.py"],
     deps = [
+        ":accounting",
         ":actions",
         ":books",
         ":holdings",
@@ -893,7 +893,6 @@ py_test(
         ":money",
         ":observations",
         ":prepared",
-        ":session",
         ":tlh",
         ":world",
         "//:conftest",
@@ -924,9 +923,11 @@ py_test(
     srcs = ["test_world.py"],
     deps = [
         ":actions",
+        ":agent",
         ":capture",
         ":configured",
         ":events",
+        ":observations",
         ":prepared",
         ":results",
         ":session",
@@ -1014,5 +1015,14 @@ py_test(
         "//finance/augur/sim/testing:accounting",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "agent",
+    srcs = ["agent.py"],
+    deps = [
+        ":actions",
+        ":observations",
     ],
 )

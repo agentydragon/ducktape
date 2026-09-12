@@ -36,9 +36,13 @@ Previously recorded independent roadmap work retains its own scope.
 
 ## GWORLD — decided: a coordinating World over tracked components
 
-Selected 2026-09-12. COMPOSE implements it; this section leaves with COMPOSE's
-first landed slice, and its durable statements move to `SPEC.md` and
-`sim/DESIGN.md`.
+Selected 2026-09-12. COMPOSE implements it in slices; each slice moves its
+durable statements to `SPEC.md` and `sim/DESIGN.md`, and this section leaves with
+the last one. Landed: `EconomicAgent`, `World.track/start/step/rollout` over the
+existing `CompiledRun`, the session as a layer over N worlds. Remaining: the
+constructor over tracked components instead of the scenario bag, the typed
+message queue and inbox, untracked domains absent from results, and a
+month-zero `Mortgage` as a tracked contract.
 
 The experiment constructs an empty `World`, tracks the economic objects that take
 part, then owns the loop around `World.step()`:
