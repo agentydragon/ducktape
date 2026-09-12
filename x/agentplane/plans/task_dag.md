@@ -5,8 +5,8 @@ operator priority is separate. Completed implementation belongs in the component
 this backlog. See the [Action Service specification](../action_service/SPEC.md),
 [service integration details](../action_service/README.md),
 [workload authentication](../docs/workload_authentication.md),
-[operator federation](../docs/operator_federation.md), and
-[launch presets](../docs/launch_presets.md).
+[operator federation](../docs/operator_federation.md),
+[launch presets](../docs/launch_presets.md), and [action policies](../docs/action_policies.md).
 
 ## Operator priority
 
@@ -64,6 +64,7 @@ flowchart TB
     CONNECTION_SA_REBIND["Planned mutation<br/>rebind a Connection's ServiceAccount in place<br/>no mutation exists; only a fresh OAuth consent does"]:::future
     SANDBOX_SA["Deferred design<br/>one ServiceAccount per Sandbox<br/>a native Kubernetes identity to separate and grant on"]:::future
     DENY_LISTS["Deferred behavior<br/>autoDenyIf / autoDenyUnless<br/>when an Action needs them"]:::future
+    CONSOLE_POLICIES["Deferred migration<br/>console auto-approval policies not yet sets<br/>each needs an ActionGroup, a kind, or DENY_LISTS"]:::future
 
     CRED --> MCPAUTH
     MCPAUTH --> PROD
@@ -79,6 +80,7 @@ flowchart TB
     MCPAUTH --> CUTOVER
     MCPAGG -. replacement surface .-> RETIRE_TOOLS
     APPROVALUI -. replacement surface .-> RETIRE_TOOLS
+    CONSOLE_POLICIES -. policy parity .-> RETIRE_TOOLS
     AG -. hosted Thread lifecycle .-> RETIRE_AGENT
 
     INPUT_DELIVERY -. reliable Thread ingress .-> ING
@@ -188,12 +190,57 @@ and the Pod) carries over. No dependency on anything else; nothing waits on this
 
 **Deferred behavior:** an `ActionPolicySet` carries three lists and only `autoApproveIf` decides
 today; the CRD accepts `autoDenyIf` and `autoDenyUnless` and evaluation ignores them. Their
-semantics are settled in the [Action policy plan](action_policies.md): a request matching any
+semantics are settled in the [action policies design](../docs/action_policies.md): a request matching any
 `autoDenyIf` policy is auto-denied, one matching none of the `autoDenyUnless` policies is
 auto-denied, deny wins over approve, and a request matching nothing takes the human path.
 `autoDenyIf` first, when an Action needs it; `autoDenyUnless` later. Nothing waits on this; the
 console policies that need it (schema misses recorded as denied Decisions, the disabled kubectl
-passthrough redundancy check) are listed in that plan.
+passthrough redundancy check) are under `CONSOLE_POLICIES`.
+
+### `CONSOLE_POLICIES` — console auto-approval policies without a set
+
+**Deferred migration:** the Haku console's `auto_approval_policies`
+(`cluster/k8s/haku/console/config.yaml`) is the reviewed authority the Action policy model
+replaces; its GitHub policies exist as sets in `cluster/k8s/agentplane-staging/actions/`. What
+remains, each with what it needs; an entry leaves when its set can be written.
+
+- **`exact_tools` for servers with no ActionGroup**: `gmail_reads`, `google_calendar_reads`,
+  `grocy_reads` (`grocy-sf`), `tana_safe_tools` (`tana-rw`), `postscanmail_reads`
+  (`postscanmail-mcp`), `home_assistant_reads` (`home-assistant`), and the console's own
+  in-process `sandbox` (`haku_sandbox_control`) and `grants` servers (`kubernetes_reads`,
+  `grants_whoami`, `grants_own_revoke`). Each is a plain `exact_actions` set once the backend is an
+  ActionGroup in the Action Service settings, with its executor credential (operator OAuth
+  linkage for Google, a static bearer or in-cluster route for the rest) and network-policy egress.
+  `sandbox` and `grants` are console-internal servers with no Action Service counterpart at all;
+  they need an equivalent surface before a set can name them.
+- **`home_assistant_entity_control`** (`home_assistant_desk_light_control`): every Home Assistant
+  write is one generic `ha_call_service`, so the console's evaluator allow-lists the argument keys
+  it has reviewed and admits one entity with its listed services. Argument-only, so once a
+  `home-assistant` ActionGroup exists this is either an `argument_schema` set (`const` entity,
+  `enum` services, `additionalProperties: false` over the reviewed keys) or a kind if the
+  configured entity map stays the operator's vocabulary.
+- **`gmail_label_namespace`** (`managed_gmail_labels`): `labels_patch`/`labels_delete` name a
+  label by id, so the evaluator resolves the id to a name through the Gmail API before checking
+  the prefix. A kind with an injected Gmail client, arriving with the `gmail` ActionGroup and its
+  operator-linked credential.
+- **`grant_self_list` and grants self-introspection** (`grants_own_list`,
+  `grants_self_introspection`): `list_grants(principal=self)` is argument-only, an
+  `argument_schema` set over a `grants` ActionGroup; but the grant model itself is console-owned,
+  so this waits on the Action Service having its own grant surface, not on a kind.
+- **Schema auto-denial** (`autoDenyIf` equivalent): the console records a call whose arguments
+  fail the registered tool schema as born-denied. The Action Service refuses such a request at
+  admission before persisting anything, so the audit row the console keeps does not exist here;
+  matching it needs `DENY_LISTS` and a recorded, denied Decision for the schema miss.
+- **Kubectl passthrough redundancy check** (`kubectl_passthrough_redundancy_check`, commented out
+  in the console): auto-deny a `kubectl-passthrough-mcp` call the caller's own Kubernetes identity
+  already covers by SubjectAccessReview, pointing at the direct path. A kind with an injected
+  authorization service and a caller-to-Kubernetes-identity mapping, on `autoDenyIf`. The console
+  keeps it disabled because direct access is not yet an equivalent substitute (its kubeconfig
+  cannot execute the POST/SPDY transport the passthrough carries); the same condition gates it
+  here.
+
+Nothing waits on this except `RETIRE_TOOLS`, which needs policy parity for the affordances it
+retires.
 
 ## Named gates and acceptance evidence
 
@@ -545,5 +592,10 @@ Action outbox or event store; cross-Identity delivery requires an explicit read 
 - separating the egress proxy's rule namespace from its Sandbox namespace — both deployments pass
   one namespace for both today, the reason separation mattered is not recorded, and a split has to
   replace the app's binding-to-Sandbox ownerReference cascade with a sweep
-  (`x/agentplane/app/egress.py`); and
+  (`x/agentplane/app/egress.py`);
+- a runtime editing surface for `ActionPolicySet`s, and for bindings beyond the one the app
+  writes at launch — Git and `kubectl` are the editors;
+- creating a labeled caller ServiceAccount at OAuth enrollment instead of by a Git edit;
+- a TokenReview admission path for an external client holding a ServiceAccount token with a
+  dedicated audience, as Sandboxes authenticate, instead of OAuth; and
 - cryptographic Decision signing until Decisions cross a boundary that requires it.

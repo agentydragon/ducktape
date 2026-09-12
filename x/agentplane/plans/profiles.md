@@ -33,8 +33,8 @@ either extend the egress resource or invent a parallel notion. The selector subj
 removed for this reason, not merely unused: a subject is one named Sandbox.
 
 Storage remains an open design choice, including Kubernetes resources, app configuration, and
-PostgreSQL. The [Action policy binding plan](action_policies.md) compares these candidates and their
-ownership boundaries; no blanket Kubernetes exclusion applies.
+PostgreSQL. The [action policies design](../docs/action_policies.md) records why that slice chose
+Kubernetes objects with per-object ownership; no blanket Kubernetes exclusion applies.
 
 ## What this leaves open
 
@@ -43,10 +43,9 @@ Thread consumers use them. A broader capability profile still waits for a design
 future consumers — egress, approvals, MCP reachability, and other tool permissions — share one
 authority. Do not widen the launch-presets slice to settle that question.
 
-The narrower Action-policy reuse requirement is active in [Action policies](action_policies.md):
-many `public-coder` Sandboxes and a separate external Identity can reference one canonical
-ActionPolicySet (working name). This shares Action permissions without copying configuration or
-sharing identity. It does not require a cross-authority capability profile; a future broad profile
+The narrower Action-policy reuse requirement is met by [action policies](../docs/action_policies.md):
+many `public-coder` Sandboxes and a separate external caller reference one `ActionPolicySet`,
+sharing Action permissions without copying configuration or sharing identity. It does not require a cross-authority capability profile; a future broad profile
 must reuse that Action policy authority rather than duplicate its rules.
 
 ## Meanwhile
