@@ -1,20 +1,30 @@
 import { Button, Container, Group, Stack } from "@mantine/core";
+import { useState } from "react";
 import { HashRouter, Route, Routes, useLocation, useMatch, useNavigate, useParams } from "react-router";
 
 import { ActionRequests } from "./actions";
 import { ActionHistory } from "./actions_history";
-import { Connections } from "./connections";
 import { ConnectionConsent } from "./consent";
 import { SandboxPage } from "./sandbox_page";
 import { SandboxList } from "./sandboxes";
 import { SessionView } from "./session";
-import { PushSettings } from "./push";
-import { McpServers } from "./mcp_servers";
+import { Settings, type SettingsTab } from "./settings";
 
 // Hash routing: the API serves the bundle at "/" only, so no path has to reach the server.
 function sandboxPath(name: string): string {
   return `/sandboxes/${encodeURIComponent(name)}`;
 }
+
+/**
+ * The three pages the Settings modal replaced kept their own routes; a path among them still opens
+ * the modal on the matching tab, so an old bookmark or the visual-test harness's `#/connections`
+ * still lands somewhere sensible without a dedicated `<Route>`.
+ */
+const LEGACY_SETTINGS_PATH: Record<string, SettingsTab> = {
+  "/connections": "oauth-clients",
+  "/mcp-servers": "mcp-servers",
+  "/notifications": "notifications",
+};
 
 function sessionPath(name: string, sessionId: string): string {
   return `${sandboxPath(name)}/sessions/${encodeURIComponent(sessionId)}`;
@@ -65,6 +75,11 @@ function AppRoutes(): JSX.Element {
   const navigate = useNavigate();
   const location = useLocation();
   const sessionRoute = useMatch("/sandboxes/:name/sessions/:sessionId");
+  // Seeded from the initial path so a legacy link/bookmark (or the visual-test harness) opens
+  // straight to the matching tab; afterwards the modal is plain local UI state, not routed.
+  const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(
+    () => LEGACY_SETTINGS_PATH[location.pathname] ?? null
+  );
   return (
     <Container size="xl" py="md" h={sessionRoute ? "100dvh" : undefined}>
       <Stack h="100%">
@@ -84,23 +99,8 @@ function AppRoutes(): JSX.Element {
           >
             Action history
           </Button>
-          <Button
-            variant={location.pathname === "/connections" ? "filled" : "subtle"}
-            onClick={() => void navigate("/connections")}
-          >
-            Connections
-          </Button>
-          <Button
-            variant={location.pathname === "/mcp-servers" ? "filled" : "subtle"}
-            onClick={() => void navigate("/mcp-servers")}
-          >
-            MCP servers
-          </Button>
-          <Button
-            variant={location.pathname === "/notifications" ? "filled" : "subtle"}
-            onClick={() => void navigate("/notifications")}
-          >
-            Notifications
+          <Button variant={settingsTab ? "filled" : "subtle"} onClick={() => setSettingsTab("oauth-clients")}>
+            Settings
           </Button>
         </Group>
         <Routes>
@@ -109,13 +109,16 @@ function AppRoutes(): JSX.Element {
           <Route path="/actions/history" element={<ActionHistory />} />
           <Route path="/actions/:requestId" element={<ActionRequests />} />
           <Route path="/connection-enrollments/:handle" element={<ConsentRoute />} />
-          <Route path="/connections" element={<Connections />} />
-          <Route path="/notifications" element={<PushSettings />} />
-          <Route path="/mcp-servers" element={<McpServers />} />
           <Route path="/sandboxes/:name" element={<SandboxRoute />} />
           <Route path="/sandboxes/:name/sessions/:sessionId" element={<SessionRoute />} />
           <Route path="*" element={<ListRoute />} />
         </Routes>
+        <Settings
+          opened={settingsTab !== null}
+          tab={settingsTab ?? "oauth-clients"}
+          onTabChange={setSettingsTab}
+          onClose={() => setSettingsTab(null)}
+        />
       </Stack>
     </Container>
   );
