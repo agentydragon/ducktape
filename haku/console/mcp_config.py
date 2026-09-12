@@ -299,7 +299,7 @@ class GitHubPublicRepositoryAutoApprovalPolicy(AutoApprovalPolicyBase):
 
     Unlike ``GitHubRepositoryAutoApprovalPolicy``, the target repository is not fixed by config —
     it is derived from the call the same way, then checked live for public visibility rather than
-    compared against a configured pair. See ``haku/console/auto_approval/github.py``.
+    compared against a configured pair. See ``github_policy/repository.py``.
     """
 
     type: Literal["github_public_repository"] = "github_public_repository"

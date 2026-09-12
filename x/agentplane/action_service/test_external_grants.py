@@ -1,6 +1,7 @@
 """Authenticated grant snapshots and transactional admission/dispatch authorization."""
 
 import asyncio
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -11,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
+from github_policy.visibility import RepositoryVisibilityService
 from x.agentplane.action_service.catalog import ActionCatalog, ActionIdentity
 from x.agentplane.action_service.conftest import RecordingExecutor
 from x.agentplane.action_service.connections import (
@@ -42,9 +44,9 @@ from x.agentplane.action_service.models import (
     ServiceAccountRef,
     Verdict,
 )
+from x.agentplane.action_service.policies.resources import parse_binding, parse_policy_set
 from x.agentplane.action_service.policy_evaluation import PROVIDER_NAME, PolicySetDecisionProvider
 from x.agentplane.action_service.policy_informer import PolicyIndex, namespaced_key
-from x.agentplane.action_service.policy_resources import parse_binding, parse_policy_set
 from x.agentplane.action_service.providers import DecisionContext
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, eligible_callers
@@ -320,6 +322,7 @@ async def test_bound_service_account_is_auto_approved_by_its_binding_only(
     envelope: ActionRequestInput,
     echo_catalog: ActionCatalog,
     echo_executor: RecordingExecutor,
+    github_visibility: Callable[..., RepositoryVisibilityService],
 ) -> None:
     namespace = PERSONAL.namespace
     index = PolicyIndex(synced=True)
@@ -342,7 +345,11 @@ async def test_bound_service_account_is_auto_approved_by_its_binding_only(
         }
     )
     service = ActionService(
-        store, echo_catalog, {"agentplane": echo_executor}, providers=[PolicySetDecisionProvider()], policies=index
+        store,
+        echo_catalog,
+        {"agentplane": echo_executor},
+        providers=[PolicySetDecisionProvider(visibility=github_visibility())],
+        policies=index,
     )
     try:
         allowed = await service.submit(envelope, grant.principal(), external_grant=grant.provenance())

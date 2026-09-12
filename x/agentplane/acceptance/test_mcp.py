@@ -38,14 +38,14 @@ from x.agentplane.action_service.models import (
     PolicyKind,
     Verdict,
 )
-from x.agentplane.action_service.policy_evaluation import PROVIDER_NAME
-from x.agentplane.action_service.policy_resources import (
+from x.agentplane.action_service.policies.resources import (
     BINDINGS_PLURAL,
     GROUP,
     POLICY_SETS_PLURAL,
     READY_CONDITION,
     VERSION,
 )
+from x.agentplane.action_service.policy_evaluation import PROVIDER_NAME
 from x.agentplane.app.api import Provider
 from x.agentplane.app.client import Client
 from x.agentplane.app.inventory import SandboxView

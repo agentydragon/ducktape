@@ -42,15 +42,15 @@ from x.agentplane.action_service.models import (
     SandboxCaller,
     Verdict,
 )
-from x.agentplane.action_service.policy_evaluation import PROVIDER_NAME
-from x.agentplane.action_service.policy_informer import PolicyIndex
-from x.agentplane.action_service.policy_resources import (
+from x.agentplane.action_service.policies.resources import (
     BINDINGS_PLURAL,
     GROUP,
     POLICY_SETS_PLURAL,
     SERVICE_ACCOUNTS_PLURAL,
     VERSION,
 )
+from x.agentplane.action_service.policy_evaluation import PROVIDER_NAME
+from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.runtime import running_executor
 from x.agentplane.action_service.service import ActionService, UnsupportedActionError
 from x.agentplane.action_service.test_fixtures.lifecycle import wait_available

@@ -106,6 +106,16 @@ spec:
           serverNames:
             - api.githubcopilot.com
             - github.com
+    # `github_public_repository` policies confirm a repository is public with an unauthenticated
+    # GitHub REST call (github_policy/visibility.py); no credential rides this path.
+    - toFQDNs:
+        - matchName: api.github.com
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - api.github.com
     # The Kubernetes MCP server uses the public Gateway/remote-node path.
     - toEntities:
         - remote-node
