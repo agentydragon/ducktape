@@ -1,4 +1,4 @@
-"""The pinned Claude Code binary wired to a scripted upstream."""
+"""The pinned Claude Code binary wired to the typed Anthropic fixture."""
 
 from __future__ import annotations
 
@@ -6,9 +6,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from x.agentplane.harness_tests.scripted_upstream import ScriptedUpstream
+from x.agentplane.harness_tests.claude.messages import AnthropicMessages
+from x.agentplane.native.async_process import AsyncNativeProcess
 from x.agentplane.native.claude import driver, scenarios, wire
-from x.agentplane.native.process import NativeProcess
 
 # A routed name in the shape a LiteLLM deployment gives Claude Code; the family suffix lets it
 # resolve the model's context window. The scripted upstream never dispatches on it.
@@ -25,12 +25,12 @@ class ClaudeHarness:
 
     def start(
         self,
-        upstream: ScriptedUpstream,
+        anthropic_messages: AnthropicMessages,
         *,
         resume_id: str | None = None,
         session_id: str | None = None,
         replay_user_messages: bool = False,
-    ) -> NativeProcess:
+    ) -> AsyncNativeProcess:
         # Launched as it ships: the RBE worker's glibc userland is the supported test environment.
         command = scenarios.command(
             self.binary,
@@ -41,14 +41,17 @@ class ClaudeHarness:
         )
         environment = {
             **self.base_environment,
-            **scenarios.environment(endpoint=upstream.origin, token="test-key", config_dir=str(self.config)),
+            **scenarios.environment(endpoint=anthropic_messages.origin, token="test-key", config_dir=str(self.config)),
         }
-        process = NativeProcess(self.logs, command, cwd=self.workspace, environment=environment)
-        process.frame_handler = _allow_permission
+        process = AsyncNativeProcess(self.logs, command, cwd=self.workspace, environment=environment)
+        # The inbound permission frame is recorded in stdout.jsonl before this responder writes its
+        # approval, which is recorded in stdin.jsonl. The native trace therefore includes both
+        # sides of every fixture-injected approval.
+        process.frame_responder = _allow_permission
         return process
 
 
-def _allow_permission(frame: dict[str, Any]) -> wire.ControlResponse | None:
+async def _allow_permission(frame: dict[str, Any]) -> wire.ControlResponse | None:
     match wire.parse_frame(frame):
         case wire.ControlRequestFrame(request_id=request_id, request=wire.CanUseTool(input=tool_input)):
             return driver.allow_tool(request_id, tool_input)

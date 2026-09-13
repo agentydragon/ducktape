@@ -11,7 +11,9 @@ import abc
 import asyncio
 from dataclasses import dataclass
 
-from x.agentplane.harness_tests.scripted_upstream import ScriptedUpstream, Stream, UpstreamRequest
+from pydantic import BaseModel
+
+from x.agentplane.harness_tests.model_endpoint import ModelExchange, SseEvent
 
 
 @dataclass(frozen=True)
@@ -40,11 +42,10 @@ class ToolOutput:
 
 
 @dataclass(frozen=True)
-class ModelRequest:
+class ModelRequest[RequestT: BaseModel]:
     """What the harness sent upstream, as native-protocol-neutral markers."""
 
-    raw: UpstreamRequest
-    # The exact model route the harness sent to the loopback server.
+    _exchange: ModelExchange[RequestT]
     model: str
     # The instruction text the model sees outside the conversation: the harness's system prompt,
     # and any developer preamble it sends alongside.
@@ -56,30 +57,36 @@ class ModelRequest:
     streaming: bool
 
 
-class ScriptedModel(abc.ABC):
-    def __init__(self, upstream: ScriptedUpstream, *, model: str) -> None:
-        self.upstream = upstream
+class ScriptedModel[RequestT: BaseModel](abc.ABC):
+    def __init__(self, *, model: str) -> None:
         self.model = model
+        self.request_count = 0
+        self._held_client_closures: list[asyncio.Task[None]] = []
 
-    async def request(self, *, timeout_s: float = 30) -> ModelRequest:
-        """The next request the harness sends; blocks until it arrives."""
-        return self.parse(await asyncio.to_thread(self.upstream.next_request, timeout=timeout_s))
+    async def request(self) -> ModelRequest[RequestT]:
+        """The next typed model request the harness sends."""
+        self.request_count += 1
+        return self.parse(await self.next_exchange())
 
-    def reply(self, request: ModelRequest, *items: Item) -> None:
-        self.upstream.respond(request.raw, self.stream(list(items)))
+    async def reply(self, request: ModelRequest[RequestT], *items: Item) -> None:
+        await request._exchange.send(*self.stream(list(items)))
+        await request._exchange.close()
 
-    def hold(self, request: ModelRequest) -> None:
+    async def hold(self, request: ModelRequest[RequestT]) -> None:
         """Begin an answer and never finish it, so the turn stays in flight until interrupted."""
-        self.upstream.respond(request.raw, self.opened_stream())
-
-    def assert_quiescent(self) -> None:
-        self.upstream.assert_quiescent()
-
-    @abc.abstractmethod
-    def parse(self, raw: UpstreamRequest) -> ModelRequest: ...
+        await request._exchange.send(*self.opened_stream())
+        # The endpoint remains strict at fixture teardown: the runner must close this held stream
+        # when it stops its harness, and this task records that explicit client-side closure.
+        self._held_client_closures.append(asyncio.create_task(request._exchange.wait_client_closed()))
 
     @abc.abstractmethod
-    def stream(self, items: list[Item]) -> Stream: ...
+    async def next_exchange(self) -> ModelExchange[RequestT]: ...
 
     @abc.abstractmethod
-    def opened_stream(self) -> Stream: ...
+    def parse(self, exchange: ModelExchange[RequestT]) -> ModelRequest[RequestT]: ...
+
+    @abc.abstractmethod
+    def stream(self, items: list[Item]) -> tuple[SseEvent, ...]: ...
+
+    @abc.abstractmethod
+    def opened_stream(self) -> tuple[SseEvent, ...]: ...

@@ -1,21 +1,11 @@
-"""Fixtures shared by both agent harnesses: the scripted upstream and a native process sandbox."""
+"""Fixtures shared by both native agent-harness suites."""
 
 from __future__ import annotations
 
 import os
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-
-from x.agentplane.harness_tests.scripted_upstream import ScriptedUpstream
-from x.agentplane.native.process import serve
-
-
-@pytest.fixture
-def upstream() -> Iterator[ScriptedUpstream]:
-    with serve(ScriptedUpstream()) as server:
-        yield server
 
 
 @pytest.fixture

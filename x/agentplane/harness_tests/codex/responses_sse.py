@@ -7,7 +7,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-from x.agentplane.harness_tests.scripted_upstream import Packet, Stream
+from x.agentplane.harness_tests.model_endpoint import SseEvent
 
 
 @dataclass(frozen=True)
@@ -45,11 +45,11 @@ _USAGE = {
 
 class _Emitter:
     def __init__(self) -> None:
-        self.packets: list[Packet] = []
+        self.events: list[SseEvent] = []
 
     def emit(self, data: dict[str, Any]) -> None:
-        data = {**data, "sequence_number": len(self.packets)}
-        self.packets.append(Packet(data["type"], f"data: {json.dumps(data)}\n\n".encode()))
+        data = {**data, "sequence_number": len(self.events)}
+        self.events.append(SseEvent(data["type"], f"data: {json.dumps(data)}\n\n".encode()))
 
 
 def _completed_item(item: Item) -> dict[str, Any]:
@@ -197,7 +197,16 @@ def _item_packets(emitter: _Emitter, index: int, item: Item) -> dict[str, Any]:
     return done
 
 
-def response_stream(items: list[Item], *, model: str) -> Stream:
+@dataclass(frozen=True)
+class ResponseStream:
+    events: tuple[SseEvent, ...]
+
+    def through(self, kind: str) -> ResponseStream:
+        index = next(index for index, event in enumerate(self.events) if event.kind == kind)
+        return ResponseStream(self.events[: index + 1])
+
+
+def response_stream(items: list[Item], *, model: str) -> ResponseStream:
     envelope = {"id": f"resp_test_{next(_ids)}", "object": "response", "created_at": 0, "model": model, "output": []}
     emitter = _Emitter()
     emitter.emit({"type": "response.created", "response": {**envelope, "status": "in_progress"}})
@@ -209,4 +218,4 @@ def response_stream(items: list[Item], *, model: str) -> Stream:
             "response": {**envelope, "status": "completed", "output": output, "usage": _USAGE},
         }
     )
-    return Stream((*emitter.packets, Packet("done", b"data: [DONE]\n\n")))
+    return ResponseStream((*emitter.events, SseEvent("done", b"data: [DONE]\n\n")))

@@ -6,8 +6,6 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
 
-from x.agentplane.harness_tests.scripted_upstream import UpstreamRequest
-
 
 class InputText(BaseModel):
     type: Literal["input_text"]
@@ -76,10 +74,6 @@ class ResponsesRequest(BaseModel):
     stream: bool
     prompt_cache_key: str
     client_metadata: ClientMetadata
-
-    @classmethod
-    def parse(cls, request: UpstreamRequest) -> ResponsesRequest:
-        return cls.model_validate(request.json)
 
     @property
     def tool_names(self) -> list[str]:

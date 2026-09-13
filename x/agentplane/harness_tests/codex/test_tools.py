@@ -8,39 +8,39 @@ import pytest_bazel
 
 from x.agentplane.harness_tests.codex import frames, responses_sse as sse
 from x.agentplane.harness_tests.codex.harness import EFFORT, MODEL, CodexHarness
-from x.agentplane.harness_tests.codex.requests import ResponsesRequest
-from x.agentplane.harness_tests.scripted_upstream import ScriptedUpstream
-from x.agentplane.native.codex import scenarios, wire
+from x.agentplane.harness_tests.codex.responses import OpenAIResponses
+from x.agentplane.native.codex import async_scenarios as scenarios, wire
 
 PROBE_FAILURE = (
     'sh -c \'printf "probe stdout before failure\\n"; printf "probe stderr before failure\\n" >&2; exit 23\''
 )
 
 
-def test_parallel_shell_commands_report_output_and_exit_codes(codex: CodexHarness, upstream: ScriptedUpstream) -> None:
-    with codex.start(upstream) as process:
-        thread_id = scenarios.launch_handshake(process, cwd=str(codex.workspace), model=MODEL, effort=EFFORT)[
+async def test_parallel_shell_commands_report_output_and_exit_codes(
+    codex: CodexHarness, openai_responses: OpenAIResponses
+) -> None:
+    async with codex.start(openai_responses) as process:
+        thread_id = (await scenarios.launch_handshake(process, cwd=str(codex.workspace), model=MODEL, effort=EFFORT))[
             "thread_id"
         ]
-        scenarios.start_turn(
+        await scenarios.start_turn(
             process, thread_id=thread_id, request_id="capture-3", text="Use the shell probe and report its outcomes."
         )
 
-        raw = upstream.next_request()
-        upstream.respond(
-            raw,
-            sse.response_stream(
-                [
-                    sse.Reasoning("run both", "enc_test_1"),
-                    sse.FunctionCall("call_test_1", "exec_command", {"cmd": "printf 'PROBE_STDOUT\\n'"}),
-                    sse.FunctionCall("call_test_2", "exec_command", {"cmd": PROBE_FAILURE}),
-                ],
-                model=MODEL,
-            ),
+        exchange = await openai_responses.await_next_request()
+        stream = sse.response_stream(
+            [
+                sse.Reasoning("run both", "enc_test_1"),
+                sse.FunctionCall("call_test_1", "exec_command", {"cmd": "printf 'PROBE_STDOUT\\n'"}),
+                sse.FunctionCall("call_test_2", "exec_command", {"cmd": PROBE_FAILURE}),
+            ],
+            model=MODEL,
         )
+        await exchange.send(*stream.events)
+        await exchange.close()
 
-        raw = upstream.next_request()
-        request = ResponsesRequest.parse(raw)
+        exchange = await openai_responses.await_next_request()
+        request = exchange.request
         assert request.item_kinds == [
             "message:user",
             "reasoning",
@@ -60,9 +60,11 @@ def test_parallel_shell_commands_report_output_and_exit_codes(codex: CodexHarnes
         assert "probe stdout before failure" in second.output
         assert "probe stderr before failure" in second.output
         assert "exited with code 23" in second.output
-        upstream.respond(raw, sse.response_stream([sse.Message("SHELL_PROBE_DONE")], model=MODEL))
+        stream = sse.response_stream([sse.Message("SHELL_PROBE_DONE")], model=MODEL)
+        await exchange.send(*stream.events)
+        await exchange.close()
 
-        assert scenarios.await_turn_completed(process)["params"]["turn"]["status"] == "completed"
+        assert (await scenarios.await_turn_completed(process))["params"]["turn"]["status"] == "completed"
         assert process.alive()
     captured = process.stdout_frames()
     frames.assert_success(captured, "SHELL_PROBE_DONE")
@@ -75,63 +77,62 @@ def test_parallel_shell_commands_report_output_and_exit_codes(codex: CodexHarnes
         commands
     )
     assert any("PROBE_STDOUT" in (item.aggregated_output or "") for item in commands), commands
-    upstream.assert_quiescent()
 
 
-def test_file_edit_round_trip_changes_the_workspace(codex: CodexHarness, upstream: ScriptedUpstream) -> None:
+async def test_file_edit_round_trip_changes_the_workspace(
+    codex: CodexHarness, openai_responses: OpenAIResponses
+) -> None:
     editable = codex.workspace / "editable.txt"
     editable.write_text("before\n")
-    with codex.start(upstream) as process:
-        thread_id = scenarios.launch_handshake(process, cwd=str(codex.workspace), model=MODEL, effort=EFFORT)[
+    async with codex.start(openai_responses) as process:
+        thread_id = (await scenarios.launch_handshake(process, cwd=str(codex.workspace), model=MODEL, effort=EFFORT))[
             "thread_id"
         ]
-        scenarios.start_turn(
+        await scenarios.start_turn(
             process,
             thread_id=thread_id,
             request_id="capture-3",
             text="Read editable.txt, change it to exactly `after\\n`, reread it, then reply FILE_EDIT_DONE.",
         )
 
-        raw = upstream.next_request()
-        upstream.respond(
-            raw,
-            sse.response_stream(
-                [sse.FunctionCall("call_test_1", "exec_command", {"cmd": "cat editable.txt"})], model=MODEL
-            ),
+        exchange = await openai_responses.await_next_request()
+        stream = sse.response_stream(
+            [sse.FunctionCall("call_test_1", "exec_command", {"cmd": "cat editable.txt"})], model=MODEL
         )
+        await exchange.send(*stream.events)
+        await exchange.close()
 
-        raw = upstream.next_request()
-        (read_output,) = ResponsesRequest.parse(raw).function_call_outputs
+        exchange = await openai_responses.await_next_request()
+        (read_output,) = exchange.request.function_call_outputs
         assert read_output.call_id == "call_test_1"
         assert "before" in read_output.output
-        upstream.respond(
-            raw,
-            sse.response_stream(
-                [sse.FunctionCall("call_test_2", "exec_command", {"cmd": "printf 'after\\n' > editable.txt"})],
-                model=MODEL,
-            ),
+        stream = sse.response_stream(
+            [sse.FunctionCall("call_test_2", "exec_command", {"cmd": "printf 'after\\n' > editable.txt"})], model=MODEL
         )
+        await exchange.send(*stream.events)
+        await exchange.close()
 
-        raw = upstream.next_request()
-        (write_output,) = ResponsesRequest.parse(raw).function_call_outputs[-1:]
+        exchange = await openai_responses.await_next_request()
+        (write_output,) = exchange.request.function_call_outputs[-1:]
         assert write_output.call_id == "call_test_2"
         assert "exited with code 0" in write_output.output
         assert editable.read_text() == "after\n"
-        upstream.respond(
-            raw,
-            sse.response_stream(
-                [sse.FunctionCall("call_test_3", "exec_command", {"cmd": "cat editable.txt"})], model=MODEL
-            ),
+        stream = sse.response_stream(
+            [sse.FunctionCall("call_test_3", "exec_command", {"cmd": "cat editable.txt"})], model=MODEL
         )
+        await exchange.send(*stream.events)
+        await exchange.close()
 
-        raw = upstream.next_request()
-        (reread_output,) = ResponsesRequest.parse(raw).function_call_outputs[-1:]
+        exchange = await openai_responses.await_next_request()
+        (reread_output,) = exchange.request.function_call_outputs[-1:]
         assert reread_output.call_id == "call_test_3"
         assert "after" in reread_output.output
         assert "before" not in reread_output.output
-        upstream.respond(raw, sse.response_stream([sse.Message("FILE_EDIT_DONE")], model=MODEL))
+        stream = sse.response_stream([sse.Message("FILE_EDIT_DONE")], model=MODEL)
+        await exchange.send(*stream.events)
+        await exchange.close()
 
-        assert scenarios.await_turn_completed(process)["params"]["turn"]["status"] == "completed"
+        assert (await scenarios.await_turn_completed(process))["params"]["turn"]["status"] == "completed"
     captured = process.stdout_frames()
     frames.assert_success(captured, "FILE_EDIT_DONE")
     commands = frames.assert_item_lifecycles(captured, wire.CommandExecutionItem)
@@ -141,7 +142,6 @@ def test_file_edit_round_trip_changes_the_workspace(codex: CodexHarness, upstrea
         "printf 'after\\n' > editable.txt",
         "cat editable.txt",
     ]
-    upstream.assert_quiescent()
 
 
 if __name__ == "__main__":

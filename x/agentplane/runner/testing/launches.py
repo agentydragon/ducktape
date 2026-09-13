@@ -8,7 +8,6 @@ from pathlib import Path
 from util.bazel.runfiles import get_required_path
 from x.agentplane.harness_tests.claude import harness as claude_harness
 from x.agentplane.harness_tests.codex import harness as codex_harness
-from x.agentplane.harness_tests.scripted_upstream import ScriptedUpstream
 from x.agentplane.runner import protocol_pb2 as pb
 from x.agentplane.runner.config import ClaudeLaunch, CodexLaunch, RunnerConfig
 
@@ -42,26 +41,26 @@ def environment(home: Path) -> dict[str, str]:
     }
 
 
-def config(harness: pb.Harness.ValueType, upstream: ScriptedUpstream, *, state_dir: Path, home: Path) -> RunnerConfig:
+def config(harness: pb.Harness.ValueType, endpoint: str, *, state_dir: Path, home: Path) -> RunnerConfig:
     return RunnerConfig(
         state_dir=state_dir,
         environment=environment(home),
-        claude=claude_launch(upstream) if harness == pb.HARNESS_CLAUDE else None,
-        codex=codex_launch(upstream) if harness == pb.HARNESS_CODEX else None,
+        claude=claude_launch(endpoint) if harness == pb.HARNESS_CLAUDE else None,
+        codex=codex_launch(endpoint) if harness == pb.HARNESS_CODEX else None,
     )
 
 
-def claude_launch(upstream: ScriptedUpstream) -> ClaudeLaunch:
-    return ClaudeLaunch(binary=get_required_path(CLAUDE_BINARY), base_url=upstream.origin, auth_token=TOKEN)
+def claude_launch(endpoint: str) -> ClaudeLaunch:
+    return ClaudeLaunch(binary=get_required_path(CLAUDE_BINARY), base_url=endpoint, auth_token=TOKEN)
 
 
-def codex_launch(upstream: ScriptedUpstream) -> CodexLaunch:
-    return CodexLaunch(binary=get_required_path(CODEX_BINARY), base_url=f"{upstream.origin}/v1", api_key=TOKEN)
+def codex_launch(endpoint: str) -> CodexLaunch:
+    return CodexLaunch(binary=get_required_path(CODEX_BINARY), base_url=f"{endpoint}/v1", api_key=TOKEN)
 
 
 def runner_command(
     harness: pb.Harness.ValueType,
-    upstream: ScriptedUpstream,
+    endpoint: str,
     *,
     state_dir: Path,
     test_debug_checkpoint: tuple[str, str] | None = None,
@@ -69,10 +68,10 @@ def runner_command(
     """The runner as its own process, configured like `config` is."""
     command = [str(get_required_path(RUNNER_BINARY)), "--state-dir", str(state_dir)]
     if harness == pb.HARNESS_CLAUDE:
-        launch = claude_launch(upstream)
+        launch = claude_launch(endpoint)
         command += ["--claude-binary", str(launch.binary), "--anthropic-base-url", launch.base_url]
     elif harness == pb.HARNESS_CODEX:
-        codex = codex_launch(upstream)
+        codex = codex_launch(endpoint)
         command += ["--codex-binary", str(codex.binary), "--openai-base-url", codex.base_url]
     else:
         raise ValueError(f"unsupported {harness=}")

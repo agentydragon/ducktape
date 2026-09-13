@@ -47,7 +47,7 @@ def assert_item_lifecycles[
         for frame in parse(frames)
         if isinstance(frame, wire.ItemStarted) and isinstance(frame.params.item, item_model)
     }
-    completed = [
+    completed: list[T] = [
         frame.params.item
         for frame in parse(frames)
         if isinstance(frame, wire.ItemCompleted) and isinstance(frame.params.item, item_model)

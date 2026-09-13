@@ -7,7 +7,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from x.agentplane.harness_tests.scripted_upstream import Body, Packet, Stream
+from x.agentplane.harness_tests.model_endpoint import JsonResponse, SseEvent
 
 
 @dataclass(frozen=True)
@@ -37,17 +37,17 @@ _USAGE = {"input_tokens": 10, "cache_creation_input_tokens": 0, "cache_read_inpu
 _message_ids = (f"msg_test_{n}" for n in itertools.count(1))
 
 
-def _packet(event: str, data: dict[str, Any], *, kind: str | None = None) -> Packet:
-    return Packet(kind or event, f"event: {event}\ndata: {json.dumps(data)}\n\n".encode())
+def _packet(event: str, data: dict[str, Any], *, kind: str | None = None) -> SseEvent:
+    return SseEvent(kind or event, f"event: {event}\ndata: {json.dumps(data)}\n\n".encode())
 
 
-def _delta(index: int, delta: dict[str, Any]) -> Packet:
+def _delta(index: int, delta: dict[str, Any]) -> SseEvent:
     return _packet(
         "content_block_delta", {"type": "content_block_delta", "index": index, "delta": delta}, kind=delta["type"]
     )
 
 
-def _block_packets(index: int, block: Block) -> list[Packet]:
+def _block_packets(index: int, block: Block) -> list[SseEvent]:
     match block:
         case Thinking(thinking, signature):
             start: dict[str, Any] = {"type": "thinking", "thinking": "", "signature": ""}
@@ -72,7 +72,16 @@ def _stop_reason(blocks: list[Block]) -> StopReason:
     return "tool_use" if any(isinstance(block, ToolUse) for block in blocks) else "end_turn"
 
 
-def message_stream(blocks: list[Block], *, model: str) -> Stream:
+@dataclass(frozen=True)
+class MessageStream:
+    events: tuple[SseEvent, ...]
+
+    def through(self, kind: str) -> MessageStream:
+        index = next(index for index, event in enumerate(self.events) if event.kind == kind)
+        return MessageStream(self.events[: index + 1])
+
+
+def message_stream(blocks: list[Block], *, model: str) -> MessageStream:
     message: dict[str, Any] = {
         "id": next(_message_ids),
         "type": "message",
@@ -97,10 +106,10 @@ def message_stream(blocks: list[Block], *, model: str) -> Stream:
         )
     )
     packets.append(_packet("message_stop", {"type": "message_stop"}))
-    return Stream(tuple(packets))
+    return MessageStream(tuple(packets))
 
 
-def message_body(blocks: list[Block], *, model: str) -> Body:
+def message_body(blocks: list[Block], *, model: str) -> JsonResponse:
     """The non-streaming form Claude Code falls back to after a lost stream."""
     content: list[dict[str, Any]] = []
     for block in blocks:
@@ -121,4 +130,4 @@ def message_body(blocks: list[Block], *, model: str) -> Body:
         "stop_sequence": None,
         "usage": {**_USAGE, "output_tokens": 12},
     }
-    return Body(json.dumps(message).encode())
+    return JsonResponse(json.dumps(message).encode())

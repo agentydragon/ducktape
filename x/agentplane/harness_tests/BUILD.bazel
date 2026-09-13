@@ -7,16 +7,18 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
-        ":scripted_upstream",
-        "//x/agentplane/native:process",
         "@pypi//pytest",
     ],
 )
 
 py_library(
-    name = "scripted_upstream",
+    name = "model_endpoint",
     testonly = True,
-    srcs = ["scripted_upstream.py"],
+    srcs = ["model_endpoint.py"],
+    deps = [
+        "@pypi//aiohttp",
+        "@pypi//pydantic",
+    ],
 )
 
 test_suite(

@@ -1,11 +1,19 @@
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
 from pathlib import Path
 
 import pytest
 
 from util.bazel.runfiles import get_required_path
 from x.agentplane.harness_tests.codex.harness import CodexHarness
+from x.agentplane.harness_tests.codex.responses import OpenAIResponses
+
+
+@pytest.fixture
+async def openai_responses() -> AsyncGenerator[OpenAIResponses]:
+    async with OpenAIResponses() as endpoint:
+        yield endpoint
 
 
 @pytest.fixture

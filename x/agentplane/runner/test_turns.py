@@ -29,7 +29,7 @@ async def test_one_turn_streams_reasoning_and_text(
     request = await model.request()
     assert request.streaming
     assert request.user_texts[-1] == "Reply with exactly: BASELINE_OK"
-    model.reply(request, Reasoning("brief"), Text("BASELINE_OK"))
+    await model.reply(request, Reasoning("brief"), Text("BASELINE_OK"))
 
     done = await session.until(events.turn_completed)
     assert done.turn_completed.status == pb.TURN_STATUS_COMPLETED
@@ -61,7 +61,6 @@ async def test_one_turn_streams_reasoning_and_text(
     }
     await session.detach()
     await session.drain_until_end()
-    model.assert_quiescent()
 
 
 async def test_tool_call_reports_arguments_and_result(
@@ -71,12 +70,12 @@ async def test_tool_call_reports_arguments_and_result(
     await session.send("input-1", "Run the tool and report TOOL_DONE.")
 
     request = await model.request()
-    model.reply(request, ShellCall("call_test_1", "printf TOOL_OUTPUT"))
+    await model.reply(request, ShellCall("call_test_1", "printf TOOL_OUTPUT"))
     request = await model.request()
     (output,) = request.tool_outputs
     assert output.call_id == "call_test_1"
     assert "TOOL_OUTPUT" in output.text
-    model.reply(request, Text("TOOL_DONE"))
+    await model.reply(request, Text("TOOL_DONE"))
 
     done = await session.until(events.turn_completed)
     assert done.turn_completed.status == pb.TURN_STATUS_COMPLETED
@@ -98,7 +97,6 @@ async def test_tool_call_reports_arguments_and_result(
     events.assert_sourced(seen)
     await session.detach()
     await session.drain_until_end()
-    model.assert_quiescent()
 
 
 async def test_failed_tool_is_reported_as_failed(
@@ -108,18 +106,17 @@ async def test_failed_tool_is_reported_as_failed(
     await session.send("input-1", "Run the failing tool.")
 
     request = await model.request()
-    model.reply(request, ShellCall("call_test_1", "sh -c 'printf failing; exit 23'"))
+    await model.reply(request, ShellCall("call_test_1", "sh -c 'printf failing; exit 23'"))
     request = await model.request()
     (output,) = request.tool_outputs
     assert "failing" in output.text
-    model.reply(request, Text("SEEN_FAILURE"))
+    await model.reply(request, Text("SEEN_FAILURE"))
 
     await session.until(events.turn_completed)
     (call,) = events.items(session.seen, pb.ITEM_KIND_TOOL_CALL)
     assert not events.completed(session.seen, call).tool.succeeded
     await session.detach()
     await session.drain_until_end()
-    model.assert_quiescent()
 
 
 @pytest.mark.parametrize("harness", [pb.HARNESS_CODEX])
@@ -130,7 +127,7 @@ async def test_codex_input_during_a_turn_joins_it(
     await session.send("input-1", "Wait with the shell, then reply.")
 
     request = await model.request()
-    model.reply(request, ShellCall("call_test_1", WAIT_COMMAND))
+    await model.reply(request, ShellCall("call_test_1", WAIT_COMMAND))
     await session.until(events.is_kind("tool_arguments"))
     await session.send("input-2", "Reply ONLY SECOND_INPUT_OBSERVED after your current work.")
     confirmed = await session.until(
@@ -151,7 +148,7 @@ async def test_codex_input_during_a_turn_joins_it(
         "SECOND_INPUT_OBSERVED" in text
         for text in request.user_texts + [output.text for output in request.tool_outputs]
     )
-    model.reply(request, Text("SECOND_INPUT_OBSERVED"))
+    await model.reply(request, Text("SECOND_INPUT_OBSERVED"))
 
     done = await session.until(events.turn_completed)
     assert done.turn_completed.status == pb.TURN_STATUS_COMPLETED
@@ -162,7 +159,6 @@ async def test_codex_input_during_a_turn_joins_it(
     ] == [["input-1"], ["input-2"]]
     await session.detach()
     await session.drain_until_end()
-    model.assert_quiescent()
 
 
 @pytest.mark.parametrize("harness", [pb.HARNESS_CLAUDE])
@@ -174,7 +170,7 @@ async def test_claude_inputs_during_a_tool_are_confirmed_from_the_started_cohort
     await session.send("input-1", "Wait with the shell, then reply.")
 
     request = await model.request()
-    model.reply(request, ShellCall("call_test_1", WAIT_COMMAND))
+    await model.reply(request, ShellCall("call_test_1", WAIT_COMMAND))
     await session.until(events.is_kind("tool_arguments"))
     await session.send("input-2", "Reply ONLY SECOND_INPUT_OBSERVED after your current work.")
     await session.send("input-3", "Reply ONLY THIRD_INPUT_OBSERVED after your current work.")
@@ -183,7 +179,7 @@ async def test_claude_inputs_during_a_tool_are_confirmed_from_the_started_cohort
     assert "wait_finished" in request.tool_outputs[0].text
     assert "SECOND_INPUT_OBSERVED" in request.tool_outputs[0].text
     assert "THIRD_INPUT_OBSERVED" in request.tool_outputs[0].text
-    model.reply(request, Text("SECOND_INPUT_OBSERVED"))
+    await model.reply(request, Text("SECOND_INPUT_OBSERVED"))
 
     done = await session.until(events.turn_completed)
     assert done.turn_completed.status == pb.TURN_STATUS_COMPLETED
@@ -199,7 +195,6 @@ async def test_claude_inputs_during_a_tool_are_confirmed_from_the_started_cohort
     assert len(confirmations[-1].source_sequences) == 3  # tool result, then Claude's two lifecycle starts.
     await session.detach()
     await session.drain_until_end()
-    model.assert_quiescent()
 
 
 async def test_model_command_reaches_the_first_upstream_request_that_selects_it(
@@ -217,7 +212,7 @@ async def test_model_command_reaches_the_first_upstream_request_that_selects_it(
     await attached.send("input-1", "Reply with exactly: SWITCHED_MODEL_OK")
     request = await model.request()
     assert request.model == selected
-    model.reply(request, Text("SWITCHED_MODEL_OK"))
+    await model.reply(request, Text("SWITCHED_MODEL_OK"))
     changed = await attached.until(events.is_kind("model_changed"))
     assert changed.model_changed.model == selected
     started = await attached.until(events.is_kind("turn_started"))
@@ -225,7 +220,6 @@ async def test_model_command_reaches_the_first_upstream_request_that_selects_it(
     await attached.until(events.turn_completed)
     await attached.detach()
     await attached.drain_until_end()
-    model.assert_quiescent()
 
 
 @pytest.mark.parametrize("harness", [pb.HARNESS_CLAUDE])
@@ -236,7 +230,7 @@ async def test_claude_active_turn_model_command_has_a_native_causal_outcome(
     session = await client.attach("switch-model-active-1", spec=spec)
     await session.send("input-1", "Wait; do not answer early.")
     request = await model.request()
-    model.hold(request)
+    await model.hold(request)
     confirmed = await session.until(events.is_kind("harness_user_message_confirmed"))
     selected = "agentplane-switched/claude-haiku-4-5-20251001"
     await session.switch_model("switch-active", selected)
@@ -258,7 +252,6 @@ async def test_claude_active_turn_model_command_has_a_native_causal_outcome(
 
     await session.detach()
     await session.drain_until_end()
-    model.assert_quiescent()
 
 
 @pytest.mark.parametrize("harness", [pb.HARNESS_CODEX])
@@ -269,7 +262,7 @@ async def test_codex_active_turn_model_command_takes_effect_on_its_next_turn_sta
     session = await client.attach("switch-model-active-1", spec=spec)
     await session.send("input-1", "Wait; do not answer early.")
     request = await model.request()
-    model.hold(request)
+    await model.hold(request)
     confirmed = await session.until(events.is_kind("harness_user_message_confirmed"))
     selected = "agentplane-switched-model"
     await session.switch_model("switch-active", selected)
@@ -283,7 +276,7 @@ async def test_codex_active_turn_model_command_takes_effect_on_its_next_turn_sta
     await session.send("input-2", "Reply with exactly: ACTIVE_MODEL_OK")
     request = await model.request()
     assert request.model == selected
-    model.reply(request, Text("ACTIVE_MODEL_OK"))
+    await model.reply(request, Text("ACTIVE_MODEL_OK"))
     changed = await session.until(events.is_kind("model_changed"))
     assert changed.model_changed.command_id == "switch-active"
     assert changed.model_changed.model == selected
@@ -291,7 +284,6 @@ async def test_codex_active_turn_model_command_takes_effect_on_its_next_turn_sta
 
     await session.detach()
     await session.drain_until_end()
-    model.assert_quiescent()
 
 
 async def test_interrupt_ends_the_turn_as_interrupted(
@@ -301,7 +293,7 @@ async def test_interrupt_ends_the_turn_as_interrupted(
     await session.send("input-1", "Wait; do not answer early.")
 
     request = await model.request()
-    model.hold(request)
+    await model.hold(request)
     confirmed = await session.until(events.is_kind("harness_user_message_confirmed"))
     await session.interrupt("interrupt-1", confirmed.harness_user_message_confirmed.turn_id)
 
@@ -313,12 +305,11 @@ async def test_interrupt_ends_the_turn_as_interrupted(
     await session.send("input-2", "Reply with exactly: AFTER_INTERRUPT_OK")
     request = await model.request()
     assert request.user_texts[-1] == "Reply with exactly: AFTER_INTERRUPT_OK"
-    model.reply(request, Text("AFTER_INTERRUPT_OK"))
+    await model.reply(request, Text("AFTER_INTERRUPT_OK"))
     done = await session.until(events.turn_completed)
     assert done.turn_completed.status == pb.TURN_STATUS_COMPLETED
     await session.detach()
     await session.drain_until_end()
-    model.assert_quiescent()
 
 
 if __name__ == "__main__":

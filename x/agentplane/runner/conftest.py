@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import grpc
 import pytest
 
-from x.agentplane.harness_tests.scripted_upstream import ScriptedUpstream
-from x.agentplane.native.process import serve as serve_upstream
+from x.agentplane.harness_tests.claude.messages import AnthropicMessages
+from x.agentplane.harness_tests.codex.responses import OpenAIResponses
 from x.agentplane.runner import protocol_pb2 as pb
 from x.agentplane.runner.client import RunnerClient
 from x.agentplane.runner.config import RunnerConfig
@@ -30,18 +31,27 @@ def harness(request: pytest.FixtureRequest) -> pb.Harness.ValueType:
     return pb.Harness.ValueType(request.param)
 
 
+ModelEndpoint = AnthropicMessages | OpenAIResponses
+
+
 @pytest.fixture
-def upstream() -> Iterator[ScriptedUpstream]:
-    with serve_upstream(ScriptedUpstream()) as server:
+async def endpoint(harness: pb.Harness.ValueType) -> AsyncIterator[ModelEndpoint]:
+    server: ModelEndpoint = AnthropicMessages() if harness == pb.HARNESS_CLAUDE else OpenAIResponses()
+    await server.start()
+    try:
         yield server
+    finally:
+        await server.stop()
 
 
 @pytest.fixture
-def model(harness: pb.Harness.ValueType, upstream: ScriptedUpstream) -> ScriptedModel:
+def model(harness: pb.Harness.ValueType, endpoint: ModelEndpoint) -> ScriptedModel[Any]:
     if harness == pb.HARNESS_CLAUDE:
-        return ClaudeModel(upstream)
+        assert isinstance(endpoint, AnthropicMessages)
+        return ClaudeModel(endpoint)
     if harness == pb.HARNESS_CODEX:
-        return CodexModel(upstream)
+        assert isinstance(endpoint, OpenAIResponses)
+        return CodexModel(endpoint)
     raise ValueError(f"unsupported {harness=}")
 
 
@@ -58,8 +68,8 @@ def spec(harness: pb.Harness.ValueType, workspace: Path) -> pb.SessionSpec:
 
 
 @pytest.fixture
-def config(harness: pb.Harness.ValueType, upstream: ScriptedUpstream, tmp_path: Path) -> RunnerConfig:
-    return launches.config(harness, upstream, state_dir=tmp_path / "state", home=tmp_path / "home")
+def config(harness: pb.Harness.ValueType, endpoint: ModelEndpoint, tmp_path: Path) -> RunnerConfig:
+    return launches.config(harness, endpoint.origin, state_dir=tmp_path / "state", home=tmp_path / "home")
 
 
 @dataclass

@@ -33,11 +33,10 @@ async def test_a_session_without_instructions_sends_none(
     await attachment.send("input-1", "Reply with exactly: PLAIN_OK")
     request = await model.request()
     assert "Wren" not in request.system_text
-    model.reply(request, Text("PLAIN_OK"))
+    await model.reply(request, Text("PLAIN_OK"))
     await attachment.until(events.turn_completed)
     await attachment.detach()
     await attachment.drain_until_end()
-    model.assert_quiescent()
 
 
 async def test_instructions_reach_the_model_on_every_turn_and_after_a_resume(
@@ -47,7 +46,7 @@ async def test_instructions_reach_the_model_on_every_turn_and_after_a_resume(
     await first.send("input-1", "Reply with exactly: SEED_OK")
     request = await model.request()
     assert INSTRUCTIONS in request.system_text
-    model.reply(request, Text("SEED_OK"))
+    await model.reply(request, Text("SEED_OK"))
     await first.until(events.turn_completed)
     await first.stop_runner_session("stop-instructions")
     await first.until(events.is_kind("harness_exited"))
@@ -63,11 +62,10 @@ async def test_instructions_reach_the_model_on_every_turn_and_after_a_resume(
     await second.send("input-2", "Reply with exactly: RESUMED_OK")
     request = await model.request()
     assert INSTRUCTIONS in request.system_text
-    model.reply(request, Text("RESUMED_OK"))
+    await model.reply(request, Text("RESUMED_OK"))
     await second.until(events.turn_completed)
     await second.detach()
     await second.drain_until_end()
-    model.assert_quiescent()
 
 
 if __name__ == "__main__":
