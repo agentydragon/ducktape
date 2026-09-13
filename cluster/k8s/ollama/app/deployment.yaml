@@ -70,7 +70,7 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 10
         - name: auth-proxy
-          image: nginx:1.27-alpine
+          image: nginx:1.31-alpine
           ports:
             - name: auth-proxy
               containerPort: 11435
