@@ -10,6 +10,7 @@ import time
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import cast
 
 import docker
 import docker.models.containers
@@ -48,7 +49,9 @@ class E2EContainer:
         started = time.monotonic()
         result = self._container.exec_run(cmd, demux=True, workdir=workdir)
         duration_s = time.monotonic() - started
-        stdout, stderr = result.output
+        if result.exit_code is None:
+            raise RuntimeError("Docker returned no exit code for exec_run")
+        stdout, stderr = cast(tuple[bytes | None, bytes | None], result.output)
         stdout = stdout or b""
         stderr = stderr or b""
         self._record_timing(
