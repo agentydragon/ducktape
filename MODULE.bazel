@@ -292,10 +292,10 @@ oci.pull(
 )
 oci.pull(
     name = "mitmproxy",
-    digest = "sha256:e0deb0df7edf9f909053f274a067cd1cacb90f5c17d74459e1693179c0b98d8f",
+    digest = "sha256:68afa70d7b6ac9d269b88f88534f9ffceb363b4ce31703a78702341fba82e831",
     image = "mirror.gcr.io/mitmproxy/mitmproxy",
     platforms = ["linux/amd64"],
-    tag = "11",
+    tag = "12",
 )
 
 # Unprivileged nginx for the augur frontend image (static React bundle served
