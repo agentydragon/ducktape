@@ -76,7 +76,7 @@ oci_image_py(
     name = "mitmproxy",
     testonly = True,
     image = "@mitmproxy_linux_amd64",
-    tag = "mitmproxy:11",
+    tag = "mitmproxy:12",
     visibility = ["//visibility:public"],
 )
 
