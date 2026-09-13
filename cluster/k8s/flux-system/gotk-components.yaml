@@ -7810,6 +7810,9 @@ spec:
         - --enable-leader-election
         - --storage-path=/data
         - --storage-adv-addr=source-watcher.$(RUNTIME_NAMESPACE).svc.cluster.local.
+        # ArtifactGenerator outputs are built serially; keep current outputs
+        # younger than the 10m reconciliation timeout during a full rebuild.
+        - --artifact-retention-ttl=30m
         env:
         - name: RUNTIME_NAMESPACE
           valueFrom:
