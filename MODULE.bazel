@@ -517,7 +517,7 @@ npm.npm_translate_lock(
         "eslint-plugin-react": [""],
         "eslint-plugin-react-hooks": [""],
         "svelte-eslint-parser": [""],
-        "globals@16.5.0": [""],
+        "globals@17.12.0": [""],
     },
     # Auto-regenerate pnpm-lock.yaml when package.json changes
     update_pnpm_lock = True,
