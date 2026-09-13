@@ -16,3 +16,6 @@ spec:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
+  dependsOn:
+    - name: flux-image-automation-ghcr
+      namespace: ducktape-flux
