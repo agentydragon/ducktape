@@ -10,6 +10,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from itertools import batched
 from pathlib import Path
+from typing import TypeGuard
 
 from googleapiclient.errors import HttpError
 
@@ -27,10 +28,8 @@ from util.fmt import format_truncation_suffix
 logger = logging.getLogger(__name__)
 
 
-def _is_rate_limit_error(exception):
-    if isinstance(exception, HttpError):
-        return exception.resp.status in (429, 503)
-    return False
+def _is_rate_limit_error(exception: Exception | None) -> TypeGuard[HttpError]:
+    return isinstance(exception, HttpError) and exception.resp.status in (429, 503)
 
 
 def _get_retry_after(exception: HttpError) -> tuple[int | None, dict]:
@@ -283,11 +282,7 @@ class GmailClient:
                 batch_request.execute()
 
                 # Check if any requests were rate limited
-                rate_limit_errors: list[HttpError] = [
-                    exc
-                    for _, exc, _ in batch_errors
-                    if exc is not None and _is_rate_limit_error(exc) and isinstance(exc, HttpError)
-                ]
+                rate_limit_errors: list[HttpError] = [exc for _, exc, _ in batch_errors if _is_rate_limit_error(exc)]
                 rate_limited = len(rate_limit_errors) > 0
 
                 if not rate_limited:
