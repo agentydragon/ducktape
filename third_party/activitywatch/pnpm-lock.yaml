@@ -69,8 +69,8 @@ importers:
         specifier: ^4.0.0
         version: 4.2.3
       component-emitter:
-        specifier: ^1.3.0
-        version: 1.3.1
+        specifier: ^2.0.0
+        version: 2.0.0
       core-js:
         specifier: ^3.50.0
         version: 3.50.0
@@ -142,13 +142,13 @@ importers:
         version: 7.0.3
       vis-data:
         specifier: ^7.1.2
-        version: 7.1.10(uuid@7.0.3)(vis-util@5.0.7(@egjs/hammerjs@2.0.17)(component-emitter@1.3.1))
+        version: 7.1.10(uuid@7.0.3)(vis-util@5.0.7(@egjs/hammerjs@2.0.17)(component-emitter@2.0.0))
       vis-timeline:
         specifier: ^7.5.0
-        version: 7.7.4(@egjs/hammerjs@2.0.17)(component-emitter@1.3.1)(keycharm@0.3.1)(moment@2.30.1)(propagating-hammerjs@1.5.0)(uuid@7.0.3)(vis-data@7.1.10(uuid@7.0.3)(vis-util@5.0.7(@egjs/hammerjs@2.0.17)(component-emitter@1.3.1)))(vis-util@5.0.7(@egjs/hammerjs@2.0.17)(component-emitter@1.3.1))(xss@1.0.15)
+        version: 7.7.4(@egjs/hammerjs@2.0.17)(component-emitter@2.0.0)(keycharm@0.3.1)(moment@2.30.1)(propagating-hammerjs@1.5.0)(uuid@7.0.3)(vis-data@7.1.10(uuid@7.0.3)(vis-util@5.0.7(@egjs/hammerjs@2.0.17)(component-emitter@2.0.0)))(vis-util@5.0.7(@egjs/hammerjs@2.0.17)(component-emitter@2.0.0))(xss@1.0.15)
       vis-util:
         specifier: ^5.0.2
-        version: 5.0.7(@egjs/hammerjs@2.0.17)(component-emitter@1.3.1)
+        version: 5.0.7(@egjs/hammerjs@2.0.17)(component-emitter@2.0.0)
       vite:
         specifier: ^6.4.1
         version: 6.4.3(@types/node@20.19.43)(less@4.9.1)(sass@1.104.1)(terser@5.51.2)
@@ -3076,8 +3076,9 @@ packages:
   commondir@1.0.1:
     resolution: {integrity: sha512-W9pAhw0ja1Edb5GVdIF1mjZw/ASI0AlShXM83UUGe2DVr5TdAPEA1OA8m/g8zWp9x6On7gqufY+FatDbC3MDQg==}
 
-  component-emitter@1.3.1:
-    resolution: {integrity: sha512-T0+barUSQRTUQASh8bx02dl+DhF54GtIDY13Y3m9oWTklKbb3Wv974meRpeZ3lp1JpLVECWWNHC4vaG2XHXouQ==}
+  component-emitter@2.0.0:
+    resolution: {integrity: sha512-4m5s3Me2xxlVKG9PkZpQqHQR7bgpnN7joDMJ4yvVkVXngjoITG76IaZmzmywSeRTeTpc6N6r3H3+KyUurV8OYw==}
+    engines: {node: '>=18'}
 
   compressible@2.0.18:
     resolution: {integrity: sha512-AF3r7P5dWxL8MxyITRMlORQNaOA2IkAFaTr4k7BUumjPtRpGDTZpl0Pb1XCO6JeDCBdp126Cgs9sMxqSjgYyRg==}
@@ -11399,7 +11400,7 @@ snapshots:
 
   commondir@1.0.1: {}
 
-  component-emitter@1.3.1: {}
+  component-emitter@2.0.0: {}
 
   compressible@2.0.18:
     dependencies:
@@ -16103,27 +16104,27 @@ snapshots:
 
   vary@1.1.2: {}
 
-  vis-data@7.1.10(uuid@7.0.3)(vis-util@5.0.7(@egjs/hammerjs@2.0.17)(component-emitter@1.3.1)):
+  vis-data@7.1.10(uuid@7.0.3)(vis-util@5.0.7(@egjs/hammerjs@2.0.17)(component-emitter@2.0.0)):
     dependencies:
       uuid: 7.0.3
-      vis-util: 5.0.7(@egjs/hammerjs@2.0.17)(component-emitter@1.3.1)
+      vis-util: 5.0.7(@egjs/hammerjs@2.0.17)(component-emitter@2.0.0)
 
-  vis-timeline@7.7.4(@egjs/hammerjs@2.0.17)(component-emitter@1.3.1)(keycharm@0.3.1)(moment@2.30.1)(propagating-hammerjs@1.5.0)(uuid@7.0.3)(vis-data@7.1.10(uuid@7.0.3)(vis-util@5.0.7(@egjs/hammerjs@2.0.17)(component-emitter@1.3.1)))(vis-util@5.0.7(@egjs/hammerjs@2.0.17)(component-emitter@1.3.1))(xss@1.0.15):
+  vis-timeline@7.7.4(@egjs/hammerjs@2.0.17)(component-emitter@2.0.0)(keycharm@0.3.1)(moment@2.30.1)(propagating-hammerjs@1.5.0)(uuid@7.0.3)(vis-data@7.1.10(uuid@7.0.3)(vis-util@5.0.7(@egjs/hammerjs@2.0.17)(component-emitter@2.0.0)))(vis-util@5.0.7(@egjs/hammerjs@2.0.17)(component-emitter@2.0.0))(xss@1.0.15):
     dependencies:
       '@egjs/hammerjs': 2.0.17
-      component-emitter: 1.3.1
+      component-emitter: 2.0.0
       keycharm: 0.3.1
       moment: 2.30.1
       propagating-hammerjs: 1.5.0
       uuid: 7.0.3
-      vis-data: 7.1.10(uuid@7.0.3)(vis-util@5.0.7(@egjs/hammerjs@2.0.17)(component-emitter@1.3.1))
-      vis-util: 5.0.7(@egjs/hammerjs@2.0.17)(component-emitter@1.3.1)
+      vis-data: 7.1.10(uuid@7.0.3)(vis-util@5.0.7(@egjs/hammerjs@2.0.17)(component-emitter@2.0.0))
+      vis-util: 5.0.7(@egjs/hammerjs@2.0.17)(component-emitter@2.0.0)
       xss: 1.0.15
 
-  vis-util@5.0.7(@egjs/hammerjs@2.0.17)(component-emitter@1.3.1):
+  vis-util@5.0.7(@egjs/hammerjs@2.0.17)(component-emitter@2.0.0):
     dependencies:
       '@egjs/hammerjs': 2.0.17
-      component-emitter: 1.3.1
+      component-emitter: 2.0.0
 
   vite-plugin-pwa@1.3.0(vite@6.4.3(@types/node@20.19.43)(less@4.9.1)(sass@1.104.1)(terser@5.51.2))(workbox-build@6.6.0(@types/babel__core@7.20.5))(workbox-window@6.6.0):
     dependencies:
