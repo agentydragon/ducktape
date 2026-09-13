@@ -75,6 +75,47 @@ runner-session sequence. It need not be the replica that accepted or dispatched 
 command. Browser SSE reads committed PostgreSQL state, never an ingester's local
 stream.
 
+### Required app records
+
+The SQL shape may evolve, but these identities and boundaries are required:
+
+| Record                      | Required contents and invariant                                                                                                                                                                                |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Thread**                  | Product Thread id, presentation fields, and archive state. The id is minted before the first command and is never a runner-session id.                                                                         |
+| **ThreadSandboxTarget**     | Either an existing Sandbox name/UID or fully resolved creation input until Kubernetes creates the correlated object. Afterwards it pins the concrete name/UID without mirroring mutable Sandbox lifecycle.     |
+| **ThreadRunnerSessionPlan** | Planned runner-session id and immutable session spec; it may exist before a Sandbox UID or running harness. A successor plan may name the prior association only as requested continuation intent.             |
+| **ThreadRunnerSession**     | Actual Thread-to-Sandbox-UID-to-runner-session association, written only after runner evidence. It stores any predecessor/continuation proof the runner supplied. One is the active delivery target at a time. |
+| **ThreadCommand**           | Thread id, stable command id, one Thread ordinal, immutable kind/payload, acceptance transaction/time, and durable delivery observations. It is desired intent, never a mutable launch phase.                  |
+| **Copied runner Event**     | Thread runner-session association plus runner sequence and exact Event payload. Its uniqueness makes replay idempotent and is the normal-projection input.                                                     |
+
+The runner journal is runner-owned recovery support, not an app table or a second
+outbox. Its native correlation and durable receipt/effect records reach the app only
+through replayable Events. The existing Thread-start persistence is a transition toward
+the atomic **Thread + target + session plan + first Thread command** write; it must not
+remain a parallel launch subsystem.
+
+### The outbox is desired state, not lifecycle history
+
+```text
+new Thread request                         existing Thread request
+------------------                         -----------------------
+mint Thread id                             use Thread id
+write Thread + target + session plan       append ThreadCommand
+append first ThreadCommand                 commit
+              \                           /
+               durable Thread-command outbox
+                            |
+                            v
+        reconcile Sandbox prerequisites, runner association, then command
+                            |
+                            v
+                 copied runner receipt/effect/outcome Events
+```
+
+Kubernetes status is a prerequisite observation, never a Thread-command phase. The
+outbox and runner Event copy therefore express one desired record and one actual
+record without an app-owned imitation of Sandbox lifecycle.
+
 ## Command protocol: intent, receipt, then outcome
 
 The app outbox and runner journal are different records.
@@ -97,6 +138,13 @@ therefore has runner-journal admission order. That is not HTTP arrival order acr
 concurrent app requests or Attach streams, and not a promise that terminal effects
 occur in that order. A terminal Event names the causal command; its runner sequence,
 not a cross-layer timestamp, is the ordering fact the view may use.
+
+Thread ordinal defines desired order, but command eligibility is operation-aware. A
+received model change blocks a later command that would start a new turn until it has
+an effect or terminal non-effect; it need not stop a harness-supported input from
+joining the already-active turn. An interrupt targets the clicked turn id and must not
+wait behind unrelated queued inputs or reach a later turn. These are reconciliation
+rules, not a claim that terminal runner effects have one universal ordering.
 
 ### Inputs preserve actual harness grouping
 
@@ -189,6 +237,24 @@ matrix against the mocked LLM server and a real runner state directory:
 This matrix is evidence-first. It may supply facts needed for the deferred
 cross-session-delivery choice, but does not pre-decide that choice.
 
+### Storage/API migration before multi-session Threads
+
+Today's session-shaped event/feed storage cannot represent this contract by merely
+renaming columns. Before a Thread can have several runner sessions:
+
+1. Introduce Thread runner-session associations, backfill one for each existing
+   Thread, and make product Thread ids independent of runner-session ids.
+2. Key copied Events by **Thread runner-session association + runner sequence** and
+   move feed state to that association. Do not fabricate a global sequence across
+   associations; add a Thread display order only if a later product need proves it.
+3. Derive current Thread state from its active association instead of overwriting one
+   session-shaped Thread feed snapshot.
+4. Move list, read, title, archive, and transcript routes to Thread ids. Retain
+   Sandbox/session routes only as explicit manual/diagnostic object views.
+
+This is an atomic monorepo API change: no production path may sometimes treat a
+runner-session id as a Thread id.
+
 ## Projection and the Thread page
 
 The normal Thread view has one conversation spine per runner-session Event segment. It
@@ -230,6 +296,27 @@ facts do not share it. Raw mode shows them in linked, visually distinct diagnost
 records—by command id, Sandbox identity, and their own durable order—rather than
 interleaving timestamps into a fictitious global timeline. An unreceipted command is
 visibly unreceived; a Kubernetes pause never masquerades as a harness Event.
+
+### Client server state
+
+The React client uses a server-state cache (for example, TanStack Query) for separate
+Thread, command-queue, transcript, and Sandbox snapshots. SSE/transactional change
+notifications invalidate or replace those server snapshots. A mutation may optimistically
+show only the command the app has durably accepted; no component owns provisioning,
+delivery retry, or inferred completion in local state.
+
+## Implementation sequence
+
+1. Normalize Thread identity versus runner-session association and migrate copied
+   Event/feed storage.
+2. Implement the atomic Thread/outbox write and multi-replica reconciler for new and
+   existing Sandbox targets.
+3. Ship the additive unified composer and durable pending-command queue; preserve
+   manual Sandbox/session surfaces.
+4. Add controls through the same outbox only after their per-harness receipt/effect
+   recovery gates pass.
+5. Decide and implement successor-session delivery only after the deferred native
+   continuation evidence exists.
 
 ## Required guarantees and tests
 
