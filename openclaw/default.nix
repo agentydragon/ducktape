@@ -20,10 +20,11 @@ let
   # the gateway's bundled extension tree instead: discovery then records it as
   # origin=bundled and the normal state-store trust boundary remains intact.
   #
-  # Keep both packaged roots complete: this release contains source-checkout
-  # markers and therefore prefers dist/extensions, while a future package that
-  # omits those markers will prefer dist-runtime/extensions. Hard-linking the
-  # second tree avoids storing a duplicate copy of the plugin payload.
+  # Keep both logical packaged roots complete: this release contains
+  # source-checkout markers and therefore prefers dist/extensions, while a
+  # future package that omits those markers may prefer dist-runtime/extensions.
+  # The bundler hard-links a separate second tree, or recognizes when the
+  # upstream package intentionally makes dist-runtime a symlink to dist.
   gatewayWithRuntimePlugins = gateway.overrideAttrs (previous: {
     # nix-openclaw supplies a complete custom installPhase rather than the
     # stdenv default, so append here instead of relying on a postInstall hook
