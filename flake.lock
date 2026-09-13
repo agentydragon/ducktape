@@ -19,11 +19,11 @@
     "claude-plugins-official": {
       "flake": false,
       "locked": {
-        "lastModified": 1788555287,
-        "narHash": "sha256-gZxIOTXzNFxW+67iO5bveT4ZBKjP8HZfUlg1fAq4jE0=",
+        "lastModified": 1789142908,
+        "narHash": "sha256-8LgDacLKv4gLPYrgIwg/O8IfySBwa/AxgrLXFdliROc=",
         "owner": "anthropics",
         "repo": "claude-plugins-official",
-        "rev": "85cce0381e7860082641b59d961a2b8c368b8b79",
+        "rev": "3deb821cb71ccfaaf2ffa9935e977df314ce5cd5",
         "type": "github"
       },
       "original": {
@@ -315,11 +315,11 @@
     "siderolabs-docs": {
       "flake": false,
       "locked": {
-        "lastModified": 1788539017,
-        "narHash": "sha256-0PIy8fUN+CnSnj1hJ3UY+Xyv44sZ/NWCXR4V3RGuC8o=",
+        "lastModified": 1789135466,
+        "narHash": "sha256-tTCN2tQSGkpytJEtd/1BoGkmH/PBcYTmjI8cfLMJP+0=",
         "owner": "siderolabs",
         "repo": "docs",
-        "rev": "9d5349eb3bfb02190115a0e6234cc276bf46ac63",
+        "rev": "0b4152eb23f3fce8287920f5a3a4b2a4ed99d7bd",
         "type": "github"
       },
       "original": {
@@ -335,11 +335,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1788337237,
-        "narHash": "sha256-gkSH8VUtCo6hnysNmb9DbTuDepH2t5pv+QWjP75xKAk=",
+        "lastModified": 1788914643,
+        "narHash": "sha256-4GuMPW90JSxXWDPUB9M+1m7fYbe3H0apOd86/zBQ2Kw=",
         "owner": "Mic92",
         "repo": "sops-nix",
-        "rev": "fbf759290e0cb0a98dfc813a4eb7d53ad1dacb57",
+        "rev": "13616fff713a9f94055c66f15687ebdc17a335df",
         "type": "github"
       },
       "original": {
