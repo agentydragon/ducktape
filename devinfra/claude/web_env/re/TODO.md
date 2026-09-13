@@ -86,10 +86,13 @@ isolated.
   (2026-09-12).** `/proc/1/exe` and `/proc/1/mem` both return `EACCES` for
   root with full capabilities, on a confirmed real Firecracker kernel (not a
   gVisor-synthesized `/proc`); see `../process_api/README.md` §
-  "Capturing the binary" for the full evidence. `reference/process_api.gz`
-  is unverified against whatever build is currently live — a prior session
-  must have had `/proc/1/exe` read access that this one does not. Re-check
-  this from a future session before assuming it's permanent.
+  "Capturing the binary" for the full evidence and a ranked, unconfirmed
+  list of likely mechanisms (LSM policy on the process, `PR_SET_DUMPABLE`,
+  a user-namespace boundary — LSM policy fits the observed `EACCES` best).
+  `reference/process_api.gz` is unverified against whatever build is
+  currently live — a prior session must have had `/proc/1/exe` read access
+  that this one does not. Re-check this from a future session before
+  assuming it's permanent.
 - **Container build-and-diff (Phase 5) has not been run** against this
   snapshot. The session that produced it had the `docker` client but no daemon.
   `live-dpkg-versions.txt` is refreshed (same 686 packages, version bumps
