@@ -70,5 +70,4 @@ Not covered — need custom regex managers or restructuring:
 
 ## Repository
 
-- [x] Refreshed <docs/dead_code_2026_01_30.md> on 2026-09-09: removed stale rows for files that no longer exist, including the unused Firecracker manager modules removed in this cleanup.
 - [ ] Add an AGPL-3.0 `LICENSE` file at the repo root and standardize AGPL-3.0 license headers across source files (`README.md` declares AGPL 3.0, but there is no `LICENSE` file and headers are inconsistent)

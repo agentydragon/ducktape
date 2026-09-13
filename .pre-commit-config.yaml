@@ -85,10 +85,6 @@ repos:
         language: system
         types: [python]
 
-  # TODO: Check if Bazel mypy (runs by default via bazel build //...) can replace
-  # pre-commit mypy hooks. The Bazel mypy setup handles workspace dependencies
-  # correctly and uses a single mypy.ini config.
-
   # Nix formatter (RFC 166 style) — nixfmt provided by devShell / web-session via Nix
   - repo: local
     hooks:

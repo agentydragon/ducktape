@@ -1,15 +1,5 @@
 # Ansible TODO
 
-## Remote Desktop Infrastructure (Stale)
-
-**Branch**: `authentik-remote-desktop`
-**Status**: Stale — Authentik is now deployed in the k8s cluster, user provisioning is
-handled via Authentik SSO blueprints. The old VPS is being decommissioned. If remote
-desktop is needed, deploy Guacamole or similar in the cluster behind Authentik SSO.
-
-- [ ] Remote desktop server selection and setup (Guacamole in cluster)
-- [ ] Integration between Authentik and remote desktop
-
 ## Nix/Home-Manager Migration
 
 See <../nix/home/migration_plan.md> for full status. GPD is the last legacy holdout.

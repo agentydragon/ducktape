@@ -182,8 +182,6 @@ split-on-trailing-comma = false
 
 [lint.per-file-ignores]
 # Project-specific ignores (consolidated from individual pyproject.toml files)
-# Test fixtures are intentionally bad code for detector testing
-"py_detectors/tests/fixtures/**" = ["ALL"]
 # sys.path manipulation must happen before imports in uv run scripts and pytest
 "devinfra/ci/sync_pins.py" = ["E402"]
 "devinfra/ci/prune_releases.py" = ["E402"]

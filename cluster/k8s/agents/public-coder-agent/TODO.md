@@ -28,9 +28,6 @@ not infer. Two consequences, both logged once a minute:
 
 Doctor reports these on every run:
 
-- [ ] `plugins.entries.phone-control` — "plugin not found: phone-control (stale
-      config entry ignored)". Remove it. It is also the only thing that would
-      make a Nix-mode-off `doctor --fix` attempt a plugin auto-install.
 - [ ] `mcp.apps.sandboxOrigin` unset while `gateway.auth.mode` is
       `trusted-proxy`. Widget and MCP-app frames render from the gateway port + 1
       sandbox listener, which the outpost does not route today, so those frames
