@@ -135,6 +135,7 @@ if [ -n "$PR_HEAD_SHA" ]; then
   git -c advice.detachedHead=false checkout --quiet "$HEAD_SHA"
   bazel-diff generate-hashes -w "$PWD" -b bazel /tmp/bd-cache/head.json
   bazel-diff get-impacted-targets \
+    -w "$PWD" \
     -sh /tmp/bd-cache/base.json -fh /tmp/bd-cache/head.json \
     >/tmp/affected-raw.txt
 
