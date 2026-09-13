@@ -1,25 +1,27 @@
 # Required by fastmcp 3.x (with extras filetree, keyring, memory).
-# Not in nixpkgs as of 25.11.
+# Stable nixpkgs 26.05 ships 0.3.0; this override supplies the >=0.4.4
+# version required by FastMCP 3.4.x.
 {
   lib,
   python3Packages,
 }:
 python3Packages.buildPythonPackage rec {
   pname = "py-key-value-aio";
-  version = "0.4.4";
+  version = "0.4.5";
   pyproject = true;
 
   src = python3Packages.fetchPypi {
     pname = "py_key_value_aio";
     inherit version;
-    hash = "sha256-4wEuYkPtfMCbsFRXvU0DsbpcKxyocACWs5J9t5/7vlU=";
+    hash = "sha256-xlY6LGq+XaXiD0+eh1wqm0JaIkSlT62/Rs8UCp7qRdc=";
   };
 
-  # nixpkgs ships uv-build 0.9.x; the sdist pins `uv_build<0.9.0`. The build
-  # backend interface is unchanged between 0.8 → 0.9, so drop the upper bound.
+  # Stable nixpkgs 26.05 provides uv-build 0.10.0, while this release asks for
+  # uv-build >=0.11.4. The build backend interface is unchanged here, so keep
+  # the stable package set and relax only the lower bound.
   postPatch = ''
     substituteInPlace pyproject.toml \
-      --replace-fail '"uv_build>=0.8.2,<0.9.0"' '"uv_build>=0.8.2"'
+      --replace-fail '"uv_build>=0.11.4,<0.12"' '"uv_build>=0.10.0"'
   '';
 
   build-system = with python3Packages; [ uv-build ];

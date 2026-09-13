@@ -10,13 +10,13 @@
   fetchFromGitHub,
 }:
 let
-  version = "3.4.4";
+  version = "3.4.7";
 
   src = fetchFromGitHub {
     owner = "PrefectHQ";
     repo = "fastmcp";
     tag = "v${version}";
-    hash = "sha256-aqFht99jbBIg6tFBlHeWebC0xDtind5w4+RIAdXJ50U=";
+    hash = "sha256-EysVbtFbop5ENupc9T5EmtUSZ8osVtQSzpwa6rea/OQ=";
   };
 
   build-system = with python3Packages; [
