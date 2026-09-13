@@ -1,0 +1,107 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: agentplane-testing
+  namespace: ducktape-flux
+  annotations:
+    description: Complete Agentplane testing environment, including namespace, database, Dex, egress, LLM ingress, Actions fixtures, app, runner template, and operator RBAC.
+spec:
+  retryInterval: 1m
+  interval: 10m
+  timeout: 10m
+  path: ./cluster/k8s/agentplane-testing
+  prune: true
+  # The trust-manager Bundle creates this ConfigMap asynchronously and it is not
+  # part of the rendered input, so use explicit checks rather than wait:true.
+  healthChecks:
+    - apiVersion: v1
+      kind: Namespace
+      name: agentplane-testing
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Cluster
+      name: postgres
+      namespace: agentplane-testing
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Database
+      name: actions
+      namespace: agentplane-testing
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Database
+      name: egress
+      namespace: agentplane-testing
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: agentplane-testing-dex
+      namespace: agentplane-testing
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: agentplane-llm-ingress
+      namespace: agentplane-testing
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: agentplane-egress
+      namespace: agentplane-testing
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: agentplane-actions
+      namespace: agentplane-testing
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: agentplane-mcp-everything
+      namespace: agentplane-testing
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: agentplane-oauth-fixture
+      namespace: agentplane-testing
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: agentplane-app
+      namespace: agentplane-testing
+    - apiVersion: cert-manager.io/v1
+      kind: Certificate
+      name: agentplane-egress-root-ca
+      namespace: agentplane-testing
+    - apiVersion: trust.cert-manager.io/v1alpha1
+      kind: Bundle
+      name: agentplane-testing-egress-ca
+    - apiVersion: v1
+      kind: ConfigMap
+      name: agentplane-testing-egress-ca
+      namespace: agentplane-testing
+  healthCheckExprs:
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Database
+      current: >-
+        has(status.applied) && status.applied &&
+        has(status.observedGeneration) && status.observedGeneration == metadata.generation
+  sourceRef:
+    kind: ExternalArtifact
+    name: agentplane-testing
+    namespace: ducktape-flux
+  dependsOn:
+    - name: agentplane-crds
+      namespace: ducktape-flux
+    - name: agent-sandbox-controller
+      namespace: ducktape-flux
+    - name: cert-manager-environment
+      namespace: ducktape-flux
+    - name: cert-manager-trust
+      namespace: ducktape-flux
+    - name: claude-rbac
+      namespace: ducktape-flux
+    - name: cnpg
+      namespace: ducktape-flux
+    - name: external-creds
+      namespace: ducktape-flux
+    - name: external-secrets-config
+      namespace: ducktape-flux
+    - name: forgejo-images
+      namespace: ducktape-flux
+    - name: gateway
+      namespace: ducktape-flux
+    - name: litellm-keys-tf
+      namespace: ducktape-flux
+    - name: local-path-provisioner
+      namespace: ducktape-flux
+    - name: reflector
+      namespace: ducktape-flux

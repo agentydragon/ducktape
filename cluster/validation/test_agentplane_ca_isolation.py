@@ -23,7 +23,7 @@ def test_environment_ca_publication_and_consumers_are_isolated(k8s_dir: Path) ->
         bundle = manifest(root, "egress/trust-bundle.yaml")
         proxy = manifest(root, "egress/deployment-agentplane-egress.yaml")
         template = manifest(root, "app/sandboxtemplate-agentplane-runner.yaml")
-        flux = manifest(root, "egress/flux-kustomization.yaml")["spec"]
+        flux = manifest(root, "flux-kustomization.yaml")["spec"]
         secret_name = certificate["spec"]["secretName"]
         bundle_name = bundle["metadata"]["name"]
         assert secret_name not in reflected_names
