@@ -83,7 +83,7 @@ isolated.
 ## Environment-limited
 
 - **`process_api` cannot be recaptured from inside a live session
-  (2026-09-12).** `/proc/1/exe` and `/proc/1/mem` both return `EPERM` for
+  (2026-09-12).** `/proc/1/exe` and `/proc/1/mem` both return `EACCES` for
   root with full capabilities, on a confirmed real Firecracker kernel (not a
   gVisor-synthesized `/proc`); see `../process_api/README.md` §
   "Capturing the binary" for the full evidence. `reference/process_api.gz`

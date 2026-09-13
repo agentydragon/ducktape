@@ -21,7 +21,7 @@ under `re/environment_manager/src/` still reflects `0b86a2a0`
 `release-ba76006550-ext` yet; see `re/TODO.md`.
 
 **`process_api` could not be recaptured in the 2026-09-12 pass**:
-`/proc/1/exe` and `/proc/1/mem` both return `EPERM` for root with full
+`/proc/1/exe` and `/proc/1/mem` both return `EACCES` for root with full
 capabilities (`cap_sys_ptrace` included), on a genuine Firecracker kernel (not
 a gVisor-synthesized `/proc` — confirmed via `/proc/version`). `/proc/1/maps`
 and `/proc/1/smaps_rollup` remain readable and show the binary still fully

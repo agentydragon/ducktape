@@ -27,7 +27,7 @@ unverified as of 2026-09-12 — see "Capturing the binary" below.
 
 ## Capturing the binary
 
-As of 2026-09-12, `/proc/1/exe` and `/proc/1/mem` both return `EPERM` from
+As of 2026-09-12, `/proc/1/exe` and `/proc/1/mem` both return `EACCES` from
 inside a live session, for root with full effective capabilities (including
 `cap_sys_ptrace`) and no Yama `ptrace_scope` file present. This is a genuine
 Firecracker kernel (confirmed via `/proc/version`; not a gVisor-synthesized
