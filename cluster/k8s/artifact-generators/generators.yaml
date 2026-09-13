@@ -362,11 +362,11 @@ spec:
           exclude:
             - flux-kustomization.yaml
 
-    - name: agentplane-index-namespace
+    - name: agentplane-index
       originRevision: "@repo"
       copy:
-        - from: "@repo/cluster/k8s/agentplane-index/namespace/**"
-          to: "@artifact/cluster/k8s/agentplane-index/namespace/"
+        - from: "@repo/cluster/k8s/agentplane-index/**"
+          to: "@artifact/cluster/k8s/agentplane-index/"
           exclude:
             - flux-kustomization.yaml
 
@@ -931,30 +931,6 @@ spec:
       copy:
         - from: "@repo/cluster/k8s/agent-box/namespace/**"
           to: "@artifact/cluster/k8s/agent-box/namespace/"
-          exclude:
-            - flux-kustomization.yaml
-
-    - name: agentplane-index-app
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agentplane-index/app/**"
-          to: "@artifact/cluster/k8s/agentplane-index/app/"
-          exclude:
-            - flux-kustomization.yaml
-
-    - name: agentplane-index-db
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agentplane-index/db/**"
-          to: "@artifact/cluster/k8s/agentplane-index/db/"
-          exclude:
-            - flux-kustomization.yaml
-
-    - name: agentplane-index-secrets
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agentplane-index/secrets/**"
-          to: "@artifact/cluster/k8s/agentplane-index/secrets/"
           exclude:
             - flux-kustomization.yaml
 
