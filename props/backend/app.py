@@ -188,7 +188,7 @@ def _make_lifespan(deps: BackendDeps):
                 return
             exc = task.exception()
             if exc is not None:
-                logger.exception("Background startup failed; exiting to trigger restart", exc_info=exc)
+                logger.error("Background startup failed; exiting to trigger restart", exc_info=exc)
                 os._exit(1)
 
         startup_task.add_done_callback(_on_startup_done)

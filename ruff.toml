@@ -14,7 +14,6 @@ target-version = "py314"
 # Reason: devinfra/format/format.py reads .gitattributes, but ruff check reads ruff.toml.
 # See README.md "Lint/Format Exclusions" section for details.
 exclude = [
-    "tana/export/references",
     "props/testing/fixtures/testdata",
     "py_detectors/rules/**/bad/**",
     "py_detectors/rules/**/ok/**",
