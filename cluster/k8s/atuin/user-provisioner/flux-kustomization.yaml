@@ -8,8 +8,8 @@ spec:
   path: ./cluster/k8s/atuin/user-provisioner
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: atuin-user-provisioner
 
     namespace: ducktape-flux
   dependsOn:

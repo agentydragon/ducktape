@@ -11,8 +11,8 @@ spec:
   path: ./cluster/k8s/aiquota
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: aiquota
     namespace: ducktape-flux
   timeout: 5m
   wait: true

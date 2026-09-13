@@ -10,8 +10,8 @@ spec:
   retryInterval: 1m
   timeout: 5m
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: egress-proxy-rugged
 
     namespace: ducktape-flux
   path: ./cluster/k8s/egress-proxy-rugged

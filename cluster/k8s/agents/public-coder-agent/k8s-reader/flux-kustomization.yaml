@@ -10,8 +10,8 @@ spec:
   path: ./cluster/k8s/agents/public-coder-agent/k8s-reader
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: public-coder-agent-k8s-reader
     namespace: ducktape-flux
   timeout: 5m
   retryInterval: 1m
