@@ -36,6 +36,7 @@ resources:
   - valkey/flux-kustomization.yaml
   - reflector/flux-kustomization.yaml
   - node-feature-discovery/flux-kustomization.yaml
+  - nvidia-runtimeclass/flux-kustomization.yaml
   - nvidia-device-plugin/flux-kustomization.yaml
   - kvm-device-plugin/flux-kustomization.yaml
   - dcgm-exporter/flux-kustomization.yaml # NVIDIA GPU metrics (XID/PCIe/power) → Mimir via PodMonitor

@@ -240,6 +240,7 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         ("nix-cache-namespace", "nix-cache/namespace"),
         ("node-feature-discovery", "node-feature-discovery"),
         ("nvidia-device-plugin", "nvidia-device-plugin"),
+        ("nvidia-runtimeclass", "nvidia-runtimeclass"),
         ("oci-cache-app", "oci-cache/app"),
         ("oci-cache-namespace", "oci-cache/namespace"),
         ("ollama-agent-rbac", "ollama/agent-rbac"),
