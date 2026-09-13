@@ -17,7 +17,13 @@ from mcp.client.auth.oauth2 import OAuthClientProvider
 from mcp.client.auth.utils import extract_resource_metadata_from_www_auth
 from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamable_http_client
-from mcp.shared.auth import OAuthClientInformationFull, OAuthClientMetadata, OAuthMetadata, ProtectedResourceMetadata
+from mcp.shared.auth import (
+    AuthorizationCodeResult,
+    OAuthClientInformationFull,
+    OAuthClientMetadata,
+    OAuthMetadata,
+    ProtectedResourceMetadata,
+)
 from pydantic import AnyUrl
 
 
@@ -163,7 +169,7 @@ async def register_client(server: str, redirect_uri: str) -> Registration:
         registration = Registration(client=client, authorization_url=url)
         raise _RegistrationCompleteError
 
-    async def callback() -> tuple[str, str | None]:
+    async def callback() -> AuthorizationCodeResult:
         raise DcrError("Registration-only probe unexpectedly requested an authorization code")
 
     auth = OAuthClientProvider(
