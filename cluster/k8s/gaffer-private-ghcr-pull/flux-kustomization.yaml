@@ -23,5 +23,5 @@ spec:
   healthChecks:
     - apiVersion: external-secrets.io/v1
       kind: ExternalSecret
-      name: gaffer-private-ghcr-pull
+      name: gaffer-ghcr-pull
       namespace: flux-system
