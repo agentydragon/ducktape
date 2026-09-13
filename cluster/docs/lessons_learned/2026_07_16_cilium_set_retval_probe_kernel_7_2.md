@@ -3,7 +3,10 @@
 **Date**: 2026-07-16. **Status**: resolved for `rugged` 2026-09-05 by pinning the
 7.1 _series_ (`linuxPackages_7_1`) in
 <../../../nix/nixos/hosts/rugged/ipu7-camera.nix>, where the bounds that produce
-it are recorded.
+it are recorded. The upstream Cilium stable-branch fixes are merged but not yet
+in a released version as of 2026-09-13; the bump and subsequent Linux 7.2
+validation are tracked in
+[ducktape#6825](https://github.com/agentydragon/ducktape/issues/6825).
 
 **A floating alias is not a pin.** The 2026-08-26 remediation set
 `linuxPackages_latest`, correct at the time because the alias then resolved to
@@ -13,10 +16,13 @@ DaemonSets with it. What this host needs is a floor (≥ 6.17, IPU7 camera) and 
 ceiling (< 7.2, this bug); an alias encodes neither and tracks whatever upstream
 ships. A series attribute encodes both and cannot cross the ceiling.
 
-Upstream `cilium/ebpf` probe fix (remediation 1) is still not shipped: Cilium
-1.19.6 was observed fatalling on kernel 7.2.0 on 2026-09-04. The general "every
-kernel ≥ 7.2-rc1, every released Cilium" blast radius remains open for anyone
-actually needing a ≥ 7.2 kernel.
+The upstream `cilium/ebpf` probe fix is now merged in the stable branches but is
+not in the latest released `v1.19.7`: the `v1.19` backport is
+[Cilium PR #48376](https://github.com/cilium/cilium/pull/48376), and it changes
+`HAVE_SET_RETVAL` detection to use `bpf_core_enum_value_exists()`. Cilium
+1.19.6 was observed fatalling on kernel 7.2.0 on 2026-09-04. The kernel ceiling
+and release bump remain tracked in
+[ducktape#6825](https://github.com/agentydragon/ducktape/issues/6825).
 
 ## Symptom
 
@@ -74,11 +80,13 @@ descheduler `nodeFit` (#3276), stuck-Job GC (#3279). Unrelated same-window noise
 
 ## Fix paths
 
-1. **Upstream `cilium/ebpf`** (real fix): in `features/prog.go
-haveProgramHelper`, special-case `FnSetRetval` to prepend
-   `asm.Mov.Imm(asm.R1, 0)` — a constant 0 is valid on both old (`ARG_ANYTHING`)
-   and new (in-range known scalar) kernels, so the probe loads cleanly with no
-   log-sniffing. Cilium then needs a vendored bump + patch releases.
+1. **Upstream Cilium** (real fix, merged but not released in the current pin):
+   the stable backport changes `HAVE_SET_RETVAL` detection to use
+   `bpf_core_enum_value_exists()`; see
+   [Cilium PR #48376](https://github.com/cilium/cilium/pull/48376). Once a
+   release contains it, bump Cilium and remove the local kernel ceiling only
+   after validating Linux 7.2; see
+   [ducktape#6825](https://github.com/agentydragon/ducktape/issues/6825).
 2. **Kernel list heads-up** (time-sensitive, optional): 7.2 is at rc2;
    `bpf@vger.kernel.org` should know the hardening bricks startup of every
    released Cilium ("breaks userspace" datapoint) while there is still time
