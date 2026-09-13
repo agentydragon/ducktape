@@ -84,14 +84,3 @@ py_library(
         "@pypi//anyio",
     ],
 )
-
-py_library(
-    name = "wedge_repro",
-    testonly = True,
-    srcs = ["wedge_repro.py"],
-    deps = [
-        ":remote_server",
-        "@pypi//anyio",
-        "@pypi//fastmcp_slim",
-    ],
-)
