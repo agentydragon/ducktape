@@ -8,6 +8,8 @@ Haku reads these tables directly with the read-only `haku_reader` CNPG managed
 role (member of pg_read_all_data) — no read API and no grant management here.
 """
 
+from __future__ import annotations
+
 from datetime import UTC, datetime
 
 from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text
@@ -44,7 +46,7 @@ class JobRow(Base):
     status: Mapped[JobStatus] = mapped_column(_str_enum(JobStatus), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
-    result: Mapped["ResultRow | None"] = relationship(back_populates="job", lazy="joined")
+    result: Mapped[ResultRow | None] = relationship(back_populates="job", lazy="joined")
 
 
 class ResultRow(Base):

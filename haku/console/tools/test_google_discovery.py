@@ -9,6 +9,8 @@ then needs only a thin smoke test: its advertised tool-name set + one representa
 one strict-input rejection (see `test_gmail.py`). Don't re-test the factory once per generated tool.
 """
 
+from __future__ import annotations
+
 from typing import Any
 
 import pytest
@@ -98,7 +100,7 @@ class _FakeService:
         if name.startswith("__") and name.endswith("__"):
             raise AttributeError(name)
 
-        def call(**kwargs: Any) -> "_FakeService":
+        def call(**kwargs: Any) -> _FakeService:
             self.calls.append((name, kwargs))
             return self
 

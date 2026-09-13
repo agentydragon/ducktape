@@ -1,5 +1,7 @@
 """Mounted server wrapper bundling prefix and server instance."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -39,7 +41,7 @@ class Mounted[T: FastMCP]:
     prefix: MCPMountPrefix
     server: T
 
-    def tool_name(self, tool: "Tool") -> str:
+    def tool_name(self, tool: Tool) -> str:
         """Get fully-qualified MCP tool name.
 
         Args:

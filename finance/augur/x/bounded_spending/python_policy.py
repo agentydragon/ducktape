@@ -5,6 +5,8 @@ NumPy object arrays (Python integers), not a claim of SIMD or compiled-policy sp
 Neither implementation performs financial settlement or computes tax.
 """
 
+from __future__ import annotations
+
 from collections.abc import Callable
 from dataclasses import dataclass
 from itertools import batched
@@ -56,7 +58,7 @@ class Observations:
     cpi: NDArray[np.object_]
 
     @classmethod
-    def from_decisions(cls, batch: list[Decision]) -> "Observations":
+    def from_decisions(cls, batch: list[Decision]) -> Observations:
         cpi = []
         for row in batch:
             level = row.observation.cpi

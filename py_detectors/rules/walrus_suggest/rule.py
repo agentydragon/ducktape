@@ -29,7 +29,7 @@ def _is_simple_guard(test: ast.AST, name: str) -> str | None:
         return None
     if isinstance(op, ast.Is | ast.IsNot) and isinstance(right, ast.Constant) and right.value is None:
         return "is None" if isinstance(op, ast.Is) else "is not None"
-    if isinstance(op, ast.Eq | ast.NotEq) and isinstance(right, ast.Constant | ast.Str | ast.Num):
+    if isinstance(op, ast.Eq | ast.NotEq) and isinstance(right, ast.Constant):
         return "== literal" if isinstance(op, ast.Eq) else "!= literal"
     return None
 
@@ -45,7 +45,11 @@ def find_detections(path: Path, tree: ast.AST, source: str) -> Iterable[Detectio
             name = stmt.targets[0].id
             next_stmt = body[i + 1]
             # Skip standalone string doc/comment statements
-            if isinstance(next_stmt, ast.Expr) and isinstance(next_stmt.value, ast.Str):
+            if (
+                isinstance(next_stmt, ast.Expr)
+                and isinstance(next_stmt.value, ast.Constant)
+                and isinstance(next_stmt.value.value, str)
+            ):
                 if i + 2 >= len(body):
                     continue
                 next_stmt = body[i + 2]

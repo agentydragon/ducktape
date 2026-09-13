@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import date, datetime
 from enum import StrEnum
 from typing import Annotated, Literal
@@ -62,7 +64,7 @@ class FetchError(BaseModel):
     error: str
 
     @classmethod
-    def from_exception(cls, e: BaseException, context: str | None = None) -> "FetchError":
+    def from_exception(cls, e: BaseException, context: str | None = None) -> FetchError:
         message = str(e).strip() or type(e).__name__
         if context:
             message = f"{context}: {message}"

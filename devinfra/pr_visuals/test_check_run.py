@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Any
 
 import pytest
@@ -41,7 +43,7 @@ class FakeGithub:
     def __init__(self, repo: FakeRepo) -> None:
         self.repo = repo
 
-    def __enter__(self) -> "FakeGithub":
+    def __enter__(self) -> FakeGithub:
         return self
 
     def __exit__(self, *_args: object) -> None:

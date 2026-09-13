@@ -5,6 +5,8 @@ Claude Code defines a single ``hookOutput`` object with an optional discriminate
 Python equivalent: ``HookOutput`` with ``hook_specific_output: AnyHookSpecificOutput | None``.
 """
 
+from __future__ import annotations
+
 from typing import Annotated, Literal
 
 from pydantic import Discriminator, Field, model_validator
@@ -72,7 +74,7 @@ class HookOutput(CamelModel):
     hook_specific_output: AnyHookSpecificOutput | None = None
 
     @model_validator(mode="after")
-    def _validate_stop_reason(self) -> "HookOutput":
+    def _validate_stop_reason(self) -> HookOutput:
         if self.stop_reason is not None and self.continue_:
             raise ValueError("stop_reason requires continue=false")
         return self

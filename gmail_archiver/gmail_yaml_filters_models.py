@@ -3,11 +3,15 @@
 Compatible with gmail-yaml-filters format (https://github.com/mesozoic/gmail-yaml-filters).
 """
 
+from __future__ import annotations
+
 import builtins
 from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
+
+StringList = list[str]
 
 
 class ConditionKey(StrEnum):
@@ -62,7 +66,7 @@ class CompoundCondition(BaseModel):
 
     any: str | list[str] | None = None
     all: str | list[str] | None = None
-    not_: "str | CompoundCondition | None" = Field(default=None, alias="not")
+    not_: str | CompoundCondition | None = Field(default=None, alias="not")
 
 
 class FilterRule(BaseModel):
@@ -75,11 +79,11 @@ class FilterRule(BaseModel):
     from_: str | CompoundCondition | None = Field(default=None, alias="from")
     to: str | CompoundCondition | None = None
     subject: str | CompoundCondition | None = None
-    has: str | list[str] | CompoundCondition | None = None
-    match: str | list[str] | CompoundCondition | None = None
-    does_not_have: str | list[str] | CompoundCondition | None = None
-    missing: str | list[str] | CompoundCondition | None = None
-    no_match: str | list[str] | CompoundCondition | None = None
+    has: str | StringList | CompoundCondition | None = None
+    match: str | StringList | CompoundCondition | None = None
+    does_not_have: str | StringList | CompoundCondition | None = None
+    missing: str | StringList | CompoundCondition | None = None
+    no_match: str | StringList | CompoundCondition | None = None
 
     # Search operators
     bcc: str | CompoundCondition | None = None
@@ -111,7 +115,7 @@ class FilterRule(BaseModel):
     forward: str | None = None
 
     # Special keys (self-referential)
-    more: "FilterRule | builtins.list[FilterRule] | None" = None
+    more: FilterRule | builtins.list[FilterRule] | None = None
     ignore: bool | None = None
 
 
@@ -126,7 +130,7 @@ class FilterRuleSet(BaseModel):
     rules: list[FilterRule | ForEachRule]
 
     @classmethod
-    def from_yaml_list(cls, yaml_list: list[dict[str, Any]]) -> "FilterRuleSet":
+    def from_yaml_list(cls, yaml_list: list[dict[str, Any]]) -> FilterRuleSet:
         rules: list[FilterRule | ForEachRule] = []
         for rule_dict in yaml_list:
             if "for_each" in rule_dict:

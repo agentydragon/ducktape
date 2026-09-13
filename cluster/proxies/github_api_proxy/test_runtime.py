@@ -5,6 +5,7 @@ import json
 import socket
 import ssl
 import stat
+from asyncio.unix_events import _UnixDefaultEventLoopPolicy
 from collections.abc import AsyncIterator, Buffer
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -28,7 +29,7 @@ PASSWORD = "test-private-password-alpha-0123456789"
 SECOND_PASSWORD = "test-private-password-beta-0123456789"
 
 
-class OriginLoopPolicy(asyncio.DefaultEventLoopPolicy):
+class OriginLoopPolicy(_UnixDefaultEventLoopPolicy):
     def new_event_loop(self) -> OriginLoop:
         return OriginLoop()
 

@@ -6,6 +6,8 @@ provider settings disable refreshes, so this process never mutates credential
 files or persists quota snapshots.
 """
 
+from __future__ import annotations
+
 import asyncio
 import base64
 import hashlib
@@ -375,7 +377,7 @@ class Settings(BaseSettings):
     oauth_username: str = "agentydragon"
 
     @model_validator(mode="after")
-    def validate_clickhouse(self) -> "Settings":
+    def validate_clickhouse(self) -> Settings:
         if self.clickhouse_url and self.clickhouse_password is None:
             raise ValueError("AIQUOTA_CLICKHOUSE_PASSWORD is required when AIQUOTA_CLICKHOUSE_URL is set")
         return self

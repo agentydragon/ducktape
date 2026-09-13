@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import types
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -91,7 +93,7 @@ class TypedClient:
         return self._models
 
     @classmethod
-    def from_server(cls, server: FastMCP, session: Client) -> "TypedClient":
+    def from_server(cls, server: FastMCP, session: Client) -> TypedClient:
         """Create a TypedClient introspecting FastMCP's tool registry.
 
         Requires a server created via FastMCP. Introspects FlatTool instances

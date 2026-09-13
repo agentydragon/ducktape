@@ -7,6 +7,8 @@ resource it returns is a real `gmail_api` model dumped to the wire shape, so the
 `model_validate` round-trips genuine resources rather than hand-shaped dicts.
 """
 
+from __future__ import annotations
+
 import base64
 from dataclasses import dataclass, field
 from typing import Any
@@ -63,7 +65,7 @@ class _FakeBatch:
 
 
 class _FakeLabels:
-    def __init__(self, svc: "_FakeGmailService") -> None:
+    def __init__(self, svc: _FakeGmailService) -> None:
         self._svc = svc
 
     def list(self, *, userId):  # noqa: N803 -- mirrors Gmail's kwarg casing; used by _user_labels()
@@ -88,7 +90,7 @@ class _FakeLabels:
 
 
 class _FakeThreads:
-    def __init__(self, svc: "_FakeGmailService") -> None:
+    def __init__(self, svc: _FakeGmailService) -> None:
         self._svc = svc
 
     def modify(self, *, userId, id, body):  # noqa: N803
@@ -96,7 +98,7 @@ class _FakeThreads:
 
 
 class _FakeDrafts:
-    def __init__(self, svc: "_FakeGmailService") -> None:
+    def __init__(self, svc: _FakeGmailService) -> None:
         self._svc = svc
 
     def create(self, *, userId, body):  # noqa: N803
@@ -113,7 +115,7 @@ class _FakeDrafts:
 
 
 class _FakeFilters:
-    def __init__(self, svc: "_FakeGmailService") -> None:
+    def __init__(self, svc: _FakeGmailService) -> None:
         self._svc = svc
 
     def create(self, *, userId, body):  # noqa: N803
@@ -128,7 +130,7 @@ class _FakeFilters:
 
 
 class _FakeSettings:
-    def __init__(self, svc: "_FakeGmailService") -> None:
+    def __init__(self, svc: _FakeGmailService) -> None:
         self._svc = svc
 
     def filters(self) -> _FakeFilters:
@@ -136,7 +138,7 @@ class _FakeSettings:
 
 
 class _FakeUsers:
-    def __init__(self, svc: "_FakeGmailService") -> None:
+    def __init__(self, svc: _FakeGmailService) -> None:
         self._svc = svc
 
     def labels(self) -> _FakeLabels:

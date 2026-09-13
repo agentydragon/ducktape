@@ -1,5 +1,7 @@
 """E2E: real daemon/client + shadowed PyGithub; PR variants: open(can merge), merged, closed, no PR."""
 
+from __future__ import annotations
+
 import json
 import os
 import re
@@ -120,7 +122,7 @@ def _rpc_json(sock_path: str | os.PathLike, method: str, params: dict[str, Any])
         ("none", []),
     ],
 )
-def test_github_pr_variants(variant, expects, github_pr_env: "GithubPrEnv"):
+def test_github_pr_variants(variant, expects, github_pr_env: GithubPrEnv):
     env = github_pr_env
     factory = env.config_factory(env.repo_path)
     config = factory.integration(github_repo="test/test")

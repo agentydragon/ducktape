@@ -4,6 +4,8 @@ All paths derived from a session_id live here. This is a plain dataclass
 (not pydantic-settings) — it computes paths, not config.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -34,7 +36,7 @@ class SessionPaths:
     xdg_cache_home: Path
 
     @classmethod
-    def from_env(cls, session_id: str, env: dict[str, str]) -> "SessionPaths":
+    def from_env(cls, session_id: str, env: dict[str, str]) -> SessionPaths:
         """Construct from an environment dict, resolving home/cache eagerly."""
         home = Path(env["HOME"]) if "HOME" in env else Path.home()
         xdg_cache_home = Path(
