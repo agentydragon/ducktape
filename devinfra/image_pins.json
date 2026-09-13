@@ -9,7 +9,7 @@
   },
   "freecad_test": {
     "image": "ghcr.io/agentydragon/freecad-test",
-    "digest": "sha256:491d3b17d4243cc7d95b66de77651622f39644427f4bc4294d6a7f295f2414c8",
+    "digest": "sha256:a66134665f733038c03496c69ebfdaabe8210e049d1f052629337cf9e7728119",
     "platforms": ["linux/amd64"]
   },
   "excalidraw": {
