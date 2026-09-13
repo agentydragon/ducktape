@@ -273,7 +273,7 @@ dependencies = [
     "syrupy>=4.0",
     "pypdf>=6.18.1",
     "PyHamcrest>=2.1",
-    "mypy==1.20.2",
+    "mypy==2.3.1",
 
     # Protobuf and gRPC code generation for //x/agentplane/runner: grpcio-tools bundles protoc
     # and the gRPC Python plugin; mypy-protobuf adds the .pyi stubs mypy reads.
