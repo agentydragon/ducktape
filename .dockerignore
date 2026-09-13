@@ -37,8 +37,6 @@ coverage.xml
 .pytest_cache/
 
 # Large data directories
-adgn_logs/
-adgn_db_backups/
 debug/
 rspcache/
 worktrees/
