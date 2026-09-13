@@ -50,7 +50,7 @@ spec:
               mountPath: /client-secret
       containers:
         - name: google-workspace-mcp
-          image: ghcr.io/taylorwilsdon/google_workspace_mcp:1.26.0
+          image: ghcr.io/taylorwilsdon/google_workspace_mcp:1.26.1
           ports:
             - name: http
               containerPort: 8000
