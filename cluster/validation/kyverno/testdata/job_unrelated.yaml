@@ -1,0 +1,14 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: unrelated-job
+  namespace: default
+  labels:
+    app.kubernetes.io/managed-by: helm
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: job
+          image: busybox:latest

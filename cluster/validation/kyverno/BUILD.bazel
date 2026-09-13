@@ -73,6 +73,23 @@ py_test(
 )
 
 py_test(
+    name = "test_ignore_cnpg_jobs_for_reloader",
+    srcs = ["test_ignore_cnpg_jobs_for_reloader.py"],
+    data = [
+        "testdata/job_cnpg_initdb.yaml",
+        "testdata/job_unrelated.yaml",
+        "//cluster/k8s:kyverno_policy_files",
+        "@multitool//tools/kyverno",
+    ],
+    deps = [
+        ":apply",
+        ":paths",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_inject_mitmproxy",
     srcs = ["test_inject_mitmproxy.py"],
     data = [
