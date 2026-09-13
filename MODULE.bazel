@@ -433,7 +433,7 @@ use_repo(apt, "gnome_shell_test", "trixie_agentplane_runner", "trixie_attic_rota
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")
 bazel_dep(name = "aspect_rules_esbuild", version = "0.27.0")
-bazel_dep(name = "aspect_rules_js", version = "2.9.3")
+bazel_dep(name = "aspect_rules_js", version = "3.4.0")
 bazel_dep(name = "aspect_rules_ts", version = "3.10.1")
 bazel_dep(name = "rules_nodejs", version = "6.7.5")
 
@@ -461,8 +461,8 @@ rules_ts_ext = use_extension("@aspect_rules_ts//ts:extensions.bzl", "ext")
 rules_ts_ext.deps(ts_version = "5.8.3")
 use_repo(rules_ts_ext, "npm_typescript")
 
-# Pin pnpm v9 to match the lockfile format (rules_js 2.9.2 defaults to pnpm v8
-# which cannot read lockfileVersion 9 and triggers a non-hermetic regeneration).
+# Pin pnpm v9 to match the lockfile format instead of relying on the rules_js
+# default, which may not be able to read lockfileVersion 9 hermetically.
 pnpm = use_extension("@aspect_rules_js//npm:extensions.bzl", "pnpm")
 pnpm.pnpm(
     pnpm_version = "9.15.9",
