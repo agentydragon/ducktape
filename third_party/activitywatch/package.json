@@ -139,7 +139,7 @@
     "vite-plugin-pwa": "^1.3.0",
     "vue": "^2.7",
     "vue-cli-plugin-pug": "^2.0.0",
-    "vue-eslint-parser": "^9.3",
+    "vue-eslint-parser": "^10.0.0",
     "vue-hot-reload-api": "^2.3.4",
     "vue-loader": "^17.0",
     "vue-router": "^3.5.3",
