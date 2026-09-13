@@ -41,7 +41,6 @@
   body {
     color: var(--augur-text);
     font-family:
-      Inter,
       ui-sans-serif,
       system-ui,
       -apple-system,
@@ -91,7 +90,6 @@
   td.label {
     color: var(--augur-text-strong);
     font-family:
-      Inter,
       ui-sans-serif,
       system-ui,
       -apple-system,
@@ -119,7 +117,6 @@
 
   .display {
     font-family:
-      Inter,
       ui-sans-serif,
       system-ui,
       -apple-system,
