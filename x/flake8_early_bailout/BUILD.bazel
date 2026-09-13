@@ -3,6 +3,7 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "flake8_early_bailout",
+    testonly = True,
     srcs = ["flake8_early_bailout.py"],
     visibility = ["//visibility:public"],
 )

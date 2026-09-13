@@ -6,6 +6,7 @@ package(default_visibility = ["//x/agentplane:__subpackages__"])
 
 py_library(
     name = "agent",
+    testonly = True,
     srcs = ["agent.py"],
     deps = [
         "//x/agentplane/app:client",

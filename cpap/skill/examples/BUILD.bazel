@@ -18,6 +18,7 @@ py_library(
 
 py_library(
     name = "generate_test_edf",
+    testonly = True,
     srcs = ["generate_test_edf.py"],
     visibility = ["//cpap/skill:__pkg__"],
 )

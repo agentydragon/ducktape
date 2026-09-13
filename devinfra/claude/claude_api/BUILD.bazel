@@ -2,6 +2,7 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "tool_input_models",
+    testonly = True,
     srcs = ["tool_input_models.py"],
     visibility = ["//visibility:public"],
     deps = ["@pypi//pydantic"],
