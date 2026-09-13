@@ -1,9 +1,10 @@
-# Idempotently ensures the `paperless_users` group exists with the full set of
-# document/app permissions (every permission in the `documents` and `paperless`
-# Django apps — version-robust, no hardcoded codenames, and includes the
-# `view_uisettings` permission the web UI requires). New Authentik SSO users are
-# auto-joined to this group (PAPERLESS_SOCIAL_ACCOUNT_DEFAULT_GROUPS), giving them
-# full non-admin functionality without a superuser or admin password.
+# Idempotently ensures the local `paperless_users` and `paperless_admins` groups
+# exist with the full set of document/app permissions (every permission in the
+# `documents` and `paperless` Django apps — version-robust, no hardcoded codenames,
+# and includes the `view_uisettings` permission the web UI requires). Authentik
+# owns membership: the `paperless_admins` claim maps agentydragon to the local
+# group and Paperless superuser role. The bootstrap remains the declarative owner
+# of the local groups and permissions; it does not create or promote a user.
 #
 # Re-applied on every reconcile (kustomize force). Retries via backoffLimit until
 # the webserver has applied migrations (auth_group table must exist first).
@@ -34,13 +35,13 @@ spec:
             - -c
             - |
               from django.contrib.auth.models import Group, Permission
-              g, _ = Group.objects.get_or_create(name="paperless_users")
-              g.permissions.set(
-                  Permission.objects.filter(
-                      content_type__app_label__in=["documents", "paperless"]
-                  )
+              permissions = Permission.objects.filter(
+                  content_type__app_label__in=["documents", "paperless"]
               )
-              print("paperless_users now has", g.permissions.count(), "permissions")
+              for group_name in ["paperless_users", "paperless_admins"]:
+                  group, _ = Group.objects.get_or_create(name=group_name)
+                  group.permissions.set(permissions)
+                  print(group_name, "now has", group.permissions.count(), "permissions")
           envFrom:
             - configMapRef:
                 name: paperless-config

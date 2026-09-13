@@ -20,13 +20,18 @@ data:
 
   # OIDC-only auth via Authentik (django-allauth openid_connect provider).
   # PAPERLESS_SOCIALACCOUNT_PROVIDERS JSON is injected from the reflected
-  # paperless-sso-providers secret. New SSO users are auto-provisioned and
-  # joined to the paperless_users group (created by the bootstrap Job), which
-  # carries full non-admin document permissions.
+  # paperless-sso-providers secret. Authentik's paperless_admins group is synced
+  # to the matching local group and grants agentydragon Django superuser status.
+  # The bootstrap Job owns the local groups and their permissions. Keep the
+  # default group as the fresh-signup fallback; group sync replaces memberships
+  # from the groups claim on login.
   PAPERLESS_APPS: "allauth.socialaccount.providers.openid_connect"
   PAPERLESS_SOCIAL_AUTO_SIGNUP: "true"
   PAPERLESS_SOCIALACCOUNT_ALLOW_SIGNUPS: "true"
   PAPERLESS_SOCIAL_ACCOUNT_DEFAULT_GROUPS: "paperless_users"
+  PAPERLESS_SOCIAL_ACCOUNT_SYNC_GROUPS: "true"
+  PAPERLESS_SOCIAL_ACCOUNT_SYNC_GROUPS_CLAIM: "groups"
+  PAPERLESS_SOCIAL_ACCOUNT_SYNC_SUPERUSER_GROUP: "paperless_admins"
   PAPERLESS_ACCOUNT_ALLOW_SIGNUPS: "false"
   PAPERLESS_DISABLE_REGULAR_LOGIN: "true"
   PAPERLESS_REDIRECT_LOGIN_TO_SSO: "true"

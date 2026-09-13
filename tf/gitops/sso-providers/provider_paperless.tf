@@ -1,8 +1,27 @@
 # Paperless-ngx — OIDC login for the document management system.
-# Single-user (agentydragon): access is gated to the admins group, and the
-# user is auto-provisioned on first login into the `paperless_users` group
-# (created by the paperless-bootstrap-group Job) for full non-admin access.
-# Not a Django superuser by design — see cluster/k8s/paperless/.
+# Single-user (agentydragon): access and Django superuser status are gated by the
+# dedicated `paperless_admins` group. The Paperless bootstrap Job creates the
+# matching local groups and their permissions; Authentik owns membership.
+
+resource "authentik_group" "paperless_admins" {
+  name  = "paperless_admins"
+  users = [tonumber(authentik_user.agentydragon.id)]
+}
+
+# Paperless's group synchronizer expects the claim values to be names of existing
+# local Django groups. Keep this mapping app-specific rather than exposing every
+# Authentik group to Paperless. The baseline paperless_users membership keeps the
+# account usable even if superuser role mapping is later disabled.
+resource "authentik_property_mapping_provider_scope" "paperless_groups" {
+  name       = "paperless-groups"
+  scope_name = "groups"
+  expression = <<-EXPR
+    authentik_groups = [group.name for group in request.user.ak_groups.all()]
+    if "paperless_admins" in authentik_groups:
+        return {"groups": ["paperless_users", "paperless_admins"]}
+    return {"groups": []}
+  EXPR
+}
 
 resource "authentik_provider_oauth2" "paperless" {
   name               = "paperless-oauth2"
@@ -19,6 +38,7 @@ resource "authentik_provider_oauth2" "paperless" {
     data.authentik_property_mapping_provider_scope.openid.id,
     data.authentik_property_mapping_provider_scope.email.id,
     data.authentik_property_mapping_provider_scope.profile.id,
+    authentik_property_mapping_provider_scope.paperless_groups.id,
   ]
 
   # django-allauth openid_connect callback (provider_id = "authentik").
@@ -42,7 +62,7 @@ resource "authentik_application" "paperless" {
 
 resource "authentik_policy_binding" "paperless_admins" {
   target = authentik_application.paperless.uuid
-  group  = data.authentik_group.admins.id
+  group  = authentik_group.paperless_admins.id
   order  = 0
 }
 
@@ -63,7 +83,7 @@ resource "kubernetes_secret" "paperless_sso_providers" {
     providers = jsonencode({
       openid_connect = {
         OAUTH_PKCE_ENABLED = true
-        SCOPE              = ["openid", "profile", "email"]
+        SCOPE              = ["openid", "profile", "email", "groups"]
         APPS = [{
           provider_id = "authentik"
           name        = "Log in via Authentik"
