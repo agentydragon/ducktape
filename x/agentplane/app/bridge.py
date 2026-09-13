@@ -266,17 +266,11 @@ class RunnerBridge:
         finally:
             attachment.cancel()
 
-    async def send(self, sandbox: str, session_id: str, message: pb.Input) -> None:
-        await self._command(sandbox, session_id, lambda attachment: attachment.send(message.input_id, message.text))
+    async def command(self, sandbox: str, session_id: str, command: pb.Command) -> None:
+        await self._command(sandbox, session_id, lambda attachment: attachment.command(command))
 
-    async def interrupt(self, sandbox: str, session_id: str) -> None:
-        await self._command(sandbox, session_id, lambda attachment: attachment.interrupt())
-
-    async def switch_model(self, sandbox: str, session_id: str, switch_id: str, model: str) -> None:
-        await self._command(sandbox, session_id, lambda attachment: attachment.switch_model(switch_id, model))
-
-    async def shutdown(self, sandbox: str, session_id: str) -> None:
-        await self._command(sandbox, session_id, lambda attachment: attachment.shutdown(), ends_stream=True)
+    async def stop_runner_session(self, sandbox: str, session_id: str, command: pb.Command) -> None:
+        await self._command(sandbox, session_id, lambda attachment: attachment.command(command), ends_stream=True)
 
     async def _command(
         self,
@@ -362,7 +356,7 @@ def _frame(event: str, data: dict[str, object], *, event_id: int | None = None) 
     return ("\n".join(lines) + "\n\n").encode()
 
 
-def _parse[M: pb.Input | pb.SessionSpec](message: M, body: dict[str, object]) -> M:
+def _parse[M: pb.Command | pb.SessionSpec](message: M, body: dict[str, object]) -> M:
     try:
         return ParseDict(body, message)
     except ParseError as error:
@@ -431,42 +425,49 @@ async def session_events(
 
 @router.post("/{session_id}/inputs", status_code=status.HTTP_202_ACCEPTED)
 async def send_input(bridge: Bridge, name: str, session_id: str, body: dict[str, object]) -> Response:
-    await bridge.send(name, session_id, _parse(pb.Input(), body))
+    command = _parse(pb.Command(), body)
+    if not command.command_id or not command.HasField("submit_input"):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="expected SubmitInput command")
+    await bridge.command(name, session_id, command)
     return Response(status_code=status.HTTP_202_ACCEPTED)
 
 
 @router.post("/{session_id}/interrupt", status_code=status.HTTP_202_ACCEPTED)
-async def interrupt_session(bridge: Bridge, name: str, session_id: str) -> Response:
-    await bridge.interrupt(name, session_id)
+async def interrupt_session(bridge: Bridge, name: str, session_id: str, body: dict[str, object]) -> Response:
+    command = _parse(pb.Command(), body)
+    if not command.command_id or not command.HasField("interrupt_turn"):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="expected InterruptTurn command")
+    await bridge.command(name, session_id, command)
     return Response(status_code=status.HTTP_202_ACCEPTED)
-
-
-class ModelSwitch(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    switch_id: str = Field(min_length=1)
-    model: str = Field(min_length=1)
 
 
 @router.post("/{session_id}/model", status_code=status.HTTP_202_ACCEPTED)
 async def switch_session_model(
-    bridge: Bridge, name: str, session_id: str, body: ModelSwitch, request: Request
+    bridge: Bridge, name: str, session_id: str, body: dict[str, object], request: Request
 ) -> Response:
+    command = _parse(pb.Command(), body)
+    if not command.command_id or not command.HasField("change_model") or not command.change_model.model:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="expected ChangeModel command")
     summaries = await bridge.list_sessions(name)
     summary = next((item for item in summaries if item.session_id == session_id), None)
     if summary is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"unknown session {session_id!r}")
     harness = Harness(pb.Harness.Name(summary.spec.harness))
     catalog = request.app.state.models
-    if not isinstance(catalog, dict) or body.model not in catalog[harness]:
+    if not isinstance(catalog, dict) or command.change_model.model not in catalog[harness]:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="model is incompatible with this harness"
         )
-    await bridge.switch_model(name, session_id, body.switch_id, body.model)
+    await bridge.command(name, session_id, command)
     return Response(status_code=status.HTTP_202_ACCEPTED)
 
 
 @router.post("/{session_id}/shutdown", status_code=status.HTTP_202_ACCEPTED)
-async def shutdown_session(bridge: Bridge, name: str, session_id: str) -> Response:
-    await bridge.shutdown(name, session_id)
+async def shutdown_session(bridge: Bridge, name: str, session_id: str, body: dict[str, object]) -> Response:
+    command = _parse(pb.Command(), body)
+    if not command.command_id or not command.HasField("stop_runner_session"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="expected StopRunnerSession command"
+        )
+    await bridge.stop_runner_session(name, session_id, command)
     return Response(status_code=status.HTTP_202_ACCEPTED)

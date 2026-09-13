@@ -5,7 +5,7 @@ import type { components, paths } from "./api/schema";
 import { redirectToLogin } from "./operator_login";
 import {
   AttachedSchema,
-  InputSchema,
+  CommandSchema,
   SessionSpecSchema,
   SessionSummarySchema,
   type Attached,
@@ -210,32 +210,63 @@ export async function models(): Promise<ModelCatalog> {
   return data as ModelCatalog;
 }
 
-export async function switchModel(sandbox: string, sessionId: string, switchId: string, model: string): Promise<void> {
+export async function switchModel(sandbox: string, sessionId: string, commandId: string, model: string): Promise<void> {
   const { error } = await api.POST("/sandboxes/{name}/sessions/{session_id}/model", {
     params: { path: { name: sandbox, session_id: sessionId } },
-    body: { switch_id: switchId, model },
+    body: toJson(
+      CommandSchema,
+      create(CommandSchema, {
+        commandId,
+        operation: { case: "changeModel", value: { model } },
+      })
+    ) as JsonObject,
   });
   if (error) throw new Error(displayableError(error));
 }
 
-export async function sendInput(sandbox: string, sessionId: string, inputId: string, text: string): Promise<void> {
+export async function sendInput(sandbox: string, sessionId: string, commandId: string, text: string): Promise<void> {
   const { error } = await api.POST("/sandboxes/{name}/sessions/{session_id}/inputs", {
     params: { path: { name: sandbox, session_id: sessionId } },
-    body: toJson(InputSchema, create(InputSchema, { inputId, text })) as JsonObject,
+    body: toJson(
+      CommandSchema,
+      create(CommandSchema, {
+        commandId,
+        operation: { case: "submitInput", value: { text } },
+      })
+    ) as JsonObject,
   });
   if (error) throw new Error(displayableError(error));
 }
 
-export async function interruptSession(sandbox: string, sessionId: string): Promise<void> {
+export async function interruptSession(
+  sandbox: string,
+  sessionId: string,
+  commandId: string,
+  turnId: string
+): Promise<void> {
   const { error } = await api.POST("/sandboxes/{name}/sessions/{session_id}/interrupt", {
     params: { path: { name: sandbox, session_id: sessionId } },
+    body: toJson(
+      CommandSchema,
+      create(CommandSchema, {
+        commandId,
+        operation: { case: "interruptTurn", value: { turnId } },
+      })
+    ) as JsonObject,
   });
   if (error) throw new Error(displayableError(error));
 }
 
-export async function shutdownSession(sandbox: string, sessionId: string): Promise<void> {
+export async function shutdownSession(sandbox: string, sessionId: string, commandId: string): Promise<void> {
   const { error } = await api.POST("/sandboxes/{name}/sessions/{session_id}/shutdown", {
     params: { path: { name: sandbox, session_id: sessionId } },
+    body: toJson(
+      CommandSchema,
+      create(CommandSchema, {
+        commandId,
+        operation: { case: "stopRunnerSession", value: {} },
+      })
+    ) as JsonObject,
   });
   if (error) throw new Error(displayableError(error));
 }

@@ -123,7 +123,7 @@ class Client:
         answered = await self._json("POST", f"/sandboxes/{name}/sessions", json=body.model_dump())
         return Attachment(ParseDict(answered, pb.Attached()))
 
-    async def send_input(self, name: str, session_id: str, message: pb.Input) -> None:
+    async def send_input(self, name: str, session_id: str, message: pb.Command) -> None:
         await self._json("POST", f"/sandboxes/{name}/sessions/{session_id}/inputs", json=MessageToDict(message))
 
     async def events(self, name: str, session_id: str, *, after: int, read_seconds: float) -> AsyncIterator[pb.Event]:

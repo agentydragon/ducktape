@@ -10,25 +10,22 @@
 //
 // The vocabulary names the selected agent harness only in SessionSpec.harness. The harness's own frames are still
 // delivered verbatim as Native events, in both directions, and every derived event lists the Native
-// sequences it came from, so harness-native detail is one lookup away without leaking into the
-// contract.
+// sequences it came from, so harness-native detail is one lookup away without leaking into the contract.
 //
-// Inputs. An Input is reported as InputSubmitted when the runner takes it, then InputAccepted once
-// the harness acknowledges native admission, or InputRejected. Claude currently acknowledges
-// command-queue admission; that is not transcript admission or a native persistence fence. An input
-// while no turn is active starts a turn (TurnStarted precedes its InputAccepted); an input while a
-// turn is active joins that turn, and the harness decides where in the model's context it lands.
-// input_id is client-chosen and idempotent: an Input whose id the session log already settled is not
-// written again, and the runner re-emits that input's outcome so a client that retried after a lost
-// connection learns the original result.
+// Commands. A Command is client-chosen and idempotent. The runner writes it to a durable command
+// journal before emitting CommandReceived. A receipt only proves that durable runner boundary; it
+// intentionally does not promise a timing category. The later causal event says what happened:
+// HarnessUserMessageConfirmed, ModelChanged, an interrupted TurnCompleted, CommandRejected, or
+// CommandNoop. A command journal survives a runner restart and lets the runner reconcile the same
+// command id rather than make the client guess whether an input was taken.
 //
 // Harness lifecycle. Open with a spec starts the harness if it is not running, resuming the native conversation
-// when the session has one. Shutdown interrupts an active turn, stops the harness, reports
+// when the session has one. A StopRunnerSession command interrupts an active turn, stops the harness, reports
 // HarnessExited, and ends all observing streams; the session stays resumable. Detach, or a dropped connection,
 // ends the stream only: the harness keeps running and its events keep accruing in the log. A runner
-// that restarts and finds a session it had running reports HarnessLost, TurnCompleted with
-// PROCESS_LOST for an active turn, and InputUncertain for each input that was submitted but never
-// settled; a client sees those on its next Attach.
+// that restarts and finds a session it had running reports HarnessLost and TurnCompleted with
+// PROCESS_LOST for an active turn. It never emits an "uncertain" command terminal state: an
+// uncompleted command remains in its journal until the runner can establish a causal result.
 //
 // Attachments independently replay and follow the log; commands share the session lock and input
 // deduplication. Open without a spec never starts the harness and ends after replay if stopped.
@@ -113,35 +110,42 @@ message Open {
   uint64 after_sequence = 3;
 }
 
-message Input {
-  string input_id = 1;
-  string text = 2;
+message SubmitInput {
+  string text = 1;
 }
 
-// Changes the model used for subsequent turns. It is accepted only while no turn is active.
-// switch_id is client-chosen and idempotent, like Input.input_id.
-message SwitchModel {
-  string switch_id = 1;
-  string model = 2;
+message ChangeModel {
+  string model = 1;
 }
 
-// Ends the active turn; ignored when no turn is active.
-message Interrupt {}
+// Ends exactly this active turn. A runner must not carry an interrupt forward to a later turn.
+message InterruptTurn {
+  string turn_id = 1;
+}
 
-// Stops the harness and ends the stream. The session stays resumable.
-message Shutdown {}
+// Stops the harness. The runner session stays resumable.
+message StopRunnerSession {}
+
+message Command {
+  // Client-chosen and stable across app/runner reconnects. Every command, including an input,
+  // has one id; a distinct request id is neither needed nor accepted.
+  string command_id = 1;
+  oneof operation {
+    SubmitInput submit_input = 2;
+    ChangeModel change_model = 3;
+    InterruptTurn interrupt_turn = 4;
+    StopRunnerSession stop_runner_session = 5;
+  }
+}
 
 // Ends the stream; the harness keeps running.
 message Detach {}
 
 message ClientMessage {
-  oneof command {
+  oneof message {
     Open open = 1;
-    Input input = 2;
-    Interrupt interrupt = 3;
-    Shutdown shutdown = 4;
-    Detach detach = 5;
-    SwitchModel switch_model = 6;
+    Command command = 2;
+    Detach detach = 3;
   }
 }
 
@@ -207,8 +211,11 @@ message HarnessStarted {
 
 message HarnessExited {
   int32 exit_code = 1;
-  // The runner stopped it, for a Shutdown or its own shutdown; otherwise the harness ended on its own.
+  // The runner stopped it for a StopRunnerSession command or its own shutdown; otherwise the
+  // harness ended on its own.
   bool stopped_by_runner = 2;
+  // The causal effect of this StopRunnerSession command, if one asked the runner to stop it.
+  string stopped_by_command_id = 3;
 }
 
 // The runner restarted and found the harness gone; its exit status is unknown.
@@ -218,29 +225,34 @@ message HarnessStderr {
   string text = 1;
 }
 
-// The runner took the input and is writing it to the harness; admission is pending. The text
-// travels with it so the log alone shows what was asked, without the harness's transcript.
-message InputSubmitted {
-  string input_id = 1;
-  string text = 2;
+// The runner's durable acknowledgement. This does not imply native delivery or an effect timing.
+message CommandReceived {
+  string command_id = 1;
 }
 
-// The harness acknowledged its native admission boundary, as part of turn_id. For Claude
-// this currently means command-queue admission, not transcript admission or durable persistence.
-message InputAccepted {
-  string input_id = 1;
-  string turn_id = 2;
-}
-
-message InputRejected {
-  string input_id = 1;
+// A terminal negative outcome. A rejected command may be retried only with a new command id.
+message CommandRejected {
+  string command_id = 1;
   string reason = 2;
 }
 
-// The runner restarted after submitting the input and before the harness settled it; the harness
-// may or may not have taken it. Resending it is the client's decision.
-message InputUncertain {
-  string input_id = 1;
+// A harmless terminal outcome: interrupting an already completed turn, or selecting the current
+// model, for example. It is deliberately distinct from rejection.
+message CommandNoop {
+  string command_id = 1;
+  string reason = 2;
+}
+
+// A harness-confirmed causal input delivery. Usually harness_message_id names the native user
+// message; Claude active-tool continuations instead name the tool-result frame and cite its
+// following lifecycle cohort in Event.source_sequences. One native delivery may combine multiple
+// requested inputs; text and origin_command_ids preserve that fact rather than pretending harnesses
+// admit or coalesce the same way.
+message HarnessUserMessageConfirmed {
+  string harness_message_id = 1;
+  string text = 2;
+  repeated string origin_command_ids = 3;
+  string turn_id = 4;
 }
 
 message TurnStarted {
@@ -249,15 +261,12 @@ message TurnStarted {
   string model = 2;
 }
 
-message ModelSwitchSucceeded {
-  string switch_id = 1;
+// The requested model actually took effect. For Codex this is the next-turn selection boundary;
+// for Claude it follows the native control response.
+message ModelChanged {
+  string command_id = 1;
   string previous_model = 2;
   string model = 3;
-}
-
-message ModelSwitchRejected {
-  string switch_id = 1;
-  string reason = 2;
 }
 
 message TurnCompleted {
@@ -265,6 +274,8 @@ message TurnCompleted {
   TurnStatus status = 2;
   // Set for FAILED and PROCESS_LOST.
   string error = 3;
+  // Set only when this terminal interrupted outcome was caused by an InterruptTurn command.
+  string interrupted_by_command_id = 4;
 }
 
 // One unit of assistant output within a turn: a text block, a reasoning block, or a tool call.
@@ -319,6 +330,15 @@ message Native {
   string line = 2;
 }
 
+// A test-only runner pause, emitted only when the hidden runner test-checkpoint options are set.
+// It occupies the normal replayable session event stream so a real-process integration test can
+// crash the runner at a durable boundary without a second signalling transport. Deployments never
+// enable these options.
+message DebugCheckpoint {
+  string name = 1;
+  string command_id = 2;
+}
+
 message Event {
   // Strictly increasing within a session, across attachments and runner restarts.
   uint64 sequence = 1;
@@ -330,10 +350,10 @@ message Event {
     HarnessExited harness_exited = 5;
     HarnessLost harness_lost = 6;
     HarnessStderr harness_stderr = 7;
-    InputSubmitted input_submitted = 8;
-    InputAccepted input_accepted = 9;
-    InputRejected input_rejected = 10;
-    InputUncertain input_uncertain = 11;
+    CommandReceived command_received = 8;
+    CommandRejected command_rejected = 9;
+    CommandNoop command_noop = 10;
+    HarnessUserMessageConfirmed harness_user_message_confirmed = 11;
     TurnStarted turn_started = 12;
     TurnCompleted turn_completed = 13;
     ItemStarted item_started = 14;
@@ -343,8 +363,8 @@ message Event {
     ToolOutputDelta tool_output_delta = 18;
     ItemCompleted item_completed = 19;
     Native native = 20;
-    ModelSwitchSucceeded model_switch_succeeded = 21;
-    ModelSwitchRejected model_switch_rejected = 22;
+    ModelChanged model_changed = 21;
+    DebugCheckpoint debug_checkpoint = 22;
   }
 }
 

@@ -67,24 +67,25 @@ async def test_replay_from_zero_returns_the_whole_log(
     model.assert_quiescent()
 
 
-async def test_resending_an_input_id_delivers_it_once(
+async def test_resending_a_command_id_delivers_it_once(
     client: RunnerClient, model: ScriptedModel, spec: pb.SessionSpec
 ) -> None:
     first = await client.attach("retry-1", spec=spec)
     await first.send("input-1", "Reply with exactly: ONCE_OK")
     request = await model.request()
-    await first.until(events.is_kind("input_accepted"))
+    # Claude's exact confirmation evidence is its response-side model-message start; Codex obtains
+    # it at native turn start. Both have sent one upstream request before this reply, and both reach
+    # the one common harness-confirmation effect after it.
+    model.reply(request, Text("ONCE_OK"))
+    confirmed = await first.until(events.is_kind("harness_user_message_confirmed"))
     first.cancel()
 
     second = await client.attach("retry-1", after_sequence=first.cursor)
     await second.send("input-1", "Reply with exactly: ONCE_OK")
-    again = await second.until(events.is_kind("input_accepted"))
-    assert again.input_accepted.input_id == "input-1"
-    assert again.input_accepted.turn_id == events.of_kind(first.seen, "input_accepted")[-1].input_accepted.turn_id
+    assert confirmed.harness_user_message_confirmed.origin_command_ids == ["input-1"]
     assert request.user_texts.count("Reply with exactly: ONCE_OK") == 1
-    model.reply(request, Text("ONCE_OK"))
     await second.until(events.turn_completed)
-    assert len(events.of_kind([*first.seen, *second.seen], "input_submitted")) == 1
+    assert len(events.of_kind([*first.seen, *second.seen], "command_received")) == 1
     await second.detach()
     await second.drain_until_end()
     model.assert_quiescent()
@@ -106,7 +107,7 @@ async def test_attachments_share_events_and_detach_independently(
     await first.until(events.turn_completed)
     assert [event for event in first.seen if event.sequence > replay_cursor] == second.seen
     events.assert_contiguous(first.seen)
-    assert len(events.of_kind(first.seen, "input_submitted")) == 1
+    assert len(events.of_kind(first.seen, "command_received")) == 1
     assert request.user_texts.count("Reply with exactly: SECOND_OK") == 1
     await second.detach()
     await second.drain_until_end()
@@ -127,7 +128,7 @@ async def test_shutdown_stops_the_harness_and_open_resumes_the_conversation(
     model.reply(request, Text("SEED_OK"))
     await first.until(events.turn_completed)
     observer = await client.attach("shutdown-1", after_sequence=first.cursor)
-    await first.shutdown()
+    await first.stop_runner_session("stop-1")
     exited = await first.until(events.is_kind("harness_exited"))
     assert exited.harness_exited.stopped_by_runner
     await first.drain_until_end()

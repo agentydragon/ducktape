@@ -26,9 +26,16 @@ function rowId(row: Row): string {
 const script: Event[] = [
   event(1, { case: "harnessStarted", value: { resumed: false, pid: 7 } }),
   event(2, { case: "turnStarted", value: { turnId: "t1" } }),
-  event(3, { case: "inputSubmitted", value: { inputId: "i1", text: "hi" } }),
+  event(3, { case: "commandReceived", value: { commandId: "i1" } }),
   event(4, { case: "native", value: { direction: Direction.TO_HARNESS, line: '{"text":"hi"}' } }),
-  event(5, { case: "inputAccepted", value: { inputId: "i1", turnId: "t1" } }, [4]),
+  event(
+    5,
+    {
+      case: "harnessUserMessageConfirmed",
+      value: { harnessMessageId: "m-user-1", text: "hi", originCommandIds: ["i1"], turnId: "t1" },
+    },
+    [4]
+  ),
   event(6, { case: "native", value: { direction: Direction.FROM_HARNESS, line: '{"delta":"Hel"}' } }),
   event(7, { case: "itemStarted", value: { itemId: "m#0", kind: ItemKind.ASSISTANT_TEXT } }, [6]),
   event(8, { case: "textDelta", value: { itemId: "m#0", text: "Hel" } }, [6]),
@@ -64,13 +71,15 @@ describe("reduce", () => {
       succeeded: true,
       completed: true,
     });
-    expect(state.inputs).toMatchObject([{ id: "i1", state: "accepted", detail: "", text: "hi", turnId: "t1" }]);
+    expect(state.inputs).toMatchObject([
+      { id: "m-user-1", state: "confirmed", detail: "from i1", text: "hi", turnId: "t1" },
+    ]);
   });
 
   it("keeps an input's rejection reason and a lost harness", () => {
     const state = [
-      event(1, { case: "inputSubmitted", value: { inputId: "i1" } }),
-      event(2, { case: "inputRejected", value: { inputId: "i1", reason: "nope" } }),
+      event(1, { case: "commandReceived", value: { commandId: "i1" } }),
+      event(2, { case: "commandRejected", value: { commandId: "i1", reason: "nope" } }),
       event(3, { case: "harnessLost", value: {} }),
     ].reduce(reduce, EMPTY);
     expect(state.inputs).toMatchObject([{ id: "i1", state: "rejected", detail: "nope", text: "", turnId: null }]);
@@ -132,7 +141,7 @@ describe("timeline", () => {
     );
     expect(announced).toEqual([
       ["2", "turn", "t1"],
-      ["3", "input", "i1"],
+      ["5", "input", "m-user-1"],
       ["7", "item", "m#0"],
       ["11", "item", "toolu_1"],
     ]);

@@ -3,8 +3,8 @@
 Status: **harness evidence**, not a neutral API proposal.
 
 [`common_protocol.md`](common_protocol.md) leaves one question open: whether Claude has an
-enqueued/dequeued state that `join`/steer alone cannot express, and therefore whether the seam's
-"one `Input` verb and no steer verb" rule is still right. It does. This page records what Claude
+enqueued/dequeued state that `join`/steer alone cannot express, and therefore whether the runner's
+one `SubmitInput` command and no separate steer command rule is still right. It does. This page records what Claude
 actually offers, in the shape a later side-by-side with Codex's `thread/queue/*` needs.
 
 ## Provenance
@@ -12,10 +12,11 @@ actually offers, in the shape a later side-by-side with Codex's `thread/queue/*`
 The public source is the **published type declarations** in `@anthropic-ai/claude-agent-sdk`
 (`sdk.d.ts`), which document these frames and their semantics directly; the notes below quote them.
 Frame _shapes_ not named as a type there were read off the harness. The per-contributor lifecycle
-rule comes from static analysis of the pinned 2.1.252 implementation. Per the
-[shared rules](harness_protocols.md#shared-rules), none of this is pinned in a scripted test yet:
-**a live probe must confirm each behavior before a driver depends on it.** The coalescing rule in
-particular has a counter-intuitive outcome that deserves its own capture.
+and coalescing rules are now pinned against the loopback model by
+`test_queued_inputs_coalesce_into_one_native_user_message` and
+`test_inputs_during_a_tool_coalesce_into_the_tool_result`. Withdrawal remains only source evidence:
+per the [shared rules](harness_protocols.md#shared-rules), it needs its own live capture before a
+driver depends on it.
 
 ## The model in one paragraph
 
@@ -31,14 +32,18 @@ Lifecycle transitions come back as an outbound stream frame:
 
 ```json
 { "type": "command_lifecycle", "command_uuid": "<the uuid you sent>",
-  "state": "started" | "completed" | "cancelled",
+  "state": "queued" | "started" | "completed" | "cancelled",
   "uuid": "<fresh uuid for this frame>", "session_id": "..." }
 ```
 
 - `command_uuid` echoes the caller's uuid; that is the whole correlation mechanism.
 - The frame is itself a message with its own `uuid` — do not confuse the two fields.
-- **The input content is never echoed back.** There is no "here is what I received" frame; the
-  handle is the only receipt.
+- A replay frame is not a universal "here is what I received" receipt. With
+  `--replay-user-messages`, an ordinary compatible batch emits synthetic follower replay(s), then
+  its last UUID with the newline-joined text. While a tool is active, Claude injects queued input
+  into the tool-result continuation but emits no echo of that injected text under the observed
+  flags. The runner therefore correlates the actual model-request or tool-result frame plus the
+  following `started` cohort; it must not claim that a synthetic replay is native delivery.
 - Forwarding is idempotent, and a remote transport suppresses it because it reports lifecycle on
   its own channel. A driver must not assume acks are present merely because it sent a uuid.
 
@@ -151,7 +156,9 @@ are equivalent.
 
 ## What to capture before pinning any of this
 
-1. Two sends during an active turn: confirm both are queued, and whether they coalesce.
+1. **Captured:** two sends during an active tool run are accepted into the following tool-result
+   continuation; the model sees their newline-joined text, while output gives the tool result and
+   per-input `started` cohort rather than an echo of the joined string.
 2. `cancel_async_message` against (a) a queued uuid, (b) a running uuid, (c) an unknown uuid —
    record `cancelled` and which lifecycle frames arrive.
 3. The coalescing case explicitly: cancel a non-representative member, then a representative one,

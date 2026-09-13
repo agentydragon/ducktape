@@ -68,6 +68,8 @@ def assert_sourced(events: Sequence[pb.Event]) -> None:
         "tool_output_delta",
         "item_completed",
         "turn_completed",
+        "harness_user_message_confirmed",
+        "model_changed",
     )
     for event in events:
         if kind(event) in derived:

@@ -433,8 +433,8 @@ def _project_attached(attached: pb.Attached, event: pb.Event) -> None:
             attached.active_turn_id = event.turn_started.turn_id
         case "turn_completed":
             attached.active_turn_id = ""
-        case "model_switch_succeeded":
-            attached.spec.model = event.model_switch_succeeded.model
+        case "model_changed":
+            attached.spec.model = event.model_changed.model
 
 
 async def _last(session: AsyncSession, thread_id: UUID) -> tuple[int | None, datetime | None, dict[str, object] | None]:

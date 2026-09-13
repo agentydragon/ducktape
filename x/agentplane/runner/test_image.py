@@ -113,7 +113,7 @@ async def test_the_image_runs_a_turn(container: str, harness: pb.Harness.ValueTy
     assert done.turn_completed.status == pb.TURN_STATUS_COMPLETED
     (item_id,) = events.items(attachment.seen, pb.ITEM_KIND_ASSISTANT_TEXT)
     assert events.completed(attachment.seen, item_id).text == "IMAGE_OK"
-    await attachment.shutdown()
+    await attachment.stop_runner_session("stop-image")
     await attachment.drain_until_end()
     await client.close()
     model.assert_quiescent()

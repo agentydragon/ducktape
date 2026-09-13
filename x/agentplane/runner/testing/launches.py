@@ -59,7 +59,13 @@ def codex_launch(upstream: ScriptedUpstream) -> CodexLaunch:
     return CodexLaunch(binary=get_required_path(CODEX_BINARY), base_url=f"{upstream.origin}/v1", api_key=TOKEN)
 
 
-def runner_command(harness: pb.Harness.ValueType, upstream: ScriptedUpstream, *, state_dir: Path) -> list[str]:
+def runner_command(
+    harness: pb.Harness.ValueType,
+    upstream: ScriptedUpstream,
+    *,
+    state_dir: Path,
+    test_debug_checkpoint: tuple[str, str] | None = None,
+) -> list[str]:
     """The runner as its own process, configured like `config` is."""
     command = [str(get_required_path(RUNNER_BINARY)), "--state-dir", str(state_dir)]
     if harness == pb.HARNESS_CLAUDE:
@@ -70,4 +76,7 @@ def runner_command(harness: pb.Harness.ValueType, upstream: ScriptedUpstream, *,
         command += ["--codex-binary", str(codex.binary), "--openai-base-url", codex.base_url]
     else:
         raise ValueError(f"unsupported {harness=}")
+    if test_debug_checkpoint is not None:
+        name, command_id = test_debug_checkpoint
+        command += ["--test-debug-checkpoint-name", name, "--test-debug-checkpoint-command-id", command_id]
     return command

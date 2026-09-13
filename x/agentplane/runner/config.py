@@ -24,6 +24,14 @@ class CodexLaunch:
 
 
 @dataclass(frozen=True, slots=True)
+class DebugCheckpoint:
+    """One test-only runner pause, surfaced through the ordinary session event stream."""
+
+    name: str
+    command_id: str
+
+
+@dataclass(frozen=True, slots=True)
 class RunnerConfig:
     # Holds `sessions/<session_id>/` with the session log and the harness's own persistence.
     state_dir: Path
@@ -32,3 +40,7 @@ class RunnerConfig:
     environment: Mapping[str, str] = field(default_factory=dict)
     claude: ClaudeLaunch | None = None
     codex: CodexLaunch | None = None
+    # A hidden test-only process-integration seam. Deployments never set it. Once the runner
+    # reaches this boundary it appends DebugCheckpoint and waits to be killed by the test; a
+    # replacement runner sees that persisted event and proceeds normally.
+    test_debug_checkpoint: DebugCheckpoint | None = None

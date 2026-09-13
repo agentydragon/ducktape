@@ -155,7 +155,8 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
             reopened = await http.post(SESSIONS, json={"session_id": SESSION, "spec": MessageToDict(spec)})
             assert reopened.status_code == 201, reopened.text
             accepted = await http.post(
-                f"{SESSIONS}/{SESSION}/inputs", json={"inputId": "input-1", "text": "Reply with exactly: BRIDGE_OK"}
+                f"{SESSIONS}/{SESSION}/inputs",
+                json={"commandId": "input-1", "submitInput": {"text": "Reply with exactly: BRIDGE_OK"}},
             )
             assert accepted.status_code == 202, accepted.text
             model.reply(await model.request(), Text("BRIDGE_OK"))
@@ -175,7 +176,7 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
                 assert await read_until(second, "turnCompleted") == seen
                 accepted = await http.post(
                     f"{SESSIONS}/{SESSION}/inputs",
-                    json={"inputId": "input-2", "text": "Reply with exactly: BRIDGE_TWO"},
+                    json={"commandId": "input-2", "submitInput": {"text": "Reply with exactly: BRIDGE_TWO"}},
                 )
                 assert accepted.status_code == 202, accepted.text
                 model.reply(await model.request(), Text("BRIDGE_TWO"))
@@ -196,7 +197,9 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
             assert (await next_message(lines)).event == "attached"
             assert (await next_message(lines)).id == cut + 1
 
-        stopped = await http.post(f"{SESSIONS}/{SESSION}/shutdown")
+        stopped = await http.post(
+            f"{SESSIONS}/{SESSION}/shutdown", json={"commandId": "stop-bridge", "stopRunnerSession": {}}
+        )
         assert stopped.status_code == 202, stopped.text
         (summary,) = (await http.get(SESSIONS)).json()
         assert summary["harnessState"] == "HARNESS_STATE_STOPPED"
@@ -238,21 +241,28 @@ async def test_the_feed_records_a_turn_nobody_is_watching(
         opened = await http.post(SESSIONS, json={"session_id": "unwatched", "spec": MessageToDict(spec)})
         assert opened.status_code == 201, opened.text
         accepted = await http.post(
-            f"{SESSIONS}/unwatched/inputs", json={"inputId": "input-1", "text": "Reply with exactly: UNWATCHED_OK"}
+            f"{SESSIONS}/unwatched/inputs",
+            json={"commandId": "input-1", "submitInput": {"text": "Reply with exactly: UNWATCHED_OK"}},
         )
         assert accepted.status_code == 202, accepted.text
         model.reply(await model.request(), Text("UNWATCHED_OK"))
         (thread,) = (await http.get("/threads")).json()
         stored = await _stored_events(http, thread["id"], until="turnCompleted")
         assert [event["itemCompleted"]["text"] for event in stored if "itemCompleted" in event] == ["UNWATCHED_OK"]
-        assert (await http.post(f"{SESSIONS}/unwatched/shutdown")).status_code == 202
+        assert (
+            await http.post(
+                f"{SESSIONS}/unwatched/shutdown", json={"commandId": "stop-unwatched", "stopRunnerSession": {}}
+            )
+        ).status_code == 202
         assert (await http.get("/threads/00000000-0000-0000-0000-000000000000/events")).status_code == 404
     model.assert_quiescent()
 
 
 async def test_the_bridge_reports_what_the_runner_refuses(app_url: str) -> None:
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
-        unknown = await http.post(f"{SESSIONS}/never-opened/inputs", json={"inputId": "x", "text": "hello"})
+        unknown = await http.post(
+            f"{SESSIONS}/never-opened/inputs", json={"commandId": "x", "submitInput": {"text": "hello"}}
+        )
         assert unknown.status_code == 409
         assert "does not exist" in unknown.json()["detail"]
         malformed = await http.post(
@@ -300,12 +310,16 @@ async def test_replica_commands_and_database_stream_survive_ingestion_owner_exit
     async with aclosing(replicas.survivor.events(SANDBOX, SESSION, after_sequence=0)) as frames:
         lines = frame_lines(frames)
         assert (await next_message(lines)).event == "attached"
-        await replicas.survivor.send(SANDBOX, SESSION, pb.Input(input_id="input-1", text="FIRST_REPLICA_TURN"))
+        await replicas.survivor.command(
+            SANDBOX, SESSION, pb.Command(command_id="input-1", submit_input=pb.SubmitInput(text="FIRST_REPLICA_TURN"))
+        )
         model.reply(await model.request(), Text("FIRST_REPLICA_TURN"))
         async with asyncio.timeout(10):
             first = await read_until(lines, "turnCompleted")
 
-        await replicas.survivor.send(SANDBOX, SESSION, pb.Input(input_id="input-2", text="AFTER_OWNER_EXIT"))
+        await replicas.survivor.command(
+            SANDBOX, SESSION, pb.Command(command_id="input-2", submit_input=pb.SubmitInput(text="AFTER_OWNER_EXIT"))
+        )
         request = await model.request()
         await replicas.owner.close()
         model.reply(request, Text("AFTER_OWNER_EXIT"))
@@ -317,7 +331,9 @@ async def test_replica_commands_and_database_stream_survive_ingestion_owner_exit
             "FIRST_REPLICA_TURN",
             "AFTER_OWNER_EXIT",
         ]
-        await replicas.survivor.shutdown(SANDBOX, SESSION)
+        await replicas.survivor.stop_runner_session(
+            SANDBOX, SESSION, pb.Command(command_id="stop-after-owner", stop_runner_session=pb.StopRunnerSession())
+        )
         async with asyncio.timeout(10):
             await read_until(lines, "harnessExited")
             assert (await next_message(lines)).event == "end"
@@ -379,12 +395,16 @@ async def test_resumed_session_stream_does_not_end_at_previous_shutdown(
     replicas: Replicas, model: ScriptedModel, spec: pb.SessionSpec
 ) -> None:
     await replicas.owner.open_session(SANDBOX, SESSION, spec)
-    await replicas.survivor.send(SANDBOX, SESSION, pb.Input(input_id="seed-input", text="BEFORE_RESUME"))
+    await replicas.survivor.command(
+        SANDBOX, SESSION, pb.Command(command_id="seed-input", submit_input=pb.SubmitInput(text="BEFORE_RESUME"))
+    )
     model.reply(await model.request(), Text("BEFORE_RESUME"))
     async with aclosing(replicas.survivor.events(SANDBOX, SESSION, after_sequence=0)) as frames:
         async with asyncio.timeout(10):
             await read_until(frame_lines(frames), "turnCompleted")
-    await replicas.survivor.shutdown(SANDBOX, SESSION)
+    await replicas.survivor.stop_runner_session(
+        SANDBOX, SESSION, pb.Command(command_id="stop-before-resume", stop_runner_session=pb.StopRunnerSession())
+    )
     async with aclosing(replicas.survivor.events(SANDBOX, SESSION, after_sequence=0)) as frames:
         lines = frame_lines(frames)
         assert (await next_message(lines)).event == "attached"
@@ -397,14 +417,20 @@ async def test_resumed_session_stream_does_not_end_at_previous_shutdown(
     async with aclosing(replicas.survivor.events(SANDBOX, SESSION, after_sequence=cursor)) as frames:
         lines = frame_lines(frames)
         assert (await next_message(lines)).event == "attached"
-        await replicas.survivor.send(SANDBOX, SESSION, pb.Input(input_id="resumed-input", text="RESUMED_REPLICA"))
+        await replicas.survivor.command(
+            SANDBOX,
+            SESSION,
+            pb.Command(command_id="resumed-input", submit_input=pb.SubmitInput(text="RESUMED_REPLICA")),
+        )
         model.reply(await model.request(), Text("RESUMED_REPLICA"))
         async with asyncio.timeout(10):
             resumed = await read_until(lines, "turnCompleted")
         assert all(message.event == "event" for message in resumed)
         assert any(message.data.get("harnessStarted", {}).get("resumed") for message in resumed)
         assert [message.id for message in resumed] == list(range(cursor + 1, cursor + len(resumed) + 1))
-        await replicas.survivor.shutdown(SANDBOX, SESSION)
+        await replicas.survivor.stop_runner_session(
+            SANDBOX, SESSION, pb.Command(command_id="stop-after-resume", stop_runner_session=pb.StopRunnerSession())
+        )
     model.assert_quiescent()
 
 
@@ -412,7 +438,9 @@ async def test_stored_conversation_stream_does_not_require_reachable_runner(
     replicas: Replicas, store: TrajectoryStore, spec: pb.SessionSpec
 ) -> None:
     await replicas.owner.open_session(SANDBOX, SESSION, spec)
-    await replicas.survivor.shutdown(SANDBOX, SESSION)
+    await replicas.survivor.stop_runner_session(
+        SANDBOX, SESSION, pb.Command(command_id="stop-for-offline", stop_runner_session=pb.StopRunnerSession())
+    )
     async with aclosing(replicas.survivor.events(SANDBOX, SESSION, after_sequence=0)) as frames:
         lines = frame_lines(frames)
         await next_message(lines)

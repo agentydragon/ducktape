@@ -140,7 +140,9 @@ class Agent:
         the cursor before submitting cannot miss an event."""
         after = self._sequence
         await self._client.send_input(
-            self._sandbox, self._session_id, pb.Input(input_id=f"input-{uuid4().hex[:8]}", text=prompt)
+            self._sandbox,
+            self._session_id,
+            pb.Command(command_id=f"input-{uuid4().hex[:8]}", submit_input=pb.SubmitInput(text=prompt)),
         )
         turn = Turn()
         async for event in self._client.events(self._sandbox, self._session_id, after=after, read_seconds=TURN_SECONDS):

@@ -8,18 +8,21 @@ are the evidence every rule here rests on.
 
 ## What the seam owns
 
-- One bidirectional stream per attachment, `Attach`, over session-scoped commands (`Open`,
-  `Input`, `Interrupt`, `Shutdown`, `Detach`, `SwitchModel`) and sequenced events.
+- One bidirectional stream per attachment, `Attach`, over `Open`, `Command`, and `Detach`, plus
+  sequenced events. A command is `SubmitInput`, `ChangeModel`, `InterruptTurn`, or
+  `StopRunnerSession`.
 - Only behavior the scripted tests prove with the real binaries. Its own tests are one
   interaction script per scenario run against both harnesses, so a caller never switches on
   the harness.
-- One `Input` verb and no steer verb: both harnesses take an input during a turn into that turn.
+- One `SubmitInput` operation and no steer operation: both harnesses take an input during a turn
+  into that turn.
 - Harness ids and frames, delivered verbatim as `Native` events with the derived events citing
   them, so harness detail is one lookup away rather than collapsed.
 
-The seam does not emulate retry, redispatch an input whose admission is uncertain, or present an
-unsupported operation as successful. It is an internal boundary: distinct from the browser-facing
-API, and silent on Thread naming, archive presentation, timeline design, and HTTP resource shape.
+The runner makes its own journal durable before `CommandReceived`, reconciles uncompleted commands
+after restart, and never emits an indeterminate outcome. It does not present an unsupported
+operation as successful. It is an internal boundary: distinct from the browser-facing API, and
+silent on Thread naming, archive presentation, timeline design, and HTTP resource shape.
 
 ## Harness differences that stay visible
 
@@ -37,16 +40,17 @@ API, and silent on Thread naming, archive presentation, timeline design, and HTT
 - Claude's side of that question is now written up in
   [`claude_input_queue.md`](claude_input_queue.md): it too has a real
   enqueued/dequeued state — inputs are queued under a caller-supplied uuid, withdrawn by
-  `cancel_async_message`, and reported via `command_lifecycle` frames — so "one `Input` verb and
-  no steer verb" is due a revisit against both harnesses, not just Codex. The two queues are not
+  `cancel_async_message`, and reported via `command_lifecycle` frames — so "one `SubmitInput`
+  operation and no steer verb" is due a revisit against both harnesses, not just Codex. The two
+  queues are not
   the same object, though: Codex's sits beside the turn and deletes race-free, while Claude's
   feeds the turn and **coalesces**, which silently moves the unit of withdrawal from the input to
   the batch. Any common enqueue/withdraw verb has to survive that asymmetry.
 - Steering, queued input, interruption, and resume use harness-native mechanisms and outcomes.
   A related operation on both sides is not evidence that the two are equivalent.
-- Runtime model and reasoning-effort controls are deliberately deferred while their harness
-  boundaries are resolved; see [runtime control acceptance](runtime_control.md) and the linked
-  [`CONTROL_STATE` task](../plans/task_dag.md#control_state--dynamic-runtime-control-acceptance).
+- Runtime model control is a durable command. Claude reports its native `set_model` control effect;
+  Codex reports `ModelChanged` only when a later native `turn/start` proves its selection. Those
+  different mechanisms stay in their adapters.
 
 These are constraints on the adapters, not a license to manufacture common semantics the
 harnesses did not demonstrate. A behavior that is unsupported or supported differently is
@@ -59,7 +63,8 @@ and the runner does not know them:
 
 - **Thread**: a durable, user-visible interaction context, served by one runner session at a
   time.
-- **Input**: a message the Agentplane service accepted; it becomes one runner `Input`.
+- **Thread command**: an app-owned desired operation with a stable id; delivery to the runner is a
+  runner `Command` with the same id.
 - **Turn**: one harness execution bracket, the runner's `TurnStarted` to `TurnCompleted`.
 - **Runner**: the process serving a Thread's session.
 - **Timeline event**: a presentation of runner events, owned by whichever app renders it.
