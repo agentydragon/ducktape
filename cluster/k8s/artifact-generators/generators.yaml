@@ -1992,6 +1992,287 @@ spec:
           to: "@artifact/cluster/k8s/node-feature-discovery/"
           exclude:
             - flux-kustomization.yaml
+    - name: archivebox-app
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/x/archivebox/app/**"
+          to: "@artifact/cluster/k8s/x/archivebox/app/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: archivebox-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/x/archivebox/namespace/**"
+          to: "@artifact/cluster/k8s/x/archivebox/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: authelia-app
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/x/authelia/app/**"
+          to: "@artifact/cluster/k8s/x/authelia/app/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: authelia-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/x/authelia/namespace/**"
+          to: "@artifact/cluster/k8s/x/authelia/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: oci-cache-app
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/oci-cache/app/**"
+          to: "@artifact/cluster/k8s/oci-cache/app/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: oci-cache-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/oci-cache/namespace/**"
+          to: "@artifact/cluster/k8s/oci-cache/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: ollama-agent-rbac
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/ollama/agent-rbac/**"
+          to: "@artifact/cluster/k8s/ollama/agent-rbac/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: ollama-app
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/ollama/app/**"
+          to: "@artifact/cluster/k8s/ollama/app/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: openebs-lvm
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/openebs-lvm/**"
+          to: "@artifact/cluster/k8s/openebs-lvm/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: paperless-app
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/paperless/app/**"
+          to: "@artifact/cluster/k8s/paperless/app/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: paperless-cache
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/paperless/cache/**"
+          to: "@artifact/cluster/k8s/paperless/cache/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: paperless-db
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/paperless/db/**"
+          to: "@artifact/cluster/k8s/paperless/db/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: paperless-secrets
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/paperless/secrets/**"
+          to: "@artifact/cluster/k8s/paperless/secrets/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: proxmox-proxy
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/proxmox-proxy/**"
+          to: "@artifact/cluster/k8s/proxmox-proxy/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: reloader
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/reloader/**"
+          to: "@artifact/cluster/k8s/reloader/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: sdr
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/sdr/**"
+          to: "@artifact/cluster/k8s/sdr/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: seaweedfs-drivefs-artifacts-bucket
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/seaweedfs/drivefs-artifacts-bucket/**"
+          to: "@artifact/cluster/k8s/seaweedfs/drivefs-artifacts-bucket/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: seaweedfs-forgejo-bucket
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/seaweedfs/forgejo-bucket/**"
+          to: "@artifact/cluster/k8s/seaweedfs/forgejo-bucket/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: seaweedfs-haku-openclaw-spike-backups-bucket
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/seaweedfs/haku-openclaw-spike-backups-bucket/**"
+          to: "@artifact/cluster/k8s/seaweedfs/haku-openclaw-spike-backups-bucket/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: seaweedfs-home-assistant-backups-bucket
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/seaweedfs/home-assistant-backups-bucket/**"
+          to: "@artifact/cluster/k8s/seaweedfs/home-assistant-backups-bucket/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: seaweedfs-langfuse-bucket
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/seaweedfs/langfuse-bucket/**"
+          to: "@artifact/cluster/k8s/seaweedfs/langfuse-bucket/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: seaweedfs-loom-gym-bucket
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/seaweedfs/loom-gym-bucket/**"
+          to: "@artifact/cluster/k8s/seaweedfs/loom-gym-bucket/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: seaweedfs-monitoring
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/seaweedfs/monitoring/**"
+          to: "@artifact/cluster/k8s/seaweedfs/monitoring/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: seaweedfs-pr-visuals-bucket
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/seaweedfs/pr-visuals-bucket/**"
+          to: "@artifact/cluster/k8s/seaweedfs/pr-visuals-bucket/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: seaweedfs-public-coder-agent-backups-bucket
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/seaweedfs/public-coder-agent-backups-bucket/**"
+          to: "@artifact/cluster/k8s/seaweedfs/public-coder-agent-backups-bucket/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: seaweedfs-registry-cache-bucket
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/seaweedfs/registry-cache-bucket/**"
+          to: "@artifact/cluster/k8s/seaweedfs/registry-cache-bucket/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: seaweedfs-vm-images-bucket
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/seaweedfs/vm-images-bucket/**"
+          to: "@artifact/cluster/k8s/seaweedfs/vm-images-bucket/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: seaweedfs-wayback-archive-bucket
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/seaweedfs/wayback-archive-bucket/**"
+          to: "@artifact/cluster/k8s/seaweedfs/wayback-archive-bucket/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: ssh-mcp
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/ssh-mcp/**"
+          to: "@artifact/cluster/k8s/ssh-mcp/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: sshpiper-crds
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/sshpiper-crds/**"
+          to: "@artifact/cluster/k8s/sshpiper-crds/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: study-casino-agent-rbac
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/study-casino/agent-rbac/**"
+          to: "@artifact/cluster/k8s/study-casino/agent-rbac/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: study-casino-app
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/study-casino/app/**"
+          to: "@artifact/cluster/k8s/study-casino/app/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: study-casino-db
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/study-casino/db/**"
+          to: "@artifact/cluster/k8s/study-casino/db/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: talos-cloud-controller-manager
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/talos-cloud-controller-manager/**"
+          to: "@artifact/cluster/k8s/talos-cloud-controller-manager/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: tofu-state-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/tofu-state/namespace/**"
+          to: "@artifact/cluster/k8s/tofu-state/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: user-agentydragon
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/user-agentydragon/**"
+          to: "@artifact/cluster/k8s/user-agentydragon/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: vector-talos-logs
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/vector-talos-logs/**"
+          to: "@artifact/cluster/k8s/vector-talos-logs/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: vm-images-publisher
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/vm-images-publisher/**"
+          to: "@artifact/cluster/k8s/vm-images-publisher/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: vpa
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/vpa/**"
+          to: "@artifact/cluster/k8s/vpa/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: website
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/website/**"
+          to: "@artifact/cluster/k8s/website/"
+          exclude:
+            - flux-kustomization.yaml
+
 
 ---
 apiVersion: source.extensions.fluxcd.io/v1beta1

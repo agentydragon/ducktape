@@ -9,8 +9,8 @@ spec:
   path: ./cluster/k8s/seaweedfs/public-coder-agent-backups-bucket
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: seaweedfs-public-coder-agent-backups-bucket
     namespace: ducktape-flux
   dependsOn:
     - name: seaweedfs-cluster

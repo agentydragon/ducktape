@@ -9,7 +9,7 @@ spec:
   path: ./cluster/k8s/x/authelia/namespace
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: authelia-namespace
 
     namespace: ducktape-flux

@@ -10,8 +10,8 @@ spec:
   path: ./cluster/k8s/paperless/app
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: paperless-app
     namespace: ducktape-flux
   timeout: 10m
   dependsOn:
