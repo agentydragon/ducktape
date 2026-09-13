@@ -11,7 +11,7 @@ This document describes the linting and formatting setup across pre-commit, Baze
 | **Python (mypy)**                | -                       | default      | bazel-check         |
 | **JS/TS (eslint)**               | -                       | default      | bazel-check         |
 | **JS/TS (prettier)**             | `prettier` hook         | N/A          | Pre-commit          |
-| **Starlark (buildifier)**        | `buildifier-lint` hook  | -            | Pre-commit          |
+| **Starlark (buildifier)**        | `buildifier` hook       | -            | Pre-commit          |
 | **Starlark (buildifier format)** | `buildifier` hook       | N/A          | Pre-commit          |
 | **Rust (clippy)**                | -                       | default      | bazel-check         |
 | **Rust (rustfmt)**               | `fmt` hook              | default      | Both                |
@@ -86,9 +86,9 @@ Aspect definitions in `devinfra/lint/linters.bzl`:
 Formatting is handled by pre-commit hooks (run automatically on `git commit`):
 
 - **prettier** - JS/TS, CSS, HTML, Markdown, YAML, JSON (local node hook)
-- **ruff format** - Python (`astral-sh/ruff-pre-commit`)
-- **shfmt** - Shell scripts (`scop/pre-commit-shfmt`)
-- **buildifier** - Starlark (`keith/pre-commit-buildifier`)
+- **ruff format** - Python (local Nix devshell tool)
+- **shfmt** - Shell scripts (local Nix devshell tool; `.zsh` is excluded)
+- **buildifier** - Starlark (local Nix devshell tool)
 
 All hooks respect `.gitattributes` and `.pre-commit-config.yaml` exclusions.
 
@@ -96,17 +96,16 @@ All hooks respect `.gitattributes` and `.pre-commit-config.yaml` exclusions.
 
 Key hooks in `.pre-commit-config.yaml`:
 
-| Hook                 | Source                      | Purpose                           |
-| -------------------- | --------------------------- | --------------------------------- |
-| `ruff-check`         | astral-sh/ruff-pre-commit   | Python linting                    |
-| `ruff-format`        | astral-sh/ruff-pre-commit   | Python formatting                 |
-| `buildifier`         | keith/pre-commit-buildifier | Starlark formatting               |
-| `buildifier-lint`    | keith/pre-commit-buildifier | Starlark linting                  |
-| `ducktape-precommit` | local (system)              | Filename + frozen-specimen checks |
-| `prettier`           | local (node)                | JS/TS/MD/YAML formatting          |
-| `rustfmt`            | local (system)              | Rust formatting                   |
-| `nixfmt`             | local (static binary)       | Nix formatting                    |
-| `markdownlint-cli2`  | local (system)              | Markdown linting                  |
+| Hook                 | Source                | Purpose                           |
+| -------------------- | --------------------- | --------------------------------- |
+| `ruff-check`         | local (Nix devshell)  | Python linting                    |
+| `ruff-format`        | local (Nix devshell)  | Python formatting                 |
+| `buildifier`         | local (Nix devshell)  | Starlark formatting               |
+| `ducktape-precommit` | local (system)        | Filename + frozen-specimen checks |
+| `prettier`           | local (node)          | JS/TS/MD/YAML formatting          |
+| `rustfmt`            | local (system)        | Rust formatting                   |
+| `nixfmt`             | local (static binary) | Nix formatting                    |
+| `markdownlint-cli2`  | local (system)        | Markdown linting                  |
 
 Cluster-specific hooks run only on `cluster/` files:
 
@@ -122,10 +121,10 @@ dependencies, health checks, blueprint completeness) runs as the
 
 ## Version Management
 
-Pre-commit uses external tool versions for some hooks:
+Pre-commit uses tools supplied by the Nix devshell / web-session:
 
-- `ruff-check`/`ruff-format`: from `astral-sh/ruff-pre-commit`
-- `buildifier`/`buildifier-lint`: from `keith/pre-commit-buildifier`
+- `ruff-check`/`ruff-format`: the devshell's Ruff binary
+- `buildifier`: the devshell's Buildifier binary
 
 Bazel uses managed versions:
 
@@ -135,7 +134,7 @@ Bazel uses managed versions:
 
 See `TODO.md` for tracked items. Current gaps:
 
-1. **Version drift risk**: Pre-commit uses external ruff/buildifier versions that may differ from Bazel-managed versions. TODO in `.pre-commit-config.yaml` tracks the buildifier version sync issue.
+1. **Version drift risk**: Pre-commit uses Nix-provided ruff/buildifier versions, while Bazel uses its own pinned multitool/buildifier versions. Changes to one toolchain do not automatically update the other.
 
 2. **ESLint not in pre-commit**: JS/TS linting only runs in CI via Bazel aspects, not locally during commit.
 

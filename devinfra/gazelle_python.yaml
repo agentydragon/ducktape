@@ -194,7 +194,6 @@ manifest:
     google.type.quaternion_pb2: googleapis_common_protos
     google.type.timeofday_pb2: googleapis_common_protos
     google_auth_httplib2: google_auth_httplib2
-    google_auth_oauthlib: google_auth_oauthlib
     googleapiclient: google_api_python_client
     greenlet: greenlet
     griffe: griffelib
@@ -549,4 +548,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 93e46b475b768c3676442826944f07c747cda13f61ecdb84b73fd335c9649bd1
+integrity: 6c177c40e492ac8e14ca7d13e312f300108b5adfd7d1d35455ecbbafb394d85e
