@@ -9,8 +9,8 @@
       "sha256": "Ews1qv8jjSS6KxhUaaTdysP+a2yTZOEjTkH8wL7zqeg="
     },
     "bbapi": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/bbapi-10e2d3d7dba2/bbapi",
-      "sha256": "EOLT19uiwCuLF1vUBe5K3RNo+O1Ti+zfmtgR7ASG3LA="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/bbapi-a828e37c63b5/bbapi",
+      "sha256": "qCjjfGO18kjttVi//Xlg1FxKJbx+yIE4joHBsqgEnCA="
     },
     "claude-hooks": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-64acfeda27fa/claude_hooks-0.1.0-py3-none-any.whl",
@@ -81,8 +81,8 @@
       "sha256": "eCzQ/g/btogW4ragke8gHosEy25k1M8rLmJeY2D3Woo="
     },
     "skill-cihealth": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cihealth-dde7cda49f3b/cihealth.skill",
-      "sha256": "3efNpJ87Cnpl6PjHYw1+IXpExC2esb5f1Cyz0hCiBAQ="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cihealth-a8a054131490/cihealth.skill",
+      "sha256": "qKBUExSQ8pP6V2/DKMDPRpMO9KxAeU5mN7/TH7E4VTc="
     },
     "skill-web_selfcheck": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-web_selfcheck-f5e75a4080ee/web_selfcheck.skill",
