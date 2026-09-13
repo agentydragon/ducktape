@@ -162,10 +162,6 @@ section {
   box-shadow: var(--shadow);
   flex: 0 0 auto;
 }
-.device.phone {
-  width: 360px;
-}
-
 /* ---- sidebar chrome (app_shell.html, new_thread_landing.html) ---- */
 
 .sidebar {
@@ -501,56 +497,4 @@ footer {
   color: var(--faint);
   border-top: 1px solid var(--border-soft);
   padding-top: 20px;
-}
-
-/* ---- upward/downward-opening menu (composer_bar.html, nav_overflow.html) ---- */
-/* Each mock sets the menu's opening edge (top+left vs bottom+right) and width -- see its own
-   <style>; Floating UI's own auto-flip is what picks one over the other at runtime, not a
-   per-mock design choice. */
-
-.menu {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: var(--shadow);
-  padding: 6px;
-  position: absolute;
-  z-index: 2;
-}
-.menu::before {
-  background: var(--surface);
-  content: "";
-  height: 11px;
-  position: absolute;
-  transform: rotate(45deg);
-  width: 11px;
-}
-.menu-item {
-  display: flex;
-  align-items: center;
-  border-radius: 6px;
-  color: var(--ink);
-}
-.icon-btn {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--surface-2);
-  color: var(--muted);
-  flex: 0 0 auto;
-}
-.icon-btn.open {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-.pill.stay {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-.pill.move {
-  background: var(--warn-soft);
-  color: var(--warn);
 }

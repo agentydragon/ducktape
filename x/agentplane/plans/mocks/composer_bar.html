@@ -20,6 +20,9 @@
       .section-note {
         max-width: 68ch;
       }
+      .device.phone {
+        width: 360px;
+      }
       .device {
         width: 640px;
         padding: 14px;
@@ -118,11 +121,24 @@
         height: 12px;
       }
       .icon-btn {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--surface-2);
+        color: var(--muted);
+        flex: 0 0 auto;
         border: 1px solid transparent;
       }
       .icon-btn svg {
         width: 16px;
         height: 16px;
+      }
+      .icon-btn.open {
+        background: var(--accent-soft);
+        color: var(--accent);
       }
 
       .icon-btn.idle {
@@ -191,17 +207,34 @@
      (default position "bottom", auto-flips to "top" when it would clip) -- this is what that
      flip settles on here, not a special case to hand-code. */
       .menu {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        box-shadow: var(--shadow);
+        padding: 6px;
+        position: absolute;
+        z-index: 2;
         bottom: calc(100% + 8px);
         right: 40px;
         width: 208px;
       }
       .menu::before {
+        background: var(--surface);
+        content: "";
+        height: 11px;
+        position: absolute;
+        transform: rotate(45deg);
+        width: 11px;
         bottom: -6px;
         right: 18px;
         border-right: 1px solid var(--border);
         border-bottom: 1px solid var(--border);
       }
       .menu-item {
+        display: flex;
+        align-items: center;
+        border-radius: 6px;
+        color: var(--ink);
         justify-content: space-between;
         gap: 10px;
         padding: 8px 8px;
@@ -302,6 +335,14 @@
         color: var(--faint);
         font-weight: 700;
         width: 28px;
+      }
+      .pill.stay {
+        background: var(--accent-soft);
+        color: var(--accent);
+      }
+      .pill.move {
+        background: var(--warn-soft);
+        color: var(--warn);
       }
     </style>
 
