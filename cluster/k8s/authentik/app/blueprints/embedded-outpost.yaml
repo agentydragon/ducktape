@@ -21,20 +21,22 @@ entries:
       config:
         authentik_host: "https://auth.allegedly.works"
       providers:
+        # keep-sorted start
         - !Find [authentik_providers_proxy.proxyprovider, [name, activitywatch]]
-        - !Find [authentik_providers_proxy.proxyprovider, [name, alloy-otlp]]
-        - !Find [authentik_providers_proxy.proxyprovider, [name, grocy-sf]]
-        - !Find [authentik_providers_proxy.proxyprovider, [name, grocy-vallejo]]
-        - !Find [authentik_providers_proxy.proxyprovider, [name, hubble]]
-        - !Find [authentik_providers_proxy.proxyprovider, [name, public-coder-agent]]
-        - !Find [authentik_providers_proxy.proxyprovider, [name, haku-openclaw-spike]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, adsb]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, agents-mitmproxy]]
-        - !Find [authentik_providers_proxy.proxyprovider, [name, proxmox]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, alloy-otlp]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, fava]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, goldilocks]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, google-workspace-mcp]]
-        - !Find [authentik_providers_proxy.proxyprovider, [name, plaid-link]]
-        - !Find [authentik_providers_proxy.proxyprovider, [name, sdr]]
-        - !Find [authentik_providers_proxy.proxyprovider, [name, adsb]]
-        - !Find [authentik_providers_proxy.proxyprovider, [name, fava]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, grocy-sf]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, grocy-vallejo]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, haku-openclaw-spike]]
         # haku-console and the Agentplane app own their own OAuth; haku-ui stays proxied.
         - !Find [authentik_providers_proxy.proxyprovider, [name, haku-ui]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, hubble]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, plaid-link]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, proxmox]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, public-coder-agent]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, sdr]]
+        # keep-sorted end
