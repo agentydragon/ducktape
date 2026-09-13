@@ -8,11 +8,11 @@
 }:
 pkgs.stdenvNoCC.mkDerivation (finalAttrs: {
   pname = "anthropic-cli";
-  version = "1.12.1";
+  version = "1.32.0";
 
   src = pkgs.fetchurl {
     url = "https://github.com/anthropics/anthropic-cli/releases/download/v${finalAttrs.version}/ant_${finalAttrs.version}_linux_amd64.tar.gz";
-    hash = "sha256-cgXlUsZ4UhmKAVLPEADhybq3AHXcALVm/KkZnjHZxQk=";
+    hash = "sha256-tyC2dLDR+zc2IHwZmO8hVangxLVFJ9I2V3MgXA1QFJY=";
   };
 
   # Tarball holds `ant` plus completions/ and man/ at the root; the binary is

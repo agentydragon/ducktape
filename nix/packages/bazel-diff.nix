@@ -9,14 +9,14 @@
   lib,
 }:
 let
-  version = "16.0.0";
+  version = "47.0.0";
 in
 pkgs.stdenvNoCC.mkDerivation {
   pname = "bazel-diff";
   inherit version;
   src = pkgs.fetchurl {
-    url = "https://github.com/Tinder/bazel-diff/releases/download/${version}/bazel-diff_deploy.jar";
-    hash = "sha256-wtZvqabI5l9YqZ08ZYmThONg+LXXXywq/148s6rBTJQ=";
+    url = "https://github.com/Tinder/bazel-diff/releases/download/v${version}/bazel-diff_deploy.jar";
+    hash = "sha256-9liQo5R500IgJCORskeef4yJ4e4Sz6PRSqKMEBjNwhI=";
   };
   dontUnpack = true;
   nativeBuildInputs = [ pkgs.makeWrapper ];

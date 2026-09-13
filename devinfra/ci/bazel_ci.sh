@@ -86,7 +86,7 @@ trap finalize_bb_runner_probe EXIT
 # the broken area are unblocked.
 #
 # `bazel-diff` binary comes from the RBE image via
-# nix/packages/bazel-diff.nix (pinned to v16.0.0).
+# nix/packages/bazel-diff.nix (pinned to v47.0.0).
 #
 # Fails hard on any bazel-diff error — no fallback to `//...`.
 # bazel-diff is the source of truth for the affected set; a
