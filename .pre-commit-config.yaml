@@ -66,6 +66,14 @@ repos:
   # Ruff linter and formatter — ruff provided by devShell / web-session via Nix
   - repo: local
     hooks:
+      # Language-agnostic ordering for explicitly marked blocks. The binary is
+      # in devToolsCommon so this also runs in CI and Claude Code web sessions.
+      - id: keep-sorted
+        name: keep-sorted
+        entry: keep-sorted
+        language: system
+        types: [text]
+
       - id: ruff-check
         name: ruff-check
         entry: ruff check --fix --force-exclude --config ruff.toml

@@ -27,15 +27,17 @@ CALL_SERVICE_TOOL = "ha_call_service"
 # websocket escape hatch that bypasses the domain/service/entity triple entirely.
 _REVIEWED_ARGUMENTS = frozenset(
     {
-        "domain",
-        "service",
-        "entity_id",
+        # keep-sorted start
         "data",
-        "return_response",
-        "wait",
-        "verbose",
-        "result_fields",
+        "domain",
+        "entity_id",
         "result_attribute_keys",
+        "result_fields",
+        "return_response",
+        "service",
+        "verbose",
+        "wait",
+        # keep-sorted end
     }
 )
 

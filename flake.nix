@@ -353,6 +353,7 @@
         pkgs.ruff
         pkgs.shfmt
         pkgs.buildifier
+        pkgs.keep-sorted
         pkgs.gofumpt
         pkgs.markdownlint-cli2
         ducktapePkgs.prettier

@@ -66,13 +66,15 @@ export function parseInbound(data: unknown): Inbound | null {
 // haku-state, or Haku could whitelist a phishing host to skip the confirm. An entry matches the
 // host exactly or any subdomain of it.
 export const OPEN_LINK_WHITELIST = [
-  "claude.ai",
-  "github.com",
+  // keep-sorted start
   "allegedly.works", // the operator's own services (*.allegedly.works)
-  "mail.google.com",
-  "drive.google.com",
-  "calendar.google.com",
   "app.tana.inc",
+  "calendar.google.com",
+  "claude.ai",
+  "drive.google.com",
+  "github.com",
+  "mail.google.com",
+  // keep-sorted end
 ] as const;
 
 export type LinkVerdict = { action: "open" } | { action: "confirm" } | { action: "reject"; reason: string };
