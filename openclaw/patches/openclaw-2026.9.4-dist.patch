@@ -95,6 +95,15 @@ diff -u a/dist/openclaw-agent-db-fItexY2B.mjs b/dist/openclaw-agent-db-fItexY2B.
  		assertOpenClawAgentCurrentRuntimeSchema(database, {
  			agentId,
  			pathname
+@@ -2423,1 +2435,4 @@
+-	}
++	}
++	const configuredLeaseMs = (options.env ?? process.env).OPENCLAW_AGENT_DB_MAINTENANCE_LEASE_MS?.trim();
++	const defaultLeaseMs = configuredLeaseMs ? Number(configuredLeaseMs) : 6e4;
++	if (!Number.isSafeInteger(defaultLeaseMs) || defaultLeaseMs <= 0) throw new Error("OPENCLAW_AGENT_DB_MAINTENANCE_LEASE_MS must be a positive safe integer");
+@@ -2431,1 +2446,1 @@
+-		leaseMs: options.leaseMs ?? 6e4,
++		leaseMs: options.leaseMs ?? defaultLeaseMs,
 diff -u a/dist/openclaw-database-verify-CVkK3KtV.mjs b/dist/openclaw-database-verify-CVkK3KtV.mjs
 --- a/dist/openclaw-database-verify-CVkK3KtV.mjs
 +++ b/dist/openclaw-database-verify-CVkK3KtV.mjs
