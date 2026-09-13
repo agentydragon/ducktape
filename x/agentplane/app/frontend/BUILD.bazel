@@ -657,6 +657,7 @@ ts_library(
     deps = [
         ":client",
         ":session",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",

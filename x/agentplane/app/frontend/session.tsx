@@ -238,7 +238,11 @@ function ItemRunView({ items }: { items: Item[] }): JSX.Element {
 
 function ItemGroupView({ group }: { group: ItemGroup }): JSX.Element {
   if (group.kind === "single") return <ItemView item={group.item} />;
-  if (group.items.length === 1) return <ItemView item={group.items[0]} />;
+  // Reasoning already has its own URL-addressable disclosure; keep that state as the only
+  // disclosure for a lone reasoning item while tool calls use the run summary consistently.
+  if (group.items.length === 1 && group.items[0].kind === ItemKind.REASONING) {
+    return <ItemView item={group.items[0]} />;
+  }
   return <ItemRunView items={group.items} />;
 }
 
