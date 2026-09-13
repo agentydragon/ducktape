@@ -30,7 +30,7 @@ import { VariantControl } from "./variant_control";
  * one combined widget (tool_rendering's call registry) that owns both states; `toolCallPreview`
  * renders it in place of the separate fields when one matches, and the raw-JSON disclosures stay
  * available either way. */
-function ToolCallStatus({ status }: { status: ToolCallRecord["status"] }): JSX.Element {
+function ToolCallStatus({ status }: { status: ToolCallRecord["status"] }): import("react").JSX.Element {
   const label = terminalStatusLabel(status);
   const color = statusColor(status);
   const icon =
@@ -73,7 +73,7 @@ export function ToolCallCard({
   footer?: ReactNode;
   /** Set by a surface that needs to scroll this specific card into view (a deep-linked call). */
   containerRef?: Ref<HTMLElement>;
-}): JSX.Element {
+}): import("react").JSX.Element {
   const detailed = variant === "detailed";
   const combined = toolCallPreview(fields.serverId, fields.toolName, args, result, variant);
   const action = toolActionDescription(fields.serverId, fields.toolName, args);

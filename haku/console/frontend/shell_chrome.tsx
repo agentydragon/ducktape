@@ -512,7 +512,7 @@ export function ApprovalsTab({
   | "onApproveScreenshot"
   | "onDenyScreenshot"
   | "onDismissRecentToolCall"
-> & { focusedToolCallId?: string | null }): JSX.Element {
+> & { focusedToolCallId?: string | null }): import("react").JSX.Element {
   const items = useMemo(
     () => approvalQueueItems(pendingApprovals, geolocationApprovals, screenshotApprovals),
     [geolocationApprovals, pendingApprovals, screenshotApprovals]
@@ -667,7 +667,7 @@ export type IndicatorPanel = "location" | "screenshot" | "sync-status" | "sessio
 
 // Trusted chrome lives in a real left-hand layout rail. Page navigation is independent from the
 // approvals drawer, while the three compact indicator popovers are mutually exclusive.
-export function ShellChrome(props: ShellChromeProps): JSX.Element {
+export function ShellChrome(props: ShellChromeProps): import("react").JSX.Element {
   const {
     approvalsOpen,
     onApprovalsOpenChange,

@@ -85,7 +85,7 @@ export function KubernetesGrantScopeAndRules({
 }: {
   spec: KubernetesGrantShape;
   variant: "compact" | "detailed";
-}): JSX.Element {
+}): import("react").JSX.Element {
   const rules = variant === "compact" ? spec.rules.slice(0, 1) : spec.rules;
   return (
     <Stack gap={4}>
@@ -104,7 +104,7 @@ export function httpOriginLabel(origin: HttpGrantShape["origin"]): string {
   return `${origin.scheme}://${origin.host}:${origin.port}`;
 }
 
-export function HttpGrantCoverage({ spec }: { spec: HttpGrantShape }): JSX.Element {
+export function HttpGrantCoverage({ spec }: { spec: HttpGrantShape }): import("react").JSX.Element {
   return (
     <Stack gap={4}>
       <Group gap={6}>
@@ -123,7 +123,13 @@ export function HttpGrantCoverage({ spec }: { spec: HttpGrantShape }): JSX.Eleme
   );
 }
 
-function GrantItemView({ item, variant }: { item: CreateGrantItem; variant: "compact" | "detailed" }): JSX.Element {
+function GrantItemView({
+  item,
+  variant,
+}: {
+  item: CreateGrantItem;
+  variant: "compact" | "detailed";
+}): import("react").JSX.Element {
   if (item.domain === "kubernetes") return <KubernetesGrantScopeAndRules spec={item.spec} variant={variant} />;
   return <HttpGrantCoverage spec={item.spec} />;
 }

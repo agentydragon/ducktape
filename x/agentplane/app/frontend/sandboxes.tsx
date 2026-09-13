@@ -84,7 +84,7 @@ function policySetOption(policySet: ActionPolicySetView): { value: string; label
   return { value: policySet.name, label: state === "Ready" ? policySet.name : `${policySet.name} · ${state}` };
 }
 
-function StateBadge({ row }: { row: SandboxView }): JSX.Element {
+function StateBadge({ row }: { row: SandboxView }): import("react").JSX.Element {
   return (
     <Tooltip label={stateDetail(row)} multiline style={{ whiteSpace: "pre-line" }} withArrow>
       <Badge color={STATE_COLORS[row.state] ?? "blue"}>{row.state}</Badge>
@@ -92,7 +92,7 @@ function StateBadge({ row }: { row: SandboxView }): JSX.Element {
   );
 }
 
-export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX.Element {
+export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): import("react").JSX.Element {
   // The list is pushed; an action's own failure is what this holds.
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<NewSandbox>(EMPTY_FORM);

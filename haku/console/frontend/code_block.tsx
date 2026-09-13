@@ -224,7 +224,7 @@ export function CodeBlock({
   language?: CodeLanguage;
   compact?: boolean;
   lineNumbers?: boolean;
-}): JSX.Element {
+}): import("react").JSX.Element {
   const extensions = useMemo<Extension[]>(() => {
     const exts: Extension[] = [EditorView.lineWrapping, syntaxHighlighting(HAKU_HIGHLIGHT), HAKU_THEME];
     if (language) {

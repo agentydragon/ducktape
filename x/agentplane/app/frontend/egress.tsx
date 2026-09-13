@@ -12,7 +12,7 @@ function provenance(binding: BindingView): string {
 }
 
 /** When a binding stops counting, red once that is past: the objects are pushed, the clock is not. */
-export function expiry(expiresAt: string | null | undefined): JSX.Element {
+export function expiry(expiresAt: string | null | undefined): import("react").JSX.Element {
   if (!expiresAt) return <Text size="sm">never</Text>;
   const at = new Date(expiresAt);
   return (
@@ -23,7 +23,13 @@ export function expiry(expiresAt: string | null | undefined): JSX.Element {
 }
 
 /** Every rule of every resolved policy, one line each: what may be reached and with which credential. */
-function PolicySummary({ policies, missing }: { policies: PolicyView[]; missing: string[] }): JSX.Element {
+function PolicySummary({
+  policies,
+  missing,
+}: {
+  policies: PolicyView[];
+  missing: string[];
+}): import("react").JSX.Element {
   return (
     <Stack gap="xs">
       {policies.map((policy) => (
@@ -66,7 +72,13 @@ const REVOKE_EXPLAINS =
   "Deletes the rule, which is what takes the access away. There is no undo; a new binding has to be made.";
 const REVOKE_FROM_GIT = "Applied by Flux: remove it in the repository, or the next reconcile applies it again.";
 
-function BindingActions({ binding, onRevoke }: { binding: BindingView; onRevoke: () => void }): JSX.Element {
+function BindingActions({
+  binding,
+  onRevoke,
+}: {
+  binding: BindingView;
+  onRevoke: () => void;
+}): import("react").JSX.Element {
   return (
     <Group gap="xs" wrap="nowrap" justify="flex-end">
       <Tooltip label={binding.from_git ? REVOKE_FROM_GIT : REVOKE_EXPLAINS} withArrow multiline w={280}>
@@ -97,7 +109,7 @@ function BindingsTable({
 }: {
   bindings: BindingView[];
   onRevoke: (name: string) => void;
-}): JSX.Element {
+}): import("react").JSX.Element {
   // Which bindings show their rules is in the URL, like the tab and the session page's switches, so
   // a reading of what a sandbox may reach can be linked to and survives a reload.
   const [searchParams, setSearchParams] = useSearchParams();
@@ -216,7 +228,7 @@ function GrantPolicies({
   picked: string[];
   onPick: (names: string[]) => void;
   onGrant: () => void;
-}): JSX.Element {
+}): import("react").JSX.Element {
   return (
     <Group align="flex-end">
       <MultiSelect
@@ -234,7 +246,7 @@ function GrantPolicies({
   );
 }
 
-function DecisionsTable({ decisions }: { decisions: Decision[] }): JSX.Element {
+function DecisionsTable({ decisions }: { decisions: Decision[] }): import("react").JSX.Element {
   // Newest first: the ring is served oldest first.
   const rows = [...decisions].reverse();
   return (
@@ -310,7 +322,13 @@ function DecisionsTable({ decisions }: { decisions: Decision[] }): JSX.Element {
 }
 
 /** What may leave the sandbox and what recently did: its pushed bindings and the proxy's decisions. */
-export function EgressSection({ name, bindings }: { name: string; bindings: BindingView[] | null }): JSX.Element {
+export function EgressSection({
+  name,
+  bindings,
+}: {
+  name: string;
+  bindings: BindingView[] | null;
+}): import("react").JSX.Element {
   const [decisions, setDecisions] = useState<Decision[] | null>(null);
   const [decisionsError, setDecisionsError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);

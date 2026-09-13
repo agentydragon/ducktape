@@ -29,7 +29,7 @@ export function highlightJson(text: string): string {
 
 /** A JSON-serializable value, rendered as syntax-highlighted, sanitized JSON inside a `<Code
  * block>`. Untrusted-content safe: see `highlightJson`. */
-export function JsonView({ value }: { value: unknown }): JSX.Element {
+export function JsonView({ value }: { value: unknown }): import("react").JSX.Element {
   const text = useMemo(() => JSON.stringify(value, null, 2), [value]);
   const html = useMemo(() => highlightJson(text), [text]);
   return (
@@ -42,7 +42,7 @@ export function JsonView({ value }: { value: unknown }): JSX.Element {
 /** A pre-serialized string rendered as syntax-highlighted JSON when it looks like JSON, else as
  * plain text -- for a caller holding text that might not be JSON (tool output, a streamed partial
  * arguments blob) rather than a value it should serialize itself. */
-export function HighlightedText({ text }: { text: string }): JSX.Element {
+export function HighlightedText({ text }: { text: string }): import("react").JSX.Element {
   const html = useMemo(() => (looksLikeJson(text) ? highlightJson(text) : null), [text]);
   return (
     <Code block className="agentplane-hljs">

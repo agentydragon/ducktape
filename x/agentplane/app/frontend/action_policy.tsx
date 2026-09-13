@@ -51,7 +51,7 @@ function Ready({
 }: {
   ready: ReadyConditionView | null | undefined;
   generation?: number;
-}): JSX.Element {
+}): import("react").JSX.Element {
   const { label, color, hint } = readiness(ready, generation);
   const badge = (
     <Badge color={color} style={WHOLE_BADGE}>
@@ -67,7 +67,7 @@ function Ready({
 }
 
 /** A set as a binding names it: present and parsed, present but refused, or missing. */
-function PolicySets({ binding }: { binding: ActionPolicyBindingView }): JSX.Element {
+function PolicySets({ binding }: { binding: ActionPolicyBindingView }): import("react").JSX.Element {
   return (
     <Group gap={4}>
       {binding.policy_sets.map((policySet: ActionPolicySetView) =>
@@ -94,7 +94,7 @@ function PolicySets({ binding }: { binding: ActionPolicyBindingView }): JSX.Elem
   );
 }
 
-function BindingsTable({ bindings }: { bindings: ActionPolicyBindingView[] }): JSX.Element {
+function BindingsTable({ bindings }: { bindings: ActionPolicyBindingView[] }): import("react").JSX.Element {
   return (
     <Table>
       <Table.Thead>
@@ -156,7 +156,7 @@ function BindingsTable({ bindings }: { bindings: ActionPolicyBindingView[] }): J
 }
 
 /** Every set a binding names, once each, with the verdict the Action Service wrote on it. */
-function SetsTable({ bindings }: { bindings: ActionPolicyBindingView[] }): JSX.Element | null {
+function SetsTable({ bindings }: { bindings: ActionPolicyBindingView[] }): import("react").JSX.Element | null {
   const sets = new Map<string, ActionPolicySetView>();
   for (const binding of bindings) for (const policySet of binding.policy_sets) sets.set(policySet.name, policySet);
   if (sets.size === 0) return null;
@@ -214,7 +214,7 @@ function PolicyList({
   title: string;
   policies: EffectivePolicyView[];
   empty: string;
-}): JSX.Element {
+}): import("react").JSX.Element {
   return (
     <Stack gap="xs">
       <Title order={5}>{title}</Title>
@@ -277,7 +277,7 @@ function PolicyList({
 }
 
 /** Why the frame carries no policy: the service could not be asked, and by whom or what. */
-function Unavailable({ failure }: { failure: ActionPolicyUnavailable }): JSX.Element {
+function Unavailable({ failure }: { failure: ActionPolicyUnavailable }): import("react").JSX.Element {
   return (
     <Alert color="red" role="alert" title="The Action Service could not be asked">
       <Text size="sm">
@@ -303,7 +303,7 @@ export function ActionPolicySection({
   policy,
 }: {
   policy: ActionPolicyView | ActionPolicyUnavailable | null;
-}): JSX.Element {
+}): import("react").JSX.Element {
   if (!policy) return <></>;
   if ("kind" in policy) return <Unavailable failure={policy} />;
   return (

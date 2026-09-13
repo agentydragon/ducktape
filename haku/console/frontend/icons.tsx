@@ -28,97 +28,97 @@ import { GMAIL_ICON_DATA_URI, GOOGLE_CALENDAR_ICON_DATA_URI } from "./brand_icon
 type TablerIconProps = ComponentProps<typeof IconChecklist>;
 
 /** Checklist — the shell's approvals-queue toggle. */
-export function ChecklistIcon(props: TablerIconProps): JSX.Element {
+export function ChecklistIcon(props: TablerIconProps): import("react").JSX.Element {
   return <IconChecklist size={20} {...props} />;
 }
 
 /** Gauge — opens the AI quota summary. */
-export function AiquotaIcon(props: TablerIconProps): JSX.Element {
+export function AiquotaIcon(props: TablerIconProps): import("react").JSX.Element {
   return <IconGauge size={20} {...props} />;
 }
 
 /** Home — selects the persistent Haku UI frame. */
-export function HomeIcon(props: TablerIconProps): JSX.Element {
+export function HomeIcon(props: TablerIconProps): import("react").JSX.Element {
   return <IconHome size={20} {...props} />;
 }
 
 /** Check in a circle — approvals are connected and current. */
-export function SyncCurrentIcon(props: TablerIconProps): JSX.Element {
+export function SyncCurrentIcon(props: TablerIconProps): import("react").JSX.Element {
   return <IconCircleCheck size={20} {...props} />;
 }
 
 /** Warning triangle — approvals sync is unhealthy. */
-export function SyncErrorIcon(props: TablerIconProps): JSX.Element {
+export function SyncErrorIcon(props: TablerIconProps): import("react").JSX.Element {
   return <IconAlertTriangle size={20} {...props} />;
 }
 
 /** Close — dismisses a shell drawer or popover. */
-export function CloseIcon(props: TablerIconProps): JSX.Element {
+export function CloseIcon(props: TablerIconProps): import("react").JSX.Element {
   return <IconX size={20} {...props} />;
 }
 
 /** Clock-with-rewind — links to the past-tool-calls history view. */
-export function HistoryIcon(props: TablerIconProps): JSX.Element {
+export function HistoryIcon(props: TablerIconProps): import("react").JSX.Element {
   return <IconHistory size={20} {...props} />;
 }
 
 /** Gear — links to the settings view. */
-export function SettingsIcon(props: TablerIconProps): JSX.Element {
+export function SettingsIcon(props: TablerIconProps): import("react").JSX.Element {
   return <IconSettings size={20} {...props} />;
 }
 
 /** Unlink — disconnects an operator account from an MCP server. */
-export function DisconnectIcon(props: TablerIconProps): JSX.Element {
+export function DisconnectIcon(props: TablerIconProps): import("react").JSX.Element {
   return <IconUnlink size={20} {...props} />;
 }
 
 /** Map pin — the shell's location-sharing control, and a preview's location field. */
-export function MapPinIcon(props: TablerIconProps): JSX.Element {
+export function MapPinIcon(props: TablerIconProps): import("react").JSX.Element {
   return <IconMapPin size={20} {...props} />;
 }
 
 /** Camera — the shell's screenshot-capture control. */
-export function CameraIcon(props: TablerIconProps): JSX.Element {
+export function CameraIcon(props: TablerIconProps): import("react").JSX.Element {
   return <IconCamera size={20} {...props} />;
 }
 
 /** Clock — a calendar event's when/time field. */
-export function ClockIcon(props: TablerIconProps): JSX.Element {
+export function ClockIcon(props: TablerIconProps): import("react").JSX.Element {
   return <IconClock size={20} {...props} />;
 }
 
 /** Bell — a calendar event's reminders field. */
-export function BellIcon(props: TablerIconProps): JSX.Element {
+export function BellIcon(props: TablerIconProps): import("react").JSX.Element {
   return <IconBell size={20} {...props} />;
 }
 
 /** People — a calendar event's attendees field. */
-export function UsersIcon(props: TablerIconProps): JSX.Element {
+export function UsersIcon(props: TablerIconProps): import("react").JSX.Element {
   return <IconUsers size={20} {...props} />;
 }
 
 /** Calendar — a non-primary target calendar. */
-export function CalendarIcon(props: TablerIconProps): JSX.Element {
+export function CalendarIcon(props: TablerIconProps): import("react").JSX.Element {
   return <IconCalendarEvent size={20} {...props} />;
 }
 
 /** Repeat arrows — a calendar event's recurrence rule. */
-export function RepeatIcon(props: TablerIconProps): JSX.Element {
+export function RepeatIcon(props: TablerIconProps): import("react").JSX.Element {
   return <IconRepeat size={20} {...props} />;
 }
 
 /** Envelope — a Gmail draft's recipients / a thread list. */
-export function MailIcon(props: TablerIconProps): JSX.Element {
+export function MailIcon(props: TablerIconProps): import("react").JSX.Element {
   return <IconMail size={20} {...props} />;
 }
 
 /** Plain list — the "Brief" (compact) side of a card's detail toggle. */
-export function ListIcon(props: TablerIconProps): JSX.Element {
+export function ListIcon(props: TablerIconProps): import("react").JSX.Element {
   return <IconList size={20} {...props} />;
 }
 
 /** List with detail lines — the "Full" (detailed) side of a card's detail toggle. */
-export function ListDetailsIcon(props: TablerIconProps): JSX.Element {
+export function ListDetailsIcon(props: TablerIconProps): import("react").JSX.Element {
   return <IconListDetails size={20} {...props} />;
 }
 
@@ -129,12 +129,12 @@ export function ListDetailsIcon(props: TablerIconProps): JSX.Element {
 // app, where a generic mail/calendar glyph would be ambiguous.
 
 /** Gmail's own multicolor icon — marks a link that opens Gmail, unlike `MailIcon` above. */
-export function GmailIcon({ size = 20 }: { size?: number }): JSX.Element {
+export function GmailIcon({ size = 20 }: { size?: number }): import("react").JSX.Element {
   return <img src={GMAIL_ICON_DATA_URI} alt="" width={size} height={size} style={{ display: "block" }} />;
 }
 
 /** Google Calendar's own multicolor icon — marks a link that opens Google Calendar, unlike
  * `CalendarIcon` above. */
-export function GoogleCalendarIcon({ size = 20 }: { size?: number }): JSX.Element {
+export function GoogleCalendarIcon({ size = 20 }: { size?: number }): import("react").JSX.Element {
   return <img src={GOOGLE_CALENDAR_ICON_DATA_URI} alt="" width={size} height={size} style={{ display: "block" }} />;
 }
