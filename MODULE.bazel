@@ -155,7 +155,7 @@ tf.download(
         # manually review the source diff since the last pinned tag (focus:
         # request construction/egress and release workflow) BEFORE updating.
         # Do not auto-merge Renovate/update_deps bumps.
-        "litellm": "ncecere/litellm:2.0.1",
+        "litellm": "ncecere/litellm:2.1.0",
         "local": "hashicorp/local:2.9.1",
         "null": "hashicorp/null:3.3.2",
         "ovh": "ovh/ovh:2.19.0",
