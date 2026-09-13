@@ -261,7 +261,7 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         ("paperless-secrets", "paperless/secrets"),
         ("plaid-db-mcp", "agents/plaid-db-mcp/app"),
         ("plaid-db-mcp-servicemonitor", "agents/plaid-db-mcp/servicemonitor"),
-        ("plaid-mcp", "agents/plaid-mcp/app"),
+        ("plaid-mcp", "agents/plaid-mcp"),
         ("plaid-mcp-db", "agents/plaid-mcp/db"),
         ("plaid-mcp-namespace", "agents/plaid-mcp/namespace"),
         ("postscanmail-mcp", "agents/postscanmail-mcp/app"),

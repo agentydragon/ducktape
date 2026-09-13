@@ -86,7 +86,7 @@ resources:
   - agents/osm-mcp/flux-kustomization.yaml
   - agents/plaid-mcp/namespace/flux-kustomization.yaml
   - agents/plaid-mcp/db/flux-kustomization.yaml
-  - agents/plaid-mcp/app/flux-kustomization.yaml
+  - agents/plaid-mcp/flux-kustomization.yaml
   - agents/plaid-db-mcp/app/flux-kustomization.yaml
   - agents/plaid-db-mcp/servicemonitor/flux-kustomization.yaml
   - agents/postscanmail-mcp/namespace/flux-kustomization.yaml

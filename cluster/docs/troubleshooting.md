@@ -388,8 +388,8 @@ looks applied but never takes effect.
 **Why it never self-heals.** Three things compound:
 
 - `wait: true` makes Flux block on **every object it applies**, not just the ones named
-  in `healthChecks`. `plaid-mcp-db` health-checked only its CNPG `Cluster` and still
-  wedged on a Job.
+  in `healthChecks`. The unified `plaid-mcp` Kustomization health-checks the CNPG
+  `Cluster`, but can still wedge on a Job.
 - A Job's pod template is immutable, so re-applying an unchanged manifest is a no-op.
   Flux keeps applying; the Failed Job stays Failed.
 - `kustomize.toolkit.fluxcd.io/force: enabled` recreates an object when apply hits an

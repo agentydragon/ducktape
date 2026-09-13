@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: plaid-db-mcp-config
+  namespace: plaid-mcp
+data:
+  MCP_FACADE_AUTH__OIDC_ISSUER: "https://auth.allegedly.works/application/o/plaid-db-mcp/"
+  MCP_FACADE_AUTH__PUBLIC_BASE_URL: "https://plaid-db.allegedly.works"
+  MCP_FACADE_FACADE_NAME: "Plaid DB MCP Facade"
+  MCP_FACADE_UPSTREAM__KIND: "http"
+  MCP_FACADE_UPSTREAM__URL: "http://localhost:8000/mcp"
+  MCP_FACADE_PERSISTENCE__KIND: "valkey"
+  MCP_FACADE_PERSISTENCE__HOST: "plaid-valkey-kimsufi-master.plaid-mcp.svc.cluster.local"
+  MCP_FACADE_PERSISTENCE__DB: "0"

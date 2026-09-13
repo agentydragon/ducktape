@@ -6,7 +6,8 @@ metadata:
 spec:
   interval: 10m
   path: ./cluster/k8s/agents/plaid-db-mcp/servicemonitor
-  prune: true
+  prune: false
+  deletionPolicy: Orphan
   sourceRef:
     kind: ExternalArtifact
     name: plaid-db-mcp-servicemonitor
