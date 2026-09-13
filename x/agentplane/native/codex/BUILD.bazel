@@ -23,7 +23,6 @@ py_library(
     srcs = ["async_scenarios.py"],
     deps = [
         ":driver",
-        ":scenarios",
         "//x/agentplane/native:async_process",
     ],
 )

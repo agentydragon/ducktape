@@ -8,8 +8,10 @@ objects and sockets stay inside this module.
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 from dataclasses import dataclass
-from typing import Any, cast
+from types import TracebackType
+from typing import Any, Self, cast
 
 from aiohttp import web
 from pydantic import BaseModel
@@ -130,6 +132,24 @@ class ModelExchange[RequestT: BaseModel]:
         self.request = request
         self._http = http
         self._settled_by: str | None = None
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        if self._settled_by is not None:
+            return
+        if exc_type is None:
+            await self.close()
+            return
+        # Preserve the test failure that left the exchange unfinished.
+        with suppress(ConnectionError):
+            await self.abort()
 
     async def respond(self, response: JsonResponse) -> None:
         self._ensure_open("respond")

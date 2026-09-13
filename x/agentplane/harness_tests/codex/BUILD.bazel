@@ -102,6 +102,7 @@ py_test(
         "//:conftest",
         "//x/agentplane/harness_tests:conftest",
         "//x/agentplane/native/codex:async_scenarios",
+        "//x/agentplane/native/codex:scenarios",
         "//x/agentplane/native/codex:wire",
         "@pypi//pytest_bazel",
     ],

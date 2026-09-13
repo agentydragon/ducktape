@@ -108,6 +108,7 @@ py_test(
         "//:conftest",
         "//x/agentplane/harness_tests:conftest",
         "//x/agentplane/native/claude:async_scenarios",
+        "//x/agentplane/native/claude:scenarios",
         "@pypi//pytest_bazel",
     ],
 )
@@ -155,6 +156,7 @@ py_test(
         "//x/agentplane/harness_tests:conftest",
         "//x/agentplane/native/claude:async_scenarios",
         "//x/agentplane/native/claude:driver",
+        "//x/agentplane/native/claude:scenarios",
         "@pypi//pytest_bazel",
     ],
 )

@@ -8,6 +8,7 @@ from x.agentplane.harness_tests.claude import anthropic_sse as sse, frames
 from x.agentplane.harness_tests.claude.harness import MODEL, ClaudeHarness
 from x.agentplane.harness_tests.claude.messages import AnthropicMessages
 from x.agentplane.native.claude import async_scenarios as scenarios, driver
+from x.agentplane.native.claude.scenarios import SYSTEM_PROMPT, TOOLS, session_id
 
 CRASHED_SESSION = "00000000-0000-4000-8000-000000000001"
 SEED_INPUT = "Reply with exactly: CRASH_RESUME_SEED_OK"
@@ -26,8 +27,8 @@ async def test_baseline_turn(claude: ClaudeHarness, anthropic_messages: Anthropi
         assert request.model == MODEL
         assert request.stream is True
         assert request.thinking.type == "enabled"
-        assert request.tool_names == list(scenarios.TOOLS)
-        assert request.system_text.endswith(scenarios.SYSTEM_PROMPT)
+        assert request.tool_names == list(TOOLS)
+        assert request.system_text.endswith(SYSTEM_PROMPT)
         assert len(request.system_text) < 1000
         assert request.texts("user")[-1] == "Reply with exactly: CAPTURE_BASELINE_OK"
         stream = sse.message_stream([sse.Thinking("brief", "sig_test_1"), sse.Text("CAPTURE_BASELINE_OK")], model=MODEL)
@@ -53,7 +54,7 @@ async def test_idle_resume_replays_the_transcript_from_disk(
         seed = await scenarios.await_result(first)
         assert seed["result"] == "IDLE_RESUME_SEED_OK"
 
-    async with claude.start(anthropic_messages, resume_id=scenarios.session_id(seed)) as second:
+    async with claude.start(anthropic_messages, resume_id=session_id(seed)) as second:
         await scenarios.launch_handshake(second)
         await scenarios.send(second, "Reply with exactly: IDLE_RESUME_OK")
         exchange = await anthropic_messages.await_next_request()
@@ -99,7 +100,7 @@ async def test_resume_after_crash_replays_completed_history_but_drops_active_and
         await exchange.close()
         seed = await scenarios.await_result(seeded)
         assert seed["result"] == "CRASH_RESUME_SEED_OK"
-        assert scenarios.session_id(seed) == CRASHED_SESSION
+        assert session_id(seed) == CRASHED_SESSION
 
     async with claude.start(anthropic_messages, resume_id=CRASHED_SESSION, replay_user_messages=True) as first:
         await scenarios.launch_handshake(first)
