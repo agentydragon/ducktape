@@ -214,7 +214,6 @@ manifest:
     httptools: httptools
     httpx: httpx
     httpx2: httpx2
-    httpx_sse: httpx_sse
     huggingface_hub: huggingface_hub
     humanize: humanize
     hyperframe: hyperframe
@@ -266,7 +265,6 @@ manifest:
     jupyter_kernel_client: jupyter_kernel_client
     jupyter_lsp: jupyter_lsp
     jupyter_mcp_server: jupyter_mcp_server
-    jupyter_mcp_tools: jupyter_mcp_tools
     jupyter_mimetypes: jupyter_mimetypes
     jupyter_nbmodel_client: jupyter_nbmodel_client
     jupyter_server: jupyter_server
@@ -309,6 +307,7 @@ manifest:
     matplotlib_inline: matplotlib_inline
     mautrix: mautrix
     mcp: mcp
+    mcp_types: mcp_types
     mdit_py_plugins: mdit_py_plugins
     mdurl: mdurl
     mirakuru: mirakuru
@@ -435,7 +434,6 @@ manifest:
     pytest_bazel: pytest_bazel
     pytest_cov: pytest_cov
     pytest_env: pytest_env
-    pytest_httpx2: pytest_httpx2
     pytest_mock: pytest_mock
     pytest_playwright: pytest_playwright
     pytest_postgresql: pytest_postgresql
@@ -549,4 +547,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: ee52af167c9820901cbe48fc73a34fc3425c8cd8a7dcdf48053fc363e2c85b0c
+integrity: 33af5e2cee84982d1f70e7ecd3a38a603bb463961228e5166b6c144536af5e78

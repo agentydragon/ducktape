@@ -151,6 +151,7 @@ py_library(
     deps = [
         ":prefix",
         "@pypi//mcp",
+        "@pypi//mcp_types",
         "@pypi//pydantic",
     ],
 )
