@@ -2,18 +2,21 @@ load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
     name = "file_utils",
+    testonly = True,
     srcs = ["file_utils.py"],
     visibility = ["//:__subpackages__"],
 )
 
 py_library(
     name = "jsonl_logger",
+    testonly = True,
     srcs = ["jsonl_logger.py"],
     visibility = ["//:__subpackages__"],
 )
 
 py_library(
     name = "logging_utils",
+    testonly = True,
     srcs = ["logging_utils.py"],
     visibility = ["//:__subpackages__"],
     deps = ["@pypi//structlog"],
@@ -21,6 +24,7 @@ py_library(
 
 py_library(
     name = "task_loader",
+    testonly = True,
     srcs = ["task_loader.py"],
     visibility = ["//:__subpackages__"],
     deps = [
@@ -31,6 +35,7 @@ py_library(
 
 py_library(
     name = "yaml_loader",
+    testonly = True,
     srcs = ["yaml_loader.py"],
     visibility = ["//:__subpackages__"],
     deps = [

@@ -94,6 +94,7 @@ oci_load(
 # Linux bubblewrap sandbox exec MCP server
 py_library(
     name = "bwrap",
+    testonly = True,
     srcs = ["bwrap.py"],
     visibility = ["//visibility:public"],
     deps = [
