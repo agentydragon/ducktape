@@ -1977,13 +1977,6 @@ spec:
           to: "@artifact/cluster/k8s/seaweedfs/haku-openclaw-spike-backups-bucket/"
           exclude:
             - flux-kustomization.yaml
-    - name: seaweedfs-home-assistant-backups-bucket
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/seaweedfs/home-assistant-backups-bucket/**"
-          to: "@artifact/cluster/k8s/seaweedfs/home-assistant-backups-bucket/"
-          exclude:
-            - flux-kustomization.yaml
     - name: seaweedfs-langfuse-bucket
       originRevision: "@repo"
       copy:
