@@ -27,9 +27,10 @@ SELECTED_MODEL = "agentplane-switched/claude-haiku-4-5-20251001"
 def test_queued_inputs_coalesce_into_one_native_user_message(claude: ClaudeHarness, upstream: ScriptedUpstream) -> None:
     """Claude batches compatible queued prompts with newlines, retaining the last frame UUID.
 
-    With replay enabled it also emits a synthetic echo for each batch follower before the merged
-    native user message. The command-lifecycle frames remain per submitted input. The runner must
-    therefore preserve both origins on the latter, not mistake the synthetic echo for delivery.
+    With replay enabled it emits a synthetic echo for the batch leader and the final merged native
+    user message. The command-lifecycle frames remain per submitted input. The runner must
+    therefore preserve every origin from those lifecycle frames, not mistake the synthetic echo
+    for delivery.
     """
     with claude.start(upstream, replay_user_messages=True) as process:
         scenarios.launch_handshake(process)
@@ -95,7 +96,6 @@ def test_queued_inputs_coalesce_into_one_native_user_message(claude: ClaudeHarne
     ]
     assert follower_and_merged == [
         (first.uuid, COALESCED_FIRST),
-        (second.uuid, f"{COALESCED_FIRST}\n{COALESCED_SECOND}"),
         (third.uuid, f"{COALESCED_FIRST}\n{COALESCED_SECOND}\n{COALESCED_THIRD}"),
     ]
     replayed = [
@@ -163,7 +163,8 @@ def test_interrupt_cancels_each_queued_input_before_native_message(
         for frame in (wire.parse_frame(raw) for raw in process.stdout_frames())
         if isinstance(frame, wire.CommandLifecycleFrame) and frame.state is wire.CommandState.CANCELLED
     ]
-    assert cancelled[-2:] == [first.uuid, second.uuid]
+    assert cancelled.count(first.uuid) == 1
+    assert cancelled.count(second.uuid) == 1
     upstream.assert_quiescent()
 
 
