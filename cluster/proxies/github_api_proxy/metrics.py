@@ -63,7 +63,7 @@ def observed_cost(response: http.Response | None) -> tuple[CostStatus, int | Non
         return CostStatus.UNAVAILABLE, None
     try:
         payload = json.loads(response.raw_content)
-    except (ValueError, RecursionError):
+    except ValueError, RecursionError:
         return CostStatus.INVALID, None
     if not isinstance(payload, dict) or not isinstance(data := payload.get("data"), dict):
         return CostStatus.ABSENT, None

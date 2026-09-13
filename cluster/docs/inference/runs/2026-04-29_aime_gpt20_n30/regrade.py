@@ -49,7 +49,7 @@ def regrade_one(content: str, target: int) -> tuple[bool, str | None, str]:
         for m in pat.finditer(tail):
             try:
                 ans = int(m.group(1))
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 continue
             return ans == target, str(ans), name
     return False, None, "no-match"
@@ -81,7 +81,7 @@ def regrade_log(eval_path: Path) -> dict[str, Any]:
         score = s["scores"]["aime_scorer"]
         try:
             target = int(s["target"])
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             target = -1
         ok_re, ans_re, which = regrade_one(assistant_text(s), target)
         mu = (s.get("model_usage") or {}).get("openai/gpt-oss:20b") or {}

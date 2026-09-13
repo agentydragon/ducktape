@@ -351,7 +351,7 @@ def _plaid_error_code(exc: Exception) -> str | None:
         return None
     try:
         parsed = json.loads(exc.body)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         # Body absent or not JSON — not a structured Plaid error; fall through to the status.
         parsed = None
     if isinstance(parsed, dict) and isinstance(code := parsed.get("error_code"), str):

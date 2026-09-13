@@ -96,7 +96,7 @@ class ServerStub:
             # Get type hints
             try:
                 hints = get_type_hints(method)
-            except (NameError, AttributeError, TypeError):
+            except NameError, AttributeError, TypeError:
                 # Can't get type hints (forward refs, missing imports), skip
                 continue
 

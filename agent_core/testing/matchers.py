@@ -173,7 +173,7 @@ class HasJsonArguments(BaseMatcher[FunctionCallItem]):
             return False
         try:
             return bool(json.loads(item.arguments) == self.expected)
-        except (json.JSONDecodeError, TypeError):
+        except json.JSONDecodeError, TypeError:
             return False
 
     def describe_to(self, description: Description) -> None:

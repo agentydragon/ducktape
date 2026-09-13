@@ -162,7 +162,7 @@ def signed_operator_session(conn: HTTPConnection) -> SignedOperatorSession | Non
     try:
         operator_id = UUID(raw["operator_id"])
         identity_id = UUID(raw["identity_id"])
-    except (KeyError, TypeError, ValueError):
+    except KeyError, TypeError, ValueError:
         _rejected(conn, "malformed_identity")
         return None
     username = raw.get("username")

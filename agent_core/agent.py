@@ -195,7 +195,7 @@ def _content_is_redundant(content: list[ResultContent], sc: ToolOutputData) -> b
         return False
     try:
         return bool(json.loads(block.text) == sc)
-    except (json.JSONDecodeError, AttributeError):
+    except json.JSONDecodeError, AttributeError:
         return False
 
 

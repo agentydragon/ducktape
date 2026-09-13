@@ -181,7 +181,7 @@ def parse_credentials(authorization: str | None) -> tuple[str, str] | None:
             return None
         username, password = decoded.split(":", 1)
         return (username, password)
-    except (ValueError, UnicodeDecodeError):
+    except ValueError, UnicodeDecodeError:
         return None
 
 

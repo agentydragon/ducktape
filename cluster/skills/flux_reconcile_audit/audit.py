@@ -107,7 +107,7 @@ async def mimir_p99_by_name(http: httpx.AsyncClient, window: str) -> dict[tuple[
             continue
         try:
             v = float(series["value"][1])
-        except (KeyError, ValueError):
+        except KeyError, ValueError:
             continue
         if math.isnan(v):
             continue
@@ -135,7 +135,7 @@ async def loki_count_by_name(
             continue
         try:
             out[nm] = int(float(series["value"][1]))
-        except (KeyError, ValueError):
+        except KeyError, ValueError:
             continue
     return out
 

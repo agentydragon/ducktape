@@ -35,7 +35,7 @@ class RepoHelper:
         try:
             parent = self.repo.head.peel(pygit2.Commit)
             parents = [parent.id]
-        except (KeyError, pygit2.GitError):
+        except KeyError, pygit2.GitError:
             parents = []
         self.repo.create_commit("HEAD", sig, sig, message, tree_oid, parents)
 

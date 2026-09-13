@@ -483,7 +483,7 @@ def allocated_bytes(path: Path) -> int | None:
             text=True,
         )
         return int(result.stdout.split(maxsplit=1)[0])
-    except (OSError, subprocess.CalledProcessError, ValueError, IndexError):
+    except OSError, subprocess.CalledProcessError, ValueError, IndexError:
         return None
 
 

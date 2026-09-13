@@ -48,7 +48,7 @@ def _get_retry_after(exception: HttpError) -> tuple[int | None, dict]:
     # Try to parse response body as JSON
     try:
         debug_info["body"] = json.loads(exception.content.decode("utf-8"))
-    except (json.JSONDecodeError, UnicodeDecodeError, AttributeError):
+    except json.JSONDecodeError, UnicodeDecodeError, AttributeError:
         # Fall back to raw string if JSON parsing fails
         try:
             debug_info["body"] = exception.content.decode("utf-8", errors="replace")[:500]
@@ -61,7 +61,7 @@ def _get_retry_after(exception: HttpError) -> tuple[int | None, dict]:
         try:
             # Try parsing as integer (seconds)
             return int(retry_after), debug_info
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             pass
 
     # Check for "Retry after" timestamp in error body

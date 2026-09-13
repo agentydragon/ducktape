@@ -122,7 +122,7 @@ def scan_file(filepath: Path) -> tuple[list[dict], list[dict]]:
         model_analyzer.visit(tree)
 
         return dict_finder.dict_literals, model_analyzer.models
-    except (SyntaxError, UnicodeDecodeError):
+    except SyntaxError, UnicodeDecodeError:
         # Skip files with syntax errors or encoding issues
         return [], []
 

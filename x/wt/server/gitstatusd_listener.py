@@ -303,7 +303,7 @@ class GitStatusdProtocol:
                 commit_message_summary=GitStatusdProtocol._safe_get_optional_string(fields, 28),
             )
 
-        except (GitStatusdParseError, GitStatusdValidationError):
+        except GitStatusdParseError, GitStatusdValidationError:
             raise
         except Exception as e:
             raise GitStatusdParseError(f"Unexpected error parsing gitstatusd response: {e}") from e

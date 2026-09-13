@@ -267,6 +267,6 @@ class WorktreeService:
                     if fl.path and Path(fl.path).is_relative_to(directory):
                         procs.append(ProcessInfo(pid=proc.pid, name=proc.name()))
                         break
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
+            except psutil.NoSuchProcess, psutil.AccessDenied:
                 continue
         return procs

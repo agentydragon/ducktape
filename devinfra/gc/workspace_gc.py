@@ -61,7 +61,7 @@ def _github_token() -> str | None:
         return token
     try:
         token = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True, check=True).stdout.strip()
-    except (OSError, subprocess.CalledProcessError):
+    except OSError, subprocess.CalledProcessError:
         return None
     return token or None
 

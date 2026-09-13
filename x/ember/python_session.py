@@ -153,7 +153,7 @@ def _kernel_alive() -> bool:
 def _kernel_pid() -> int | None:
     try:
         return int(PID_FILE.read_text())
-    except (FileNotFoundError, ValueError):
+    except FileNotFoundError, ValueError:
         return None
 
 

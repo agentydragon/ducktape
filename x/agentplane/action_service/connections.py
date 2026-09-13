@@ -260,7 +260,7 @@ class ConnectionAuthority:
         try:
             row = await self._locked_grant(session, grant.grant_id)
             self._require_row_caller(row)
-        except (GrantRejectedError, ConnectionNotFoundError):
+        except GrantRejectedError, ConnectionNotFoundError:
             return False
         return row.status == GrantStatus.ACTIVE and Grant.model_validate(row).provenance() == grant
 

@@ -105,7 +105,7 @@ def scan_file(filepath: Path) -> dict[str, list[dict[str, Any]]]:
             result["single_line_try"] = analyzer.single_line_try
 
         return result
-    except (SyntaxError, UnicodeDecodeError):
+    except SyntaxError, UnicodeDecodeError:
         # Skip files with syntax errors or encoding issues
         return {}
 

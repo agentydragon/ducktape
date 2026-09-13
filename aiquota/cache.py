@@ -26,7 +26,7 @@ class QuotaCache:
     def read(self) -> AllQuotas | None:
         try:
             return AllQuotas.model_validate_json(self.path.read_text())
-        except (OSError, ValueError):
+        except OSError, ValueError:
             return None
 
     def write(self, quotas: AllQuotas) -> None:

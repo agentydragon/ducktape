@@ -149,7 +149,7 @@ class FileCollector:
             try:
                 content = self.provider.get_file_content(path)
                 files[path] = content
-            except (ValueError, OSError):
+            except ValueError, OSError:
                 # Skip files that can't be read
                 continue
 

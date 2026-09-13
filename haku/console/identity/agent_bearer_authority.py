@@ -82,7 +82,7 @@ class AgentBearerAuthority:
             except AgentGrantAuthorityUnavailableError:
                 unavailable = True
                 continue
-            except (StaticAgentRejectedError, ValueError):
+            except StaticAgentRejectedError, ValueError:
                 continue
             if resolved is not None:
                 return resolved

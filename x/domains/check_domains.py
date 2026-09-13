@@ -134,7 +134,7 @@ class DomainCache:
                 for domain, entry in data.items():
                     if now - entry["timestamp"] < CACHE_TTL_SECONDS:
                         self.cache[domain] = CacheEntry(status=entry["status"], timestamp=entry["timestamp"])
-            except (json.JSONDecodeError, KeyError):
+            except json.JSONDecodeError, KeyError:
                 self.cache = {}
 
     def save(self):
@@ -178,7 +178,7 @@ def check_domain_rdap(domain: str) -> Status:
             if e.code == 404:
                 return "available"
             continue
-        except (urllib.error.URLError, json.JSONDecodeError, TimeoutError, OSError):
+        except urllib.error.URLError, json.JSONDecodeError, TimeoutError, OSError:
             continue
 
     return "unknown"

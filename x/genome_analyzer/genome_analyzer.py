@@ -309,7 +309,7 @@ class GenomicAnalyzer:
                     try:
                         response = requests.post(url, json=body, headers=headers, timeout=120)
                         break
-                    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+                    except requests.exceptions.ConnectionError, requests.exceptions.Timeout:
                         if attempt < 2:
                             wait_time = (2**attempt) * 5  # 5, 10, 20 seconds
                             print(f"    Network error, retrying in {wait_time}s...")
