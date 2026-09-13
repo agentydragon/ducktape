@@ -1023,6 +1023,14 @@ go_deps = use_extension(
 )
 go_deps.from_file(go_mod = "//third_party:go.mod")
 
+# k8s.io/apimachinery's generated BUILD files import kube-openapi, but that
+# dependency is not imported by first-party Go files.
+go_deps.module(
+    path = "k8s.io/kube-openapi",
+    sum = "h1:oXImqH8mQNk7PmvzKhmN3ddJoY6OnyM225MXwGHPm0A=",
+    version = "v0.0.0-20260721132016-d427ff9ee9ad",
+)
+
 # BUILD-file-only tools are not visible to `go mod tidy`, so their Go modules
 # remain indirect in third_party/go.mod. Declare them directly here so
 # `bazel mod tidy` retains the repositories imported by those BUILD files.
@@ -1320,6 +1328,7 @@ use_repo(
     "in_yaml_go_yaml_v4",
     "io_k8s_apimachinery",
     "io_k8s_apiserver",
+    "io_k8s_kube_openapi",
     "io_opentelemetry_go_auto_sdk",
     "io_opentelemetry_go_otel",
     "io_opentelemetry_go_otel_exporters_otlp_otlptrace",
