@@ -22,7 +22,7 @@ metadata:
 spec:
   # Keep the replica count GitOps-owned; the worker-local state claim is
   # selected by the affinity and PVC declarations below.
-  replicas: 1
+  replicas: 0
   strategy:
     type: Recreate
   selector:
