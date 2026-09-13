@@ -131,6 +131,139 @@ class ProbeShape:
         return body
 
 
+@dataclass(frozen=True)
+class ProbeCase:
+    model: ModelProbe
+    shape: str
+    scenario: str
+    request_path: Path | None
+    response_path: Path | None
+
+
+@dataclass(frozen=True)
+class ProbeContext:
+    client: httpx.Client
+    base_url: str
+    headers: dict[str, str]
+    max_output_tokens: int
+    include_unsupported: bool
+    continue_on_error: bool
+    json_lines: bool
+    resume_dirs: tuple[Path, ...]
+
+    def _post_json(
+        self, url: str, body: dict[str, Any], request_path: Path | None, response_path: Path | None
+    ) -> tuple[Any, str]:
+        _save_json_body(request_path, body)
+        response = self.client.post(url, headers=self.headers, json=body)
+        _save_body(response_path, response.text)
+        parsed = _parse_json(response)
+        detail = _detail_from_body(parsed)
+        response.raise_for_status()
+        return parsed, detail
+
+    def _post_streaming_responses(
+        self, url: str, body: dict[str, Any], request_path: Path | None, response_path: Path | None
+    ) -> dict[str, Any]:
+        _save_json_body(request_path, body)
+        raw_lines: list[str] = []
+        events: list[Any] = []
+        with self.client.stream("POST", url, headers=self.headers, json=body) as response:
+            if response.status_code >= 400:
+                response.read()
+                _save_body(response_path, response.text)
+                response.raise_for_status()
+            for line in response.iter_lines():
+                raw_lines.append(line)
+                if not line:
+                    continue
+                if line.startswith("data: "):
+                    payload = line.removeprefix("data: ").strip()
+                    if payload and payload != "[DONE]":
+                        try:
+                            events.append(json.loads(payload))
+                        except json.JSONDecodeError as exc:
+                            raise ProbeError(f"invalid Responses stream JSON: {payload}") from exc
+            _save_body(response_path, "\n".join(raw_lines))
+        return _responses_body_from_stream_events(events)
+
+    def _post_shape_request(self, case: ProbeCase, body: dict[str, Any]) -> Any:
+        shape = SHAPES[case.shape]
+        url = _request_url(self.base_url, shape.name)
+        if shape.stream:
+            return self._post_streaming_responses(url, body, case.request_path, case.response_path)
+        body_json, _ = self._post_json(url, body, case.request_path, case.response_path)
+        return body_json
+
+    def _probe_one(self, case: ProbeCase) -> ProbeResult:
+        started = time.monotonic()
+        shape_spec = SHAPES[case.shape]
+        request_body = _planned_request_body(case.model, case.shape, case.scenario, self.max_output_tokens)
+        request_key = _request_key(_request_url(self.base_url, case.shape), request_body)
+        try:
+            if case.model.mode not in TEXT_MODES:
+                detail = f"unsupported non-text mode for {case.shape}/{case.scenario} probe: {case.model.mode}"
+                status = "fail" if self.include_unsupported else "skip"
+            else:
+                response_body = self._post_shape_request(case, request_body)
+                detail = _validate_for_scenario(shape_spec, case.scenario, response_body)
+                status = "ok"
+        except (httpx.HTTPError, ProbeError) as exc:
+            detail = f"{type(exc).__name__}: {exc}"
+            status = "fail"
+        return ProbeResult(
+            model=case.model,
+            shape=case.shape,
+            scenario=case.scenario,
+            status=status,
+            elapsed_seconds=time.monotonic() - started,
+            detail=detail,
+            request_path=case.request_path,
+            response_path=case.response_path,
+            request_key=request_key,
+        )
+
+    def run_matrix(
+        self,
+        probes: list[ModelProbe],
+        shapes: list[str],
+        scenarios: list[str],
+        response_dir: Path,
+        results_by_key: dict[str, ProbeResult],
+    ) -> None:
+        copied_resume_keys: set[str] = set()
+        for probe in probes:
+            for shape in shapes:
+                for scenario in scenarios:
+                    key = _case_key(self.base_url, probe, shape, scenario, self.max_output_tokens)
+                    previous = results_by_key.get(key)
+                    if (
+                        self.resume_dirs
+                        and previous is not None
+                        and previous.status == "ok"
+                        and _saved_exchange_matches_key(previous)
+                    ):
+                        if key not in copied_resume_keys:
+                            _append_result_record(response_dir, previous)
+                            copied_resume_keys.add(key)
+                        continue
+                    request_path, response_path = _artifact_paths(response_dir, probe, shape, scenario)
+                    result = self._probe_one(
+                        ProbeCase(
+                            model=probe,
+                            shape=shape,
+                            scenario=scenario,
+                            request_path=request_path,
+                            response_path=response_path,
+                        )
+                    )
+                    results_by_key[key] = result
+                    _append_result_record(response_dir, result)
+                    _print_result(result, self.json_lines)
+                    if result.status == "fail" and not self.continue_on_error:
+                        return
+
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Probe configured LiteLLM models with tiny requests.")
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL, help="LiteLLM proxy base URL.")
@@ -326,23 +459,6 @@ def _save_body(path: Path | None, body: str) -> None:
 
 def _save_json_body(path: Path | None, body: dict[str, Any]) -> None:
     _save_body(path, json.dumps(body, indent=2, sort_keys=True))
-
-
-def _post_json(
-    client: httpx.Client,
-    url: str,
-    headers: dict[str, str],
-    body: dict[str, Any],
-    request_path: Path | None,
-    response_path: Path | None,
-) -> tuple[Any, str]:
-    _save_json_body(request_path, body)
-    response = client.post(url, headers=headers, json=body)
-    _save_body(response_path, response.text)
-    parsed = _parse_json(response)
-    detail = _detail_from_body(parsed)
-    response.raise_for_status()
-    return parsed, detail
 
 
 def _first_chat_message(body: Any) -> dict[str, Any]:
@@ -634,96 +750,6 @@ def _saved_exchange_matches_key(result: ProbeResult) -> bool:
     return _request_key(url, request_body) == result.request_key
 
 
-def _post_streaming_responses(
-    client: httpx.Client,
-    url: str,
-    headers: dict[str, str],
-    body: dict[str, Any],
-    request_path: Path | None,
-    response_path: Path | None,
-) -> dict[str, Any]:
-    _save_json_body(request_path, body)
-    raw_lines: list[str] = []
-    events: list[Any] = []
-    with client.stream("POST", url, headers=headers, json=body) as response:
-        if response.status_code >= 400:
-            response.read()
-            _save_body(response_path, response.text)
-            response.raise_for_status()
-        for line in response.iter_lines():
-            raw_lines.append(line)
-            if not line:
-                continue
-            if line.startswith("data: "):
-                payload = line.removeprefix("data: ").strip()
-                if payload and payload != "[DONE]":
-                    try:
-                        events.append(json.loads(payload))
-                    except json.JSONDecodeError as exc:
-                        raise ProbeError(f"invalid Responses stream JSON: {payload}") from exc
-        _save_body(response_path, "\n".join(raw_lines))
-    return _responses_body_from_stream_events(events)
-
-
-def _post_shape_request(
-    client: httpx.Client,
-    base_url: str,
-    headers: dict[str, str],
-    model: ModelProbe,
-    shape: ProbeShape,
-    body: dict[str, Any],
-    request_path: Path | None,
-    response_path: Path | None,
-) -> Any:
-    url = _request_url(base_url, shape.name)
-    if shape.stream:
-        return _post_streaming_responses(client, url, headers, body, request_path, response_path)
-    body_json, _ = _post_json(client, url, headers, body, request_path, response_path)
-    return body_json
-
-
-def _probe_one(
-    client: httpx.Client,
-    base_url: str,
-    headers: dict[str, str],
-    model: ModelProbe,
-    shape: str,
-    scenario: str,
-    max_output_tokens: int,
-    include_unsupported: bool,
-    request_path: Path | None,
-    response_path: Path | None,
-) -> ProbeResult:
-    started = time.monotonic()
-    shape_spec = SHAPES[shape]
-    request_body = _planned_request_body(model, shape, scenario, max_output_tokens)
-    request_key = _request_key(_request_url(base_url, shape), request_body)
-    try:
-        if model.mode not in TEXT_MODES:
-            detail = f"unsupported non-text mode for {shape}/{scenario} probe: {model.mode}"
-            status = "fail" if include_unsupported else "skip"
-        else:
-            response_body = _post_shape_request(
-                client, base_url, headers, model, shape_spec, request_body, request_path, response_path
-            )
-            detail = _validate_for_scenario(shape_spec, scenario, response_body)
-            status = "ok"
-    except (httpx.HTTPError, ProbeError) as exc:
-        detail = f"{type(exc).__name__}: {exc}"
-        status = "fail"
-    return ProbeResult(
-        model=model,
-        shape=shape,
-        scenario=scenario,
-        status=status,
-        elapsed_seconds=time.monotonic() - started,
-        detail=detail,
-        request_path=request_path,
-        response_path=response_path,
-        request_key=request_key,
-    )
-
-
 def _print_result(result: ProbeResult, json_lines: bool) -> None:
     if json_lines:
         print(_result_record_json(result), flush=True)
@@ -876,53 +902,6 @@ def _write_html_report(path: Path, results: list[ProbeResult], response_dir: Pat
     path.write_text(html_text)
 
 
-def _run_probe_matrix(
-    client: httpx.Client,
-    args: argparse.Namespace,
-    base_url: str,
-    headers: dict[str, str],
-    probes: list[ModelProbe],
-    shapes: list[str],
-    scenarios: list[str],
-    response_dir: Path,
-    results_by_key: dict[str, ProbeResult],
-) -> None:
-    copied_resume_keys: set[str] = set()
-    for probe in probes:
-        for shape in shapes:
-            for scenario in scenarios:
-                key = _case_key(base_url, probe, shape, scenario, args.max_output_tokens)
-                previous = results_by_key.get(key)
-                if (
-                    args.resume_dir
-                    and previous is not None
-                    and previous.status == "ok"
-                    and _saved_exchange_matches_key(previous)
-                ):
-                    if key not in copied_resume_keys:
-                        _append_result_record(response_dir, previous)
-                        copied_resume_keys.add(key)
-                    continue
-                request_path, response_path = _artifact_paths(response_dir, probe, shape, scenario)
-                result = _probe_one(
-                    client,
-                    base_url,
-                    headers,
-                    probe,
-                    shape,
-                    scenario,
-                    args.max_output_tokens,
-                    args.include_unsupported,
-                    request_path,
-                    response_path,
-                )
-                results_by_key[key] = result
-                _append_result_record(response_dir, result)
-                _print_result(result, args.json)
-                if result.status == "fail" and not args.continue_on_error:
-                    return
-
-
 def main() -> int:
     args = _parse_args()
     base_url = args.base_url.rstrip("/")
@@ -963,7 +942,16 @@ def main() -> int:
     interrupted = False
     try:
         with httpx.Client(timeout=timeout, follow_redirects=True) as client:
-            _run_probe_matrix(client, args, base_url, headers, probes, shapes, scenarios, response_dir, results_by_key)
+            ProbeContext(
+                client=client,
+                base_url=base_url,
+                headers=headers,
+                max_output_tokens=args.max_output_tokens,
+                include_unsupported=args.include_unsupported,
+                continue_on_error=args.continue_on_error,
+                json_lines=args.json,
+                resume_dirs=tuple(args.resume_dir),
+            ).run_matrix(probes, shapes, scenarios, response_dir, results_by_key)
     except KeyboardInterrupt:
         interrupted = True
         print("interrupted: writing report for completed probe records", file=sys.stderr, flush=True)
