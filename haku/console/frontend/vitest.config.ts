@@ -7,10 +7,6 @@ export default defineConfig({
     // is also why no `esbuild.jsx` setting is needed — the JSX is long since gone.
     include: ["**/*.test.js"],
     environment: "jsdom", // DOMPurify (in markdown.ts) needs a DOM
-    // Mantine depends on browser APIs such as matchMedia and ResizeObserver. Run its UI
-    // integration spec in an environment that provides those implementations instead of
-    // reimplementing them locally in the test.
-    environmentMatchGlobs: [["**/route_resource_state.test.js", "happy-dom"]],
   },
   cacheDir: ".vitest-cache",
 });
