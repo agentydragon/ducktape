@@ -2,9 +2,9 @@
 # (openclaw/) and Haku's spike image (haku/openclaw_spike/).
 #
 # Both images consume nix-openclaw's npm-package gateway build, spliced with
-# this directory's npm wrapper. That splice, the source pin, and the dist
-# repairs below are identical for both consumers, so they live here once rather
-# than being mirrored between two image definitions and drifting apart.
+# this directory's npm wrapper and release-specific dist patch. That splice,
+# source pin, and patch are identical for both consumers, so they live here once
+# rather than being mirrored between two image definitions and drifting apart.
 #
 # Gotcha: use the npm-package path, not a from-source `sourceInfo` override.
 # nix-openclaw's own stable is npm-package too, so its from-source pnpm build is
@@ -16,9 +16,8 @@
 }:
 
 let
-  # nix-openclaw's own source pin still tracks an older stable release. Keep its
-  # tested npm-package build path, but splice the current stable wrapper and
-  # source metadata over it so the images actually contain 2026.9.4.
+  # Keep the tested npm-package build path and explicitly align its wrapper and
+  # source metadata with the 2026.9.4 release used by both images.
   ocPkgs = import nix-openclaw.inputs.nixpkgs {
     inherit (pkgs.stdenv.hostPlatform) system;
     overlays = [ nix-openclaw.overlays.default ];
@@ -89,70 +88,7 @@ in
 {
   inherit ocPkgs openclawPackages;
 
-  # nix-openclaw's stage_dist_runtime copies dist/extensions into dist-runtime/
-  # and nothing else, but the extension modules import shared chunks as
-  # ../../<chunk>.js -- resolving to dist/ in the upstream layout and to
-  # dist-runtime/ here, where only extensions/ exists. 496 of 526 extension files
-  # import such a chunk. OpenClaw prefers dist-runtime/extensions over
-  # dist/extensions when present, so the partial tree is worse than none:
-  # workboard's doctor contract is loaded by a legacy state migration, and its
-  # ERR_MODULE_NOT_FOUND becomes a blocking startup-migration warning that
-  # refuses to report the gateway ready.
-  #
-  # Repaired on the built output rather than by rewriting their install script,
-  # so this does not depend on the exact shell line surviving upstream edits.
-  # Links are relative because both trees are copied into $out together.
-  #
-  # Appended to installPhase, not a postInstall hook: nix-openclaw supplies a
-  # complete custom installPhase and never calls `runHook postInstall`, so a
-  # postInstall here is silently skipped and the guard below never runs.
-  gateway = openclawPackages.openclaw-gateway.overrideAttrs (previous: {
-    installPhase =
-      previous.installPhase
-      + "\n"
-      + ''
-        for runtime in "$out"/lib/*/dist-runtime; do
-          dist="$(dirname "$runtime")/dist"
-          if [ ! -d "$runtime" ] || [ ! -d "$dist" ]; then
-            continue
-          fi
-
-          for entry in "$dist"/*; do
-            name="$(basename "$entry")"
-            if [ "$name" = extensions ] || [ -e "$runtime/$name" ]; then
-              continue
-            fi
-            ln -s "../dist/$name" "$runtime/$name"
-          done
-
-          # Fail closed. Resolve each specifier against its own importer, because a
-          # nested extension file's ../../ means extensions/, not the tree root; scan
-          # .js/.mjs only, since .d.ts references are type-level; and match bare specifier
-          # strings rather than `from "..."`, because workboard's is a dynamic
-          # import() -- the exact one that took the gateway down.
-          #
-          # Skip nested node_modules: stage_acpx splices in a plugin carrying its own
-          # vendored packages, which resolve through their own tree, not through the
-          # shared chunks this staging is responsible for.
-          missing="$(
-            {
-              grep -rHoE --include='*.js' --include='*.mjs' --exclude-dir=node_modules '"(\.\./)+[A-Za-z0-9_.-]+\.(js|mjs)"' "$runtime/extensions" || {
-                grep_status=$?
-                [ "$grep_status" -eq 1 ] || exit "$grep_status"
-              }
-            } \
-            | sed -E 's/:"/\t/; s/"$//' | sort -u \
-            | while IFS="$(printf '\t')" read -r file spec; do
-                if [ ! -e "$(dirname "$file")/$spec" ]; then
-                  printf '%s -> %s\n' "$file" "$spec"
-                fi
-              done)"
-          if [ -n "$missing" ]; then
-            echo "dist-runtime is missing chunks its extensions import:" >&2
-            echo "$missing" >&2
-            exit 1
-          fi
-        done
-      '';
-  });
+  # The pinned nix-openclaw installer now makes dist-runtime a symlink to dist,
+  # so no downstream runtime-layout repair is needed here.
+  gateway = openclawPackages.openclaw-gateway;
 }

@@ -38,10 +38,12 @@ state predates the release.
   is the design: re-find the construct in the new dist and update the
   release-specific patch. Never relax a match to make a bump pass -- the
   patched behaviour silently reverts to upstream's.
-- **Verify the built artifact, not the expression.** The `dist-runtime` staging
-  bug and the `stage_acpx` edge case were both invisible until the derivation was
-  actually built and its output inspected; local simulation of the upstream tarball
-  missed both, because the real tree has content the tarball does not.
+- **Verify the built artifact, not the expression.** The `stage_acpx` edge case
+  was invisible until the derivation was actually built and its output inspected;
+  local simulation of the upstream tarball missed it, because the real tree has
+  content the tarball does not. The pinned nix-openclaw installer now makes
+  `dist-runtime` a symlink to `dist`, so do not reintroduce a downstream copy or
+  link workaround unless a future upstream change regresses that invariant.
 
 ## Verifying a rollout
 

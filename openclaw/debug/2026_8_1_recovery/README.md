@@ -66,32 +66,16 @@ startup work. This is a deployment-specific mitigation; leave the OpenClaw
 default at 60 seconds for other instances unless their storage and startup path
 have the same measured bound.
 
-## 2. `dist-runtime` missing its shared chunks (resolved)
+## 2. `dist-runtime` missing its shared chunks (fixed upstream)
 
-nix-openclaw's `stage_dist_runtime` copies `dist/extensions` into `dist-runtime/`
-and nothing else, but extension modules import shared chunks as `../../<chunk>.js`
-— resolving to `dist/` upstream and to `dist-runtime/` here, where only
-`extensions/` exists. OpenClaw prefers `dist-runtime/extensions` when present, so
-the partial tree is worse than none.
+The historical failure was caused by `stage_dist_runtime` creating a partial
+`dist-runtime/` tree containing `extensions/` but not the shared chunks imported
+by those extensions. That made `workboard` fail during a legacy state migration.
 
-Mostly cosmetic, except `workboard`: its doctor contract is loaded by a legacy
-state migration, so its `ERR_MODULE_NOT_FOUND` became a blocking
-startup-migration warning. Invisible until (1) was fixed, because startup aborted
-earlier.
-
-Fixed in `openclaw/gateway.nix`, now shared by both images.
-
-**Gotcha:** append to `installPhase`, not `postInstall`. nix-openclaw supplies a
-complete custom `installPhase` and never calls `runHook postInstall`, so a
-`postInstall` is silently skipped — the build succeeds having done nothing, and a
-fail-closed guard placed there passes vacuously.
-
-**Gotcha for the guard:** resolve each specifier against its own importer (a
-nested extension file's `../../` means `extensions/`, not the tree root), scan
-`.js` only (`.d.ts` references are type-level), match bare specifier strings —
-workboard's is a dynamic `import()`, so a `from "..."` pattern misses it — and
-skip vendored `node_modules`, since `stage_acpx` splices in a plugin whose own
-packages resolve through their own tree.
+The pinned `nix-openclaw` revision now removes any partial tree and creates
+`dist-runtime -> dist`. The downstream repair in `openclaw/gateway.nix` has
+therefore been retired. Keep the artifact-level check below when bumping
+nix-openclaw; a future installer must preserve this symlink invariant.
 
 ## 3. Legacy session store (resolved)
 
