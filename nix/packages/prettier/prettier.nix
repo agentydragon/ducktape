@@ -10,11 +10,11 @@
 { pkgs }:
 pkgs.buildNpmPackage {
   pname = "prettier-with-plugins";
-  version = "3.8.1";
+  version = "3.9.6";
 
   src = ./.;
 
-  npmDepsHash = "sha256-Qw5eA5gTdFv4v0jIuGyWuT/JRjojzKJJArQKs0Po8AQ=";
+  npmDepsHash = "sha256-014E/+/KK2dPckOgy33KONUYgciQAI05pO+m/RYDcIc=";
 
   dontBuild = true;
 
