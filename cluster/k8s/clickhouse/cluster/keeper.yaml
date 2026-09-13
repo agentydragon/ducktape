@@ -60,7 +60,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: clickhouse-keeper
-              image: clickhouse/clickhouse-keeper:26.8.2.7@sha256:0fbe266b275a23b53508a7a3dac2e6fe149d63cddf242897a5c5c3d7b5350568
+              image: clickhouse/clickhouse-keeper:26.8.3.105@sha256:d9aced52deafda7ca716983bc80766641bcde30c23f3f7abdf6cacc9f244bd74
               imagePullPolicy: IfNotPresent
               resources:
                 requests:
