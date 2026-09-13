@@ -34,7 +34,7 @@ spec:
 
     image:
       repository: emberstack/kubernetes-reflector
-      tag: "10.0.7"
+      tag: "10.0.65"
       pullPolicy: IfNotPresent
 
     configuration:
