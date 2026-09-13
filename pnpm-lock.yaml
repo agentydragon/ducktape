@@ -269,8 +269,8 @@ importers:
         specifier: ^7.10.1
         version: 7.13.0(typescript@5.9.3)
       pixelmatch:
-        specifier: ^6.0.0
-        version: 6.0.0
+        specifier: ^7.0.0
+        version: 7.2.0
       pngjs:
         specifier: ^7.0.0
         version: 7.0.0
@@ -336,8 +336,8 @@ importers:
         specifier: ^7.10.1
         version: 7.13.0(typescript@5.9.3)
       pixelmatch:
-        specifier: ^6.0.0
-        version: 6.0.0
+        specifier: ^7.0.0
+        version: 7.2.0
       pngjs:
         specifier: ^7.0.0
         version: 7.0.0
@@ -3731,8 +3731,8 @@ packages:
     resolution: {integrity: sha512-QP88BAKvMam/3NxH6vj2o21R6MjxZUAd6nlwAS/pnGvN9IVLocLHxGYIzFhg6fUQ+5th6P4dv4eW9jX3DSIj7A==}
     engines: {node: '>=12'}
 
-  pixelmatch@6.0.0:
-    resolution: {integrity: sha512-FYpL4XiIWakTnIqLqvt3uN4L9B3TsuHIvhLILzTiJZMJUsGvmKNeL4H3b6I99LRyerK9W4IuOXw+N28AtRgK2g==}
+  pixelmatch@7.2.0:
+    resolution: {integrity: sha512-xhcb4yHu9sM/G7foGzoLtXYcC0zHEaOXXjRKhGup0fw78Nf2Tkiapv4EQyMzrbcmQPsllAI7DbFY2UT7PlI9Pg==}
     hasBin: true
 
   pkce-challenge@5.0.1:
@@ -8472,7 +8472,7 @@ snapshots:
 
   picomatch@4.0.4: {}
 
-  pixelmatch@6.0.0:
+  pixelmatch@7.2.0:
     dependencies:
       pngjs: 7.0.0
 

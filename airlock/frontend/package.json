@@ -11,7 +11,7 @@
     "esbuild-plugin-tailwindcss": "^2.0.3",
     "esbuild-svelte": "^0.9.5",
     "openapi-typescript": "^7.10.1",
-    "pixelmatch": "^6.0.0",
+    "pixelmatch": "^7.0.0",
     "pngjs": "^7.0.0",
     "puppeteer": "^23.11.1",
     "svelte-check": "^4.7.6",
