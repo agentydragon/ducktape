@@ -1,5 +1,7 @@
 """E2E: real daemon/client + shadowed PyGithub; PR variants: open(can merge), merged, closed, no PR."""
 
+from __future__ import annotations
+
 import json
 import os
 import re

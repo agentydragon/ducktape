@@ -9,6 +9,8 @@ then needs only a thin smoke test: its advertised tool-name set + one representa
 one strict-input rejection (see `test_gmail.py`). Don't re-test the factory once per generated tool.
 """
 
+from __future__ import annotations
+
 from typing import Any
 
 import pytest

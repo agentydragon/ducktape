@@ -7,6 +7,8 @@ resource it returns is a real `gmail_api` model dumped to the wire shape, so the
 `model_validate` round-trips genuine resources rather than hand-shaped dicts.
 """
 
+from __future__ import annotations
+
 import base64
 from dataclasses import dataclass, field
 from typing import Any

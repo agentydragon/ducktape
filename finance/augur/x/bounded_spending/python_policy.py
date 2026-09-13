@@ -5,6 +5,8 @@ NumPy object arrays (Python integers), not a claim of SIMD or compiled-policy sp
 Neither implementation performs financial settlement or computes tax.
 """
 
+from __future__ import annotations
+
 from collections.abc import Callable
 from dataclasses import dataclass
 from itertools import batched

@@ -1,5 +1,7 @@
 """Configuration models for the Home Assistant API proxy."""
 
+from __future__ import annotations
+
 import logging
 import os
 from enum import StrEnum

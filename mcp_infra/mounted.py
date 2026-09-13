@@ -1,5 +1,7 @@
 """Mounted server wrapper bundling prefix and server instance."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 

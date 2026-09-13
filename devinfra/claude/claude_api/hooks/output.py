@@ -5,6 +5,8 @@ Claude Code defines a single ``hookOutput`` object with an optional discriminate
 Python equivalent: ``HookOutput`` with ``hook_specific_output: AnyHookSpecificOutput | None``.
 """
 
+from __future__ import annotations
+
 from typing import Annotated, Literal
 
 from pydantic import Discriminator, Field, model_validator

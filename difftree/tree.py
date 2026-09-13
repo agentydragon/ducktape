@@ -7,6 +7,8 @@ TreeNode is immutable (frozen dataclass) - all tree transformations return new n
 View-level rendering logic (path collapsing, tree decoration styling) lives in diff_tree.py.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from pathlib import Path
 

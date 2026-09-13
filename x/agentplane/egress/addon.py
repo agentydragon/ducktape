@@ -14,7 +14,7 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from ipaddress import ip_address
+from ipaddress import IPv6Address, ip_address
 from uuid import uuid4
 
 from mitmproxy import connection, http
@@ -60,7 +60,7 @@ def _peer_ip(flow: http.HTTPFlow) -> str:
     if peername is None:
         raise IdentityRejectedError(DenyReason.POD_MISMATCH, "client connection has no peer address")
     address = ip_address(peername[0])
-    return str(address.ipv4_mapped or address) if address.version == 6 else str(address)
+    return str(address.ipv4_mapped or address) if isinstance(address, IPv6Address) else str(address)
 
 
 class EgressAddon:

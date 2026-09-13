@@ -8,6 +8,8 @@ Haku reads these tables directly with the read-only `haku_reader` CNPG managed
 role (member of pg_read_all_data) — no read API and no grant management here.
 """
 
+from __future__ import annotations
+
 from datetime import UTC, datetime
 
 from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text
