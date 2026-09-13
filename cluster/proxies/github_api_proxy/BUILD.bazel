@@ -56,6 +56,7 @@ py_test(
     ],
     requires_docker = True,
     deps = [
+        ":conftest",
         ":testing",
         "//:conftest",
         "//util:oci",
@@ -147,6 +148,7 @@ py_test(
     srcs = ["test_capture.py"],
     deps = [
         ":capture",
+        ":conftest",
         ":metrics",
         "//:conftest",
         "@pypi//mitmproxy",
@@ -160,6 +162,7 @@ py_test(
     srcs = ["test_config.py"],
     deps = [
         ":config",
+        ":conftest",
         "//:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
@@ -171,6 +174,7 @@ py_test(
     name = "test_metrics",
     srcs = ["test_metrics.py"],
     deps = [
+        ":conftest",
         ":metrics",
         "//:conftest",
         "@pypi//aiohttp",
@@ -225,6 +229,7 @@ py_test(
     name = "test_destinations",
     srcs = ["test_destinations.py"],
     deps = [
+        ":conftest",
         ":destinations",
         "//:conftest",
         "@pypi//pytest",
