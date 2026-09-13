@@ -26,7 +26,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: plaid-web
-          image: git.allegedly.works/ducktape-ci/plaid-mcp-server:devel-20260913193034-4d7cda6 # {"$imagepolicy": "flux-system:plaid-mcp-server"}
+          image: git.allegedly.works/ducktape-ci/plaid-mcp-server:devel-20260913224023-00ae0b0 # {"$imagepolicy": "flux-system:plaid-mcp-server"}
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
