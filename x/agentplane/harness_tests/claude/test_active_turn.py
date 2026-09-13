@@ -144,6 +144,16 @@ def test_interrupt_cancels_each_queued_input_before_native_message(
         assert response["response"]["subtype"] == "success"
         assert initial_raw.client_closed.wait(30)
         assert scenarios.await_result(process)["is_error"] is True
+        for command_uuid in (first.uuid, second.uuid):
+
+            def is_cancelled(frame: dict[str, Any], expected: str = command_uuid) -> bool:
+                return (
+                    frame.get("type") == "command_lifecycle"
+                    and frame.get("command_uuid") == expected
+                    and frame.get("state") == "cancelled"
+                )
+
+            process.await_frame(is_cancelled, timeout=30)
 
         scenarios.send(process, INTERRUPT_RECOVERY)
         recovery_raw = upstream.next_request()
