@@ -61,7 +61,7 @@ importers:
         version: 5.3.8(@popperjs/core@2.11.8)
       bootstrap-vue:
         specifier: ^2.15.0
-        version: 2.23.1(jquery@3.7.1)(vue@2.7.16)
+        version: 2.23.1(jquery@4.0.0)(vue@2.7.16)
       chart.js:
         specifier: ^3.8.0
         version: 3.9.1
@@ -96,8 +96,8 @@ importers:
         specifier: ^0.8.0
         version: 0.8.0
       jquery:
-        specifier: ^3.5.1
-        version: 3.7.1
+        specifier: ^4.0.0
+        version: 4.0.0
       jsdom:
         specifier: ^21.1.1
         version: 21.1.2
@@ -5225,8 +5225,8 @@ packages:
   joi@17.13.4:
     resolution: {integrity: sha512-1RuuER6kmt8K8I3nIWvPZKi5RQCb568ZPyY4Pwjlua+yo+63ZTmIwxLZH0heBmiKN4uxjvCiarDrjaeH84xicQ==}
 
-  jquery@3.7.1:
-    resolution: {integrity: sha512-m4avr8yL8kmFN8psrbFFFmB/If14iN5o9nw/NgnnM+kybDJpRsAynV2BsfpTYrTRysYUdADVD7CkUUizgkpLfg==}
+  jquery@4.0.0:
+    resolution: {integrity: sha512-TXCHVR3Lb6TZdtw1l3RTLf8RBWVGexdxL6AC8/e0xZKEpBflBsjh9/8LXw+dkNFuOyW9B7iB3O1sP7hS0Kiacg==}
 
   js-beautify@1.15.4:
     resolution: {integrity: sha512-9/KXeZUKKJwqCXUdBxFJ3vPh467OCckSBmYDwSK/EtV090K+iMJ7zx2S3HLVDIWFQdqMIsZWbnaGiba18aWhaA==}
@@ -11197,10 +11197,10 @@ snapshots:
 
   boolbase@1.0.0: {}
 
-  bootstrap-vue@2.23.1(jquery@3.7.1)(vue@2.7.16):
+  bootstrap-vue@2.23.1(jquery@4.0.0)(vue@2.7.16):
     dependencies:
       '@nuxt/opencollective': 0.3.3
-      bootstrap: 4.6.2(jquery@3.7.1)(popper.js@1.16.1)
+      bootstrap: 4.6.2(jquery@4.0.0)(popper.js@1.16.1)
       popper.js: 1.16.1
       portal-vue: 2.1.7(vue@2.7.16)
       vue-functional-data-merge: 3.1.0
@@ -11209,9 +11209,9 @@ snapshots:
       - jquery
       - vue
 
-  bootstrap@4.6.2(jquery@3.7.1)(popper.js@1.16.1):
+  bootstrap@4.6.2(jquery@4.0.0)(popper.js@1.16.1):
     dependencies:
-      jquery: 3.7.1
+      jquery: 4.0.0
       popper.js: 1.16.1
 
   bootstrap@5.3.8(@popperjs/core@2.11.8):
@@ -13926,7 +13926,7 @@ snapshots:
       '@sideway/formula': 3.0.1
       '@sideway/pinpoint': 2.0.0
 
-  jquery@3.7.1: {}
+  jquery@4.0.0: {}
 
   js-beautify@1.15.4:
     dependencies:
