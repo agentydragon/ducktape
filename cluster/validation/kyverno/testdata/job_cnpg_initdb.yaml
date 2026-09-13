@@ -1,0 +1,17 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: postgres-1-initdb
+  namespace: agentplane-staging
+  labels:
+    app.kubernetes.io/managed-by: cloudnative-pg
+    cnpg.io/cluster: postgres
+    cnpg.io/instanceName: postgres-1
+    cnpg.io/jobRole: initdb
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: initdb
+          image: ghcr.io/cloudnative-pg/postgresql:16

@@ -14,3 +14,4 @@ resources:
   - clusterrole-cleanup-controller-jobs.yaml
   - clusterrole-cleanup-controller-workloads.yaml
   - clusterrole-cleanup-controller-sandboxes.yaml
+  - ignore-cnpg-jobs-for-reloader.yaml
