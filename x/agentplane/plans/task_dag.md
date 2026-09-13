@@ -63,7 +63,7 @@ flowchart TB
     UISHELL_NEWTHREAD_SANDBOX["Planned UI<br/>pre-scoped '+ New thread' on a Sandbox's page<br/>Sandbox/preset already fixed"]:::future
     UISHELL_NEWTHREAD_LANDING["Planned UI<br/>sidebar '+' unscoped new-thread composer<br/>Sandbox/preset/model pickers + prompt"]:::future
     NEWTHREAD_DURABLE["Planned backend<br/>server-owned sandbox+thread provisioning<br/>must survive a browser close or app-server restart mid-submit"]:::future
-    REASONING_EFFORT_RUNTIME["Planned protocol + UI<br/>reasoning effort switchable mid-thread<br/>mirror the existing model-switch mechanism"]:::future
+    CONTROL_STATE["Deferred decision<br/>dynamic runtime control state<br/>model/effort acceptance"]:::future
     UISHELL_SIDEBAR_LIVE["Bug + planned fix<br/>sidebar Thread/Sandbox state goes stale<br/>rename, sandbox status icon never push-update"]:::future
     UISHELL_SIDEBAR_ALL_SANDBOXES["Bug<br/>threadless Sandboxes missing from sidebar<br/>e.g. still waiting for a pod to land"]:::future
     UISHELL_SIDEBAR_SANDBOX_LINK["Planned UI<br/>sidebar Sandbox name should link to its page<br/>currently plain text"]:::future
@@ -121,9 +121,8 @@ Haku Console migration is split: Agent/conversation management and tool-call/app
 can retire on different schedules after their respective replacement surfaces exist.
 
 The session-first UI shell (`UISHELL_DRAWER`, `UISHELL_NEWTHREAD_SANDBOX`,
-`UISHELL_NEWTHREAD_LANDING`, `NEWTHREAD_DURABLE`, `REASONING_EFFORT_RUNTIME`, `UISHELL_SIDEBAR_LIVE`,
-`UISHELL_SIDEBAR_ALL_SANDBOXES`, `UISHELL_SIDEBAR_SANDBOX_LINK`, `UISHELL_NEWSANDBOX_NAV`,
-`THREAD_BROWSE_PAGINATE`) is a separate
+`UISHELL_NEWTHREAD_LANDING`, `NEWTHREAD_DURABLE`, `UISHELL_SIDEBAR_LIVE`, `UISHELL_SIDEBAR_ALL_SANDBOXES`,
+`UISHELL_SIDEBAR_SANDBOX_LINK`, `UISHELL_NEWSANDBOX_NAV`, `THREAD_BROWSE_PAGINATE`) is a separate
 frontend-ergonomics track: it is not gated by, and does not gate, the Action Service milestones
 above. `UISHELL_NEWTHREAD_SANDBOX` and `UISHELL_NEWTHREAD_LANDING` can each ship a working happy-path
 without `NEWTHREAD_DURABLE` (submit, stay on the page, watch it provision) — but neither is _correct_
@@ -136,11 +135,7 @@ both landed, replacing the top nav row entirely as one atomic cutover; `UISHELL_
 `UISHELL_NEWTHREAD_LANDING` (the sidebar's own "+", currently a stub that opens the Sandbox list) now
 build on that chrome, as do four correctness/completeness gaps found in the landed sidebar itself:
 `UISHELL_SIDEBAR_LIVE`, `UISHELL_SIDEBAR_ALL_SANDBOXES`, `UISHELL_SIDEBAR_SANDBOX_LINK`, and
-`UISHELL_NEWSANDBOX_NAV`. `REASONING_EFFORT_RUNTIME` is independent of all of this — it improves the
-already-shipped composer-row on its own — but `UISHELL_NEWTHREAD_LANDING`/`UISHELL_NEWTHREAD_SANDBOX`
-depend on it for design coherence: their mock assumes reasoning effort is a live composer-row
-control from the start, the same one an open thread already uses for its model, rather than a
-one-off field in a creation form. `THREAD_BROWSE_PAGINATE` is explicitly deferred, not designed: finding one
+`UISHELL_NEWSANDBOX_NAV`. `THREAD_BROWSE_PAGINATE` is explicitly deferred, not designed: finding one
 old Thread once the sidebar's working-set list outgrows it needs its own paginated/searchable page
 eventually, flagged now only so the with-sandboxes endpoint isn't assumed to stay one unpaginated
 call forever. See [session-first navigation](session_first_navigation.md).
@@ -467,6 +462,29 @@ background work, but any such runner surface reuses the Action Service contracts
 second tool-request lifecycle; the settled provider behavior and the seam are in
 [driver tools and background work](driver_tools_and_background.md).
 
+### `CONTROL_STATE` — dynamic runtime control acceptance
+
+**Deferred decision:** decide whether the runner protocol should report a harness's current
+acceptance of runtime control changes, rather than imposing one common gate. This is a time-local,
+operation-specific state — "would accept this command now" — not a persistent harness capability or
+a promise that a future request will be accepted. A command response remains authoritative if the
+state and command race.
+
+The decision must cover both model and reasoning-effort changes, but this item does not add either
+command. It must specify:
+
+- whether acceptance means admission now, application now, or only effect on a named subsequent
+  model request or turn;
+- whether a model change may be admitted during an active agent loop and, if so, how the current
+  turn's effective model is distinguished from the next-turn/session default;
+- how Claude's native `control_request` `set_model` and Codex's per-turn `turn/start` `model` and
+  `effort` fields are represented without pretending they are equivalent; and
+- how state transitions, command outcomes, attach/replay, and stale-state races are represented.
+
+The concrete [REASONING_EFFORT_RUNTIME proposal in #6456](https://github.com/agentydragon/ducktape/pull/6456)
+is withdrawn as an implementation recipe pending this decision. The harness evidence and open
+questions are in [runtime control acceptance](../docs/runtime_control.md).
+
 ### `ING` — Event & Notification Hub
 
 **Deferred support:** consume Action events and external sources such as GitHub/Calendar, match
@@ -496,8 +514,7 @@ confirmed): lift `/actions/stream` into an app-shell-level provider so the badge
 it — a "+ New thread" composer (model picker + prompt) with the Sandbox, and therefore its preset,
 already fixed. `sandbox_page.tsx` already exists and already creates Threads in a Sandbox; this is
 a composer-shape addition over data it already has. No dependency on the UI-shell cluster; depends
-on `NEWTHREAD_DURABLE` and `REASONING_EFFORT_RUNTIME` for correctness (not to ship a first working
-version).
+on `NEWTHREAD_DURABLE` for correctness (not to ship a first working version).
 
 ### `UISHELL_NEWTHREAD_LANDING` — sidebar "+" unscoped new-thread composer
 
@@ -506,12 +523,9 @@ Thread already uses — same composer, same layout — just with no Sandbox/Thre
 lets the operator target an existing Sandbox or describe a new one (reusing `sandboxes.tsx`'s New
 Sandbox fields and `sandbox_page.tsx`'s New Session fields, composed on one page); pressing Enter
 submits the draft immediately as a pending bubble, provisions whatever's missing, and rebinds the
-page to the real Thread in place — the composer itself never moves or remounts. Model and reasoning
-effort are the composer-row's own controls, not a second form: no separate "Model"/"Reasoning
-effort" field lives in the Sandbox picker or the new-Sandbox form, which would be a second source of
-truth to keep in sync with the real composer-row the moment the thread binds. Mocked in
-[`mocks/new_thread_landing.html`](mocks/new_thread_landing.html). Depends on `NEWTHREAD_DURABLE` and
-`REASONING_EFFORT_RUNTIME` for correctness, same as `UISHELL_NEWTHREAD_SANDBOX`.
+page to the real Thread in place — the composer itself never moves or remounts. Mocked in
+[`mocks/new_thread_landing.html`](mocks/new_thread_landing.html). Depends on `NEWTHREAD_DURABLE` for
+correctness, same as `UISHELL_NEWTHREAD_SANDBOX`.
 
 **Unblocked**: the sidebar (`UISHELL_SIDEBAR`) has landed, and its "+" is currently a stub that
 just opens the Sandbox list — this replaces that stub with the real composer. Whether this composer
@@ -552,41 +566,6 @@ The client mints the session id up front (the same pattern `sandbox_page.tsx`'s 
 already uses) so it has a stable URL to bind to from the moment of submission, before the sandbox or
 session exist yet; reopening that URL later, from any device, just reconnects to the same live
 stream.
-
-### `REASONING_EFFORT_RUNTIME` — reasoning effort switchable mid-thread
-
-**Planned protocol + UI:** the model picker under the composer (`session.tsx`) already lets the
-operator change the model on a live thread — reasoning effort should work the same way instead of
-being fixed at creation. Today it isn't: the runner protocol has `SwitchModel{switch_id, model}`
-(accepted only while no turn is active, idempotent by `switch_id`) with
-`ModelSwitchSucceeded{switch_id, previous_model, model}` /
-`ModelSwitchRejected{switch_id, reason}` observations, but `reasoning_effort` only appears once, as
-a plain field on the initial `SessionSpec` — there is no equivalent switch command, so nothing lets
-an operator change it after a thread starts. Both harnesses are believed to support changing
-reasoning effort on an already-running session, mirroring how model-switching already works, but
-that isn't confirmed — the runner-side step below is where it gets checked.
-
-Steps, mirroring the existing model-switch mechanism at each layer:
-
-1. **Runner protocol** (`x/agentplane/runner/*.proto`): add `SwitchReasoningEffort{switch_id,
-reasoning_effort}` as a `Command` variant, and `ReasoningEffortSwitchSucceeded{switch_id,
-previous_reasoning_effort, reasoning_effort}` / `ReasoningEffortSwitchRejected{switch_id, reason}`
-   as `Observation` variants — same shape as `SwitchModel`/`ModelSwitchSucceeded`/
-   `ModelSwitchRejected`.
-2. **Runner harness support**: confirm both `claude` and `codex` harnesses actually accept a
-   reasoning-effort change on a running session; if one doesn't, `ReasoningEffortSwitchRejected`
-   needs a real reason string for that case, not just a stub.
-3. **`app/bridge.py`**: proxy the new command through to the runner client, mirroring however
-   `SwitchModel` is currently wired.
-4. **`app/frontend/client.ts`**: add `switchReasoningEffort(sandbox, sessionId, switchId,
-reasoningEffort)`, mirroring `switchModel`.
-5. **`app/frontend/session.tsx`**: add a second `Select` (`aria-label="Reasoning effort"`) next to
-   the model `Select` in the composer-row, guarded the same way (`state.harness !== "running" ||
-activeTurn !== undefined || pending`), plus a `reasoningEffortSwitchSucceeded` observation
-   handler mirroring the existing `modelSwitchSucceeded` case.
-6. Once shipped, `UISHELL_NEWTHREAD_LANDING`/`UISHELL_NEWTHREAD_SANDBOX` (mocked in
-   `mocks/new_thread_landing.html`) use this same live composer-row control from the start instead
-   of a one-off "Reasoning effort" field in the new-sandbox form — no separate design needed there.
 
 ### `UISHELL_SIDEBAR_LIVE` — sidebar Thread/Sandbox state goes stale
 
