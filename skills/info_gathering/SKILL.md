@@ -144,9 +144,10 @@ actions identified during ENUMERATE.
 ## 3. Uncertainty Register
 
 A table of every quantity we're uncertain about. For each:
-| ID | Quantity | Prior distribution | Source of prior | Entropy (bits) | Status |
-|----|----------|--------------------|-----------------|----------------|--------|
-| U1 | ... | ... | ... | ... | open/resolved |
+
+| ID  | Quantity | Prior distribution | Source of prior | Entropy (bits) | Status        |
+| --- | -------- | ------------------ | --------------- | -------------- | ------------- |
+| U1  | ...      | ...                | ...             | ...            | open/resolved |
 
 ## 4. Hypothesis Space (where applicable)
 

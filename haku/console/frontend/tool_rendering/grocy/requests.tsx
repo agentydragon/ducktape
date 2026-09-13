@@ -737,14 +737,12 @@ function shoppingItemEditChanges(
       : null,
     // `EditShoppingListField` is just `note` today; resolve that one's old value, leave any
     // future field's old side blank until this grows an arm for it.
-    ...(args.clear_fields ?? []).map(
-      (field): FieldChange => ({
-        key: `clear_${field}`,
-        label: field.replaceAll("_", " "),
-        old: field === "note" ? oldValue(current, current?.note ?? null) : null,
-        next: CLEARED,
-      })
-    ),
+    ...(args.clear_fields ?? []).map((field): FieldChange => ({
+      key: `clear_${field}`,
+      label: field.replaceAll("_", " "),
+      old: field === "note" ? oldValue(current, current?.note ?? null) : null,
+      next: CLEARED,
+    })),
   ].filter((c): c is FieldChange => c != null);
 }
 
