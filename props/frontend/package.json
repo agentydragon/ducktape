@@ -26,7 +26,7 @@
     "marked-highlight": "^2.1.1",
     "openapi-fetch": "^0.17.0",
     "chart.js": "^4.4.8",
-    "chartjs-chart-matrix": "^2.0.1",
+    "chartjs-chart-matrix": "^3.0.0",
     "svelte-sonner": "^1.0.0"
   },
   "pnpm": {
