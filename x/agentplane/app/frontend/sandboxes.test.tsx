@@ -31,7 +31,7 @@ async function render(codexModels: string[] = ["test-codex-a", "test-codex-b"]):
     template: "test-template",
     policies: [],
     action_policy_sets: ["test-reads"],
-    thread_defaults: { provider: "codex", model: "test-codex-b" },
+    thread_defaults: { provider: "PROVIDER_CODEX", model: "test-codex-b" },
     bootstrap: "mkdir -p /state/workspaces",
   };
   const policySets: ActionPolicySetView[] = [
@@ -138,7 +138,7 @@ it("pre-fills the preset's action policy sets, offers every set with its verdict
         template: "test-template",
         action_policy_sets: ["test-reads"],
         bootstrap: "mkdir -p /state/workspaces",
-        thread_defaults: expect.objectContaining({ provider: "codex", model: "test-codex-b" }),
+        thread_defaults: expect.objectContaining({ provider: "PROVIDER_CODEX", model: "test-codex-b" }),
       }),
     })
   );

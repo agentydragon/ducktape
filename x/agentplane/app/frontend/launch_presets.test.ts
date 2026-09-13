@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { changedDefaults, effectiveThreadDefaults } from "./launch_presets";
 
 const inherited = {
-  provider: "codex" as const,
+  provider: "PROVIDER_CODEX" as const,
   model: "preset-model",
   reasoning_effort: "medium",
   instructions: "preset instructions",

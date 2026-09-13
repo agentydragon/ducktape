@@ -14,6 +14,7 @@ from google.protobuf.timestamp_pb2 import Timestamp
 from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from x.agentplane.app.presets import Provider
 from x.agentplane.app.trajectory import (
     FeedEnd,
     FeedError,
@@ -107,12 +108,14 @@ async def test_threads_list_with_their_progress(store: TrajectoryStore, lease: I
         "cwd": "/state/work",
         "last_sequence": 2,
     }
+    assert views[thread].provider is Provider.CLAUDE
     assert views[thread].last_event_at == datetime(2026, 9, 2, 12, 0, 2, tzinfo=UTC)
     assert (views[empty].provider, views[empty].last_sequence, views[empty].last_event_at) == (
         "PROVIDER_CODEX",
         0,
         None,
     )
+    assert views[empty].provider is Provider.CODEX
     # No feed has ever attached to either thread (only their event log was replayed), so the
     # exposed harness state stays unspecified rather than inferring it from history.
     assert views[thread].harness == views[empty].harness == "HARNESS_STATE_UNSPECIFIED"

@@ -37,10 +37,19 @@ import { ConfirmDelete, DeleteButton, SuspendResume } from "./lifecycle";
 import { liveSandboxUrl, LiveStatus, useLive, type SandboxSnapshot } from "./live";
 import { HarnessState, Provider, SessionSpecSchema, type SessionSummary } from "./protocol_pb";
 
-// The harness a session runs, as the API's catalog names it and as the protocol's enum spells it.
+// A session form speaks human-sized harness names; model catalogs and sandbox defaults reuse the
+// protocol's Provider JSON names.
 type Harness = "claude" | "codex";
 const HARNESSES: Harness[] = ["claude", "codex"];
 const PROVIDER_ENUM: Record<Harness, Provider> = { claude: Provider.CLAUDE, codex: Provider.CODEX };
+const CATALOG_PROVIDER: Record<Harness, string> = {
+  claude: "PROVIDER_CLAUDE",
+  codex: "PROVIDER_CODEX",
+};
+const HARNESS_FOR_CATALOG_PROVIDER: Record<string, Harness> = {
+  PROVIDER_CLAUDE: "claude",
+  PROVIDER_CODEX: "codex",
+};
 
 // The page's tabs, named in the URL (`?tab=`) so a tab can be linked to and survives a reload.
 const TABS = ["sessions", "egress", "policy", "status"] as const;
@@ -234,7 +243,8 @@ export function SandboxPage({
     const defaults = binding.thread_defaults;
     setDefaultsLabel(defaults ? "Sandbox defaults" : null);
     if (!defaults) return;
-    if (defaults.provider) setHarness(defaults.provider as Harness);
+    const defaultHarness = defaults.provider ? HARNESS_FOR_CATALOG_PROVIDER[defaults.provider] : undefined;
+    if (defaultHarness) setHarness(defaultHarness);
     if (defaults.model) setModel(defaults.model);
     if (defaults.reasoning_effort) setEffort(defaults.reasoning_effort);
     setInstructions(defaults.instructions ?? "");

@@ -20,6 +20,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     DateTime,
+    Enum as SqlEnum,
     ForeignKey,
     Text,
     UniqueConstraint,
@@ -35,6 +36,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from x.agentplane.app.changes import Changes
 from x.agentplane.app.operator_sessions import Base, OperatorSessionStore
+from x.agentplane.app.presets import Provider
 from x.agentplane.app.trajectory_updates import CHANNEL, TrajectoryUpdates
 from x.agentplane.runner import protocol_pb2 as pb
 
@@ -51,7 +53,14 @@ class Thread(Base):
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     sandbox: Mapped[str] = mapped_column(Text)
     session_id: Mapped[str] = mapped_column(Text)
-    provider: Mapped[str] = mapped_column(Text)
+    provider: Mapped[Provider] = mapped_column(
+        SqlEnum(
+            Provider,
+            native_enum=False,
+            create_constraint=False,
+            values_callable=lambda values: [item.value for item in values],
+        )
+    )
     model: Mapped[str] = mapped_column(Text)
     cwd: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
@@ -125,7 +134,7 @@ class ThreadView(BaseModel):
     id: UUID
     sandbox: str
     session_id: str
-    provider: str = Field(description="The protocol's Provider enum member, by name: PROVIDER_CLAUDE, PROVIDER_CODEX.")
+    provider: Provider = Field(description="The runner protocol Provider enum member.")
     model: str
     cwd: str
     created_at: datetime
@@ -171,7 +180,7 @@ class TrajectoryStore:
                 .values(
                     sandbox=sandbox,
                     session_id=session_id,
-                    provider=pb.Provider.Name(spec.provider),
+                    provider=Provider(pb.Provider.Name(spec.provider)),
                     model=spec.model,
                     cwd=spec.cwd,
                 )

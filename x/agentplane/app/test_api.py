@@ -631,7 +631,7 @@ def test_presets_publish_editable_sandbox_and_thread_defaults(client: TestClient
             "policies": ["github"],
             "action_policy_sets": ["github-reads"],
             "thread_defaults": {
-                "provider": "codex",
+                "provider": "PROVIDER_CODEX",
                 "model": "test-codex-model",
                 "cwd": "/state/workspaces/{session_id}",
                 "reasoning_effort": "medium",
@@ -644,7 +644,10 @@ def test_presets_publish_editable_sandbox_and_thread_defaults(client: TestClient
 
 def test_models_lists_what_each_harness_may_run(client: TestClient) -> None:
     """The catalog the session form offers; a thread carries its model, a sandbox does not."""
-    assert client.get("/models").json() == {"claude": ["test-claude-model"], "codex": ["test-codex-model"]}
+    assert client.get("/models").json() == {
+        "PROVIDER_CLAUDE": ["test-claude-model"],
+        "PROVIDER_CODEX": ["test-codex-model"],
+    }
 
 
 async def test_a_thread_is_found_by_its_session_and_renamed_in_place(

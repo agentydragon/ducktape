@@ -42,7 +42,7 @@ def test_sandbox_preset_expands_to_fields_the_operator_can_set_individually(pres
         "policies": ["github-public"],
         "action_policy_sets": [],
         "thread_defaults": {
-            "provider": "codex",
+            "provider": "PROVIDER_CODEX",
             "model": "preset-model",
             "cwd": "/state/workspaces/{session_id}",
             "reasoning_effort": "medium",
@@ -63,7 +63,7 @@ def test_sandbox_binding_keeps_the_selected_values_when_the_catalog_changes(pres
 
     assert binding.thread_defaults is not None
     assert binding.thread_defaults.model_dump() == {
-        "provider": "codex",
+        "provider": "PROVIDER_CODEX",
         "model": "preset-model",
         "cwd": "/state/workspaces/{session_id}",
         "reasoning_effort": "medium",

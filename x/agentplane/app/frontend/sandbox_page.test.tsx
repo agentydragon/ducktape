@@ -74,7 +74,7 @@ async function render(
   fetchMock.mockImplementation((request: Request) => {
     const path = new URL(request.url).pathname;
     if (path === "/models") {
-      return Promise.resolve(Response.json({ claude: ["test-model"], codex: [] }));
+      return Promise.resolve(Response.json({ PROVIDER_CLAUDE: ["test-model"], PROVIDER_CODEX: [] }));
     }
     if (path === "/egress/policies" || path === "/sandboxes/startup-test/egress/decisions") {
       return Promise.resolve(Response.json([]));

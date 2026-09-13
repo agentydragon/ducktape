@@ -30,8 +30,6 @@ from x.agentplane.runner import protocol_pb2 as pb
 
 REQUEST_SECONDS = 30.0
 
-PROTO_PROVIDERS = {Provider.CLAUDE: pb.PROVIDER_CLAUDE, Provider.CODEX: pb.PROVIDER_CODEX}
-
 
 class SessionStreamError(Exception):
     """The app ended a session's event stream with an error frame."""

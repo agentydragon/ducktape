@@ -13,10 +13,10 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class Provider(StrEnum):
-    """The native harness a ThreadPreset opens."""
+    """The runner protocol Provider enum names, reused by configuration and Thread projections."""
 
-    CLAUDE = "claude"
-    CODEX = "codex"
+    CLAUDE = "PROVIDER_CLAUDE"
+    CODEX = "PROVIDER_CODEX"
 
 
 class ThreadDefaults(BaseModel):
@@ -39,7 +39,7 @@ class ThreadDefaults(BaseModel):
         if cwd := values.get("cwd"):
             values["cwd"] = str(cwd).replace("{session_id}", session_id)
         if provider := values.pop("provider", None):
-            values["provider"] = f"PROVIDER_{str(provider).upper()}"
+            values["provider"] = str(provider)
         if "reasoning_effort" in values:
             values["reasoningEffort"] = values.pop("reasoning_effort")
         return values

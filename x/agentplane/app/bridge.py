@@ -456,7 +456,7 @@ async def switch_session_model(
     summary = next((item for item in summaries if item.session_id == session_id), None)
     if summary is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"unknown session {session_id!r}")
-    provider = Provider.CLAUDE if summary.spec.provider == pb.PROVIDER_CLAUDE else Provider.CODEX
+    provider = Provider(pb.Provider.Name(summary.spec.provider))
     catalog = request.app.state.models
     if not isinstance(catalog, dict) or body.model not in catalog[provider]:
         raise HTTPException(

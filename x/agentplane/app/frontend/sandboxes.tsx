@@ -294,7 +294,10 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           <Select
             label="Harness"
             allowDeselect={false}
-            data={["claude", "codex"]}
+            data={[
+              { value: "PROVIDER_CLAUDE", label: "Claude" },
+              { value: "PROVIDER_CODEX", label: "Codex" },
+            ]}
             value={thread.provider ?? null}
             onChange={(provider) =>
               setThread({ ...thread, provider: (provider ?? undefined) as ThreadDefaults["provider"] })

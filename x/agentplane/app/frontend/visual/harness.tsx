@@ -783,7 +783,7 @@ const EVENTS_STATES: Event[] = [
 // Only what a page still asks for: the sandboxes, their bindings and their threads arrive on the
 // live streams above.
 routes.push(
-  ["GET", /^\/models$/, () => ({ claude: ["harness-claude-model"], codex: ["harness-codex-model"] })],
+  ["GET", /^\/models$/, () => ({ PROVIDER_CLAUDE: ["harness-claude-model"], PROVIDER_CODEX: ["harness-codex-model"] })],
   [
     "GET",
     /^\/presets$/,
@@ -795,7 +795,7 @@ routes.push(
         policies: ["github-public"],
         action_policy_sets: ["public-coder"],
         thread_defaults: {
-          provider: "codex",
+          provider: "PROVIDER_CODEX",
           model: "harness-codex-model",
           cwd: "/state/workspaces/{session_id}",
           reasoning_effort: "medium",
