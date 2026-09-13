@@ -60,6 +60,12 @@ gateway's own startup completed the transcript-directive phase.
 starves the lease heartbeat's timer; a database large enough to block past the 60s
 TTL leaves the lease lost for every database after it.
 
+The public-coder Deployment sets `OPENCLAW_AGENT_DB_MAINTENANCE_LEASE_MS=86400000`
+(24 hours) because its rotational state disk can spend minutes in synchronous
+startup work. This is a deployment-specific mitigation; leave the OpenClaw
+default at 60 seconds for other instances unless their storage and startup path
+have the same measured bound.
+
 ## 2. `dist-runtime` missing its shared chunks (resolved)
 
 nix-openclaw's `stage_dist_runtime` copies `dist/extensions` into `dist-runtime/`

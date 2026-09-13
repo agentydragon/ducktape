@@ -90,7 +90,7 @@ spec:
             # Full SQLite integrity checks cross-check every index against its
             # table in O(N log N) time. On this agent's rotational state disk,
             # the already-current database took over 20 minutes and outlived
-            # OpenClaw's five-minute startup migration lease. Even quick_check
+            # OpenClaw's 60-second default startup migration lease. Even quick_check
             # exceeded that lease on the live 871 MB database, so skip startup
             # integrity pragmas; schema and canonical-index checks still run,
             # and full integrity checks remain available offline.
