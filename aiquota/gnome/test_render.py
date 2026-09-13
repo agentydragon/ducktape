@@ -34,6 +34,7 @@ import time
 import zipfile
 from collections.abc import Iterator
 from pathlib import Path
+from typing import cast
 
 import docker.models.containers
 import pytest
@@ -48,6 +49,17 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.visual_review import retain_review_asset
 
 logger = logging.getLogger(__name__)
+
+
+def _exec_output(result: docker.models.containers.ExecResult) -> tuple[bytes, bytes]:
+    """Return demultiplexed Docker output as bytes.
+
+    ``exec_run(..., demux=True)`` returns a pair, but the Docker SDK's Python
+    3.14 typing surface also exposes the non-demuxed union on ``output``.
+    """
+    stdout, stderr = cast(tuple[bytes | None, bytes | None], result.output)
+    return stdout or b"", stderr or b""
+
 
 _GNOME_SHELL_TEST = OciImage("_main/gnome/test_image/gnome_shell_test.rloc", "gnome-shell-test:pinned")
 _EXTENSION_ZIP = "_main/aiquota/gnome/aiquota.zip"
@@ -128,7 +140,7 @@ def render_session(
                 break
             time.sleep(0.2)
         else:
-            xvfb_log = raw.exec_run(["cat", "/tmp/xvfb.log"], demux=True).output[0] or b""
+            xvfb_log, _ = _exec_output(raw.exec_run(["cat", "/tmp/xvfb.log"], demux=True))
             pytest.fail(
                 f"container boot.sh never produced /tmp/boot.ready within 30s\n"
                 f"xvfb.log:\n{xvfb_log.decode(errors='replace')}"
@@ -207,7 +219,8 @@ def _wait_for_extension_enabled(
             f"gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell "
             f"--method org.gnome.Shell.Extensions.GetExtensionInfo {shlex.quote(uuid)}",
         )
-        last_response = (r.output[0] or b"") + (r.output[1] or b"")
+        stdout, stderr = _exec_output(r)
+        last_response = stdout + stderr
         if r.exit_code == 0 and f"'state': <{_EXTENSION_STATE_ENABLED}.0>".encode() in last_response:
             return
         time.sleep(0.25)
@@ -249,8 +262,9 @@ _GEOMETRY_RE = re.compile(rb"\((-?\d+),\s*(-?\d+),\s*(-?\d+),\s*(-?\d+)\)")
 def _reload_fixture(container: docker.models.containers.Container, fixture_path_in_container: str) -> None:
     r = _test_dbus_call(container, "Reload", shlex.quote(fixture_path_in_container))
     if r.exit_code != 0:
-        stderr = (r.output[1] or b"").decode(errors="replace")
-        raise RuntimeError(f"Reload({fixture_path_in_container}) exit={r.exit_code}: {stderr}")
+        _, stderr = _exec_output(r)
+        stderr_text = stderr.decode(errors="replace")
+        raise RuntimeError(f"Reload({fixture_path_in_container}) exit={r.exit_code}: {stderr_text}")
     # Let the rebuilt panel/popup actors paint before the next screenshot.
     time.sleep(0.3)
 
@@ -258,13 +272,16 @@ def _reload_fixture(container: docker.models.containers.Container, fixture_path_
 def _open_menu(container: docker.models.containers.Container) -> tuple[int, int, int, int]:
     r = _test_dbus_call(container, "OpenMenu")
     if r.exit_code != 0:
-        raise RuntimeError(f"OpenMenu exit={r.exit_code}: {(r.output[1] or b'').decode(errors='replace')}")
+        _, stderr = _exec_output(r)
+        raise RuntimeError(f"OpenMenu exit={r.exit_code}: {stderr.decode(errors='replace')}")
     # Allow one frame for the menu to lay out before querying its size.
     time.sleep(0.2)
     g = _test_dbus_call(container, "GetMenuGeometry")
     if g.exit_code != 0:
-        raise RuntimeError(f"GetMenuGeometry exit={g.exit_code}: {(g.output[1] or b'').decode(errors='replace')}")
-    blob = (g.output[0] or b"") + (g.output[1] or b"")
+        _, stderr = _exec_output(g)
+        raise RuntimeError(f"GetMenuGeometry exit={g.exit_code}: {stderr.decode(errors='replace')}")
+    stdout, stderr = _exec_output(g)
+    blob = stdout + stderr
     m = _GEOMETRY_RE.search(blob)
     if not m:
         raise RuntimeError(f"GetMenuGeometry returned unparseable output: {blob!r}")
@@ -274,19 +291,22 @@ def _open_menu(container: docker.models.containers.Container) -> tuple[int, int,
 def _close_menu(container: docker.models.containers.Container) -> None:
     r = _test_dbus_call(container, "CloseMenu")
     if r.exit_code != 0:
-        raise RuntimeError(f"CloseMenu exit={r.exit_code}: {(r.output[1] or b'').decode(errors='replace')}")
+        _, stderr = _exec_output(r)
+        raise RuntimeError(f"CloseMenu exit={r.exit_code}: {stderr.decode(errors='replace')}")
 
 
 def _screenshot(container: docker.models.containers.Container, out_path_in_container: str) -> None:
     r = _exec_in_session(container, f"scrot --display :99 --overwrite {shlex.quote(out_path_in_container)}")
     if r.exit_code != 0:
-        stderr = (r.output[1] or b"").decode(errors="replace")
-        raise RuntimeError(f"scrot exit={r.exit_code}: {stderr}")
+        _, stderr = _exec_output(r)
+        stderr_text = stderr.decode(errors="replace")
+        raise RuntimeError(f"scrot exit={r.exit_code}: {stderr_text}")
 
 
 def _save_shell_log(container: docker.models.containers.Container, log_path: Path) -> None:
     r = container.exec_run(["cat", "/tmp/shell.log"], demux=True)
-    log_path.write_bytes((r.output[0] or b"") + (r.output[1] or b""))
+    stdout, stderr = _exec_output(r)
+    log_path.write_bytes(stdout + stderr)
 
 
 @pytest.fixture
