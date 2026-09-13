@@ -650,3 +650,22 @@ keyboard will use.
 **Durable consequence.** The port-path pin is load-bearing and must be
 re-pinned whenever the cable moves — recorded as a gotcha in
 <../README.md> § Gaming display path, with the recovery recipe.
+
+## 2026-09-12 — atlas front-panel USB-C passthrough validated with YubiKey
+
+**Physical change.** Atlas's front-panel USB-C port enumerates as host path
+`3-1`. A YubiKey `1050:0407` was inserted as the validation device; the
+passthrough is intentionally attached to the physical port, not to the
+YubiKey's VID/PID.
+
+**Live passthrough.** VM 110 remained running. The persistent configuration
+was staged as `usb1`, then the device was attached through the QEMU monitor:
+
+```bash
+qm set 110 -usb1 host=3-1,usb3=1
+qm monitor 110 <<< "device_add usb-host,bus=xhci.0,hostbus=3,hostport=1,id=usb1"
+```
+
+**Verification.** `qm status 110` remained `running`; QEMU reported
+`YubiKey OTP+FIDO+CCID, ID: usb1`, and the guest exposed the corresponding
+HID and smart-card interfaces.

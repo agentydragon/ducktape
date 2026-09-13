@@ -8,7 +8,7 @@ digraph desk_wiring {
     // KVM: header row, then two vertical columns side by side (peripheral / host)
     kvm [label="{ Sabrent SB-TB4K — TB4 KVM [atlas TB 0-1] | { { <pwr> power in | <ds_a> downstream TB4 A [→ 5-1.1] | <ds_b> downstream TB4 B | <ds_c> downstream TB4 C | <usba1> USB-A 1 | <usba2> USB-A 2 } | { <pc1> host PC1 (TB4) [atlas] | <pc2> host PC2 (TB4) [laptop] | <usba3> USB-A 3 | <usba4> USB-A 4 } } }"];
 
-    atlas [label="{ atlas — Proxmox tower · 2× RTX 5090 | <tb_top> mobo TB4 · top [TB domain 0 / card1-DP-1] | <tb_mid> mobo TB4 · middle | <usba_rear> rear USB-A bus 3 port 2 }"];
+    atlas [label="{ atlas — Proxmox tower · 2× RTX 5090 | <tb_top> mobo TB4 · top [TB domain 0 / card1-DP-1] | <tb_mid> mobo TB4 · middle | <usba_rear> rear USB-A bus 3 port 2 | <usbc_front> front-panel USB-C [port path: 3-1] }"];
 
     wyrm2 [label="{ wyrm2 VM — local seat0 | <dp_out> RTX 5090 01:00.0 DP-OUT [card0-DP-1] | <gpu1> RTX 5090 02:00.0 [card2, headless] }"];
 
@@ -37,4 +37,5 @@ digraph desk_wiring {
     wyrm2:dp_out -> monitor:dp [xlabel="Ivanky 8K DP m-m", color="#00695c"];
     monitor:usbb -> atlas:usba_rear [xlabel="USB A→B", color="#827717"];
     atlas:usba_rear -> wyrm2 [xlabel="QEMU port-path\npassthrough (3-2.1)", color="#827717", style=dashed];
+    atlas:usbc_front -> wyrm2 [xlabel="USB port-path passthrough\n(3-1 → QEMU usb1)", color="#8e24aa", style=dashed];
 }
