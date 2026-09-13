@@ -2,6 +2,7 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "event_renderer",
+    testonly = True,
     srcs = ["event_renderer.py"],
     visibility = ["//:__subpackages__"],
     deps = [

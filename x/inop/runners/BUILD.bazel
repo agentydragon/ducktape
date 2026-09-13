@@ -2,6 +2,7 @@ load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
     name = "base",
+    testonly = True,
     srcs = ["base.py"],
     visibility = ["//:__subpackages__"],
     deps = [
@@ -12,6 +13,7 @@ py_library(
 
 py_library(
     name = "claude_runner",
+    testonly = True,
     srcs = ["claude_runner.py"],
     visibility = ["//:__subpackages__"],
     deps = [
@@ -26,6 +28,7 @@ py_library(
 
 py_library(
     name = "containerized_claude",
+    testonly = True,
     srcs = ["containerized_claude.py"],
     visibility = ["//:__subpackages__"],
     deps = [
@@ -38,6 +41,7 @@ py_library(
 
 py_library(
     name = "openai_runner",
+    testonly = True,
     srcs = ["openai_runner.py"],
     visibility = ["//:__subpackages__"],
     deps = [
