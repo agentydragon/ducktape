@@ -16,7 +16,11 @@ from mcp.server.auth.provider import RefreshToken, TokenError
 
 
 def _bare_proxy() -> OAuthProxy:
-    return object.__new__(OAuthProxy)
+    proxy = object.__new__(OAuthProxy)
+    state = cast(Any, proxy)
+    state._jwt_issuer = Mock()
+    state._jwt_issuer.verify_token.return_value = {}
+    return proxy
 
 
 async def test_authorization_code_exchange_reads_raw_tokens_before_deleting_code() -> None:
