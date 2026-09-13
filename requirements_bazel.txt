@@ -5644,9 +5644,9 @@ pytest-playwright==0.9.0 \
     --hash=sha256:9d9dc74e335c647944cecfffa706cc9e6e4bf4c25e84592c128b584d494d4471 \
     --hash=sha256:bd44daa852b0fb8b0e55a2f88b727507dedda0e350bea5d09420647252f2454b
     # via ducktape (pyproject.toml)
-pytest-postgresql==8.1.0 \
-    --hash=sha256:0868bb3374fa4f454efd73ac1d7b23d2da623782044371b84d39f83a0893f56f \
-    --hash=sha256:ffd24027a28aba3d05a909fb03ee87d1d474574c3504f332d6047e8699170adc
+pytest-postgresql==9.1.0 \
+    --hash=sha256:78d5b04e321c1d9b2ac86c837aa536f833f4141bd297196d54b6755a3aeba008 \
+    --hash=sha256:d340789d6f43cac901fc14f52b15723279bd66db4db7a6506d969417c36cdf04
     # via ducktape (pyproject.toml)
 pytest-shard==0.1.2 \
     --hash=sha256:407a1df385cebe1feb9b4d2e7eeee8b044f8a24f0919421233159a17c59be2b9 \
