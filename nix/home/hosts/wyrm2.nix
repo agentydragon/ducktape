@@ -20,6 +20,8 @@
 
   ducktape.forgejoSsh.sopsFile = ../../../ssh_keys/wyrm2-forgejo.sops.key;
 
+  ducktape.codex.chatgptPackage = ducktapePackages.chatgpt;
+
   ducktape.githubApiProxy = {
     enable = true;
     remote = {
@@ -313,7 +315,6 @@
     # Options: gnomeExtensions.syncthing-indicator, gnomeExtensions.syncthing-toggle, qsyncthingtray
     ducktapePackages.bebas-neue-font
     config.ducktape.githubApiProxy.desktopPackage
-    ducktapePackages.chatgpt
     pkgs.inkscape
     pkgs.kicad
     pkgs.openscad

@@ -16,9 +16,45 @@ let
   codexBazeliskCache = "${config.xdg.cacheHome}/bazelisk";
   codexPreCommitCache = "${config.xdg.cacheHome}/pre-commit";
   codexSccacheCache = "${config.xdg.cacheHome}/sccache";
+  inherit (cfg) chatgptPackage;
+  chatgptVersion = if chatgptPackage == null then null else chatgptPackage.version;
   # Current Codex host-owned GitHub app connector id. Codex matches app approval
   # config by connector id from the tool's MCP metadata, not by display name.
   githubCodexAppsConnectorId = "connector_76869538009648d5b282a4bb21c3d157";
+
+  chatgptMcpServers = lib.optionalAttrs (chatgptPackage != null) {
+    # ChatGPT desktop supplies Codex's local browser bridge. Keep the paths in
+    # the declarative base config so a new Nix store path replaces the old one
+    # in the live config during Home Manager activation.
+    node_repl = {
+      args = [ ];
+      command = "${chatgptPackage}/lib/chatgpt/resources/cua_node/bin/node_repl";
+      startup_timeout_sec = 120;
+      env = {
+        NODE_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS = "1000";
+        NODE_REPL_NODE_MODULE_DIRS = "${chatgptPackage}/lib/chatgpt/resources/cua_node/lib/node_modules";
+        NODE_REPL_NODE_PATH = "${chatgptPackage}/lib/chatgpt/resources/cua_node/bin/node";
+        NODE_REPL_TRUSTED_CODE_PATHS = "${codexHomeAbsolute}:${chatgptPackage}/lib/chatgpt/resources/cua_node/lib/node_modules";
+        CODEX_HOME = codexHomeAbsolute;
+        BROWSER_USE_AVAILABLE_BACKENDS = "chrome,iab";
+        BROWSER_USE_TINYSKY_ENABLED = "0";
+        NODE_REPL_INSTRUCTIONS_USE_CASE_BROWSER = "Control the in-app browser in conjunction with the Browser Plugin.";
+        NODE_REPL_INSTRUCTIONS_USE_CASE_CHROME = "Control the Chrome browser in conjunction with the Chrome Plugin. Prefer this method of controlling Chrome over alternatives (such as Computer Use) unless the user explicitly mentions an alternative.";
+        BROWSER_USE_CODEX_APP_BUILD_FLAVOR = "prod";
+        BROWSER_USE_CODEX_APP_VERSION = chatgptVersion;
+        NODE_REPL_TRUSTED_SERVICES = builtins.toJSON {
+          browser = "${codexHomeAbsolute}/plugins/cache/openai-bundled/browser/${chatgptVersion}/scripts/browser-service.mjs";
+        };
+        CODEX_CLI_PATH = "${chatgptPackage}/lib/chatgpt/resources/codex";
+      };
+    };
+    # Keep the app's disabled legacy companion entry on the current package
+    # path as well; otherwise it remains a stale unmanaged absolute path.
+    cua_repl = {
+      command = "${chatgptPackage}/lib/chatgpt/ChatGPT";
+      enabled = false;
+    };
+  };
 
   # Common base config for every host. Local (gpt-oss) model profiles live in
   # localModelSettings (opt-in via ducktape.codex.localModels);
@@ -51,7 +87,8 @@ let
         auth = "oauth";
         default_tools_approval_mode = "approve";
       };
-    };
+    }
+    // chatgptMcpServers;
     apps = {
       ${githubCodexAppsConnectorId} = {
         tools = {
@@ -268,6 +305,11 @@ in
       '';
     };
     localModels.enable = lib.mkEnableOption "the local (gpt-oss) Codex model profiles";
+    chatgptPackage = lib.mkOption {
+      type = lib.types.nullOr lib.types.package;
+      default = null;
+      description = "Optional ChatGPT desktop package providing Codex's browser MCP server.";
+    };
   };
 
   config.programs.codex = {
@@ -279,6 +321,7 @@ in
   };
 
   config.home = {
+    packages = lib.optional (cfg.chatgptPackage != null) cfg.chatgptPackage;
     file = {
       "${baseFileRelative}".source = baseConfigFile;
       "${rulesReadmeRelative}".text = ''
