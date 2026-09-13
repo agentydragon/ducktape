@@ -1,7 +1,7 @@
 //! Write the session env file (`CLAUDE_ENV_FILE`) — the single write point
 //! for all env vars the agent's Bash tool sees.
 //!
-//! Ports `devinfra/claude/env_file.py::write_env_file`. Order matters:
+//! The session env file is the single write point for the agent's environment. Order matters:
 //! secrets and `env_exports` from the profile are written BEFORE the final
 //! `PATH="<shims_dir>:$PATH"` prepend, so the shims dir always wins even if
 //! the profile or overlay mangled PATH.

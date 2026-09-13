@@ -15,7 +15,6 @@ import pytest
 import pytest_bazel
 import yaml
 
-from devinfra.claude.env_file import parse_env_null_delimited
 from devinfra.claude.testing import container_e2e
 from util.bazel.runfiles import get_required_path
 
@@ -44,6 +43,17 @@ _SESSION_ID = "container-e2e-test"
 _ENV_FILE = f"/root/.claude/session-env/{_SESSION_ID}/sessionstart-hook-0.sh"
 # Daemon UDS lives under /tmp/claude-hd/<session_id>/ (AF_UNIX 108-byte limit).
 _DAEMON_SOCK = f"/tmp/claude-hd/{_SESSION_ID}/d.sock"
+
+
+def _parse_env_null_delimited(raw: bytes) -> dict[str, str]:
+    """Parse ``env -0`` output for assertions about the session environment."""
+    result: dict[str, str] = {}
+    for item in raw.split(b"\x00"):
+        if not item:
+            continue
+        key_b, _, val_b = item.partition(b"=")
+        result[key_b.decode(errors="replace")] = val_b.decode(errors="replace")
+    return result
 
 
 def _exec_under_env(
@@ -162,7 +172,7 @@ def test_container_e2e(impl: str, container: container_e2e.E2EContainer) -> None
     # Env file exists.
     container.exec(["test", "-f", _ENV_FILE])
     _, stdout, _ = _exec_under_env(container, "env -0")
-    agent_env = parse_env_null_delimited(stdout)
+    agent_env = _parse_env_null_delimited(stdout)
 
     # env_exports from profile.
     assert agent_env["E2E_TEST_MARKER"] == "1"
