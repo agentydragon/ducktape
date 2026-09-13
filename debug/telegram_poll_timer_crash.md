@@ -145,20 +145,22 @@ Next desktop launch will succeed. Annoying because there's no good way to
 enumerate "all polls with `close_date > now+25d`" from the client side; in
 practice recent forum activity is the place to look.
 
-### C. Patched telegram-desktop derivation (available, not yet wired)
+### C. Patched telegram-desktop derivation (retired 2026-09-13)
 
-Implemented at <nix/packages/telegram-desktop.nix>, with the patch at
-<nix/packages/patches/telegram-desktop-poll-timer-debug.patch>. Exposed
-as `ducktapePackages.telegram-desktop` but **not yet swapped into any
-host's `home.packages`** — pending validation via the manual
-clone+ninja loop at
-<nix/packages/patches/telegram_desktop_iterate.md>. To deploy on a
-host, replace `pkgs.telegram-desktop` with
-`ducktapePackages.telegram-desktop` in the host's home-manager file
-(e.g., <nix/home/hosts/wyrm2.nix>), then `home-manager switch
---flake .#<host>`.
+The local debug derivation was never wired into a host. It previously carried
+the one-day timer clamp, diagnostic poll logging, and an unstripped
+`RelWithDebInfo` build to make the original crash easier to investigate.
 
-The patch:
+The locked nixpkgs input (`21a67dc470149f337cecafbe965d8d252a390518`) now
+supplies Telegram Desktop `7.1.5` without downstream patches, and its vendored
+source contains the equivalent 24-hour
+`_pollsClosingTimer` clamp in
+[`data_session.cpp`](https://github.com/telegramdesktop/tdesktop/blob/v7.1.5/Telegram/SourceFiles/data/data_session.cpp).
+The local derivation, patch, and iteration guide were removed. The incident
+diagnosis and former patch behavior remain here as historical context; this is
+not a deployment recipe.
+
+Former patch behavior:
 
 1. Clamps `_pollsClosingTimer.callOnce(...)` at 1 day, mirroring the
    2021 TTL-timer fix (`b2e8299...`). The timer simply re-fires daily
@@ -167,22 +169,13 @@ The patch:
    computed delta in days, and first 120 chars of question text. Greppable
    via `grep "Poll Debug" ~/.local/share/TelegramDesktop/log.txt`.
 
-The derivation also sets `cmakeBuildType = "RelWithDebInfo"` and
+The former derivation also set `cmakeBuildType = "RelWithDebInfo"` and
 `dontStrip = true`, so any future telegram-desktop coredumps will have
 DWARF + a build-id (the stock nixpkgs build has neither, which made the
 original RCA expensive — function symbols only, no struct walking).
 
-Cost: one full tdesktop rebuild per package bump (hours, large closure).
-Substituters won't have it — this is local-only. Carry until the
-upstream poll-timer fix lands.
-
-For tweaking the patch itself (log line shape, clamp threshold, debug
-instrumentation) without paying for the full nix rebuild on every
-edit, use the Docker-based recipe at
-<../nix/packages/patches/telegram_desktop_iterate.md>. Build through
-tdesktop's official `tdesktop:centos_env` image (Rocky 8 + statically
-compiled deps) against a local clone — incremental ninja rebuilds
-after the first full build drop edit→binary to seconds.
+The former derivation incurred one full tdesktop rebuild per package bump and
+was local-only; that maintenance cost is now gone.
 
 ### D. Extract MTProto session from tdata → drive Telethon / API directly
 
@@ -230,19 +223,16 @@ all fail.
 
 ## Upstream
 
-The fix is local (5 lines, well-precedented by the 2021 TTL-timer fix at
-`b2e829904fb7976784618dea18700dbb5568b42f`). No upstream issue or PR
-filed yet. **Action item**: file
-<https://github.com/telegramdesktop/tdesktop/issues> with this RCA + a
-PR carrying the patch. Worth doing — bug clearly affects more than one
-user (multi-host repro here, and the TTL precedent shows tdesktop
-maintainers will accept the fix).
+The timer clamp is now present in the selected nixpkgs Telegram source, so no
+local upstream issue or patch proposal remains necessary for this crash. The
+original local diagnosis and reproduction data remain useful historical records.
 
 ## Status
 
-- **Upstream issue**: not yet filed
+- **Upstream fix in selected nixpkgs**: Telegram Desktop `7.1.5`, with no
+  package patches; the source contains the 24-hour poll timer clamp
 - **Upstream repo**: <https://github.com/telegramdesktop/tdesktop>
 - **Affected component**: `Telegram/SourceFiles/data/data_session.cpp` (`checkPollsClosings`)
 - **Affected library**: `desktop-app/lib_base` (`base/timer.cpp`, `Timer::setTimeout`)
-- **Versions confirmed broken**: 6.4.1 (2026-04-06), 6.6.2 (2026-05-04..05). 8 months,
-  two minor releases later, no fix.
+- **Versions confirmed broken historically**: 6.4.1 (2026-04-06), 6.6.2
+  (2026-05-04..05)
