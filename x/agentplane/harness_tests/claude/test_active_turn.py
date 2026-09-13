@@ -17,6 +17,7 @@ SECOND_INPUT = "Reply ONLY SECOND_INPUT_OBSERVED after your current work."
 THIRD_INPUT = "Reply ONLY THIRD_INPUT_OBSERVED after your current work."
 COALESCED_FIRST = "Reply only after seeing COALESCED_FIRST."
 COALESCED_SECOND = "Reply only after seeing COALESCED_SECOND."
+COALESCED_THIRD = "Reply only after seeing COALESCED_THIRD."
 INTERRUPTED_QUEUE_FIRST = "Reply only after seeing INTERRUPTED_QUEUE_FIRST."
 INTERRUPTED_QUEUE_SECOND = "Reply only after seeing INTERRUPTED_QUEUE_SECOND."
 INTERRUPT_RECOVERY = "Reply with exactly: INTERRUPT_QUEUE_RECOVERY_OK"
@@ -38,15 +39,19 @@ def test_queued_inputs_coalesce_into_one_native_user_message(claude: ClaudeHarne
         content_started = next(
             index for index, packet in enumerate(initial_stream.packets) if packet.kind == "content_block_start"
         )
-        # Keep the first query active while both later messages enter the native queue, then let
-        # that turn finish. This is the headless driver's actual batching boundary: two direct
-        # stdin writes before a turn begins are drained one-at-a-time by the input reader.
+        # Keep the first query active while later messages enter the native queue, then let that
+        # turn finish. This is the headless driver's actual batching boundary: direct stdin
+        # writes before a turn begins are drained one-at-a-time by the input reader.
+        assert MessagesRequest.parse(initial_raw).texts("user") == [
+            "Finish this first turn before taking later messages."
+        ]
         upstream.respond(initial_raw, Stream(initial_stream.packets[: content_started + 1]).held())
         scenarios.await_active(process)
         first = driver.user_frame(COALESCED_FIRST)
         second = driver.user_frame(COALESCED_SECOND)
-        process.write_many([first, second])
-        for command_uuid in (first.uuid, second.uuid):
+        third = driver.user_frame(COALESCED_THIRD)
+        process.write_many([first, second, third])
+        for command_uuid in (first.uuid, second.uuid, third.uuid):
 
             def is_queued(frame: dict[str, Any], expected: str = command_uuid) -> bool:
                 return (
@@ -61,7 +66,9 @@ def test_queued_inputs_coalesce_into_one_native_user_message(claude: ClaudeHarne
 
         raw = upstream.next_request()
         request = MessagesRequest.parse(raw)
-        assert request.texts("user")[-1] == f"{COALESCED_FIRST}\n{COALESCED_SECOND}"
+        coalesced = f"{COALESCED_FIRST}\n{COALESCED_SECOND}\n{COALESCED_THIRD}"
+        assert request.texts("user") == ["Finish this first turn before taking later messages.", coalesced]
+        assert request.texts("assistant") == ["INITIAL_TURN_DONE"]
         upstream.respond(raw, sse.message_stream([sse.Text("COALESCED_OK")], model=MODEL))
         assert scenarios.await_result(process)["result"] == "COALESCED_OK"
 
@@ -71,28 +78,32 @@ def test_queued_inputs_coalesce_into_one_native_user_message(claude: ClaudeHarne
         for frame in parsed
         if isinstance(frame, wire.CommandLifecycleFrame) and frame.state is wire.CommandState.QUEUED
     ]
-    assert queued[-2:] == [first.uuid, second.uuid]
+    assert queued[-3:] == [first.uuid, second.uuid, third.uuid]
     follower_and_merged = [
         (frame.uuid, frame.message.content)
         for frame in parsed
         if isinstance(frame, wire.UserFrame)
         and frame.is_replay
-        and frame.message.content in {COALESCED_FIRST, f"{COALESCED_FIRST}\n{COALESCED_SECOND}"}
+        and frame.message.content
+        in {
+            COALESCED_FIRST,
+            f"{COALESCED_FIRST}\n{COALESCED_SECOND}",
+            f"{COALESCED_FIRST}\n{COALESCED_SECOND}\n{COALESCED_THIRD}",
+        }
     ]
     assert follower_and_merged == [
         (first.uuid, COALESCED_FIRST),
         (second.uuid, f"{COALESCED_FIRST}\n{COALESCED_SECOND}"),
+        (third.uuid, f"{COALESCED_FIRST}\n{COALESCED_SECOND}\n{COALESCED_THIRD}"),
     ]
     replayed = [
         frame
         for frame in parsed
-        if isinstance(frame, wire.UserFrame)
-        and frame.is_replay
-        and frame.message.content == f"{COALESCED_FIRST}\n{COALESCED_SECOND}"
+        if isinstance(frame, wire.UserFrame) and frame.is_replay and frame.message.content == coalesced
     ]
     assert len(replayed) == 1
-    assert replayed[0].uuid == second.uuid
-    assert replayed[0].message.content == f"{COALESCED_FIRST}\n{COALESCED_SECOND}"
+    assert replayed[0].uuid == third.uuid
+    assert replayed[0].message.content == coalesced
     upstream.assert_quiescent()
 
 
@@ -143,8 +154,8 @@ def test_interrupt_cancels_each_queued_input_before_native_message(
         scenarios.send(process, INTERRUPT_RECOVERY)
         recovery_raw = upstream.next_request()
         request = MessagesRequest.parse(recovery_raw)
-        assert INTERRUPTED_QUEUE_FIRST not in request.texts("user")
-        assert INTERRUPTED_QUEUE_SECOND not in request.texts("user")
+        assert request.texts("user") == [INTERRUPT_RECOVERY]
+        assert request.texts("assistant") == []
         upstream.respond(recovery_raw, sse.message_stream([sse.Text("INTERRUPT_QUEUE_RECOVERY_OK")], model=MODEL))
         assert scenarios.await_result(process)["result"] == "INTERRUPT_QUEUE_RECOVERY_OK"
 

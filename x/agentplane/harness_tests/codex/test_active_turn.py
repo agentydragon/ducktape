@@ -153,9 +153,7 @@ def test_interrupt_drops_joined_inputs_before_the_next_model_request(
         recovery_raw = upstream.next_request()
         request = ResponsesRequest.parse(recovery_raw)
         texts = [message.text for message in request.messages("user")]
-        assert INTERRUPTED_QUEUE_FIRST not in texts
-        assert INTERRUPTED_QUEUE_SECOND not in texts
-        assert texts[-1] == INTERRUPT_RECOVERY
+        assert texts == [INTERRUPT_RECOVERY]
         upstream.respond(
             recovery_raw, sse.response_stream([sse.Message("CODEX_INTERRUPT_QUEUE_RECOVERY_OK")], model=MODEL)
         )
