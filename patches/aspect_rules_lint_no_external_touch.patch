@@ -18,10 +18,10 @@ diff --git a/lint/eslint.bzl b/lint/eslint.bzl
 index 591640e..a4fd8d7 100644
 --- a/lint/eslint.bzl
 +++ b/lint/eslint.bzl
-@@ -158,7 +158,7 @@ def _eslint_action(ctx, executable, srcs, config, stdout, exit_code, env):
+@@ -162,7 +162,7 @@ def eslint_action(ctx, executable, srcs, stdout, exit_code = None, format = "stylish", env = {}, patch = None, target = None, args = []):
                  outputs = [stdout],
                  tools = [executable._eslint],
-                 arguments = [args],
+                 arguments = [action_args],
 -                command = executable._eslint.path + " $@ && touch " + stdout.path,
 +                command = executable._eslint.path + " $@ && : > " + stdout.path,
                  env = dict(env, **{
