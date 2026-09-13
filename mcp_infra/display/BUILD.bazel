@@ -72,6 +72,7 @@ py_test(
         "//mcp_infra/exec/docker:server",
         "//mcp_infra/exec/docker:types",
         "@pypi//mcp",
+        "@pypi//mcp_types",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

@@ -9,6 +9,7 @@ py_library(
         "//util:typer",
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
+        "@pypi//mcp_types",
         "@pypi//rich",
         "@pypi//typer",
     ],

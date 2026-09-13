@@ -141,7 +141,13 @@ py_library(
     name = "resource_utils",
     srcs = ["resource_utils.py"],
     visibility = ["//:__subpackages__"],
-    deps = ["@pypi//pydantic"],
+    deps = [
+        "@pypi//fastmcp_slim",
+        "@pypi//mcp",
+        "@pypi//mcp_types",
+        "@pypi//more_itertools",
+        "@pypi//pydantic",
+    ],
 )
 
 py_library(
@@ -151,6 +157,7 @@ py_library(
     deps = [
         ":prefix",
         "@pypi//mcp",
+        "@pypi//mcp_types",
         "@pypi//pydantic",
     ],
 )

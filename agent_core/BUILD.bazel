@@ -148,6 +148,7 @@ py_library(
         ":tool_provider",
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
+        "@pypi//mcp_types",
     ],
 )
 

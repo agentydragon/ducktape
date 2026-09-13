@@ -38,6 +38,7 @@ py_library(
         "//mcp_infra/authentik_auth:config",
         "@pypi//httpx",
         "@pypi//mcp",
+        "@pypi//mcp_types",
         "@pypi//sqlalchemy",
     ],
 )
@@ -98,6 +99,7 @@ py_library(
         "@pypi//fastmcp_slim",
         "@pypi//httpx",
         "@pypi//mcp",
+        "@pypi//mcp_types",
         "@pypi//py_key_value_aio",
         "@pypi//starlette",
     ],
@@ -233,6 +235,7 @@ py_test(
         "@pypi//fastmcp_slim",
         "@pypi//httpx",
         "@pypi//mcp",
+        "@pypi//mcp_types",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//starlette",

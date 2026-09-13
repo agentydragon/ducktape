@@ -32,6 +32,7 @@ py_library(
     deps = [
         "//openai_utils:pydantic_strict_mode",
         "@pypi//mcp",
+        "@pypi//mcp_types",
     ],
 )
 
@@ -48,6 +49,7 @@ py_library(
         "//mcp_infra/enhanced:server",
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
+        "@pypi//mcp_types",
     ],
 )
 
@@ -104,6 +106,7 @@ py_library(
         "//mcp_infra/enhanced:server",
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
+        "@pypi//mcp_types",
     ],
 )
 
