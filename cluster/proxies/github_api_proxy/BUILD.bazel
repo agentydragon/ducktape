@@ -185,6 +185,7 @@ py_test(
     srcs = ["test_runtime.py"],
     deps = [
         ":config",
+        ":conftest",
         ":destinations",
         ":metrics",
         ":runtime",
@@ -196,6 +197,13 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [":destinations"],
 )
 
 py_library(

@@ -5,7 +5,6 @@ import json
 import socket
 import ssl
 import stat
-from asyncio.unix_events import _UnixDefaultEventLoopPolicy
 from collections.abc import AsyncIterator, Buffer
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -20,23 +19,13 @@ from mitmproxy.tools.dump import DumpMaster
 from prometheus_client import generate_latest
 
 from cluster.proxies.github_api_proxy.config import Settings
-from cluster.proxies.github_api_proxy.destinations import OriginLoop, PublicOrigins
+from cluster.proxies.github_api_proxy.destinations import PublicOrigins
 from cluster.proxies.github_api_proxy.metrics import Metrics
 from cluster.proxies.github_api_proxy.runtime import create_master
 from cluster.proxies.github_api_proxy.testing import certificates
 
 PASSWORD = "test-private-password-alpha-0123456789"
 SECOND_PASSWORD = "test-private-password-beta-0123456789"
-
-
-class OriginLoopPolicy(_UnixDefaultEventLoopPolicy):
-    def new_event_loop(self) -> OriginLoop:
-        return OriginLoop()
-
-
-@pytest.fixture(scope="session")
-def event_loop_policy() -> OriginLoopPolicy:
-    return OriginLoopPolicy()
 
 
 @dataclass
