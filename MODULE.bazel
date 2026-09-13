@@ -8,10 +8,15 @@ bazel_dep(name = "bazel_skylib", version = "1.9.2")
 bazel_dep(name = "rules_python", version = "1.9.2")
 bazel_dep(name = "rules_python_gazelle_plugin", version = "2.3.3")
 
-# Gazelle python plugin fixes (per-file mode: a py_library for every .py file,
-# no binary splitting — upstream candidate; loads from //devinfra/python:defs.bzl —
-# repo-specific). 2.3.2 already fixed the third problem we hit on 1.9.2: deletion
-# of every srcs-less main_module py_binary.
+# Gazelle python plugin fixes. In 2.3.3, per-file mode still splits files containing
+# `if __name__ == "__main__"` into py_binary targets, stealing the module's library;
+# the first hunk disables that split in per-file mode. The closest upstream tracker
+# is rules_python issue #1815, but it is not the same proposed behavior. Retire that
+# hunk only after a released plugin supplies the equivalent behavior and the Gazelle
+# drift check passes. The second hunk redirects emitted loads to Ducktape's wrapper
+# macros and is intentional repository integration, with no upstream retirement gate.
+# 2.3.3 already fixed the third problem we hit on 1.9.2: deletion of every srcs-less
+# main_module py_binary.
 single_version_override(
     module_name = "rules_python_gazelle_plugin",
     patch_strip = 1,
@@ -46,8 +51,10 @@ bazel_dep(name = "ducktape_claude_web_env_environment_manager", version = "0.1.0
 bazel_dep(name = "rules_mypy", version = "0.40.0")
 bazel_dep(name = "rules_conda", version = "0.3.2")
 
-# aspect_rules_lint's lint actions create empty output files with `touch`, but
-# some actions run with a narrow PATH. Use POSIX shell redirection instead.
+# aspect_rules_lint's lint actions create empty output files with `touch`, but some
+# actions run with a narrow PATH. Use POSIX shell redirection instead. No exact
+# upstream issue was found; retire this patch after upstream removes the external
+# `touch` dependency, or after a supported narrow-PATH test proves it unnecessary.
 single_version_override(
     module_name = "aspect_rules_lint",
     patch_strip = 1,
@@ -55,7 +62,9 @@ single_version_override(
 )
 
 # Conda epoch versions (e.g. "1!164.3095") contain '!' which is invalid in Bazel
-# repo names. Patch _package_repo_name to sanitize.
+# repo names. Patch _package_repo_name to sanitize. No exact upstream issue was
+# found; retire after a released rules_conda version sanitizes repository names, or
+# when Ducktape stops consuming epoch-version packages.
 single_version_override(
     module_name = "rules_conda",
     patch_strip = 1,
@@ -66,20 +75,23 @@ single_version_override(
 # build the C++ CP-SAT backend. Its module creates a dev-only pip hub named
 # "pypi", which collides with Ducktape's root pip hub during module extension
 # resolution. Keep pybind11_abseil's apparent @pypi mapping inside that module,
-# but give its generated hub a module-specific name.
+# but give its generated hub a module-specific name. Upstream PR #73 is merged, but
+# the fix is not in a released version yet; remove this override only after a
+# release containing that PR and a successful OR-Tools consumer build.
 single_version_override(
     module_name = "pybind11_abseil",
     patch_strip = 1,
     patches = ["//third_party/patches:pybind11_abseil_rename_pypi_hub.patch"],
 )
 
-# Fork with two fixes for CI disk exhaustion during mypy type-checking:
-# 1. include_external option: allows mypy aspect to run on @pypi// deps, so they
-#    get their own .mypy_cache outputs that downstream targets can symlink to
-#    (upstream skips external deps, causing each internal target to re-cache them)
-# 2. symlinks instead of shutil.copy(): mypy_runner.py uses symlinks when merging
-#    upstream caches, reducing disk usage from O(n²) to O(n)
-# TODO: Propose these changes upstream and switch back to BCR version if accepted
+# This archive pin is a fork commit retained while the mypy cache-disk work is
+# evaluated. The pinned commit itself does not contain the documented
+# `include_external` or symlink-copy changes: the repository-local runner supplies
+# the symlink merge, and `include_external` remains disabled until the fork's
+# site-packages issue is resolved. Retire the override after focused Bazel mypy
+# validation against BCR 0.40.0 if the local runner is sufficient; otherwise wait
+# for a released rules_mypy/fork version containing the needed changes. No exact
+# upstream issue or released implementation currently supersedes this decision.
 archive_override(
     module_name = "rules_mypy",
     sha256 = "938b128e28ddbf610ce09f3603d6797a8f023904908d16fb94748c193cda1122",
@@ -93,8 +105,10 @@ bazel_dep(name = "rules_tf", version = "0.0.10")
 # Patch: check exit code of `tofu/terraform providers mirror` in the repo rule.
 # Upstream silently ignores failures (stdout >/dev/null, return code unchecked),
 # so a transient registry outage produces an incomplete mirror that Bazel caches,
-# causing validate tests to fail with "provider not found in mirror".
-# TODO: remove patches once https://github.com/yanndegat/rules_tf/pull/28 is merged
+# causing validate tests to fail with "provider not found in mirror". PR #28 is
+# still open; remove the two mirror-check patches only after that fix is merged and
+# released, then rerun the mirror validation. `exclude_dotterraform` is a separate
+# source-packaging fix and has its own lifecycle.
 single_version_override(
     module_name = "rules_tf",
     patch_strip = 1,
@@ -687,9 +701,10 @@ http_file(
 
 # openai/codex source — consumed via overlaid BUILD files by the execpolicy audit
 # tool (//x/codex_execpolicy_audit). Pinned to a specific commit; the overlay patch
-# adds BUILD.bazel to the two crates we need (shell-command, utils/absolute-path) and
-# drops the schemars/ts-rs derives from absolute-path. Bump commit + re-roll patch +
-# update sha256 together.
+# adds BUILD.bazel to the crates we need, wires them to stable-repo dependencies,
+# and drops unsupported/nightly-only pieces. Retire it only after upstream publishes
+# compatible BUILD metadata and the audit builds on stable Rust without the local
+# stub/exclusions. Bump commit + re-roll patch + update sha256 together.
 http_archive(
     name = "codex",
     patch_strip = 1,

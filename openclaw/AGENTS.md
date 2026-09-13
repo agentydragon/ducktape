@@ -38,6 +38,9 @@ state predates the release.
   is the design: re-find the construct in the new dist and update the
   release-specific patch. Never relax a match to make a bump pass -- the
   patched behaviour silently reverts to upstream's.
+- Each dist hunk is a downstream Nix/runtime contract, not automatically an
+  upstream bug. Retire a hunk only when the upstream release exposes equivalent
+  behavior and both images pass the affected Nix-mode, plugin, and startup checks.
 - **Verify the built artifact, not the expression.** The `stage_acpx` edge case
   was invisible until the derivation was actually built and its output inspected;
   local simulation of the upstream tarball missed it, because the real tree has

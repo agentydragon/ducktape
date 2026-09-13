@@ -14,8 +14,12 @@ def _buildbuddy_protos_impl(_ctx):
         build_file = "//third_party/buildbuddy:BUILD.protos.bazel",
         patch_cmds = [
             # Remove BuildBuddy's own BUILD files so our build_file is the only one.
+            # Retire this command if the pinned archive no longer supplies conflicting
+            # BUILD files or the local overlay stops owning the package definitions.
             "find . -mindepth 2 \\( -name BUILD -o -name BUILD.bazel \\) -delete",
             # Strip vtprotobuf imports and option usages (we don't use vtprotobuf).
+            # Retire this command if the local BUILD consumes vtprotobuf or the
+            # upstream protos stop referring to it.
             "sed -i -e '/planetscale\\/vtprotobuf/d' -e '/vtproto\\./d' proto/eventlog.proto proto/zip.proto proto/distributed_cache.proto proto/storage.proto",
         ],
     )

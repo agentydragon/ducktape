@@ -145,7 +145,10 @@ http_archive(
 )
 
 # aw-webui: frontend for aw-server-rust, pinned to the submodule commit used by
-# aw-server-rust @ c8533a0. BUILD file is overlaid.
+# aw-server-rust @ c8533a0. BUILD file is overlaid. The patch supplies a Bazel
+# commit hash and retires legacy service-worker registrations; remove those hunks
+# only when the upstream build is hermetic and the migration no longer needs
+# `/sw.js`. The BUILD overlay itself is local integration.
 _AW_WEBUI_COMMIT = "3cbe34999addfb199c4afb3725494e0db26c00f5"
 
 http_archive(
@@ -159,6 +162,10 @@ http_archive(
 )
 
 # aw-server-rust: Rust backend that embeds aw-webui at compile time via rust-embed.
+# The rustls hunk is a downstream TLS/build choice; issue #478 is closed but the
+# upstream source still enables vendored OpenSSL. The service-worker route is a
+# downstream browser migration. Retire either hunk only after the corresponding
+# upstream source and the Bazel build provide the same behavior.
 _AW_SERVER_RUST_COMMIT = "c8533a0019ea86312b9dffc8a0dd3ae8483abae2"
 
 http_archive(

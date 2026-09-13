@@ -30,6 +30,8 @@ stdenvNoCC.mkDerivation {
     patchShebangs $out/bin/aw-watcher-tmux
     # The upstream plugin logs every heartbeat payload and its temporary filename.
     # Keep the systemd journal useful while preserving actual error output.
+    # Remove this downstream privacy/noise filter if upstream stops logging these
+    # fields or adds a supported quiet mode.
     sed -i '/^echo \$TMP_FILE$/d; /^    echo "\$PAYLOAD"$/d' $out/bin/aw-watcher-tmux
     wrapProgram $out/bin/aw-watcher-tmux \
       --prefix PATH : ${

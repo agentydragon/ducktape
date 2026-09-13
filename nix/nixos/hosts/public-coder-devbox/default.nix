@@ -98,6 +98,8 @@ in
   # NixOS's disk-image builder uses LKL's cptofs to populate the ext4 image.
   # Upstream cptofs hardcodes a 100 MiB guest and OOMs while copying this 50 GiB
   # root filesystem; raise that build-only guest limit without changing VM RAM.
+  # Retire when the selected LKL/cptofs release exposes an equivalent memory-size
+  # control or raises the default enough for this image, then rebuild the image.
   nixpkgs.overlays = [
     (final: prev: {
       lkl = prev.lkl.overrideAttrs (old: {

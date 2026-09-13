@@ -42,7 +42,10 @@
       tags: [proxmox, terraform]
 
     # Replaces the subscription-status condition with `if (false)` so the
-    # "no valid subscription" popup is never shown. Idempotent via --forward.
+    # "no valid subscription" popup is never shown. This is an intentional local
+    # policy for an unsubscribed host, not an upstream defect. Retire it if the
+    # host gains a subscription or the no-subscription UI is intentionally desired.
+    # Idempotent via --forward.
     - name: Copy Proxmox no-subscription patch to target
       ansible.builtin.copy:
         src: proxmox-no-subscription.patch
