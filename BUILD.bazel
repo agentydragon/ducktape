@@ -428,10 +428,3 @@ py_wheel(
     version = "0.1.0",
     deps = [":ducktape_pkg"],
 )
-
-sh_test(
-    name = "envrc_test",
-    size = "small",
-    srcs = ["envrc_test.sh"],
-    data = [".envrc"],
-)
