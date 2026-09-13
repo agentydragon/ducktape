@@ -70,7 +70,7 @@
     "vis-timeline": "^7.5.0",
     "vis-util": "^5.0.2",
     "vite": "^6.4.1",
-    "vue-awesome": "^3.5.1",
+    "vue-awesome": "^4.0.0",
     "vue-chartjs": "^4.1.0",
     "vue-color": "^2.8.1",
     "vue-d3-sunburst": "git+https://github.com/ErikBjare/Vue.D3.sunburst.git#patch-1",
