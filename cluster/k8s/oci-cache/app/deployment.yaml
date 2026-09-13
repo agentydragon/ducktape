@@ -35,7 +35,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: zot
-          image: ghcr.io/project-zot/zot-linux-amd64:v2.1.11
+          image: ghcr.io/project-zot/zot-linux-amd64:v2.1.21
           imagePullPolicy: IfNotPresent
           args: ["serve", "/etc/zot/config.json"]
           ports:
