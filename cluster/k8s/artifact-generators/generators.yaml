@@ -862,43 +862,11 @@ spec:
           exclude:
             - flux-kustomization.yaml
 
-    - name: plaid-db-mcp
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/plaid-db-mcp/app/**"
-          to: "@artifact/cluster/k8s/agents/plaid-db-mcp/app/"
-          exclude:
-            - flux-kustomization.yaml
-
-    - name: plaid-db-mcp-servicemonitor
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/plaid-db-mcp/servicemonitor/**"
-          to: "@artifact/cluster/k8s/agents/plaid-db-mcp/servicemonitor/"
-          exclude:
-            - flux-kustomization.yaml
-
     - name: plaid-mcp
       originRevision: "@repo"
       copy:
         - from: "@repo/cluster/k8s/agents/plaid-mcp/**"
           to: "@artifact/cluster/k8s/agents/plaid-mcp/"
-          exclude:
-            - flux-kustomization.yaml
-
-    - name: plaid-mcp-db
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/plaid-mcp/db/**"
-          to: "@artifact/cluster/k8s/agents/plaid-mcp/db/"
-          exclude:
-            - flux-kustomization.yaml
-
-    - name: plaid-mcp-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/plaid-mcp/namespace/**"
-          to: "@artifact/cluster/k8s/agents/plaid-mcp/namespace/"
           exclude:
             - flux-kustomization.yaml
 
