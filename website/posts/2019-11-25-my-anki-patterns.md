@@ -155,7 +155,7 @@ a disambiguator. For example, when two German words are true synonyms, they
 cannot be disambiguated based on nuances of their meaning.
 
 In Anki, you can annotate a Cloze with a hint text. I often put the constraint
-into it. I use a hint of “~a~” to mean “word that contains the letter A”, and
+into it. I use a hint of “`~a~`” to mean “word that contains the letter A”, and
 other similar shorthands.
 
 # Other tips
