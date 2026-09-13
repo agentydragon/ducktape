@@ -596,13 +596,6 @@ types.requirements(
         # freecad-stubs provides FreeCAD/Part/Sketcher modules but there's
         # no "freecad" runtime pip package — FreeCAD comes from conda.
         "freecad-stubs",
-        # types-docutils arrives transitively through types-pygments, but no
-        # first-party target imports the docutils runtime package.
-        "types-docutils",
-        # types-psycopg2 maps to requirement("psycopg2") but we use
-        # psycopg2-binary (different pip package name). Can't be fixed
-        # by adding a dep — psycopg2 and psycopg2-binary conflict.
-        "types-psycopg2",
     ],
     pip_requirements = "@pypi//:requirements.bzl",
     requirements_txt = "//:requirements_bazel.txt",
