@@ -64,7 +64,7 @@
     "sass": "^1.104.1",
     "semver": "^7.8.5",
     "style-loader": "^4.0.0",
-    "typeface-varela-round": "1.1.13",
+    "typeface-varela-round": "0.0.71",
     "uuid": "^14.0.0",
     "vis-data": "^8.0.0",
     "vis-timeline": "^7.5.0",
