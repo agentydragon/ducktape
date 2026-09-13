@@ -21,7 +21,7 @@ spec:
       serviceAccountName: kubectl-machine-mcp
       containers:
         - name: server
-          image: ghcr.io/containers/kubernetes-mcp-server:v0.0.63
+          image: ghcr.io/containers/kubernetes-mcp-server:v0.0.66
           imagePullPolicy: IfNotPresent
           args:
             # Config is public-only — token validation uses the issuer's published
