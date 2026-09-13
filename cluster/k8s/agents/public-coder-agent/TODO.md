@@ -24,25 +24,6 @@ not infer. Two consequences, both logged once a minute:
       that dreaming cron reconciles and heartbeats actually run — heartbeats have
       been off since the bump, so nothing has been exercising them.
 
-## Matrix `auth-presence` module missing from `dist-runtime`
-
-```text
-[channels] failed to load persistedAuthState checker for matrix: plugin module
-  path not found: .../dist-runtime/extensions/matrix/auth-presence | ENOENT
-```
-
-`openclaw/gateway.nix` stages the shared chunks into `dist-runtime/`, but
-`bundle-runtime-plugin.sh` adds the Matrix plugin to the extension trees _after_
-that fixup runs, so this path is outside what the fixup repairs and outside what
-its fail-closed guard checks. Matrix itself works — it loads from
-`dist/extensions/matrix/dist/index.js` — so only the persisted-auth-state checker
-is degraded.
-
-- [ ] Establish whether this predates 2026.8.1 or is new, then either extend the
-      staging to cover bundled runtime plugins or fix the plugin layout. Whatever
-      the fix, extend the guard to cover it: it passes today only because it runs
-      before the plugin exists.
-
 ## Stale and retired config keys
 
 Doctor reports these on every run:
