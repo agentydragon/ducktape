@@ -21,8 +21,8 @@ importers:
         specifier: ^0.0.16
         version: 0.0.16(pinia@2.3.1(typescript@5.9.3)(vue@2.7.16))(vue@2.7.16)
       '@types/chart.js':
-        specifier: ^2.9.23
-        version: 2.9.41
+        specifier: ^4.0.0
+        version: 4.0.1
       '@types/chrome':
         specifier: 0.2.9
         version: 0.2.9
@@ -63,8 +63,8 @@ importers:
         specifier: ^2.15.0
         version: 2.23.1(jquery@3.7.1)(vue@2.7.16)
       chart.js:
-        specifier: ^3.8.0
-        version: 3.9.1
+        specifier: ^4.0.0
+        version: 4.5.1
       color:
         specifier: ^4.0.0
         version: 4.2.3
@@ -157,7 +157,7 @@ importers:
         version: 3.5.4(vue@2.7.16)
       vue-chartjs:
         specifier: ^4.1.0
-        version: 4.1.2(chart.js@3.9.1)(vue@2.7.16)
+        version: 4.1.2(chart.js@4.5.1)(vue@2.7.16)
       vue-color:
         specifier: ^3.0.0
         version: 3.3.3(vue@2.7.16)
@@ -1498,6 +1498,9 @@ packages:
     peerDependencies:
       tslib: '2'
 
+  '@kurkle/color@0.3.4':
+    resolution: {integrity: sha512-M5UknZPHRu3DEDWoipU6sE8PdkZ6Z/S+v4dD+Ke8IaNlpdSQah50lz1KtcFBa2vsdOnwbbnxJwVM4wty6udA5w==}
+
   '@leichtgewicht/ip-codec@2.0.5':
     resolution: {integrity: sha512-Vo+PSpZG2/fmgmiNzYK9qWRh8h/CHrwD0mo1h1DzL4yzHNSfWYujGTYsWGreD000gcgmZ7K4Ys6Tx9TxtsKdDw==}
 
@@ -1830,8 +1833,9 @@ packages:
   '@types/bonjour@3.5.13':
     resolution: {integrity: sha512-z9fJ5Im06zvUL548KvYNecEVlA7cVDkGUi6kZusb04mpyEFKCIZJvloCcmpmLaIahDpOQGHaHmG6imtPMmPXGQ==}
 
-  '@types/chart.js@2.9.41':
-    resolution: {integrity: sha512-3dvkDvueckY83UyUXtJMalYoH6faOLkWQoaTlJgB4Djde3oORmNP0Jw85HtzTuXyliUHcdp704s0mZFQKio/KQ==}
+  '@types/chart.js@4.0.1':
+    resolution: {integrity: sha512-OwXJ6Eg14eFpCsTG6sljiGnvVpit5R9rapG7nwDnQlljsdplVIOYVuCSwy07IduCtihrOwvOnbhXKLyp3nvPcw==}
+    deprecated: This is a stub types definition. chart.js provides its own type definitions, so you do not need this installed.
 
   '@types/chrome@0.2.9':
     resolution: {integrity: sha512-6rXrDPkkWv4D2Q23HqT+iED4voODU5CpOSc2VFgKyecSFItuEsIBvz9CY6jUQ3dd+Q7zo1bnCE9pKRMtkYut5g==}
@@ -2952,8 +2956,9 @@ packages:
   character-parser@2.2.0:
     resolution: {integrity: sha512-+UqJQjFEFaTAs3bNsF2j2kEN1baG/zghZbdqoYEDxGZtJo9LBzl1A+m0D4n3qKx8N2FNv8/Xp6yV9mQmBuptaw==}
 
-  chart.js@3.9.1:
-    resolution: {integrity: sha512-Ro2JbLmvg83gXF5F4sniaQ+lTbSv18E+TIf2cOeiH1Iqd2PGFOtem+DUufMZsCJwFE7ywPOpfXFBwRTGq7dh6w==}
+  chart.js@4.5.1:
+    resolution: {integrity: sha512-GIjfiT9dbmHRiYi6Nl2yFCq7kkwdkp1W/lp2J99rX0yo9tgJGn3lKQATztIjb5tVtevcBtIdICNWqlq5+E8/Pw==}
+    engines: {pnpm: '>=8'}
 
   chokidar@3.6.0:
     resolution: {integrity: sha512-7VT13fmjotKpGipCW9JEQAusEPE+Ei8nl6/g4FBAmIm0GOOLMua9NDDo/DWp0ZAxCr3cPq5ZpBqmPAQgDda2Pw==}
@@ -9333,6 +9338,8 @@ snapshots:
       '@jsonjoy.com/codegen': 17.67.0(tslib@2.8.1)
       tslib: 2.8.1
 
+  '@kurkle/color@0.3.4': {}
+
   '@leichtgewicht/ip-codec@2.0.5': {}
 
   '@nicolo-ribaudo/chokidar-2@2.1.8-no-fsevents.3':
@@ -9616,9 +9623,9 @@ snapshots:
     dependencies:
       '@types/node': 20.19.43
 
-  '@types/chart.js@2.9.41':
+  '@types/chart.js@4.0.1':
     dependencies:
-      moment: 2.30.1
+      chart.js: 4.5.1
 
   '@types/chrome@0.2.9':
     dependencies:
@@ -11331,7 +11338,9 @@ snapshots:
     dependencies:
       is-regex: 1.2.1
 
-  chart.js@3.9.1: {}
+  chart.js@4.5.1:
+    dependencies:
+      '@kurkle/color': 0.3.4
 
   chokidar@3.6.0:
     dependencies:
@@ -16235,9 +16244,9 @@ snapshots:
     dependencies:
       vue: 2.7.16
 
-  vue-chartjs@4.1.2(chart.js@3.9.1)(vue@2.7.16):
+  vue-chartjs@4.1.2(chart.js@4.5.1)(vue@2.7.16):
     dependencies:
-      chart.js: 3.9.1
+      chart.js: 4.5.1
       vue: 2.7.16
 
   vue-cli-plugin-pug@2.0.0(webpack@5.110.3(postcss@8.5.13)):
