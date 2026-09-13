@@ -13,6 +13,9 @@ from x.agentplane.native.codex import driver, scenarios, wire
 WAIT_COMMAND = 'sh -c \'printf "wait_started\\n"; sleep 3; printf "wait_finished\\n"\''
 SECOND_INPUT = "Reply ONLY SECOND_INPUT_OBSERVED after current work."
 STEER_INPUT = "Reply ONLY STEERED after the current tool action."
+INTERRUPTED_QUEUE_FIRST = "Reply only after seeing CODEX_INTERRUPTED_QUEUE_FIRST."
+INTERRUPTED_QUEUE_SECOND = "Reply only after seeing CODEX_INTERRUPTED_QUEUE_SECOND."
+INTERRUPT_RECOVERY = "Reply with exactly: CODEX_INTERRUPT_QUEUE_RECOVERY_OK"
 
 
 def _wait_call() -> sse.FunctionCall:
@@ -116,6 +119,48 @@ def test_interrupt_aborts_the_in_flight_model_call(codex: CodexHarness, upstream
         assert process.alive()
     captured = process.stdout_frames()
     assert not frames.agent_texts(captured)
+    upstream.assert_quiescent()
+
+
+def test_interrupt_drops_joined_inputs_before_the_next_model_request(
+    codex: CodexHarness, upstream: ScriptedUpstream
+) -> None:
+    """Joined active-turn inputs vanish when their turn is interrupted before model consumption."""
+    with codex.start(upstream) as process:
+        thread_id = scenarios.launch_handshake(process, cwd=str(codex.workspace), model=MODEL, effort=EFFORT)[
+            "thread_id"
+        ]
+        turn_id = scenarios.start_turn(
+            process, thread_id=thread_id, request_id="interrupt-queue-1", text="Wait; do not answer early."
+        )
+        scenarios.await_turn_started(process)
+        initial_raw = upstream.next_request()
+
+        for request_id, text in (
+            ("interrupt-queue-2", INTERRUPTED_QUEUE_FIRST),
+            ("interrupt-queue-3", INTERRUPTED_QUEUE_SECOND),
+        ):
+            process.write(driver.turn_start(request_id, thread_id=thread_id, text=text))
+            response = process.await_frame(lambda frame, expected=request_id: frame.get("id") == expected, timeout=30)
+            assert response["result"]["turn"]["id"] == turn_id
+
+        response = scenarios.interrupt(process, thread_id=thread_id, turn_id=turn_id, request_id="interrupt-queue-4")
+        assert "error" not in response
+        assert initial_raw.client_closed.wait(30)
+        assert scenarios.await_turn_completed(process)["params"]["turn"]["status"] == "interrupted"
+
+        scenarios.start_turn(process, thread_id=thread_id, request_id="interrupt-queue-5", text=INTERRUPT_RECOVERY)
+        recovery_raw = upstream.next_request()
+        request = ResponsesRequest.parse(recovery_raw)
+        texts = [message.text for message in request.messages("user")]
+        assert INTERRUPTED_QUEUE_FIRST not in texts
+        assert INTERRUPTED_QUEUE_SECOND not in texts
+        assert texts[-1] == INTERRUPT_RECOVERY
+        upstream.respond(
+            recovery_raw, sse.response_stream([sse.Message("CODEX_INTERRUPT_QUEUE_RECOVERY_OK")], model=MODEL)
+        )
+        assert scenarios.await_turn_completed(process)["params"]["turn"]["status"] == "completed"
+
     upstream.assert_quiescent()
 
 

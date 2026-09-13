@@ -17,6 +17,9 @@ SECOND_INPUT = "Reply ONLY SECOND_INPUT_OBSERVED after your current work."
 THIRD_INPUT = "Reply ONLY THIRD_INPUT_OBSERVED after your current work."
 COALESCED_FIRST = "Reply only after seeing COALESCED_FIRST."
 COALESCED_SECOND = "Reply only after seeing COALESCED_SECOND."
+INTERRUPTED_QUEUE_FIRST = "Reply only after seeing INTERRUPTED_QUEUE_FIRST."
+INTERRUPTED_QUEUE_SECOND = "Reply only after seeing INTERRUPTED_QUEUE_SECOND."
+INTERRUPT_RECOVERY = "Reply with exactly: INTERRUPT_QUEUE_RECOVERY_OK"
 SELECTED_MODEL = "agentplane-switched/claude-haiku-4-5-20251001"
 
 
@@ -90,6 +93,67 @@ def test_queued_inputs_coalesce_into_one_native_user_message(claude: ClaudeHarne
     assert len(replayed) == 1
     assert replayed[0].uuid == second.uuid
     assert replayed[0].message.content == f"{COALESCED_FIRST}\n{COALESCED_SECOND}"
+    upstream.assert_quiescent()
+
+
+def test_interrupt_cancels_each_queued_input_before_native_message(
+    claude: ClaudeHarness, upstream: ScriptedUpstream
+) -> None:
+    """An interrupt with cancel_queued drops every queued input before it reaches the model.
+
+    This pins the native per-input cancellation frames and the absence of both texts from the
+    subsequent model request. The runner can therefore settle every originating command as a
+    no-op instead of leaving a durable receipt permanently pending.
+    """
+    with claude.start(upstream, replay_user_messages=True) as process:
+        scenarios.launch_handshake(process)
+        scenarios.send(process, "Keep this first turn active until interrupted.")
+        initial_raw = upstream.next_request()
+        stream = sse.message_stream([sse.Text("never finished")], model=MODEL)
+        upstream.respond(initial_raw, stream.until("content_block_start").held())
+        scenarios.await_active(process)
+
+        first = driver.user_frame(INTERRUPTED_QUEUE_FIRST)
+        second = driver.user_frame(INTERRUPTED_QUEUE_SECOND)
+        process.write_many([first, second])
+        for command_uuid in (first.uuid, second.uuid):
+            process.await_frame(
+                lambda frame, expected=command_uuid: (
+                    frame.get("type") == "command_lifecycle"
+                    and frame.get("command_uuid") == expected
+                    and frame.get("state") == "queued"
+                ),
+                timeout=30,
+            )
+
+        response = scenarios.interrupt(process, cancel_queued=True)
+        assert response["response"]["subtype"] == "success"
+        assert initial_raw.client_closed.wait(30)
+        assert scenarios.await_result(process)["is_error"] is True
+        for command_uuid in (first.uuid, second.uuid):
+            process.await_frame(
+                lambda frame, expected=command_uuid: (
+                    frame.get("type") == "command_lifecycle"
+                    and frame.get("command_uuid") == expected
+                    and frame.get("state") == "cancelled"
+                ),
+                timeout=30,
+            )
+
+        scenarios.send(process, INTERRUPT_RECOVERY)
+        recovery_raw = upstream.next_request()
+        request = MessagesRequest.parse(recovery_raw)
+        assert INTERRUPTED_QUEUE_FIRST not in request.texts("user")
+        assert INTERRUPTED_QUEUE_SECOND not in request.texts("user")
+        upstream.respond(recovery_raw, sse.message_stream([sse.Text("INTERRUPT_QUEUE_RECOVERY_OK")], model=MODEL))
+        assert scenarios.await_result(process)["result"] == "INTERRUPT_QUEUE_RECOVERY_OK"
+
+    cancelled = [
+        frame.command_uuid
+        for frame in (wire.parse_frame(raw) for raw in process.stdout_frames())
+        if isinstance(frame, wire.CommandLifecycleFrame) and frame.state is wire.CommandState.CANCELLED
+    ]
+    assert cancelled[-2:] == [first.uuid, second.uuid]
     upstream.assert_quiescent()
 
 
