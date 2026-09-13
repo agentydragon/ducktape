@@ -1063,7 +1063,7 @@ window.location.hash = scenario.route;
 const container = document.getElementById("app");
 if (!container) throw new Error("missing #app");
 createRoot(container).render(
-  <MantineProvider defaultColorScheme="auto" theme={{ fontFamily: "Inter, sans-serif" }}>
+  <MantineProvider defaultColorScheme="auto">
     <App />
   </MantineProvider>
 );

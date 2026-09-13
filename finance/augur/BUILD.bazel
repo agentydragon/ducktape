@@ -115,7 +115,6 @@ py_test(
         "//finance/augur/api:public_fixture_config",
         "//finance/augur/api:public_fixture_properties",
         "//finance/augur/frontend:bundle_base",
-        "//util/testing/frontend_visual:fonts",
         "@playwright_browsers//:chromium-headless-shell",
     ],
     env = {

@@ -7,7 +7,8 @@
  * the ambient PLAYWRIGHT_BROWSERS_PATH for a local `bazel run`.
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import puppeteer from "puppeteer";
@@ -18,6 +19,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // util/testing/frontend_visual/ would turn that directory into a namespace
 // package shadowing the sibling frontend_visual.py module for mypy.
 const FLAGS = JSON.parse(readFileSync(join(__dirname, "..", "chromium-flags.json"), "utf8"));
+const FONT_PREFERENCES = JSON.parse(readFileSync(join(__dirname, "..", "chromium-font-preferences.json"), "utf8"));
 export const CONTAINER_BASE_ARGS = FLAGS.containerBase;
 export const DETERMINISTIC_EXTRA_ARGS = FLAGS.deterministicExtra;
 
@@ -67,7 +69,10 @@ export async function launchBrowser({ args = [], headless = true, userDataDir } 
 
 /** `launchBrowser` with the deterministic-rendering flag set on top. */
 export async function launchDeterministicBrowser({ args = [], userDataDir } = {}) {
-  return launchBrowser({ args: [...DETERMINISTIC_EXTRA_ARGS, ...args], userDataDir });
+  const profile = userDataDir || mkdtempSync(join(process.env.TEST_TMPDIR || tmpdir(), "chrome-user-data-"));
+  mkdirSync(join(profile, "Default"), { recursive: true });
+  writeFileSync(join(profile, "Default", "Preferences"), JSON.stringify(FONT_PREFERENCES));
+  return launchBrowser({ args: [...DETERMINISTIC_EXTRA_ARGS, ...args], userDataDir: profile });
 }
 
 export function resolveChromiumExecutable() {

@@ -63,6 +63,18 @@ If the single component has a real production container that owns its width
 actual container/class in the harness — not a synthetic hardcoded width — so
 the screenshot tracks the true CSS instead of a number that can drift from it.
 
+## Font ownership
+
+Generic CSS families (`serif`, `sans-serif`, `monospace`, and `system-ui`) resolve through
+Chromium's seeded profile preferences and deterministic font flags. The browser environment
+owns that mapping; visual harnesses must not inject a blanket `font-family` rule.
+
+An application that intentionally uses a named font owns its font asset and `@font-face` rule.
+Fetch a pinned external asset through Bazel when practical, bundle it with the application, and
+pass the asset plus `font_family` to `visual_test` when using the shared macro. This keeps named
+typography in the product's normal CSS while keeping generic-family determinism independent of
+the page cascade.
+
 ## Waiting for a scene
 
 Every scenario takes `readySelectors`: the scene's own readiness conditions, waited for
@@ -115,7 +127,7 @@ stable across a pair. The same sweep runs weekly over every visual target
 (`.github/workflows/visual-determinism.yml`) and can be dispatched on demand.
 
 If they differ, `launchDeterministicBrowser()` + `DISABLE_ANIMATIONS_CSS` (both in
-`launcher.mjs`) close off rendering-level jitter (font rasterization, unguarded
-CSS animations), but not a page that's still loading: `visual-test-lib.mjs` waits
+`launcher.mjs`) close off rendering-level jitter (pinned browser font preferences,
+font rasterization, unguarded CSS animations), but not a page that's still loading: `visual-test-lib.mjs` waits
 with `waitUntil: "networkidle0"` for exactly this reason, rather than `"load"`,
 which returns as soon as the initial HTML parses regardless of in-flight fetches.

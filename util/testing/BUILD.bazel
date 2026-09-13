@@ -110,6 +110,7 @@ filegroup(
     srcs = [
         "chromium-flags.json",
         "frozen-clock.js",
+        "chromium-font-preferences.json",
     ],
     visibility = ["//util/testing/frontend_visual:__pkg__"],
 )
@@ -119,6 +120,7 @@ js_library(
     srcs = [
         "chromium-flags.json",
         "frozen-clock.js",
+        "chromium-font-preferences.json",
     ],
     # frozen-clock.js is raw injected text (its `frozenClock` const is only
     # referenced by the wrapper the launchers append), not a module — module
@@ -139,6 +141,26 @@ py_library(
         "//util/bazel:runfiles",
         "@pypi//playwright",
     ],
+)
+
+py_test(
+    name = "test_frontend_visual",
+    srcs = ["test_frontend_visual.py"],
+    data = [
+        "//util:playwright",
+        "@playwright_browsers//:chromium-headless-shell",
+    ],
+    env = {
+        "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
+    },
+    deps = [
+        ":frontend_visual",
+        "//:conftest",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+    tags = ["visual"],
 )
 
 py_test(

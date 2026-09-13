@@ -674,6 +674,17 @@ http_file(
     urls = ["https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken"],
 )
 
+# Inter is an application-owned web font, not an RBE worker dependency. Fetch the upstream
+# variable font through Bazel so applications can copy it into their own static bundles without
+# committing the binary or depending on a live font CDN at render time. The URL, release query,
+# and digest must be bumped together; the font is licensed under the SIL Open Font License.
+http_file(
+    name = "inter_variable_font",
+    downloaded_file_path = "InterVariable.woff2",
+    sha256 = "693b77d4f32ee9b8bfc995589b5fad5e99adf2832738661f5402f9978429a8e3",
+    urls = ["https://rsms.me/inter/font-files/InterVariable.woff2?v=4.1"],
+)
+
 # openai/codex source — consumed via overlaid BUILD files by the execpolicy audit
 # tool (//x/codex_execpolicy_audit). Pinned to a specific commit; the overlay patch
 # adds BUILD.bazel to the two crates we need (shell-command, utils/absolute-path) and

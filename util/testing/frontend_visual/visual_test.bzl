@@ -10,7 +10,6 @@ load("@aspect_rules_js//js:defs.bzl", "js_test")
 
 _CHROMIUM = "@playwright_browsers//:chromium-headless-shell"
 _LIB = "//util/testing/frontend_visual:visual_test_lib"
-_FONTS = "//util/testing/frontend_visual:fonts"
 
 def visual_test(
         name,
@@ -18,7 +17,7 @@ def visual_test(
         harness,
         scenarios,
         assets = [],
-        fonts = _FONTS,
+        fonts = None,
         font_family = None,
         env = {},
         **kwargs):
@@ -33,19 +32,24 @@ def visual_test(
         rather than the browser fetching it.
       assets: everything else the harness page pulls over `file://` — its `index.html`, any
         stylesheet, the bundle rule itself.
-      fonts: the font filegroup the harness serves. Default is the hermetic shared one.
-      font_family: the family a page's own typography forces, asserted against what actually
-        rendered. Required with `fonts`, since `test-fonts.css`'s Inter is no longer what lands.
+      fonts: optional app-owned font filegroup the harness serves alongside its assets.
+      font_family: optional named family asserted against what actually rendered. Required with
+        `fonts`, so a custom font asset cannot be staged without declaring its purpose.
       env: extra environment for the runner.
       **kwargs: passed to `js_test` — `size` and `shard_count` in practice.
     """
-    if fonts != _FONTS and font_family == None:
+    if fonts != None and font_family == None:
         fail("visual_test(%s) brings its own fonts, so it must name the font_family they force; " % name +
-             "left unset, the render assertion still checks for the shared test-fonts.css Inter.")
+             "left unset, the render assertion cannot verify the app-owned font.")
+    if fonts == None and font_family != None:
+        fail("visual_test(%s) names font_family but does not provide the app-owned fonts; " % name +
+             "pass both together.")
 
     # Read from the source tree, not copied to bin: the harness page is a file:// URL and pulls
     # these by relative path, so a copy would be a second set of bytes nothing points at.
-    read_in_place = assets + [harness, fonts, _CHROMIUM, _LIB]
+    read_in_place = assets + [harness, _CHROMIUM, _LIB]
+    if fonts != None:
+        read_in_place.append(fonts)
 
     runner_env = dict(env)
     runner_env["HARNESS_PATH"] = "$(rootpath %s)" % harness

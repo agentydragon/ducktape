@@ -66,12 +66,10 @@ async function captureScenario(browser, scenarioName, options, { harnessUrl, out
 
     console.log(`Testing: ${outputName} (page=${scenarioName})`);
     await page.goto(`${harnessUrl}?page=${scenarioName}`, { waitUntil: "networkidle0", timeout: WAIT_TIMEOUT_MS });
-    // test-fonts.css applies the hermetic font to every element, so any harness document carries
-    // it; a miss means the @font-face never resolved and every glyph below is the wrong shape.
-    // Most callers use Inter (the shared test-fonts.css default), but a harness can override via
-    // the EXPECTED_FONT_FAMILY env var when it bundles its own typography.
-    const expectedFont = process.env.EXPECTED_FONT_FAMILY || "Inter";
-    if (!(await page.evaluate((family) => document.fonts.check(`16px "${family}"`), expectedFont))) {
+    // Only assert a named font when the app explicitly declares one. Generic family resolution is
+    // owned by the deterministic browser profile, and must not be emulated with test CSS.
+    const expectedFont = process.env.EXPECTED_FONT_FAMILY;
+    if (expectedFont && !(await page.evaluate((family) => document.fonts.check(`16px "${family}"`), expectedFont))) {
       throw new Error(`${expectedFont} font did not load`);
     }
     await page.waitForSelector("#app > *", { timeout: WAIT_TIMEOUT_MS });

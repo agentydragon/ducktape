@@ -1,0 +1,29 @@
+{
+  "webkit": {
+    "webprefs": {
+      "fonts": {
+        "standard": {
+          "Zyyy": "Liberation Serif"
+        },
+        "fixed": {
+          "Zyyy": "Liberation Mono"
+        },
+        "serif": {
+          "Zyyy": "Liberation Serif"
+        },
+        "sansserif": {
+          "Zyyy": "Liberation Sans"
+        },
+        "cursive": {
+          "Zyyy": "Liberation Sans"
+        },
+        "fantasy": {
+          "Zyyy": "Liberation Sans"
+        },
+        "math": {
+          "Zyyy": "Liberation Serif"
+        }
+      }
+    }
+  }
+}

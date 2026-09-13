@@ -33,11 +33,7 @@ from finance.augur.dev_server import build_dev_app
 from finance.evidence.markets import Platform
 from util.bazel.runfiles import get_required_path
 from util.testing.asgi import serve_app_sync
-from util.testing.frontend_visual import (
-    deterministic_browser_context,
-    deterministic_style,
-    launch_deterministic_browser,
-)
+from util.testing.frontend_visual import deterministic_browser_context, stability_style
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.visual_review import retain_review_asset
 
@@ -47,7 +43,7 @@ from util.testing.visual_review import retain_review_asset
 pytest_plugins = ("util.playwright",)
 
 if TYPE_CHECKING:
-    from playwright.sync_api import Browser, Page, Playwright, ViewportSize
+    from playwright.sync_api import Page, Playwright, ViewportSize
 
 
 @dataclass(frozen=True)
@@ -140,7 +136,7 @@ def _click_terminal_distribution_percentile(page: Page, *, percentile: float, y_
 
 def _wait_for_product_page(page: Page) -> None:
     """Wait for the product surface's net-worth fan to render at non-zero height."""
-    page.add_style_tag(content=deterministic_style())
+    page.add_style_tag(content=stability_style())
     page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=30_000)
     page.locator("[data-product-fan-chart='netWorthQuanta']").wait_for(state="visible", timeout=30_000)
     page.get_by_role("heading", name="Augur", exact=True).wait_for(state="visible", timeout=30_000)
@@ -234,7 +230,7 @@ def _wait_for_property_panel(page: Page) -> None:
 
 def _wait_for_distribution_failures(page: Page) -> None:
     """Inspect a stopped book without placing it in the terminal-wealth distribution."""
-    page.add_style_tag(content=deterministic_style())
+    page.add_style_tag(content=stability_style())
     page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=30_000)
     page.locator("[data-product-fan-chart='netWorthQuanta']").wait_for(state="visible", timeout=30_000)
     _wait_for_terminal_distribution_density(page, min_series=1)
@@ -257,7 +253,7 @@ def _wait_for_calibration_page(page: Page) -> None:
     The tab now auto-runs on load (no button), so the screenshot captures the scored-markets
     table and the issuer mark fan. Hermetic prices are served by the in-process server, so the
     auto-run resolves without touching the network."""
-    page.add_style_tag(content=deterministic_style())
+    page.add_style_tag(content=stability_style())
     page.locator("[data-augur-surface='calibration']").wait_for(state="visible", timeout=30_000)
     page.get_by_role("heading", name="Augur", exact=True).wait_for(state="visible", timeout=30_000)
     page.locator("[data-augur-tab='calibration'][data-active]").wait_for(state="visible", timeout=30_000)
@@ -345,7 +341,7 @@ def _wait_for_scenario_comparison(page: Page) -> None:
     """Wait for the multi-scenario overlay: the scenario bar, the editor spreadsheet with a Base +
     two variant columns (and the per-scenario "Property to buy" row), three scenario fans + legend,
     and the per-scenario comparison table."""
-    page.add_style_tag(content=deterministic_style())
+    page.add_style_tag(content=stability_style())
     page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=30_000)
     page.locator("[data-product-scenario-tabs]").wait_for(state="visible", timeout=30_000)
     page.locator("[data-product-fan-chart='netWorthQuanta']").wait_for(state="visible", timeout=30_000)
@@ -434,15 +430,6 @@ VISUAL_CASES = (
 )
 
 
-@pytest.fixture
-def browser(playwright_sync: Playwright) -> Iterator[Browser]:
-    browser = launch_deterministic_browser(playwright_sync)
-    try:
-        yield browser
-    finally:
-        browser.close()
-
-
 @pytest.fixture(scope="module")
 def hermetic_prices() -> dict[Platform, dict[str, float]]:
     """A fixed live price for every market in the example catalog.
@@ -477,8 +464,8 @@ def augur_server(augur_config: Config, hermetic_prices: dict[Platform, dict[str,
 
 
 @pytest.fixture
-def page(browser: Browser) -> Iterator[Page]:
-    context = deterministic_browser_context(browser, viewport=SCREENSHOT_VIEWPORT, frozen_now_ms=FROZEN_NOW_MS)
+def page(playwright_sync: Playwright) -> Iterator[Page]:
+    context = deterministic_browser_context(playwright_sync, viewport=SCREENSHOT_VIEWPORT, frozen_now_ms=FROZEN_NOW_MS)
     page = context.new_page()
     page.on(
         "pageerror",
