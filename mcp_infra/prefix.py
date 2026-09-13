@@ -12,12 +12,8 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from pydantic import PlainSerializer, StringConstraints, TypeAdapter
+from pydantic import StringConstraints, TypeAdapter
 from pydantic_core import core_schema
-
-# Shared identity serializer for string-based Annotated types
-# Preserves string value unchanged during JSON serialization
-_STR_IDENTITY_SERIALIZER = PlainSerializer(lambda x: x, return_type=str, when_used="json")
 
 
 class MCPMountPrefix(str):

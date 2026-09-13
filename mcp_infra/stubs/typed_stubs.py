@@ -6,18 +6,10 @@ from dataclasses import dataclass
 from typing import Any, cast, get_origin, get_type_hints
 
 from fastmcp.client import Client
-from fastmcp.client.client import CallToolResult as FastMCPCallToolResult
 from fastmcp.server import FastMCP
 from pydantic import BaseModel, TypeAdapter
 
 from mcp_infra.flat_tool import FlatTool
-
-
-def _structured_content(result: FastMCPCallToolResult, *, tool_name: str) -> dict[str, Any]:
-    sc = result.structured_content
-    if sc is None:
-        raise RuntimeError(f"{tool_name!r} did not return structured_content; tests require structured outputs")
-    return TypeAdapter(dict[str, Any]).validate_python(sc)
 
 
 class ToolStub[T_Out]:
@@ -113,7 +105,7 @@ class TypedClient:
             try:
                 hints = get_type_hints(component.fn, include_extras=True)
                 hinted_output = hints.get("return")
-            except (NameError, TypeError, AttributeError):
+            except NameError, TypeError, AttributeError:
                 hinted_output = None
 
             output_type = _resolve_output_type(hinted_output, hinted_output)

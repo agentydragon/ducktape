@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/python:defs.bzl", "py_library")
 
 # Docker fixtures that depend on debian-slim OCI image
 # Only include in tests that actually need Docker execution
@@ -16,6 +16,7 @@ py_library(
 
 py_library(
     name = "exec_stubs",
+    testonly = True,
     srcs = ["exec_stubs.py"],
     visibility = ["//:__subpackages__"],
     deps = [
@@ -28,6 +29,7 @@ py_library(
 
 py_library(
     name = "fixtures",
+    testonly = True,
     srcs = ["fixtures.py"],
     visibility = ["//:__subpackages__"],
     deps = [
@@ -61,6 +63,7 @@ py_library(
 
 py_library(
     name = "simple_servers",
+    testonly = True,
     srcs = ["simple_servers.py"],
     visibility = ["//:__subpackages__"],
     deps = [
@@ -73,19 +76,13 @@ py_library(
 
 py_library(
     name = "stdio_app",
+    testonly = True,
     srcs = ["stdio_app.py"],
     visibility = ["//:__subpackages__"],
     deps = [
         ":simple_servers",
         "@pypi//anyio",
     ],
-)
-
-py_binary(
-    name = "stdio_app_bin",
-    main_module = "mcp_infra.testing.stdio_app",
-    visibility = ["//:__subpackages__"],
-    deps = [":stdio_app"],
 )
 
 py_library(

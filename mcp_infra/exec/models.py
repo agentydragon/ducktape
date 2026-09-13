@@ -4,17 +4,9 @@ import asyncio
 from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from signal import SIGKILL, SIGTERM
 from typing import Annotated, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
-
-# Signal exit codes for process termination
-SIGNAL_EXIT_OFFSET: Final[int] = 128
-
-
-def signal_exit_code(sig: int) -> int:
-    return SIGNAL_EXIT_OFFSET + int(sig)
 
 
 @asynccontextmanager
@@ -34,9 +26,6 @@ async def async_timer() -> AsyncGenerator[Callable[[], int]]:
 
     yield get_duration_ms
 
-
-EXIT_CODE_SIGTERM: Final[int] = signal_exit_code(SIGTERM)
-EXIT_CODE_SIGKILL: Final[int] = signal_exit_code(SIGKILL)
 
 # Cap for stdout/stderr bytes in exec-like servers
 MAX_BYTES_CAP = 150_000
@@ -182,25 +171,6 @@ class BaseExecResult(BaseModel):
         return cls(exit=exit_status, stdout=stdout, stderr=stderr, duration_ms=duration_ms, **extras)
 
 
-# Stream processing functions (moved from io_limits.py to avoid circular imports)
-
-
-@dataclass(slots=True)
-class StreamReadResult:
-    stored_bytes: bytes  # Prefix captured (up to limit)
-    truncated: bool  # True if output exceeded the store_limit
-    total_bytes: int  # total bytes produced by the stream (counted)
-
-    @property
-    def stored_text(self) -> str:
-        return _decode_prefix(self.stored_bytes)
-
-
-def _decode_prefix(prefix: bytes) -> str:
-    """Decode a byte prefix to UTF-8, replacing errors; avoid surrogate noise."""
-    return prefix.decode("utf-8", errors="replace")
-
-
 def render_stream(data: bytes, limit: int) -> ExecStream:
     """Render raw bytes under a byte limit, producing either text or TruncatedStream."""
     if limit <= 0 or len(data) == 0:
@@ -231,27 +201,3 @@ def render_raw_to_result(
     exit_status = TimedOut() if timed_out else Exited(exit_code=exit_code if exit_code is not None else 0)
 
     return BaseExecResult.from_rendered_streams(exit_status, stdout_render, stderr_render, duration_ms)
-
-
-async def read_stream_limited_async(
-    reader: asyncio.StreamReader, store_limit: int, chunk_size: int = 8192
-) -> StreamReadResult:
-    """Read an asyncio StreamReader to EOF, storing at most store_limit bytes.
-
-    - Always drains to EOF to compute total_bytes
-    - Returns stored_text (UTF-8), truncated flag, and total_bytes
-    """
-    assert store_limit >= 0
-    stored = bytearray()
-    total = 0
-    while True:
-        buf = await reader.read(chunk_size)
-        if not buf:
-            break
-        total += len(buf)
-        if len(stored) < store_limit:
-            remaining = store_limit - len(stored)
-            if remaining > 0:
-                stored.extend(buf[:remaining])
-    truncated = total > store_limit
-    return StreamReadResult(stored_bytes=bytes(stored), truncated=truncated, total_bytes=total)

@@ -120,7 +120,6 @@ The agent container exposes a minimal HTTP interface to the host. No timeline or
 - Approve/deny high-risk tool calls (runtime exec, external network, policy edits).
 - Observe chat via Matrix (or chosen backend) and audit feed via the policy gateway; UI can synthesise `UiState` purely from those external sources.
 - Inspect hooks via `loop://hooks/{id}`; disable suspicious automation.
-- Reconfigure mounts via `compositor_admin` tools—still routed through policy gateway for logging.
 - Grant new credentials (DB write scopes, external tool tokens) by injecting them into the agent container (e.g., via MCP tool that writes secrets into the agent DB).
 
 ## Summary

@@ -117,6 +117,7 @@ py_binary(
 
 py_library(
     name = "matchers",
+    testonly = True,
     srcs = ["matchers.py"],
     visibility = ["//:__subpackages__"],
     deps = [
