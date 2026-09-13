@@ -79,30 +79,24 @@ export function approvalQueueItems(
   screenshotApprovals: readonly ScreenshotApproval[]
 ): ApprovalQueueItem[] {
   return [
-    ...toolApprovals.map(
-      (approval): ApprovalQueueItem => ({
-        kind: "tool",
-        id: toolApprovalQueueId(approval.tool_call_id),
-        createdAt: approval.created_at,
-        approval,
-      })
-    ),
-    ...geolocationApprovals.map(
-      (approval): ApprovalQueueItem => ({
-        kind: "geolocation",
-        id: geolocationApprovalQueueId(approval.id),
-        createdAt: approval.createdAt,
-        approval,
-      })
-    ),
-    ...screenshotApprovals.map(
-      (approval): ApprovalQueueItem => ({
-        kind: "screenshot",
-        id: screenshotApprovalQueueId(approval.id),
-        createdAt: approval.createdAt,
-        approval,
-      })
-    ),
+    ...toolApprovals.map((approval): ApprovalQueueItem => ({
+      kind: "tool",
+      id: toolApprovalQueueId(approval.tool_call_id),
+      createdAt: approval.created_at,
+      approval,
+    })),
+    ...geolocationApprovals.map((approval): ApprovalQueueItem => ({
+      kind: "geolocation",
+      id: geolocationApprovalQueueId(approval.id),
+      createdAt: approval.createdAt,
+      approval,
+    })),
+    ...screenshotApprovals.map((approval): ApprovalQueueItem => ({
+      kind: "screenshot",
+      id: screenshotApprovalQueueId(approval.id),
+      createdAt: approval.createdAt,
+      approval,
+    })),
   ].sort((a, b) => createdAtMs(b.createdAt) - createdAtMs(a.createdAt));
 }
 

@@ -31,8 +31,7 @@ export type McpOperatorAuthStatus = components["schemas"]["McpOperatorAuthStatus
 export type ProviderConnectionConnectResponse = components["schemas"]["ProviderConnectionConnectResponse"];
 export type OperatorConnectionName = ProviderConnectionConnectResponse["connection"];
 export type OAuthConnectionResult =
-  | components["schemas"]["ConnectionSucceeded"]
-  | components["schemas"]["ConnectionFailed"];
+  components["schemas"]["ConnectionSucceeded"] | components["schemas"]["ConnectionFailed"];
 export type AgentView = components["schemas"]["AgentView"];
 export type AgentListResponse = components["schemas"]["AgentListResponse"];
 export type Grant = components["schemas"]["Grant"];
@@ -45,8 +44,7 @@ export type EnrollmentDecisionRequest =
   | components["schemas"]["ReconnectEnrollmentRequest"]
   | components["schemas"]["DenyEnrollmentRequest"];
 export type EnrollmentDecisionResponse =
-  | components["schemas"]["EnrollmentContinues"]
-  | components["schemas"]["EnrollmentWasDenied"];
+  components["schemas"]["EnrollmentContinues"] | components["schemas"]["EnrollmentWasDenied"];
 export type AiquotaView = components["schemas"]["AllQuotasView"];
 
 // FastAPI error responses are `{detail: string}`; surface that real reason, falling back when the

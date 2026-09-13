@@ -1272,9 +1272,7 @@ Over the WebSocket connection, messages are wrapped with session context:
 {
   "type": "api_request",
   "session_id": "session_018FEX...",
-  "request": {
-    /* Standard Messages API payload */
-  }
+  "request": {/* Standard Messages API payload */}
 }
 ```
 
@@ -1285,9 +1283,7 @@ Responses include:
   "type": "api_response",
   "session_id": "session_018FEX...",
   "event": "content_block_delta",
-  "data": {
-    /* SSE data payload */
-  }
+  "data": {/* SSE data payload */}
 }
 ```
 

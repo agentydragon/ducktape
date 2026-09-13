@@ -129,17 +129,17 @@ editing a route.
       (`/var/mnt/seaweedfs-data` works — study-casino-db-5 just
       provisioned there), but no SeaweedFS volume server runs on it.
 
-      Either fix it (diagnose 103711's disk via `talosctl --nodes 10.42.0.14
-      get uservolumeconfig` / `talosctl ls /var/mnt`, fix the Talos config
-      if needed, then bump Seaweed CR `spec.volume.replicas: 3 → 5` and
-      verify replication converges across all 5 nodes; uncordon
-      ovh-ns103711) or stop claiming the broken state is fine (remove
-      103711 from `nodePathMap` and the topology entirely until it's
-      actually brought up). Pick one. The current half-state is the
-      worst of both — directly caused the study-casino-db migration to
-      stall on a broken-disk node selected by the scheduler. Also fixes
-      `defaultReplication: 001` durability headroom (4-5 volume servers
-      → tolerates 2-node loss instead of just 1).
+  Either fix it (diagnose 103711's disk via
+  `talosctl --nodes 10.42.0.14 get uservolumeconfig` / `talosctl ls /var/mnt`,
+  fix the Talos config if needed, then bump Seaweed CR `spec.volume.replicas: 3 → 5` and
+  verify replication converges across all 5 nodes; uncordon
+  ovh-ns103711) or stop claiming the broken state is fine (remove
+  103711 from `nodePathMap` and the topology entirely until it's
+  actually brought up). Pick one. The current half-state is the
+  worst of both — directly caused the study-casino-db migration to
+  stall on a broken-disk node selected by the scheduler. Also fixes
+  `defaultReplication: 001` durability headroom (4-5 volume servers
+  → tolerates 2-node loss instead of just 1).
 
 - [ ] **Diagnose tana-mcp crash-loop** — used to work before the renames.
       `tana-desktop` container restarts every ~3 min (43+ restarts as of
@@ -257,41 +257,41 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       against `auth.allegedly.works` because DNS resolved to a dead IP ~2/5 of the
       time (PR fixing the immediate bleeding: ducktape#1820).
 
-      Survey of where the public IPs actually live today:
+  Survey of where the public IPs actually live today:
 
-      - **OVH cluster TF**: `cluster/terraform/main/ovh-nodes.tf:335-337` already rolls
-        `data.ovh_dedicated_server.kimsufi[*].ip` into `local.kimsufi_public_ips`.
-        This is the canonical, live source of truth and would expose as one output.
-      - **Kubernetes Node objects**: NOT currently usable. Checked
-        `kubectl get node ovh-ns102453 -o json` — `status.addresses` has only
-        `InternalIP=10.42.0.15` (Nebula) and hostname; no `ExternalIP`, no public-IP
-        annotation, `spec.providerID` empty. The talos-CCM is *installed* (Flux
-        `k8s/talos-cloud-controller-manager/helmrelease.yaml`, configured with
-        `publicIPDiscovery: true` for `topology.kubernetes.io/region=hil`) but
-        switched off: its log says `is kubelet has args: --cloud-provider=external on
-        the node?` — the Talos kubelet isn't started with that flag, so it never
-        applies the `node.cloudprovider.kubernetes.io/uninitialized` taint, so the
-        CCM's `cloud-node` controller short-circuits without populating addresses.
-      - **`CiliumLoadBalancerIPPool`**: not applicable to the current hostNetwork
-        Gateway. It would become relevant only if we switch to Service exposure
-        backed by provider-routed/floating VIPs plus BGP/L2 advertisement.
+  - **OVH cluster TF**: `cluster/terraform/main/ovh-nodes.tf:335-337` already rolls
+    `data.ovh_dedicated_server.kimsufi[*].ip` into `local.kimsufi_public_ips`.
+    This is the canonical, live source of truth and would expose as one output.
+  - **Kubernetes Node objects**: NOT currently usable. Checked
+    `kubectl get node ovh-ns102453 -o json` — `status.addresses` has only
+    `InternalIP=10.42.0.15` (Nebula) and hostname; no `ExternalIP`, no public-IP
+    annotation, `spec.providerID` empty. The talos-CCM is _installed_ (Flux
+    `k8s/talos-cloud-controller-manager/helmrelease.yaml`, configured with
+    `publicIPDiscovery: true` for `topology.kubernetes.io/region=hil`) but
+    switched off: its log says `is kubelet has args: --cloud-provider=external on the node?`
+    — the Talos kubelet isn't started with that flag, so it never
+    applies the `node.cloudprovider.kubernetes.io/uninitialized` taint, so the
+    CCM's `cloud-node` controller short-circuits without populating addresses.
+  - **`CiliumLoadBalancerIPPool`**: not applicable to the current hostNetwork
+    Gateway. It would become relevant only if we switch to Service exposure
+    backed by provider-routed/floating VIPs plus BGP/L2 advertisement.
 
-      Two paths, mostly orthogonal:
+  Two paths, mostly orthogonal:
 
-      1. **Fix the data gap at the right layer**: add
-         `machine.kubelet.extraArgs.cloud-provider: external` to the Talos machine
-         config for every Kimsufi node. Existing CCM then populates `ExternalIP` +
-         `providerID`. The DNS TF (and `kubectl get nodes -o wide`, and anything
-         else that asks the cluster for node addresses) just works. Needs a
-         per-node config patch + reboot; check kube-vip / Cilium
-         tolerate the temporary uninitialized taint at startup.
-      2. **Wire DNS TF to cluster TF state**: add a
-         `terraform_remote_state` data source for the cluster TF root and pull
-         `local.kimsufi_public_ips`. Lower blast radius (TF-only), no node restart,
-         but only fixes DNS — leaves Node objects still missing ExternalIP for
-         everyone else.
+  1. **Fix the data gap at the right layer**: add
+     `machine.kubelet.extraArgs.cloud-provider: external` to the Talos machine
+     config for every Kimsufi node. Existing CCM then populates `ExternalIP` +
+     `providerID`. The DNS TF (and `kubectl get nodes -o wide`, and anything
+     else that asks the cluster for node addresses) just works. Needs a
+     per-node config patch + reboot; check kube-vip / Cilium
+     tolerate the temporary uninitialized taint at startup.
+  2. **Wire DNS TF to cluster TF state**: add a
+     `terraform_remote_state` data source for the cluster TF root and pull
+     `local.kimsufi_public_ips`. Lower blast radius (TF-only), no node restart,
+     but only fixes DNS — leaves Node objects still missing ExternalIP for
+     everyone else.
 
-      (1) is the right architectural answer; (2) is the right next-PR answer.
+  (1) is the right architectural answer; (2) is the right next-PR answer.
 
 - [ ] Decouple wyrm2 from tofu: `module.wyrm2` in the same TF root as the cluster means
       any `tofu apply` risks rebooting wyrm2 (the machine running tofu). The `--exclude`

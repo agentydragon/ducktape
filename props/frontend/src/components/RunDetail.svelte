@@ -45,9 +45,7 @@
   // exclusive (no "loaded but also errored" combo). initialRun (visual tests / SSR
   // hydration) seeds the loaded state; otherwise we start in loading.
   type RunLoad =
-    | { status: "loading" }
-    | { status: "loaded"; run: AgentRunDetail }
-    | { status: "error"; message: string };
+    { status: "loading" } | { status: "loaded"; run: AgentRunDetail } | { status: "error"; message: string };
   // svelte-ignore state_referenced_locally
   let load: RunLoad = $state(initialRun ? { status: "loaded", run: initialRun } : { status: "loading" });
 

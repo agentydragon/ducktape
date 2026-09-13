@@ -182,7 +182,7 @@ can drop onto the leader (.13) at any time and spike its fsync queue.
    on the CRD). For ephemeral batch runners use **required** anti-affinity (no
    availability cost). **The blocker is that this is copy-pasted across ~22 hand-written
    `cluster/k8s/**/\*-tf.yaml`/`terraform.yaml`files** (each already repeats an
-identical`runnerPodTemplate.spec.env`with the`tofu-state-db-credentials`
+   identical`runnerPodTemplate.spec.env`with the`tofu-state-db-credentials`
    PGPASSWORD). This config is purely cross-cutting (identical for every CR) and should
    be centralized before adding more to it — see "Centralizing the Terraform CR runner
    template" below.

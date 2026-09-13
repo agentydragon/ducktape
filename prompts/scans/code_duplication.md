@@ -424,9 +424,7 @@ it("should call approve tool when approve button is clicked", async () => {
 ```typescript
 // GlobalApprovalsList.test.ts - "Open reject dialog" pattern repeated 5+ times
 it("should open reject dialog when reject button is clicked", async () => {
-  const mockApprovals = [
-    /* ... */
-  ];
+  const mockApprovals = [/* ... */];
   mockReadResource.mockResolvedValue(mockApprovals);
 
   const { container } = render(GlobalApprovalsList);
@@ -448,9 +446,7 @@ it("should open reject dialog when reject button is clicked", async () => {
 });
 
 it("should require rejection reason to be non-empty", async () => {
-  const mockApprovals = [
-    /* ... */
-  ];
+  const mockApprovals = [/* ... */];
   mockReadResource.mockResolvedValue(mockApprovals);
 
   const { container } = render(GlobalApprovalsList);

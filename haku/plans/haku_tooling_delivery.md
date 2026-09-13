@@ -65,8 +65,8 @@ session. Use add_repo to request access."}` (the Anthropic `documentation_url` o
      It is `add_repo`-extensible, but bazel pulls **dozens** of transitive third-party dep repos
      (rules_python, rules_cc, bazel-skylib, apple_support, …), re-chased on every bump —
      impractical. (CA trust is a **non-issue** here: per `/root/.ccr/README.md`, bazel reads a
-     managed block in `/etc/bazel.bazelrc`, not `JAVA_TOOL_OPTIONS` — the `WARNING: ignoring
-     JAVA_TOOL_OPTIONS` is a red herring.)
+     managed block in `/etc/bazel.bazelrc`, not `JAVA_TOOL_OPTIONS` — the
+     `WARNING: ignoring JAVA_TOOL_OPTIONS` is a red herring.)
 
    **The git protocol is the one open fetch path — but bazel won't use it without per-module
    overrides.** Reconfirmed 2026-07-22: `git ls-remote bazelbuild/bazel-skylib` (never
