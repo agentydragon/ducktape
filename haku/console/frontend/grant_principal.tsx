@@ -5,7 +5,7 @@ import type { GrantPrincipal } from "./client";
 export type { GrantPrincipal } from "./client";
 
 /** Render a grant principal by Agent name, retaining IDs only where they are the useful identity. */
-export function GrantPrincipalLabel({ principal }: { principal: GrantPrincipal }): import("react").JSX.Element {
+export function GrantPrincipalLabel({ principal }: { principal: GrantPrincipal }): JSX.Element {
   switch (principal.kind) {
     case "agent":
       return (

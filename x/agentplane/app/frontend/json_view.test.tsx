@@ -15,7 +15,7 @@ afterEach(async () => {
   }
 });
 
-async function render(element: import("react").JSX.Element): Promise<HTMLDivElement> {
+async function render(element: JSX.Element): Promise<HTMLDivElement> {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);

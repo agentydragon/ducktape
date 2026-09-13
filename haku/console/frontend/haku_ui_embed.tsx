@@ -108,7 +108,7 @@ export function HakuUiEmbed({
   agentEnrollmentInitialChoice?: EnrollmentChoice;
   toolCallId?: string | null;
   onNavigate: (view: ConsoleNavigationView) => void;
-}): import("react").JSX.Element {
+}): JSX.Element {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const viewRef = useRef(view);
   viewRef.current = view;

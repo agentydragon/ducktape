@@ -3,11 +3,7 @@ import { type JSX, useCallback, useEffect, useState } from "react";
 
 import { displayableError, mcpLinkageService, type McpLinkageService, type McpLinkageView } from "../client";
 
-export function McpServers({
-  service = mcpLinkageService,
-}: {
-  service?: McpLinkageService;
-}): import("react").JSX.Element {
+export function McpServers({ service = mcpLinkageService }: { service?: McpLinkageService }): JSX.Element {
   const [rows, setRows] = useState<McpLinkageView[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<{ serverId: string; operation: "link" | "disconnect" } | null>(null);

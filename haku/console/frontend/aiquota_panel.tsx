@@ -38,7 +38,7 @@ export function AiquotaPanel({
   loading: boolean;
   error: string | null;
   onClose?: () => void;
-}): import("react").JSX.Element {
+}): JSX.Element {
   const now = useNow();
   const fetchedAt = useMemo(() => (quotas ? parseTimestamp(quotas.fetched_at) : null), [quotas]);
   return (
@@ -103,7 +103,7 @@ export function AiquotaRailButton({
   loading: boolean;
   open: boolean;
   onClick: () => void;
-}): import("react").JSX.Element {
+}): JSX.Element {
   const used = railUsedPercent(quotas);
   const color = used >= 95 ? "red" : used >= 80 ? "yellow" : "teal";
   return (

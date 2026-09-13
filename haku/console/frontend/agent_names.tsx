@@ -22,7 +22,7 @@ export function AgentNamesProvider({
   children: ReactNode;
   initialNames?: AgentNames;
   load?: boolean;
-}): import("react").JSX.Element {
+}): JSX.Element {
   const [names, setNames] = useState<AgentNames>(initialNames ?? EMPTY_AGENT_NAMES);
 
   useEffect(() => {
@@ -50,13 +50,7 @@ export function useAgentNames(): AgentNames {
 }
 
 /** Render a friendly Agent name while retaining the UUID as non-default detail. */
-export function AgentName({
-  agentId,
-  displayName,
-}: {
-  agentId: string;
-  displayName?: string;
-}): import("react").JSX.Element {
+export function AgentName({ agentId, displayName }: { agentId: string; displayName?: string }): JSX.Element {
   const names = useAgentNames();
   const name = displayName ?? names.get(agentId) ?? "Unknown";
   return <span title={`Agent UUID: ${agentId}`}>{name}</span>;
@@ -71,7 +65,7 @@ export function ToolCallAgentProvider({
   agentId: string | null;
   displayName: string;
   children: ReactNode;
-}): import("react").JSX.Element {
+}): JSX.Element {
   const identity = agentId === null ? null : { agentId, displayName };
   return <ToolCallAgentContext.Provider value={identity}>{children}</ToolCallAgentContext.Provider>;
 }

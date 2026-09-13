@@ -18,7 +18,7 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
   return response.status === 204 ? (undefined as T) : response.json();
 }
 
-export function PushSettings(): import("react").JSX.Element {
+export function PushSettings(): JSX.Element {
   const [devices, setDevices] = useState<Device[]>([]);
   const [key, setKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);

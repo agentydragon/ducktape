@@ -29,7 +29,7 @@ export function ConnectionConsent({
   handle: string;
   service?: ConsentService;
   navigate?: (url: string) => void;
-}): import("react").JSX.Element {
+}): JSX.Element {
   const [preview, setPreview] = useState<ConsentPreview | null>(null);
   const [name, setName] = useState("");
   const [account, setAccount] = useState("");

@@ -163,7 +163,7 @@ export function RecurrenceField({
 }: {
   recurrence: string[];
   variant: "compact" | "detailed";
-}): import("react").JSX.Element {
+}): JSX.Element {
   return (
     <Stack gap={2}>
       <Field icon={<RepeatIcon size={15} />} label="Repeats">
@@ -219,10 +219,7 @@ function CalendarField({ calendarId }: { calendarId: string }) {
 
 // Exported for google_calendar/calls.tsx's combined create_event widget, which renders this
 // pre-execution and CalendarEventResultView (responses.tsx) once the call has finished.
-export function CreateCalendarEventPreview({
-  args,
-  variant,
-}: PreviewProps<CreateCalendarEventArgs>): import("react").JSX.Element {
+export function CreateCalendarEventPreview({ args, variant }: PreviewProps<CreateCalendarEventArgs>): JSX.Element {
   // The summary is the event's own name, so it leads as an unlabelled heading; the rest use inline
   // icon fields (🕐 time, 📍 location, …), denser than a stacked uppercase label per row.
   const when = formatEventDateTimeRange(args.start, args.end);

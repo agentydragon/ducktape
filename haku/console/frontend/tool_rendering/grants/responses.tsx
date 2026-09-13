@@ -50,7 +50,7 @@ function Timestamp({ label, value }: { label: string; value: string }) {
   );
 }
 
-function GrantCoverage({ view, variant }: { view: GrantView; variant: PreviewVariant }): import("react").JSX.Element {
+function GrantCoverage({ view, variant }: { view: GrantView; variant: PreviewVariant }): JSX.Element {
   if (view.domain === "kubernetes") {
     return (
       <KubernetesGrantScopeAndRules spec={{ scope: view.grant.scope, rules: view.grant.rules }} variant={variant} />

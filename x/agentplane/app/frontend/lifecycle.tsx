@@ -25,7 +25,7 @@ export function SuspendResume({
 }: {
   sandbox: SandboxView;
   onAct: (action: "suspend" | "resume") => void;
-}): import("react").JSX.Element {
+}): JSX.Element {
   const resume = sandbox.operating_mode === "Suspended";
   return (
     <Tooltip label={resume ? "Resume" : "Suspend"} withArrow>
@@ -40,13 +40,7 @@ export function SuspendResume({
   );
 }
 
-export function DeleteButton({
-  sandbox,
-  onDelete,
-}: {
-  sandbox: SandboxView;
-  onDelete: () => void;
-}): import("react").JSX.Element {
+export function DeleteButton({ sandbox, onDelete }: { sandbox: SandboxView; onDelete: () => void }): JSX.Element {
   const allowed = deletable(sandbox);
   return (
     <Tooltip label={allowed ? "Delete" : DELETE_NEEDS_SUSPENDED} withArrow>
@@ -75,7 +69,7 @@ export function ConfirmDelete({
   name: string;
   onCancel: () => void;
   onConfirm: () => void;
-}): import("react").JSX.Element {
+}): JSX.Element {
   return (
     <Modal opened onClose={onCancel} title={`Delete ${name}?`}>
       <Stack>

@@ -162,7 +162,7 @@ function ModifyGmailThreadLabelsPreview({ args, variant }: PreviewProps<ModifyGm
 
 // Exported for gmail/responses.tsx's drafts_create finished view — it re-shows the same clamped
 // body the pending preview did, since the operator still cares whether the sent text matches.
-export function CompactBody({ body }: { body: string }): import("react").JSX.Element {
+export function CompactBody({ body }: { body: string }): JSX.Element {
   const { text, truncated } = firstLines(body, 2);
   return (
     <PreviewText c="dimmed" style={{ whiteSpace: "pre-wrap" }}>
@@ -174,10 +174,7 @@ export function CompactBody({ body }: { body: string }): import("react").JSX.Ele
 
 // Exported for gmail/calls.tsx's combined drafts_create widget, which renders this pre-execution
 // and CreateGmailDraftResultView (responses.tsx) once the call has finished.
-export function CreateGmailDraftPreview({
-  args,
-  variant,
-}: PreviewProps<CreateGmailDraftArgs>): import("react").JSX.Element {
+export function CreateGmailDraftPreview({ args, variant }: PreviewProps<CreateGmailDraftArgs>): JSX.Element {
   // Subject leads as the draft's title; recipients ride one mail-icon line (cc folded in when
   // detailed); the body follows unlabelled — clamped compact, full detailed. A reply draft links to
   // the thread it lands in rather than printing the raw thread id, whose value the href carries.
