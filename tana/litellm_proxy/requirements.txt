@@ -1586,9 +1586,9 @@ oauthlib==3.3.1 \
     --hash=sha256:0f0f8aa759826a193cf66c12ea1af1637f87b9b4622d46e866952bb022e538c9 \
     --hash=sha256:88119c938d2b8fb88561af5f6ee0eec8cc8d552b7bb1f712743136eb7523b7a1
     # via fastapi-sso
-openai==3.13.0 \
-    --hash=sha256:a8f87a9b3b9c08eb446d68bd0a80e8ec907c4c35fdea63f4265c7b34b2de3a60 \
-    --hash=sha256:e35b1f6fe99245e86e37504d9fad1ad2a363807307c424232c1d849bd0666c8e
+openai==2.54.0 \
+    --hash=sha256:89089789197ccdb87f173a03145ed1598d00795220c93e96cf712b1cbf5e5f2b \
+    --hash=sha256:e3e6f8bc1ba30ddf381ace1a14340eed381cb984a1a59bd0f34b5be3b5d49cfa
     # via litellm
 opentelemetry-api==1.44.0 \
     --hash=sha256:67647e5e9566edcf421166fdf022b3537f818635daa852b289e34604dc6fb33a \
