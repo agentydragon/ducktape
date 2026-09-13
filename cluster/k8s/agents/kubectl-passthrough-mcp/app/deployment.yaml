@@ -21,7 +21,7 @@ spec:
       serviceAccountName: kubectl-passthrough-mcp
       containers:
         - name: server
-          image: ghcr.io/containers/kubernetes-mcp-server:v0.0.63
+          image: ghcr.io/containers/kubernetes-mcp-server:v0.0.66
           imagePullPolicy: IfNotPresent
           args:
             # Config is public-only — the OAuth2 provider is public (PKCE),
