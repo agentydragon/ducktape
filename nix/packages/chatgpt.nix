@@ -9,7 +9,7 @@
   pkgs,
 }:
 let
-  version = "26.825.31414";
+  version = "26.908.40834";
 in
 pkgs.stdenv.mkDerivation {
   pname = "chatgpt";
@@ -17,7 +17,7 @@ pkgs.stdenv.mkDerivation {
 
   src = pkgs.fetchurl {
     url = "https://persistent.oaistatic.com/codex-app-prod/linux/deb/pool/main/c/chatgpt/chatgpt_${version}_amd64.deb";
-    hash = "sha256-wXMEi6gPevnNiQT5ofJyr/SUejFPb+l9obuDaEds3Pk=";
+    hash = "sha256-2je457zvquoBnEeMrL5sc+4d3RXg4euzx+8KQt2BisI=";
   };
 
   nativeBuildInputs = with pkgs; [
