@@ -6,7 +6,8 @@ set (Bazel), falling back to Playwright's default browser resolution. The
 browser launches with the shared container-safe flags (needed on RBE, where
 there is no user namespace and /dev/shm is tiny); visual tests that need
 deterministic rendering override `browser` with
-`util.testing.frontend_visual.launch_deterministic_browser`.
+`util.testing.frontend_visual.deterministic_browser_context`, which also seeds
+Chromium's generic-font profile preferences.
 """
 
 from __future__ import annotations

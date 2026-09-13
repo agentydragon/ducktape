@@ -32,7 +32,7 @@ from study_casino.changelog import LATEST_CHANGELOG_ID
 from study_casino.config import Settings
 from util.bazel.runfiles import get_required_path
 from util.testing.asgi import serve_app_sync
-from util.testing.frontend_visual import deterministic_browser_context, launch_deterministic_browser, stability_style
+from util.testing.frontend_visual import deterministic_browser_context, stability_style
 from util.testing.postgres_fixtures import start_postgres_container
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.visual_review import retain_review_asset
@@ -43,7 +43,7 @@ from util.testing.visual_review import retain_review_asset
 pytest_plugins = ("util.playwright",)
 
 if TYPE_CHECKING:
-    from playwright.sync_api import Browser, Playwright, ViewportSize
+    from playwright.sync_api import Playwright, ViewportSize
 
 
 # Two viewports per case: a desktop width that exercises the two-column casino
@@ -84,12 +84,8 @@ CASES: tuple[Case, ...] = (
 
 
 @pytest.fixture
-def browser(playwright_sync: Playwright) -> Iterator[Browser]:
-    instance = launch_deterministic_browser(playwright_sync)
-    try:
-        yield instance
-    finally:
-        instance.close()
+def browser(playwright_sync: Playwright) -> Playwright:
+    return playwright_sync
 
 
 @pytest.fixture(scope="module")
@@ -161,10 +157,10 @@ def _post(origin: str, path: str, payload: dict) -> None:
             raise RuntimeError(f"seed {path} failed: HTTP {response.status}")
 
 
-def _render_case(browser: Browser, origin: str, case: Case, out_dir: Path, suffix: str) -> Path:
+def _render_case(playwright_sync: Playwright, origin: str, case: Case, out_dir: Path, suffix: str) -> Path:
     """Render one case; fails on any browser page error (render health)."""
     context = deterministic_browser_context(
-        browser, viewport=case.viewport, frozen_now_ms=FROZEN_NOW_MS, color_scheme="dark"
+        playwright_sync, viewport=case.viewport, frozen_now_ms=FROZEN_NOW_MS, color_scheme="dark"
     )
     page = context.new_page()
     page_errors: list[str] = []
@@ -186,7 +182,7 @@ def _render_case(browser: Browser, origin: str, case: Case, out_dir: Path, suffi
 
 
 @pytest.mark.parametrize("case", CASES, ids=[case.name for case in CASES])
-def test_casino_views_render(browser: Browser, casino_server: str, tmp_path: Path, case: Case) -> None:
+def test_casino_views_render(browser: Playwright, casino_server: str, tmp_path: Path, case: Case) -> None:
     undeclared_dir = undeclared_outputs_dir()
     first_path = _render_case(browser, casino_server, case, tmp_path, "first")
     second_path = _render_case(browser, casino_server, case, tmp_path, "second")

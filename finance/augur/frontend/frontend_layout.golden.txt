@@ -1,4 +1,6 @@
 ./favicon.svg
+./fonts/Inter.woff2
+./fonts/fonts.css
 ./index.html
 ./main.js
 ./main.js.map

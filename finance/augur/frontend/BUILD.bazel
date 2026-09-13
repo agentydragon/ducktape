@@ -486,6 +486,18 @@ js_run_binary(
 )
 
 copy_file(
+    name = "bundle_inter_font",
+    src = "@inter_variable_font//file",
+    out = "dist/fonts/Inter.woff2",
+)
+
+copy_file(
+    name = "bundle_fonts_css",
+    src = "fonts/fonts.css",
+    out = "dist/fonts/fonts.css",
+)
+
+copy_file(
     name = "bundle_index_html",
     src = "index.html",
     out = "dist/index.html",
@@ -501,7 +513,9 @@ filegroup(
     name = "bundle_base",
     srcs = [
         ":bundle_favicon",
+        ":bundle_fonts_css",
         ":bundle_index_html",
+        ":bundle_inter_font",
         ":main_bundle",
         ":styles_css",
     ],

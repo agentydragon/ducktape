@@ -34,6 +34,23 @@ js_test(
     entry_point = "capture.test.mjs",
 )
 
+js_test(
+    name = "font_environment_test",
+    data = [
+        ":launcher",
+        "@playwright_browsers//:chromium-headless-shell",
+    ],
+    entry_point = "font_environment.test.mjs",
+    env = {
+        "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
+    },
+    no_copy_to_bin = [
+        ":launcher",
+        "@playwright_browsers//:chromium-headless-shell",
+    ],
+    tags = ["visual"],
+)
+
 # Which scenes a Bazel shard owns: filter, then split. Shared by every multi-scene runner.
 js_library(
     name = "sharding",
@@ -69,14 +86,4 @@ js_test(
     name = "visual_review_manifest_test",
     data = [":visual_review_manifest"],
     entry_point = "visual-review-manifest.test.mjs",
-)
-
-# Font files for hermetic rendering.
-filegroup(
-    name = "fonts",
-    srcs = [
-        "fonts/Inter.woff2",
-        "test-fonts.css",
-    ],
-    visibility = ["//visibility:public"],
 )

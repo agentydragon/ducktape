@@ -213,8 +213,7 @@ spa_bundle(
 # Renders the StudyCasino component with mocked state and publishes the
 # screenshot for PR visual review (publishOnly — no checked-in baselines).
 # Reuses the shared Puppeteer lib at //util/testing/frontend_visual.
-# Casino fonts above are wired in instead of the lib's Inter so the test
-# captures the same typography users see in production.
+# Casino fonts above are wired in so the test captures the same typography users see in production.
 
 js_library(
     name = "visual_scenarios",
