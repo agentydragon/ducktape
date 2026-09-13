@@ -315,10 +315,10 @@ oci.pull(
 #   crane digest --platform linux/amd64 docker.io/stalwartlabs/stalwart:<tag>
 oci.pull(
     name = "stalwart",
-    digest = "sha256:93c574e52249c1ebf90061da2c4c0756a7b72abfcc1fec34506a03c2e38b5977",
+    digest = "sha256:388dcb75a70727c5b551249a6d34b1f1321294852489e4fa3a4e6be698b7c4f0",
     image = "mirror.gcr.io/stalwartlabs/stalwart",
     platforms = ["linux/amd64"],
-    tag = "v0.16.21",
+    tag = "v0.16.22",
 )
 
 # Test infrastructure: a real Matrix homeserver for //haku/console/x's Matrix e2e tests. The
