@@ -18,6 +18,7 @@
   ];
 
   ducktape.hakuApprovals.enable = true;
+  ducktape.codex.chatgptPackage = ducktapePackages.chatgpt;
 
   ducktape.forgejoSsh.sopsFile = ../../../ssh_keys/iguana-forgejo.sops.key;
   ducktape.githubSsh.sopsFile = ../../../ssh_keys/iguana-github.sops.key;
@@ -29,7 +30,6 @@
 
   home.packages = [
     ducktapePackages.claude-desktop
-    ducktapePackages.chatgpt
   ];
 
   # ActivityWatch capture + import into the central server. The importer folds this
