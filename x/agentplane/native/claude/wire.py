@@ -198,6 +198,9 @@ class StreamEventFrame(BaseModel):
     event: StreamEvent
     session_id: str
     uuid: str
+    # Present when the model request was caused by one normal user prompt. A continuation after a
+    # tool result deliberately omits it, even when queued input was folded into that continuation.
+    user_message_uuid: str | None = None
 
 
 class AssistantMessage(BaseModel):

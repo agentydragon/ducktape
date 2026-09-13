@@ -65,9 +65,14 @@ def _thread_id(thread_start_response: dict[str, Any]) -> str:
     return thread_id_value
 
 
-def start_turn(process: NativeProcess, *, thread_id: str, request_id: str, text: str) -> str:
-    """Send turn/start and return the turn id from its native acknowledgement."""
-    process.write(driver.turn_start(request_id, thread_id=thread_id, text=text))
+def start_turn(
+    process: NativeProcess, *, thread_id: str, request_id: str, text: str, model: str | None = None
+) -> str:
+    """Send turn/start and return the turn id from its native acknowledgement.
+
+    Codex's optional model is a native turn property, rather than a separate control operation.
+    """
+    process.write(driver.turn_start(request_id, thread_id=thread_id, text=text, model=model))
     started = process.await_frame(lambda item: item.get("id") == request_id, timeout=30)
     turn_result = started.get("result")
     turn = turn_result.get("turn") if isinstance(turn_result, dict) else None
