@@ -43,7 +43,7 @@ bazel_dep(name = "ducktape_haku", version = "0.1.0")
 bazel_dep(name = "ducktape_manifold_mcp_server", version = "0.1.0", dev_dependency = True)
 bazel_dep(name = "ducktape_claude_web_env_environment_manager", version = "0.1.0", dev_dependency = True)
 
-bazel_dep(name = "rules_mypy", version = "0.40.0")
+bazel_dep(name = "rules_mypy", version = "0.41.0")
 bazel_dep(name = "rules_conda", version = "0.3.2")
 
 # aspect_rules_lint's lint actions create empty output files with `touch`, but
@@ -71,20 +71,6 @@ single_version_override(
     module_name = "pybind11_abseil",
     patch_strip = 1,
     patches = ["//third_party/patches:pybind11_abseil_rename_pypi_hub.patch"],
-)
-
-# Fork with two fixes for CI disk exhaustion during mypy type-checking:
-# 1. include_external option: allows mypy aspect to run on @pypi// deps, so they
-#    get their own .mypy_cache outputs that downstream targets can symlink to
-#    (upstream skips external deps, causing each internal target to re-cache them)
-# 2. symlinks instead of shutil.copy(): mypy_runner.py uses symlinks when merging
-#    upstream caches, reducing disk usage from O(n²) to O(n)
-# TODO: Propose these changes upstream and switch back to BCR version if accepted
-archive_override(
-    module_name = "rules_mypy",
-    sha256 = "938b128e28ddbf610ce09f3603d6797a8f023904908d16fb94748c193cda1122",
-    strip_prefix = "rules_mypy-355ae265ccef0e5928a440f2f1a2a9796298ec62",
-    urls = ["https://github.com/agentydragon/rules_mypy/archive/355ae265ccef0e5928a440f2f1a2a9796298ec62.tar.gz"],
 )
 
 # Terraform/OpenTofu validation (cluster/)
