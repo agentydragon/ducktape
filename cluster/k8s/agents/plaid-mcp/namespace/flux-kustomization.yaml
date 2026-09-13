@@ -11,5 +11,6 @@ spec:
 
     namespace: ducktape-flux
   path: ./cluster/k8s/agents/plaid-mcp/namespace
-  prune: true
+  prune: false
+  deletionPolicy: Orphan
   timeout: 2m

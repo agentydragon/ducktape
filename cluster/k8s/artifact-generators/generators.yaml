@@ -881,8 +881,8 @@ spec:
     - name: plaid-mcp
       originRevision: "@repo"
       copy:
-        - from: "@repo/cluster/k8s/agents/plaid-mcp/app/**"
-          to: "@artifact/cluster/k8s/agents/plaid-mcp/app/"
+        - from: "@repo/cluster/k8s/agents/plaid-mcp/**"
+          to: "@artifact/cluster/k8s/agents/plaid-mcp/"
           exclude:
             - flux-kustomization.yaml
 

@@ -13,7 +13,8 @@ spec:
 
     namespace: ducktape-flux
   path: ./cluster/k8s/agents/plaid-mcp/db
-  prune: true
+  prune: false
+  deletionPolicy: Orphan
   wait: true
   dependsOn:
     - name: cnpg
