@@ -21,7 +21,7 @@ require (
 	github.com/minio/minio-go/v7 v7.3.0
 	github.com/pion/ice/v4 v4.4.2
 	github.com/pion/interceptor v0.1.48
-	github.com/pion/rtp v1.10.5
+	github.com/pion/rtp/v2 v2.0.0
 	github.com/pion/sdp/v3 v3.0.19
 	github.com/pion/stun/v3 v3.1.7
 	github.com/pion/webrtc/v4 v4.2.20
