@@ -104,9 +104,7 @@ async def test_queued_inputs_coalesce_into_one_native_user_message(
     replayed = [
         frame
         for frame in parsed
-        if isinstance(frame, wire.UserFrame)
-        and frame.is_replay
-        and frame.message.content == coalesced
+        if isinstance(frame, wire.UserFrame) and frame.is_replay and frame.message.content == coalesced
     ]
     assert len(replayed) == 1
     assert replayed[0].uuid == third.uuid
@@ -191,32 +189,31 @@ async def test_set_model_during_an_active_turn_controls_the_next_model_request(
         await scenarios.launch_handshake(process)
         await scenarios.send(process, "Wait; do not answer early.")
 
-        exchange = await anthropic_messages.await_next_request()
-        stream = sse.message_stream([sse.Text("never finished")], model=MODEL)
-        await exchange.send(*stream.through("content_block_start").events)
-        await scenarios.await_active(process)
+        async with await anthropic_messages.await_next_request() as exchange:
+            stream = sse.message_stream([sse.Text("never finished")], model=MODEL)
+            await exchange.send(*stream.through("content_block_start").events)
+            await scenarios.await_active(process)
 
-        change = driver.set_model(SELECTED_MODEL)
-        await process.send(change)
-        while True:
-            response = await process.next_frame()
-            if (
-                response.get("type") == "control_response"
-                and response.get("response", {}).get("request_id") == change.request_id
-            ):
-                break
-        assert response["response"]["subtype"] == "success"
+            change = driver.set_model(SELECTED_MODEL)
+            await process.send(change)
+            while True:
+                response = await process.next_frame()
+                if (
+                    response.get("type") == "control_response"
+                    and response.get("response", {}).get("request_id") == change.request_id
+                ):
+                    break
+            assert response["response"]["subtype"] == "success"
 
-        await scenarios.interrupt(process, cancel_queued=False)
-        await exchange.wait_client_closed()
-        assert (await scenarios.await_result(process))["is_error"] is True
+            await scenarios.interrupt(process, cancel_queued=False)
+            await exchange.wait_client_closed()
+            assert (await scenarios.await_result(process))["is_error"] is True
 
         await scenarios.send(process, "Reply with exactly: SELECTED_MODEL_OK")
-        next_exchange = await anthropic_messages.await_next_request()
-        assert next_exchange.request.model == SELECTED_MODEL
-        stream = sse.message_stream([sse.Text("SELECTED_MODEL_OK")], model=SELECTED_MODEL)
-        await next_exchange.send(*stream.events)
-        await next_exchange.close()
+        async with await anthropic_messages.await_next_request() as next_exchange:
+            assert next_exchange.request.model == SELECTED_MODEL
+            stream = sse.message_stream([sse.Text("SELECTED_MODEL_OK")], model=SELECTED_MODEL)
+            await next_exchange.send(*stream.events)
         assert (await scenarios.await_result(process))["result"] == "SELECTED_MODEL_OK"
 
 
@@ -232,10 +229,9 @@ async def test_inputs_during_a_tool_coalesce_into_the_tool_result(
         await scenarios.launch_handshake(process)
         first_uuid = await scenarios.send(process, "Wait with the shell, then reply WAIT_DONE.")
 
-        exchange = await anthropic_messages.await_next_request()
-        stream = sse.message_stream([sse.ToolUse("toolu_test_1", "Bash", {"command": WAIT_COMMAND})], model=MODEL)
-        await exchange.send(*stream.events)
-        await exchange.close()
+        async with await anthropic_messages.await_next_request() as exchange:
+            stream = sse.message_stream([sse.ToolUse("toolu_test_1", "Bash", {"command": WAIT_COMMAND})], model=MODEL)
+            await exchange.send(*stream.events)
         active = await scenarios.await_active(process)
         assert active["type"] == "stream_event"
         second_uuid = await scenarios.send(process, SECOND_INPUT)
@@ -243,17 +239,16 @@ async def test_inputs_during_a_tool_coalesce_into_the_tool_result(
         assert first_uuid != second_uuid
         assert second_uuid != third_uuid
 
-        exchange = await anthropic_messages.await_next_request()
-        request = exchange.request
-        (result,) = request.tool_results
-        assert result.tool_use_id == "toolu_test_1"
-        assert "wait_started\nwait_finished\n" in result.text
-        assert SECOND_INPUT in result.text
-        assert THIRD_INPUT in result.text
-        assert SECOND_INPUT not in request.texts("user")
-        stream = sse.message_stream([sse.Text("SECOND_INPUT_OBSERVED")], model=MODEL)
-        await exchange.send(*stream.events)
-        await exchange.close()
+        async with await anthropic_messages.await_next_request() as exchange:
+            request = exchange.request
+            (result,) = request.tool_results
+            assert result.tool_use_id == "toolu_test_1"
+            assert "wait_started\nwait_finished\n" in result.text
+            assert SECOND_INPUT in result.text
+            assert THIRD_INPUT in result.text
+            assert SECOND_INPUT not in request.texts("user")
+            stream = sse.message_stream([sse.Text("SECOND_INPUT_OBSERVED")], model=MODEL)
+            await exchange.send(*stream.events)
 
         assert (await scenarios.await_result(process))["result"] == "SECOND_INPUT_OBSERVED"
         assert process.alive()
@@ -291,17 +286,17 @@ async def test_interrupt_aborts_the_in_flight_model_call(
         await scenarios.launch_handshake(process)
         await scenarios.send(process, "Wait with the shell; do not answer early.")
 
-        exchange = await anthropic_messages.await_next_request()
-        stream = sse.message_stream([sse.Text("never finished")], model=MODEL)
-        await exchange.send(*stream.through("content_block_start").events)
-        await scenarios.await_active(process)
+        async with await anthropic_messages.await_next_request() as exchange:
+            stream = sse.message_stream([sse.Text("never finished")], model=MODEL)
+            await exchange.send(*stream.through("content_block_start").events)
+            await scenarios.await_active(process)
 
-        response = await scenarios.interrupt(process, cancel_queued=False)
-        assert response["response"]["subtype"] == "success"
-        await exchange.wait_client_closed()
-        result = await scenarios.await_result(process)
-        assert result["is_error"] is True
-        assert process.alive()
+            response = await scenarios.interrupt(process, cancel_queued=False)
+            assert response["response"]["subtype"] == "success"
+            await exchange.wait_client_closed()
+            result = await scenarios.await_result(process)
+            assert result["is_error"] is True
+            assert process.alive()
     captured = process.stdout_frames()
     frames.assert_failure(frames.terminals(captured)[-1], result_fragment="", terminal_reason="aborted_streaming")
     assert not frames.tool_uses(captured)

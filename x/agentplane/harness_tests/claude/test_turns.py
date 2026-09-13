@@ -22,18 +22,19 @@ async def test_baseline_turn(claude: ClaudeHarness, anthropic_messages: Anthropi
         await scenarios.launch_handshake(process)
         await scenarios.send(process, "Reply with exactly: CAPTURE_BASELINE_OK")
 
-        exchange = await anthropic_messages.await_next_request()
-        request = exchange.request
-        assert request.model == MODEL
-        assert request.stream is True
-        assert request.thinking.type == "enabled"
-        assert request.tool_names == list(TOOLS)
-        assert request.system_text.endswith(SYSTEM_PROMPT)
-        assert len(request.system_text) < 1000
-        assert request.texts("user")[-1] == "Reply with exactly: CAPTURE_BASELINE_OK"
-        stream = sse.message_stream([sse.Thinking("brief", "sig_test_1"), sse.Text("CAPTURE_BASELINE_OK")], model=MODEL)
-        await exchange.send(*stream.events)
-        await exchange.close()
+        async with await anthropic_messages.await_next_request() as exchange:
+            request = exchange.request
+            assert request.model == MODEL
+            assert request.stream is True
+            assert request.thinking.type == "enabled"
+            assert request.tool_names == list(TOOLS)
+            assert request.system_text.endswith(SYSTEM_PROMPT)
+            assert len(request.system_text) < 1000
+            assert request.texts("user")[-1] == "Reply with exactly: CAPTURE_BASELINE_OK"
+            stream = sse.message_stream(
+                [sse.Thinking("brief", "sig_test_1"), sse.Text("CAPTURE_BASELINE_OK")], model=MODEL
+            )
+            await exchange.send(*stream.events)
 
         result = await scenarios.await_result(process)
         assert result["result"] == "CAPTURE_BASELINE_OK"
@@ -47,24 +48,22 @@ async def test_idle_resume_replays_the_transcript_from_disk(
     async with claude.start(anthropic_messages) as first:
         await scenarios.launch_handshake(first)
         await scenarios.send(first, "Reply with exactly: IDLE_RESUME_SEED_OK")
-        exchange = await anthropic_messages.await_next_request()
-        stream = sse.message_stream([sse.Text("IDLE_RESUME_SEED_OK")], model=MODEL)
-        await exchange.send(*stream.events)
-        await exchange.close()
+        async with await anthropic_messages.await_next_request() as exchange:
+            stream = sse.message_stream([sse.Text("IDLE_RESUME_SEED_OK")], model=MODEL)
+            await exchange.send(*stream.events)
         seed = await scenarios.await_result(first)
         assert seed["result"] == "IDLE_RESUME_SEED_OK"
 
     async with claude.start(anthropic_messages, resume_id=session_id(seed)) as second:
         await scenarios.launch_handshake(second)
         await scenarios.send(second, "Reply with exactly: IDLE_RESUME_OK")
-        exchange = await anthropic_messages.await_next_request()
-        request = exchange.request
-        assert request.texts("user")[-1] == "Reply with exactly: IDLE_RESUME_OK"
-        assert "Reply with exactly: IDLE_RESUME_SEED_OK" in request.texts("user")
-        assert request.texts("assistant") == ["IDLE_RESUME_SEED_OK"]
-        stream = sse.message_stream([sse.Text("IDLE_RESUME_OK")], model=MODEL)
-        await exchange.send(*stream.events)
-        await exchange.close()
+        async with await anthropic_messages.await_next_request() as exchange:
+            request = exchange.request
+            assert request.texts("user")[-1] == "Reply with exactly: IDLE_RESUME_OK"
+            assert "Reply with exactly: IDLE_RESUME_SEED_OK" in request.texts("user")
+            assert request.texts("assistant") == ["IDLE_RESUME_SEED_OK"]
+            stream = sse.message_stream([sse.Text("IDLE_RESUME_OK")], model=MODEL)
+            await exchange.send(*stream.events)
         assert (await scenarios.await_result(second))["result"] == "IDLE_RESUME_OK"
     frames.assert_success(second.stdout_frames(), "IDLE_RESUME_OK")
 
@@ -76,9 +75,9 @@ async def test_crash_before_a_completed_turn_leaves_claudes_session_unresumable(
     async with claude.start(anthropic_messages, session_id=CRASHED_SESSION) as first:
         await scenarios.launch_handshake(first)
         await scenarios.send(first, IN_FLIGHT_INPUT)
-        exchange = await anthropic_messages.await_next_request()
-        assert await first.crash() < 0
-    await exchange.wait_client_closed()
+        async with await anthropic_messages.await_next_request() as exchange:
+            assert await first.crash() < 0
+            await exchange.wait_client_closed()
 
     async with claude.start(anthropic_messages, resume_id=CRASHED_SESSION) as resumed:
         await resumed.send(driver.initialize())
@@ -94,10 +93,9 @@ async def test_resume_after_crash_replays_completed_history_but_drops_active_and
     async with claude.start(anthropic_messages, session_id=CRASHED_SESSION) as seeded:
         await scenarios.launch_handshake(seeded)
         await scenarios.send(seeded, SEED_INPUT)
-        exchange = await anthropic_messages.await_next_request()
-        stream = sse.message_stream([sse.Text("CRASH_RESUME_SEED_OK")], model=MODEL)
-        await exchange.send(*stream.events)
-        await exchange.close()
+        async with await anthropic_messages.await_next_request() as exchange:
+            stream = sse.message_stream([sse.Text("CRASH_RESUME_SEED_OK")], model=MODEL)
+            await exchange.send(*stream.events)
         seed = await scenarios.await_result(seeded)
         assert seed["result"] == "CRASH_RESUME_SEED_OK"
         assert session_id(seed) == CRASHED_SESSION
@@ -105,35 +103,33 @@ async def test_resume_after_crash_replays_completed_history_but_drops_active_and
     async with claude.start(anthropic_messages, resume_id=CRASHED_SESSION, replay_user_messages=True) as first:
         await scenarios.launch_handshake(first)
         await scenarios.send(first, IN_FLIGHT_INPUT)
-        exchange = await anthropic_messages.await_next_request()
-
-        queued = driver.user_frame(QUEUED_INPUT)
-        await first.send(queued)
-        while True:
-            frame = await first.next_frame()
-            if (
-                frame.get("type") == "command_lifecycle"
-                and frame.get("command_uuid") == queued.uuid
-                and frame.get("state") == "queued"
-            ):
-                break
-        assert await first.crash() < 0
-    await exchange.wait_client_closed()
+        async with await anthropic_messages.await_next_request() as exchange:
+            queued = driver.user_frame(QUEUED_INPUT)
+            await first.send(queued)
+            while True:
+                frame = await first.next_frame()
+                if (
+                    frame.get("type") == "command_lifecycle"
+                    and frame.get("command_uuid") == queued.uuid
+                    and frame.get("state") == "queued"
+                ):
+                    break
+            assert await first.crash() < 0
+            await exchange.wait_client_closed()
 
     async with claude.start(anthropic_messages, resume_id=CRASHED_SESSION) as resumed:
         await scenarios.launch_handshake(resumed)
         await scenarios.send(resumed, RECOVERY_INPUT)
-        exchange = await anthropic_messages.await_next_request()
-        replay = exchange.request
-        user_texts = replay.texts("user")
-        assert user_texts[-1] == RECOVERY_INPUT
-        assert SEED_INPUT in user_texts
-        assert QUEUED_INPUT not in user_texts
-        assert IN_FLIGHT_INPUT not in user_texts
-        assert replay.texts("assistant") == ["CRASH_RESUME_SEED_OK"]
-        stream = sse.message_stream([sse.Text("CRASH_RESUME_OK")], model=MODEL)
-        await exchange.send(*stream.events)
-        await exchange.close()
+        async with await anthropic_messages.await_next_request() as exchange:
+            replay = exchange.request
+            user_texts = replay.texts("user")
+            assert user_texts[-1] == RECOVERY_INPUT
+            assert SEED_INPUT in user_texts
+            assert QUEUED_INPUT not in user_texts
+            assert IN_FLIGHT_INPUT not in user_texts
+            assert replay.texts("assistant") == ["CRASH_RESUME_SEED_OK"]
+            stream = sse.message_stream([sse.Text("CRASH_RESUME_OK")], model=MODEL)
+            await exchange.send(*stream.events)
         assert (await scenarios.await_result(resumed))["result"] == "CRASH_RESUME_OK"
 
 

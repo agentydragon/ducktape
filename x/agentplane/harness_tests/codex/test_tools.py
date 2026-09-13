@@ -27,42 +27,40 @@ async def test_parallel_shell_commands_report_output_and_exit_codes(
             process, thread_id=thread_id, request_id="capture-3", text="Use the shell probe and report its outcomes."
         )
 
-        exchange = await openai_responses.await_next_request()
-        stream = sse.response_stream(
-            [
-                sse.Reasoning("run both", "enc_test_1"),
-                sse.FunctionCall("call_test_1", "exec_command", {"cmd": "printf 'PROBE_STDOUT\\n'"}),
-                sse.FunctionCall("call_test_2", "exec_command", {"cmd": PROBE_FAILURE}),
-            ],
-            model=MODEL,
-        )
-        await exchange.send(*stream.events)
-        await exchange.close()
+        async with await openai_responses.await_next_request() as exchange:
+            stream = sse.response_stream(
+                [
+                    sse.Reasoning("run both", "enc_test_1"),
+                    sse.FunctionCall("call_test_1", "exec_command", {"cmd": "printf 'PROBE_STDOUT\\n'"}),
+                    sse.FunctionCall("call_test_2", "exec_command", {"cmd": PROBE_FAILURE}),
+                ],
+                model=MODEL,
+            )
+            await exchange.send(*stream.events)
 
-        exchange = await openai_responses.await_next_request()
-        request = exchange.request
-        assert request.item_kinds == [
-            "message:user",
-            "reasoning",
-            "function_call",
-            "function_call",
-            "function_call_output",
-            "function_call_output",
-        ]
-        # The reasoning item's encrypted content comes back verbatim ahead of the calls.
-        assert request.reasoning[0].encrypted_content == "enc_test_1"
-        assert [call.call_id for call in request.function_calls] == ["call_test_1", "call_test_2"]
-        first, second = request.function_call_outputs
-        assert first.call_id == "call_test_1"
-        assert "PROBE_STDOUT" in first.output
-        assert "exited with code 0" in first.output
-        assert second.call_id == "call_test_2"
-        assert "probe stdout before failure" in second.output
-        assert "probe stderr before failure" in second.output
-        assert "exited with code 23" in second.output
-        stream = sse.response_stream([sse.Message("SHELL_PROBE_DONE")], model=MODEL)
-        await exchange.send(*stream.events)
-        await exchange.close()
+        async with await openai_responses.await_next_request() as exchange:
+            request = exchange.request
+            assert request.item_kinds == [
+                "message:user",
+                "reasoning",
+                "function_call",
+                "function_call",
+                "function_call_output",
+                "function_call_output",
+            ]
+            # The reasoning item's encrypted content comes back verbatim ahead of the calls.
+            assert request.reasoning[0].encrypted_content == "enc_test_1"
+            assert [call.call_id for call in request.function_calls] == ["call_test_1", "call_test_2"]
+            first, second = request.function_call_outputs
+            assert first.call_id == "call_test_1"
+            assert "PROBE_STDOUT" in first.output
+            assert "exited with code 0" in first.output
+            assert second.call_id == "call_test_2"
+            assert "probe stdout before failure" in second.output
+            assert "probe stderr before failure" in second.output
+            assert "exited with code 23" in second.output
+            stream = sse.response_stream([sse.Message("SHELL_PROBE_DONE")], model=MODEL)
+            await exchange.send(*stream.events)
 
         assert (await scenarios.await_turn_completed(process))["params"]["turn"]["status"] == "completed"
         assert process.alive()
@@ -95,42 +93,39 @@ async def test_file_edit_round_trip_changes_the_workspace(
             text="Read editable.txt, change it to exactly `after\\n`, reread it, then reply FILE_EDIT_DONE.",
         )
 
-        exchange = await openai_responses.await_next_request()
-        stream = sse.response_stream(
-            [sse.FunctionCall("call_test_1", "exec_command", {"cmd": "cat editable.txt"})], model=MODEL
-        )
-        await exchange.send(*stream.events)
-        await exchange.close()
+        async with await openai_responses.await_next_request() as exchange:
+            stream = sse.response_stream(
+                [sse.FunctionCall("call_test_1", "exec_command", {"cmd": "cat editable.txt"})], model=MODEL
+            )
+            await exchange.send(*stream.events)
 
-        exchange = await openai_responses.await_next_request()
-        (read_output,) = exchange.request.function_call_outputs
-        assert read_output.call_id == "call_test_1"
-        assert "before" in read_output.output
-        stream = sse.response_stream(
-            [sse.FunctionCall("call_test_2", "exec_command", {"cmd": "printf 'after\\n' > editable.txt"})], model=MODEL
-        )
-        await exchange.send(*stream.events)
-        await exchange.close()
+        async with await openai_responses.await_next_request() as exchange:
+            (read_output,) = exchange.request.function_call_outputs
+            assert read_output.call_id == "call_test_1"
+            assert "before" in read_output.output
+            stream = sse.response_stream(
+                [sse.FunctionCall("call_test_2", "exec_command", {"cmd": "printf 'after\\n' > editable.txt"})],
+                model=MODEL,
+            )
+            await exchange.send(*stream.events)
 
-        exchange = await openai_responses.await_next_request()
-        (write_output,) = exchange.request.function_call_outputs[-1:]
-        assert write_output.call_id == "call_test_2"
-        assert "exited with code 0" in write_output.output
-        assert editable.read_text() == "after\n"
-        stream = sse.response_stream(
-            [sse.FunctionCall("call_test_3", "exec_command", {"cmd": "cat editable.txt"})], model=MODEL
-        )
-        await exchange.send(*stream.events)
-        await exchange.close()
+        async with await openai_responses.await_next_request() as exchange:
+            (write_output,) = exchange.request.function_call_outputs[-1:]
+            assert write_output.call_id == "call_test_2"
+            assert "exited with code 0" in write_output.output
+            assert editable.read_text() == "after\n"
+            stream = sse.response_stream(
+                [sse.FunctionCall("call_test_3", "exec_command", {"cmd": "cat editable.txt"})], model=MODEL
+            )
+            await exchange.send(*stream.events)
 
-        exchange = await openai_responses.await_next_request()
-        (reread_output,) = exchange.request.function_call_outputs[-1:]
-        assert reread_output.call_id == "call_test_3"
-        assert "after" in reread_output.output
-        assert "before" not in reread_output.output
-        stream = sse.response_stream([sse.Message("FILE_EDIT_DONE")], model=MODEL)
-        await exchange.send(*stream.events)
-        await exchange.close()
+        async with await openai_responses.await_next_request() as exchange:
+            (reread_output,) = exchange.request.function_call_outputs[-1:]
+            assert reread_output.call_id == "call_test_3"
+            assert "after" in reread_output.output
+            assert "before" not in reread_output.output
+            stream = sse.response_stream([sse.Message("FILE_EDIT_DONE")], model=MODEL)
+            await exchange.send(*stream.events)
 
         assert (await scenarios.await_turn_completed(process))["params"]["turn"]["status"] == "completed"
     captured = process.stdout_frames()

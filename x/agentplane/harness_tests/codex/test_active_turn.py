@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 import pytest_bazel
 
 from x.agentplane.harness_tests.codex import frames, responses_sse as sse
@@ -34,10 +32,9 @@ async def test_second_input_during_a_tool_joins_the_running_turn(
             process, thread_id=thread_id, request_id="capture-3", text="Wait with the shell."
         )
 
-        exchange = await openai_responses.await_next_request()
-        stream = sse.response_stream([_wait_call()], model=MODEL)
-        await exchange.send(*stream.events)
-        await exchange.close()
+        async with await openai_responses.await_next_request() as exchange:
+            stream = sse.response_stream([_wait_call()], model=MODEL)
+            await exchange.send(*stream.events)
         while True:
             started = await process.next_frame()
             if started.get("method") == "item/started" and started["params"]["item"].get("type") == "commandExecution":
@@ -52,15 +49,14 @@ async def test_second_input_during_a_tool_joins_the_running_turn(
         # The second turn/start is accepted as input for the turn already running.
         assert response["result"]["turn"]["id"] == turn_id
 
-        exchange = await openai_responses.await_next_request()
-        request = exchange.request
-        assert request.item_kinds == ["message:user", "function_call", "function_call_output", "message:user"]
-        assert request.function_call_outputs[0].call_id == "call_test_1"
-        assert "wait_finished" in request.function_call_outputs[0].output
-        assert request.messages("user")[-1].text == SECOND_INPUT
-        stream = sse.response_stream([sse.Message("SECOND_INPUT_OBSERVED")], model=MODEL)
-        await exchange.send(*stream.events)
-        await exchange.close()
+        async with await openai_responses.await_next_request() as exchange:
+            request = exchange.request
+            assert request.item_kinds == ["message:user", "function_call", "function_call_output", "message:user"]
+            assert request.function_call_outputs[0].call_id == "call_test_1"
+            assert "wait_finished" in request.function_call_outputs[0].output
+            assert request.messages("user")[-1].text == SECOND_INPUT
+            stream = sse.response_stream([sse.Message("SECOND_INPUT_OBSERVED")], model=MODEL)
+            await exchange.send(*stream.events)
 
         assert (await scenarios.await_turn_completed(process))["params"]["turn"]["status"] == "completed"
         assert process.alive()
@@ -81,10 +77,9 @@ async def test_steer_during_a_tool_joins_the_running_turn(
             process, thread_id=thread_id, request_id="capture-3", text="Wait with the shell."
         )
 
-        exchange = await openai_responses.await_next_request()
-        stream = sse.response_stream([_wait_call()], model=MODEL)
-        await exchange.send(*stream.events)
-        await exchange.close()
+        async with await openai_responses.await_next_request() as exchange:
+            stream = sse.response_stream([_wait_call()], model=MODEL)
+            await exchange.send(*stream.events)
         while True:
             frame = await process.next_frame()
             if frame.get("method") == "item/started" and frame["params"]["item"].get("type") == "commandExecution":
@@ -95,13 +90,12 @@ async def test_steer_during_a_tool_joins_the_running_turn(
         )
         assert response["result"]["turnId"] == turn_id
 
-        exchange = await openai_responses.await_next_request()
-        request = exchange.request
-        assert request.item_kinds == ["message:user", "function_call", "function_call_output", "message:user"]
-        assert request.messages("user")[-1].text == STEER_INPUT
-        stream = sse.response_stream([sse.Message("STEERED")], model=MODEL)
-        await exchange.send(*stream.events)
-        await exchange.close()
+        async with await openai_responses.await_next_request() as exchange:
+            request = exchange.request
+            assert request.item_kinds == ["message:user", "function_call", "function_call_output", "message:user"]
+            assert request.messages("user")[-1].text == STEER_INPUT
+            stream = sse.response_stream([sse.Message("STEERED")], model=MODEL)
+            await exchange.send(*stream.events)
 
         assert (await scenarios.await_turn_completed(process))["params"]["turn"]["status"] == "completed"
     captured = process.stdout_frames()
@@ -121,10 +115,10 @@ async def test_interrupt_aborts_the_in_flight_model_call(
         )
         await scenarios.await_turn_started(process)
 
-        exchange = await openai_responses.await_next_request()
-        response = await scenarios.interrupt(process, thread_id=thread_id, turn_id=turn_id, request_id="capture-5")
-        assert "error" not in response
-        await exchange.wait_client_closed()
+        async with await openai_responses.await_next_request() as exchange:
+            response = await scenarios.interrupt(process, thread_id=thread_id, turn_id=turn_id, request_id="capture-5")
+            assert "error" not in response
+            await exchange.wait_client_closed()
 
         terminal = await scenarios.await_turn_completed(process)
         assert terminal["params"]["turn"]["status"] == "interrupted"
@@ -133,51 +127,49 @@ async def test_interrupt_aborts_the_in_flight_model_call(
     assert not frames.agent_texts(captured)
 
 
-def test_interrupt_drops_joined_inputs_before_the_next_model_request(
-    codex: CodexHarness, upstream: ScriptedUpstream
+async def test_interrupt_drops_joined_inputs_before_the_next_model_request(
+    codex: CodexHarness, openai_responses: OpenAIResponses
 ) -> None:
     """Joined active-turn inputs vanish when their turn is interrupted before model consumption."""
-    with codex.start(upstream) as process:
-        thread_id = scenarios.launch_handshake(process, cwd=str(codex.workspace), model=MODEL, effort=EFFORT)[
+    async with codex.start(openai_responses) as process:
+        thread_id = (await scenarios.launch_handshake(process, cwd=str(codex.workspace), model=MODEL, effort=EFFORT))[
             "thread_id"
         ]
-        turn_id = scenarios.start_turn(
+        turn_id = await scenarios.start_turn(
             process, thread_id=thread_id, request_id="interrupt-queue-1", text="Wait; do not answer early."
         )
-        scenarios.await_turn_started(process)
-        initial_raw = upstream.next_request()
+        await scenarios.await_turn_started(process)
+        async with await openai_responses.await_next_request() as initial_exchange:
+            for request_id, text in (
+                ("interrupt-queue-2", INTERRUPTED_QUEUE_FIRST),
+                ("interrupt-queue-3", INTERRUPTED_QUEUE_SECOND),
+            ):
+                await process.send(driver.turn_start(request_id, thread_id=thread_id, text=text))
+                while True:
+                    response = await process.next_frame()
+                    if response.get("id") == request_id:
+                        break
+                assert response["result"]["turn"]["id"] == turn_id
 
-        for request_id, text in (
-            ("interrupt-queue-2", INTERRUPTED_QUEUE_FIRST),
-            ("interrupt-queue-3", INTERRUPTED_QUEUE_SECOND),
-        ):
-            process.write(driver.turn_start(request_id, thread_id=thread_id, text=text))
+            response = await scenarios.interrupt(
+                process, thread_id=thread_id, turn_id=turn_id, request_id="interrupt-queue-4"
+            )
+            assert "error" not in response
+            await initial_exchange.wait_client_closed()
+            assert (await scenarios.await_turn_completed(process))["params"]["turn"]["status"] == "interrupted"
 
-            def has_request_id(frame: dict[str, Any], expected: str = request_id) -> bool:
-                return frame.get("id") == expected
-
-            response = process.await_frame(has_request_id, timeout=30)
-            assert response["result"]["turn"]["id"] == turn_id
-
-        response = scenarios.interrupt(process, thread_id=thread_id, turn_id=turn_id, request_id="interrupt-queue-4")
-        assert "error" not in response
-        assert initial_raw.client_closed.wait(30)
-        assert scenarios.await_turn_completed(process)["params"]["turn"]["status"] == "interrupted"
-
-        scenarios.start_turn(process, thread_id=thread_id, request_id="interrupt-queue-5", text=INTERRUPT_RECOVERY)
-        recovery_raw = upstream.next_request()
-        request = ResponsesRequest.parse(recovery_raw)
-        texts = [message.text for message in request.messages("user")]
-        assert texts[-1] == INTERRUPT_RECOVERY
-        assert all(
-            marker not in text for marker in (INTERRUPTED_QUEUE_FIRST, INTERRUPTED_QUEUE_SECOND) for text in texts
+        await scenarios.start_turn(
+            process, thread_id=thread_id, request_id="interrupt-queue-5", text=INTERRUPT_RECOVERY
         )
-        upstream.respond(
-            recovery_raw, sse.response_stream([sse.Message("CODEX_INTERRUPT_QUEUE_RECOVERY_OK")], model=MODEL)
-        )
-        assert scenarios.await_turn_completed(process)["params"]["turn"]["status"] == "completed"
-
-    upstream.assert_quiescent()
+        async with await openai_responses.await_next_request() as recovery_exchange:
+            texts = [message.text for message in recovery_exchange.request.messages("user")]
+            assert texts[-1] == INTERRUPT_RECOVERY
+            assert all(
+                marker not in text for marker in (INTERRUPTED_QUEUE_FIRST, INTERRUPTED_QUEUE_SECOND) for text in texts
+            )
+            stream = sse.response_stream([sse.Message("CODEX_INTERRUPT_QUEUE_RECOVERY_OK")], model=MODEL)
+            await recovery_exchange.send(*stream.events)
+            assert (await scenarios.await_turn_completed(process))["params"]["turn"]["status"] == "completed"
 
 
 if __name__ == "__main__":

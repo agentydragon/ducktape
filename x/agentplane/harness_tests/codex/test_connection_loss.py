@@ -55,35 +55,33 @@ async def test_stream_lost_after_visible_text_is_retried_and_the_thread_continue
             process, thread_id=thread_id, request_id="capture-3", text="Reply with exactly: POST_FAILURE_FIRST_OK"
         )
 
-        exchange = await openai_responses.await_next_request()
-        await exchange.send(
-            *sse.response_stream([sse.Message("POST_FAILURE_FIRST_OK")], model=MODEL)
-            .through("response.output_text.delta")
-            .events
-        )
-        await exchange.abort()
+        async with await openai_responses.await_next_request() as exchange:
+            await exchange.send(
+                *sse.response_stream([sse.Message("POST_FAILURE_FIRST_OK")], model=MODEL)
+                .through("response.output_text.delta")
+                .events
+            )
+            await exchange.abort()
         notice = await scenarios.await_error(process)
         assert notice["params"]["willRetry"] is True
 
-        exchange = await openai_responses.await_next_request()
-        request = exchange.request
-        # The retry resends the turn without the partial text.
-        assert request.item_kinds == ["message:user"]
-        stream = sse.response_stream([sse.Message("POST_FAILURE_FIRST_OK")], model=MODEL)
-        await exchange.send(*stream.events)
-        await exchange.close()
+        async with await openai_responses.await_next_request() as exchange:
+            request = exchange.request
+            # The retry resends the turn without the partial text.
+            assert request.item_kinds == ["message:user"]
+            stream = sse.response_stream([sse.Message("POST_FAILURE_FIRST_OK")], model=MODEL)
+            await exchange.send(*stream.events)
         assert (await scenarios.await_turn_completed(process))["params"]["turn"]["status"] == "completed"
 
         await scenarios.start_turn(
             process, thread_id=thread_id, request_id="capture-4", text="Reply with exactly: POST_FAILURE_FOLLOW_UP_OK"
         )
-        exchange = await openai_responses.await_next_request()
-        request = exchange.request
-        assert request.item_kinds == ["message:user", "message:assistant", "message:user"]
-        assert request.messages("assistant")[0].text == "POST_FAILURE_FIRST_OK"
-        stream = sse.response_stream([sse.Message("POST_FAILURE_FOLLOW_UP_OK")], model=MODEL)
-        await exchange.send(*stream.events)
-        await exchange.close()
+        async with await openai_responses.await_next_request() as exchange:
+            request = exchange.request
+            assert request.item_kinds == ["message:user", "message:assistant", "message:user"]
+            assert request.messages("assistant")[0].text == "POST_FAILURE_FIRST_OK"
+            stream = sse.response_stream([sse.Message("POST_FAILURE_FOLLOW_UP_OK")], model=MODEL)
+            await exchange.send(*stream.events)
         assert (await scenarios.await_turn_completed(process))["params"]["turn"]["status"] == "completed"
     captured = process.stdout_frames()
     frames.assert_success(captured, "POST_FAILURE_FOLLOW_UP_OK")
@@ -101,7 +99,8 @@ async def test_retry_exhaustion_fails_the_turn_and_the_thread_accepts_the_next_i
             process, thread_id=thread_id, request_id="capture-3", text="Reply with exactly: CONNECTION_EXHAUSTION_OK"
         )
         for _ in range(1 + MAX_RETRIES):
-            await (await openai_responses.await_next_request()).abort()
+            async with await openai_responses.await_next_request() as exchange:
+                await exchange.abort()
         failed = await scenarios.await_turn_completed(process)
         assert failed["params"]["turn"]["status"] == "failed"
         assert process.alive()
@@ -112,13 +111,12 @@ async def test_retry_exhaustion_fails_the_turn_and_the_thread_accepts_the_next_i
             request_id="capture-4",
             text="Reply with exactly: POST_EXHAUSTION_FOLLOW_UP_OK",
         )
-        exchange = await openai_responses.await_next_request()
-        request = exchange.request
-        assert request.item_kinds == ["message:user", "message:user"]
-        assert request.messages("user")[-1].text == "Reply with exactly: POST_EXHAUSTION_FOLLOW_UP_OK"
-        stream = sse.response_stream([sse.Message("POST_EXHAUSTION_FOLLOW_UP_OK")], model=MODEL)
-        await exchange.send(*stream.events)
-        await exchange.close()
+        async with await openai_responses.await_next_request() as exchange:
+            request = exchange.request
+            assert request.item_kinds == ["message:user", "message:user"]
+            assert request.messages("user")[-1].text == "Reply with exactly: POST_EXHAUSTION_FOLLOW_UP_OK"
+            stream = sse.response_stream([sse.Message("POST_EXHAUSTION_FOLLOW_UP_OK")], model=MODEL)
+            await exchange.send(*stream.events)
         assert (await scenarios.await_turn_completed(process))["params"]["turn"]["status"] == "completed"
     captured = process.stdout_frames()
     assert [error.will_retry for error in frames.errors(captured)] == [True] * MAX_RETRIES + [False]

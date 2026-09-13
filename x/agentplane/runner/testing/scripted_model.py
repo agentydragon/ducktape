@@ -69,8 +69,8 @@ class ScriptedModel[RequestT: BaseModel](abc.ABC):
         return self.parse(await self.next_exchange())
 
     async def reply(self, request: ModelRequest[RequestT], *items: Item) -> None:
-        await request._exchange.send(*self.stream(list(items)))
-        await request._exchange.close()
+        async with request._exchange as exchange:
+            await exchange.send(*self.stream(list(items)))
 
     async def hold(self, request: ModelRequest[RequestT]) -> None:
         """Begin an answer and never finish it, so the turn stays in flight until interrupted."""

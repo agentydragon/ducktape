@@ -18,18 +18,18 @@ async def test_stream_lost_before_content_is_retried_without_streaming(
         await scenarios.launch_handshake(process)
         await scenarios.send(process, "Reply with exactly: CONNECTION_RETRY_OK")
 
-        exchange = await anthropic_messages.await_next_request()
-        assert exchange.request.stream is True
-        await exchange.send(*sse.message_stream([sse.Text("lost")], model=MODEL).through("message_start").events)
-        await exchange.abort()
+        async with await anthropic_messages.await_next_request() as exchange:
+            assert exchange.request.stream is True
+            await exchange.send(*sse.message_stream([sse.Text("lost")], model=MODEL).through("message_start").events)
+            await exchange.abort()
 
         # Claude Code retries the same turn as a non-streaming request.
-        exchange = await anthropic_messages.await_next_request()
-        request = exchange.request
-        assert request.stream is False
-        assert request.texts("user")[-1] == "Reply with exactly: CONNECTION_RETRY_OK"
-        assert request.texts("assistant") == []
-        await exchange.respond(sse.message_body([sse.Text("CONNECTION_RETRY_OK")], model=MODEL))
+        async with await anthropic_messages.await_next_request() as exchange:
+            request = exchange.request
+            assert request.stream is False
+            assert request.texts("user")[-1] == "Reply with exactly: CONNECTION_RETRY_OK"
+            assert request.texts("assistant") == []
+            await exchange.respond(sse.message_body([sse.Text("CONNECTION_RETRY_OK")], model=MODEL))
 
         assert (await scenarios.await_result(process))["result"] == "CONNECTION_RETRY_OK"
         assert process.alive()
@@ -45,29 +45,28 @@ async def test_stream_lost_after_visible_text_is_retried_without_streaming(
         await scenarios.launch_handshake(process)
         await scenarios.send(process, "Reply with exactly: POST_FAILURE_FIRST_OK")
 
-        exchange = await anthropic_messages.await_next_request()
-        await exchange.send(
-            *sse.message_stream([sse.Text("POST_FAILURE_FIRST_OK")], model=MODEL).through("text_delta").events
-        )
-        await exchange.abort()
+        async with await anthropic_messages.await_next_request() as exchange:
+            await exchange.send(
+                *sse.message_stream([sse.Text("POST_FAILURE_FIRST_OK")], model=MODEL).through("text_delta").events
+            )
+            await exchange.abort()
 
         # The visible partial text is discarded and the whole turn is retried without streaming.
-        exchange = await anthropic_messages.await_next_request()
-        request = exchange.request
-        assert request.stream is False
-        assert request.texts("assistant") == []
-        await exchange.respond(sse.message_body([sse.Text("POST_FAILURE_FIRST_OK")], model=MODEL))
+        async with await anthropic_messages.await_next_request() as exchange:
+            request = exchange.request
+            assert request.stream is False
+            assert request.texts("assistant") == []
+            await exchange.respond(sse.message_body([sse.Text("POST_FAILURE_FIRST_OK")], model=MODEL))
         assert (await scenarios.await_result(process))["result"] == "POST_FAILURE_FIRST_OK"
         assert process.alive()
 
         await scenarios.send(process, "Reply with exactly: POST_FAILURE_FOLLOW_UP_OK")
-        exchange = await anthropic_messages.await_next_request()
-        request = exchange.request
-        assert request.texts("user")[-1] == "Reply with exactly: POST_FAILURE_FOLLOW_UP_OK"
-        assert request.texts("assistant") == ["POST_FAILURE_FIRST_OK"]
-        stream = sse.message_stream([sse.Text("POST_FAILURE_FOLLOW_UP_OK")], model=MODEL)
-        await exchange.send(*stream.events)
-        await exchange.close()
+        async with await anthropic_messages.await_next_request() as exchange:
+            request = exchange.request
+            assert request.texts("user")[-1] == "Reply with exactly: POST_FAILURE_FOLLOW_UP_OK"
+            assert request.texts("assistant") == ["POST_FAILURE_FIRST_OK"]
+            stream = sse.message_stream([sse.Text("POST_FAILURE_FOLLOW_UP_OK")], model=MODEL)
+            await exchange.send(*stream.events)
         assert (await scenarios.await_result(process))["result"] == "POST_FAILURE_FOLLOW_UP_OK"
     captured = process.stdout_frames()
     assert [terminal.is_error for terminal in frames.terminals(captured)] == [False, False]
@@ -81,19 +80,19 @@ async def test_retry_exhaustion_fails_the_turn_and_the_process_accepts_the_next_
         await scenarios.launch_handshake(process)
         await scenarios.send(process, "Reply with exactly: CONNECTION_EXHAUSTION_OK")
         for _ in range(1 + MAX_RETRIES):
-            await (await anthropic_messages.await_next_request()).abort()
+            async with await anthropic_messages.await_next_request() as exchange:
+                await exchange.abort()
         failed = await scenarios.await_result(process)
         assert failed["is_error"] is True
         assert process.alive()
 
         await scenarios.send(process, "Reply with exactly: POST_EXHAUSTION_FOLLOW_UP_OK")
-        exchange = await anthropic_messages.await_next_request()
-        request = exchange.request
-        assert request.texts("user")[-1] == "Reply with exactly: POST_EXHAUSTION_FOLLOW_UP_OK"
-        assert request.texts("assistant") == []
-        stream = sse.message_stream([sse.Text("POST_EXHAUSTION_FOLLOW_UP_OK")], model=MODEL)
-        await exchange.send(*stream.events)
-        await exchange.close()
+        async with await anthropic_messages.await_next_request() as exchange:
+            request = exchange.request
+            assert request.texts("user")[-1] == "Reply with exactly: POST_EXHAUSTION_FOLLOW_UP_OK"
+            assert request.texts("assistant") == []
+            stream = sse.message_stream([sse.Text("POST_EXHAUSTION_FOLLOW_UP_OK")], model=MODEL)
+            await exchange.send(*stream.events)
         assert (await scenarios.await_result(process))["result"] == "POST_EXHAUSTION_FOLLOW_UP_OK"
     captured = process.stdout_frames()
     frames.assert_failure(frames.terminals(captured)[0], result_fragment="API Error", terminal_reason="api_error")

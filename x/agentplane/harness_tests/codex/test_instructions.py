@@ -59,31 +59,29 @@ async def test_a_resume_cannot_replace_the_threads_developer_instructions(
     async with codex.start(openai_responses) as first:
         thread_id = await _start(first, cwd=str(codex.workspace), instructions=STARTED_WITH)
         await scenarios.start_turn(first, thread_id=thread_id, request_id="instructions-5", text="Reply: SEED_OK")
-        exchange = await openai_responses.await_next_request()
-        request = exchange.request
-        # The instructions lead the thread, ahead of the first user message.
-        assert request.item_kinds == ["message:developer", "message:user"]
-        assert [message.text for message in request.messages("developer")] == [STARTED_WITH]
-        stream = sse.response_stream([sse.Message("SEED_OK")], model=MODEL)
-        await exchange.send(*stream.events)
-        await exchange.close()
+        async with await openai_responses.await_next_request() as exchange:
+            request = exchange.request
+            # The instructions lead the thread, ahead of the first user message.
+            assert request.item_kinds == ["message:developer", "message:user"]
+            assert [message.text for message in request.messages("developer")] == [STARTED_WITH]
+            stream = sse.response_stream([sse.Message("SEED_OK")], model=MODEL)
+            await exchange.send(*stream.events)
         assert (await scenarios.await_turn_completed(first))["params"]["turn"]["status"] == "completed"
 
     async with codex.start(openai_responses) as second:
         resumed = await _resume(second, thread_id=thread_id, base=RESUMED_BASE, instructions=RESUMED_WITH)
         assert "error" not in resumed
         await scenarios.start_turn(second, thread_id=thread_id, request_id="instructions-6", text="Reply: NEXT_OK")
-        exchange = await openai_responses.await_next_request()
-        request = exchange.request
-        # The sibling override on the same resume did land, so an inert `developerInstructions` is
-        # not a resume that ignored everything.
-        assert request.instructions == RESUMED_BASE
-        # One developer message, the thread's own — neither replaced nor joined by the new text.
-        assert [message.text for message in request.messages("developer")] == [STARTED_WITH]
-        assert RESUMED_WITH not in [message.text for message in request.messages("developer")]
-        stream = sse.response_stream([sse.Message("NEXT_OK")], model=MODEL)
-        await exchange.send(*stream.events)
-        await exchange.close()
+        async with await openai_responses.await_next_request() as exchange:
+            request = exchange.request
+            # The sibling override on the same resume did land, so an inert `developerInstructions` is
+            # not a resume that ignored everything.
+            assert request.instructions == RESUMED_BASE
+            # One developer message, the thread's own — neither replaced nor joined by the new text.
+            assert [message.text for message in request.messages("developer")] == [STARTED_WITH]
+            assert RESUMED_WITH not in [message.text for message in request.messages("developer")]
+            stream = sse.response_stream([sse.Message("NEXT_OK")], model=MODEL)
+            await exchange.send(*stream.events)
         assert (await scenarios.await_turn_completed(second))["params"]["turn"]["status"] == "completed"
         # Nothing on the wire reports the discarded override, so a client cannot tell it was
         # dropped: the app-server's "override was provided and ignored" notices are for a thread
