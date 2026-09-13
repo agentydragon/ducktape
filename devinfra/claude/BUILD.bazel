@@ -3,32 +3,8 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 # === Base modules (no internal deps) ===
 
 py_library(
-    name = "shell",
-    srcs = ["shell.py"],
-    visibility = ["//visibility:public"],
-)
-
-py_library(
     name = "otlp_forwarder",
     srcs = ["otlp_forwarder.py"],
-    visibility = ["//visibility:public"],
-)
-
-py_library(
-    name = "errors",
-    srcs = ["errors.py"],
-    visibility = ["//visibility:public"],
-)
-
-py_library(
-    name = "streaming",
-    srcs = ["streaming.py"],
-    visibility = ["//visibility:public"],
-)
-
-py_library(
-    name = "debug",
-    srcs = ["debug.py"],
     visibility = ["//visibility:public"],
 )
 
