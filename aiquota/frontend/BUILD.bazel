@@ -1,7 +1,6 @@
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_js//js:defs.bzl", "js_library", "js_test")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
-load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@npm_ducktape//:vitest/package_json.bzl", vitest_bin = "bin")
 load("//devinfra/js:openapi.bzl", "js_openapi_schema")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
@@ -117,26 +116,10 @@ js_library(
     srcs = ["page.css"],
 )
 
-copy_file(
-    name = "bundle_inter_font",
-    src = "@inter_variable_font//file",
-    out = "public/fonts/Inter.woff2",
-)
-
-copy_file(
-    name = "bundle_fonts_css",
-    src = "fonts/fonts.css",
-    out = "public/fonts/fonts.css",
-)
-
 spa_bundle(
     name = "bundle",
     entry_point = "main.tsx",
     jsx = "automatic",
-    public = [
-        ":bundle_fonts_css",
-        ":bundle_inter_font",
-    ],
     deps = [
         ":board_css",
         ":main",
@@ -270,27 +253,11 @@ filegroup(
     srcs = ["screenshots/bundle.css"],
 )
 
-copy_file(
-    name = "screenshot_inter_font",
-    testonly = True,
-    src = "@inter_variable_font//file",
-    out = "screenshots/fonts/Inter.woff2",
-)
-
-copy_file(
-    name = "screenshot_fonts_css",
-    testonly = True,
-    src = "fonts/fonts.css",
-    out = "screenshots/fonts/fonts.css",
-)
-
 SCREENSHOT_DATA = [
     "screenshots/index.html",
     ":scenes_json",
     ":screenshot_bundle_css",
     ":screenshot_bundle_js",
-    ":screenshot_fonts_css",
-    ":screenshot_inter_font",
     "//util/testing/frontend_visual:capture",
     "//util/testing/frontend_visual:launcher",
     "//util/testing/frontend_visual:visual_review_manifest",

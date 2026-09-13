@@ -11,7 +11,7 @@ body {
   min-width: 320px;
   background: var(--aiquota-bg);
   color: var(--aiquota-text);
-  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  font-family: ui-sans-serif, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
