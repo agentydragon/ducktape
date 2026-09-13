@@ -6,21 +6,15 @@ instance or LiteLLM proxy with OPENAI_API_KEY and OPENAI_BASE_URL set.
 
 from __future__ import annotations
 
-import logging
-
 import pytest_bazel
 from pydantic import BaseModel, ConfigDict
 
 from agent_core.agent import Agent
 from agent_core.direct_provider import DirectToolProvider
 from agent_core.handler import FinishOnTextMessageHandler
-from agent_core.logging_handler import LoggingHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
 from agent_core.testing.responses import DecoratorMock
-from agent_core.turn_limit import MaxTurnsHandler
 from openai_utils.model import UserMessage
-
-logger = logging.getLogger(__name__)
 
 
 class CapitalInput(BaseModel):
@@ -40,12 +34,7 @@ async def test_text_completion(mock_or_live, recording_handler) -> None:
     agent = await Agent.create(
         tool_provider=provider,
         client=client,
-        handlers=[
-            FinishOnTextMessageHandler(),
-            MaxTurnsHandler(max_turns=5),
-            LoggingHandler(logger),
-            recording_handler,
-        ],
+        handlers=[FinishOnTextMessageHandler(), recording_handler],
         tool_policy=AllowAnyToolOrTextMessage(),
     )
     agent.process_message(UserMessage.text("What is the capital of France?"))
@@ -75,12 +64,7 @@ async def test_tool_calling(mock_or_live, recording_handler) -> None:
     agent = await Agent.create(
         tool_provider=provider,
         client=client,
-        handlers=[
-            FinishOnTextMessageHandler(),
-            MaxTurnsHandler(max_turns=5),
-            LoggingHandler(logger),
-            recording_handler,
-        ],
+        handlers=[FinishOnTextMessageHandler(), recording_handler],
         tool_policy=AllowAnyToolOrTextMessage(),
     )
     agent.process_message(UserMessage.text("Use the lookup_capital tool to find the capital of France."))
