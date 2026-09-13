@@ -55,7 +55,11 @@ proxy hostname; mixed public/private answer sets fail closed. Resolution failure
 also fail closed. The `OriginLoop` resolves and validates a hostname in its public
 `create_connection` boundary, selects one approved numeric address, and passes that
 address to asyncio's normal socket implementation. The logical hostname remains in
-mitmproxy's connection object for pooling and upstream TLS identity. Starting the
+mitmproxy's connection object for pooling and upstream TLS identity. This interception
+is limited to permitted web-origin authorities on ports 80 and 443; other loop users,
+such as local control or test connections on ephemeral ports, are delegated to asyncio
+unchanged. The mitmproxy hook rejects non-web upstream authorities before they reach
+this loop. Starting the
 proxy without its guarded, correctly configured loop is rejected. Deployment egress
 policy adds another boundary; it does not replace these checks. There is no runtime
 option for private origins. Synthetic tests alone redirect validated public IPs to

@@ -78,12 +78,13 @@ class OriginLoop(asyncio.SelectorEventLoop):
                 logical_host = host.decode("idna") if isinstance(host, bytes) else host
             except UnicodeError as exc:
                 raise OSError("Proxy destination resolution failed") from exc
-            try:
-                ipaddress.ip_address(logical_host)
-            except ValueError:
-                host = await self.origin_policy.select_address(logical_host, port, family=kwargs.get("family", 0))
-                if kwargs.get("ssl") and kwargs.get("server_hostname") is None:
-                    kwargs["server_hostname"] = logical_host
+            if self.origin_policy.permitted_authority(logical_host, port):
+                try:
+                    ipaddress.ip_address(logical_host)
+                except ValueError:
+                    host = await self.origin_policy.select_address(logical_host, port, family=kwargs.get("family", 0))
+                    if kwargs.get("ssl") and kwargs.get("server_hostname") is None:
+                        kwargs["server_hostname"] = logical_host
 
         return await super().create_connection(protocol_factory, host, port, *args, **kwargs)
 
