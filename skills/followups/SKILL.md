@@ -92,34 +92,25 @@ the schema details and older-session invocation.
 ## Developer-machine cleanup
 
 When `/followups` is invoked on a personal developer machine (for example,
-`wyrm2` or another local workstation), include a cleanup suggestion for local
+`wyrm2` or `rugged`), include a cleanup suggestion for local
 state created by this session, if any. Do not make this suggestion in a managed
-Claude Code Web session or another managed/ephemeral environment, where the
-harness owns the lifecycle. Do not perform the cleanup automatically.
+Claude Code Web session or another managed/ephemeral environment.
 
 Use the recovered transcript and current filesystem state to establish session
-ownership. Offer only this session's Bazel servers, per-worktree Bazel output
-bases, and Git worktrees. This is not a general workspace-GC pass: do not touch
-pre-existing user state, shared repository or disk caches, the current checkout,
-or state used by another live session. If ownership is unclear, leave the item
-alone and say why.
+ownership. Offer to clean up any per-worktree Bazel output bases, shut down
+any running Bazel servers and Git worktrees held by your session.
+No need to clean up shared repository or disk caches.
 
 Before presenting the suggestion:
 
-- Confirm that each Bazel server and output base belongs to this session. Shut
-  down each owned server with the repository's configured Bazel frontend
-  (normally `bazelisk shutdown`) before deleting its output base. Never remove a
-  shared cache or an output base that another session may be using.
 - For each session-created worktree, verify that
   `git -C <worktree> status --porcelain` is empty and that its work is committed
   in Git. Preserve the branch or other ref that makes those commits recoverable.
   Do not remove a worktree containing uncommitted or untracked information.
 
-Present one concrete, opt-in cleanup followup naming the exact servers, output
-bases, and worktrees eligible for removal. Its next step is to shut down the
-owned Bazel servers, delete those output bases, and run `git worktree remove`
-for the clean, committed worktrees. If this session created none, omit the
-cleanup suggestion rather than presenting an empty action.
+Present one concrete, opt-in cleanup followup listing the worktrees you own,
+and with each, which of {worktree, Bazel server, output base} would be cleaned up.
+If this session created none, omit the cleanup suggestion.
 
 ## Process
 

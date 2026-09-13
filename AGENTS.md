@@ -221,6 +221,8 @@ Committing on `devel` trips the `no-commit-to-branch` hook. Skip it
 (`SKIP=no-commit-to-branch git commit …`) only when the user has explicitly approved a
 direct commit on `devel`.
 
+## Hygiene on developer machines
+
 **A dirty checkout you started in is not yours.** Uncommitted changes in the working
 tree — especially in the user's own checkouts (`~/code/ducktape` on wyrm2, rugged, …),
 where a dirty `devel` serves as their staging playground — usually mean the dirt is
@@ -228,24 +230,29 @@ theirs. Never switch branches there or commit on top of it unasked: judge whethe
 request builds on that dirty state; if not, do the work in a fresh worktree and send a
 PR from it; if genuinely ambiguous, ask.
 
-### Developer-machine worktree hygiene
+### Worktrees and Bazel output bases
 
-The dirty-checkout rule above determines whether isolation is needed. Do not create a
-worktree for read-only investigation. When you first need to edit code or run Bazel,
-inspect the current worktree. If it is suitable for the task, keep using it; otherwise,
-create one isolated worktree for the session. If the rule above says the task explicitly
-builds on existing dirty changes, remain in that checkout.
+Worktrees are cheap, but not free. Rough numbers as of 2026-09-13:
 
-Once a worktree has been selected or created, keep using that absolute path for the
-session's edits, Git commands, and Bazel commands. Do not create or switch to another
-worktree merely for convenience. A new worktree per isolated session is acceptable;
-reuse an older worktree only when an explicit handoff identifies it as released for
-this task. Report the chosen worktree path at handoff.
+- ducktape `.git` = ~750 MB on disk
+- 1 ducktape worktree = ~250 MB on disk
+- 1 per-worktree Bazel server = ~2 GB RAM
+- 1 per-worktree Bazel output base = ~5-10 GB on disk
 
-Use a harness-provided worktree when one exists. Otherwise, prefer
-`/tmp/ducktape-worktrees/YYYY-MM-DD-<short-task-slug>`; choose the date and slug once
-and keep that path for the session. Use other `/tmp` paths only for genuinely
-disposable work.
+Avoid needlessly proliferating Bazel servers and output bases - that can starve
+my developer machines when there's multiple agents running parallel.
+
+Do use worktrees to isolate your work, safely run subagents.
+If suitable (e.g. read-only tasks or when mostly clean), use the worktree you were
+started in. When you do need a worktree, make one harness-provided worktree (if your
+harness has worktree management tools); otherwise use
+`/tmp/ducktape-worktrees/YYYY-MM-DD-<short-task-slug>`.
+But once you run Bazel in a worktree, prefer to stick to the same worktree
+on future branches/tasks, unless you have a specific need for multiple
+worktrees (e.g., running a subagent team).
+
+Remote Bazel (`bbr`, `bb remote`) runs on Buildbuddy's infrastructure and does not
+incur this RAM and disk cost, but is not always practical.
 
 ### Parallel Bash calls share one working directory
 
