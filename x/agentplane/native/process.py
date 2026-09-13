@@ -127,6 +127,12 @@ class NativeProcess:
     def alive(self) -> bool:
         return self.process is not None and self.process.poll() is None
 
+    def crash(self) -> int:
+        """Abruptly kill the native harness without giving it a shutdown turn."""
+        assert self.process is not None
+        self.process.kill()
+        return self.process.wait(timeout=5)
+
     def close(self) -> int | None:
         if self.process is None:
             return None

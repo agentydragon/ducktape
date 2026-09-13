@@ -11,6 +11,9 @@ from x.agentplane.harness_tests.scripted_upstream import ScriptedUpstream
 from x.agentplane.native.codex import driver, scenarios, wire
 
 TOOLS = ["exec_command", "write_stdin", "request_user_input"]
+IN_FLIGHT_INPUT = "Reply with exactly: CODEX_CRASHED_IN_FLIGHT_REPLAYED"
+QUEUED_INPUT = "Reply with exactly: CODEX_CRASHED_QUEUE_FATE"
+RECOVERY_INPUT = "Reply with exactly: CODEX_CRASH_RESUME_OK"
 
 
 def test_baseline_turn(codex: CodexHarness, upstream: ScriptedUpstream) -> None:
@@ -88,6 +91,38 @@ def test_idle_resume_replays_the_thread_from_disk(codex: CodexHarness, upstream:
         upstream.respond(raw, sse.response_stream([sse.Message("IDLE_RESUME_OK")], model=MODEL))
         assert scenarios.await_turn_completed(second)["params"]["turn"]["status"] == "completed"
     frames.assert_success(second.stdout_frames(), "IDLE_RESUME_OK")
+    upstream.assert_quiescent()
+
+
+def test_resume_after_crash_replays_the_in_flight_turn_but_not_its_live_followup(
+    codex: CodexHarness, upstream: ScriptedUpstream
+) -> None:
+    """A persisted thread survives a killed app-server; its active-turn input queue does not."""
+    with codex.start(upstream) as first:
+        thread_id = scenarios.launch_handshake(
+            first, cwd=str(codex.workspace), model=MODEL, effort=EFFORT, persist=True
+        )["thread_id"]
+        turn_id = scenarios.start_turn(first, thread_id=thread_id, request_id="crash-3", text=IN_FLIGHT_INPUT)
+        scenarios.await_turn_started(first)
+        raw = upstream.next_request()
+
+        first.write(driver.turn_start("crash-4", thread_id=thread_id, text=QUEUED_INPUT))
+        joined = first.await_frame(lambda item: item.get("id") == "crash-4", timeout=30)
+        assert joined["result"]["turn"]["id"] == turn_id
+        assert first.crash() < 0
+    assert raw.client_closed.wait(30)
+
+    with codex.start(upstream) as resumed:
+        assert scenarios.resume_handshake(resumed, thread_id=thread_id)["thread_id"] == thread_id
+        scenarios.start_turn(resumed, thread_id=thread_id, request_id="crash-6", text=RECOVERY_INPUT)
+        replay = ResponsesRequest.parse(upstream.next_request())
+        assert [message.text for message in replay.messages("user")] == [IN_FLIGHT_INPUT, RECOVERY_INPUT]
+        assert QUEUED_INPUT not in [message.text for message in replay.messages("user")]
+        assert replay.messages("assistant") == []
+        upstream.respond(
+            upstream.observed[-1], sse.response_stream([sse.Message("CODEX_CRASH_RESUME_OK")], model=MODEL)
+        )
+        assert scenarios.await_turn_completed(resumed)["params"]["turn"]["status"] == "completed"
     upstream.assert_quiescent()
 
 
