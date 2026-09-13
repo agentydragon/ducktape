@@ -31,6 +31,7 @@ from typing import Annotated, Any
 from uuid import UUID
 
 import httpx
+import httpx2
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 from kubernetes_asyncio import client as k8s_client
@@ -309,7 +310,7 @@ async def action_policy_frame(
         return await inventory.for_sandbox(operator_actions(request, caller), sandbox_uid)
     except OperatorFederationError as error:
         return ActionPolicyUnavailable(code=str(error))
-    except (httpx.HTTPStatusError, httpx.RequestError) as error:
+    except (httpx.HTTPStatusError, httpx.RequestError, httpx2.HTTPStatusError, httpx2.TransportError) as error:
         return ActionPolicyUnavailable(code="upstream_request_failed", upstream=upstream_failure_detail(error))
 
 

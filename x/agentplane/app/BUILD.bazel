@@ -53,6 +53,7 @@ py_library(
         "@pypi//fastapi",
         "@pypi//grpcio",
         "@pypi//httpx",
+        "@pypi//httpx2",
         "@pypi//itsdangerous",
         "@pypi//protobuf",
         "@pypi//pydantic",
@@ -576,6 +577,7 @@ py_library(
         "//x/agentplane/action_service/policies:resources",
         "@pypi//fastapi",
         "@pypi//httpx",
+        "@pypi//httpx2",
         "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",
     ],
@@ -637,6 +639,7 @@ py_library(
         "@pypi//authlib",
         "@pypi//fastapi",
         "@pypi//httpx",
+        "@pypi//httpx2",
         "@pypi//pydantic",
     ],
 )

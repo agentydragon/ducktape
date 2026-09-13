@@ -12,6 +12,7 @@ from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
 import httpx
+import httpx2
 from authlib.integrations.base_client.errors import OAuthError
 from authlib.integrations.httpx_client import AsyncOAuth2Client
 from fastapi import Request
@@ -50,16 +51,20 @@ class UpstreamFailure(BaseModel):
     error_type: str = Field(description="The httpx exception class, which names the failure shape.")
 
 
-def upstream_failure_detail(error: httpx.HTTPStatusError | httpx.RequestError) -> UpstreamFailure:
+def upstream_failure_detail(
+    error: httpx.HTTPStatusError | httpx.RequestError | httpx2.HTTPStatusError | httpx2.TransportError,
+) -> UpstreamFailure:
     return UpstreamFailure(
         method=error.request.method,
         url=str(error.request.url.copy_with(username="", password="", query=None, fragment=None)),
-        upstream_status=error.response.status_code if isinstance(error, httpx.HTTPStatusError) else None,
+        upstream_status=error.response.status_code
+        if isinstance(error, (httpx.HTTPStatusError, httpx2.HTTPStatusError))
+        else None,
         error_type=type(error).__name__,
     )
 
 
-async def _check_token_response(response: httpx.Response) -> None:
+async def _check_token_response(response: httpx2.Response) -> None:
     # Authlib otherwise discards the HTTP response when raising OAuthError.
     response.raise_for_status()
 
@@ -180,7 +185,7 @@ class FederatedOperatorActions:
                 raise error.http_error from None
             logger.warning("operator federation cannot verify tokens: signing keys unavailable")
             raise OperatorFederationError("operator_federation_verification_unavailable", status_code=503) from None
-        except (httpx.HTTPStatusError, httpx.RequestError) as error:
+        except (httpx.HTTPStatusError, httpx.RequestError, httpx2.HTTPStatusError, httpx2.TransportError) as error:
             logger.warning(f"operator federation exchange request failed: {upstream_failure_detail(error)}")
             raise
         except (OAuthError, ValueError) as error:

@@ -148,7 +148,7 @@ py_library(
     deps = [
         "@pypi//authlib",
         "@pypi//fastapi",
-        "@pypi//httpx",
+        "@pypi//httpx2",
         "@pypi//pydantic",
     ],
 )
