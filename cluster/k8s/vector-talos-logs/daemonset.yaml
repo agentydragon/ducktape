@@ -30,7 +30,7 @@ spec:
         - operator: Exists
       containers:
         - name: vector
-          image: docker.io/timberio/vector:0.57.0-distroless-libc@sha256:bb5968aa63f3bf7cf77f8cd7548c1442cc91f2a8c20d7ef5c5a03e2a37fbf205
+          image: docker.io/timberio/vector:0.58.0-distroless-libc@sha256:6c93dfe2554cc7e38316d618961cd657d5271c7a7aa727e0007502b28cb82c2e
           args:
             - --config
             - /etc/vector/vector.toml

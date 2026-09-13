@@ -30,7 +30,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: schema
-          image: clickhouse/clickhouse-server:26.3.20.7@sha256:c22a4aba84a1ea83e320a6f8620b87100649e04995b61d7dde160fc1ca33bc76
+          image: clickhouse/clickhouse-server:26.8.2.7@sha256:fa394da808cc53f76d0344429421d6c422a6ee85fe7450135c0e3cff4df9bcbb
           imagePullPolicy: IfNotPresent
           command: [clickhouse-client]
           args:
