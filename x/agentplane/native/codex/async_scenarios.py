@@ -7,7 +7,6 @@ from typing import Any
 
 from x.agentplane.native.async_process import AsyncNativeProcess
 from x.agentplane.native.codex import driver
-from x.agentplane.native.codex.scenarios import MAX_RETRIES
 
 
 async def _next_matching(process: AsyncNativeProcess, predicate: Callable[[dict[str, Any]], bool]) -> dict[str, Any]:
@@ -18,7 +17,13 @@ async def _next_matching(process: AsyncNativeProcess, predicate: Callable[[dict[
 
 
 async def launch_handshake(
-    process: AsyncNativeProcess, *, cwd: str, model: str, effort: str, persist: bool = False, config: dict[str, Any] | None = None
+    process: AsyncNativeProcess,
+    *,
+    cwd: str,
+    model: str,
+    effort: str,
+    persist: bool = False,
+    config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     initialize = driver.initialize("capture-1")
     await process.send(initialize)
@@ -59,7 +64,9 @@ async def await_turn_started(process: AsyncNativeProcess) -> dict[str, Any]:
 
 
 async def await_error(process: AsyncNativeProcess) -> dict[str, Any]:
-    return await _next_matching(process, lambda item: item.get("method") == "error" and isinstance(item.get("params"), dict))
+    return await _next_matching(
+        process, lambda item: item.get("method") == "error" and isinstance(item.get("params"), dict)
+    )
 
 
 async def await_turn_completed(process: AsyncNativeProcess) -> dict[str, Any]:

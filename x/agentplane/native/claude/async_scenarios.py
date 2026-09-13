@@ -7,7 +7,7 @@ from typing import Any
 
 from x.agentplane.native.async_process import AsyncNativeProcess
 from x.agentplane.native.claude import driver
-from x.agentplane.native.claude.scenarios import HOOK_EVENTS, MAX_RETRIES, SYSTEM_PROMPT, TOOLS, session_id
+from x.agentplane.native.claude.scenarios import HOOK_EVENTS
 
 
 async def _next_matching(process: AsyncNativeProcess, predicate: Callable[[dict[str, Any]], bool]) -> dict[str, Any]:
