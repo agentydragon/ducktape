@@ -15,6 +15,7 @@ import shutil
 from pathlib import Path
 
 import pytest
+from syrupy.data import SnapshotCollection
 from syrupy.extensions.amber import AmberSnapshotExtension
 
 
@@ -22,8 +23,16 @@ class BazelAmberExtension(AmberSnapshotExtension):
     """Amber extension that copies written snapshots to undeclared test outputs."""
 
     @classmethod
-    def write_snapshot_collection(cls, *, snapshot_collection):
-        super().write_snapshot_collection(snapshot_collection=snapshot_collection)
+    def write_snapshot_collection(
+        cls,
+        *,
+        snapshot_collection: SnapshotCollection,
+        name_order: dict[str, int] | None = None,
+    ) -> None:
+        super().write_snapshot_collection(
+            snapshot_collection=snapshot_collection,
+            name_order=name_order,
+        )
         outputs_dir = os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR")
         if not outputs_dir:
             return
