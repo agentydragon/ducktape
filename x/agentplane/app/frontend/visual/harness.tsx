@@ -748,13 +748,10 @@ const EVENTS_STATES: Event[] = [
   event(1, { case: "harnessStarted", value: { resumed: false, pid: 9 } }),
   event(2, { case: "commandReceived", value: { commandId: "i1" } }),
   event(3, { case: "turnStarted", value: { turnId: "t1" } }),
-  event(
-    4,
-    {
-      case: "harnessUserMessageConfirmed",
-      value: { harnessMessageId: "user-1", text: "Delete the stale branch.", originCommandIds: ["i1"], turnId: "t1" },
-    }
-  ),
+  event(4, {
+    case: "harnessUserMessageConfirmed",
+    value: { harnessMessageId: "user-1", text: "Delete the stale branch.", originCommandIds: ["i1"], turnId: "t1" },
+  }),
   event(5, { case: "itemStarted", value: { itemId: "tool#0", kind: ItemKind.TOOL_CALL, toolName: "Bash" } }),
   event(6, { case: "toolArguments", value: { itemId: "tool#0", argumentsJson: '{"command": "git branch -d stale"}' } }),
   event(7, {
@@ -773,18 +770,15 @@ const EVENTS_STATES: Event[] = [
   event(11, { case: "turnCompleted", value: { turnId: "t1", status: TurnStatus.COMPLETED } }),
   event(12, { case: "commandReceived", value: { commandId: "i2" } }),
   event(13, { case: "turnStarted", value: { turnId: "t2" } }),
-  event(
-    14,
-    {
-      case: "harnessUserMessageConfirmed",
-      value: {
-        harnessMessageId: "user-2",
-        text: "Run the test suite twice, thinking it over first.",
-        originCommandIds: ["i2"],
-        turnId: "t2",
-      },
-    }
-  ),
+  event(14, {
+    case: "harnessUserMessageConfirmed",
+    value: {
+      harnessMessageId: "user-2",
+      text: "Run the test suite twice, thinking it over first.",
+      originCommandIds: ["i2"],
+      turnId: "t2",
+    },
+  }),
   event(15, { case: "itemStarted", value: { itemId: "r#0", kind: ItemKind.REASONING } }),
   event(16, {
     case: "textDelta",

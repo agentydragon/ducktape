@@ -602,7 +602,9 @@ export function SessionView({
               variant="light"
               color="red"
               aria-label="Interrupt"
-              onClick={() => void run(() => interruptSession(sandbox, sessionId, crypto.randomUUID(), activeTurn?.id ?? ""))}
+              onClick={() =>
+                void run(() => interruptSession(sandbox, sessionId, crypto.randomUUID(), activeTurn?.id ?? ""))
+              }
               disabled={!activeTurn}
             >
               <IconPlayerStop size={16} />

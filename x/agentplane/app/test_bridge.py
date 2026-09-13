@@ -198,8 +198,7 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
             assert (await next_message(lines)).id == cut + 1
 
         stopped = await http.post(
-            f"{SESSIONS}/{SESSION}/shutdown",
-            json={"commandId": "stop-bridge", "stopRunnerSession": {}},
+            f"{SESSIONS}/{SESSION}/shutdown", json={"commandId": "stop-bridge", "stopRunnerSession": {}}
         )
         assert stopped.status_code == 202, stopped.text
         (summary,) = (await http.get(SESSIONS)).json()
@@ -252,8 +251,7 @@ async def test_the_feed_records_a_turn_nobody_is_watching(
         assert [event["itemCompleted"]["text"] for event in stored if "itemCompleted" in event] == ["UNWATCHED_OK"]
         assert (
             await http.post(
-                f"{SESSIONS}/unwatched/shutdown",
-                json={"commandId": "stop-unwatched", "stopRunnerSession": {}},
+                f"{SESSIONS}/unwatched/shutdown", json={"commandId": "stop-unwatched", "stopRunnerSession": {}}
             )
         ).status_code == 202
         assert (await http.get("/threads/00000000-0000-0000-0000-000000000000/events")).status_code == 404

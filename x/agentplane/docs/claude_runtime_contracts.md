@@ -9,14 +9,14 @@ becomes an Agentplane guarantee. No proprietary source is reproduced here.
 
 ## Priority for Agentplane
 
-| Priority | Boundary                        | Current gap                                                                                                                                                                                    |
-| -------- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P0       | App command outbox              | The runner durably receipts and reconciles commands, but the app still needs its own desired `ThreadCommand` outbox before it can survive loss before runner delivery.                         |
-| P0       | Driver-hosted MCP               | The wire is documented in [driver_tools.md](driver_tools.md), but the runner neither declares SDK MCP servers during initialization nor routes `mcp_message`.                                  |
-| P1       | Permission and dialog recovery  | The runner deliberately auto-allows tool permission requests and rejects other controls. A future interactive host must use `tool_use_id`, not a transient request id, as its recovery key.    |
-| P1       | Background task state           | Claude exposes a replace-set snapshot plus detail edges; the current adapter retains these only as native frames.                                                                              |
-| P1       | Remote delivery ambiguity       | Claude's managed remote transport distinguishes never-uploaded calls from calls that may have landed. Agentplane's app-to-runner stream has no equivalent classification.                      |
-| P2       | Limits and refusal fallback     | Rate-limit and fallback events remain native-only, and a fallback that needs a user dialog cannot complete through the current runner.                                                         |
+| Priority | Boundary                       | Current gap                                                                                                                                                                                 |
+| -------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P0       | App command outbox             | The runner durably receipts and reconciles commands, but the app still needs its own desired `ThreadCommand` outbox before it can survive loss before runner delivery.                      |
+| P0       | Driver-hosted MCP              | The wire is documented in [driver_tools.md](driver_tools.md), but the runner neither declares SDK MCP servers during initialization nor routes `mcp_message`.                               |
+| P1       | Permission and dialog recovery | The runner deliberately auto-allows tool permission requests and rejects other controls. A future interactive host must use `tool_use_id`, not a transient request id, as its recovery key. |
+| P1       | Background task state          | Claude exposes a replace-set snapshot plus detail edges; the current adapter retains these only as native frames.                                                                           |
+| P1       | Remote delivery ambiguity      | Claude's managed remote transport distinguishes never-uploaded calls from calls that may have landed. Agentplane's app-to-runner stream has no equivalent classification.                   |
+| P2       | Limits and refusal fallback    | Rate-limit and fallback events remain native-only, and a fallback that needs a user dialog cannot complete through the current runner.                                                      |
 
 ## Known Agentplane bugs and recommended work
 

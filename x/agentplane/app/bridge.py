@@ -266,17 +266,11 @@ class RunnerBridge:
         finally:
             attachment.cancel()
 
-    async def send(self, sandbox: str, session_id: str, message: pb.Input) -> None:
-        await self._command(sandbox, session_id, lambda attachment: attachment.send(message.input_id, message.text))
+    async def command(self, sandbox: str, session_id: str, command: pb.Command) -> None:
+        await self._command(sandbox, session_id, lambda attachment: attachment.command(command))
 
-    async def interrupt(self, sandbox: str, session_id: str) -> None:
-        await self._command(sandbox, session_id, lambda attachment: attachment.interrupt())
-
-    async def switch_model(self, sandbox: str, session_id: str, switch_id: str, model: str) -> None:
-        await self._command(sandbox, session_id, lambda attachment: attachment.switch_model(switch_id, model))
-
-    async def shutdown(self, sandbox: str, session_id: str) -> None:
-        await self._command(sandbox, session_id, lambda attachment: attachment.shutdown(), ends_stream=True)
+    async def stop_runner_session(self, sandbox: str, session_id: str, command: pb.Command) -> None:
+        await self._command(sandbox, session_id, lambda attachment: attachment.command(command), ends_stream=True)
 
     async def _command(
         self,
@@ -362,7 +356,7 @@ def _frame(event: str, data: dict[str, object], *, event_id: int | None = None) 
     return ("\n".join(lines) + "\n\n").encode()
 
 
-def _parse[M: pb.Input | pb.SessionSpec](message: M, body: dict[str, object]) -> M:
+def _parse[M: pb.Command | pb.SessionSpec](message: M, body: dict[str, object]) -> M:
     try:
         return ParseDict(body, message)
     except ParseError as error:
@@ -472,6 +466,8 @@ async def switch_session_model(
 async def shutdown_session(bridge: Bridge, name: str, session_id: str, body: dict[str, object]) -> Response:
     command = _parse(pb.Command(), body)
     if not command.command_id or not command.HasField("stop_runner_session"):
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="expected StopRunnerSession command")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="expected StopRunnerSession command"
+        )
     await bridge.stop_runner_session(name, session_id, command)
     return Response(status_code=status.HTTP_202_ACCEPTED)

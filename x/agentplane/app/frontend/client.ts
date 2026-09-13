@@ -213,10 +213,13 @@ export async function models(): Promise<ModelCatalog> {
 export async function switchModel(sandbox: string, sessionId: string, commandId: string, model: string): Promise<void> {
   const { error } = await api.POST("/sandboxes/{name}/sessions/{session_id}/model", {
     params: { path: { name: sandbox, session_id: sessionId } },
-    body: toJson(CommandSchema, create(CommandSchema, {
-      commandId,
-      operation: { case: "changeModel", value: { model } },
-    })) as JsonObject,
+    body: toJson(
+      CommandSchema,
+      create(CommandSchema, {
+        commandId,
+        operation: { case: "changeModel", value: { model } },
+      })
+    ) as JsonObject,
   });
   if (error) throw new Error(displayableError(error));
 }
@@ -224,21 +227,32 @@ export async function switchModel(sandbox: string, sessionId: string, commandId:
 export async function sendInput(sandbox: string, sessionId: string, commandId: string, text: string): Promise<void> {
   const { error } = await api.POST("/sandboxes/{name}/sessions/{session_id}/inputs", {
     params: { path: { name: sandbox, session_id: sessionId } },
-    body: toJson(CommandSchema, create(CommandSchema, {
-      commandId,
-      operation: { case: "submitInput", value: { text } },
-    })) as JsonObject,
+    body: toJson(
+      CommandSchema,
+      create(CommandSchema, {
+        commandId,
+        operation: { case: "submitInput", value: { text } },
+      })
+    ) as JsonObject,
   });
   if (error) throw new Error(displayableError(error));
 }
 
-export async function interruptSession(sandbox: string, sessionId: string, commandId: string, turnId: string): Promise<void> {
+export async function interruptSession(
+  sandbox: string,
+  sessionId: string,
+  commandId: string,
+  turnId: string
+): Promise<void> {
   const { error } = await api.POST("/sandboxes/{name}/sessions/{session_id}/interrupt", {
     params: { path: { name: sandbox, session_id: sessionId } },
-    body: toJson(CommandSchema, create(CommandSchema, {
-      commandId,
-      operation: { case: "interruptTurn", value: { turnId } },
-    })) as JsonObject,
+    body: toJson(
+      CommandSchema,
+      create(CommandSchema, {
+        commandId,
+        operation: { case: "interruptTurn", value: { turnId } },
+      })
+    ) as JsonObject,
   });
   if (error) throw new Error(displayableError(error));
 }
@@ -246,10 +260,13 @@ export async function interruptSession(sandbox: string, sessionId: string, comma
 export async function shutdownSession(sandbox: string, sessionId: string, commandId: string): Promise<void> {
   const { error } = await api.POST("/sandboxes/{name}/sessions/{session_id}/shutdown", {
     params: { path: { name: sandbox, session_id: sessionId } },
-    body: toJson(CommandSchema, create(CommandSchema, {
-      commandId,
-      operation: { case: "stopRunnerSession", value: {} },
-    })) as JsonObject,
+    body: toJson(
+      CommandSchema,
+      create(CommandSchema, {
+        commandId,
+        operation: { case: "stopRunnerSession", value: {} },
+      })
+    ) as JsonObject,
   });
   if (error) throw new Error(displayableError(error));
 }

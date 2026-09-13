@@ -100,9 +100,7 @@ class CodexAdapter(HarnessAdapter):
         if response.error is not None or response.result is None:
             reason = response.error.message if response.error is not None else "turn/start returned no result"
             if selected_change is not None:
-                self.session._reject(
-                    selected_change[0], f"Codex did not select the requested model: {reason}"
-                )
+                self.session._reject(selected_change[0], f"Codex did not select the requested model: {reason}")
             self.session._reject(command_id, reason)
             return
         if selected_change is not None:
@@ -113,11 +111,7 @@ class CodexAdapter(HarnessAdapter):
         if turn_id != self.session.active_turn_id:
             self.session.emit(pb.TurnStarted(turn_id=turn_id, model=self.session.record.model), sources=[sequence])
         await self.session.confirm_user_message(
-            harness_message_id=turn_id,
-            text=text,
-            origin_command_ids=[command_id],
-            turn_id=turn_id,
-            sources=[sequence],
+            harness_message_id=turn_id, text=text, origin_command_ids=[command_id], turn_id=turn_id, sources=[sequence]
         )
 
     async def interrupt(self) -> None:
@@ -140,9 +134,7 @@ class CodexAdapter(HarnessAdapter):
         *superseded, selected = self._pending_model_changes
         self._pending_model_changes = []
         for command_id, _ in superseded:
-            self.session._noop(
-                command_id, "superseded by a later model command before any Codex turn selected it"
-            )
+            self.session._noop(command_id, "superseded by a later model command before any Codex turn selected it")
         return selected
 
     async def on_frame(self, frame: Frame, source_sequence: int) -> None:

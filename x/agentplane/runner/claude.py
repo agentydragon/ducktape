@@ -114,13 +114,15 @@ class ClaudeAdapter(HarnessAdapter):
 
     async def on_frame(self, frame: Frame, source_sequence: int) -> None:
         parsed = wire.parse_frame(frame)
-        if self._tool_result_message is not None and not (
-            isinstance(parsed, wire.CommandLifecycleFrame) and parsed.state is wire.CommandState.STARTED
-        ) and not (
-            # With replay enabled, a coalesced active-turn batch first emits synthetic follower
-            # echo(es). They are queue bookkeeping, not a new native prompt and not the end of
-            # the tool-result continuation window; the following started cohort establishes it.
-            isinstance(parsed, wire.UserFrame) and parsed.is_replay and parsed.uuid in self._pending
+        if (
+            self._tool_result_message is not None
+            and not (isinstance(parsed, wire.CommandLifecycleFrame) and parsed.state is wire.CommandState.STARTED)
+            and not (
+                # With replay enabled, a coalesced active-turn batch first emits synthetic follower
+                # echo(es). They are queue bookkeeping, not a new native prompt and not the end of
+                # the tool-result continuation window; the following started cohort establishes it.
+                isinstance(parsed, wire.UserFrame) and parsed.is_replay and parsed.uuid in self._pending
+            )
         ):
             await self._confirm_tool_result_inputs()
         match parsed:
