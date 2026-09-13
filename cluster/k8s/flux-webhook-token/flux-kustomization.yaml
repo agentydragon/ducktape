@@ -10,8 +10,8 @@ spec:
   path: ./cluster/k8s/flux-webhook-token
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: flux-webhook-token
     namespace: ducktape-flux
   timeout: 5m
   wait: true

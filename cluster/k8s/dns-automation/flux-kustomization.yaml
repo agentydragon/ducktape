@@ -9,8 +9,8 @@ spec:
   path: ./cluster/k8s/dns-automation
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: dns-automation
     namespace: ducktape-flux
   healthChecks:
     - apiVersion: infra.contrib.fluxcd.io/v1alpha2

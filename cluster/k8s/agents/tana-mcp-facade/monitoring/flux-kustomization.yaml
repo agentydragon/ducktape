@@ -8,8 +8,8 @@ spec:
   path: ./cluster/k8s/agents/tana-mcp-facade/monitoring
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: tana-mcp-facade-monitoring
 
     namespace: ducktape-flux
   # Depends on the namespace owner (tana-mcp) + monitoring CRDs, NOT on
