@@ -4,12 +4,13 @@ load("@rules_tf//tf:def.bzl", "tf_module", "tf_providers_versions")
 exports_files(["main.tf"])
 
 # The Terraform CR is suspended and this root is parked. Keep the Bazel targets
-# manual while modus-agendi/anthropic-claude-managed-agents is unavailable:
-# rules_tf mirrors every provider in MODULE.bazel for unrelated Terraform
-# targets, so that dead upstream provider is intentionally omitted from the
-# global mirror. Explicit validate/apply work needs a restored/replaced provider.
-# TODO: if the cloud agent is revived, restore provider mirroring after replacing
-# the provider path or retire this HCL root in favor of imperative provisioning.
+# manual even though the community provider is published: rules_tf mirrors every
+# provider in MODULE.bazel for unrelated Terraform targets, so this parked
+# module's provider remains intentionally outside the global mirror. Explicit
+# validate/apply work needs deliberate provider and security review.
+# TODO: if the cloud agent is revived, validate the published provider and either
+# restore provider mirroring or retire this HCL root in favor of imperative
+# provisioning.
 tf_providers_versions(
     name = "providers",
     providers = {
