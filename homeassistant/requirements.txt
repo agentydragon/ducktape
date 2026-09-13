@@ -4,9 +4,9 @@ acme==5.2.2 \
     --hash=sha256:354ef66cf226b2bef02006311778e97123237207b4febe8829ded9860784ee64 \
     --hash=sha256:7702d5b99149d5cd9cd48a9270c04693e925730c023ca3e1b853ab43746a9d01
     # via hass-nabucasa
-aiodns==4.0.0 \
-    --hash=sha256:17be26a936ba788c849ba5fd20e0ba69d8c46e6273e846eb5430eae2630ce5b1 \
-    --hash=sha256:a188a75fb8b2b7862ac8f84811a231402fb74f5b4e6f10766dc8a4544b0cf989
+aiodns==4.0.4 \
+    --hash=sha256:c24dd605bac70a1676ce503f967a98483ff163507198557d8e9db16267e6cfd2 \
+    --hash=sha256:cb10e0c0d2591636716ad2fe402e977c16d71bdaf76bb8cb49e8a6633596f736
     # via
     #   aiohttp-asyncmdnsresolver
     #   homeassistant
