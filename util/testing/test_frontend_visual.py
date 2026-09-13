@@ -23,11 +23,7 @@ def _platform_families(page, selector: str) -> list[str]:
 
 
 def test_generic_families_are_browser_pinned(playwright_sync) -> None:
-    context = deterministic_browser_context(
-        playwright_sync,
-        viewport={"width": 800, "height": 600},
-        frozen_now_ms=0,
-    )
+    context = deterministic_browser_context(playwright_sync, viewport={"width": 800, "height": 600}, frozen_now_ms=0)
     try:
         page = context.new_page()
         page.set_content(
