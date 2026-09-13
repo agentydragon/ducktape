@@ -157,8 +157,8 @@
       "sha256": "H1IZhwFqcKG+uu00hFnEv6AuqSOnLsgk7YE7LfiEew8="
     },
     "skill-info_gathering": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-info_gathering-c0d3fe66d561/info_gathering.skill",
-      "sha256": "wNP+ZtVhjPixd016E9ISIsCHiwQpzSlYg16PztlmIVA="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-info_gathering-d5d8bb3c4f5a/info_gathering.skill",
+      "sha256": "1di7PE9aBWGb+aaX3RpEqT6PMiDxuOAGiDAfPucwDbY="
     },
     "skill-knowledge_hygiene": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-knowledge_hygiene-bc4c4050e0e5/knowledge_hygiene.skill",
