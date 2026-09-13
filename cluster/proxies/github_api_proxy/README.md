@@ -52,13 +52,59 @@ CA content; the ordinary onboarding application is disabled.
 Only public web-origin ports 80 and 443 can be dialed. Every DNS answer must be
 globally routable and neither a special/transition address nor an address of the
 proxy hostname; mixed public/private answer sets fail closed. Resolution failures
-also fail closed. The runtime's event loop checks the actual numeric socket target
-against that connection task's validated DNS answers, rejecting any change before
-connect. Mitmproxy retains the logical hostname for connection reuse and upstream
-TLS identity. Starting the proxy without its guarded event loop is rejected. Deployment egress
+also fail closed. The `OriginLoop` resolves and validates a hostname in its public
+`create_connection` boundary, selects one approved numeric address, and passes that
+address to asyncio's normal socket implementation. The logical hostname remains in
+mitmproxy's connection object for pooling and upstream TLS identity. Starting the
+proxy without its guarded, correctly configured loop is rejected. Deployment egress
 policy adds another boundary; it does not replace these checks. There is no runtime
 option for private origins. Synthetic tests alone redirect validated public IPs to
 loopback fixtures.
+
+## Why the custom dial boundary exists
+
+This is a small adapter for the pinned mitmproxy 12.2.3 API, not a general-purpose
+asyncio policy. The security invariant is about the address of the actual outbound
+TCP connect, while mitmproxy's `server_connect` hook receives a logical hostname
+and is followed by `asyncio.open_connection(*server.address)`. The hook can reject
+the request, but it cannot supply a separate, already-approved dial address. If
+the hostname is resolved in the hook and resolved again by asyncio, DNS can return
+a different address between validation and the connect. The loop therefore performs
+the resolution, validation, and numeric substitution as one explicit operation at
+the boundary that owns the dial. The relevant pinned implementation is
+[`ProxyServer.open_connection`](https://github.com/mitmproxy/mitmproxy/blob/v12.2.3/mitmproxy/proxy/server.py)
+and the pooling comparison is in
+[`GetHttpConnection.connection_spec_matches`](https://github.com/mitmproxy/mitmproxy/blob/v12.2.3/mitmproxy/proxy/layers/http/__init__.py).
+
+The alternatives each lose an important property:
+
+- Validating only in `server_connect` leaves the hook-to-dial DNS race.
+- Replacing `server.address` with the numeric result changes mitmproxy's logical
+  connection-pool key and can prevent reuse of existing hostname connections; it
+  also makes the logical host unavailable to TLS setup.
+- Passing the validated addresses through a `ContextVar` and checking them from
+  `sock_connect` couples correctness to a task-local implementation detail: the
+  hook and dial must stay in the same task, and copied or missing context can make
+  the check apply to the wrong connection or not apply at all.
+- A cluster egress policy is useful defense in depth, but it cannot express this
+  per-request hostname-to-resolved-address invariant and cannot preserve the
+  proxy's logical connection identity.
+
+The adapter has no ambient per-task state: it receives the hostname, validates the
+current answer set, and immediately delegates the selected numeric address to
+asyncio. Direct numeric upstream destinations are checked in `server_connect`
+because the same event loop also accepts the proxy's inbound client sockets; the
+client's loopback connection must not be mistaken for an upstream origin dial.
+The production loop is created from the parsed proxy hostname, and `create_master`
+rejects a default loop or a loop configured for another hostname. The corresponding
+pytest-asyncio loop factory is test plumbing only.
+
+This code can be deleted when mitmproxy exposes separate logical and dial addresses
+or a pre-connect hook that receives and can replace the final numeric address while
+leaving the logical hostname untouched. Until then, changing either the hook,
+`Server.address`, or the loop boundary requires re-establishing all three properties:
+validate every answer, dial only an approved numeric result, and preserve pooling
+and TLS identity.
 
 Raw flows and incremental session metadata append to private files without rotation
 or deletion. `text/event-stream` responses forward headers and chunks immediately:

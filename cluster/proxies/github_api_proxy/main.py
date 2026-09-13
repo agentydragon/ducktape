@@ -36,7 +36,8 @@ def main() -> None:
     # Mitmproxy's verbose diagnostics can include arbitrary destination URLs. Metrics
     # and the private capture are the observation channels; do not log request data.
     logging.basicConfig(level=logging.CRITICAL)
-    asyncio.run(run(Settings.model_validate_json(args.config.read_bytes())), loop_factory=OriginLoop)
+    settings = Settings.model_validate_json(args.config.read_bytes())
+    asyncio.run(run(settings), loop_factory=lambda: OriginLoop(settings.proxy_hostname))
 
 
 if __name__ == "__main__":

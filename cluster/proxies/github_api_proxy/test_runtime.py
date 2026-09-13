@@ -19,7 +19,7 @@ from mitmproxy.tools.dump import DumpMaster
 from prometheus_client import generate_latest
 
 from cluster.proxies.github_api_proxy.config import Settings
-from cluster.proxies.github_api_proxy.destinations import PublicOrigins
+from cluster.proxies.github_api_proxy.destinations import OriginLoop, OriginPolicy
 from cluster.proxies.github_api_proxy.metrics import Metrics
 from cluster.proxies.github_api_proxy.runtime import create_master
 from cluster.proxies.github_api_proxy.testing import certificates
@@ -34,7 +34,8 @@ class LocalOrigins:
     https_port: int
     requests: list[tuple[str, str]] = field(default_factory=list)
     dials: int = 0
-    dns_answer: str = "93.184.216.34"
+    dns_answers: list[str] = field(default_factory=lambda: ["93.184.216.34"])
+    target_resolutions: int = 0
     ready: asyncio.Event = field(default_factory=asyncio.Event)
     finish_events: asyncio.Event = field(default_factory=asyncio.Event)
 
@@ -87,10 +88,13 @@ class Harness:
 
 @pytest.fixture
 async def proxy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[Harness]:
-    async def resolve(self: PublicOrigins, host: str, port: int) -> list[str]:
+    async def resolve(self: OriginPolicy, host: str, port: int, *, family: int = 0) -> list[str]:
+        del self, port, family
         match host:
             case "api.github.com" | "claude.ai":
-                return ["93.184.216.34"]
+                origins.target_resolutions += 1
+                answer = origins.dns_answers[min(origins.target_resolutions - 1, len(origins.dns_answers) - 1)]
+                return [answer]
             case "localhost" | "self-alias.test":
                 return ["8.8.4.4"]
             case "private.test":
@@ -100,7 +104,7 @@ async def proxy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterato
             case _:
                 return [host]
 
-    monkeypatch.setattr(PublicOrigins, "resolve", resolve)
+    monkeypatch.setattr(OriginPolicy, "resolve", resolve)
     outer = certificates(tmp_path, "outer", "localhost")
     interception = certificates(tmp_path, "interception", None)
     upstream = certificates(tmp_path, "upstream", "upstream.test")
@@ -111,7 +115,6 @@ async def proxy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterato
     origins = LocalOrigins(0, 0)
     client_port: int | None = None
     original_connect = asyncio.SelectorEventLoop.sock_connect
-    original_resolve = socket.getaddrinfo
 
     async def dial(
         loop: asyncio.SelectorEventLoop, sock: socket.socket, address: tuple[object, ...] | str | Buffer
@@ -126,28 +129,7 @@ async def proxy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterato
             address = ("127.0.0.1", origins.https_port if int(address[1]) == 443 else origins.http_port)
         await original_connect(loop, sock, address)
 
-    def dns(
-        host: str | bytes | None,
-        port: str | bytes | int | None,
-        family: int = 0,
-        type: int = 0,
-        proto: int = 0,
-        flags: int = 0,
-    ) -> list[
-        tuple[
-            socket.AddressFamily,
-            socket.SocketKind,
-            int,
-            str,
-            tuple[str, int] | tuple[str, int, int, int] | tuple[int, bytes],
-        ]
-    ]:
-        if host in {"api.github.com", "claude.ai"}:
-            host = origins.dns_answer
-        return original_resolve(host, port, family, type, proto, flags)
-
     monkeypatch.setattr(asyncio.SelectorEventLoop, "sock_connect", dial)
-    monkeypatch.setattr(socket, "getaddrinfo", dns)
     runners = []
     for secure in (False, True):
         app = web.Application()
@@ -198,6 +180,30 @@ async def proxy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterato
         finally:
             for runner in runners:
                 await runner.cleanup()
+
+
+@pytest.mark.parametrize("loop_kind", ["default", "wrong-origin"])
+def test_create_master_requires_configured_origin_loop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, loop_kind: str
+) -> None:
+    loop = asyncio.new_event_loop() if loop_kind == "default" else OriginLoop("other-proxy.test")
+    monkeypatch.setattr(asyncio, "get_running_loop", lambda: loop)
+    settings = Settings(
+        proxy_hostname="localhost",
+        credential_files=[tmp_path / "credentials.json"],
+        proxy_tls_cert_file=tmp_path / "proxy.crt",
+        proxy_tls_key_file=tmp_path / "proxy.key",
+        interception_ca_cert_file=tmp_path / "interception.crt",
+        interception_ca_key_file=tmp_path / "interception.key",
+        confdir=tmp_path / "conf",
+        capture_path=tmp_path / "capture" / "raw.flows",
+        session_ws_events=tmp_path / "capture" / "sessions.jsonl",
+    )
+    try:
+        with pytest.raises(RuntimeError, match="configured origin-dial event loop"):
+            create_master(settings, Metrics())
+    finally:
+        loop.close()
 
 
 def authorization(client: str = "test-alpha", password: str = PASSWORD) -> str:
@@ -389,9 +395,8 @@ async def test_persistent_origin_connection_serves_past_connection_limit(proxy: 
         await writer.wait_closed()
 
 
-@pytest.mark.parametrize("rebound", ["127.0.0.1", "8.8.8.8"])
-async def test_dns_change_after_validation_never_dials(proxy: Harness, rebound: str) -> None:
-    proxy.origins.dns_answer = rebound
+async def test_dns_is_resolved_once_before_dial(proxy: Harness) -> None:
+    proxy.origins.dns_answers = ["93.184.216.34", "127.0.0.1"]
     reader, writer = await proxy.connect()
     try:
         async with asyncio.timeout(5):
@@ -399,9 +404,10 @@ async def test_dns_change_after_validation_never_dials(proxy: Harness, rebound: 
                 await request(
                     reader, writer, method="GET", target="http://api.github.com/graphql", auth=authorization()
                 )
-            )[0] == 502
-        assert proxy.origins.dials == 0
-        assert proxy.origins.requests == []
+            )[0] == 200
+        assert proxy.origins.target_resolutions == 1
+        assert proxy.origins.dials == 1
+        assert len(proxy.origins.requests) == 1
     finally:
         writer.close()
         await writer.wait_closed()
