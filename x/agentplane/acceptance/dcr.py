@@ -10,7 +10,7 @@ import logging
 from dataclasses import dataclass, field
 from uuid import uuid4
 
-import httpx
+import httpx2
 from fastmcp.client.auth.oauth import TokenStorageAdapter
 from key_value.aio.stores.memory import MemoryStore
 from mcp.client.auth.oauth2 import OAuthClientProvider
@@ -61,11 +61,11 @@ class _Wire:
     registrations: int = 0
     last_status: int | None = None
 
-    async def request(self, request: httpx.Request) -> None:
+    async def request(self, request: httpx2.Request) -> None:
         __tracebackhide__ = True
         # This deployment intentionally owns its own AS. Fail before sending a
         # registration payload to another origin, even if discovery advertises it.
-        server = httpx.URL(self.server)
+        server = httpx2.URL(self.server)
         _require(
             request.url.copy_with(path="/", query=None, fragment=None)
             == server.copy_with(path="/", query=None, fragment=None),
@@ -81,7 +81,7 @@ class _Wire:
             self.registrations += 1
             _require(self.registrations == 1, "Unexpected duplicate registration POST")
 
-    async def response(self, response: httpx.Response) -> None:
+    async def response(self, response: httpx2.Response) -> None:
         __tracebackhide__ = True
         self.last_status = response.status_code
         if str(response.request.url) == self.server:
@@ -152,7 +152,7 @@ async def register_client(server: str, redirect_uri: str) -> Registration:
         _require(client.client_secret is None, "Public-client registration unexpectedly issued a secret")
         _require(client.scope == metadata.scope, "Registration changed discovered scopes")
         _require(wire.registrations == 1, "SDK did not complete exactly one real registration")
-        authorization = httpx.URL(url)
+        authorization = httpx2.URL(url)
         assert wire.metadata is not None
         _require(
             str(authorization.copy_with(query=None)) == str(wire.metadata.authorization_endpoint),
@@ -172,7 +172,6 @@ async def register_client(server: str, redirect_uri: str) -> Registration:
         storage=storage,
         redirect_handler=redirect,
         callback_handler=callback,
-        timeout=30,
     )
     previous_logging = logging.root.manager.disable
     logging.disable(logging.CRITICAL)
@@ -180,13 +179,13 @@ async def register_client(server: str, redirect_uri: str) -> Registration:
         async with asyncio.timeout(60):
             try:
                 async with (
-                    httpx.AsyncClient(
+                    httpx2.AsyncClient(
                         auth=auth,
                         timeout=15,
                         follow_redirects=False,
                         event_hooks={"request": [wire.request], "response": [wire.response]},
                     ) as http,
-                    streamable_http_client(server, http_client=http) as (read, write, _),
+                    streamable_http_client(server, http_client=http) as (read, write),
                     ClientSession(read, write) as session,
                 ):
                     await session.initialize()

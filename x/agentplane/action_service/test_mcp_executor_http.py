@@ -415,7 +415,10 @@ async def test_invalid_discovery_clears_stale_actions(
 ) -> None:
     assert "echo" in http_group.actions
     if invalid == "schema":
-        fake_server.tools[0]["inputSchema"] = {"type": "test-invalid-type"}
+        fake_server.tools[0]["inputSchema"] = {
+            "type": "object",
+            "properties": {"invalid": {"type": "test-invalid-type"}},
+        }
     else:
         fake_server.tools.append(fake_server.tools[0])
     await executor.refresh_catalog()
@@ -430,7 +433,7 @@ async def test_invalid_live_schema_refuses_before_call(
     execution_request: ExecutionRequest,
     execution_lease: ExecutionLease,
 ) -> None:
-    fake_server.tools[0]["inputSchema"] = {"type": "test-invalid-type"}
+    fake_server.tools[0]["inputSchema"] = {"type": "object", "properties": {"invalid": {"type": "test-invalid-type"}}}
     result = await executor.execute(execution_request, execution_lease)
     assert result.error == {"kind": "mcp_invalid_schema", "message": "backend tool schema is invalid"}
     assert fake_server.calls == []
@@ -443,7 +446,10 @@ async def test_runtime_serves_unavailable_group_and_recovers_without_restart(
     if failure == "unavailable":
         fake_server.list_unavailable = True
     else:
-        fake_server.tools[0]["inputSchema"] = {"type": "test-invalid-type"}
+        fake_server.tools[0]["inputSchema"] = {
+            "type": "object",
+            "properties": {"invalid": {"type": "test-invalid-type"}},
+        }
     async with running_executor(ActionCatalog(groups={"remote": http_group})):
         assert not http_group.available
         await wait_retry(http_group)
@@ -554,7 +560,10 @@ async def test_production_http_composition_one_execution_no_replay(
         if outcome == "schema_mismatch":
             fake_server.tools[0]["inputSchema"]["required"] = ["other"]
         if outcome == "invalid_schema":
-            fake_server.tools[0]["inputSchema"] = {"type": "test-invalid-type"}
+            fake_server.tools[0]["inputSchema"] = {
+                "type": "object",
+                "properties": {"invalid": {"type": "test-invalid-type"}},
+            }
         decision = DecisionInput(verdict=Verdict.ALLOW, expected_version=pending.version, idempotency_key="allow-once")
         await service.decide(pending.id, decision, operator)
         expected = {

@@ -20,7 +20,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal, cast
 
-import httpx
+import httpx2
 import jsonschema
 import mcp.types
 from fastmcp.client import Client, ClientTransport
@@ -108,14 +108,14 @@ class _ToolListChangeHandler(MessageHandler):
         self._changed.set()
 
 
-class _LinkageBearerAuth(httpx.Auth):
+class _LinkageBearerAuth(httpx2.Auth):
     requires_response_body = False
 
     def __init__(self, linkage: McpLinkageAuthority, server_id: str) -> None:
         self._linkage = linkage
         self._server_id = server_id
 
-    async def async_auth_flow(self, request: httpx.Request):
+    async def async_auth_flow(self, request: httpx2.Request):
         token = await self._linkage.access_token_for_execution(self._server_id)
         request.headers["Authorization"] = f"Bearer {token}"
         yield request
