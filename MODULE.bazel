@@ -290,13 +290,6 @@ oci.pull(
     platforms = ["linux/amd64"],
     tag = "3.14-slim",
 )
-oci.pull(
-    name = "mitmproxy",
-    digest = "sha256:68afa70d7b6ac9d269b88f88534f9ffceb363b4ce31703a78702341fba82e831",
-    image = "mirror.gcr.io/mitmproxy/mitmproxy",
-    platforms = ["linux/amd64"],
-    tag = "12",
-)
 
 # Unprivileged nginx for the augur frontend image (static React bundle served
 # behind oauth2-proxy + readOnlyRootFilesystem).
@@ -320,20 +313,7 @@ oci.pull(
     platforms = ["linux/amd64"],
     tag = "v0.16.22",
 )
-
-# Test infrastructure: a real Matrix homeserver for //haku/console/x's Matrix e2e tests. The
-# console's own sync loop is built on Synapse behaviours (a truncated timeline is flagged rather
-# than errored; a transaction is deduplicated per device) that only Synapse can be asked about.
-# To repin:
-#   crane digest ghcr.io/element-hq/synapse:<tag>
-oci.pull(
-    name = "synapse",
-    digest = "sha256:78de1d10bef02e375f861d1cc99f8bedd9381d4f9083ea8b2c22a053477b205f",
-    image = "ghcr.io/element-hq/synapse",
-    platforms = ["linux/amd64"],
-    tag = "v1.160.0",
-)
-use_repo(oci, "debian_trixie_slim", "debian_trixie_slim_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "grocy", "grocy_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "mitmproxy", "mitmproxy_linux_amd64", "nginx_unprivileged", "nginx_unprivileged_linux_amd64", "pgvector_pg18", "pgvector_pg18_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "python_3_14_slim", "python_3_14_slim_linux_amd64", "registry_3", "registry_3_linux_amd64", "ryuk", "ryuk_linux_amd64", "stalwart", "stalwart_linux_amd64", "synapse", "synapse_linux_amd64", "talos_imager", "talos_imager_linux_amd64")
+use_repo(oci, "debian_trixie_slim", "debian_trixie_slim_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "grocy", "grocy_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "nginx_unprivileged", "nginx_unprivileged_linux_amd64", "pgvector_pg18", "pgvector_pg18_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "python_3_14_slim", "python_3_14_slim_linux_amd64", "registry_3", "registry_3_linux_amd64", "ryuk", "ryuk_linux_amd64", "stalwart", "stalwart_linux_amd64", "talos_imager", "talos_imager_linux_amd64")
 
 # Container image pins from devinfra/image_pins.json.
 # - Generates @image_pins//:pins.bzl with NAME_IMAGE / NAME_DIGEST constants

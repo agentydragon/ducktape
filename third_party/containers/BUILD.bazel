@@ -57,26 +57,10 @@ oci_image_py(
 )
 
 oci_image_py(
-    name = "synapse",
-    testonly = True,
-    image = "@synapse_linux_amd64",
-    tag = "ghcr.io/element-hq/synapse:v1.158.0",
-    visibility = ["//visibility:public"],
-)
-
-oci_image_py(
     name = "python_3_14_slim",
     testonly = True,
     image = "@python_3_14_slim_linux_amd64",
     tag = "python:3.14-slim",
-    visibility = ["//visibility:public"],
-)
-
-oci_image_py(
-    name = "mitmproxy",
-    testonly = True,
-    image = "@mitmproxy_linux_amd64",
-    tag = "mitmproxy:12",
     visibility = ["//visibility:public"],
 )
 
