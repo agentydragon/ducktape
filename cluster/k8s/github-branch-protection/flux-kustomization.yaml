@@ -9,8 +9,8 @@ spec:
   path: ./cluster/k8s/github-branch-protection
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: github-branch-protection
     namespace: ducktape-flux
   timeout: 10m
   wait: true

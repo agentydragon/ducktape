@@ -8,8 +8,8 @@ spec:
   path: ./cluster/k8s/grocy/vallejo/mcp-servicemonitor
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: grocy-mcp-vallejo-servicemonitor
 
     namespace: ducktape-flux
   dependsOn:

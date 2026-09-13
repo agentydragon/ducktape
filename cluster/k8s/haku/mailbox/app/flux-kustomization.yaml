@@ -11,8 +11,8 @@ spec:
   prune: true
   wait: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: haku-mailbox-app
     namespace: ducktape-flux
   decryption:
     provider: sops
