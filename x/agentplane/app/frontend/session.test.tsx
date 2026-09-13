@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 
+import { create, toJson, type MessageInitShape } from "@bufbuild/protobuf";
 import { MantineProvider } from "@mantine/core";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -7,6 +8,7 @@ import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { sendInput } from "./client";
+import { EventSchema, ItemKind } from "./protocol_pb";
 import { SessionView } from "./session";
 
 vi.mock("./client", async (importOriginal) => ({
@@ -26,7 +28,11 @@ afterEach(async () => {
   vi.resetAllMocks();
 });
 
-async function render(): Promise<{ container: HTMLDivElement; composer: HTMLTextAreaElement }> {
+function event(sequence: number, observation: MessageInitShape<typeof EventSchema>["observation"]): string {
+  return JSON.stringify(toJson(EventSchema, create(EventSchema, { sequence: BigInt(sequence), observation })));
+}
+
+async function render(): Promise<{ container: HTMLDivElement; composer: HTMLTextAreaElement; stream: EventTarget }> {
   const stream = new EventTarget();
   vi.stubGlobal(
     "EventSource",
@@ -53,7 +59,7 @@ async function render(): Promise<{ container: HTMLDivElement; composer: HTMLText
   });
   const composer = container.querySelector("textarea");
   if (!composer) throw new Error("Missing composer");
-  return { container, composer };
+  return { container, composer, stream };
 }
 
 async function type(composer: HTMLTextAreaElement, text: string): Promise<void> {
@@ -112,4 +118,33 @@ it("gives edited text a new input id after a failure", async () => {
   await act(async () => enter(composer));
   expect(vi.mocked(sendInput).mock.calls[1]?.[2]).not.toBe(vi.mocked(sendInput).mock.calls[0]?.[2]);
   expect(vi.mocked(sendInput).mock.calls[1]?.[3]).toBe("different message");
+});
+
+it("collapses a lone tool call behind its run disclosure", async () => {
+  const { container, stream } = await render();
+  await act(async () => {
+    stream.dispatchEvent(
+      new MessageEvent("event", { data: event(2, { case: "turnStarted", value: { turnId: "t1" } }) })
+    );
+    stream.dispatchEvent(
+      new MessageEvent("event", {
+        data: event(3, {
+          case: "itemStarted",
+          value: { itemId: "tool#0", kind: ItemKind.TOOL_CALL, toolName: "Bash" },
+        }),
+      })
+    );
+    stream.dispatchEvent(
+      new MessageEvent("event", {
+        data: event(4, {
+          case: "itemCompleted",
+          value: { itemId: "tool#0", outcome: { case: "tool", value: { output: "ok", succeeded: true } } },
+        }),
+      })
+    );
+  });
+  const control = [...container.querySelectorAll("button")].find((button) =>
+    button.textContent?.includes("1 tool call")
+  );
+  expect(control?.getAttribute("aria-expanded")).toBe("false");
 });
