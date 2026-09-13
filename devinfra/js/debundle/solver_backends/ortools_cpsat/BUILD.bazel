@@ -5,7 +5,11 @@ load("@rules_rust_prost//:defs.bzl", "rust_prost_library")
 
 package(default_visibility = ["//visibility:public"])
 
-COPTS = ["-std=c++23"]
+# Keep this target on the toolchain's C++17 mode. Abseil's status library is
+# built in that mode; compiling this target as C++20+ changes SourceLocation to
+# std::source_location and creates an ABI mismatch with the out-of-line status
+# helpers in recent Abseil LTS releases.
+COPTS = ["-std=c++17"]
 
 proto_library(
     name = "selector_cp_sat_proto",

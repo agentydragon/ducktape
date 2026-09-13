@@ -213,7 +213,7 @@ absl::Status AddVariables(const SelectorCpSatRequest& request,
     return shared_domains.status();
   }
   for (const Variable& variable : request.variables()) {
-    if (variables->contains(variable.id())) {
+    if (variables->find(variable.id()) != variables->end()) {
       return absl::InvalidArgumentError(
           absl::StrCat("duplicate variable id ", variable.id()));
     }
@@ -454,7 +454,7 @@ absl::StatusOr<std::vector<ProjectionVariable>> ProjectionVariables(
     }
   }
   for (uint32_t id : ids) {
-    if (!variables.contains(id)) {
+    if (variables.find(id) == variables.end()) {
       return MissingVariableStatus(id);
     }
   }
