@@ -2513,9 +2513,9 @@ pytest-timeout==2.4.0 \
     --hash=sha256:7e68e90b01f9eff71332b25001f85c75495fc4e3a836701876183c4bcfd0540a \
     --hash=sha256:c42667e5cdadb151aeb5b26d114aff6bdf5a907f176a007a30b940d3d865b5c2
     # via pytest-homeassistant-custom-component
-pytest-unordered==0.7.0 \
-    --hash=sha256:0f953a438db00a9f6f99a0f4727f2d75e72dd93319b3d548a97ec9db4903a44f \
-    --hash=sha256:486b26d24a2d3b879a275c3d16d14eda1bd9c32aafddbb17b98ac755daba7584
+pytest-unordered==0.8.0 \
+    --hash=sha256:3c369ed86919d3eb35e11fd27bb679c1e3506ead9327e25aa8a07307256be65a \
+    --hash=sha256:c792b879032b33141205e1a38a80234eb0117474bf9459ae65557e29837c2a1c
     # via pytest-homeassistant-custom-component
 pytest-xdist==3.8.0 \
     --hash=sha256:202ca578cfeb7370784a8c33d6d05bc6e13b4f25b5053c30a152269fd10f0b88 \
