@@ -20,7 +20,7 @@ Flags:
 Use "environment-runner [command] --help" for more information about a command.
 
 === --version ===
-environment-runner version release-1186d93b9-ext
+environment-runner version release-ba76006550-ext
 
 === setup --help ===
 The setup command pre-installs all required dependencies for orchestrator mode.
@@ -193,9 +193,9 @@ Flags:
       --local-testing                           Disable Claude WebSocket connections and git configuration (run in standalone mode for local testing)
       --log-level string                        Log level (debug, info, warn, error) (default "info")
       --organization-id string                  Organization ID for API calls (required for self-hosted)
-      --print-code-logs                         Print Claude Code logs to console when execution completes or fails
+      --print-code-logs                         Print an end-of-session Claude Code summary to console when execution completes or fails (raw log dump requires ENV_MANAGER_PRINT_RAW_CC_LOGS)
       --session string                          ID of the session to manage (required)
-      --session-mode string                     Session mode: 'new' (default for Cloud), 'resume' (skip git clone and setup scripts), 'resume-cached' (default for self-hosted), 'setup-only' (exit after setup) (default "new")
+      --session-mode string                     Session mode: 'new' (default for Cloud), 'resume' (skip git clone and setup scripts), 'resume-cached' (default for first self-hosted runs), 'setup-only' (exit after setup); 'retry' is reserved for the runner and cannot be passed explicitly (default "new")
       --skip-git-config                         Skip git configuration setup (use container's existing .gitconfig)
       --stdin                                   Deprecated: stdin is now always used. This flag is ignored.
       --upgrade-claude-code                     Deprecated: use --claude-agent-version instead. When true (default), upgrades Claude Agent to latest version. (default true)

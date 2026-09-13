@@ -59,6 +59,15 @@ isolated.
 
 ## Carried forward, not re-verified
 
+- **`environment-manager` bumped to `release-ba76006550-ext` (2026-09-12),
+  not yet reconciled.** `reference/environment-manager.gz` was recaptured
+  from the live binary, but `src/` still reflects `0b86a2a0`
+  (`release-1186d93b9-ext`); nobody has re-run the reconstruction pass
+  against the new build. Two confirmed differences so far, from `--help`
+  text alone: the new build has **no ELF Build ID note** (every prior build
+  had one), and `--print-code-logs` / `--session-mode` gained new behavior
+  (see `reference/subcommands.txt` diff in git history for exact wording).
+  Everything else under `src/` is unverified against this build.
 - **envtype `Initialize` session-mode gating.** The `new` / `resume` /
   `resume-cached` / `setup-only` step gating in <../../AGENTS.md> was
   established on an older binary. `Initialize` grew from 103 to 157 symbols and
@@ -73,6 +82,17 @@ isolated.
 
 ## Environment-limited
 
+- **`process_api` cannot be recaptured from inside a live session
+  (2026-09-12).** `/proc/1/exe` and `/proc/1/mem` both return `EACCES` for
+  root with full capabilities, on a confirmed real Firecracker kernel (not a
+  gVisor-synthesized `/proc`); see `../process_api/README.md` §
+  "Capturing the binary" for the full evidence and a ranked, unconfirmed
+  list of likely mechanisms (LSM policy on the process, `PR_SET_DUMPABLE`,
+  a user-namespace boundary — LSM policy fits the observed `EACCES` best).
+  `reference/process_api.gz` is unverified against whatever build is
+  currently live — a prior session must have had `/proc/1/exe` read access
+  that this one does not. Re-check this from a future session before
+  assuming it's permanent.
 - **Container build-and-diff (Phase 5) has not been run** against this
   snapshot. The session that produced it had the `docker` client but no daemon.
   `live-dpkg-versions.txt` is refreshed (same 686 packages, version bumps

@@ -12,19 +12,27 @@ Go-based orchestration service that manages Claude Code web container sessions.
 
 ## Target Binary
 
-| Property           | Value                                                            |
-| ------------------ | ---------------------------------------------------------------- |
-| **ELF Build ID**   | `0b86a2a0dbc9411eb18435e1c56822b0156f90fe`                       |
-| **Reference file** | `devinfra/claude/web_env/reference/environment-manager.gz`       |
-| **Language**       | Go                                                               |
-| **Version string** | `release-1186d93b9-ext`                                          |
-| **Channel**        | Release                                                          |
-| **Obfuscation**    | garble, with `-literals` (symbols randomized, strings encrypted) |
-| **Binary size**    | 58.6 MB (uncompressed), 22 MB (gzipped)                          |
-| **Functions**      | 46,573 (recovered from `.gopclntab`)                             |
-| **Binary path**    | `/opt/env-runner/environment-manager`                            |
-| **Dynamic deps**   | Only `libc.so.6`                                                 |
-| **RE directory**   | `src/` (flat layout, Build ID in this table)                     |
+The reconstructed source under `src/` reflects the binary described in this
+table (`0b86a2a0`, `release-1186d93b9-ext`). A newer live build,
+`release-ba76006550-ext`, was captured to `reference/environment-manager.gz`
+on 2026-09-12 and is **not yet reconciled** — see `../TODO.md`. That build
+ships with **no ELF Build ID note at all** (`readelf -n` finds nothing),
+where every prior build had one; the table below stays pinned to `0b86a2a0`
+until the reconstruction pass runs against the new build.
+
+| Property           | Value                                                                                                                      |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| **ELF Build ID**   | `0b86a2a0dbc9411eb18435e1c56822b0156f90fe`                                                                                 |
+| **Reference file** | `devinfra/claude/web_env/reference/environment-manager.gz` (superseded by the `release-ba76006550-ext` capture, see above) |
+| **Language**       | Go                                                                                                                         |
+| **Version string** | `release-1186d93b9-ext`                                                                                                    |
+| **Channel**        | Release                                                                                                                    |
+| **Obfuscation**    | garble, with `-literals` (symbols randomized, strings encrypted)                                                           |
+| **Binary size**    | 58.6 MB (uncompressed), 22 MB (gzipped)                                                                                    |
+| **Functions**      | 46,573 (recovered from `.gopclntab`)                                                                                       |
+| **Binary path**    | `/opt/env-runner/environment-manager`                                                                                      |
+| **Dynamic deps**   | Only `libc.so.6`                                                                                                           |
+| **RE directory**   | `src/` (flat layout, Build ID in this table)                                                                               |
 
 ## Working with the binary
 

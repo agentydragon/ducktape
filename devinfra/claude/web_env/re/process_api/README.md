@@ -21,7 +21,55 @@ PID 1 duties (orphan adoption, zombie reaping).
 | **Rust toolchain** | `rustc 1.95.0-nightly (6a979b3e3 2026-02-26)`                       |
 | **Source paths**   | Remapped: application modules appear as bare `src/*.rs`             |
 
-Reconstructed source lives under `src/` in this directory.
+Reconstructed source lives under `src/` in this directory. This table
+describes the `edebff2c` build; whether the live binary still matches it is
+unverified as of 2026-09-12 — see "Capturing the binary" below.
+
+## Capturing the binary
+
+As of 2026-09-12, `/proc/1/exe` and `/proc/1/mem` both return `EACCES` from
+inside a live session, for root with full effective capabilities (including
+`cap_sys_ptrace`) and no Yama `ptrace_scope` file present. This is a genuine
+Firecracker kernel (confirmed via `/proc/version`; not a gVisor-synthesized
+`/proc`), so the block is a real kernel/LSM-level access-control decision, not
+a sandbox artifact of this repo's own tooling. `/proc/1/maps` and
+`/proc/1/smaps_rollup` still work and confirm the binary is fully mapped
+(headers/rodata/`.text`/`.data` segments matching the ~4.4 MB size above), so
+the bytes exist in memory but no accessible read path reaches them. Forcing a
+core dump by signaling PID 1 is not an option — PID 1 is this session's own
+container init, so that would take the session down with it. The
+`reference/process_api.gz` snapshot predates this restriction (a prior
+session could evidently read `/proc/1/exe` directly); there is currently no
+known way to recapture `process_api` from inside a session at all.
+
+**Supporting evidence**: `stat /proc/1/exe` shows the symlink itself is wide
+open (`0777 lrwxrwxrwx`, owned by `root:root`) — the denial happens inside the
+kernel's special-cased handler for that entry, before ordinary DAC permission
+bits would matter. `/proc/1/status` shows `PPid: 0` (this really is the
+top-level init, not a namespaced view of a fake PID 1) and `Seccomp: 0` (no
+seccomp filter on PID 1 itself, so that's not the mechanism).
+
+**Likely mechanism (unconfirmed, ranked by plausibility)** — confirming any
+of these would require exactly the ptrace/namespace-comparison probing this
+repo's owner declined to pursue against a live session's own PID 1, so this
+stays a hypothesis list rather than a finding:
+
+1. **LSM policy (SELinux/AppArmor) specifically labeling `process_api`'s
+   memory as protected.** Best fit for `EACCES` — many LSM policy denials
+   surface as `EACCES`, where the classic `ptrace_may_access()`
+   capability/dumpable-flag failure (no `CAP_SYS_PTRACE` in the target's
+   namespace) is remembered as returning `EPERM`. Also the most "on brand"
+   explanation given how deliberately layered the rest of the sandbox is.
+2. **`prctl(PR_SET_DUMPABLE, 0)` on `process_api` itself**, with `exe`/`mem`
+   gated more strictly than `maps` in this kernel/config. Plausible, but sits
+   less comfortably with the observed `EACCES` than an LSM denial does.
+3. **A user-namespace boundary.** `/proc/self/uid_map` shows an explicit
+   `0 0 4294967295` mapping — only present for a _created_ namespace, not the
+   initial one — even though it maps uid 0 straight through. If `process_api`
+   lives in an ancestor namespace, capabilities that are "full" inside our
+   own namespace don't count against a target above it. Architecturally
+   plausible for a VM hosting an agent session as a semi-isolated subtree,
+   but this failure mode would more naturally surface as `EPERM`.
 
 ## Build
 
