@@ -90,8 +90,8 @@ importers:
         specifier: 3.3.1
         version: 3.3.1
       lucide-svelte:
-        specifier: ^0.577.0
-        version: 0.577.0(svelte@5.57.0(@typescript-eslint/types@8.70.0))
+        specifier: ^1.0.0
+        version: 1.0.1(svelte@5.57.0(@typescript-eslint/types@8.70.0))
       marked:
         specifier: ^18.0.0
         version: 18.0.13
@@ -308,8 +308,8 @@ importers:
         specifier: ^11.12.0
         version: 11.12.0
       lucide-svelte:
-        specifier: ^0.577.0
-        version: 0.577.0(svelte@5.57.0(@typescript-eslint/types@8.70.0))
+        specifier: ^1.0.0
+        version: 1.0.1(svelte@5.57.0(@typescript-eslint/types@8.70.0))
       marked:
         specifier: ^18.0.0
         version: 18.0.13
@@ -3472,8 +3472,8 @@ packages:
   lru-cache@5.1.1:
     resolution: {integrity: sha512-KpNARQA3Iwv+jTA0utUVVbrh+Jlrr1Fv0e56GGzAFOXN7dk/FviaDW8LHmK52DlcH4WP2n6gI8vN1aesBFgo9w==}
 
-  lucide-svelte@0.577.0:
-    resolution: {integrity: sha512-0i88o57KsaHWnc80J57fY99CWzlZsSdtH5kKjLUJa7z8dum/9/AbINNLzJ7NiRFUdOgMnfAmJt8jFbW2zeC5qQ==}
+  lucide-svelte@1.0.1:
+    resolution: {integrity: sha512-WvzZgk0pqzgda+AErLvgWxHkfg/+GgUwqKMRHvzt0IqyMdmyEDzDCk3Z+Wo/3y753oIgx8u9Q4eUbWkghFa8Jg==}
     deprecated: Package deprecated. Please use @lucide/svelte instead.
     peerDependencies:
       svelte: ^3 || ^4 || ^5.0.0-next.42
@@ -8105,7 +8105,7 @@ snapshots:
       yallist: 3.1.1
     optional: true
 
-  lucide-svelte@0.577.0(svelte@5.57.0(@typescript-eslint/types@8.70.0)):
+  lucide-svelte@1.0.1(svelte@5.57.0(@typescript-eslint/types@8.70.0)):
     dependencies:
       svelte: 5.57.0(@typescript-eslint/types@8.70.0)
 
