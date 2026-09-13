@@ -8,12 +8,12 @@
 }:
 python3Packages.buildPythonPackage rec {
   pname = "pyrage";
-  version = "1.3.0";
+  version = "1.4.0";
   format = "wheel";
 
   src = fetchurl {
-    url = "https://files.pythonhosted.org/packages/38/f3/e91bf604fd40c42c60e8f95075cddb0b85d0bdf452f736b533b1bad550e0/pyrage-1.3.0-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl";
-    hash = "sha256-qwZrIpJcWg7F/q0uIeRYayHV2nMAVcfkbKqXi9md6TY=";
+    url = "https://files.pythonhosted.org/packages/d9/f0/41da7d88cfdad2eba492f3275ec50a65916ccd3a78140fb15875569ad1ff/pyrage-1.4.0-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl";
+    hash = "sha256-f06wy8K0ruXerJhixHs4lYZt9VVBU5Ua+CLpxYHmhVg=";
   };
 
   nativeBuildInputs = [ autoPatchelfHook ];

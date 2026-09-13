@@ -9,7 +9,7 @@
 let
   litert-lm-api = python3Packages.buildPythonPackage rec {
     pname = "litert-lm-api";
-    version = "0.13.1";
+    version = "0.17.0";
     format = "wheel";
 
     src = fetchPypi {
@@ -19,7 +19,7 @@ let
       python = "py3";
       abi = "none";
       platform = "manylinux_2_27_x86_64";
-      hash = "sha256-uYHVXgV76WZPMGcNXB+qbnOK1RaiYX29rBDca1tAnMo=";
+      hash = "sha256-ZU7+fdaHAzWzz6vlfevJ7xO+7OFuSYGnHJZNOiEvtyQ=";
     };
 
     nativeBuildInputs = [ autoPatchelfHook ];
@@ -40,7 +40,7 @@ let
 
   litert-lm-builder = python3Packages.buildPythonPackage rec {
     pname = "litert-lm-builder";
-    version = "0.13.0";
+    version = "0.17.0";
     format = "wheel";
 
     src = fetchPypi {
@@ -50,7 +50,7 @@ let
       python = "py3";
       abi = "none";
       platform = "any";
-      hash = "sha256-s6RpaKK/Sc0pBZowp2wHOK4LkMOcfBSA21BgczMh11c=";
+      hash = "sha256-iFqAcZ1OPV6WPRZXxRDct+m6zsT9FyNlSaXuEu6ROwM=";
     };
 
     propagatedBuildInputs = with python3Packages; [
@@ -71,7 +71,7 @@ let
 in
 python3Packages.buildPythonApplication rec {
   pname = "litert-lm";
-  version = "0.13.1";
+  version = "0.17.0";
   format = "wheel";
 
   src = fetchPypi {
@@ -81,7 +81,7 @@ python3Packages.buildPythonApplication rec {
     python = "py3";
     abi = "none";
     platform = "any";
-    hash = "sha256-I5CglpPz1yjs+tVhGbMmqfnjAtKQE5L/dbAlBAyjZbk=";
+    hash = "sha256-AVvUzIs3SCET3cYt6nbM0SAJQtl9UlFKBwvfn9TZVNg=";
   };
 
   postInstall = ''
@@ -94,6 +94,7 @@ python3Packages.buildPythonApplication rec {
       click
       huggingface-hub
       prompt-toolkit
+      questionary
       typing-extensions
     ])
     ++ [
