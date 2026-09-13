@@ -4,6 +4,9 @@
 **Host**: rugged, Intel Lunar Lake, Arc 130V/140V iGPU, Intel AI Boost NPU,
 30GiB RAM
 
+**LiteRT-LM patch status rechecked**: 2026-09-13 against package version
+`0.17.0` (the current PyPI release checked, and the version pinned below).
+
 ## Takeaways
 
 - Google does have its own runtime path: **LiteRT-LM**. Its direct CLI and
@@ -11,7 +14,7 @@
   official E2B `.litertlm` model runs on rugged's Arc GPU and supports
   LiteRT-LM speculative decoding. It is now packaged locally as `.#litert-lm`.
 - LiteRT-LM's OpenAI-compatible `serve` mode exists and can run both CPU and
-  GPU requests. Upstream 0.13.1 does not expose the Gemma 4 speculative
+  GPU requests. Upstream 0.17.0 does not expose the Gemma 4 speculative
   decoding/MTP flag in `serve`, but the local Nix package now carries a small
   patch that threads the existing engine option through as
   `serve --enable-speculative-decoding=true`. With that patch, GPU streaming
@@ -38,6 +41,9 @@ Official references:
 - <https://developers.google.com/edge/litert/next/litert_lm_npu>
 - <https://www.intel.com/content/www/us/en/developer/articles/community/litert-unlocks-core-ultra-npu-performance-for-aipc.html>
 - <https://ollama.com/library/gemma4/tags>
+- <https://pypi.org/project/litert-lm/0.17.0/>
+- <https://github.com/google-ai-edge/LiteRT-LM/pull/2828>
+- <https://github.com/google-ai-edge/LiteRT-LM/issues/1930>
 
 ## Status matrix
 
@@ -95,8 +101,8 @@ Practical next sequence:
 
 - `flake.nix` has a shared `nixpkgs-master` input for packages newer than
   unstable. The old narrower `nixpkgs-ollama` idea was folded into this.
-- <nix/packages/litert-lm.nix> packages `litert-lm-api==0.13.1`,
-  `litert-lm-builder==0.13.0`, and `litert-lm==0.13.1` from PyPI. The native
+- <nix/packages/litert-lm.nix> packages `litert-lm-api==0.17.0`,
+  `litert-lm-builder==0.17.0`, and `litert-lm==0.17.0` from PyPI. The native
   wheel is auto-patched against nixpkgs `vulkan-loader`.
 - <nix/packages/litert-lm-serve-speculative-decoding.patch> locally patches
   `litert-lm serve` to expose `--enable-speculative-decoding=true` and pass it
@@ -124,9 +130,9 @@ the lower-level LiteRT runtime, not the LiteRT-LM CLI/API package set used here.
 
 The local flake packages the three Google PyPI wheels directly:
 
-- `litert-lm-api==0.13.1`
-- `litert-lm-builder==0.13.0`
-- `litert-lm==0.13.1`
+- `litert-lm-api==0.17.0`
+- `litert-lm-builder==0.17.0`
+- `litert-lm==0.17.0`
 
 The native API wheel contains `liblitert-lm.so`; the local derivation patches it
 against nixpkgs `vulkan-loader`, so no `LD_LIBRARY_PATH` is needed for Vulkan.
@@ -258,6 +264,25 @@ the `LiteRTLMServer`, and passing it through to `litert_lm.Engine(...)`. A
 patched verbose GPU serve run confirmed `enable_speculative_decoding: true` and
 loaded `TF_LITE_MTP_DRAFTER`. On shutdown, the patched server logged 3 drafted
 tokens, 3 verified tokens, and MTP success rate 1 for the tiny `ok` smoke test.
+
+#### Patch retirement recheck (2026-09-13)
+
+Keep <nix/packages/litert-lm-serve-speculative-decoding.patch>. The pinned
+`0.17.0` package still lacks a `serve`-level speculative-decoding override, as
+does the current upstream `serve` implementation. Upstream PR #2828 adds the
+option to `run` and `benchmark` only; it does not supersede this patch. Upstream
+issue #1930 is the closest tracker and remains open.
+
+`nix build .#litert-lm --no-link --print-out-paths --accept-flake-config`
+passed and the patch applied to the `0.17.0` package. A subsequent
+`litert-lm serve --help` smoke test did not reach Click because the built
+Python 3.14 application loaded a Python 3.13 NumPy extension; treat that as a
+separate packaging defect, not evidence that the patch is removable.
+
+Retire the patch only after a released LiteRT-LM version provides equivalent
+`serve`-level override semantics (whether named `--enable-speculative-decoding`
+or the newer upstream spelling), and the rugged command plus actual MTP
+inference have been revalidated.
 
 For OpenCode, advertise `gemma4-e2b-it,gpu,32000` rather than `...,131072`.
 The server accepts `...,131072`, but this specific `.litertlm` artifact reports
