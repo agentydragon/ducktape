@@ -19,7 +19,3 @@ spec:
   dependsOn:
     - name: flux-image-automation-ghcr
       namespace: ducktape-flux
-    - name: tofu-controller
-      namespace: ducktape-flux
-    - name: tofu-state-db
-      namespace: ducktape-flux
