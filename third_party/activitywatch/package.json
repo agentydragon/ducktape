@@ -58,7 +58,7 @@
     "less-loader": "^13.0.0",
     "luxon": "^3.0.0",
     "papaparse": "^5.7.0",
-    "pinia": "^2.0.13",
+    "pinia": "^4.0.0",
     "propagating-hammerjs": "^1.4.7",
     "regenerator-runtime": "^0.14.1",
     "sass": "^1.104.1",
