@@ -67,7 +67,7 @@ tempfile = "^3.20.0"
 bytes = "^1.11.0"
 parking_lot = "^0.12.5"
 libc = "^0.2.172"
-jsonwebtoken = "^9.3.1"
+jsonwebtoken = "^11.0.0"
 # x/twenty_questions_frameworks/rig
 anyhow = "^1.0"
 object_store = { version = "^0.14.0", features = ["aws"] }
