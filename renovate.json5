@@ -3,5 +3,39 @@
   extends: ["config:recommended"],
   dependencyDashboard: true,
   prCreation: "approval",
-  ignorePaths: ["props/specimens/**", "devinfra/claude/web_env/**"],
+  ignorePaths: [
+    "props/specimens/**",
+    "devinfra/claude/web_env/**",
+    // Generated from pyproject.toml; Renovate should update the source instead.
+    "requirements_bazel.txt",
+    // Rendered by crate-universe; the canonical Cargo files remain visible.
+    "Cargo.Bazel.lock",
+    // Bazel owns these locks; Renovate should watch their package.json inputs.
+    "pnpm-lock.yaml",
+    "third_party/manifold_mcp_server/pnpm-lock.yaml",
+    // Generated from pixi.toml; keep the manifest as Renovate's input.
+    "skills/freecad/conda/pixi.lock",
+  ],
+  packageRules: [
+    {
+      description: "Leave Bazel-owned pnpm lock regeneration to Bazel",
+      matchManagers: ["npm"],
+      matchFileNames: [
+        "package.json",
+        "airlock/frontend/package.json",
+        "props/frontend/package.json",
+        "study_casino/frontend/package.json",
+        "util/testing/frontend_visual/package.json",
+        "x/rspcache/admin_ui/package.json",
+        "third_party/manifold_mcp_server/package.json",
+      ],
+      skipArtifactsUpdate: true,
+    },
+    {
+      description: "Leave Pixi lock regeneration to Bazel",
+      matchManagers: ["pixi"],
+      matchFileNames: ["skills/freecad/conda/pixi.toml"],
+      skipArtifactsUpdate: true,
+    },
+  ],
 }
