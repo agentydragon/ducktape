@@ -228,13 +228,13 @@ theirs. Never switch branches there or commit on top of it unasked: judge whethe
 request builds on that dirty state; if not, do the work in a fresh worktree and send a
 PR from it; if genuinely ambiguous, ask.
 
-### Session worktree discipline
+### Developer-machine worktree hygiene
 
-Do not create a worktree for read-only investigation. When you first need to edit code
-or run Bazel, inspect the current worktree. If it is clean and suitable for the task,
-keep using it. If it is a personal or user-owned dirty checkout with unrelated changes,
-or otherwise unsuitable for the work, create one isolated worktree for the session. If
-the task explicitly builds on the existing dirty changes, remain in that checkout.
+The dirty-checkout rule above determines whether isolation is needed. Do not create a
+worktree for read-only investigation. When you first need to edit code or run Bazel,
+inspect the current worktree. If it is suitable for the task, keep using it; otherwise,
+create one isolated worktree for the session. If the rule above says the task explicitly
+builds on existing dirty changes, remain in that checkout.
 
 Once a worktree has been selected or created, keep using that absolute path for the
 session's edits, Git commands, and Bazel commands. Do not create or switch to another
