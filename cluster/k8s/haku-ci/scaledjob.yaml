@@ -131,7 +131,7 @@ spec:
           # price, contained by haku-ci being operator-only (no Haku RBAC), off control
           # planes, and egress-fenced. See README.
           - name: dind
-            image: docker:27-dind-rootless
+            image: docker:29-dind-rootless
             restartPolicy: Always
             args:
               - --host=tcp://0.0.0.0:2375

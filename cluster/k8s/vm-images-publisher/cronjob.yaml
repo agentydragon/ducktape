@@ -41,7 +41,7 @@ spec:
                         operator: DoesNotExist
           containers:
             - name: publish
-              image: nixos/nix:2.24.11
+              image: nixos/nix:2.35.2
               imagePullPolicy: IfNotPresent
               resources:
                 requests:

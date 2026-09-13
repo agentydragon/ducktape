@@ -19,7 +19,7 @@ spec:
       namespace: ducktape-flux
   images:
     - name: registry.k8s.io/sig-storage/snapshot-controller
-      newTag: v8.4.0
+      newTag: v8.6.0
   patches:
     - target:
         kind: Deployment

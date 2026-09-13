@@ -27,7 +27,7 @@ spec:
         topology.kubernetes.io/region: hil
       containers:
         - name: dind
-          image: docker:27-dind
+          image: docker:29-dind
           args:
             - dockerd
             - --host=unix:///var/run/docker.sock
