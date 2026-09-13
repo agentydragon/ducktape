@@ -33,7 +33,7 @@ from finance.plaid.db.products import Product
 
 # Plaid removed the `development` environment in 2024; only sandbox/production remain.
 PLAID_HOSTS = {"sandbox": plaid.Environment.Sandbox, "production": plaid.Environment.Production}
-type JsonValue = str | int | float | bool | None | list["JsonValue"] | dict[str, "JsonValue"]
+type JsonValue = str | int | float | bool | list["JsonValue"] | dict[str, "JsonValue"] | None
 
 
 @dataclass(frozen=True)

@@ -51,7 +51,7 @@ async def async_wait_for_port(host: str, port: int, *, timeout_secs: float = 10.
         ):
             with attempt:
                 await _try_connect()
-    except (OSError, TimeoutError):
+    except OSError, TimeoutError:
         raise TimeoutError(f"port did not become ready: {host}:{port}")
 
 

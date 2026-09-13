@@ -14,7 +14,6 @@ target-version = "py314"
 # Reason: devinfra/format/format.py reads .gitattributes, but ruff check reads ruff.toml.
 # See README.md "Lint/Format Exclusions" section for details.
 exclude = [
-    "tana/export/references",
     "props/testing/fixtures/testdata",
     "py_detectors/rules/**/bad/**",
     "py_detectors/rules/**/ok/**",
@@ -83,6 +82,12 @@ ignore = [
     "PLR0915",  # too many statements
     "PLR0911",  # too many returns
     "PLR0913",  # too many arguments - often leads to unhelpful refactors
+    # PLR0917 is not a generally useful design signal here: some APIs are
+    # naturally wide (for example, Typer-style command entry points). Revisit
+    # enabling it after evaluating whether LLM-generated fixes actually
+    # improve the design instead of introducing wrapper dataclasses without
+    # broader reconsideration.
+    "PLR0917",
     "B904",     # raise from e
     "E501",     # line length (formatter handles wrapping)
     # EXE002 (file is executable but has no shebang): the lint *aspect* runs ruff on

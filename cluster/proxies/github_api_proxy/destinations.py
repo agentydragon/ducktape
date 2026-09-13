@@ -3,6 +3,7 @@ import ipaddress
 import socket
 from collections.abc import Buffer
 from contextvars import ContextVar
+from typing import Any
 
 from mitmproxy import http
 from mitmproxy.proxy.server_hooks import ServerConnectionHookData
@@ -11,7 +12,7 @@ checked_destinations: ContextVar[frozenset[tuple[str, int]] | None] = ContextVar
 
 
 class OriginLoop(asyncio.SelectorEventLoop):
-    async def sock_connect(self, sock: socket.socket, address: tuple[object, ...] | str | Buffer) -> None:
+    async def sock_connect(self, sock: socket.socket, address: tuple[Any, ...] | str | Buffer | int) -> None:
         if (checked := checked_destinations.get()) is not None:
             # asyncio resolves before this public hook. Check the actual numeric
             # dial target without changing mitmproxy's hostname-based pool key.
@@ -94,7 +95,7 @@ class PublicOrigins:
             ):
                 server.error = "Proxy destination not permitted"
                 return
-        except (OSError, ValueError, TimeoutError):
+        except OSError, ValueError, TimeoutError:
             server.error = "Proxy destination resolution failed"
             return
         # Mitmproxy awaits this hook and its dial in the same connection task.

@@ -60,9 +60,9 @@ def summarize(message: WebSocketMessage) -> tuple[ParseStatus, Structure | None]
         return "oversized", None
     try:
         value = json.loads(message.content.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError):
+    except UnicodeDecodeError, json.JSONDecodeError:
         return "non_json", None
-    except (ValueError, RecursionError):
+    except ValueError, RecursionError:
         return "analysis_limit", None
     if not isinstance(value, dict):
         return "unknown_schema", None

@@ -34,7 +34,7 @@ def _journal_headline(name: str) -> str:
         dt = datetime.strptime(date_str, "%Y-%m-%d")
         # TODO: detect day more robustly
         return dt.strftime("%a, %b %-d")  # "Tue, May 6"
-    except (ValueError, IndexError):
+    except ValueError, IndexError:
         return name
 
 

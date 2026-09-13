@@ -71,15 +71,14 @@ RUN curl -fsSL -o /usr/local/bin/tea \
     && chmod +x /usr/local/bin/tea \
     && tea --version
 
-# ruff pinned to the version haku-state's lint workflow installs
-# (.forgejo/workflows/lint.yaml: `pip install ruff==...`) — a DIFFERENT pin there and here
-# means the sandbox greenlights code CI then rejects, which is worse than not having it.
+# Keep the standalone Ruff binary aligned with the repository-wide pin. A different pin
+# here would mean the sandbox greenlights code that the main lint path rejects.
 # Earns its place because lint is the one CI gate the sandbox couldn't reproduce: ruff is
 # not a Bazel target (see that workflow's header for why), and full `python3` above still
 # ships no pip, so an agent working haku-state could only eyeball line lengths and
 # blank-line runs. That cost three consecutive red PRs (E501, E303, E402) before this was
 # baked in. Standalone binary, same shape as the bazelisk/kubectl/tea pins above.
-ARG RUFF_VERSION=0.15.20
+ARG RUFF_VERSION=0.16.7
 RUN curl -fsSL "https://github.com/astral-sh/ruff/releases/download/${RUFF_VERSION}/ruff-x86_64-unknown-linux-gnu.tar.gz" \
       | tar -xz -C /usr/local/bin --strip-components=1 --wildcards '*/ruff' \
     && ruff --version

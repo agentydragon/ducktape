@@ -91,7 +91,7 @@ def _test_reflink_support() -> bool:
         try:
             subprocess.run(["cp", "--reflink=auto", test_file, test_copy], check=True, capture_output=True, text=True)
             return True
-        except (subprocess.CalledProcessError, FileNotFoundError):
+        except subprocess.CalledProcessError, FileNotFoundError:
             return False
 
 

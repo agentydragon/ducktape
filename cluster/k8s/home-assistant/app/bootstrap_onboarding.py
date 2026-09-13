@@ -41,7 +41,7 @@ def wait_for_home_assistant() -> set[str] | None:
         try:
             verify_api_ready()
             return onboarding_status()
-        except (error.URLError, TimeoutError):
+        except error.URLError, TimeoutError:
             time.sleep(5)
     raise TimeoutError("Home Assistant did not become available within 5 minutes")
 

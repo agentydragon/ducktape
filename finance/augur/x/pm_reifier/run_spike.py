@@ -241,7 +241,7 @@ def _path(scn: dict, series: str) -> list[float] | None:
         return None
     try:
         vals = [float(x) for x in arr]
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
     return vals if all(math.isfinite(v) and v > 0 for v in vals) else None
 
@@ -255,7 +255,7 @@ def _oval(scn: dict) -> list[float] | None:
         return None
     try:
         vals = [float(x) for x in arr]
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
     return vals if all(math.isfinite(v) and v > 0 for v in vals) else None
 

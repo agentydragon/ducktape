@@ -159,7 +159,7 @@ class _TokenRefreshResponse(BaseModel):
 def _read_auth(path: Path) -> _AuthState | None:
     try:
         raw = json.loads(path.read_text())
-    except (OSError, ValueError, TypeError):
+    except OSError, ValueError, TypeError:
         return None
     if not isinstance(raw, dict):
         return None
@@ -201,7 +201,7 @@ def _decode_jwt_payload(jwt: str) -> dict[str, Any] | None:
     try:
         decoded = base64.urlsafe_b64decode(payload + padding)
         value = json.loads(decoded)
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return None
     return value if isinstance(value, dict) else None
 

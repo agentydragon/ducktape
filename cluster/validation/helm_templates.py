@@ -26,7 +26,7 @@ def _get_values_files() -> list[Path]:
         from util.bazel.runfiles import get_required_path  # noqa: PLC0415 — not available outside Bazel
 
         return [get_required_path(rloc) for rloc in _CILIUM_VALUES_RLOCATIONS]
-    except (ImportError, RuntimeError):
+    except ImportError, RuntimeError:
         # Outside Bazel: resolve relative to repo root (strip _main/ prefix)
         repo_root = Path(__file__).resolve().parents[2]
         return [repo_root / rloc.removeprefix("_main/") for rloc in _CILIUM_VALUES_RLOCATIONS]

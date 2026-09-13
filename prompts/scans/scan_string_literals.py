@@ -101,7 +101,7 @@ def scan_file(filepath: Path) -> tuple[list[dict], list[dict]]:
         extractor = LiteralAndSymbolExtractor(filepath)
         extractor.visit(tree)
         return extractor.literals, extractor.symbols
-    except (SyntaxError, UnicodeDecodeError):
+    except SyntaxError, UnicodeDecodeError:
         return [], []
 
 

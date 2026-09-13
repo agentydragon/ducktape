@@ -42,7 +42,7 @@ def parse_python_file(path: Path) -> tuple[ast.AST, str] | None:
         text = path.read_text(encoding="utf-8")
         tree = ast.parse(text)
         return tree, text
-    except (OSError, SyntaxError, UnicodeDecodeError):
+    except OSError, SyntaxError, UnicodeDecodeError:
         return None
 
 

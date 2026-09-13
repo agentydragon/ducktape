@@ -61,7 +61,7 @@ def _log_task_exception(t: asyncio.Task) -> None:
     try:
         exc = t.exception()
         if exc:
-            logger.exception("background task failed", exc_info=exc)
+            logger.error("background task failed", exc_info=exc)
     except asyncio.CancelledError:
         pass
     except Exception:

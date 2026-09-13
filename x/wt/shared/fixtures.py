@@ -46,7 +46,7 @@ def load_pr_fixture(config: Configuration, branch_name: str) -> PRData | None:
     adapter = TypeAdapter(dict[str, PRFixtureEntry])
     try:
         fixtures = adapter.validate_json(path.read_text())
-    except (ValidationError, json.JSONDecodeError, OSError):
+    except ValidationError, json.JSONDecodeError, OSError:
         return None
     entry = fixtures.get(branch_name) or fixtures.get("*")
     if not entry:

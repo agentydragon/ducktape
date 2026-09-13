@@ -67,7 +67,7 @@ def main() -> None:
         with os.fdopen(fd, "w") as output:
             os.fchmod(output.fileno(), 0o600)
             output.write(content)
-    except (OSError, ValueError):
+    except OSError, ValueError:
         # Neither JSON parser diagnostics nor Squid configuration lines may log credentials.
         parser.exit(1, "github-api-relay: could not prepare private configuration\n")
 

@@ -182,7 +182,7 @@ def _relpath(p: str) -> str:
         abs_p = p
     try:
         return os.path.relpath(abs_p, start=Path.cwd())
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return p
 
 

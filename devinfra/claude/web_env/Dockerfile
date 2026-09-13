@@ -136,7 +136,7 @@ RUN curl -fsSL https://astral.sh/uv/0.8.17/install.sh | sh && \
     /root/.local/bin/uv tool install poetry && \
     /root/.local/bin/uv tool install pyright && \
     /root/.local/bin/uv tool install pytest && \
-    /root/.local/bin/uv tool install ruff
+    /root/.local/bin/uv tool install ruff==0.16.7
 
 # Maven + Gradle + Composer
 RUN curl -fsSL https://archive.apache.org/dist/maven/maven-3/3.9.11/binaries/apache-maven-3.9.11-bin.tar.gz | \

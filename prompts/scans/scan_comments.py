@@ -94,7 +94,7 @@ def scan_file(filepath: Path) -> list[dict[str, Any]]:
     try:
         lines = filepath.read_text(encoding="utf-8").splitlines(keepends=True)
         return extract_comments_from_file(filepath, lines)
-    except (UnicodeDecodeError, OSError):
+    except UnicodeDecodeError, OSError:
         # Skip files with encoding issues or read errors
         return []
 

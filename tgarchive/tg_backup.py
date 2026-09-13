@@ -42,7 +42,7 @@ async def _resolve_entity(client: TelegramClient, name: str) -> Entity:
     # Try direct lookup first (handles @username, numeric IDs, t.me/... links).
     try:
         return await client.get_entity(name)
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         pass
     matches: list[Entity] = [d.entity async for d in client.iter_dialogs() if d.title == name]
     if len(matches) == 1:

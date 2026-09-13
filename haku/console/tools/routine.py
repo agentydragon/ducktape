@@ -38,7 +38,7 @@ def _upstream_detail(resp: httpx.Response) -> str:
     """Best-effort human-readable reason from an upstream error response."""
     try:
         return str(resp.json()["error"]["message"])
-    except (ValueError, KeyError, TypeError):
+    except ValueError, KeyError, TypeError:
         return resp.text[:300]
 
 

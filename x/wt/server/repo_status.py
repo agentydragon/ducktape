@@ -16,13 +16,13 @@ class RepoStatus:
     def summarize_status(self, worktree_path: Path) -> tuple[CommitInfo | None, tuple[int, int], str]:
         try:
             repo = self.git_manager.get_repo(worktree_path)
-        except (pygit2.GitError, OSError, ValueError):
+        except pygit2.GitError, OSError, ValueError:
             return None, (0, 0), ""
         branch_name = repo.head.shorthand or ""
         commit_info: CommitInfo | None
         try:
             commit_info = self.git_manager.get_commit_info("HEAD", worktree_path)
-        except (NoSuchRefError, pygit2.GitError, KeyError, ValueError):
+        except NoSuchRefError, pygit2.GitError, KeyError, ValueError:
             commit_info = None
 
         # Ahead/behind computation
@@ -67,7 +67,7 @@ class RepoStatus:
 
                 ahead, behind = main_repo.ahead_behind(local_id, upstream_id)
                 ahead_behind = (ahead, behind)
-            except (KeyError, pygit2.GitError, ValueError):
+            except KeyError, pygit2.GitError, ValueError:
                 ahead_behind = (0, 0)
 
         return commit_info, ahead_behind, branch_name

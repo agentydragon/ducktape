@@ -383,7 +383,7 @@ class WorkspaceEnvironment(BaseModel):
                 relative_path = filepath.relative_to(self.workspace_path).as_posix()
                 try:
                     files[relative_path] = filepath.read_text(encoding="utf-8")
-                except (UnicodeDecodeError, OSError):
+                except UnicodeDecodeError, OSError:
                     # Skip binary or unreadable files
                     continue
         return files

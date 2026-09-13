@@ -152,7 +152,7 @@ def scan_file(filepath: Path) -> list[dict[str, Any]]:
         extractor = SingleLineExtractor(filepath, lines)
         extractor.visit(tree)
         return extractor.single_line_functions
-    except (SyntaxError, UnicodeDecodeError):
+    except SyntaxError, UnicodeDecodeError:
         return []
 
 
