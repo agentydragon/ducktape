@@ -30,7 +30,7 @@ pkg_files(
     name = "pyyaml_site_packages_files",
     testonly = True,
     srcs = ["@pypi//pyyaml:pkg"],
-    prefix = "/usr/local/lib/python3.13",
+    prefix = "/usr/local/lib/python3.14",
     strip_prefix = strip_prefix.from_pkg(),
 )
 
@@ -68,12 +68,12 @@ pkg_tar(
     ],
 )
 
-# E2E test container: python:3.13-slim base + curl + git + JDK from trixie,
+# E2E test container: python:3.14-slim base + curl + git + JDK from trixie,
 # bazelisk + sops as static binaries. See trixie_e2e.yaml.
 oci_image(
     name = "e2e_container_image",
     testonly = True,
-    base = "@python_3_13_slim_linux_amd64",
+    base = "@python_3_14_slim_linux_amd64",
     env = {
         "BAZELISK_HOME": "/root/.cache/bazelisk",
         "PATH": "/tools:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin",

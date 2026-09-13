@@ -2,11 +2,11 @@
 # Not in nixpkgs, installed from pre-built manylinux wheel.
 {
   lib,
-  python3Packages,
+  python314Packages,
   fetchurl,
   autoPatchelfHook,
 }:
-python3Packages.buildPythonPackage rec {
+python314Packages.buildPythonPackage rec {
   pname = "pyrage";
   version = "1.4.0";
   format = "wheel";

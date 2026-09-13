@@ -3,7 +3,7 @@
 # upstream source so their versions cannot drift.
 {
   lib,
-  python3Packages,
+  python314Packages,
   griffelib,
   py-key-value-aio,
   uncalled-for,
@@ -19,12 +19,12 @@ let
     hash = "sha256-EysVbtFbop5ENupc9T5EmtUSZ8osVtQSzpwa6rea/OQ=";
   };
 
-  build-system = with python3Packages; [
+  build-system = with python314Packages; [
     hatchling
     uv-dynamic-versioning
   ];
 
-  fastmcp-slim = python3Packages.buildPythonPackage {
+  fastmcp-slim = python314Packages.buildPythonPackage {
     pname = "fastmcp-slim";
     inherit version src build-system;
     pyproject = true;
@@ -39,7 +39,7 @@ let
     # Install the base package together with FastMCP's `client` and `server`
     # extras. The root `fastmcp` distribution depends on this complete runtime.
     dependencies =
-      (with python3Packages; [
+      (with python314Packages; [
         # Base dependencies.
         email-validator
         platformdirs
@@ -96,7 +96,7 @@ let
     };
   };
 
-  fastmcp = python3Packages.buildPythonPackage {
+  fastmcp = python314Packages.buildPythonPackage {
     pname = "fastmcp";
     inherit version src build-system;
     pyproject = true;

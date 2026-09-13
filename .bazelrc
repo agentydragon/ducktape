@@ -59,9 +59,9 @@ common --lockfile_mode=off
 
 # Lint + typecheck enabled by default on all builds.
 # Combines lint (ruff, ESLint), typecheck (mypy), and Rust checks (clippy, rustfmt).
-# Use Python 3.13 for mypy to parse Python 3.13 syntax (e.g., homeassistant).
+# Use Python 3.14 for mypy to parse Python 3.14 syntax (e.g., homeassistant).
 # To skip lint (e.g. for fast iterative builds): bazel build --config=nolint //...
-build --@rules_python//python/config_settings:python_version=3.13
+build --@rules_python//python/config_settings:python_version=3.14
 build --aspects=//devinfra/lint:linters.bzl%ruff,//devinfra/lint:linters.bzl%mypy_aspect,//devinfra/lint:linters.bzl%eslint,@rules_rust//rust:defs.bzl%rust_clippy_aspect,@rules_rust//rust:defs.bzl%rustfmt_aspect
 build --output_groups=+rules_lint_report,+mypy,+clippy_checks,+rustfmt_checks
 

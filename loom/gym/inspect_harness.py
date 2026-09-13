@@ -54,7 +54,7 @@ from loom.gym.task import Question, Task
 logger = logging.getLogger(__name__)
 
 WAYBACK_PROXY_IMAGE_TAG = "wayback-proxy:latest"
-# Built from loom/gym/sandbox/Dockerfile: python:3.13-slim + pandas, numpy,
+# Built from loom/gym/sandbox/Dockerfile: python:3.14-slim + pandas, numpy,
 # scipy, statsmodels, python-dateutil, requests, bash, curl.
 SANDBOX_IMAGE_TAG = "loom-gym-sandbox:latest"
 DEFAULT_WAYBACK_UPSTREAM = "https://web.archive.org"

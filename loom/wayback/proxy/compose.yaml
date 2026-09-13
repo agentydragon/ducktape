@@ -7,7 +7,7 @@
 # trusts it through the standard SSL_CERT_FILE/CURL_CA_BUNDLE/... contract.
 services:
   agent:
-    image: python:3.13-slim
+    image: python:3.14-slim
     init: true
     command: tail -f /dev/null
     networks: [sandbox]

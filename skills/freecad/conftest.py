@@ -125,7 +125,7 @@ def _freecad_run(
     if overrides:
         run_env.update(overrides)
     # Inject _main runfiles paths so FreeCAD scripts can import from the
-    # monorepo. Filter out Bazel's Python 3.13 stdlib/site-packages — they
+    # monorepo. Filter out Bazel's Python 3.14 stdlib/site-packages — they
     # conflict with FreeCAD's bundled Python 3.14.
     base_pythonpath = _merge_pythonpath()
     inject_paths = [p for p in base_pythonpath.split(os.pathsep) if p and "/_main" in p and "site-packages" not in p]

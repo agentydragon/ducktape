@@ -15,7 +15,7 @@ For the architecture and design rationale see <PLAN.md>.
 | `run.py`            | `bb run :run` entry — runs the agent eval against `--model`.                                                     |
 | `validate_judge.py` | `bb run :validate_empty` / `:validate_reference` — judge floor/ceiling sanity checks (no agent).                 |
 | `_runner.py`        | Shared CLI: credential check, log-dir defaulting, `inspect_eval()` call.                                         |
-| `compose.yaml`      | Agent docker sandbox: `python:3.13-slim`, `working_dir=/work`.                                                   |
+| `compose.yaml`      | Agent docker sandbox: `python:3.14-slim`, `working_dir=/work`.                                                   |
 | `BUILD.bazel`       | `:task` library + `:run` / `:validate_judge` / `:validate_empty` / `:validate_reference` binaries.               |
 
 ## Run

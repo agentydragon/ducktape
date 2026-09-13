@@ -107,7 +107,7 @@ container at {skill_path}/.
 ---
 
 You have shell access via the `bash` tool. Stdout and stderr are returned
-together. The container is `python:3.13-slim` (Debian-based) with internet
+together. The container is `python:3.14-slim` (Debian-based) with internet
 access; install whatever you need (`apt-get install -y ...`,
 `pip install ...`, `curl ...`).
 """
@@ -191,7 +191,7 @@ class RubricGrade(TypedDict):
 
 
 _DEFAULT_JUDGE_MODEL = "anthropic/claude-sonnet-5"
-_GRADER_IMAGE = "python:3.13-slim"
+_GRADER_IMAGE = "python:3.14-slim"
 
 # Sample.metadata key carrying the host directory whose contents will be
 # bind-mounted into the grader at /grade/recovered/. Eval task: the
@@ -336,13 +336,13 @@ def _grader_bash_tool(box: _GraderContainer) -> Tool:
         async def execute(command: str) -> str:
             """Run a bash command in the read-only grader container.
 
-            Available paths: /grade/recovered, /grade/reference,
-            /grade/spec, /grade/rubric. Stdout and stderr are returned
-            together. Container is `python:3.13-slim` with standard
-            tools (find, cat, diff, grep, wc, head, tail).
+                        Available paths: /grade/recovered, /grade/reference,
+                        /grade/spec, /grade/rubric. Stdout and stderr are returned
+            together. Container is `python:3.14-slim` with standard
+                        tools (find, cat, diff, grep, wc, head, tail).
 
-            Args:
-                command: The bash command to execute.
+                        Args:
+                            command: The bash command to execute.
             """
             return await box.exec_text(command)
 

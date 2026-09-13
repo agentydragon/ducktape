@@ -7,12 +7,12 @@ let
   wheel = artifacts.aiquota;
   extensionZip = artifacts.aiquota-extension;
 in
-pkgs.python3Packages.buildPythonApplication {
+pkgs.python314Packages.buildPythonApplication {
   pname = "aiquota";
   version = "latest";
   format = "wheel";
   src = wheel;
-  propagatedBuildInputs = with pkgs.python3Packages; [
+  propagatedBuildInputs = with pkgs.python314Packages; [
     atomicwrites
     httpx
     platformdirs

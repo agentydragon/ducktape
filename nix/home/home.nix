@@ -340,7 +340,7 @@ in
   home.packages =
     with pkgs;
     [
-      (python3.withPackages (
+      (python314.withPackages (
         ps: with ps; [
           pydeps
         ]

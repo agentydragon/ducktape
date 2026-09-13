@@ -106,7 +106,7 @@ Image contents (becomes a Bazel `oci_image` per
 
 ```dockerfile
 # Runs in haku-sandbox as non-root, behind haku-egress-proxy egress.
-FROM python:3.13-slim
+FROM python:3.14-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git curl ca-certificates postgresql-client bash \
  && rm -rf /var/lib/apt/lists/*

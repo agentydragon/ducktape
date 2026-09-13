@@ -264,7 +264,7 @@ async def _async_main(args: argparse.Namespace) -> None:
         container_name = f"fl-scoring-{uuid.uuid4().hex[:8]}"
         async with aiodocker.Docker() as docker:
             container = await docker.containers.run(
-                config={"Image": "python:3.13-slim", "Cmd": ["sleep", "3600"]}, name=container_name
+                config={"Image": "python:3.14-slim", "Cmd": ["sleep", "3600"]}, name=container_name
             )
             try:
                 summary = await run_game(

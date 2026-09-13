@@ -29,7 +29,7 @@ _SKILL_INTRO = "Follow this skill throughout the task."
 _EXEC_TOOL_NOTE = (
     "You have shell access via the `exec` tool — `cmd` is a list of strings, no shell "
     "expansion. Stdout and stderr are returned together. The container is "
-    "`python:3.13-slim` (Debian-based) with internet access; install whatever you need "
+    "`python:3.14-slim` (Debian-based) with internet access; install whatever you need "
     "(`apt-get install -y ...`, `pip install ...`, `curl ...`)."
 )
 

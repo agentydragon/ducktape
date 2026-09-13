@@ -106,7 +106,7 @@ async def _async_main(args: argparse.Namespace) -> None:
         docker = await stack.enter_async_context(aiodocker.Docker())
         container_name = f"fl-scoring-{uuid.uuid4().hex[:8]}"
         scoring_container = await docker.containers.run(
-            config={"Image": "python:3.13-slim", "Cmd": ["sleep", "7200"]}, name=container_name
+            config={"Image": "python:3.14-slim", "Cmd": ["sleep", "7200"]}, name=container_name
         )
         try:
             tasks = [

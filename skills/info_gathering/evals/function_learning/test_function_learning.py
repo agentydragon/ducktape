@@ -6,7 +6,7 @@ real `scratch_exec_mcp_tool()` exec tool — the replay scripts don't
 call exec, but wiring it up to the real MCP launcher means the test
 fails loud if that surface breaks.
 
-Loads `python:3.13-slim` into the Docker daemon up-front via
+Loads `python:3.14-slim` into the Docker daemon up-front via
 `load_oci_image` (matches the pattern in
 `skills/info_gathering/evals/docker_scratch.py`) so neither the test's
 scoring container nor the launcher subprocess hits a 404 on a worker
@@ -28,7 +28,7 @@ from skills.info_gathering.evals.function_learning.function_learning import run_
 from skills.info_gathering.evals.function_learning.functions import PARITY_GROUPS
 from skills.info_gathering.evals.function_learning.result_types import RunSummary
 from skills.info_gathering.evals.replay_client import ReplayChatClient
-from third_party.containers import python_3_13_slim
+from third_party.containers import python_3_14_slim
 from util.oci import load_oci_image
 
 _TEST_TURNS = 3
@@ -59,7 +59,7 @@ async def _run_with_replay(
     turn_limit: int = _TEST_TURNS,
 ) -> RunSummary:
     client = ReplayChatClient(responses=completions)
-    image_tag = load_oci_image(python_3_13_slim.IMAGE)
+    image_tag = load_oci_image(python_3_14_slim.IMAGE)
 
     # Stage the empty skill so the sandbox shape matches production: prompt
     # claims `SKILL_PATH` is mounted, and it really is.

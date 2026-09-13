@@ -12,7 +12,7 @@ Quick switching between git worktrees with copy-on-write for rapid prototyping.
 
 ## Requirements
 
-Python 3.13+, `gitstatusd` (Bazel provides via `//third_party/gitstatusd` for tests; for non-Bazel, install separately or set `gitstatusd_path` in config).
+Python 3.14+, `gitstatusd` (Bazel provides via `//third_party/gitstatusd` for tests; for non-Bazel, install separately or set `gitstatusd_path` in config).
 
 ## Usage
 

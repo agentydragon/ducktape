@@ -139,7 +139,7 @@ py_test(
     deps = [
         ":fake_ia",
         "//:conftest",
-        "//third_party/containers:python_3_13_slim",
+        "//third_party/containers:python_3_14_slim",
         "//util:oci",
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",

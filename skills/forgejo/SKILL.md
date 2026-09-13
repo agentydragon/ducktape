@@ -146,9 +146,9 @@ The helper logs in, fetches the run page, parses the page-provided `data-*` attr
 posts the UI's JSON cursor payload. If `uv run` picks a stripped system interpreter (the
 symptom is `ModuleNotFoundError: No module named 'math'` from inside the stdlib, seen in
 the Claude Code web container), point it at the resolved path of a full one:
-`uv run --python "$(readlink -f /usr/local/bin/python3.13)" …`. The symlink path itself
+`uv run --python "$(readlink -f /usr/local/bin/python3.14)" …`. The symlink path itself
 does not help: a venv whose `home` is `/usr/local/bin` falls back to the same stripped
-`/usr/lib/python3.13`.
+`/usr/lib/python3.14`.
 
 The credential comes from the `~/.netrc` entry for the Forgejo host (mode `600`, or
 Python's `netrc` refuses it) unless `--user`/`--password` or

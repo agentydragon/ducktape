@@ -1,7 +1,7 @@
-# Deb packages layered on python:3.13-slim for container E2E tests.
+# Deb packages layered on python:3.14-slim for container E2E tests.
 #
 # Hermetic, lockfile-pinned deb extraction via rules_distroless.
-# The base image (python:3.13-slim, Debian Trixie) already provides
+# The base image (python:3.14-slim, Debian Trixie) already provides
 # Python, bash, and ca-certificates.
 #
 # Regenerate the lock file after any change:

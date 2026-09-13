@@ -71,7 +71,7 @@ that extracts `PyInfo.imports` from each target's providers, maps them to
 
 ### Option B: Synthetic venv with `.pth` file
 
-Create `.venv/lib/python3.13/site-packages/_bazel_deps.pth` listing all Bazel
+Create `.venv/lib/python3.14/site-packages/_bazel_deps.pth` listing all Bazel
 package site-packages directories (absolute paths). Pyright auto-discovers the
 venv — no `pyrightconfig.json` needed for package resolution.
 

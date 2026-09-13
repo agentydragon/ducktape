@@ -4,7 +4,7 @@ Personal infrastructure monorepo. Manages configuration for: **agentydragon** (T
 
 ## Build System
 
-**Bazel** is the unified build system. Python 3.13+, Rust via Cargo/Bazel.
+**Bazel** is the unified build system. Python 3.14+, Rust via Cargo/Bazel.
 
 ### Python
 

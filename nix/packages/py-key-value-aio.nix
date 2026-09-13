@@ -3,14 +3,14 @@
 # version required by FastMCP 3.4.x.
 {
   lib,
-  python3Packages,
+  python314Packages,
 }:
-python3Packages.buildPythonPackage rec {
+python314Packages.buildPythonPackage rec {
   pname = "py-key-value-aio";
   version = "0.4.5";
   pyproject = true;
 
-  src = python3Packages.fetchPypi {
+  src = python314Packages.fetchPypi {
     pname = "py_key_value_aio";
     inherit version;
     hash = "sha256-xlY6LGq+XaXiD0+eh1wqm0JaIkSlT62/Rs8UCp7qRdc=";
@@ -24,9 +24,9 @@ python3Packages.buildPythonPackage rec {
       --replace-fail '"uv_build>=0.11.4,<0.12"' '"uv_build>=0.10.0"'
   '';
 
-  build-system = with python3Packages; [ uv-build ];
+  build-system = with python314Packages; [ uv-build ];
 
-  dependencies = with python3Packages; [
+  dependencies = with python314Packages; [
     beartype
     typing-extensions
     # filetree extra

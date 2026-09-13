@@ -54,7 +54,7 @@ def _proxy_env() -> dict[str, str]:
 
 @asynccontextmanager
 async def eval_sandbox(
-    *, skill: StagedSkill, workspace: Path, inputs: Path | None, image: str = "python:3.13-slim", name: str = "exec"
+    *, skill: StagedSkill, workspace: Path, inputs: Path | None, image: str = "python:3.14-slim", name: str = "exec"
 ) -> AsyncGenerator[MCPStdioTool]:
     """Yield an `MCPStdioTool` exposing `exec` against a scratch container.
 
@@ -66,7 +66,7 @@ async def eval_sandbox(
         inputs: Host directory bound read-only at `INPUT_PATH`, or ``None``
             for evals with no inputs. Caller is responsible for assembling
             this directory's contents before entering the context.
-        image: Container image. Defaults to `python:3.13-slim`.
+        image: Container image. Defaults to `python:3.14-slim`.
         name: MCPStdioTool tool name (defaults to ``"exec"``).
 
     The container has host networking, proxy env wired, and `cwd`/`user`/`env`

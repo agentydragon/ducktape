@@ -331,7 +331,7 @@
         pkgs.kyverno # Policy engine CLI (validate manifests, test policies)
         pkgs.nebula # Nebula mesh overlay (nebula-cert for PKI management)
         pkgs.ovhcloud-cli # OVH API CLI (Kimsufi server inventory, boot, IPMI)
-        pkgs.python313Packages.ovh # OVH Python client for ad-hoc API scripts
+        pkgs.python314Packages.ovh # OVH Python client for ad-hoc API scripts
       ];
       # System libraries matching RBE worker image (devinfra/rbe_image/Dockerfile).
       systemLibs = import ./nix/packages/system-libs.nix { inherit pkgs; };
@@ -360,7 +360,7 @@
         pkgs.openssl
         # Codex setup materializes kubeconfig via devinfra/k8s/kubeconfig.py;
         # include a guaranteed Python runtime with pyyaml for that path.
-        (pkgs.python3.withPackages (ps: [ ps.pyyaml ]))
+        (pkgs.python314.withPackages (ps: [ ps.pyyaml ]))
         # Infrastructure tools
         pkgs.gh
         pkgs.kubectl

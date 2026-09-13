@@ -31,7 +31,7 @@ def _proxy_env() -> dict[str, str]:
 
 @asynccontextmanager
 async def scratch_exec_server(
-    image: str = "python:3.13-slim", *, binds: list[BindMount] | None = None, working_dir: Path = Path("/tmp")
+    image: str = "python:3.14-slim", *, binds: list[BindMount] | None = None, working_dir: Path = Path("/tmp")
 ) -> AsyncGenerator[ContainerExecServer]:
     """Create a scratch container with an MCP exec tool server.
 

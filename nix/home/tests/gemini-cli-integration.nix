@@ -51,7 +51,7 @@ let
 in
 pkgs.runCommand "gemini-cli-integration"
   {
-    nativeBuildInputs = [ pkgs.python3 ];
+    nativeBuildInputs = [ pkgs.python314 ];
   }
   ''
     python - '${allowedPolicy}' '${inspectionPolicy}' <<'PY'

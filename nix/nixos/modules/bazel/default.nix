@@ -61,7 +61,7 @@
       # SCM
       git
       # Python (rules_python bootstrap)
-      python3
+      python314
     ];
   };
 }
