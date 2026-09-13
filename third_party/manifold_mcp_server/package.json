@@ -8,7 +8,7 @@
     ]
   },
   "dependencies": {
-    "esbuild": "^0.25.1",
+    "esbuild": "^0.28.0",
     "manifold-mcp-server": "0.1.1",
     "supergateway": "^3.4.0"
   }
