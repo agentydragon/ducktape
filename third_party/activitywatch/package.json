@@ -78,7 +78,7 @@
     "vue-i18n": "^11.0.0",
     "vue-demi": "^0.14.10",
     "vuedraggable": "^2.24.3",
-    "weekstart": "^1.0.1",
+    "weekstart": "^2.0.0",
     "xss": "^1.0.14"
   },
   "devDependencies": {
