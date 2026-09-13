@@ -10,8 +10,8 @@ spec:
   path: ./cluster/k8s/monitoring/mimir
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: monitoring-mimir
     namespace: ducktape-flux
   decryption:
     provider: sops

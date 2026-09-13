@@ -10,8 +10,8 @@ spec:
   path: ./cluster/k8s/monitoring/tempo
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: monitoring-tempo
     namespace: ducktape-flux
   decryption:
     provider: sops

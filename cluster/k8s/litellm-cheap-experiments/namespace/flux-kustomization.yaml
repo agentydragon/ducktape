@@ -12,8 +12,8 @@ spec:
   prune: true
   wait: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: litellm-cheap-experiments-namespace
     namespace: ducktape-flux
   timeout: 2m
   healthChecks:

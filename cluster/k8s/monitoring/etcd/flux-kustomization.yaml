@@ -11,8 +11,8 @@ spec:
   path: ./cluster/k8s/monitoring/etcd
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: monitoring-etcd
 
     namespace: ducktape-flux
   dependsOn:

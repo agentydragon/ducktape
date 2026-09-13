@@ -9,8 +9,8 @@ spec:
   path: ./cluster/k8s/kvm-device-plugin
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: kvm-device-plugin
     namespace: ducktape-flux
   timeout: 2m
   healthChecks:

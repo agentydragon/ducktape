@@ -1712,6 +1712,287 @@ spec:
           to: "@artifact/cluster/k8s/haku/workspaces/app/"
           exclude:
             - flux-kustomization.yaml
+    - name: haku-ci
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/haku-ci/**"
+          to: "@artifact/cluster/k8s/haku-ci/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: headlamp-app
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/headlamp/app/**"
+          to: "@artifact/cluster/k8s/headlamp/app/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: headlamp-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/headlamp/namespace/**"
+          to: "@artifact/cluster/k8s/headlamp/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: home-assistant-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/home-assistant/namespace/**"
+          to: "@artifact/cluster/k8s/home-assistant/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: hubble-ui
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/hubble-ui/**"
+          to: "@artifact/cluster/k8s/hubble-ui/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: infra-drift
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/infra-drift/**"
+          to: "@artifact/cluster/k8s/infra-drift/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: inventree-app
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/inventree/app/**"
+          to: "@artifact/cluster/k8s/inventree/app/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: inventree-db
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/inventree/db/**"
+          to: "@artifact/cluster/k8s/inventree/db/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: inventree-token-provisioner
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/inventree/token-provisioner/**"
+          to: "@artifact/cluster/k8s/inventree/token-provisioner/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: keda
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/keda/**"
+          to: "@artifact/cluster/k8s/keda/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: kube-api-proxy
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/kube-api-proxy/**"
+          to: "@artifact/cluster/k8s/kube-api-proxy/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: kube-system
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/kube-system/**"
+          to: "@artifact/cluster/k8s/kube-system/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: kubevirt-cdi-operator
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/kubevirt/cdi-operator/**"
+          to: "@artifact/cluster/k8s/kubevirt/cdi-operator/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: kubevirt-operator
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/kubevirt/operator/**"
+          to: "@artifact/cluster/k8s/kubevirt/operator/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: kvm-device-plugin
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/kvm-device-plugin/**"
+          to: "@artifact/cluster/k8s/kvm-device-plugin/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: langfuse-agent-rbac
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/langfuse/agent-rbac/**"
+          to: "@artifact/cluster/k8s/langfuse/agent-rbac/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: langfuse-app
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/langfuse/app/**"
+          to: "@artifact/cluster/k8s/langfuse/app/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: langfuse-cache
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/langfuse/cache/**"
+          to: "@artifact/cluster/k8s/langfuse/cache/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: langfuse-db
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/langfuse/db/**"
+          to: "@artifact/cluster/k8s/langfuse/db/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: litellm-db
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/litellm/db/**"
+          to: "@artifact/cluster/k8s/litellm/db/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: litellm-servicemonitor
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/litellm/servicemonitor/**"
+          to: "@artifact/cluster/k8s/litellm/servicemonitor/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: litellm-tana
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/litellm/tana/**"
+          to: "@artifact/cluster/k8s/litellm/tana/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: litellm-cheap-experiments-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/litellm-cheap-experiments/namespace/**"
+          to: "@artifact/cluster/k8s/litellm-cheap-experiments/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: matrix-app
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/matrix/app/**"
+          to: "@artifact/cluster/k8s/matrix/app/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: matrix-db
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/matrix/db/**"
+          to: "@artifact/cluster/k8s/matrix/db/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: matrix-user-provisioner
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/matrix/user-provisioner/**"
+          to: "@artifact/cluster/k8s/matrix/user-provisioner/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: metrics-server
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/metrics-server/**"
+          to: "@artifact/cluster/k8s/metrics-server/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: monitoring-alloy
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/monitoring/alloy/**"
+          to: "@artifact/cluster/k8s/monitoring/alloy/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: monitoring-alloy-otlp-bearer-token-tf
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/monitoring/alloy-otlp-bearer-token-tf/**"
+          to: "@artifact/cluster/k8s/monitoring/alloy-otlp-bearer-token-tf/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: monitoring-cilium
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/monitoring/cilium/**"
+          to: "@artifact/cluster/k8s/monitoring/cilium/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: monitoring-etcd
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/monitoring/etcd/**"
+          to: "@artifact/cluster/k8s/monitoring/etcd/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: monitoring-grafana-db
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/monitoring/grafana-db/**"
+          to: "@artifact/cluster/k8s/monitoring/grafana-db/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: monitoring-loki
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/monitoring/loki/**"
+          to: "@artifact/cluster/k8s/monitoring/loki/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: monitoring-mimir
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/monitoring/mimir/**"
+          to: "@artifact/cluster/k8s/monitoring/mimir/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: monitoring-rules
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/monitoring/rules/**"
+          to: "@artifact/cluster/k8s/monitoring/rules/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: monitoring-tempo
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/monitoring/tempo/**"
+          to: "@artifact/cluster/k8s/monitoring/tempo/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: nix-cache-bootstrap
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/nix-cache/bootstrap/**"
+          to: "@artifact/cluster/k8s/nix-cache/bootstrap/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: nix-cache-db
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/nix-cache/db/**"
+          to: "@artifact/cluster/k8s/nix-cache/db/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: nix-cache-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/nix-cache/namespace/**"
+          to: "@artifact/cluster/k8s/nix-cache/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: node-feature-discovery
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/node-feature-discovery/**"
+          to: "@artifact/cluster/k8s/node-feature-discovery/"
+          exclude:
+            - flux-kustomization.yaml
+
 
 ---
 apiVersion: source.extensions.fluxcd.io/v1beta1

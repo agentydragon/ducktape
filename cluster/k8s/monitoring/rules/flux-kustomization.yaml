@@ -8,8 +8,8 @@ spec:
   path: ./cluster/k8s/monitoring/rules
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: monitoring-rules
 
     namespace: ducktape-flux
   dependsOn:
