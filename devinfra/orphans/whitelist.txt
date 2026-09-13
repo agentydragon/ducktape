@@ -78,7 +78,6 @@ homeassistant/**/*.yaml
 *.markdown
 
 # JavaScript / TypeScript
-eslint.config.js
 finance/worthy/worthy/graph.js
 
 # Text files (notes, todos, etc.)
