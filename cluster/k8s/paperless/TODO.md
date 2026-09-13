@@ -1,32 +1,57 @@
 # Paperless TODO
 
-## Make first-user bootstrap declarative (remove the manual SSO claim)
+## Validate the Authentik-backed single-user admin
 
-**Problem.** On a fresh install (zero real users + zero docs), Paperless's adapter
-force-opens the local signup page and the Angular frontend redirects `/accounts/login/`
-→ `/accounts/signup/`, hiding the "Log in via Authentik" button. The only way to claim
-the first account via SSO is to hit allauth's endpoint directly
-(`/accounts/oidc/authentik/login/?process=login`). This is a manual, out-of-band step —
-it violates the cluster's "declarative turnkey bootstrap" directive — and it leaves a
-window where local signup is open to anyone who reaches the URL. Background:
-<../../docs/lessons_learned/2026_06_22_paperless_servicelinks_and_fresh_install_sso.md>.
+[PR #6571](https://github.com/agentydragon/ducktape/pull/6571) implements the
+single-user design:
 
-**Goal.** Bring up Paperless with no manual claim step and no open-signup window: after
-Flux reconciles, agentydragon's SSO-linked account already exists.
+- Authentik owns a Paperless-specific `paperless_admins` group containing only
+  `agentydragon`.
+- The Paperless OIDC provider emits an app-specific `groups` claim. Membership in
+  `paperless_admins` produces the `paperless_admins` claim value.
+- Paperless synchronizes that value to the local Django group and maps
+  `paperless_admins` to Django superuser status.
+- The bootstrap Job creates the local group and its document/application permissions;
+  it does not create or promote a Paperless user.
+- Paperless access is gated by the dedicated group, not the shared global Authentik Admins
+  group. Regular password login remains disabled.
 
-**Approach to evaluate.** Extend the `paperless-bootstrap-group` Job (or add a sibling)
-to idempotently pre-create the `agentydragon` user with an unusable password, add it to
-`paperless_users` (and set `is_superuser`/`is_staff` if we decide we want admin), and
-**pre-link the allauth `SocialAccount`** so the first OIDC login resolves to it instead
-of triggering signup. The Authentik `sub` for agentydragon is
-`5f1415ca9b1e49945b31dcbf4bfa27daafbd9b0aea4a30baa740918439aa5e3f` (provider `authentik`).
-Hardcoding the `sub` is brittle if the Authentik user is recreated — prefer fetching it
-from Authentik (or accept the documented DR re-claim). Once a real user exists, the
-fresh-install branch is off, so signup closes and the SSO login page behaves normally.
+Paperless's `DEFAULT_GROUPS` and `SYNC_GROUPS` settings require the named local Django
+groups to already exist. They do not create groups or permissions. `PAPERLESS_ADMIN_USER`
+only creates a local password-based superuser and does not link an OIDC account. The
+current bootstrap is therefore still required for local group/permission schema, even
+though Authentik owns membership.
 
-**Open questions.**
+### Post-merge acceptance
 
-- Why didn't `PAPERLESS_REDIRECT_LOGIN_TO_SSO=true` redirect `/accounts/login/` straight
-  to Authentik on fresh install? If it can be made to, that alone removes the manual step
-  without pre-seeding the user.
-- Decide superuser vs. regular for the pre-seeded account (currently regular by design).
+After Flux applies the Terraform and Paperless changes:
+
+1. Confirm the Authentik `paperless_admins` group contains only `agentydragon`, and the
+   Paperless application policy is bound to that group.
+2. Confirm the provider's ID token or userinfo response contains the expected
+   `groups` value: `paperless_admins`.
+3. Confirm `paperless-bootstrap-group` succeeds and the local `paperless_admins` group has
+   the expected permissions.
+4. Log in through Authentik and confirm the account is `agentydragon`, has the local
+   `paperless_admins` group, and is a Django superuser. Verify the Paperless UI and API,
+   including the admin area, while confirming regular password login remains unavailable.
+5. Re-check the fresh-install behavior separately. The v3 adapter still has a special
+   first-user path; if `/accounts/login/` routes to local signup on an empty database,
+   retain the documented direct OIDC claim path rather than weakening the SSO-only policy.
+
+### Follow-up decisions
+
+- Do not remove the bootstrap Job merely because group synchronization works. If desired,
+  reduce it to the smallest idempotent local group/permission bootstrap; remove it only
+  after another declarative mechanism takes over that responsibility. Any existing
+  `paperless_users` database row is not deleted automatically by this configuration change.
+- Do not add staff or another superuser group unless the account model changes from the
+  current single-admin setup.
+
+### Rollback
+
+If the claim is missing or incorrect, disable
+`PAPERLESS_SOCIAL_ACCOUNT_SYNC_GROUPS` and
+`PAPERLESS_SOCIAL_ACCOUNT_SYNC_SUPERUSER_GROUP`, restore the prior Paperless access-policy
+binding, and retain the bootstrap Job. Do not delete local groups or permissions during
+the first rollout.
