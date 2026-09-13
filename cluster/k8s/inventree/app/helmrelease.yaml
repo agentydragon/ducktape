@@ -22,7 +22,7 @@ spec:
   chart:
     spec:
       chart: inventree
-      version: "0.4.3"
+      version: "0.4.28"
       sourceRef:
         kind: HelmRepository
         name: inventree-charts
