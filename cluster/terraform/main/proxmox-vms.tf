@@ -83,6 +83,12 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
     host = "spice"
     usb3 = true
   }
+  # Atlas's front-panel USB-C port (host path 3-1), passed through by physical
+  # port so whatever device is plugged in is presented to wyrm2 as Proxmox usb1.
+  usb {
+    host = "3-1"
+    usb3 = true
+  }
   # RTL-SDR Blog V4 (Realtek RTL2838) — for SDR streaming via rtl_tcp.
   usb {
     host = "0bda:2838"
