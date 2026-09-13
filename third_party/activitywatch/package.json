@@ -142,7 +142,7 @@
     "vue-eslint-parser": "^10.0.0",
     "vue-hot-reload-api": "^2.3.4",
     "vue-loader": "^17.0",
-    "vue-router": "^3.5.3",
+    "vue-router": "^5.0.0",
     "vue-style-loader": "^4.1.0",
     "webpack": "^5.110.3",
     "webpack-dev-middleware": "^8.0.0",
