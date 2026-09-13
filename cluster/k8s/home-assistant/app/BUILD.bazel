@@ -4,6 +4,7 @@ load("//devinfra/python:defs.bzl", "py_test")
 # Top-level module names by design (imports = ["."]): the onboarding Job runs
 # these as scripts, and the tests import them bare.
 # gazelle:resolve py bootstrap_onboarding //cluster/k8s/home-assistant/app:bootstrap_onboarding
+# gazelle:resolve py install_dreo //cluster/k8s/home-assistant/app:install_dreo
 # gazelle:resolve py install_oidc //cluster/k8s/home-assistant/app:install_oidc
 
 py_library(
