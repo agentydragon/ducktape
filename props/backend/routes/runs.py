@@ -509,14 +509,16 @@ def list_runs(
             runs=[
                 _build_run_info(
                     r,
-                    split,
-                    issues_count,
-                    total_edges,
-                    tp_count,
-                    fp_count,
-                    total_credit,
-                    llm_requests_count,
-                    missing_grading_edges,
+                    split=split,
+                    reported_issues_count=issues_count,
+                    grading=_build_grading_summary(
+                        total_edges=total_edges,
+                        tp_count=tp_count,
+                        fp_count=fp_count,
+                        total_credit=total_credit,
+                        missing_grading_edges=missing_grading_edges,
+                    ),
+                    llm_requests_count=llm_requests_count,
                 )
                 for r, split, issues_count, total_edges, tp_count, fp_count, total_credit, llm_requests_count, missing_grading_edges in runs_with_extras
             ],
@@ -1052,27 +1054,34 @@ async def get_run_logs(run_id: UUID, caller_db: CallerDb) -> RunLogsResponse:
     return RunLogsResponse(run_id=run_id, logs=await fetch_run_logs(run_id, start=start, end=end))
 
 
-def _build_run_info(
-    run: AgentRun,
-    split: Split | None,
-    issues_count: int | None = None,
+def _build_grading_summary(
+    *,
     total_edges: int | None = None,
     tp_count: int | None = None,
     fp_count: int | None = None,
     total_credit: float | None = None,
-    llm_requests_count: int | None = None,
     missing_grading_edges: int | None = None,
-) -> RunInfo:
-    """Convert AgentRun ORM to RunInfo."""
-    grading: RunGradingSummary | None = None
+) -> RunGradingSummary | None:
     if missing_grading_edges is not None:
-        grading = RunGradingSummary(
+        return RunGradingSummary(
             present_edges=total_edges or 0,
             drift_edges=missing_grading_edges,
             tp_count=tp_count or 0,
             fp_count=fp_count or 0,
             total_credit=total_credit or 0.0,
         )
+    return None
+
+
+def _build_run_info(
+    run: AgentRun,
+    *,
+    split: Split | None,
+    reported_issues_count: int | None,
+    grading: RunGradingSummary | None,
+    llm_requests_count: int | None,
+) -> RunInfo:
+    """Convert an AgentRun ORM object and its aggregate data to RunInfo."""
     return RunInfo(
         agent_run_id=run.agent_run_id,
         image_digest=run.image_digest,
@@ -1083,7 +1092,7 @@ def _build_run_info(
         created_at=run.created_at,
         updated_at=run.updated_at,
         split=split,
-        reported_issues_count=issues_count,
+        reported_issues_count=reported_issues_count,
         grading=grading,
         llm_requests_count=llm_requests_count,
     )
