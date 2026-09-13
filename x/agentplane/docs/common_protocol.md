@@ -2,7 +2,7 @@
 
 The shared seam over Claude Code and Codex is the runner under [`../runner/`](../runner/); its
 contract is [`../runner/SPEC.md`](../runner/SPEC.md). This page records what that seam may own,
-what stays provider-native, and the vocabulary the layers above it use. The scripted tests under
+what stays harness-native, and the vocabulary the layers above it use. The scripted tests under
 [`../harness_tests/`](../harness_tests/) and the live probe under [`../capture/`](../capture/)
 are the evidence every rule here rests on.
 
@@ -12,16 +12,16 @@ are the evidence every rule here rests on.
   `Input`, `Interrupt`, `Shutdown`, `Detach`, `SwitchModel`) and sequenced events.
 - Only behavior the scripted tests prove with the real binaries. Its own tests are one
   interaction script per scenario run against both harnesses, so a caller never switches on
-  the provider.
+  the harness.
 - One `Input` verb and no steer verb: both harnesses take an input during a turn into that turn.
-- Provider ids and frames, delivered verbatim as `Native` events with the derived events citing
-  them, so provider detail is one lookup away rather than collapsed.
+- Harness ids and frames, delivered verbatim as `Native` events with the derived events citing
+  them, so harness detail is one lookup away rather than collapsed.
 
 The seam does not emulate retry, redispatch an input whose admission is uncertain, or present an
 unsupported operation as successful. It is an internal boundary: distinct from the browser-facing
 API, and silent on Thread naming, archive presentation, timeline design, and HTTP resource shape.
 
-## Provider differences that stay visible
+## Harness differences that stay visible
 
 - Claude and Codex expose different native control and lifecycle frames.
 - With `CLAUDE_CODE_MAX_RETRIES` bounded, Claude retries a stream lost before or after visible
@@ -32,24 +32,24 @@ API, and silent on Thread naming, archive presentation, timeline design, and HTT
   (`thread/queue/{add,list,update,delete,reorder,start}`, `codex-rs/ext/queue`): unlike join, a
   queued item never touches the active turn and only starts a new one once the thread goes idle,
   and `delete` is race-free (mutex-serialized against dispatch, returns whether it actually still
-  removed something) up to that point — evidence in <provider_protocols.md>. That is a
+  removed something) up to that point — evidence in <harness_protocols.md>. That is a
   materially different shape from join/steer's all-or-nothing `turn/interrupt`.
 - Claude's side of that question is now written up in
   [`claude_input_queue.md`](claude_input_queue.md): it too has a real
   enqueued/dequeued state — inputs are queued under a caller-supplied uuid, withdrawn by
   `cancel_async_message`, and reported via `command_lifecycle` frames — so "one `Input` verb and
-  no steer verb" is due a revisit against both providers, not just Codex. The two queues are not
+  no steer verb" is due a revisit against both harnesses, not just Codex. The two queues are not
   the same object, though: Codex's sits beside the turn and deletes race-free, while Claude's
   feeds the turn and **coalesces**, which silently moves the unit of withdrawal from the input to
   the batch. Any common enqueue/withdraw verb has to survive that asymmetry.
-- Steering, queued input, interruption, and resume use provider-native mechanisms and outcomes.
+- Steering, queued input, interruption, and resume use harness-native mechanisms and outcomes.
   A related operation on both sides is not evidence that the two are equivalent.
-- Runtime model and reasoning-effort controls are deliberately deferred while their provider
+- Runtime model and reasoning-effort controls are deliberately deferred while their harness
   boundaries are resolved; see [runtime control acceptance](runtime_control.md) and the linked
   [`CONTROL_STATE` task](../plans/task_dag.md#control_state--dynamic-runtime-control-acceptance).
 
 These are constraints on the adapters, not a license to manufacture common semantics the
-providers did not demonstrate. A behavior that is unsupported or supported differently is
+harnesses did not demonstrate. A behavior that is unsupported or supported differently is
 recorded as such in the adapter, never smoothed over with a generic state machine or retry policy.
 
 ## Vocabulary above the seam
@@ -60,7 +60,7 @@ and the runner does not know them:
 - **Thread**: a durable, user-visible interaction context, served by one runner session at a
   time.
 - **Input**: a message the Agentplane service accepted; it becomes one runner `Input`.
-- **Turn**: one provider execution bracket, the runner's `TurnStarted` to `TurnCompleted`.
+- **Turn**: one harness execution bracket, the runner's `TurnStarted` to `TurnCompleted`.
 - **Runner**: the process serving a Thread's session.
 - **Timeline event**: a presentation of runner events, owned by whichever app renders it.
 
@@ -74,11 +74,11 @@ evidence; they read the runner's events and its `Native` frames.
 ## Capture evidence contract
 
 A live probe run preserves native frames in both directions with their complete payloads and
-framing boundaries, file order within each transcript, provider-native request, session,
+framing boundaries, file order within each transcript, harness-native request, session,
 thread, turn, item, and tool ids, model request bodies and streamed response chunks, and enough
 process-exit information to diagnose a failed run. Its output stays outside Git as an
 investigation artifact; nothing consumes it mechanically, and the behavioral assertions live in
 the scripted tests. It carries no routine byte lengths, hashes, parsed-object copies, duplicate
-timestamps, sequence registries, or outer copies of provider ids: the ordered payload already
+timestamps, sequence registries, or outer copies of harness ids: the ordered payload already
 supplies that. Refreshing a pinned harness against it is described in
 [the harness tests README](../harness_tests/README.md).

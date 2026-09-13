@@ -1,6 +1,6 @@
 # Claude Code: input queueing, acknowledgement, and withdrawal
 
-Status: **provider evidence**, not a neutral API proposal.
+Status: **harness evidence**, not a neutral API proposal.
 
 [`common_protocol.md`](common_protocol.md) leaves one question open: whether Claude has an
 enqueued/dequeued state that `join`/steer alone cannot express, and therefore whether the seam's
@@ -13,7 +13,7 @@ The public source is the **published type declarations** in `@anthropic-ai/claud
 (`sdk.d.ts`), which document these frames and their semantics directly; the notes below quote them.
 Frame _shapes_ not named as a type there were read off the harness. The per-contributor lifecycle
 rule comes from static analysis of the pinned 2.1.252 implementation. Per the
-[shared rules](provider_protocols.md#shared-rules), none of this is pinned in a scripted test yet:
+[shared rules](harness_protocols.md#shared-rules), none of this is pinned in a scripted test yet:
 **a live probe must confirm each behavior before a driver depends on it.** The coalescing rule in
 particular has a counter-intuitive outcome that deserves its own capture.
 
@@ -114,7 +114,7 @@ operation as successful" rule than a version table would be.
 ## Against Codex, for a later common facade
 
 Set next to Codex's durable `thread/queue/{add,list,update,delete,reorder,start}`
-([`provider_protocols.md`](provider_protocols.md)), the two are closer than
+([`harness_protocols.md`](harness_protocols.md)), the two are closer than
 `common_protocol.md` currently assumes — both have a real enqueued state and a withdraw
 operation — but they are **not** the same object:
 
@@ -145,7 +145,7 @@ acknowledgement**, provided it:
 - keeps `list` / `reorder` / `update` out of the common surface, or gates them behind an
   explicit capability, since Claude has no equivalent.
 
-Enumerating the queue and reordering it should stay provider-native until Claude demonstrates an
+Enumerating the queue and reordering it should stay harness-native until Claude demonstrates an
 equivalent — per the existing rule that a related operation on both sides is not evidence the two
 are equivalent.
 

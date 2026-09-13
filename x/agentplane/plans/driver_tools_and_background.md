@@ -1,6 +1,6 @@
 # Driver-provided tools and background work on the seam
 
-Status: **deferred pending a real consumer.** Provider behavior is settled in
+Status: **deferred pending a real consumer.** Harness behavior is settled in
 [`../docs/driver_tools.md`](../docs/driver_tools.md) and
 [`../docs/background_work.md`](../docs/background_work.md). Any future runner surface must reuse the
 implemented [Action Service contracts](../action_service/SPEC.md), not invent a second
@@ -11,7 +11,7 @@ incompatible tool-request lifecycle.
 Future input-delivery work must follow `INPUT_DELIVERY` in [the DAG](task_dag.md): re-read landed
 Claude/Codex queueing evidence, compare native receipt/promotion/coalescing semantics, and refresh
 captures before revising the common protocol. A harness-local queue is neither a background Action
-Execution nor proof that both providers support the same per-input acknowledgement or cancellation.
+Execution nor proof that both harnesses support the same per-input acknowledgement or cancellation.
 
 ## Driver-provided declarations
 
@@ -25,14 +25,14 @@ and does not grant execution authority. If a declared tool invokes work outside 
 - pending/result delivery uses canonical receipts and durable events.
 
 Do not build an MCP registry, parallel `ToolRequest`, or harness-specific approval object. The
-provider-specific declaration adapter may still need to decide whether its tool set is immutable per
+harness-specific declaration adapter may still need to decide whether its tool set is immutable per
 session or replaceable; Codex's fixed thread schemas and Claude's tool-list behavior remain visible
 constraints rather than reasons to fork the Action contract.
 
 ## Background work
 
 Background work exposed by a harness is local runtime state, not automatically an Action Execution.
-The smallest common provider floor remains list + stop by harness ID, correlated to the originating
+The smallest common harness floor remains list + stop by harness ID, correlated to the originating
 native tool call. Expose it only when a product consumer needs to observe or stop harness-local work.
 
 If background work invokes an external Action, the durable external effect is still represented by
@@ -43,8 +43,8 @@ become a second retry, idempotency, or authorization authority.
 
 - one named consumer and user-visible behavior;
 - scripted tests against both pinned harness binaries;
-- a mapping showing which fields are provider declaration/runtime correlation and which belong to
+- a mapping showing which fields are harness declaration/runtime correlation and which belong to
   Action definition/request/execution;
 - no duplicate Decision, retry, credential, or result-delivery semantics; and
-- an explicit unsupported result where one provider cannot honor a mutation such as replacing tools
+- an explicit unsupported result where one harness cannot honor a mutation such as replacing tools
   mid-thread.

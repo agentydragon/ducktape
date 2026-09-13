@@ -29,7 +29,7 @@ the tests outside Bazel with a Nix-built Python is not supported: the binaries f
 - `claude/requests.py`, `codex/requests.py`: the request bodies as typed markers (tool roster,
   system prompt or instructions, texts by role, tool results, thinking blocks, cache key).
 - `claude/frames.py`, `codex/frames.py`: assertions over the native output frames.
-- `claude/harness.py`, `codex/harness.py`: the pinned binary wired to the upstream; provider
+- `claude/harness.py`, `codex/harness.py`: the pinned binary wired to the upstream; harness
   fixtures live in each `conftest.py`.
 
 The test modules cover plain turns and resume (`test_turns.py`), tool round trips

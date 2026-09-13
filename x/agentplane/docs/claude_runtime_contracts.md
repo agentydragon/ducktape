@@ -4,19 +4,19 @@ Status: **static implementation evidence and Agentplane design constraints**.
 
 These notes come from structurally debundling the pinned Claude Code 2.1.252 application. They
 describe behavior implemented by that build, but do not replace the live capture requirement in
-[provider_protocols.md](provider_protocols.md): a runner feature must still be exercised before it
+[harness_protocols.md](harness_protocols.md): a runner feature must still be exercised before it
 becomes an Agentplane guarantee. No proprietary source is reproduced here.
 
 ## Priority for Agentplane
 
-| Priority | Boundary                        | Current gap                                                                                                                                                                                    |
-| -------- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P0       | Input admission and persistence | Claude `queued` means command-queue admission, but the runner currently maps it to the provider-neutral `InputAccepted`. Transcript append acceptance is also weaker than durable persistence. |
-| P0       | Driver-hosted MCP               | The wire is documented in [driver_tools.md](driver_tools.md), but the runner neither declares SDK MCP servers during initialization nor routes `mcp_message`.                                  |
-| P1       | Permission and dialog recovery  | The runner deliberately auto-allows tool permission requests and rejects other controls. A future interactive host must use `tool_use_id`, not a transient request id, as its recovery key.    |
-| P1       | Background task state           | Claude exposes a replace-set snapshot plus detail edges; the current adapter retains these only as native frames.                                                                              |
-| P1       | Remote delivery ambiguity       | Claude's managed remote transport distinguishes never-uploaded calls from calls that may have landed. Agentplane's app-to-runner stream has no equivalent classification.                      |
-| P2       | Limits and refusal fallback     | Rate-limit and fallback events remain native-only, and a fallback that needs a user dialog cannot complete through the current runner.                                                         |
+| Priority | Boundary                        | Current gap                                                                                                                                                                                   |
+| -------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P0       | Input admission and persistence | Claude `queued` means command-queue admission, but the runner currently maps it to the harness-neutral `InputAccepted`. Transcript append acceptance is also weaker than durable persistence. |
+| P0       | Driver-hosted MCP               | The wire is documented in [driver_tools.md](driver_tools.md), but the runner neither declares SDK MCP servers during initialization nor routes `mcp_message`.                                 |
+| P1       | Permission and dialog recovery  | The runner deliberately auto-allows tool permission requests and rejects other controls. A future interactive host must use `tool_use_id`, not a transient request id, as its recovery key.   |
+| P1       | Background task state           | Claude exposes a replace-set snapshot plus detail edges; the current adapter retains these only as native frames.                                                                             |
+| P1       | Remote delivery ambiguity       | Claude's managed remote transport distinguishes never-uploaded calls from calls that may have landed. Agentplane's app-to-runner stream has no equivalent classification.                     |
+| P2       | Limits and refusal fallback     | Rate-limit and fallback events remain native-only, and a fallback that needs a user dialog cannot complete through the current runner.                                                        |
 
 ## Known Agentplane bugs and recommended work
 
@@ -26,11 +26,11 @@ These IDs are local shorthand for implementation work, not upstream issue number
 
 **Bug.** [`runner/claude.py`](../runner/claude.py) emits `InputAccepted` for
 `command_lifecycle: queued`. The name previously implied transcript admission and still conflates
-different provider-native boundaries. Clients can therefore treat an input as recoverably accepted
+different harness-native boundaries. Clients can therefore treat an input as recoverably accepted
 before Claude has started it or persisted it.
 
 **Recommendation.** Make queue admission explicit instead of silently changing the meaning for one
-provider. Add an `InputQueued` state/event, move Claude's `InputAccepted` transition to `started`
+harness. Add an `InputQueued` state/event, move Claude's `InputAccepted` transition to `started`
 or replayed-user evidence, and retain the native lifecycle frame for exact correlation. Migration
 tests must cover early cancellation without `started`, coalesced contributors, and process loss in
 each state. Until that protocol change lands, consumers must read Claude `InputAccepted` as native
@@ -63,10 +63,10 @@ before acknowledgement, and after the runner's durable input event.
 ### C4: background state has no typed reset path
 
 **Bug.** Claude background snapshots and edges currently survive only as `Native` events. A client
-cannot consume the replace-set contract without provider-specific parsing, and replaying edges after
+cannot consume the replace-set contract without harness-specific parsing, and replaying edges after
 a worker restart can retain tasks that no longer exist.
 
-**Recommendation.** Add a provider-aware adapter projection whose snapshot event replaces the
+**Recommendation.** Add a harness-aware adapter projection whose snapshot event replaces the
 complete set and whose detail events reference the native source sequence. Test restart with an
 empty snapshot, queue pressure, duplicate terminal notification, and correlation to the originating
 tool call. Do not manufacture equivalent Codex push semantics; its background-terminal surface is
@@ -185,7 +185,7 @@ preferentially retains task lifecycle bookends and terminal status. Drain stamps
 `uuid`/`session_id` values. A terminal notification is guarded for once-only delivery and may carry
 the originating `tool_use_id`, output file, summary, usage, transcript, and ambient metadata.
 
-See [background_work.md](background_work.md) for the provider comparison. The app-state snapshot
+See [background_work.md](background_work.md) for the harness comparison. The app-state snapshot
 projector remains outside the recovered module; only its replace/reset consumption rule is relied
 on here.
 
