@@ -24,11 +24,20 @@ class ClaudeHarness:
     base_environment: dict[str, str]
 
     def start(
-        self, upstream: ScriptedUpstream, *, resume_id: str | None = None, replay_user_messages: bool = False
+        self,
+        upstream: ScriptedUpstream,
+        *,
+        resume_id: str | None = None,
+        session_id: str | None = None,
+        replay_user_messages: bool = False,
     ) -> NativeProcess:
         # Launched as it ships: the RBE worker's glibc userland is the supported test environment.
         command = scenarios.command(
-            self.binary, model=MODEL, resume_id=resume_id, replay_user_messages=replay_user_messages
+            self.binary,
+            model=MODEL,
+            resume_id=resume_id,
+            session_id=session_id,
+            replay_user_messages=replay_user_messages,
         )
         environment = {
             **self.base_environment,
