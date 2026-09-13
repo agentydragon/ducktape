@@ -1,0 +1,11 @@
+--- a/conda/extensions.bzl
++++ b/conda/extensions.bzl
+@@ -9,7 +9,7 @@
+         path = "python.exe"
+     return rctx.execute(
+         [Label("@python_3_11_host//:" + path)] + args,
+-        environment = {"PYTHONPATH": str(rctx.path(Label("@rules_conda_pypi_311_py_rattler//:site-packages")))},
++        environment = {"PYTHONPATH": str(rctx.path(Label("@rules_conda_pypi_311_py_rattler_sdist_b00f91e1//:site-packages")))},
+     )
+ 
+ def _check_result(result, error):
