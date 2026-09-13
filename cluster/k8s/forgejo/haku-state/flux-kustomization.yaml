@@ -28,12 +28,13 @@ spec:
       namespace: ducktape-flux
     - name: tofu-state-db
       namespace: ducktape-flux
-    # The git-creds Secret lands in both target namespaces; wait for each to exist.
+    # The git-creds Secret is reflected into agentplane-index; wait for the
+    # aggregate to create that target Namespace before applying Terraform.
+    - name: agentplane-index
+      namespace: ducktape-flux
     - name: haku-namespace
       namespace: ducktape-flux
     - name: haku-console-namespace
       namespace: ducktape-flux
     - name: haku-egress-proxy-namespace
-      namespace: ducktape-flux
-    - name: agentplane-index-namespace
       namespace: ducktape-flux
