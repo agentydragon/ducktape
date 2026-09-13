@@ -181,6 +181,17 @@ Flux `Kustomization` resources (`flux-kustomization.yaml`) are applied from the 
 manifests Flux applies at `spec.path` — **never its `flux-kustomization.yaml`**, which
 would apply it redundantly.
 
+### Migrating stateful Flux Kustomizations
+
+Never rename or remove a Flux Kustomization that owns a CNPG Cluster, PVC, Bucket, or
+other persistent resource in the same unrehearsed reconciliation that adds its replacement.
+With `prune: true`, removing the old Kustomization can delete its entire managed inventory;
+the default deletion policy mirrors `prune`. Before the cutover, suspend each old owner and
+patch the live object to `spec.prune: false` and `spec.deletionPolicy: Orphan`. Verify those
+settings and the existing stateful resource, then reconcile the replacement and confirm it
+uses the same resource and PVC identities before cleaning up the old owner. `suspend` alone
+does not make deletion safe.
+
 **Never mix HelmReleases with CRD instances in the same Kustomization.**
 Layer 1 (CRD operators) → Layer 2 (secrets with ESO) → Layer 3 (app with HelmRelease),
 each layer's `flux-kustomization.yaml` with `dependsOn` on the previous. Violations are
