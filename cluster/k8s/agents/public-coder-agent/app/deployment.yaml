@@ -96,6 +96,12 @@ spec:
             # and full integrity checks remain available offline.
             - name: OPENCLAW_AGENT_DB_STARTUP_INTEGRITY_CHECK
               value: none
+            # Startup migrations hold a synchronous SQLite file-exclusion
+            # scope on the rotational state disk. Keep the maintenance lease
+            # alive for that bounded recovery window instead of letting the
+            # 60-second default expire.
+            - name: OPENCLAW_AGENT_DB_MAINTENANCE_LEASE_MS
+              value: "86400000"
             # Turn off the gateway's background database integrity verifier.
             # Not an upstream knob -- openclaw/patch-openclaw-npm-dist.mjs adds
             # it, because upstream guards the verifier only behind a vitest-only
