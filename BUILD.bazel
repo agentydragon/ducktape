@@ -81,7 +81,6 @@ load("@image_pins//:pins.bzl", "RBE_WORKER_DIGEST", "RBE_WORKER_IMAGE")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("@rules_python//python/uv:lock.bzl", "lock")
-load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//devinfra/python:defs.bzl", "py_library")
 
 # Visibility is controlled per-target. Gazelle uses python_default_visibility NONE
