@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 # Docker fixtures that depend on debian-slim OCI image
 # Only include in tests that actually need Docker execution
