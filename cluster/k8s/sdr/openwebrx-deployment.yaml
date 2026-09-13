@@ -25,7 +25,7 @@ spec:
       # no one reaches the OpenWebRX+ login page without authenticating first.
       initContainers:
         - name: seed-admin
-          image: slechev/openwebrxplus:1.2.111
+          image: slechev/openwebrxplus:1.2.123
           command: ["openwebrx", "admin", "--noninteractive", "--silent", "adduser", "admin"]
           env:
             - name: OWRX_PASSWORD
@@ -35,7 +35,7 @@ spec:
               mountPath: /var/lib/openwebrx
       containers:
         - name: openwebrx
-          image: slechev/openwebrxplus:1.2.111
+          image: slechev/openwebrxplus:1.2.123
           ports:
             - containerPort: 8073
               name: http

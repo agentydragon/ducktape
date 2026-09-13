@@ -26,7 +26,7 @@ spec:
         # google_workspace_mcp expects a client_secret.json file in addition to env vars.
         # Generate it from the env vars so we avoid storing the JSON as a separate secret.
         - name: gen-client-secret
-          image: busybox:1.37
+          image: busybox:1.38
           command:
             - sh
             - -c
@@ -50,7 +50,7 @@ spec:
               mountPath: /client-secret
       containers:
         - name: google-workspace-mcp
-          image: ghcr.io/taylorwilsdon/google_workspace_mcp:1.14.2
+          image: ghcr.io/taylorwilsdon/google_workspace_mcp:1.26.0
           ports:
             - name: http
               containerPort: 8000

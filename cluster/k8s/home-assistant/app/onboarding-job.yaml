@@ -20,7 +20,7 @@ spec:
         kubernetes.io/hostname: optiplex
       containers:
         - name: onboarding
-          image: ghcr.io/home-assistant/home-assistant:2026.7.2
+          image: ghcr.io/home-assistant/home-assistant:2026.9.2
           command:
             - python
             - /bootstrap/bootstrap_onboarding.py

@@ -38,7 +38,7 @@ spec:
           effect: NoSchedule
       containers:
         - name: s3
-          image: chrislusf/seaweedfs:4.44
+          image: chrislusf/seaweedfs:4.46
           imagePullPolicy: IfNotPresent
           command:
             - /bin/sh

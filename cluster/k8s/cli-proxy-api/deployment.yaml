@@ -43,7 +43,7 @@ spec:
           effect: NoSchedule
       initContainers:
         - name: init-auth-dir
-          image: busybox:1.37
+          image: busybox:1.38
           command: [sh, -c, "mkdir -p /data/auth"]
           volumeMounts:
             - name: data

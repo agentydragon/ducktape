@@ -18,7 +18,7 @@ spec:
       containers:
         - name: setup
           # curl + busybox awk; we hit /api/pull directly (no ollama CLI needed).
-          image: curlimages/curl:8.10.1
+          image: curlimages/curl:8.22.0
           command:
             - /scripts/setup-gpt-oss-v2.sh
           env:

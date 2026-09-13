@@ -40,7 +40,7 @@ spec:
       initContainers:
         # One-time clone so /ledger/main.beancount exists before Fava starts.
         - name: ledger-sync-init
-          image: docker.io/alpine/git:2.52.0@sha256:4a0e72d49596a1f5d3701aeedafdadc5c0da4062be4657c7bdc4017387f591cc
+          image: docker.io/alpine/git:v2.54.0@sha256:0b5f57d22181e8b8fbe8ac5ca8754faa0d577f101b9857418f1acc43955ad464
           command: ["sh", "/scripts/sync.sh", "once"]
           env:
             - name: GIT_USERNAME
@@ -67,7 +67,7 @@ spec:
               drop: ["ALL"]
       containers:
         - name: ledger-sync
-          image: docker.io/alpine/git:2.52.0@sha256:4a0e72d49596a1f5d3701aeedafdadc5c0da4062be4657c7bdc4017387f591cc
+          image: docker.io/alpine/git:v2.54.0@sha256:0b5f57d22181e8b8fbe8ac5ca8754faa0d577f101b9857418f1acc43955ad464
           command: ["sh", "/scripts/sync.sh"]
           env:
             - name: GIT_USERNAME
