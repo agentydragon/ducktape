@@ -1,4 +1,3 @@
-import { TypographyStylesProvider } from "@mantine/core";
 import DOMPurify from "dompurify";
 import { Marked } from "marked";
 import { type JSX, useMemo } from "react";
@@ -35,8 +34,8 @@ const ALLOWED_TAGS = [
 ];
 
 /**
- * Markdown as HTML, styled by Mantine's `TypographyStylesProvider` — without it Mantine's reset
- * leaves paragraphs and lists with no spacing of their own.
+ * Markdown as HTML. The local class supplies the small amount of prose styling this transcript
+ * needs; Mantine 9 removed the old `TypographyStylesProvider` wrapper.
  */
 export function Markdown({ source }: { source: string }): JSX.Element {
   const html = useMemo(() => {
@@ -48,9 +47,5 @@ export function Markdown({ source }: { source: string }): JSX.Element {
       ALLOW_DATA_ATTR: false,
     });
   }, [source]);
-  return (
-    <TypographyStylesProvider>
-      <div dangerouslySetInnerHTML={{ __html: html }} />
-    </TypographyStylesProvider>
-  );
+  return <div className="agentplane-markdown" dangerouslySetInnerHTML={{ __html: html }} />;
 }
