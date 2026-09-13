@@ -1222,9 +1222,9 @@ litellm-enterprise==0.1.67 \
     --hash=sha256:4efa3fc834556ebfc9fdaeb329c74f060178f51e9d84d863158ee149445d0edc \
     --hash=sha256:7e8ff187617235e26fde80fc5023e4f945eb13d578d96fe9571ccc498e5a7d54
     # via litellm
-litellm-proxy-extras==0.4.91 \
-    --hash=sha256:5cac5f06f9addd023b5c99a05c2c4c5147eaf799d8f00567e3ee8f04e4595c0b \
-    --hash=sha256:d19fe53591b0bbd48aff24cb1a166b0c68ff2491469ceec88eaa83c6a364562d
+litellm-proxy-extras==0.4.97 \
+    --hash=sha256:41f8459bdbdb755a1648b2ca6952567b19981311ca009f094c21461ee8523868 \
+    --hash=sha256:61216f829d7f2f35d91685af86c8a3949a02ebc82f2935fe178d2d8ebce1f97a
     # via litellm
 markdown-it-py==4.2.0 \
     --hash=sha256:04a21681d6fbb623de53f6f364d352309d4094dd4194040a10fd51833e418d49 \
