@@ -138,9 +138,9 @@ require (
 
 require (
 	github.com/mark3labs/mcp-go v0.58.0
-	github.com/prometheus/client_golang v1.24.0
-	github.com/prometheus/common v0.70.0
-	github.com/prometheus/procfs v0.21.1
+	github.com/prometheus/client_golang v1.24.1
+	github.com/prometheus/common v0.71.0
+	github.com/prometheus/procfs v0.22.0
 	go.opentelemetry.io/otel v1.46.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.46.0
 	go.opentelemetry.io/otel/metric v1.46.0
