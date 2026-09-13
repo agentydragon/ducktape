@@ -1119,7 +1119,7 @@ dependencies = [
  "chrono",
  "reqwest 0.11.27",
  "rust_decimal",
- "rusty-money",
+ "rusty-money 0.4.2",
  "serde",
  "serde_json",
  "thiserror 1.0.69",
@@ -1439,7 +1439,7 @@ dependencies = [
  "rust_decimal_macros",
  "rustc-hash",
  "rusty-leveldb",
- "rusty-money",
+ "rusty-money 0.5.0",
  "schemars 0.9.0",
  "scraper",
  "sea-orm",
@@ -2422,7 +2422,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.6.3",
  "tokio",
  "tower-service",
  "tracing",
@@ -3980,7 +3980,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls",
- "socket2 0.5.10",
+ "socket2 0.6.3",
  "thiserror 2.0.20",
  "tokio",
  "tracing",
@@ -4018,7 +4018,7 @@ dependencies = [
  "cfg_aliases 0.2.1",
  "libc",
  "once_cell",
- "socket2 0.5.10",
+ "socket2 0.6.3",
  "tracing",
  "windows-sys 0.52.0",
 ]
@@ -4654,6 +4654,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rusty-money"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e8ac0a3274868e5d2615e749ad3b944d93cf846deefd46ea918a225e5d53856d"
+dependencies = [
+ "rust_decimal",
+]
+
+[[package]]
 name = "rustyline"
 version = "14.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5171,7 +5180,7 @@ version = "1.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c4db69cba1110affc0e9f7bcd48bbf87b3f4fc7c61fc9155afd4c469eb3d6c1b"
 dependencies = [
- "errno 0.2.8",
+ "errno 0.3.14",
  "libc",
 ]
 
@@ -7051,7 +7060,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
