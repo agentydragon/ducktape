@@ -238,11 +238,12 @@ py_test(
         ":mcp_types",
         "//:conftest",
         "//mcp_infra:request_scoped_openapi",
-        "//util/testing:httpx2_mock",
         "@pypi//fastmcp_slim",
         "@pypi//httpx2",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pytest_httpx2",
+        "@pypi//respx",
     ],
 )
 
@@ -254,9 +255,10 @@ py_test(
         ":conftest",
         ":grocy_types",
         "//:conftest",
-        "//util/testing:httpx2_mock",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pytest_httpx2",
+        "@pypi//respx",
     ],
 )
 
