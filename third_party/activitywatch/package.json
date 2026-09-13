@@ -40,7 +40,7 @@
     "aw-client": "^0.4.0",
     "bootstrap": "^5.0.0",
     "bootstrap-vue": "^2.15.0",
-    "chart.js": "^3.8.0",
+    "chart.js": "^4.0.0",
     "color": "^4.0.0",
     "component-emitter": "^2.0.0",
     "core-js": "^3.50.0",
