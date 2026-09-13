@@ -37,7 +37,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: gost
-          image: docker.io/gogost/gost:3.2.4
+          image: docker.io/gogost/gost:3.3.0
           args:
             - -L
             - http://:8080
