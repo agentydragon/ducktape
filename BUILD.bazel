@@ -39,13 +39,11 @@
 # map the import onto -- same reason skills/BUILD.bazel pins its generated spec modules.
 # gazelle:resolve py third_party.containers.debian_slim //third_party/containers:debian_slim
 # gazelle:resolve py third_party.containers.grocy //third_party/containers:grocy
-# gazelle:resolve py third_party.containers.mitmproxy //third_party/containers:mitmproxy
 # gazelle:resolve py third_party.containers.pgvector_pg18 //third_party/containers:pgvector_pg18
 # gazelle:resolve py third_party.containers.postgres_18 //third_party/containers:postgres_18
 # gazelle:resolve py third_party.containers.python_3_14_slim //third_party/containers:python_3_14_slim
 # gazelle:resolve py third_party.containers.registry_3 //third_party/containers:registry_3
 # gazelle:resolve py third_party.containers.ryuk //third_party/containers:ryuk
-# gazelle:resolve py third_party.containers.synapse //third_party/containers:synapse
 #
 # Bazel-provided libraries (not from PyPI)
 # gazelle:resolve py rules_python.python.runfiles @rules_python//python/runfiles
