@@ -3,6 +3,7 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "dbus_fast_example",
+    testonly = True,
     srcs = [
         "client.py",
         "dbus_service.py",

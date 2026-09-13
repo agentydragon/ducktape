@@ -3,7 +3,10 @@ load("@rules_oci//oci:defs.bzl", "oci_image")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
-package(default_visibility = ["//x/agentplane:__subpackages__"])
+package(
+    default_testonly = True,
+    default_visibility = ["//x/agentplane:__subpackages__"],
+)
 
 py_library(
     name = "fake_mcp_server",

@@ -621,6 +621,7 @@ py_test(
 
 py_library(
     name = "client",
+    testonly = True,
     srcs = ["client.py"],
     deps = [
         ":api",
