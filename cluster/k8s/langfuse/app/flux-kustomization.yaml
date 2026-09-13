@@ -10,8 +10,8 @@ spec:
   path: ./cluster/k8s/langfuse/app
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: langfuse-app
     namespace: ducktape-flux
   timeout: 20m
   healthChecks:
