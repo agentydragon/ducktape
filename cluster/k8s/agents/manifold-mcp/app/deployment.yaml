@@ -24,7 +24,7 @@ spec:
       automountServiceAccountToken: false
       containers:
         - name: manifold-mcp-server
-          image: git.allegedly.works/ducktape-ci/manifold-mcp-server:devel-20260912230606-cbbcf83 # {"$imagepolicy": "flux-system:manifold-mcp-server"}
+          image: git.allegedly.works/ducktape-ci/manifold-mcp-server:devel-20260913080556-7a2643a # {"$imagepolicy": "flux-system:manifold-mcp-server"}
           imagePullPolicy: Always
           ports:
             - name: bridge
