@@ -17,7 +17,7 @@ terraform {
     # credential token. In-cluster auth via the tf-runner SA.
     kubernetes = {
       source  = "hashicorp/kubernetes"
-      version = "~> 2.38"
+      version = "~> 3.0"
     }
   }
 
