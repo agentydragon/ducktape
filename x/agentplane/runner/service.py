@@ -333,18 +333,9 @@ async def _consume(
 ) -> None:
     try:
         async for message in requests:
-            match message.WhichOneof("command"):
-                case "input":
-                    await _finish_command(session.submit(message.input.input_id, message.input.text))
-                case "interrupt":
-                    await _finish_command(session.interrupt())
-                case "switch_model":
-                    await _finish_command(
-                        session.switch_model(message.switch_model.switch_id, message.switch_model.model)
-                    )
-                case "shutdown":
-                    await _finish_command(session.shutdown())
-                    return
+            match message.WhichOneof("message"):
+                case "command":
+                    await _finish_command(session.command(message.command))
                 case "detach":
                     return
                 case other:

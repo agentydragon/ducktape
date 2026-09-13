@@ -3,8 +3,12 @@
 Observed with Claude Code 2.1.252 under `--replay-user-messages`:
 
 - a `command_lifecycle` frame with state `queued` follows each accepted user frame at once, keyed by
-  the frame's uuid; `started` and `completed` follow when the harness processes it, and the `user`
-  echo with `isReplay` comes with `started`;
+  the frame's uuid; that is queue admission only. `started` identifies the inputs Claude takes into
+  a native prompt. For a batch, replay first emits synthetic follower echoes, then `started` for all
+  contributors, and finally the representative (last-UUID) user echo whose text is newline-joined;
+- when a tool is active, later inputs instead join its continuation request. Claude emits the tool
+  result, then `started` for every input in that continuation, but no replayed user text; the
+  runner correlates that tool-result frame and started cohort as its confirmation evidence;
 - streamed blocks arrive as `content_block_start`, deltas, then one `assistant` frame holding the
   completed block, then `content_block_stop`; after a lost stream the retry is non-streaming and
   only the `assistant` frames appear;
@@ -37,8 +41,15 @@ class ClaudeAdapter(HarnessAdapter):
         self.session = session
         self.launch = launch
         self._native_session_id = session.record.native_session_id or str(uuid4())
-        # User frame uuid to input id, until the harness reports the frame queued.
-        self._pending: dict[str, str] = {}
+        # User frame uuid to command data, until the harness confirms its native message.
+        self._pending: dict[str, tuple[str, str]] = {}
+        # `started` lifecycle UUIDs awaiting the representative replayed native user message. A
+        # Claude batch starts every contributor but emits only its last UUID with the joined text.
+        self._started_inputs: list[tuple[str, int]] = []
+        # A user frame holding a tool result is followed by lifecycle ``started`` for inputs
+        # Claude folds into that still-active turn. There is intentionally no replayed user
+        # frame for those inputs, so the lifecycle cohort itself is the native confirmation.
+        self._tool_result_message: tuple[str, int] | None = None
         self._message_id = ""
         # Content block index to item id for the message being streamed.
         self._block_items: dict[int, str] = {}
@@ -78,20 +89,19 @@ class ClaudeAdapter(HarnessAdapter):
         )
         return self._native_session_id
 
-    async def submit(self, input_id: str, text: str) -> None:
+    async def submit(self, command_id: str, text: str) -> None:
         if not self.session.active_turn_id:
             self.session.emit(
                 pb.TurnStarted(turn_id=f"turn-{uuid4().hex}", model=self.session.record.model), sources=[]
             )
         frame = driver.user_frame(text)
-        self._pending[frame.uuid] = input_id
-        self.session.emit(pb.InputSubmitted(input_id=input_id, text=text), sources=[])
+        self._pending[frame.uuid] = (command_id, text)
         await self.session.write_native(frame)
 
     async def interrupt(self) -> None:
         await self.session.write_native(driver.interrupt(cancel_queued=False, reason="agentplane"))
 
-    async def switch_model(self, model: str) -> None:
+    async def change_model(self, command_id: str, model: str) -> None:
         request = driver.set_model(model)
         response = await self.session.request(
             request, matches=lambda frame: _control_response_for(frame, request.request_id)
@@ -100,22 +110,38 @@ class ClaudeAdapter(HarnessAdapter):
         if not isinstance(parsed, wire.ControlResponseFrame) or parsed.response.subtype != "success":
             detail = parsed.response.error if isinstance(parsed, wire.ControlResponseFrame) else "invalid response"
             raise RuntimeError(f"Claude Code refused model switch: {detail}")
+        self.session.model_changed(command_id, model, sources=[response.sequence])
 
-    async def on_frame(self, frame: Frame) -> None:
-        match wire.parse_frame(frame):
+    async def on_frame(self, frame: Frame, source_sequence: int) -> None:
+        parsed = wire.parse_frame(frame)
+        if self._tool_result_message is not None and not (
+            isinstance(parsed, wire.CommandLifecycleFrame) and parsed.state is wire.CommandState.STARTED
+        ) and not (
+            # With replay enabled, a coalesced active-turn batch first emits synthetic follower
+            # echo(es). They are queue bookkeeping, not a new native prompt and not the end of
+            # the tool-result continuation window; the following started cohort establishes it.
+            isinstance(parsed, wire.UserFrame) and parsed.is_replay and parsed.uuid in self._pending
+        ):
+            await self._confirm_tool_result_inputs()
+        match parsed:
             case wire.ControlRequestFrame() as request:
                 await self._answer_control_request(request)
-            case wire.CommandLifecycleFrame(state=wire.CommandState.QUEUED, command_uuid=command_uuid):
-                if input_id := self._pending.pop(command_uuid, None):
-                    self.session.emit(pb.InputAccepted(input_id=input_id, turn_id=self._turn_id()))
-            case wire.StreamEventFrame(event=event):
-                self._on_stream_event(event)
+            case wire.CommandLifecycleFrame(state=wire.CommandState.STARTED, command_uuid=command_uuid):
+                if command_uuid in self._pending:
+                    self._started_inputs.append((command_uuid, source_sequence))
+            case wire.CommandLifecycleFrame(state=wire.CommandState.CANCELLED, command_uuid=command_uuid):
+                if pending := self._pending.pop(command_uuid, None):
+                    command_id, _ = pending
+                    self._started_inputs = [item for item in self._started_inputs if item[0] != command_uuid]
+                    self.session._noop(command_id, "Claude cancelled the queued user input before taking it")
+            case wire.StreamEventFrame() as streamed:
+                await self._on_stream_event(streamed, source_sequence)
             case wire.AssistantFrame(message=message):
                 self._on_assistant(message)
-            case wire.UserFrame(message=message):
-                self._on_user(message)
+            case wire.UserFrame() as user:
+                await self._on_user(user, source_sequence)
             case wire.ResultFrame() as result:
-                self._on_result(result)
+                await self._on_result(result)
 
     async def _answer_control_request(self, frame: wire.ControlRequestFrame) -> None:
         match frame.request:
@@ -141,11 +167,14 @@ class ClaudeAdapter(HarnessAdapter):
             self.session.emit(pb.TurnStarted(turn_id=f"turn-{uuid4().hex}", model=self.session.record.model))
         return self.session.active_turn_id
 
-    def _on_stream_event(self, event: wire.StreamEvent) -> None:
+    async def _on_stream_event(self, frame: wire.StreamEventFrame, source_sequence: int) -> None:
+        event = frame.event
         match event:
             case wire.MessageStart(message=message):
                 self._message_id = message.id
                 self._block_items = {}
+                if frame.user_message_uuid:
+                    await self._confirm_message_start(frame.user_message_uuid, source_sequence)
             case wire.ContentBlockStart(index=index, content_block=block):
                 item_id = self._item_id(block, index, self._message_id)
                 self._block_items[index] = item_id
@@ -157,6 +186,34 @@ class ClaudeAdapter(HarnessAdapter):
                         self.session.emit(pb.TextDelta(item_id=item_id, text=text))
                     case wire.InputJsonDelta(partial_json=partial_json):
                         self.session.emit(pb.ToolArgumentsDelta(item_id=item_id, partial_json=partial_json))
+
+    async def _confirm_message_start(self, harness_message_id: str, source_sequence: int) -> None:
+        """Confirm the native prompt which caused one Claude model request.
+
+        Claude's replay flag supplies a textual echo for a coalesced queue batch but not for its
+        ordinary one-message path. ``stream_event.message_start.user_message_uuid`` is present in
+        both of those model-request cases and is the durable correlation that the prompt began.
+        """
+        started_uuids = [uuid for uuid, _ in self._started_inputs]
+        if harness_message_id not in started_uuids:
+            return
+        if harness_message_id != started_uuids[-1]:
+            raise RuntimeError("Claude started a model request for a non-representative input")
+        contributors = list(self._started_inputs)
+        pending = [self._pending.get(uuid) for uuid, _ in contributors]
+        if any(item is None for item in pending):
+            raise RuntimeError("Claude started an input the runner did not have pending")
+        confirmed = [item for item in pending if item is not None]
+        for uuid, _ in contributors:
+            del self._pending[uuid]
+        self._started_inputs = []
+        await self.session.confirm_user_message(
+            harness_message_id=harness_message_id,
+            text="\n".join(item[1] for item in confirmed),
+            origin_command_ids=[item[0] for item in confirmed],
+            turn_id=self._turn_id(),
+            sources=[*(sequence for _, sequence in contributors), source_sequence],
+        )
 
     def _on_assistant(self, message: wire.AssistantMessage) -> None:
         for block in message.content:
@@ -171,16 +228,84 @@ class ClaudeAdapter(HarnessAdapter):
                 case ToolUseBlock(input=tool_input):
                     self.session.emit(pb.ToolArguments(item_id=item_id, arguments_json=json.dumps(tool_input)))
 
-    def _on_user(self, message: wire.UserMessage) -> None:
-        for block in blocks_of(message.content):
+    async def _on_user(self, frame: wire.UserFrame, source_sequence: int) -> None:
+        if frame.is_replay:
+            await self._confirm_replayed_user_message(frame, source_sequence)
+            return
+        message = frame.message
+        blocks = list(blocks_of(message.content))
+        for block in blocks:
             if isinstance(block, ToolResultBlock):
                 self.session.emit(
                     pb.ItemCompleted(
                         item_id=block.tool_use_id, tool=pb.ToolResult(output=block.text, succeeded=not block.is_error)
                     )
                 )
+        if any(isinstance(block, ToolResultBlock) for block in blocks):
+            self._tool_result_message = (frame.uuid, source_sequence)
 
-    def _on_result(self, result: wire.ResultFrame) -> None:
+    async def _confirm_replayed_user_message(self, frame: wire.UserFrame, source_sequence: int) -> None:
+        """Confirm exactly one native Claude prompt, rather than its replay bookkeeping.
+
+        `--replay-user-messages` outputs each follower of a coalesced batch once in its original
+        form before the lifecycle `started` frames. Those echoes never reached the model as their
+        own messages. The later representative echo has the last UUID and joined text; the started
+        cohort provides its exact command origins without trying to reconstruct them from newlines.
+        """
+        started_uuids = [uuid for uuid, _ in self._started_inputs]
+        if frame.uuid not in started_uuids:
+            return
+        if frame.uuid != started_uuids[-1]:
+            raise RuntimeError("Claude replayed a non-representative started input")
+        contributors = list(self._started_inputs)
+        pending = [self._pending.get(uuid) for uuid, _ in contributors]
+        if any(item is None for item in pending):
+            raise RuntimeError("Claude started an input the runner did not have pending")
+        confirmed = [item for item in pending if item is not None]
+        text = "\n".join(item[1] for item in confirmed)
+        if frame.message.content != text:
+            raise RuntimeError("Claude replayed user text inconsistent with its started input batch")
+        for uuid, _ in contributors:
+            del self._pending[uuid]
+        self._started_inputs = []
+        await self.session.confirm_user_message(
+            harness_message_id=frame.uuid,
+            text=text,
+            origin_command_ids=[item[0] for item in confirmed],
+            turn_id=self._turn_id(),
+            sources=[*(sequence for _, sequence in contributors), source_sequence],
+        )
+
+    async def _confirm_tool_result_inputs(self) -> None:
+        """Confirm inputs Claude begins after a tool result, without inventing a user echo.
+
+        Native Claude puts an active-turn input into the continuation request alongside the tool
+        result, then reports ``started`` once per input. The tool-result frame does not contain
+        the input text and no replayed user frame follows, so its UUID plus that exact lifecycle
+        cohort is the strongest native causal evidence available.
+        """
+        tool_result_message = self._tool_result_message
+        self._tool_result_message = None
+        if tool_result_message is None or not self._started_inputs:
+            return
+        contributors = list(self._started_inputs)
+        pending = [self._pending.get(uuid) for uuid, _ in contributors]
+        if any(item is None for item in pending):
+            raise RuntimeError("Claude started an input the runner did not have pending")
+        confirmed = [item for item in pending if item is not None]
+        for uuid, _ in contributors:
+            del self._pending[uuid]
+        self._started_inputs = []
+        harness_message_id, tool_result_sequence = tool_result_message
+        await self.session.confirm_user_message(
+            harness_message_id=harness_message_id,
+            text="\n".join(item[1] for item in confirmed),
+            origin_command_ids=[item[0] for item in confirmed],
+            turn_id=self._turn_id(),
+            sources=[tool_result_sequence, *(sequence for _, sequence in contributors)],
+        )
+
+    async def _on_result(self, result: wire.ResultFrame) -> None:
         if not self.session.active_turn_id:
             return
         if (result.terminal_reason or "").startswith("aborted"):
@@ -189,7 +314,7 @@ class ClaudeAdapter(HarnessAdapter):
             status, error = pb.TURN_STATUS_FAILED, result.result or ""
         else:
             status, error = pb.TURN_STATUS_COMPLETED, ""
-        self.session.emit(pb.TurnCompleted(turn_id=self.session.active_turn_id, status=status, error=error))
+        await self.session.turn_completed(self.session.active_turn_id, status, error)
 
     @staticmethod
     def _item_id(block: Block, index: int, message_id: str) -> str:

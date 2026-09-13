@@ -50,12 +50,13 @@ page is what the runner guarantees about it.
 - The runner then replays every event with a sequence greater than `Open.after_sequence`, in
   order, and continues with live events. A client that passes the last sequence it processed sees
   neither a gap nor a duplicate; a cursor beyond `last_sequence` ends the stream with an error.
-- Multiple attachments independently replay and follow the session. Each may issue commands;
-  the runner serializes them with the session lock and deduplicates inputs by `input_id`.
+- Multiple attachments independently replay and follow the session. Each may issue client-chosen,
+  idempotent `Command`s; the runner serializes them with the session lock and deduplicates by
+  `command_id`.
 - `Detach`, or a dropped connection, ends the stream and nothing else. The harness keeps running
   and its events keep accruing in the log.
-- `Shutdown` interrupts an active turn, stops the harness, reports `HarnessExited`, and ends the
-  streams after every observer drains the terminal events. The session stays resumable.
+- `StopRunnerSession` interrupts an active turn, stops the harness, reports `HarnessExited`, and
+  ends the streams after every observer drains the terminal events. The session stays resumable.
 
 ## Events
 
@@ -67,7 +68,7 @@ directions, so harness-native detail is one lookup away.
 | Family  | Events                                                                                                                                       |
 | ------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | harness | `HarnessStarted` (resumed, pid), `HarnessExited` (exit code, stopped by the runner), `HarnessLost`, `HarnessStderr`                          |
-| input   | `InputSubmitted`, `InputAccepted` (turn id), `InputRejected` (reason), `InputUncertain`                                                      |
+| command | `CommandReceived`, `CommandRejected`, `CommandNoop`, `HarnessUserMessageConfirmed`, `ModelChanged`                                          |
 | turn    | `TurnStarted`, `TurnCompleted` (`COMPLETED`, `INTERRUPTED`, `FAILED`, `PROCESS_LOST`)                                                        |
 | item    | `ItemStarted` (assistant text, reasoning, tool call), `TextDelta`, `ToolArgumentsDelta`, `ToolArguments`, `ToolOutputDelta`, `ItemCompleted` |
 | native  | `Native` (direction, exact line)                                                                                                             |
@@ -77,42 +78,43 @@ and complete with their full text; tool calls stream their arguments where the h
 report the complete `ToolArguments`, stream output where the harness does, and complete with the
 harness's outcome. Tool names and argument shapes are the harness's own.
 
-## Inputs
+## Commands and effects
 
-- `input_id` is client-chosen and idempotent. An input is reported as `InputSubmitted`, carrying
-  its text, when the runner takes it, then `InputAccepted` once the harness acknowledges native
-  admission, or `InputRejected`. For Claude, this acknowledgement is `command_lifecycle: queued`:
-  it proves command-queue admission, not that the input has started, entered the native transcript,
-  reached the model, or become durable. The exact native admission boundary remains visible in the source
-  `Native` event.
-- An input while no turn is active starts a turn: `TurnStarted` precedes its `InputAccepted`. An
-  input while a turn is active joins that turn; the harness decides where in the model's context
-  it lands.
-- Resending an id the log already settled delivers nothing to the harness; the runner re-emits the
-  original outcome so a client that retried after a lost connection learns it. Resending an id
-  that is still unsettled changes nothing.
-- `Interrupt` ends the active turn, which completes as `INTERRUPTED`; with no active turn it is
-  ignored.
-
-## Model changes
-
-- `SwitchModel` changes a running session's model only between turns. A successful switch preserves
-  the native conversation and session instructions, becomes the stored default for a restart, and
-  takes effect on the next model request. The runner records either `ModelSwitchSucceeded` or
-  `ModelSwitchRejected`; each `TurnStarted` records the effective model so mixed-model histories
-  remain auditable.
+- A `Command` is client-chosen and idempotent. The runner fsyncs it in its command journal before
+  appending `CommandReceived`. That receipt proves only the runner's durable boundary. It does not
+  claim a native effect or a scheduling category.
+- A later causal event is the terminal result: `HarnessUserMessageConfirmed`, `ModelChanged`, an
+  interrupted `TurnCompleted`, `CommandRejected`, or `CommandNoop`. Retrying the same command id
+  never creates another native command. A runner restart reconciles any nonterminal journal entry
+  with its original id; if an effect was synced before its public event append, recovery appends
+  that exact effect.
+- `SubmitInput` is terminal only when the harness confirms its causal delivery. Its receipt names
+  the native message/correlation id, text, turn id, and every originating command id. Claude's
+  normal request carries its representative input UUID on `stream_event.message_start`; compatible
+  queued inputs may be newline-joined under that UUID, with bookkeeping replay frames for their
+  followers. While a Claude tool is active, later inputs instead join the tool-result continuation
+  and Claude emits neither a user echo nor an input UUID: the runner reports the tool-result id plus
+  the exact following `started` cohort as the causal evidence. Codex reports each accepted
+  `turn/start` input separately.
+- `InterruptTurn` is terminal when the named turn reports `INTERRUPTED`, whose
+  `interrupted_by_command_id` names the command. If the turn is already over it is a `CommandNoop`.
+- `ChangeModel` has harness-specific native effects. Claude sends `set_model` and reports
+  `ModelChanged` after its successful control response. Codex retains the request until a later
+  `turn/start` response proves that selected model was used; a superseded pending request is a
+  `CommandNoop`. Neither harness's behavior is represented as a public "now" or "at boundary"
+  choice.
+- `StopRunnerSession` is terminal as `HarnessExited`, naming its command id. A stopped harness is
+  instead a `CommandNoop`.
 
 ## Durability and restart
 
-- The log is written before an event is delivered. Harness, input, and turn lifecycle events are
-  synced to disk; deltas and native evidence are flushed but not synced, so a crash can shorten
-  their tail but never reorder or lose a decision.
+- The public log is written before an event is delivered. Command receipts, terminal command
+  outcomes, harness lifecycle, and turns are synced; deltas and native evidence are flushed but
+  not synced, so a crash can shorten their tail but cannot reorder a durable outcome.
 - A runner that finds a session it had running reports `HarnessLost`, then `TurnCompleted` with
-  `PROCESS_LOST` if a turn was active, then `InputUncertain` for each input submitted but never
-  settled. The next `Open` with a spec resumes the native conversation and reports `HarnessStarted` with
-  `resumed`.
-- `InputUncertain` is the one window the runner cannot close: the input may or may not be in the
-  harness's transcript. Resending it is the client's decision.
+  `PROCESS_LOST` if a turn was active. Its command journal then replays missing durable receipts or
+  terminal effects and reconciles the remaining commands after the next explicit `Open` starts the
+  harness. There is no indeterminate command outcome.
 - A harness that exits on its own is reported the same way, as `HarnessExited` with the exit code
   instead of `HarnessLost`.
 - A runner that receives SIGTERM stops every running harness through the stop ladder (stdin
@@ -152,7 +154,7 @@ session and a new transcript.
   outright can lose the conversation since its last completed fence. The runner stops harnesses by
   closing stdin, and the runner's own termination does the same for every session, so the pod's
   SIGTERM path gives Claude an orderly flush opportunity but does not turn an earlier
-  `InputAccepted` into proof of native persistence. See
+  `CommandReceived` into proof of native persistence. See
   [`../docs/claude_runtime_contracts.md`](../docs/claude_runtime_contracts.md).
 - Codex reports no aggregated output for a shell command that outlived its first read, and keeps a
   streamed model connection open after an interrupt; neither changes the events above.

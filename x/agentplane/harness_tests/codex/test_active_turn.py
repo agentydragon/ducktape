@@ -13,32 +13,10 @@ from x.agentplane.native.codex import driver, scenarios, wire
 WAIT_COMMAND = 'sh -c \'printf "wait_started\\n"; sleep 3; printf "wait_finished\\n"\''
 SECOND_INPUT = "Reply ONLY SECOND_INPUT_OBSERVED after current work."
 STEER_INPUT = "Reply ONLY STEERED after the current tool action."
-SELECTED_MODEL = "agentplane-switched-model"
 
 
 def _wait_call() -> sse.FunctionCall:
     return sse.FunctionCall("call_test_1", "exec_command", {"cmd": WAIT_COMMAND})
-
-
-def test_turn_start_model_selects_that_native_turn(codex: CodexHarness, upstream: ScriptedUpstream) -> None:
-    """Codex has no model-control request: turn/start selects the model it actually uses."""
-    with codex.start(upstream) as process:
-        thread_id = scenarios.launch_handshake(process, cwd=str(codex.workspace), model=MODEL, effort=EFFORT)[
-            "thread_id"
-        ]
-        scenarios.start_turn(
-            process,
-            thread_id=thread_id,
-            request_id="capture-selected-model",
-            text="Reply with exactly: CODEX_SELECTED_MODEL_OK",
-            model=SELECTED_MODEL,
-        )
-
-        raw = upstream.next_request()
-        assert ResponsesRequest.parse(raw).model == SELECTED_MODEL
-        upstream.respond(raw, sse.response_stream([sse.Message("CODEX_SELECTED_MODEL_OK")], model=SELECTED_MODEL))
-        assert scenarios.await_turn_completed(process)["params"]["turn"]["status"] == "completed"
-    upstream.assert_quiescent()
 
 
 def test_second_input_during_a_tool_joins_the_running_turn(codex: CodexHarness, upstream: ScriptedUpstream) -> None:

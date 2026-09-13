@@ -306,7 +306,7 @@ async def test_ingested_events_project_the_durable_attachment_without_replay_reg
         [
             _event(4, turn_completed=pb.TurnCompleted(turn_id="test-turn", status=pb.TURN_STATUS_COMPLETED)),
             _event(5, model_switch_rejected=pb.ModelSwitchRejected(switch_id="test-rejected", reason="no")),
-            _event(6, model_switch_succeeded=pb.ModelSwitchSucceeded(model="test-next-model")),
+            _event(6, model_changed=pb.ModelChanged(model="test-next-model")),
             _event(7, harness_exited=pb.HarnessExited()),
         ],
         lease=lease,

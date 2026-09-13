@@ -19,7 +19,7 @@ from typing import Annotated
 
 import typer
 
-from x.agentplane.runner.config import ClaudeLaunch, CodexLaunch, RunnerConfig
+from x.agentplane.runner.config import ClaudeLaunch, CodexLaunch, DebugCheckpoint, RunnerConfig
 from x.agentplane.runner.service import serve
 
 logger = logging.getLogger(__name__)
@@ -62,6 +62,12 @@ def main(
             "value; repeat per variable.",
         ),
     ] = None,
+    test_debug_checkpoint_name: Annotated[
+        str | None, typer.Option(hidden=True, help="Test-only crash-test checkpoint name.")
+    ] = None,
+    test_debug_checkpoint_command_id: Annotated[
+        str | None, typer.Option(hidden=True, help="Test-only crash-test checkpoint command id.")
+    ] = None,
 ) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     claude = None
@@ -76,11 +82,18 @@ def main(
         if openai_base_url is None:
             raise typer.BadParameter("--openai-base-url is required with --codex-binary")
         codex = CodexLaunch(binary=codex_binary, base_url=openai_base_url, api_key=os.environ["OPENAI_API_KEY"])
+    if (test_debug_checkpoint_name is None) != (test_debug_checkpoint_command_id is None):
+        raise typer.BadParameter("both test debug checkpoint options must be set together")
     config = RunnerConfig(
         state_dir=state_dir,
         environment=harness_environment(os.environ, declared=harness_env or []),
         claude=claude,
         codex=codex,
+        test_debug_checkpoint=(
+            DebugCheckpoint(test_debug_checkpoint_name, test_debug_checkpoint_command_id)
+            if test_debug_checkpoint_name is not None and test_debug_checkpoint_command_id is not None
+            else None
+        ),
     )
     asyncio.run(async_main(config, listen))
 

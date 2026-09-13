@@ -15,8 +15,6 @@ from x.agentplane.runner import protocol_pb2 as pb
 
 
 _SESSION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
-
-
 class SessionRecord(BaseModel):
     harness: str = Field(description="Harness enum name, e.g. HARNESS_CLAUDE")
     cwd: str

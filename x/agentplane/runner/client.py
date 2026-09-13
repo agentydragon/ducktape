@@ -19,7 +19,7 @@ class RunnerError(Exception):
 
 
 class StreamClosedError(Exception):
-    """The runner ended the stream without an error, after Shutdown or Detach."""
+    """The runner ended the stream without an error, after StopRunnerSession or Detach."""
 
 
 class Attachment:
@@ -35,17 +35,20 @@ class Attachment:
         """The last sequence read; what a reconnecting Open passes as after_sequence."""
         return self.seen[-1].sequence if self.seen else 0
 
-    async def send(self, input_id: str, text: str) -> None:
-        await self._call.write(pb.ClientMessage(input=pb.Input(input_id=input_id, text=text)))
+    async def send(self, command_id: str, text: str) -> None:
+        await self.command(pb.Command(command_id=command_id, submit_input=pb.SubmitInput(text=text)))
 
-    async def interrupt(self) -> None:
-        await self._call.write(pb.ClientMessage(interrupt=pb.Interrupt()))
+    async def command(self, command: pb.Command) -> None:
+        await self._call.write(pb.ClientMessage(command=command))
 
-    async def switch_model(self, switch_id: str, model: str) -> None:
-        await self._call.write(pb.ClientMessage(switch_model=pb.SwitchModel(switch_id=switch_id, model=model)))
+    async def interrupt(self, command_id: str, turn_id: str) -> None:
+        await self.command(pb.Command(command_id=command_id, interrupt_turn=pb.InterruptTurn(turn_id=turn_id)))
 
-    async def shutdown(self) -> None:
-        await self._call.write(pb.ClientMessage(shutdown=pb.Shutdown()))
+    async def switch_model(self, command_id: str, model: str) -> None:
+        await self.command(pb.Command(command_id=command_id, change_model=pb.ChangeModel(model=model)))
+
+    async def stop_runner_session(self, command_id: str) -> None:
+        await self.command(pb.Command(command_id=command_id, stop_runner_session=pb.StopRunnerSession()))
 
     async def detach(self) -> None:
         await self._call.write(pb.ClientMessage(detach=pb.Detach()))

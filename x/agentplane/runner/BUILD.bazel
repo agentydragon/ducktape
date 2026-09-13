@@ -100,6 +100,16 @@ py_library(
 )
 
 py_library(
+    name = "command_journal",
+    srcs = ["command_journal.py"],
+    deps = [
+        ":event_log",
+        "//x/agentplane/runner:protocol_pb2",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
     name = "event_log",
     srcs = ["event_log.py"],
     deps = [
@@ -146,6 +156,7 @@ py_library(
     srcs = ["session.py"],
     deps = [
         ":adapter",
+        ":command_journal",
         ":config",
         ":event_log",
         ":harness_process",
@@ -163,6 +174,22 @@ py_library(
         "//x/agentplane/runner:protocol_pb2",
         "@pypi//protobuf",
         "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_claude_adapter",
+    srcs = ["test_claude_adapter.py"],
+    deps = [
+        ":claude",
+        ":config",
+        ":conftest",
+        ":session",
+        ":store",
+        "//:conftest",
+        "//x/agentplane/native/claude:wire",
+        "@pypi//pydantic",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -242,6 +269,7 @@ py_test(
         "//x/agentplane/runner/testing:events",
         "//x/agentplane/runner/testing:scripted_model",
         "@pypi//protobuf",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

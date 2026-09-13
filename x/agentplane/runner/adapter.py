@@ -23,15 +23,20 @@ class HarnessAdapter(abc.ABC):
         """Initialize the freshly started harness and return its native session id."""
 
     @abc.abstractmethod
-    async def submit(self, input_id: str, text: str) -> None: ...
+    async def submit(self, command_id: str, text: str) -> None: ...
 
     @abc.abstractmethod
     async def interrupt(self) -> None: ...
 
     @abc.abstractmethod
-    async def switch_model(self, model: str) -> None:
-        """Make model the native harness's selection for its next turn."""
+    async def change_model(self, command_id: str, model: str) -> None:
+        """Apply one model command, reporting its causal effect through the owning Session."""
 
     @abc.abstractmethod
-    async def on_frame(self, frame: dict[str, Any]) -> None:
-        """Translate one parsed stdout frame into session events, answering the harness if it asked."""
+    async def on_frame(self, frame: dict[str, Any], source_sequence: int) -> None:
+        """Translate one parsed stdout frame into session events, answering the harness if it asked.
+
+        ``source_sequence`` is the durable Native Event which carried ``frame``. An adapter may
+        wait for a small native cohort before emitting one observation, so it must retain the
+        source rather than relying on the Session's ambient translating frame.
+        """

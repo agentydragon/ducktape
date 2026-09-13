@@ -9,32 +9,29 @@ becomes an Agentplane guarantee. No proprietary source is reproduced here.
 
 ## Priority for Agentplane
 
-| Priority | Boundary                        | Current gap                                                                                                                                                                                   |
-| -------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P0       | Input admission and persistence | Claude `queued` means command-queue admission, but the runner currently maps it to the harness-neutral `InputAccepted`. Transcript append acceptance is also weaker than durable persistence. |
-| P0       | Driver-hosted MCP               | The wire is documented in [driver_tools.md](driver_tools.md), but the runner neither declares SDK MCP servers during initialization nor routes `mcp_message`.                                 |
-| P1       | Permission and dialog recovery  | The runner deliberately auto-allows tool permission requests and rejects other controls. A future interactive host must use `tool_use_id`, not a transient request id, as its recovery key.   |
-| P1       | Background task state           | Claude exposes a replace-set snapshot plus detail edges; the current adapter retains these only as native frames.                                                                             |
-| P1       | Remote delivery ambiguity       | Claude's managed remote transport distinguishes never-uploaded calls from calls that may have landed. Agentplane's app-to-runner stream has no equivalent classification.                     |
-| P2       | Limits and refusal fallback     | Rate-limit and fallback events remain native-only, and a fallback that needs a user dialog cannot complete through the current runner.                                                        |
+| Priority | Boundary                        | Current gap                                                                                                                                                                                    |
+| -------- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P0       | App command outbox              | The runner durably receipts and reconciles commands, but the app still needs its own desired `ThreadCommand` outbox before it can survive loss before runner delivery.                         |
+| P0       | Driver-hosted MCP               | The wire is documented in [driver_tools.md](driver_tools.md), but the runner neither declares SDK MCP servers during initialization nor routes `mcp_message`.                                  |
+| P1       | Permission and dialog recovery  | The runner deliberately auto-allows tool permission requests and rejects other controls. A future interactive host must use `tool_use_id`, not a transient request id, as its recovery key.    |
+| P1       | Background task state           | Claude exposes a replace-set snapshot plus detail edges; the current adapter retains these only as native frames.                                                                              |
+| P1       | Remote delivery ambiguity       | Claude's managed remote transport distinguishes never-uploaded calls from calls that may have landed. Agentplane's app-to-runner stream has no equivalent classification.                      |
+| P2       | Limits and refusal fallback     | Rate-limit and fallback events remain native-only, and a fallback that needs a user dialog cannot complete through the current runner.                                                         |
 
 ## Known Agentplane bugs and recommended work
 
 These IDs are local shorthand for implementation work, not upstream issue numbers.
 
-### C1: `InputAccepted` overstates Claude's acknowledgement
+### C1: command effect is now causal
 
-**Bug.** [`runner/claude.py`](../runner/claude.py) emits `InputAccepted` for
-`command_lifecycle: queued`. The name previously implied transcript admission and still conflates
-different harness-native boundaries. Clients can therefore treat an input as recoverably accepted
-before Claude has started it or persisted it.
-
-**Recommendation.** Make queue admission explicit instead of silently changing the meaning for one
-harness. Add an `InputQueued` state/event, move Claude's `InputAccepted` transition to `started`
-or replayed-user evidence, and retain the native lifecycle frame for exact correlation. Migration
-tests must cover early cancellation without `started`, coalesced contributors, and process loss in
-each state. Until that protocol change lands, consumers must read Claude `InputAccepted` as native
-queue admission only.
+The runner no longer treats `command_lifecycle: queued` as a user-message result. It records
+`CommandReceived` at its durable journal boundary. A normal prompt is correlated by Claude's
+following `stream_event.message_start.user_message_uuid`; a coalesced queued message retains its
+newline-joined text and every origin command id at that representative UUID (with a replayed native
+echo when Claude emits one). For active-turn inputs Claude emits neither correlation nor replayed
+user text: after the tool-result frame, its exact `started` cohort proves the inputs entered that
+continuation, so the runner records both sources on `HarnessUserMessageConfirmed`. A cancelled
+queue entry becomes `CommandNoop`. The exact native lifecycle remains visible as `Native` evidence.
 
 ### C2: the documented SDK MCP host role is not implemented
 
@@ -52,8 +49,8 @@ messages. Keep MCP task support disabled until an active `tools/call` path is ob
 
 **Bug.** Runner events are durable and cursor-replayable, but app commands are direct gRPC writes.
 If that stream fails, the app cannot distinguish a command that never reached the runner from one
-that arrived before the acknowledgement was lost. `input_id` resolves a retry only after the runner
-has logged it.
+that arrived before the acknowledgement was lost. A stable command id resolves a retry only after
+the runner has logged it.
 
 **Recommendation.** Persist an outbound command ledger in the app with at least queued, written,
 and runner-acknowledged states. Reconcile it against the runner log on reattach and expose
@@ -132,8 +129,8 @@ or parent chains.
 Implications:
 
 - Agentplane's durable event log does not make Claude's native transcript durable.
-- A process loss after `queued` or even after local append acceptance still needs uncertainty
-  handling unless a persistence fence completed.
+- A process loss after `queued` or even after local append acceptance still says nothing about
+  Claude's transcript persistence; that is separate from the runner's durable command outcome.
 - Resume can merge known UUIDs that do not yet have a local file and lazily hydrate driver-backed
   agent transcripts without overwriting locally written ones.
 
@@ -202,8 +199,8 @@ explicit close also removes callbacks, keepalive, attestation, and feature-refre
 
 Agentplane durably logs runner-to-client events and can replay them by cursor. Its client-to-runner
 gRPC writes have no persisted upload ledger, so after a connection loss the bridge cannot tell
-"never sent" from "possibly delivered." `input_id` makes a retry idempotent only after the runner
-has logged that id. Do not infer a delivery guarantee from a successful local write.
+"never sent" from "possibly delivered." A stable command id makes a retry idempotent only after
+the runner has logged that id. Do not infer a delivery guarantee from a successful local write.
 
 ## Rate limits and refusal fallback
 

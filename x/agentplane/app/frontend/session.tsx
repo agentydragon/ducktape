@@ -15,7 +15,6 @@ import {
   Textarea,
   TextInput,
   Tooltip,
-  VisuallyHidden,
 } from "@mantine/core";
 import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
 import IconPlayerStop from "@tabler/icons-react/dist/esm/icons/IconPlayerStop.mjs";
@@ -94,20 +93,13 @@ function StatusDot({
 }
 
 /** Role reads from position and color, not a label: the assistant's items are already full-width
- * (`ItemView`), so only user input needs a distinct treatment -- a right-aligned bubble. Sending
- * reads from the bubble's own color, not a dot on top of it -- a still-submitted input keeps the
- * "in progress" yellow this app already uses for streaming/pending elsewhere, switching to the
- * settled blue once the runner accepts it into a turn. */
+ * (`ItemView`), so only user input needs a distinct treatment -- a right-aligned bubble. The
+ * runner supplies this only after the harness confirms the native message, so it is always a
+ * settled transcript entry, not a guessed delivery state. */
 function InputView({ input }: { input: InputState }): JSX.Element {
-  const sending = input.state === "submitted";
   return (
     <Group justify="flex-end">
-      <Paper
-        className={sending ? "agentplane-user-bubble agentplane-user-bubble-sending" : "agentplane-user-bubble"}
-        p="sm"
-      >
-        {/* The color change alone would be invisible to a screen reader. */}
-        {sending && <VisuallyHidden>Sending. </VisuallyHidden>}
+      <Paper className="agentplane-user-bubble" p="sm">
         {/* An input logged before the runner carried its text shows as its id. */}
         <Text style={{ whiteSpace: "pre-wrap" }}>{input.text || `input ${input.id}`}</Text>
       </Paper>
@@ -372,7 +364,7 @@ export function SessionView({
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const submitting = useRef(false);
-  const pendingInput = useRef<{ sandbox: string; sessionId: string; text: string; inputId: string } | null>(null);
+  const pendingInput = useRef<{ sandbox: string; sessionId: string; text: string; commandId: string } | null>(null);
   const [thread, setThread] = useState<ThreadView | null>(null);
   const [model, setModel] = useState<string | null>(null);
   const [modelOptions, setModelOptions] = useState<string[]>([]);
@@ -412,8 +404,8 @@ export function SessionView({
     });
     source.addEventListener("event", (message: MessageEvent<string>) => {
       const event = fromJson(EventSchema, JSON.parse(message.data) as JsonValue);
-      if (event.observation.case === "modelSwitchSucceeded") setModel(event.observation.value.model);
-      if (event.observation.case === "modelSwitchRejected") setError(event.observation.value.reason);
+      if (event.observation.case === "modelChanged") setModel(event.observation.value.model);
+      if (event.observation.case === "commandRejected") setError(event.observation.value.reason);
       setState((current) => reduce(current, event));
     });
     // The runner ending the stream is final: a reconnect would Open the session again, which
@@ -453,14 +445,14 @@ export function SessionView({
       pendingInput.current.sandbox !== sandbox ||
       pendingInput.current.sessionId !== sessionId
     ) {
-      pendingInput.current = { sandbox, sessionId, text, inputId: crypto.randomUUID() };
+      pendingInput.current = { sandbox, sessionId, text, commandId: crypto.randomUUID() };
     }
     submitting.current = true;
     setSending(true);
     try {
-      // A failed HTTP response may follow runner admission. Retry the same input id until
-      // acknowledged so a lost response cannot turn a retry into a second user message.
-      await sendInput(sandbox, sessionId, pendingInput.current.inputId, text);
+      // A failed HTTP response may follow runner receipt. Retry the same command id so a lost
+      // response cannot turn a retry into a second user-message request.
+      await sendInput(sandbox, sessionId, pendingInput.current.commandId, text);
       pendingInput.current = null;
       setDraft("");
       setError(null);
@@ -537,12 +529,7 @@ export function SessionView({
                 </Stack>
               ))}
               {state.inputs
-                .filter((input) => input.state === "submitted")
-                .map((input) => (
-                  <InputView key={input.id} input={input} />
-                ))}
-              {state.inputs
-                .filter((input) => input.state === "rejected" || input.state === "uncertain")
+                .filter((input) => input.state === "rejected")
                 .map((input) => (
                   <Text key={input.id} c="orange">
                     input {input.id} {input.state} {input.detail}
@@ -574,7 +561,7 @@ export function SessionView({
               data={modelOptions}
               value={model}
               onChange={(next) => void selectModel(next)}
-              disabled={state.harness !== "running" || activeTurn !== undefined || modelPending}
+              disabled={state.harness !== "running" || modelPending}
               w={200}
             />
           </Group>
@@ -604,7 +591,7 @@ export function SessionView({
                   leftSection={<IconPower size={15} />}
                   disabled={state.harness !== "running"}
                   closeMenuOnClick
-                  onClick={() => void run(() => shutdownSession(sandbox, sessionId))}
+                  onClick={() => void run(() => shutdownSession(sandbox, sessionId, crypto.randomUUID()))}
                 >
                   Shut down harness
                 </Menu.Item>
@@ -615,7 +602,7 @@ export function SessionView({
               variant="light"
               color="red"
               aria-label="Interrupt"
-              onClick={() => void run(() => interruptSession(sandbox, sessionId))}
+              onClick={() => void run(() => interruptSession(sandbox, sessionId, crypto.randomUUID(), activeTurn?.id ?? ""))}
               disabled={!activeTurn}
             >
               <IconPlayerStop size={16} />

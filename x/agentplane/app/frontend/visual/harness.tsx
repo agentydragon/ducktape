@@ -677,11 +677,18 @@ function frame(
  */
 const EVENTS: Event[] = [
   event(1, { case: "harnessStarted", value: { resumed: false, pid: 7 } }),
-  event(2, { case: "inputSubmitted", value: { inputId: "i1", text: "List the repository files." } }),
+  event(2, { case: "commandReceived", value: { commandId: "i1" } }),
   event(3, frame(Direction.TO_HARNESS, { type: "user", text: "List the repository files." })),
   event(4, frame(Direction.FROM_HARNESS, { type: "turn.started" })),
   event(5, { case: "turnStarted", value: { turnId: "t1" } }, [4]),
-  event(6, { case: "inputAccepted", value: { inputId: "i1", turnId: "t1" } }, [4]),
+  event(
+    6,
+    {
+      case: "harnessUserMessageConfirmed",
+      value: { harnessMessageId: "user-1", text: "List the repository files.", originCommandIds: ["i1"], turnId: "t1" },
+    },
+    [4]
+  ),
   event(7, frame(Direction.FROM_HARNESS, { type: "thinking", text: THINKING })),
   event(8, { case: "itemStarted", value: { itemId: "r#0", kind: ItemKind.REASONING } }, [7]),
   event(9, { case: "textDelta", value: { itemId: "r#0", text: THINKING } }, [7]),
@@ -704,11 +711,18 @@ const EVENTS: Event[] = [
   event(19, { case: "itemCompleted", value: { itemId: "m#0", outcome: { case: "text", value: ANSWER } } }, [16]),
   event(20, frame(Direction.FROM_HARNESS, { type: "turn.completed" })),
   event(21, { case: "turnCompleted", value: { turnId: "t1", status: TurnStatus.COMPLETED } }, [20]),
-  event(22, { case: "inputSubmitted", value: { inputId: "i2", text: "Now read src." } }),
+  event(22, { case: "commandReceived", value: { commandId: "i2" } }),
   event(23, frame(Direction.TO_HARNESS, { type: "user", text: "Now read src." })),
   event(24, frame(Direction.FROM_HARNESS, { type: "turn.started" })),
   event(25, { case: "turnStarted", value: { turnId: "t2" } }, [24]),
-  event(26, { case: "inputAccepted", value: { inputId: "i2", turnId: "t2" } }, [24]),
+  event(
+    26,
+    {
+      case: "harnessUserMessageConfirmed",
+      value: { harnessMessageId: "user-2", text: "Now read src.", originCommandIds: ["i2"], turnId: "t2" },
+    },
+    [24]
+  ),
   event(27, frame(Direction.FROM_HARNESS, { type: "thinking", text: THINKING_AGAIN })),
   event(28, { case: "itemStarted", value: { itemId: "r#1", kind: ItemKind.REASONING } }, [27]),
   event(29, { case: "textDelta", value: { itemId: "r#1", text: THINKING_AGAIN } }, [27]),
@@ -732,9 +746,15 @@ const EVENTS: Event[] = [
  */
 const EVENTS_STATES: Event[] = [
   event(1, { case: "harnessStarted", value: { resumed: false, pid: 9 } }),
-  event(2, { case: "inputSubmitted", value: { inputId: "i1", text: "Delete the stale branch." } }),
+  event(2, { case: "commandReceived", value: { commandId: "i1" } }),
   event(3, { case: "turnStarted", value: { turnId: "t1" } }),
-  event(4, { case: "inputAccepted", value: { inputId: "i1", turnId: "t1" } }),
+  event(
+    4,
+    {
+      case: "harnessUserMessageConfirmed",
+      value: { harnessMessageId: "user-1", text: "Delete the stale branch.", originCommandIds: ["i1"], turnId: "t1" },
+    }
+  ),
   event(5, { case: "itemStarted", value: { itemId: "tool#0", kind: ItemKind.TOOL_CALL, toolName: "Bash" } }),
   event(6, { case: "toolArguments", value: { itemId: "tool#0", argumentsJson: '{"command": "git branch -d stale"}' } }),
   event(7, {
@@ -751,12 +771,20 @@ const EVENTS_STATES: Event[] = [
     value: { itemId: "m#0", outcome: { case: "text", value: "That branch doesn't exist." } },
   }),
   event(11, { case: "turnCompleted", value: { turnId: "t1", status: TurnStatus.COMPLETED } }),
-  event(12, {
-    case: "inputSubmitted",
-    value: { inputId: "i2", text: "Run the test suite twice, thinking it over first." },
-  }),
+  event(12, { case: "commandReceived", value: { commandId: "i2" } }),
   event(13, { case: "turnStarted", value: { turnId: "t2" } }),
-  event(14, { case: "inputAccepted", value: { inputId: "i2", turnId: "t2" } }),
+  event(
+    14,
+    {
+      case: "harnessUserMessageConfirmed",
+      value: {
+        harnessMessageId: "user-2",
+        text: "Run the test suite twice, thinking it over first.",
+        originCommandIds: ["i2"],
+        turnId: "t2",
+      },
+    }
+  ),
   event(15, { case: "itemStarted", value: { itemId: "r#0", kind: ItemKind.REASONING } }),
   event(16, {
     case: "textDelta",
@@ -777,7 +805,7 @@ const EVENTS_STATES: Event[] = [
   }),
   // Turn t2 stays active: the run above (r#0, tool#1, tool#2) is what an in-progress, partly-failed
   // step looks like. i3 is never accepted: this is what a message queued mid-turn looks like.
-  event(23, { case: "inputSubmitted", value: { inputId: "i3", text: "One more thing before you go." } }),
+  event(23, { case: "commandReceived", value: { commandId: "i3" } }),
 ];
 
 // Only what a page still asks for: the sandboxes, their bindings and their threads arrive on the

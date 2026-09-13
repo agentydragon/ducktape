@@ -14,6 +14,7 @@ import os
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 
 from google.protobuf.json_format import MessageToDict, ParseDict
 from google.protobuf.message import Message
@@ -27,12 +28,11 @@ Observation = (
     | pb.HarnessExited
     | pb.HarnessLost
     | pb.HarnessStderr
-    | pb.InputSubmitted
-    | pb.InputAccepted
-    | pb.InputRejected
-    | pb.InputUncertain
-    | pb.ModelSwitchSucceeded
-    | pb.ModelSwitchRejected
+    | pb.CommandReceived
+    | pb.CommandRejected
+    | pb.CommandNoop
+    | pb.HarnessUserMessageConfirmed
+    | pb.ModelChanged
     | pb.TurnStarted
     | pb.TurnCompleted
     | pb.ItemStarted
@@ -42,6 +42,7 @@ Observation = (
     | pb.ToolOutputDelta
     | pb.ItemCompleted
     | pb.Native
+    | pb.DebugCheckpoint
 )
 
 _FIELDS: dict[type[Message], str] = {
@@ -49,12 +50,11 @@ _FIELDS: dict[type[Message], str] = {
     pb.HarnessExited: "harness_exited",
     pb.HarnessLost: "harness_lost",
     pb.HarnessStderr: "harness_stderr",
-    pb.InputSubmitted: "input_submitted",
-    pb.InputAccepted: "input_accepted",
-    pb.InputRejected: "input_rejected",
-    pb.InputUncertain: "input_uncertain",
-    pb.ModelSwitchSucceeded: "model_switch_succeeded",
-    pb.ModelSwitchRejected: "model_switch_rejected",
+    pb.CommandReceived: "command_received",
+    pb.CommandRejected: "command_rejected",
+    pb.CommandNoop: "command_noop",
+    pb.HarnessUserMessageConfirmed: "harness_user_message_confirmed",
+    pb.ModelChanged: "model_changed",
     pb.TurnStarted: "turn_started",
     pb.TurnCompleted: "turn_completed",
     pb.ItemStarted: "item_started",
@@ -64,7 +64,9 @@ _FIELDS: dict[type[Message], str] = {
     pb.ToolOutputDelta: "tool_output_delta",
     pb.ItemCompleted: "item_completed",
     pb.Native: "native",
+    pb.DebugCheckpoint: "debug_checkpoint",
 }
+_OBSERVATIONS: dict[str, type[Message]] = {field: message for message, field in _FIELDS.items()}
 
 # Events a restarted runner reasons from are synced to disk before they are reported; deltas and
 # native evidence are flushed but not synced, since losing a tail of them only shortens the record.
@@ -72,14 +74,14 @@ _SYNCED = (
     pb.HarnessStarted,
     pb.HarnessExited,
     pb.HarnessLost,
-    pb.InputSubmitted,
-    pb.InputAccepted,
-    pb.InputRejected,
-    pb.InputUncertain,
-    pb.ModelSwitchSucceeded,
-    pb.ModelSwitchRejected,
+    pb.CommandReceived,
+    pb.CommandRejected,
+    pb.CommandNoop,
+    pb.HarnessUserMessageConfirmed,
+    pb.ModelChanged,
     pb.TurnStarted,
     pb.TurnCompleted,
+    pb.DebugCheckpoint,
 )
 
 
@@ -144,3 +146,23 @@ class EventLog:
 
     def close(self) -> None:
         self._file.close()
+
+
+def encode_observation(observation: Observation) -> dict[str, object]:
+    """Serialize an observation without fabricating an Event sequence or timestamp.
+
+    The command journal uses this for a terminal result it has observed but whose public Event append
+    may be interrupted. The Event log remains the public sequence allocator on replay.
+    """
+    return {"kind": _FIELDS[type(observation)], "value": MessageToDict(observation, preserving_proto_field_name=True)}
+
+
+def decode_observation(raw: object) -> Observation:
+    """Parse the journal form of one observation; reject malformed support state strictly."""
+    if not isinstance(raw, dict):
+        raise ValueError("observation must be an object")
+    kind, value = raw.get("kind"), raw.get("value")
+    message = _OBSERVATIONS.get(kind) if isinstance(kind, str) else None
+    if message is None or not isinstance(value, dict):
+        raise ValueError("observation has an invalid kind or value")
+    return cast(Observation, ParseDict(value, message()))

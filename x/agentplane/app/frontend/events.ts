@@ -30,11 +30,11 @@ export interface Turn {
 
 export interface InputState {
   id: string;
-  state: "submitted" | "accepted" | "rejected" | "uncertain";
+  state: "confirmed" | "rejected";
   detail: string;
-  /** What was asked; empty for events logged before the runner carried it. */
+  /** The exact native harness message, not an app-owned pending command. */
   text: string;
-  /** The turn the harness took it into, once accepted. */
+  /** The turn the harness took it into. */
   turnId: string | null;
   firstSequence: bigint;
 }
@@ -133,7 +133,7 @@ function withInput(state: SessionState, id: string, firstSequence: bigint, updat
     ? state.inputs.map((input) => (input.id === id ? { ...input, ...update } : input))
     : [
         ...state.inputs,
-        { id, state: "submitted" as const, detail: "", text: "", turnId: null, firstSequence, ...update },
+        { id, state: "confirmed" as const, detail: "", text: "", turnId: null, firstSequence, ...update },
       ];
   return { ...state, inputs };
 }
@@ -154,23 +154,18 @@ export function reduce(previous: SessionState, event: Event): SessionState {
       return { ...state, harness: "lost" };
     case "harnessStderr":
       return { ...state, stderr: [...state.stderr, observation.value.text] };
-    case "inputSubmitted":
-      return withInput(state, observation.value.inputId, event.sequence, {
-        state: "submitted",
+    case "harnessUserMessageConfirmed":
+      return withInput(state, observation.value.harnessMessageId, event.sequence, {
+        state: "confirmed",
         text: observation.value.text,
-      });
-    case "inputAccepted":
-      return withInput(state, observation.value.inputId, event.sequence, {
-        state: "accepted",
         turnId: observation.value.turnId,
+        detail: `from ${observation.value.originCommandIds.join(", ")}`,
       });
-    case "inputRejected":
-      return withInput(state, observation.value.inputId, event.sequence, {
+    case "commandRejected":
+      return withInput(state, observation.value.commandId, event.sequence, {
         state: "rejected",
         detail: observation.value.reason,
       });
-    case "inputUncertain":
-      return withInput(state, observation.value.inputId, event.sequence, { state: "uncertain" });
     case "turnStarted":
       return {
         ...state,

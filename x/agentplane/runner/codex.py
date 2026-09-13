@@ -44,6 +44,9 @@ class CodexAdapter(HarnessAdapter):
         self._thread_id = session.record.native_session_id or ""
         self._request_ids = (f"agentplane-{n}" for n in itertools.count(1))
         self._items: set[str] = set()
+        # Codex chooses the model in turn/start. A received ChangeModel remains here until a
+        # subsequent user command actually starts a turn using it.
+        self._pending_model_changes: list[tuple[str, str]] = []
 
     def command(self) -> list[str]:
         return scenarios.command(str(self.launch.binary), endpoint=self.launch.base_url)
@@ -88,32 +91,61 @@ class CodexAdapter(HarnessAdapter):
         self._thread_id = wire.ThreadResult.model_validate(response.result).thread.id
         return self._thread_id
 
-    async def submit(self, input_id: str, text: str) -> None:
-        self.session.emit(pb.InputSubmitted(input_id=input_id, text=text), sources=[])
+    async def submit(self, command_id: str, text: str) -> None:
+        selected_change = self._take_pending_model_change()
+        selected_model = selected_change[1] if selected_change is not None else self.session.record.model
         response, sequence = await self._request(
-            driver.turn_start(
-                next(self._request_ids), thread_id=self._thread_id, text=text, model=self.session.record.model
-            )
+            driver.turn_start(next(self._request_ids), thread_id=self._thread_id, text=text, model=selected_model)
         )
         if response.error is not None or response.result is None:
             reason = response.error.message if response.error is not None else "turn/start returned no result"
-            self.session.emit(pb.InputRejected(input_id=input_id, reason=reason), sources=[sequence])
+            if selected_change is not None:
+                self.session._reject(
+                    selected_change[0], f"Codex did not select the requested model: {reason}"
+                )
+            self.session._reject(command_id, reason)
             return
+        if selected_change is not None:
+            # The native response proves Codex accepted the turn that selected this model. This,
+            # rather than command receipt or a guessed future boundary, is its causal effect.
+            self.session.model_changed(*selected_change, sources=[sequence])
         turn_id = wire.TurnResult.model_validate(response.result).turn.id
         if turn_id != self.session.active_turn_id:
             self.session.emit(pb.TurnStarted(turn_id=turn_id, model=self.session.record.model), sources=[sequence])
-        self.session.emit(pb.InputAccepted(input_id=input_id, turn_id=turn_id), sources=[sequence])
+        await self.session.confirm_user_message(
+            harness_message_id=turn_id,
+            text=text,
+            origin_command_ids=[command_id],
+            turn_id=turn_id,
+            sources=[sequence],
+        )
 
     async def interrupt(self) -> None:
         await self._request(
             driver.interrupt(next(self._request_ids), thread_id=self._thread_id, turn_id=self.session.active_turn_id)
         )
 
-    async def switch_model(self, model: str) -> None:
-        # Codex selects a model per turn. The session persists this default before its next turn/start.
-        del model
+    async def change_model(self, command_id: str, model: str) -> None:
+        self._pending_model_changes.append((command_id, model))
 
-    async def on_frame(self, frame: Frame) -> None:
+    def _take_pending_model_change(self) -> tuple[str, str] | None:
+        """Choose the newest requested model for the next native turn.
+
+        Earlier pending requests never changed a native selection, so they are terminal no-ops
+        rather than fabricated model effects. The caller records the final command only after the
+        matching native ``turn/start`` response confirms the selected model's actual use.
+        """
+        if not self._pending_model_changes:
+            return None
+        *superseded, selected = self._pending_model_changes
+        self._pending_model_changes = []
+        for command_id, _ in superseded:
+            self.session._noop(
+                command_id, "superseded by a later model command before any Codex turn selected it"
+            )
+        return selected
+
+    async def on_frame(self, frame: Frame, source_sequence: int) -> None:
         match wire.parse_frame(frame):
             case wire.ServerRequest(id=request_id, method=method):
                 # Approvals, user-input requests, and elicitations have no answer path here; a
@@ -135,7 +167,7 @@ class CodexAdapter(HarnessAdapter):
                     status, error = pb.TURN_STATUS_FAILED, f"the turn ended with an unrecognized status {turn.status!r}"
                 else:
                     error = turn.error.message if turn.error is not None else ""
-                self.session.emit(pb.TurnCompleted(turn_id=turn.id, status=status, error=error))
+                await self.session.turn_completed(turn.id, status, error)
             case wire.ItemStarted(params=params):
                 self._item_started(params.item)
             case wire.ItemCompleted(params=params):

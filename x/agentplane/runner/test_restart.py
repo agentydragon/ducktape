@@ -39,7 +39,7 @@ class RunnerProcess:
         os.killpg(self.process.pid, signal.SIGKILL)
         await self.process.wait()
         for pid in harness_pids:
-            await _exited(pid)
+            await asyncio.wait_for(_exited(pid), timeout=10)
 
     async def stop(self) -> None:
         """SIGTERM, as a Pod's termination sends it; the runner stops its harnesses before exiting."""
@@ -80,10 +80,10 @@ async def _exited(pid: int) -> None:
 @pytest.fixture
 async def start_runner(
     harness: pb.Harness.ValueType, upstream: ScriptedUpstream, tmp_path: Path
-) -> AsyncIterator[Callable[[], Awaitable[RunnerProcess]]]:
+) -> AsyncIterator[Callable[..., Awaitable[RunnerProcess]]]:
     started: list[RunnerProcess] = []
 
-    async def start() -> RunnerProcess:
+    async def start(*, test_debug_checkpoint: tuple[str, str] | None = None) -> RunnerProcess:
         environment = {
             **launches.environment(tmp_path / "home"),
             # The runner binary is a Bazel py_binary inside this test's runfiles tree and finds its
@@ -93,7 +93,9 @@ async def start_runner(
             "OPENAI_API_KEY": launches.TOKEN,
         }
         process = await asyncio.create_subprocess_exec(
-            *launches.runner_command(harness, upstream, state_dir=tmp_path / "state"),
+            *launches.runner_command(
+                harness, upstream, state_dir=tmp_path / "state", test_debug_checkpoint=test_debug_checkpoint
+            ),
             env=environment,
             stdout=asyncio.subprocess.PIPE,
             start_new_session=True,
@@ -142,10 +144,106 @@ async def test_a_restarted_runner_reports_the_loss_and_resumes_the_conversation(
     done = await second.until(events.turn_completed)
     assert done.turn_completed.status == pb.TURN_STATUS_COMPLETED
     events.assert_contiguous([*first.seen, *second.seen])
-    await second.shutdown()
+    await second.stop_runner_session("stop-after-crash")
     await second.drain_until_end()
     await client.close()
     model.assert_quiescent()
+
+
+async def test_crash_after_runner_receipt_before_native_dispatch_retries_once(
+    start_runner: Callable[..., Awaitable[RunnerProcess]], model: ScriptedModel, spec: pb.SessionSpec
+) -> None:
+    """This is intentionally a real runner/harness process test, not a mocked Session method.
+
+    The checkpoint is after the fsynced ``dispatch_planned`` journal record and before either native
+    adapter receives the command. Killing the runner there proves a fresh runner delivers the same
+    command once, with its original id, rather than dropping it or guessing a terminal result.
+    """
+    command_id = "retry-after-receipt"
+    first_runner = await start_runner(test_debug_checkpoint=("after-dispatch-planned", command_id))
+    client = RunnerClient(first_runner.target)
+    first = await client.attach("restart-retry-1", spec=spec)
+    # Both native harnesses make a durable resume point only after one completed turn. This is the
+    # normal target for a later command and keeps the crash test about command recovery, not a
+    # harness's first-thread bootstrap contract.
+    await first.send("seed-before-retry", "Reply with exactly: RETRY_SEED_OK")
+    seed_request = await model.request()
+    model.reply(seed_request, Text("RETRY_SEED_OK"))
+    await first.until(events.turn_completed)
+    await first.send(command_id, "Reply with exactly: RETRIED_ONCE_OK")
+    await first.until(events.is_kind("command_received"))
+    debug = await first.until(events.is_kind("debug_checkpoint"))
+    assert (debug.debug_checkpoint.name, debug.debug_checkpoint.command_id) == ("after-dispatch-planned", command_id)
+    harness_pids = [event.harness_started.pid for event in events.of_kind(first.seen, "harness_started")]
+    await first_runner.crash(harness_pids)
+    await client.close()
+
+    # The first process is dead; the successor sees the persisted checkpoint and issues the one
+    # native command. The upstream has seen no request at the first checkpoint.
+    second_runner = await start_runner()
+    client = RunnerClient(second_runner.target)
+    second = await client.attach("restart-retry-1", spec=spec, after_sequence=first.cursor)
+    request = await model.request()
+    assert request.user_texts[-1] == "Reply with exactly: RETRIED_ONCE_OK"
+    assert len(model.upstream.observed) == 2
+    model.reply(request, Text("RETRIED_ONCE_OK"))
+    confirmed = await second.until(events.is_kind("harness_user_message_confirmed"))
+    assert confirmed.harness_user_message_confirmed.origin_command_ids == [command_id]
+    await second.until(events.turn_completed)
+    await second.stop_runner_session("stop-after-retry")
+    await second.drain_until_end()
+    await client.close()
+    model.assert_quiescent()
+
+
+async def test_crash_after_terminal_effect_persists_replays_that_effect(
+    start_runner: Callable[..., Awaitable[RunnerProcess]], model: ScriptedModel, spec: pb.SessionSpec
+) -> None:
+    """A journaled terminal outcome cannot disappear if the public Event append loses the process."""
+    command_id = "replay-persisted-effect"
+    # This case needs only the real harness/runner protocol path; let dispatch proceed to the
+    # native confirmation gate, then crash before Session emits its public confirmation event.
+    first_runner = await start_runner(test_debug_checkpoint=("after-terminal-outcome", command_id))
+    client = RunnerClient(first_runner.target)
+    first = await client.attach("restart-effect-1", spec=spec)
+    await first.send("seed-before-effect", "Reply with exactly: EFFECT_SEED_OK")
+    seed_request = await model.request()
+    model.reply(seed_request, Text("EFFECT_SEED_OK"))
+    await first.until(events.turn_completed)
+    await first.send(command_id, "Reply with exactly: EFFECT_REPLAY_OK")
+    await first.until(events.is_kind("command_received"))
+    # Claude's confirmation correlation is its first response-side `message_start`, unlike
+    # Codex's turn-start acknowledgement. Feed the real upstream response before waiting for the
+    # harness-neutral terminal-effect checkpoint: either harness may then reach the same durable
+    # runner boundary without the test assuming a shared native ordering.
+    target_request = await model.request()
+    model.reply(target_request, Text("EFFECT_REPLAY_OK"))
+    debug = await first.until(events.is_kind("debug_checkpoint"))
+    assert (debug.debug_checkpoint.name, debug.debug_checkpoint.command_id) == ("after-terminal-outcome", command_id)
+    assert not [
+        event
+        for event in events.of_kind(first.seen, "harness_user_message_confirmed")
+        if command_id in event.harness_user_message_confirmed.origin_command_ids
+    ]
+    # The runner has journaled the effect but is intentionally not allowed to append its public
+    # Event. Killing it now isolates that journal/Event append window rather than a harness's
+    # upstream-response boundary.
+    harness_pids = [event.harness_started.pid for event in events.of_kind(first.seen, "harness_started")]
+    await first_runner.crash(harness_pids)
+    await client.close()
+
+    second_runner = await start_runner()
+    client = RunnerClient(second_runner.target)
+    # Do not start a replacement harness here. This boundary proves the runner's own durable
+    # event replay before a later continuation contract decides how to resume an interrupted native
+    # turn; attaching without a spec is the protocol's diagnostic/replay path.
+    second = await client.attach("restart-effect-1", after_sequence=first.cursor)
+    confirmed = await second.until(events.is_kind("harness_user_message_confirmed"))
+    assert confirmed.harness_user_message_confirmed.text == "Reply with exactly: EFFECT_REPLAY_OK"
+    assert confirmed.harness_user_message_confirmed.origin_command_ids == [command_id]
+    assert len(events.of_kind(second.seen, "harness_user_message_confirmed")) == 1
+    await second.drain_until_end()
+    await client.close()
 
 
 async def test_sigterm_stops_the_harness_cleanly_and_the_next_runner_resumes(
@@ -180,7 +278,6 @@ async def test_sigterm_stops_the_harness_cleanly_and_the_next_runner_resumes(
     started = await second.until(events.is_kind("harness_started"))
     assert started.harness_started.resumed
     assert not events.of_kind(second.seen, "harness_lost")
-    assert not events.of_kind(second.seen, "input_uncertain")
     await second.send("input-2", "Reply with exactly: RESUMED_OK")
     request = await model.request()
     assert request.user_texts == ["Reply with exactly: SEED_OK", "Reply with exactly: RESUMED_OK"]
@@ -188,7 +285,7 @@ async def test_sigterm_stops_the_harness_cleanly_and_the_next_runner_resumes(
     done = await second.until(events.turn_completed)
     assert done.turn_completed.status == pb.TURN_STATUS_COMPLETED
     events.assert_contiguous([*first.seen, *second.seen])
-    await second.shutdown()
+    await second.stop_runner_session("stop-after-sigterm")
     await second.drain_until_end()
     await client.close()
     model.assert_quiescent()

@@ -49,7 +49,7 @@ async def test_instructions_reach_the_model_on_every_turn_and_after_a_resume(
     assert INSTRUCTIONS in request.system_text
     model.reply(request, Text("SEED_OK"))
     await first.until(events.turn_completed)
-    await first.shutdown()
+    await first.stop_runner_session("stop-instructions")
     await first.until(events.is_kind("harness_exited"))
     await first.drain_until_end()
 
