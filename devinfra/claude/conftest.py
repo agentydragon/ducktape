@@ -7,7 +7,6 @@ from unittest.mock import patch
 import pytest
 
 from devinfra.claude.session_paths import SessionPaths
-from devinfra.claude.settings import HookSettings
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -26,12 +25,6 @@ def session_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionPat
     # Pre-create subdirs that production code expects to exist
     paths.session_dir.mkdir(parents=True, exist_ok=True)
     return paths
-
-
-@pytest.fixture
-def hook_settings() -> HookSettings:
-    """Minimal HookSettings for tests that don't need proxy infrastructure."""
-    return HookSettings()
 
 
 @pytest.fixture

@@ -14,6 +14,10 @@
 #
 # See <debug/telegram_poll_timer_crash.md>.
 # Patch-iteration recipe: <patches/telegram_desktop_iterate.md>.
+# Lifecycle: this debug-only derivation is not wired into any host; hosts use
+# nixpkgs' telegram-desktop. Upstream `dev` now clamps the timer. Remove this
+# override and export after verifying the pinned nixpkgs package and confirming no
+# consumer needs the debug symbols/logging.
 { telegram-desktop }:
 telegram-desktop.override {
   unwrapped = telegram-desktop.unwrapped.overrideAttrs (old: {

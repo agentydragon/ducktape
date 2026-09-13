@@ -516,6 +516,13 @@ Patch intent:
 4. Add a defensive guard in `MetaOrientationManager` so unmatched
    `uninhibit_tracking()` calls cannot drive `inhibited_count` negative.
 
+Patch lifecycle (checked 2026-09-13): this remains a `rugged`-only mitigation on
+the `nixos-26.05` nixpkgs input. The selected Mutter source has not been verified
+to contain equivalent ownership and zero-guard logic, and no upstream release or
+issue has superseded the local patch. Retire it only after a selected nixpkgs
+Mutter release contains the equivalent fix and rugged passes fresh-login, reboot,
+and relevant external-monitor auto-rotate checks against that unpatched source.
+
 Validation:
 
 - `nix build .#nixosConfigurations.rugged.config.system.build.toplevel --no-link`

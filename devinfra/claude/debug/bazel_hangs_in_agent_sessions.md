@@ -132,8 +132,8 @@ collected yet.
 
 - `devinfra/claude/claude_hook/main.rs:write_session_bazelrc` — where the
   mitigations live.
-- `devinfra/claude/config/bazelrc.mako` — historical Python-era template,
-  kept for specimens only; not consulted at runtime anymore.
+- The old Python-era Bazelrc template was removed; it was not consulted at
+  runtime anymore.
 - Earlier related note, now resolved and archived:
   <../archive/2026_05_18_stuck_shim.md> — a different but adjacent "agent
   process didn't terminate cleanly" case, from when the PATH shims still

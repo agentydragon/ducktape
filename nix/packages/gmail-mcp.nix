@@ -41,7 +41,9 @@ pkgs.buildNpmPackage {
     hash = "sha256-cmnnRwQUOro7idWQySzhUfkKcnnLcpVYsi8JwwHeypg=";
   };
 
-  # Patch the broken package-lock.json that's missing resolved URL for @modelcontextprotocol/sdk
+  # Patch the broken package-lock.json that's missing resolved URL/integrity for
+  # @modelcontextprotocol/sdk. Remove this shim once the pinned upstream lockfile
+  # contains metadata accepted by buildNpmPackage, then rebuild gmail-mcp.
   postPatch = ''
     ${pkgs.jq}/bin/jq '
       .packages["node_modules/@modelcontextprotocol/sdk"] += {

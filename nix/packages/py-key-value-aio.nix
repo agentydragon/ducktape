@@ -19,6 +19,8 @@ python314Packages.buildPythonPackage rec {
   # Stable nixpkgs 26.05 provides uv-build 0.10.0, while this release asks for
   # uv-build >=0.11.4. The build backend interface is unchanged here, so keep
   # the stable package set and relax only the lower bound.
+  # Remove this compatibility shim once the selected nixpkgs package set provides
+  # uv-build >=0.11.4, then rebuild the FastMCP closure.
   postPatch = ''
     substituteInPlace pyproject.toml \
       --replace-fail '"uv_build>=0.11.4,<0.12"' '"uv_build>=0.10.0"'
