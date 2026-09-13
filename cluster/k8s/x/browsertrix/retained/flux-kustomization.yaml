@@ -11,6 +11,6 @@ spec:
   path: ./cluster/k8s/x/browsertrix/retained
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: browsertrix-retained
     namespace: ducktape-flux

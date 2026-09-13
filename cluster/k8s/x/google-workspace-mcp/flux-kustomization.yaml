@@ -9,8 +9,8 @@ spec:
   interval: 10m
   timeout: 5m
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: google-workspace-mcp
 
     namespace: ducktape-flux
   path: ./cluster/k8s/x/google-workspace-mcp

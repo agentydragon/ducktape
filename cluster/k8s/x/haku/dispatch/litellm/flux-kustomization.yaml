@@ -9,8 +9,8 @@ spec:
   path: ./cluster/k8s/x/haku/dispatch/litellm
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: haku-dispatch-litellm
     namespace: ducktape-flux
   timeout: 10m
   dependsOn:
