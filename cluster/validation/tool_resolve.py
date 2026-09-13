@@ -21,7 +21,7 @@ def resolve_tool(name: str, runfiles_rlocation: str) -> Path:
         from util.bazel.runfiles import get_required_path  # noqa: PLC0415 — not available outside Bazel
 
         return get_required_path(runfiles_rlocation)
-    except (ImportError, RuntimeError):
+    except ImportError, RuntimeError:
         pass
     if path := shutil.which(name):
         return Path(path)

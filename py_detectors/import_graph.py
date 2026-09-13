@@ -53,7 +53,7 @@ def build_import_graph(root: Path) -> dict[str, set[str]]:
         try:
             text = file_path.read_text(encoding="utf-8")
             node = ast.parse(text)
-        except (SyntaxError, UnicodeDecodeError):
+        except SyntaxError, UnicodeDecodeError:
             # Skip files with invalid Python syntax or encoding issues
             continue
         mod = module_name_for_path(root, file_path)

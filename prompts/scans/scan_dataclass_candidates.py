@@ -94,7 +94,7 @@ def scan_file(filepath: Path) -> dict[str, dict[str, Any]]:
         analyzer.visit(tree)
 
         return analyzer.classes
-    except (SyntaxError, UnicodeDecodeError):
+    except SyntaxError, UnicodeDecodeError:
         # Skip files with syntax errors or encoding issues
         return {}
 

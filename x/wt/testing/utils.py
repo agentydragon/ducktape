@@ -58,6 +58,6 @@ def wait_until(predicate: Callable[[], bool], *, timeout_seconds: float = 5.0, i
     try:
         Retrying(stop=stop_after_delay(timeout_seconds), wait=wait_fixed(interval_seconds), reraise=True)(_check)
         return True
-    except (RetryError, RuntimeError):
+    except RetryError, RuntimeError:
         # Timeout or predicate never became true
         return False

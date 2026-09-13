@@ -164,7 +164,7 @@ def _parse_window(content: str, start: int, k: int) -> dict | None:
             return None
         try:
             vals = [float(x) for x in arr]
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return None
         if not all(math.isfinite(v) and v > 0 for v in vals):
             return None

@@ -78,7 +78,7 @@ def write_startup_handshake(
     if fd_env and fd_env.isdigit():
         try:
             handshake_fd = int(fd_env)
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             handshake_fd = None
 
     handshake_data = {"success": success, "pid": os.getpid(), "timestamp": time.time(), **extra_data}

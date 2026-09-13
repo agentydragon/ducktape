@@ -56,7 +56,7 @@ async def callback(request: Request) -> RedirectResponse:
         raise HTTPException(
             status.HTTP_502_BAD_GATEWAY, "Identity provider returned an invalid response; please retry."
         ) from None
-    except (OAuthError, JoseError):
+    except OAuthError, JoseError:
         # Even the OAuth error code may be caller-controlled. Never echo provider/query values.
         logger.warning("OIDC callback refused")
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "OIDC authentication failed") from None

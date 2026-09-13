@@ -60,7 +60,7 @@ def token_expiry(token: str) -> datetime | None:
     payload = parts[1]
     try:
         claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
-    except (binascii.Error, ValueError):
+    except binascii.Error, ValueError:
         return None
     expiry = claims.get("exp") if isinstance(claims, dict) else None
     return datetime.fromtimestamp(expiry, tz=UTC) if isinstance(expiry, int | float) else None

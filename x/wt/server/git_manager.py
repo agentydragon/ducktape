@@ -153,7 +153,7 @@ class GitManager:
                     wt_repo = pygit2.Repository(wt_path)
                     if not wt_repo.head_is_detached:
                         branch_name = wt_repo.head.shorthand or ""
-                except (pygit2.GitError, OSError, ValueError, TypeError):
+                except pygit2.GitError, OSError, ValueError, TypeError:
                     # Treat as non-existent/invalid repo; leave branch_name empty
                     exists = False
             worktree_infos.append(WorktreeInfo(path=wt_path, branch=branch_name, exists=exists, is_main=False))

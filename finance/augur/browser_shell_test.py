@@ -127,7 +127,7 @@ def augur_server(tmp_path: Path) -> Iterator[str]:
                 with urllib.request.urlopen(f"{origin}/healthz", timeout=1) as response:
                     if response.status == 200 and response.read().decode() == "ok\n":
                         break
-            except (OSError, urllib.error.URLError):
+            except OSError, urllib.error.URLError:
                 time.sleep(0.25)
         else:
             raise RuntimeError(f"Augur server did not start within 30s; see {server_log.name}")

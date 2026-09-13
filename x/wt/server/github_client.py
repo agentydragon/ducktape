@@ -34,7 +34,7 @@ def get_github_token(token_arg: str | None = None, *, timeout_secs: float = 10.0
         cp = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True, check=True, timeout=timeout_secs)
         tok = (cp.stdout or "").strip()
         return tok or None
-    except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+    except FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired:
         return None
     except (OSError, PermissionError) as e:
         # Unexpected system errors should be visible to operator

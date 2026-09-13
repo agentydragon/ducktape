@@ -98,7 +98,7 @@ def sample_step(
             continue
         try:
             vals = {s: float(o["values"][s]) for s in SERIES}
-        except (KeyError, TypeError, ValueError):
+        except KeyError, TypeError, ValueError:
             continue
         if all(math.isfinite(x) for x in vals.values()):
             w = o.get("weight", 1.0)

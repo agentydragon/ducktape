@@ -85,7 +85,7 @@ def main(diff_args: tuple[str, ...], sort: str, columns: list[Column], bar_width
                     # Try to peek at one byte (BufferedReader has peek, but type system doesn't know)
                     peek_data = sys.stdin.buffer.peek(1)  # type: ignore[union-attr]
                     has_stdin_data = len(peek_data) > 0
-            except (OSError, AttributeError):
+            except OSError, AttributeError:
                 pass
 
         if has_stdin_data:

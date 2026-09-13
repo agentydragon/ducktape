@@ -45,7 +45,7 @@ def read_credentials() -> OAuthCredentials | None:
     try:
         creds = Credentials.model_validate_json(CREDENTIALS_PATH.read_text())
         return creds.claude_ai_oauth
-    except (OSError, ValueError):
+    except OSError, ValueError:
         logger.debug("Could not read Claude credentials from %s", CREDENTIALS_PATH)
         return None
 

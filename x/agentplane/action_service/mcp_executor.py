@@ -625,7 +625,7 @@ def _mcp_error_kind(result: Any) -> str | None:
             continue
         try:
             payload = json.loads(block.text)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             continue
         if isinstance(payload, dict):
             kind = cast(object, payload.get("kind"))

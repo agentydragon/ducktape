@@ -28,7 +28,7 @@ def run(cmd: str, *, timeout: int = 10) -> str:
     try:
         result = subprocess.run(cmd, check=False, shell=True, capture_output=True, text=True, timeout=timeout)
         return result.stdout.strip()
-    except (subprocess.TimeoutExpired, OSError):
+    except subprocess.TimeoutExpired, OSError:
         return ""
 
 
@@ -42,7 +42,7 @@ def sha256_file(path: str) -> str:
     """Return SHA256 hex digest of a file, or empty string if missing."""
     try:
         return hashlib.sha256(Path(path).read_bytes()).hexdigest()
-    except (OSError, PermissionError):
+    except OSError, PermissionError:
         return ""
 
 
@@ -73,13 +73,13 @@ def collect_npm_globals() -> dict[str, str]:
                     try:
                         data = json.loads(pjson.read_text())
                         packages[f"{pkg_dir.name}/{sub.name}"] = data.get("version", "?")
-                    except (json.JSONDecodeError, OSError):
+                    except json.JSONDecodeError, OSError:
                         pass
         elif pjson.exists():
             try:
                 data = json.loads(pjson.read_text())
                 packages[pkg_dir.name] = data.get("version", "?")
-            except (json.JSONDecodeError, OSError):
+            except json.JSONDecodeError, OSError:
                 pass
     return packages
 

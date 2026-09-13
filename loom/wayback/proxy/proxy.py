@@ -526,7 +526,7 @@ def _parse_retry_after(value: str | None) -> float | None:
         pass
     try:
         parsed = parsedate_to_datetime(value)
-    except (TypeError, ValueError, IndexError, OverflowError):
+    except TypeError, ValueError, IndexError, OverflowError:
         return None
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=UTC)

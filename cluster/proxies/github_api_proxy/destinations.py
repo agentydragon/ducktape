@@ -94,7 +94,7 @@ class PublicOrigins:
             ):
                 server.error = "Proxy destination not permitted"
                 return
-        except (OSError, ValueError, TimeoutError):
+        except OSError, ValueError, TimeoutError:
             server.error = "Proxy destination resolution failed"
             return
         # Mitmproxy awaits this hook and its dial in the same connection task.

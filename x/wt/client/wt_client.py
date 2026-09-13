@@ -82,7 +82,7 @@ async def read_daemon_pid(pid_path: Path) -> int | None:
             return None
 
         return int(pid_str)
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return None
 
 
@@ -135,7 +135,7 @@ class WtClient:
             # Check if process exists and socket is accessible
             return bool(psutil.pid_exists(pid) and self.config.daemon_socket_path.exists())
 
-        except (ValueError, OSError):
+        except ValueError, OSError:
             return False
 
     async def _start_daemon_if_needed(self) -> None:
@@ -326,7 +326,7 @@ class WtClient:
         repo_path = item.absolute_path
         try:
             repository = pygit2.Repository(repo_path)
-        except (pygit2.GitError, ValueError, TypeError):
+        except pygit2.GitError, ValueError, TypeError:
             return set(), set()
 
         dirty_mask = (

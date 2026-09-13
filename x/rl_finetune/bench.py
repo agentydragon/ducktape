@@ -322,7 +322,7 @@ def _last_step_log_from_train_log(name: str) -> dict:
             continue
         try:
             parsed = ast.literal_eval(line[start : end + 1])
-        except (SyntaxError, ValueError):
+        except SyntaxError, ValueError:
             continue
         if isinstance(parsed, dict):
             return parsed
@@ -337,7 +337,7 @@ def wait_health(timeout: float = 600.0) -> None:
             with urllib.request.urlopen(url, timeout=2) as r:
                 if r.status == 200:
                     return
-        except (urllib.error.URLError, ConnectionError, TimeoutError):
+        except urllib.error.URLError, ConnectionError, TimeoutError:
             pass
         time.sleep(5)
     raise RuntimeError(f"vllm-serve not healthy after {timeout}s: {url}")
