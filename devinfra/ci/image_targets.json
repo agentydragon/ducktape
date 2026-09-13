@@ -27,15 +27,18 @@
     },
     "augur": {
       "target": "//finance/augur/api:image",
-      "test": "//finance/augur/api/..."
+      "test": "//finance/augur/api/...",
+      "registry": "forgejo"
     },
     "augur-frontend": {
       "target": "//finance/augur/frontend:image",
-      "test": "//finance/augur/frontend:image_build_test"
+      "test": "//finance/augur/frontend/...",
+      "registry": "forgejo"
     },
     "augur-evidence": {
       "target": "//finance/scraper:image",
-      "test": "//finance/scraper/..."
+      "test": "//finance/scraper/...",
+      "registry": "forgejo"
     },
     "haku-kube-api-proxy": {
       "target": "//haku/kube_api_proxy:image",
