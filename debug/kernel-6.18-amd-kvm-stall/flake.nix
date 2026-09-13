@@ -5,7 +5,7 @@
 #   nix build .#kvm-test-6_12-image
 #   scp result/disk.qcow2 root@atlas:/tmp/kvm-test-6_12.qcow2
 {
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
 
   outputs =
     { nixpkgs, ... }:
