@@ -240,7 +240,7 @@ oci.pull(
 # Test infrastructure: Testcontainers Ryuk reaper (container cleanup)
 oci.pull(
     name = "ryuk",
-    digest = "sha256:f0456560ea5b4acdbed0da0efc33b5f9dd6bc1e59f2337106826dcb5b0b0e981",
+    digest = "sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0",
     image = "mirror.gcr.io/testcontainers/ryuk",
     platforms = ["linux/amd64"],
     tag = "0.14.0",
