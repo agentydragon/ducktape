@@ -77,6 +77,11 @@ def run_mypy(mypy_ini: str | None, cache_dir: str, srcs: list[str]) -> tuple[str
             f"--cache-dir={cache_dir}",
             # use current dir + MYPYPATH to resolve deps
             "--explicit-package-bases",
+            # The Bazel aspect checks each target independently, so mypy reports
+            # every override that does not match that target as unused. Keep
+            # warn_unused_configs enabled for standalone mypy runs, but avoid
+            # that per-target noise here.
+            "--no-warn-unused-configs",
             # speedup
             "--fast-module-lookup",
             *srcs,
