@@ -702,6 +702,14 @@ spec:
           exclude:
             - flux-kustomization.yaml
 
+    - name: nvidia-runtimeclass
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/nvidia-runtimeclass/**"
+          to: "@artifact/cluster/k8s/nvidia-runtimeclass/"
+          exclude:
+            - flux-kustomization.yaml
+
     - name: ollama-secrets
       originRevision: "@repo"
       copy:

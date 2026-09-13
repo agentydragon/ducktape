@@ -21,5 +21,5 @@ spec:
       namespace: ducktape-flux
     - name: cert-manager-environment
       namespace: ducktape-flux
-    - name: nvidia-device-plugin
+    - name: nvidia-runtimeclass
       namespace: ducktape-flux
