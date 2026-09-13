@@ -6,7 +6,7 @@
 ---
 manifest:
   modules_mapping:
-    0aca9ce3d91742c5b361__mypyc: mypy
+    08ae81f72d5a2b5fa9e0__mypyc: mypy
     955cd85d9c9a4f4b30d3__mypyc: tomli
     Crypto: pycryptodome
     FreeCADTemplates: freecad_stubs
@@ -44,6 +44,7 @@ manifest:
     argon2: argon2_cffi
     arrow: arrow
     asgiref: asgiref
+    ast_serialize: ast_serialize
     asttokens: asttokens
     async_lru: async_lru
     asyncpg: asyncpg
@@ -548,4 +549,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 6b0e81eaecaba198eadfc8c628acdda610555880c6b850807bda0ad3e59a1d50
+integrity: 93e46b475b768c3676442826944f07c747cda13f61ecdb84b73fd335c9649bd1
