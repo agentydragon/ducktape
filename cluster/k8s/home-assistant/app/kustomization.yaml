@@ -21,6 +21,7 @@ configMapGenerator:
     namespace: home-assistant
     files:
       - bootstrap_onboarding.py
+      - install_dreo.py
       - install_oidc.py
   - name: home-assistant-caddy
     namespace: home-assistant

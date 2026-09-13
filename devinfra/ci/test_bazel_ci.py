@@ -17,6 +17,7 @@ def test_pr_affected_targets_match_wildcard_semantics(tmp_path: Path) -> None:
     """Manual and source-file labels are removed without losing quoted '+' labels."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
+    bazel_diff_args_log = tmp_path / "bazel-diff-args.log"
     query_log = tmp_path / "query.log"
     test_args_log = tmp_path / "test-args.log"
 
@@ -40,10 +41,12 @@ else:
     )
     _write_executable(
         bin_dir / "bazel-diff",
-        """#!/bin/python
+        f"""#!/bin/python
 import sys
+from pathlib import Path
 
 if sys.argv[1] == "get-impacted-targets":
+    Path({str(bazel_diff_args_log)!r}).write_text("\\n".join(sys.argv[1:]))
     print("//ci:normal_test")
     print("//ci:manual_test")
     print("//ci:source.py")
@@ -107,6 +110,8 @@ else:
     assert Path("/tmp/affected.txt").read_text() == (
         "//:.aspect_rules_js/node_modules/@lezer+json@1.0.3/dir\n//ci:normal_test\n"
     )
+    bazel_diff_args = bazel_diff_args_log.read_text().splitlines()
+    assert bazel_diff_args[:3] == ["get-impacted-targets", "-w", str(REPO_ROOT)]
     # The pre-assigned ID has to reach Bazel: it is the only handle a consumer has on
     # this invocation when the run is cancelled before `bb remote` returns.
     assert "--invocation_id=11111111-1111-1111-1111-111111111111" in test_args_log.read_text().splitlines()
