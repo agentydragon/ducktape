@@ -2,6 +2,7 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "frame_identity",
+    testonly = True,
     srcs = ["frame_identity.py"],
     visibility = ["//haku:__subpackages__"],
 )
@@ -18,6 +19,7 @@ py_test(
 
 py_library(
     name = "frames",
+    testonly = True,
     srcs = ["frames.py"],
     visibility = ["//haku:__subpackages__"],
     deps = ["@pypi//pydantic"],

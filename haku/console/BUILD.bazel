@@ -233,6 +233,7 @@ py_library(
 
 py_library(
     name = "database_retry",
+    testonly = True,
     srcs = ["database_retry.py"],
     deps = [
         "@pypi//sqlalchemy",
