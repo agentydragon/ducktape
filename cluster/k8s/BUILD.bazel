@@ -281,6 +281,7 @@ filegroup(
         "agentplane-staging/actions/*.yaml",
         "agentplane-testing/actions/*.yaml",
         "ssh-mcp/**/*",
+        "agentplane-staging/flux-kustomization.yaml",
     ]),
     visibility = [
         "//cluster/validation:__pkg__",
