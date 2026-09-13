@@ -1023,6 +1023,30 @@ go_deps = use_extension(
 )
 go_deps.from_file(go_mod = "//third_party:go.mod")
 
+# BUILD-file-only tools are not visible to `go mod tidy`, so their Go modules
+# remain indirect in third_party/go.mod. Declare them directly here so
+# `bazel mod tidy` retains the repositories imported by those BUILD files.
+go_deps.module(
+    path = "github.com/dustin/go-humanize",
+    sum = "h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=",
+    version = "v1.0.1",
+)
+go_deps.module(
+    path = "github.com/go-git/go-git/v5",
+    sum = "h1:AbyI4xf+7DsjINHMu35quAh4wJygKBKBuXVjV/pxesM=",
+    version = "v5.17.0",
+)
+go_deps.module(
+    path = "github.com/spf13/cobra",
+    sum = "h1:DMTTonx5m65Ic0GOoRY2c16WCbHxOOw6xxezuLaBpcU=",
+    version = "v1.10.2",
+)
+go_deps.module(
+    path = "mvdan.cc/garble",
+    sum = "h1:DkcsIYE4+KEuflF9CIQPP3C+dyK4ofMGKLPrSQBr6i8=",
+    version = "v0.16.0",
+)
+
 # Patch garble's decodeBuildIDHash to pad short hashes (<15 bytes) instead
 # of panicking. Bazel-built Go binaries embed "redacted" (6 decoded bytes)
 # in their build ID ELF note, which is shorter than garble's expected 15.
@@ -1100,13 +1124,13 @@ go_deps.module(
 )
 go_deps.module(
     path = "golang.org/x/net",
-    sum = "h1:K5+3DljvIuDG9/Jv9rvyMywYNFCQ9RSUY6OOTTkT+tE=",
-    version = "v0.57.0",
+    sum = "h1:5zfYln+w5XCxwrnMMJPufRgNoXEaGxl0wo5GqPXyues=",
+    version = "v0.59.0",
 )
 go_deps.module(
     path = "golang.org/x/text",
-    sum = "h1:Ub2Z6/xjgF1WrYQz2nuITOEegKFtiIy+rieRJ5lHZKs=",
-    version = "v0.40.0",
+    sum = "h1:JbOZXgfeCPU9gacVtYliJqOhD+zhrEqK4LfdpmlUZqI=",
+    version = "v0.42.0",
 )
 go_deps.module(
     path = "github.com/google/uuid",
@@ -1115,38 +1139,38 @@ go_deps.module(
 )
 go_deps.module(
     path = "go.opentelemetry.io/otel",
-    sum = "h1:pdrWmLHofpubmArBv1LgFSv1Z0Ie/ppdZzu+kUN5EeU=",
-    version = "v1.45.0",
+    sum = "h1:FHt5/CDyVxi/8IM1CH7VE/rRgq3kLHa2mSTVMO8AWyc=",
+    version = "v1.46.0",
 )
 go_deps.module(
     path = "go.opentelemetry.io/otel/metric",
-    sum = "h1:7Eg1uH7CJ5cXv9is6tnBe1FI6rj1nwUdbFypRm3br/M=",
-    version = "v1.45.0",
+    sum = "h1:yBnkXvgV7AXFILZc5K6IZe/CBFF3OS7BJ8ov6/lj0K8=",
+    version = "v1.46.0",
 )
 go_deps.module(
     path = "go.opentelemetry.io/otel/sdk",
-    sum = "h1:4VVSMgQ83dUgW2aoX5f6JgLvHwIvzcuLnF9lUdCSpCw=",
-    version = "v1.45.0",
+    sum = "h1:h5CNQQjEbuQXY/JfZtgt3i7HVFV3aHPO2OAwO2eTYPI=",
+    version = "v1.46.0",
 )
 go_deps.module(
     path = "go.opentelemetry.io/otel/trace",
-    sum = "h1:l/mP6Uv7oNO7/TblbhpbgMidxhq1uO/rPsikOyVhxag=",
-    version = "v1.45.0",
+    sum = "h1:OULy7ccdJnZtJ0UDYFOIGaCmiWzJ8Vi2G/Rsu60qs1c=",
+    version = "v1.46.0",
 )
 go_deps.module(
     path = "google.golang.org/genproto/googleapis/api",
-    sum = "h1:FarXi840EJWSHYTN3ERkADbPWjl307+FGrA22KAVjjc=",
-    version = "v0.0.0-20260803160001-6ac0973c030d",
+    sum = "h1:ax2KzoSRIZU/M0cIxri3pKxy99vniH1PVxWC6si/eZI=",
+    version = "v0.0.0-20260819154853-08b0e4226688",
 )
 go_deps.module(
     path = "google.golang.org/genproto/googleapis/rpc",
-    sum = "h1:IL4hdHzcUv2l/gcg98/Rj3FbtE6axwqslOW8SW0C+S0=",
-    version = "v0.0.0-20260803160001-6ac0973c030d",
+    sum = "h1:cYNAzI2sUwhmCcoj9TxvihSrqsxt6uIkj3rDRhSDmW4=",
+    version = "v0.0.0-20260819154853-08b0e4226688",
 )
 go_deps.module(
     path = "google.golang.org/grpc",
-    sum = "h1:JeNZEKJFbQxArAMl+hiytHauacDNqJUllNfmIMmpqnQ=",
-    version = "v1.83.0",
+    sum = "h1:HIO0+BEtBP6soyqvqC8sNUjZ7bTs+0hFQuFF+RAy++Y=",
+    version = "v1.83.1",
 )
 go_deps.module(
     path = "google.golang.org/protobuf",
@@ -1167,8 +1191,8 @@ go_deps.module(
 )
 go_deps.module(
     path = "github.com/mark3labs/mcp-go",
-    sum = "h1:Ap/ptEB9FtWzFKM8NDsTA7QDxerQOC06eZigrTldVj0=",
-    version = "v0.54.1",
+    sum = "h1:AWfBk8lgRR0KZYve7PaLbR2MIjpw1oK2eGpBApaNS+Q=",
+    version = "v0.58.0",
 )
 go_deps.module(
     path = "github.com/hashicorp/golang-lru/v2",
@@ -1192,8 +1216,8 @@ go_deps.module(
 )
 go_deps.module(
     path = "golang.org/x/sync",
-    sum = "h1:SZjpbeLmrCk4xhRSZFNZW5gFUeCeFgjekvI/+gfScek=",
-    version = "v0.22.0",
+    sum = "h1:KameEIfc1IkluZyXWLn39Wd4tURc6GbCiISGiZm2bQk=",
+    version = "v0.23.0",
 )
 go_deps.module(
     path = "golang.org/x/time",
@@ -1237,8 +1261,8 @@ go_deps.module(
 )
 go_deps.module(
     path = "go.opentelemetry.io/otel/exporters/otlp/otlptrace",
-    sum = "h1:QRefszxJmfPdjXUUm3j6iDzY03mTPXMjqErFqQ67vUg=",
-    version = "v1.45.0",
+    sum = "h1:OFnwLJr+pF3iHrlGSzbxyuo6/6HyBlnlN1CWEJmBVcw=",
+    version = "v1.46.0",
 )
 go_deps.module(
     path = "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc",
@@ -1259,13 +1283,6 @@ go_deps.module(
 # ─ Repos exported for Bazel BUILD files ──────────────────────────────────
 # Includes directly-used repos AND transitive deps of manual go_deps.module()
 # entries (gazelle needs them visible for resolution).
-#
-# `bazel mod tidy` will try to drop `cc_mvdan_garble`, `com_github_go_git_go_git_v5`,
-# `com_github_spf13_cobra`, and `com_github_dustin_go_humanize` because gazelle
-# reports them as indirect (no Go file under third_party/go.mod imports them —
-# they're referenced only from BUILD files: skills/reverse_engineer/examples,
-# devinfra/buildbuddy_cli, and devinfra/claude/web_env/re/environment_manager).
-# Keep them here; do not re-run `bazel mod tidy` without restoring them.
 use_repo(
     go_deps,
     "cc_mvdan_garble",
