@@ -71,7 +71,7 @@ jsonwebtoken = "^9.3.1"
 # x/twenty_questions_frameworks/rig
 anyhow = "^1.0"
 object_store = { version = "^0.14.0", features = ["aws"] }
-sea-orm = { version = "1.1.17", default-features = false, features = ["macros", "runtime-tokio-rustls", "sqlx-postgres", "with-json"] }
+sea-orm = { version = "2.0.0", default-features = false, features = ["macros", "runtime-tokio-rustls", "sqlx-postgres", "with-json"] }
 sha2 = "^0.11.0"
 # rig-core's default `reqwest-rustls` feature pulls aws-lc-rs → aws-lc-sys (needs cmake).
 # Use native-tls instead (system OpenSSL on Linux, no cmake required).
