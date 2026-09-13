@@ -13,7 +13,7 @@ spec:
       chart: talos-cloud-controller-manager
       # Pinned: the inline tofu render (terraform/main/talos-ccm.tf) reads this version too,
       # so Flux + bootstrap stay reproducible and a chart bump can't silently move defaults.
-      version: 0.5.4
+      version: 0.5.7
       sourceRef:
         kind: HelmRepository
         name: siderolabs
