@@ -27,19 +27,19 @@ spec:
   secretRef:
     name: forgejo-webhook-token
   resources:
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+    - apiVersion: image.toolkit.fluxcd.io/v1
       kind: ImageRepository
       name: haku-ui
       namespace: haku-sandbox
     # haku-anki's registry scan rides the same package webhook.
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+    - apiVersion: image.toolkit.fluxcd.io/v1
       kind: ImageRepository
       name: haku-anki
       namespace: haku-sandbox
     # ImageUpdateAutomation is NOT in notification-controller's defaultFluxAPIVersions
     # map, so the explicit apiVersion is load-bearing (an omitted apiVersion fails to
     # resolve), unlike the entries above/below where it's convention.
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+    - apiVersion: image.toolkit.fluxcd.io/v1
       kind: ImageUpdateAutomation
       name: haku-ui
       namespace: haku-sandbox

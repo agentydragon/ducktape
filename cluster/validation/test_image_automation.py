@@ -19,7 +19,7 @@ from cluster.validation.kustomize import KustomizeBuildResult
 
 def _repo(name: str, image: str | None = None) -> dict[str, Any]:
     return {
-        "apiVersion": "image.toolkit.fluxcd.io/v1beta2",
+        "apiVersion": "image.toolkit.fluxcd.io/v1",
         "kind": "ImageRepository",
         "metadata": {"name": name, "namespace": "flux-system"},
         "spec": {"image": image or f"ghcr.io/agentydragon/{name}"},
@@ -43,7 +43,7 @@ def _receiver(repos: list[str]) -> dict[str, Any]:
         "spec": {
             "type": "github",
             "resources": [
-                {"apiVersion": "image.toolkit.fluxcd.io/v1beta2", "kind": "ImageRepository", "name": r} for r in repos
+                {"apiVersion": "image.toolkit.fluxcd.io/v1", "kind": "ImageRepository", "name": r} for r in repos
             ],
         },
     }

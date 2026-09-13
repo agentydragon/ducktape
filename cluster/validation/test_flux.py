@@ -97,7 +97,7 @@ def _git_repository(name: str, *, secret_name: str | None = None) -> dict:
 
 def _image_update_automation(source_name: str) -> dict:
     return {
-        "apiVersion": "image.toolkit.fluxcd.io/v1beta2",
+        "apiVersion": "image.toolkit.fluxcd.io/v1",
         "kind": "ImageUpdateAutomation",
         "metadata": {"name": "all-images", "namespace": "flux-system"},
         "spec": {
