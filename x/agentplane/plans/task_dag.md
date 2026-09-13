@@ -63,7 +63,7 @@ flowchart TB
     UISHELL_NEWTHREAD_SANDBOX["Planned UI<br/>pre-scoped '+ New thread' on a Sandbox's page<br/>Sandbox/preset already fixed"]:::future
     UISHELL_NEWTHREAD_LANDING["Planned UI<br/>sidebar '+' unscoped new-thread composer<br/>Sandbox/preset/model pickers + prompt"]:::future
     NEWTHREAD_DURABLE["Planned backend<br/>server-owned sandbox+thread provisioning<br/>must survive a browser close or app-server restart mid-submit"]:::future
-    CONTROL_STATE["Deferred decision<br/>dynamic runtime control state<br/>model/effort acceptance"]:::future
+    CONTROL_STATE["Planned runner protocol<br/>durable control receipt + settlement<br/>model/effort/interrupt scheduling"]:::future
     UISHELL_SIDEBAR_LIVE["Bug + planned fix<br/>sidebar Thread/Sandbox state goes stale<br/>rename, sandbox status icon never push-update"]:::future
     UISHELL_SIDEBAR_ALL_SANDBOXES["Bug<br/>threadless Sandboxes missing from sidebar<br/>e.g. still waiting for a pod to land"]:::future
     UISHELL_SIDEBAR_SANDBOX_LINK["Planned UI<br/>sidebar Sandbox name should link to its page<br/>currently plain text"]:::future
@@ -79,6 +79,8 @@ flowchart TB
     AG -. hosted Thread lifecycle .-> RETIRE_AGENT
 
     INPUT_DELIVERY -. reliable Thread ingress .-> ING
+    INPUT_DELIVERY -. authoritative runner receipts .-> NEWTHREAD_DURABLE
+    INPUT_DELIVERY -. shared native-evidence discipline .-> CONTROL_STATE
     T3 -. product work .-> PROD
 
     ACCESS -. authority choice .-> EGRESS_CHANGE
@@ -416,15 +418,20 @@ This work is independent of live Action/MCP staging acceptance and is not Action
 [Claude runtime contracts](../docs/claude_runtime_contracts.md), and
 [current common protocol](../docs/common_protocol.md), then inspect the pinned drivers/tests.
 Reconsider the common protocol's input semantics from this evidence rather than assuming the
-bridge is the only queue or that one input equals one turn.
+bridge is the only queue, one input equals one turn, or one submitted input becomes one native user
+message. The common receipt must name the exact harness user-message text plus the ordered requested
+input IDs from which it originated.
 
 - Claude: UUID command handles, lifecycle receipts, capability negotiation, targeted withdrawal,
   interrupt receipts/queued survivors, and coalescing that can make cancellation batch-granular.
-  Do not interpret an ambiguous `cancelled:false` as a guaranteed no-op or fabricate receipts.
+  Pin whether the coalesced harness message concatenates compatible request text with `\n`, then
+  emit one provenance-bearing receipt naming every contributing input. Do not interpret an ambiguous
+  `cancelled:false` as a guaranteed no-op or fabricate receipts.
 - Codex: distinguish joined input in the active turn's in-memory pending list from the separate
   experimental durable `thread/queue/*` API. Examine queue promotion, dispatch/delete locking,
-  interruption, and correlated user-message evidence; an RPC acknowledgement is not consumption
-  or completion, and a queue-changed notification alone does not prove promotion.
+  interruption, and correlated user-message evidence. Preserve its actual per-message grouping;
+  an RPC acknowledgement is not consumption or completion, and a queue-changed notification alone
+  does not prove promotion.
 
 **Observed evidence boundary:** some queue behavior comes from declarations/static analysis, not
 capture-pinned tests. Refresh live probes/captures against both pinned binaries for the behavior
@@ -432,6 +439,20 @@ being adopted before changing the common protocol; then encode supported behavio
 native-harness CI tests against the controlled model endpoint. Missing capabilities and blocked
 experiments stay explicit, not normalized into success. This research may justify common-protocol
 changes, but it does not preselect a queue facade, selective cancellation, or a new persistence layer.
+
+**Crash-window proof, not a timing guess:** the existing Python test harness already provides the
+necessary deterministic seams. `harness_tests/scripted_upstream.py` blocks at `next_request()` once
+the native harness has sent its LLM request; `runner/test_restart.py` kills a real runner process
+group and restarts it against the same state directory. First add a runner-owned durable command
+journal (accepted, deferred, dispatch planned, native effect observed, settled) rather than assuming
+the harness's queue is recoverable. Extend those tests (and the later app-outbox test) to crash after
+journal acceptance/before runner receipt, after receipt/before native dispatch, after the LLM mock
+sees the native request/before the journal records its effect, and after settlement/before the app
+copies it. Repeat the same client input/command id after recovery and assert journal recovery
+evidence, native transcript evidence, mock request count, runner replay, terminal effect, exact
+confirmed harness-message text, and every requested input ID that originated it. A supported durable
+command must converge in every reachable window without a duplicate native effect; otherwise it
+stays provider-native/research-only rather than gaining a generic `uncertain` terminal state.
 
 **Acceptance evidence:** exercise disconnect before delivery, delivery before observed receipt,
 reconnect/replay with the same `input_id`, and restart. Prove duplicate-ID handling at each actual
@@ -462,28 +483,47 @@ background work, but any such runner surface reuses the Action Service contracts
 second tool-request lifecycle; the settled provider behavior and the seam are in
 [driver tools and background work](driver_tools_and_background.md).
 
-### `CONTROL_STATE` — dynamic runtime control acceptance
+### `CONTROL_STATE` — durable runtime control commands
 
-**Deferred decision:** decide whether the runner protocol should report a harness's current
-acceptance of runtime control changes, rather than imposing one common gate. This is a time-local,
-operation-specific state — "would accept this command now" — not a persistent harness capability or
-a promise that a future request will be accepted. A command response remains authoritative if the
-state and command race.
+**Planned protocol, gated on the same native evidence discipline as `INPUT_DELIVERY`:** model
+change, reasoning-effort change, and interrupt are Thread-command outbox items. The runner protocol
+must give every accepted control command a durable replayable receipt and a later terminal
+settlement, not collapse an app POST acknowledgement, a native RPC response, and the actual effect
+into one outcome. The exact common lifecycle is in
+[the Thread-command design](thread_commands.md#runner-command-lifecycle).
 
-The decision must cover both model and reasoning-effort changes, but this item does not add either
-command. It must specify:
+Receipt answers “the runner journal recorded this command”; it may explicitly say the command is
+deferred until a turn boundary. Settlement answers “the requested effect occurred,” “it was
+rejected,” or “it was already inapplicable.” A restart between them is runner-owned recovery from
+that durable journal, not a terminal unknown result. This is deliberately more useful than a
+time-local `wouldAcceptNow` flag: state can race between a button render and click, while the
+accepted command and its eventual outcome survive reload and runner attachment loss.
 
-- whether acceptance means admission now, application now, or only effect on a named subsequent
-  model request or turn;
-- whether a model change may be admitted during an active agent loop and, if so, how the current
-  turn's effective model is distinguished from the next-turn/session default;
+The protocol must specify:
+
+- a command id for every control operation, plus target evidence for an interrupt's clicked active
+  turn and a causal terminal turn outcome;
+- `ChangeModel`'s common promise that future started turns select the requested model, with Claude's
+  active-turn outcome dynamically evidenced as immediate, deferred, or rejected, and Codex allowed
+  to receipt/defer it until the next turn boundary;
 - how Claude's native `control_request` `set_model` and Codex's per-turn `turn/start` `model` and
-  `effort` fields are represented without pretending they are equivalent; and
-- how state transitions, command outcomes, attach/replay, and stale-state races are represented.
+  `effort` fields map into receipt, deferment, and settlement without pretending they are identical;
+  and
+- the provider-specific deduplication or post-crash observation required to recover a received-but-
+  unsettled command from the runner journal to a terminal result, plus its
+  submitted/received/deferred/settled UI timeline projection and linked raw-frame evidence.
 
-The concrete [REASONING_EFFORT_RUNTIME proposal in #6456](https://github.com/agentydragon/ducktape/pull/6456)
-is withdrawn as an implementation recipe pending this decision. The harness evidence and open
-questions are in [runtime control acceptance](../docs/runtime_control.md).
+The current common `SwitchModel` gate is not this contract: it rejects active turns before provider
+dispatch, which unnecessarily imports Codex's restriction into Claude. Its Codex adapter performs
+no native runtime mutation; the idle path only updates the runner's stored default for a later
+`turn/start`. Capture both providers' behavior first, including whether every operation can recover
+after a runner/harness restart without a duplicate native effect. An operation that cannot prove
+that recovery stays provider-native/research-only; it does not gain an app-level terminal
+“uncertain” state. Then make the supported protocol, runner, app outbox, and controls atomic. The
+concrete
+[REASONING_EFFORT_RUNTIME proposal in #6456](https://github.com/agentydragon/ducktape/pull/6456)
+remains withdrawn as an implementation recipe until this work settles the common lifecycle. The
+harness evidence and open questions are in [runtime control acceptance](../docs/runtime_control.md).
 
 ### `ING` — Event & Notification Hub
 
@@ -549,6 +589,14 @@ app server itself restarts before the sandbox is ready** — the provisioning se
 only in frontend JS watching a live stream (dies with the tab) nor only in one replica's in-memory
 task (dies with that replica).
 
+The complete command/reconciliation model, including common input/resume delivery, Thread versus
+runner-session identity, the no-synthetic-lifecycle rule, and the delivery split is in
+[`thread_commands.md`](thread_commands.md).
+
+`INPUT_DELIVERY` is a prerequisite for the reconciler's user-visible command outcome: persistence
+of initial intent may land independently, but no command path may claim a terminal delivery result
+until runner receipt/replay semantics and post-crash recovery are evidenced faithfully.
+
 Today nothing durable does this wait: `openSession`'s own reachability check
 (`bridge.py`'s `runner_address`) already requires `state === "running"` with a pod IP before a
 session can open, and the only thing that currently waits for that and then calls `openSession` is
@@ -561,17 +609,22 @@ flow.
 existing per-sandbox watch already clears that higher bar for the state it tracks today: its
 reconcile loop (`RECONCILE_S`) re-derives ownership and in-flight sessions from `TrajectoryStore`
 (PostgreSQL) every cycle, across replicas, rather than trusting one process's memory — so any replica
-can pick up where another left off. The new-thread _request_ itself needs the same treatment, not
-just the mechanism watching it: persist immutable desired state (the client-minted Thread id,
-existing-Sandbox target or concrete new-Sandbox spec, initial runner-session spec, and prompt) the
-moment it is accepted. The Thread id is the new Sandbox's correlation label; no second request or
-"launch" identity is needed. A reconciler repeatedly compares that desired state with Kubernetes,
-the runner, and the Thread transcript, then makes the missing idempotent calls to create/find the
-Sandbox, open the initial runner session, and submit the input. Kubernetes remains the source of
-Sandbox/Pod lifecycle; runner `Event` rows remain the Thread's delivery transcript. This row does
-not invent a parallel lifecycle-status stream.
+can pick up where another left off. The new Thread needs the same treatment, not just the mechanism
+watching it: at acceptance, atomically persist a client-minted `Thread`, its initial target and
+runner-session plan, and its first `SubmitInput` outbox command. That outbox entry is the durable
+answer to “send this input once a Thread can run”; it also renders the pending composer bubble.
 
-A Thread is the durable user-facing conversation, not a runner session. It can have multiple
+The durable records have distinct owners. PostgreSQL owns the Thread target and ordered commands.
+For an existing Sandbox, the target pins its name and UID so a deleted-and-recreated object with the
+same name is never selected accidentally. For a new Sandbox, the target temporarily holds the fully
+resolved creation input until reconciliation materializes the labeled Kubernetes `Sandbox` CR; from
+then on, that CR is the only mutable desired Sandbox state and Kubernetes status remains the only
+lifecycle authority. The app stores neither a copied Sandbox phase machine nor a "launch" history.
+It observes Kubernetes as a command prerequisite, opens the planned runner session when reachable,
+and derives input outcome from copied runner `Event` receipts. The Thread id is the new Sandbox's
+correlation label; no second request or "launch" identity is needed.
+
+A Thread is the durable user-facing history, not a runner session. It can have multiple
 runner-session attachments over time; the client also mints an initial runner session id because
 the runner needs an address before it exists, but that id does not identify the Thread. The page
 will bind to the Thread id from submission onward. Reopening it later, from any device, reads the

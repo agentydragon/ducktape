@@ -46,7 +46,7 @@ API, and silent on Thread naming, archive presentation, timeline design, and HTT
   A related operation on both sides is not evidence that the two are equivalent.
 - Runtime model and reasoning-effort controls are deliberately deferred while their provider
   boundaries are resolved; see [runtime control acceptance](runtime_control.md) and the linked
-  [`CONTROL_STATE` task](../plans/task_dag.md#control_state--dynamic-runtime-control-acceptance).
+  [`CONTROL_STATE` task](../plans/task_dag.md#control_state--durable-runtime-control-commands).
 
 These are constraints on the adapters, not a license to manufacture common semantics the
 providers did not demonstrate. A behavior that is unsupported or supported differently is

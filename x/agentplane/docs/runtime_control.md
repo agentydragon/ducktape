@@ -4,7 +4,7 @@ Status: deferred design. This page records why the concrete runtime reasoning-ef
 withdrawn and what a future protocol decision has to resolve. It is not a new runner contract.
 The current `SwitchModel` contract remains in the [runner specification](../runner/SPEC.md#model-changes).
 
-The corresponding task-DAG item is [`CONTROL_STATE`](../plans/task_dag.md#control_state--dynamic-runtime-control-acceptance).
+The corresponding task-DAG item is [`CONTROL_STATE`](../plans/task_dag.md#control_state--durable-runtime-control-commands).
 The concrete [REASONING_EFFORT_RUNTIME proposal in #6456](https://github.com/agentydragon/ducktape/pull/6456)
 is no longer an implementation plan.
 
