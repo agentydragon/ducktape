@@ -1226,8 +1226,8 @@ go_deps.module(
 )
 go_deps.module(
     path = "github.com/prometheus/client_golang",
-    sum = "h1:Je96obch5RDVy3FDMndoUsjAhG5Edi49h0RJWRi/o0o=",
-    version = "v1.23.2",
+    sum = "h1:5XStIklKuAtJSNpdD3s8XJj/Yv78IQmE1kbNk87JrAI=",
+    version = "v1.24.0",
 )
 go_deps.module(
     path = "github.com/prometheus/client_model",
@@ -1236,13 +1236,13 @@ go_deps.module(
 )
 go_deps.module(
     path = "github.com/prometheus/common",
-    sum = "h1:h5E0h5/Y8niHc5DlaLlWLArTQI7tMrsfQjHV+d9ZoGs=",
-    version = "v0.66.1",
+    sum = "h1:bcpru3tWPVnxGnETLgOV5jbp/JRXgYEyv65CuBLAMMI=",
+    version = "v0.70.0",
 )
 go_deps.module(
     path = "github.com/prometheus/procfs",
-    sum = "h1:FuLQ+05u4ZI+SS/w9+BWEM2TXiHKsUQ9TADiRH7DuK0=",
-    version = "v0.17.0",
+    sum = "h1:GljZCt+zSTS+NZq88cyQ1LjZ+RCHp3uVuabBWA5+OJI=",
+    version = "v0.21.1",
 )
 go_deps.module(
     path = "github.com/beorn7/perks",
