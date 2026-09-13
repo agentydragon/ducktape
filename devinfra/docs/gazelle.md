@@ -14,15 +14,18 @@ tree.
 
 ## Plugin and patch
 
-`rules_python_gazelle_plugin` 2.3.2 under per-file generation mode, plus
+`rules_python_gazelle_plugin` 2.3.3 under per-file generation mode, plus
 <../../patches/rules_python_gazelle_ducktape.patch> (`single_version_override`):
 
-1. Per-file mode generates a `py_library` for every `.py` file. Upstream (still on
-   `main`) splits files containing `if __name__ == "__main__"` into `py_binary`
-   targets, stealing the module's library. Upstream candidate: a directive gating
-   binary generation.
+1. Per-file mode generates a `py_library` for every `.py` file. The 2.3.3 plugin
+   still splits files containing `if __name__ == "__main__"` into `py_binary`
+   targets, stealing the module's library. The closest upstream tracker is
+   [rules_python issue #1815](https://github.com/bazel-contrib/rules_python/issues/1815),
+   although it does not yet track this exact fix. Retire this hunk after a released
+   plugin supplies equivalent per-file behavior and `bb run //devinfra:gazelle`
+   remains converged.
 2. `py_{library,test,binary}` loads emit from `//devinfra/python:defs.bzl`.
-   Repo-specific, stays a patch: same-name `map_kind` load redirection is impossible
+   This is repo-specific and stays a patch: same-name `map_kind` load redirection is impossible
    (gazelle rejects `py_library py_library <bzl>` as a kind loop), and 2.x's
    `alias_kind` directive only registers differently-named wrappers for rule
    _recognition_ — it rejects same-name aliases and does not affect emitted loads.

@@ -25,6 +25,15 @@ in <../../cluster/k8s/cli-proxy-api/README.md>.
 - `patches/bazel.patch`: BUILD additions applied after Gazelle generates upstream
   package definitions. This build glue is separate from the upstream feature.
 
+These are downstream changes, not assumed upstream bug fixes. No exact upstream
+issue currently tracks the OIDC/session or read-only-panel behavior. Remove
+`management-oidc.patch` and `frontend.patch` together only after a released
+backend/UI pair provides equivalent OIDC, browser-session, CSRF, and logout
+behavior. Remove `bundled-panel.patch` when the upstream panel has an equivalent
+read-only/no-download contract or the deployment no longer requires it. Remove
+`bazel.patch` when the pinned upstream sources provide compatible BUILD metadata.
+Each removal requires the test suite and image build below to pass.
+
 Source revisions and checksums are in `MODULE.bazel`. The binary is installed at
 `/CLIProxyAPI/CLIProxyAPI`; the UI is `/CLIProxyAPI/static/management.html`. The image
 sets `MANAGEMENT_STATIC_PATH` and `MANAGEMENT_STATIC_READONLY` to serve that bundle.
