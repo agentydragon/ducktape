@@ -44,6 +44,7 @@
   - Find a less imperative lifecycle for third-party custom components such as Dreo. Compare
     a derived Home Assistant image, an OCI artifact mounted or unpacked by a controller, and
     operator-managed component state; preserve reproducible pins, rollback behavior, and the
-    existing persistent `.storage` model. Track the broader question in a GitHub issue.
+    existing persistent `.storage` model. Track the broader question in
+    [#6492](https://github.com/agentydragon/ducktape/issues/6492).
   - Re-evaluate `przemekhys/homeassistant-operator` after its APIs leave alpha and it can
     express node placement, pod customization, and custom-component lifecycle.
