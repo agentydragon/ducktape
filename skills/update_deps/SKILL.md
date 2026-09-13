@@ -15,12 +15,25 @@ You maintain a **set** of dependency update PRs for this monorepo.
 **Invariant**: the union of all open dep-update PRs, plus documented blockers,
 covers ALL current Renovate dashboard items AND any other outdated deps you find.
 
-Two PR categories:
+Use probe PRs to get evidence quickly, then consolidate proven-safe updates into
+larger review PRs. The review unit is a compatibility/risk boundary, not a
+package name or programming language.
 
-1. **Bulk trivial PR** (`deps/auto-update`): every update that "just works" — bump
-   version, regen lockfile, build + test pass, no code changes needed.
-2. **Non-trivial PRs** (`deps/<package-slug>`): one PR per update (or small related
-   group) that requires code changes, API migration, or behavioral investigation.
+1. **Grouped safe-update PRs** (`deps/auto-update` or a descriptive
+   `deps/batch-*` branch): several updates whose exact probe heads have passed
+   required CI and only change versions, lockfiles, or generated metadata. This
+   explicitly includes trivial Python package bumps: a `pyproject.toml`,
+   requirements lock, or Bazel Python requirement version-only change belongs in
+   a grouped PR when its resolver and affected CI checks are green.
+2. **Coordinated compatibility batches**: related packages that must move
+   together, such as a runtime plus its provider, plugin, or ABI peer. Keep these
+   together even if they span ecosystems, and do not mix them into the safe batch
+   until their joint compatibility is proven.
+3. **Non-trivial migration PRs** (`deps/<package-slug>`): one update or one
+   tightly related migration that changes source APIs, generated interfaces,
+   runtime behavior, exact dependency constraints, or toolchain contracts.
+   Risky major bumps stay here; a major version number alone is not sufficient
+   reason to put an otherwise proven version-only update here.
 
 You are **NOT done** until:
 
@@ -31,12 +44,17 @@ You are **NOT done** until:
 
 ## PR Model
 
-### Bulk trivial PR
+### Grouped safe-update PR
 
 - Branch: `deps/auto-update`
 - Title: `deps: bulk dependency updates (YYYY-MM-DD)`
-- Contains: all updates that build + test cleanly without code changes
-- Links to: all non-trivial PRs in the description
+- Contains: multiple individually proven version-only updates from compatible
+  boundaries, including ordinary Python package bumps.
+- Description records each source probe PR, exact tested head, old/new version,
+  and the CI/BuildBuddy evidence used to admit it.
+- Split into two or more grouped PRs only when lockfile ownership, generated
+  output, compatibility coupling, or reviewer ownership makes the boundary
+  meaningful. Do not split merely because dependencies use different languages.
 
 ### Non-trivial PRs
 
@@ -49,16 +67,25 @@ You are **NOT done** until:
 
 You manage the full set of PRs. On each run:
 
-1. List all open `deps/*` PRs
-2. Reconcile against current Renovate dashboard
-3. Open, close, force-push, or update PRs as needed
+1. List all open dependency PRs and read their descriptions.
+2. Reconcile them against the current Renovate dashboard.
+3. Publish independent probe PRs promptly so CI can test them asynchronously.
+4. As probes become green, continuously fold compatible ones into one or more
+   grouped safe-update PRs. Start each group from current `devel`, cherry-pick
+   or reapply the proven changes, run its full required CI, and link the source
+   probe PRs. Close superseded probe PRs only after the grouped PR contains their
+   changes and preserves their evidence.
+5. Keep red, pending, conflicted, or semantically coupled updates out of the
+   green group; rebase and shepherd them independently.
+6. Open, close, force-push, or update PRs as needed.
 
 ## State Passing Between Runs
 
 You are stateless. Your state lives in the PRs:
 
-- **Bulk PR description**: tables of what was updated, what's blocked, links to
-  non-trivial PRs. Your future instance reads this first.
+- **Grouped safe-update PR descriptions**: tables of what was updated, source
+  probe evidence, what's blocked, and links to non-trivial PRs. Your future
+  instance reads these first.
 - **Non-trivial PR descriptions**: migration details, what was tried, what worked.
 - **Commit history**: shows what changes were applied.
 
@@ -224,18 +251,39 @@ After editing version pins, regenerate lockfiles:
 - **OCI images** (`MODULE.bazel` `oci.pull`): update both `tag` and `digest`.
   Get new digest: `crane digest <image>:<tag>`
 
-### Batching strategy
+### Batching and consolidation strategy
 
-Do NOT apply all updates at once and then run a single build. If many things break
-simultaneously, it's nearly impossible to isolate which update caused which failure.
+Fan out independent probes when that gets CI started sooner, but do not leave
+every successful probe as a permanent one-package PR. Consolidate continuously:
 
-Work incrementally: apply a small batch, build and test, commit what works, then
-move to the next batch. How you batch is up to you — by ecosystem, by risk level,
-or one-at-a-time for risky updates. The key rule: never let the tree get into a
-state where you have dozens of untested changes stacked up.
+1. **Probe** uncertain updates independently. Do not stack dozens of untested
+   changes onto one branch; this preserves failure attribution.
+2. **Admit** an update to a safe group only after its exact PR head has green
+   required checks on RBE, with no source/API migration and no unresolved
+   resolver or generated-file drift. A URL-less legacy Renovate status is not a
+   substitute for required CI, but it also does not block admission when the
+   actual required checks are green.
+3. **Group** all admitted updates that share a compatible boundary. Ordinary
+   back-compatible Python package bumps, including lockfile-only pins, are a
+   canonical example. Patch/minor updates in other ecosystems can join the same
+   group when they have the same version-only evidence.
+4. **Separate** updates that touch source code, alter public/runtime behavior,
+   require a migration guide, change exact resolver constraints, or have a
+   cross-package/provider/ABI dependency. A major bump with no observed impact
+   may join a safe group after proof; a major bump with a real API or behavior
+   change stays in its migration PR.
+5. **Validate the aggregate** from current `devel` with the normal full CI. The
+   aggregate is the review artifact; the probe PRs are evidence and may be
+   closed as superseded. If aggregate CI fails, bisect by removing the admitted
+   update groups or restore the probe boundaries rather than abandoning all of
+   them.
 
-If you're resuming an existing PR that already has passing updates, start from that
-known-good state and add new updates incrementally on top.
+Do not classify an update as safe from its version number alone. Conversely, do
+not keep a plainly compatible patch/minor or trivial Python bump isolated merely
+because it came from a different Renovate branch.
+
+If resuming an existing grouped PR, start from its known-good state, preserve
+the source-probe links, and add only newly proven updates.
 
 ### Testing
 
@@ -268,7 +316,7 @@ suggested followups. The maintainer should be able to review the PR by reading
 commit messages without having to look up changelogs.
 
 ```bash
-# Bulk PR
+# Grouped safe-update PR
 git push origin deps/auto-update --force
 
 # Non-trivial PRs
@@ -278,7 +326,7 @@ git push origin deps/<package-slug> --force
 ## Create or Update PRs
 
 ```bash
-# Bulk PR
+# Grouped safe-update PR
 gh pr create \
   --base devel \
   --title "deps: bulk dependency updates ($(date +%Y-%m-%d))" \
@@ -312,12 +360,12 @@ Follow the standard "Before Hand-off" instructions in AGENTS.md. If a test
 failure is clearly pre-existing (also failing on `devel`), document it in the
 PR description but do not let it block you.
 
-## Bulk PR Description Format
+## Grouped Safe-Update PR Description Format
 
 ```markdown
 ## Summary
 
-**X** dependencies updated, **Y** blocked (with evidence below),
+**X** dependencies grouped, **Y** blocked (with evidence below),
 **Z** non-trivial migrations in separate PRs.
 
 ### Updates Applied
@@ -327,6 +375,13 @@ PR description but do not let it block you.
 | `pydantic`  | 2.12.0 | 2.12.5 | Fixes model_copy edge case we may hit  |
 | `rules_oci` | 2.2.7  | 2.3.0  | New `reproducible` attr on `oci_image` |
 | `ruff`      | 0.8.0  | 0.9.0  | Adds RUF060, 3 new findings — followup |
+
+### Source Probe Evidence
+
+| Update                | Probe PR / tested head | Admission evidence                                       |
+| --------------------- | ---------------------- | -------------------------------------------------------- |
+| `pydantic-core`       | #123 / `<sha>`         | version/lockfile-only; required RBE checks pass          |
+| `some-python-package` | #124 / `<sha>`         | resolver and `requirements_test` pass; no source changes |
 
 ### Non-Trivial Migration PRs
 
@@ -362,7 +417,7 @@ TODOs added by this PR (grep for them in the diff):
 <details><summary>Agent state (for next run)</summary>
 
 Last run: YYYY-MM-DD
-Bulk branch: deps/auto-update
+Grouped branch: deps/auto-update (or the current `deps/batch-*` branch)
 Non-trivial branches: deps/reqwest-0.13, deps/rules-js-v3
 
 All applied: [list with versions]
@@ -412,7 +467,14 @@ Before declaring done, verify ALL of the following:
       without an actual build/test attempt
 - [ ] No update is blocked by a TODO.md reference unless the TODO explicitly
       says "do not upgrade"
-- [ ] `bazel test //...` passes on RBE for the bulk trivial PR (BuildBuddy link in PR)
+- [ ] `bazel test //...` passes on RBE for every grouped safe-update PR
+      (BuildBuddy link in PR)
+- [ ] Every update in a grouped PR has exact source-probe/head evidence recorded
+      in that PR
+- [ ] Grouped PRs contain only admitted compatible updates; red, pending, or
+      semantically coupled work remains separate
+- [ ] Failed aggregate CI was bisected by removing admitted update groups, not
+      hidden by weakening checks
 - [ ] `bazel test //...` passes on RBE for every non-trivial PR (BuildBuddy link in PR)
 - [ ] Package names are in backticks in all PR description tables
 - [ ] Each non-trivial PR has its own description with migration notes
