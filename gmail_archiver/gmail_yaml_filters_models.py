@@ -3,11 +3,15 @@
 Compatible with gmail-yaml-filters format (https://github.com/mesozoic/gmail-yaml-filters).
 """
 
+from __future__ import annotations
+
 import builtins
 from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
+
+StringList = list[str]
 
 
 class ConditionKey(StrEnum):
@@ -75,11 +79,11 @@ class FilterRule(BaseModel):
     from_: str | CompoundCondition | None = Field(default=None, alias="from")
     to: str | CompoundCondition | None = None
     subject: str | CompoundCondition | None = None
-    has: str | list[str] | CompoundCondition | None = None
-    match: str | list[str] | CompoundCondition | None = None
-    does_not_have: str | list[str] | CompoundCondition | None = None
-    missing: str | list[str] | CompoundCondition | None = None
-    no_match: str | list[str] | CompoundCondition | None = None
+    has: str | StringList | CompoundCondition | None = None
+    match: str | StringList | CompoundCondition | None = None
+    does_not_have: str | StringList | CompoundCondition | None = None
+    missing: str | StringList | CompoundCondition | None = None
+    no_match: str | StringList | CompoundCondition | None = None
 
     # Search operators
     bcc: str | CompoundCondition | None = None

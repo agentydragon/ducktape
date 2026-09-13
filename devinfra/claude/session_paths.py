@@ -4,6 +4,8 @@ All paths derived from a session_id live here. This is a plain dataclass
 (not pydantic-settings) — it computes paths, not config.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from pathlib import Path
 
