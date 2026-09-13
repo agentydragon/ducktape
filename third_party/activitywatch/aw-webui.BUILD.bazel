@@ -7,8 +7,7 @@ Build the bundle:
   bazel build @aw_webui//:dist
 """
 
-load("@aspect_rules_js//js:defs.bzl", "js_run_binary")
-load("@npm_aw_webui//:@vue/cli-service/package_json.bzl", vue_cli_service_bin = "bin")
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_run_binary")
 load("@npm_aw_webui//:defs.bzl", "npm_link_all_packages")
 
 exports_files([
@@ -18,11 +17,19 @@ exports_files([
 
 npm_link_all_packages(name = "node_modules")
 
-vue_cli_service_bin.vue_cli_service_binary(
+# Keep the service entry point in this package's linked node_modules tree. The
+# package_json bin macro resolves it from the module root, which gives Vue CLI
+# and its PWA plugin different html-webpack-plugin instances.
+genrule(
+    name = "vue_cli_service_entry",
+    outs = ["vue_cli_service_entry.cjs"],
+    cmd = "echo \"require('@vue/cli-service/bin/vue-cli-service.js');\" > $@",
+)
+
+js_binary(
     name = "vue_cli_service",
-    # postcss-loader discovers autoprefixer dynamically at runtime; keep the
-    # public-hoisted plugin in the binary's declared runfiles under rules_js 3.
-    data = ["@ducktape_activitywatch//:node_modules/autoprefixer"],
+    data = [":node_modules"],
+    entry_point = ":vue_cli_service_entry",
     visibility = ["//visibility:public"],
 )
 

@@ -164,42 +164,6 @@
       }
     ]
   },
-  "tflint": {
-    "binaries": [
-      {
-        "kind": "archive",
-        "url": "https://github.com/terraform-linters/tflint/releases/download/v0.60.0/tflint_linux_amd64.zip",
-        "file": "tflint",
-        "sha256": "3476ceedcf0c4f9f2bed35e92988e1411bec2caa543c9387bffaa720df9efaf7",
-        "os": "linux",
-        "cpu": "x86_64"
-      },
-      {
-        "kind": "archive",
-        "url": "https://github.com/terraform-linters/tflint/releases/download/v0.60.0/tflint_linux_arm64.zip",
-        "file": "tflint",
-        "sha256": "8f01d273e58f44f6ed10e198fa1f5d0a8080b01869de64658528275e943ef47a",
-        "os": "linux",
-        "cpu": "arm64"
-      },
-      {
-        "kind": "archive",
-        "url": "https://github.com/terraform-linters/tflint/releases/download/v0.60.0/tflint_darwin_amd64.zip",
-        "file": "tflint",
-        "sha256": "256f70ad2c9963690bccc31ffda6be0159f1c5f857b46773b70d01d56b711280",
-        "os": "macos",
-        "cpu": "x86_64"
-      },
-      {
-        "kind": "archive",
-        "url": "https://github.com/terraform-linters/tflint/releases/download/v0.60.0/tflint_darwin_arm64.zip",
-        "file": "tflint",
-        "sha256": "753a392b70e37b2970732bdaf0c9ad98b0f8ecb96026b21e91261e4e967c7f5e",
-        "os": "macos",
-        "cpu": "arm64"
-      }
-    ]
-  },
   "kyverno": {
     "binaries": [
       {
@@ -224,24 +188,6 @@
         "file": "kyverno",
         "sha256": "851d1fcc4427a317674cc1892af4f43dcd19983c94498a1a913b6b849f71ef8c",
         "os": "macos",
-        "cpu": "arm64"
-      }
-    ]
-  },
-  "sops": {
-    "binaries": [
-      {
-        "kind": "file",
-        "url": "https://github.com/getsops/sops/releases/download/v3.12.2/sops-v3.12.2.linux.amd64",
-        "sha256": "14e2e1ba3bef31e74b70cf0b674f6443c80f6c5f3df15d05ffc57c34851b4998",
-        "os": "linux",
-        "cpu": "x86_64"
-      },
-      {
-        "kind": "file",
-        "url": "https://github.com/getsops/sops/releases/download/v3.12.2/sops-v3.12.2.linux.arm64",
-        "sha256": "f66de6f528dca946e910d74fa36a62a7714c11d0db16bd3c9bd8acf73b66704b",
-        "os": "linux",
         "cpu": "arm64"
       }
     ]
