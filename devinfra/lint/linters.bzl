@@ -15,7 +15,7 @@ ruff = lint_ruff_aspect(
     ],
 )
 
-# Mypy aspect for --config=typecheck builds
+# Mypy aspect, enabled by default on Bazel builds
 # Uses root mypy.ini for configuration
 # Uses custom mypy_cli to run under Python 3.14 (needed to parse homeassistant's 3.14 syntax)
 #
@@ -52,7 +52,7 @@ eslint = lint_eslint_aspect(
 # NOTE: ruff_test removed - ruff is enforced via pre-commit hook
 eslint_test = lint_test(aspect = eslint)
 
-# NOTE: mypy_aspect is used via --config=typecheck, not via lint_test
+# NOTE: mypy_aspect is configured in .bazelrc, not via lint_test.
 # The rules_mypy aspect produces different output groups than lint_test expects
 
 # NOTE: Clippy uses rules_rust native aspects, not aspect_rules_lint

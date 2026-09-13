@@ -70,7 +70,7 @@ bazel run //devinfra/lint:buildifier       # Format BUILD files
 | buildifier   | `devinfra/lint/BUILD.bazel`    | `bazel run //devinfra/lint:buildifier`          |
 | nixfmt       | N/A                            | Pre-commit hook only                            |
 
-Ruff uses a custom `rules_multitool` lockfile (`devinfra/lockfile.json`) to override the older version bundled in `aspect_rules_lint`. Mypy uses `rules_mypy` v0.40.0 with `follow_imports = silent` and `ignore_missing_imports = True`.
+Ruff uses a custom `rules_multitool` lockfile (`devinfra/lockfile.json`) to override the older version bundled in `aspect_rules_lint`. Mypy uses `rules_mypy` v0.40.0 with `follow_imports = silent`, global `ignore_missing_imports = False`, and targeted per-module overrides.
 
 ### Hook Lifecycle
 

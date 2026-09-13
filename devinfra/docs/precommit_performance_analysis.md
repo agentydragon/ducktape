@@ -38,7 +38,6 @@ to Bazel client lock serialization.
 
 **Validators** (run in parallel via asyncio):
 
-- buildifier-lint
 - pytest-main-check (direct import)
 - terraform-centralization (direct import)
 - kustomize/flux/gitops/helm (subprocess)
