@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { MantineProvider } from "@mantine/core";
-import { act } from "react";
+import { type JSX, act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -15,7 +15,7 @@ afterEach(async () => {
   }
 });
 
-async function render(element: import("react").JSX.Element): Promise<HTMLDivElement> {
+async function render(element: JSX.Element): Promise<HTMLDivElement> {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);

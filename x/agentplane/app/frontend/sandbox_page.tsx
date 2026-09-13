@@ -15,7 +15,7 @@ import {
 } from "@mantine/core";
 // Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
 import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
-import { useEffect, useState } from "react";
+import { type JSX, useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 
 import { fromJson, type JsonValue } from "@bufbuild/protobuf";
@@ -52,7 +52,7 @@ function isTab(value: string | null): value is Tab {
   return TABS.includes(value as Tab);
 }
 
-function ConditionsTable({ conditions }: { conditions: Condition[] }): import("react").JSX.Element {
+function ConditionsTable({ conditions }: { conditions: Condition[] }): JSX.Element {
   return (
     <Table>
       <Table.Thead>
@@ -80,7 +80,7 @@ function ConditionsTable({ conditions }: { conditions: Condition[] }): import("r
 }
 
 /** What Kubernetes says about the sandbox: the Sandbox CR's own status, then its Pod's. */
-function StatusView({ sandbox }: { sandbox: SandboxView }): import("react").JSX.Element {
+function StatusView({ sandbox }: { sandbox: SandboxView }): JSX.Element {
   const [raw, setRaw] = useState(false);
   return (
     <Stack gap="xs">
@@ -141,7 +141,7 @@ export function SandboxPage({
   name: string;
   onOpenSession: (sessionId: string) => void;
   onBack: () => void;
-}): import("react").JSX.Element {
+}): JSX.Element {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get("tab");

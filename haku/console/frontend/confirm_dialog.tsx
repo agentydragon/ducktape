@@ -1,5 +1,5 @@
 import { Button, Group, Stack, Text } from "@mantine/core";
-import { type PointerEvent, useEffect, useRef, useState } from "react";
+import { type JSX, type PointerEvent, useEffect, useRef, useState } from "react";
 
 import { ACTION_COLOR } from "./theme";
 
@@ -61,7 +61,7 @@ export function ConfirmDialog({
   action: Escalation | null;
   onApprove: () => void;
   onCancel: () => void;
-}): import("react").JSX.Element {
+}): JSX.Element {
   const ref = useRef<HTMLDialogElement>(null);
   const [armed, setArmed] = useState(false);
   const actionIdentity = action ? escalationIdentity(action) : null;

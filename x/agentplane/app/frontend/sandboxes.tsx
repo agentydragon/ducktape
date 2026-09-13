@@ -16,7 +16,7 @@ import {
 } from "@mantine/core";
 // Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
 import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
-import { useEffect, useState } from "react";
+import { type JSX, useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 
 import { readiness } from "./action_policy";
@@ -84,7 +84,7 @@ function policySetOption(policySet: ActionPolicySetView): { value: string; label
   return { value: policySet.name, label: state === "Ready" ? policySet.name : `${policySet.name} · ${state}` };
 }
 
-function StateBadge({ row }: { row: SandboxView }): import("react").JSX.Element {
+function StateBadge({ row }: { row: SandboxView }): JSX.Element {
   return (
     <Tooltip label={stateDetail(row)} multiline style={{ whiteSpace: "pre-line" }} withArrow>
       <Badge color={STATE_COLORS[row.state] ?? "blue"}>{row.state}</Badge>
@@ -92,7 +92,7 @@ function StateBadge({ row }: { row: SandboxView }): import("react").JSX.Element 
   );
 }
 
-export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): import("react").JSX.Element {
+export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX.Element {
   // The list is pushed; an action's own failure is what this holds.
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<NewSandbox>(EMPTY_FORM);

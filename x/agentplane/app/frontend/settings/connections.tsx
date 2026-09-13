@@ -1,5 +1,5 @@
 import { Alert, Button, Group, Stack, Table, Text, Title } from "@mantine/core";
-import { useCallback, useEffect, useState } from "react";
+import { type JSX, useCallback, useEffect, useState } from "react";
 
 import {
   ConnectionRequestError,
@@ -22,11 +22,7 @@ function currentGrant(connection: Connection): Grant | undefined {
   );
 }
 
-export function Connections({
-  service = connectionService,
-}: {
-  service?: ConnectionService;
-}): import("react").JSX.Element {
+export function Connections({ service = connectionService }: { service?: ConnectionService }): JSX.Element {
   const [rows, setRows] = useState<Connection[]>([]);
   const [accounts, setAccounts] = useState<CallerServiceAccount[]>([]);
   const [loaded, setLoaded] = useState(false);

@@ -1,3 +1,4 @@
+import type { JSX } from "react";
 import { CodeBlock } from "./code_block";
 import type { PreviewVariant } from "./tool_rendering/vocabulary";
 
@@ -38,13 +39,7 @@ const MAX_WIDTH = 72;
 /** A tool call's arguments as a syntax-highlighted, foldable JSON code block. Compact auto-folds to
  * fill the block with leading entries (see CodeBlock); detailed shows the full value with line
  * numbers. Width-aware pretty-print keeps short collections inline either way. */
-export function JsonPreview({
-  value,
-  variant,
-}: {
-  value: unknown;
-  variant: PreviewVariant;
-}): import("react").JSX.Element {
+export function JsonPreview({ value, variant }: { value: unknown; variant: PreviewVariant }): JSX.Element {
   return (
     <CodeBlock
       language="json"

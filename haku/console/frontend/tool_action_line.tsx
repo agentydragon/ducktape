@@ -1,3 +1,4 @@
+import type { JSX } from "react";
 import { Text } from "@mantine/core";
 
 import { toolActionDescription } from "./tool_rendering/actions";
@@ -14,7 +15,7 @@ export function ToolActionLine({
   serverId: string;
   toolName: string;
   args: Record<string, unknown> | null | undefined;
-}): import("react").JSX.Element {
+}): JSX.Element {
   const action = args ? toolActionDescription(serverId, toolName, args) : null;
   return (
     <Text size="xs" c={action?.destructive ? "red" : "dimmed"}>

@@ -1,5 +1,5 @@
 import { MantineProvider } from "@mantine/core";
-import { act } from "react";
+import { type JSX, act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach } from "vitest";
 
@@ -8,7 +8,7 @@ import type { ActionRequestView, ActionService, ActionState } from "./client";
 /** Shared fixture/mount plumbing for the pending (`actions.test.tsx`) and history
  * (`actions_history.test.tsx`) suites, which exercise the same `ActionRequestView` shape and the
  * same live-stream/list mounting behavior against two different views. */
-export type View = (props: { service?: ActionService }) => import("react").JSX.Element;
+export type View = (props: { service?: ActionService }) => JSX.Element;
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 

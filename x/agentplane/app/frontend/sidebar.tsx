@@ -16,7 +16,7 @@ import IconPlayerPause from "@tabler/icons-react/dist/esm/icons/IconPlayerPause.
 import IconPlayerPlay from "@tabler/icons-react/dist/esm/icons/IconPlayerPlay.mjs";
 import IconPlus from "@tabler/icons-react/dist/esm/icons/IconPlus.mjs";
 import IconSettings from "@tabler/icons-react/dist/esm/icons/IconSettings.mjs";
-import { useEffect, useRef, useState, type PointerEvent } from "react";
+import { type JSX, useEffect, useRef, useState, type PointerEvent } from "react";
 import { useLocation, useMatch, useNavigate } from "react-router";
 
 import { archiveThread, displayableError, listThreadsWithSandboxes, type SandboxView, type ThreadView } from "./client";
@@ -98,7 +98,7 @@ function SidebarResizeHandle({
   width: number;
   onDrag: (width: number) => void;
   onStep: (delta: number) => void;
-}): import("react").JSX.Element {
+}): JSX.Element {
   const dragRef = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null);
 
   function onPointerDown(event: PointerEvent<HTMLDivElement>): void {
@@ -173,7 +173,7 @@ function useThreadsWithSandboxes(): { data: ThreadsData | null; error: string | 
   return { data, error, refresh: () => setGeneration((current) => current + 1) };
 }
 
-function GroupStateIcon({ sandbox }: { sandbox: SandboxView | null }): import("react").JSX.Element {
+function GroupStateIcon({ sandbox }: { sandbox: SandboxView | null }): JSX.Element {
   if (sandbox === null) {
     return (
       <Tooltip label="Sandbox deleted" withArrow>
@@ -211,7 +211,7 @@ function ThreadRow({
   current: boolean;
   onOpen: (thread: ThreadView) => void;
   onToggleArchived: (thread: ThreadView) => void;
-}): import("react").JSX.Element {
+}): JSX.Element {
   const label = thread.name ?? thread.session_id;
   const dot = threadDotColor(thread);
   const className = [
@@ -270,7 +270,7 @@ function ThreadGroupSection({
   current: { sandbox: string; sessionId: string } | null;
   onOpen: (thread: ThreadView) => void;
   onToggleArchived: (thread: ThreadView) => void;
-}): import("react").JSX.Element {
+}): JSX.Element {
   const deleted = group.sandbox === null;
   return (
     <div>
@@ -315,7 +315,7 @@ export function Sidebar({
    * visible regardless of this prop -- sidebar.css's phone media query is what makes it matter. */
   mobileOpen: boolean;
   onMobileClose: () => void;
-}): import("react").JSX.Element {
+}): JSX.Element {
   const navigate = useNavigate();
   const location = useLocation();
   const sessionRoute = useMatch("/sandboxes/:name/sessions/:sessionId");

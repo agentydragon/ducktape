@@ -1,7 +1,7 @@
 import { ActionIcon, Anchor, Stack, Text } from "@mantine/core";
 // Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
 import IconMenu2 from "@tabler/icons-react/dist/esm/icons/IconMenu2.mjs";
-import { useState } from "react";
+import { type JSX, useState } from "react";
 import { HashRouter, Route, Routes, useLocation, useMatch, useNavigate, useParams } from "react-router";
 
 import { ActionRequests } from "./actions";
@@ -29,7 +29,7 @@ function required(value: string | undefined, name: string): string {
 }
 
 /** Nothing selected: the sidebar carries the Threads list, so the landing pane just points at it. */
-function ThreadsLanding(): import("react").JSX.Element {
+function ThreadsLanding(): JSX.Element {
   const navigate = useNavigate();
   return (
     <Stack align="center" justify="center" h="100%">
@@ -44,17 +44,17 @@ function ThreadsLanding(): import("react").JSX.Element {
   );
 }
 
-function SandboxListRoute(): import("react").JSX.Element {
+function SandboxListRoute(): JSX.Element {
   const navigate = useNavigate();
   return <SandboxList onOpen={(name) => void navigate(sandboxPath(name))} />;
 }
 
-function ConsentRoute(): import("react").JSX.Element {
+function ConsentRoute(): JSX.Element {
   const handle = required(useParams().handle, "handle");
   return <ConnectionConsent key={handle} handle={handle} />;
 }
 
-function SandboxRoute(): import("react").JSX.Element {
+function SandboxRoute(): JSX.Element {
   const name = required(useParams().name, "name");
   const navigate = useNavigate();
   return (
@@ -66,7 +66,7 @@ function SandboxRoute(): import("react").JSX.Element {
   );
 }
 
-function SessionRoute(): import("react").JSX.Element {
+function SessionRoute(): JSX.Element {
   const params = useParams();
   const name = required(params.name, "name");
   const navigate = useNavigate();
@@ -80,7 +80,7 @@ function SessionRoute(): import("react").JSX.Element {
   );
 }
 
-function AppRoutes(): import("react").JSX.Element {
+function AppRoutes(): JSX.Element {
   const location = useLocation();
   const sessionRoute = useMatch("/sandboxes/:name/sessions/:sessionId");
   // Not legacy-path compatibility: api.py's MCP-linkage OAuth callback redirects the browser here
@@ -128,7 +128,7 @@ function AppRoutes(): import("react").JSX.Element {
   );
 }
 
-export default function App(): import("react").JSX.Element {
+export default function App(): JSX.Element {
   return (
     <HashRouter>
       <AppRoutes />

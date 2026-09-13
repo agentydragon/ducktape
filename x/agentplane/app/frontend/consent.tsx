@@ -11,7 +11,7 @@ import {
   TextInput,
   Title,
 } from "@mantine/core";
-import { useEffect, useState } from "react";
+import { type JSX, useEffect, useState } from "react";
 
 import { displayableError, serviceAccountKey } from "./client";
 import { consentService, type ConsentDecision, type ConsentPreview, type ConsentService } from "./consent_client";
@@ -29,7 +29,7 @@ export function ConnectionConsent({
   handle: string;
   service?: ConsentService;
   navigate?: (url: string) => void;
-}): import("react").JSX.Element {
+}): JSX.Element {
   const [preview, setPreview] = useState<ConsentPreview | null>(null);
   const [name, setName] = useState("");
   const [account, setAccount] = useState("");

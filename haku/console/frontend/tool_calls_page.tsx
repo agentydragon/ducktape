@@ -1,5 +1,5 @@
 import { Button, Checkbox, Group, Loader, Text } from "@mantine/core";
-import { useCallback, useRef, useState } from "react";
+import { type JSX, useCallback, useRef, useState } from "react";
 
 import { approvalDisplayFields } from "./approval_state";
 import { displayableError, fetchToolCalls, type ToolCallPage, type ToolCallRecord } from "./client";
@@ -77,7 +77,7 @@ function ToolCallRow({
 // the approvals drawer's ephemeral "Recent" list, with the framed haku-ui still mounted behind it.
 // A pending call that streams in over the live WS signal can be decided here too, through the same
 // exact-Origin-gated endpoints the approvals panel uses.
-export function ToolCallsPage(): import("react").JSX.Element {
+export function ToolCallsPage(): JSX.Element {
   const [loaded, setLoaded] = useState<ToolCallPage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);

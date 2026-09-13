@@ -1,5 +1,5 @@
 import { SegmentedControl } from "@mantine/core";
-import { useState } from "react";
+import { type JSX, useState } from "react";
 
 import { ListDetailsIcon, ListIcon } from "./icons";
 import type { PreviewVariant } from "./tool_rendering/vocabulary";
@@ -21,7 +21,7 @@ export function VariantControl({
 }: {
   variant: PreviewVariant;
   onChange: (v: PreviewVariant) => void;
-}): import("react").JSX.Element {
+}): JSX.Element {
   return (
     <SegmentedControl
       size="xs"

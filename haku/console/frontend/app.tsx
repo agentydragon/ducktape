@@ -1,5 +1,5 @@
 import { Loader, Text } from "@mantine/core";
-import { useEffect, useState } from "react";
+import { type JSX, useEffect, useState } from "react";
 
 import { type ConfigResponse, displayableError, fetchConfig } from "./client";
 import { AgentNamesProvider } from "./agent_names";
@@ -13,7 +13,7 @@ import { useConsoleView } from "./routing";
 // plus the Agent UI bridge that brokers the iframe's privileged requests (opening links, launching a run).
 // Product chrome lives in haku-ui; only the trusted confirm + capability firing are here.
 // Console-owned read surfaces have their own routes (routing.ts). See README + docs/containment.md.
-export default function App(): import("react").JSX.Element {
+export default function App(): JSX.Element {
   const [config, setConfig] = useState<ConfigResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { view, agentEnrollmentId, oauthResultId, toolCallId, navigate } = useConsoleView();

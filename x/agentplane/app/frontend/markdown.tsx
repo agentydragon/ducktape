@@ -1,7 +1,7 @@
 import { TypographyStylesProvider } from "@mantine/core";
 import DOMPurify from "dompurify";
 import { Marked } from "marked";
-import { useMemo } from "react";
+import { type JSX, useMemo } from "react";
 
 // The agent's own text, so the source is untrusted: sanitize the rendered HTML down to the tags a
 // transcript needs, with no attributes that can navigate or script.
@@ -38,7 +38,7 @@ const ALLOWED_TAGS = [
  * Markdown as HTML, styled by Mantine's `TypographyStylesProvider` — without it Mantine's reset
  * leaves paragraphs and lists with no spacing of their own.
  */
-export function Markdown({ source }: { source: string }): import("react").JSX.Element {
+export function Markdown({ source }: { source: string }): JSX.Element {
   const html = useMemo(() => {
     const rendered = marked.parse(source);
     if (typeof rendered !== "string") throw new Error("asynchronous Markdown rendering is not supported");

@@ -1,3 +1,4 @@
+import type { JSX } from "react";
 import { Field } from "./field";
 import { formatTimestamp } from "./time";
 
@@ -17,7 +18,7 @@ export function ToolCallMeta({
   callerDisplayName: string;
   createdAt: string | null;
   toolCallId: string;
-}): import("react").JSX.Element {
+}): JSX.Element {
   const requested = createdAt ? formatTimestamp(createdAt) : null;
   return (
     <details className="haku-shell-disclosure">

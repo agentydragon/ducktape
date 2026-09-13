@@ -5,7 +5,7 @@
 // aliases) verbatim.
 
 import { Group, Loader, Stack } from "@mantine/core";
-import { type ReactNode, useEffect, useState } from "react";
+import { type JSX, type ReactNode, useEffect, useState } from "react";
 import type { z } from "zod";
 
 import { CodeBlock } from "../../code_block";
@@ -67,7 +67,7 @@ export function CreateGmailDraftResultView({
   args: CreateGmailDraftArgs;
   result: Draft;
   variant: PreviewVariant;
-}): import("react").JSX.Element {
+}): JSX.Element {
   const detailed = variant === "detailed";
   return (
     <Stack gap={6}>

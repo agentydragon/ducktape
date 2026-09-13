@@ -1,5 +1,5 @@
 import { ActionIcon, Badge, Button, Group, Loader, Select, Stack, Table, Tabs, Text } from "@mantine/core";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { type JSX, useCallback, useEffect, useState, type ReactNode } from "react";
 
 import { useAsyncResource, type AsyncResource, type AsyncResourceLoader } from "./async_resource";
 import {
@@ -83,7 +83,7 @@ function SectionHeading({ title, description }: { title: string; description?: s
   );
 }
 
-function DenseTable({ label, children }: { label: string; children: ReactNode }): import("react").JSX.Element {
+function DenseTable({ label, children }: { label: string; children: ReactNode }): JSX.Element {
   return (
     <Table.ScrollContainer minWidth={0} className="haku-dense-table-wrap">
       <Table className="haku-dense-table" aria-label={label} highlightOnHover>
@@ -546,7 +546,7 @@ function SystemStatusTable({ deployment }: { deployment: DeploymentInfo }) {
   );
 }
 
-export function SettingsPanel(): import("react").JSX.Element {
+export function SettingsPanel(): JSX.Element {
   const [activeTab, setActiveTab] = useState<SettingsTab>(settingsTabFromLocation);
   const [savingAgentId, setSavingAgentId] = useState<string | null>(null);
   const loadMcpServers = useCallback<AsyncResourceLoader<McpServerView[]>>(async (emit, previous) => {

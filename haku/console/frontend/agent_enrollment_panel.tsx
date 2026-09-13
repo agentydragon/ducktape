@@ -1,5 +1,5 @@
 import { Alert, Badge, Button, Group, Loader, Radio, Select, Stack, Text, TextInput } from "@mantine/core";
-import { useEffect, useRef, useState } from "react";
+import { type JSX, useEffect, useRef, useState } from "react";
 
 import {
   decideAgentEnrollment,
@@ -20,7 +20,7 @@ export function AgentEnrollmentPanel({
   interactionId: string;
   initialChoice?: EnrollmentChoice;
   onReturnToSettings: () => void;
-}): import("react").JSX.Element {
+}): JSX.Element {
   const [enrollment, setEnrollment] = useState<EnrollmentView | null>(null);
   const [choice, setChoice] = useState<EnrollmentChoice>(initialChoice);
   const [displayName, setDisplayName] = useState("");

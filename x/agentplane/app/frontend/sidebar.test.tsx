@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { MantineProvider } from "@mantine/core";
-import { act } from "react";
+import { type JSX, act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
@@ -50,7 +50,7 @@ function thread(overrides: Partial<ThreadView> & Pick<ThreadView, "id" | "sandbo
   };
 }
 
-function LocationProbe(): import("react").JSX.Element {
+function LocationProbe(): JSX.Element {
   const location = useLocation();
   return <div data-testid="location">{location.pathname}</div>;
 }

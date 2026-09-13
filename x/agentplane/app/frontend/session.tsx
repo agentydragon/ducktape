@@ -19,7 +19,7 @@ import {
 import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
 import IconPlayerStop from "@tabler/icons-react/dist/esm/icons/IconPlayerStop.mjs";
 import IconPower from "@tabler/icons-react/dist/esm/icons/IconPower.mjs";
-import { Fragment, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
+import { type JSX, Fragment, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { useSearchParams } from "react-router";
 
 import { fromJson, type JsonObject, type JsonValue } from "@bufbuild/protobuf";
@@ -76,7 +76,7 @@ function StatusDot({
   label: string;
   breathing?: boolean;
   style?: CSSProperties;
-}): import("react").JSX.Element {
+}): JSX.Element {
   return (
     <Tooltip label={label} events={{ hover: true, focus: true, touch: true }}>
       <Box
@@ -96,7 +96,7 @@ function StatusDot({
  * (`ItemView`), so only user input needs a distinct treatment -- a right-aligned bubble. The
  * runner supplies this only after the harness confirms the native message, so it is always a
  * settled transcript entry, not a guessed delivery state. */
-function InputView({ input }: { input: InputState }): import("react").JSX.Element {
+function InputView({ input }: { input: InputState }): JSX.Element {
   return (
     <Group justify="flex-end">
       <Paper className="agentplane-user-bubble" p="sm">
@@ -115,7 +115,7 @@ const REASONING_PARAM = "reasoning";
  * block is opened on its own: which ones are open is recorded in the URL, by item id, so a reading
  * can be linked to and survives a reload.
  */
-function ReasoningView({ item }: { item: Item }): import("react").JSX.Element {
+function ReasoningView({ item }: { item: Item }): JSX.Element {
   const [searchParams, setSearchParams] = useSearchParams();
   const open = new Set((searchParams.get(REASONING_PARAM) ?? "").split(",").filter((id) => id));
   function toggle(): void {
@@ -148,7 +148,7 @@ function ReasoningView({ item }: { item: Item }): import("react").JSX.Element {
   );
 }
 
-function ItemView({ item }: { item: Item }): import("react").JSX.Element {
+function ItemView({ item }: { item: Item }): JSX.Element {
   if (item.kind === ItemKind.REASONING) return <ReasoningView item={item} />;
   // Assistant text needs no kind label: it's the only unlabeled content in the transcript besides
   // the user's own bubble, so the absence of a badge already reads as "the reply" -- a status dot,
@@ -199,7 +199,7 @@ function summarizeRun(items: Item[]): string {
 
 /** A run of tool calls/reasoning collapsed behind a summary, so a long chain of intermediate
  * steps does not bury the answer that follows it; expanding shows each step as usual. */
-function ItemRunView({ items }: { items: Item[] }): import("react").JSX.Element {
+function ItemRunView({ items }: { items: Item[] }): JSX.Element {
   const [open, setOpen] = useState(false);
   return (
     <Accordion
@@ -229,7 +229,7 @@ function ItemRunView({ items }: { items: Item[] }): import("react").JSX.Element 
   );
 }
 
-function ItemGroupView({ group }: { group: ItemGroup }): import("react").JSX.Element {
+function ItemGroupView({ group }: { group: ItemGroup }): JSX.Element {
   if (group.kind === "single") return <ItemView item={group.item} />;
   // Reasoning already has its own URL-addressable disclosure; keep that state as the only
   // disclosure for a lone reasoning item while tool calls use the run summary consistently.
@@ -239,7 +239,7 @@ function ItemGroupView({ group }: { group: ItemGroup }): import("react").JSX.Ele
   return <ItemRunView items={group.items} />;
 }
 
-function TurnHeader({ turn }: { turn: Turn }): import("react").JSX.Element {
+function TurnHeader({ turn }: { turn: Turn }): JSX.Element {
   return (
     <Group gap="xs">
       <Text size="sm" c="dimmed">
@@ -253,7 +253,7 @@ function TurnHeader({ turn }: { turn: Turn }): import("react").JSX.Element {
   );
 }
 
-function RowView({ row }: { row: Row }): import("react").JSX.Element {
+function RowView({ row }: { row: Row }): JSX.Element {
   switch (row.kind) {
     case "turn":
       return <TurnHeader turn={row.turn} />;
@@ -283,7 +283,7 @@ function ThreadTitle({
   thread: ThreadView | null;
   onRenamed: (thread: ThreadView) => void;
   onError: (message: string) => void;
-}): import("react").JSX.Element {
+}): JSX.Element {
   const [draft, setDraft] = useState<string | null>(null);
   // The stored name while nothing is being typed, so a rename that arrives from elsewhere shows.
   const shown = draft ?? thread?.name ?? "";
@@ -357,7 +357,7 @@ export function SessionView({
   sandbox: string;
   sessionId: string;
   onBack: () => void;
-}): import("react").JSX.Element {
+}): JSX.Element {
   const [state, setState] = useState<SessionState>(EMPTY);
   const [status, setStatus] = useState("connecting");
   const [error, setError] = useState<string | null>(null);

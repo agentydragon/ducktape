@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { JSX, ReactNode } from "react";
 
 /** A labelled value in a preview/detail view. The default stacks a small uppercase text label over
  * the value; passing `icon` swaps that label for an inline icon on the value's own row, saving the
@@ -13,7 +13,7 @@ export function Field({
   children: ReactNode;
   mono?: boolean;
   icon?: ReactNode;
-}): import("react").JSX.Element {
+}): JSX.Element {
   return (
     <div className={`haku-shell-field ${icon ? "haku-shell-field-inline" : ""}`}>
       {icon ? (

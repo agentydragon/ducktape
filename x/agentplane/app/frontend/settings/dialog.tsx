@@ -1,3 +1,4 @@
+import type { JSX } from "react";
 import { Modal, Tabs } from "@mantine/core";
 
 import { Connections } from "./connections";
@@ -22,7 +23,7 @@ export function Settings({
   tab: SettingsTab;
   onTabChange: (tab: SettingsTab) => void;
   onClose: () => void;
-}): import("react").JSX.Element {
+}): JSX.Element {
   return (
     <Modal opened={opened} onClose={onClose} title="Settings" size="xl">
       <Tabs value={tab} onChange={(value) => isSettingsTab(value) && onTabChange(value)}>

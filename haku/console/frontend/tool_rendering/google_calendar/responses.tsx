@@ -1,3 +1,4 @@
+import type { JSX } from "react";
 // Focused result rendering for the in-process `google_calendar` server. Every schema below is
 // generated from FastMCP's advertised outputSchema; the backend's CalendarEvent projection is the
 // shared create/get/list/instances wire contract.
@@ -88,10 +89,7 @@ function CalendarEventView({ event, variant }: { event: CalendarEvent; variant: 
 // Exported for google_calendar/calls.tsx's combined create_event widget, rendered once the tool has
 // executed — the same full event view get_event/list_events use, and the only place the event's
 // when/recurrence/location shows after the call finishes.
-export function CalendarEventResultView({
-  result,
-  variant,
-}: ResultPreviewProps<CalendarEvent>): import("react").JSX.Element {
+export function CalendarEventResultView({ result, variant }: ResultPreviewProps<CalendarEvent>): JSX.Element {
   return <CalendarEventView event={result} variant={variant} />;
 }
 

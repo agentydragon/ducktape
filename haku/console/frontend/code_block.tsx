@@ -18,7 +18,7 @@ import {
 import type { EditorState, Extension } from "@codemirror/state";
 import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type JSX, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { shellLanguage } from "./shell_lang";
 
@@ -224,7 +224,7 @@ export function CodeBlock({
   language?: CodeLanguage;
   compact?: boolean;
   lineNumbers?: boolean;
-}): import("react").JSX.Element {
+}): JSX.Element {
   const extensions = useMemo<Extension[]>(() => {
     const exts: Extension[] = [EditorView.lineWrapping, syntaxHighlighting(HAKU_HIGHLIGHT), HAKU_THEME];
     if (language) {

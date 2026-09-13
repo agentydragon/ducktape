@@ -1,5 +1,5 @@
 import { Button, Center, Loader, Paper, Stack, Text, ThemeIcon, Title } from "@mantine/core";
-import { useEffect, useState } from "react";
+import { type JSX, useEffect, useState } from "react";
 
 import { consumeOAuthConnectionResult, type OAuthConnectionResult } from "./client";
 import { rememberedEmbedPath } from "./routing";
@@ -11,7 +11,7 @@ export function OAuthResultView({
 }: {
   result: OAuthConnectionResult;
   onClose?: () => void;
-}): import("react").JSX.Element {
+}): JSX.Element {
   const succeeded = result.status === "success";
   return (
     <Center component="main" className="haku-oauth-result-page">
@@ -51,7 +51,7 @@ export function OAuthResultView({
   );
 }
 
-export function OAuthResultPage({ resultId }: { resultId: string }): import("react").JSX.Element {
+export function OAuthResultPage({ resultId }: { resultId: string }): JSX.Element {
   const [result, setResult] = useState<OAuthConnectionResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 

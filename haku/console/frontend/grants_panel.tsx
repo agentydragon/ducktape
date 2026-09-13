@@ -1,5 +1,5 @@
 import { Badge, Button, Code, Group, Loader, SegmentedControl, Select, Stack, Table, Text } from "@mantine/core";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { type JSX, useCallback, useEffect, useMemo, useState } from "react";
 
 import { displayableError, fetchGrants, revokeGrant, type Grant, type GrantPrincipal } from "./client";
 import { useAgentNames } from "./agent_names";
@@ -226,7 +226,7 @@ function GrantRow({
   );
 }
 
-export function GrantsPanel(): import("react").JSX.Element {
+export function GrantsPanel(): JSX.Element {
   const agentNames = useAgentNames();
   const [allGrants, setAllGrants] = useState<Grant[] | null>(null);
   const [grants, setGrants] = useState<Grant[] | null>(null);

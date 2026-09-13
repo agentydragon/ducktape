@@ -1,5 +1,5 @@
 import { Badge, Group, Loader, Stack, Text } from "@mantine/core";
-import { useEffect, useRef, useState } from "react";
+import { type JSX, useEffect, useRef, useState } from "react";
 
 import { makeRecentToolCall, toolApprovalQueueId, type RecentToolCall } from "./approval_state";
 import { useConsoleEvents } from "./console_events";
@@ -10,7 +10,7 @@ import { useToolCallDecision } from "./tool_call_decision";
 // This is deliberately a tool-call-only surface. Geolocation and screenshot approvals are
 // Agent UI bridge requests owned by the Haku UI iframe; this page has no iframe to receive their result,
 // so rendering those buttons here would offer an action with nowhere to deliver its decision.
-export function ApprovalsEmbedPage(): import("react").JSX.Element {
+export function ApprovalsEmbedPage(): JSX.Element {
   const [pendingApprovals, setPendingApprovals] = useState<ToolCallRecord[]>([]);
   const pendingApprovalsRef = useRef<ToolCallRecord[]>([]);
   const [recentToolCalls, setRecentToolCalls] = useState<RecentToolCall[]>([]);

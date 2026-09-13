@@ -12,7 +12,7 @@
 // Bazel dep (//aiquota/frontend:board) rather than an npm package.
 import { QuotaBoard } from "../../../aiquota/frontend/board";
 import { ActionIcon, Group, Loader, Stack, Text, Tooltip } from "@mantine/core";
-import { useEffect, useMemo, useState } from "react";
+import { type JSX, useEffect, useMemo, useState } from "react";
 
 import type { AiquotaView } from "./client";
 import { AiquotaIcon, CloseIcon } from "./icons";
@@ -38,7 +38,7 @@ export function AiquotaPanel({
   loading: boolean;
   error: string | null;
   onClose?: () => void;
-}): import("react").JSX.Element {
+}): JSX.Element {
   const now = useNow();
   const fetchedAt = useMemo(() => (quotas ? parseTimestamp(quotas.fetched_at) : null), [quotas]);
   return (
@@ -103,7 +103,7 @@ export function AiquotaRailButton({
   loading: boolean;
   open: boolean;
   onClick: () => void;
-}): import("react").JSX.Element {
+}): JSX.Element {
   const used = railUsedPercent(quotas);
   const color = used >= 95 ? "red" : used >= 80 ? "yellow" : "teal";
   return (

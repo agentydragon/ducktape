@@ -16,7 +16,7 @@
  * healthy load as a fault put an alarm on the screen of every load and moved the page under it.
  */
 import { Alert } from "@mantine/core";
-import { useEffect, useState } from "react";
+import { type JSX, useEffect, useState } from "react";
 
 import type { components } from "./api/schema";
 import { api } from "./client";
@@ -113,7 +113,7 @@ function stalest(health: WatchHealth): string {
 }
 
 /** Nothing while the stream is live and the server's watch is moving; otherwise why it is not. */
-export function LiveStatus<T>({ live }: { live: Live<T> }): import("react").JSX.Element | null {
+export function LiveStatus<T>({ live }: { live: Live<T> }): JSX.Element | null {
   if (live.connection === "disconnected") {
     return (
       <Alert color="orange" p="xs">

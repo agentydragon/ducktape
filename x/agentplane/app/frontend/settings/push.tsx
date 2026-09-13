@@ -1,5 +1,5 @@
 import { Button, Code, Group, Paper, Stack, Text, Title } from "@mantine/core";
-import { useCallback, useEffect, useState } from "react";
+import { type JSX, useCallback, useEffect, useState } from "react";
 
 type Device = { endpoint: string; user_agent: string | null; created_at: string };
 
@@ -18,7 +18,7 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
   return response.status === 204 ? (undefined as T) : response.json();
 }
 
-export function PushSettings(): import("react").JSX.Element {
+export function PushSettings(): JSX.Element {
   const [devices, setDevices] = useState<Device[]>([]);
   const [key, setKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
