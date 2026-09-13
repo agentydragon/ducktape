@@ -128,6 +128,31 @@ py_library(
 #     main_module = "skills.info_gathering.evals.function_learning.analyze",
 #     deps = [":analyze"],
 # )
+#
+# py_test(
+#     name = "test_function_learning",
+#     srcs = ["test_function_learning.py"],
+#     requires_docker = True,
+#     deps = [
+#         ":conftest",
+#         ":function_learning",
+#         ":functions",
+#         ":result_types",
+#         "//:conftest",
+#         "//skills/eval_infra:eval_sandbox",
+#         "//skills/eval_infra:skill_staging",
+#         "//skills/eval_infra/empty_skill:empty_skill_skill_spec",
+#         "//skills/info_gathering/evals:replay_client",
+#         "//third_party/containers:python_3_14_slim",
+#         "//util:oci",
+#         "@pypi//agent_framework_anthropic",
+#         "@pypi//agent_framework_claude",
+#         "@pypi//agent_framework_core",
+#         "@pypi//agent_framework_openai",
+#         "@pypi//aiodocker",
+#         "@pypi//pytest_bazel",
+#     ],
+# )
 
 py_test(
     name = "test_functions",
@@ -137,21 +162,6 @@ py_test(
         ":functions",
         "//:conftest",
         "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_function_learning",
-    requires_docker = True,
-    deps = [
-        "//:conftest",
-        "//skills/eval_infra:eval_sandbox",
-        "//skills/eval_infra:skill_staging",
-        "//skills/eval_infra/empty_skill:empty_skill_skill_spec",
-        "//skills/info_gathering/evals:replay_client",
-        "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
-        "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
-        "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
     ],
 )
 
