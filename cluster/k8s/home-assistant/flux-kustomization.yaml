@@ -5,7 +5,7 @@ metadata:
   namespace: ducktape-flux
   annotations:
     description: >-
-      Home Assistant with encrypted Restic/VolSync backups to its dedicated
+      Home Assistant with encrypted Restic/VolSync backups and its dedicated
       private SeaweedFS S3 bucket.
 spec:
   interval: 10m
@@ -14,6 +14,11 @@ spec:
   path: ./cluster/k8s/home-assistant
   prune: true
   wait: true
+  healthChecks:
+    - apiVersion: seaweed.seaweedfs.com/v1
+      kind: Bucket
+      name: home-assistant-backups
+      namespace: seaweedfs
   sourceRef:
     kind: ExternalArtifact
     name: home-assistant
@@ -25,7 +30,7 @@ spec:
   dependsOn:
     - name: local-path-provisioner
       namespace: ducktape-flux
-    - name: seaweedfs-home-assistant-backups-bucket
+    - name: seaweedfs-cluster
       namespace: ducktape-flux
     - name: volsync
       namespace: ducktape-flux

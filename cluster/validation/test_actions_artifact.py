@@ -284,7 +284,6 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         ("seaweedfs-filer-db", "seaweedfs/db"),
         ("seaweedfs-forgejo-bucket", "seaweedfs/forgejo-bucket"),
         ("seaweedfs-haku-openclaw-spike-backups-bucket", "seaweedfs/haku-openclaw-spike-backups-bucket"),
-        ("seaweedfs-home-assistant-backups-bucket", "seaweedfs/home-assistant-backups-bucket"),
         ("seaweedfs-langfuse-bucket", "seaweedfs/langfuse-bucket"),
         ("seaweedfs-loom-gym-bucket", "seaweedfs/loom-gym-bucket"),
         ("seaweedfs-monitoring", "seaweedfs/monitoring"),
