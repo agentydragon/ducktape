@@ -228,6 +228,25 @@ theirs. Never switch branches there or commit on top of it unasked: judge whethe
 request builds on that dirty state; if not, do the work in a fresh worktree and send a
 PR from it; if genuinely ambiguous, ask.
 
+### Session worktree discipline
+
+Do not create a worktree for read-only investigation. When you first need to edit code
+or run Bazel, inspect the current worktree. If it is clean and suitable for the task,
+keep using it. If it is a personal or user-owned dirty checkout with unrelated changes,
+or otherwise unsuitable for the work, create one isolated worktree for the session. If
+the task explicitly builds on the existing dirty changes, remain in that checkout.
+
+Once a worktree has been selected or created, keep using that absolute path for the
+session's edits, Git commands, and Bazel commands. Do not create or switch to another
+worktree merely for convenience. A new worktree per isolated session is acceptable;
+reuse an older worktree only when an explicit handoff identifies it as released for
+this task. Before creating one, inspect `git worktree list` so you do not choose an
+occupied path or branch. Report the chosen worktree path at handoff.
+
+Use a harness-provided worktree when one exists. Otherwise, prefer a repo-local path
+such as `.worktrees/agents/<tool>-<session-id>-<short-task-slug>`; use `/tmp` only for
+genuinely disposable work.
+
 ### Parallel Bash calls share one working directory
 
 **Gotcha:** concurrent Bash tool calls run in one shell whose cwd persists across calls. A

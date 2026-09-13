@@ -76,6 +76,9 @@ missed isolation: changes spanning multiple agents' files, "my work disappeared"
 isolation rather than recovering from contamination. The orchestrator keeps the
 main worktree and never disturbs in-flight worker trees.
 
+This is a concurrency rule, not a requirement to create a new path for every round:
+once a worker has selected a worktree, it keeps using that path for the session.
+
 ### Signing in worktrees
 
 The session's signing tool (`/tmp/code-sign` via `gpg.ssh.program`) succeeds only
