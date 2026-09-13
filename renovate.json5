@@ -3,6 +3,17 @@
   extends: ["config:recommended"],
   dependencyDashboard: true,
   prCreation: "approval",
+  customManagers: [
+    {
+      // rules_tf keeps its hermetic provider mirror in a nonstandard MODULE.bazel map.
+      customType: "regex",
+      managerFilePatterns: ["/^MODULE\\.bazel$/"],
+      matchStrings: ['"[^"\\n]+":\\s*"(?<packageName>[^"\\n]+/[^"\\n]+):(?<currentValue>\\d+\\.\\d+\\.\\d+)"'],
+      datasourceTemplate: "terraform-provider",
+      versioningTemplate: "hashicorp",
+      depTypeTemplate: "terraform_provider_mirror",
+    },
+  ],
   ignorePaths: [
     "props/specimens/**",
     "devinfra/claude/web_env/**",
@@ -36,6 +47,12 @@
       matchManagers: ["pixi"],
       matchFileNames: ["skills/freecad/conda/pixi.toml"],
       skipArtifactsUpdate: true,
+    },
+    {
+      description: "Review the community Claude Managed Agents provider manually",
+      matchDatasources: ["terraform-provider"],
+      matchPackageNames: ["modus-agendi/anthropic-claude-managed-agents"],
+      automerge: false,
     },
   ],
 }
