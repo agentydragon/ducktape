@@ -35,7 +35,7 @@ spec:
           effect: NoSchedule
       containers:
         - name: nginx
-          image: nginxinc/nginx-unprivileged:1.27-alpine@sha256:28d91bdce70ad09025ea901458fdd149259d8e05982ade79d4ef2c0d9470eb48
+          image: nginxinc/nginx-unprivileged:1.31-alpine@sha256:e1754f434ace974cdf9b9f98d868082b86ab8ee703f8466e6d3d777f553d3fb9
           ports:
             - name: smtp
               containerPort: 2525
