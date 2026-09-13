@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest_bazel
 
 from x.agentplane.harness_tests.codex import frames, responses_sse as sse
@@ -141,7 +143,11 @@ def test_interrupt_drops_joined_inputs_before_the_next_model_request(
             ("interrupt-queue-3", INTERRUPTED_QUEUE_SECOND),
         ):
             process.write(driver.turn_start(request_id, thread_id=thread_id, text=text))
-            response = process.await_frame(lambda frame, expected=request_id: frame.get("id") == expected, timeout=30)
+
+            def has_request_id(frame: dict[str, Any], expected: str = request_id) -> bool:
+                return frame.get("id") == expected
+
+            response = process.await_frame(has_request_id, timeout=30)
             assert response["result"]["turn"]["id"] == turn_id
 
         response = scenarios.interrupt(process, thread_id=thread_id, turn_id=turn_id, request_id="interrupt-queue-4")
