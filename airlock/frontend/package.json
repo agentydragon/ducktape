@@ -7,7 +7,7 @@
     "svelte": "^5.56.9"
   },
   "devDependencies": {
-    "esbuild": "^0.25.1",
+    "esbuild": "^0.28.0",
     "esbuild-plugin-tailwindcss": "^2.0.3",
     "esbuild-svelte": "^0.9.5",
     "openapi-typescript": "^7.10.1",
