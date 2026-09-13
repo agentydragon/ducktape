@@ -12,10 +12,11 @@
 # `enforcement = "active"`. NOTE: this account's plan does not support
 # "evaluate" (dry-run) enforcement — GitHub returns 422 "Enforcement evaluate
 # option is not supported on this plan. Please upgrade to Enterprise" — so we
-# go straight to active. The two required check contexts were verified as
-# exact matches against a real PR head (PR #1963: `bazel-ci / Test & Build`,
-# `Pre-commit checks`), and the bypass actors match the previously-active
-# main-only ruleset, so the active config is proven.
+# go straight to active. The four required check contexts were verified as
+# exact matches against real PR heads (`bazel-ci / Test & Build`,
+# `Pre-commit checks`, `Gazelle diff`, and `Build artifacts + imports check`),
+# and the bypass actors match the previously-active main-only ruleset, so the
+# active config is proven.
 #
 # Gaffer-private has NO branch protection from this module. GitHub Free
 # does not include any branch protection (rulesets or classic) on private
@@ -100,6 +101,12 @@ resource "github_repository_ruleset" "default_branch_protection" {
       }
       required_check {
         context = "Pre-commit checks"
+      }
+      required_check {
+        context = "Gazelle diff"
+      }
+      required_check {
+        context = "Build artifacts + imports check"
       }
       strict_required_status_checks_policy = false
     }
