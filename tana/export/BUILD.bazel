@@ -1,13 +1,6 @@
 load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
 py_library(
-    name = "cli",
-    srcs = ["cli.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [":convert"],
-)
-
-py_library(
     name = "convert",
     srcs = ["convert.py"],
     visibility = ["//tana:__subpackages__"],
@@ -86,12 +79,6 @@ py_binary(
     main_module = "tana.export.download_images",
     visibility = ["//:__subpackages__"],
     deps = [":download_images"],
-)
-
-py_library(
-    name = "sample",
-    srcs = ["sample.py"],
-    visibility = ["//:__subpackages__"],
 )
 
 py_library(
