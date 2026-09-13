@@ -31,7 +31,7 @@ async function render(codexModels: string[] = ["test-codex-a", "test-codex-b"]):
     template: "test-template",
     policies: [],
     action_policy_sets: ["test-reads"],
-    thread_defaults: { provider: "codex", model: "test-codex-b" },
+    thread_defaults: { harness: "HARNESS_CODEX", model: "test-codex-b" },
     bootstrap: "mkdir -p /state/workspaces",
   };
   const policySets: ActionPolicySetView[] = [
@@ -46,7 +46,7 @@ async function render(codexModels: string[] = ["test-codex-a", "test-codex-b"]):
   vi.spyOn(api, "GET").mockImplementation(async (path) => {
     const data =
       path === "/models"
-        ? { claude: ["test-claude"], codex: codexModels }
+        ? { HARNESS_CLAUDE: ["test-claude"], HARNESS_CODEX: codexModels }
         : path === "/presets"
           ? [preset]
           : path === "/sandboxes/templates"
@@ -110,7 +110,7 @@ it("inherits the preset model and replaces incompatible choices when the harness
   expect(input(container, "Model").value).toBe("test-codex-b");
   await choose(container, "Model", "test-codex-a");
   expect(input(container, "Model").value).toBe("test-codex-a");
-  await choose(container, "Harness", "claude");
+  await choose(container, "Harness", "Claude");
   expect(input(container, "Model").value).toBe("test-claude");
   await act(async () => input(container, "Model").click());
   expect(options(container, "Model").map((node) => node.textContent)).toEqual(["test-claude"]);
@@ -138,7 +138,7 @@ it("pre-fills the preset's action policy sets, offers every set with its verdict
         template: "test-template",
         action_policy_sets: ["test-reads"],
         bootstrap: "mkdir -p /state/workspaces",
-        thread_defaults: expect.objectContaining({ provider: "codex", model: "test-codex-b" }),
+        thread_defaults: expect.objectContaining({ harness: "HARNESS_CODEX", model: "test-codex-b" }),
       }),
     })
   );
@@ -164,7 +164,7 @@ it("clears an unavailable preset model and disables a harness with no offered mo
   expect(input(container, "Model").value).toBe("");
   expect(input(container, "Model").disabled).toBe(true);
   expect(input(container, "Model").placeholder).toBe("No models available");
-  await choose(container, "Harness", "claude");
+  await choose(container, "Harness", "Claude");
   expect(input(container, "Model").disabled).toBe(false);
   expect(input(container, "Model").value).toBe("test-claude");
 });

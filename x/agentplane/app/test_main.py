@@ -20,7 +20,7 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 
 from util.net import pick_free_port
 from x.agentplane.app.action_policy import ActionPolicyInventory
-from x.agentplane.app.api import Provider, create_app
+from x.agentplane.app.api import create_app
 from x.agentplane.app.bridge import RunnerBridge
 from x.agentplane.app.conftest import AGENT_AUTH
 from x.agentplane.app.decisions import DecisionsClient
@@ -30,6 +30,7 @@ from x.agentplane.app.inventory import SandboxInventory
 from x.agentplane.app.live import LiveIndex
 from x.agentplane.app.main import AppServer, Settings, SpaFiles, resolved_agent_instructions, serve_then_close
 from x.agentplane.app.oidc import load_settings
+from x.agentplane.app.presets import Harness
 from x.agentplane.app.shutdown import drain_of
 from x.agentplane.app.trajectory import SandboxIngestion, TrajectoryStore
 
@@ -38,7 +39,7 @@ APP_ENVIRONMENT = {
     "AGENTPLANE_SANDBOX_NAMESPACE": "test-sandbox-namespace",
     "AGENTPLANE_RUNNER_PORT": "7000",
     "AGENTPLANE_DATABASE_URL": "postgresql+asyncpg://test@test.invalid/test",
-    "AGENTPLANE_MODELS": '{"claude": ["test-claude-model"], "codex": ["test-codex-model"]}',
+    "AGENTPLANE_MODELS": '{"HARNESS_CLAUDE": ["test-claude-model"], "HARNESS_CODEX": ["test-codex-model"]}',
     "AGENTPLANE_EGRESS_ADMIN_URL": "http://egress.test.invalid:8081",
 }
 OIDC_ENVIRONMENT = {
@@ -114,7 +115,7 @@ def test_without_an_issuer_there_is_no_login(monkeypatch: pytest.MonkeyPatch) ->
 
 
 SANDBOX = "shutdown-test-sandbox"
-MODELS = {Provider.CLAUDE: ["test-claude-model"], Provider.CODEX: ["test-codex-model"]}
+MODELS = {Harness.CLAUDE: ["test-claude-model"], Harness.CODEX: ["test-codex-model"]}
 
 
 @pytest.fixture

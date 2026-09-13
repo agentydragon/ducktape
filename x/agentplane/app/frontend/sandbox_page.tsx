@@ -18,7 +18,7 @@ import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertica
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 
-import { create } from "@bufbuild/protobuf";
+import { fromJson, type JsonValue } from "@bufbuild/protobuf";
 
 import {
   api,
@@ -27,6 +27,7 @@ import {
   openSession,
   RunnerUnavailableError,
   type Condition,
+  type Harness,
   type SandboxView,
   type ThreadView,
 } from "./client";
@@ -35,12 +36,12 @@ import { EgressSection } from "./egress";
 import { JsonView } from "./json_view";
 import { ConfirmDelete, DeleteButton, SuspendResume } from "./lifecycle";
 import { liveSandboxUrl, LiveStatus, useLive, type SandboxSnapshot } from "./live";
-import { HarnessState, Provider, SessionSpecSchema, type SessionSummary } from "./protocol_pb";
+import { HarnessState, SessionSpecSchema, type SessionSummary } from "./protocol_pb";
 
-// The harness a session runs, as the API's catalog names it and as the protocol's enum spells it.
-type Harness = "claude" | "codex";
-const HARNESSES: Harness[] = ["claude", "codex"];
-const PROVIDER_ENUM: Record<Harness, Provider> = { claude: Provider.CLAUDE, codex: Provider.CODEX };
+const HARNESSES: { value: Harness; label: string }[] = [
+  { value: "HARNESS_CLAUDE", label: "Claude" },
+  { value: "HARNESS_CODEX", label: "Codex" },
+];
 
 // The page's tabs, named in the URL (`?tab=`) so a tab can be linked to and survives a reload.
 const TABS = ["sessions", "egress", "policy", "status"] as const;
@@ -151,8 +152,8 @@ export function SandboxPage({
   const [effort, setEffort] = useState("low");
   const [instructions, setInstructions] = useState("");
   const [defaultsLabel, setDefaultsLabel] = useState<string | null>(null);
-  // The app's catalog of what this sandbox's harness may run; the thread carries the choice.
-  const [harness, setHarness] = useState<Harness>("claude");
+  // The app's catalog of what this sandbox's Harness may run; the thread carries the choice.
+  const [harness, setHarness] = useState<Harness>("HARNESS_CLAUDE");
   const [models, setModels] = useState<string[]>([]);
   const [model, setModel] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -219,7 +220,7 @@ export function SandboxPage({
         setError(displayableError(failure));
         return;
       }
-      const offered = data[harness];
+      const offered = data?.[harness] ?? [];
       setModels(offered);
       setModel((current) => (current && offered.includes(current) ? current : (offered[0] ?? null)));
     })();
@@ -234,7 +235,7 @@ export function SandboxPage({
     const defaults = binding.thread_defaults;
     setDefaultsLabel(defaults ? "Sandbox defaults" : null);
     if (!defaults) return;
-    if (defaults.provider) setHarness(defaults.provider as Harness);
+    if (defaults.harness) setHarness(defaults.harness);
     if (defaults.model) setModel(defaults.model);
     if (defaults.reasoning_effort) setEffort(defaults.reasoning_effort);
     setInstructions(defaults.instructions ?? "");
@@ -276,13 +277,13 @@ export function SandboxPage({
       await openSession(
         name,
         sessionId,
-        create(SessionSpecSchema, {
-          provider: PROVIDER_ENUM[harness],
+        fromJson(SessionSpecSchema, {
+          harness,
           cwd: `/state/workspaces/${sessionId}`,
           model,
           reasoningEffort: effort,
           instructions,
-        })
+        } as JsonValue)
       );
       onOpenSession(sessionId);
     } catch (reason: unknown) {
@@ -358,7 +359,7 @@ export function SandboxPage({
                 label="Harness"
                 data={HARNESSES}
                 value={harness}
-                onChange={(v) => v && setHarness(v as Harness)}
+                onChange={(value) => value && setHarness(value as Harness)}
               />
               <Select label="Model" data={models} value={model} onChange={setModel} />
               <Select
@@ -405,7 +406,7 @@ export function SandboxPage({
                           {names[session.sessionId] ?? session.sessionId}
                         </Button>
                       </Table.Td>
-                      <Table.Td>{HarnessState[session.harness]}</Table.Td>
+                      <Table.Td>{HarnessState[session.harnessState]}</Table.Td>
                       <Table.Td>{session.activeTurnId || "—"}</Table.Td>
                       <Table.Td>{String(session.lastSequence)}</Table.Td>
                       <Table.Td style={{ width: "1%", whiteSpace: "nowrap" }}>

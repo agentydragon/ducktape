@@ -17,20 +17,18 @@ from typing import Any, Self
 import httpx
 from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
 
-from x.agentplane.app.api import EgressGrant, ModelCatalog, Provider
+from x.agentplane.app.api import EgressGrant, ModelCatalog
 from x.agentplane.app.bridge import NewSession
 from x.agentplane.app.decisions import Decision
 from x.agentplane.app.egress import BindingView, PolicyView
 from x.agentplane.app.inventory import NewSandbox, ProvisioningState, SandboxView
-from x.agentplane.app.presets import SandboxPresetView
+from x.agentplane.app.presets import Harness, SandboxPresetView
 from x.agentplane.runner import protocol_pb2 as pb
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
 
 REQUEST_SECONDS = 30.0
-
-PROTO_PROVIDERS = {Provider.CLAUDE: pb.PROVIDER_CLAUDE, Provider.CODEX: pb.PROVIDER_CODEX}
 
 
 class SessionStreamError(Exception):
@@ -77,7 +75,7 @@ class Client:
 
     async def models(self) -> ModelCatalog:
         """Which models each harness may be opened with, as this deployment is configured."""
-        return {Provider(harness): names for harness, names in (await self._json("GET", "/models")).items()}
+        return {Harness(harness): names for harness, names in (await self._json("GET", "/models")).items()}
 
     async def presets(self) -> list[SandboxPresetView]:
         return [SandboxPresetView.model_validate(row) for row in await self._json("GET", "/presets")]

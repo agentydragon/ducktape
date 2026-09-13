@@ -14,10 +14,9 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 import pytest
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
-from x.agentplane.app.api import Provider
 from x.agentplane.app.client import Client, is_running
 from x.agentplane.app.inventory import NewSandbox, SandboxView
-from x.agentplane.app.presets import ThreadDefaults
+from x.agentplane.app.presets import Harness, ThreadDefaults
 
 BASE_URL = "AGENTPLANE_ACCEPTANCE_URL"
 TOKEN = "AGENTPLANE_ACCEPTANCE_TOKEN"
@@ -91,19 +90,19 @@ async def client(base_url: str, token: str) -> AsyncIterator[Client]:
         yield opened
 
 
-@pytest.fixture(params=list(Provider), ids=[str(provider) for provider in Provider])
-def provider(request: pytest.FixtureRequest) -> Provider:
+@pytest.fixture(params=list(Harness), ids=[str(harness) for harness in Harness])
+def harness(request: pytest.FixtureRequest) -> Harness:
     """Every scenario runs on every harness: one runner protocol, so one test body covers both."""
-    assert isinstance(request.param, Provider)
+    assert isinstance(request.param, Harness)
     return request.param
 
 
 @pytest.fixture
-async def model(client: Client, provider: Provider) -> str:
+async def model(client: Client, harness: Harness) -> str:
     """A model this deployment offers for this harness, asked of the app rather than hardcoded."""
     catalog = await client.models()
-    offered = catalog[provider]
-    assert offered, f"the deployment offers no model for {provider}"
+    offered = catalog[harness]
+    assert offered, f"the deployment offers no model for {harness}"
     return offered[0]
 
 

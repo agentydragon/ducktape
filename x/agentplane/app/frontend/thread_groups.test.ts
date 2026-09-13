@@ -17,14 +17,14 @@ function sandboxView(name: string, overrides: Partial<SandboxView> = {}): Sandbo
 
 function threadView(overrides: Partial<ThreadView> & Pick<ThreadView, "id" | "sandbox" | "session_id">): ThreadView {
   return {
-    provider: "PROVIDER_CLAUDE",
+    harness: "HARNESS_CLAUDE",
     model: "test-model",
     cwd: "/work",
     created_at: "2026-01-01T00:00:00Z",
     name: null,
     archived: false,
     last_sequence: 0,
-    harness: "HARNESS_STATE_UNSPECIFIED",
+    harness_state: "HARNESS_STATE_UNSPECIFIED",
     ...overrides,
   };
 }
@@ -74,8 +74,8 @@ it("counts archived threads across every sandbox regardless of visibility", () =
 });
 
 it("reads the status dot from the thread's own harness state, not its sandbox", () => {
-  const running = threadView({ id: "t-1", sandbox: "sb-a", session_id: "s-1", harness: "HARNESS_STATE_RUNNING" });
-  const stopped = threadView({ id: "t-2", sandbox: "sb-a", session_id: "s-2", harness: "HARNESS_STATE_STOPPED" });
+  const running = threadView({ id: "t-1", sandbox: "sb-a", session_id: "s-1", harness_state: "HARNESS_STATE_RUNNING" });
+  const stopped = threadView({ id: "t-2", sandbox: "sb-a", session_id: "s-2", harness_state: "HARNESS_STATE_STOPPED" });
   const unspecified = threadView({ id: "t-3", sandbox: "sb-a", session_id: "s-3" });
 
   expect(threadDotColor(running)).toBe("ok");

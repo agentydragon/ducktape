@@ -25,9 +25,9 @@ from x.agentplane.runner.testing.scripted_model import ScriptedModel
 # gazelle:include_dep @pypi//grpcio
 
 
-@pytest.fixture(params=["claude", "codex"])
-def provider(request: pytest.FixtureRequest) -> str:
-    return str(request.param)
+@pytest.fixture(params=[pb.HARNESS_CLAUDE, pb.HARNESS_CODEX], ids=["claude", "codex"])
+def harness(request: pytest.FixtureRequest) -> pb.Harness.ValueType:
+    return pb.Harness.ValueType(request.param)
 
 
 @pytest.fixture
@@ -37,8 +37,12 @@ def upstream() -> Iterator[ScriptedUpstream]:
 
 
 @pytest.fixture
-def model(provider: str, upstream: ScriptedUpstream) -> ScriptedModel:
-    return {"claude": ClaudeModel, "codex": CodexModel}[provider](upstream)
+def model(harness: pb.Harness.ValueType, upstream: ScriptedUpstream) -> ScriptedModel:
+    if harness == pb.HARNESS_CLAUDE:
+        return ClaudeModel(upstream)
+    if harness == pb.HARNESS_CODEX:
+        return CodexModel(upstream)
+    raise ValueError(f"unsupported {harness=}")
 
 
 @pytest.fixture
@@ -49,13 +53,13 @@ def workspace(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def spec(provider: str, workspace: Path) -> pb.SessionSpec:
-    return launches.spec(provider, workspace)
+def spec(harness: pb.Harness.ValueType, workspace: Path) -> pb.SessionSpec:
+    return launches.spec(harness, workspace)
 
 
 @pytest.fixture
-def config(provider: str, upstream: ScriptedUpstream, tmp_path: Path) -> RunnerConfig:
-    return launches.config(provider, upstream, state_dir=tmp_path / "state", home=tmp_path / "home")
+def config(harness: pb.Harness.ValueType, upstream: ScriptedUpstream, tmp_path: Path) -> RunnerConfig:
+    return launches.config(harness, upstream, state_dir=tmp_path / "state", home=tmp_path / "home")
 
 
 @dataclass

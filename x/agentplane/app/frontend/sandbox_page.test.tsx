@@ -55,14 +55,14 @@ afterAll(() => vi.unstubAllGlobals());
 function thread(overrides: Partial<ThreadView> & Pick<ThreadView, "id" | "session_id">): ThreadView {
   return {
     sandbox: "startup-test",
-    provider: "PROVIDER_CLAUDE",
+    harness: "HARNESS_CLAUDE",
     model: "test-model",
     cwd: "/work",
     created_at: "2026-01-01T00:00:00Z",
     name: null,
     archived: false,
     last_sequence: 0,
-    harness: "HARNESS_STATE_UNSPECIFIED",
+    harness_state: "HARNESS_STATE_UNSPECIFIED",
     ...overrides,
   };
 }
@@ -74,7 +74,7 @@ async function render(
   fetchMock.mockImplementation((request: Request) => {
     const path = new URL(request.url).pathname;
     if (path === "/models") {
-      return Promise.resolve(Response.json({ claude: ["test-model"], codex: [] }));
+      return Promise.resolve(Response.json({ HARNESS_CLAUDE: ["test-model"], HARNESS_CODEX: [] }));
     }
     if (path === "/egress/policies" || path === "/sandboxes/startup-test/egress/decisions") {
       return Promise.resolve(Response.json([]));

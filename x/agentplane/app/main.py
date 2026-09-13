@@ -111,7 +111,7 @@ class Settings(BaseSettings):
     action_federation: ActionFederationSettings | None = None
     database_url: str = Field(description="SQLAlchemy asyncpg URL of the trajectory store.")
     models: ModelCatalog = Field(
-        description='The models each provider may run, as JSON: {"claude": ["..."], "codex": ["..."]}.'
+        description='The models each agent harness may run, as JSON: {"HARNESS_CLAUDE": ["..."], "HARNESS_CODEX": ["..."]}.'
     )
     sandbox_presets: dict[str, SandboxPreset] = Field(
         default_factory=dict, description="App-owned Sandbox launch-form presets keyed by displayable name."

@@ -12,8 +12,8 @@ RUNNER_ENV = {
 
 
 def test_a_child_starts_with_what_the_deployment_declares_and_nothing_else() -> None:
-    """Nothing is inherited implicitly: the runner holds both provider keys, and a variable it was
-    not asked to pass on stays with it. Each adapter adds its own provider key on top, which is what
+    """Nothing is inherited implicitly: the runner holds both native-service keys, and a variable it was
+    not asked to pass on stays with it. Each adapter adds its own native-service key on top, which is what
     keeps a Codex child from seeing the Anthropic token and a Claude child the OpenAI one."""
     child = harness_environment(RUNNER_ENV, declared=["PATH", "TEST_TOOL_ENDPOINT=https://tools.test"])
     assert child == {"PATH": "/usr/bin", "TEST_TOOL_ENDPOINT": "https://tools.test"}

@@ -20,7 +20,7 @@ from util.net import pick_free_port
 from x.agentplane.action_service.operator_oidc import OperatorOidcSettings
 from x.agentplane.app.action_federation import DirectFederationSettings, FederatedOperatorActions
 from x.agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnavailable, ActionPolicyView
-from x.agentplane.app.api import Provider, create_app
+from x.agentplane.app.api import create_app
 from x.agentplane.app.bridge import RunnerBridge, SandboxNotReachableError
 from x.agentplane.app.decisions import DecisionsClient
 from x.agentplane.app.egress import EgressInventory
@@ -36,6 +36,7 @@ from x.agentplane.app.live import (
     frames,
 )
 from x.agentplane.app.oidc import OIDCSettings
+from x.agentplane.app.presets import Harness
 from x.agentplane.app.testing.kubernetes import (
     FakeCoreV1Api,
     FakeCustomObjectsApi,
@@ -52,7 +53,7 @@ from x.agentplane.app.trajectory import TrajectoryStore
 # gazelle:include_dep @pypi//httpx
 
 NOW = datetime(2026, 9, 3, 12, 0, tzinfo=UTC)
-MODELS = {Provider.CLAUDE: ["test-claude-model"], Provider.CODEX: ["test-codex-model"]}
+MODELS = {Harness.CLAUDE: ["test-claude-model"], Harness.CODEX: ["test-codex-model"]}
 
 
 @pytest.fixture
@@ -165,7 +166,7 @@ async def test_a_policy_the_service_cannot_be_asked_for_is_said_so_in_the_frame(
 ) -> None:
     """The failure the route would answer with, as a frame variant a tab can show: a token caller
     is not an operator, an app without federation has nobody to ask as, and a session whose token
-    the provider refuses is refused with that code and nothing of the provider's own text."""
+    the identity service refuses is refused with that code and nothing of its own text."""
     oidc = OIDCSettings(
         issuer="https://login.test.invalid/application/o/test-app/",
         client_id="test-app",

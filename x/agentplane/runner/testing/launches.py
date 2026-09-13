@@ -15,20 +15,20 @@ from x.agentplane.runner.config import ClaudeLaunch, CodexLaunch, RunnerConfig
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
 
-PROVIDERS = {"claude": pb.PROVIDER_CLAUDE, "codex": pb.PROVIDER_CODEX}
 CLAUDE_BINARY = "claude_code_cli_linux_x64/claude"
 CODEX_BINARY = "agentplane_codex_cli_linux_x64/bin/codex"
 RUNNER_BINARY = "_main/x/agentplane/runner/main_bin"
 TOKEN = "test-key"
 
 
-def spec(provider: str, cwd: Path) -> pb.SessionSpec:
-    return pb.SessionSpec(
-        provider=PROVIDERS[provider],
-        cwd=str(cwd),
-        model={"claude": claude_harness.MODEL, "codex": codex_harness.MODEL}[provider],
-        reasoning_effort=codex_harness.EFFORT,
-    )
+def spec(harness: pb.Harness.ValueType, cwd: Path) -> pb.SessionSpec:
+    if harness == pb.HARNESS_CLAUDE:
+        model = claude_harness.MODEL
+    elif harness == pb.HARNESS_CODEX:
+        model = codex_harness.MODEL
+    else:
+        raise ValueError(f"unsupported {harness=}")
+    return pb.SessionSpec(harness=harness, cwd=str(cwd), model=model, reasoning_effort=codex_harness.EFFORT)
 
 
 def environment(home: Path) -> dict[str, str]:
@@ -42,12 +42,12 @@ def environment(home: Path) -> dict[str, str]:
     }
 
 
-def config(provider: str, upstream: ScriptedUpstream, *, state_dir: Path, home: Path) -> RunnerConfig:
+def config(harness: pb.Harness.ValueType, upstream: ScriptedUpstream, *, state_dir: Path, home: Path) -> RunnerConfig:
     return RunnerConfig(
         state_dir=state_dir,
         environment=environment(home),
-        claude=claude_launch(upstream) if provider == "claude" else None,
-        codex=codex_launch(upstream) if provider == "codex" else None,
+        claude=claude_launch(upstream) if harness == pb.HARNESS_CLAUDE else None,
+        codex=codex_launch(upstream) if harness == pb.HARNESS_CODEX else None,
     )
 
 
@@ -59,13 +59,15 @@ def codex_launch(upstream: ScriptedUpstream) -> CodexLaunch:
     return CodexLaunch(binary=get_required_path(CODEX_BINARY), base_url=f"{upstream.origin}/v1", api_key=TOKEN)
 
 
-def runner_command(provider: str, upstream: ScriptedUpstream, *, state_dir: Path) -> list[str]:
+def runner_command(harness: pb.Harness.ValueType, upstream: ScriptedUpstream, *, state_dir: Path) -> list[str]:
     """The runner as its own process, configured like `config` is."""
     command = [str(get_required_path(RUNNER_BINARY)), "--state-dir", str(state_dir)]
-    if provider == "claude":
+    if harness == pb.HARNESS_CLAUDE:
         launch = claude_launch(upstream)
         command += ["--claude-binary", str(launch.binary), "--anthropic-base-url", launch.base_url]
-    else:
+    elif harness == pb.HARNESS_CODEX:
         codex = codex_launch(upstream)
         command += ["--codex-binary", str(codex.binary), "--openai-base-url", codex.base_url]
+    else:
+        raise ValueError(f"unsupported {harness=}")
     return command

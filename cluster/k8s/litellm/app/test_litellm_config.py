@@ -49,9 +49,12 @@ def test_terraform_claude_allowlist_matches_the_anthropic_model_list() -> None:
 def test_agentplane_staging_offers_all_native_subscription_models() -> None:
     config = yaml.safe_load(get_required_path("ducktape/cluster/k8s/agentplane-staging/app/config.yaml").read_text())
     tf_locals = _litellm_keys_locals()
-    assert config["models"] == {"codex": tf_locals["oai_lane_models"], "claude": tf_locals["claude_client_models"]}
+    assert config["models"] == {
+        "HARNESS_CLAUDE": tf_locals["claude_client_models"],
+        "HARNESS_CODEX": tf_locals["oai_lane_models"],
+    }
     for preset in config["thread_presets"].values():
-        assert preset["model"] in config["models"][preset["provider"]]
+        assert preset["model"] in config["models"][preset["harness"]]
 
 
 # main.tf's own comment: "Model names must match generated model_name entries in

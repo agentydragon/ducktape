@@ -69,7 +69,7 @@ from x.agentplane.app.inventory import (
 from x.agentplane.app.live import LiveIndex, router as live_router
 from x.agentplane.app.oidc import OIDCSettings, build_oauth, operator_session
 from x.agentplane.app.operator_sessions import OperatorSessionMiddleware
-from x.agentplane.app.presets import PresetCatalog, Provider, SandboxBinding, SandboxPresetView
+from x.agentplane.app.presets import Harness, PresetCatalog, SandboxBinding, SandboxPresetView
 from x.agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown
 from x.agentplane.app.trajectory import ThreadNotFoundError, ThreadView, TrajectoryStore
 from x.agentplane.runner.client import RunnerError
@@ -84,9 +84,9 @@ router = APIRouter(prefix="/sandboxes", tags=["sandboxes"])
 logger = logging.getLogger(__name__)
 
 
-# The models each harness may be opened with: the app's configuration, offered to the session form.
+# The models each agent harness may be opened with: the app's configuration, offered to the session form.
 # A thread carries its harness and model; a sandbox is a Pod and carries neither.
-ModelCatalog = dict[Provider, list[str]]
+ModelCatalog = dict[Harness, list[str]]
 
 
 def _models(request: Request) -> ModelCatalog:
@@ -593,11 +593,11 @@ def create_app(
 ) -> FastAPI:
     """The whole HTTP surface, guarded. Each of `oidc` and `reviewer` enables one way to authenticate,
     and an app given neither answers 401 to everything but /healthz."""
-    if set(catalog) != set(Provider) or not all(catalog.values()):
-        raise ValueError(f"the model catalog needs a non-empty list for every provider: {catalog=}")
+    if set(catalog) != set(Harness) or not all(catalog.values()):
+        raise ValueError(f"the model catalog needs a non-empty list for every harness: {catalog=}")
     configured_presets = presets or PresetCatalog()
     for name, preset in configured_presets.threads.items():
-        if preset.model not in catalog[preset.provider]:
+        if preset.model not in catalog[preset.harness]:
             raise ValueError(f"ThreadPreset {name!r} names model {preset.model!r} outside the configured catalog")
     app = FastAPI(title="Agentplane", version="0")
     app.state.inventory = inventory

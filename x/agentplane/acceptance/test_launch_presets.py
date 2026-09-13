@@ -10,7 +10,7 @@ import pytest_bazel
 from x.agentplane.acceptance.agent import Agent
 from x.agentplane.app.client import Client
 from x.agentplane.app.inventory import SandboxView
-from x.agentplane.app.presets import Provider, ThreadDefaults
+from x.agentplane.app.presets import Harness, ThreadDefaults
 from x.agentplane.runner import protocol_pb2 as pb
 
 PUBLIC_CODER = "public-coder"
@@ -25,7 +25,7 @@ async def test_public_coder_preset_launches_an_initialized_editable_codex_thread
 ) -> None:
     configured = {preset.name: preset for preset in await client.presets()}
     preset = configured[PUBLIC_CODER]
-    assert preset.thread_defaults.provider is Provider.CODEX
+    assert preset.thread_defaults.harness is Harness.CODEX
     assert GITHUB_PUBLIC in preset.policies
     assert preset.thread_defaults.model
 
@@ -44,11 +44,11 @@ async def test_public_coder_preset_launches_an_initialized_editable_codex_thread
     first_id = f"preset-{uuid4().hex[:8]}"
     first = await client.open_bound_session(view.name, first_id)
     assert (
-        first.attached.spec.provider,
+        first.attached.spec.harness,
         first.attached.spec.model,
         first.attached.spec.reasoning_effort,
         first.attached.spec.instructions,
-    ) == (pb.PROVIDER_CODEX, preset.thread_defaults.model, preset.thread_defaults.reasoning_effort, INSTRUCTIONS)
+    ) == (pb.HARNESS_CODEX, preset.thread_defaults.model, preset.thread_defaults.reasoning_effort, INSTRUCTIONS)
 
     agent = Agent(client, sandbox=view.name, session_id=first_id, sequence=first.last_sequence)
     turn = await agent.run(

@@ -32,10 +32,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from x.agentplane.acceptance.agent import Agent
-from x.agentplane.app.api import Provider
 from x.agentplane.app.client import Client
 from x.agentplane.app.decisions import Decision, Outcome
 from x.agentplane.app.inventory import SandboxView
+from x.agentplane.app.presets import Harness
 
 # Staging's seeded policy and the credential it substitutes
 # (cluster/k8s/agentplane-staging/egress/egresspolicy-github-public.yaml).
@@ -123,7 +123,7 @@ async def _decision_for(client: Client, sandbox: str, host: str, *, after: datet
 
 
 async def test_a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
-    client: Client, sandbox: Sandboxes, provider: Provider, model: str
+    client: Client, sandbox: Sandboxes, harness: Harness, model: str
 ) -> None:
     """The whole path in one turn: the agent asks what it may reach, uses the credential it is told
     about without ever holding it, is authenticated as the bot, and is refused everywhere the policy
@@ -131,8 +131,8 @@ async def test_a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
 
     Nothing here tells the agent the placeholder. If it comes back as the bot, discovery worked.
     """
-    view = await sandbox(f"accept-probe-{provider}", policies=[GITHUB_PUBLIC])
-    agent = await Agent.open(client, sandbox=view.name, provider=provider, model=model)
+    view = await sandbox(f"accept-probe-{harness}", policies=[GITHUB_PUBLIC])
+    agent = await Agent.open(client, sandbox=view.name, harness=harness, model=model)
     turn = await agent.run(PROBE)
     probe = turn.report(Probe)
 
@@ -155,7 +155,7 @@ async def test_a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
 
 
 async def test_the_model_call_itself_goes_through_the_proxy(
-    client: Client, sandbox: Sandboxes, provider: Provider, model: str
+    client: Client, sandbox: Sandboxes, harness: Harness, model: str
 ) -> None:
     """The runner holds only an inert placeholder, not the LiteLLM key, so a turn happens at all only
     if the proxy admits the model call and substitutes its sidecar-only workload token for the
@@ -172,8 +172,8 @@ async def test_the_model_call_itself_goes_through_the_proxy(
     `default_policies` is
     for.
     """
-    view = await sandbox(f"accept-model-{provider}")
-    agent = await Agent.open(client, sandbox=view.name, provider=provider, model=model)
+    view = await sandbox(f"accept-model-{harness}")
+    agent = await Agent.open(client, sandbox=view.name, harness=harness, model=model)
 
     turn = await agent.run("Reply with the single word: ok. Do not use any tool.")
 
@@ -187,11 +187,11 @@ async def test_the_model_call_itself_goes_through_the_proxy(
 
 
 async def test_a_policy_granted_after_the_sandbox_is_running_takes_effect(
-    client: Client, sandbox: Sandboxes, provider: Provider, model: str
+    client: Client, sandbox: Sandboxes, harness: Harness, model: str
 ) -> None:
     """Binding at runtime is a live grant, not a restart: one sandbox, refused and then admitted."""
-    view = await sandbox(f"accept-bind-{provider}")
-    agent = await Agent.open(client, sandbox=view.name, provider=provider, model=model)
+    view = await sandbox(f"accept-bind-{harness}")
+    agent = await Agent.open(client, sandbox=view.name, harness=harness, model=model)
     command = _verbatim(f"git ls-remote {PUBLIC_REPO} HEAD")
 
     await agent.run(command)

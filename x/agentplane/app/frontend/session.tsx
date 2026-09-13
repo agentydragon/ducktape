@@ -23,7 +23,7 @@ import IconPower from "@tabler/icons-react/dist/esm/icons/IconPower.mjs";
 import { Fragment, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { useSearchParams } from "react-router";
 
-import { fromJson, type JsonValue } from "@bufbuild/protobuf";
+import { fromJson, type JsonObject, type JsonValue } from "@bufbuild/protobuf";
 
 import {
   displayableError,
@@ -35,6 +35,7 @@ import {
   shutdownSession,
   models,
   switchModel,
+  type Harness,
   type ThreadView,
 } from "./client";
 import "./session.css";
@@ -54,7 +55,7 @@ import {
 import { FrameView } from "./frame";
 import { HighlightedText } from "./json_view";
 import { Markdown } from "./markdown";
-import { AttachedSchema, EventSchema, ItemKind, Provider, TurnStatus } from "./protocol_pb";
+import { AttachedSchema, EventSchema, ItemKind, TurnStatus } from "./protocol_pb";
 
 const KIND_LABELS: Partial<Record<ItemKind, string>> = {
   [ItemKind.ASSISTANT_TEXT]: "assistant",
@@ -395,11 +396,15 @@ export function SessionView({
     const source = new EventSource(eventsUrl(sandbox, sessionId));
     source.addEventListener("attached", (message: MessageEvent<string>) => {
       setStatus("attached");
-      const attached = fromJson(AttachedSchema, JSON.parse(message.data) as JsonValue);
-      const provider = attached.spec?.provider === Provider.CLAUDE ? "claude" : "codex";
+      const json = JSON.parse(message.data) as JsonObject;
+      const attached = fromJson(AttachedSchema, json);
+      const harness =
+        json.spec && typeof json.spec === "object" && !Array.isArray(json.spec)
+          ? (json.spec.harness as Harness | undefined)
+          : undefined;
       setModel(attached.spec?.model ?? null);
       models().then(
-        (catalog) => setModelOptions(catalog[provider]),
+        (catalog) => setModelOptions(harness ? (catalog[harness] ?? []) : []),
         (reason: unknown) => setError(displayableError(reason))
       );
       // The bridge stores the thread before it sends `attached`, so it is there to look up now.

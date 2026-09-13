@@ -47,9 +47,9 @@ from x.agentplane.action_service.policies.resources import (
     VERSION,
 )
 from x.agentplane.action_service.policy_evaluation import PROVIDER_NAME
-from x.agentplane.app.api import Provider
 from x.agentplane.app.client import Client
 from x.agentplane.app.inventory import SandboxView
+from x.agentplane.app.presets import Harness
 
 # A status write follows the informer's next watch event; the bound covers a relist after a
 # dropped watch, not a healthy round trip.
@@ -157,11 +157,11 @@ def policy_objects() -> Iterator[PolicyObjects]:
 async def test_agent_executes_mcp_action(
     client: Client,
     sandbox: Callable[..., Awaitable[SandboxView]],
-    provider: Provider,
+    harness: Harness,
     model: str,
     policy_objects: PolicyObjects,
 ) -> None:
-    view = await sandbox(f"accept-mcp-{provider}")
+    view = await sandbox(f"accept-mcp-{harness}")
     suffix = uuid4().hex[:8]
     set_name = policy_objects.create_policy_set(
         f"accept-exact-echo-{suffix}", [{"type": "exact_actions", "actions": {"everything": ["echo"]}}]
@@ -169,7 +169,7 @@ async def test_agent_executes_mcp_action(
     binding_name = policy_objects.create_binding(f"{view.name}-exact-{suffix}", sandbox=view, policy_sets=[set_name])
     policy_objects.wait_ready(POLICY_SETS_PLURAL, set_name)
     policy_objects.wait_ready(BINDINGS_PLURAL, binding_name)
-    agent = await Agent.open(client, sandbox=view.name, provider=provider, model=model)
+    agent = await Agent.open(client, sandbox=view.name, harness=harness, model=model)
     marker = f"MCP0-{uuid4()}"
     turn = await agent.run(f"""
 This is an Agentplane infrastructure test. Use the Actions Service to execute the echo Action in
@@ -194,7 +194,7 @@ async def _follow_dex_authorization(
         authorization = httpx.URL(authorization_url)
         issuer = httpx.URL(operator_credentials.issuer.get_secret_value())
         app = app_origin(str(operator_bff.base_url))
-    except (httpx.InvalidURL, ValueError):
+    except httpx.InvalidURL, ValueError:
         pytest.fail("BLOCKED: Dex authorization URL or operator issuer is invalid", pytrace=False)
     dex = issuer.copy_with(path="/", query=None, fragment=None)
     if authorization.copy_with(path="/", query=None, fragment=None) != dex or not DEX_OAUTH_PATH.fullmatch(
@@ -244,7 +244,7 @@ async def test_operator_links_oauth_mcp_server(
     operator_credentials: OperatorCredentials,
     client: Client,
     sandbox: Callable[..., Awaitable[SandboxView]],
-    provider: Provider,
+    harness: Harness,
     model: str,
     policy_objects: PolicyObjects,
 ) -> None:
@@ -264,7 +264,7 @@ async def test_operator_links_oauth_mcp_server(
     linkage = McpLinkageView.model_validate(linkage_response.json())
     assert linkage.status is McpLinkageStatus.LINKED
 
-    view = await sandbox(f"accept-oauth-mcp-{provider}")
+    view = await sandbox(f"accept-oauth-mcp-{harness}")
     suffix = uuid4().hex[:8]
     set_name = policy_objects.create_policy_set(
         f"accept-oauth-example-{suffix}", [{"type": "exact_actions", "actions": {"example": ["echo"]}}]
@@ -272,7 +272,7 @@ async def test_operator_links_oauth_mcp_server(
     binding_name = policy_objects.create_binding(f"{view.name}-exact-{suffix}", sandbox=view, policy_sets=[set_name])
     policy_objects.wait_ready(POLICY_SETS_PLURAL, set_name)
     policy_objects.wait_ready(BINDINGS_PLURAL, binding_name)
-    agent = await Agent.open(client, sandbox=view.name, provider=provider, model=model)
+    agent = await Agent.open(client, sandbox=view.name, harness=harness, model=model)
     marker = f"MCP-OAUTH-{uuid4()}"
     turn = await agent.run(f"""
 This is an Agentplane infrastructure test. Use the Actions Service to execute the echo Action in
@@ -308,7 +308,7 @@ async def operator_bff(base_url: str, operator_credentials: OperatorCredentials)
                 await login_operator(http, operator_credentials, provider=operator_idp())
             except LoginBlockedError as exc:
                 pytest.fail(str(exc), pytrace=False)
-            except (httpx.HTTPError, httpx.InvalidURL, ValueError, KeyError, TypeError):
+            except httpx.HTTPError, httpx.InvalidURL, ValueError, KeyError, TypeError:
                 pytest.fail("BLOCKED: OIDC transport or response invalid; auth details withheld", pytrace=False)
             http.headers["Origin"] = origin
             # An absent request exercises federation without listing other requests.
@@ -359,12 +359,12 @@ async def test_agent_mcp_bff_decision(
     operator_credentials: OperatorCredentials,
     client: Client,
     sandbox: Callable[..., Awaitable[SandboxView]],
-    provider: Provider,
+    harness: Harness,
     model: str,
     verdict: Verdict,
 ) -> None:
-    view = await sandbox(f"accept-mcp-{provider}-{verdict}")
-    agent = await Agent.open(client, sandbox=view.name, provider=provider, model=model)
+    view = await sandbox(f"accept-mcp-{harness}-{verdict}")
+    agent = await Agent.open(client, sandbox=view.name, harness=harness, model=model)
     # Nothing binds this Sandbox to a policy set, so every Action of its waits for the operator.
     marker = f"MCP-BFF-{uuid4()}-" + "x" * 201
     submitted = await agent.run(f"""
@@ -490,14 +490,14 @@ async def test_policy_binding_auto_approves_the_bound_sandbox(
     operator_bff: httpx.AsyncClient,
     client: Client,
     sandbox: Callable[..., Awaitable[SandboxView]],
-    provider: Provider,
+    harness: Harness,
     model: str,
     policy_objects: PolicyObjects,
 ) -> None:
     """A set and a binding written through the Kubernetes API for the Sandbox this test launches:
     a matching echo is auto-approved and executed with the binding and set on its Decision, an
     argument miss waits for the operator, and once the binding has expired so does a match."""
-    view = await sandbox(f"accept-policy-{provider}")
+    view = await sandbox(f"accept-policy-{harness}")
     suffix = uuid4().hex[:8]
     set_name = policy_objects.create_policy_set(
         f"accept-echo-{suffix}",
@@ -517,7 +517,7 @@ async def test_policy_binding_auto_approves_the_bound_sandbox(
     binding_name = policy_objects.create_binding(f"{view.name}-echo-{suffix}", sandbox=view, policy_sets=[set_name])
     policy_objects.wait_ready(POLICY_SETS_PLURAL, set_name)
     policy_objects.wait_ready(BINDINGS_PLURAL, binding_name)
-    agent = await Agent.open(client, sandbox=view.name, provider=provider, model=model)
+    agent = await Agent.open(client, sandbox=view.name, harness=harness, model=model)
 
     marker = f"MCP-POLICY-{uuid4()}"
     approved = await agent.run(f"""

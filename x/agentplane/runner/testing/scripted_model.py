@@ -1,7 +1,7 @@
 """A loopback model in the vocabulary the runner tests script against.
 
 A test says what the model does (`Text`, `Reasoning`, `ShellCall`) and reads what the harness sent
-(`ModelRequest`); the provider subclass owns the wire dialect. That split is what lets one test body
+(`ModelRequest`); the harness subclass owns the wire dialect. That split is what lets one test body
 run against both harnesses.
 """
 
@@ -41,10 +41,10 @@ class ToolOutput:
 
 @dataclass(frozen=True)
 class ModelRequest:
-    """What the harness sent upstream, as provider-neutral markers."""
+    """What the harness sent upstream, as native-protocol-neutral markers."""
 
     raw: UpstreamRequest
-    # The exact provider-model route the harness sent to the loopback server.
+    # The exact model route the harness sent to the loopback server.
     model: str
     # The instruction text the model sees outside the conversation: the harness's system prompt,
     # and any developer preamble it sends alongside.

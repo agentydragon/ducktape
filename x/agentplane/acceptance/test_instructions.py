@@ -23,9 +23,9 @@ from collections.abc import Awaitable, Callable
 import pytest_bazel
 
 from x.agentplane.acceptance.agent import Agent
-from x.agentplane.app.api import Provider
 from x.agentplane.app.client import Client
 from x.agentplane.app.inventory import SandboxView
+from x.agentplane.app.presets import Harness
 
 Sandboxes = Callable[..., Awaitable[SandboxView]]
 
@@ -45,7 +45,7 @@ PROMPT = "In one short sentence, say what a checksum is. Do not use any tool."
 
 
 async def test_the_model_obeys_the_standing_instruction_its_session_was_opened_with(
-    client: Client, sandbox: Sandboxes, provider: Provider, model: str
+    client: Client, sandbox: Sandboxes, harness: Harness, model: str
 ) -> None:
     """The instruction reaches the model, and the marker is the model's own doing rather than its
     habit: two sessions on one sandbox, the same prompt, differing only in whether the session was
@@ -53,16 +53,16 @@ async def test_the_model_obeys_the_standing_instruction_its_session_was_opened_w
     model, same deployment -- and neither turn uses a tool, so nothing the first leaves behind can
     reach the second.
     """
-    view = await sandbox(f"accept-instructions-{provider}")
+    view = await sandbox(f"accept-instructions-{harness}")
 
-    instructed = await Agent.open(client, sandbox=view.name, provider=provider, model=model, instructions=INSTRUCTIONS)
+    instructed = await Agent.open(client, sandbox=view.name, harness=harness, model=model, instructions=INSTRUCTIONS)
     obeyed = await instructed.run(PROMPT)
     assert MARKER in obeyed.answer, (
         f"the reply carries no {MARKER}, so the session's standing instruction did not reach the "
         f"model.\n[instruction] {INSTRUCTIONS}\n[prompt] {PROMPT}\n{obeyed.transcript}"
     )
 
-    plain = await Agent.open(client, sandbox=view.name, provider=provider, model=model)
+    plain = await Agent.open(client, sandbox=view.name, harness=harness, model=model)
     uninstructed = await plain.run(PROMPT)
     assert MARKER not in uninstructed.transcript, (
         f"a session opened with no instructions produced {MARKER} anyway, so the instructed half "

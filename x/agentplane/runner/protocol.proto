@@ -8,9 +8,10 @@
 // sequence that survives reconnects and runner restarts, so a client that resumes from the last
 // sequence it processed sees neither a gap nor a duplicate.
 //
-// The vocabulary names a provider only in SessionSpec.provider. The harness's own frames are still
+// The vocabulary names the selected agent harness only in SessionSpec.harness. The harness's own frames are still
 // delivered verbatim as Native events, in both directions, and every derived event lists the Native
-// sequences it came from, so provider detail is one lookup away without leaking into the contract.
+// sequences it came from, so harness-native detail is one lookup away without leaking into the
+// contract.
 //
 // Inputs. An Input is reported as InputSubmitted when the runner takes it, then InputAccepted once
 // the harness acknowledges native admission, or InputRejected. Claude currently acknowledges
@@ -81,14 +82,14 @@ message InitializationEvent {
   }
 }
 
-enum Provider {
-  PROVIDER_UNSPECIFIED = 0;
-  PROVIDER_CLAUDE = 1;
-  PROVIDER_CODEX = 2;
+enum Harness {
+  HARNESS_UNSPECIFIED = 0;
+  HARNESS_CLAUDE = 1;
+  HARNESS_CODEX = 2;
 }
 
 message SessionSpec {
-  Provider provider = 1;
+  Harness harness = 1;
   string cwd = 2;
   string model = 3;
   string reasoning_effort = 4;
@@ -155,7 +156,7 @@ message Attached {
   SessionSpec spec = 2;
   // The last sequence in the session log at attach time; greater sequences are live.
   uint64 last_sequence = 3;
-  HarnessState harness = 4;
+  HarnessState harness_state = 4;
   // Empty when no turn is active.
   string active_turn_id = 5;
 }
@@ -166,7 +167,7 @@ message SessionSummary {
   string session_id = 1;
   SessionSpec spec = 2;
   uint64 last_sequence = 3;
-  HarnessState harness = 4;
+  HarnessState harness_state = 4;
   // Empty when no turn is active.
   string active_turn_id = 5;
 }
@@ -224,7 +225,7 @@ message InputSubmitted {
   string text = 2;
 }
 
-// The harness acknowledged its provider-native admission boundary, as part of turn_id. For Claude
+// The harness acknowledged its native admission boundary, as part of turn_id. For Claude
 // this currently means command-queue admission, not transcript admission or durable persistence.
 message InputAccepted {
   string input_id = 1;

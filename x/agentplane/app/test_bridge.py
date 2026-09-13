@@ -20,7 +20,7 @@ from google.protobuf.json_format import MessageToDict
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from x.agentplane.app.action_policy import ActionPolicyInventory
-from x.agentplane.app.api import Provider, create_app
+from x.agentplane.app.api import create_app
 from x.agentplane.app.bridge import RunnerBridge
 from x.agentplane.app.changes import Changes
 from x.agentplane.app.conftest import AGENT_AUTH
@@ -29,6 +29,7 @@ from x.agentplane.app.egress import EgressInventory
 from x.agentplane.app.identity import TokenReviewer
 from x.agentplane.app.inventory import SandboxInventory
 from x.agentplane.app.live import LiveIndex
+from x.agentplane.app.presets import Harness
 from x.agentplane.app.trajectory import TrajectoryStore
 from x.agentplane.runner import protocol_pb2 as pb
 from x.agentplane.runner.client import RunnerClient
@@ -111,7 +112,7 @@ async def app_url(
                 inventory,
                 bridge,
                 store,
-                {provider: ["bridge-model"] for provider in Provider},
+                {harness: ["bridge-model"] for harness in Harness},
                 egress,
                 decisions,
                 live_index,
@@ -145,7 +146,7 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
         opened = await http.post(SESSIONS, json={"session_id": SESSION, "spec": MessageToDict(spec)})
         assert opened.status_code == 201, opened.text
-        assert opened.json()["harness"] == "HARNESS_STATE_RUNNING"
+        assert opened.json()["harnessState"] == "HARNESS_STATE_RUNNING"
         assert [row["sessionId"] for row in (await http.get(SESSIONS)).json()] == [SESSION]
 
         async with http.stream("GET", EVENTS) as first_tab:
@@ -198,7 +199,7 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
         stopped = await http.post(f"{SESSIONS}/{SESSION}/shutdown")
         assert stopped.status_code == 202, stopped.text
         (summary,) = (await http.get(SESSIONS)).json()
-        assert summary["harness"] == "HARNESS_STATE_STOPPED"
+        assert summary["harnessState"] == "HARNESS_STATE_STOPPED"
 
         # The store kept the whole trajectory, readable without the runner: both turns, the raw
         # frames, and the exit the shutdown caused.
@@ -255,7 +256,7 @@ async def test_the_bridge_reports_what_the_runner_refuses(app_url: str) -> None:
         assert unknown.status_code == 409
         assert "does not exist" in unknown.json()["detail"]
         malformed = await http.post(
-            SESSIONS, json={"session_id": "s", "spec": {"provider": "PROVIDER_CLAUDE", "nope": 1}}
+            SESSIONS, json={"session_id": "s", "spec": {"harness": "HARNESS_CLAUDE", "nope": 1}}
         )
         assert malformed.status_code == 422
 

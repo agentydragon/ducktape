@@ -18,7 +18,7 @@ _SESSION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
 class SessionRecord(BaseModel):
-    provider: str = Field(description="Provider enum name, e.g. PROVIDER_CLAUDE")
+    harness: str = Field(description="Harness enum name, e.g. HARNESS_CLAUDE")
     cwd: str
     model: str
     reasoning_effort: str
@@ -30,7 +30,7 @@ class SessionRecord(BaseModel):
     @classmethod
     def from_spec(cls, spec: pb.SessionSpec) -> SessionRecord:
         return cls(
-            provider=pb.Provider.Name(spec.provider),
+            harness=pb.Harness.Name(spec.harness),
             cwd=spec.cwd,
             model=spec.model,
             reasoning_effort=spec.reasoning_effort,
@@ -39,7 +39,7 @@ class SessionRecord(BaseModel):
 
     def spec(self) -> pb.SessionSpec:
         return pb.SessionSpec(
-            provider=pb.Provider.ValueType(pb.Provider.Value(self.provider)),
+            harness=pb.Harness.ValueType(pb.Harness.Value(self.harness)),
             cwd=self.cwd,
             model=self.model,
             reasoning_effort=self.reasoning_effort,

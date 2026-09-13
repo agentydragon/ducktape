@@ -30,7 +30,7 @@ import {
   EventSchema,
   HarnessState,
   ItemKind,
-  Provider,
+  Harness,
   SessionSpecSchema,
   SessionSummarySchema,
   TurnStatus,
@@ -348,14 +348,14 @@ function egressDecisions(): Decision[] | Response {
 }
 
 const SPEC: SessionSpec = create(SessionSpecSchema, {
-  provider: Provider.CLAUDE,
+  harness: Harness.CLAUDE,
   cwd: "/state/work",
   reasoningEffort: "low",
 });
 
 const SESSIONS: SessionSummary[] = [
-  create(SessionSummarySchema, { sessionId: "s-1", spec: SPEC, lastSequence: 14n, harness: HarnessState.RUNNING }),
-  create(SessionSummarySchema, { sessionId: "s-0", spec: SPEC, lastSequence: 31n, harness: HarnessState.STOPPED }),
+  create(SessionSummarySchema, { sessionId: "s-1", spec: SPEC, lastSequence: 14n, harnessState: HarnessState.RUNNING }),
+  create(SessionSummarySchema, { sessionId: "s-0", spec: SPEC, lastSequence: 31n, harnessState: HarnessState.STOPPED }),
 ];
 
 /** The store's copy of the sessions: s-1 named, s-0 not, so both renderings are on the page. */
@@ -364,7 +364,7 @@ const THREADS: ThreadView[] = [
     id: "5f1c4a2e-0000-4000-8000-000000000001",
     sandbox: "demo-a1b2",
     session_id: "s-1",
-    provider: "PROVIDER_CLAUDE",
+    harness: "HARNESS_CLAUDE",
     model: "harness-claude-model",
     cwd: "/state/work",
     created_at: ago(HOUR),
@@ -372,13 +372,13 @@ const THREADS: ThreadView[] = [
     archived: false,
     last_sequence: 14,
     last_event_at: ago(60_000),
-    harness: "HARNESS_STATE_RUNNING",
+    harness_state: "HARNESS_STATE_RUNNING",
   },
   {
     id: "5f1c4a2e-0000-4000-8000-000000000000",
     sandbox: "demo-a1b2",
     session_id: "s-0",
-    provider: "PROVIDER_CLAUDE",
+    harness: "HARNESS_CLAUDE",
     model: "harness-claude-model",
     cwd: "/state/work",
     created_at: ago(2 * HOUR),
@@ -386,13 +386,13 @@ const THREADS: ThreadView[] = [
     archived: false,
     last_sequence: 31,
     last_event_at: ago(90 * 60_000),
-    harness: "HARNESS_STATE_STOPPED",
+    harness_state: "HARNESS_STATE_STOPPED",
   },
   {
     id: "5f1c4a2e-0000-4000-8000-000000000002",
     sandbox: "demo-a1b2",
     session_id: "s-2",
-    provider: "PROVIDER_CLAUDE",
+    harness: "HARNESS_CLAUDE",
     model: "harness-claude-model",
     cwd: "/state/work",
     created_at: ago(30 * 60_000),
@@ -400,7 +400,7 @@ const THREADS: ThreadView[] = [
     archived: false,
     last_sequence: 23,
     last_event_at: ago(10_000),
-    harness: "HARNESS_STATE_RUNNING",
+    harness_state: "HARNESS_STATE_RUNNING",
   },
 ];
 
@@ -415,7 +415,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
     id: "5f1c4a2e-0000-4000-8000-000000000003",
     sandbox: "codex-c3d4",
     session_id: "s-3",
-    provider: "PROVIDER_CODEX",
+    harness: "HARNESS_CODEX",
     model: "harness-codex-model",
     cwd: "/state/work",
     created_at: ago(5 * 60_000),
@@ -423,13 +423,13 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
     archived: false,
     last_sequence: 2,
     last_event_at: ago(5 * 60_000),
-    harness: "HARNESS_STATE_STOPPED",
+    harness_state: "HARNESS_STATE_STOPPED",
   },
   {
     id: "5f1c4a2e-0000-4000-8000-000000000004",
     sandbox: "old-e5f6",
     session_id: "s-4",
-    provider: "PROVIDER_CLAUDE",
+    harness: "HARNESS_CLAUDE",
     model: "harness-claude-model",
     cwd: "/state/work",
     created_at: ago(47 * HOUR),
@@ -437,13 +437,13 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
     archived: false,
     last_sequence: 9,
     last_event_at: ago(46 * HOUR),
-    harness: "HARNESS_STATE_STOPPED",
+    harness_state: "HARNESS_STATE_STOPPED",
   },
   {
     id: "5f1c4a2e-0000-4000-8000-000000000005",
     sandbox: "old-debug-3f9c",
     session_id: "s-5",
-    provider: "PROVIDER_CLAUDE",
+    harness: "HARNESS_CLAUDE",
     model: "harness-claude-model",
     cwd: "/state/work",
     created_at: ago(72 * HOUR),
@@ -451,13 +451,13 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
     archived: false,
     last_sequence: 4,
     last_event_at: ago(70 * HOUR),
-    harness: "HARNESS_STATE_STOPPED",
+    harness_state: "HARNESS_STATE_STOPPED",
   },
   {
     id: "5f1c4a2e-0000-4000-8000-000000000006",
     sandbox: "demo-a1b2",
     session_id: "s-6",
-    provider: "PROVIDER_CLAUDE",
+    harness: "HARNESS_CLAUDE",
     model: "harness-claude-model",
     cwd: "/state/work",
     created_at: ago(96 * HOUR),
@@ -465,7 +465,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
     archived: true,
     last_sequence: 3,
     last_event_at: ago(95 * HOUR),
-    harness: "HARNESS_STATE_STOPPED",
+    harness_state: "HARNESS_STATE_STOPPED",
   },
 ];
 
@@ -613,14 +613,14 @@ const ATTACHED: Attached = create(AttachedSchema, {
   sessionId: "s-1",
   spec: SPEC,
   lastSequence: 14n,
-  harness: HarnessState.RUNNING,
+  harnessState: HarnessState.RUNNING,
 });
 
 const ATTACHED_STATES: Attached = create(AttachedSchema, {
   sessionId: "s-2",
   spec: SPEC,
   lastSequence: 23n,
-  harness: HarnessState.RUNNING,
+  harnessState: HarnessState.RUNNING,
 });
 
 /** Real reasoning is several sentences, so the folded block is worth opening. */
@@ -783,7 +783,7 @@ const EVENTS_STATES: Event[] = [
 // Only what a page still asks for: the sandboxes, their bindings and their threads arrive on the
 // live streams above.
 routes.push(
-  ["GET", /^\/models$/, () => ({ claude: ["harness-claude-model"], codex: ["harness-codex-model"] })],
+  ["GET", /^\/models$/, () => ({ HARNESS_CLAUDE: ["harness-claude-model"], HARNESS_CODEX: ["harness-codex-model"] })],
   [
     "GET",
     /^\/presets$/,
@@ -795,7 +795,7 @@ routes.push(
         policies: ["github-public"],
         action_policy_sets: ["public-coder"],
         thread_defaults: {
-          provider: "codex",
+          harness: "HARNESS_CODEX",
           model: "harness-codex-model",
           cwd: "/state/workspaces/{session_id}",
           reasoning_effort: "medium",
