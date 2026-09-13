@@ -5,11 +5,13 @@ import asyncio
 import logging
 import uuid
 from contextlib import AsyncExitStack
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import aiodocker
 import anyio
-from agent_framework import MCPStdioTool
+from agent_framework import BaseChatClient, MCPStdioTool
 from pydantic import BaseModel
 
 from skills.eval_infra.af_chat_client import build_model_client
@@ -34,40 +36,47 @@ class RunRecord(BaseModel):
     usage: TokenUsage
 
 
-async def run_one(
-    function_name: str,
-    arm: str,
-    run_idx: int,
-    exec_tool: MCPStdioTool,
-    skill_md: str,
-    scoring_container,
-    model_client,
-    sem: asyncio.Semaphore,
-    model: str,
-    api: str,
-    turn_limit: int,
-    output_dir: Path,
-) -> RunRecord | None:
-    label = f"{function_name}/{arm}[{run_idx}]"
+@dataclass(frozen=True)
+class EvalRunSpec:
+    function_name: str
+    arm: str
+    run_idx: int
+    model: str
+    api: str
+    turn_limit: int
+    output_dir: Path
+
+
+@dataclass(frozen=True)
+class EvalRuntime:
+    exec_tool: MCPStdioTool
+    skill_md: str
+    scoring_container: aiodocker.docker.DockerContainer
+    model_client: BaseChatClient[Any]
+    semaphore: asyncio.Semaphore
+
+
+async def run_one(spec: EvalRunSpec, runtime: EvalRuntime) -> RunRecord | None:
+    label = f"{spec.function_name}/{spec.arm}[{spec.run_idx}]"
     print(f"  START {label}", flush=True)
-    async with sem:
+    async with runtime.semaphore:
         try:
             summary = await run_game(
-                function_name=function_name,
+                function_name=spec.function_name,
                 hint=False,
-                turn_limit=turn_limit,
-                model=model,
-                api=api,
-                output_dir=output_dir,
-                exec_tool=exec_tool,
-                scoring_container=scoring_container,
-                model_client=model_client,
-                skill_md=skill_md,
+                turn_limit=spec.turn_limit,
+                model=spec.model,
+                api=spec.api,
+                output_dir=spec.output_dir,
+                exec_tool=runtime.exec_tool,
+                scoring_container=runtime.scoring_container,
+                model_client=runtime.model_client,
+                skill_md=runtime.skill_md,
             )
             record = RunRecord(
-                function=function_name,
-                arm=arm,
-                run_idx=run_idx,
+                function=spec.function_name,
+                arm=spec.arm,
+                run_idx=spec.run_idx,
                 model=summary.model,
                 turns=summary.turns,
                 result=summary.result,
@@ -109,20 +118,28 @@ async def _async_main(args: argparse.Namespace) -> None:
             config={"Image": "python:3.14-slim", "Cmd": ["sleep", "7200"]}, name=container_name
         )
         try:
+            runtimes = {
+                arm: EvalRuntime(
+                    exec_tool=arms[arm][0],
+                    skill_md=arms[arm][1],
+                    scoring_container=scoring_container,
+                    model_client=model_client,
+                    semaphore=sem,
+                )
+                for arm in ("on", "off")
+            }
             tasks = [
                 run_one(
-                    fn_name,
-                    arm,
-                    run_idx,
-                    arms[arm][0],
-                    arms[arm][1],
-                    scoring_container,
-                    model_client,
-                    sem,
-                    model=args.model,
-                    api=args.api,
-                    turn_limit=args.turn_limit,
-                    output_dir=output_dir / fn_name / arm / f"run_{run_idx}",
+                    EvalRunSpec(
+                        function_name=fn_name,
+                        arm=arm,
+                        run_idx=run_idx,
+                        model=args.model,
+                        api=args.api,
+                        turn_limit=args.turn_limit,
+                        output_dir=output_dir / fn_name / arm / f"run_{run_idx}",
+                    ),
+                    runtimes[arm],
                 )
                 for fn_name in FUNCTIONS_LIST
                 for arm in ("on", "off")
