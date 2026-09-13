@@ -32,8 +32,10 @@ package name or programming language.
 3. **Non-trivial migration PRs** (`deps/<package-slug>`): one update or one
    tightly related migration that changes source APIs, generated interfaces,
    runtime behavior, exact dependency constraints, or toolchain contracts.
-   Risky major bumps stay here; a major version number alone is not sufficient
-   reason to put an otherwise proven version-only update here.
+   Risky-looking bumps stay here even when their source probe is green. A major
+   version number alone is not sufficient reason to isolate an otherwise
+   proven, metadata-only update, but the changelog signals below are sufficient
+   reason to keep a bump out of a safe aggregate.
 
 You are **NOT done** until:
 
@@ -203,6 +205,45 @@ should know:
 - **Behavioral changes** (stricter validation, changed defaults)
 - **New lint rules/checks** from linter bumps
 
+Do this changelog review **before deciding whether a probe may join a grouped
+PR**, not only after CI succeeds. A green build proves source compatibility for
+the tested targets; it does not prove that a production upgrade preserves
+storage, CRDs, rollout ordering, authentication, defaults, or other deployed
+behavior.
+
+### Changelog risk gate for batching
+
+Classify each update as `safe-batch`, `coordinated`, or `migration` before
+admitting it to a grouped PR. Treat any of these as a migration signal unless
+the changelog explicitly demonstrates that it is not applicable to this
+deployment:
+
+- a chart or operator major, especially a jump across multiple chart majors;
+- CRD, API-version, Kubernetes-minimum, operator, admission, or generated-schema
+  changes;
+- replacement of bundled subcharts, databases, queues, object stores, or other
+  stateful components;
+- changed StatefulSet/PVC/resource identities, data-copy/cutover instructions,
+  backup/rollback steps, or a required install/upgrade ordering;
+- removed or renamed values, changed security/authentication behavior, changed
+  image variants, or materially changed defaults;
+- a runtime/toolchain/provider/ABI compatibility contract or a migration guide
+  with application changes.
+
+These updates must remain in their own migration PR (or a tightly coupled
+compatibility PR), even if the exact version-only probe passes CI. The PR body
+must name the upstream guide, the applicable risk signal, the affected local
+configuration or deployment, and the validation/rollout work still required.
+For example, do not group a kube-prometheus-stack chart jump that crosses
+Prometheus Operator CRD and ServiceMonitor changes, or a Langfuse chart jump
+that replaces bundled stateful stores and documents a sibling-release data
+copy, with ordinary chart-reference bumps.
+
+Only classify an update as `safe-batch` when the changelog review found no such
+signal and the applied diff is limited to version pins, lockfiles, or generated
+metadata with no source/API/runtime/deployment change. Record the classification
+and the changelog URL or release range in the source probe and aggregate PR.
+
 The reviewer should understand the semantic content of every update without
 reading changelogs themselves. Put highlights in the PR description "Changelog
 Highlights" section and in commit messages.
@@ -260,7 +301,9 @@ every successful probe as a permanent one-package PR. Consolidate continuously:
    changes onto one branch; this preserves failure attribution.
 2. **Admit** an update to a safe group only after its exact PR head has green
    required checks on RBE, with no source/API migration and no unresolved
-   resolver or generated-file drift. A URL-less legacy Renovate status is not a
+   resolver or generated-file drift. The changelog risk gate must already have
+   classified it as `safe-batch`; CI green alone cannot override a migration
+   signal. A URL-less legacy Renovate status is not a
    substitute for required CI, but it also does not block admission when the
    actual required checks are green.
 3. **Group** all admitted updates that share a compatible boundary. Ordinary
@@ -268,10 +311,12 @@ every successful probe as a permanent one-package PR. Consolidate continuously:
    canonical example. Patch/minor updates in other ecosystems can join the same
    group when they have the same version-only evidence.
 4. **Separate** updates that touch source code, alter public/runtime behavior,
-   require a migration guide, change exact resolver constraints, or have a
-   cross-package/provider/ABI dependency. A major bump with no observed impact
-   may join a safe group after proof; a major bump with a real API or behavior
-   change stays in its migration PR.
+   require a migration guide, change exact resolver constraints, have a
+   cross-package/provider/ABI dependency, or trip any changelog risk-gate
+   signal. A major bump with no observed impact may join a safe group only when
+   the changelog explicitly clears the risk gate and the diff remains
+   metadata-only. A major bump with a real API, behavior, schema, storage,
+   rollout, or deployment change stays in its migration PR.
 5. **Validate the aggregate** from current `devel` with the normal full CI. The
    aggregate is the review artifact; the probe PRs are evidence and may be
    closed as superseded. If aggregate CI fails, bisect by removing the admitted
@@ -460,6 +505,9 @@ All non-trivial PRs: [list with PR numbers]
 Before declaring done, verify ALL of the following:
 
 - [ ] Every version change has changelog research documented in the PR
+- [ ] Every version change was risk-classified from its changelog before
+      grouping; chart/operator/storage/CRD/default/auth/runtime migration signals
+      are not hidden inside a safe aggregate merely because CI is green
 - [ ] Every "blocked" update has specific evidence: BuildBuddy invocation link,
       exact error text with `file:line`, or changelog citation with API
       signature diff
@@ -472,7 +520,7 @@ Before declaring done, verify ALL of the following:
 - [ ] Every update in a grouped PR has exact source-probe/head evidence recorded
       in that PR
 - [ ] Grouped PRs contain only admitted compatible updates; red, pending, or
-      semantically coupled work remains separate
+      semantically coupled or changelog-risky work remains separate
 - [ ] Failed aggregate CI was bisected by removing admitted update groups, not
       hidden by weakening checks
 - [ ] `bazel test //...` passes on RBE for every non-trivial PR (BuildBuddy link in PR)
