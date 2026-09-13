@@ -42,7 +42,7 @@ def extract_tool_schemas(servers: dict[MCPMountPrefix, FastMCP]) -> dict[tuple[M
 
             try:
                 sig = inspect.signature(tool.fn)
-            except ValueError, TypeError:
+            except (ValueError, TypeError):
                 continue
 
             return_type = sig.return_annotation
@@ -74,7 +74,7 @@ def extract_tool_input_schemas(
 
             try:
                 sig = inspect.signature(tool.fn)
-            except ValueError, TypeError:
+            except (ValueError, TypeError):
                 continue
 
             params = list(sig.parameters.values())

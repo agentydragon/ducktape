@@ -80,7 +80,7 @@ async def _pipe(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> N
         while data := await reader.read(_PIPE_CHUNK):
             writer.write(data)
             await writer.drain()
-    except ConnectionError, asyncio.IncompleteReadError:
+    except (ConnectionError, asyncio.IncompleteReadError):
         pass
     finally:
         if writer.can_write_eof() and not writer.is_closing():

@@ -156,7 +156,7 @@ def _basic_payload(value: str) -> tuple[str, str] | None:
         return None
     try:
         payload = base64.b64decode(encoded, validate=True).decode()
-    except binascii.Error, UnicodeDecodeError, ValueError:
+    except (binascii.Error, UnicodeDecodeError, ValueError):
         return None
     return scheme, payload
 
