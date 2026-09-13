@@ -44,7 +44,7 @@ def test_queued_inputs_coalesce_into_one_native_user_message(claude: ClaudeHarne
         # writes before a turn begins are drained one-at-a-time by the input reader.
         initial_request = MessagesRequest.parse(initial_raw)
         assert initial_request.last_message.role == "user"
-        assert initial_request.last_message.content == "Finish this first turn before taking later messages."
+        assert initial_request.texts("user")[-1] == "Finish this first turn before taking later messages."
         upstream.respond(initial_raw, Stream(initial_stream.packets[: content_started + 1]).held())
         scenarios.await_active(process)
         first = driver.user_frame(COALESCED_FIRST)
@@ -68,7 +68,7 @@ def test_queued_inputs_coalesce_into_one_native_user_message(claude: ClaudeHarne
         request = MessagesRequest.parse(raw)
         coalesced = f"{COALESCED_FIRST}\n{COALESCED_SECOND}\n{COALESCED_THIRD}"
         assert request.last_message.role == "user"
-        assert request.last_message.content == coalesced
+        assert request.texts("user")[-1] == coalesced
         assert [text for text in request.texts("user") if "COALESCED_" in text] == [coalesced]
         assert request.texts("assistant") == ["INITIAL_TURN_DONE"]
         upstream.respond(raw, sse.message_stream([sse.Text("COALESCED_OK")], model=MODEL))
@@ -149,7 +149,7 @@ def test_interrupt_cancels_each_queued_input_before_native_message(
         recovery_raw = upstream.next_request()
         request = MessagesRequest.parse(recovery_raw)
         assert request.last_message.role == "user"
-        assert request.last_message.content == INTERRUPT_RECOVERY
+        assert request.texts("user")[-1] == INTERRUPT_RECOVERY
         assert all(
             marker not in text
             for marker in (INTERRUPTED_QUEUE_FIRST, INTERRUPTED_QUEUE_SECOND)
