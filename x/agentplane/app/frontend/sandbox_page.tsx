@@ -33,7 +33,6 @@ import {
 import { ActionPolicySection } from "./action_policy";
 import { EgressSection } from "./egress";
 import { JsonView } from "./json_view";
-import { effectiveThreadDefaults } from "./launch_presets";
 import { ConfirmDelete, DeleteButton, SuspendResume } from "./lifecycle";
 import { liveSandboxUrl, LiveStatus, useLive, type SandboxSnapshot } from "./live";
 import { HarnessState, Provider, SessionSpecSchema, type SessionSummary } from "./protocol_pb";
@@ -151,7 +150,7 @@ export function SandboxPage({
   const [creatingSession, setCreatingSession] = useState(false);
   const [effort, setEffort] = useState("low");
   const [instructions, setInstructions] = useState("");
-  const [presetLabel, setPresetLabel] = useState<string | null>(null);
+  const [defaultsLabel, setDefaultsLabel] = useState<string | null>(null);
   // The app's catalog of what this sandbox's harness may run; the thread carries the choice.
   const [harness, setHarness] = useState<Harness>("claude");
   const [models, setModels] = useState<string[]>([]);
@@ -181,7 +180,7 @@ export function SandboxPage({
   const state = sandbox?.state;
   const podIp = sandbox?.pod?.ip;
   const openedSessions = threads.length;
-  const presetBindingKey = JSON.stringify(sandbox?.preset_binding ?? null);
+  const bindingKey = JSON.stringify(sandbox?.binding ?? null);
   useEffect(() => {
     let cancelled = false;
     let retry: number | undefined;
@@ -227,27 +226,19 @@ export function SandboxPage({
   }, [harness]);
 
   useEffect(() => {
-    const binding = sandbox?.preset_binding;
+    const binding = sandbox?.binding;
     if (!binding) {
-      setPresetLabel(null);
+      setDefaultsLabel(null);
       return;
     }
-    void (async () => {
-      const { data, error: failure } = await api.GET("/presets");
-      if (failure) {
-        setError(displayableError(failure));
-        return;
-      }
-      const preset = data.find((candidate) => candidate.name === binding.sandbox_preset);
-      if (!preset) return;
-      const defaults = effectiveThreadDefaults(preset.thread_defaults, binding.thread_overrides ?? {});
-      setPresetLabel(`${preset.title} · ${binding.thread_preset ? "overridden" : "inherited"}`);
-      if (defaults.provider) setHarness(defaults.provider as Harness);
-      if (defaults.model) setModel(defaults.model);
-      if (defaults.reasoning_effort) setEffort(defaults.reasoning_effort);
-      setInstructions(defaults.instructions ?? "");
-    })();
-  }, [presetBindingKey]);
+    const defaults = binding.thread_defaults;
+    setDefaultsLabel(defaults ? "Sandbox defaults" : null);
+    if (!defaults) return;
+    if (defaults.provider) setHarness(defaults.provider as Harness);
+    if (defaults.model) setModel(defaults.model);
+    if (defaults.reasoning_effort) setEffort(defaults.reasoning_effort);
+    setInstructions(defaults.instructions ?? "");
+  }, [bindingKey]);
 
   // No re-read after an action: the change reaches the API server, and the watch behind the
   // stream brings the sandbox's new state back on its own.
@@ -309,7 +300,7 @@ export function SandboxPage({
         </Button>
         <Title order={2}>{name}</Title>
         {sandbox && <Badge>{sandbox.state}</Badge>}
-        {presetLabel && <Badge variant="light">{presetLabel}</Badge>}
+        {defaultsLabel && <Badge variant="light">{defaultsLabel}</Badge>}
         {sandbox && (
           <Group gap="xs" ml="auto" wrap="nowrap">
             <SuspendResume sandbox={sandbox} onAct={(action) => void act(action)} />
@@ -386,7 +377,7 @@ export function SandboxPage({
             </Group>
             <Textarea
               label="Standing instructions"
-              description={presetLabel ? "Inherited from the sandbox preset; editable for this thread" : undefined}
+              description={defaultsLabel ? "Inherited from this sandbox; editable for this thread" : undefined}
               autosize
               minRows={2}
               value={instructions}

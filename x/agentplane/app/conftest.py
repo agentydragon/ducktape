@@ -85,9 +85,7 @@ def bridge(store: TrajectoryStore) -> RunnerBridge:
 
 @pytest.fixture
 def inventory(custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api) -> SandboxInventory:
-    return SandboxInventory(
-        namespace=NAMESPACE, template=TEMPLATE, custom_objects=cast(Any, custom_objects), core_v1=cast(Any, core_v1)
-    )
+    return SandboxInventory(namespace=NAMESPACE, custom_objects=cast(Any, custom_objects), core_v1=cast(Any, core_v1))
 
 
 # The agent's credential, and what a test client carries: the app's other one is an OIDC session

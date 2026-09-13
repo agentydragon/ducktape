@@ -36,7 +36,7 @@ from x.agentplane.app.inventory import SandboxInventory
 from x.agentplane.app.live import LiveIndex
 from x.agentplane.app.oidc import OIDCSettings
 from x.agentplane.app.operator_sessions import BrowserSession
-from x.agentplane.app.testing.kubernetes import FakeAuthenticationV1Api
+from x.agentplane.app.testing.kubernetes import TEMPLATE, FakeAuthenticationV1Api
 from x.agentplane.app.trajectory import TrajectoryStore
 
 OPERATOR = "agentydragon"
@@ -174,7 +174,7 @@ async def test_a_non_json_token_exchange_failure_is_reported_as_an_upstream_erro
 async def test_an_unsafe_method_from_another_origin_is_refused(browser: httpx.AsyncClient, served: str) -> None:
     """SameSite=lax still lets a cross-site form post carry the cookie; the Origin check is what does not."""
     await browser.get("/auth/login")
-    body = {"slug": "demo"}
+    body = {"slug": "demo", "template": TEMPLATE}
 
     refused = await browser.post("/sandboxes", json=body, headers={"Origin": "https://evil.test"})
 
@@ -190,7 +190,9 @@ async def test_a_kubernetes_token_reaches_the_same_app_without_a_session(served:
         assert (await agent.get("/sandboxes")).status_code == 200
         # No Origin check on this path: a token is not ambient, so no site can make a browser send it.
         created = await agent.post(
-            "/sandboxes", json={"slug": "demo", "policies": []}, headers={"Origin": "https://evil.test"}
+            "/sandboxes",
+            json={"slug": "demo", "template": TEMPLATE, "policies": []},
+            headers={"Origin": "https://evil.test"},
         )
         assert created.status_code == 201, created.text
 

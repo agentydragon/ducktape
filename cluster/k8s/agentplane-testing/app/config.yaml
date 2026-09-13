@@ -12,8 +12,8 @@ models:
 agent_egress_api_url: http://agentplane-egress.agentplane-testing.svc.cluster.local
 agent_actions_service_url: http://agentplane-actions.agentplane-testing.svc.cluster.local:8080
 
-# App-owned launch presets. Names are resolved here; the Sandbox CR and runner receive only the
-# concrete template, policies, bootstrap source, and SessionSpec fields.
+# App-owned launch-form presets. The browser expands one into editable concrete template, policy,
+# bootstrap, and SessionSpec fields; neither a Sandbox CR nor a runner receives a preset name.
 thread_presets:
   public-coder-codex:
     title: Public coder / Codex

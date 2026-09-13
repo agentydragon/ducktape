@@ -55,7 +55,6 @@ spec:
             # The same namespace for now: the split the flag exists for is a separate change, which
             # moves the Sandboxes, their template and the runner ServiceAccount out of here.
             - --sandbox-namespace=agentplane-testing
-            - --template=agentplane-runner
             - --runner-port=7000
             - --host=0.0.0.0
             - --port=8080

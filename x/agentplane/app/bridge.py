@@ -20,7 +20,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from x.agentplane.app.changes import Changes
 from x.agentplane.app.inventory import ProvisioningState, SandboxInventory, SandboxNotFoundError
 from x.agentplane.app.live import LiveIndex
-from x.agentplane.app.presets import PresetCatalog, Provider, SandboxBinding
+from x.agentplane.app.presets import PresetCatalog, Provider
 from x.agentplane.app.shutdown import Shutdown
 from x.agentplane.app.trajectory import FeedEnd, FeedError, IngestionLease, IngestionLeaseLostError, TrajectoryStore
 from x.agentplane.runner import protocol_pb2 as pb
@@ -51,8 +51,9 @@ class MalformedMessageError(Exception):
 class NewSession(BaseModel):
     model_config = ConfigDict(extra="forbid")
     session_id: str
-    spec: dict[str, object] = Field(description="Explicit proto-JSON SessionSpec fields; these override a preset.")
-    preset: str | None = Field(default=None, description="Optional ThreadPreset override.")
+    spec: dict[str, object] = Field(
+        description="Explicit proto-JSON SessionSpec fields; Sandbox-bound defaults fill omitted fields."
+    )
 
 
 def runner_address(index: LiveIndex, port: int) -> AddressOf:
@@ -108,7 +109,7 @@ class Feed:
                 await self.store.end_feed(thread_id, lease=self.lease, error=None)
         except IngestionLeaseLostError:
             logger.info("ingestion lease lost for %s/%s", self.lease.sandbox, self.session_id)
-        except (grpc.aio.AioRpcError, ConnectionError, SQLAlchemyError, RunnerError, TimeoutError):
+        except grpc.aio.AioRpcError, ConnectionError, SQLAlchemyError, RunnerError, TimeoutError:
             # Reconcile retries from the committed cursor. A transport loss is not session end.
             logger.warning("ingestion interrupted for %s/%s", self.lease.sandbox, self.session_id, exc_info=True)
         finally:
@@ -168,7 +169,7 @@ class RunnerBridge:
                 if self._discover_sandboxes is not None:
                     self._sandboxes = set(await self._discover_sandboxes())
                 await self.reconcile()
-            except (SQLAlchemyError, grpc.aio.AioRpcError, OSError):
+            except SQLAlchemyError, grpc.aio.AioRpcError, OSError:
                 logger.warning("sandbox ingestion reconciliation failed; will retry", exc_info=True)
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(self._changed.wait(), timeout=RECONCILE_S)
@@ -217,9 +218,9 @@ class RunnerBridge:
                         feed = Feed(session_id=summary.session_id, client=client, store=self._store, lease=lease)
                         feed.task = asyncio.create_task(feed.run(), name=f"ingest-{sandbox}-{summary.session_id}")
                         self._feeds[key] = feed
-                except (grpc.aio.AioRpcError, SandboxNotReachableError, SandboxNotFoundError, TimeoutError):
+                except grpc.aio.AioRpcError, SandboxNotReachableError, SandboxNotFoundError, TimeoutError:
                     logger.warning("sandbox %s ingestion discovery unavailable", sandbox, exc_info=True)
-        except (SQLAlchemyError, OSError, TimeoutError):
+        except SQLAlchemyError, OSError, TimeoutError:
             logger.warning("sandbox %s ingestion reconciliation failed; will retry", sandbox, exc_info=True)
 
     async def _release(self, sandbox: str) -> None:
@@ -393,22 +394,17 @@ async def open_session(bridge: Bridge, name: str, body: NewSession, request: Req
     if not isinstance(inventory, SandboxInventory) or not isinstance(presets, PresetCatalog):
         raise TypeError("the app's inventory or preset catalog is not configured")
     try:
-        binding_raw = await inventory.preset_binding(name)
+        binding = await inventory.binding(name)
     except SandboxNotFoundError:
         # Preserve the old concrete-spec path: its runner address remains the authority that decides
         # whether the sandbox is reachable. Tests and non-Kubernetes embeddings may supply one
         # without keeping a second inventory record solely for preset lookup.
-        binding_raw = None
-    binding = SandboxBinding.model_validate(binding_raw) if binding_raw is not None else None
+        binding = None
     resolved = dict(body.spec)
-    if body.preset is not None:
-        resolved = presets.thread(body.preset).defaults().proto_json(body.session_id) | resolved
-    elif binding is not None:
-        resolved = presets.thread_defaults(binding).proto_json(body.session_id) | resolved
-    if binding is not None:
-        bootstrap = presets.sandbox(binding.sandbox_preset).bootstrap
-        if bootstrap:
-            await bridge.initialize(name, bootstrap)
+    if binding is not None and binding.thread_defaults is not None:
+        resolved = binding.thread_defaults.proto_json(body.session_id) | resolved
+    if binding is not None and binding.bootstrap:
+        await bridge.initialize(name, binding.bootstrap)
     spec = _parse(pb.SessionSpec(), resolved)
     spec.instructions = presets.instructions_for(spec.instructions)
     attached = await bridge.open_session(name, body.session_id, spec)

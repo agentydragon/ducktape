@@ -22,6 +22,7 @@ from x.agentplane.app.live import LiveIndex
 from x.agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
 from x.agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
 from x.agentplane.app.testing.kubernetes import (
+    TEMPLATE,
     FakeCoreV1Api,
     FakeCustomObjectsApi,
     action_policy_set,
@@ -157,7 +158,7 @@ def test_get_returns_the_row_or_404(client: TestClient) -> None:
 
 
 def test_create_returns_the_new_row(client: TestClient, custom_objects: FakeCustomObjectsApi) -> None:
-    response = client.post("/sandboxes", json={"slug": "demo"})
+    response = client.post("/sandboxes", json={"slug": "demo", "template": TEMPLATE})
 
     assert response.status_code == 201
     row = response.json()
@@ -168,45 +169,62 @@ def test_create_returns_the_new_row(client: TestClient, custom_objects: FakeCust
     assert client.get(f"/sandboxes/{row['name']}/egress").json() == []
 
 
-def test_create_with_preset_records_the_live_binding_and_allows_explicit_edits(
+def test_templates_list_the_concrete_choices_for_the_create_form(client: TestClient) -> None:
+    assert client.get("/sandboxes/templates").json() == [TEMPLATE]
+
+
+def test_create_requires_an_explicit_template(client: TestClient) -> None:
+    assert client.post("/sandboxes", json={"slug": "demo"}).status_code == 422
+
+
+def test_create_records_the_concrete_thread_defaults_and_bootstrap(
     client: TestClient, custom_objects: FakeCustomObjectsApi
 ) -> None:
     response = client.post(
         "/sandboxes",
         json={
             "slug": "coder",
-            "preset": "public-coder",
-            "thread_defaults": {"model": "edited-model", "instructions": "extra instructions"},
+            "template": TEMPLATE,
+            "policies": ["github"],
+            "action_policy_sets": ["github-reads"],
+            "thread_defaults": {
+                "provider": "codex",
+                "model": "edited-model",
+                "cwd": "/state/workspaces/{session_id}",
+                "reasoning_effort": "medium",
+                "instructions": "extra instructions",
+            },
+            "bootstrap": "mkdir -p /state/workspaces",
         },
     )
 
     assert response.status_code == 201, response.text
     row = response.json()
-    assert row["preset_binding"] == {
-        "sandbox_preset": "public-coder",
-        "thread_preset": None,
-        "thread_overrides": {
-            "provider": None,
+    assert row["binding"] == {
+        "thread_defaults": {
+            "provider": "codex",
             "model": "edited-model",
-            "cwd": None,
-            "reasoning_effort": None,
+            "cwd": "/state/workspaces/{session_id}",
+            "reasoning_effort": "medium",
             "instructions": "extra instructions",
         },
+        "bootstrap": "mkdir -p /state/workspaces",
     }
     (binding,) = client.get(f"/sandboxes/{row['name']}/egress").json()
     assert [policy["name"] for policy in binding["policies"]] == ["github"]
     annotation = custom_objects.objects[("sandboxes", row["name"])]["metadata"]["annotations"]
-    assert "agentplane.allegedly.works/launch-preset" in annotation
+    assert "agentplane.allegedly.works/sandbox-binding" in annotation
 
 
-def test_create_with_preset_binds_the_sandbox_to_its_action_policy_sets(
+def test_create_binds_the_sandbox_to_its_action_policy_sets(
     client: TestClient, custom_objects: FakeCustomObjectsApi
 ) -> None:
     """One ActionPolicyBinding per launched Sandbox, owned by it and naming it by UID: what its
-    harness may do without the operator, as the Action Service reads it. A Sandbox without a
-    preset gets none. Reading the policy back is the Action Service's answer through the operator
+    harness may do without the operator, as the Action Service reads it. Reading the policy back is the Action Service's answer through the operator
     federation (`test_action_api.py`), so a token caller is refused it."""
-    row = client.post("/sandboxes", json={"slug": "coder", "preset": "public-coder"}).json()
+    row = client.post(
+        "/sandboxes", json={"slug": "coder", "template": TEMPLATE, "action_policy_sets": ["github-reads"]}
+    ).json()
 
     sandbox_uid = custom_objects.objects[("sandboxes", row["name"])]["metadata"]["uid"]
     (written,) = [obj for (kind, _), obj in custom_objects.objects.items() if kind == "actionpolicybindings"]
@@ -218,21 +236,21 @@ def test_create_with_preset_binds_the_sandbox_to_its_action_policy_sets(
         "policySets": ["github-reads"],
     }
 
-    client.post("/sandboxes", json={"slug": "plain"})
+    client.post("/sandboxes", json={"slug": "plain", "template": TEMPLATE})
     assert len([kind for kind, _ in custom_objects.objects if kind == "actionpolicybindings"]) == 1
     refused = client.get(f"/sandboxes/{row['name']}/action-policy")
     assert (refused.status_code, refused.json()["detail"]) == (403, {"code": "operator_session_required"})
 
 
-def test_a_preset_naming_a_missing_action_policy_set_creates_nothing(
-    client: TestClient, custom_objects: FakeCustomObjectsApi
-) -> None:
+def test_a_missing_action_policy_set_creates_nothing(client: TestClient, custom_objects: FakeCustomObjectsApi) -> None:
     """Refused before the Sandbox exists, as a missing egress policy is: a launch that would grant
     nothing leaves no Sandbox behind to puzzle over."""
     del custom_objects.objects[("actionpolicysets", "github-reads")]
     seeded = {name for kind, name in custom_objects.objects if kind == "sandboxes"}
 
-    response = client.post("/sandboxes", json={"slug": "coder", "preset": "public-coder"})
+    response = client.post(
+        "/sandboxes", json={"slug": "coder", "template": TEMPLATE, "action_policy_sets": ["github-reads"]}
+    )
 
     assert response.status_code == 422, response.text
     assert "github-reads" in response.json()["detail"]
@@ -249,12 +267,12 @@ def _written_bindings(custom_objects: FakeCustomObjectsApi) -> list[tuple[str, l
     ]
 
 
-def test_explicit_sandbox_fields_replace_preset_defaults(
+def test_sandbox_fields_are_the_exact_egress_and_action_policy_picks(
     client: TestClient, custom_objects: FakeCustomObjectsApi
 ) -> None:
     row = client.post(
         "/sandboxes",
-        json={"slug": "coder", "preset": "public-coder", "policies": ["pypi"], "action_policy_sets": ["github-writes"]},
+        json={"slug": "coder", "template": TEMPLATE, "policies": ["pypi"], "action_policy_sets": ["github-writes"]},
     ).json()
 
     (binding,) = client.get(f"/sandboxes/{row['name']}/egress").json()
@@ -265,18 +283,22 @@ def test_explicit_sandbox_fields_replace_preset_defaults(
 def test_the_launch_pick_of_action_policy_sets_is_the_operators(
     client: TestClient, custom_objects: FakeCustomObjectsApi
 ) -> None:
-    """A preset pre-fills the pick and nothing more: an explicit empty list binds nothing, and a
-    launch without a preset may pick sets of its own, the same 422 guarding a dangling name."""
-    unbound = client.post("/sandboxes", json={"slug": "coder", "preset": "public-coder", "action_policy_sets": []})
+    """An explicit empty list binds nothing, while a concrete choice binds exactly that list."""
+    unbound = client.post("/sandboxes", json={"slug": "coder", "template": TEMPLATE, "action_policy_sets": []})
     assert unbound.status_code == 201, unbound.text
     assert _written_bindings(custom_objects) == []
 
-    picked = client.post("/sandboxes", json={"slug": "plain", "action_policy_sets": ["github-reads", "github-writes"]})
+    picked = client.post(
+        "/sandboxes",
+        json={"slug": "plain", "template": TEMPLATE, "action_policy_sets": ["github-reads", "github-writes"]},
+    )
     assert picked.status_code == 201, picked.text
     assert _written_bindings(custom_objects) == [(picked.json()["name"], ["github-reads", "github-writes"])]
 
     sandboxes_before = [name for kind, name in custom_objects.objects if kind == "sandboxes"]
-    refused = client.post("/sandboxes", json={"slug": "plain", "action_policy_sets": ["vanished"]})
+    refused = client.post(
+        "/sandboxes", json={"slug": "plain", "template": TEMPLATE, "action_policy_sets": ["vanished"]}
+    )
     assert refused.status_code == 422, refused.text
     assert [name for kind, name in custom_objects.objects if kind == "sandboxes"] == sandboxes_before
 
@@ -291,7 +313,7 @@ def test_policy_sets_list_the_namespace_for_the_create_form(client: TestClient) 
 def test_create_with_picked_policies_grants_one_binding_the_sandbox_owns(
     client: TestClient, custom_objects: FakeCustomObjectsApi
 ) -> None:
-    response = client.post("/sandboxes", json={"slug": "demo", "policies": ["pypi"]})
+    response = client.post("/sandboxes", json={"slug": "demo", "template": TEMPLATE, "policies": ["pypi"]})
 
     assert response.status_code == 201, response.text
     row = response.json()
@@ -310,11 +332,13 @@ def test_a_default_policy_is_granted_whether_or_not_the_caller_picks_it(client: 
     """The model endpoint is what this is for in the deployment: without it a sandbox has no agent,
     so it is not the caller's to leave out — nor, having picked it, to be granted twice. The
     parameter overrides the `default_policies` fixture the client is built from."""
-    unpicked = client.post("/sandboxes", json={"slug": "plain"}).json()
+    unpicked = client.post("/sandboxes", json={"slug": "plain", "template": TEMPLATE}).json()
     (binding,) = client.get(f"/sandboxes/{unpicked['name']}/egress").json()
     assert [policy["name"] for policy in binding["policies"]] == ["github"]
 
-    picked = client.post("/sandboxes", json={"slug": "asked", "policies": ["github", "pypi"]}).json()
+    picked = client.post(
+        "/sandboxes", json={"slug": "asked", "template": TEMPLATE, "policies": ["github", "pypi"]}
+    ).json()
     (binding,) = client.get(f"/sandboxes/{picked['name']}/egress").json()
     assert [policy["name"] for policy in binding["policies"]] == ["github", "pypi"]
 
@@ -322,11 +346,11 @@ def test_a_default_policy_is_granted_whether_or_not_the_caller_picks_it(client: 
 @pytest.mark.parametrize(
     "body",
     [
-        {"slug": "Demo"},
-        {"slug": "-demo"},
-        {"slug": "a" * 58},
-        {"slug": "demo", "provider": "claude"},
-        {"slug": "demo", "model": "cheap"},
+        {"slug": "Demo", "template": TEMPLATE},
+        {"slug": "-demo", "template": TEMPLATE},
+        {"slug": "a" * 58, "template": TEMPLATE},
+        {"slug": "demo", "template": TEMPLATE, "provider": "claude"},
+        {"slug": "demo", "template": TEMPLATE, "model": "cheap"},
     ],
     ids=[
         "uppercase-slug",
@@ -371,7 +395,19 @@ def test_bound_thread_defaults_resolve_before_bootstrap_and_explicit_launch_fiel
     client: TestClient, bridge: RunnerBridge, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     created = client.post(
-        "/sandboxes", json={"slug": "coder", "preset": "public-coder", "thread_defaults": {"model": "sandbox-model"}}
+        "/sandboxes",
+        json={
+            "slug": "coder",
+            "template": TEMPLATE,
+            "thread_defaults": {
+                "provider": "codex",
+                "model": "sandbox-model",
+                "cwd": "/state/workspaces/{session_id}",
+                "reasoning_effort": "medium",
+                "instructions": "preset instructions",
+            },
+            "bootstrap": "mkdir -p /state/workspaces",
+        },
     ).json()
     calls: list[tuple[str, object]] = []
 
@@ -521,7 +557,10 @@ def test_a_grant_naming_a_policy_that_does_not_exist_is_refused(
     # The CRD's policies are minItems: 1, so an empty grant is refused here rather than at admission.
     assert client.post("/sandboxes/live/egress", json={"policies": []}).status_code == 422
     # And at launch the names resolve before the Sandbox exists, so a typo leaves none behind.
-    assert client.post("/sandboxes", json={"slug": "demo", "policies": ["vanished"]}).status_code == 422
+    assert (
+        client.post("/sandboxes", json={"slug": "demo", "template": TEMPLATE, "policies": ["vanished"]}).status_code
+        == 422
+    )
     assert all(kind != "sandboxes" or name in {"live", "fresh"} for kind, name in custom_objects.objects)
 
 
@@ -591,7 +630,6 @@ def test_presets_publish_editable_sandbox_and_thread_defaults(client: TestClient
             "template": "agentplane-test-runner",
             "policies": ["github"],
             "action_policy_sets": ["github-reads"],
-            "thread_preset": "public-coder-codex",
             "thread_defaults": {
                 "provider": "codex",
                 "model": "test-codex-model",
@@ -599,6 +637,7 @@ def test_presets_publish_editable_sandbox_and_thread_defaults(client: TestClient
                 "reasoning_effort": "medium",
                 "instructions": "preset instructions",
             },
+            "bootstrap": "mkdir -p /state/workspaces",
         }
     ]
 

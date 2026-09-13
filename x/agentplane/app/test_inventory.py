@@ -96,7 +96,7 @@ async def test_get_reads_one_sandbox_and_refuses_foreign_or_missing_ones(
 async def test_create_stamps_a_labelled_sandbox_from_the_template(
     inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi
 ) -> None:
-    view = await inventory.create(NewSandbox(slug="my-task"))
+    view = await inventory.create(NewSandbox(slug="my-task", template="agentplane-test-runner"))
 
     assert re.fullmatch(r"my-task-[a-z0-9]{5}", view.name)
     assert view.state == ProvisioningState.WAITING_FOR_POD
@@ -111,7 +111,7 @@ async def test_create_stamps_a_labelled_sandbox_from_the_template(
 
 
 async def test_create_names_each_sandbox_uniquely(inventory: SandboxInventory) -> None:
-    spec = NewSandbox(slug="twice")
+    spec = NewSandbox(slug="twice", template="agentplane-test-runner")
 
     first, second = await inventory.create(spec), await inventory.create(spec)
 

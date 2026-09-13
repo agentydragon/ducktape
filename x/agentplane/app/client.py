@@ -82,6 +82,9 @@ class Client:
     async def presets(self) -> list[SandboxPresetView]:
         return [SandboxPresetView.model_validate(row) for row in await self._json("GET", "/presets")]
 
+    async def templates(self) -> list[str]:
+        return list(await self._json("GET", "/sandboxes/templates"))
+
     async def policies(self) -> list[PolicyView]:
         return [PolicyView.model_validate(row) for row in await self._json("GET", "/egress/policies")]
 
@@ -114,11 +117,11 @@ class Client:
         answered = await self._json("POST", f"/sandboxes/{name}/sessions", json=body.model_dump())
         return Attachment(ParseDict(answered, pb.Attached()))
 
-    async def open_preset_session(
-        self, name: str, session_id: str, *, overrides: dict[str, object] | None = None, preset: str | None = None
+    async def open_bound_session(
+        self, name: str, session_id: str, *, overrides: dict[str, object] | None = None
     ) -> Attachment:
-        """Open from a Sandbox binding or explicit ThreadPreset, sending only caller overrides."""
-        body = NewSession(session_id=session_id, spec=overrides or {}, preset=preset)
+        """Open with the concrete defaults recorded on the Sandbox, plus caller overrides."""
+        body = NewSession(session_id=session_id, spec=overrides or {})
         answered = await self._json("POST", f"/sandboxes/{name}/sessions", json=body.model_dump())
         return Attachment(ParseDict(answered, pb.Attached()))
 

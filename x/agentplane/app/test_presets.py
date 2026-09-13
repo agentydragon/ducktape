@@ -32,44 +32,50 @@ def presets() -> PresetCatalog:
     )
 
 
-def test_sandbox_overrides_replace_only_named_thread_defaults(presets: PresetCatalog) -> None:
-    binding = SandboxBinding(
-        sandbox_preset="public-coder", thread_overrides=ThreadDefaults(model="edited-model", instructions="")
-    )
+def test_sandbox_preset_expands_to_fields_the_operator_can_set_individually(presets: PresetCatalog) -> None:
+    [view] = presets.views()
 
-    resolved = presets.thread_defaults(binding)
-
-    assert resolved.model_dump() == {
-        "provider": "codex",
-        "model": "edited-model",
-        "cwd": "/state/workspaces/{session_id}",
-        "reasoning_effort": "medium",
-        "instructions": "",
-    }
-    assert resolved.proto_json("thread-7") == {
-        "provider": "PROVIDER_CODEX",
-        "model": "edited-model",
-        "cwd": "/state/workspaces/thread-7",
-        "reasoningEffort": "medium",
-        "instructions": "",
+    assert view.model_dump() == {
+        "name": "public-coder",
+        "title": "Public coder",
+        "template": "runner",
+        "policies": ["github-public"],
+        "action_policy_sets": [],
+        "thread_defaults": {
+            "provider": "codex",
+            "model": "preset-model",
+            "cwd": "/state/workspaces/{session_id}",
+            "reasoning_effort": "medium",
+            "instructions": "preset instructions",
+        },
+        "bootstrap": "mkdir -p /state/workspaces",
     }
 
 
-def test_a_changed_preset_remains_live_behind_explicit_overrides(presets: PresetCatalog) -> None:
+def test_sandbox_binding_keeps_the_selected_values_when_the_catalog_changes(presets: PresetCatalog) -> None:
+    [selected] = presets.views()
     binding = SandboxBinding(
-        sandbox_preset="public-coder", thread_overrides=ThreadDefaults(instructions="sandbox instruction")
+        thread_defaults=ThreadDefaults(instructions="").over(selected.thread_defaults), bootstrap=selected.bootstrap
     )
     presets.threads["public-coder-codex"] = presets.threads["public-coder-codex"].model_copy(
         update={"model": "new-preset-model", "reasoning_effort": "high"}
     )
 
-    resolved = presets.thread_defaults(binding)
-
-    assert (resolved.model, resolved.reasoning_effort, resolved.instructions) == (
-        "new-preset-model",
-        "high",
-        "sandbox instruction",
-    )
+    assert binding.thread_defaults is not None
+    assert binding.thread_defaults.model_dump() == {
+        "provider": "codex",
+        "model": "preset-model",
+        "cwd": "/state/workspaces/{session_id}",
+        "reasoning_effort": "medium",
+        "instructions": "",
+    }
+    assert binding.thread_defaults.proto_json("thread-7") == {
+        "provider": "PROVIDER_CODEX",
+        "model": "preset-model",
+        "cwd": "/state/workspaces/thread-7",
+        "reasoningEffort": "medium",
+        "instructions": "",
+    }
 
 
 def test_shared_agent_instructions_precede_the_task_without_replacing_it() -> None:

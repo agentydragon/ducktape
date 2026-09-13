@@ -104,7 +104,6 @@ class Settings(BaseSettings):
         description="Namespace the app stamps Sandboxes into and dials runners in. Separate from the app's own "
         "so a sandbox shares a namespace with neither the app, its database, nor the rules that govern it."
     )
-    template: str = Field(description="SandboxTemplate every new Sandbox copies its Pod from.")
     runner_port: int = Field(description="The port every runner Pod listens on.")
     host: str = Field(default="127.0.0.1", description="Bind address.")
     port: int = Field(default=8080, description="Bind port.")
@@ -115,7 +114,7 @@ class Settings(BaseSettings):
         description='The models each provider may run, as JSON: {"claude": ["..."], "codex": ["..."]}.'
     )
     sandbox_presets: dict[str, SandboxPreset] = Field(
-        default_factory=dict, description="App-owned SandboxPreset definitions keyed by stable name."
+        default_factory=dict, description="App-owned Sandbox launch-form presets keyed by displayable name."
     )
     thread_presets: dict[str, ThreadPreset] = Field(
         default_factory=dict, description="App-owned ThreadPreset definitions keyed by stable name."
@@ -224,10 +223,7 @@ async def async_main(settings: Settings) -> None:
         # Cast so `patch_namespaced_custom_object` accepts `_content_type` (see util.kubernetes).
         custom_objects = cast(CustomObjectsClient, CustomObjectsApi(api))
         inventory = SandboxInventory(
-            namespace=settings.sandbox_namespace,
-            template=settings.template,
-            custom_objects=custom_objects,
-            core_v1=CoreV1Api(api),
+            namespace=settings.sandbox_namespace, custom_objects=custom_objects, core_v1=CoreV1Api(api)
         )
         egress = EgressInventory(
             namespace=settings.namespace, custom_objects=custom_objects, default_policies=settings.default_policies
