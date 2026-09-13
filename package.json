@@ -50,7 +50,7 @@
     "react-dom": "^18.3.1",
     "react-router": "^7.9.0",
     "rrule": "^2.8.1",
-    "svelte-sonner": "^0.3.28",
+    "svelte-sonner": "^1.0.0",
     "zod": "^4.6.4"
   },
   "devDependencies": {

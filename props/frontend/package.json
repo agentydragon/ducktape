@@ -27,7 +27,7 @@
     "openapi-fetch": "^0.17.0",
     "chart.js": "^4.4.8",
     "chartjs-chart-matrix": "^2.0.1",
-    "svelte-sonner": "^0.3.28"
+    "svelte-sonner": "^1.0.0"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
