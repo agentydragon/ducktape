@@ -241,8 +241,7 @@ let
   # paths resolve to different derivations of the "same" version (see idna.nix's own comment: this
   # is exactly the kind of ripple a packageOverrides addition can cause).
   aiquota = pkgs.callPackage ./gnome-shell-aiquota.nix {
-    inherit artifacts lib;
-    python314Packages = python314Packages;
+    inherit artifacts lib python314Packages;
   };
 
   # Chrome-free GTK/WebKit approvals application.
