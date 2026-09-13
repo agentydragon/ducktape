@@ -30,13 +30,17 @@ in, still running:
 | `write_bytes` (node root, `8:0`) | 1.59 GiB |
 | copy resident in `~/.cache`      | 1.49 GiB |
 
-Its cadence is two bundle constants, **not** environment variables despite the
-names:
+Its cadence is a bundle constant plus a Nix patch that exposes an environment
+override:
 
 ```js
 const OPENCLAW_DATABASE_VERIFY_INITIAL_DELAY_MS = 5 * 6e4; // 5 min after start
-const OPENCLAW_DATABASE_VERIFY_INTERVAL_MS = 1440 * 6e4; // then every 24 h
+const OPENCLAW_DATABASE_VERIFY_INTERVAL_MS = 1440 * 6e4; // default: every 24 h
 ```
+
+The packaged build accepts `OPENCLAW_DATABASE_VERIFY_INTERVAL_MS` as a positive
+integer override; unset keeps the 24-hour default. `OPENCLAW_DATABASE_VERIFY=off`
+disables the initial schedule entirely.
 
 The pod aborts every ~2h50m and Flux rolls the image every 1.5-8h, so it never
 survives to the 24 h interval: it runs the five-minute pass on **every** restart,
@@ -156,12 +160,12 @@ config-shaped lever is target collection — `resolveOpenClawStateSqlitePath` pl
 `listOpenClawRegisteredAgentDatabases`, filtered by `existsSync` — so exempting
 an agent database means deregistering the agent.
 
-<../patch-openclaw-npm-dist.mjs> therefore mints `OPENCLAW_DATABASE_VERIFY`
-(`on`, the upstream behaviour, or `off`), guarding the initial `schedule()` call
-and logging the disable. That script content-matches `dist/*.js` rather than
-filenames, whose chunk hashes churn every release, and fails the build when a
-pattern does not match exactly once — the same mechanism behind
-`OPENCLAW_AGENT_DB_STARTUP_INTEGRITY_CHECK`. `public-coder-agent` sets it `off`;
+<../patches/openclaw-2026.9.4-dist.patch> therefore adds
+`OPENCLAW_DATABASE_VERIFY` (`on`, the upstream behaviour, or `off`) and
+`OPENCLAW_DATABASE_VERIFY_INTERVAL_MS`, guarding the initial `schedule()` call
+and logging the disable. The conventional patch targets exact generated paths
+and context, whose chunk hashes churn every release, and fails the build when a
+hunk does not apply exactly. `public-coder-agent` sets it `off`;
 the Haku spike, sharing the same image build, keeps the default.
 
 It takes effect only once the image is rebuilt: the variable does not exist in a

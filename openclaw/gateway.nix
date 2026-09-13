@@ -69,10 +69,16 @@ let
     chmod -R u+w "$out"
     cp ${./npm_wrapper/package.json} "$out/nix/npm/openclaw/package.json"
     cp ${./npm_wrapper/package-lock.json} "$out/nix/npm/openclaw/package-lock.json"
-    cp ${./patch-openclaw-npm-dist.mjs} "$out/nix/scripts/patch-openclaw-npm-dist.mjs"
-    # Current nix-openclaw stages the bundled ACPX plugin inside the dist tree
-    # itself. Keep this wrapper splice independent of the installer script's
-    # exact shell text; older revisions used a store-root symlink here.
+    cp ${./patches/openclaw-2026.9.4-dist.patch} "$out/nix/scripts/openclaw-npm-dist.patch"
+    substituteInPlace "$out/nix/packages/openclaw-gateway-npm.nix" \
+      --replace-fail 'patch-openclaw-npm-dist.mjs' 'openclaw-npm-dist.patch'
+    # Apply the release-specific repairs as a conventional, fail-closed patch.
+    # Keep the upstream installer contract's path variable: it is validated
+    # before use, and the patch command itself is pinned into the build.
+    substituteInPlace "$out/nix/scripts/openclaw-gateway-npm-install.sh" \
+      --replace-fail \
+        'OPENCLAW_PACKAGE_ROOT="$root" "$NODE_BIN" "$OPENCLAW_PATCH_NPM_DIST_SCRIPT"' \
+        '${ocPkgs.patch}/bin/patch --batch --fuzz=0 --directory="$root" --strip=1 --input="$OPENCLAW_PATCH_NPM_DIST_SCRIPT"'
   '';
 
   openclawPackages = import "${patchedNixOpenclaw}/nix/packages" {
