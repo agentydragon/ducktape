@@ -29,12 +29,30 @@ py_library(
     visibility = ["//visibility:public"],
 )
 
+py_library(
+    name = "install_dreo",
+    srcs = ["install_dreo.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+)
+
 py_test(
     name = "test_install_oidc",
     srcs = ["test_install_oidc.py"],
     deps = [
         "//:conftest",
         "//cluster/k8s/home-assistant/app:install_oidc",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_install_dreo",
+    srcs = ["test_install_dreo.py"],
+    deps = [
+        "//:conftest",
+        "//cluster/k8s/home-assistant/app:install_dreo",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
