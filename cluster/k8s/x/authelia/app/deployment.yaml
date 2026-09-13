@@ -28,7 +28,7 @@ spec:
           effect: NoSchedule
       containers:
         - name: authelia
-          image: ghcr.io/authelia/authelia:4.39.16
+          image: ghcr.io/authelia/authelia:4.39.26
           ports:
             - name: http
               containerPort: 9091
