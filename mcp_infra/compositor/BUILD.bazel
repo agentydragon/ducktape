@@ -134,6 +134,7 @@ py_test(
         "//mcp_infra:conftest",
         "//mcp_infra:snapshots",
         "@pypi//mcp",
+        "@pypi//mcp_types",
         "@pypi//pydantic",
         "@pypi//pytest_bazel",
     ],
