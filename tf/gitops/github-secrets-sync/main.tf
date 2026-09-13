@@ -6,6 +6,8 @@
 # SOPS_AGE_KEY lets privileged CI decrypt CI-only credentials from git.
 # BUILDBUDDY_API_KEY is synchronized separately so build/test jobs can receive
 # only the BuildBuddy capability instead of the broader CI decryption identity.
+# The Forgejo registry credentials are synchronized to gaffer-private from the
+# same Kubernetes Secret used by the Forgejo tenant and its pull consumers.
 #
 # Auth: fine-grained GitHub PAT stored as K8s Secret (SOPS-deployed by Flux).
 # Required PAT permissions are documented in
@@ -39,6 +41,13 @@ data "kubernetes_secret" "buildbuddy_api_key" {
   }
 }
 
+data "kubernetes_secret" "forgejo_images_creds" {
+  metadata {
+    name      = "forgejo-images-creds"
+    namespace = "forgejo-images"
+  }
+}
+
 data "kubernetes_secret" "pr_visuals_s3_credentials" {
   metadata {
     name      = "s3-identity-pr-visuals-writer"
@@ -62,6 +71,18 @@ resource "github_actions_secret" "sops_age_key_gaffer_private" {
   repository      = "gaffer-private"
   secret_name     = "SOPS_AGE_KEY"
   plaintext_value = data.kubernetes_secret.ci_age_key.data["age-key"]
+}
+
+resource "github_actions_secret" "forgejo_images_username_gaffer_private" {
+  repository      = "gaffer-private"
+  secret_name     = "FORGEJO_IMAGES_USERNAME"
+  plaintext_value = data.kubernetes_secret.forgejo_images_creds.data["username"]
+}
+
+resource "github_actions_secret" "forgejo_images_password_gaffer_private" {
+  repository      = "gaffer-private"
+  secret_name     = "FORGEJO_IMAGES_PASSWORD"
+  plaintext_value = data.kubernetes_secret.forgejo_images_creds.data["password"]
 }
 
 resource "github_actions_secret" "buildbuddy_api_key" {
