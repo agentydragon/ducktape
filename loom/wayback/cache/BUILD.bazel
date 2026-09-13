@@ -2,12 +2,6 @@ load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
 
-# Apt manifest + lockfile for rules_distroless (referenced from MODULE.bazel).
-exports_files([
-    "trixie_wayback_cache.yaml",
-    "trixie_wayback_cache.lock.json",
-])
-
 rust_library(
     name = "wayback_cache_lib",
     srcs = [

@@ -4,12 +4,6 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
-# Apt manifest + lockfile for rules_distroless (referenced from MODULE.bazel).
-exports_files([
-    "trixie_e2e.yaml",
-    "trixie_e2e.lock.json",
-])
-
 # Bazelisk + sops baked into /tools/ (on PATH). Neither is in Debian main,
 # so we fetch them as static binaries via http_file.
 pkg_tar(
@@ -69,7 +63,7 @@ pkg_tar(
 )
 
 # E2E test container: python:3.14-slim base + curl + git + JDK from trixie,
-# bazelisk + sops as static binaries. See trixie_e2e.yaml.
+# bazelisk + sops as static binaries. The Debian package set is in MODULE.bazel.
 oci_image(
     name = "e2e_container_image",
     testonly = True,

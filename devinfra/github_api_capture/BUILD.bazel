@@ -2,11 +2,6 @@ load("@rules_oci//oci:defs.bzl", "oci_image")
 load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
-exports_files([
-    "squid.yaml",
-    "squid.lock.json",
-])
-
 oci_image(
     name = "squid_test_image",
     testonly = True,
