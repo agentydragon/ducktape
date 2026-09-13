@@ -6,7 +6,7 @@
 }:
 let
   # The ducktape umbrella wheel is built (on Bazel) against
-  # `fastmcp==3.4.4` (see requirements_bazel.txt). Nixpkgs 26.05 ships 3.2,
+  # `fastmcp==3.4.7` (see requirements_bazel.txt). Nixpkgs 26.05 ships 3.2.3,
   # while py-key-value-aio is older than FastMCP's >=0.4.4 floor. Package those
   # two deltas against the stable Python package set so the whole closure shares
   # one consistent site-packages.
