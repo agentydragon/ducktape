@@ -372,7 +372,6 @@ rec {
   fastmcp = python314Packages.toPythonApplication python314Packages.fastmcp-slim;
   bebas-neue-font = pkgs.callPackage ./bebas-neue-font.nix { };
   bb = pkgs.callPackage ./bb.nix { inherit artifacts; };
-  telegram-desktop = pkgs.callPackage ./telegram-desktop.nix { };
 
   # Released //devinfra:gazelle_python_binary — the same binary
   # `bb run //devinfra:gazelle` builds (repo plugin config compiled in).
