@@ -261,7 +261,7 @@ class ActionsOAuthProxy(DownstreamClientIdentityOIDCProxy):
             raise _refused("token exchange", _CONNECTION_GONE) from None
         except (EnrollmentRejectedError, GrantRejectedError, ConnectionConflictError) as error:
             raise _refused("token exchange", str(error)) from None
-        except OidcPrincipalVerificationUnavailableError, SQLAlchemyError:
+        except (OidcPrincipalVerificationUnavailableError, SQLAlchemyError):
             raise _unavailable() from None
 
         context = _ISSUING.set(grant.id)
@@ -398,7 +398,7 @@ class ActionsOAuthProxy(DownstreamClientIdentityOIDCProxy):
         """
         try:
             return jwt.decode(token, options={"verify_signature": False}).get("iss") == str(self.base_url)
-        except jwt.InvalidTokenError, ValueError:
+        except (jwt.InvalidTokenError, ValueError):
             return False
 
     async def revoke_token(self, token: McpAccessToken | RefreshToken) -> None:

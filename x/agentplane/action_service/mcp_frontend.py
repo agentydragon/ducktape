@@ -73,6 +73,14 @@ def _parse_include_field(value: IncludeField | str) -> IncludeField:
 McpIncludeField = Annotated[IncludeField, BeforeValidator(_parse_include_field)]
 
 
+def _parse_wait_until(value: WaitUntil | str) -> WaitUntil:
+    """Accept the JSON string form before FastMCP's strict enum validation."""
+    return value if isinstance(value, WaitUntil) else WaitUntil(value)
+
+
+McpWaitUntil = Annotated[WaitUntil, BeforeValidator(_parse_wait_until)]
+
+
 class ActionSummary(BaseModel):
     group: str
     name: str
@@ -293,7 +301,7 @@ def create_server(
     async def request_action(
         request: ActionRequestInput,
         wait_seconds: WaitSeconds = 0,
-        wait_until: WaitUntil = WaitUntil.TERMINAL,
+        wait_until: McpWaitUntil = WaitUntil.TERMINAL,
         caller: Caller = CALLER,
     ) -> ToolResult:
         """Submit one Action for policy evaluation, human decision if needed, and single-shot execution.
@@ -316,7 +324,7 @@ def create_server(
         request_id: McpRequestId | None = None,
         idempotency_key: IdempotencyKey | None = None,
         wait_seconds: WaitSeconds = 0,
-        wait_until: WaitUntil = WaitUntil.TERMINAL,
+        wait_until: McpWaitUntil = WaitUntil.TERMINAL,
         caller: Caller = CALLER,
     ) -> ToolResult:
         """Read your submitted Action's current receipt, Decision, and safe execution result/error.

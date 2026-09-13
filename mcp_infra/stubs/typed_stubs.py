@@ -105,7 +105,7 @@ class TypedClient:
             try:
                 hints = get_type_hints(component.fn, include_extras=True)
                 hinted_output = hints.get("return")
-            except NameError, TypeError, AttributeError:
+            except (NameError, TypeError, AttributeError):
                 hinted_output = None
 
             output_type = _resolve_output_type(hinted_output, hinted_output)
