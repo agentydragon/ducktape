@@ -193,7 +193,7 @@ def resolved_agent_instructions(
     template = Template(
         get_required_path(DEFAULT_AGENT_INSTRUCTIONS_TEMPLATE).read_text(encoding="utf-8"), undefined=StrictUndefined
     )
-    return template.render(egress_api_url=egress_api_url, actions_service_url=actions_service_url)
+    return str(template.render(egress_api_url=egress_api_url, actions_service_url=actions_service_url))
 
 
 def main() -> None:
