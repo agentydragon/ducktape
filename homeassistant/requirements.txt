@@ -1382,9 +1382,9 @@ josepy==2.2.0 \
     # via
     #   acme
     #   hass-nabucasa
-license-expression==30.4.3 \
-    --hash=sha256:49f439fea91c4d1a642f9f2902b58db1d42396c5e331045f41ce50df9b40b1f2 \
-    --hash=sha256:fd3db53418133e0eef917606623bc125fbad3d1225ba8d23950999ee87c99280
+license-expression==30.4.4 \
+    --hash=sha256:421788fdcadb41f049d2dc934ce666626265aeccefddd25e162a26f23bcbf8a4 \
+    --hash=sha256:73448f0aacd8d0808895bdc4b2c8e01a8d67646e4188f887375398c761f340fd
     # via pytest-homeassistant-custom-component
 lru-dict==1.4.1 \
     --hash=sha256:000ba9a2ab4dd1ad2d91764a6d5cce75a59de51534cdda478d1ddaa3cd8d5c48 \
