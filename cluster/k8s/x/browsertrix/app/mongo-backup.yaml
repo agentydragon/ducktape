@@ -38,7 +38,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: mongodump
-              image: docker.io/library/mongo:7.0
+              image: docker.io/library/mongo:8.3
               imagePullPolicy: IfNotPresent
               command:
                 - /bin/sh
