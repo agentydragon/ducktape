@@ -5,7 +5,7 @@
   },
   "bbr_runner": {
     "image": "ghcr.io/agentydragon/bbr-runner",
-    "digest": "sha256:b0103d2c12118a178d414c6725c79cee22991253a2fdc3955bce2640a75c0863"
+    "digest": "sha256:317146dcb58af0d3ddb0ac970ba748a96908d780abf238590fd4fa70d402d4b1"
   },
   "freecad_test": {
     "image": "ghcr.io/agentydragon/freecad-test",
