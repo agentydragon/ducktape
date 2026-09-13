@@ -20,6 +20,11 @@ spec:
   values:
     recommender:
       enabled: true
+      # Checkpoint and recommendation loops need not run every minute; the
+      # longer interval reduces steady etcd write churn on the HDD control plane
+      # while keeping recommendations reasonably fresh.
+      extraArgs:
+        recommender-interval: 15m
       resources:
         requests:
           cpu: 25m
