@@ -24,15 +24,9 @@ class BazelAmberExtension(AmberSnapshotExtension):
 
     @classmethod
     def write_snapshot_collection(
-        cls,
-        *,
-        snapshot_collection: SnapshotCollection,
-        name_order: dict[str, int] | None = None,
+        cls, *, snapshot_collection: SnapshotCollection, name_order: dict[str, int] | None = None
     ) -> None:
-        super().write_snapshot_collection(
-            snapshot_collection=snapshot_collection,
-            name_order=name_order,
-        )
+        super().write_snapshot_collection(snapshot_collection=snapshot_collection, name_order=name_order)
         outputs_dir = os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR")
         if not outputs_dir:
             return
