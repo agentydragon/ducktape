@@ -10,20 +10,20 @@ spec:
   sourceRef:
     kind: ExternalArtifact
     name: osm-mcp
-
     namespace: ducktape-flux
-  path: ./cluster/k8s/agents/osm-mcp/app
+  path: ./cluster/k8s/agents/osm-mcp
   prune: true
   wait: true
   healthChecks:
+    - apiVersion: v1
+      kind: Namespace
+      name: osm-mcp
     - apiVersion: apps/v1
       kind: Deployment
       name: osm-mcp
       namespace: osm-mcp
   dependsOn:
     - name: external-secrets-config
-      namespace: ducktape-flux
-    - name: osm-mcp-namespace
       namespace: ducktape-flux
     # forgejo-images-creds-eso.yaml extracts the source Secret from the
     # forgejo-images namespace, so it must exist first.

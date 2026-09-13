@@ -10,18 +10,19 @@ spec:
   sourceRef:
     kind: ExternalArtifact
     name: headlamp-app
-
     namespace: ducktape-flux
-  path: ./cluster/k8s/headlamp/app
+  path: ./cluster/k8s/headlamp
   prune: true
   wait: true
   healthChecks:
+    - apiVersion: v1
+      kind: Namespace
+      name: headlamp
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
       name: headlamp
       namespace: headlamp
   dependsOn:
-    - name: headlamp-namespace
     - name: gateway
       namespace: ducktape-flux
     - name: sso-providers-tf

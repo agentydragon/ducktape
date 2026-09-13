@@ -451,6 +451,7 @@ py_test(
         "//cluster/k8s:flux_bootstrap_files",
         "//cluster/k8s:flux_system_files",
         "//cluster/k8s/agents/loki-read-proxy:manifests",
+        "//cluster/k8s/home-assistant/app:manifests",
         "@multitool//tools/kustomize",
     ],
     deps = [
