@@ -90,12 +90,24 @@ class NativeProcess:
         self.close()
 
     def write(self, frame: BaseModel) -> None:
+        self.write_many([frame])
+
+    def write_many(self, frames: list[BaseModel]) -> None:
+        """Write directly adjacent NDJSON frames in one pipe operation.
+
+        This is intentionally only a transport primitive: a native harness still owns how it
+        queues or coalesces the frames. Tests use it to make two already-arrived commands a
+        deterministic headless-queue scenario rather than a scheduler race between writes.
+        """
         assert self.process is not None
         assert self.process.stdin is not None
-        payload = frame.model_dump_json(by_alias=True).encode()
-        write_jsonl(self.logs / "stdin.jsonl", text_record(payload))
+        payloads = [frame.model_dump_json(by_alias=True).encode() for frame in frames]
+        for payload in payloads:
+            write_jsonl(self.logs / "stdin.jsonl", text_record(payload))
+        if not payloads:
+            return
         with self._stdin_lock:
-            self.process.stdin.write(payload + b"\n")
+            self.process.stdin.write(b"".join(payload + b"\n" for payload in payloads))
             self.process.stdin.flush()
 
     def await_frame(self, predicate: Callable[[dict[str, Any]], bool], *, timeout: float) -> dict[str, Any]:
