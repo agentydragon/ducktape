@@ -24,24 +24,6 @@ not infer. Two consequences, both logged once a minute:
       that dreaming cron reconciles and heartbeats actually run — heartbeats have
       been off since the bump, so nothing has been exercising them.
 
-## Matrix `auth-presence` module (resolved)
-
-```text
-[channels] failed to load persistedAuthState checker for matrix: plugin module
-  path not found: .../dist-runtime/extensions/matrix/auth-presence | ENOENT
-```
-
-The warning was recorded during the 2026.8.1-era recovery, but it does not
-reproduce in the current 2026.9.4 image. The bundled Matrix plugin contains
-`dist/auth-presence.js` in both `dist/extensions/matrix` and
-`dist-runtime/extensions/matrix`, and the healthy public-coder pod loads Matrix
-without an `auth-presence` or `persistedAuthState` warning (verified 2026-09-13).
-
-The remaining comment in `openclaw/bundle-runtime-plugin.sh` documents a separate
-future-package caveat: its outward host-dependency link can fail a loader path or
-alias check when `dist-runtime` is selected. It is not a missing module in the
-current package, so no packaging change is needed now.
-
 ## Stale and retired config keys
 
 Doctor reports these on every run:
