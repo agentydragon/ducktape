@@ -16,7 +16,7 @@
     "puppeteer": "^25.0.0",
     "svelte-check": "^4.7.6",
     "tailwindcss": "^4.3.3",
-    "typescript": "^5.9.0"
+    "typescript": "^7.0.0"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
