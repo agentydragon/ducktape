@@ -240,12 +240,12 @@ Once a worktree has been selected or created, keep using that absolute path for 
 session's edits, Git commands, and Bazel commands. Do not create or switch to another
 worktree merely for convenience. A new worktree per isolated session is acceptable;
 reuse an older worktree only when an explicit handoff identifies it as released for
-this task. Before creating one, inspect `git worktree list` so you do not choose an
-occupied path or branch. Report the chosen worktree path at handoff.
+this task. Report the chosen worktree path at handoff.
 
-Use a harness-provided worktree when one exists. Otherwise, prefer a repo-local path
-such as `.worktrees/agents/<tool>-<session-id>-<short-task-slug>`; use `/tmp` only for
-genuinely disposable work.
+Use a harness-provided worktree when one exists. Otherwise, prefer
+`/tmp/ducktape-worktrees/YYYY-MM-DD-<short-task-slug>`; choose the date and slug once
+and keep that path for the session. Use other `/tmp` paths only for genuinely
+disposable work.
 
 ### Parallel Bash calls share one working directory
 
