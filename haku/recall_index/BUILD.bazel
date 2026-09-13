@@ -80,6 +80,7 @@ py_library(
 
 py_library(
     name = "query",
+    testonly = True,
     srcs = ["query.py"],
     visibility = ["//visibility:public"],
     deps = [

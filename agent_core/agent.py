@@ -195,7 +195,7 @@ def _content_is_redundant(content: list[ResultContent], sc: ToolOutputData) -> b
         return False
     try:
         return bool(json.loads(block.text) == sc)
-    except (json.JSONDecodeError, AttributeError):
+    except json.JSONDecodeError, AttributeError:
         return False
 
 
@@ -804,7 +804,7 @@ class Agent:
                 h.on_response(
                     Response(response_id=resp.id, request_id=request_id, usage=usage, model=self._client.model)
                 )
-        # Note: Loop termination is controlled by handlers (e.g., MaxTurnsHandler)
+        # Note: Loop termination is controlled by handlers
         # or explicit tool policies (e.g., RequireAnyTool prevents text-only responses)
 
     def _process_resp_output(

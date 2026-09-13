@@ -1,14 +1,13 @@
 # Owning the CLI protocol
 
 **Status: built** (decided 2026-08-12). The console drives Claude Code's newline-delimited JSON
-protocol itself: <../cli_protocol/frames.py> types the control channel, `ClaudeCli`
-(<../console/x/claude_code/client.py>) reads both channels and owns `initialize` and `interrupt`,
-and `runner/claude/options.py` builds the launch argv. No Python imports the Agent SDK. Why each of
-those is ours rather than the SDK's is written where it is now maintained — those modules'
-docstrings — and the wire itself is <../cli_protocol/protocol.md>.
+protocol itself: `ClaudeCli` (<../console/x/claude_code/client.py>) reads both channels and owns
+`initialize` and `interrupt`, and `runner/claude/options.py` builds the launch argv. No Python
+imports the Agent SDK. Why each of those is ours rather than the SDK's is written where it is now
+maintained — those modules' docstrings — and the wire itself is <../cli_protocol/protocol.md>.
 
 The conversation channel stays deliberately unmodelled: the console's record of a session is the
-wire, and a frame gets a model when the code that acts on it exists.
+wire.
 
 Session re-adoption across a console roll — the design this decision was a prerequisite for — is
 also built; its decision record, including the replay hazard and the rejected alternatives, is

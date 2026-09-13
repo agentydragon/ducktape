@@ -257,10 +257,8 @@ live_openai_py_test(
         "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
         "//agent_core:agent",
         "//agent_core:handler",
-        "//agent_core:logging_handler",
         "//agent_core:loop_control",
         "//agent_core:mcp_provider",
-        "//agent_core:turn_limit",
         "//agent_core/testing:responses",
         "//agent_core/testing/mcp:responses",
         "//mcp_infra:prefix",

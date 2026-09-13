@@ -74,28 +74,6 @@ py_library(
 )
 
 py_library(
-    name = "logging_handler",
-    srcs = ["logging_handler.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":events",
-        ":handler",
-        ":loop_control",
-        "//openai_utils:model",
-    ],
-)
-
-py_library(
-    name = "turn_limit",
-    srcs = ["turn_limit.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":handler",
-        ":loop_control",
-    ],
-)
-
-py_library(
     name = "model",
     srcs = ["model.py"],
     visibility = ["//:__subpackages__"],
@@ -337,23 +315,6 @@ py_test(
 )
 
 py_test(
-    name = "test_turn_limit",
-    srcs = ["test_turn_limit.py"],
-    deps = [
-        ":agent",
-        ":conftest",
-        ":handler",
-        ":loop_control",
-        ":turn_limit",
-        "//:conftest",
-        "//agent_core/testing/mcp:responses",
-        "//openai_utils:model",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_compaction",
     srcs = ["test_compaction.py"],
     deps = [
@@ -378,9 +339,7 @@ live_openai_py_test(
         ":agent",
         ":conftest",
         ":handler",
-        ":logging_handler",
         ":loop_control",
-        ":turn_limit",
         "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
         "//agent_core/testing/mcp:responses",
         "//openai_utils:model",
@@ -398,9 +357,7 @@ live_openai_py_test(
         ":conftest",
         ":direct_provider",
         ":handler",
-        ":logging_handler",
         ":loop_control",
-        ":turn_limit",
         "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
         "//agent_core/testing:responses",
         "//openai_utils:model",

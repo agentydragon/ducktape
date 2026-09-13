@@ -15,19 +15,13 @@ leaves `content` empty:
 
 from __future__ import annotations
 
-import logging
-
 import pytest_bazel
 
 from agent_core.agent import Agent
 from agent_core.handler import FinishOnTextMessageHandler
-from agent_core.logging_handler import LoggingHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
 from agent_core.testing.mcp.responses import EchoMock
-from agent_core.turn_limit import MaxTurnsHandler
 from openai_utils.model import ReasoningItem, UserMessage
-
-logger = logging.getLogger(__name__)
 
 
 async def test_reasoning_elicited(mock_or_live, mcp_tool_provider_echo, recording_handler) -> None:
@@ -41,12 +35,7 @@ async def test_reasoning_elicited(mock_or_live, mcp_tool_provider_echo, recordin
     agent = await Agent.create(
         tool_provider=mcp_tool_provider_echo,
         client=client,
-        handlers=[
-            FinishOnTextMessageHandler(),
-            MaxTurnsHandler(max_turns=5),
-            LoggingHandler(logger),
-            recording_handler,
-        ],
+        handlers=[FinishOnTextMessageHandler(), recording_handler],
         tool_policy=AllowAnyToolOrTextMessage(),
     )
     agent.process_message(
