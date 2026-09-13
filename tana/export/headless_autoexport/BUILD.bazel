@@ -1,8 +1,0 @@
-load("//devinfra/python:defs.bzl", "py_library")
-
-py_library(
-    name = "record_from_profile",
-    srcs = ["record_from_profile.py"],
-    visibility = ["//:__subpackages__"],
-    deps = ["@pypi//playwright"],
-)
