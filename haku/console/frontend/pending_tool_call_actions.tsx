@@ -17,7 +17,7 @@ export function PendingToolCallActions({
   armed?: boolean;
   onApprove: (decisionNote?: string) => void;
   onDeny: (decisionNote?: string) => void;
-}): JSX.Element {
+}): import("react").JSX.Element {
   const [decisionNote, setDecisionNote] = useState("");
   const disabled = busy || !armed;
   const normalizedNote = () => decisionNote.trim() || undefined;

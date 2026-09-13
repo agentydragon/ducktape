@@ -8,7 +8,7 @@ import { JsonView } from "./json_view";
 /** A decided/terminal ActionRequest, kept as a durable receipt: the decision it's a record of leads
  * the card, with the exact arguments folded behind a disclosure rather than shown unconditionally
  * (the pending card's job is a live decision, this one's is a compact audit trail). */
-function HistoryCard({ request }: { request: ActionRequestView }): JSX.Element {
+function HistoryCard({ request }: { request: ActionRequestView }): import("react").JSX.Element {
   const decision = request.decision;
   const policySet = decision?.policy_evidence?.matched.policy_set;
   return (
@@ -71,7 +71,7 @@ function HistoryCard({ request }: { request: ActionRequestView }): JSX.Element {
 }
 
 /** Decided and terminal ActionRequests: durable receipts, not something an operator still acts on. */
-export function ActionHistory({ service = actionService }: { service?: ActionService }): JSX.Element {
+export function ActionHistory({ service = actionService }: { service?: ActionService }): import("react").JSX.Element {
   const { requests, error, loading } = useActionRequests(service);
   const decided = requests.filter((request) => request.state !== "decision_pending");
 

@@ -23,7 +23,7 @@ function prefixOf(event: Event): string {
  * where it sits, and on a phone there is no sideways to scroll — and JSON is highlighted, which is
  * what makes a wrapped blob legible as structure instead of a wall of punctuation.
  */
-export function FrameView({ event }: { event: Event }): JSX.Element {
+export function FrameView({ event }: { event: Event }): import("react").JSX.Element {
   const payload = payloadOf(event);
   // A harness that writes a plain line to its stdout still gets a frame, so highlight only what
   // announces itself as JSON rather than colouring the words of a log line as if they were tokens.

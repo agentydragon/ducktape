@@ -67,7 +67,7 @@ export function CreateGmailDraftResultView({
   args: CreateGmailDraftArgs;
   result: Draft;
   variant: PreviewVariant;
-}): JSX.Element {
+}): import("react").JSX.Element {
   const detailed = variant === "detailed";
   return (
     <Stack gap={6}>

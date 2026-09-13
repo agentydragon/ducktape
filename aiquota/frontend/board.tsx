@@ -53,7 +53,7 @@ const PROVIDER_NAMES: Record<string, string> = { claude: "Claude", codex: "Codex
  * One card per provider. `aiquota-scope` carries the palette (board.css), so a host page's own
  * tokens are neither read nor overwritten.
  */
-export function QuotaBoard({ quotas, now }: { quotas: QuotasView; now: number }): JSX.Element {
+export function QuotaBoard({ quotas, now }: { quotas: QuotasView; now: number }): import("react").JSX.Element {
   return (
     <section className="aiquota-scope aiquota-board" aria-live="polite">
       {quotas.providers.map((provider) => (
@@ -63,7 +63,7 @@ export function QuotaBoard({ quotas, now }: { quotas: QuotasView; now: number })
   );
 }
 
-function ProviderCard({ provider, now }: { provider: ProviderView; now: number }): JSX.Element {
+function ProviderCard({ provider, now }: { provider: ProviderView; now: number }): import("react").JSX.Element {
   const quota = effectiveQuota(provider);
   const tint = providerTint(provider, quota, now);
   const overPlan = provider.currently_over_plan;
@@ -125,7 +125,7 @@ function WindowRow({
   isShort: boolean;
   stale: boolean;
   now: number;
-}): JSX.Element {
+}): import("react").JSX.Element {
   const math: WindowMath = {
     usedPercent: window.used_percent,
     resetSeconds: resetSeconds(window, now),
@@ -175,7 +175,7 @@ function Meter({
   elapsed: number;
   tint: Tint;
   label: string;
-}): JSX.Element {
+}): import("react").JSX.Element {
   const fill = Math.max(0, Math.min(100, usedPercent));
   const tick = elapsed * 100;
   return (
@@ -210,7 +210,7 @@ function OverPlanStrip({
   extra: ExtraSpend | null;
   windows: QuotaWindow[];
   now: number;
-}): JSX.Element {
+}): import("react").JSX.Element {
   return (
     <div className="aiquota-strip aiquota-strip-over-plan">
       <p className="aiquota-strip-line">
@@ -233,7 +233,7 @@ function OverPlanStrip({
  * other facts about the future rather than in the status badges. The expiries come from a
  * best-effort detail endpoint that can name fewer credits than the count — hence "known".
  */
-function ResetCreditsStrip({ count, expiries }: { count: number; expiries: string[] }): JSX.Element {
+function ResetCreditsStrip({ count, expiries }: { count: number; expiries: string[] }): import("react").JSX.Element {
   return (
     <div className={`aiquota-strip${count > 0 ? " aiquota-strip-resets" : ""}`}>
       <p className="aiquota-strip-line">
@@ -245,7 +245,7 @@ function ResetCreditsStrip({ count, expiries }: { count: number; expiries: strin
 }
 
 /** Peak hours cost a multiple per token, so they belong beside the quota they drain. */
-function BurnStrip({ burn, now }: { burn: BurnStatus; now: number }): JSX.Element {
+function BurnStrip({ burn, now }: { burn: BurnStatus; now: number }): import("react").JSX.Element {
   const first = burn.upcoming[0];
   const changesAt = first ? new Date(burn.in_peak ? first.end : first.start) : null;
   const until = changesAt ? formatDuration((changesAt.getTime() - now) / 1000) : null;

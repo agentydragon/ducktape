@@ -226,7 +226,7 @@ function GrantRow({
   );
 }
 
-export function GrantsPanel(): JSX.Element {
+export function GrantsPanel(): import("react").JSX.Element {
   const agentNames = useAgentNames();
   const [allGrants, setAllGrants] = useState<Grant[] | null>(null);
   const [grants, setGrants] = useState<Grant[] | null>(null);

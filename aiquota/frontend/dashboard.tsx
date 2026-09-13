@@ -24,7 +24,7 @@ export function Dashboard({
   error: string | null;
   refreshing: boolean;
   onRefresh: () => void;
-}): JSX.Element {
+}): import("react").JSX.Element {
   return (
     <main id="app">
       <header className="aiquota-page-heading">
@@ -60,7 +60,7 @@ export function Dashboard({
 }
 
 /** The conventional circular arrow; the button is icon-only, so its label lives in aria-label. */
-function RefreshIcon(): JSX.Element {
+function RefreshIcon(): import("react").JSX.Element {
   return (
     <svg
       viewBox="0 0 24 24"

@@ -8,7 +8,7 @@ const POLL_INTERVAL_MS = 120_000;
 /** Reset countdowns are the only thing that moves between polls; tick them like a clock. */
 const TICK_MS = 1_000;
 
-export function App(): JSX.Element {
+export function App(): import("react").JSX.Element {
   const [quotas, setQuotas] = useState<QuotasView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(true);

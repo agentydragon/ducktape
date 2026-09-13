@@ -14,18 +14,22 @@ export type PreviewProps<Args> = { args: Args; variant: PreviewVariant };
 
 /** Tool-widget body copy. Keeping the default here prevents Mantine's larger application-level
  * default from leaking back into one server when a renderer omits `size`. */
-export function PreviewText({ size = "sm", ...props }: PropsWithChildren<TextProps>): JSX.Element {
+export function PreviewText({ size = "sm", ...props }: PropsWithChildren<TextProps>): import("react").JSX.Element {
   return <Text size={size} {...props} />;
 }
 
 /** A tool widget's primary identity: same type scale as its body, distinguished by weight rather
  * than a one-off larger font. */
-export function PreviewTitle({ size = "sm", fw = 600, ...props }: PropsWithChildren<TextProps>): JSX.Element {
+export function PreviewTitle({
+  size = "sm",
+  fw = 600,
+  ...props
+}: PropsWithChildren<TextProps>): import("react").JSX.Element {
   return <Text size={size} fw={fw} {...props} />;
 }
 
 /** Attribute/state pill for tool widgets. Variants and semantic colors remain call-site choices. */
-export function PreviewBadge({ size = "sm", ...props }: PropsWithChildren<BadgeProps>): JSX.Element {
+export function PreviewBadge({ size = "sm", ...props }: PropsWithChildren<BadgeProps>): import("react").JSX.Element {
   return <Badge size={size} {...props} />;
 }
 
@@ -40,7 +44,7 @@ export function plural(count: number, noun: string): string {
 }
 
 /** A dimmed "… +N more" line for the items a compact preview elided; renders nothing at 0. */
-export function MoreLine({ count }: { count: number }): JSX.Element | null {
+export function MoreLine({ count }: { count: number }): import("react").JSX.Element | null {
   if (count <= 0) return null;
   return (
     <PreviewText size="xs" c="dimmed">

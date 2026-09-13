@@ -31,7 +31,11 @@ export function stateLabel(state: ActionState): string {
 /** The grant fields, folded inside `RequestAuditDetails`' disclosure rather than shown
  * unconditionally: verbose per-request provenance an operator deciding needs occasionally, not on
  * every glance at the card. */
-function ExternalGrantFields({ grant }: { grant: NonNullable<ActionRequestView["external_grant"]> }): JSX.Element {
+function ExternalGrantFields({
+  grant,
+}: {
+  grant: NonNullable<ActionRequestView["external_grant"]>;
+}): import("react").JSX.Element {
   return (
     <Stack gap={2} mt={4} style={{ overflowWrap: "anywhere" }}>
       <Text size="xs">
@@ -56,7 +60,7 @@ function ExternalGrantFields({ grant }: { grant: NonNullable<ActionRequestView["
 /** The request's own verbose identifiers, folded behind one disclosure rather than shown
  * unconditionally: the UUID nobody reads at a glance, and -- when the caller authenticated
  * externally -- the grant provenance behind it. Shared by the pending and history cards. */
-export function RequestAuditDetails({ request }: { request: ActionRequestView }): JSX.Element {
+export function RequestAuditDetails({ request }: { request: ActionRequestView }): import("react").JSX.Element {
   const grant = request.external_grant;
   return (
     <details>
@@ -76,7 +80,7 @@ export function RequestAuditDetails({ request }: { request: ActionRequestView })
 /** The caller's own plain-language framing of what it is asking for — the required one-line
  * `title` and the optional `description` — shared by the pending and history cards so the operator
  * reads the same words when deciding and when auditing. */
-export function ActionContext({ request }: { request: ActionRequestView }): JSX.Element {
+export function ActionContext({ request }: { request: ActionRequestView }): import("react").JSX.Element {
   return (
     <>
       {/* TODO: rendered verbatim as plain text; markdown rendering is a possible later addition. */}
@@ -92,7 +96,7 @@ export function ActionContext({ request }: { request: ActionRequestView }): JSX.
 
 /** The caller-principal line shown unconditionally on both cards; the verbose grant provenance
  * behind an authenticated external caller lives in `RequestAuditDetails` instead. */
-export function ActionCaller({ request }: { request: ActionRequestView }): JSX.Element {
+export function ActionCaller({ request }: { request: ActionRequestView }): import("react").JSX.Element {
   if (!request.external_grant)
     return (
       <Text size="xs" c="dimmed">
@@ -187,7 +191,7 @@ function PendingActionCard({
   request: ActionRequestView;
   deciding: boolean;
   onDecide: (request: ActionRequestView, verdict: Verdict) => void;
-}): JSX.Element {
+}): import("react").JSX.Element {
   return (
     <Paper withBorder p="md">
       <Stack gap="sm">
@@ -224,7 +228,7 @@ function PendingActionCard({
 /** The primary, actionable view: ActionRequests still awaiting an operator decision. Decided and
  * terminal requests live on the separate `ActionHistory` view (`actions_history.tsx`) instead of
  * alongside these. */
-export function ActionRequests({ service = actionService }: { service?: ActionService }): JSX.Element {
+export function ActionRequests({ service = actionService }: { service?: ActionService }): import("react").JSX.Element {
   const { requests, error, loading, deciding, decide } = useActionRequests(service);
   const pending = requests.filter((request) => request.state === "decision_pending");
 

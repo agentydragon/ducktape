@@ -50,7 +50,7 @@ function thread(overrides: Partial<ThreadView> & Pick<ThreadView, "id" | "sandbo
   };
 }
 
-function LocationProbe(): JSX.Element {
+function LocationProbe(): import("react").JSX.Element {
   const location = useLocation();
   return <div data-testid="location">{location.pathname}</div>;
 }

@@ -37,7 +37,7 @@ const ALLOWED_TAGS = [
  * Markdown as HTML. The local class supplies the small amount of prose styling this transcript
  * needs; Mantine 9 removed the old `TypographyStylesProvider` wrapper.
  */
-export function Markdown({ source }: { source: string }): JSX.Element {
+export function Markdown({ source }: { source: string }): import("react").JSX.Element {
   const html = useMemo(() => {
     const rendered = marked.parse(source);
     if (typeof rendered !== "string") throw new Error("asynchronous Markdown rendering is not supported");
