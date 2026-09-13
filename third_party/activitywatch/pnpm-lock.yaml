@@ -54,8 +54,8 @@ importers:
         specifier: ^5.1.0
         version: 5.1.0(ajv@8.20.0)
       aw-client:
-        specifier: ^0.3.7
-        version: 0.3.7
+        specifier: ^0.4.0
+        version: 0.4.1
       bootstrap:
         specifier: ^5.0.0
         version: 5.3.8(@popperjs/core@2.11.8)
@@ -2668,11 +2668,8 @@ packages:
     resolution: {integrity: sha512-wvUjBtSGN7+7SjNpq/9M2Tg350UZD3q62IFZLbRAR1bSMlCo1ZaeW+BJ+D090e4hIIZLBcTDWe4Mh4jvUDajzQ==}
     engines: {node: '>= 0.4'}
 
-  aw-client@0.3.7:
-    resolution: {integrity: sha512-cY7NB06FSUFR1pvz1dnKbqasK5vf96VxjQBhEXG3//52hn87Hk3vfw79rYh2/izYe9eopgMGhn8JTUhvWT7Lkw==}
-
-  axios@1.18.1:
-    resolution: {integrity: sha512-3nTvFlvpn9Zu/RkHUqtc7/+al4UpRW5az71ap5zccp6e8RAYEzhMTecX8Dz1wWDYrPpUoB1HAQEGEAEvUr7S9g==}
+  aw-client@0.4.1:
+    resolution: {integrity: sha512-XTonpbduirGJTxFQt3/QXtN8L9i/GlOzp3gEBEzdr7a7Ot9pnn71QgnJU66KkPy9EMKZlA2d6DQh9wSA3cuePQ==}
 
   babel-jest@27.5.1:
     resolution: {integrity: sha512-cdQ5dXjGRd0IBRATiQ4mZGlGlRE8kJpjPOixdNRdT+m3UcNqmYWN6rK6nvtXYfY3D76cb8s/O1Ss8ea24PIwcg==}
@@ -6335,10 +6332,6 @@ packages:
   proxy-addr@2.0.7:
     resolution: {integrity: sha512-llQsMLSUDUPT44jdrU/O37qlnifitDP+ZwrmmZcoSKyLKvtZxpyV0n2/bD/N4tBAAZ/gJEdZU7KMraoK1+XYAg==}
     engines: {node: '>= 0.10'}
-
-  proxy-from-env@2.1.0:
-    resolution: {integrity: sha512-cJ+oHTW1VAEa8cJslgmUZrc+sjRKgAKl3Zyse6+PV38hZe/V6Z14TbCuXcan9F9ghlz4QrFr2c92TNF82UkYHA==}
-    engines: {node: '>=10'}
 
   prr@1.0.1:
     resolution: {integrity: sha512-yPw4Sng1gWghHQWj0B3ZggWUm4qVbPwPFcRG8KyxiU7J2OHFSoEHKS+EZ3fv5l1t9CyCiop6l/ZYeWbrgoQejw==}
@@ -10960,22 +10953,7 @@ snapshots:
     dependencies:
       possible-typed-array-names: 1.1.0
 
-  aw-client@0.3.7:
-    dependencies:
-      axios: 1.18.1
-    transitivePeerDependencies:
-      - debug
-      - supports-color
-
-  axios@1.18.1:
-    dependencies:
-      follow-redirects: 1.16.0(debug@4.4.3)
-      form-data: 4.0.6
-      https-proxy-agent: 5.0.1
-      proxy-from-env: 2.1.0
-    transitivePeerDependencies:
-      - debug
-      - supports-color
+  aw-client@0.4.1: {}
 
   babel-jest@27.5.1(@babel/core@7.29.7):
     dependencies:
@@ -14979,8 +14957,6 @@ snapshots:
     dependencies:
       forwarded: 0.2.0
       ipaddr.js: 1.9.1
-
-  proxy-from-env@2.1.0: {}
 
   prr@1.0.1:
     optional: true
