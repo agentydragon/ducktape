@@ -1,0 +1,5 @@
+--- a/python/private/pypi/hub_builder.bzl
++++ b/python/private/pypi/hub_builder.bzl
+@@ -319,1 +319,2 @@
+     repo_name = "{}_{}_{}".format(self.name, version_label(python_version), repo.repo_name)
++    print("RULES_PYTHON_GENERATED_REPO {}".format(repo_name))

@@ -8,6 +8,13 @@ bazel_dep(name = "bazel_skylib", version = "1.9.2")
 bazel_dep(name = "rules_python", version = "2.3.3")
 bazel_dep(name = "rules_python_gazelle_plugin", version = "2.3.3")
 
+# Temporary diagnostic for the rules_conda compatibility investigation.
+single_version_override(
+    module_name = "rules_python",
+    patch_strip = 1,
+    patches = ["//third_party/patches:rules_python_debug_names.patch"],
+)
+
 # Gazelle python plugin fixes. In 2.3.3, per-file mode still splits files containing
 # `if __name__ == "__main__"` into py_binary targets, stealing the module's library;
 # the first hunk disables that split in per-file mode. The closest upstream tracker
