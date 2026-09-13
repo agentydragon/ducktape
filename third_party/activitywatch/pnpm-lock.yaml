@@ -153,8 +153,8 @@ importers:
         specifier: ^6.4.1
         version: 6.4.3(@types/node@20.19.43)(less@4.9.1)(sass@1.104.1)(terser@5.51.2)
       vue-awesome:
-        specifier: ^3.5.1
-        version: 3.5.4(vue@2.7.16)
+        specifier: ^4.0.0
+        version: 4.5.0(vue@2.7.16)
       vue-chartjs:
         specifier: ^4.1.0
         version: 4.1.2(chart.js@3.9.1)(vue@2.7.16)
@@ -7416,11 +7416,11 @@ packages:
     resolution: {integrity: sha512-Dhxzh5HZuiHQhbvTW9AMetFfBHDMYpo23Uo9btPXgdYP+3T5S+p+jgNy7spra+veYhBP2dCSgxR/i2Y02h5/6w==}
     engines: {node: '>=0.10.0'}
 
-  vue-awesome@3.5.4:
-    resolution: {integrity: sha512-RRuo08A6mFye2RyLVdnODH5kyLiHANMl9EzKXZXCeMrsP4SY3nyjkQnTGlgbbVOBQuaGBMrFp9HPOJYDaVNk/w==}
+  vue-awesome@4.5.0:
+    resolution: {integrity: sha512-pbtZkRecXLm3fg0eVkwObDRM9YNU1BW5wDsL4mMoSvUXZbTnS+N2E4CahAwKJL5OPbqmhJQgZPekQoJrID7dcQ==}
     engines: {node: '>= 4.0.0', npm: '>= 3.0.0'}
     peerDependencies:
-      vue: ^2.2.6
+      vue: ^2.4.0
 
   vue-chartjs@4.1.2:
     resolution: {integrity: sha512-QSggYjeFv/L4jFSBQpX8NzrAvX0B+Ha6nDgxkTG8tEXxYOOTwKI4phRLe+B4f+REnkmg7hgPY24R0cixZJyXBg==}
@@ -16071,7 +16071,7 @@ snapshots:
 
   void-elements@3.1.0: {}
 
-  vue-awesome@3.5.4(vue@2.7.16):
+  vue-awesome@4.5.0(vue@2.7.16):
     dependencies:
       vue: 2.7.16
 
