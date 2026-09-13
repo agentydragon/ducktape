@@ -101,7 +101,7 @@ prometheus = "^0.14.0"
 # for the overlaid codex-shell-command + codex-utils-absolute-path BUILD files.
 # Versions pinned to openai/codex's workspace deps for API compatibility.
 base64 = "0.23.0"
-dirs = "6"
+dirs = "7"
 dunce = "1.0.4"
 once_cell = "1.20.2"
 tree-sitter = "0.27.0"
