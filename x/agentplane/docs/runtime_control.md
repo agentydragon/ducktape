@@ -38,7 +38,7 @@ common runtime mutation exists.
 
 The useful protocol concept is not a persistent harness capability. It is an operation-specific,
 time-local control state: for example, "the harness would accept a model change sent now" or "it
-would not accept one now." The meaning should be *now*, with no promise about a later point. A state
+would not accept one now." The meaning should be _now_, with no promise about a later point. A state
 transition could therefore say that acceptance has changed, but it cannot replace the response to
 the command: state and command can race, and the command response is the authoritative result.
 
