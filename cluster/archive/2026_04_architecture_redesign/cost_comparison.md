@@ -8,7 +8,7 @@
 | Worker (x2) | CPX31 | 4 shared | 8 GB | 160 GB | 24.99     |
 | **Total**   |       | 16       | 32GB | 640 GB | **99.96** |
 
-Planned upgrade to CPX41: 8 vCPU / 16 GB RAM / 240 GB per node → ~€67/mo total (~$73).
+Planned upgrade to CPX41: 8 vCPU / 16 GB RAM / 240 GB per node → ≈€67/mo total (≈$73).
 
 Plus home infrastructure (free aside from electricity):
 

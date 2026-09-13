@@ -49,7 +49,9 @@ Term 2
 
 ## Attributes and Classes (Pandoc extension)
 
+```text
 [This paragraph has a class.]{.warning}
+```
 
 ## Task Lists (GFM extension)
 
@@ -78,7 +80,9 @@ $$
 
 ## Superscript and Subscript (Pandoc extension)
 
+```text
 E=mc^2^ and H~2~O
+```
 
 ## Footnotes (extension, not CommonMark)
 
