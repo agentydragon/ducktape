@@ -9,21 +9,23 @@ spec:
   retryInterval: 1m
   interval: 10m
   timeout: 5m
-  path: ./cluster/k8s/agents/agent-sandbox/workspaces/app
+  path: ./cluster/k8s/agents/agent-sandbox/workspaces
   prune: true
   wait: true
   sourceRef:
     kind: ExternalArtifact
     name: agent-workspaces-app
     namespace: ducktape-flux
+  healthChecks:
+    - apiVersion: v1
+      kind: Namespace
+      name: agent-workspaces
   dependsOn:
     - name: external-secrets-config
       namespace: ducktape-flux
     - name: forgejo-images
       namespace: ducktape-flux
     - name: agent-sandbox-controller # CRDs + controller
-      namespace: ducktape-flux
-    - name: agent-workspaces-namespace
       namespace: ducktape-flux
     - name: litellm-keys-tf # mints + reflects the Codex workspace key
       namespace: ducktape-flux

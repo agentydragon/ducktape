@@ -60,8 +60,7 @@ resources:
   - agents/shared-secrets/flux-kustomization.yaml
   - agents/agent-rbac-base/flux-kustomization.yaml
   - agents/agent-sandbox/controller/flux-kustomization.yaml
-  - agents/agent-sandbox/workspaces/namespace/flux-kustomization.yaml
-  - agents/agent-sandbox/workspaces/app/flux-kustomization.yaml
+  - agents/agent-sandbox/workspaces/flux-kustomization.yaml
   - agents/claude-sandbox-secrets/flux-kustomization.yaml
   - agents/authentik-jwt-rotation/flux-kustomization.yaml
   - agents/forgejo-token-rotation/flux-kustomization.yaml
@@ -84,8 +83,7 @@ resources:
   - agents/manifold-mcp/namespace/flux-kustomization.yaml
   - agents/manifold-mcp/app/flux-kustomization.yaml
   - agents/manifold-mcp/servicemonitor/flux-kustomization.yaml
-  - agents/osm-mcp/namespace/flux-kustomization.yaml
-  - agents/osm-mcp/app/flux-kustomization.yaml
+  - agents/osm-mcp/flux-kustomization.yaml
   - agents/plaid-mcp/namespace/flux-kustomization.yaml
   - agents/plaid-mcp/db/flux-kustomization.yaml
   - agents/plaid-mcp/app/flux-kustomization.yaml
@@ -98,8 +96,7 @@ resources:
   - agents/ha-mcp/credentials/flux-kustomization.yaml
   - agents/ha-mcp/app/flux-kustomization.yaml
   - agents/ha-mcp/servicemonitor/flux-kustomization.yaml
-  - home-assistant/namespace/flux-kustomization.yaml
-  - home-assistant/app/flux-kustomization.yaml
+  - home-assistant/flux-kustomization.yaml
   - agents/mitmproxy-namespace/flux-kustomization.yaml
   - agents/mitmproxy/flux-kustomization.yaml
   - agents/haku-egress-proxy-namespace/flux-kustomization.yaml
@@ -228,8 +225,7 @@ resources:
   - budget/app/flux-kustomization.yaml
 
   # --- evidence (shared evidence-scraping config: the market mirror roster) ---
-  - evidence/namespace/flux-kustomization.yaml
-  - evidence/market-roster/flux-kustomization.yaml
+  - evidence/flux-kustomization.yaml
 
   # --- haku (personal background agent; see haku/PLAN.md) ---
   - haku/namespace/flux-kustomization.yaml
@@ -319,8 +315,7 @@ resources:
   - aiquota/flux-kustomization.yaml
 
   # --- headlamp ---
-  - headlamp/namespace/flux-kustomization.yaml
-  - headlamp/app/flux-kustomization.yaml
+  - headlamp/flux-kustomization.yaml
 
   # --- paperless ---
   - paperless/namespace/flux-kustomization.yaml

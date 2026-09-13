@@ -7,6 +7,7 @@ metadata:
     # VolSync mover to copy without silently omitting state.
     volsync.backube/privileged-movers: "true"
   labels:
+    goldilocks.fairwinds.com/enabled: "true"
     # Home Assistant and Matter need the host network for mDNS, Bluetooth and
     # Matter fabric traffic on the physical home LAN.
     pod-security.kubernetes.io/enforce: privileged

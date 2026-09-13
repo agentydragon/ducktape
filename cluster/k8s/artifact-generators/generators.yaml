@@ -665,8 +665,8 @@ spec:
     - name: home-assistant
       originRevision: "@repo"
       copy:
-        - from: "@repo/cluster/k8s/home-assistant/app/**"
-          to: "@artifact/cluster/k8s/home-assistant/app/"
+        - from: "@repo/cluster/k8s/home-assistant/**"
+          to: "@artifact/cluster/k8s/home-assistant/"
           exclude:
             - flux-kustomization.yaml
 
@@ -857,16 +857,8 @@ spec:
     - name: osm-mcp
       originRevision: "@repo"
       copy:
-        - from: "@repo/cluster/k8s/agents/osm-mcp/app/**"
-          to: "@artifact/cluster/k8s/agents/osm-mcp/app/"
-          exclude:
-            - flux-kustomization.yaml
-
-    - name: osm-mcp-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/osm-mcp/namespace/**"
-          to: "@artifact/cluster/k8s/agents/osm-mcp/namespace/"
+        - from: "@repo/cluster/k8s/agents/osm-mcp/**"
+          to: "@artifact/cluster/k8s/agents/osm-mcp/"
           exclude:
             - flux-kustomization.yaml
 
@@ -1001,16 +993,8 @@ spec:
     - name: agent-workspaces-app
       originRevision: "@repo"
       copy:
-        - from: "@repo/cluster/k8s/agents/agent-sandbox/workspaces/app/**"
-          to: "@artifact/cluster/k8s/agents/agent-sandbox/workspaces/app/"
-          exclude:
-            - flux-kustomization.yaml
-
-    - name: agent-workspaces-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/agent-sandbox/workspaces/namespace/**"
-          to: "@artifact/cluster/k8s/agents/agent-sandbox/workspaces/namespace/"
+        - from: "@repo/cluster/k8s/agents/agent-sandbox/workspaces/**"
+          to: "@artifact/cluster/k8s/agents/agent-sandbox/workspaces/"
           exclude:
             - flux-kustomization.yaml
 
@@ -1249,15 +1233,8 @@ spec:
     - name: evidence-market-roster
       originRevision: "@repo"
       copy:
-        - from: "@repo/cluster/k8s/evidence/market-roster/**"
-          to: "@artifact/cluster/k8s/evidence/market-roster/"
-          exclude:
-            - flux-kustomization.yaml
-    - name: evidence-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/evidence/namespace/**"
-          to: "@artifact/cluster/k8s/evidence/namespace/"
+        - from: "@repo/cluster/k8s/evidence/**"
+          to: "@artifact/cluster/k8s/evidence/"
           exclude:
             - flux-kustomization.yaml
     - name: firecrawl
@@ -1611,22 +1588,8 @@ spec:
     - name: headlamp-app
       originRevision: "@repo"
       copy:
-        - from: "@repo/cluster/k8s/headlamp/app/**"
-          to: "@artifact/cluster/k8s/headlamp/app/"
-          exclude:
-            - flux-kustomization.yaml
-    - name: headlamp-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/headlamp/namespace/**"
-          to: "@artifact/cluster/k8s/headlamp/namespace/"
-          exclude:
-            - flux-kustomization.yaml
-    - name: home-assistant-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/home-assistant/namespace/**"
-          to: "@artifact/cluster/k8s/home-assistant/namespace/"
+        - from: "@repo/cluster/k8s/headlamp/**"
+          to: "@artifact/cluster/k8s/headlamp/"
           exclude:
             - flux-kustomization.yaml
     - name: hubble-ui
