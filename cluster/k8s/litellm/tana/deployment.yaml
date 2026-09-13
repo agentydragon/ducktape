@@ -23,7 +23,7 @@ spec:
       terminationGracePeriodSeconds: 90
       containers:
         - name: litellm
-          image: git.allegedly.works/ducktape-ci/tana-litellm-proxy:devel-20260913010759-3b190fd # {"$imagepolicy": "flux-system:tana-litellm-proxy"}
+          image: git.allegedly.works/ducktape-ci/tana-litellm-proxy:devel-20260913074202-77faa01 # {"$imagepolicy": "flux-system:tana-litellm-proxy"}
           imagePullPolicy: Always
           args: ["--config", "/etc/litellm/config.yaml"]
           ports:
