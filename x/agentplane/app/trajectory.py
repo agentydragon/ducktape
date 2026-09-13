@@ -1,10 +1,12 @@
 """Trajectories outlive sandboxes: every runner event, `Native` frames included, copied into
 PostgreSQL as it arrives.
 
-A thread is one runner session, keyed by the sandbox and the client-chosen session id; its events
-are stored as the protocol's own proto-JSON under the session's sequence, so a thread reads back
-without a runner and a deleted sandbox loses nothing. The schema is owned by the Alembic migrations
-under `migrations/`, applied by `database_migrate.py` as a separate deploy step.
+Today the trajectory store projects one runner session into one Thread. The durable start-request
+boundary below deliberately keeps the product Thread id distinct from its initial runner session
+id, so the next schema change can make runner-session attachments many-to-one with Threads. Events
+are stored as the protocol's own proto-JSON, so a Thread reads back without a runner and a deleted
+Sandbox loses nothing. The schema is owned by the Alembic migrations under `migrations/`, applied
+by `database_migrate.py` as a separate deploy step.
 """
 
 from __future__ import annotations
@@ -35,6 +37,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from x.agentplane.app.changes import Changes
 from x.agentplane.app.operator_sessions import Base, OperatorSessionStore
+from x.agentplane.app.presets import SandboxCreationSpec
 from x.agentplane.app.trajectory_updates import CHANNEL, TrajectoryUpdates
 from x.agentplane.runner import protocol_pb2 as pb
 
@@ -93,6 +96,36 @@ class FeedState(Base):
     end: Mapped[dict[str, str] | None] = mapped_column(JSONB(none_as_null=True))
 
 
+class ThreadStartRequest(Base):
+    """A requested first turn before a runner can admit it.
+
+    `Event` remains the durable Thread transcript.  This row exists only for the gap before
+    a Sandbox is reachable and its runner has emitted the real ``InputSubmitted`` event.  The
+    client mints the Thread id before submitting, so retrying an uncertain POST names the same
+    desired Thread instead of creating a second first turn.
+    """
+
+    __tablename__ = "thread_start_request"
+    # This is the client-minted product Thread id. It is also the correlation label on a new
+    # Sandbox; no separate request id exists.
+    thread_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    # Existing targets are pinned to the exact Kubernetes object selected.  New targets have no
+    # UID yet and are instead found by the thread-id label after creation.
+    sandbox: Mapped[str | None] = mapped_column(Text)
+    sandbox_uid: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    # Null means an existing Sandbox.  A non-null document is the fully resolved creation request
+    # the durable reconciler will apply, not a live preset lookup it could reinterpret after a
+    # configuration change.
+    sandbox_creation: Mapped[dict[str, object] | None] = mapped_column(JSONB(none_as_null=True))
+    # The initial runner attachment selected for this start. It is not the Thread's identity and a
+    # later runner attachment may use a different id for the same Thread.
+    runner_session_id: Mapped[str] = mapped_column(Text)
+    session_spec: Mapped[dict[str, object]] = mapped_column(JSONB)
+    input_id: Mapped[str] = mapped_column(Text)
+    input_text: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+
+
 @dataclass(frozen=True)
 class IngestionLease:
     sandbox: str
@@ -117,6 +150,59 @@ class FeedError:
 class FeedSnapshot:
     attached: pb.Attached
     end: FeedEnd | FeedError | None
+
+
+@dataclass(frozen=True)
+class ExistingSandboxTarget:
+    """A particular Kubernetes Sandbox selected for a new Thread."""
+
+    sandbox: str
+    sandbox_uid: UUID
+
+    def __post_init__(self) -> None:
+        if not self.sandbox:
+            raise ValueError("an existing Sandbox target name must not be empty")
+
+
+@dataclass(frozen=True)
+class NewSandboxTarget:
+    """A Sandbox to create and later find by the Thread id correlation label."""
+
+    creation: SandboxCreationSpec
+
+
+SandboxTarget = ExistingSandboxTarget | NewSandboxTarget
+
+
+@dataclass(frozen=True)
+class NewThreadStartRequest:
+    """The immutable, idempotent request a browser submits once it presses Enter.
+
+    ``target`` selects an existing Sandbox or supplies an immutable creation spec. The concrete
+    Sandbox spec, SessionSpec, and Input are resolved before this boundary; persistence is their
+    only JSON conversion point. ``runner_session_id`` is the first runner attachment, not the
+    Thread identity.
+    """
+
+    thread_id: UUID
+    target: SandboxTarget
+    runner_session_id: str
+    session_spec: pb.SessionSpec
+    first_input: pb.Input
+
+    def __post_init__(self) -> None:
+        if not self.runner_session_id:
+            raise ValueError("a Thread runner session id must not be empty")
+
+
+@dataclass(frozen=True)
+class ThreadStartRequestSnapshot:
+    thread_id: UUID
+    target: SandboxTarget
+    runner_session_id: str
+    session_spec: pb.SessionSpec
+    first_input: pb.Input
+    created_at: datetime
 
 
 class ThreadView(BaseModel):
@@ -144,6 +230,13 @@ class ThreadNotFoundError(Exception):
         super().__init__(f"no thread {thread_id}")
 
 
+class ThreadStartRequestConflictError(Exception):
+    """A Thread id or stable runner attachment was reused for different work."""
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(detail)
+
+
 class TrajectoryStore:
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
@@ -164,7 +257,7 @@ class TrajectoryStore:
         await self._updates.start()
 
     async def thread(self, sandbox: str, session_id: str, spec: pb.SessionSpec) -> UUID:
-        """The thread for a session, created from its spec on first sight."""
+        """Find the Thread for a runner attachment, creating a legacy one on first sight."""
         async with self._sessions.begin() as session:
             created = await session.scalar(
                 insert(Thread)
@@ -186,6 +279,57 @@ class TrajectoryStore:
                     select(Thread.id).where(Thread.sandbox == sandbox, Thread.session_id == session_id)
                 )
             ).one()
+
+    async def request_thread_start(self, request: NewThreadStartRequest) -> ThreadStartRequestSnapshot:
+        """Persist a first-turn request exactly once.
+
+        A repeated uncertain POST returns the original request only when every immutable field
+        agrees. Reusing a Thread id for different work is an operator-visible conflict, not
+        best-effort duplicate suppression that might send the wrong prompt.
+        """
+        target_values = _target_values(request.target)
+        request_values = {
+            "thread_id": request.thread_id,
+            **target_values,
+            "runner_session_id": request.runner_session_id,
+            "session_spec": MessageToDict(request.session_spec),
+            "input_id": request.first_input.input_id,
+            "input_text": request.first_input.text,
+        }
+        async with self._sessions.begin() as session:
+            inserted_start_thread_id = await session.scalar(
+                insert(ThreadStartRequest)
+                .values(**request_values)
+                .on_conflict_do_nothing()
+                .returning(ThreadStartRequest.thread_id)
+            )
+            if inserted_start_thread_id is None:
+                stored = await session.get(ThreadStartRequest, request.thread_id)
+                if stored is None:
+                    raise RuntimeError("Thread-start request insert conflicted without a matching request")
+                if _same_thread_start_request(stored, request):
+                    return _thread_start_request_snapshot(stored)
+                raise ThreadStartRequestConflictError("thread id was already used for a different Thread-start request")
+            # This wakes a reconciler on every replica.  It is an invalidation, not a synthetic
+            # lifecycle stream: the reader derives lifecycle from Kubernetes and real Event rows.
+            await _notify(session)
+            stored = await session.get(ThreadStartRequest, inserted_start_thread_id)
+            if stored is None:  # pragma: no cover - the insert above returned its primary key.
+                raise RuntimeError("created Thread start request disappeared before commit")
+            return _thread_start_request_snapshot(stored)
+
+    async def thread_start_request(self, thread_id: UUID) -> ThreadStartRequestSnapshot | None:
+        async with self._sessions() as session:
+            stored = await session.get(ThreadStartRequest, thread_id)
+            return _thread_start_request_snapshot(stored) if stored is not None else None
+
+    async def thread_start_requests(self) -> list[ThreadStartRequestSnapshot]:
+        """All accepted desired requests; real runner Event rows determine completion."""
+        async with self._sessions() as session:
+            requests = await session.scalars(
+                select(ThreadStartRequest).order_by(ThreadStartRequest.created_at, ThreadStartRequest.thread_id)
+            )
+            return [_thread_start_request_snapshot(stored) for stored in requests]
 
     async def last_sequence(self, thread_id: UUID) -> int:
         async with self._sessions() as session:
@@ -387,6 +531,50 @@ class TrajectoryStore:
                 .limit(limit)
             )
             return [ParseDict(payload, pb.Event()) for payload in payloads]
+
+
+def _same_thread_start_request(row: ThreadStartRequest, request: NewThreadStartRequest) -> bool:
+    """Strict equality is the safe idempotency rule for a first user message."""
+    target = _target_values(request.target)
+    return (
+        row.thread_id == request.thread_id
+        and row.sandbox == target["sandbox"]
+        and row.sandbox_uid == target["sandbox_uid"]
+        and row.sandbox_creation == target["sandbox_creation"]
+        and row.runner_session_id == request.runner_session_id
+        and ParseDict(row.session_spec, pb.SessionSpec()) == request.session_spec
+        and row.input_id == request.first_input.input_id
+        and row.input_text == request.first_input.text
+    )
+
+
+def _target_values(target: SandboxTarget) -> dict[str, str | UUID | dict[str, object] | None]:
+    match target:
+        case ExistingSandboxTarget(sandbox=sandbox, sandbox_uid=sandbox_uid):
+            return {"sandbox": sandbox, "sandbox_uid": sandbox_uid, "sandbox_creation": None}
+        case NewSandboxTarget(creation=creation):
+            return {"sandbox": None, "sandbox_uid": None, "sandbox_creation": creation.model_dump(mode="json")}
+
+
+def _target_snapshot(stored: ThreadStartRequest) -> SandboxTarget:
+    if stored.sandbox_creation is not None:
+        if stored.sandbox is not None or stored.sandbox_uid is not None:
+            raise RuntimeError("new-Sandbox Thread start request has an existing-Sandbox target")
+        return NewSandboxTarget(SandboxCreationSpec.model_validate(stored.sandbox_creation))
+    if stored.sandbox is None or stored.sandbox_uid is None:
+        raise RuntimeError("existing-Sandbox Thread start request has no pinned Sandbox")
+    return ExistingSandboxTarget(stored.sandbox, stored.sandbox_uid)
+
+
+def _thread_start_request_snapshot(stored: ThreadStartRequest) -> ThreadStartRequestSnapshot:
+    return ThreadStartRequestSnapshot(
+        thread_id=stored.thread_id,
+        target=_target_snapshot(stored),
+        runner_session_id=stored.runner_session_id,
+        session_spec=ParseDict(stored.session_spec, pb.SessionSpec()),
+        first_input=pb.Input(input_id=stored.input_id, text=stored.input_text),
+        created_at=stored.created_at,
+    )
 
 
 def _positive_duration(duration: timedelta) -> None:

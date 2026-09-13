@@ -532,6 +532,13 @@ just opens the Sandbox list — this replaces that stub with the real composer. 
 eventually becomes the default landing page instead of requiring the sidebar click first is an open
 question, not decided.
 
+**Object-management surface remains:** this high-level path is additive. Keep the manual Sandbox
+list/page and its direct controls for creating a Sandbox with no Thread, selecting a Sandbox before
+opening a session, and inspecting/suspending/resuming/deleting the Kubernetes object. They expose
+the real lifecycle while the Thread-first workflow is being shaken down and remain necessary for
+advanced operation. The sidebar must continue to show threadless Sandboxes; the composer should
+link to the resulting Sandbox and Thread rather than making their lower-level routes disappear.
+
 ### `NEWTHREAD_DURABLE` — server-owned sandbox+thread provisioning
 
 **Planned backend, required for `UISHELL_NEWTHREAD_LANDING`/`UISHELL_NEWTHREAD_SANDBOX` to be
@@ -555,17 +562,21 @@ existing per-sandbox watch already clears that higher bar for the state it track
 reconcile loop (`RECONCILE_S`) re-derives ownership and in-flight sessions from `TrajectoryStore`
 (PostgreSQL) every cycle, across replicas, rather than trusting one process's memory — so any replica
 can pick up where another left off. The new-thread _request_ itself needs the same treatment, not
-just the mechanism watching it: persist it as a durable row (sandbox target/params, thread spec, the
-prompt, a status) the moment it's accepted, keyed the same way the Action Service already makes a
-submission idempotent and recoverable (`idempotency_key` in `action_service/models.py`) rather than
-inventing a new pattern. The reconcile loop picks up any row still pending, drives it to open the
-session and send the first turn, and marks it done — exactly the shape that already survives replica
-death for ingestion, extended to cover provisioning too.
+just the mechanism watching it: persist immutable desired state (the client-minted Thread id,
+existing-Sandbox target or concrete new-Sandbox spec, initial runner-session spec, and prompt) the
+moment it is accepted. The Thread id is the new Sandbox's correlation label; no second request or
+"launch" identity is needed. A reconciler repeatedly compares that desired state with Kubernetes,
+the runner, and the Thread transcript, then makes the missing idempotent calls to create/find the
+Sandbox, open the initial runner session, and submit the input. Kubernetes remains the source of
+Sandbox/Pod lifecycle; runner `Event` rows remain the Thread's delivery transcript. This row does
+not invent a parallel lifecycle-status stream.
 
-The client mints the session id up front (the same pattern `sandbox_page.tsx`'s `createSession`
-already uses) so it has a stable URL to bind to from the moment of submission, before the sandbox or
-session exist yet; reopening that URL later, from any device, just reconnects to the same live
-stream.
+A Thread is the durable user-facing conversation, not a runner session. It can have multiple
+runner-session attachments over time; the client also mints an initial runner session id because
+the runner needs an address before it exists, but that id does not identify the Thread. The page
+will bind to the Thread id from submission onward. Reopening it later, from any device, reads the
+same desired state and then the real Thread history rather than a different route selected by
+whatever runner session happens to be current.
 
 ### `UISHELL_SIDEBAR_LIVE` — sidebar Thread/Sandbox state goes stale
 

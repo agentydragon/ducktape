@@ -1,12 +1,12 @@
-"""The store's contract: a thread per session, events kept verbatim and idempotently, read back
-without a runner."""
+"""The store's contract: Thread identities are distinct from runner attachments; events are kept
+verbatim and idempotently, then read back without a runner."""
 
 from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
@@ -14,13 +14,18 @@ from google.protobuf.timestamp_pb2 import Timestamp
 from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from x.agentplane.app.presets import SandboxBinding, SandboxCreationSpec
 from x.agentplane.app.trajectory import (
+    ExistingSandboxTarget,
     FeedEnd,
     FeedError,
     IngestionLease,
     IngestionLeaseLostError,
+    NewSandboxTarget,
+    NewThreadStartRequest,
     SandboxIngestion,
     ThreadNotFoundError,
+    ThreadStartRequestConflictError,
     TrajectoryStore,
 )
 from x.agentplane.runner import protocol_pb2 as pb
@@ -54,7 +59,92 @@ def _event(sequence: int, **observation: object) -> pb.Event:
     return pb.Event(sequence=sequence, at=at, **observation)  # type: ignore[arg-type]
 
 
-async def test_a_session_is_one_thread_and_its_events_read_back_in_order(
+def _thread_start_request(
+    *,
+    thread_id: UUID | None = None,
+    sandbox: str = "new-work-a1b2c",
+    sandbox_uid: UUID | None = None,
+    runner_session_id: str = "s-new",
+    text: str = "Investigate the failed deploy.",
+) -> NewThreadStartRequest:
+    return NewThreadStartRequest(
+        thread_id=thread_id or uuid4(),
+        target=(
+            ExistingSandboxTarget(sandbox, sandbox_uid)
+            if sandbox_uid is not None
+            else NewSandboxTarget(
+                SandboxCreationSpec(
+                    template="public-coder",
+                    egress_policies=["basic", "github-public"],
+                    action_policy_sets=["public-coder"],
+                    preset_binding=SandboxBinding(sandbox_preset="public-coder"),
+                    bootstrap="git status",
+                )
+            )
+        ),
+        runner_session_id=runner_session_id,
+        session_spec=SPEC,
+        first_input=pb.Input(input_id="input-first", text=text),
+    )
+
+
+async def test_a_thread_start_request_preserves_a_concrete_pre_admission_request(store: TrajectoryStore) -> None:
+    request = _thread_start_request()
+
+    accepted = await store.request_thread_start(request)
+
+    assert accepted.thread_id == request.thread_id
+    assert accepted.target == request.target
+    assert accepted.runner_session_id == request.runner_session_id
+    assert accepted.session_spec == SPEC
+    assert accepted.first_input == request.first_input
+    # This is desired state, not a claim that the current session-shaped Thread table already
+    # models the eventual Thread. A follow-up makes runner attachments many-to-one with Thread.
+    assert await store.list_threads() == []
+    assert await store.thread_start_request(accepted.thread_id) == accepted
+    assert await store.thread_start_requests() == [accepted]
+    # A response lost after commit is harmless to retry with exactly the same request: the prompt
+    # still appears once, in this pre-admission record, until the runner owns it in Event.
+    assert await store.request_thread_start(request) == accepted
+
+
+async def test_a_thread_start_request_rejects_changing_work_under_one_thread_id(store: TrajectoryStore) -> None:
+    request = _thread_start_request()
+    await store.request_thread_start(request)
+
+    with pytest.raises(ThreadStartRequestConflictError, match="thread id"):
+        await store.request_thread_start(
+            _thread_start_request(thread_id=request.thread_id, text="A different request.")
+        )
+
+
+async def test_a_thread_start_request_can_choose_an_existing_sandbox(store: TrajectoryStore) -> None:
+    sandbox_uid = uuid4()
+    request = _thread_start_request(sandbox="already-running", sandbox_uid=sandbox_uid)
+
+    accepted = await store.request_thread_start(request)
+
+    assert accepted.target == ExistingSandboxTarget("already-running", sandbox_uid)
+    with pytest.raises(ValueError, match="existing Sandbox target name"):
+        ExistingSandboxTarget("", sandbox_uid)
+
+
+async def test_thread_start_requests_wake_other_replicas_and_are_concurrently_idempotent(
+    store: TrajectoryStore, replica: TrajectoryStore
+) -> None:
+    changed = asyncio.Event()
+    with replica.changes.subscribe(changed):
+        accepted = await store.request_thread_start(_thread_start_request())
+        await asyncio.wait_for(changed.wait(), timeout=5)
+    assert await replica.thread_start_request(accepted.thread_id) == accepted
+    first, second = await asyncio.gather(
+        store.request_thread_start(_thread_start_request(thread_id=accepted.thread_id)),
+        replica.request_thread_start(_thread_start_request(thread_id=accepted.thread_id)),
+    )
+    assert first == second == accepted
+
+
+async def test_a_runner_attachment_names_one_thread_and_its_events_read_back_in_order(
     store: TrajectoryStore, lease: IngestionLease
 ) -> None:
     thread = await store.thread("sb-1", "s-1", SPEC)

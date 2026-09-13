@@ -400,6 +400,7 @@ py_library(
     deps = [
         ":changes",
         ":operator_sessions",
+        ":presets",
         ":trajectory_updates",
         "//x/agentplane/runner:protocol_pb2",
         "@pypi//asyncpg",
@@ -415,6 +416,7 @@ py_test(
     srcs = ["test_trajectory.py"],
     deps = [
         ":conftest",
+        ":presets",
         ":trajectory",
         "//:conftest",
         "//x/agentplane/runner:protocol_pb2",

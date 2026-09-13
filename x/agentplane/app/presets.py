@@ -82,6 +82,23 @@ class SandboxBinding(BaseModel):
     thread_overrides: ThreadDefaults = Field(default_factory=ThreadDefaults)
 
 
+class SandboxCreationSpec(BaseModel):
+    """The fully resolved, immutable Sandbox side of one new-Thread request.
+
+    A browser submits a preset name and optional edits; the API resolves that into this concrete
+    form before persistence.  A reconciler can therefore continue after a config rollout without
+    changing the template, grants, or bootstrap script the operator accepted.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    template: str = Field(min_length=1)
+    egress_policies: list[str] = Field(default_factory=list)
+    action_policy_sets: list[str] = Field(default_factory=list)
+    preset_binding: SandboxBinding | None = None
+    bootstrap: str = Field(default="", max_length=65_536)
+
+
 class SandboxPresetView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
