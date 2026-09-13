@@ -13,8 +13,8 @@
       "sha256": "qCjjfGO18kjttVi//Xlg1FxKJbx+yIE4joHBsqgEnCA="
     },
     "claude-hooks": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-64acfeda27fa/claude_hooks-0.1.0-py3-none-any.whl",
-      "sha256": "ZKz+2if690BxV5kCcL6soVeqQJ9gaZ7DiS7czoVEh1o="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-725785a241e9/claude_hooks-0.1.0-py3-none-any.whl",
+      "sha256": "cleFokHpC6DICiaVm2RHJ3/oWmaVf7VfIIdUW34ivJI="
     },
     "ducktape-git-hooks": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-git-hooks-d2108b229806/ducktape_git_hooks-0.1.0-py3-none-any.whl",
@@ -25,8 +25,8 @@
       "sha256": "63E2m+rAhYBlnZ6CrccnHIPLO5NIsDZbPArSSWI6vBI="
     },
     "ducktape": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-df5b92188c39/ducktape-0.1.0-py3-none-any.whl",
-      "sha256": "31uSGIw5ozq9v1KFZJQ8O3UU8KaqywVEz5/u0O2YoXM="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-252e50281a35/ducktape-0.1.0-py3-none-any.whl",
+      "sha256": "JS5QKBo1VQRqJzPGTa1xj8L60x/PH6fU5+MYtJLMYNY="
     },
     "gterm-theme": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-9d9992c2da1d/gterm_theme-0.1.0-py3-none-any.whl",
@@ -37,12 +37,12 @@
       "sha256": "Pmh9R6/gLEIYf0iKAa0r4JO5QqXpC1eVW0v2bYcJKcY="
     },
     "aiquota-extension": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-3725f35b2fbf/aiquota.zip",
+      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-cc0a6226b99e/aiquota.zip",
       "sha256": "h5FY1EiwBpdmmGGKccNS7KRAkag48pCMYugtiSvaVWw="
     },
     "aiquota": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-3725f35b2fbf/aiquota-0.1.0-py3-none-any.whl",
-      "sha256": "P2213YRg5jQzZMvy2OUCQEFn4UI8lGhwK4SASU6Co8A="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-cc0a6226b99e/aiquota-0.1.0-py3-none-any.whl",
+      "sha256": "tb2YIukoHNXz63EMyXOKpC3a6eqO1OTcaGkkG55HDNA="
     },
     "haku-approvals": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/haku-approvals-3b4a69f4c16d/haku-approvals.zip",
