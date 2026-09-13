@@ -337,9 +337,9 @@ in
         ''}
         Type=Application
       '').overrideAttrs
-      (_: {
-        passthru.providedSessions = [ "sway-debug" ];
-      })
+        (_: {
+          passthru.providedSessions = [ "sway-debug" ];
+        })
     )
   ];
 
