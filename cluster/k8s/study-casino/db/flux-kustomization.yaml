@@ -8,8 +8,8 @@ spec:
   interval: 10m
   timeout: 10m
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: study-casino-db
     namespace: ducktape-flux
   path: ./cluster/k8s/study-casino/db
   prune: true
