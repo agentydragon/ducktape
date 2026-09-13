@@ -31,9 +31,10 @@ applies the previous state and reads as a failed change.
 
 ### Wiping a backing DB orphans tofu state
 
-`tf/gitops/sso-providers/` (Authentik OAuth2 providers) manages objects inside
-another stateful system whose IDs it records in tfstate. Wiping the backing DB
-without also clearing the tofu state
+`tf/gitops/sso-providers/` (Authentik OAuth2 providers) and
+`props/deploy/forgejo/tofu/` (Forgejo registry user) both manage objects inside
+another stateful system whose IDs
+they record in tfstate. Wiping the backing DB without also clearing the tofu state
 triggers `Unable to read … not found with id N` failures on the next plan. State lives
 in the `tofu-state-db-ovh` CNPG cluster (one schema per `Terraform` CR). Recovery:
 <docs/troubleshooting.md> § "Resource ID Desync After Wiping a Backing Datastore".
