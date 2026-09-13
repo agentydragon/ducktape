@@ -125,12 +125,6 @@ gh run list --repo $REPO --workflow nix-attic-push.yml \
   --json status,conclusion,createdAt,displayTitle \
   --jq '.[] | [.conclusion, .createdAt[:16], .displayTitle[:50]] | @tsv' 2>/dev/null
 
-# nix-flake-update is manual — just report last run
-echo "=== nix-flake-update (manual) ==="
-gh run list --repo $REPO --workflow nix-flake-update.yml \
-  --limit 3 \
-  --json status,conclusion,createdAt \
-  --jq '.[] | [.conclusion, .createdAt[:16]] | @tsv' 2>/dev/null
 ```
 
 **sync-pins health criteria:**
@@ -257,10 +251,9 @@ Produce a single markdown report. Healthy items get one line. Issues get details
 
 ## Scheduled Jobs
 
-| Job              | Schedule     | Last success        | Status |
-| ---------------- | ------------ | ------------------- | ------ |
-| sync-pins        | every 30 min | 2026-04-13 06:32    | ✅     |
-| nix-flake-update | manual       | 2026-04-10 (manual) | ✅     |
+| Job       | Schedule     | Last success     | Status |
+| --------- | ------------ | ---------------- | ------ |
+| sync-pins | every 30 min | 2026-04-13 06:32 | ✅     |
 
 ## Artifact Pin Staleness
 

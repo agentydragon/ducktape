@@ -4,8 +4,8 @@
 # `refs/heads/main`. Rulesets are GitHub's modern API and support
 # Integration-actor bypass — the ducktape-automation App is wired in below so
 # direct-push workflows that mint installation tokens (sync-pins,
-# nix-flake-update, container-images pin-digests) keep working. All three
-# already push as the App, so they are covered by the Integration bypass; the
+# container-images pin-digests) keep working. Both already push as the App, so
+# they are covered by the Integration bypass; the
 # admin RepositoryRole bypass covers owner/PAT pushes (Flux image automation,
 # rotation CronJobs, the owner's own pushes).
 #

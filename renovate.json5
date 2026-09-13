@@ -3,6 +3,12 @@
   extends: ["config:recommended"],
   dependencyDashboard: true,
   prCreation: "approval",
+  // Renovate's native Nix manager is opt-in while it remains in beta. It owns
+  // flake input updates; release artifacts under nix/artifact-pins.json have
+  // their own sync-pins workflow and are intentionally not part of this.
+  nix: {
+    enabled: true,
+  },
   customManagers: [
     {
       // rules_tf keeps its hermetic provider mirror in a nonstandard MODULE.bazel map.
