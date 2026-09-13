@@ -1,13 +1,6 @@
 load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
-    name = "litellm_tool_provider",
-    srcs = ["litellm_tool_provider.py"],
-    visibility = ["//skills/info_gathering/evals:__subpackages__"],
-    deps = ["//agent_core:tool_provider"],
-)
-
-py_library(
     name = "harness",
     srcs = ["harness.py"],
     visibility = ["//skills/info_gathering/evals:__subpackages__"],
