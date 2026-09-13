@@ -16,10 +16,6 @@ from mcp_infra.exec.models import MAX_BYTES_CAP, BaseExecResult, ResolvedExecInp
 
 logger = logging.getLogger(__name__)
 
-CONTAINER_STATUS_POLL_INTERVAL_SECS = 0.05
-KILL_RETRY_DELAY_SECS = 0.2
-CONTAINER_RESTART_DELAY_SECS = 0.5
-
 # Docker exec stream type codes
 STREAM_TYPE_STDOUT = 1
 STREAM_TYPE_STDERR = 2
@@ -124,47 +120,6 @@ async def _race_with_timeout(work_task: asyncio.Task, timeout_ms: float) -> bool
     return timeout_task in done
 
 
-async def _kill_container_with_retry(container) -> None:
-    """Kill an aiodocker container with retry for stubborn processes.
-
-    Attempts to kill twice with a delay between attempts.
-    Suppresses all exceptions since this is best-effort cleanup.
-    """
-    try:
-        await container.kill()
-        await asyncio.sleep(KILL_RETRY_DELAY_SECS)
-        await container.kill()
-    except (aiodocker.exceptions.DockerError, asyncio.CancelledError):
-        # Container already stopped or kill cancelled - ignore during cleanup
-        pass
-
-
-def _normalize_docker_logs_to_bytes(logs) -> bytes:
-    """Normalize Docker log output (list, bytes, str, or None) to bytes."""
-    if logs is None:
-        return b""
-
-    if isinstance(logs, bytes):
-        return logs
-
-    if isinstance(logs, str):
-        return logs.encode("utf-8")
-
-    if isinstance(logs, list):
-        result = bytearray()
-        for chunk in logs:
-            if isinstance(chunk, bytes):
-                result.extend(chunk)
-            elif isinstance(chunk, str):
-                result.extend(chunk.encode("utf-8"))
-            else:
-                logger.warning(f"Unexpected chunk type in logs list: {type(chunk)}")
-        return bytes(result)
-
-    logger.warning(f"Unexpected logs type: {type(logs)}, returning empty bytes")
-    return b""
-
-
 async def _collect_from_exec_stream(stream, stdout_buf: bytearray, stderr_buf: bytearray) -> None:
     """Read from multiplexed Docker exec stream into separate buffers."""
     while True:
@@ -190,8 +145,8 @@ def render_container_result(
     stdout_buf: bytearray, stderr_buf: bytearray, exit_code: int | None, timed_out: bool, duration_ms: int
 ) -> BaseExecResult:
     return render_raw_to_result(
-        stdout=stdout_buf,
-        stderr=stderr_buf,
+        stdout=bytes(stdout_buf),
+        stderr=bytes(stderr_buf),
         exit_code=exit_code,
         timed_out=timed_out,
         max_bytes=MAX_BYTES_CAP,

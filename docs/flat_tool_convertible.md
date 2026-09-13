@@ -11,7 +11,6 @@ functions with `Annotated[T, "description"]` parameters instead.
 | `git_commit_ai/agent_backend.py`           | `submit_commit_message` | `CommitMessage`      |
 | `mcp_infra/compositor/resources_server.py` | `list_resources`        | none (zero-arg)      |
 | `mcp_infra/compositor/resources_server.py` | `list_templates`        | none (zero-arg)      |
-| `mcp_infra/compositor/admin.py`            | `detach_server`         | `DetachServerArgs`   |
 | `git_commit_ai/git_ro/server.py`           | `rev_parse`             | `RevParseInput`      |
 | `mcp_infra/exec/seatbelt.py`               | `read_image`            | `ReadImageInput`     |
 | `mcp_infra/exec/direct.py`                 | `read_image`            | `ReadImageInput`     |
@@ -30,7 +29,6 @@ Require FlatTool for: nested models, `Field(ge=, le=, min_length=, pattern=)`,
 | `x/ember/mcp_tools.py`                     | `sleep_until_user_message` | `ConfigDict(extra="forbid")`                                  |
 | `mcp_infra/compositor/resources_server.py` | `read`                     | `Field(ge=0)` on `start_offset`                               |
 | `mcp_infra/compositor/resources_server.py` | `read_blocks`              | `Field(ge=0)` constraints                                     |
-| `mcp_infra/compositor/admin.py`            | `attach_server`            | Nested models (`ServerSpec` union)                            |
 | `git_commit_ai/git_ro/server.py`           | `status`                   | Nested model (`ListSlice`)                                    |
 | `git_commit_ai/git_ro/server.py`           | `diff`                     | Nested models, `Field(ge=0, le=1000)`                         |
 | `git_commit_ai/git_ro/server.py`           | `log`                      | Nested model (`TextSlice`)                                    |

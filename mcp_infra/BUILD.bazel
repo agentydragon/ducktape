@@ -71,16 +71,6 @@ py_library(
 )
 
 py_library(
-    name = "mcp_types",
-    srcs = ["mcp_types.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "@pypi//fastmcp_slim",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
     name = "mount_types",
     srcs = ["mount_types.py"],
     visibility = ["//:__subpackages__"],
@@ -151,12 +141,7 @@ py_library(
     name = "resource_utils",
     srcs = ["resource_utils.py"],
     visibility = ["//:__subpackages__"],
-    deps = [
-        "@pypi//fastmcp_slim",
-        "@pypi//mcp",
-        "@pypi//more_itertools",
-        "@pypi//pydantic",
-    ],
+    deps = ["@pypi//pydantic"],
 )
 
 py_library(

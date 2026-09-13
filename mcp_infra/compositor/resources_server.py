@@ -141,9 +141,6 @@ class TruncatedBlock(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-BlockContent = Annotated[BaseResourceContents | TruncatedBlock, Field(discriminator="kind")]
-
-
 class ReadBlocksArgs(OpenAIStrictModeBaseModel):
     server: str = Field(description="Origin MCP server name")
     uri: str = Field(description="Resource URI")

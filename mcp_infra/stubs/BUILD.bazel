@@ -2,6 +2,7 @@ load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
     name = "resources_stub",
+    testonly = True,
     srcs = ["resources_stub.py"],
     visibility = ["//:__subpackages__"],
     deps = [
@@ -12,6 +13,7 @@ py_library(
 
 py_library(
     name = "server_stubs",
+    testonly = True,
     srcs = ["server_stubs.py"],
     visibility = ["//:__subpackages__"],
     deps = [
@@ -22,6 +24,7 @@ py_library(
 
 py_library(
     name = "typed_stubs",
+    testonly = True,
     srcs = ["typed_stubs.py"],
     visibility = ["//:__subpackages__"],
     deps = [

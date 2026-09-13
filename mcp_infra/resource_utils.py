@@ -1,13 +1,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
-from typing import Any
 
-from fastmcp.client.client import Client
-from mcp import types as mcp_types
-from more_itertools import one
-from pydantic import TypeAdapter
 from pydantic.networks import AnyUrl
 
 _URI_PATTERN = re.compile(r"^([^:]+://)(.*?)$")
@@ -21,68 +15,3 @@ def add_resource_prefix(uri: str | AnyUrl, prefix: str) -> str:
         protocol, path = match.groups()
         return f"{protocol}{prefix}/{path}"
     return uri_str
-
-
-def extract_single_text_content(res: list[mcp_types.TextResourceContents | mcp_types.BlobResourceContents]) -> str:
-    """Return the text from the single TextResourceContents part, or raise."""
-    item = one(res)
-    if not isinstance(item, mcp_types.TextResourceContents):
-        raise TypeError(f"expected TextResourceContents, got {type(item).__name__}")
-    return item.text
-
-
-async def read_text(client: Client[Any], uri: AnyUrl | str) -> str:
-    """Read a text resource and return its content.
-
-    Raises:
-        RuntimeError: If resource doesn't contain exactly one text part
-    """
-    uri_obj = AnyUrl(uri) if isinstance(uri, str) else uri
-    contents = await client.read_resource(uri_obj)
-    return extract_single_text_content(contents)
-
-
-async def read_text_json_typed[T](client: Client[Any], uri: AnyUrl | str, model: type[T] | Any) -> T:
-    """Read a text JSON resource and parse it as the given Pydantic model/type.
-
-    Args:
-        client: FastMCP client instance
-        uri: Resource URI (AnyUrl or string)
-        model: Type (class, Union, Annotated, etc.) that TypeAdapter can handle
-
-    Returns:
-        Parsed model instance
-
-    - Validates exactly one text part
-    - Parses JSON into the provided model/type using TypeAdapter(model).validate_json
-    - Accepts concrete types (type[T]) and type expressions (Union, Annotated, etc.)
-    - Type inference works for concrete types; Union types require explicit annotation
-    """
-    # Convert str to AnyUrl if needed
-    uri_obj: AnyUrl = AnyUrl(uri) if isinstance(uri, str) else uri
-    contents = await client.read_resource(uri_obj)
-    validated: T = TypeAdapter(model).validate_json(extract_single_text_content(contents))
-    return validated
-
-
-def has_resource_prefix(uri: str, prefix: str) -> bool:
-    """Check if a resource URI has the given prefix."""
-    match = _URI_PATTERN.match(uri)
-    if match:
-        _, path = match.groups()
-        return path.startswith(f"{prefix}/")
-    return False
-
-
-def derive_origin_server(uri: str, mount_names: Iterable[str]) -> str:
-    """Find which mounted server owns the given resource URI.
-
-    Uses FastMCP's path format (protocol://prefix/path).
-    Raises ValueError if no server matches.
-    """
-    sorted_names = sorted(mount_names)
-    for name in sorted_names:
-        if has_resource_prefix(uri, name):
-            return name
-
-    raise ValueError(f"Could not derive origin server for URI {uri!r}. Available servers: {sorted_names}")
