@@ -3,27 +3,7 @@
   <head>
     <meta charset="utf8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <style>
-      :root {
-        color-scheme: light;
-      }
-      body {
-        margin: 0;
-        padding: 0;
-        font:
-          14px -apple-system,
-          BlinkMacSystemFont,
-          sans-serif;
-        background: #faf9f5;
-        color: #141413;
-      }
-      img {
-        max-width: 100%;
-      }
-      [hidden]:not([hidden="until-found" i]) {
-        display: none !important;
-      }
-    </style>
+    <link rel="stylesheet" href="shared.css" />
   </head>
   <body>
     <title>Agentplane Nav Overflow</title>
@@ -31,145 +11,18 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <style>
-      :root {
-        --bg: #f4f5f7;
-        --surface: #ffffff;
-        --surface-2: #f1f3f5;
-        --border: #dfe2e7;
-        --border-soft: #e8eaed;
-        --ink: #1b1d22;
-        --muted: #676d79;
-        --faint: #9aa0ab;
-        --accent: #1c7ed6;
-        --accent-soft: #e7f3ff;
-        --warn: #e8590c;
-        --warn-soft: #fff2e8;
-        --danger: #d92d20;
-        --shadow: 0 1px 2px rgba(20, 24, 33, 0.04), 0 8px 24px -12px rgba(20, 24, 33, 0.18);
-      }
-
-      @media (prefers-color-scheme: dark) {
-        :root:not([data-theme="light"]) {
-          --bg: #18191c;
-          --surface: #232427;
-          --surface-2: #2a2b2f;
-          --border: #3a3b40;
-          --border-soft: #313236;
-          --ink: #e9eaec;
-          --muted: #a2a7b0;
-          --faint: #6f7480;
-          --accent: #66b2f0;
-          --accent-soft: #1d3247;
-          --warn: #f2994a;
-          --warn-soft: #3a2a17;
-          --danger: #f2705f;
-          --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
-        }
-      }
-
-      :root[data-theme="dark"] {
-        --bg: #18191c;
-        --surface: #232427;
-        --surface-2: #2a2b2f;
-        --border: #3a3b40;
-        --border-soft: #313236;
-        --ink: #e9eaec;
-        --muted: #a2a7b0;
-        --faint: #6f7480;
-        --accent: #66b2f0;
-        --accent-soft: #1d3247;
-        --warn: #f2994a;
-        --warn-soft: #3a2a17;
-        --danger: #f2705f;
-        --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
-      }
-
-      * {
-        box-sizing: border-box;
-      }
-
-      body {
-        margin: 0;
-        background: var(--bg);
-        color: var(--ink);
-        font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
-        padding: 0 20px;
-        padding-block: 40px 64px;
-      }
-
       main {
         max-width: 900px;
-        margin: 0 auto;
-        display: flex;
-        flex-direction: column;
-        gap: 48px;
       }
-
-      .eyebrow {
-        font-size: 12px;
-        font-weight: 600;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        color: var(--accent);
-        margin: 0 0 8px;
-      }
-
-      h1 {
-        font-size: 30px;
-        font-weight: 700;
-        letter-spacing: -0.015em;
-        margin: 0 0 10px;
-        text-wrap: balance;
-      }
-
       .lede {
-        font-size: 15.5px;
-        line-height: 1.6;
-        color: var(--muted);
         max-width: 62ch;
-        margin: 0;
       }
-
-      h2 {
-        font-size: 12.5px;
-        font-weight: 700;
-        letter-spacing: 0.07em;
-        text-transform: uppercase;
-        color: var(--faint);
-        margin: 0 0 16px;
-      }
-
-      section {
-        display: flex;
-        flex-direction: column;
-        gap: 16px;
-      }
-
       .section-note {
-        font-size: 13.5px;
-        line-height: 1.55;
-        color: var(--muted);
         max-width: 68ch;
-        margin: -6px 0 4px;
       }
-
-      .stage {
-        overflow-x: auto;
-        padding: 4px 2px 12px;
-      }
-
       .device {
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: 14px;
-        box-shadow: var(--shadow);
-        padding: 16px;
         width: 640px;
-        flex: 0 0 auto;
-      }
-
-      .device.phone {
-        width: 360px;
+        padding: 16px;
       }
 
       .navrow {
@@ -213,66 +66,31 @@
         font-size: 13px;
         text-align: center;
       }
-
-      .states {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-        gap: 16px;
-      }
       .state-card {
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: 14px;
-        box-shadow: var(--shadow);
         padding: 16px;
       }
       .state-tag {
-        display: inline-flex;
-        align-items: center;
-        font-size: 11px;
-        font-weight: 600;
         letter-spacing: 0.03em;
-        color: var(--muted);
-        background: var(--surface-2);
-        border-radius: 999px;
-        padding: 3px 9px;
         margin-bottom: 14px;
       }
 
       /* Menu opens downward -- the nav sits at the TOP of the viewport, so there's room below it
      (the reverse of the composer bar's menu, which had to open upward). */
       .menu {
-        position: absolute;
         top: calc(100% + 8px);
         left: 0;
         width: 190px;
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        box-shadow: var(--shadow);
-        padding: 6px;
-        z-index: 2;
       }
       .menu::before {
-        content: "";
-        position: absolute;
         top: -6px;
         left: 22px;
-        width: 11px;
-        height: 11px;
-        background: var(--surface);
         border-left: 1px solid var(--border);
         border-top: 1px solid var(--border);
-        transform: rotate(45deg);
       }
       .menu-item {
-        display: flex;
-        align-items: center;
         gap: 8px;
         padding: 8px 10px;
-        border-radius: 6px;
         font-size: 13.5px;
-        color: var(--ink);
       }
       .menu-item.current {
         background: var(--accent-soft);
@@ -322,24 +140,9 @@
         background: var(--surface);
         white-space: nowrap;
       }
-      .icon-btn {
-        width: 32px;
-        height: 32px;
-        border-radius: 8px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: var(--surface-2);
-        color: var(--muted);
-        flex: 0 0 auto;
-      }
       .icon-btn svg {
         width: 15px;
         height: 15px;
-      }
-      .icon-btn.open {
-        background: var(--accent-soft);
-        color: var(--accent);
       }
 
       .tabs {
@@ -370,104 +173,14 @@
         left: auto;
         right: 12px;
       }
-
-      .table-wrap {
-        overflow-x: auto;
-      }
       table {
-        width: 100%;
-        border-collapse: collapse;
         font-size: 13.5px;
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        overflow: hidden;
       }
       thead th {
-        text-align: left;
-        font-size: 11px;
-        font-weight: 700;
-        letter-spacing: 0.05em;
-        text-transform: uppercase;
-        color: var(--faint);
-        background: var(--surface-2);
         padding: 10px 14px;
-        border-bottom: 1px solid var(--border);
       }
       tbody td {
         padding: 11px 14px;
-        border-bottom: 1px solid var(--border-soft);
-        vertical-align: top;
-      }
-      tbody tr:last-child td {
-        border-bottom: none;
-      }
-      td.element {
-        font-weight: 600;
-        white-space: nowrap;
-      }
-      td.muted {
-        color: var(--muted);
-      }
-      .pill {
-        display: inline-flex;
-        align-items: center;
-        gap: 5px;
-        font-size: 11.5px;
-        font-weight: 600;
-        padding: 2px 8px;
-        border-radius: 999px;
-      }
-      .pill.stay {
-        background: var(--accent-soft);
-        color: var(--accent);
-      }
-      .pill.move {
-        background: var(--warn-soft);
-        color: var(--warn);
-      }
-
-      ul.notes {
-        margin: 0;
-        padding: 0;
-        list-style: none;
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-      }
-      ul.notes li {
-        font-size: 13.5px;
-        line-height: 1.55;
-        color: var(--ink);
-        padding-left: 18px;
-        position: relative;
-      }
-      ul.notes li::before {
-        content: "";
-        position: absolute;
-        left: 2px;
-        top: 7px;
-        width: 5px;
-        height: 5px;
-        border-radius: 50%;
-        background: var(--accent);
-      }
-      ul.notes b {
-        font-weight: 600;
-      }
-      ul.notes code {
-        font-family: ui-monospace, SFMono-Regular, "Liberation Mono", monospace;
-        font-size: 0.92em;
-        background: var(--surface-2);
-        padding: 1px 5px;
-        border-radius: 4px;
-      }
-
-      footer {
-        font-size: 12px;
-        color: var(--faint);
-        border-top: 1px solid var(--border-soft);
-        padding-top: 20px;
       }
     </style>
 

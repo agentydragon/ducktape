@@ -2,7 +2,10 @@
 
 Static HTML mocks (no framework, no build step — open directly in a browser) captured during
 design discussion. Not wired to real state; each mock's own footer names the plan doc it was made
-for.
+for. Design tokens and boilerplate shared by two or more mocks live in `shared.css`, linked from
+each file's `<head>`; each mock's own `<style>` keeps only what's unique to it, or a single
+differing property (e.g. `.device { width: ...; }`) where a shared rule's shape matches but its
+size doesn't.
 
 - **`app_shell.html`** — the session-first sidebar shell: shipped, referenced from
   [`../task_dag.md`](../task_dag.md)'s UI-shell track and
