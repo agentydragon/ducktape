@@ -137,8 +137,8 @@
       "sha256": "fsy7mhfDo7JFUm1Rf2abTxPYHlAEISJO6L2+uTlJIS0="
     },
     "skill-forgejo": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-forgejo-183dd5ad3ccf/forgejo.skill",
-      "sha256": "GD3VrTzP3RezhpSOh6AbnqGUzYkn/C0tmaSCKV8cJlI="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-forgejo-c57f6cfbc861/forgejo.skill",
+      "sha256": "xX9s+8hhCJ7zB7J0S0zzcB0uGzBXH/lH3V6JQIa80TE="
     },
     "skill-freecad": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-freecad-d8fa0b572957/freecad.skill",
@@ -213,8 +213,8 @@
       "sha256": "zcaOOCVfx/GJzszicLGTJAe5K/Y4bZBdOGcq4soigII="
     },
     "gazelle": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/gazelle-ac77f8227c16/gazelle_python_binary",
-      "sha256": "rHf4InwW4x2wRUIkuZMrYAFknR1aKTcWt5sCTca/CJQ="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/gazelle-bc2a6ae8f1f6/gazelle_python_binary",
+      "sha256": "vCpq6PH2eJEkOg2bkwHm/8I0p3XMO5e8GBmrim27zyc="
     },
     "hakuctl": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/hakuctl-19245dcb58ca/hakuctl-0.1.0-py3-none-any.whl",
