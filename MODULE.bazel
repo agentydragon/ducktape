@@ -140,10 +140,9 @@ tf.download(
         "authentik": "goauthentik/authentik:2026.2.0",
         "aws": "hashicorp/aws:5.100.0",
         # Intentionally omitted from the global provider mirror while
-        # tf/gitops/haku-cloud-agent is parked: the OpenTofu registry still
-        # advertises modus-agendi/anthropic-claude-managed-agents v1.1.0, but
-        # its GitHub repo/release assets currently 404. Keeping it here makes
-        # unrelated Terraform/image jobs fail while mirroring providers.
+        # tf/gitops/haku-cloud-agent is parked. The community provider is
+        # published, but mirroring it here would make unrelated Terraform and
+        # image jobs depend on a parked module's provider.
         "external": "hashicorp/external:2.4.0",
         "flux": "fluxcd/flux:1.9.0",
         "forgejo": "svalabs/forgejo:1.5.0",
