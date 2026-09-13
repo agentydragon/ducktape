@@ -64,10 +64,6 @@ Not covered — need custom regex managers or restructuring:
 - [ ] `tfdoc_version` and `tflint_version` in `MODULE.bazel`
 - [ ] Talos extension/imager versions if pinned outside standard patterns
 
-Needs verification:
-
-- [ ] Helm chart versions in `cluster/k8s/**/helmrelease.yaml` — `flux` manager should cover these but no Helm updates appeared on dashboard. Check if `HelmRepository` sources are needed for Renovate to resolve chart versions.
-
 ### LLM-powered update summaries
 
 - [ ] Add a scheduled GitHub Action that collects open Renovate PRs / dashboard state and produces an LLM-generated summary of breaking changes, notable features, and update recommendations. Options: `actions/ai-inference` (free, single LLM call, action must pre-fetch changelogs) or Copilot coding agent (assign `@copilot` to issue, agent can browse, costs premium requests). Consider storing verbose LLM-facing context on a branch to enable incremental analysis across runs.
