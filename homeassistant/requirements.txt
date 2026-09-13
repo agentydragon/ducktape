@@ -148,9 +148,9 @@ aiohttp==3.13.3 \
     #   homeassistant
     #   pytest-aiohttp
     #   snitun
-aiohttp-asyncmdnsresolver==0.1.1 \
-    --hash=sha256:8c65d4b08b42c8a260717a2766bd5967a1d437cee852a9b21f3928b5171a7c81 \
-    --hash=sha256:d04ded993e9f0e07c07a1bc687cde447d9d32e05bcf55ecbf94f63b33dcab93e
+aiohttp-asyncmdnsresolver==0.2.0 \
+    --hash=sha256:1e6dc01719dc563346ae051122fa7dc3a757317e3e6bf4ef8b23cfd034089c22 \
+    --hash=sha256:aab2cef7ef8ae45b94abf1fc92aa9f4d70cbef7ac0a3d495a86fb96fce357262
     # via homeassistant
 aiohttp-cors==0.8.1 \
     --hash=sha256:3180cf304c5c712d626b9162b195b1db7ddf976a2a25172b35bb2448b890a80d \
