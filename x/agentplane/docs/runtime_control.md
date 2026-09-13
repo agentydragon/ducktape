@@ -1,22 +1,47 @@
 # Runtime control
 
-`ChangeModel` is a durable runner command. `CommandReceived` says only that the runner stored it;
-`ModelChanged` says the harness has actually taken effect. There is no public timing selector and
-no generic active-turn conditional. The runner calls the harness adapter and waits for its
+`ChangeModel` is an implemented durable runner command. The cross-layer command
+lifecycle and UI contract are authoritative in
+[Thread, runner, and harness layering](thread_layering.md). An app acceptance or
+runner receipt is not a model change; only the causal `ModelChanged` Event says the
+change took effect. The task-DAG entry is
+[CONTROL_STATE](../plans/task_dag.md#control_state--dynamic-runtime-control-acceptance).
+
+`CommandReceived` says only that the runner stored the command. There is no public
+timing selector or generic active-turn conditional: the runner waits for
 harness-native evidence.
 
 ## Harness evidence
 
-- Claude receives a native `control_request` with subtype `set_model`. Its adapter sends that
-  request and emits `ModelChanged` only after the successful native control response. Claude
-  accepts this control while a turn is active; the pinned harness test proves the next model
-  request uses the selection.
-- Codex app-server has no equivalent mutation request. Its adapter retains the requested model
-  until the next native `turn/start` response proves that `turn/start` selected it. A later pending
-  request supersedes an earlier one, which ends as `CommandNoop`; a native refusal ends both the
-  selected model command and input command as `CommandRejected`.
+- Claude receives a native `control_request` with subtype `set_model`. Its adapter
+  emits `ModelChanged` only after the successful native control response. Claude
+  accepts this control while a turn is active; the pinned harness test proves the
+  next model request uses the selection.
+- Codex app-server has no equivalent mutation request. Its adapter retains the
+  requested model until the next native `turn/start` response proves that selection.
+  A later pending request supersedes an earlier one, which ends as `CommandNoop`; a
+  native refusal ends both the selected model command and input command as
+  `CommandRejected`.
+
+The receipt/effect split is deliberately preferable to static **now** or **at
+boundary** options. It lets the runner report exactly when the harness says a
+requested change took effect, even when that is later than receipt.
 
 The pinned native surface and mock-LLM tests are summarized in the
-[protocol roster](../native/docs/protocol_roster.md). Reasoning effort is not a runtime command:
-Claude presently exposes it at launch and Codex has separate thread-config and per-turn fields.
-It needs its own evidence-backed command before it joins this protocol.
+[protocol roster](../native/docs/protocol_roster.md).
+
+## Open capability question
+
+A future capability snapshot can say, for one operation at one instant, whether the
+runner would promptly admit it or retain it while busy. This is advisory and races with
+a command. Before adding it, demonstrate for each harness:
+
+- which native exchange establishes admission, application, or future-turn selection;
+- how an active turn's effective model remains separately auditable;
+- what replay/reconnect state it needs; and
+- whether a received command can recover to effect, rejection, or no-op after relevant
+  crash windows.
+
+Reasoning effort needs its own evidence. Claude's launch configuration and Codex's
+per-turn/model configuration surfaces are not proof of one common live mutation, so
+it is not a runtime command.

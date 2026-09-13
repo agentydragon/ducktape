@@ -63,6 +63,7 @@ flowchart TB
     UISHELL_NEWTHREAD_SANDBOX["Planned UI<br/>pre-scoped '+ New thread' on a Sandbox's page<br/>Sandbox/preset already fixed"]:::future
     UISHELL_NEWTHREAD_LANDING["Planned UI<br/>sidebar '+' unscoped new-thread composer<br/>Sandbox/preset/model pickers + prompt"]:::future
     NEWTHREAD_DURABLE["Planned backend<br/>server-owned sandbox+thread provisioning<br/>must survive a browser close or app-server restart mid-submit"]:::future
+    THREAD_SUCCESSOR_DELIVERY["Deferred decision<br/>unsettled Thread command across<br/>successor runner session"]:::future
     CONTROL_STATE["Deferred decision<br/>dynamic runtime control state<br/>model/effort acceptance"]:::future
     UISHELL_SIDEBAR_LIVE["Bug + planned fix<br/>sidebar Thread/Sandbox state goes stale<br/>rename, sandbox status icon never push-update"]:::future
     UISHELL_SIDEBAR_ALL_SANDBOXES["Bug<br/>threadless Sandboxes missing from sidebar<br/>e.g. still waiting for a pod to land"]:::future
@@ -121,7 +122,7 @@ Haku Console migration is split: Agent/conversation management and tool-call/app
 can retire on different schedules after their respective replacement surfaces exist.
 
 The session-first UI shell (`UISHELL_DRAWER`, `UISHELL_NEWTHREAD_SANDBOX`,
-`UISHELL_NEWTHREAD_LANDING`, `NEWTHREAD_DURABLE`, `UISHELL_SIDEBAR_LIVE`, `UISHELL_SIDEBAR_ALL_SANDBOXES`,
+`UISHELL_NEWTHREAD_LANDING`, `NEWTHREAD_DURABLE`, `THREAD_SUCCESSOR_DELIVERY`, `UISHELL_SIDEBAR_LIVE`, `UISHELL_SIDEBAR_ALL_SANDBOXES`,
 `UISHELL_SIDEBAR_SANDBOX_LINK`, `UISHELL_NEWSANDBOX_NAV`, `THREAD_BROWSE_PAGINATE`) is a separate
 frontend-ergonomics track: it is not gated by, and does not gate, the Action Service milestones
 above. `UISHELL_NEWTHREAD_SANDBOX` and `UISHELL_NEWTHREAD_LANDING` can each ship a working happy-path
@@ -403,11 +404,13 @@ This track may move independently of Agent/conversation management: Haku Console
 conversations while Agentplane owns external tool calls, or the reverse during a staged migration.
 Preserve tool-call audit/export and rollback evidence before removing the old owner.
 
-### `INPUT_DELIVERY` — native queue evidence before common-protocol changes
+### `INPUT_DELIVERY` — native queue evidence before durable Thread-command delivery
 
 **P0 behavior:** an input crossing the app/runner boundary has an honest, correlated delivery
 outcome after disconnect/reconnect, without silently losing it or blindly submitting it twice.
 This work is independent of live Action/MCP staging acceptance and is not Action cancellation.
+Its desired receipt/effect outcomes and app presentation are in
+[Thread, runner, and harness layering](../docs/thread_layering.md#command-protocol-intent-receipt-then-outcome).
 
 **Needed support — mandatory first step:** re-read the landed
 [Claude queue research](../docs/claude_input_queue.md),
@@ -434,12 +437,14 @@ experiments stay explicit, not normalized into success. This research may justif
 changes, but it does not preselect a queue facade, selective cancellation, or a new persistence layer.
 
 **Acceptance evidence:** exercise disconnect before delivery, delivery before observed receipt,
-reconnect/replay with the same `input_id`, and restart. Prove duplicate-ID handling at each actual
+reconnect/replay with the same command id, and restart. Prove duplicate-ID handling at each actual
 boundary rather than assuming native idempotency. Include Claude coalescing/interrupt/withdrawal
 and Codex join-versus-durable-queue cases, preserving raw native evidence and harness differences.
-No acknowledgement, retry, steering, cancellation, or completion may be invented by the runner.
-Decide the narrow common contract only after these observations; keep unsupported operations native
-or explicitly unavailable. **Deferred:** generic queue management and unproven per-input cancellation.
+In both harnesses, queue several inputs, interrupt before native message confirmation, and prove
+each input is confirmed, terminally dropped/no-op, or later confirmed; none may remain indefinitely
+received. No acknowledgement, retry, steering, cancellation, or completion may be invented by the
+runner. Keep unsupported operations native or explicitly unavailable. **Deferred:** generic queue
+management and unproven per-input cancellation.
 
 ### `PROD` — production-capable governed action execution
 
@@ -464,26 +469,12 @@ second tool-request lifecycle; the settled harness behavior and the seam are in
 
 ### `CONTROL_STATE` — dynamic runtime control acceptance
 
-**Deferred decision:** decide whether the runner protocol should report a harness's current
-acceptance of runtime control changes, rather than imposing one common gate. This is a time-local,
-operation-specific state — "would accept this command now" — not a persistent harness capability or
-a promise that a future request will be accepted. A command response remains authoritative if the
-state and command race.
-
-The decision must cover both model and reasoning-effort changes, but this item does not add either
-command. It must specify:
-
-- whether acceptance means admission now, application now, or only effect on a named subsequent
-  model request or turn;
-- whether a model change may be admitted during an active agent loop and, if so, how the current
-  turn's effective model is distinguished from the next-turn/session default;
-- how Claude's native `control_request` `set_model` and Codex's per-turn `turn/start` `model` and
-  `effort` fields are represented without pretending they are equivalent; and
-- how state transitions, command outcomes, attach/replay, and stale-state races are represented.
-
-The concrete [REASONING_EFFORT_RUNTIME proposal in #6456](https://github.com/agentydragon/ducktape/pull/6456)
-is withdrawn as an implementation recipe pending this decision. The harness evidence and open
-questions are in [runtime control acceptance](../docs/runtime_control.md).
+**Deferred native-capability work:** the receipt/effect contract, display of a
+received-but-not-effective model change, and any future time-local capability snapshot
+are specified in [Thread, runner, and harness layering](../docs/thread_layering.md#command-protocol-intent-receipt-then-outcome).
+The harness-specific evidence still needed for model/effort capability reporting is in
+[runtime control acceptance](../docs/runtime_control.md). Do not introduce an app-side
+common active-turn gate or make the picker claim success before a causal effect.
 
 ### `ING` — Event & Notification Hub
 
@@ -522,8 +513,10 @@ on `NEWTHREAD_DURABLE` for correctness (not to ship a first working version).
 Thread already uses — same composer, same layout — just with no Sandbox/Thread bound yet. That state
 lets the operator target an existing Sandbox or describe a new one (reusing `sandboxes.tsx`'s New
 Sandbox fields and `sandbox_page.tsx`'s New Session fields, composed on one page); pressing Enter
-submits the draft immediately as a pending bubble, provisions whatever's missing, and rebinds the
-page to the real Thread in place — the composer itself never moves or remounts. Mocked in
+persists the Thread command immediately, provisions whatever is missing, and rebinds the page to
+the real Thread in place — the composer itself never moves or remounts. Pending input appears in
+the command queue above the composer, not as a transcript bubble, until runner evidence confirms
+its actual harness message. Mocked in
 [`mocks/new_thread_landing.html`](mocks/new_thread_landing.html). Depends on `NEWTHREAD_DURABLE` for
 correctness, same as `UISHELL_NEWTHREAD_SANDBOX`.
 
@@ -534,38 +527,30 @@ question, not decided.
 
 ### `NEWTHREAD_DURABLE` — server-owned sandbox+thread provisioning
 
-**Planned backend, required for `UISHELL_NEWTHREAD_LANDING`/`UISHELL_NEWTHREAD_SANDBOX` to be
-correct, not just to ship a happy path:** submitting a new-thread composer (fill Sandbox parameters,
-fill Thread parameters, enter a prompt, press Enter) must still produce a running thread that has
-processed that prompt even if the operator closes the browser immediately after submitting, **or the
-app server itself restarts before the sandbox is ready** — the provisioning sequence cannot live
-only in frontend JS watching a live stream (dies with the tab) nor only in one replica's in-memory
-task (dies with that replica).
+**Planned backend:** implement the Thread-command outbox and reconciler in
+[Thread, runner, and harness layering](../docs/thread_layering.md). The new-Thread transaction
+must atomically mint the Thread identity, persist its Sandbox target/session plan, and append its
+first Thread command. Any replica must resume reconciliation after the browser or another replica
+disappears; Kubernetes remains the Sandbox lifecycle authority and the runner remains the command
+receipt/effect authority.
 
-Today nothing durable does this wait: `openSession`'s own reachability check
-(`bridge.py`'s `runner_address`) already requires `state === "running"` with a pod IP before a
-session can open, and the only thing that currently waits for that and then calls `openSession` is
-the frontend (`sandbox_page.tsx`'s `createSession`). Sandbox creation itself is already durable — a
-Kubernetes object with a controller-owned lifecycle, independent of the client — so what's missing
-is specifically the "wait for the pod, open the session, send the first turn" tail, not the whole
-flow.
+Acceptance includes reload-stable Thread URLs, the distinct pending-command queue above the composer
+(including received-but-not-effective model changes), app-replica crash delivery windows, and the
+normal/Raw projection rules in that contract. The deferred fate of an unsettled command across a
+successor runner session is explicitly not decided by this item. It also requires both harnesses'
+mocked-LLM tests and runner crash tests to settle queued inputs after an interrupt as confirmed,
+dropped/no-op, or later confirmed—never as an unbounded received state.
+The harness-loss/Sandbox suspend-resume matrix, which keeps Kubernetes, runner, and native
+continuation evidence separate, is in
+[Thread, runner, and harness layering](../docs/thread_layering.md#required-harness-loss-and-sandbox-lifecycle-cross-check).
 
-**Surviving a browser close is not the same guarantee as surviving a server restart.** `bridge.py`'s
-existing per-sandbox watch already clears that higher bar for the state it tracks today: its
-reconcile loop (`RECONCILE_S`) re-derives ownership and in-flight sessions from `TrajectoryStore`
-(PostgreSQL) every cycle, across replicas, rather than trusting one process's memory — so any replica
-can pick up where another left off. The new-thread _request_ itself needs the same treatment, not
-just the mechanism watching it: persist it as a durable row (sandbox target/params, thread spec, the
-prompt, a status) the moment it's accepted, keyed the same way the Action Service already makes a
-submission idempotent and recoverable (`idempotency_key` in `action_service/models.py`) rather than
-inventing a new pattern. The reconcile loop picks up any row still pending, drives it to open the
-session and send the first turn, and marks it done — exactly the shape that already survives replica
-death for ingestion, extended to cover provisioning too.
+### `THREAD_SUCCESSOR_DELIVERY` — unsettled command across a successor runner session
 
-The client mints the session id up front (the same pattern `sandbox_page.tsx`'s `createSession`
-already uses) so it has a stable URL to bind to from the moment of submission, before the sandbox or
-session exist yet; reopening that URL later, from any device, just reconnects to the same live
-stream.
+**Deferred decision:** when a harness/session is replaced, decide whether a received-but-unsettled
+Thread command is recoverable only in its predecessor session or may be delivered by a successor.
+The required native continuation proof, command-provenance guarantee, and no-duplicate-effect test
+gate are in [Thread, runner, and harness layering](../docs/thread_layering.md#deferred-commands-unsettled-across-successor-sessions).
+Until then there is no automatic cross-session replay.
 
 ### `UISHELL_SIDEBAR_LIVE` — sidebar Thread/Sandbox state goes stale
 
