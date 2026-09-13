@@ -21,21 +21,21 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends bash curl ca-certificates g++ \
     && rm -rf /var/lib/apt/lists/*
 
-# Pinned and resolved together for python 3.13: core data analysis (pandas, numpy,
+# Pinned and resolved together for python 3.14: core data analysis (pandas, numpy,
 # scipy, statsmodels), probabilistic + ML modeling (scikit-learn, pymc, arviz,
 # arch), and fetch + HTML parsing (requests, beautifulsoup4, lxml).
 RUN pip install --no-cache-dir \
-    pandas==2.2.3 \
-    numpy==2.2.1 \
-    scipy==1.15.1 \
-    statsmodels==0.14.4 \
+    pandas==2.3.3 \
+    numpy==2.3.4 \
+    scipy==1.16.3 \
+    statsmodels==0.14.5 \
     python-dateutil==2.9.0.post0 \
-    scikit-learn==1.9.0 \
-    pymc==6.0.1 \
-    arviz==1.1.0 \
+    scikit-learn==1.9.1 \
+    pymc==6.3.2 \
+    arviz==1.3.0 \
     arch==8.0.0 \
-    requests==2.32.3 \
+    requests==2.34.2 \
     beautifulsoup4==4.15.0 \
-    lxml==6.1.1
+    lxml==6.1.3
 
 CMD ["bash"]
