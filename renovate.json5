@@ -9,6 +9,19 @@
   nix: {
     enabled: true,
   },
+  // The flux manager defaults to bootstrap's gotk-components.yaml only. Our
+  // Flux resources live under cluster/k8s and are generated into artifacts,
+  // so scan the source manifests for HelmRelease/HelmRepository pins and
+  // image references in Helm values.
+  flux: {
+    managerFilePatterns: ["/^cluster\\/k8s\\/.+\\.ya?ml$/"],
+  },
+  // Scan ordinary Kubernetes resources for image references. Flux's
+  // ImageUpdateAutomation remains the owner of resources carrying an
+  // $imagepolicy marker; this manager covers the remaining pins.
+  kubernetes: {
+    managerFilePatterns: ["/^cluster\\/k8s\\/.+\\.ya?ml$/"],
+  },
   customManagers: [
     {
       // rules_tf keeps its hermetic provider mirror in a nonstandard MODULE.bazel map.
