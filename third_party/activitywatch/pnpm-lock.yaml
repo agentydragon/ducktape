@@ -18,8 +18,8 @@ importers:
         specifier: ^5.10.1
         version: 5.11.5(vue@2.7.16)
       '@pinia/testing':
-        specifier: ^0.0.16
-        version: 0.0.16(pinia@2.3.1(typescript@5.9.3)(vue@2.7.16))(vue@2.7.16)
+        specifier: ^0.1.0
+        version: 0.1.7(pinia@2.3.1(typescript@5.9.3)(vue@2.7.16))(vue@2.7.16)
       '@types/chart.js':
         specifier: ^2.9.23
         version: 2.9.41
@@ -1610,10 +1610,10 @@ packages:
     resolution: {integrity: sha512-7FNeNl8NCE7aINx7WXiKQrPYZWC/hvrTsmk6zmxbI7LTXE7hVek/n8AfVgpe2y82zl3w0HvCHN0bVKMBoJcC0w==}
     engines: {node: '>= 10.0.0'}
 
-  '@pinia/testing@0.0.16':
-    resolution: {integrity: sha512-oa5kO82hzWekqMq1HTnS/b+ZM+ZKEcEApuuCTelvKK79jTxg7P026Qw8/2RbVn5eUGAvRWQu4ubObrshVqCRjQ==}
+  '@pinia/testing@0.1.7':
+    resolution: {integrity: sha512-xcDq6Ry/kNhZ5bsUMl7DeoFXwdume1NYzDggCiDUDKoPQ6Mo0eH9VU7bJvBtlurqe6byAntWoX5IhVFqWzRz/Q==}
     peerDependencies:
-      pinia: '>=2.0.34'
+      pinia: '>=2.2.6'
 
   '@pkgjs/parseargs@0.11.0':
     resolution: {integrity: sha512-+1VkjdD0QBLPodGrJUeqarH8VAIvQODIbwh9XpP5Syisf7YoQgsJKPNFoqqLQlu+VQ/tVSshMR6loPMn8U+dPg==}
@@ -9395,7 +9395,7 @@ snapshots:
       '@parcel/watcher-win32-x64': 2.6.0
     optional: true
 
-  '@pinia/testing@0.0.16(pinia@2.3.1(typescript@5.9.3)(vue@2.7.16))(vue@2.7.16)':
+  '@pinia/testing@0.1.7(pinia@2.3.1(typescript@5.9.3)(vue@2.7.16))(vue@2.7.16)':
     dependencies:
       pinia: 2.3.1(typescript@5.9.3)(vue@2.7.16)
       vue-demi: 0.14.10(vue@2.7.16)
