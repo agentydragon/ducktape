@@ -69,7 +69,7 @@
     "vis-data": "^8.0.0",
     "vis-timeline": "^7.5.0",
     "vis-util": "^6.0.0",
-    "vite": "^6.4.1",
+    "vite": "^8.0.0",
     "vue-awesome": "^4.0.0",
     "vue-chartjs": "^5.0.0",
     "vue-color": "^3.0.0",
