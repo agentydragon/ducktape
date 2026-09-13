@@ -72,6 +72,7 @@ py_library(
 
 py_library(
     name = "kustomize",
+    testonly = True,
     srcs = ["kustomize.py"],
     data = ["@multitool//tools/kustomize"],
     deps = [
@@ -96,6 +97,7 @@ py_library(
 
 py_library(
     name = "cluster",
+    testonly = True,
     srcs = ["cluster.py"],
     deps = [
         ":flux",
@@ -110,6 +112,7 @@ py_library(
 
 py_library(
     name = "flux_bootstrap_auth",
+    testonly = True,
     srcs = ["flux_bootstrap_auth.py"],
     deps = [
         ":cluster",
@@ -119,6 +122,7 @@ py_library(
 
 py_library(
     name = "dependencies",
+    testonly = True,
     srcs = ["dependencies.py"],
     deps = [
         ":cluster",
@@ -132,12 +136,14 @@ py_library(
 
 py_library(
     name = "health_checks",
+    testonly = True,
     srcs = ["health_checks.py"],
     deps = [":cluster"],
 )
 
 py_library(
     name = "postbuild_substitutions",
+    testonly = True,
     srcs = ["postbuild_substitutions.py"],
     deps = [
         ":cluster",
@@ -147,6 +153,7 @@ py_library(
 
 py_library(
     name = "terraform_backends",
+    testonly = True,
     srcs = ["terraform_backends.py"],
     deps = [
         ":cluster",
@@ -156,12 +163,14 @@ py_library(
 
 py_library(
     name = "crd_layering",
+    testonly = True,
     srcs = ["crd_layering.py"],
     deps = [":kustomize"],
 )
 
 py_library(
     name = "authentik_blueprints",
+    testonly = True,
     srcs = ["authentik_blueprints.py"],
     deps = [
         "@pypi//pydantic",
@@ -171,6 +180,7 @@ py_library(
 
 py_library(
     name = "checks",
+    testonly = True,
     srcs = ["checks.py"],
     deps = [
         ":cluster",
@@ -182,6 +192,7 @@ py_library(
 
 py_library(
     name = "helm_templates",
+    testonly = True,
     srcs = ["helm_templates.py"],
     data = [
         "//cluster/terraform/main:cilium-values.yaml",
@@ -195,6 +206,7 @@ py_library(
 
 py_library(
     name = "image_automation",
+    testonly = True,
     srcs = ["image_automation.py"],
     deps = [
         ":cluster",
@@ -373,6 +385,7 @@ py_test(
 
 py_library(
     name = "terraform_hcl",
+    testonly = True,
     srcs = ["terraform_hcl.py"],
     deps = ["@pypi//pygohcl"],
 )
