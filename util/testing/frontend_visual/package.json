@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "devDependencies": {
-    "puppeteer": "^23.11.1"
+    "puppeteer": "^25.0.0"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

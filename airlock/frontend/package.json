@@ -13,7 +13,7 @@
     "openapi-typescript": "^7.10.1",
     "pixelmatch": "^7.0.0",
     "pngjs": "^7.0.0",
-    "puppeteer": "^23.11.1",
+    "puppeteer": "^25.0.0",
     "svelte-check": "^4.7.6",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.0"
