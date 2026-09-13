@@ -79,7 +79,7 @@ spec:
               subPath: configuration.yaml
               readOnly: true
         - name: caddy
-          image: caddy:2.10.0-alpine
+          image: caddy:2.11.4-alpine
           env:
             - name: METRICS_TOKEN
               valueFrom:
