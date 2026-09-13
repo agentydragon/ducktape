@@ -411,7 +411,7 @@ This work is independent of live Action/MCP staging acceptance and is not Action
 
 **Needed support — mandatory first step:** re-read the landed
 [Claude queue research](../docs/claude_input_queue.md),
-[Claude/Codex protocol notes](../docs/provider_protocols.md),
+[Claude/Codex protocol notes](../docs/harness_protocols.md),
 [native harness evidence](../docs/harness_evidence.md),
 [Claude runtime contracts](../docs/claude_runtime_contracts.md), and
 [current common protocol](../docs/common_protocol.md), then inspect the pinned drivers/tests.
@@ -436,7 +436,7 @@ changes, but it does not preselect a queue facade, selective cancellation, or a 
 **Acceptance evidence:** exercise disconnect before delivery, delivery before observed receipt,
 reconnect/replay with the same `input_id`, and restart. Prove duplicate-ID handling at each actual
 boundary rather than assuming native idempotency. Include Claude coalescing/interrupt/withdrawal
-and Codex join-versus-durable-queue cases, preserving raw native evidence and provider differences.
+and Codex join-versus-durable-queue cases, preserving raw native evidence and harness differences.
 No acknowledgement, retry, steering, cancellation, or completion may be invented by the runner.
 Decide the narrow common contract only after these observations; keep unsupported operations native
 or explicitly unavailable. **Deferred:** generic queue management and unproven per-input cancellation.
@@ -459,7 +459,7 @@ except `RETIRE_AGENT`, whose replacement runtime it is.
 
 **Deferred pending a real consumer:** a driver may declare model-visible tools and control
 background work, but any such runner surface reuses the Action Service contracts rather than a
-second tool-request lifecycle; the settled provider behavior and the seam are in
+second tool-request lifecycle; the settled harness behavior and the seam are in
 [driver tools and background work](driver_tools_and_background.md).
 
 ### `CONTROL_STATE` — dynamic runtime control acceptance

@@ -1,4 +1,4 @@
-"""Fixtures shared by both providers: the scripted upstream and a native process sandbox."""
+"""Fixtures shared by both agent harnesses: the scripted upstream and a native process sandbox."""
 
 from __future__ import annotations
 

@@ -251,6 +251,6 @@ the scenario under test; a bridge that turns any of these on must widen the rost
 - **Prompt suggestions**: Claude `--prompt-suggestions=false` suppresses the post-turn model call.
 - **Nonessential traffic**: Claude `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`; Codex
   `include_environment_context = false`. The baseline tests count upstream requests per turn.
-- **Thinking stays on** for both providers: Claude `thinking.type == "enabled"` and signature echo,
+- **Thinking stays on** for both harnesses: Claude `thinking.type == "enabled"` and signature echo,
   Codex `model_reasoning_effort` and encrypted reasoning echo are asserted, since replaying them
   correctly across resume is part of the contract.

@@ -1,6 +1,6 @@
-# Claude Code and Codex protocol notes
+# Claude Code and Codex harness protocol notes
 
-Status: **provider evidence for the native drivers**.
+Status: **harness evidence for the native drivers**.
 
 Agentplane speaks each native protocol directly. This document records only the
 facts needed to write the drivers and tests. It does not define a neutral API, compatibility-profile
@@ -10,7 +10,7 @@ system, or product persistence model.
 
 - Use real stdin/stdout pipes, not PTYs, tmux, pane scraping, or prompt heuristics.
 - Keep Claude and Codex driver state separate until captures demonstrate a useful common seam.
-- Preserve complete native frames and provider-native ids in the ordered transcript during live
+- Preserve complete native frames and harness-native ids in the ordered transcript during live
   probe runs; the logs stay outside Git.
 - Record upstream LLM request bodies and streamed response chunks separately from native frames;
   the scripted tests assert request markers and build responses rather than replaying recordings.
@@ -113,7 +113,7 @@ machines. Their Agentplane constraints and current coverage are collected in
 
 ### Resume
 
-Use the provider's native session-resume mechanism after killing only an idle child. Assert recovery
+Use the harness's native session-resume mechanism after killing only an idle child. Assert recovery
 of a nonce held in model context. Do not call replaying a bridge journal or resending a prompt Claude
 resume.
 
@@ -226,7 +226,7 @@ survival. Do not infer continuity from a product transcript.
 
 ## P0 driver contract
 
-Each provider driver should support only the operations required by the initial scenarios:
+Each harness driver should support only the operations required by the initial scenarios:
 
 ```text
 launch_and_initialize()

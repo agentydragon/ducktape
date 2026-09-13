@@ -135,6 +135,6 @@ Four things are Claude-only and cannot be synthesized:
 
 Per [common_protocol.md](common_protocol.md) — "a related operation on both sides is not evidence
 that the two are equivalent" — the honest shape is the floor pair as common verbs, with Claude's
-push signals, output file and in-band model notice staying provider-native. Defining a common
+push signals, output file and in-band model notice staying harness-native. Defining a common
 "background task completed" event would either be a Claude passthrough dressed as a shared
 guarantee, or force the runner to poll Codex and manufacture an edge the harness never emitted.

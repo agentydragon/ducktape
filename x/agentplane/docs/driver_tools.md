@@ -205,7 +205,7 @@ must sit in a namespace, which `validate_dynamic_tool` enforces
 whole path is confirmed:
 
 1. **Enablement.** `tool_search` is offered only when the model's catalog entry sets
-   `supports_search_tool`, the provider advertises the `namespace_tools` capability (default true),
+   `supports_search_tool`, the harness advertises the `namespace_tools` capability (default true),
    and at least one registered tool is deferred (`core/src/tools/spec_plan.rs`, read). Confirmed by
    an A/B on otherwise identical setups: with `supports_search_tool: false` the request carried only
    the built-ins; with `true` it also carried a
@@ -323,7 +323,7 @@ Two smaller things a common contract cannot promise identically:
 - **Naming.** Claude renames a driver tool to `mcp__<server>__<tool>` and the model calls it under
   that name. Codex keeps the declared name and carries the namespace as a separate field on the
   call, reserving the `mcp` prefix. Either the runner owns the name the model sees, or the name is
-  provider-visible.
+  harness-visible.
 
 On `notifications/tools/list_changed` the two diverge: Claude re-lists and uses the new set, Codex
 ignores it. So a session that keeps offering tools its MCP server has withdrawn is a live failure

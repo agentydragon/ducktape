@@ -409,7 +409,7 @@ py_test(
 
 py_test(
     name = "test_instructions",
-    # Two harness launches per provider; 16s on an idle worker.
+    # Two launches per agent harness; 16s on an idle worker.
     size = "medium",
     srcs = ["test_instructions.py"],
     data = [

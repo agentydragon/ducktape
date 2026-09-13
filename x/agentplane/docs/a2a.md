@@ -49,7 +49,7 @@ not define the native lifecycle needed to answer:
 
 - Was an input only durably accepted, written to a process, admitted by a native queue, or delivered
   to an active execution boundary?
-- Does the provider own a prompt queue, and can a pending prompt be dequeued?
+- Does the harness own a prompt queue, and can a pending prompt be dequeued?
 - Did steering target the active run or become a later prompt?
 - Which exact native request, response, notification, or frame supports a terminal/recovery claim?
 - Can a replacement Runtime safely resume without a partitioned predecessor still causing side

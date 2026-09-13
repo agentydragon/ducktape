@@ -28,7 +28,7 @@ success mean different things in the two adapters:
 
 The pinned native surface and coverage are summarized in the [protocol roster](../native/docs/protocol_roster.md).
 The runner's existing cross-harness test proves idle model selection reaches the next upstream
-request for both providers; it does not prove that an active-loop model mutation has equivalent
+request for both harnesses; it does not prove that an active-loop model mutation has equivalent
 semantics. The same distinction matters more for reasoning effort: Claude's `--effort` is a launch
 setting in the current adapter, while Codex's native per-turn effort field and the
 `model_reasoning_effort` thread/config setting are separate surfaces. Neither is evidence that one
@@ -49,7 +49,7 @@ Before adding commands for model or reasoning-effort changes, the protocol needs
 - active-loop changes: if a model change is admitted while an agent loop is active, can it affect a
   later model request in that same loop, or only the next turn? How is that effective model recorded
   separately from the session's standing default?
-- provider-specific state: how do Claude's native control-request boundary and Codex's per-turn
+- harness-specific state: how do Claude's native control-request boundary and Codex's per-turn
   fields produce compatible observations without inventing equivalence the harnesses do not have?
 - reconnect and races: what state is included in `Attached`/`SessionSummary`, what transitions are
   replayed, and what does a client do when its state view is stale?
@@ -60,6 +60,6 @@ A negotiated control-state surface may be the right direction, but it should be 
 these questions rather than added as a mirror of `SwitchModel`. No protocol, adapter, bridge, UI, or
 reasoning-effort behavior change is included in this documentation PR.
 
-See also the [common protocol](common_protocol.md), which records the rule that provider behaviors
+See also the [common protocol](common_protocol.md), which records the rule that harness behaviors
 supported differently must remain visible, and the [harness evidence contract](harness_evidence.md)
-for the proof required before promoting a provider-specific behavior into the seam.
+for the proof required before promoting a harness-specific behavior into the seam.

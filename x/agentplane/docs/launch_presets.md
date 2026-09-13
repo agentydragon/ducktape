@@ -27,7 +27,7 @@ A `SandboxPreset` owns what is established by or needed to initialize a Sandbox:
 
 A `ThreadPreset` owns what is selected when a native Thread is opened:
 
-- provider and model;
+- harness and model;
 - appended standing instructions; and
 - native session options exposed by the integration app.
 

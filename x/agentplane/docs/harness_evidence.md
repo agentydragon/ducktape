@@ -5,7 +5,7 @@ run the pinned native harnesses against a loopback model endpoint. The probe und
 [`../capture/`](../capture/) preserves ordered native frames and model bodies outside Git; the
 tests under [`../harness_tests/`](../harness_tests/) carry the committed behavioral contract.
 
-## Observed provider behavior
+## Observed harness behavior
 
 - Claude uses newline-delimited stream/control JSON. With `CLAUDE_CODE_MAX_RETRIES` bounded, the
   pinned version retries a stream lost before or after visible text as a non-streaming request.
@@ -47,5 +47,5 @@ When a harness pin changes or a new behavior needs coverage:
 3. update the driver and scripted scenario only for behavior Agentplane intends to support; and
 4. update the harness pin.
 
-Classify provider-specific results as **Proven**, **Supported differently**, **Unsupported**, or
+Classify harness-specific results as **Proven**, **Supported differently**, **Unsupported**, or
 **Environment-blocked** instead of normalizing them into a false common success.
