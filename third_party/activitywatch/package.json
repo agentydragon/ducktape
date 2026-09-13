@@ -126,7 +126,7 @@
     "moment": "^2.29.4",
     "moment-range": "^4.0.2",
     "ora": "^7.0.1",
-    "prettier": "^2.5.1",
+    "prettier": "^3.0.0",
     "pug": "^3.0.4",
     "pug-plain-loader": "^1.0.0",
     "sass-loader": "^8.0.2",
