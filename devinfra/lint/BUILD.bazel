@@ -1,6 +1,7 @@
-load("//devinfra/python:defs.bzl", "py_library")
-
 # Lint tooling configuration
+
+# The source belongs directly to the custom mypy binary below; do not generate a library target.
+# gazelle:exclude mypy_runner.py
 
 load("@buildifier_prebuilt//:rules.bzl", "buildifier")
 load("@io_bazel_rules_go//go:def.bzl", "nogo")
@@ -20,6 +21,7 @@ package(default_visibility = ["//visibility:public"])
 # Type stubs and packages with py.typed are provided by:
 # 1. The types extension (@pip_types) for types-*/stubs packages
 # 2. The target's deps for packages with py.typed (via MYPYPATH from aspect)
+# keep: the excluded source and explicitly curated deps belong to this binary.
 py_binary(
     name = "mypy_cli",
     srcs = ["mypy_runner.py"],
@@ -75,10 +77,4 @@ nogo(
     name = "nogo",
     vet = True,
     visibility = ["//visibility:public"],
-)
-
-py_library(
-    name = "mypy_runner",
-    srcs = ["mypy_runner.py"],
-    deps = ["@pypi//mypy"],
 )
