@@ -14,11 +14,9 @@ spec:
     name: gaffer-private
   path: ./k8s
   prune: true
-  # No `wait: true` — pod readiness depends on the GHCR pull secret
-  # (rendered and distributed by the gaffer-private-ghcr-pull ESO Kustomization, which
-  # in turn dependsOn this one to ensure the augur namespace
-  # exists). Waiting here would circle back. The downstream
-  # Kustomization tolerates apply-then-eventually-ready.
+  # No `wait: true` — workload readiness is owned by the private child
+  # Kustomizations and their dependencies. Waiting here would circle back;
+  # the downstream Kustomizations tolerate apply-then-eventually-ready.
   dependsOn:
     - name: authentik
       namespace: ducktape-flux
