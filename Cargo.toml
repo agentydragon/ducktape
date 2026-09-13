@@ -75,7 +75,7 @@ sea-orm = { version = "2.0.0", default-features = false, features = ["macros", "
 sha2 = "^0.11.0"
 # rig-core's default `reqwest-rustls` feature pulls aws-lc-rs → aws-lc-sys (needs cmake).
 # Use native-tls instead (system OpenSSL on Linux, no cmake required).
-rig-core = { version = "^0.42.0", default-features = false, features = ["derive", "reqwest-native-tls"] }
+rig-core = { version = "^0.42.0", default-features = false, features = ["derive", "native-tls"] }
 bollard = "^0.21.0"
 swc_atoms = "^10.0.0"
 swc_common = { version = "^26.0.0", features = ["concurrent"] }
