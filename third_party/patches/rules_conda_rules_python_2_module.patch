@@ -9,4 +9,4 @@
  )
  use_repo(pip, "rules_conda_pypi")
 -use_repo(pip, "rules_conda_pypi_311_py_rattler")
-+use_repo(pip, "rules_conda_pypi_311_py_rattler_sdist_b00f91e1")
++use_repo(pip, "rules_conda_pypi_311_py_rattler_cp38_abi3_manylinux_2_17_x86_64_4729deb0")

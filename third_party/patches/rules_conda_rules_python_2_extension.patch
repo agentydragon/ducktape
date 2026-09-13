@@ -5,7 +5,7 @@
      return rctx.execute(
          [Label("@python_3_11_host//:" + path)] + args,
 -        environment = {"PYTHONPATH": str(rctx.path(Label("@rules_conda_pypi_311_py_rattler//:site-packages")))},
-+        environment = {"PYTHONPATH": str(rctx.path(Label("@rules_conda_pypi_311_py_rattler_sdist_b00f91e1//:site-packages")))},
++        environment = {"PYTHONPATH": str(rctx.path(Label("@rules_conda_pypi_311_py_rattler_cp38_abi3_manylinux_2_17_x86_64_4729deb0//:site-packages")))},
      )
  
  def _check_result(result, error):
