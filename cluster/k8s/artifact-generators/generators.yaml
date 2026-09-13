@@ -10,11 +10,11 @@ spec:
       name: ducktape
       namespace: ducktape-flux
   artifacts:
-    - name: agentplane-staging-actions
+    - name: agentplane-staging
       originRevision: "@repo"
       copy:
-        - from: "@repo/cluster/k8s/agentplane-staging/actions/**"
-          to: "@artifact/cluster/k8s/agentplane-staging/actions/"
+        - from: "@repo/cluster/k8s/agentplane-staging/**"
+          to: "@artifact/cluster/k8s/agentplane-staging/"
           # Root Flux owns the consumer declaration, not its own artifact.
           exclude:
             - flux-kustomization.yaml
@@ -27,27 +27,12 @@ spec:
           exclude:
             - flux-kustomization.yaml
 
-    - name: agentplane-staging-app
+    - name: agentplane-testing
       originRevision: "@repo"
       copy:
-        - from: "@repo/cluster/k8s/agentplane-staging/app/**"
-          to: "@artifact/cluster/k8s/agentplane-staging/app/"
-          exclude:
-            - flux-kustomization.yaml
-
-    - name: agentplane-staging-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agentplane-staging/namespace/**"
-          to: "@artifact/cluster/k8s/agentplane-staging/namespace/"
-          exclude:
-            - flux-kustomization.yaml
-
-    - name: agentplane-testing-actions
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agentplane-testing/actions/**"
-          to: "@artifact/cluster/k8s/agentplane-testing/actions/"
+        - from: "@repo/cluster/k8s/agentplane-testing/**"
+          to: "@artifact/cluster/k8s/agentplane-testing/"
+          # Root Flux owns the consumer declaration, not its own artifact.
           exclude:
             - flux-kustomization.yaml
 
@@ -345,14 +330,6 @@ spec:
           exclude:
             - flux-kustomization.yaml
 
-    - name: agentplane-testing-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agentplane-testing/namespace/**"
-          to: "@artifact/cluster/k8s/agentplane-testing/namespace/"
-          exclude:
-            - flux-kustomization.yaml
-
     - name: grafana-helmrepository
       originRevision: "@repo"
       copy:
@@ -390,22 +367,6 @@ spec:
       copy:
         - from: "@repo/cluster/k8s/agentplane-index/namespace/**"
           to: "@artifact/cluster/k8s/agentplane-index/namespace/"
-          exclude:
-            - flux-kustomization.yaml
-
-    - name: agentplane-staging-db
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agentplane-staging/db/**"
-          to: "@artifact/cluster/k8s/agentplane-staging/db/"
-          exclude:
-            - flux-kustomization.yaml
-
-    - name: agentplane-testing-db
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agentplane-testing/db/**"
-          to: "@artifact/cluster/k8s/agentplane-testing/db/"
           exclude:
             - flux-kustomization.yaml
 
@@ -510,70 +471,6 @@ spec:
       copy:
         - from: "@repo/cluster/k8s/agentplane-egress-credentials/secrets/**"
           to: "@artifact/cluster/k8s/agentplane-egress-credentials/secrets/"
-          exclude:
-            - flux-kustomization.yaml
-
-    - name: agentplane-staging-agent-rbac
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agentplane-staging/agent-rbac/**"
-          to: "@artifact/cluster/k8s/agentplane-staging/agent-rbac/"
-          exclude:
-            - flux-kustomization.yaml
-
-    - name: agentplane-staging-egress
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agentplane-staging/egress/**"
-          to: "@artifact/cluster/k8s/agentplane-staging/egress/"
-          exclude:
-            - flux-kustomization.yaml
-
-    - name: agentplane-staging-llm-ingress
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agentplane-staging/llm-ingress/**"
-          to: "@artifact/cluster/k8s/agentplane-staging/llm-ingress/"
-          exclude:
-            - flux-kustomization.yaml
-
-    - name: agentplane-testing-agent-rbac
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agentplane-testing/agent-rbac/**"
-          to: "@artifact/cluster/k8s/agentplane-testing/agent-rbac/"
-          exclude:
-            - flux-kustomization.yaml
-
-    - name: agentplane-testing-app
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agentplane-testing/app/**"
-          to: "@artifact/cluster/k8s/agentplane-testing/app/"
-          exclude:
-            - flux-kustomization.yaml
-
-    - name: agentplane-testing-dex
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agentplane-testing/dex/**"
-          to: "@artifact/cluster/k8s/agentplane-testing/dex/"
-          exclude:
-            - flux-kustomization.yaml
-
-    - name: agentplane-testing-egress
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agentplane-testing/egress/**"
-          to: "@artifact/cluster/k8s/agentplane-testing/egress/"
-          exclude:
-            - flux-kustomization.yaml
-
-    - name: agentplane-testing-llm-ingress
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agentplane-testing/llm-ingress/**"
-          to: "@artifact/cluster/k8s/agentplane-testing/llm-ingress/"
           exclude:
             - flux-kustomization.yaml
 

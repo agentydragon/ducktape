@@ -241,7 +241,7 @@ def test_staging_push_key_config_and_egress_agree(monkeypatch: pytest.MonkeyPatc
     assert secret["metadata"]["namespace"] == "agentplane-staging"
     assert secret["stringData"][reference["key"]].startswith("ENC[AES256_GCM,")
     assert reference["name"] in deployment["metadata"]["annotations"]["secret.reloader.stakater.com/reload"].split(",")
-    flux = yaml.safe_load((root / "flux-kustomization.yaml").read_text())
+    flux = yaml.safe_load(get_required_path("_main/cluster/k8s/agentplane-staging/flux-kustomization.yaml").read_text())
     assert flux["spec"]["decryption"] == {"provider": "sops", "secretRef": {"name": "sops-age-cluster-secrets"}}
 
     private_key = (

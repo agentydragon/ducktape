@@ -120,7 +120,7 @@ resources:
   # --- sshpiper (CRD, then the one deployment using it above) ---
   - sshpiper-crds/flux-kustomization.yaml
 
-  # --- agentplane (CRDs, then staging) ---
+  # --- agentplane (CRDs, then one Kustomization per environment) ---
   - agentplane-index/namespace/flux-kustomization.yaml
   - agentplane-index/db/flux-kustomization.yaml
   - agentplane-index/secrets/flux-kustomization.yaml
@@ -128,24 +128,11 @@ resources:
   - agentplane-crds/flux-kustomization.yaml
   - agentplane-egress-credentials/namespace/flux-kustomization.yaml
   - agentplane-egress-credentials/secrets/flux-kustomization.yaml
-  - agentplane-staging/namespace/flux-kustomization.yaml
-  - agentplane-staging/agent-rbac/flux-kustomization.yaml
-  - agentplane-staging/db/flux-kustomization.yaml
-  - agentplane-staging/llm-ingress/flux-kustomization.yaml
-  - agentplane-staging/app/flux-kustomization.yaml
-  - agentplane-staging/egress/flux-kustomization.yaml
-  - agentplane-staging/actions/flux-kustomization.yaml
+  - agentplane-staging/flux-kustomization.yaml
   - ssh-mcp/namespace-flux-kustomization.yaml
   - ssh-mcp/secrets/flux-kustomization.yaml
   - ssh-mcp/flux-kustomization.yaml
-  - agentplane-testing/namespace/flux-kustomization.yaml
-  - agentplane-testing/agent-rbac/flux-kustomization.yaml
-  - agentplane-testing/db/flux-kustomization.yaml
-  - agentplane-testing/dex/flux-kustomization.yaml
-  - agentplane-testing/llm-ingress/flux-kustomization.yaml
-  - agentplane-testing/app/flux-kustomization.yaml
-  - agentplane-testing/egress/flux-kustomization.yaml
-  - agentplane-testing/actions/flux-kustomization.yaml
+  - agentplane-testing/flux-kustomization.yaml
 
   # --- kyverno ---
   - kyverno/app/flux-kustomization.yaml
