@@ -65,9 +65,7 @@ def _thread_id(thread_start_response: dict[str, Any]) -> str:
     return thread_id_value
 
 
-def start_turn(
-    process: NativeProcess, *, thread_id: str, request_id: str, text: str, model: str | None = None
-) -> str:
+def start_turn(process: NativeProcess, *, thread_id: str, request_id: str, text: str, model: str | None = None) -> str:
     """Send turn/start and return the turn id from its native acknowledgement.
 
     Codex's optional model is a native turn property, rather than a separate control operation.

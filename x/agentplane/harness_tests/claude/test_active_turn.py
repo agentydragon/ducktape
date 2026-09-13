@@ -20,9 +20,7 @@ COALESCED_SECOND = "Reply only after seeing COALESCED_SECOND."
 SELECTED_MODEL = "agentplane-switched/claude-haiku-4-5-20251001"
 
 
-def test_queued_inputs_coalesce_into_one_native_user_message(
-    claude: ClaudeHarness, upstream: ScriptedUpstream
-) -> None:
+def test_queued_inputs_coalesce_into_one_native_user_message(claude: ClaudeHarness, upstream: ScriptedUpstream) -> None:
     """Claude batches compatible queued prompts with newlines, retaining the last frame UUID.
 
     With replay enabled it also emits a synthetic echo for each batch follower before the merged
@@ -46,6 +44,7 @@ def test_queued_inputs_coalesce_into_one_native_user_message(
         second = driver.user_frame(COALESCED_SECOND)
         process.write_many([first, second])
         for command_uuid in (first.uuid, second.uuid):
+
             def is_queued(frame: dict[str, Any], expected: str = command_uuid) -> bool:
                 return (
                     frame.get("type") == "command_lifecycle"
@@ -53,10 +52,7 @@ def test_queued_inputs_coalesce_into_one_native_user_message(
                     and frame.get("state") == "queued"
                 )
 
-            process.await_frame(
-                is_queued,
-                timeout=30,
-            )
+            process.await_frame(is_queued, timeout=30)
         upstream.respond(initial_raw, Stream(initial_stream.packets[content_started + 1 :]))
         assert scenarios.await_result(process)["result"] == "INITIAL_TURN_DONE"
 
@@ -132,9 +128,7 @@ def test_set_model_during_an_active_turn_controls_the_next_model_request(
     upstream.assert_quiescent()
 
 
-def test_inputs_during_a_tool_coalesce_into_the_tool_result(
-    claude: ClaudeHarness, upstream: ScriptedUpstream
-) -> None:
+def test_inputs_during_a_tool_coalesce_into_the_tool_result(claude: ClaudeHarness, upstream: ScriptedUpstream) -> None:
     """Claude has no steering frame: active-turn inputs join the current tool result as one
     newline-joined native cohort rather than becoming their own user messages."""
     # The runner enables replay so normal queued batches can retain every origin. Pin the

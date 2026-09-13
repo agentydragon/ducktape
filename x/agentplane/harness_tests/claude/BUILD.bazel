@@ -75,6 +75,7 @@ py_test(
         "//x/agentplane/harness_tests:scripted_upstream",
         "//x/agentplane/native/claude:driver",
         "//x/agentplane/native/claude:scenarios",
+        "//x/agentplane/native/claude:wire",
         "@pypi//pytest_bazel",
     ],
 )
