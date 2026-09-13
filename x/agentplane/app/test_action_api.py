@@ -56,7 +56,7 @@ from x.agentplane.app.action_policy import (
     ActionPolicyView,
     BindingProvenance,
 )
-from x.agentplane.app.api import Provider, create_app
+from x.agentplane.app.api import create_app
 from x.agentplane.app.bridge import RunnerBridge
 from x.agentplane.app.conftest import AGENT_AUTH
 from x.agentplane.app.consent import ConsentAllow
@@ -66,6 +66,7 @@ from x.agentplane.app.identity import TokenReviewer
 from x.agentplane.app.inventory import SandboxInventory
 from x.agentplane.app.live import LiveIndex, SandboxSnapshot
 from x.agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings
+from x.agentplane.app.presets import Harness
 from x.agentplane.app.testing.kubernetes import NAMESPACE, FakeCustomObjectsApi, sandbox
 from x.agentplane.app.trajectory import TrajectoryStore
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
@@ -248,7 +249,7 @@ async def review(
             inventory,
             bridge,
             store,
-            {provider: ["test-model"] for provider in Provider},
+            {harness: ["test-model"] for harness in Harness},
             egress,
             decisions,
             live_index,
@@ -269,7 +270,7 @@ async def review(
             inventory,
             bridge,
             replica_store,
-            {provider: ["test-model"] for provider in Provider},
+            {harness: ["test-model"] for harness in Harness},
             egress,
             decisions,
             live_index,

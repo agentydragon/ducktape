@@ -11,7 +11,7 @@ import pytest_bazel
 from fastapi.testclient import TestClient
 
 from x.agentplane.app.action_policy import ActionPolicyInventory
-from x.agentplane.app.api import Provider, create_app, upstream_http_error
+from x.agentplane.app.api import create_app, upstream_http_error
 from x.agentplane.app.bridge import RunnerBridge
 from x.agentplane.app.conftest import AGENT_AUTH
 from x.agentplane.app.decisions import DecisionsClient
@@ -19,7 +19,7 @@ from x.agentplane.app.egress import EgressInventory
 from x.agentplane.app.identity import TokenReviewer
 from x.agentplane.app.inventory import SandboxInventory
 from x.agentplane.app.live import LiveIndex
-from x.agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
+from x.agentplane.app.presets import Harness, PresetCatalog, SandboxPreset, ThreadPreset
 from x.agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
 from x.agentplane.app.testing.kubernetes import (
     TEMPLATE,
@@ -40,7 +40,7 @@ from x.agentplane.runner import protocol_pb2 as pb
 # gazelle:include_dep @pypi//protobuf
 
 
-TEST_MODELS = {Provider.CLAUDE: ["test-claude-model"], Provider.CODEX: ["test-codex-model"]}
+TEST_MODELS = {Harness.CLAUDE: ["test-claude-model"], Harness.CODEX: ["test-codex-model"]}
 
 
 @pytest.mark.parametrize("host", ["identity-provider.invalid", "actions.invalid"])
@@ -82,7 +82,7 @@ TEST_PRESETS = PresetCatalog(
     threads={
         "public-coder-codex": ThreadPreset(
             title="Public coder / Codex",
-            provider=Provider.CODEX,
+            harness=Harness.CODEX,
             model="test-codex-model",
             reasoning_effort="medium",
             instructions="preset instructions",
@@ -188,7 +188,7 @@ def test_create_records_the_concrete_thread_defaults_and_bootstrap(
             "policies": ["github"],
             "action_policy_sets": ["github-reads"],
             "thread_defaults": {
-                "provider": "codex",
+                "harness": "HARNESS_CODEX",
                 "model": "edited-model",
                 "cwd": "/state/workspaces/{session_id}",
                 "reasoning_effort": "medium",
@@ -202,7 +202,7 @@ def test_create_records_the_concrete_thread_defaults_and_bootstrap(
     row = response.json()
     assert row["binding"] == {
         "thread_defaults": {
-            "provider": "codex",
+            "harness": "HARNESS_CODEX",
             "model": "edited-model",
             "cwd": "/state/workspaces/{session_id}",
             "reasoning_effort": "medium",
@@ -349,14 +349,14 @@ def test_a_default_policy_is_granted_whether_or_not_the_caller_picks_it(client: 
         {"slug": "Demo", "template": TEMPLATE},
         {"slug": "-demo", "template": TEMPLATE},
         {"slug": "a" * 58, "template": TEMPLATE},
-        {"slug": "demo", "template": TEMPLATE, "provider": "claude"},
+        {"slug": "demo", "template": TEMPLATE, "harness": "claude"},
         {"slug": "demo", "template": TEMPLATE, "model": "cheap"},
     ],
     ids=[
         "uppercase-slug",
         "leading-dash-slug",
         "slug-too-long-for-a-dns-label",
-        "provider-on-sandbox",
+        "harness-on-sandbox",
         "model-on-sandbox",
     ],
 )
@@ -400,7 +400,7 @@ def test_bound_thread_defaults_resolve_before_bootstrap_and_explicit_launch_fiel
             "slug": "coder",
             "template": TEMPLATE,
             "thread_defaults": {
-                "provider": "codex",
+                "harness": "HARNESS_CODEX",
                 "model": "sandbox-model",
                 "cwd": "/state/workspaces/{session_id}",
                 "reasoning_effort": "medium",
@@ -432,8 +432,8 @@ def test_bound_thread_defaults_resolve_before_bootstrap_and_explicit_launch_fiel
     assert calls[1][0] == "open"
     spec = calls[1][1]
     assert isinstance(spec, pb.SessionSpec)
-    assert (spec.provider, spec.cwd, spec.model, spec.reasoning_effort, spec.instructions) == (
-        pb.PROVIDER_CODEX,
+    assert (spec.harness, spec.cwd, spec.model, spec.reasoning_effort, spec.instructions) == (
+        pb.HARNESS_CODEX,
         "/state/workspaces/thread-1",
         "thread-model",
         "medium",
@@ -453,13 +453,13 @@ def test_shared_instructions_are_also_added_to_direct_session_launches(
     monkeypatch.setattr(bridge, "open_session", open_session)
     response = client.post(
         "/sandboxes/live/sessions",
-        json={"session_id": "plain-1", "spec": {"provider": "PROVIDER_CLAUDE", "cwd": "/w", "model": "plain-model"}},
+        json={"session_id": "plain-1", "spec": {"harness": "HARNESS_CLAUDE", "cwd": "/w", "model": "plain-model"}},
     )
 
     assert response.status_code == 201, response.text
     assert captured == [
         pb.SessionSpec(
-            provider=pb.PROVIDER_CLAUDE, cwd="/w", model="plain-model", instructions="shared agent instructions"
+            harness=pb.HARNESS_CLAUDE, cwd="/w", model="plain-model", instructions="shared agent instructions"
         )
     ]
 
@@ -631,7 +631,7 @@ def test_presets_publish_editable_sandbox_and_thread_defaults(client: TestClient
             "policies": ["github"],
             "action_policy_sets": ["github-reads"],
             "thread_defaults": {
-                "provider": "PROVIDER_CODEX",
+                "harness": "HARNESS_CODEX",
                 "model": "test-codex-model",
                 "cwd": "/state/workspaces/{session_id}",
                 "reasoning_effort": "medium",
@@ -645,8 +645,8 @@ def test_presets_publish_editable_sandbox_and_thread_defaults(client: TestClient
 def test_models_lists_what_each_harness_may_run(client: TestClient) -> None:
     """The catalog the session form offers; a thread carries its model, a sandbox does not."""
     assert client.get("/models").json() == {
-        "PROVIDER_CLAUDE": ["test-claude-model"],
-        "PROVIDER_CODEX": ["test-codex-model"],
+        "HARNESS_CLAUDE": ["test-claude-model"],
+        "HARNESS_CODEX": ["test-codex-model"],
     }
 
 
@@ -662,7 +662,7 @@ async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
 ) -> None:
     """Over ASGI on this loop, not TestClient's thread: the store's pooled asyncpg connections
     belong to the loop that opened them."""
-    spec = pb.SessionSpec(provider=pb.PROVIDER_CLAUDE, cwd="/w", model="test-model")
+    spec = pb.SessionSpec(harness=pb.HARNESS_CLAUDE, cwd="/w", model="test-model")
     thread_id = str(await store.thread("live", "s-1", spec))
     await store.thread("live", "s-2", spec)
     app = create_app(
@@ -697,7 +697,7 @@ async def test_a_thread_archives_and_unarchives_and_hides_from_the_default_listi
     action_policy: ActionPolicyInventory,
     reviewer: TokenReviewer,
 ) -> None:
-    spec = pb.SessionSpec(provider=pb.PROVIDER_CLAUDE, cwd="/w", model="test-model")
+    spec = pb.SessionSpec(harness=pb.HARNESS_CLAUDE, cwd="/w", model="test-model")
     thread_id = str(await store.thread("live", "s-1", spec))
     app = create_app(
         inventory, bridge, store, TEST_MODELS, egress, decisions, live_index, action_policy, reviewer=reviewer
@@ -735,7 +735,7 @@ async def test_threads_with_sandboxes_pairs_each_thread_with_its_sandbox_or_none
     several Threads is not duplicated once per Thread."""
     custom_objects.objects[("sandboxes", "live")] = sandbox("live")
     core_v1.pods["live"] = pod("live", phase="Running", ready=True, ip="10.0.0.7")
-    spec = pb.SessionSpec(provider=pb.PROVIDER_CLAUDE, cwd="/w", model="test-model")
+    spec = pb.SessionSpec(harness=pb.HARNESS_CLAUDE, cwd="/w", model="test-model")
     live_thread = await store.thread("live", "s-1", spec)
     other_live_thread = await store.thread("live", "s-2", spec)
     gone_thread = await store.thread("gone", "s-3", spec)
@@ -750,7 +750,7 @@ async def test_threads_with_sandboxes_pairs_each_thread_with_its_sandbox_or_none
         default_thread_ids = {row["id"] for row in default_body["threads"]}
         assert default_thread_ids == {str(live_thread), str(other_live_thread)}
         # Neither thread's feed has attached; the sidebar's per-thread status dot reads this as gray.
-        assert {row["harness"] for row in default_body["threads"]} == {"HARNESS_STATE_UNSPECIFIED"}
+        assert {row["harness_state"] for row in default_body["threads"]} == {"HARNESS_STATE_UNSPECIFIED"}
         assert set(default_body["sandboxes"]) == {"live"}
         assert (default_body["sandboxes"]["live"]["name"], default_body["sandboxes"]["live"]["state"]) == (
             "live",

@@ -47,8 +47,8 @@ def _free_port() -> int:
 
 
 @pytest.fixture
-async def container(provider: str, upstream: ScriptedUpstream) -> AsyncIterator[str]:
-    """One runner container on the host network, configured for `provider` against the scripted
+async def container(harness: pb.Harness.ValueType, upstream: ScriptedUpstream) -> AsyncIterator[str]:
+    """One runner container on the host network, configured for `harness` against the scripted
     upstream; yields the runner's address."""
     tag = load_oci_image(IMAGE)
     port = _free_port()
@@ -82,10 +82,12 @@ async def container(provider: str, upstream: ScriptedUpstream) -> AsyncIterator[
         "--harness-env",
         "HOME",
     ]
-    if provider == "claude":
+    if harness == pb.HARNESS_CLAUDE:
         command += ["--claude-binary", "/usr/local/bin/claude", "--anthropic-base-url", upstream.origin]
-    else:
+    elif harness == pb.HARNESS_CODEX:
         command += ["--codex-binary", "/opt/codex/bin/codex", "--openai-base-url", f"{upstream.origin}/v1"]
+    else:
+        raise ValueError(f"unsupported {harness=}")
     await _docker(*command)
     try:
         async for attempt in AsyncRetrying(
@@ -101,10 +103,10 @@ async def container(provider: str, upstream: ScriptedUpstream) -> AsyncIterator[
         await _docker("rm", "--force", name)
 
 
-async def test_the_image_runs_a_turn(container: str, provider: str, model: ScriptedModel) -> None:
+async def test_the_image_runs_a_turn(container: str, harness: pb.Harness.ValueType, model: ScriptedModel) -> None:
     client = RunnerClient(container)
-    attachment = await client.attach("image-1", spec=launches.spec(provider, Path(WORKSPACE)))
-    assert attachment.attached.harness == pb.HARNESS_STATE_RUNNING
+    attachment = await client.attach("image-1", spec=launches.spec(harness, Path(WORKSPACE)))
+    assert attachment.attached.harness_state == pb.HARNESS_STATE_RUNNING
     await attachment.send("input-1", "Reply with exactly: IMAGE_OK")
     model.reply(await model.request(), Text("IMAGE_OK"))
     done = await attachment.until(events.turn_completed)

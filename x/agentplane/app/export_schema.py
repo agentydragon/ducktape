@@ -13,12 +13,13 @@ from typing import Any, cast
 import httpx
 
 from x.agentplane.app.action_policy import ActionPolicyInventory
-from x.agentplane.app.api import Provider, create_app
+from x.agentplane.app.api import create_app
 from x.agentplane.app.bridge import RunnerBridge, SandboxNotReachableError
 from x.agentplane.app.decisions import DecisionsClient
 from x.agentplane.app.egress import EgressInventory
 from x.agentplane.app.inventory import ProvisioningState, SandboxInventory
 from x.agentplane.app.live import LiveIndex
+from x.agentplane.app.presets import Harness
 from x.agentplane.app.trajectory import TrajectoryStore
 
 
@@ -35,7 +36,7 @@ def openapi_document() -> dict[str, Any]:
         inventory,
         RunnerBridge(address_of=_unreachable, store=store),
         store,
-        {provider: ["schema-model"] for provider in Provider},
+        {harness: ["schema-model"] for harness in Harness},
         EgressInventory(namespace="schema", custom_objects=cast(Any, None)),
         DecisionsClient(httpx.AsyncClient(base_url="http://schema.invalid")),
         LiveIndex(stale_after_seconds=900),

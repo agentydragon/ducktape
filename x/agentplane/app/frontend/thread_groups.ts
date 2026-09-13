@@ -44,5 +44,5 @@ export function archivedCount(threads: ThreadView[]): number {
 /** Green while the thread's own harness is attached and running; gray otherwise (idle, or its
  * Sandbox suspended/deleted, which leaves no attached feed behind either). */
 export function threadDotColor(thread: ThreadView): "ok" | "gray" {
-  return thread.harness === "HARNESS_STATE_RUNNING" ? "ok" : "gray";
+  return thread.harness_state === "HARNESS_STATE_RUNNING" ? "ok" : "gray";
 }

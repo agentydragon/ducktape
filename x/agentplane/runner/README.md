@@ -31,7 +31,7 @@ bbr test //x/agentplane/runner/...
 ## Tests
 
 Each test is one interaction script written against the client and run against both harnesses;
-the parametrized `model` fixture is the only place that knows the model API dialect. Provider
+the parametrized `model` fixture is the only place that knows the model API dialect. Harness
 fixtures live in `testing/`: `scripted_model.py` is the neutral vocabulary (`Text`, `Reasoning`,
 `ShellCall`, and the request markers), `claude_model.py` and `codex_model.py` speak the two
 dialects, and `launches.py` wires the pinned binaries to a scripted upstream. `test_restart.py`

@@ -20,7 +20,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from x.agentplane.app.changes import Changes
 from x.agentplane.app.inventory import ProvisioningState, SandboxInventory, SandboxNotFoundError
 from x.agentplane.app.live import LiveIndex
-from x.agentplane.app.presets import PresetCatalog, Provider
+from x.agentplane.app.presets import Harness, PresetCatalog
 from x.agentplane.app.shutdown import Shutdown
 from x.agentplane.app.trajectory import FeedEnd, FeedError, IngestionLease, IngestionLeaseLostError, TrajectoryStore
 from x.agentplane.runner import protocol_pb2 as pb
@@ -209,7 +209,7 @@ class RunnerBridge:
                         thread_id = await self._store.thread(sandbox, summary.session_id, summary.spec)
                         snapshot = await self._store.feed_state(thread_id)
                         if (
-                            summary.harness == pb.HARNESS_STATE_STOPPED
+                            summary.harness_state == pb.HARNESS_STATE_STOPPED
                             and snapshot is not None
                             and snapshot.end is not None
                             and await self._store.last_sequence(thread_id) == summary.last_sequence
@@ -288,7 +288,7 @@ class RunnerBridge:
     ) -> None:
         attachment = await (await self._client(sandbox)).attach(session_id)
         try:
-            if attachment.attached.harness != pb.HARNESS_STATE_RUNNING:
+            if attachment.attached.harness_state != pb.HARNESS_STATE_RUNNING:
                 raise RunnerError("session is stopped; explicitly open it before sending commands")
             await command(attachment)
             if not ends_stream:
@@ -456,9 +456,9 @@ async def switch_session_model(
     summary = next((item for item in summaries if item.session_id == session_id), None)
     if summary is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"unknown session {session_id!r}")
-    provider = Provider(pb.Provider.Name(summary.spec.provider))
+    harness = Harness(pb.Harness.Name(summary.spec.harness))
     catalog = request.app.state.models
-    if not isinstance(catalog, dict) or body.model not in catalog[provider]:
+    if not isinstance(catalog, dict) or body.model not in catalog[harness]:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="model is incompatible with this harness"
         )

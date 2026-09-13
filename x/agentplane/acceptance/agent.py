@@ -6,7 +6,7 @@ a paraphrase. What the agent produced is collected all the same, because it is w
 readable.
 
 Which harness runs is the caller's, not this module's: the runner protocol is the same for both, so
-a scenario parametrised over `Provider` gets Claude and Codex from one body.
+a scenario parametrised over `Harness` gets Claude and Codex from one body.
 """
 
 from __future__ import annotations
@@ -22,8 +22,8 @@ import httpx
 from pydantic import BaseModel
 from tenacity import AsyncRetrying, retry_if_exception, stop_after_delay, wait_fixed
 
-from x.agentplane.app.api import Provider
-from x.agentplane.app.client import PROTO_PROVIDERS, Client
+from x.agentplane.app.client import Client
+from x.agentplane.app.presets import Harness
 from x.agentplane.runner import protocol_pb2 as pb
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -98,9 +98,7 @@ class Agent:
         self._sequence = sequence
 
     @classmethod
-    async def open(
-        cls, client: Client, *, sandbox: str, provider: Provider, model: str, instructions: str = ""
-    ) -> Agent:
+    async def open(cls, client: Client, *, sandbox: str, harness: Harness, model: str, instructions: str = "") -> Agent:
         """Open a session, waiting out a runner that is up but not yet listening.
 
         A sandbox reports Running once its Pod has an address, and an address is not a listening
@@ -112,7 +110,7 @@ class Agent:
         is the proto's own default and opens the session the runner would open without the field.
         """
         spec = pb.SessionSpec(
-            provider=PROTO_PROVIDERS[provider],
+            harness=pb.Harness.Value(harness.value),
             cwd=WORKING_DIRECTORY,
             model=model,
             reasoning_effort="low",

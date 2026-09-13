@@ -36,7 +36,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from x.agentplane.app.changes import Changes
 from x.agentplane.app.operator_sessions import Base, OperatorSessionStore
-from x.agentplane.app.presets import Provider
+from x.agentplane.app.presets import Harness
 from x.agentplane.app.trajectory_updates import CHANNEL, TrajectoryUpdates
 from x.agentplane.runner import protocol_pb2 as pb
 
@@ -53,9 +53,9 @@ class Thread(Base):
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     sandbox: Mapped[str] = mapped_column(Text)
     session_id: Mapped[str] = mapped_column(Text)
-    provider: Mapped[Provider] = mapped_column(
+    harness: Mapped[Harness] = mapped_column(
         SqlEnum(
-            Provider,
+            Harness,
             native_enum=False,
             create_constraint=False,
             values_callable=lambda values: [item.value for item in values],
@@ -134,7 +134,7 @@ class ThreadView(BaseModel):
     id: UUID
     sandbox: str
     session_id: str
-    provider: Provider = Field(description="The runner protocol Provider enum member.")
+    harness: Harness = Field(description="The runner protocol Harness enum member.")
     model: str
     cwd: str
     created_at: datetime
@@ -142,7 +142,7 @@ class ThreadView(BaseModel):
     archived: bool
     last_sequence: int = Field(description="The highest stored sequence; 0 while nothing is stored.")
     last_event_at: datetime | None = None
-    harness: str = Field(
+    harness_state: str = Field(
         description="The protocol's HarnessState enum member, by name: HARNESS_STATE_RUNNING, "
         "HARNESS_STATE_STOPPED, or HARNESS_STATE_UNSPECIFIED while no feed has ever attached to this thread."
     )
@@ -180,7 +180,7 @@ class TrajectoryStore:
                 .values(
                     sandbox=sandbox,
                     session_id=session_id,
-                    provider=Provider(pb.Provider.Name(spec.provider)),
+                    harness=Harness(pb.Harness.Name(spec.harness)),
                     model=spec.model,
                     cwd=spec.cwd,
                 )
@@ -426,9 +426,9 @@ def _project_attached(attached: pb.Attached, event: pb.Event) -> None:
     attached.last_sequence = event.sequence
     match event.WhichOneof("observation"):
         case "harness_started":
-            attached.harness = pb.HARNESS_STATE_RUNNING
+            attached.harness_state = pb.HARNESS_STATE_RUNNING
         case "harness_exited" | "harness_lost":
-            attached.harness = pb.HARNESS_STATE_STOPPED
+            attached.harness_state = pb.HARNESS_STATE_STOPPED
         case "turn_started":
             attached.active_turn_id = event.turn_started.turn_id
         case "turn_completed":
@@ -449,12 +449,14 @@ async def _last(session: AsyncSession, thread_id: UUID) -> tuple[int | None, dat
 def _view(
     thread: Thread, last_sequence: int | None, last_at: datetime | None, attached: dict[str, object] | None
 ) -> ThreadView:
-    harness = ParseDict(attached, pb.Attached()).harness if attached is not None else pb.HARNESS_STATE_UNSPECIFIED
+    harness_state = (
+        ParseDict(attached, pb.Attached()).harness_state if attached is not None else pb.HARNESS_STATE_UNSPECIFIED
+    )
     return ThreadView(
         id=thread.id,
         sandbox=thread.sandbox,
         session_id=thread.session_id,
-        provider=thread.provider,
+        harness=thread.harness,
         model=thread.model,
         cwd=thread.cwd,
         created_at=thread.created_at,
@@ -462,5 +464,5 @@ def _view(
         archived=thread.archived,
         last_sequence=last_sequence or 0,
         last_event_at=last_at,
-        harness=pb.HarnessState.Name(harness),
+        harness_state=pb.HarnessState.Name(harness_state),
     )

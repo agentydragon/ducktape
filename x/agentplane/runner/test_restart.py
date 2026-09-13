@@ -79,7 +79,7 @@ async def _exited(pid: int) -> None:
 
 @pytest.fixture
 async def start_runner(
-    provider: str, upstream: ScriptedUpstream, tmp_path: Path
+    harness: pb.Harness.ValueType, upstream: ScriptedUpstream, tmp_path: Path
 ) -> AsyncIterator[Callable[[], Awaitable[RunnerProcess]]]:
     started: list[RunnerProcess] = []
 
@@ -93,7 +93,7 @@ async def start_runner(
             "OPENAI_API_KEY": launches.TOKEN,
         }
         process = await asyncio.create_subprocess_exec(
-            *launches.runner_command(provider, upstream, state_dir=tmp_path / "state"),
+            *launches.runner_command(harness, upstream, state_dir=tmp_path / "state"),
             env=environment,
             stdout=asyncio.subprocess.PIPE,
             start_new_session=True,
@@ -159,7 +159,7 @@ async def test_sigterm_stops_the_harness_cleanly_and_the_next_runner_resumes(
     await first.until(events.turn_completed)
     (running,) = await client.list_sessions()
     assert running.session_id == "sigterm-1"
-    assert running.harness == pb.HARNESS_STATE_RUNNING
+    assert running.harness_state == pb.HARNESS_STATE_RUNNING
     assert running.spec == spec
     # Native frames after the turn's result may still be arriving.
     assert running.last_sequence >= first.cursor
@@ -172,7 +172,7 @@ async def test_sigterm_stops_the_harness_cleanly_and_the_next_runner_resumes(
     second_runner = await start_runner()
     client = RunnerClient(second_runner.target)
     (stopped,) = await client.list_sessions()
-    assert stopped.harness == pb.HARNESS_STATE_STOPPED
+    assert stopped.harness_state == pb.HARNESS_STATE_STOPPED
     assert stopped.last_sequence > first.cursor
     second = await client.attach("sigterm-1", spec=spec, after_sequence=first.cursor)
     exited = await second.until(events.is_kind("harness_exited"))

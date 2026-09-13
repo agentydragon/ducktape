@@ -14,7 +14,7 @@ from google.protobuf.timestamp_pb2 import Timestamp
 from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from x.agentplane.app.presets import Provider
+from x.agentplane.app.presets import Harness
 from x.agentplane.app.trajectory import (
     FeedEnd,
     FeedError,
@@ -29,7 +29,7 @@ from x.agentplane.runner import protocol_pb2 as pb
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
 
-SPEC = pb.SessionSpec(provider=pb.PROVIDER_CLAUDE, cwd="/state/work", model="test-model", reasoning_effort="low")
+SPEC = pb.SessionSpec(harness=pb.HARNESS_CLAUDE, cwd="/state/work", model="test-model", reasoning_effort="low")
 
 
 @pytest.fixture
@@ -91,7 +91,7 @@ async def test_a_session_is_one_thread_and_its_events_read_back_in_order(
 
 async def test_threads_list_with_their_progress(store: TrajectoryStore, lease: IngestionLease) -> None:
     thread = await store.thread("sb-1", "s-1", SPEC)
-    empty = await store.thread("sb-2", "s-9", pb.SessionSpec(provider=pb.PROVIDER_CODEX, cwd="/w", model="m"))
+    empty = await store.thread("sb-2", "s-9", pb.SessionSpec(harness=pb.HARNESS_CODEX, cwd="/w", model="m"))
     await store.record(
         thread,
         [_event(1, harness_started=pb.HarnessStarted(pid=1)), _event(2, harness_lost=pb.HarnessLost())],
@@ -100,25 +100,21 @@ async def test_threads_list_with_their_progress(store: TrajectoryStore, lease: I
 
     views = {view.id: view for view in await store.list_threads()}
 
-    assert views[thread].model_dump(include={"sandbox", "session_id", "provider", "model", "cwd", "last_sequence"}) == {
+    assert views[thread].model_dump(include={"sandbox", "session_id", "harness", "model", "cwd", "last_sequence"}) == {
         "sandbox": "sb-1",
         "session_id": "s-1",
-        "provider": "PROVIDER_CLAUDE",
+        "harness": "HARNESS_CLAUDE",
         "model": "test-model",
         "cwd": "/state/work",
         "last_sequence": 2,
     }
-    assert views[thread].provider is Provider.CLAUDE
+    assert views[thread].harness is Harness.CLAUDE
     assert views[thread].last_event_at == datetime(2026, 9, 2, 12, 0, 2, tzinfo=UTC)
-    assert (views[empty].provider, views[empty].last_sequence, views[empty].last_event_at) == (
-        "PROVIDER_CODEX",
-        0,
-        None,
-    )
-    assert views[empty].provider is Provider.CODEX
+    assert (views[empty].harness, views[empty].last_sequence, views[empty].last_event_at) == ("HARNESS_CODEX", 0, None)
+    assert views[empty].harness is Harness.CODEX
     # No feed has ever attached to either thread (only their event log was replayed), so the
     # exposed harness state stays unspecified rather than inferring it from history.
-    assert views[thread].harness == views[empty].harness == "HARNESS_STATE_UNSPECIFIED"
+    assert views[thread].harness_state == views[empty].harness_state == "HARNESS_STATE_UNSPECIFIED"
     assert await store.get_thread(empty) == views[empty]
     assert await store.get_thread(thread) == views[thread]
     assert [view.id for view in await store.list_threads(sandbox="sb-1")] == [thread]
@@ -129,23 +125,23 @@ async def test_threads_list_with_their_progress(store: TrajectoryStore, lease: I
 async def test_threads_list_reflects_the_attached_feed_s_harness_state(
     store: TrajectoryStore, lease: IngestionLease
 ) -> None:
-    """`list_threads`/`get_thread` expose `FeedState.attached.harness` per thread — the live
+    """`list_threads`/`get_thread` expose `FeedState.attached.harness_state` per thread — the live
     running/idle signal the sidebar's per-thread status dot reads (`x/agentplane/plans/task_dag.md`
     `UISHELL_SIDEBAR`), not a value derived from the historical event log."""
     thread = await store.thread("sb-1", "s-1", SPEC)
-    running_attached = pb.Attached(session_id="s-1", spec=SPEC, harness=pb.HARNESS_STATE_RUNNING)
+    running_attached = pb.Attached(session_id="s-1", spec=SPEC, harness_state=pb.HARNESS_STATE_RUNNING)
     await store.set_attached(thread, running_attached, lease=lease)
 
     (running,) = await store.list_threads()
-    assert running.harness == "HARNESS_STATE_RUNNING"
+    assert running.harness_state == "HARNESS_STATE_RUNNING"
     got_thread = await store.get_thread(thread)
     assert got_thread is not None
-    assert got_thread.harness == "HARNESS_STATE_RUNNING"
+    assert got_thread.harness_state == "HARNESS_STATE_RUNNING"
 
-    stopped_attached = pb.Attached(session_id="s-1", spec=SPEC, harness=pb.HARNESS_STATE_STOPPED)
+    stopped_attached = pb.Attached(session_id="s-1", spec=SPEC, harness_state=pb.HARNESS_STATE_STOPPED)
     await store.set_attached(thread, stopped_attached, lease=lease)
     (stopped,) = await store.list_threads()
-    assert stopped.harness == "HARNESS_STATE_STOPPED"
+    assert stopped.harness_state == "HARNESS_STATE_STOPPED"
 
 
 async def test_a_thread_is_unnamed_until_renamed_and_keeps_its_progress(
@@ -286,7 +282,7 @@ async def test_ingested_events_project_the_durable_attachment_without_replay_reg
     store: TrajectoryStore, replica: TrajectoryStore, lease: IngestionLease
 ) -> None:
     thread = await store.thread("sb-1", "s-1", SPEC)
-    attached = pb.Attached(session_id="s-1", spec=SPEC, harness=pb.HARNESS_STATE_STOPPED)
+    attached = pb.Attached(session_id="s-1", spec=SPEC, harness_state=pb.HARNESS_STATE_STOPPED)
     await store.set_attached(thread, attached, lease=lease)
     await store.end_feed(thread, lease=lease, error=None)
     await store.record(
@@ -301,7 +297,7 @@ async def test_ingested_events_project_the_durable_attachment_without_replay_reg
     running = await replica.feed_state(thread)
     assert running is not None
     assert running.end is None
-    assert running.attached.harness == pb.HARNESS_STATE_RUNNING
+    assert running.attached.harness_state == pb.HARNESS_STATE_RUNNING
     assert running.attached.active_turn_id == "test-turn"
     assert running.attached.last_sequence == 3
     assert running.attached.spec == SPEC
@@ -319,7 +315,7 @@ async def test_ingested_events_project_the_durable_attachment_without_replay_reg
     stopped = await replica.feed_state(thread)
     assert stopped is not None
     assert isinstance(stopped.end, FeedEnd)
-    assert stopped.attached.harness == pb.HARNESS_STATE_STOPPED
+    assert stopped.attached.harness_state == pb.HARNESS_STATE_STOPPED
     assert stopped.attached.active_turn_id == ""
     assert stopped.attached.spec.model == "test-next-model"
     assert stopped.attached.spec.reasoning_effort == SPEC.reasoning_effort
@@ -337,11 +333,11 @@ async def test_ingested_events_project_the_durable_attachment_without_replay_reg
     resumed = await replica.feed_state(thread)
     assert resumed is not None
     assert resumed.end is None
-    assert resumed.attached.harness == pb.HARNESS_STATE_RUNNING
+    assert resumed.attached.harness_state == pb.HARNESS_STATE_RUNNING
     await store.record(thread, [_event(9, harness_lost=pb.HarnessLost())], lease=lease)
     lost = await replica.feed_state(thread)
     assert lost is not None
-    assert lost.attached.harness == pb.HARNESS_STATE_STOPPED
+    assert lost.attached.harness_state == pb.HARNESS_STATE_STOPPED
     assert lost.attached.last_sequence == 9
 
 
@@ -349,7 +345,7 @@ async def test_historical_catchup_does_not_rewind_an_attachment_snapshot(
     store: TrajectoryStore, replica: TrajectoryStore, lease: IngestionLease
 ) -> None:
     thread = await store.thread("sb-1", "s-1", SPEC)
-    attached = pb.Attached(session_id="s-1", spec=SPEC, harness=pb.HARNESS_STATE_STOPPED, last_sequence=2)
+    attached = pb.Attached(session_id="s-1", spec=SPEC, harness_state=pb.HARNESS_STATE_STOPPED, last_sequence=2)
     await store.set_attached(thread, attached, lease=lease)
     await store.end_feed(thread, lease=lease, error=None)
     await store.record(thread, [_event(1, harness_started=pb.HarnessStarted())], lease=lease)

@@ -21,7 +21,7 @@ async def test_one_turn_streams_reasoning_and_text(
     client: RunnerClient, model: ScriptedModel, spec: pb.SessionSpec
 ) -> None:
     session = await client.attach("turn-1", spec=spec)
-    assert session.attached.harness == pb.HARNESS_STATE_RUNNING
+    assert session.attached.harness_state == pb.HARNESS_STATE_RUNNING
     assert session.attached.active_turn_id == ""
     await session.send("input-1", "Reply with exactly: BASELINE_OK")
 
@@ -157,11 +157,13 @@ async def test_input_during_a_turn_joins_it(client: RunnerClient, model: Scripte
 
 
 async def test_idle_model_switch_reaches_the_next_upstream_request(
-    client: RunnerClient, model: ScriptedModel, provider: str, spec: pb.SessionSpec
+    client: RunnerClient, model: ScriptedModel, harness: pb.Harness.ValueType, spec: pb.SessionSpec
 ) -> None:
     """Drive the pinned harnesses through the loopback server, rather than trusting runner state."""
     attached = await client.attach("switch-model-1", spec=spec)
-    selected = "agentplane-switched/claude-haiku-4-5-20251001" if provider == "claude" else "agentplane-switched-model"
+    selected = (
+        "agentplane-switched/claude-haiku-4-5-20251001" if harness == pb.HARNESS_CLAUDE else "agentplane-switched-model"
+    )
     await attached.switch_model("switch-1", selected)
     changed = await attached.until(events.is_kind("model_switch_succeeded"))
     assert changed.model_switch_succeeded.model == selected

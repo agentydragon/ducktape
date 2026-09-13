@@ -23,8 +23,10 @@ import { readiness } from "./action_policy";
 import {
   api,
   displayableError,
+  models,
   type ActionPolicySetView,
   type Condition,
+  type ModelCatalog,
   type NewSandbox,
   type SandboxPresetView,
   type SandboxView,
@@ -97,8 +99,8 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   const [presets, setPresets] = useState<SandboxPresetView[]>([]);
   const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
   const [thread, setThread] = useState<ThreadDefaults>(EMPTY_THREAD);
-  const [modelCatalog, setModelCatalog] = useState<Record<string, string[]> | null>(null);
-  const modelOptions = thread.provider ? (modelCatalog?.[thread.provider] ?? []) : [];
+  const [modelCatalog, setModelCatalog] = useState<ModelCatalog | null>(null);
+  const modelOptions = thread.harness ? (modelCatalog?.[thread.harness] ?? []) : [];
   // The namespace's policies; ticking some grants them to this sandbox alone.
   const [policies, setPolicies] = useState<string[]>([]);
   const [templates, setTemplates] = useState<string[]>([]);
@@ -153,24 +155,18 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   }, []);
 
   useEffect(() => {
-    void api.GET("/models").then(
-      ({ data, error: failure }) => {
-        if (failure) setError(displayableError(failure));
-        else setModelCatalog(data);
-      },
-      (reason: unknown) => setError(displayableError(reason))
-    );
+    void models().then(setModelCatalog, (reason: unknown) => setError(displayableError(reason)));
   }, []);
 
   useEffect(() => {
     if (!modelCatalog) return;
     setThread((current) => {
-      if (!current.provider) return current;
-      const offered = modelCatalog[current.provider];
+      if (!current.harness) return current;
+      const offered = modelCatalog[current.harness];
       if (current.model && offered.includes(current.model)) return current;
       return { ...current, model: offered[0] ?? null };
     });
-  }, [modelCatalog, thread.provider, thread.model]);
+  }, [modelCatalog, thread.harness, thread.model]);
 
   // No refresh after an action: the change reaches the API server, and the watch behind the
   // stream brings the new row back on its own.
@@ -295,12 +291,12 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
             label="Harness"
             allowDeselect={false}
             data={[
-              { value: "PROVIDER_CLAUDE", label: "Claude" },
-              { value: "PROVIDER_CODEX", label: "Codex" },
+              { value: "HARNESS_CLAUDE", label: "Claude" },
+              { value: "HARNESS_CODEX", label: "Codex" },
             ]}
-            value={thread.provider ?? null}
-            onChange={(provider) =>
-              setThread({ ...thread, provider: (provider ?? undefined) as ThreadDefaults["provider"] })
+            value={thread.harness ?? null}
+            onChange={(harness) =>
+              setThread({ ...thread, harness: (harness ?? undefined) as ThreadDefaults["harness"] })
             }
           />
           <Select

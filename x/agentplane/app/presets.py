@@ -12,11 +12,11 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
-class Provider(StrEnum):
-    """The runner protocol Provider enum names, reused by configuration and Thread projections."""
+class Harness(StrEnum):
+    """The runner protocol Harness enum names, reused by configuration and Thread projections."""
 
-    CLAUDE = "PROVIDER_CLAUDE"
-    CODEX = "PROVIDER_CODEX"
+    CLAUDE = "HARNESS_CLAUDE"
+    CODEX = "HARNESS_CODEX"
 
 
 class ThreadDefaults(BaseModel):
@@ -24,7 +24,7 @@ class ThreadDefaults(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    provider: Provider | None = None
+    harness: Harness | None = None
     model: str | None = None
     cwd: str | None = None
     reasoning_effort: str | None = None
@@ -38,8 +38,8 @@ class ThreadDefaults(BaseModel):
         values = self.model_dump(exclude_none=True)
         if cwd := values.get("cwd"):
             values["cwd"] = str(cwd).replace("{session_id}", session_id)
-        if provider := values.pop("provider", None):
-            values["provider"] = str(provider)
+        if harness := values.pop("harness", None):
+            values["harness"] = str(harness)
         if "reasoning_effort" in values:
             values["reasoningEffort"] = values.pop("reasoning_effort")
         return values
@@ -49,7 +49,7 @@ class ThreadPreset(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     title: str
-    provider: Provider
+    harness: Harness
     model: str
     cwd: str = "/state/workspaces/{session_id}"
     reasoning_effort: str = "low"

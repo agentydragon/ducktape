@@ -1,12 +1,12 @@
 # The app's settings file (x/agentplane/app/main.py `Settings`), mounted by the Deployment.
 # Native subscription routes authorized by the staging key in tf/gitops/litellm-keys.
 models:
-  claude:
+  HARNESS_CLAUDE:
     - anthropic-max20/ant-messages/claude-opus-5
     - anthropic-max20/ant-messages/claude-sonnet-5
     - anthropic-max20/ant-messages/claude-fable-5
     - anthropic-max20/ant-messages/claude-haiku-4-5-20251001
-  codex:
+  HARNESS_CODEX:
     - chatgpt/oai-responses/gpt-6-astra
     - chatgpt/oai-responses/gpt-5.4
     - chatgpt/oai-responses/gpt-5.5
@@ -24,7 +24,7 @@ agent_actions_service_url: http://agentplane-actions.agentplane-staging.svc.clus
 thread_presets:
   public-coder-codex:
     title: Public coder / Codex
-    provider: PROVIDER_CODEX
+    harness: HARNESS_CODEX
     model: chatgpt/oai-responses/gpt-5.6-luna
     cwd: /state/workspaces/{session_id}
     reasoning_effort: medium

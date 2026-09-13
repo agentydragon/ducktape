@@ -11,7 +11,6 @@ import {
   type Attached,
   type SessionSpec,
   type SessionSummary,
-  Provider,
 } from "./protocol_pb";
 
 export const api: ReturnType<typeof createClient<paths>> = createClient<paths>({ baseUrl: "" });
@@ -43,6 +42,8 @@ export type EffectivePolicyView = components["schemas"]["EffectivePolicyView"];
 export type ReadyConditionView = components["schemas"]["ReadyConditionView"];
 export type SandboxPresetView = components["schemas"]["SandboxPresetView"];
 export type ThreadDefaults = components["schemas"]["ThreadDefaults"];
+export type Harness = components["schemas"]["Harness"];
+export type ModelCatalog = Record<Harness, string[]>;
 export type Decision = components["schemas"]["Decision"];
 export type ActionRequestView = components["schemas"]["ActionRequestView"];
 export type ActionState = components["schemas"]["ActionState"];
@@ -203,10 +204,10 @@ export async function openSession(sandbox: string, sessionId: string, spec: Sess
   return fromJson(AttachedSchema, data as JsonValue);
 }
 
-export async function models(): Promise<Record<"claude" | "codex", string[]>> {
+export async function models(): Promise<ModelCatalog> {
   const { data, error } = await api.GET("/models");
   if (error) throw new Error(displayableError(error));
-  return data as Record<"claude" | "codex", string[]>;
+  return data as ModelCatalog;
 }
 
 export async function switchModel(sandbox: string, sessionId: string, switchId: string, model: string): Promise<void> {

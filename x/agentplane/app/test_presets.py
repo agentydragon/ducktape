@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 import pytest_bazel
 
-from x.agentplane.app.presets import PresetCatalog, SandboxBinding, SandboxPreset, ThreadDefaults, ThreadPreset
+from x.agentplane.app.presets import Harness, PresetCatalog, SandboxBinding, SandboxPreset, ThreadDefaults, ThreadPreset
 
 
 @pytest.fixture
@@ -23,7 +23,7 @@ def presets() -> PresetCatalog:
         threads={
             "public-coder-codex": ThreadPreset(
                 title="Public coder / Codex",
-                provider="codex",
+                harness=Harness.CODEX,
                 model="preset-model",
                 reasoning_effort="medium",
                 instructions="preset instructions",
@@ -42,7 +42,7 @@ def test_sandbox_preset_expands_to_fields_the_operator_can_set_individually(pres
         "policies": ["github-public"],
         "action_policy_sets": [],
         "thread_defaults": {
-            "provider": "PROVIDER_CODEX",
+            "harness": "HARNESS_CODEX",
             "model": "preset-model",
             "cwd": "/state/workspaces/{session_id}",
             "reasoning_effort": "medium",
@@ -63,14 +63,14 @@ def test_sandbox_binding_keeps_the_selected_values_when_the_catalog_changes(pres
 
     assert binding.thread_defaults is not None
     assert binding.thread_defaults.model_dump() == {
-        "provider": "PROVIDER_CODEX",
+        "harness": "HARNESS_CODEX",
         "model": "preset-model",
         "cwd": "/state/workspaces/{session_id}",
         "reasoning_effort": "medium",
         "instructions": "",
     }
     assert binding.thread_defaults.proto_json("thread-7") == {
-        "provider": "PROVIDER_CODEX",
+        "harness": "HARNESS_CODEX",
         "model": "preset-model",
         "cwd": "/state/workspaces/thread-7",
         "reasoningEffort": "medium",

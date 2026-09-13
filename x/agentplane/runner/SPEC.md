@@ -1,8 +1,8 @@
 # Runner protocol
 
 One gRPC contract over the native Claude Code and Codex harnesses. A caller drives a session
-through it without knowing which harness is behind it: the only provider-specific field it ever
-sets is `SessionSpec.provider`. The wire definition is [`protocol.proto`](protocol.proto); this
+through it without knowing which harness is behind it: the only harness-selection field it ever
+sets is `SessionSpec.harness`. The wire definition is [`protocol.proto`](protocol.proto); this
 page is what the runner guarantees about it.
 
 ## Initialization
@@ -62,7 +62,7 @@ page is what the runner guarantees about it.
 Every event carries a session-scoped `sequence`, dense from 1 and strictly increasing across
 attachments and runner restarts, and a timestamp. Derived events name the `Native` events they
 came from in `source_sequences`; the harness frames themselves are delivered verbatim, in both
-directions, so provider detail is one lookup away.
+directions, so harness-native detail is one lookup away.
 
 | Family  | Events                                                                                                                                       |
 | ------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -83,7 +83,7 @@ harness's outcome. Tool names and argument shapes are the harness's own.
   its text, when the runner takes it, then `InputAccepted` once the harness acknowledges native
   admission, or `InputRejected`. For Claude, this acknowledgement is `command_lifecycle: queued`:
   it proves command-queue admission, not that the input has started, entered the native transcript,
-  reached the model, or become durable. The exact provider boundary remains visible in the source
+  reached the model, or become durable. The exact native admission boundary remains visible in the source
   `Native` event.
 - An input while no turn is active starts a turn: `TurnStarted` precedes its `InputAccepted`. An
   input while a turn is active joins that turn; the harness decides where in the model's context

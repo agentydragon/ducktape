@@ -1,11 +1,11 @@
 # configMapGenerator input; not a standalone Kubernetes manifest (kubeconform-excluded).
 # The app's settings file (x/agentplane/app/main.py `Settings`), mounted by the Deployment.
 # What the session form offers per harness: routes the cheap-experiments key may call
-# (tf/gitops/litellm-keys), one native model per provider so far.
+# (tf/gitops/litellm-keys), one native model per harness so far.
 models:
-  claude:
+  HARNESS_CLAUDE:
     - anthropic-api/ant-messages/claude-haiku-4-5-20251001
-  codex:
+  HARNESS_CODEX:
     - chatgpt/oai-responses/gpt-5.6-luna
 
 # Rendered into the image-owned agent-instruction template; deployments may use different service names.
@@ -17,7 +17,7 @@ agent_actions_service_url: http://agentplane-actions.agentplane-testing.svc.clus
 thread_presets:
   public-coder-codex:
     title: Public coder / Codex
-    provider: PROVIDER_CODEX
+    harness: HARNESS_CODEX
     model: chatgpt/oai-responses/gpt-5.6-luna
     cwd: /state/workspaces/{session_id}
     reasoning_effort: medium

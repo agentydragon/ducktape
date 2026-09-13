@@ -15,9 +15,9 @@ from x.agentplane.runner.store import SessionRecord, SessionStore
 
 def test_a_stored_record_reproduces_the_spec_it_was_created_from(tmp_path: Path) -> None:
     spec = pb.SessionSpec(
-        provider=pb.PROVIDER_CLAUDE,
+        harness=pb.HARNESS_CLAUDE,
         cwd="/session/workspace",
-        model="test-provider/test-model",
+        model="test-backend/test-model",
         reasoning_effort="low",
         instructions="Standing order for this session: the operator's name is Wren.",
     )

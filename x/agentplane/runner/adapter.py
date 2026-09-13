@@ -1,4 +1,4 @@
-"""What a session asks of its provider adapter.
+"""What a session asks of its harness adapter.
 
 An abstract base rather than a union of the two adapters: the session module must not import the
 adapters, which import it, so this is the seam that breaks the cycle.

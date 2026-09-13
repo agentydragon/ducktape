@@ -38,14 +38,14 @@ function sandbox(name: string, overrides: Partial<SandboxView> = {}): SandboxVie
 
 function thread(overrides: Partial<ThreadView> & Pick<ThreadView, "id" | "sandbox" | "session_id">): ThreadView {
   return {
-    provider: "PROVIDER_CLAUDE",
+    harness: "HARNESS_CLAUDE",
     model: "test-model",
     cwd: "/work",
     created_at: "2026-01-01T00:00:00Z",
     name: null,
     archived: false,
     last_sequence: 0,
-    harness: "HARNESS_STATE_UNSPECIFIED",
+    harness_state: "HARNESS_STATE_UNSPECIFIED",
     ...overrides,
   };
 }

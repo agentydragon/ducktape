@@ -38,16 +38,16 @@ class InitializationConflictError(Exception):
 
 
 def make_adapter(session: Session) -> HarnessAdapter:
-    provider = pb.Provider.Value(session.record.provider)
-    if provider == pb.PROVIDER_CLAUDE:
+    harness = pb.Harness.Value(session.record.harness)
+    if harness == pb.HARNESS_CLAUDE:
         if session.config.claude is None:
             raise RuntimeError("this runner is not configured for Claude sessions")
         return ClaudeAdapter(session, session.config.claude)
-    if provider == pb.PROVIDER_CODEX:
+    if harness == pb.HARNESS_CODEX:
         if session.config.codex is None:
             raise RuntimeError("this runner is not configured for Codex sessions")
         return CodexAdapter(session, session.config.codex)
-    raise ValueError(f"unsupported {provider=}")
+    raise ValueError(f"unsupported {harness=}")
 
 
 class Runner:
@@ -164,8 +164,8 @@ class Runner:
         else:
             if not request.HasField("spec"):
                 raise OpenError(f"session {session_id} does not exist and Open carries no spec")
-            if request.spec.provider not in (pb.PROVIDER_CLAUDE, pb.PROVIDER_CODEX):
-                raise OpenError("spec.provider must be CLAUDE or CODEX")
+            if request.spec.harness not in (pb.HARNESS_CLAUDE, pb.HARNESS_CODEX):
+                raise OpenError("spec.harness must be CLAUDE or CODEX")
             if not request.spec.cwd or not request.spec.model:
                 raise OpenError("spec.cwd and spec.model are required")
             if not PurePosixPath(request.spec.cwd).is_absolute():
@@ -197,7 +197,7 @@ class Runner:
                 session_id=session.session_id,
                 spec=session.record.spec(),
                 last_sequence=session.log.last_sequence,
-                harness=pb.HARNESS_STATE_RUNNING if session.running else pb.HARNESS_STATE_STOPPED,
+                harness_state=pb.HARNESS_STATE_RUNNING if session.running else pb.HARNESS_STATE_STOPPED,
                 active_turn_id=session.active_turn_id,
             )
             for session in sorted(self.sessions.values(), key=lambda session: session.session_id)
@@ -276,7 +276,7 @@ class RunnerService(protocol_pb2_grpc.RunnerServicer):
                 session_id=session.session_id,
                 spec=session.record.spec(),
                 last_sequence=session.log.last_sequence,
-                harness=pb.HARNESS_STATE_RUNNING if session.running else pb.HARNESS_STATE_STOPPED,
+                harness_state=pb.HARNESS_STATE_RUNNING if session.running else pb.HARNESS_STATE_STOPPED,
                 active_turn_id=session.active_turn_id,
             )
         )

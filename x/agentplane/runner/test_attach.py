@@ -30,7 +30,7 @@ async def test_reattach_resumes_from_the_cursor_without_gap_or_duplicate(
     first.cancel()
 
     second = await client.attach("reattach-1", after_sequence=first.cursor)
-    assert second.attached.harness == pb.HARNESS_STATE_RUNNING
+    assert second.attached.harness_state == pb.HARNESS_STATE_RUNNING
     assert second.attached.active_turn_id == events.of_kind(first.seen, "turn_started")[-1].turn_started.turn_id
     request = await model.request()
     assert "wait_finished" in request.tool_outputs[0].text
@@ -135,16 +135,16 @@ async def test_shutdown_stops_the_harness_and_open_resumes_the_conversation(
     assert events.of_kind(observer.seen, "harness_exited")[-1] == exited
 
     replay = await client.attach("shutdown-1")
-    assert replay.attached.harness == pb.HARNESS_STATE_STOPPED
+    assert replay.attached.harness_state == pb.HARNESS_STATE_STOPPED
     await replay.drain_until_end()
     assert replay.seen == first.seen
     (summary,) = await client.list_sessions()
-    assert summary.harness == pb.HARNESS_STATE_STOPPED
+    assert summary.harness_state == pb.HARNESS_STATE_STOPPED
 
     second = await client.attach("shutdown-1", spec=spec, after_sequence=first.cursor)
     started = await second.until(events.is_kind("harness_started"))
     assert started.harness_started.resumed
-    assert second.attached.harness == pb.HARNESS_STATE_RUNNING
+    assert second.attached.harness_state == pb.HARNESS_STATE_RUNNING
     await second.send("input-2", "Reply with exactly: RESUMED_OK")
     request = await model.request()
     assert request.user_texts == ["Reply with exactly: SEED_OK", "Reply with exactly: RESUMED_OK"]
@@ -162,17 +162,14 @@ async def test_open_rejects_a_mismatched_spec(client: RunnerClient, spec: pb.Ses
     await first.detach()
     await first.drain_until_end()
     other = pb.SessionSpec(
-        provider=spec.provider,
-        cwd=spec.cwd,
-        model="agentplane-test/other-model",
-        reasoning_effort=spec.reasoning_effort,
+        harness=spec.harness, cwd=spec.cwd, model="agentplane-test/other-model", reasoning_effort=spec.reasoning_effort
     )
     with pytest.raises(RunnerError, match="different spec"):
         await client.attach("spec-1", spec=other)
     with pytest.raises(RunnerError, match="does not exist"):
         await client.attach("spec-2")
     instructed = pb.SessionSpec(
-        provider=spec.provider,
+        harness=spec.harness,
         cwd=spec.cwd,
         model=spec.model,
         reasoning_effort=spec.reasoning_effort,
@@ -180,7 +177,7 @@ async def test_open_rejects_a_mismatched_spec(client: RunnerClient, spec: pb.Ses
     )
     with pytest.raises(RunnerError, match="different spec"):
         await client.attach("spec-1", spec=instructed)
-    relative = pb.SessionSpec(provider=spec.provider, cwd="work/../elsewhere", model=spec.model)
+    relative = pb.SessionSpec(harness=spec.harness, cwd="work/../elsewhere", model=spec.model)
     with pytest.raises(RunnerError, match="absolute"):
         await client.attach("spec-3", spec=relative)
 

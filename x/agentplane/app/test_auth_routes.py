@@ -26,7 +26,7 @@ from util.net import bind_free_port
 from util.testing.asgi import serve_app
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 from x.agentplane.app.action_policy import ActionPolicyInventory
-from x.agentplane.app.api import Provider, create_app
+from x.agentplane.app.api import create_app
 from x.agentplane.app.bridge import RunnerBridge
 from x.agentplane.app.conftest import AGENT, AGENT_AUTH, AUDIENCE, STRANGER_AUTH
 from x.agentplane.app.decisions import DecisionsClient
@@ -36,13 +36,14 @@ from x.agentplane.app.inventory import SandboxInventory
 from x.agentplane.app.live import LiveIndex
 from x.agentplane.app.oidc import OIDCSettings
 from x.agentplane.app.operator_sessions import BrowserSession
+from x.agentplane.app.presets import Harness
 from x.agentplane.app.testing.kubernetes import TEMPLATE, FakeAuthenticationV1Api
 from x.agentplane.app.trajectory import TrajectoryStore
 
 OPERATOR = "agentydragon"
 SUBJECT = "op-subject-1"
 SESSION_SECRET = "test-session-secret"  # a test literal, not a real credential
-MODELS = {Provider.CLAUDE: ["test-claude-model"], Provider.CODEX: ["test-codex-model"]}
+MODELS = {Harness.CLAUDE: ["test-claude-model"], Harness.CODEX: ["test-codex-model"]}
 
 
 # Serves the app accepting tokens from exactly the subjects passed, yielding its base URL.
@@ -305,7 +306,7 @@ async def test_expired_pending_login_cannot_finish(browser: httpx.AsyncClient, s
 async def test_callback_error_does_not_echo_untrusted_provider_text(
     browser: httpx.AsyncClient, caplog: pytest.LogCaptureFixture
 ) -> None:
-    marker = "test-sensitive-provider-value"
+    marker = "test-sensitive-harness-value"
     response = await browser.get("/auth/callback", params={"error": marker, "error_description": marker})
     assert response.status_code == 401
     assert marker not in response.text
