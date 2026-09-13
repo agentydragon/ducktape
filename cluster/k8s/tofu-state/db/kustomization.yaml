@@ -8,6 +8,4 @@ kind: Kustomization
 # the same Secret directly.
 resources:
   - credentials.sops.yaml
-  - ollama-bearer-token-credentials.sops.yaml
-  - ollama-bearer-token-database.yaml
   - postgres-cluster-ovh.yaml
