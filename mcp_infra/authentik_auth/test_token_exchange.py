@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-import httpx
+import httpx2
 import pytest
 import pytest_bazel
 from authlib.integrations.httpx_client import AsyncOAuth2Client as AuthlibAsyncOAuth2Client
@@ -109,12 +109,12 @@ async def test_token_exchanger_returns_explicit_result_without_cross_call_state(
 async def test_token_exchanger_retries_transient_failure_with_fresh_client(
     oauth_client_factory: _OAuthClientFactory, failure_kind: str
 ) -> None:
-    request = httpx.Request("POST", "https://auth.example.com/application/o/token/")
+    request = httpx2.Request("POST", "https://auth.example.com/application/o/token/")
     failure: BaseException
     if failure_kind == "transport":
-        failure = httpx.ConnectError("temporary DNS failure", request=request)
+        failure = httpx2.ConnectError("temporary DNS failure", request=request)
     else:
-        failure = httpx.HTTPStatusError("HTTP 503", request=request, response=httpx.Response(503, request=request))
+        failure = httpx2.HTTPStatusError("HTTP 503", request=request, response=httpx2.Response(503, request=request))
     oauth_client_factory.effects.extend([failure, {"access_token": "backend-after-retry"}])
 
     assert await AuthentikTokenExchanger(_exchange_config()).exchange("upstream-authentik-jwt") == (
@@ -127,18 +127,18 @@ async def test_token_exchanger_retries_transient_failure_with_fresh_client(
 async def test_token_exchanger_retries_real_authlib_429(monkeypatch: pytest.MonkeyPatch) -> None:
     attempts = 0
 
-    async def token_endpoint(request: httpx.Request) -> httpx.Response:
+    async def token_endpoint(request: httpx2.Request) -> httpx2.Response:
         nonlocal attempts
         attempts += 1
         if attempts == 1:
-            return httpx.Response(
+            return httpx2.Response(
                 429, json={"error": "temporarily_unavailable", "error_description": "rate limited"}, request=request
             )
-        return httpx.Response(200, json={"access_token": "backend-after-rate-limit"}, request=request)
+        return httpx2.Response(200, json={"access_token": "backend-after-rate-limit"}, request=request)
 
     class RealOAuthClient(AuthlibAsyncOAuth2Client):
         def __init__(self, *, client_id: str, timeout: float) -> None:
-            super().__init__(client_id=client_id, timeout=timeout, transport=httpx.MockTransport(token_endpoint))
+            super().__init__(client_id=client_id, timeout=timeout, transport=httpx2.MockTransport(token_endpoint))
 
     monkeypatch.setattr("mcp_infra.authentik_auth.token_exchange.AsyncOAuth2Client", RealOAuthClient)
     monkeypatch.setattr(AuthentikTokenExchanger, "exchange_retry_wait", wait_none())
