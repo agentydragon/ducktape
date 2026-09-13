@@ -2,6 +2,7 @@
   pkgs,
   nix-openclaw,
   ducktapePkgs,
+  ruffLatest,
 }:
 
 let
@@ -81,7 +82,7 @@ let
       openssh
       pre-commit
       python3
-      ruff
+      ruffLatest
       ripgrep
       shfmt
       sops
