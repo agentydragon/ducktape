@@ -9,12 +9,6 @@ py_binary(
 )
 
 py_library(
-    name = "framing",
-    testonly = True,
-    srcs = ["framing.py"],
-)
-
-py_library(
     name = "llm_recording_proxy",
     srcs = ["llm_recording_proxy.py"],
     deps = [":records"],
@@ -37,16 +31,6 @@ py_library(
     name = "records",
     srcs = ["records.py"],
     deps = ["@pypi//pydantic"],
-)
-
-py_test(
-    name = "test_framing",
-    srcs = ["test_framing.py"],
-    deps = [
-        ":framing",
-        "//:conftest",
-        "@pypi//pytest_bazel",
-    ],
 )
 
 py_test(

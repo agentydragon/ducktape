@@ -105,7 +105,7 @@ old ID, the client finds no socket for the old ID and tries to start a _second_ 
 
 `<session_dir>` = `~/.claude/session-env/<session_id>/` — a per-session directory managed by Claude Code.
 
-See `settings.py` for the full configuration schema.
+The Rust daemon's profile schema is defined in <claude_hook/config.rs>.
 
 ## References
 

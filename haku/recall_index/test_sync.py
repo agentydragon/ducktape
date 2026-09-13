@@ -15,9 +15,15 @@ from haku.recall_index.content import content_sha
 from haku.recall_index.embedder import EMBED_BATCH
 from haku.recall_index.embedding_sync import embed_pending
 from haku.recall_index.fake_embedder import ExplodingEmbedder, FakeEmbedder
-from haku.recall_index.query import query_git
 from haku.recall_index.schema import Content, ContentEmbedding, IndexType
-from haku.recall_index.store import ContentRow, current_git_state, insert_contents, read_indexed_text, register_index
+from haku.recall_index.store import (
+    ContentRow,
+    current_git_state,
+    insert_contents,
+    read_indexed_text,
+    register_index,
+    search_git,
+)
 from haku.recall_index.sync import AlreadyCurrent, SyncOutcome, SyncReport, sync
 
 _AUTHOR = pygit2.Signature("Test", "test@example.com")
@@ -75,7 +81,14 @@ async def find(
     index_id: str = _GIT_INDEX,
     path_prefix: str | None = None,
 ):
-    return await query_git(session, embedder, query, index_id=index_id, limit=5, path_prefix=path_prefix)
+    return await search_git(
+        session,
+        await embedder.embed_query(query),
+        index_id=index_id,
+        model_key=embedder.model_key,
+        limit=5,
+        path_prefix=path_prefix,
+    )
 
 
 async def test_search_returns_the_matching_path(

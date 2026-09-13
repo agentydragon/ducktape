@@ -1,25 +1,6 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
-    name = "tool_input_models",
-    testonly = True,
-    srcs = ["tool_input_models.py"],
-    visibility = ["//visibility:public"],
-    deps = ["@pypi//pydantic"],
-)
-
-py_test(
-    name = "test_tool_input_models",
-    srcs = ["test_tool_input_models.py"],
-    deps = [
-        ":tool_input_models",
-        "//:conftest",
-        "//devinfra/claude:conftest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
     name = "statusline",
     srcs = ["statusline.py"],
     visibility = ["//visibility:public"],
