@@ -13,8 +13,8 @@ spec:
   path: ./cluster/k8s/gecko/namespace
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: gecko-namespace
 
     namespace: ducktape-flux
   wait: true

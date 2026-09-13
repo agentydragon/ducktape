@@ -8,8 +8,8 @@ spec:
   path: ./cluster/k8s/haku/ui-image-webhook
   prune: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: haku-ui-image-webhook
 
     namespace: ducktape-flux
   dependsOn:

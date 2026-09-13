@@ -11,8 +11,8 @@ spec:
   prune: true
   wait: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: haku-cloud-agent
     # Decrypt the SOPS Secrets in this dir (anthropic-api-key, haku-kube-token);
     # without this Flux applies the raw ENC[...] ciphertext and the runner gets a
     # bogus key/token (401).

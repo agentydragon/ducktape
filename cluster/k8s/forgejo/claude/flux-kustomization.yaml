@@ -11,8 +11,8 @@ spec:
   prune: true
   wait: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: forgejo-claude
     # Wait for the Terraform apply (creates the claude Forgejo service user + the
     # claude-forgejo-credentials Secret) so repo read-grants (e.g. gaffer-private
     # tf/thrive-scrape) and agent sessions can depend on it.

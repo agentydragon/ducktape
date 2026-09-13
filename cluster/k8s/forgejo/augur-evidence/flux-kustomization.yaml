@@ -11,8 +11,8 @@ spec:
   prune: true
   wait: true
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: augur-evidence
 
     # Wait for the Terraform apply (creates the Forgejo repo + service users + the
     # augur-evidence-git-{write,read} Secrets) so the scraper/git-sync can depend on it.

@@ -1420,6 +1420,299 @@ spec:
           to: "@artifact/cluster/k8s/flux-webhook-token/"
           exclude:
             - flux-kustomization.yaml
+    - name: forgejo-agentydragon
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/forgejo/agentydragon/**"
+          to: "@artifact/cluster/k8s/forgejo/agentydragon/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: forgejo-agentydragon-repos
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/forgejo/agentydragon-repos/**"
+          to: "@artifact/cluster/k8s/forgejo/agentydragon-repos/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: augur-evidence
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/forgejo/augur-evidence/**"
+          to: "@artifact/cluster/k8s/forgejo/augur-evidence/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: budget-ledger
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/forgejo/budget-ledger/**"
+          to: "@artifact/cluster/k8s/forgejo/budget-ledger/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: forgejo-cache
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/forgejo/cache/**"
+          to: "@artifact/cluster/k8s/forgejo/cache/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: forgejo-claude
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/forgejo/claude/**"
+          to: "@artifact/cluster/k8s/forgejo/claude/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: cpap-data
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/forgejo/cpap-data/**"
+          to: "@artifact/cluster/k8s/forgejo/cpap-data/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: forgejo-db
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/forgejo/db/**"
+          to: "@artifact/cluster/k8s/forgejo/db/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: forgejo-secrets
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/forgejo/secrets/**"
+          to: "@artifact/cluster/k8s/forgejo/secrets/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: forgejo-servicemonitor
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/forgejo/servicemonitor/**"
+          to: "@artifact/cluster/k8s/forgejo/servicemonitor/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: gatus
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/gatus/app/**"
+          to: "@artifact/cluster/k8s/gatus/app/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: gatus-db
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/gatus/db/**"
+          to: "@artifact/cluster/k8s/gatus/db/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: gatus-servicemonitor
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/gatus/servicemonitor/**"
+          to: "@artifact/cluster/k8s/gatus/servicemonitor/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: gatus-sso-tf
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/gatus/sso-tf/**"
+          to: "@artifact/cluster/k8s/gatus/sso-tf/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: gecko
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/gecko/app/**"
+          to: "@artifact/cluster/k8s/gecko/app/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: gecko-namespace
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/gecko/namespace/**"
+          to: "@artifact/cluster/k8s/gecko/namespace/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: github-api-proxy
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/github-api-proxy/app/**"
+          to: "@artifact/cluster/k8s/github-api-proxy/app/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: github-api-proxy-identity
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/github-api-proxy/identity/**"
+          to: "@artifact/cluster/k8s/github-api-proxy/identity/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: github-api-proxy-secrets
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/github-api-proxy/secrets/**"
+          to: "@artifact/cluster/k8s/github-api-proxy/secrets/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: github-branch-protection
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/github-branch-protection/**"
+          to: "@artifact/cluster/k8s/github-branch-protection/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: github-exporter
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/github-exporter/**"
+          to: "@artifact/cluster/k8s/github-exporter/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: github-secrets-sync
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/github-secrets-sync/**"
+          to: "@artifact/cluster/k8s/github-secrets-sync/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: goldilocks
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/goldilocks/**"
+          to: "@artifact/cluster/k8s/goldilocks/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: grocy-mcp-sf
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/grocy/sf/mcp/**"
+          to: "@artifact/cluster/k8s/grocy/sf/mcp/"
+          exclude:
+            - flux-kustomization.yaml
+        - from: "@repo/cluster/k8s/grocy/mcp-base/**"
+          to: "@artifact/cluster/k8s/grocy/mcp-base/"
+    - name: grocy-mcp-sf-servicemonitor
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/grocy/sf/mcp-servicemonitor/**"
+          to: "@artifact/cluster/k8s/grocy/sf/mcp-servicemonitor/"
+          exclude:
+            - flux-kustomization.yaml
+        - from: "@repo/cluster/k8s/grocy/mcp-servicemonitor-base/**"
+          to: "@artifact/cluster/k8s/grocy/mcp-servicemonitor-base/"
+    - name: grocy-sf-user-perms
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/grocy/sf/user-perms/**"
+          to: "@artifact/cluster/k8s/grocy/sf/user-perms/"
+          exclude:
+            - flux-kustomization.yaml
+        - from: "@repo/cluster/k8s/grocy/user-perms-base/**"
+          to: "@artifact/cluster/k8s/grocy/user-perms-base/"
+    - name: grocy-mcp-vallejo
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/grocy/vallejo/mcp/**"
+          to: "@artifact/cluster/k8s/grocy/vallejo/mcp/"
+          exclude:
+            - flux-kustomization.yaml
+        - from: "@repo/cluster/k8s/grocy/mcp-base/**"
+          to: "@artifact/cluster/k8s/grocy/mcp-base/"
+    - name: grocy-mcp-vallejo-servicemonitor
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/grocy/vallejo/mcp-servicemonitor/**"
+          to: "@artifact/cluster/k8s/grocy/vallejo/mcp-servicemonitor/"
+          exclude:
+            - flux-kustomization.yaml
+        - from: "@repo/cluster/k8s/grocy/mcp-servicemonitor-base/**"
+          to: "@artifact/cluster/k8s/grocy/mcp-servicemonitor-base/"
+    - name: grocy-vallejo-user-perms
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/grocy/vallejo/user-perms/**"
+          to: "@artifact/cluster/k8s/grocy/vallejo/user-perms/"
+          exclude:
+            - flux-kustomization.yaml
+        - from: "@repo/cluster/k8s/grocy/user-perms-base/**"
+          to: "@artifact/cluster/k8s/grocy/user-perms-base/"
+    - name: haku-cloud-agent
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/haku/cloud-agent-tf/**"
+          to: "@artifact/cluster/k8s/haku/cloud-agent-tf/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: haku-console-db
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/haku/console/db/**"
+          to: "@artifact/cluster/k8s/haku/console/db/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: haku-console
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/haku/console/**"
+          to: "@artifact/cluster/k8s/haku/console/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: haku-console-migration
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/haku/console/migration/**"
+          to: "@artifact/cluster/k8s/haku/console/migration/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: haku-console-servicemonitor
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/haku/console/servicemonitor/**"
+          to: "@artifact/cluster/k8s/haku/console/servicemonitor/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: haku-mailbox-app
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/haku/mailbox/app/**"
+          to: "@artifact/cluster/k8s/haku/mailbox/app/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: haku-mailbox-db
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/haku/mailbox/db/**"
+          to: "@artifact/cluster/k8s/haku/mailbox/db/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: haku-managed-agent
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/haku/managed-agent/**"
+          to: "@artifact/cluster/k8s/haku/managed-agent/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: haku-ui-image-webhook
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/haku/ui-image-webhook/**"
+          to: "@artifact/cluster/k8s/haku/ui-image-webhook/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: haku-workloads
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/haku/workloads/**"
+          to: "@artifact/cluster/k8s/haku/workloads/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: haku-workspaces-app
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/haku/workspaces/app/**"
+          to: "@artifact/cluster/k8s/haku/workspaces/app/"
+          exclude:
+            - flux-kustomization.yaml
+
 ---
 apiVersion: source.extensions.fluxcd.io/v1beta1
 kind: ArtifactGenerator

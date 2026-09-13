@@ -8,8 +8,8 @@ spec:
   interval: 10m
   timeout: 5m
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: forgejo-cache
     namespace: ducktape-flux
   path: ./cluster/k8s/forgejo/cache
   prune: true
