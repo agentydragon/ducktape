@@ -30,3 +30,20 @@ fresh-install branch is off, so signup closes and the SSO login page behaves nor
   to Authentik on fresh install? If it can be made to, that alone removes the manual step
   without pre-seeding the user.
 - Decide superuser vs. regular for the pre-seeded account (currently regular by design).
+
+## Make bootstrap ordering explicit
+
+**Problem.** `paperless-app` is consumed from a generated `ExternalArtifact`: the
+artifact generator copies the whole `cluster/k8s/paperless/app/**` tree, and one Flux
+Kustomization applies the Deployment and `paperless-bootstrap-group` Job together.
+Flux does not provide resource-level ordering within that Kustomization. The Job must
+therefore tolerate starting before Paperless has completed its image-managed database
+migrations; an init container would run even earlier and could block the Deployment on
+the very migrations that Paperless performs during startup.
+
+**Future options.** Keep the Job idempotent and retrying in the current artifact, or,
+if strict ordering becomes necessary, create a separate generated bootstrap artifact
+and Flux Kustomization that depends on `paperless`. The latter also requires updating
+the artifact generator and the root Flux consumer declarations; it is not just a
+directory split. Do not convert this to an init container without also taking ownership
+of the migration ordering.
