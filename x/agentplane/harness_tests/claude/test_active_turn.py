@@ -128,28 +128,30 @@ def test_interrupt_cancels_each_queued_input_before_native_message(
         second = driver.user_frame(INTERRUPTED_QUEUE_SECOND)
         process.write_many([first, second])
         for command_uuid in (first.uuid, second.uuid):
-            process.await_frame(
-                lambda frame, expected=command_uuid: (
+
+            def is_queued(frame: dict[str, Any], expected: str = command_uuid) -> bool:
+                return (
                     frame.get("type") == "command_lifecycle"
                     and frame.get("command_uuid") == expected
                     and frame.get("state") == "queued"
-                ),
-                timeout=30,
-            )
+                )
+
+            process.await_frame(is_queued, timeout=30)
 
         response = scenarios.interrupt(process, cancel_queued=True)
         assert response["response"]["subtype"] == "success"
         assert initial_raw.client_closed.wait(30)
         assert scenarios.await_result(process)["is_error"] is True
         for command_uuid in (first.uuid, second.uuid):
-            process.await_frame(
-                lambda frame, expected=command_uuid: (
+
+            def is_cancelled(frame: dict[str, Any], expected: str = command_uuid) -> bool:
+                return (
                     frame.get("type") == "command_lifecycle"
                     and frame.get("command_uuid") == expected
                     and frame.get("state") == "cancelled"
-                ),
-                timeout=30,
-            )
+                )
+
+            process.await_frame(is_cancelled, timeout=30)
 
         scenarios.send(process, INTERRUPT_RECOVERY)
         recovery_raw = upstream.next_request()
