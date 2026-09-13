@@ -89,6 +89,29 @@ working context. If discovery is unavailable, state that visibility limit and
 do not claim that the loose-thread scan was complete. See `/session_logs` for
 the schema details and older-session invocation.
 
+## Developer-machine cleanup
+
+When `/followups` is invoked on a personal developer machine (for example,
+`wyrm2` or `rugged`), include a cleanup suggestion for local
+state created by this session, if any. Do not make this suggestion in a managed
+Claude Code Web session or another managed/ephemeral environment.
+
+Use the recovered transcript and current filesystem state to establish session
+ownership. Offer to clean up any per-worktree Bazel output bases, shut down
+any running Bazel servers and Git worktrees held by your session.
+No need to clean up shared repository or disk caches.
+
+Before presenting the suggestion:
+
+- For each session-created worktree, verify that
+  `git -C <worktree> status --porcelain` is empty and that its work is committed
+  in Git. Preserve the branch or other ref that makes those commits recoverable.
+  Do not remove a worktree containing uncommitted or untracked information.
+
+Present one concrete, opt-in cleanup followup listing the worktrees you own,
+and with each, which of {worktree, Bazel server, output base} would be cleaned up.
+If this session created none, omit the cleanup suggestion.
+
 ## Process
 
 `/followups` is a **loop, not a one-shot menu**: as long as the user keeps

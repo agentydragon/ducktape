@@ -221,12 +221,38 @@ Committing on `devel` trips the `no-commit-to-branch` hook. Skip it
 (`SKIP=no-commit-to-branch git commit …`) only when the user has explicitly approved a
 direct commit on `devel`.
 
+## Hygiene on developer machines
+
 **A dirty checkout you started in is not yours.** Uncommitted changes in the working
 tree — especially in the user's own checkouts (`~/code/ducktape` on wyrm2, rugged, …),
 where a dirty `devel` serves as their staging playground — usually mean the dirt is
 theirs. Never switch branches there or commit on top of it unasked: judge whether the
 request builds on that dirty state; if not, do the work in a fresh worktree and send a
 PR from it; if genuinely ambiguous, ask.
+
+### Worktrees and Bazel output bases
+
+Worktrees are cheap, but not free. Rough numbers as of 2026-09-13:
+
+- ducktape `.git` = ~750 MB on disk
+- 1 ducktape worktree = ~250 MB on disk
+- 1 per-worktree Bazel server = ~2 GB RAM
+- 1 per-worktree Bazel output base = ~5-10 GB on disk
+
+Avoid needlessly proliferating Bazel servers and output bases - that can starve
+my developer machines when there's multiple agents running parallel.
+
+Do use worktrees to isolate your work, safely run subagents.
+If suitable (e.g. read-only tasks or when mostly clean), use the worktree you were
+started in. When you do need a worktree, make one harness-provided worktree (if your
+harness has worktree management tools); otherwise use
+`/tmp/ducktape-worktrees/YYYY-MM-DD-<short-task-slug>`.
+But once you run Bazel in a worktree, prefer to stick to the same worktree
+on future branches/tasks, unless you have a specific need for multiple
+worktrees (e.g., running a subagent team).
+
+Remote Bazel (`bbr`, `bb remote`) runs on Buildbuddy's infrastructure and does not
+incur this RAM and disk cost, but is not always practical.
 
 ### Parallel Bash calls share one working directory
 
