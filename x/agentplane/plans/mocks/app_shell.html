@@ -765,20 +765,25 @@
                       />
                     </svg>
                   </span>
-                  <span class="picker">
-                    claude-sonnet-5
-                    <svg viewBox="0 0 12 12" fill="none">
-                      <path
-                        d="M3 4.5 6 7.5 9 4.5"
-                        stroke="currentColor"
-                        stroke-width="1.4"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                      />
-                    </svg>
-                  </span>
                 </div>
                 <div class="new-thread-input">Describe what you want done…</div>
+                <div class="composer-row">
+                  <div class="cluster">
+                    <span class="dot gray" title="Not yet attached"></span>
+                    <span class="picker">
+                      claude-sonnet-5
+                      <svg viewBox="0 0 12 12" fill="none">
+                        <path
+                          d="M3 4.5 6 7.5 9 4.5"
+                          stroke="currentColor"
+                          stroke-width="1.4"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        />
+                      </svg>
+                    </span>
+                  </div>
+                </div>
                 <p class="composer-stub" style="margin: 0">Enter launches the thread, Ctrl+Enter for a new line</p>
               </div>
             </div>
@@ -792,33 +797,42 @@
               <span class="sep" style="color: var(--faint)">/</span>
               <span style="font-weight: 600">New thread</span>
             </div>
-            <span class="picker" style="margin-bottom: 10px">
-              claude-sonnet-5
-              <svg viewBox="0 0 12 12" fill="none">
-                <path
-                  d="M3 4.5 6 7.5 9 4.5"
-                  stroke="currentColor"
-                  stroke-width="1.4"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-            </span>
             <div class="new-thread-input" style="min-height: 60px">Describe what you want done…</div>
-            <p style="font-size: 11.5px; color: var(--faint); margin: 8px 0 0">
+            <div class="composer-row" style="margin: 0 0 10px">
+              <div class="cluster">
+                <span class="dot gray" title="Not yet attached"></span>
+                <span class="picker">
+                  claude-sonnet-5
+                  <svg viewBox="0 0 12 12" fill="none">
+                    <path
+                      d="M3 4.5 6 7.5 9 4.5"
+                      stroke="currentColor"
+                      stroke-width="1.4"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                </span>
+              </div>
+            </div>
+            <p style="font-size: 11.5px; color: var(--faint); margin: 0">
               No sandbox/preset picker — reached from that Sandbox's own page, so both are already fixed
             </p>
           </div>
         </div>
         <p class="section-note">
           The sidebar's "+" opens an empty composer, not a wizard: pick an existing Sandbox or "+ New sandbox from
-          preset" (only then does a preset picker appear), pick a model, type a prompt, press Enter — the page then
-          binds to whatever Sandbox/Thread that created. A Sandbox's own page keeps a "+ New thread" of its own reusing
-          the identical component with the Sandbox (and therefore preset) already fixed, per the operator's own framing
-          that a per-Sandbox page should still be able to start a fresh conversation directly. Whether this same empty
-          composer eventually replaces whatever the default landing page is instead of requiring the sidebar click first
-          is an open question, not decided here — see
-          <code>x/agentplane/plans/session_first_navigation.md</code>.
+          preset" (only then does a preset picker appear), type a prompt, press Enter — the page then binds to whatever
+          Sandbox/Thread that created. The model picker sits in the composer-row under the input, same position as an
+          already-open thread's — not grouped with the Sandbox/preset pickers above it, which pick a target rather than
+          configure the turn. A Sandbox's own page keeps a "+ New thread" of its own reusing the identical component
+          with the Sandbox (and therefore preset) already fixed, per the operator's own framing that a per-Sandbox page
+          should still be able to start a fresh conversation directly. Whether this same empty composer eventually
+          replaces whatever the default landing page is instead of requiring the sidebar click first is an open
+          question, not decided here — see
+          <code>x/agentplane/plans/session_first_navigation.md</code>. See
+          <code>mocks/new_thread_landing.html</code> for the fully worked-out states (target picking, provisioning,
+          binding) and the reasoning-effort picker alongside the model one.
         </p>
       </section>
 
