@@ -30,14 +30,19 @@ async def test_public_coder_preset_launches_an_initialized_editable_codex_thread
     assert preset.thread_defaults.model
 
     view = await sandbox(
-        "accept-public-coder", preset=PUBLIC_CODER, thread_defaults=ThreadDefaults(instructions=INSTRUCTIONS)
+        "accept-public-coder",
+        template=preset.template,
+        policies=preset.policies,
+        thread_defaults=ThreadDefaults(instructions=INSTRUCTIONS).over(preset.thread_defaults),
+        bootstrap=preset.bootstrap,
     )
-    assert view.preset_binding is not None
-    assert view.preset_binding.sandbox_preset == PUBLIC_CODER
+    assert view.binding is not None
+    assert view.binding.thread_defaults is not None
+    assert view.binding.thread_defaults.instructions == INSTRUCTIONS
     assert GITHUB_PUBLIC in {policy.name for binding in await client.bindings(view.name) for policy in binding.policies}
 
     first_id = f"preset-{uuid4().hex[:8]}"
-    first = await client.open_preset_session(view.name, first_id)
+    first = await client.open_bound_session(view.name, first_id)
     assert (
         first.attached.spec.provider,
         first.attached.spec.model,
@@ -52,9 +57,9 @@ async def test_public_coder_preset_launches_an_initialized_editable_codex_thread
     assert "public-coder workspace initialized" in turn.transcript
     assert "PRESET-INSTRUCTIONS-OK" in turn.answer
 
-    inherited = await client.open_preset_session(view.name, f"preset-{uuid4().hex[:8]}")
+    inherited = await client.open_bound_session(view.name, f"preset-{uuid4().hex[:8]}")
     local_model = "acceptance-local-model-override"
-    local = await client.open_preset_session(view.name, f"preset-{uuid4().hex[:8]}", overrides={"model": local_model})
+    local = await client.open_bound_session(view.name, f"preset-{uuid4().hex[:8]}", overrides={"model": local_model})
     assert inherited.attached.spec.model == preset.thread_defaults.model
     assert local.attached.spec.model == local_model
 

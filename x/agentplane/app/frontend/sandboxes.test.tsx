@@ -31,8 +31,8 @@ async function render(codexModels: string[] = ["test-codex-a", "test-codex-b"]):
     template: "test-template",
     policies: [],
     action_policy_sets: ["test-reads"],
-    thread_preset: "test-thread",
     thread_defaults: { provider: "codex", model: "test-codex-b" },
+    bootstrap: "mkdir -p /state/workspaces",
   };
   const policySets: ActionPolicySetView[] = [
     {
@@ -49,9 +49,11 @@ async function render(codexModels: string[] = ["test-codex-a", "test-codex-b"]):
         ? { claude: ["test-claude"], codex: codexModels }
         : path === "/presets"
           ? [preset]
-          : path === "/action-policy/sets"
-            ? policySets
-            : [];
+          : path === "/sandboxes/templates"
+            ? ["test-template", "other-template"]
+            : path === "/action-policy/sets"
+              ? policySets
+              : [];
     return { data, response: new Response() } as Awaited<ReturnType<typeof api.GET>>;
   });
   const container = document.createElement("div");
@@ -104,6 +106,7 @@ function options(container: HTMLElement, label: string): HTMLElement[] {
 
 it("inherits the preset model and replaces incompatible choices when the harness changes", async () => {
   const container = await render();
+  expect(input(container, "Template").value).toBe("test-template");
   expect(input(container, "Model").value).toBe("test-codex-b");
   await choose(container, "Model", "test-codex-a");
   expect(input(container, "Model").value).toBe("test-codex-a");
@@ -131,8 +134,28 @@ it("pre-fills the preset's action policy sets, offers every set with its verdict
   expect(post).toHaveBeenCalledWith(
     "/sandboxes",
     expect.objectContaining({
-      body: expect.objectContaining({ preset: "test-preset", action_policy_sets: ["test-reads"] }),
+      body: expect.objectContaining({
+        template: "test-template",
+        action_policy_sets: ["test-reads"],
+        bootstrap: "mkdir -p /state/workspaces",
+        thread_defaults: expect.objectContaining({ provider: "codex", model: "test-codex-b" }),
+      }),
     })
+  );
+});
+
+it("lets an operator replace the preset template before creating the sandbox", async () => {
+  const container = await render();
+  await choose(container, "Template", "other-template");
+  const post = vi.spyOn(api, "POST").mockResolvedValue({ data: {}, response: new Response() } as never);
+  await type(input(container, "Name"), "picked");
+  const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New sandbox");
+  if (!button) throw new Error("Missing New sandbox button");
+  await act(async () => button.click());
+
+  expect(post).toHaveBeenCalledWith(
+    "/sandboxes",
+    expect.objectContaining({ body: expect.objectContaining({ template: "other-template" }) })
   );
 });
 

@@ -131,11 +131,19 @@ async def sandbox(client: Client) -> AsyncIterator[Callable[..., Awaitable[Sandb
     async def create(
         slug: str,
         *,
+        template: str | None = None,
         policies: list[str] | None = None,
-        preset: str | None = None,
         thread_defaults: ThreadDefaults | None = None,
+        bootstrap: str = "",
     ) -> SandboxView:
-        values: dict[str, object] = {"slug": slug, "preset": preset, "thread_defaults": thread_defaults}
+        if template is None:
+            [template] = await client.templates()
+        values: dict[str, object] = {
+            "slug": slug,
+            "template": template,
+            "thread_defaults": thread_defaults,
+            "bootstrap": bootstrap,
+        }
         if policies is not None:
             values["policies"] = policies
         view = await client.create_sandbox(NewSandbox.model_validate(values))

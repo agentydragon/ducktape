@@ -1,7 +1,8 @@
-"""App-owned launch presets and their concrete resolution.
+"""App-owned form presets.
 
-Preset names stop at this integration-app boundary. Kubernetes and the runner receive only the
-resolved template, policies, bootstrap source, and SessionSpec fields.
+A preset is only a convenient collection of values the operator may choose individually. Kubernetes
+and the runner receive the selected concrete template, policies, bootstrap source, and SessionSpec
+fields, never a preset name to resolve later.
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ class Provider(StrEnum):
 
 
 class ThreadDefaults(BaseModel):
-    """Editable thread launch fields; null means the preset or platform still supplies the field."""
+    """Editable SessionSpec launch fields; null means the caller deliberately left that field unspecified."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -73,13 +74,12 @@ class SandboxPreset(BaseModel):
 
 
 class SandboxBinding(BaseModel):
-    """The live preset association and only the operator's sandbox-level thread edits."""
+    """The exact reusable Thread defaults and bootstrap the Sandbox was created with."""
 
     model_config = ConfigDict(extra="forbid")
 
-    sandbox_preset: str
-    thread_preset: str | None = None
-    thread_overrides: ThreadDefaults = Field(default_factory=ThreadDefaults)
+    thread_defaults: ThreadDefaults | None = None
+    bootstrap: str = Field(max_length=65_536)
 
 
 class SandboxPresetView(BaseModel):
@@ -90,12 +90,12 @@ class SandboxPresetView(BaseModel):
     template: str
     policies: list[str]
     action_policy_sets: list[str]
-    thread_preset: str
     thread_defaults: ThreadDefaults
+    bootstrap: str
 
 
 class PresetCatalog(BaseModel):
-    """Validated app configuration, keyed by stable names used in Sandbox annotations."""
+    """Validated app configuration, keyed by names the UI may expand into editable fields."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -114,18 +114,6 @@ class PresetCatalog(BaseModel):
             raise ValueError(f"SandboxPresets name unknown ThreadPresets: {sorted(missing)}")
         return self
 
-    def sandbox(self, name: str) -> SandboxPreset:
-        try:
-            return self.sandboxes[name]
-        except KeyError:
-            raise UnknownPresetError("sandbox", name) from None
-
-    def thread(self, name: str) -> ThreadPreset:
-        try:
-            return self.threads[name]
-        except KeyError:
-            raise UnknownPresetError("thread", name) from None
-
     def views(self) -> list[SandboxPresetView]:
         return [
             SandboxPresetView(
@@ -134,25 +122,13 @@ class PresetCatalog(BaseModel):
                 template=preset.template,
                 policies=preset.policies,
                 action_policy_sets=preset.action_policy_sets,
-                thread_preset=preset.thread_preset,
-                thread_defaults=self.thread(preset.thread_preset).defaults(),
+                thread_defaults=self.threads[preset.thread_preset].defaults(),
+                bootstrap=preset.bootstrap,
             )
             for name, preset in self.sandboxes.items()
         ]
-
-    def thread_defaults(self, binding: SandboxBinding) -> ThreadDefaults:
-        sandbox = self.sandbox(binding.sandbox_preset)
-        selected = binding.thread_preset or sandbox.thread_preset
-        return binding.thread_overrides.over(self.thread(selected).defaults())
 
     def instructions_for(self, task_instructions: str) -> str:
         """Combine platform operation guidance with the caller's task-specific instructions."""
         parts = [part.strip() for part in (self.agent_instructions, task_instructions) if part.strip()]
         return "\n\n".join(parts)
-
-
-class UnknownPresetError(Exception):
-    def __init__(self, kind: str, name: str) -> None:
-        super().__init__(f"unknown {kind} preset {name!r}")
-        self.kind = kind
-        self.name = name

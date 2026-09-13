@@ -26,7 +26,7 @@ from util.kubernetes import CustomObjectsClient
 from x.agentplane.app.presets import SandboxBinding, ThreadDefaults
 
 MANAGED_LABEL = "agentplane.allegedly.works/managed"
-PRESET_BINDING_ANNOTATION = "agentplane.allegedly.works/launch-preset"
+SANDBOX_BINDING_ANNOTATION = "agentplane.allegedly.works/sandbox-binding"
 
 _TEMPLATE_API = ("extensions.agents.x-k8s.io", "v1beta1")
 _TEMPLATES_PLURAL = "sandboxtemplates"
@@ -74,27 +74,21 @@ class SandboxRunningError(InventoryError):
 
 
 class NewSandbox(BaseModel):
-    """What a caller decides about a sandbox; absent optional fields may inherit a preset."""
+    """The concrete sandbox choices a caller makes after optionally applying a form preset."""
 
     model_config = ConfigDict(extra="forbid")
 
     slug: Slug = Field(description="Human-chosen name stem; a random suffix makes the Sandbox name unique.")
-    preset: str | None = Field(default=None, description="Optional app-owned SandboxPreset name.")
-    policies: list[str] = Field(
-        default_factory=list,
-        description="EgressPolicy names to grant. When a preset is selected, omission inherits its list.",
-    )
+    template: str = Field(min_length=1, description="SandboxTemplate whose Pod and volume shape this Sandbox copies.")
+    policies: list[str] = Field(default_factory=list, description="EgressPolicy names to grant.")
     action_policy_sets: list[str] = Field(
         default_factory=list,
-        description="ActionPolicySet names to bind. When a preset is selected, omission inherits its list; an "
-        "explicit list, empty included, is bound as given.",
-    )
-    thread_preset: str | None = Field(
-        default=None, description="Optional ThreadPreset override for this Sandbox's future sessions."
+        description="ActionPolicySet names to bind; an explicit list, empty included, is bound as given.",
     )
     thread_defaults: ThreadDefaults | None = Field(
-        default=None, description="Editable ThreadPreset fields stored as explicit Sandbox-level overrides."
+        default=None, description="Reusable Thread defaults for future sessions in this Sandbox."
     )
+    bootstrap: str = Field(default="", max_length=65_536, description="Runner initialization script for this Sandbox.")
 
 
 class Condition(BaseModel):
@@ -147,8 +141,8 @@ class SandboxView(BaseModel):
     operating_mode: OperatingMode
     conditions: list[Condition] = Field(description="The Sandbox's own status conditions.")
     node_name: str | None = Field(default=None, description="Where the Sandbox controller placed the Pod.")
-    preset_binding: SandboxBinding | None = Field(
-        default=None, description="The app-owned live preset association and explicit thread overrides."
+    binding: SandboxBinding | None = Field(
+        default=None, description="The app-owned concrete Thread defaults and bootstrap selected for this Sandbox."
     )
     pod: PodStatus | None = None
 
@@ -203,6 +197,18 @@ class _Template(BaseModel):
     spec: _TemplateSpec
 
 
+class _NamedMetadata(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    name: str
+
+
+class _NamedResource(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    metadata: _NamedMetadata
+
+
 class _ResourceList(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -210,11 +216,19 @@ class _ResourceList(BaseModel):
 
 
 class SandboxInventory:
-    def __init__(self, *, namespace: str, template: str, custom_objects: CustomObjectsClient, core_v1: CoreV1Api):
+    def __init__(self, *, namespace: str, custom_objects: CustomObjectsClient, core_v1: CoreV1Api):
         self._namespace = namespace
-        self._template = template
         self._custom_objects = custom_objects
         self._core_v1 = core_v1
+
+    async def list_templates(self) -> list[str]:
+        """The concrete templates an operator may choose for one Sandbox."""
+        page = await self._custom_objects.list_namespaced_custom_object(
+            *_TEMPLATE_API, self._namespace, _TEMPLATES_PLURAL
+        )
+        return sorted(
+            _NamedResource.model_validate(item).metadata.name for item in _ResourceList.model_validate(page).items
+        )
 
     async def list_sandboxes(self) -> list[SandboxView]:
         sandboxes_page, pods = await asyncio.gather(
@@ -229,12 +243,10 @@ class SandboxInventory:
         sandbox = await self._sandbox(name)
         return _view(sandbox, await self._pod(name))
 
-    async def create(
-        self, spec: NewSandbox, *, template_name: str | None = None, annotations: dict[str, str] | None = None
-    ) -> SandboxView:
+    async def create(self, spec: NewSandbox, *, annotations: dict[str, str] | None = None) -> SandboxView:
         template = _Template.model_validate(
             await self._custom_objects.get_namespaced_custom_object(
-                *_TEMPLATE_API, self._namespace, _TEMPLATES_PLURAL, template_name or self._template
+                *_TEMPLATE_API, self._namespace, _TEMPLATES_PLURAL, spec.template
             )
         )
         suffix = "".join(secrets.choice(_SUFFIX_ALPHABET) for _ in range(_SUFFIX_LENGTH))
@@ -258,8 +270,8 @@ class SandboxInventory:
         )
         return _view(_Sandbox.model_validate(created), None)
 
-    async def preset_binding(self, name: str) -> SandboxBinding | None:
-        raw = (await self._sandbox(name)).metadata.annotations.get(PRESET_BINDING_ANNOTATION)
+    async def binding(self, name: str) -> SandboxBinding | None:
+        raw = (await self._sandbox(name)).metadata.annotations.get(SANDBOX_BINDING_ANNOTATION)
         if raw is None:
             return None
         return SandboxBinding.model_validate_json(raw)
@@ -347,13 +359,13 @@ def _view(sandbox: _Sandbox, pod: k8s_client.V1Pod | None) -> SandboxView:
         operating_mode=sandbox.spec.operating_mode,
         conditions=sandbox.status.conditions,
         node_name=sandbox.status.node_name,
-        preset_binding=_preset_binding(sandbox),
+        binding=_binding(sandbox),
         pod=_pod_status(pod) if pod is not None else None,
     )
 
 
-def _preset_binding(sandbox: _Sandbox) -> SandboxBinding | None:
-    raw = sandbox.metadata.annotations.get(PRESET_BINDING_ANNOTATION)
+def _binding(sandbox: _Sandbox) -> SandboxBinding | None:
+    raw = sandbox.metadata.annotations.get(SANDBOX_BINDING_ANNOTATION)
     if raw is None:
         return None
     return SandboxBinding.model_validate_json(raw)

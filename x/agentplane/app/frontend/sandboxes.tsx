@@ -30,14 +30,17 @@ import {
   type SandboxView,
   type ThreadDefaults,
 } from "./client";
-import { changedDefaults } from "./launch_presets";
 import { ConfirmDelete, deletable, SuspendResume } from "./lifecycle";
 import { liveSandboxesUrl, LiveStatus, useLive, type SandboxesSnapshot } from "./live";
 
-const EMPTY_FORM: NewSandbox = { slug: "", policies: [], action_policy_sets: [] };
+const EMPTY_FORM: NewSandbox = { slug: "", template: "", policies: [], action_policy_sets: [], bootstrap: "" };
 const EMPTY_THREAD: ThreadDefaults = {};
 // The picked preset, in the URL like the sandbox page's tab, so a launch form can be linked to.
 const PRESET_PARAM = "preset";
+
+function hasThreadDefaults(defaults: ThreadDefaults): boolean {
+  return Object.values(defaults).some((value) => value !== undefined && value !== null && value !== "");
+}
 
 export const STATE_COLORS: Record<string, string> = {
   running: "green",
@@ -92,12 +95,13 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<NewSandbox>(EMPTY_FORM);
   const [presets, setPresets] = useState<SandboxPresetView[]>([]);
-  const [inheritedThread, setInheritedThread] = useState<ThreadDefaults>(EMPTY_THREAD);
+  const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
   const [thread, setThread] = useState<ThreadDefaults>(EMPTY_THREAD);
   const [modelCatalog, setModelCatalog] = useState<Record<string, string[]> | null>(null);
   const modelOptions = thread.provider ? (modelCatalog?.[thread.provider] ?? []) : [];
   // The namespace's policies; ticking some grants them to this sandbox alone.
   const [policies, setPolicies] = useState<string[]>([]);
+  const [templates, setTemplates] = useState<string[]>([]);
   // The namespace's action policy sets; a preset pre-fills the pick and the operator edits it.
   const [policySets, setPolicySets] = useState<ActionPolicySetView[]>([]);
   // The sandbox whose deletion is being confirmed, by name; deleting takes its volume with it.
@@ -109,28 +113,28 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
 
   /** Fill the form from a preset, or clear what one filled; every launch field stays editable. */
   function pickPreset(preset: SandboxPresetView | null): void {
+    setSelectedPreset(preset?.name ?? null);
     if (!preset) {
-      setForm((current) => ({ ...current, preset: null, policies: [], action_policy_sets: [] }));
-      setInheritedThread(EMPTY_THREAD);
+      setForm((current) => ({ ...current, template: "", policies: [], action_policy_sets: [], bootstrap: "" }));
       setThread(EMPTY_THREAD);
       return;
     }
     setForm((current) => ({
       ...current,
-      preset: preset.name,
+      template: preset.template,
       policies: preset.policies,
       action_policy_sets: preset.action_policy_sets,
+      bootstrap: preset.bootstrap,
     }));
-    setInheritedThread(preset.thread_defaults);
     setThread(preset.thread_defaults);
   }
 
   // The URL names a preset the form has not taken yet: once the catalog is here, take it.
   useEffect(() => {
-    if (requestedPreset === null || requestedPreset === form.preset) return;
+    if (requestedPreset === null || requestedPreset === selectedPreset) return;
     const preset = presets.find((candidate) => candidate.name === requestedPreset);
     if (preset) pickPreset(preset);
-  }, [requestedPreset, presets]);
+  }, [requestedPreset, selectedPreset, presets]);
 
   useEffect(() => {
     void (async () => {
@@ -142,6 +146,9 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
       else setPolicySets(setViews);
       const { data: presetViews } = await api.GET("/presets");
       setPresets(presetViews ?? []);
+      const { data: templateNames, error: templateFailure } = await api.GET("/sandboxes/templates");
+      if (templateFailure) setError(displayableError(templateFailure));
+      else setTemplates(templateNames);
     })();
   }, []);
 
@@ -179,7 +186,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   async function create(): Promise<void> {
     const body = {
       ...form,
-      thread_defaults: form.preset ? changedDefaults(thread, inheritedThread) : undefined,
+      thread_defaults: hasThreadDefaults(thread) ? thread : undefined,
     };
     const { error: failure } = await api.POST("/sandboxes", {
       body,
@@ -187,7 +194,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
     if (failure) setError(displayableError(failure));
     else {
       setForm(EMPTY_FORM);
-      setInheritedThread(EMPTY_THREAD);
+      setSelectedPreset(null);
       setThread(EMPTY_THREAD);
       setError(null);
     }
@@ -214,7 +221,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           label="Preset"
           description="Fills editable launch defaults"
           data={presets.map((preset) => ({ value: preset.name, label: preset.title }))}
-          value={form.preset ?? null}
+          value={selectedPreset}
           onChange={(name) => {
             const preset = presets.find((candidate) => candidate.name === name) ?? null;
             pickPreset(preset);
@@ -230,6 +237,16 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           value={form.slug}
           onChange={(e) => setForm({ ...form, slug: e.currentTarget.value })}
           style={{ flex: "1 1 10rem" }}
+        />
+        <Select
+          label="Template"
+          searchable
+          clearable
+          data={templates}
+          value={form.template || null}
+          onChange={(template) => setForm({ ...form, template: template ?? "" })}
+          placeholder={templates.length > 0 ? "Choose a template" : "Loading templates…"}
+          style={{ flex: "1 1 14rem" }}
         />
         <MultiSelect
           label="Policies"
@@ -249,54 +266,72 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
         />
         <Button
           onClick={() => void create()}
-          disabled={!form.slug || Boolean(form.preset && (!thread.model || !modelOptions.includes(thread.model)))}
+          disabled={
+            !form.slug ||
+            !form.template ||
+            Boolean(selectedPreset && (!thread.model || !modelOptions.includes(thread.model)))
+          }
         >
           New sandbox
         </Button>
       </Group>
-      {form.preset && (
-        <Stack gap="xs">
-          <Text size="sm" fw={600}>
-            Inherited thread defaults · editable
-          </Text>
-          <Group align="flex-end">
-            <Select
-              label="Harness"
-              allowDeselect={false}
-              data={["claude", "codex"]}
-              value={thread.provider ?? null}
-              onChange={(provider) =>
-                setThread({ ...thread, provider: (provider ?? undefined) as ThreadDefaults["provider"] })
-              }
-            />
-            <Select
-              label="Model"
-              searchable
-              allowDeselect={false}
-              data={modelOptions}
-              value={thread.model ?? null}
-              onChange={(model) => setThread({ ...thread, model })}
-              disabled={modelOptions.length === 0}
-              placeholder={modelCatalog ? "No models available" : "Loading models…"}
-              style={{ flex: "1 1 20rem" }}
-            />
-            <Select
-              label="Reasoning effort"
-              data={["low", "medium", "high"]}
-              value={thread.reasoning_effort ?? null}
-              onChange={(effort) => setThread({ ...thread, reasoning_effort: effort ?? undefined })}
-            />
-          </Group>
-          <Textarea
-            label="Standing instructions"
-            description="Inherited from the preset; edits apply to future threads in this sandbox"
-            autosize
-            minRows={3}
-            value={thread.instructions ?? ""}
-            onChange={(event) => setThread({ ...thread, instructions: event.currentTarget.value })}
+      <Textarea
+        label="Bootstrap script"
+        description="Runs once before this Sandbox's first session"
+        autosize
+        minRows={2}
+        value={form.bootstrap}
+        onChange={(event) => setForm({ ...form, bootstrap: event.currentTarget.value })}
+      />
+      <Stack gap="xs">
+        <Text size="sm" fw={600}>
+          Session launch defaults · optional
+        </Text>
+        <Text size="xs" c="dimmed">
+          Used when this sandbox starts a runner session. A preset only fills these fields; each also works on its own.
+        </Text>
+        <Group align="flex-end">
+          <Select
+            label="Harness"
+            allowDeselect={false}
+            data={["claude", "codex"]}
+            value={thread.provider ?? null}
+            onChange={(provider) =>
+              setThread({ ...thread, provider: (provider ?? undefined) as ThreadDefaults["provider"] })
+            }
           />
-        </Stack>
-      )}
+          <Select
+            label="Model"
+            searchable
+            allowDeselect={false}
+            data={modelOptions}
+            value={thread.model ?? null}
+            onChange={(model) => setThread({ ...thread, model })}
+            disabled={modelOptions.length === 0}
+            placeholder={modelCatalog ? "No models available" : "Loading models…"}
+            style={{ flex: "1 1 20rem" }}
+          />
+          <Select
+            label="Reasoning effort"
+            data={["low", "medium", "high"]}
+            value={thread.reasoning_effort ?? null}
+            onChange={(effort) => setThread({ ...thread, reasoning_effort: effort ?? undefined })}
+          />
+        </Group>
+        <TextInput
+          label="Working directory"
+          value={thread.cwd ?? ""}
+          onChange={(event) => setThread({ ...thread, cwd: event.currentTarget.value })}
+        />
+        <Textarea
+          label="Standing instructions"
+          description="Edits apply to future threads in this sandbox"
+          autosize
+          minRows={3}
+          value={thread.instructions ?? ""}
+          onChange={(event) => setThread({ ...thread, instructions: event.currentTarget.value })}
+        />
+      </Stack>
       <Table>
         <Table.Thead>
           <Table.Tr>

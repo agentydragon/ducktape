@@ -59,7 +59,7 @@ from x.agentplane.app.egress import (
 )
 from x.agentplane.app.identity import CallerIdentity, TokenReviewer, require_caller
 from x.agentplane.app.inventory import (
-    PRESET_BINDING_ANNOTATION,
+    SANDBOX_BINDING_ANNOTATION,
     NewSandbox,
     SandboxInventory,
     SandboxNotFoundError,
@@ -69,14 +69,7 @@ from x.agentplane.app.inventory import (
 from x.agentplane.app.live import LiveIndex, router as live_router
 from x.agentplane.app.oidc import OIDCSettings, build_oauth, operator_session
 from x.agentplane.app.operator_sessions import OperatorSessionMiddleware
-from x.agentplane.app.presets import (
-    PresetCatalog,
-    Provider,
-    SandboxBinding,
-    SandboxPresetView,
-    ThreadDefaults,
-    UnknownPresetError,
-)
+from x.agentplane.app.presets import PresetCatalog, Provider, SandboxBinding, SandboxPresetView
 from x.agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown
 from x.agentplane.app.trajectory import ThreadNotFoundError, ThreadView, TrajectoryStore
 from x.agentplane.runner.client import RunnerError
@@ -89,10 +82,6 @@ from x.agentplane.runner.client import RunnerError
 
 router = APIRouter(prefix="/sandboxes", tags=["sandboxes"])
 logger = logging.getLogger(__name__)
-
-
-class InvalidLaunchError(Exception):
-    """A syntactically valid launch combines preset fields that cannot apply."""
 
 
 # The models each harness may be opened with: the app's configuration, offered to the session form.
@@ -178,42 +167,33 @@ async def list_sandboxes(inventory: Inventory) -> list[SandboxView]:
     return await inventory.list_sandboxes()
 
 
+@router.get("/templates")
+async def list_templates(inventory: Inventory) -> list[str]:
+    """The templates the operator may select in a concrete new-Sandbox request."""
+    return await inventory.list_templates()
+
+
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_sandbox(
-    inventory: Inventory, egress: Egress, action_policy: ActionPolicy, presets: Presets, spec: NewSandbox
+    inventory: Inventory, egress: Egress, action_policy: ActionPolicy, spec: NewSandbox
 ) -> SandboxView:
-    """Resolve an optional app preset, then create the same concrete Sandbox the no-preset API does.
-    The launch's action policy sets, the preset's unless picked explicitly, become one binding of
-    the new Sandbox; a launch picking none leaves it without one."""
-    template_name: str | None = None
-    annotations: dict[str, str] | None = None
-    picked_policies = spec.policies
-    policy_sets = spec.action_policy_sets
-    if spec.preset is not None:
-        preset = presets.sandbox(spec.preset)
-        template_name = preset.template
-        picked_policies = preset.policies if "policies" not in spec.model_fields_set else spec.policies
-        policy_sets = (
-            preset.action_policy_sets if "action_policy_sets" not in spec.model_fields_set else spec.action_policy_sets
-        )
-        # Validate and preserve only explicit Sandbox-level edits; current preset defaults remain live.
-        overrides = spec.thread_defaults or ThreadDefaults()
-        if spec.thread_preset is not None:
-            presets.thread(spec.thread_preset)
-        binding = SandboxBinding(
-            sandbox_preset=spec.preset, thread_preset=spec.thread_preset, thread_overrides=overrides
-        )
-        annotations = {PRESET_BINDING_ANNOTATION: binding.model_dump_json(exclude_none=True)}
-    elif spec.thread_preset is not None or spec.thread_defaults is not None:
-        raise InvalidLaunchError("thread_preset and thread_defaults require a sandbox preset")
-    policies = egress.launch_policies(picked_policies)
+    """Create exactly the fields the caller selected; browser presets have already filled them."""
+    policies = egress.launch_policies(spec.policies)
     await egress.require_policies(policies)
-    await action_policy.require_policy_sets(policy_sets)
-    view = await inventory.create(spec, template_name=template_name, annotations=annotations)
+    await action_policy.require_policy_sets(spec.action_policy_sets)
+    binding = (
+        SandboxBinding(thread_defaults=spec.thread_defaults, bootstrap=spec.bootstrap)
+        if spec.thread_defaults is not None or spec.bootstrap
+        else None
+    )
+    annotations = (
+        {SANDBOX_BINDING_ANNOTATION: binding.model_dump_json(exclude_none=True)} if binding is not None else None
+    )
+    view = await inventory.create(spec, annotations=annotations)
     if policies:
         await egress.grant(sandbox=view.name, sandbox_uid=view.uid, policies=policies)
-    if policy_sets:
-        await action_policy.bind(sandbox=view.name, sandbox_uid=view.uid, policy_sets=policy_sets)
+    if spec.action_policy_sets:
+        await action_policy.bind(sandbox=view.name, sandbox_uid=view.uid, policy_sets=spec.action_policy_sets)
     return view
 
 
@@ -453,7 +433,7 @@ async def action_stream(
                     yield chunk
         except TimeoutError:
             return
-        except (httpx.RequestError, httpx2.HTTPStatusError, httpx2.TransportError):
+        except httpx.RequestError, httpx2.HTTPStatusError, httpx2.TransportError:
             # Headers are already sent. End the SSE connection so EventSource reconnects.
             logger.warning("Action stream interrupted after response start", exc_info=True)
 
@@ -699,14 +679,6 @@ def create_app(
     @app.exception_handler(FluxOwnedBindingError)
     async def _flux_owned(_request: Request, error: FluxOwnedBindingError) -> JSONResponse:
         return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": str(error)})
-
-    @app.exception_handler(UnknownPresetError)
-    async def _unknown_preset(_request: Request, error: UnknownPresetError) -> JSONResponse:
-        return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, content={"detail": str(error)})
-
-    @app.exception_handler(InvalidLaunchError)
-    async def _invalid_launch(_request: Request, error: InvalidLaunchError) -> JSONResponse:
-        return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, content={"detail": str(error)})
 
     @app.exception_handler(UnknownPolicyError)
     async def _unknown_policy(_request: Request, error: UnknownPolicyError) -> JSONResponse:

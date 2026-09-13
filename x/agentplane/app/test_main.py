@@ -36,7 +36,6 @@ from x.agentplane.app.trajectory import SandboxIngestion, TrajectoryStore
 APP_ENVIRONMENT = {
     "AGENTPLANE_NAMESPACE": "test-namespace",
     "AGENTPLANE_SANDBOX_NAMESPACE": "test-sandbox-namespace",
-    "AGENTPLANE_TEMPLATE": "test-template",
     "AGENTPLANE_RUNNER_PORT": "7000",
     "AGENTPLANE_DATABASE_URL": "postgresql+asyncpg://test@test.invalid/test",
     "AGENTPLANE_MODELS": '{"claude": ["test-claude-model"], "codex": ["test-codex-model"]}',
