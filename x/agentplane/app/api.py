@@ -11,6 +11,7 @@ from uuid import UUID
 
 import grpc
 import httpx
+import httpx2
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from google.protobuf.json_format import MessageToDict
@@ -334,9 +335,15 @@ async def _operator_actions(
         raise upstream_http_error(error) from error
     except httpx.RequestError as error:
         raise upstream_http_error(error) from error
+    except httpx2.HTTPStatusError as error:
+        raise upstream_http_error(error) from error
+    except httpx2.TransportError as error:
+        raise upstream_http_error(error) from error
 
 
-def upstream_http_error(error: httpx.HTTPStatusError | httpx.RequestError) -> HTTPException:
+def upstream_http_error(
+    error: httpx.HTTPStatusError | httpx.RequestError | httpx2.HTTPStatusError | httpx2.TransportError,
+) -> HTTPException:
     """Describe the failed request, which may be to the identity provider or the service."""
     detail = upstream_failure_detail(error)
     return HTTPException(
@@ -446,7 +453,7 @@ async def action_stream(
                     yield chunk
         except TimeoutError:
             return
-        except httpx.RequestError:
+        except (httpx.RequestError, httpx2.HTTPStatusError, httpx2.TransportError):
             # Headers are already sent. End the SSE connection so EventSource reconnects.
             logger.warning("Action stream interrupted after response start", exc_info=True)
 

@@ -21,7 +21,7 @@ import os
 import time
 from typing import Annotated
 
-import httpx
+import httpx2
 from authlib.integrations.httpx_client import AsyncOAuth2Client
 from fastapi import APIRouter, Cookie, HTTPException
 from fastapi.responses import RedirectResponse
@@ -44,7 +44,7 @@ _discovery_cache: dict[str, dict] = {}
 
 async def _get_discovery(issuer: str) -> dict:
     if issuer not in _discovery_cache:
-        async with httpx.AsyncClient() as client:
+        async with httpx2.AsyncClient() as client:
             resp = await client.get(issuer.rstrip("/") + "/.well-known/openid-configuration", timeout=10)
             resp.raise_for_status()
             _discovery_cache[issuer] = resp.json()
