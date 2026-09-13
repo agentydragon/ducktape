@@ -148,7 +148,7 @@ tf.download(
         "github": "integrations/github:6.13.0",
         "helm": "hashicorp/helm:3.3.0",
         "http": "hashicorp/http:3.6.2",
-        "kubernetes": "hashicorp/kubernetes:2.38.0",
+        "kubernetes": "hashicorp/kubernetes:3.2.1",
         "libvirt": "dmacvicar/libvirt:0.9.9",
         # CAUTION: low-user-count community provider that authenticates with the
         # LiteLLM master key (tf/gitops/litellm-keys). On every version bump,
