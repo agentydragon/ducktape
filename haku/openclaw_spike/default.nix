@@ -13,6 +13,7 @@
 {
   pkgs,
   nix-openclaw,
+  ruffLatest,
 }:
 
 let
@@ -57,7 +58,7 @@ let
       procps
       python3
       ripgrep
-      ruff
+      ruffLatest
       tea
     ]
     ++ [ nodejs ];

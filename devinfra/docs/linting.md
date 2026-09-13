@@ -123,7 +123,7 @@ dependencies, health checks, blueprint completeness) runs as the
 
 Pre-commit uses tools supplied by the Nix devshell / web-session:
 
-- `ruff-check`/`ruff-format`: the devshell's Ruff binary
+- `ruff-check`/`ruff-format`: Ruff 0.16.7 from the devshell's pinned binary
 - `buildifier`: the devshell's Buildifier binary
 
 Bazel uses managed versions:
@@ -134,7 +134,7 @@ Bazel uses managed versions:
 
 See `TODO.md` for tracked items. Current gaps:
 
-1. **Version drift risk**: Pre-commit uses Nix-provided ruff/buildifier versions, while Bazel uses its own pinned multitool/buildifier versions. Changes to one toolchain do not automatically update the other.
+1. **Buildifier version drift risk**: Pre-commit uses the Nix-provided Buildifier, while Bazel uses its own pinned Buildifier version. Changes to one toolchain do not automatically update the other.
 
 2. **ESLint not in pre-commit**: JS/TS linting only runs in CI via Bazel aspects, not locally during commit.
 

@@ -25,7 +25,6 @@ Run `bazel run //devinfra/orphans:find_orphans_bin` to list orphaned files.
 ### Lower Priority
 
 - **Package consolidation**: Small experimental packages could move into `hack/` monolith. Keep packages separate when they have different deployment targets or dependency sets.
-- **Ruff version alignment**: 0.14.0 in `devinfra/lockfile.json` vs 0.14.6 in `.pre-commit-config.yaml`.
 - **Remove `check-ast` pre-commit hook**: Redundant with `bazel build`.
 
 ### Intentionally Not Bazelized

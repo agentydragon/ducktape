@@ -79,6 +79,24 @@
         config.allowUnfree = true;
       };
 
+      # Keep the developer Ruff binary aligned with the repository's pinned
+      # Python and Bazel toolchains while nixpkgs catches up.
+      ruffLatest = pkgs.stdenvNoCC.mkDerivation {
+        pname = "ruff";
+        version = "0.16.7";
+        src = pkgs.fetchurl {
+          url = "https://github.com/astral-sh/ruff/releases/download/0.16.7/ruff-x86_64-unknown-linux-gnu.tar.gz";
+          hash = "sha256-c4lMe3yaU/1m7XFes6HsZQd/MWMo43cFepi9t/y6AyY=";
+        };
+        dontBuild = true;
+        dontConfigure = true;
+        dontCheck = true;
+        installPhase = ''
+          install -Dm755 ruff $out/bin/ruff
+        '';
+        meta.mainProgram = "ruff";
+      };
+
       # CI-released artifact pins (nix/artifact-pins.json), updated by sync-pins.yml.
       # Use Nixpkgs fetchurl derivations, not builtins.fetchurl: hosts behind
       # restricted egress can substitute these fixed-output paths from Attic
@@ -350,7 +368,7 @@
         pkgs.bazelisk
         pkgs.nixfmt
         pkgs.statix
-        pkgs.ruff
+        ruffLatest
         pkgs.shfmt
         pkgs.buildifier
         pkgs.keep-sorted
@@ -525,6 +543,7 @@
               ducktapePkgs
               nix-openclaw
               pkgs
+              ruffLatest
               ;
           };
           # Haku's Claude-backed OpenClaw spike. Same Nix build mechanism as
@@ -533,7 +552,7 @@
           # Build: nix build .#haku-openclaw-spike-image
           # Load:  docker load < result
           haku-openclaw-spike-image = import ./haku/openclaw_spike {
-            inherit nix-openclaw pkgs;
+            inherit nix-openclaw pkgs ruffLatest;
           };
           # NixOS-based RBE worker (systemd, envfs, nix-ld).
           # Build: nix build .#nix-rbe-nixos
