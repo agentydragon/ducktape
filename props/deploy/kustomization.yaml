@@ -7,4 +7,3 @@ resources:
   - db
   - secrets
   - app
-  - forgejo/terraform.yaml

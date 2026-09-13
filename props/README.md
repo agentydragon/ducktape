@@ -137,8 +137,10 @@ Grading is automatic via snapshot graders. See <docs/training_strategy.md> for d
 ## Cluster Deployment
 
 Props has one canonical deployment package under `props/deploy/`. It is a Kustomize
-package containing the namespace, database, secrets, RBAC, application resources,
-and the Forgejo Terraform wiring. Flux registers that package through
+package containing the namespace, database, secrets, RBAC, and application resources.
+The retired Forgejo Terraform files remain under `props/deploy/forgejo/` for state
+and cleanup provenance, but are intentionally not included in this package. Flux
+registers that package through
 `cluster/k8s/props.yaml`; the registration is currently suspended while Props is
 parked. Set `suspend: false` there to revive it.
 
@@ -149,7 +151,6 @@ parked. Set `suspend: false` there to revive it.
 | Backend    | `props/deploy/app/`         |
 | PostgreSQL | `props/deploy/db/`          |
 | Secrets    | `props/deploy/secrets/`     |
-| Forgejo    | `props/deploy/forgejo/`     |
 
 The package keeps its existing node placement and workload-level configuration.
 
