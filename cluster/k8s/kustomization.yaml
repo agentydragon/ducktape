@@ -172,7 +172,6 @@ resources:
   - monitoring/grafana-operator/flux-kustomization.yaml
   - monitoring/namespace/flux-kustomization.yaml
   - monitoring/stack/flux-kustomization.yaml
-  - monitoring/stack-secrets/flux-kustomization.yaml
   - monitoring/rules/flux-kustomization.yaml
   - monitoring/etcd/flux-kustomization.yaml
   - monitoring/cilium/flux-kustomization.yaml

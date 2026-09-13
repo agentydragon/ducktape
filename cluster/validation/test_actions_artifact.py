@@ -253,7 +253,6 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         ("monitoring-namespace", "monitoring/namespace"),
         ("monitoring-rules", "monitoring/rules"),
         ("monitoring-stack", "monitoring/stack"),
-        ("monitoring-stack-secrets", "monitoring/stack-secrets"),
         ("monitoring-tempo", "monitoring/tempo"),
         ("nix-cache", "nix-cache/app"),
         ("nix-cache-bootstrap", "nix-cache/bootstrap"),

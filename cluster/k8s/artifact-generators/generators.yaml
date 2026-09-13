@@ -789,14 +789,6 @@ spec:
           exclude:
             - flux-kustomization.yaml
 
-    - name: monitoring-stack-secrets
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/monitoring/stack-secrets/**"
-          to: "@artifact/cluster/k8s/monitoring/stack-secrets/"
-          exclude:
-            - flux-kustomization.yaml
-
     - name: nix-cache
       originRevision: "@repo"
       copy:
