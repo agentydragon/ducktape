@@ -10,6 +10,7 @@ venv
 
 # Claude Code agent worktrees
 .claude/worktrees
+.worktrees
 
 # Development environment caches
 # Root level
