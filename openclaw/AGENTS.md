@@ -31,11 +31,12 @@ state predates the release.
   `installPhase`. A fail-closed check placed in `postInstall` passes vacuously,
   which is worse than no check.
 - **The dist patches fail closed, so a bump breaks the image build loudly.**
-  <patch-openclaw-npm-dist.mjs> rewrites hardcoded upstream constants into
-  environment reads, matching on source text rather than the hash-named chunk
-  files. When a release moves one of those lines the build stops with
-  `expected exactly one ...`, which is the design: re-find the construct in the
-  new dist and update the match. Never relax a match to make a bump pass -- the
+  <patches/openclaw-2026.9.4-dist.patch> rewrites hardcoded upstream constants
+  into environment reads and Nix-specific behaviour, matching exact paths and
+  source context rather than silently accepting a changed release. When a
+  release moves one of those lines the build stops with a patch failure, which
+  is the design: re-find the construct in the new dist and update the
+  release-specific patch. Never relax a match to make a bump pass -- the
   patched behaviour silently reverts to upstream's.
 - **Verify the built artifact, not the expression.** The `dist-runtime` staging
   bug and the `stage_acpx` edge case were both invisible until the derivation was

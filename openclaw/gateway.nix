@@ -18,38 +18,37 @@
 let
   # nix-openclaw's own source pin still tracks an older stable release. Keep its
   # tested npm-package build path, but splice the current stable wrapper and
-  # source metadata over it so the images actually contain 2026.8.1.
+  # source metadata over it so the images actually contain 2026.9.4.
   ocPkgs = import nix-openclaw.inputs.nixpkgs {
     inherit (pkgs.stdenv.hostPlatform) system;
     overlays = [ nix-openclaw.overlays.default ];
   };
 
-  # Mirrors nix/sources/openclaw-source.nix but pinned to 2026.8.1. Setting
+  # Mirrors nix/sources/openclaw-source.nix but pinned to 2026.9.4. Setting
   # `gatewayNpmDepsHash` (not `pnpmDepsHash`) selects the prebuilt-npm gateway
   # path -- the one stable uses. `runtimePluginVersion` tracks nix-openclaw's
-  # generated acpx runtime plugin (2026.7.1), not the gateway version; acpx
-  # 2026.7.1 declares openclawCompat >=2026.7.1, so it is compatible with the
-  # stable host.
+  # generated acpx runtime plugin (2026.9.4), which requires the matching
+  # OpenClaw host version.
   stableSourceInfo = {
     owner = "openclaw";
     repo = "openclaw";
     pnpmMajor = "12";
     applyPublicSurfaceHardlinksPatch = false;
     applySkipPluginAutoEnableNixModePatch = false;
-    # 2026.8.1 changed the hardlink-policy source shape, so the old
+    # 2026.9.4 changed the hardlink-policy source shape, so the old
     # nix-openclaw ownership patch no longer applies. Runtime plugins are
     # copied into the gateway's bundled extension tree by the consumer instead.
     applyNixStorePluginOwnershipPatch = false;
-    releaseTag = "v2026.8.1";
-    releaseVersion = "2026.8.1";
-    runtimePluginVersion = "2026.7.1";
+    releaseTag = "v2026.9.4";
+    releaseVersion = "2026.9.4";
+    runtimePluginVersion = "2026.9.4";
     # The npm path does not fetch the git source, but these mirror the stable
     # sourceInfo shape for checks and future source builds.
-    rev = "ea806575e6450e4d1efdfc72c19f04be982a1b9b";
-    hash = "sha256-9mYcHVti8iV47jByNLIMTXevyamNP82ZHQldzwbt8pg=";
+    rev = "3a9d69db306cd7f081e06254cb89c4bcc14a7107";
+    hash = "sha256-xeUf0Emyhen4hnxjhbTI59d02QfB3YWTxhlqNkKuiUA=";
     # Filled from the Nix build's fixed-output error after the wrapper lock is
     # regenerated.
-    gatewayNpmDepsHash = "sha256-KnAPTULugA20oTb0Mkh82CajOBBC+LBg+Zx5nugwpAk=";
+    gatewayNpmDepsHash = "sha256-L6Y69xvZFrwG3Hb2iKG2FLraQqLtxtupImFR4KLTs9Q=";
   };
 
   # nix-openclaw's npm wrapper (nix/npm/openclaw/) pins openclaw to an older
@@ -70,12 +69,16 @@ let
     chmod -R u+w "$out"
     cp ${./npm_wrapper/package.json} "$out/nix/npm/openclaw/package.json"
     cp ${./npm_wrapper/package-lock.json} "$out/nix/npm/openclaw/package-lock.json"
-    cp ${./patch-openclaw-npm-dist.mjs} "$out/nix/scripts/patch-openclaw-npm-dist.mjs"
-    # 2026.8.1 rejects an ACPX package root that is a symlink outside the
-    # bundled extension tree. Copy the generated plugin into the dist instead.
+    cp ${./patches/openclaw-2026.9.4-dist.patch} "$out/nix/scripts/openclaw-npm-dist.patch"
+    substituteInPlace "$out/nix/packages/openclaw-gateway-npm.nix" \
+      --replace-fail 'patch-openclaw-npm-dist.mjs' 'openclaw-npm-dist.patch'
+    # Apply the release-specific repairs as a conventional, fail-closed patch.
+    # Keep the upstream installer contract's path variable: it is validated
+    # before use, and the patch command itself is pinned into the build.
     substituteInPlace "$out/nix/scripts/openclaw-gateway-npm-install.sh" \
-      --replace-fail 'ln -s "$OPENCLAW_BUNDLED_ACPX" "$acpx_root"' \
-      'cp -R "$OPENCLAW_BUNDLED_ACPX/." "$acpx_root"'
+      --replace-fail \
+        'OPENCLAW_PACKAGE_ROOT="$root" "$NODE_BIN" "$OPENCLAW_PATCH_NPM_DIST_SCRIPT"' \
+        '${ocPkgs.patch}/bin/patch --batch --fuzz=0 --directory="$root" --strip=1 --input="$OPENCLAW_PATCH_NPM_DIST_SCRIPT"'
   '';
 
   openclawPackages = import "${patchedNixOpenclaw}/nix/packages" {
@@ -124,14 +127,20 @@ in
 
           # Fail closed. Resolve each specifier against its own importer, because a
           # nested extension file's ../../ means extensions/, not the tree root; scan
-          # .js only, since .d.ts references are type-level; and match bare specifier
+          # .js/.mjs only, since .d.ts references are type-level; and match bare specifier
           # strings rather than `from "..."`, because workboard's is a dynamic
           # import() -- the exact one that took the gateway down.
           #
           # Skip nested node_modules: stage_acpx splices in a plugin carrying its own
           # vendored packages, which resolve through their own tree, not through the
           # shared chunks this staging is responsible for.
-          missing="$(grep -rHoE --include='*.js' --exclude-dir=node_modules '"(\.\./)+[A-Za-z0-9_.-]+\.js"' "$runtime/extensions" \
+          missing="$(
+            {
+              grep -rHoE --include='*.js' --include='*.mjs' --exclude-dir=node_modules '"(\.\./)+[A-Za-z0-9_.-]+\.(js|mjs)"' "$runtime/extensions" || {
+                grep_status=$?
+                [ "$grep_status" -eq 1 ] || exit "$grep_status"
+              }
+            } \
             | sed -E 's/:"/\t/; s/"$//' | sort -u \
             | while IFS="$(printf '\t')" read -r file spec; do
                 if [ ! -e "$(dirname "$file")/$spec" ]; then

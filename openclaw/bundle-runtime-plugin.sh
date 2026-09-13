@@ -21,6 +21,13 @@ fi
 
 bundled_parent="$gateway_root/dist/extensions"
 runtime_parent="$gateway_root/dist-runtime/extensions"
+gateway_root_real=$(readlink -f "$gateway_root")
+bundled_parent_real=$(readlink -f "$bundled_parent")
+runtime_parent_real=$(readlink -f "$runtime_parent")
+shared_plugin_root=false
+if [[ "$bundled_parent_real" == "$runtime_parent_real" ]]; then
+  shared_plugin_root=true
+fi
 for parent in "$bundled_parent" "$runtime_parent"; do
   if [[ ! -d "$parent" ]]; then
     echo "gateway bundled-plugin root does not exist: $parent" >&2
@@ -61,10 +68,14 @@ ln -s ../../../.. "$host_dependency"
 # which the bundling relies on.
 
 # OpenClaw selects one of these bundled roots based on package layout. Populate
-# both, but hard-link the regular files so the plugin payload is stored once.
-cp -al "$bundled_target" "$runtime_target"
+# both when they are separate, but hard-link the regular files so the plugin
+# payload is stored once. Newer nix-openclaw releases make dist-runtime a
+# symlink to dist, so the two logical roots intentionally share one directory.
+if [[ "$shared_plugin_root" == false ]]; then
+  cp -al "$bundled_target" "$runtime_target"
+fi
 
 for target in "$bundled_target" "$runtime_target"; do
   test -f "$target/openclaw.plugin.json"
-  test "$(readlink -f "$target/node_modules/openclaw")" = "$gateway_root"
+  test "$(readlink -f "$target/node_modules/openclaw")" = "$gateway_root_real"
 done
