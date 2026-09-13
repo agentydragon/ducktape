@@ -26,5 +26,10 @@ spec:
       namespace: ducktape-flux
     - name: github-secrets-sync-secrets
       namespace: ducktape-flux
+    # The Terraform module reads the canonical ducktape-ci registry credential
+    # from forgejo-images before publishing it to gaffer-private's GitHub Actions
+    # secrets.
+    - name: forgejo-images
+      namespace: ducktape-flux
     - name: seaweedfs-pr-visuals-bucket
       namespace: ducktape-flux

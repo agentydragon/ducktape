@@ -15,7 +15,7 @@ Required repository permissions:
 | Permission     | Access     | Why                                                                                                                                                                                                                                                                             |
 | -------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Contents       | Read/write | The token is mounted into the Authentik and Attic token-rotation CronJobs, which sparse-clone `ducktape`, edit SOPS files, commit, and push to `devel`.                                                                                                                         |
-| Secrets        | Read/write | `tf/gitops/github-secrets-sync` manages the `SOPS_AGE_KEY` GitHub Actions secret for `ducktape` and `gaffer-private`, plus the narrow `BUILDBUDDY_API_KEY` and PR visual S3 credentials for `ducktape` CI.                                                                      |
+| Secrets        | Read/write | `tf/gitops/github-secrets-sync` manages the `SOPS_AGE_KEY` GitHub Actions secret for `ducktape` and `gaffer-private`, the Forgejo registry username/password for `gaffer-private`, plus the narrow `BUILDBUDDY_API_KEY` and PR visual S3 credentials for `ducktape` CI.         |
 | Environments   | Read/write | `tf/gitops/github-secrets-sync` manages the protected `fork-ci-review` environment for explicitly approved non-agent fork revisions.                                                                                                                                            |
 | Variables      | Read/write | `tf/gitops/github-secrets-sync` manages the `PROPS_REGISTRY_URL` GitHub Actions variable for `ducktape`. GitHub's fine-grained permission header calls this `actions_variables`; without it, tofu-controller fails with `403 Resource not accessible by personal access token`. |
 | Administration | Read/write | `tf/gitops/github-branch-protection` manages the `ducktape` repository ruleset for branch protection. GitHub lists repository ruleset endpoints under the `Administration` permission.                                                                                          |
@@ -36,6 +36,12 @@ ExternalSecret; Reflector is not part of this credential's distribution path.
 `tf/gitops/github-secrets-sync/main.tf` includes an import block for
 `ducktape:PROPS_REGISTRY_URL`. Keep that import block until the resource is
 present in tofu-controller's remote state.
+
+The `FORGEJO_IMAGES_USERNAME` and `FORGEJO_IMAGES_PASSWORD` secrets for
+`gaffer-private` come from the canonical `forgejo-images/forgejo-images-creds`
+Secret. Do not copy those values into GitHub manually; the
+`github-secrets-sync` Kustomization waits for `forgejo-images` before its
+Terraform apply.
 
 If `github-secrets-sync` starts failing, check the accepted-permission header
 for the failing endpoint before broadening the token:
