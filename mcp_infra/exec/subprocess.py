@@ -58,7 +58,7 @@ async def run_proc(
             proc.kill()
             try:
                 out, err = await asyncio.wait_for(proc.communicate(), timeout=5)
-            except TimeoutError, ProcessLookupError:
+            except (TimeoutError, ProcessLookupError):
                 out, err = b"", b""
             stdout_bytes = out if out is not None else b""
             stderr_bytes = err if err is not None else b""
