@@ -5,6 +5,7 @@ from unittest.mock import Mock
 from urllib.parse import parse_qs, urlsplit
 
 import httpx
+import httpx2
 import pytest
 import pytest_bazel
 from sqlalchemy import select
@@ -30,15 +31,15 @@ from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 
 @pytest.fixture
 async def linkage(engine: AsyncEngine) -> AsyncIterator[McpLinkageAuthority]:
-    def provider(request: httpx.Request) -> httpx.Response:
+    def provider(request: httpx2.Request) -> httpx2.Response:
         if request.method == "POST":
             assert request.url.path == "/token"
             # GitHub answers form-encoded without this header, and reports a bad code as 200.
             assert request.headers["accept"] == "application/json"
             if parse_qs(request.content.decode())["code"] == ["test-bad-code"]:
-                return httpx.Response(200, json={"error": "bad_verification_code"})
-            return httpx.Response(200, json={"access_token": "test-access-token", "expires_in": 3600})
-        return httpx.Response(404)
+                return httpx2.Response(200, json={"error": "bad_verification_code"})
+            return httpx2.Response(200, json={"access_token": "test-access-token", "expires_in": 3600})
+        return httpx2.Response(404)
 
     server = McpOAuthServer(
         server_id="test-kubernetes",
@@ -49,7 +50,7 @@ async def linkage(engine: AsyncEngine) -> AsyncIterator[McpLinkageAuthority]:
         client_id="test-client",
         redirect_uri="https://test-actions.example/mcp-linkage/callback",
     )
-    async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as http:
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(provider)) as http:
         yield McpLinkageAuthority(make_sessionmaker(engine), {server.server_id: server}, http=http)
 
 

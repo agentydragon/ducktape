@@ -131,7 +131,7 @@ class Feed:
                 await self.store.end_feed(thread_id, lease=self.lease, error=str(error))
         except IngestionLeaseLostError:
             logger.info("ingestion lease lost for %s/%s", self.lease.sandbox, self.session_id)
-        except grpc.aio.AioRpcError, ConnectionError, SQLAlchemyError, RunnerError, TimeoutError:
+        except (grpc.aio.AioRpcError, ConnectionError, SQLAlchemyError, RunnerError, TimeoutError):
             # Reconcile retries from the committed cursor. A transport loss is not session end.
             logger.warning("ingestion interrupted for %s/%s", self.lease.sandbox, self.session_id, exc_info=True)
         finally:
@@ -191,7 +191,7 @@ class RunnerBridge:
                 if self._discover_sandboxes is not None:
                     self._sandboxes = set(await self._discover_sandboxes())
                 await self.reconcile()
-            except SQLAlchemyError, grpc.aio.AioRpcError, OSError:
+            except (SQLAlchemyError, grpc.aio.AioRpcError, OSError):
                 logger.warning("sandbox ingestion reconciliation failed; will retry", exc_info=True)
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(self._changed.wait(), timeout=RECONCILE_S)
@@ -240,9 +240,9 @@ class RunnerBridge:
                         feed = Feed(session_id=summary.session_id, client=client, store=self._store, lease=lease)
                         feed.task = asyncio.create_task(feed.run(), name=f"ingest-{sandbox}-{summary.session_id}")
                         self._feeds[key] = feed
-                except grpc.aio.AioRpcError, SandboxNotReachableError, SandboxNotFoundError, TimeoutError:
+                except (grpc.aio.AioRpcError, SandboxNotReachableError, SandboxNotFoundError, TimeoutError):
                     logger.warning("sandbox %s ingestion discovery unavailable", sandbox, exc_info=True)
-        except SQLAlchemyError, OSError, TimeoutError:
+        except (SQLAlchemyError, OSError, TimeoutError):
             logger.warning("sandbox %s ingestion reconciliation failed; will retry", sandbox, exc_info=True)
 
     async def _release(self, sandbox: str) -> None:
