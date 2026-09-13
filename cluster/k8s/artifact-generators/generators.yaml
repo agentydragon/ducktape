@@ -1993,7 +1993,6 @@ spec:
           exclude:
             - flux-kustomization.yaml
 
-
 ---
 apiVersion: source.extensions.fluxcd.io/v1beta1
 kind: ArtifactGenerator
