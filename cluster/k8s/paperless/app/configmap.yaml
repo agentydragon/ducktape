@@ -23,12 +23,11 @@ data:
   # paperless-sso-providers secret. Authentik's paperless_admins group is synced
   # to the matching local group and grants agentydragon Django superuser status.
   # The bootstrap Job owns the local groups and their permissions. Keep the
-  # default group as the fresh-signup fallback; group sync replaces memberships
-  # from the groups claim on login.
+  # SSO claim as the sole source of group membership; synchronization replaces
+  # memberships from the groups claim on login.
   PAPERLESS_APPS: "allauth.socialaccount.providers.openid_connect"
   PAPERLESS_SOCIAL_AUTO_SIGNUP: "true"
   PAPERLESS_SOCIALACCOUNT_ALLOW_SIGNUPS: "true"
-  PAPERLESS_SOCIAL_ACCOUNT_DEFAULT_GROUPS: "paperless_users"
   PAPERLESS_SOCIAL_ACCOUNT_SYNC_GROUPS: "true"
   PAPERLESS_SOCIAL_ACCOUNT_SYNC_GROUPS_CLAIM: "groups"
   PAPERLESS_SOCIAL_ACCOUNT_SYNC_SUPERUSER_GROUP: "paperless_admins"

@@ -1,10 +1,10 @@
-# Idempotently ensures the local `paperless_users` and `paperless_admins` groups
-# exist with the full set of document/app permissions (every permission in the
-# `documents` and `paperless` Django apps — version-robust, no hardcoded codenames,
-# and includes the `view_uisettings` permission the web UI requires). Authentik
-# owns membership: the `paperless_admins` claim maps agentydragon to the local
-# group and Paperless superuser role. The bootstrap remains the declarative owner
-# of the local groups and permissions; it does not create or promote a user.
+# Idempotently ensures the local `paperless_admins` group exists with the full set
+# of document/app permissions (every permission in the `documents` and `paperless`
+# Django apps — version-robust, no hardcoded codenames, and includes the
+# `view_uisettings` permission the web UI requires). Authentik owns membership: the
+# `paperless_admins` claim maps agentydragon to the local group and Paperless
+# superuser role. The bootstrap remains the declarative owner of the local group
+# and permissions; it does not create or promote a user.
 #
 # Re-applied on every reconcile (kustomize force). Retries via backoffLimit until
 # the webserver has applied migrations (auth_group table must exist first).
@@ -38,10 +38,9 @@ spec:
               permissions = Permission.objects.filter(
                   content_type__app_label__in=["documents", "paperless"]
               )
-              for group_name in ["paperless_users", "paperless_admins"]:
-                  group, _ = Group.objects.get_or_create(name=group_name)
-                  group.permissions.set(permissions)
-                  print(group_name, "now has", group.permissions.count(), "permissions")
+              group, _ = Group.objects.get_or_create(name="paperless_admins")
+              group.permissions.set(permissions)
+              print("paperless_admins now has", group.permissions.count(), "permissions")
           envFrom:
             - configMapRef:
                 name: paperless-config

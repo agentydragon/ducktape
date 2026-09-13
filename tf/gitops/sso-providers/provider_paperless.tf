@@ -10,15 +10,14 @@ resource "authentik_group" "paperless_admins" {
 
 # Paperless's group synchronizer expects the claim values to be names of existing
 # local Django groups. Keep this mapping app-specific rather than exposing every
-# Authentik group to Paperless. The baseline paperless_users membership keeps the
-# account usable even if superuser role mapping is later disabled.
+# Authentik group to Paperless.
 resource "authentik_property_mapping_provider_scope" "paperless_groups" {
   name       = "paperless-groups"
   scope_name = "groups"
   expression = <<-EXPR
     authentik_groups = [group.name for group in request.user.ak_groups.all()]
     if "paperless_admins" in authentik_groups:
-        return {"groups": ["paperless_users", "paperless_admins"]}
+        return {"groups": ["paperless_admins"]}
     return {"groups": []}
   EXPR
 }
