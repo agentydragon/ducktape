@@ -514,8 +514,8 @@ filegroup(
     srcs = [
         ":bundle_favicon",
         ":bundle_fonts_css",
-        ":bundle_inter_font",
         ":bundle_index_html",
+        ":bundle_inter_font",
         ":main_bundle",
         ":styles_css",
     ],

@@ -109,8 +109,8 @@ filegroup(
     name = "browser_launcher_assets",
     srcs = [
         "chromium-flags.json",
-        "frozen-clock.js",
         "chromium-font-preferences.json",
+        "frozen-clock.js",
     ],
     visibility = ["//util/testing/frontend_visual:__pkg__"],
 )
@@ -119,8 +119,8 @@ js_library(
     name = "browser_launcher_assets_js",
     srcs = [
         "chromium-flags.json",
-        "frozen-clock.js",
         "chromium-font-preferences.json",
+        "frozen-clock.js",
     ],
     # frozen-clock.js is raw injected text (its `frozenClock` const is only
     # referenced by the wrapper the launchers append), not a module — module
@@ -153,14 +153,13 @@ py_test(
     env = {
         "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
     },
+    tags = ["visual"],
     deps = [
         ":frontend_visual",
         "//:conftest",
-        "@pypi//playwright",
-        "@pypi//pytest",
+        "//util:playwright",
         "@pypi//pytest_bazel",
     ],
-    tags = ["visual"],
 )
 
 py_test(
