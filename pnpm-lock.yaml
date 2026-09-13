@@ -120,8 +120,8 @@ importers:
         specifier: ^2.8.1
         version: 2.8.1
       svelte-sonner:
-        specifier: ^0.3.28
-        version: 0.3.28(svelte@5.57.0(@typescript-eslint/types@8.70.0))
+        specifier: ^1.0.0
+        version: 1.2.1(svelte@5.57.0(@typescript-eslint/types@8.70.0))
       zod:
         specifier: ^4.6.4
         version: 4.6.4
@@ -320,8 +320,8 @@ importers:
         specifier: ^0.17.0
         version: 0.17.0
       svelte-sonner:
-        specifier: ^0.3.28
-        version: 0.3.28(svelte@5.57.0(@typescript-eslint/types@8.70.0))
+        specifier: ^1.0.0
+        version: 1.2.1(svelte@5.57.0(@typescript-eslint/types@8.70.0))
     devDependencies:
       esbuild:
         specifier: '>=0.28.0'
@@ -3884,6 +3884,11 @@ packages:
     resolution: {integrity: sha512-DPe5pVFaAsinSaV6QjQ6gdiedWDcRCbUuiQfQa2wmWV7+xC9bGulGI8+TdRmoFkAPaBXk8CrAbnlY2ISniJ47Q==}
     engines: {node: '>=18'}
 
+  runed@0.28.0:
+    resolution: {integrity: sha512-k2xx7RuO9hWcdd9f+8JoBeqWtYrm5CALfgpkg2YDB80ds/QE4w0qqu34A7fqiAwiBBSBQOid7TLxwxVC27ymWQ==}
+    peerDependencies:
+      svelte: ^5.7.0
+
   sade@1.8.1:
     resolution: {integrity: sha512-xal3CZX1Xlo/k4ApwCFrHVACi9fBqJ7V+mwhBsuf/1IOKbBy098Fex+Wa/5QMubw09pSZ/u8EY8PWgevJsXp1A==}
     engines: {node: '>=6'}
@@ -4149,10 +4154,10 @@ packages:
       typescript:
         optional: true
 
-  svelte-sonner@0.3.28:
-    resolution: {integrity: sha512-K3AmlySeFifF/cKgsYNv5uXqMVNln0NBAacOYgmkQStLa/UoU0LhfAACU6Gr+YYC8bOCHdVmFNoKuDbMEsppJg==}
+  svelte-sonner@1.2.1:
+    resolution: {integrity: sha512-N00LOWb60fjKXULbpngku+7E9Krb16KpNq4/Eax5Vu7o1Dpbca55QpaLPsB+yp82JIEdFhfJuv5cVXLoe0ZtVA==}
     peerDependencies:
-      svelte: ^3.0.0 || ^4.0.0 || ^5.0.0-next.1
+      svelte: ^5.0.0
 
   svelte2tsx@0.7.53:
     resolution: {integrity: sha512-ljVSwmnYRDHRm8+7ICP6QoAN7U7vgOFfPBLN6T745YWNYqRRSzHxlrzUVqMjYls2Un8MzJissfziy/38e6Deeg==}
@@ -8393,6 +8398,11 @@ snapshots:
 
   run-applescript@7.1.0: {}
 
+  runed@0.28.0(svelte@5.57.0(@typescript-eslint/types@8.70.0)):
+    dependencies:
+      esm-env: 1.2.2
+      svelte: 5.57.0(@typescript-eslint/types@8.70.0)
+
   sade@1.8.1:
     dependencies:
       mri: 1.2.0
@@ -8692,8 +8702,9 @@ snapshots:
       postcss-load-config: 3.1.4(postcss@8.5.9)
       typescript: 5.9.3
 
-  svelte-sonner@0.3.28(svelte@5.57.0(@typescript-eslint/types@8.70.0)):
+  svelte-sonner@1.2.1(svelte@5.57.0(@typescript-eslint/types@8.70.0)):
     dependencies:
+      runed: 0.28.0(svelte@5.57.0(@typescript-eslint/types@8.70.0))
       svelte: 5.57.0(@typescript-eslint/types@8.70.0)
 
   svelte2tsx@0.7.53(svelte@5.57.0(@typescript-eslint/types@8.70.0))(typescript@5.9.3):
