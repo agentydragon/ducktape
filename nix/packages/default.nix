@@ -10,24 +10,24 @@ let
   # while py-key-value-aio is older than FastMCP's >=0.4.4 floor. Package those
   # two deltas against the stable Python package set so the whole closure shares
   # one consistent site-packages.
-  python3 = pkgs.python3.override {
-    self = python3;
+  python314 = pkgs.python314.override {
+    self = python314;
     packageOverrides =
       pyfinal: pyprev:
       let
         fastmcpPackages = pkgs.callPackage ./fastmcp.nix {
-          python3Packages = pyfinal;
+          python314Packages = pyfinal;
           inherit (pyfinal) griffelib py-key-value-aio uncalled-for;
         };
       in
       {
         py-key-value-aio = pkgs.callPackage ./py-key-value-aio.nix {
-          python3Packages = pyfinal;
+          python314Packages = pyfinal;
         };
         inherit (fastmcpPackages) fastmcp fastmcp-slim;
       };
   };
-  python3Packages = python3.pkgs;
+  python314Packages = python314.pkgs;
   # CI wheels land in the nix store as "source" (no .whl extension).
   # pypaInstallPhase globs *.whl, so we restore the original filename.
   renameWheel =
@@ -53,7 +53,7 @@ let
       buildInputs ? [ ],
       mainProgram ? null,
     }:
-    python3Packages.buildPythonApplication {
+    python314Packages.buildPythonApplication {
       inherit pname;
       version = "latest";
       format = "wheel";
@@ -66,7 +66,7 @@ let
       # a CA bundle visible during the imports-check phase, otherwise libgit2
       # fails with "failed to load certificates" inside the sealed build env.
       # stdenv pins SSL_CERT_FILE to /no-cert-file.crt when unset, AND nixpkgs'
-      # python3Packages.httpx ships a postHook that runs `unset SSL_CERT_FILE`
+      # python314Packages.httpx ships a postHook that runs `unset SSL_CERT_FILE`
       # after every build phase — so neither `env.SSL_CERT_FILE` nor cacert's
       # own setup-hook survive long enough. Override the stock phase with one
       # that sets the env var inside the same shell invocation.
@@ -75,8 +75,8 @@ let
       ducktapePythonImportsCheck = ''
         export SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
         echo "Check imports (SSL_CERT_FILE pinned): ${builtins.concatStringsSep " " importsCheck}"
-        export PYTHONPATH="$out/lib/${python3.libPrefix}/site-packages:$PYTHONPATH"
-        (cd "$out" && ${python3.interpreter} -c \
+        export PYTHONPATH="$out/lib/${python314.libPrefix}/site-packages:$PYTHONPATH"
+        (cd "$out" && ${python314.interpreter} -c \
           'import sys, importlib; [importlib.import_module(m) for m in sys.argv[1:]]' \
           ${builtins.concatStringsSep " " importsCheck})
       '';
@@ -99,7 +99,7 @@ let
     pname = "ducktape-util";
     description = "Shared utility library (util.bazel, util.fs, etc.)";
     importsCheck = [ "util" ];
-    propagatedBuildInputs = with python3Packages; [
+    propagatedBuildInputs = with python314Packages; [
       opentelemetry-api
       opentelemetry-sdk
       tenacity
@@ -114,7 +114,7 @@ let
     # SYNC: This list must match `requires` in //:ducktape_git_hooks_wheel (BUILD.bazel).
     # When adding a dependency, update BOTH places.
     propagatedBuildInputs =
-      with python3Packages;
+      with python314Packages;
       [
         networkx
         opentelemetry-api
@@ -143,7 +143,7 @@ let
     propagatedBuildInputs = [
       ducktape-util
     ]
-    ++ (with python3Packages; [
+    ++ (with python314Packages; [
       fastmcp
       mcp
       rich
@@ -214,7 +214,7 @@ rec {
     description = "bb remote wrapper with repo-level config from devinfra/bbr.json";
     mainProgram = "bbr";
     importsCheck = [ "devinfra.bbr" ];
-    propagatedBuildInputs = with python3Packages; [ pygit2 ];
+    propagatedBuildInputs = with python314Packages; [ pygit2 ];
   };
 
   ducktape = mkWheel {
@@ -230,7 +230,7 @@ rec {
       "devinfra.gc.output_base_gc"
       "devinfra.ws.cli"
     ];
-    propagatedBuildInputs = with python3Packages; [
+    propagatedBuildInputs = with python314Packages; [
       aiodocker
       anyio
       httpx
@@ -245,7 +245,7 @@ rec {
       structlog
       tenacity
       typer
-      python3Packages.fastmcp
+      python314Packages.fastmcp
       mcp
       pyhamcrest
       click
@@ -278,13 +278,13 @@ rec {
     # The wheel declares pip-level deps; this list provides Nix-level equivalents.
     # When adding a dependency, update BOTH places.
     #
-    # `aiquota` (the derivation, not a python3Packages attr) provides the aiquota
+    # `aiquota` (the derivation, not a python314Packages attr) provides the aiquota
     # module the statusline imports for quota data; it propagates its own deps
     # (typer, atomicwrites, ...) so they don't need listing here.
     propagatedBuildInputs = [
       aiquota
     ]
-    ++ (with python3Packages; [
+    ++ (with python314Packages; [
       httpx
       platformdirs
       pydantic
@@ -335,7 +335,7 @@ rec {
       # Gio.Settings at startup.
       gnome-terminal
     ];
-    propagatedBuildInputs = with python3Packages; [
+    propagatedBuildInputs = with python314Packages; [
       absl-py
       dbus-python
       pycairo
@@ -369,7 +369,7 @@ rec {
   # fastmcp-slim owns the client CLI (`fastmcp call|list <url> --auth <bearer>`);
   # expose it as a standalone app for agent closures (flake.nix `.#agent-haku`).
   # The root metapackage remains the dependency consumed by the ducktape wheel.
-  fastmcp = python3Packages.toPythonApplication python3Packages.fastmcp-slim;
+  fastmcp = python314Packages.toPythonApplication python314Packages.fastmcp-slim;
   bebas-neue-font = pkgs.callPackage ./bebas-neue-font.nix { };
   bb = pkgs.callPackage ./bb.nix { inherit artifacts; };
   telegram-desktop = pkgs.callPackage ./telegram-desktop.nix { };

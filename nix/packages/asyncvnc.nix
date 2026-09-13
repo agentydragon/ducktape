@@ -2,11 +2,11 @@
 # Not in nixpkgs, used by hetzner-vnc-screenshot
 {
   lib,
-  python3Packages,
+  python314Packages,
   fetchurl,
   keysymdef,
 }:
-python3Packages.buildPythonPackage rec {
+python314Packages.buildPythonPackage rec {
   pname = "asyncvnc";
   version = "1.3.0";
   format = "wheel";
@@ -18,8 +18,8 @@ python3Packages.buildPythonPackage rec {
 
   dependencies = [
     keysymdef
-    python3Packages.cryptography
-    python3Packages.numpy
+    python314Packages.cryptography
+    python314Packages.numpy
   ];
 
   doCheck = false;

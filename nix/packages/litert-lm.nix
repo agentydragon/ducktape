@@ -4,10 +4,10 @@
   autoPatchelfHook,
   fetchPypi,
   vulkan-loader,
-  python3Packages,
+  python314Packages,
 }:
 let
-  litert-lm-api = python3Packages.buildPythonPackage rec {
+  litert-lm-api = python314Packages.buildPythonPackage rec {
     pname = "litert-lm-api";
     version = "0.17.0";
     format = "wheel";
@@ -38,7 +38,7 @@ let
     };
   };
 
-  litert-lm-builder = python3Packages.buildPythonPackage rec {
+  litert-lm-builder = python314Packages.buildPythonPackage rec {
     pname = "litert-lm-builder";
     version = "0.17.0";
     format = "wheel";
@@ -53,7 +53,7 @@ let
       hash = "sha256-iFqAcZ1OPV6WPRZXxRDct+m6zsT9FyNlSaXuEu6ROwM=";
     };
 
-    propagatedBuildInputs = with python3Packages; [
+    propagatedBuildInputs = with python314Packages; [
       absl-py
       flatbuffers
       protobuf
@@ -69,7 +69,7 @@ let
     };
   };
 in
-python3Packages.buildPythonApplication rec {
+python314Packages.buildPythonApplication rec {
   pname = "litert-lm";
   version = "0.17.0";
   format = "wheel";
@@ -85,12 +85,12 @@ python3Packages.buildPythonApplication rec {
   };
 
   postInstall = ''
-    patch -d "$out/${python3Packages.python.sitePackages}" -p1 \
+    patch -d "$out/${python314Packages.python.sitePackages}" -p1 \
       < ${./litert-lm-serve-speculative-decoding.patch}
   '';
 
   propagatedBuildInputs =
-    (with python3Packages; [
+    (with python314Packages; [
       click
       huggingface-hub
       prompt-toolkit

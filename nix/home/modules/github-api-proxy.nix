@@ -146,7 +146,7 @@ in
         RuntimeDirectory = "github-api-relay";
         RuntimeDirectoryMode = "0700";
         ExecStartPre = lib.escapeShellArgs [
-          "${pkgs.python3}/bin/python3"
+          "${pkgs.python314}/bin/python3"
           "${../../../devinfra/github_api_capture/relay_config.py}"
           "--host"
           cfg.remote.host

@@ -2,10 +2,10 @@
 # Not in nixpkgs, dependency of asyncvnc
 {
   lib,
-  python3Packages,
+  python314Packages,
   fetchurl,
 }:
-python3Packages.buildPythonPackage rec {
+python314Packages.buildPythonPackage rec {
   pname = "keysymdef";
   version = "1.2.0";
   format = "wheel";

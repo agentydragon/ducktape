@@ -2,10 +2,10 @@
 # Not in nixpkgs, packaged here for git-commit-ai dependency
 {
   lib,
-  python3Packages,
+  python314Packages,
   fetchPypi,
 }:
-python3Packages.buildPythonPackage rec {
+python314Packages.buildPythonPackage rec {
   pname = "compact-json";
   version = "1.8.2";
   pyproject = true;
@@ -16,9 +16,9 @@ python3Packages.buildPythonPackage rec {
     hash = "sha256-3CABSGlb4EuRrEXNPNpTGqAX+yVgm2a5lhoAjbJernc=";
   };
 
-  build-system = [ python3Packages.poetry-core ];
+  build-system = [ python314Packages.poetry-core ];
 
-  dependencies = with python3Packages; [
+  dependencies = with python314Packages; [
     wcwidth
     importlib-resources
     setuptools

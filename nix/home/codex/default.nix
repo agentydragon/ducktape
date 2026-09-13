@@ -205,7 +205,7 @@ let
   rulesReadmeRelative = "${codexHomeRelative}/rules/README.md";
   skillPrefix = if useXdgDirectories then "${xdgConfigHomeRelative}/codex" else ".codex";
 
-  pythonMerge = pkgs.python3.withPackages (ps: [ ps."tomli-w" ]);
+  pythonMerge = pkgs.python314.withPackages (ps: [ ps."tomli-w" ]);
   managedRulesSource = pkgs.writeText "codex-managed.rules" execPolicyRules.text;
   mkSkills = import ../skills.nix sharedSkillsArgs;
   # Codex currently skips symlinked SKILL.md files, so deploy each skill as a directory symlink.
