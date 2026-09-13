@@ -10,7 +10,7 @@ import logging
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
-import httpx
+import httpx2
 from authlib.integrations.base_client.errors import OAuthError
 from authlib.integrations.httpx_client import AsyncOAuth2Client
 from fastmcp.dependencies import CurrentAccessToken
@@ -51,14 +51,14 @@ def _record_backend_token_exchange_failure(outcome: str, error: BaseException | 
 
 
 def _transient_exchange_error(error: BaseException) -> bool:
-    if isinstance(error, httpx.TransportError):
+    if isinstance(error, httpx2.TransportError):
         return True
-    return isinstance(error, httpx.HTTPStatusError) and (
+    return isinstance(error, httpx2.HTTPStatusError) and (
         error.response.status_code == 429 or error.response.status_code >= 500
     )
 
 
-def _raise_transient_token_status(response: httpx.Response) -> httpx.Response:
+def _raise_transient_token_status(response: httpx2.Response) -> httpx2.Response:
     """Make retryable statuses visible before Authlib parses OAuth JSON.
 
     Authlib raises for 5xx responses itself, but parses a 429 body directly into
@@ -118,13 +118,13 @@ class AuthentikTokenExchanger:
         except OAuthError as error:
             _record_backend_token_exchange_failure("oauth", error)
             raise BackendTokenExchangeError from error
-        except httpx.TransportError as error:
+        except httpx2.TransportError as error:
             _record_backend_token_exchange_failure("transport", error)
             raise BackendTokenExchangeError from error
-        except httpx.HTTPStatusError as error:
+        except httpx2.HTTPStatusError as error:
             _record_backend_token_exchange_failure("upstream", error)
             raise BackendTokenExchangeError from error
-        except (httpx.HTTPError, ValueError) as error:
+        except (httpx2.HTTPError, ValueError) as error:
             _record_backend_token_exchange_failure("response", error)
             raise BackendTokenExchangeError from error
         return access_token
