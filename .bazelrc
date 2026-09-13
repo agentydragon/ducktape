@@ -25,8 +25,18 @@ build --host_per_file_copt=external/protobuf[+]/.*@-Wno-deprecated-declarations
 #   headers that still call RepeatedPtrField(Arena*), which protobuf deprecated.
 # -Wnarrowing: OR-Tools' integer-resolution queue initializes an int trail level
 #   from its unsigned AssignmentInfo::level field.
-build --per_file_copt=external/or-tools[+]/.*@-Wno-sign-compare,-Wno-range-loop-construct,-Wno-comment,-Wno-deprecated-declarations,-Wno-narrowing
-build --host_per_file_copt=external/or-tools[+]/.*@-Wno-sign-compare,-Wno-range-loop-construct,-Wno-comment,-Wno-deprecated-declarations,-Wno-narrowing
+# -Wunused-but-set-variable: `has_all_diffs` is assigned but unused in
+#   ortools/sat/cp_model_expand.cc.
+# -Wparentheses: objective comparisons in ortools/sat/cp_model_presolve.cc
+#   rely on C++ operator precedence that gcc warns about.
+build --per_file_copt=external/or-tools[+]/.*@-Wno-sign-compare,-Wno-range-loop-construct,-Wno-comment,-Wno-deprecated-declarations,-Wno-narrowing,-Wno-unused-but-set-variable,-Wno-parentheses
+build --host_per_file_copt=external/or-tools[+]/.*@-Wno-sign-compare,-Wno-range-loop-construct,-Wno-comment,-Wno-deprecated-declarations,-Wno-narrowing,-Wno-unused-but-set-variable,-Wno-parentheses
+
+# OR-Tools' bitset header instantiates Abseil check templates in this
+# repository-owned translation unit, so the external-source filter above does
+# not apply to its signed/unsigned comparison diagnostics.
+build --per_file_copt=devinfra/js/debundle/solver_backends/ortools_cpsat/solver[.]cc@-Wno-sign-compare
+build --host_per_file_copt=devinfra/js/debundle/solver_backends/ortools_cpsat/solver[.]cc@-Wno-sign-compare
 
 # Reduce runfiles disk usage (prevents "No space left on device" on CI runners).
 # Each py_test creates a runfiles tree with ~2,458 symlinks for the Python toolchain;
