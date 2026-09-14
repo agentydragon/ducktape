@@ -6,7 +6,8 @@ prometheus.operator.servicemonitors "cluster" {
 
   // kube-prometheus-stack ServiceMonitors use Secret-backed authorization or no
   // authentication. Alloy rejects any ServiceMonitor referencing a local file --
-  // `bearerTokenFile`, and `tlsConfig.{ca,cert,key}File` -- unless this is set.
+  // `bearerTokenFile` or `tlsConfig.{ca,cert,key}File` -- and local file access is
+  // intentionally disabled here.
   //
   // A rejected ServiceMonitor produces no scrape config at all, so there is no
   // `up` series to fall to 0 and TargetDown cannot fire: the only trace is one
@@ -15,11 +16,8 @@ prometheus.operator.servicemonitors "cluster" {
   // `apiserver_request_*`, `coredns_*`) went missing while every rule built on
   // it kept evaluating against no data.
   //
-  // The guard is for multi-tenant clusters, where an untrusted party can create
-  // a ServiceMonitor and make Alloy read arbitrary files off its own disk. Here
-  // ServiceMonitors arrive only through Flux. It remains required by the Volsync
-  // ServiceMonitor, which still references the service-account token file.
-  allow_arbitrary_file_access = true
+  // ServiceMonitors arrive only through Flux. Authenticated targets must use
+  // Secret-backed credentials; unauthenticated targets must clear auth fields.
 
   scrape {
     default_scrape_interval = "60s"
