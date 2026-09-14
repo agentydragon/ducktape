@@ -28,6 +28,7 @@ py_test(
     name = "test_model_endpoint",
     srcs = ["test_model_endpoint.py"],
     deps = [
+        ":conftest",
         ":model_endpoint",
         "//:conftest",
         "//x/agentplane/harness_tests/claude:messages",
