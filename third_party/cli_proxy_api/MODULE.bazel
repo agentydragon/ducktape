@@ -69,6 +69,7 @@ go_deps.module(
     path = "github.com/router-for-me/CLIProxyAPI/v7",
     version = "v7.0.0-20260908173309-7fac6b15bcfe",
 )
+
 # The pinned upstream CLIProxyAPI source archive's generated BUILD graph still
 # imports pion/stun/v3 even though its go.mod has moved to pion/stun/v4. Keep
 # the isolated go_deps repository visible alongside the v4 module used by the
