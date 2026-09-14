@@ -7,6 +7,7 @@ metadata:
     description: Private CNPG physical backups and WAL archive for Authentik.
 spec:
   name: authentik-db-backups
+  adoptExisting: true
   clusterRef:
     name: seaweedfs
     namespace: seaweedfs
