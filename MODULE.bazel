@@ -101,6 +101,7 @@ single_version_override(
         "//patches:rules_tf_check_tofu_mirror.patch",
         "//patches:rules_tf_check_terraform_mirror.patch",
         "//patches:rules_tf_exclude_dotterraform.patch",
+        "//patches:rules_tf_tflint064_config.patch",
     ],
 )
 
