@@ -22,10 +22,11 @@ processes the whole batch of changes at once rather than reacting edit-by-edit.
 
 **Implementation note:** `haku/x/dispatch/app.py` is Haku-initiated only — `POST /jobs` (Haku's
 own bearer token), with no externally-triggered job creation path. The plane is **still in the
-tree** (`haku/x/dispatch/`, wired at `cluster/k8s/x/haku/dispatch/`) but **not deployed**: none of
-its `flux-kustomization.yaml` files are listed in the root `cluster/k8s/kustomization.yaml`, and its
-design note has moved to <../archive/2026_08_multi_agent.md>. So option (1) below reuses code that
-exists and a service that does not currently run.
+tree** (`haku/x/dispatch/`, wired at `haku/x/dispatch/deploy/`) but **not deployed**: its
+root Flux registration is suspended, and its deployment package has no active child
+`flux-kustomization.yaml` registrations. Its design note has moved to
+<../archive/2026_08_multi_agent.md>. So option (1) below reuses code that exists and a
+service that does not currently run.
 Sensors (`changedetection.io` → webhook → `haku-state intake/`) are step 6 in
 `2026_08_multi_agent.md`'s build order and not built; even once they exist, they land findings in
 Haku's own intake for Haku to act on, not a direct dispatch trigger.

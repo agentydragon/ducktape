@@ -92,8 +92,8 @@ Parked clusters (suspended Flux Kustomizations; R2/R3 bind again on revival):
   `local-path-proxmox` when reviving.
 - `wayback-archive-db` (<../../loom/wayback/deploy/db/>): OVH-HA shape,
   suspended with the rest of wayback-cache.
-- `haku-dispatch-db` (`k8s/x/haku/dispatch/db/`): OVH-HA shape; not wired
-  into the root `k8s/kustomization.yaml` at all.
+- `haku-dispatch-db` (`haku/x/dispatch/deploy/db/`): OVH-HA shape; parked through
+  `cluster/k8s/haku-dispatch.yaml` and not currently reconciled.
 
 ## TODO
 

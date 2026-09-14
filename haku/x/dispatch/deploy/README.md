@@ -1,14 +1,16 @@
-# `haku-dispatch` — retired dispatch-plane cluster wiring
+# `haku-dispatch` — parked dispatch-plane deployment
 
-This directory is retained as historical reference material. The z.ai Haku
-dispatch lane was retired in August 2026; these manifests are no longer
-registered in the active Flux root. The application code remains in `haku/x/dispatch/`
-for possible future re-use, but this cluster wiring is not runnable as-is.
+This directory is the canonical deployment package for the retired Haku dispatch
+plane. The z.ai lane was retired in August 2026 and the package is parked by the
+suspended `cluster/k8s/haku-dispatch.yaml` registration. The application code is in
+`haku/x/dispatch/`; this cluster wiring is not runnable as-is until the worker-zone
+and provider wiring is deliberately restored.
 
 The in-cluster half of the former Haku dispatch plane: the dispatcher service, the shared
 second-layer **workers-LiteLLM**, and the CNPG database they share. Application code:
-<../../../../haku/x/dispatch/README.md>. Zone perimeters (where the workers actually run):
-<../zones/README.md>. Design + roadmap: <../../../../haku/archive/2026_08_multi_agent.md>.
+<../README.md>. Zone perimeters (where the workers actually run):
+<../../../../cluster/k8s/x/haku/zones/README.md>. Design + roadmap:
+<../../../archive/2026_08_multi_agent.md>.
 
 Everything here is ducktape-reviewed — Haku can reach the dispatcher's API but has no
 write path to any of these manifests.
@@ -21,7 +23,6 @@ write path to any of these manifests.
 | `db/`         | `haku-dispatch-db` CNPG cluster; `dispatcher` + `litellm_workers` databases; managed roles.      |
 | `dispatcher/` | Dispatcher `Deployment`, service, SA, egress CNP, zone job-stamp RBAC, and the reviewed configs. |
 | `litellm/`    | workers-LiteLLM `Deployment`, generated config, ingress CNP.                                     |
-| `agent-rbac/` | Co-subjects Haku onto `logs-configmaps-reader` for this namespace (diagnostics only).            |
 
 ## Two-layer LiteLLM and the key chain
 
@@ -79,5 +80,5 @@ The retirement was performed in two PRs. First, #3982 changed the two namespace
 Kustomizations to `deletionPolicy: Delete` and was merged only after the policy
 change could reconcile. The follow-up then moved this dispatch tree, the z.ai
 zone, and the shared zone proxy under `cluster/k8s/x/` and removed their active
-root registrations. This allowed Flux to prune the two live namespaces and
-their contents instead of silently orphaning them.
+root registrations. This package move keeps the retired plane's reviewed
+deployment closure beside its application code while leaving it suspended.

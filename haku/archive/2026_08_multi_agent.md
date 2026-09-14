@@ -18,7 +18,7 @@ even though the zones do not.
 Archived, documented elsewhere:
 
 - Dispatcher service + worker image: <../x/dispatch/README.md>
-- Cluster wiring (workers-LiteLLM, CNPG, and the three-hop key chain): <../../cluster/k8s/x/haku/dispatch/README.md>
+- Cluster wiring (workers-LiteLLM, CNPG, and the three-hop key chain): <../x/dispatch/deploy/README.md>
 - Zone perimeters and the trust model: <../../cluster/k8s/x/haku/zones/README.md>
 - Security contract (enforcement inventory): <../docs/security.md>
 - Settled options survey (dispatch plane, Centaur deep-eval, harness): <2026_07_02_dispatch_plane_options.md>
@@ -153,7 +153,7 @@ Still to wire:
   today only the _main_ LiteLLM instance has `callbacks: ["langfuse_otel", "prometheus"]`
   wired (`cluster/k8s/litellm/app/deployment.yaml`, one project: `langfuse-litellm-project`);
   the workers-LiteLLM generator explicitly flags the gap
-  (`cluster/k8s/x/haku/dispatch/litellm/generate_workers_litellm.py`'s own
+  (`haku/x/dispatch/deploy/litellm/generate_workers_litellm.py`'s own
   `# TODO(langfuse)` comment — `callbacks: ["prometheus"]` only). There's also **no
   Terraform provider for Langfuse** (`tf/gitops/sso-providers/provider_langfuse.tf` is only
   the Authentik OIDC login client) — every project/key that exists today came from Langfuse

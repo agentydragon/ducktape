@@ -1,4 +1,4 @@
-# The load-bearing reachability policy (cluster/k8s/x/haku/dispatch/README.md → key
+# The load-bearing reachability policy (haku/x/dispatch/deploy/README.md → key
 # chain): only worker-zone pods may talk to the workers-LiteLLM. Haku
 # (haku-sandbox) is deliberately NOT admitted — a per-job key leaked through
 # worker output is unusable from anywhere that matters. The dispatcher (same

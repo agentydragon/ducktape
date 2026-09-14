@@ -37,20 +37,20 @@ Severity: high
 
 Owner:
 
-- Kubernetes Job deadline and TTL in `cluster/k8s/haku/dispatch/dispatcher/job-template.yaml:18-21`
+- Kubernetes Job deadline and TTL in `haku/x/dispatch/deploy/dispatcher/job-template.yaml:18-21`
 
 Recreation:
 
-- `JobStatus` in `haku/dispatch/models.py:9-13`
-- result and kill transitions in `haku/dispatch/db.py:103-111`
-- result and delete endpoints in `haku/dispatch/app.py:165-190`
+- `JobStatus` in `haku/x/dispatch/models.py:9-13`
+- result and kill transitions in `haku/x/dispatch/db.py:103-111`
+- result and delete endpoints in `haku/x/dispatch/app.py:165-190`
 
 Observed divergences:
 
 - deadline expiry, eviction, OOM, pod startup failure, or a failed result POST leaves the database row permanently `created`; there is no Job watcher or reconciler;
 - a result arriving after an explicit kill is accepted because result submission checks only whether `row.result` exists, then overwrites `killed` with `completed` or `failed`;
-- the same-named per-job Secret has no owner reference (`haku/dispatch/k8s_jobs.py:43-49`);
-- normal completion does not delete the Secret or revoke the LiteLLM key; cleanup exists only on explicit kill (`haku/dispatch/k8s_jobs.py:93-102`).
+- the same-named per-job Secret has no owner reference (`haku/x/dispatch/k8s_jobs.py:43-49`);
+- normal completion does not delete the Secret or revoke the LiteLLM key; cleanup exists only on explicit kill (`haku/x/dispatch/k8s_jobs.py:93-102`).
 
 The documented SQL source of truth can therefore lie, terminal states are reversible, and Secrets containing prompts and tokens accumulate after Job TTL cleanup.
 
@@ -156,11 +156,11 @@ Severity: high
 Owner:
 
 - actual generated credentials in `tf/gitops/haku-state/main.tf:29-31,99-101`
-- dispatcher credentials in `cluster/k8s/haku/dispatch/dispatcher/credentials.yaml`
+- dispatcher credentials in `haku/x/dispatch/deploy/dispatcher/credentials.yaml`
 
 Recreation:
 
-- regex catalog in `haku/dispatch/prompt_lint.py:11-22`
+- regex catalog in `haku/x/dispatch/prompt_lint.py:11-22`
 
 The lint calls itself a zero-false-negative deterministic layer, but it recognizes branded prefixes, JWTs, PEM, and age keys only. Haku's Git password, console token, and dispatcher secrets are opaque generated alphanumerics and match none of those patterns.
 
@@ -259,7 +259,7 @@ Consolidation:
 
 ### Idempotency reconstruction
 
-`haku/dispatch/k8s_jobs.py:23-24` derives identity only from the caller's idempotency key, while the companion Job and Secret depend on prompt, zone, model, and budget. Existing DB rows are returned without payload comparison, and in a race the second request can replace the Secret while accepting the first request's already-created Job. Persist and compare a canonical request fingerprint; reject same-key/different-payload requests and make the Secret immutable once the Job exists.
+`haku/x/dispatch/k8s_jobs.py:23-24` derives identity only from the caller's idempotency key, while the companion Job and Secret depend on prompt, zone, model, and budget. Existing DB rows are returned without payload comparison, and in a race the second request can replace the Secret while accepting the first request's already-created Job. Persist and compare a canonical request fingerprint; reject same-key/different-payload requests and make the Secret immutable once the Job exists.
 
 ### Preview adapters copying remote result contracts
 
@@ -271,7 +271,7 @@ These are not currently failing the deployed configuration, but their propagatio
 
 ### P. Dispatch zone abstraction carries only namespace and model names
 
-`haku/dispatch/config.py:26-32` models namespace and allowed models. The Job template globally hardcodes `HARNESS=claude` and `ANTHROPIC_*` authentication (`cluster/k8s/haku/dispatch/dispatcher/job-template.yaml:44-66`), while the classifier defines only the ZAI policy. The worker already has a Codex branch, and the planned OAI zone requires it.
+`haku/x/dispatch/config.py:26-32` models namespace and allowed models. The Job template globally hardcodes `HARNESS=claude` and `ANTHROPIC_*` authentication (`haku/x/dispatch/deploy/dispatcher/job-template.yaml:44-66`), while the classifier defines only the ZAI policy. The worker already has a Codex branch, and the planned OAI zone requires it.
 
 Adding OAI to `zones.yaml` can pass current parity tests while launching Claude with the wrong authentication and admission policy.
 

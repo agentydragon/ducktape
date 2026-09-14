@@ -41,7 +41,7 @@ spec:
                   name: workers-litellm-master-key
                   key: api-key
             # Per-job virtual keys live here (DATABASE_URL) — see
-            # cluster/k8s/x/haku/dispatch/README.md → key chain.
+            # haku/x/dispatch/deploy/README.md → key chain.
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:

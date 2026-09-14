@@ -11,6 +11,7 @@ spec:
     branch: devel
   sparseCheckout:
     - cluster/k8s/
+    - haku/x/dispatch/deploy/
     - loom/wayback/deploy/
     - props/deploy/
     - tf/gitops/

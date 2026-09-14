@@ -237,6 +237,8 @@ resources:
   - haku/managed-agent/flux-kustomization.yaml # self-hosted Managed Agents worker (Runtime B)
   - haku/workspaces/app/flux-kustomization.yaml # Haku sandbox warm pool in haku-sandbox (exec target for the sandbox-provisioning MCP)
   - haku/cloud-agent-tf/flux-kustomization.yaml # Anthropic-hosted agent via claude-managed-agents tofu provider
+  # --- haku dispatch (parked; flip cluster/k8s/haku-dispatch.yaml suspend to revive) ---
+  - haku-dispatch.yaml
   # (self-hosted agent is provisioned imperatively via `ant`, not TF — the provider has no
   #  self_hosted support; see haku/runtime/managed_agent/self_hosted/README.md)
   - haku/workloads/flux-kustomization.yaml # Flux reconciles Haku's haku-state k8s/ workloads under a constrained SA

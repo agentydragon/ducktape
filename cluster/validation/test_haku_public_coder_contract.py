@@ -33,12 +33,15 @@ def test_public_coder_and_haku_configured_diagnostics_are_secret_free(k8s_dir: P
         assert labels[expected_label] == "true", path
         assert not ({agent_readable_metadata_label, agent_readable_logs_label} - {expected_label}) & labels.keys(), path
 
-    for relative_path in ("matrix/namespace/namespace.yaml", "x/haku/dispatch/namespace/namespace.yaml"):
-        path = k8s_dir / relative_path
+    namespace_paths = (
+        k8s_dir / "matrix/namespace/namespace.yaml",
+        get_required_path("ducktape/haku/x/dispatch/deploy/namespace/namespace.yaml"),
+    )
+    for path in namespace_paths:
         namespace = one(obj for obj in yaml.safe_load_all(path.read_text()) if obj["kind"] == "Namespace")
         assert (
             not {agent_readable_metadata_label, agent_readable_logs_label} & namespace["metadata"]["labels"].keys()
-        ), relative_path
+        ), path
 
     flux_system_kustomization = (k8s_dir / "flux-system/kustomization.yaml").read_text()
     assert "path: /metadata/labels/rbac.ducktape.io~1agent-readable-logs" in flux_system_kustomization

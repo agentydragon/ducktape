@@ -1,14 +1,15 @@
 """Contract tests for the reviewed Kubernetes Job template used by Haku dispatch."""
 
-from pathlib import Path
-
 import pytest_bazel
 
 from haku.x.dispatch.k8s_jobs import render_job
+from util.bazel.runfiles import get_required_path
+
+_JOB_TEMPLATE = get_required_path("ducktape/haku/x/dispatch/deploy/dispatcher/job-template.yaml")
 
 
-def test_reviewed_job_template_renders_without_unfilled_placeholders(k8s_dir: Path) -> None:
-    template = (k8s_dir / "x/haku/dispatch/dispatcher/job-template.yaml").read_text(encoding="utf-8")
+def test_reviewed_job_template_renders_without_unfilled_placeholders() -> None:
+    template = _JOB_TEMPLATE.read_text(encoding="utf-8")
 
     job = render_job(
         template, name="job-0123456789abcdef", namespace="haku-sandbox-zai", zone="zai", model="glm-5.2-anthropic"
@@ -19,9 +20,9 @@ def test_reviewed_job_template_renders_without_unfilled_placeholders(k8s_dir: Pa
     assert job["metadata"]["namespace"] == "haku-sandbox-zai"
 
 
-def test_reviewed_job_template_keeps_credentials_in_the_per_job_secret(k8s_dir: Path) -> None:
+def test_reviewed_job_template_keeps_credentials_in_the_per_job_secret() -> None:
     job = render_job(
-        (k8s_dir / "x/haku/dispatch/dispatcher/job-template.yaml").read_text(encoding="utf-8"),
+        _JOB_TEMPLATE.read_text(encoding="utf-8"),
         name="job-0123456789abcdef",
         namespace="haku-sandbox-zai",
         zone="zai",
