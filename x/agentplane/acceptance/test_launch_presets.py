@@ -13,6 +13,9 @@ from x.agentplane.app.inventory import SandboxView
 from x.agentplane.app.presets import Harness, ThreadDefaults
 from x.agentplane.runner import protocol_pb2
 
+# The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
+# gazelle:include_dep @pypi//protobuf
+
 PUBLIC_CODER = "public-coder"
 GITHUB_PUBLIC = "github-public"
 INSTRUCTIONS = "For this acceptance thread, end the final answer with PRESET-INSTRUCTIONS-OK."

@@ -14,6 +14,9 @@ exports_files(["protocol.proto"])
 
 # gazelle:resolve py x.agentplane.runner.protocol_pb2 //x/agentplane/runner:protocol_pb2
 # gazelle:resolve py x.agentplane.runner.protocol_pb2_grpc //x/agentplane/runner:protocol_pb2_grpc
+# gazelle:resolve py x.agentplane.protocol.command_pb2 //x/agentplane/protocol:command_pb2
+# gazelle:resolve py x.agentplane.protocol.event_pb2 //x/agentplane/protocol:event_pb2
+# gazelle:resolve py x.agentplane.protocol.event_log_pb2 //x/agentplane/protocol:event_log_pb2
 
 py_grpc_library(
     name = "protocol",
@@ -270,7 +273,6 @@ py_test(
         "//:conftest",
         "//x/agentplane/harness_tests/claude:messages",
         "//x/agentplane/harness_tests/codex:responses",
-        "//x/agentplane/protocol:event_log_pb2",
         "//x/agentplane/protocol:event_pb2",
         "//x/agentplane/runner:protocol_pb2",
         "//x/agentplane/runner/testing:events",
