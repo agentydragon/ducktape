@@ -80,11 +80,13 @@ class ThreadRunnerSession(Base):
     """One runner-session identity within the Thread's static Sandbox."""
 
     __tablename__ = "thread_runner_session"
-    __table_args__ = (Index("thread_runner_session_one_active", "thread_id", unique=True, postgresql_where=text("active")),)
+    __table_args__ = (
+        Index("thread_runner_session_one_active", "thread_id", unique=True, postgresql_where=text("active")),
+    )
 
     thread_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"))
+    # Agentplane mints runner-session ids, so this global idempotency key needs no repeated Sandbox column.
     runner_session_id: Mapped[str] = mapped_column(Text, primary_key=True)
-    sandbox_uid: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
     # A Thread retains prior sessions but exposes exactly one current command target.
     active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("true"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
