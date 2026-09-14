@@ -51,6 +51,10 @@ spec:
     replicaCount: 2
     strategy:
       type: RollingUpdate
+      rollingUpdate:
+        # Allow one old pod to be removed so a replacement can schedule when
+        # hard anti-affinity and the two-worker capacity would otherwise deadlock.
+        maxUnavailable: 1
 
     # Pin to OVH kimsufi nodes: required by the seaweedfs-ovh CSI (OVH-only)
     # and co-located with the OVH-HA forgejo-db (cnpg_conventions R5).
