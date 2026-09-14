@@ -43,7 +43,7 @@ spec:
         - GRANT CREATE, DROP TABLE, DROP VIEW ON langfuse.*
         - GRANT ALTER ADD COLUMN, ALTER MODIFY COLUMN, ALTER VIEW MODIFY QUERY ON langfuse.*
         - GRANT ALTER ADD INDEX, ALTER DROP INDEX, ALTER MATERIALIZE INDEX ON langfuse.*
-        - GRANT SELECT(database, table, total_replicas, active_replicas, queue_size, future_parts, is_session_expired, is_readonly) ON system.replicas
+        - GRANT SELECT ON system.replicas
         - GRANT SHOW COLUMNS ON system.replicas
         - GRANT SELECT(database, table, name, partition, partition_id, active, rows) ON system.parts
         - GRANT SELECT(database, table, is_done) ON system.mutations
