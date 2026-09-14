@@ -3,12 +3,6 @@ load("@rules_oci//oci:defs.bzl", "oci_image")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
-# Apt manifest + lockfile for rules_distroless (referenced from MODULE.bazel).
-exports_files([
-    "trixie_cpap_sync.yaml",
-    "trixie_cpap_sync.lock.json",
-])
-
 py_library(
     name = "card",
     srcs = ["card.py"],

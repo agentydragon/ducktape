@@ -5,6 +5,9 @@ through it without knowing which harness is behind it: the only harness-selectio
 sets is `SessionSpec.harness`. The wire definition is [`protocol.proto`](protocol.proto); this
 page is what the runner guarantees about it.
 
+The runner does not own product Threads, app command persistence, Kubernetes lifecycle, or the
+Thread-page projection. Their cross-layer contract is [Thread, runner, and harness layering](../docs/thread_layering.md).
+
 ## Initialization
 
 - `Initialize` receives integration-app configured shell source and executes it with `/bin/sh -eu`

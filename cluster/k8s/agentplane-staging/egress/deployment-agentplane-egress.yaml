@@ -83,7 +83,7 @@ spec:
               drop: ["ALL"]
       containers:
         - name: proxy
-          image: git.allegedly.works/ducktape-ci/agentplane-egress:devel-20260913223942-00ae0b0 # {"$imagepolicy": "flux-system:agentplane-egress"}
+          image: git.allegedly.works/ducktape-ci/agentplane-egress:devel-20260913232520-d3b62d6 # {"$imagepolicy": "flux-system:agentplane-egress"}
           imagePullPolicy: IfNotPresent
           args:
             - --namespace=agentplane-staging

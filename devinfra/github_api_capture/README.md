@@ -197,8 +197,9 @@ It checks successful nested TLS and authenticated readiness, no leaked parent
 authorization at the origin, rejection of wrong credentials or bad parent TLS,
 and absence of direct origin fallback when the parent is unavailable.
 
-The test image uses Debian `squid-openssl` `7.6-2`, pinned by the generated
-`squid.lock.json`; the host service uses the repository-pinned Nix Squid `7.6`.
+The test image uses Debian `squid-openssl` `7.6-2`, resolved from the snapshot
+source pinned in `MODULE.bazel`; the host service uses the repository-pinned Nix
+Squid `7.6`.
 The test also executes the actual CA preparation script against an old bundle
 and NSS nickname before switching to a new certificate with an old timestamp.
 Validate the rendered Home Manager unit and the pinned host binary before rollout

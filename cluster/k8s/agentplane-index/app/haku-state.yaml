@@ -38,7 +38,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: index
-          image: git.allegedly.works/ducktape-ci/agentplane-index:devel-20260913193010-4d7cda6 # {"$imagepolicy": "flux-system:agentplane-index"}
+          image: git.allegedly.works/ducktape-ci/agentplane-index:devel-20260913232207-d3b62d6 # {"$imagepolicy": "flux-system:agentplane-index"}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

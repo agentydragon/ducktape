@@ -42,7 +42,12 @@ in
     # A floor plus a ceiling is what a series attribute expresses and an alias
     # cannot. 7.1 is not LTS: when it leaves nixpkgs, re-derive the intersection
     # rather than reaching for `latest` again. 6.18 (LTS, and what the other nodes
-    # run) qualifies if `ba7fd1634228` reached its stable series — untested.
+    # run) does not currently carry `ba7fd1634228`, so it would require an
+    # adapted Xe/TTM backport before it could replace this pin.
+    #
+    # Keep the < 7.2 ceiling until a released Cilium version contains the
+    # FnSetRetval probe fix and live Linux 7.2 validation succeeds. The bump is
+    # tracked in https://github.com/agentydragon/ducktape/issues/6825.
     boot.kernelPackages = pkgs.linuxPackages_7_1;
 
     # Firmware for IPU and Intel Visual Sensing Controller

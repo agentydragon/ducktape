@@ -31,4 +31,7 @@ generic MCP, configured Identities, Connection grants, and OAuth/consent. The
 [workload authentication](../docs/workload_authentication.md),
 [launch presets](../docs/launch_presets.md), and [action policies](../docs/action_policies.md) own
 the other implemented contracts.
+[Thread, runner, and harness layering](../docs/thread_layering.md) is the authoritative target
+contract for the durable Thread-command/reconciliation work tracked in the DAG; it intentionally
+separates that pending work from the currently deployed session-shaped bridge.
 Deployed acceptance is tracked in the DAG; code or CI evidence alone does not satisfy it.
