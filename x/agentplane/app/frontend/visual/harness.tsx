@@ -24,9 +24,9 @@ import type {
   ThreadView,
 } from "../client";
 import type { SandboxesSnapshot, SandboxSnapshot, WatchHealth } from "../live";
-import { Direction, EventSchema, ItemKind, TurnStatus } from "../x/agentplane/protocol/event_pb";
-import { CommandSchema } from "../x/agentplane/protocol/command_pb";
-import { EventEntrySchema, type EventEntry } from "../x/agentplane/protocol/event_log_pb";
+import { Direction, EventSchema, ItemKind, TurnStatus } from "../../../protocol/event_pb";
+import { CommandSchema } from "../../../protocol/command_pb";
+import { EventEntrySchema, type EventEntry } from "../../../protocol/event_log_pb";
 import {
   AttachedSchema,
   Harness,
@@ -36,7 +36,7 @@ import {
   type Attached,
   type SessionSpec,
   type SessionSummary,
-} from "../x/agentplane/runner/protocol_pb";
+} from "../../../runner/protocol_pb";
 import { routes } from "./network";
 import { SCENARIOS, type Scenario } from "./scenarios";
 

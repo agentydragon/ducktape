@@ -4,8 +4,8 @@
  * began at, so the raw view can lay the whole session out as one stream in cursor order with the items in their
  * places.
  */
-import { ItemKind, TurnStatus, type Event } from "./x/agentplane/protocol/event_pb";
-import type { EventEntry } from "./x/agentplane/protocol/event_log_pb";
+import { ItemKind, TurnStatus, type Event } from "../../protocol/event_pb";
+import type { EventEntry } from "../../protocol/event_log_pb";
 
 export interface Item {
   id: string;

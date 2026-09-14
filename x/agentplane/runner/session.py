@@ -319,13 +319,13 @@ class Session:
         self.emit(event_pb2.DebugCheckpoint(name=name, command_id=command_id), sources=[])
         await asyncio.Event().wait()
 
-    async def turn_completed(self, turn_id: str, status: event_pb2.TurnStatus.ValueType, error: str = "") -> None:
+    async def turn_completed(self, turn_id: str, status: event_pb2.TurnStatus, error: str = "") -> None:
         """Translate one native terminal turn result and release commands waiting on it."""
         async with self._lock:
             self._record_turn_completed(turn_id, status, error)
             await self._reconcile_commands()
 
-    def _record_turn_completed(self, turn_id: str, status: event_pb2.TurnStatus.ValueType, error: str = "") -> None:
+    def _record_turn_completed(self, turn_id: str, status: event_pb2.TurnStatus, error: str = "") -> None:
         interrupt_command_id = self._interrupt_commands.pop(turn_id, "")
         observation = event_pb2.TurnCompleted(
             turn_id=turn_id,

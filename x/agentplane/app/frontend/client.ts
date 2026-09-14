@@ -10,8 +10,8 @@ import {
   type Attached,
   type SessionSpec,
   type SessionSummary,
-} from "./x/agentplane/runner/protocol_pb";
-import { CommandSchema } from "./x/agentplane/protocol/command_pb";
+} from "../../runner/protocol_pb";
+import { CommandSchema } from "../../protocol/command_pb";
 
 export const api: ReturnType<typeof createClient<paths>> = createClient<paths>({ baseUrl: "" });
 

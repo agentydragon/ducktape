@@ -1,34 +1,63 @@
-load("//devinfra/python:grpc.bzl", "py_grpc_library")
+load("@aspect_rules_ts//ts:proto.bzl", "ts_proto_library")
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
+load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files([
-    "command.proto",
-    "event.proto",
-    "event_log.proto",
-])
-
-# gazelle:resolve py x.agentplane.protocol.command_pb2 //x/agentplane/protocol:command_pb2
-py_grpc_library(
-    name = "command",
-    proto = "command.proto",
+proto_library(
+    name = "command_proto",
+    srcs = ["command.proto"],
 )
 
-# gazelle:resolve py x.agentplane.protocol.event_pb2 //x/agentplane/protocol:event_pb2
-py_grpc_library(
-    name = "event",
-    imports = [":command.proto"],
-    proto = "event.proto",
-    py_deps = [":command_pb2"],
+py_proto_library_with_mypy_stubs(
+    name = "command_pb2",
+    deps = [":command_proto"],
 )
 
-# gazelle:resolve py x.agentplane.protocol.event_log_pb2 //x/agentplane/protocol:event_log_pb2
-py_grpc_library(
-    name = "event_log",
-    imports = [
-        ":command.proto",
-        ":event.proto",
+ts_proto_library(
+    name = "command_pb",
+    copy_files = False,
+    node_modules = "//:node_modules",
+    proto = ":command_proto",
+)
+
+proto_library(
+    name = "event_proto",
+    srcs = ["event.proto"],
+    deps = [
+        ":command_proto",
+        "@protobuf//:timestamp_proto",
     ],
-    proto = "event_log.proto",
-    py_deps = [":event_pb2"],
+)
+
+py_proto_library_with_mypy_stubs(
+    name = "event_pb2",
+    deps = [":event_proto"],
+)
+
+ts_proto_library(
+    name = "event_pb",
+    copy_files = False,
+    node_modules = "//:node_modules",
+    proto = ":event_proto",
+    deps = [":command_pb"],
+)
+
+proto_library(
+    name = "event_log_proto",
+    srcs = ["event_log.proto"],
+    deps = [":event_proto"],
+)
+
+py_proto_library_with_mypy_stubs(
+    name = "event_log_pb2",
+    deps = [":event_log_proto"],
+)
+
+ts_proto_library(
+    name = "event_log_pb",
+    copy_files = False,
+    node_modules = "//:node_modules",
+    proto = ":event_log_proto",
+    deps = [":event_pb"],
 )

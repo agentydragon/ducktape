@@ -2,8 +2,8 @@ import { create, type MessageInitShape } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 
 import { EMPTY, eventOf, groupItems, reduce, timeline, type Item, type Row } from "./events";
-import { Direction, EventSchema, ItemKind, TurnStatus } from "./x/agentplane/protocol/event_pb";
-import { EventEntrySchema, type EventEntry } from "./x/agentplane/protocol/event_log_pb";
+import { Direction, EventSchema, ItemKind, TurnStatus } from "../../protocol/event_pb";
+import { EventEntrySchema, type EventEntry } from "../../protocol/event_log_pb";
 
 function event(
   cursor: number,

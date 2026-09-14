@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import grpc
 import pytest
@@ -27,15 +27,15 @@ from x.agentplane.runner.testing.scripted_model import ScriptedModel
 
 
 @pytest.fixture(params=[protocol_pb2.HARNESS_CLAUDE, protocol_pb2.HARNESS_CODEX], ids=["claude", "codex"])
-def harness(request: pytest.FixtureRequest) -> protocol_pb2.Harness.ValueType:
-    return protocol_pb2.Harness.ValueType(request.param)
+def harness(request: pytest.FixtureRequest) -> protocol_pb2.Harness:
+    return cast(protocol_pb2.Harness, request.param)
 
 
 ModelEndpoint = AnthropicMessages | OpenAIResponses
 
 
 @pytest.fixture
-async def endpoint(harness: protocol_pb2.Harness.ValueType) -> AsyncIterator[ModelEndpoint]:
+async def endpoint(harness: protocol_pb2.Harness) -> AsyncIterator[ModelEndpoint]:
     server: ModelEndpoint = AnthropicMessages() if harness == protocol_pb2.HARNESS_CLAUDE else OpenAIResponses()
     await server.start()
     try:
@@ -45,7 +45,7 @@ async def endpoint(harness: protocol_pb2.Harness.ValueType) -> AsyncIterator[Mod
 
 
 @pytest.fixture
-def model(harness: protocol_pb2.Harness.ValueType, endpoint: ModelEndpoint) -> ScriptedModel[Any]:
+def model(harness: protocol_pb2.Harness, endpoint: ModelEndpoint) -> ScriptedModel[Any]:
     if harness == protocol_pb2.HARNESS_CLAUDE:
         assert isinstance(endpoint, AnthropicMessages)
         return ClaudeModel(endpoint)
@@ -63,12 +63,12 @@ def workspace(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def spec(harness: protocol_pb2.Harness.ValueType, workspace: Path) -> protocol_pb2.SessionSpec:
+def spec(harness: protocol_pb2.Harness, workspace: Path) -> protocol_pb2.SessionSpec:
     return launches.spec(harness, workspace)
 
 
 @pytest.fixture
-def config(harness: protocol_pb2.Harness.ValueType, endpoint: ModelEndpoint, tmp_path: Path) -> RunnerConfig:
+def config(harness: protocol_pb2.Harness, endpoint: ModelEndpoint, tmp_path: Path) -> RunnerConfig:
     return launches.config(harness, endpoint.origin, state_dir=tmp_path / "state", home=tmp_path / "home")
 
 

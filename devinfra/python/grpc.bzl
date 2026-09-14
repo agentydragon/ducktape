@@ -1,82 +1,105 @@
-"""Python protobuf and gRPC modules from one `.proto`, with the stubs mypy reads.
+"""Typed Python service stubs where the available standard protobuf rules stop.
 
-The generator is the grpc project's own protoc and gRPC plugin as shipped in the `grpcio-tools`
-wheel, so the gencode matches the `protobuf` and `grpcio` runtimes in the lockfile by
-construction; `mypy-protobuf` adds the `.pyi` for messages and for the servicer and stub.
-
-Deviation from the Bazel `grpc` module's `py_grpc_library`: that rule builds grpc's C++ core to
-obtain the same plugin, and grpc 1.73 through 1.76 do not compile on the RBE worker toolchain
-(missing standard headers under its gcc, and 1.75 pins a Python 3.14 beta rules_python cannot
-resolve), so the wheel is the generator here.
+Messages use `@protobuf//bazel:py_proto_library`, which owns the proto import graph and generated
+message modules. The workspace has no compatible `grpc` Bazel module: grpc 1.76 cannot load against
+our protobuf 36 and newer grpc forces rules_python 2, which breaks the repository's rules_conda
+extension. This narrow rule therefore only generates the gRPC service module with the plugins from
+the pinned grpcio-tools and mypy-protobuf wheels.
 """
 
+load("@protobuf//bazel/common:proto_info.bzl", "ProtoInfo")
 load("//devinfra/python:defs.bzl", "py_library")
 
 _TOOLS = "//devinfra/python:protoc"
-_MYPY_PLUGIN = "//devinfra/python:protoc_gen_mypy"
 _MYPY_GRPC_PLUGIN = "//devinfra/python:protoc_gen_mypy_grpc"
 
-def py_grpc_library(name, proto, imports = [], py_deps = [], visibility = None):
-    """`<name>_pb2` and `<name>_pb2_grpc` libraries for `proto`, typed for mypy.
+def _py_grpc_service_codegen_impl(ctx):
+    proto_info = ctx.attr.proto[ProtoInfo]
+    sources = proto_info.direct_sources
+    if len(sources) != 1:
+        fail("Expected exactly one direct proto source", "proto")
 
-    Consumers import them as `<package>.<name>_pb2`; gazelle needs a `# gazelle:resolve py` directive
-    for each, since no source file backs them. `imports` makes project-local proto sources visible to
-    protoc; `py_deps` supplies their generated Python modules to this generated library.
+    source = sources[0]
 
-    Args:
-      name: the module stem, normally the proto's own stem.
-      proto: the `.proto` file in this package.
-      imports: project-local `.proto` labels this proto imports.
-      py_deps: generated Python protobuf labels corresponding to `imports`, for both runtime and
-        `.pyi` imports.
-      visibility: visibility of both libraries.
-    """
-    native.genrule(
-        name = name + "_codegen",
-        srcs = [proto] + imports,
-        outs = [
-            name + "_pb2.py",
-            name + "_pb2.pyi",
-            name + "_pb2_grpc.py",
-            name + "_pb2_grpc.pyi",
-        ],
-        cmd = " ".join([
-            "$(execpath %s)" % _TOOLS,
+    # This mirrors gRPC's own Bazel rules: the service generator receives the standard proto
+    # provider's import closure, while it generates code only for the direct service schema.
+    ctx.actions.run_shell(
+        command = " ".join([
+            ctx.executable._protoc.path,
             "-I.",
-            "--plugin=protoc-gen-mypy=$(execpath %s)" % _MYPY_PLUGIN,
-            "--plugin=protoc-gen-mypy_grpc=$(execpath %s)" % _MYPY_GRPC_PLUGIN,
-            "--python_out=$(BINDIR)",
-            "--mypy_out=$(BINDIR)",
-            "--grpc_python_out=$(BINDIR)",
-            "--mypy_grpc_out=$(BINDIR)",
-            "$(execpath %s)" % proto,
+            "--plugin=protoc-gen-mypy_grpc={}".format(ctx.executable._mypy_grpc_plugin.path),
+            "--grpc_python_out={}".format(ctx.bin_dir.path),
+            "--mypy_grpc_out={}".format(ctx.bin_dir.path),
+            source.path,
         ]),
-        tools = [_TOOLS, _MYPY_PLUGIN, _MYPY_GRPC_PLUGIN],
+        inputs = proto_info.transitive_sources,
+        tools = [
+            ctx.executable._protoc,
+            ctx.executable._mypy_grpc_plugin,
+        ],
+        outputs = [
+            ctx.outputs.py,
+            ctx.outputs.pyi,
+        ],
+        mnemonic = "PyGrpcServiceGen",
+        use_default_shell_env = True,
+    )
+
+    return DefaultInfo(files = depset([
+        ctx.outputs.py,
+        ctx.outputs.pyi,
+    ]))
+
+_py_grpc_service_codegen = rule(
+    implementation = _py_grpc_service_codegen_impl,
+    attrs = {
+        "module_name": attr.string(mandatory = True),
+        "proto": attr.label(
+            mandatory = True,
+            providers = [ProtoInfo],
+        ),
+        "_mypy_grpc_plugin": attr.label(
+            default = Label(_MYPY_GRPC_PLUGIN),
+            executable = True,
+            cfg = "exec",
+        ),
+        "_protoc": attr.label(
+            default = Label(_TOOLS),
+            executable = True,
+            cfg = "exec",
+        ),
+    },
+    outputs = {
+        "py": "%{module_name}.py",
+        "pyi": "%{module_name}.pyi",
+    },
+)
+
+def py_grpc_service_library(name, proto, py_proto, visibility = None):
+    """A typed `<name>` gRPC service library over a standard `py_proto_library`.
+
+    `proto` is a standard `proto_library`, whose `ProtoInfo` supplies the complete import closure;
+    callers never repeat imported sources. `py_proto` owns the corresponding message modules. This
+    rule deliberately owns only the service module that standard protobuf rules do not generate.
+    """
+    codegen_name = name + "_codegen"
+    _py_grpc_service_codegen(
+        name = codegen_name,
+        module_name = name,
+        proto = proto,
+        visibility = ["//visibility:private"],
     )
 
     # Generated code, not ours to lint.
-    generated_tags = ["no-lint", "no-mypy"]
     py_library(
-        name = name + "_pb2",
-        srcs = [name + "_pb2.py"],
-        pyi_srcs = [name + "_pb2.pyi"],
-        # rules_mypy obtains generated dependency roots from default runfiles, whereas rules_python
-        # deliberately excludes `pyi_srcs` from them. Retain this tiny generated stub as data so
-        # imported protobuf message types remain visible to type checks of downstream libraries.
-        data = [name + "_pb2.pyi"],
-        tags = generated_tags,
-        visibility = visibility,
-        deps = ["@pypi//protobuf"] + py_deps,
-        pyi_deps = py_deps,
-    )
-    py_library(
-        name = name + "_pb2_grpc",
-        srcs = [name + "_pb2_grpc.py"],
-        pyi_srcs = [name + "_pb2_grpc.pyi"],
-        tags = generated_tags,
+        name = name,
+        srcs = [name + ".py"],
+        pyi_srcs = [name + ".pyi"],
+        tags = ["no-lint", "no-mypy"],
         visibility = visibility,
         deps = [
-            ":" + name + "_pb2",
+            py_proto,
             "@pypi//grpcio",
         ],
+        pyi_deps = [py_proto],
     )

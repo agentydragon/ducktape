@@ -133,10 +133,7 @@ class Runner:
 
     @staticmethod
     async def _record_initialization_output(
-        stream: asyncio.StreamReader,
-        attempt: int,
-        source: protocol_pb2.InitializationStream.ValueType,
-        log: InitializationLog,
+        stream: asyncio.StreamReader, attempt: int, source: protocol_pb2.InitializationStream, log: InitializationLog
     ) -> None:
         while data := await stream.read(4096):
             log.append_output(attempt, source, data)

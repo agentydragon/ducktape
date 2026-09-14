@@ -20,7 +20,7 @@ RUNNER_BINARY = "_main/x/agentplane/runner/main_bin"
 TOKEN = "test-key"
 
 
-def spec(harness: protocol_pb2.Harness.ValueType, cwd: Path) -> protocol_pb2.SessionSpec:
+def spec(harness: protocol_pb2.Harness, cwd: Path) -> protocol_pb2.SessionSpec:
     if harness == protocol_pb2.HARNESS_CLAUDE:
         model = claude_harness.MODEL
     elif harness == protocol_pb2.HARNESS_CODEX:
@@ -41,7 +41,7 @@ def environment(home: Path) -> dict[str, str]:
     }
 
 
-def config(harness: protocol_pb2.Harness.ValueType, endpoint: str, *, state_dir: Path, home: Path) -> RunnerConfig:
+def config(harness: protocol_pb2.Harness, endpoint: str, *, state_dir: Path, home: Path) -> RunnerConfig:
     return RunnerConfig(
         state_dir=state_dir,
         environment=environment(home),
@@ -59,7 +59,7 @@ def codex_launch(endpoint: str) -> CodexLaunch:
 
 
 def runner_command(
-    harness: protocol_pb2.Harness.ValueType,
+    harness: protocol_pb2.Harness,
     endpoint: str,
     *,
     state_dir: Path,

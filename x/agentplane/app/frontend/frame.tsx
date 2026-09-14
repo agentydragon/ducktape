@@ -4,8 +4,8 @@ import { type JSX, useMemo } from "react";
 
 import "./frame.css";
 import { highlightJson, looksLikeJson } from "./json_view";
-import { Direction, type Event } from "./x/agentplane/protocol/event_pb";
-import { EventEntrySchema, type EventEntry, type EventOrigin } from "./x/agentplane/protocol/event_log_pb";
+import { Direction, type Event } from "../../protocol/event_pb";
+import { EventEntrySchema, type EventEntry, type EventOrigin } from "../../protocol/event_log_pb";
 
 /** EventEntry's required-by-contract payloads are optional in generated TypeScript. */
 function eventOf(entry: EventEntry): Event {

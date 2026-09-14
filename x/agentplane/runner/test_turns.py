@@ -199,7 +199,7 @@ async def test_claude_inputs_during_a_tool_are_confirmed_from_the_started_cohort
 
 
 async def test_model_command_reaches_the_first_upstream_request_that_selects_it(
-    client: RunnerClient, model: ScriptedModel, harness: protocol_pb2.Harness.ValueType, spec: protocol_pb2.SessionSpec
+    client: RunnerClient, model: ScriptedModel, harness: protocol_pb2.Harness, spec: protocol_pb2.SessionSpec
 ) -> None:
     """Drive the pinned harnesses through the loopback server, rather than trusting runner state."""
     attached = await client.attach("switch-model-1", spec=spec)

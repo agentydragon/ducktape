@@ -49,9 +49,7 @@ def _free_port() -> int:
 
 
 @pytest.fixture
-async def container(
-    harness: protocol_pb2.Harness.ValueType, endpoint: AnthropicMessages | OpenAIResponses
-) -> AsyncIterator[str]:
+async def container(harness: protocol_pb2.Harness, endpoint: AnthropicMessages | OpenAIResponses) -> AsyncIterator[str]:
     """One runner container on the host network, configured for `harness` against the scripted
     upstream; yields the runner's address."""
     tag = load_oci_image(IMAGE)
@@ -107,9 +105,7 @@ async def container(
         await _docker("rm", "--force", name)
 
 
-async def test_the_image_runs_a_turn(
-    container: str, harness: protocol_pb2.Harness.ValueType, model: ScriptedModel
-) -> None:
+async def test_the_image_runs_a_turn(container: str, harness: protocol_pb2.Harness, model: ScriptedModel) -> None:
     client = RunnerClient(container)
     attachment = await client.attach("image-1", spec=launches.spec(harness, Path(WORKSPACE)))
     assert attachment.attached.harness_state == protocol_pb2.HARNESS_STATE_RUNNING

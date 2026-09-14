@@ -15,7 +15,7 @@ import json
 import re
 from dataclasses import dataclass, field
 from http import HTTPStatus
-from typing import TypeVar
+from typing import TypeVar, cast
 from uuid import uuid4
 
 import httpx
@@ -60,7 +60,7 @@ class Turn:
 
     tool_outputs: list[str] = field(default_factory=list)
     text: list[str] = field(default_factory=list)
-    status: event_pb2.TurnStatus.ValueType | None = None
+    status: event_pb2.TurnStatus | None = None
 
     @property
     def answer(self) -> str:
@@ -111,7 +111,7 @@ class Agent:
         is the proto's own default and opens the session the runner would open without the field.
         """
         spec = protocol_pb2.SessionSpec(
-            harness=protocol_pb2.Harness.Value(harness.value),
+            harness=cast(protocol_pb2.Harness, protocol_pb2.Harness.Value(harness.value)),
             cwd=WORKING_DIRECTORY,
             model=model,
             reasoning_effort="low",

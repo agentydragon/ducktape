@@ -8,8 +8,8 @@ import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { sendInput } from "./client";
-import { EventSchema, ItemKind } from "./x/agentplane/protocol/event_pb";
-import { EventEntrySchema } from "./x/agentplane/protocol/event_log_pb";
+import { EventSchema, ItemKind } from "../../protocol/event_pb";
+import { EventEntrySchema } from "../../protocol/event_log_pb";
 import { SessionView } from "./session";
 
 vi.mock("./client", async (importOriginal) => ({

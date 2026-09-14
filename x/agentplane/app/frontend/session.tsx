@@ -55,9 +55,9 @@ import {
 import { FrameView } from "./frame";
 import { HighlightedText } from "./json_view";
 import { Markdown } from "./markdown";
-import { ItemKind, TurnStatus } from "./x/agentplane/protocol/event_pb";
-import { EventEntrySchema } from "./x/agentplane/protocol/event_log_pb";
-import { AttachedSchema } from "./x/agentplane/runner/protocol_pb";
+import { ItemKind, TurnStatus } from "../../protocol/event_pb";
+import { EventEntrySchema } from "../../protocol/event_log_pb";
+import { AttachedSchema } from "../../runner/protocol_pb";
 
 const KIND_LABELS: Partial<Record<ItemKind, string>> = {
   [ItemKind.ASSISTANT_TEXT]: "assistant",

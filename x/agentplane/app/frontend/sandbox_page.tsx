@@ -36,7 +36,7 @@ import { EgressSection } from "./egress";
 import { JsonView } from "./json_view";
 import { ConfirmDelete, DeleteButton, SuspendResume } from "./lifecycle";
 import { liveSandboxUrl, LiveStatus, useLive, type SandboxSnapshot } from "./live";
-import { HarnessState, SessionSpecSchema, type SessionSummary } from "./x/agentplane/runner/protocol_pb";
+import { HarnessState, SessionSpecSchema, type SessionSummary } from "../../runner/protocol_pb";
 
 const HARNESSES: { value: Harness; label: string }[] = [
   { value: "HARNESS_CLAUDE", label: "Claude" },

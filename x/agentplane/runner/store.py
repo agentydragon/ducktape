@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
+from typing import cast
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
@@ -43,7 +44,7 @@ class SessionRecord(BaseModel):
 
     def spec(self) -> protocol_pb2.SessionSpec:
         return protocol_pb2.SessionSpec(
-            harness=protocol_pb2.Harness.ValueType(protocol_pb2.Harness.Value(self.harness)),
+            harness=cast(protocol_pb2.Harness, protocol_pb2.Harness.Value(self.harness)),
             cwd=self.cwd,
             model=self.model,
             reasoning_effort=self.reasoning_effort,
