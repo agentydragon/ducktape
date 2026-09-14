@@ -12,12 +12,13 @@ apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Credentials
 metadata:
   name: pr-visuals-writer
-  namespace: seaweedfs
+  namespace: flux-system
 spec:
   seaweedRef:
     name: seaweedfs
+    namespace: seaweedfs
   identityRef:
     name: pr-visuals-writer
   secretRef:
-    name: s3-identity-pr-visuals-writer
+    name: pr-visuals-s3-credentials
   reclaimPolicy: Retain

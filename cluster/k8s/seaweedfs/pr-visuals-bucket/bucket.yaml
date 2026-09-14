@@ -2,9 +2,11 @@ apiVersion: seaweed.seaweedfs.com/v1
 kind: Bucket
 metadata:
   name: pr-visuals
-  namespace: seaweedfs
+  namespace: flux-system
 spec:
   name: pr-visuals
+  # The existing bucket is being handed to the tenant-local CR.
+  adoptExisting: true
   clusterRef:
     name: seaweedfs
     namespace: seaweedfs
