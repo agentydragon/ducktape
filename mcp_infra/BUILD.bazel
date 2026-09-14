@@ -102,6 +102,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "@pypi//fastmcp_slim",
+        "@pypi//httpx",
         "@pypi//httpx2",
     ],
 )
