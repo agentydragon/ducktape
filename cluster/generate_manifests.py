@@ -10,6 +10,9 @@ credentials or ask cdk8s to apply anything.
 import argparse
 from pathlib import Path
 
+from cdk8s import App, Chart, Yaml
+from cdk8s_plus_33 import ConfigMap
+
 from cluster.k8s.litellm.app.model_rosters import (
     ANTHROPIC_MODELS,
     ASTRA_CONTEXT_WINDOW,
@@ -273,8 +276,6 @@ def _yaml_config(config: dict) -> str:
     # cdk8s owns serialization of the application YAML as well as the
     # surrounding Kubernetes object. This is intentionally not PyYAML: the
     # app config is data, while cdk8s is the one manifest/YAML writer here.
-    from cdk8s import Yaml  # noqa: PLC0415
-
     return Yaml.format_objects([config])
 
 
@@ -341,11 +342,6 @@ def _config_maps() -> tuple[tuple[str, str, str, dict[str, object]], ...]:
 
 def generate_manifests(output_directory: Path) -> None:
     """Synthesize ordinary Kubernetes ConfigMaps into output_directory."""
-    # Keep jsii imports out of parity-only test startup: RBE test workers do not
-    # need Node, while the Bazel-local generator job does.
-    from cdk8s import App, Chart  # noqa: PLC0415
-    from cdk8s_plus_33 import ConfigMap  # noqa: PLC0415
-
     output_directory.mkdir(parents=True, exist_ok=True)
 
     app = App(outdir=str(output_directory))
