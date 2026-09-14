@@ -576,7 +576,7 @@ class HakuMcpActorResolver:
             grant_id = _grant_id_from_claims(token.claims)
             client_id = _required_nonblank_string(token.client_id, field_name="client_id")
             token_scopes = frozenset(token.scopes)
-        except KeyError, TypeError, ValueError:
+        except (KeyError, TypeError, ValueError):
             raise ToolError("Agent grant is invalid") from None
 
         try:
@@ -700,7 +700,7 @@ class HakuAgentOAuthProxy(RetryableRefreshOIDCProxy):
             _validate_grant_authorization(
                 authorization, grant_id=authorization.grant_id, client_id=client_id, scopes=granted_scopes
             )
-        except InvalidOidcPrincipalError, EnrollmentRejectedError, GrantRejectedError:
+        except (InvalidOidcPrincipalError, EnrollmentRejectedError, GrantRejectedError):
             await self._code_store.delete(key=authorization_code.code)
             raise TokenError("invalid_grant", _INVALID_GRANT) from None
         except ExchangeAlreadyClaimedError:
@@ -812,7 +812,7 @@ class HakuAgentOAuthProxy(RetryableRefreshOIDCProxy):
                 raise GrantRejectedError
             after = await self._resolve_authorization(reference, returned_scopes)
             _require_same_actor(authorization, after, scopes=returned_scopes)
-        except GrantRejectedError, KeyError, TypeError, ValueError:
+        except (GrantRejectedError, KeyError, TypeError, ValueError):
             return None
         except AgentGrantAuthorityUnavailableError as error:
             raise BearerVerificationUnavailableError("Agent authorization is temporarily unavailable") from error
