@@ -13,6 +13,9 @@ TOOLS = ["exec_command", "write_stdin", "request_user_input"]
 IN_FLIGHT_INPUT = "Reply with exactly: CODEX_CRASHED_IN_FLIGHT_REPLAYED"
 QUEUED_INPUT = "Reply with exactly: CODEX_CRASHED_QUEUE_FATE"
 RECOVERY_INPUT = "Reply with exactly: CODEX_CRASH_RESUME_OK"
+INTERRUPTED_RESUME_INPUT = "Reply with exactly: CODEX_INTERRUPTED_RESUME_INPUT"
+INTERRUPTED_RESUME_PARTIAL = "CODEX_INTERRUPTED_RESUME_PARTIAL"
+INTERRUPTED_RESUME_RECOVERY = "Reply with exactly: CODEX_INTERRUPTED_RESUME_RECOVERY_OK"
 
 
 async def test_baseline_turn(codex: CodexHarness, openai_responses: OpenAIResponses) -> None:
@@ -70,6 +73,70 @@ async def test_idle_resume_replays_the_thread_from_disk(codex: CodexHarness, ope
             await exchange.send(*stream.events)
         assert (await turn.completed()).params.turn.status is wire.TurnStatus.COMPLETED
     frames.assert_success(second.native_frames(), "IDLE_RESUME_OK")
+
+
+async def test_resume_after_an_interrupted_partial_turn_keeps_the_user_item_not_partial_output(
+    codex: CodexHarness, openai_responses: OpenAIResponses
+) -> None:
+    """A fresh Codex process resumes the interrupted user item, not its partial assistant output.
+
+    The interrupt has already completed before the process is killed.  This is therefore distinct
+    from the active-process crash test below, and pins the typed Responses request that a runner
+    sees after `thread/resume` rather than assuming interrupted stream state is durable.
+    """
+    async with codex.start(openai_responses, persist=True) as seeded:
+        seed_turn = await seeded.start_turn("Reply with exactly: CODEX_INTERRUPTED_RESUME_SEED_OK")
+        async with await openai_responses.await_next_request() as exchange:
+            await exchange.send(
+                *sse.response_stream(
+                    [sse.Reasoning("seed", "enc_interrupted_resume"), sse.Message("CODEX_INTERRUPTED_RESUME_SEED_OK")],
+                    model=MODEL,
+                ).events
+            )
+        assert (await seed_turn.completed()).params.turn.status is wire.TurnStatus.COMPLETED
+
+    async with codex.start(openai_responses, resume_thread_id=seeded.thread_id) as interrupted:
+        turn = await interrupted.start_turn(INTERRUPTED_RESUME_INPUT)
+        await turn.started()
+        async with await openai_responses.await_next_request() as exchange:
+            await exchange.send(
+                *sse.response_stream([sse.Message(INTERRUPTED_RESUME_PARTIAL)], model=MODEL)
+                .through("response.output_text.delta")
+                .events
+            )
+            assert (await interrupted.interrupt(turn)).error is None
+            await exchange.wait_client_closed()
+        assert (await turn.completed()).params.turn.status is wire.TurnStatus.INTERRUPTED
+        assert await interrupted.crash() < 0
+
+    assert [
+        frame.params.delta
+        for frame in frames.parse(interrupted.native_frames())
+        if isinstance(frame, wire.AgentMessageDelta)
+    ] == [INTERRUPTED_RESUME_PARTIAL]
+
+    async with codex.start(openai_responses, resume_thread_id=seeded.thread_id) as resumed:
+        recovery = await resumed.start_turn(INTERRUPTED_RESUME_RECOVERY)
+        async with await openai_responses.await_next_request() as exchange:
+            replay = exchange.request
+            assert replay.item_kinds == [
+                "message:user",
+                "reasoning",
+                "message:assistant",
+                "message:user",
+                "message:user",
+            ]
+            assert [message.text for message in replay.messages("user")] == [
+                "Reply with exactly: CODEX_INTERRUPTED_RESUME_SEED_OK",
+                INTERRUPTED_RESUME_INPUT,
+                INTERRUPTED_RESUME_RECOVERY,
+            ]
+            assert [message.text for message in replay.messages("assistant")] == ["CODEX_INTERRUPTED_RESUME_SEED_OK"]
+            assert replay.reasoning[0].encrypted_content == "enc_interrupted_resume"
+            await exchange.send(
+                *sse.response_stream([sse.Message("CODEX_INTERRUPTED_RESUME_RECOVERY_OK")], model=MODEL).events
+            )
+        assert (await recovery.completed()).params.turn.status is wire.TurnStatus.COMPLETED
 
 
 async def test_resume_after_crash_replays_the_in_flight_turn_but_not_its_live_followup(
