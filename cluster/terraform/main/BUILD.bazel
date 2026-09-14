@@ -13,7 +13,7 @@ tf_providers_versions(
     providers = {
         "proxmox": "bpg/proxmox:~>0.113.0",
         "talos": "siderolabs/talos:~>0.11.0",
-        "kubernetes": "hashicorp/kubernetes:~>2.38.0",
+        "kubernetes": "hashicorp/kubernetes:~>3.2.0",
         "helm": "hashicorp/helm:~>3.3.0",
         "local": "hashicorp/local:~>2.9.0",
         "null": "hashicorp/null:~>3.3.0",

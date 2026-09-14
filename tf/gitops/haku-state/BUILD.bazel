@@ -5,7 +5,7 @@ tf_providers_versions(
     providers = {
         "forgejo": "svalabs/forgejo:~>1.5",
         "http": "hashicorp/http:~>3.4",
-        "kubernetes": "hashicorp/kubernetes:~>2.38",
+        "kubernetes": "hashicorp/kubernetes:~>3.0",
         "random": "hashicorp/random:~>3.9.0",
     },
     tf_version = "1.9.8",
