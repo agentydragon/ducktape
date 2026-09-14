@@ -115,6 +115,7 @@ py_test(
         "//:conftest",
         "@pypi//fastmcp_slim",
         "@pypi//httpx",
+        "@pypi//httpx2",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
