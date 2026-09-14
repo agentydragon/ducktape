@@ -297,7 +297,6 @@ py_test(
         "//:conftest",
         "//haku/console:conftest",
         "//haku/console/oauth:token_state",
-        "@pypi//httpx2",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pytest_httpx2",  # keep: pytest plugin (auto-loaded), not a direct import
