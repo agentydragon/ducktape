@@ -6,9 +6,9 @@ from mitmproxy import exceptions, flow, http, io
 from mitmproxy.addons.save import Save
 from mitmproxy.websocket import WebSocketMessage
 
-from devinfra.github_proxy.auth import scrub
-from devinfra.github_proxy.metrics import CaptureChannel, Metrics
-from devinfra.github_proxy.session_ws_metadata import Event, SessionWebSocketMetadata
+from devinfra.github_proxy.central.auth import scrub
+from devinfra.github_proxy.central.metrics import CaptureChannel, Metrics
+from devinfra.github_proxy.central.session_ws_metadata import Event, SessionWebSocketMetadata
 
 
 class RedactedFlowWriter(io.FilteredFlowWriter):

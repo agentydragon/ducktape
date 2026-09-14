@@ -4,8 +4,8 @@ import pytest
 import pytest_bazel
 from mitmproxy import connection, flow, http, io
 
-from devinfra.github_proxy.capture import PrivateSave, SessionMetadata
-from devinfra.github_proxy.metrics import CaptureChannel, Metrics
+from devinfra.github_proxy.central.capture import PrivateSave, SessionMetadata
+from devinfra.github_proxy.central.metrics import CaptureChannel, Metrics
 
 
 @pytest.mark.parametrize("terminal", ["response", "error", "shutdown"])

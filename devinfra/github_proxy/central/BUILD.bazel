@@ -6,7 +6,7 @@ load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 py_binary(
     name = "main_bin",
-    main_module = "devinfra.github_proxy.main",
+    main_module = "devinfra.github_proxy.central.main",
     deps = [":main"],
 )
 
@@ -57,7 +57,7 @@ py_test(
     requires_docker = True,
     deps = [
         "//:conftest",
-        "//devinfra/github_proxy/testing:certificates",
+        "//devinfra/github_proxy/central/testing:certificates",
         "//util:oci",
         "//util/testing:container_logs",
         "@pypi//aiohttp",
@@ -102,7 +102,7 @@ py_library(
 py_library(
     name = "session_ws_metadata",
     srcs = ["session_ws_metadata.py"],
-    visibility = ["//devinfra/github_proxy:__pkg__"],
+    visibility = ["//devinfra/github_proxy/central:__pkg__"],
     deps = ["@pypi//mitmproxy"],
 )
 
@@ -196,7 +196,7 @@ py_test(
         ":metrics",
         ":runtime",
         "//:conftest",
-        "//devinfra/github_proxy/testing:certificates",
+        "//devinfra/github_proxy/central/testing:certificates",
         "@pypi//aiohttp",
         "@pypi//mitmproxy",
         "@pypi//prometheus_client",

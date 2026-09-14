@@ -2,7 +2,7 @@ load("//devinfra/python:defs.bzl", "py_library")
 
 package(
     default_testonly = True,
-    default_visibility = ["//devinfra/github_proxy:__pkg__"],
+    default_visibility = ["//devinfra/github_proxy/central:__pkg__"],
 )
 
 py_library(

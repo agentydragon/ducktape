@@ -19,11 +19,11 @@ from mitmproxy.proxy.server_hooks import ServerConnectionHookData
 from mitmproxy.tools.dump import DumpMaster
 from prometheus_client import generate_latest
 
-from devinfra.github_proxy.config import Settings
-from devinfra.github_proxy.destinations import OriginLoop, PublicOrigins
-from devinfra.github_proxy.metrics import Metrics
-from devinfra.github_proxy.runtime import create_master
-from devinfra.github_proxy.testing.certificates import certificates
+from devinfra.github_proxy.central.config import Settings
+from devinfra.github_proxy.central.destinations import OriginLoop, PublicOrigins
+from devinfra.github_proxy.central.metrics import Metrics
+from devinfra.github_proxy.central.runtime import create_master
+from devinfra.github_proxy.central.testing.certificates import certificates
 
 PASSWORD = "test-private-password-alpha-0123456789"
 SECOND_PASSWORD = "test-private-password-beta-0123456789"
