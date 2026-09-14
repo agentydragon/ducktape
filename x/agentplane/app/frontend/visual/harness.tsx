@@ -24,21 +24,19 @@ import type {
   ThreadView,
 } from "../client";
 import type { SandboxesSnapshot, SandboxSnapshot, WatchHealth } from "../live";
+import { Direction, EventSchema, ItemKind, TurnStatus } from "../x/agentplane/protocol/event_pb";
+import { CommandSchema } from "../x/agentplane/protocol/command_pb";
+import { EventEntrySchema, type EventEntry } from "../x/agentplane/protocol/event_log_pb";
 import {
   AttachedSchema,
-  Direction,
-  EventSchema,
-  HarnessState,
-  ItemKind,
   Harness,
+  HarnessState,
   SessionSpecSchema,
   SessionSummarySchema,
-  TurnStatus,
   type Attached,
-  type Event,
   type SessionSpec,
   type SessionSummary,
-} from "../protocol_pb";
+} from "../x/agentplane/runner/protocol_pb";
 import { routes } from "./network";
 import { SCENARIOS, type Scenario } from "./scenarios";
 
@@ -354,8 +352,8 @@ const SPEC: SessionSpec = create(SessionSpecSchema, {
 });
 
 const SESSIONS: SessionSummary[] = [
-  create(SessionSummarySchema, { sessionId: "s-1", spec: SPEC, lastSequence: 14n, harnessState: HarnessState.RUNNING }),
-  create(SessionSummarySchema, { sessionId: "s-0", spec: SPEC, lastSequence: 31n, harnessState: HarnessState.STOPPED }),
+  create(SessionSummarySchema, { sessionId: "s-1", spec: SPEC, lastCursor: 14n, harnessState: HarnessState.RUNNING }),
+  create(SessionSummarySchema, { sessionId: "s-0", spec: SPEC, lastCursor: 31n, harnessState: HarnessState.STOPPED }),
 ];
 
 /** The store's copy of the sessions: s-1 named, s-0 not, so both renderings are on the page. */
@@ -370,7 +368,7 @@ const THREADS: ThreadView[] = [
     created_at: ago(HOUR),
     name: "List the repository files",
     archived: false,
-    last_sequence: 14,
+    last_cursor: 14,
     last_event_at: ago(60_000),
     harness_state: "HARNESS_STATE_RUNNING",
   },
@@ -384,7 +382,7 @@ const THREADS: ThreadView[] = [
     created_at: ago(2 * HOUR),
     name: null,
     archived: false,
-    last_sequence: 31,
+    last_cursor: 31,
     last_event_at: ago(90 * 60_000),
     harness_state: "HARNESS_STATE_STOPPED",
   },
@@ -398,7 +396,7 @@ const THREADS: ThreadView[] = [
     created_at: ago(30 * 60_000),
     name: "Clean up the stale branch",
     archived: false,
-    last_sequence: 23,
+    last_cursor: 23,
     last_event_at: ago(10_000),
     harness_state: "HARNESS_STATE_RUNNING",
   },
@@ -421,7 +419,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
     created_at: ago(5 * 60_000),
     name: "Watch the image build",
     archived: false,
-    last_sequence: 2,
+    last_cursor: 2,
     last_event_at: ago(5 * 60_000),
     harness_state: "HARNESS_STATE_STOPPED",
   },
@@ -435,7 +433,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
     created_at: ago(47 * HOUR),
     name: "Investigate flaky CI",
     archived: false,
-    last_sequence: 9,
+    last_cursor: 9,
     last_event_at: ago(46 * HOUR),
     harness_state: "HARNESS_STATE_STOPPED",
   },
@@ -449,7 +447,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
     created_at: ago(72 * HOUR),
     name: "Why did the migration hang",
     archived: false,
-    last_sequence: 4,
+    last_cursor: 4,
     last_event_at: ago(70 * HOUR),
     harness_state: "HARNESS_STATE_STOPPED",
   },
@@ -463,7 +461,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
     created_at: ago(96 * HOUR),
     name: "Old flaky-test spike",
     archived: true,
-    last_sequence: 3,
+    last_cursor: 3,
     last_event_at: ago(95 * HOUR),
     harness_state: "HARNESS_STATE_STOPPED",
   },
@@ -612,14 +610,14 @@ const ACTIONS: ActionRequestView[] = [
 const ATTACHED: Attached = create(AttachedSchema, {
   sessionId: "s-1",
   spec: SPEC,
-  lastSequence: 14n,
+  lastCursor: 14n,
   harnessState: HarnessState.RUNNING,
 });
 
 const ATTACHED_STATES: Attached = create(AttachedSchema, {
   sessionId: "s-2",
   spec: SPEC,
-  lastSequence: 23n,
+  lastCursor: 23n,
   harnessState: HarnessState.RUNNING,
 });
 
@@ -655,11 +653,27 @@ const ANSWER = [
 ].join("\n");
 
 function event(
-  sequence: number,
+  cursor: number,
   observation: MessageInitShape<typeof EventSchema>["observation"],
   sources: number[] = []
-): Event {
-  return create(EventSchema, { sequence: BigInt(sequence), observation, sourceSequences: sources.map(BigInt) });
+): EventEntry {
+  return create(EventEntrySchema, {
+    cursor: BigInt(cursor),
+    origin: { sourceId: "visual-runner", sequence: BigInt(cursor) },
+    event: create(EventSchema, { observation, sourceSequences: sources.map(BigInt) }),
+  });
+}
+
+function admitted(commandId: string): MessageInitShape<typeof EventSchema>["observation"] {
+  return {
+    case: "commandAdmitted",
+    value: {
+      command: create(CommandSchema, {
+        commandId,
+        operation: { case: "submitInput", value: { text: "fixture input" } },
+      }),
+    },
+  };
 }
 
 function frame(
@@ -672,12 +686,12 @@ function frame(
 /**
  * Two turns, cited the way the runner cites: a derived event names the frame it was translated
  * from, while an input written to the harness and the harness's own noise name nothing. The
- * `session_raw` scenario reads them as one stream in sequence order — the stderr line between the
+ * `session_raw` scenario reads them as one stream in cursor order — the stderr line between the
  * second turn's reasoning and its answer is where the ordering earns its keep.
  */
-const EVENTS: Event[] = [
+const EVENTS: EventEntry[] = [
   event(1, { case: "harnessStarted", value: { resumed: false, pid: 7 } }),
-  event(2, { case: "commandReceived", value: { commandId: "i1" } }),
+  event(2, admitted("i1")),
   event(3, frame(Direction.TO_HARNESS, { type: "user", text: "List the repository files." })),
   event(4, frame(Direction.FROM_HARNESS, { type: "turn.started" })),
   event(5, { case: "turnStarted", value: { turnId: "t1" } }, [4]),
@@ -711,7 +725,7 @@ const EVENTS: Event[] = [
   event(19, { case: "itemCompleted", value: { itemId: "m#0", outcome: { case: "text", value: ANSWER } } }, [16]),
   event(20, frame(Direction.FROM_HARNESS, { type: "turn.completed" })),
   event(21, { case: "turnCompleted", value: { turnId: "t1", status: TurnStatus.COMPLETED } }, [20]),
-  event(22, { case: "commandReceived", value: { commandId: "i2" } }),
+  event(22, admitted("i2")),
   event(23, frame(Direction.TO_HARNESS, { type: "user", text: "Now read src." })),
   event(24, frame(Direction.FROM_HARNESS, { type: "turn.started" })),
   event(25, { case: "turnStarted", value: { turnId: "t2" } }, [24]),
@@ -744,9 +758,9 @@ const EVENTS: Event[] = [
  * tool call that already failed, and a message still queued mid-turn. Not meant to read as a
  * plausible conversation; each piece exists to make one dot's rendering show up in a diff.
  */
-const EVENTS_STATES: Event[] = [
+const EVENTS_STATES: EventEntry[] = [
   event(1, { case: "harnessStarted", value: { resumed: false, pid: 9 } }),
-  event(2, { case: "commandReceived", value: { commandId: "i1" } }),
+  event(2, admitted("i1")),
   event(3, { case: "turnStarted", value: { turnId: "t1" } }),
   event(4, {
     case: "harnessUserMessageConfirmed",
@@ -768,7 +782,7 @@ const EVENTS_STATES: Event[] = [
     value: { itemId: "m#0", outcome: { case: "text", value: "That branch doesn't exist." } },
   }),
   event(11, { case: "turnCompleted", value: { turnId: "t1", status: TurnStatus.COMPLETED } }),
-  event(12, { case: "commandReceived", value: { commandId: "i2" } }),
+  event(12, admitted("i2")),
   event(13, { case: "turnStarted", value: { turnId: "t2" } }),
   event(14, {
     case: "harnessUserMessageConfirmed",
@@ -798,8 +812,9 @@ const EVENTS_STATES: Event[] = [
     value: { itemId: "tool#2", outcome: { case: "tool", value: { output: "1 test regressed", succeeded: false } } },
   }),
   // Turn t2 stays active: the run above (r#0, tool#1, tool#2) is what an in-progress, partly-failed
-  // step looks like. i3 is never accepted: this is what a message queued mid-turn looks like.
-  event(23, { case: "commandReceived", value: { commandId: "i3" } }),
+  // step looks like. i3 is admitted but has not yet been confirmed by the harness: this is what a
+  // message queued mid-turn looks like.
+  event(23, admitted("i3")),
 ];
 
 // Only what a page still asks for: the sandboxes, their bindings and their threads arrive on the
@@ -982,11 +997,11 @@ class HarnessEventSource extends EventTarget {
     // the URL names -- everything but `s-2` gets the original two-turn script above.
     const isStatesSession = url.pathname.endsWith(`/sessions/${ATTACHED_STATES.sessionId}/events`);
     const attached = isStatesSession ? ATTACHED_STATES : ATTACHED;
-    const events = isStatesSession ? EVENTS_STATES : EVENTS;
+    const entries = isStatesSession ? EVENTS_STATES : EVENTS;
     this.dispatchEvent(new MessageEvent("attached", { data: toJsonString(AttachedSchema, attached) }));
-    for (const event of events) {
+    for (const entry of entries) {
       this.dispatchEvent(
-        new MessageEvent("event", { data: toJsonString(EventSchema, event), lastEventId: String(event.sequence) })
+        new MessageEvent("event", { data: toJsonString(EventEntrySchema, entry), lastEventId: String(entry.cursor) })
       );
     }
   }

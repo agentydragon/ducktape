@@ -17,7 +17,8 @@ from util.oci import OciImage, load_oci_image
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from x.agentplane.harness_tests.claude.messages import AnthropicMessages
 from x.agentplane.harness_tests.codex.responses import OpenAIResponses
-from x.agentplane.runner import protocol_pb2 as pb
+from x.agentplane.protocol import event_pb2
+from x.agentplane.runner import protocol_pb2
 from x.agentplane.runner.client import RunnerClient
 from x.agentplane.runner.testing import events, launches
 from x.agentplane.runner.testing.scripted_model import ScriptedModel, Text
@@ -48,7 +49,9 @@ def _free_port() -> int:
 
 
 @pytest.fixture
-async def container(harness: pb.Harness.ValueType, endpoint: AnthropicMessages | OpenAIResponses) -> AsyncIterator[str]:
+async def container(
+    harness: protocol_pb2.Harness.ValueType, endpoint: AnthropicMessages | OpenAIResponses
+) -> AsyncIterator[str]:
     """One runner container on the host network, configured for `harness` against the scripted
     upstream; yields the runner's address."""
     tag = load_oci_image(IMAGE)
@@ -83,9 +86,9 @@ async def container(harness: pb.Harness.ValueType, endpoint: AnthropicMessages |
         "--harness-env",
         "HOME",
     ]
-    if harness == pb.HARNESS_CLAUDE:
+    if harness == protocol_pb2.HARNESS_CLAUDE:
         command += ["--claude-binary", "/usr/local/bin/claude", "--anthropic-base-url", endpoint.origin]
-    elif harness == pb.HARNESS_CODEX:
+    elif harness == protocol_pb2.HARNESS_CODEX:
         command += ["--codex-binary", "/opt/codex/bin/codex", "--openai-base-url", f"{endpoint.origin}/v1"]
     else:
         raise ValueError(f"unsupported {harness=}")
@@ -104,15 +107,17 @@ async def container(harness: pb.Harness.ValueType, endpoint: AnthropicMessages |
         await _docker("rm", "--force", name)
 
 
-async def test_the_image_runs_a_turn(container: str, harness: pb.Harness.ValueType, model: ScriptedModel) -> None:
+async def test_the_image_runs_a_turn(
+    container: str, harness: protocol_pb2.Harness.ValueType, model: ScriptedModel
+) -> None:
     client = RunnerClient(container)
     attachment = await client.attach("image-1", spec=launches.spec(harness, Path(WORKSPACE)))
-    assert attachment.attached.harness_state == pb.HARNESS_STATE_RUNNING
+    assert attachment.attached.harness_state == protocol_pb2.HARNESS_STATE_RUNNING
     await attachment.send("input-1", "Reply with exactly: IMAGE_OK")
     await model.reply(await model.request(), Text("IMAGE_OK"))
     done = await attachment.until(events.turn_completed)
-    assert done.turn_completed.status == pb.TURN_STATUS_COMPLETED
-    (item_id,) = events.items(attachment.seen, pb.ITEM_KIND_ASSISTANT_TEXT)
+    assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
+    (item_id,) = events.items(attachment.seen, event_pb2.ITEM_KIND_ASSISTANT_TEXT)
     assert events.completed(attachment.seen, item_id).text == "IMAGE_OK"
     await attachment.stop_runner_session("stop-image")
     await attachment.drain_until_end()

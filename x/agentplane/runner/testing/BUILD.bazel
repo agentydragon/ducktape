@@ -35,7 +35,8 @@ py_library(
     name = "events",
     srcs = ["events.py"],
     deps = [
-        "//x/agentplane/runner:protocol_pb2",
+        "//x/agentplane/protocol:event_log_pb2",
+        "//x/agentplane/protocol:event_pb2",
         "@pypi//protobuf",
     ],
 )

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest_bazel
 
-from x.agentplane.runner import protocol_pb2 as pb
+from x.agentplane.runner import protocol_pb2
 from x.agentplane.runner.client import RunnerClient
 from x.agentplane.runner.testing import events
 from x.agentplane.runner.testing.scripted_model import ScriptedModel, Text
@@ -15,8 +15,8 @@ from x.agentplane.runner.testing.scripted_model import ScriptedModel, Text
 INSTRUCTIONS = "Standing order for this session: the operator's name is Wren."
 
 
-def with_instructions(spec: pb.SessionSpec, instructions: str) -> pb.SessionSpec:
-    return pb.SessionSpec(
+def with_instructions(spec: protocol_pb2.SessionSpec, instructions: str) -> protocol_pb2.SessionSpec:
+    return protocol_pb2.SessionSpec(
         harness=spec.harness,
         cwd=spec.cwd,
         model=spec.model,
@@ -26,7 +26,7 @@ def with_instructions(spec: pb.SessionSpec, instructions: str) -> pb.SessionSpec
 
 
 async def test_a_session_without_instructions_sends_none(
-    client: RunnerClient, model: ScriptedModel, spec: pb.SessionSpec
+    client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
 ) -> None:
     attachment = await client.attach("no-instructions-1", spec=spec)
     assert attachment.attached.spec.instructions == ""
@@ -40,7 +40,7 @@ async def test_a_session_without_instructions_sends_none(
 
 
 async def test_instructions_reach_the_model_on_every_turn_and_after_a_resume(
-    client: RunnerClient, model: ScriptedModel, spec: pb.SessionSpec
+    client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
 ) -> None:
     first = await client.attach("instructions-1", spec=with_instructions(spec, INSTRUCTIONS))
     await first.send("input-1", "Reply with exactly: SEED_OK")
@@ -55,10 +55,10 @@ async def test_instructions_reach_the_model_on_every_turn_and_after_a_resume(
     # A resume starts a fresh harness process, and the two carry the instructions there by different
     # routes: Claude Code re-sends them in its handshake, Codex replays the developer message its
     # thread stored when it was created. The runner SPEC has what that difference costs.
-    second = await client.attach("instructions-1", spec=first.attached.spec, after_sequence=first.cursor)
+    second = await client.attach("instructions-1", spec=first.attached.spec, after_cursor=first.cursor)
     assert second.attached.spec.instructions == INSTRUCTIONS
     started = await second.until(events.is_kind("harness_started"))
-    assert started.harness_started.resumed
+    assert started.event.harness_started.resumed
     await second.send("input-2", "Reply with exactly: RESUMED_OK")
     request = await model.request()
     assert INSTRUCTIONS in request.system_text

@@ -5,6 +5,7 @@ exports_files(
         "0001_trajectory_store.py",
         "0002_thread_archived.py",
         "0003_thread_harness.py",
+        "0004_followable_event_entries.py",
     ],
     visibility = ["//x/agentplane/app/migrations:__pkg__"],
 )
@@ -34,4 +35,10 @@ py_library(
         "@pypi//alembic",
         "@pypi//sqlalchemy",
     ],
+)
+
+py_library(
+    name = "0004_followable_event_entries",
+    srcs = ["0004_followable_event_entries.py"],
+    deps = ["@pypi//alembic"],
 )

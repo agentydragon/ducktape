@@ -41,6 +41,7 @@ import "./session.css";
 
 import {
   EMPTY,
+  eventOf,
   groupItems,
   reduce,
   timeline,
@@ -54,7 +55,9 @@ import {
 import { FrameView } from "./frame";
 import { HighlightedText } from "./json_view";
 import { Markdown } from "./markdown";
-import { AttachedSchema, EventSchema, ItemKind, TurnStatus } from "./protocol_pb";
+import { ItemKind, TurnStatus } from "./x/agentplane/protocol/event_pb";
+import { EventEntrySchema } from "./x/agentplane/protocol/event_log_pb";
+import { AttachedSchema } from "./x/agentplane/runner/protocol_pb";
 
 const KIND_LABELS: Partial<Record<ItemKind, string>> = {
   [ItemKind.ASSISTANT_TEXT]: "assistant",
@@ -403,10 +406,11 @@ export function SessionView({
       findThread(sandbox, sessionId).then(setThread, (reason: unknown) => setError(displayableError(reason)));
     });
     source.addEventListener("event", (message: MessageEvent<string>) => {
-      const event = fromJson(EventSchema, JSON.parse(message.data) as JsonValue);
+      const entry = fromJson(EventEntrySchema, JSON.parse(message.data) as JsonValue);
+      const event = eventOf(entry);
       if (event.observation.case === "modelChanged") setModel(event.observation.value.model);
-      if (event.observation.case === "commandRejected") setError(event.observation.value.reason);
-      setState((current) => reduce(current, event));
+      if (event.observation.case === "commandFailed") setError(event.observation.value.reason);
+      setState((current) => reduce(current, entry));
     });
     // The runner ending the stream is final: a reconnect would Open the session again, which
     // restarts a shut-down harness. Only a dropped connection is left to EventSource's own retry.
@@ -503,14 +507,14 @@ export function SessionView({
           defaults to its content's height as its floor. */}
       <ScrollArea style={{ flex: 1, minHeight: 0 }}>
         <Stack>
-          {/* Raw: the whole session in sequence order, so what happened between two items — a
+          {/* Raw: the whole session in cursor order, so what happened between two items — a
               stderr line, the harness starting — reads where it happened. Otherwise the turns,
               which group what the raw order interleaves. */}
           {showRaw ? (
-            timeline(state).map(({ event, row }) => (
-              <Fragment key={String(event.sequence)}>
+            timeline(state).map(({ entry, row }) => (
+              <Fragment key={String(entry.cursor)}>
                 {row && <RowView row={row} />}
-                <FrameView event={event} />
+                <FrameView entry={entry} />
               </Fragment>
             ))
           ) : (
@@ -529,7 +533,7 @@ export function SessionView({
                 </Stack>
               ))}
               {state.inputs
-                .filter((input) => input.state === "rejected")
+                .filter((input) => input.state === "failed")
                 .map((input) => (
                   <Text key={input.id} c="orange">
                     input {input.id} {input.state} {input.detail}

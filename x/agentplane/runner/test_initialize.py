@@ -8,7 +8,7 @@ import grpc
 import pytest
 import pytest_bazel
 
-from x.agentplane.runner import protocol_pb2 as pb
+from x.agentplane.runner import protocol_pb2
 from x.agentplane.runner.client import RunnerClient
 from x.agentplane.runner.config import RunnerConfig
 from x.agentplane.runner.service import serve
@@ -17,7 +17,7 @@ from x.agentplane.runner.service import serve
 # gazelle:include_dep @pypi//protobuf
 
 
-async def collect(call: grpc.aio.UnaryStreamCall) -> list[pb.InitializationEvent]:
+async def collect(call: grpc.aio.UnaryStreamCall) -> list[protocol_pb2.InitializationEvent]:
     return [event async for event in call]
 
 
@@ -36,7 +36,9 @@ async def test_initialize_executes_once_and_replays_its_output(tmp_path: Path) -
         await server.stop(0)
 
     assert [(event.sequence, event.attempt) for event in first] == [(1, 1), (2, 1)]
-    assert first[0].output == pb.InitializationOutput(stream=pb.INITIALIZATION_STREAM_STDOUT, data=b"ready\n")
+    assert first[0].output == protocol_pb2.InitializationOutput(
+        stream=protocol_pb2.INITIALIZATION_STREAM_STDOUT, data=b"ready\n"
+    )
     assert (first[-1].result.executed, first[-1].result.exit_code) == (True, 0)
     assert repeated == first
     assert (state / "workspaces/public-coder-ready").read_text() == "ready\n"
@@ -51,7 +53,7 @@ async def test_initialize_reconnect_replays_after_the_client_cursor(tmp_path: Pa
     try:
         disconnected = client.initialize_events(script)
         first = await disconnected.read()
-        assert isinstance(first, pb.InitializationEvent)
+        assert isinstance(first, protocol_pb2.InitializationEvent)
         disconnected.cancel()
         (state / "continue").touch()
         resumed = await collect(client.initialize_events(script, after_sequence=first.sequence))
@@ -62,7 +64,9 @@ async def test_initialize_reconnect_replays_after_the_client_cursor(tmp_path: Pa
 
     assert first.output.data == b"first\n"
     assert [event.sequence for event in resumed] == [2, 3]
-    assert resumed[0].output == pb.InitializationOutput(stream=pb.INITIALIZATION_STREAM_STDERR, data=b"second\n")
+    assert resumed[0].output == protocol_pb2.InitializationOutput(
+        stream=protocol_pb2.INITIALIZATION_STREAM_STDERR, data=b"second\n"
+    )
     assert resumed[1].result.exit_code == 0
 
 
@@ -118,7 +122,7 @@ async def test_failed_initialize_output_is_saved_and_the_same_script_may_be_retr
         b"".join(
             event.output.data
             for event in retried
-            if event.HasField("output") and event.output.stream == pb.INITIALIZATION_STREAM_STDERR
+            if event.HasField("output") and event.output.stream == protocol_pb2.INITIALIZATION_STREAM_STDERR
         )
         == b"broken\nbroken\n"
     )

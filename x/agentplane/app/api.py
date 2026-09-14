@@ -568,13 +568,13 @@ async def unarchive_thread(store: Store, thread_id: UUID) -> Response:
 async def thread_events(
     store: Store,
     thread_id: UUID,
-    after: Annotated[int, Query(ge=0, description="Events with a greater sequence.")] = 0,
+    after: Annotated[int, Query(ge=0, description="EventEntries with a greater cursor.")] = 0,
     limit: Annotated[int, Query(ge=1, le=10_000)] = 10_000,
 ) -> list[dict[str, object]]:
-    """The stored events as proto-JSON of the runner protocol's Event, in sequence order."""
+    """The stored EventEntries as proto-JSON, in cursor order."""
     if await store.get_thread(thread_id) is None:
         raise ThreadNotFoundError(thread_id)
-    return [MessageToDict(event) for event in await store.events(thread_id, after_sequence=after, limit=limit)]
+    return [MessageToDict(entry) for entry in await store.events(thread_id, after_cursor=after, limit=limit)]
 
 
 def create_app(

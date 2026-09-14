@@ -1,0 +1,34 @@
+load("//devinfra/python:grpc.bzl", "py_grpc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "command.proto",
+    "event.proto",
+    "event_log.proto",
+])
+
+# gazelle:resolve py x.agentplane.protocol.command_pb2 //x/agentplane/protocol:command_pb2
+py_grpc_library(
+    name = "command",
+    proto = "command.proto",
+)
+
+# gazelle:resolve py x.agentplane.protocol.event_pb2 //x/agentplane/protocol:event_pb2
+py_grpc_library(
+    name = "event",
+    imports = [":command.proto"],
+    proto = "event.proto",
+    py_deps = [":command_pb2"],
+)
+
+# gazelle:resolve py x.agentplane.protocol.event_log_pb2 //x/agentplane/protocol:event_log_pb2
+py_grpc_library(
+    name = "event_log",
+    imports = [
+        ":command.proto",
+        ":event.proto",
+    ],
+    proto = "event_log.proto",
+    py_deps = [":event_pb2"],
+)

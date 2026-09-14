@@ -16,21 +16,24 @@ _TOOLS = "//devinfra/python:protoc"
 _MYPY_PLUGIN = "//devinfra/python:protoc_gen_mypy"
 _MYPY_GRPC_PLUGIN = "//devinfra/python:protoc_gen_mypy_grpc"
 
-def py_grpc_library(name, proto, visibility = None):
+def py_grpc_library(name, proto, imports = [], py_deps = [], visibility = None):
     """`<name>_pb2` and `<name>_pb2_grpc` libraries for `proto`, typed for mypy.
 
     Consumers import them as `<package>.<name>_pb2`; gazelle needs a `# gazelle:resolve py` directive
-    for each, since no source file backs them. The proto may import only the well-known types bundled
-    with protoc: no other `.proto` is on its include path.
+    for each, since no source file backs them. `imports` makes project-local proto sources visible to
+    protoc; `py_deps` supplies their generated Python modules to this generated library.
 
     Args:
       name: the module stem, normally the proto's own stem.
       proto: the `.proto` file in this package.
+      imports: project-local `.proto` labels this proto imports.
+      py_deps: generated Python protobuf labels corresponding to `imports`, for both runtime and
+        `.pyi` imports.
       visibility: visibility of both libraries.
     """
     native.genrule(
         name = name + "_codegen",
-        srcs = [proto],
+        srcs = [proto] + imports,
         outs = [
             name + "_pb2.py",
             name + "_pb2.pyi",
@@ -57,9 +60,14 @@ def py_grpc_library(name, proto, visibility = None):
         name = name + "_pb2",
         srcs = [name + "_pb2.py"],
         pyi_srcs = [name + "_pb2.pyi"],
+        # rules_mypy obtains generated dependency roots from default runfiles, whereas rules_python
+        # deliberately excludes `pyi_srcs` from them. Retain this tiny generated stub as data so
+        # imported protobuf message types remain visible to type checks of downstream libraries.
+        data = [name + "_pb2.pyi"],
         tags = generated_tags,
         visibility = visibility,
-        deps = ["@pypi//protobuf"],
+        deps = ["@pypi//protobuf"] + py_deps,
+        pyi_deps = py_deps,
     )
     py_library(
         name = name + "_pb2_grpc",

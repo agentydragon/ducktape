@@ -5,10 +5,11 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
+from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
 
-from x.agentplane.runner import protocol_pb2 as pb
+from x.agentplane.runner import protocol_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -23,23 +24,26 @@ class SessionRecord(BaseModel):
     model: str
     reasoning_effort: str
     instructions: str = Field(default="", description="SessionSpec.instructions; empty for a session without any")
+    event_source_id: UUID = Field(
+        default_factory=uuid4, description="The runner session's stable EventOrigin.source_id across runner restarts."
+    )
     native_session_id: str | None = Field(
         default=None, description="Claude session id or Codex thread id, once the harness has assigned one"
     )
 
     @classmethod
-    def from_spec(cls, spec: pb.SessionSpec) -> SessionRecord:
+    def from_spec(cls, spec: protocol_pb2.SessionSpec) -> SessionRecord:
         return cls(
-            harness=pb.Harness.Name(spec.harness),
+            harness=protocol_pb2.Harness.Name(spec.harness),
             cwd=spec.cwd,
             model=spec.model,
             reasoning_effort=spec.reasoning_effort,
             instructions=spec.instructions,
         )
 
-    def spec(self) -> pb.SessionSpec:
-        return pb.SessionSpec(
-            harness=pb.Harness.ValueType(pb.Harness.Value(self.harness)),
+    def spec(self) -> protocol_pb2.SessionSpec:
+        return protocol_pb2.SessionSpec(
+            harness=protocol_pb2.Harness.ValueType(protocol_pb2.Harness.Value(self.harness)),
             cwd=self.cwd,
             model=self.model,
             reasoning_effort=self.reasoning_effort,

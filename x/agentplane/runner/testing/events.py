@@ -4,61 +4,67 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 
-from x.agentplane.runner import protocol_pb2 as pb
+from x.agentplane.protocol import event_log_pb2, event_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
 
 
-def kind(event: pb.Event) -> str:
-    return event.WhichOneof("observation") or ""
+def kind(entry: event_log_pb2.EventEntry) -> str:
+    return entry.event.WhichOneof("observation") or ""
 
 
-def of_kind(events: Sequence[pb.Event], name: str) -> list[pb.Event]:
-    return [event for event in events if kind(event) == name]
+def of_kind(entries: Sequence[event_log_pb2.EventEntry], name: str) -> list[event_log_pb2.EventEntry]:
+    return [entry for entry in entries if kind(entry) == name]
 
 
-def is_kind(name: str) -> Callable[[pb.Event], bool]:
-    return lambda event: kind(event) == name
+def is_kind(name: str) -> Callable[[event_log_pb2.EventEntry], bool]:
+    return lambda entry: kind(entry) == name
 
 
-def turn_completed(event: pb.Event) -> bool:
-    return kind(event) == "turn_completed"
+def turn_completed(entry: event_log_pb2.EventEntry) -> bool:
+    return kind(entry) == "turn_completed"
 
 
-def items(events: Sequence[pb.Event], item_kind: int) -> list[str]:
+def items(entries: Sequence[event_log_pb2.EventEntry], item_kind: int) -> list[str]:
     """Ids of the items started with `item_kind`, in order."""
     return [
-        event.item_started.item_id for event in of_kind(events, "item_started") if event.item_started.kind == item_kind
+        entry.event.item_started.item_id
+        for entry in of_kind(entries, "item_started")
+        if entry.event.item_started.kind == item_kind
     ]
 
 
-def streamed_text(events: Sequence[pb.Event], item_id: str) -> str:
+def streamed_text(entries: Sequence[event_log_pb2.EventEntry], item_id: str) -> str:
     return "".join(
-        event.text_delta.text for event in of_kind(events, "text_delta") if event.text_delta.item_id == item_id
+        entry.event.text_delta.text
+        for entry in of_kind(entries, "text_delta")
+        if entry.event.text_delta.item_id == item_id
     )
 
 
-def completed(events: Sequence[pb.Event], item_id: str) -> pb.ItemCompleted:
-    (event,) = [event for event in of_kind(events, "item_completed") if event.item_completed.item_id == item_id]
-    return event.item_completed
+def completed(entries: Sequence[event_log_pb2.EventEntry], item_id: str) -> event_pb2.ItemCompleted:
+    (entry,) = [entry for entry in of_kind(entries, "item_completed") if entry.event.item_completed.item_id == item_id]
+    return entry.event.item_completed
 
 
-def tool_arguments(events: Sequence[pb.Event], item_id: str) -> str:
-    (event,) = [event for event in of_kind(events, "tool_arguments") if event.tool_arguments.item_id == item_id]
-    return event.tool_arguments.arguments_json
+def tool_arguments(entries: Sequence[event_log_pb2.EventEntry], item_id: str) -> str:
+    (entry,) = [entry for entry in of_kind(entries, "tool_arguments") if entry.event.tool_arguments.item_id == item_id]
+    return entry.event.tool_arguments.arguments_json
 
 
-def assert_contiguous(events: Sequence[pb.Event]) -> None:
-    """Sequences are dense and increasing: the log has neither gaps nor duplicates."""
-    sequences = [event.sequence for event in events]
-    assert sequences == list(range(sequences[0], sequences[0] + len(sequences))), sequences
+def assert_contiguous(entries: Sequence[event_log_pb2.EventEntry]) -> None:
+    """Source-local cursors are dense and increasing: the log has neither gaps nor duplicates."""
+    cursors = [entry.cursor for entry in entries]
+    assert cursors == list(range(cursors[0], cursors[0] + len(cursors))), cursors
 
 
-def assert_sourced(events: Sequence[pb.Event]) -> None:
+def assert_sourced(entries: Sequence[event_log_pb2.EventEntry]) -> None:
     """Every event derived from harness output names the Native events it came from."""
     native = {
-        event.sequence for event in of_kind(events, "native") if event.native.direction == pb.DIRECTION_FROM_HARNESS
+        entry.origin.sequence
+        for entry in of_kind(entries, "native")
+        if entry.event.native.direction == event_pb2.DIRECTION_FROM_HARNESS
     }
     derived = (
         "item_started",
@@ -71,7 +77,7 @@ def assert_sourced(events: Sequence[pb.Event]) -> None:
         "harness_user_message_confirmed",
         "model_changed",
     )
-    for event in events:
-        if kind(event) in derived:
-            assert event.source_sequences, event
-            assert set(event.source_sequences) <= native, event
+    for entry in entries:
+        if kind(entry) in derived:
+            assert entry.event.source_sequences, entry
+            assert set(entry.event.source_sequences) <= native, entry

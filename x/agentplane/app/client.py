@@ -2,8 +2,8 @@
 
 The app's request and response models are what it speaks: `NewSandbox`, `EgressGrant` and
 `NewSession` go out, `SandboxView`, `BindingView` and `Decision` come back, and a session's events
-arrive as the runner protocol's own `Event` messages rather than as dictionaries to pick apart. A
-caller dispatches on `WhichOneof("observation")`, the same way the app and the runner do.
+arrive as shared `EventEntry` messages rather than as dictionaries to pick apart. A caller
+dispatches on `entry.event.WhichOneof("observation")`, the same way the app and the runner do.
 """
 
 from __future__ import annotations
@@ -23,7 +23,8 @@ from x.agentplane.app.decisions import Decision
 from x.agentplane.app.egress import BindingView, PolicyView
 from x.agentplane.app.inventory import NewSandbox, ProvisioningState, SandboxView
 from x.agentplane.app.presets import Harness, SandboxPresetView
-from x.agentplane.runner import protocol_pb2 as pb
+from x.agentplane.protocol import command_pb2, event_log_pb2
+from x.agentplane.runner import protocol_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -39,11 +40,11 @@ class SessionStreamError(Exception):
 class Attachment:
     """What opening a session answers: the session's spec, and where its log stands."""
 
-    attached: pb.Attached
+    attached: protocol_pb2.Attached
 
     @property
-    def last_sequence(self) -> int:
-        return self.attached.last_sequence
+    def last_cursor(self) -> int:
+        return self.attached.last_cursor
 
 
 class Client:
@@ -110,10 +111,10 @@ class Client:
     async def decisions(self, name: str) -> list[Decision]:
         return [Decision.model_validate(row) for row in await self._json("GET", f"/sandboxes/{name}/egress/decisions")]
 
-    async def open_session(self, name: str, session_id: str, spec: pb.SessionSpec) -> Attachment:
+    async def open_session(self, name: str, session_id: str, spec: protocol_pb2.SessionSpec) -> Attachment:
         body = NewSession(session_id=session_id, spec=MessageToDict(spec))
         answered = await self._json("POST", f"/sandboxes/{name}/sessions", json=body.model_dump())
-        return Attachment(ParseDict(answered, pb.Attached()))
+        return Attachment(ParseDict(answered, protocol_pb2.Attached()))
 
     async def open_bound_session(
         self, name: str, session_id: str, *, overrides: dict[str, object] | None = None
@@ -121,12 +122,14 @@ class Client:
         """Open with the concrete defaults recorded on the Sandbox, plus caller overrides."""
         body = NewSession(session_id=session_id, spec=overrides or {})
         answered = await self._json("POST", f"/sandboxes/{name}/sessions", json=body.model_dump())
-        return Attachment(ParseDict(answered, pb.Attached()))
+        return Attachment(ParseDict(answered, protocol_pb2.Attached()))
 
-    async def send_input(self, name: str, session_id: str, message: pb.Command) -> None:
+    async def send_input(self, name: str, session_id: str, message: command_pb2.Command) -> None:
         await self._json("POST", f"/sandboxes/{name}/sessions/{session_id}/inputs", json=MessageToDict(message))
 
-    async def events(self, name: str, session_id: str, *, after: int, read_seconds: float) -> AsyncIterator[pb.Event]:
+    async def events(
+        self, name: str, session_id: str, *, after: int, read_seconds: float
+    ) -> AsyncIterator[event_log_pb2.EventEntry]:
         """The session's events from `after`. Ends when the stream does; `read_seconds` bounds how
         long a single frame may take to arrive, so a wedged session fails a caller rather than
         hanging it.
@@ -161,12 +164,12 @@ class Client:
                         yield _event(payload)
 
 
-def _event(payload: str) -> pb.Event:
-    """One `event` frame's data as the protocol's own message; a payload that is not one says so."""
+def _event(payload: str) -> event_log_pb2.EventEntry:
+    """One `event` frame's data as an EventEntry; a payload that is not one says so."""
     try:
-        return ParseDict(json.loads(payload), pb.Event())
+        return ParseDict(json.loads(payload), event_log_pb2.EventEntry())
     except (ValueError, ParseError) as error:
-        raise SessionStreamError(f"not an Event: {error}: {payload[:400]!r}") from error
+        raise SessionStreamError(f"not an EventEntry: {error}: {payload[:400]!r}") from error
 
 
 def is_running(view: SandboxView) -> bool:

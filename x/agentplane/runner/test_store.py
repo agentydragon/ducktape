@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest_bazel
 
-from x.agentplane.runner import protocol_pb2 as pb
+from x.agentplane.runner import protocol_pb2
 from x.agentplane.runner.store import SessionRecord, SessionStore
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -14,8 +14,8 @@ from x.agentplane.runner.store import SessionRecord, SessionStore
 
 
 def test_a_stored_record_reproduces_the_spec_it_was_created_from(tmp_path: Path) -> None:
-    spec = pb.SessionSpec(
-        harness=pb.HARNESS_CLAUDE,
+    spec = protocol_pb2.SessionSpec(
+        harness=protocol_pb2.HARNESS_CLAUDE,
         cwd="/session/workspace",
         model="test-backend/test-model",
         reasoning_effort="low",

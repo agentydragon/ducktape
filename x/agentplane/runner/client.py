@@ -1,4 +1,4 @@
-"""A typed client over one Attach stream: the runner API as its callers see it."""
+"""Typed runner transport client over one Attach stream."""
 
 from __future__ import annotations
 
@@ -7,7 +7,8 @@ from collections.abc import Callable
 
 import grpc
 
-from x.agentplane.runner import protocol_pb2 as pb, protocol_pb2_grpc
+from x.agentplane.protocol import command_pb2, event_log_pb2
+from x.agentplane.runner import protocol_pb2, protocol_pb2_grpc
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -24,61 +25,71 @@ class StreamClosedError(Exception):
 
 class Attachment:
     def __init__(
-        self, call: grpc.aio.StreamStreamCall[pb.ClientMessage, pb.ServerMessage], attached: pb.Attached
+        self,
+        call: grpc.aio.StreamStreamCall[protocol_pb2.ClientMessage, protocol_pb2.ServerMessage],
+        attached: protocol_pb2.Attached,
     ) -> None:
         self._call = call
         self.attached = attached
-        self.seen: list[pb.Event] = []
+        self.seen: list[event_log_pb2.EventEntry] = []
 
     @property
     def cursor(self) -> int:
-        """The last sequence read; what a reconnecting Open passes as after_sequence."""
-        return self.seen[-1].sequence if self.seen else 0
+        """The last source-local cursor read; a reconnecting Open follows after it."""
+        return self.seen[-1].cursor if self.seen else 0
 
     async def send(self, command_id: str, text: str) -> None:
-        await self.command(pb.Command(command_id=command_id, submit_input=pb.SubmitInput(text=text)))
+        await self.command(command_pb2.Command(command_id=command_id, submit_input=command_pb2.SubmitInput(text=text)))
 
-    async def command(self, command: pb.Command) -> None:
-        await self._call.write(pb.ClientMessage(command=command))
+    async def command(self, command: command_pb2.Command) -> None:
+        await self._call.write(protocol_pb2.ClientMessage(command=command))
 
     async def interrupt(self, command_id: str, turn_id: str) -> None:
-        await self.command(pb.Command(command_id=command_id, interrupt_turn=pb.InterruptTurn(turn_id=turn_id)))
+        await self.command(
+            command_pb2.Command(command_id=command_id, interrupt_turn=command_pb2.InterruptTurn(turn_id=turn_id))
+        )
 
     async def switch_model(self, command_id: str, model: str) -> None:
-        await self.command(pb.Command(command_id=command_id, change_model=pb.ChangeModel(model=model)))
+        await self.command(
+            command_pb2.Command(command_id=command_id, change_model=command_pb2.ChangeModel(model=model))
+        )
 
     async def stop_runner_session(self, command_id: str) -> None:
-        await self.command(pb.Command(command_id=command_id, stop_runner_session=pb.StopRunnerSession()))
+        await self.command(
+            command_pb2.Command(command_id=command_id, stop_runner_session=command_pb2.StopRunnerSession())
+        )
 
     async def detach(self) -> None:
-        await self._call.write(pb.ClientMessage(detach=pb.Detach()))
+        await self._call.write(protocol_pb2.ClientMessage(detach=protocol_pb2.Detach()))
 
-    async def next_event(self) -> pb.Event:
+    async def next_entry(self) -> event_log_pb2.EventEntry:
         message = await self._call.read()
         if message is grpc.aio.EOF:
             raise StreamClosedError
-        assert isinstance(message, pb.ServerMessage)
+        assert isinstance(message, protocol_pb2.ServerMessage)
         if message.HasField("error"):
             raise RunnerError(message.error)
-        assert message.HasField("event"), "an Attached message after the first is a protocol violation"
-        self.seen.append(message.event)
-        return message.event
+        assert message.HasField("event_entry"), "an Attached message after the first is a protocol violation"
+        self.seen.append(message.event_entry)
+        return message.event_entry
 
-    async def until(self, accept: Callable[[pb.Event], bool], *, timeout_s: float = 60) -> pb.Event:
-        """Read events until one satisfies `accept`, and return it; earlier ones land in `seen`."""
+    async def until(
+        self, accept: Callable[[event_log_pb2.EventEntry], bool], *, timeout_s: float = 60
+    ) -> event_log_pb2.EventEntry:
+        """Read entries until one satisfies `accept`, and return it; earlier ones land in `seen`."""
 
-        async def read() -> pb.Event:
-            while not accept(event := await self.next_event()):
+        async def read() -> event_log_pb2.EventEntry:
+            while not accept(entry := await self.next_entry()):
                 pass
-            return event
+            return entry
 
         return await asyncio.wait_for(read(), timeout=timeout_s)
 
     async def drain_until_end(self) -> None:
-        """Read the remaining events of a stream the runner is ending."""
+        """Read the remaining entries of a stream the runner is ending."""
         try:
             while True:
-                await self.next_event()
+                await self.next_entry()
         except StreamClosedError:
             return
 
@@ -93,16 +104,20 @@ class RunnerClient:
         self._stub = protocol_pb2_grpc.RunnerStub(self._channel)
 
     async def attach(
-        self, session_id: str, *, spec: pb.SessionSpec | None = None, after_sequence: int = 0
+        self, session_id: str, *, spec: protocol_pb2.SessionSpec | None = None, after_cursor: int = 0
     ) -> Attachment:
         call = self._stub.Attach()
         await call.write(
-            pb.ClientMessage(open=pb.Open(session_id=session_id, spec=spec, after_sequence=after_sequence))
+            protocol_pb2.ClientMessage(
+                open=protocol_pb2.Open(
+                    session_id=session_id, spec=spec, follow=event_log_pb2.Follow(after_cursor=after_cursor)
+                )
+            )
         )
         message = await call.read()
         if message is grpc.aio.EOF:
             raise RunnerError("the runner ended the stream before answering Open")
-        assert isinstance(message, pb.ServerMessage)
+        assert isinstance(message, protocol_pb2.ServerMessage)
         if message.HasField("error"):
             raise RunnerError(message.error)
         assert message.HasField("attached"), "the first server message must be Attached"
@@ -110,13 +125,13 @@ class RunnerClient:
 
     def initialize_events(
         self, script: str, *, after_sequence: int = 0
-    ) -> grpc.aio.UnaryStreamCall[pb.InitializeRequest, pb.InitializationEvent]:
+    ) -> grpc.aio.UnaryStreamCall[protocol_pb2.InitializeRequest, protocol_pb2.InitializationEvent]:
         """Replay initialization events after a cursor, then follow live output through completion."""
-        return self._stub.Initialize(pb.InitializeRequest(script=script, after_sequence=after_sequence))
+        return self._stub.Initialize(protocol_pb2.InitializeRequest(script=script, after_sequence=after_sequence))
 
-    async def initialize(self, script: str) -> pb.InitializeResult:
+    async def initialize(self, script: str) -> protocol_pb2.InitializeResult:
         """Run or replay initialization and return its terminal result."""
-        result: pb.InitializeResult | None = None
+        result: protocol_pb2.InitializeResult | None = None
         async for event in self.initialize_events(script):
             if event.HasField("result"):
                 result = event.result
@@ -124,8 +139,8 @@ class RunnerClient:
             raise RunnerError("the initialization stream ended without a result")
         return result
 
-    async def list_sessions(self) -> list[pb.SessionSummary]:
-        response = await self._stub.ListSessions(pb.ListSessionsRequest())
+    async def list_sessions(self) -> list[protocol_pb2.SessionSummary]:
+        response = await self._stub.ListSessions(protocol_pb2.ListSessionsRequest())
         return list(response.sessions)
 
     async def close(self) -> None:

@@ -11,35 +11,41 @@ load("//devinfra/js:ts_library.bzl", "ts_library")
 
 _PROTOC = "//devinfra/python:protoc"
 
-def ts_proto_library(name, proto, tsconfig, visibility = None):
-    """`<name>`: a `ts_library` of `<stem>_pb.ts` generated from `proto`, a `.proto` in any package.
+def _source_path(proto):
+    if proto.startswith("//"):
+        package, filename = proto.removeprefix("//").split(":")
+        return package + "/" + filename
+    return proto
 
-    Consumers import `./<stem>_pb` from this package. The proto may import only the well-known
-    types bundled with protoc: no other `.proto` is on its include path.
+def ts_proto_library(name, proto, tsconfig, imports = [], visibility = None):
+    """`<name>`: generated TypeScript protobuf modules from `proto` and its imports.
+
+    Generated modules preserve project-relative paths below this package. `imports` are generated
+    alongside `proto`, so imports in generated TypeScript resolve without a hand-written schema.
 
     Args:
       name: the library's name.
       proto: label of the `.proto` file.
       tsconfig: the package's shared `ts_config`, as for `ts_library`.
+      imports: project-local `.proto` labels this proto imports, including transitive imports.
       visibility: visibility of the library.
     """
-    stem = proto.split(":")[-1].split("/")[-1].removesuffix(".proto")
+    protos = [proto] + imports
     plugin = "_" + name + "_protoc_gen_es"
     protoc_gen_es_bin.protoc_gen_es_binary(name = plugin)
     native.genrule(
         name = "_" + name + "_codegen",
-        srcs = [proto],
-        outs = [stem + "_pb.ts"],
+        srcs = protos,
+        outs = [_source_path(item).removesuffix(".proto") + "_pb.ts" for item in protos],
         # BAZEL_BINDIR is how a rules_js binary finds its runfiles when a genrule runs it.
         cmd = " ".join([
             "BAZEL_BINDIR=$(BINDIR)",
             "$(execpath %s)" % _PROTOC,
-            "-I$$(dirname $(execpath %s))" % proto,
+            "-I.",
             "--plugin=protoc-gen-es=$(execpath :%s)" % plugin,
             "--es_out=$(RULEDIR)",
             "--es_opt=target=ts",
-            "$(execpath %s)" % proto,
-        ]),
+        ] + ["$(execpath %s)" % item for item in protos]),
         tools = [_PROTOC, ":" + plugin],
     )
     ts_library(

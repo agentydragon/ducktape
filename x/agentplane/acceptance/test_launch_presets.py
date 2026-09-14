@@ -11,7 +11,7 @@ from x.agentplane.acceptance.agent import Agent
 from x.agentplane.app.client import Client
 from x.agentplane.app.inventory import SandboxView
 from x.agentplane.app.presets import Harness, ThreadDefaults
-from x.agentplane.runner import protocol_pb2 as pb
+from x.agentplane.runner import protocol_pb2
 
 PUBLIC_CODER = "public-coder"
 GITHUB_PUBLIC = "github-public"
@@ -48,9 +48,14 @@ async def test_public_coder_preset_launches_an_initialized_editable_codex_thread
         first.attached.spec.model,
         first.attached.spec.reasoning_effort,
         first.attached.spec.instructions,
-    ) == (pb.HARNESS_CODEX, preset.thread_defaults.model, preset.thread_defaults.reasoning_effort, INSTRUCTIONS)
+    ) == (
+        protocol_pb2.HARNESS_CODEX,
+        preset.thread_defaults.model,
+        preset.thread_defaults.reasoning_effort,
+        INSTRUCTIONS,
+    )
 
-    agent = Agent(client, sandbox=view.name, session_id=first_id, sequence=first.last_sequence)
+    agent = Agent(client, sandbox=view.name, session_id=first_id, cursor=first.last_cursor)
     turn = await agent.run(
         "Use a shell tool to read /state/workspaces/.agentplane-public-coder-ready, then briefly report its exact content."
     )

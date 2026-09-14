@@ -17,10 +17,14 @@ ts_config(
     src = "tsconfig.json",
 )
 
-# The runner protocol's messages, generated from protocol.proto itself: what the bridge's routes
-# carry as proto-JSON, and what the session view folds.
+# The bridge transports runner snapshots and the shared Command/Event log as proto-JSON.
 ts_proto_library(
     name = "protocol_pb",
+    imports = [
+        "//x/agentplane/protocol:command.proto",
+        "//x/agentplane/protocol:event.proto",
+        "//x/agentplane/protocol:event_log.proto",
+    ],
     proto = "//x/agentplane/runner:protocol.proto",
     tsconfig = TSCONFIG,
 )

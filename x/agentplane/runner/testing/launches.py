@@ -8,7 +8,7 @@ from pathlib import Path
 from util.bazel.runfiles import get_required_path
 from x.agentplane.harness_tests.claude import harness as claude_harness
 from x.agentplane.harness_tests.codex import harness as codex_harness
-from x.agentplane.runner import protocol_pb2 as pb
+from x.agentplane.runner import protocol_pb2
 from x.agentplane.runner.config import ClaudeLaunch, CodexLaunch, RunnerConfig
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -20,14 +20,14 @@ RUNNER_BINARY = "_main/x/agentplane/runner/main_bin"
 TOKEN = "test-key"
 
 
-def spec(harness: pb.Harness.ValueType, cwd: Path) -> pb.SessionSpec:
-    if harness == pb.HARNESS_CLAUDE:
+def spec(harness: protocol_pb2.Harness.ValueType, cwd: Path) -> protocol_pb2.SessionSpec:
+    if harness == protocol_pb2.HARNESS_CLAUDE:
         model = claude_harness.MODEL
-    elif harness == pb.HARNESS_CODEX:
+    elif harness == protocol_pb2.HARNESS_CODEX:
         model = codex_harness.MODEL
     else:
         raise ValueError(f"unsupported {harness=}")
-    return pb.SessionSpec(harness=harness, cwd=str(cwd), model=model, reasoning_effort=codex_harness.EFFORT)
+    return protocol_pb2.SessionSpec(harness=harness, cwd=str(cwd), model=model, reasoning_effort=codex_harness.EFFORT)
 
 
 def environment(home: Path) -> dict[str, str]:
@@ -41,12 +41,12 @@ def environment(home: Path) -> dict[str, str]:
     }
 
 
-def config(harness: pb.Harness.ValueType, endpoint: str, *, state_dir: Path, home: Path) -> RunnerConfig:
+def config(harness: protocol_pb2.Harness.ValueType, endpoint: str, *, state_dir: Path, home: Path) -> RunnerConfig:
     return RunnerConfig(
         state_dir=state_dir,
         environment=environment(home),
-        claude=claude_launch(endpoint) if harness == pb.HARNESS_CLAUDE else None,
-        codex=codex_launch(endpoint) if harness == pb.HARNESS_CODEX else None,
+        claude=claude_launch(endpoint) if harness == protocol_pb2.HARNESS_CLAUDE else None,
+        codex=codex_launch(endpoint) if harness == protocol_pb2.HARNESS_CODEX else None,
     )
 
 
@@ -59,7 +59,7 @@ def codex_launch(endpoint: str) -> CodexLaunch:
 
 
 def runner_command(
-    harness: pb.Harness.ValueType,
+    harness: protocol_pb2.Harness.ValueType,
     endpoint: str,
     *,
     state_dir: Path,
@@ -67,10 +67,10 @@ def runner_command(
 ) -> list[str]:
     """The runner as its own process, configured like `config` is."""
     command = [str(get_required_path(RUNNER_BINARY)), "--state-dir", str(state_dir)]
-    if harness == pb.HARNESS_CLAUDE:
+    if harness == protocol_pb2.HARNESS_CLAUDE:
         launch = claude_launch(endpoint)
         command += ["--claude-binary", str(launch.binary), "--anthropic-base-url", launch.base_url]
-    elif harness == pb.HARNESS_CODEX:
+    elif harness == protocol_pb2.HARNESS_CODEX:
         codex = codex_launch(endpoint)
         command += ["--codex-binary", str(codex.binary), "--openai-base-url", codex.base_url]
     else:
