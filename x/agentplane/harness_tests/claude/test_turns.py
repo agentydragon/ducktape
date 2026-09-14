@@ -8,6 +8,7 @@ from x.agentplane.harness_tests.claude import anthropic_sse as sse, frames
 from x.agentplane.harness_tests.claude.harness import MODEL, ClaudeHarness
 from x.agentplane.harness_tests.claude.messages import AnthropicMessages
 from x.agentplane.native.claude import wire
+from x.agentplane.native.claude.blocks import TextBlock, blocks_of
 from x.agentplane.native.claude.scenarios import SYSTEM_PROMPT, TOOLS
 
 CRASHED_SESSION = "00000000-0000-4000-8000-000000000001"
@@ -67,10 +68,10 @@ async def test_idle_resume_replays_the_transcript_from_disk(
     frames.assert_success(second.native_frames(), "IDLE_RESUME_OK")
 
 
-async def test_resume_after_an_interrupted_partial_turn_replays_only_completed_history(
+async def test_resume_after_an_interrupted_partial_turn_replays_only_completed_model_history(
     claude: ClaudeHarness, anthropic_messages: AnthropicMessages
 ) -> None:
-    """A terminated interrupted turn does not become context for a fresh Claude process.
+    """Claude emits a partial turn and marker but does not replay them to a fresh model request.
 
     This is deliberately distinct from a process killed while its turn is active below: the first
     harness observes the interrupt and closes its upstream stream before it is killed.  The resumed
@@ -94,13 +95,25 @@ async def test_resume_after_an_interrupted_partial_turn_replays_only_completed_h
             assert (await interrupted.interrupt(cancel_queued=False)).response.subtype == "success"
             await exchange.wait_client_closed()
         assert (await prompt.result()).is_error is True
+        interrupted_frames = frames.parse(interrupted.native_frames())
+        assert INTERRUPTED_RESUME_PARTIAL in frames.assistant_texts(interrupted.native_frames())
+        assert "[Request interrupted by user]" in [
+            block.text
+            for frame in interrupted_frames
+            if isinstance(frame, wire.UserFrame)
+            for block in blocks_of(frame.message.content)
+            if isinstance(block, TextBlock)
+        ]
         assert await interrupted.crash() < 0
 
     async with claude.start(anthropic_messages, resume_id=CRASHED_SESSION) as resumed:
         recovery = await resumed.send(INTERRUPTED_RESUME_RECOVERY)
         async with await anthropic_messages.await_next_request() as exchange:
             replay = exchange.request
-            assert replay.texts("user") == [SEED_INPUT, INTERRUPTED_RESUME_RECOVERY]
+            conversation_user_texts = [
+                text for text in replay.texts("user") if not text.startswith("<system-reminder>")
+            ]
+            assert conversation_user_texts == [SEED_INPUT, INTERRUPTED_RESUME_RECOVERY]
             assert replay.texts("assistant") == ["CRASH_RESUME_SEED_OK"]
             await exchange.send(*sse.message_stream([sse.Text("INTERRUPTED_RESUME_RECOVERY_OK")], model=MODEL).events)
         assert (await recovery.result()).result == "INTERRUPTED_RESUME_RECOVERY_OK"
