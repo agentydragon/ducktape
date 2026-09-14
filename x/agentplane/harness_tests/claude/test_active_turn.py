@@ -190,6 +190,7 @@ async def test_plain_interrupt_preserves_queued_inputs_for_the_next_native_reque
             stream = sse.message_stream([sse.Text(PLAIN_INTERRUPT_RESULT)], model=MODEL)
             events = run.events()
             await queued_exchange.send(*stream.events)
+            await queued_exchange.close()
             assert (await events.result()).result == PLAIN_INTERRUPT_RESULT
 
     parsed = [wire.parse_frame(frame) for frame in run.native_frames()]
