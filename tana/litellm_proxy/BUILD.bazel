@@ -172,7 +172,6 @@ py_console_script_binary(
         ":__init__",
         ":custom_handler",
         ":provider",
-        LITELLM_PROXY_PIP + "litellm",
     ] + LITELLM_PROXY_RUNTIME_DEPS,
 )
 
