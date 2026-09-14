@@ -20,17 +20,20 @@ original problem.
 The packaged skill contains three executable helpers:
 
 ```bash
-find-current-session.sh [claude|codex]
-analyze-session.sh [claude|codex|TRANSCRIPT.jsonl]
-conversation.sh [claude|codex] [TRANSCRIPT.jsonl]
+find_current_session.sh [claude|codex]
+analyze_session.sh [claude|codex|TRANSCRIPT.jsonl]
+conversation.sh [--max-display-text-length N] [claude|codex] [TRANSCRIPT.jsonl]
 ```
 
 `conversation.sh` prints every user window in chronological order. Each window
-contains the complete user text and up to two preceding assistant messages. It
-also prints compaction markers and continues scanning after them. Do not pipe it
-through `head`, `tail`, or a truncating pager when doing the recovery pass. For a
-large transcript, read the output in sequential chunks and verify the final user
-message number.
+contains up to two preceding assistant messages. Each user or assistant message
+is capped at 1,000 characters by default; longer text is cut in the middle and
+marked with an instruction for requesting a larger display. Pass
+`--max-display-text-length N` for a different cap (`N` must be at least 100).
+The transcript is still scanned in full, and compaction markers are still
+preserved. Do not pipe it through `head`, `tail`, or a truncating pager when
+doing the recovery pass. For a large transcript, read the output in sequential
+chunks and verify the final user message number.
 
 When running from a checkout rather than an installed package, use
 `skills/session_logs` in place of the installed skill directory below.
@@ -40,8 +43,8 @@ When running from a checkout rather than an installed package, use
 Validated on this machine with Claude Code `2.1.260`:
 
 ```bash
-CLAUDE_SESSION=$(~/.claude/skills/session_logs/find-current-session.sh claude)
-~/.claude/skills/session_logs/analyze-session.sh "$CLAUDE_SESSION"
+CLAUDE_SESSION=$(~/.claude/skills/session_logs/find_current_session.sh claude)
+~/.claude/skills/session_logs/analyze_session.sh "$CLAUDE_SESSION"
 ~/.claude/skills/session_logs/conversation.sh claude "$CLAUDE_SESSION"
 ```
 
@@ -59,8 +62,8 @@ traffic rather than user turns. Compaction is recorded as
 Validated on this machine with Codex CLI `0.153.4`:
 
 ```bash
-CODEX_SESSION=$(~/.codex/skills/session_logs/find-current-session.sh codex)
-~/.codex/skills/session_logs/analyze-session.sh "$CODEX_SESSION"
+CODEX_SESSION=$(~/.codex/skills/session_logs/find_current_session.sh codex)
+~/.codex/skills/session_logs/analyze_session.sh "$CODEX_SESSION"
 ~/.codex/skills/session_logs/conversation.sh codex "$CODEX_SESSION"
 ```
 
@@ -77,7 +80,7 @@ Harness-injected role-user setup blocks are retained for completeness and should
 be distinguished from the user's actual request while interpreting the result.
 
 If the session-id environment variable is missing or the helper reports an
-ambiguous candidate, inspect `analyze-session.sh` output and choose the file
+ambiguous candidate, inspect `analyze_session.sh` output and choose the file
 whose session id, working directory, and activity match this agent. Never guess
 from a post-compaction summary alone.
 
@@ -100,8 +103,8 @@ After running `conversation.sh`:
 For a compact inventory rather than the full conversation:
 
 ```bash
-~/.codex/skills/session_logs/analyze-session.sh codex
-~/.claude/skills/session_logs/analyze-session.sh claude
+~/.codex/skills/session_logs/analyze_session.sh codex
+~/.claude/skills/session_logs/analyze_session.sh claude
 ```
 
 Pass an explicit transcript path to either helper when reviewing an older
