@@ -151,7 +151,7 @@ tf.download(
     # Each version must satisfy the constraints of ALL modules that use it.
     # When modules disagree (e.g., ~>3.0 vs ~>3.7.0), use the tighter range.
     mirror = {
-        "authentik": "goauthentik/authentik:2026.2.0",
+        "authentik": "goauthentik/authentik:2026.8.0",
         "aws": "hashicorp/aws:6.64.0",
         # Intentionally omitted from the global provider mirror while
         # tf/gitops/haku-cloud-agent is parked. The community provider is
