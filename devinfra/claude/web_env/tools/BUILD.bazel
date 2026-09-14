@@ -55,6 +55,7 @@ py_library(
     deps = [
         "//util/bazel:workspace",
         "@pypi//requests",
+        "@pypi//urllib3",
     ],
 )
 
