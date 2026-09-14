@@ -1,6 +1,7 @@
 import tarfile
 from pathlib import Path
 
+import pytest
 import pytest_bazel
 
 from devinfra.ci import bb_runner_probe
@@ -81,6 +82,28 @@ def test_capture_bytes_records_truncation_without_stat_size(tmp_path: Path) -> N
     assert info["size"] == 3
     assert info["truncated"] is True
     assert dest.read_bytes() == b"abc"
+
+
+def test_filesystem_stats_records_capacity_commands(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run_command(argv: list[str], *, timeout: float = 2.0) -> bb_runner_probe.CommandResult:
+        del timeout
+        calls.append(argv)
+        return bb_runner_probe.CommandResult(argv=argv, returncode=0, stdout="filesystem stats", stderr="")
+
+    monkeypatch.setattr(bb_runner_probe, "run_command", fake_run_command)
+
+    result = bb_runner_probe.filesystem_stats()
+
+    assert [entry["path"] for entry in result] == list(bb_runner_probe.FILESYSTEM_PATHS)
+    assert all(entry["df"]["stdout"] == "filesystem stats" for entry in result)
+    assert all(entry["statfs"]["stdout"] == "filesystem stats" for entry in result)
+    assert calls == [
+        command
+        for path in bb_runner_probe.FILESYSTEM_PATHS
+        for command in (["df", "-P", "-k", path], ["stat", "-f", path])
+    ]
 
 
 def test_extract_digest() -> None:
