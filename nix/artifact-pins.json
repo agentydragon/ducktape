@@ -217,8 +217,8 @@
       "sha256": "vCpq6PH2eJEkOg2bkwHm/8I0p3XMO5e8GBmrim27zyc="
     },
     "hakuctl": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/hakuctl-19245dcb58ca/hakuctl-0.1.0-py3-none-any.whl",
-      "sha256": "GSRdy1jKf+0SGEctZzmDNY24gHwAyzr10qKeOBfA9/g="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/hakuctl-beb4d1fad2ab/hakuctl-0.1.0-py3-none-any.whl",
+      "sha256": "vrTR+tKr7sthZZhJT0eWvmmJzPR0xfifIsziIdYAbQo="
     },
     "skill-ci_latency": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-ci_latency-ce26d1bf34db/ci_latency.skill",
