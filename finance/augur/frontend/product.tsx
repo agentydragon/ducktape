@@ -120,7 +120,7 @@ function RolloutResultsPanel({
               { value: "fan", label: "Fans" },
               { value: "candles", label: "Candles" },
             ]}
-            onChange={setChartMode}
+            onChange={(value) => setChartMode(String(value))}
             data-product-chart-mode-toggle=""
           />
           {chartMode === "candles" && (

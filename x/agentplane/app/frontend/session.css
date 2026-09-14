@@ -91,3 +91,23 @@
   background-color: var(--mantine-color-yellow-light);
   color: var(--mantine-color-yellow-light-color);
 }
+
+/* Mantine 9 removed TypographyStylesProvider. Keep the transcript's rendered Markdown readable
+   without making the sanitized HTML depend on a deprecated component. */
+.agentplane-markdown :where(h1, h2, h3, h4, h5, h6) {
+  font-weight: 700;
+  line-height: 1.25;
+  margin-block: 1em 0.5em;
+}
+
+.agentplane-markdown :where(p, ul, ol, pre, blockquote, table) {
+  margin-block: 0.75em;
+}
+
+.agentplane-markdown :where(ul, ol) {
+  padding-inline-start: 1.5em;
+}
+
+.agentplane-markdown :where(code) {
+  font-family: var(--mantine-font-family-monospace);
+}
