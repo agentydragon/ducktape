@@ -8,13 +8,13 @@ from pathlib import Path
 import pytest_bazel
 from aiohttp import ClientConnectionError, ClientSession, ClientTimeout
 
-from devinfra.github_api_proxy.testing.certificates import certificates
+from devinfra.github_proxy.testing.certificates import certificates
 from util.oci import OciImage, load_oci_image
 from util.testing.container_logs import LoggedContainer
 
 
 def test_image_entrypoint_as_unprivileged_user() -> None:
-    tag = load_oci_image(OciImage("_main/devinfra/github_api_proxy/image_layout.rloc", "github-api-proxy:test"))
+    tag = load_oci_image(OciImage("_main/devinfra/github_proxy/image_layout.rloc", "github-api-proxy:test"))
     with LoggedContainer(tag, test_name="proxy-image-entrypoint", command=["--help"], network_mode="none") as container:
         wrapped = container.get_wrapped_container()
         assert wrapped.wait(timeout=15)["StatusCode"] == 0
@@ -23,7 +23,7 @@ def test_image_entrypoint_as_unprivileged_user() -> None:
 
 
 async def test_image_boots_with_readonly_secrets_and_persistent_capture(tmp_path: Path) -> None:
-    tag = load_oci_image(OciImage("_main/devinfra/github_api_proxy/image_layout.rloc", "github-api-proxy:test"))
+    tag = load_oci_image(OciImage("_main/devinfra/github_proxy/image_layout.rloc", "github-api-proxy:test"))
     public_tls = tmp_path / "public-tls"
     interception_ca = tmp_path / "interception-ca"
     client = tmp_path / "client"

@@ -1,7 +1,7 @@
 import pytest
 import pytest_bazel
 
-from devinfra.github_api_proxy.destinations import public_address
+from devinfra.github_proxy.destinations import public_address
 
 
 @pytest.mark.parametrize(

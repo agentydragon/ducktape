@@ -7,10 +7,10 @@ from pathlib import Path
 
 from aiohttp import web
 
-from devinfra.github_api_proxy.config import Settings
-from devinfra.github_api_proxy.destinations import OriginLoop
-from devinfra.github_api_proxy.metrics import Metrics
-from devinfra.github_api_proxy.runtime import create_master
+from devinfra.github_proxy.config import Settings
+from devinfra.github_proxy.destinations import OriginLoop
+from devinfra.github_proxy.metrics import Metrics
+from devinfra.github_proxy.runtime import create_master
 
 
 async def run(settings: Settings) -> None:

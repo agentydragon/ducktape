@@ -5,6 +5,7 @@ exports_files(["prepare_trust.sh"])
 py_library(
     name = "relay_config",
     srcs = ["relay_config.py"],
+    visibility = ["//:__pkg__"],
 )
 
 py_test(
@@ -13,7 +14,7 @@ py_test(
     srcs = ["test_relay_config.py"],
     data = [
         "prepare_trust.sh",
-        "//devinfra/github_api_proxy/host/testing:squid_image",
+        "//devinfra/github_proxy/host/testing:squid_image",
     ],
     requires_docker = True,
     deps = [

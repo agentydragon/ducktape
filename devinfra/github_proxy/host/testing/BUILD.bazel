@@ -3,7 +3,7 @@ load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
 
 package(
     default_testonly = True,
-    default_visibility = ["//devinfra/github_api_proxy/host:__pkg__"],
+    default_visibility = ["//devinfra/github_proxy/host:__pkg__"],
 )
 
 oci_image(

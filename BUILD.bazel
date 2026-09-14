@@ -338,6 +338,7 @@ py_package(
         "cluster.skills.hetzner_vnc_screenshot",
         "cluster.skills.proxmox_vm",
         "devinfra.gc",
+        "devinfra.github_proxy.host",
         "devinfra.ws",
         "difftree",
         "git_commit_ai",
@@ -361,6 +362,7 @@ py_package(
         "//cluster/skills/hetzner_vnc_screenshot:vnc_screenshot",
         "//cluster/skills/proxmox_vm:vm_interact",
         "//devinfra/gc:workspace_gc",
+        "//devinfra/github_proxy/host:relay_config",
         "//devinfra/ws:cli",
     ],
 )
@@ -376,6 +378,7 @@ py_wheel(
             "gmail-archiver = gmail_archiver.main:app",
             "hetzner-vnc-screenshot = cluster.skills.hetzner_vnc_screenshot.vnc_screenshot:app",
             "vm-interact = cluster.skills.proxmox_vm.vm_interact:app",
+            "github-proxy-relay-config = devinfra.github_proxy.host.relay_config:main",
             "ws = devinfra.ws.cli:main",
         ],
     },

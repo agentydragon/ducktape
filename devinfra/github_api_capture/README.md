@@ -191,7 +191,7 @@ targets; neither source activation nor a successful build removes these.
 
 ### Validation
 
-`bbr test //devinfra/github_api_proxy/host:test_relay_config` runs real Squid on RBE
+`bbr test //devinfra/github_proxy/host:test_relay_config` runs real Squid on RBE
 against a synthetic TLS-authenticated parent and independent HTTPS origin.
 It checks successful nested TLS and authenticated readiness, no leaked parent
 authorization at the origin, rejection of wrong credentials or bad parent TLS,
