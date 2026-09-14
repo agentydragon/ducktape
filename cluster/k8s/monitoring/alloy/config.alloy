@@ -4,11 +4,9 @@
 prometheus.operator.servicemonitors "cluster" {
   kubernetes_role = "endpointslice"
 
-  // The kube-prometheus-stack ServiceMonitors for apiserver, kubelet, coredns,
-  // kube-controller-manager and kube-scheduler authenticate with the pod's own
-  // service-account token and CA at their well-known paths. Alloy rejects any
-  // ServiceMonitor referencing a local file -- `bearerTokenFile`, and
-  // `tlsConfig.{ca,cert,key}File` -- unless this is set.
+  // kube-prometheus-stack ServiceMonitors use Secret-backed authorization or no
+  // authentication. Alloy rejects any ServiceMonitor referencing a local file --
+  // `bearerTokenFile`, and `tlsConfig.{ca,cert,key}File` -- unless this is set.
   //
   // A rejected ServiceMonitor produces no scrape config at all, so there is no
   // `up` series to fall to 0 and TargetDown cannot fire: the only trace is one
@@ -19,7 +17,8 @@ prometheus.operator.servicemonitors "cluster" {
   //
   // The guard is for multi-tenant clusters, where an untrusted party can create
   // a ServiceMonitor and make Alloy read arbitrary files off its own disk. Here
-  // ServiceMonitors arrive only through Flux.
+  // ServiceMonitors arrive only through Flux. It remains required by the Volsync
+  // ServiceMonitor, which still references the service-account token file.
   allow_arbitrary_file_access = true
 
   scrape {
@@ -45,13 +44,10 @@ prometheus.remote_write "mimir" {
 
 // --- Control-plane and kubelet scraping ---
 
-// kube-prometheus-stack's ServiceMonitors for these components authenticate with
-// the pod's own service-account token, and `prometheus.operator.servicemonitors`
-// refuses to read a file referenced by a ServiceMonitor unless
-// `allow_arbitrary_file_access` is set. Scraping them from config Alloy owns
-// keeps that file access scoped to these jobs instead of granting it to every
-// ServiceMonitor in the cluster, so the corresponding chart components are
-// switched off in ../stack/helmrelease.yaml.
+// kube-prometheus-stack's API-server and kubelet ServiceMonitors are disabled in
+// ../stack/helmrelease.yaml because Alloy scrapes those surfaces natively below.
+// The chart-managed controller-manager and scheduler monitors use the
+// Alloy-owned Secret, while CoreDNS is chart-managed without authentication.
 //
 // `job` and `metrics_path` are load-bearing, not cosmetic: the deployed
 // kubernetes-mixin rules select on job="kubelet" (35 rules), job="apiserver"
