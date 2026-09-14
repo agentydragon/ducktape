@@ -141,6 +141,19 @@ class ThreadCommand(Base):
     accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
 
+COMMAND_OBSERVATION_KINDS = frozenset(
+    {
+        "command_received",
+        "command_rejected",
+        "command_noop",
+        "harness_user_message_confirmed",
+        "model_changed",
+        "turn_completed",
+        "harness_exited",
+    }
+)
+
+
 @dataclass(frozen=True)
 class IngestionLease:
     sandbox: str
@@ -343,6 +356,21 @@ class TrajectoryStore:
                     )
                 )
             return deliveries
+
+    async def command_observations(self, thread_id: UUID) -> list[pb.Event]:
+        """The receipt and causal-effect portion of one Thread's runner event timeline.
+
+        Command state is a read projection, never another app-owned state machine: callers combine
+        these events with the immutable outbox record.  Keep conversation streaming events out of
+        this query so a pending-commands view does not grow with every text delta.
+        """
+        async with self._sessions() as session:
+            payloads = await session.scalars(
+                select(Event.payload)
+                .where(Event.thread_id == thread_id, Event.kind.in_(COMMAND_OBSERVATION_KINDS))
+                .order_by(Event.sequence)
+            )
+            return [ParseDict(payload, pb.Event()) for payload in payloads]
 
     async def last_sequence(self, thread_id: UUID) -> int:
         async with self._sessions() as session:

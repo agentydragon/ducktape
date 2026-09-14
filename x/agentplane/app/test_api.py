@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import socket
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
 import pytest_bazel
 from fastapi.testclient import TestClient
+from google.protobuf.timestamp_pb2 import Timestamp
 
 from x.agentplane.app.action_policy import ActionPolicyInventory
 from x.agentplane.app.api import create_app, upstream_http_error
@@ -41,6 +43,12 @@ from x.agentplane.runner import protocol_pb2 as pb
 
 
 TEST_MODELS = {Harness.CLAUDE: ["test-claude-model"], Harness.CODEX: ["test-codex-model"]}
+
+
+def _event(sequence: int, **observation: object) -> pb.Event:
+    at = Timestamp()
+    at.FromDatetime(datetime(2026, 9, 14, 12, 0, sequence, tzinfo=UTC))
+    return pb.Event(sequence=sequence, at=at, **observation)  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize("host", ["identity-provider.invalid", "actions.invalid"])
@@ -648,6 +656,77 @@ def test_models_lists_what_each_harness_may_run(client: TestClient) -> None:
         "HARNESS_CLAUDE": ["test-claude-model"],
         "HARNESS_CODEX": ["test-codex-model"],
     }
+
+
+async def test_thread_input_is_durable_and_its_state_is_projected_from_runner_events(
+    inventory: SandboxInventory,
+    bridge: RunnerBridge,
+    store: TrajectoryStore,
+    egress: EgressInventory,
+    decisions: DecisionsClient,
+    live_index: LiveIndex,
+    action_policy: ActionPolicyInventory,
+    reviewer: TokenReviewer,
+) -> None:
+    thread_id = await store.thread(
+        "live", "runner-session", pb.SessionSpec(harness=pb.HARNESS_CLAUDE, cwd="/w", model="test-claude-model")
+    )
+    app = create_app(
+        inventory, bridge, store, TEST_MODELS, egress, decisions, live_index, action_policy, reviewer=reviewer
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
+    ) as http:
+        accepted = await http.post(
+            f"/threads/{thread_id}/inputs", json={"command_id": "input-1", "text": "Inspect the red check."}
+        )
+        assert accepted.status_code == 202, accepted.text
+        accepted_view = accepted.json()
+        assert {key: value for key, value in accepted_view.items() if key != "accepted_at"} == {
+            "command": {"commandId": "input-1", "submitInput": {"text": "Inspect the red check."}},
+            "ordinal": 1,
+            "state": "accepted",
+            "reason": None,
+        }
+        assert accepted_view["accepted_at"]
+        assert (
+            await http.post(
+                f"/threads/{thread_id}/inputs", json={"command_id": "input-1", "text": "Inspect the red check."}
+            )
+        ).json()["ordinal"] == 1
+        assert (
+            await http.post(f"/threads/{thread_id}/inputs", json={"command_id": "input-1", "text": "different"})
+        ).status_code == 409
+        assert (await http.post(f"/threads/{thread_id}/inputs", json={"command_id": "missing-text"})).status_code == 422
+
+        lease = await store.acquire_ingestion("live", timedelta(minutes=1))
+        assert lease is not None
+        await store.record(
+            thread_id, [_event(1, command_received=pb.CommandReceived(command_id="input-1"))], lease=lease
+        )
+        received = await http.get(f"/threads/{thread_id}/commands")
+        assert received.status_code == 200
+        assert received.json()[0]["state"] == "received"
+
+        await store.record(
+            thread_id,
+            [
+                _event(
+                    2,
+                    harness_user_message_confirmed=pb.HarnessUserMessageConfirmed(
+                        harness_message_id="native-user-1",
+                        text="Inspect the red check.",
+                        origin_command_ids=["input-1"],
+                        turn_id="turn-1",
+                    ),
+                )
+            ],
+            lease=lease,
+        )
+        confirmed = await http.get(f"/threads/{thread_id}/commands")
+        assert confirmed.status_code == 200
+        assert confirmed.json()[0]["state"] == "confirmed"
+        assert (await http.get("/threads/00000000-0000-0000-0000-000000000000/commands")).status_code == 404
 
 
 async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
