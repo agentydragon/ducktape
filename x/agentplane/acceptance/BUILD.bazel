@@ -1,6 +1,9 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
-package(default_visibility = ["//x/agentplane:__subpackages__"])
+package(
+    default_testonly = True,
+    default_visibility = ["//x/agentplane:__subpackages__"],
+)
 
 # gazelle:resolve py x.agentplane.runner.protocol_pb2 //x/agentplane/runner:protocol_pb2
 
