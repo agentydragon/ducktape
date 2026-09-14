@@ -6,6 +6,7 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack
+from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
@@ -14,7 +15,7 @@ import httpx
 import httpx2
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
-from google.protobuf.json_format import MessageToDict
+from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from x.agentplane.action_service.client import OperatorActionServiceClient
@@ -71,7 +72,14 @@ from x.agentplane.app.oidc import OIDCSettings, build_oauth, operator_session
 from x.agentplane.app.operator_sessions import OperatorSessionMiddleware
 from x.agentplane.app.presets import Harness, PresetCatalog, SandboxBinding, SandboxPresetView
 from x.agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown
-from x.agentplane.app.trajectory import ThreadNotFoundError, ThreadView, TrajectoryStore
+from x.agentplane.app.trajectory import (
+    ThreadCommandConflictError,
+    ThreadCommandSnapshot,
+    ThreadNotFoundError,
+    ThreadView,
+    TrajectoryStore,
+)
+from x.agentplane.runner import protocol_pb2 as pb
 from x.agentplane.runner.client import RunnerError
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -499,6 +507,35 @@ class ThreadRename(BaseModel):
         return value
 
 
+class ThreadCommandView(BaseModel):
+    """An accepted durable desired command; actual receipt/effect remains in runner Events."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    command: dict[str, object]
+    ordinal: int
+    accepted_at: datetime
+
+
+def _thread_command_view(snapshot: ThreadCommandSnapshot) -> ThreadCommandView:
+    return ThreadCommandView(
+        command=MessageToDict(snapshot.command), ordinal=snapshot.ordinal, accepted_at=snapshot.accepted_at
+    )
+
+
+def _thread_command(body: dict[str, object]) -> pb.Command:
+    """Accept the runner protocol's canonical Command JSON as durable app intent."""
+    try:
+        command = ParseDict(body, pb.Command())
+    except ParseError as error:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"not a Command: {error}") from error
+    if not command.command_id or command.WhichOneof("operation") is None:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, "a Thread command needs a command id and exactly one operation"
+        )
+    return command
+
+
 @threads.get("")
 async def list_threads(
     store: Store,
@@ -509,6 +546,31 @@ async def list_threads(
     """Every persisted thread, newest first; a thread outlives its sandbox. Both filters together
     name at most one thread: a session's."""
     return await store.list_threads(sandbox=sandbox, session_id=session_id, include_archived=include_archived)
+
+
+@threads.get("/{thread_id}/commands")
+async def thread_commands(store: Store, thread_id: UUID) -> list[ThreadCommandView]:
+    """Desired commands in durable per-Thread order, before their runner receipt/effect Events."""
+    if await store.get_thread(thread_id) is None:
+        raise ThreadNotFoundError(thread_id)
+    return [_thread_command_view(command) for command in await store.thread_commands(thread_id)]
+
+
+@threads.post("/{thread_id}/commands", status_code=status.HTTP_202_ACCEPTED)
+async def request_thread_command(
+    store: Store, thread_id: UUID, body: dict[str, object], catalog: Annotated[ModelCatalog, Depends(_models)]
+) -> ThreadCommandView:
+    """Commit a generic desired runner command; a reconciler delivers it later."""
+    command = _thread_command(body)
+    if command.HasField("change_model"):
+        thread = await store.get_thread(thread_id)
+        if thread is None:
+            raise ThreadNotFoundError(thread_id)
+        if not command.change_model.model or command.change_model.model not in catalog[thread.harness]:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT, "model is incompatible with this Thread's harness"
+            )
+    return _thread_command_view(await store.request_thread_command(thread_id, command))
 
 
 class ThreadsWithSandboxes(BaseModel):
@@ -648,6 +710,10 @@ def create_app(
     @app.exception_handler(ThreadNotFoundError)
     async def _thread_not_found(_request: Request, error: ThreadNotFoundError) -> JSONResponse:
         return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"detail": str(error)})
+
+    @app.exception_handler(ThreadCommandConflictError)
+    async def _thread_command_conflict(_request: Request, error: ThreadCommandConflictError) -> JSONResponse:
+        return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": str(error)})
 
     @app.get("/healthz", include_in_schema=False)
     async def healthz() -> Response:

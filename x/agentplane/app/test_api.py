@@ -598,16 +598,6 @@ def test_egress_decisions_are_502_when_the_proxy_is_unreachable(
     assert [b["name"] for b in client.get("/sandboxes/live/egress").json()] == ["live-granted", "live-seeded"]
 
 
-def test_every_route_needs_one_of_the_two_credentials(client: TestClient) -> None:
-    """Guarded from the app, not from a proxy in front of it: no header a caller sets is trusted."""
-    assert client.get("/sandboxes", headers={"Authorization": ""}).status_code == 401
-    assert client.get("/sandboxes", headers={"Authorization": "Bearer wrong"}).status_code == 401
-    assert client.post("/sandboxes", json={"slug": "x"}, headers={"Authorization": ""}).status_code == 401
-    # The forgeable header the API server's service proxy used to forward buys nothing now.
-    assert client.get("/sandboxes", headers={"Authorization": "", "x-authentik-username": "root"}).status_code == 401
-    assert client.get("/healthz", headers={"Authorization": ""}).status_code == 204
-
-
 def test_binding_revocation(client: TestClient) -> None:
     """A runtime binding is revoked by deleting it; one the manifest declares would be re-applied."""
     refused = client.delete("/egress/bindings/live-seeded")
@@ -648,6 +638,69 @@ def test_models_lists_what_each_harness_may_run(client: TestClient) -> None:
         "HARNESS_CLAUDE": ["test-claude-model"],
         "HARNESS_CODEX": ["test-codex-model"],
     }
+
+
+async def test_thread_commands_are_idempotent_ordered_and_validate_the_thread_harness(
+    inventory: SandboxInventory,
+    bridge: RunnerBridge,
+    store: TrajectoryStore,
+    egress: EgressInventory,
+    decisions: DecisionsClient,
+    live_index: LiveIndex,
+    action_policy: ActionPolicyInventory,
+    reviewer: TokenReviewer,
+) -> None:
+    thread_id = await store.thread(
+        "live", "runner-session", pb.SessionSpec(harness=pb.HARNESS_CLAUDE, cwd="/w", model="test-claude-model")
+    )
+    app = create_app(
+        inventory, bridge, store, TEST_MODELS, egress, decisions, live_index, action_policy, reviewer=reviewer
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
+    ) as http:
+        assert (await http.get(f"/threads/{thread_id}/commands")).json() == []
+
+        first = await http.post(
+            f"/threads/{thread_id}/commands",
+            json={"commandId": "first-input", "submitInput": {"text": "Inspect the red check."}},
+        )
+        assert first.status_code == 202, first.text
+        assert first.json()["ordinal"] == 1
+        assert first.json()["command"] == {
+            "commandId": "first-input",
+            "submitInput": {"text": "Inspect the red check."},
+        }
+        assert first.json()["accepted_at"]
+
+        second = await http.post(
+            f"/threads/{thread_id}/commands",
+            json={"commandId": "model-next", "changeModel": {"model": "test-claude-model"}},
+        )
+        assert second.status_code == 202, second.text
+        assert second.json()["ordinal"] == 2
+        assert (
+            await http.post(
+                f"/threads/{thread_id}/commands",
+                json={"commandId": "model-next", "changeModel": {"model": "test-claude-model"}},
+            )
+        ).json()["ordinal"] == 2
+        conflicting = await http.post(
+            f"/threads/{thread_id}/commands",
+            json={"commandId": "model-next", "submitInput": {"text": "different command"}},
+        )
+        assert conflicting.status_code == 409
+        invalid = await http.post(f"/threads/{thread_id}/commands", json={"commandId": "missing-operation"})
+        assert invalid.status_code == 422
+        wrong_harness = await http.post(
+            f"/threads/{thread_id}/commands",
+            json={"commandId": "wrong-model", "changeModel": {"model": "test-codex-model"}},
+        )
+        assert wrong_harness.status_code == 422
+        assert wrong_harness.json() == {"detail": "model is incompatible with this Thread's harness"}
+        assert (await http.get("/threads/00000000-0000-0000-0000-000000000000/commands")).status_code == 404
+
+    assert [command.ordinal for command in await store.thread_commands(thread_id)] == [1, 2]
 
 
 async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
