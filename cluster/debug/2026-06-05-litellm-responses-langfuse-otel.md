@@ -1,15 +1,33 @@
-# LiteLLM `/v1/responses` does not emit Langfuse OTEL traces
+# LiteLLM `/v1/responses` Langfuse OTEL tracing
 
 **Date**: 2026-06-05
-**Status**: Open upstream/LiteLLM issue. Cluster wiring is good for
-chat-completions, but LiteLLM's Responses-to-chat bridge did not produce
-Langfuse traces for the z.ai model path. Measured against `litellm:1.86.3`; the
-cluster runs `1.90.2` today (<../k8s/litellm/app/deployment.yaml>) and the
-finding has not been re-verified against it.
+**Status**: Closed for the currently deployed ChatGPT Responses route. The
+original z.ai Responses-to-chat bridge finding remains a historical limitation
+for routes configured with `use_chat_completions_api = true`; it is not a
+claim that every LiteLLM `/v1/responses` route drops Langfuse traces.
 
-## Symptom
+## Current verification (2026-09-14)
 
-Cluster LiteLLM is configured with:
+The current cluster was re-tested after the original report. The repository
+pins LiteLLM `1.100.1` (`tana/litellm_proxy/requirements.in`), and the live
+proxy is running a current custom `devel` image.
+
+A bounded request to `chatgpt/oai-responses/gpt-5.6-luna` returned HTTP 200. It
+produced a normal Langfuse trace with two legacy observations (`GENERATION`
+`litellm_request` plus `SPAN` `raw_gen_ai_request`) and two corresponding
+`events_full` rows from the OTEL path. The successful trace was created at
+`2026-09-14 21:44:21 UTC` in `langfuse-litellm-project`.
+
+This closes the current ChatGPT Responses route finding and confirms that the
+Langfuse dual-write path sees it. It does not establish that the old z.ai
+bridge path is fixed; that route still needs an upstream LiteLLM change or a
+separate current-version repro before it can be treated as durable history.
+
+## Historical symptom
+
+This section records the original LiteLLM `1.86.3` z.ai bridge repro.
+
+The tested cluster configuration was:
 
 - deployment image: `litellm/litellm:1.86.3`
 - `litellm_settings.callbacks: ["langfuse_otel"]`
@@ -17,7 +35,7 @@ Cluster LiteLLM is configured with:
 - Langfuse public/secret keys reflected from `langfuse/langfuse-secrets` into
   the `litellm` namespace
 
-`/v1/chat/completions` calls through `glm-4.6` write traces to Langfuse.
+`/v1/chat/completions` calls through `glm-4.6` wrote traces to Langfuse.
 `/v1/responses` calls through the same model return `200 OK`, but write no
 trace or observation rows.
 
@@ -85,7 +103,7 @@ final Langfuse OTEL success span. The proxy's non-streaming return path does
 not independently dispatch final success logging, so no Langfuse row is
 created even though the model request succeeds.
 
-## Newer version check
+## Historical newer-version check
 
 Checked upstream source on 2026-06-05:
 
@@ -101,8 +119,10 @@ Both still have the same relevant structure:
 - `utils.py` still has no sync-wrapper early return for `"aresponses"` in the
   normal post-call branch.
 
-So upgrading from `1.86.3` to `1.87.1` or `1.88.0-rc.3` should not be expected
-to fix Langfuse tracing for this path.
+So upgrading from `1.86.3` to `1.87.1` or `1.88.0-rc.3` was not expected to
+fix Langfuse tracing for that path. This source comparison predates the
+current `1.100.1` deployment and is not a verdict on the current ChatGPT
+Responses route tested above.
 
 Primary sources checked:
 
@@ -114,15 +134,17 @@ Primary sources checked:
 
 ## Implication for `props/`
 
-Do not rely on Langfuse traces as durable history for `props/` calls that go
-through LiteLLM `/v1/responses` until this is fixed.
+Do not generalize the original z.ai bridge failure to every `props/` call. The
+current ChatGPT Responses route is now verified above. Calls that still go
+through the old `use_chat_completions_api = true` bridge should not be treated
+as durable Langfuse history until that route is separately re-tested or fixed.
 
 The `props/` client can still send correlation fields in OpenAI metadata, but
-those fields will not land in Langfuse on the current LiteLLM Responses bridge.
-Use one of these instead:
+those fields will not land in Langfuse on the old
+`use_chat_completions_api = true` bridge. Use one of these instead:
 
-- continue using `/v1/chat/completions` for calls that must be logged in
-  Langfuse now
+- continue using `/v1/chat/completions` for calls on the unverified z.ai bridge
+  that must be logged in Langfuse now
 - patch/custom-build LiteLLM so the Responses-to-chat bridge emits a final
   Responses success event
 - wait for an upstream LiteLLM fix and retest with the marker query above
