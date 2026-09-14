@@ -1131,7 +1131,7 @@ go_sdk = use_extension(
     "go_sdk",
     dev_dependency = True,
 )
-go_sdk.download(version = "1.26.4")
+go_sdk.download(version = "1.27.1")
 go_sdk.nogo(nogo = "//devinfra/lint:nogo")
 
 # ─ Go dependencies ───────────────────────────────────────────────────────
