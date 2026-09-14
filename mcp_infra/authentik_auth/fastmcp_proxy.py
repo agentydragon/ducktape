@@ -66,7 +66,7 @@ def _upstream_oauth_rejection(exc: BaseException | None) -> bool:
     refresh token, missing JTI mapping — i.e. normal client churn that never
     reached Authentik, and must not fire the upstream-failure alert.
     """
-    return isinstance(exc, OAuth2Error) or isinstance(exc, (httpx.HTTPStatusError, httpx2.HTTPStatusError))
+    return isinstance(exc, (OAuth2Error, httpx.HTTPStatusError, httpx2.HTTPStatusError))
 
 
 class RetryableJWTVerifier(JWTVerifier):
