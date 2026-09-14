@@ -9,6 +9,7 @@ import logging
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from datetime import timedelta
 from typing import Annotated
+from uuid import UUID
 
 import grpc
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response, status
@@ -23,7 +24,6 @@ from x.agentplane.app.live import LiveIndex
 from x.agentplane.app.presets import Harness, PresetCatalog
 from x.agentplane.app.shutdown import Shutdown
 from x.agentplane.app.trajectory import FeedEnd, FeedError, IngestionLease, IngestionLeaseLostError, TrajectoryStore
-from x.agentplane.protocol import command_pb2
 from x.agentplane.runner import protocol_pb2
 from x.agentplane.runner.client import Attachment, RunnerClient, RunnerError, StreamClosedError
 
@@ -37,6 +37,7 @@ RECONCILE_S = 2
 LEASE_DURATION = timedelta(seconds=30)
 AddressOf = Callable[[str], Awaitable[str]]
 DiscoverSandboxes = Callable[[], Awaitable[list[str]]]
+SandboxUidOf = Callable[[str], UUID | None]
 
 
 class SandboxNotReachableError(Exception):
@@ -72,11 +73,20 @@ def runner_address(index: LiveIndex, port: int) -> AddressOf:
 class Feed:
     """One lease owner's ingestion connection. Browsers never subscribe to this object."""
 
-    def __init__(self, *, session_id: str, client: RunnerClient, store: TrajectoryStore, lease: IngestionLease):
+    def __init__(
+        self,
+        *,
+        session_id: str,
+        client: RunnerClient,
+        store: TrajectoryStore,
+        lease: IngestionLease,
+        sandbox_uid: UUID | None,
+    ):
         self.session_id = session_id
         self.client = client
         self.store = store
         self.lease = lease
+        self.sandbox_uid = sandbox_uid
         self.task: asyncio.Task[None] | None = None
 
     async def run(self) -> None:
@@ -85,7 +95,9 @@ class Feed:
             async with asyncio.timeout(10):
                 attachment = await self.client.attach(self.session_id)
             attached = attachment.attached
-            thread_id = await self.store.thread(self.lease.sandbox, self.session_id, attached.spec)
+            thread_id = await self.store.thread(
+                self.lease.sandbox, self.session_id, attached.spec, sandbox_uid=self.sandbox_uid
+            )
             stored = await self.store.last_cursor(thread_id)
             if stored > attached.last_cursor:
                 if await self.store.feed_state(thread_id) is None:
@@ -132,11 +144,13 @@ class RunnerBridge:
         store: TrajectoryStore,
         discover_sandboxes: DiscoverSandboxes | None = None,
         sandbox_changes: Changes | None = None,
+        sandbox_uid_of: SandboxUidOf = lambda _sandbox: None,
     ) -> None:
         self._address_of = address_of
         self._store = store
         self._discover_sandboxes = discover_sandboxes
         self._sandbox_changes = sandbox_changes
+        self._sandbox_uid_of = sandbox_uid_of
         self._clients: dict[str, RunnerClient] = {}
         self._feeds: dict[tuple[str, str], Feed] = {}
         self._leases: dict[str, IngestionLease] = {}
@@ -207,7 +221,9 @@ class RunnerBridge:
                             if feed.client is client:
                                 continue
                             await feed.close()
-                        thread_id = await self._store.thread(sandbox, summary.session_id, summary.spec)
+                        thread_id = await self._store.thread(
+                            sandbox, summary.session_id, summary.spec, sandbox_uid=self._sandbox_uid_of(sandbox)
+                        )
                         snapshot = await self._store.feed_state(thread_id)
                         if (
                             summary.harness_state == protocol_pb2.HARNESS_STATE_STOPPED
@@ -216,7 +232,13 @@ class RunnerBridge:
                             and await self._store.last_cursor(thread_id) == summary.last_cursor
                         ):
                             continue
-                        feed = Feed(session_id=summary.session_id, client=client, store=self._store, lease=lease)
+                        feed = Feed(
+                            session_id=summary.session_id,
+                            client=client,
+                            store=self._store,
+                            lease=lease,
+                            sandbox_uid=self._sandbox_uid_of(sandbox),
+                        )
                         feed.task = asyncio.create_task(feed.run(), name=f"ingest-{sandbox}-{summary.session_id}")
                         self._feeds[key] = feed
                 except grpc.aio.AioRpcError, SandboxNotReachableError, SandboxNotFoundError, TimeoutError:
@@ -253,7 +275,9 @@ class RunnerBridge:
         try:
             await attachment.detach()
             await attachment.drain_until_end()
-            thread_id = await self._store.thread(sandbox, session_id, attachment.attached.spec)
+            thread_id = await self._store.thread(
+                sandbox, session_id, attachment.attached.spec, sandbox_uid=self._sandbox_uid_of(sandbox)
+            )
             await self.start([sandbox])
             # In particular, do not return a resumed session while the database still says its
             # previous harness ended. Commands remain runner-first; this only synchronizes Open.
@@ -269,10 +293,10 @@ class RunnerBridge:
         finally:
             attachment.cancel()
 
-    async def command(self, sandbox: str, session_id: str, command: command_pb2.Command) -> None:
+    async def command(self, sandbox: str, session_id: str, command: protocol_pb2.Command) -> None:
         await self._command(sandbox, session_id, lambda attachment: attachment.command(command))
 
-    async def stop_runner_session(self, sandbox: str, session_id: str, command: command_pb2.Command) -> None:
+    async def stop_runner_session(self, sandbox: str, session_id: str, command: protocol_pb2.Command) -> None:
         await self._command(sandbox, session_id, lambda attachment: attachment.command(command), ends_stream=True)
 
     async def _command(
@@ -304,7 +328,9 @@ class RunnerBridge:
             summary = next((item for item in summaries if item.session_id == session_id), None)
             if summary is None:
                 raise RunnerError(f"session {session_id} does not exist")
-            thread_id = await self._store.thread(sandbox, session_id, summary.spec)
+            thread_id = await self._store.thread(
+                sandbox, session_id, summary.spec, sandbox_uid=self._sandbox_uid_of(sandbox)
+            )
         await self.start([sandbox])
         waiter = asyncio.Event()
         cursor = after_cursor
@@ -359,7 +385,7 @@ def _frame(event: str, data: dict[str, object], *, event_id: int | None = None) 
     return ("\n".join(lines) + "\n\n").encode()
 
 
-def _parse[M: command_pb2.Command | protocol_pb2.SessionSpec](message: M, body: dict[str, object]) -> M:
+def _parse[M: protocol_pb2.Command | protocol_pb2.SessionSpec](message: M, body: dict[str, object]) -> M:
     try:
         return ParseDict(body, message)
     except ParseError as error:
@@ -428,7 +454,7 @@ async def session_events(
 
 @router.post("/{session_id}/inputs", status_code=status.HTTP_202_ACCEPTED)
 async def send_input(bridge: Bridge, name: str, session_id: str, body: dict[str, object]) -> Response:
-    command = _parse(command_pb2.Command(), body)
+    command = _parse(protocol_pb2.Command(), body)
     if not command.command_id or not command.HasField("submit_input"):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="expected SubmitInput command")
     await bridge.command(name, session_id, command)
@@ -437,7 +463,7 @@ async def send_input(bridge: Bridge, name: str, session_id: str, body: dict[str,
 
 @router.post("/{session_id}/interrupt", status_code=status.HTTP_202_ACCEPTED)
 async def interrupt_session(bridge: Bridge, name: str, session_id: str, body: dict[str, object]) -> Response:
-    command = _parse(command_pb2.Command(), body)
+    command = _parse(protocol_pb2.Command(), body)
     if not command.command_id or not command.HasField("interrupt_turn"):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="expected InterruptTurn command")
     await bridge.command(name, session_id, command)
@@ -448,7 +474,7 @@ async def interrupt_session(bridge: Bridge, name: str, session_id: str, body: di
 async def switch_session_model(
     bridge: Bridge, name: str, session_id: str, body: dict[str, object], request: Request
 ) -> Response:
-    command = _parse(command_pb2.Command(), body)
+    command = _parse(protocol_pb2.Command(), body)
     if not command.command_id or not command.HasField("change_model") or not command.change_model.model:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="expected ChangeModel command")
     summaries = await bridge.list_sessions(name)
@@ -467,7 +493,7 @@ async def switch_session_model(
 
 @router.post("/{session_id}/shutdown", status_code=status.HTTP_202_ACCEPTED)
 async def shutdown_session(bridge: Bridge, name: str, session_id: str, body: dict[str, object]) -> Response:
-    command = _parse(command_pb2.Command(), body)
+    command = _parse(protocol_pb2.Command(), body)
     if not command.command_id or not command.HasField("stop_runner_session"):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="expected StopRunnerSession command"

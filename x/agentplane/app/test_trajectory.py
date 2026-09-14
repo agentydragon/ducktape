@@ -1,12 +1,11 @@
-"""The store's contract: a thread per session, events kept verbatim and idempotently, read back
-without a runner."""
+"""The store's contract: durable Threads own runner-session associations, commands, and events."""
 
 from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
@@ -21,6 +20,7 @@ from x.agentplane.app.trajectory import (
     IngestionLease,
     IngestionLeaseLostError,
     SandboxIngestion,
+    ThreadCommandConflictError,
     ThreadNotFoundError,
     TrajectoryStore,
 )
@@ -78,7 +78,7 @@ async def test_a_session_is_one_thread_and_its_events_read_back_in_order(
         ],
         lease=lease,
     )
-    # A replay after a reconnect brings sequences already stored: they are not written twice.
+    # A replay after a reconnect brings entries already stored under their cursors: they are not written twice.
     await store.record(
         thread,
         [_event(3, turn_started=event_pb2.TurnStarted(turn_id="t1")), _event(4, harness_lost=event_pb2.HarnessLost())],
@@ -93,6 +93,55 @@ async def test_a_session_is_one_thread_and_its_events_read_back_in_order(
     assert [entry.cursor for entry in await store.events(thread, after_cursor=1, limit=2)] == [2, 3]
     assert await store.last_cursor(thread) == 4
     assert await store.last_cursor(other) == 0
+
+
+async def test_runner_session_cannot_rebind_a_thread_to_a_different_static_sandbox(
+    store: TrajectoryStore,
+) -> None:
+    sandbox_uid = uuid4()
+    thread = await store.thread("sb-1", "s-1", SPEC, sandbox_uid=sandbox_uid)
+
+    assert await store.thread("sb-1", "s-1", SPEC, sandbox_uid=sandbox_uid) == thread
+    with pytest.raises(ValueError, match="different Sandbox"):
+        await store.thread("sb-2", "s-1", SPEC, sandbox_uid=sandbox_uid)
+    with pytest.raises(ValueError, match="different Kubernetes UID"):
+        await store.thread("sb-1", "s-1", SPEC, sandbox_uid=uuid4())
+
+
+async def test_thread_commands_are_ordered_idempotent_and_reject_payload_reuse(store: TrajectoryStore) -> None:
+    thread = await store.thread("sb-1", "s-1", SPEC)
+    command = protocol_pb2.Command(command_id="model-next", change_model=protocol_pb2.ChangeModel(model="next-model"))
+
+    first = await store.request_thread_command(thread, command)
+
+    assert (first.thread_id, first.ordinal, first.command) == (thread, 1, command)
+    assert await store.request_thread_command(thread, command) == first
+    assert await store.thread_commands(thread) == [first]
+    with pytest.raises(ThreadCommandConflictError, match="command id"):
+        await store.request_thread_command(
+            thread, protocol_pb2.Command(command_id="model-next", change_model=protocol_pb2.ChangeModel(model="other-model"))
+        )
+    with pytest.raises(ValueError, match="command id"):
+        await store.request_thread_command(thread, protocol_pb2.Command())
+    with pytest.raises(ThreadNotFoundError):
+        await store.request_thread_command(UUID(int=0), command)
+
+
+async def test_thread_command_ordinals_are_serialised_across_replicas(
+    store: TrajectoryStore, replica: TrajectoryStore
+) -> None:
+    thread = await store.thread("sb-1", "s-1", SPEC)
+    first = protocol_pb2.Command(command_id="first", submit_input=protocol_pb2.SubmitInput(text="First."))
+    second = protocol_pb2.Command(command_id="second", submit_input=protocol_pb2.SubmitInput(text="Second."))
+
+    left, right = await asyncio.gather(
+        store.request_thread_command(thread, first), replica.request_thread_command(thread, second)
+    )
+
+    assert {snapshot.ordinal for snapshot in (left, right)} == {1, 2}
+    commands = await store.thread_commands(thread)
+    assert [snapshot.ordinal for snapshot in commands] == [1, 2]
+    assert {snapshot.command.command_id for snapshot in commands} == {"first", "second"}
 
 
 async def test_threads_list_with_their_progress(store: TrajectoryStore, lease: IngestionLease) -> None:
