@@ -1,0 +1,19 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  name: wayback-archive
+  namespace: wayback-cache
+  annotations:
+    description: Retained storage for the parked Wayback cache package.
+spec:
+  name: wayback-archive
+  # The former physical bucket was explicitly purged and deleted before this
+  # parked package was introduced. Re-enable only after reviewing the revival.
+  adoptExisting: false
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  reclaimPolicy: Retain
+  access:
+    - user: wayback-cache
+      actions: [Read, Write, List, Tagging]

@@ -48,7 +48,6 @@ spec:
         - attic
         - drivefs-artifacts
         - vm-images
-        - wayback-archive
         - loom-gym
     - sid: ReadBucketObjects
       effect: Allow
@@ -58,7 +57,6 @@ spec:
         - attic/*
         - drivefs-artifacts/*
         - vm-images/*
-        - wayback-archive/*
         - loom-gym/*
     - sid: WriteAndTagLoomGymObjects
       effect: Allow
