@@ -13,7 +13,6 @@ on:
       - "cluster/litellm_constructs.py"
       - "cluster/test_generate_manifests.py"
       - "cluster/k8s/litellm/**"
-      - "tana/litellm_proxy/model_registry.py"
       - "pyproject.toml"
       - "requirements_bazel.txt"
   workflow_dispatch:
@@ -45,12 +44,10 @@ jobs:
           set -euo pipefail
           output_dir="$RUNNER_TEMP/cdk8s-manifests"
           bb run //cluster:generate_manifests -- --output-dir "$output_dir"
-          for manifest in litellm.k8s.yaml tana-litellm.k8s.yaml litellm-servicemonitor.k8s.yaml; do
+          for manifest in litellm.k8s.yaml litellm-servicemonitor.k8s.yaml; do
             test -s "$output_dir/$manifest"
           done
-          for manifest in litellm.k8s.yaml tana-litellm.k8s.yaml; do
-            grep --fixed-strings --line-regexp --quiet "kind: ConfigMap" "$output_dir/$manifest"
-          done
+          grep --fixed-strings --line-regexp --quiet "kind: ConfigMap" "$output_dir/litellm.k8s.yaml"
           bb test //cluster:test_generate_manifests
       - name: Upload generated manifests
         uses: actions/upload-artifact@v7
