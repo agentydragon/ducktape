@@ -44,8 +44,10 @@ jobs:
           set -euo pipefail
           output_dir="$RUNNER_TEMP/cdk8s-manifests"
           bb run //cluster:generate_manifests -- --output-dir "$output_dir"
-          for manifest in litellm.k8s.yaml tana-litellm.k8s.yaml workers-litellm.k8s.yaml; do
+          for manifest in litellm.k8s.yaml tana-litellm.k8s.yaml workers-litellm.k8s.yaml litellm-servicemonitor.k8s.yaml; do
             test -s "$output_dir/$manifest"
+          done
+          for manifest in litellm.k8s.yaml tana-litellm.k8s.yaml workers-litellm.k8s.yaml; do
             grep --fixed-strings --line-regexp --quiet "kind: ConfigMap" "$output_dir/$manifest"
           done
           bb test //cluster:test_generate_manifests
