@@ -152,6 +152,10 @@ jobs:
         uses: ./.github/actions/bb-remote
         with:
           rbe_image: ${{ inputs.rbe_image }}
+          # Full //... runs must not accumulate Bazel output bases on a recycled
+          # BuildBuddy workspace. The runner currently exposes only about 24G
+          # despite the 100G disk estimate requested by this action.
+          recycle_runner: false
           run_from_commit: ${{ steps.source.outputs.sha }}
           linkage_roles: test,build
           # The build itself lives in devinfra/ci/bazel_ci.sh — see that file's header for

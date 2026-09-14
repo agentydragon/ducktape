@@ -74,6 +74,10 @@ inputs:
     description: "Runner vCPU count (EstimatedComputeUnits)"
     required: false
     default: "4"
+  recycle_runner:
+    description: "Whether BuildBuddy may reuse the runner filesystem between invocations"
+    required: false
+    default: "true"
   linkage_roles:
     description: >
       Optional comma-separated role names for child Bazel invocations in the
@@ -117,6 +121,7 @@ runs:
         INPUT_RBE_IMAGE: ${{ inputs.rbe_image }}
         INPUT_DISK_BYTES: ${{ inputs.disk_bytes }}
         INPUT_COMPUTE_UNITS: ${{ inputs.compute_units }}
+        INPUT_RECYCLE_RUNNER: ${{ inputs.recycle_runner }}
         INPUT_LINKAGE_ROLES: ${{ inputs.linkage_roles }}
         INPUT_RUN_FROM_COMMIT: ${{ inputs.run_from_commit }}
       run: |
@@ -170,7 +175,7 @@ runs:
           --runner_exec_properties=EstimatedComputeUnits="$INPUT_COMPUTE_UNITS"
           --runner_exec_properties=workload-isolation-type=firecracker
           --runner_exec_properties=init-dockerd=true
-          --runner_exec_properties=recycle-runner=true
+          --runner_exec_properties=recycle-runner="$INPUT_RECYCLE_RUNNER"
           --runner_exec_properties=remote-snapshot-save-policy=always
           --runner_exec_properties=snapshot-read-policy=newest
         )
