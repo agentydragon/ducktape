@@ -12,6 +12,6 @@ spec:
     - port: http
       path: /metrics
       interval: 30s
-      # Metrics are unauthenticated (gitea.config.metrics.TOKEN is empty).
-      # TODO: Set a metrics token and add bearerTokenSecret here via a
-      # SOPS-managed secret (follow the LiteLLM token pattern).
+      bearerTokenSecret:
+        name: forgejo-metrics-token
+        key: token
