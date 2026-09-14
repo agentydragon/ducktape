@@ -15,6 +15,13 @@ STEER_INPUT = "Reply ONLY STEERED after the current tool action."
 INTERRUPTED_QUEUE_FIRST = "Reply only after seeing CODEX_INTERRUPTED_QUEUE_FIRST."
 INTERRUPTED_QUEUE_SECOND = "Reply only after seeing CODEX_INTERRUPTED_QUEUE_SECOND."
 INTERRUPT_RECOVERY = "Reply with exactly: CODEX_INTERRUPT_QUEUE_RECOVERY_OK"
+INTERRUPTED_INITIAL = "Wait; do not answer early."
+INTERRUPTED_TURN_MARKER = (
+    "<turn_aborted>\n"
+    "The user interrupted the previous turn on purpose. Any running unified exec processes may still be running "
+    "in the background. If any tools/commands were aborted, they may have partially executed.\n"
+    "</turn_aborted>"
+)
 
 
 def _wait_call() -> sse.FunctionCall:
@@ -103,7 +110,7 @@ async def test_interrupt_drops_joined_inputs_before_the_next_model_request(
 ) -> None:
     """Joined active-turn inputs vanish when their turn is interrupted before model consumption."""
     async with codex.start(openai_responses) as run:
-        turn = await run.start_turn("Wait; do not answer early.")
+        turn = await run.start_turn(INTERRUPTED_INITIAL)
         await turn.started()
         async with await openai_responses.await_next_request() as initial_exchange:
             for text in (INTERRUPTED_QUEUE_FIRST, INTERRUPTED_QUEUE_SECOND):
@@ -115,11 +122,12 @@ async def test_interrupt_drops_joined_inputs_before_the_next_model_request(
 
         recovery = await run.start_turn(INTERRUPT_RECOVERY)
         async with await openai_responses.await_next_request() as recovery_exchange:
-            texts = [message.text for message in recovery_exchange.request.messages("user")]
-            assert texts[-1] == INTERRUPT_RECOVERY
-            assert all(
-                marker not in text for marker in (INTERRUPTED_QUEUE_FIRST, INTERRUPTED_QUEUE_SECOND) for text in texts
-            )
+            assert recovery_exchange.request.item_kinds == ["message:user"] * 3
+            assert [message.text for message in recovery_exchange.request.messages("user")] == [
+                INTERRUPTED_INITIAL,
+                INTERRUPTED_TURN_MARKER,
+                INTERRUPT_RECOVERY,
+            ]
             stream = sse.response_stream([sse.Message("CODEX_INTERRUPT_QUEUE_RECOVERY_OK")], model=MODEL)
             await recovery_exchange.send(*stream.events)
             assert (await recovery.completed()).params.turn.status is wire.TurnStatus.COMPLETED

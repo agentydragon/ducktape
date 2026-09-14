@@ -51,6 +51,13 @@ class CodexEvents:
                     if received_turn == turn_id:
                         return frame
 
+    async def agent_message_delta(self, turn_id: str) -> wire.AgentMessageDelta:
+        while True:
+            match await self.next():
+                case wire.AgentMessageDelta(params=wire.ItemDeltaParams(turn_id=received)) as frame:
+                    if received == turn_id:
+                        return frame
+
     async def error(self, turn_id: str) -> wire.ErrorNotification:
         while True:
             match await self.next():
@@ -72,6 +79,9 @@ class CodexTurn:
 
     async def completed(self) -> wire.TurnCompleted:
         return await self._events.turn_completed(self.id)
+
+    async def agent_message_delta(self) -> wire.AgentMessageDelta:
+        return await self._events.agent_message_delta(self.id)
 
     async def error(self) -> wire.ErrorNotification:
         return await self._events.error(self.id)
