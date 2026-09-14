@@ -3,7 +3,12 @@
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 exports_files(
-    ["workers-litellm-config.yaml"],
+    [
+        "cnp-workers-litellm.yaml",
+        "deployment.yaml",
+        "service.yaml",
+        "workers-litellm-config.yaml",
+    ],
     visibility = ["//cluster:__pkg__"],
 )
 

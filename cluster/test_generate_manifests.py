@@ -1,9 +1,11 @@
-"""Parity tests for the cdk8s LiteLLM ConfigMap generator."""
+"""Parity tests for the cdk8s LiteLLM manifest generator."""
+
+from pathlib import Path
 
 import pytest_bazel
 import yaml
 
-from cluster.generate_manifests import _config_maps, main_proxy_config
+from cluster.generate_manifests import _config_maps, generate_manifests, main_proxy_config
 from util.bazel.runfiles import get_required_path
 
 
@@ -33,6 +35,35 @@ def test_config_map_payloads_contain_the_existing_proxy_configs() -> None:
         generated["tana-litellm"][1]["custom_handler.py"]
         == get_required_path("ducktape/cluster/k8s/litellm/tana/custom_handler.py").read_text()
     )
+
+
+def test_runtime_resources_match_the_existing_litellm_manifests(tmp_path: Path) -> None:
+    generate_manifests(tmp_path)
+    generated = {}
+    for manifest in tmp_path.glob("*.yaml"):
+        for resource in yaml.safe_load_all(manifest.read_text()):
+            if resource is not None:
+                generated[(resource["kind"], resource["metadata"]["name"])] = resource
+
+    expected = {
+        ("Deployment", "litellm"): "ducktape/cluster/k8s/litellm/app/deployment.yaml",
+        ("Service", "litellm"): "ducktape/cluster/k8s/litellm/app/service.yaml",
+        ("ServiceAccount", "litellm"): "ducktape/cluster/k8s/litellm/app/serviceaccount.yaml",
+        ("HTTPRoute", "litellm"): "ducktape/cluster/k8s/litellm/app/httproute.yaml",
+        ("ExternalSecret", "forgejo-images-creds"): "ducktape/cluster/k8s/litellm/tana/forgejo-images-creds-eso.yaml",
+        ("Deployment", "tana-litellm"): "ducktape/cluster/k8s/litellm/tana/deployment.yaml",
+        ("Service", "tana-litellm"): "ducktape/cluster/k8s/litellm/tana/service.yaml",
+        ("HTTPRoute", "tana-litellm"): "ducktape/cluster/k8s/litellm/tana/httproute.yaml",
+        ("Deployment", "workers-litellm"): "ducktape/cluster/k8s/x/haku/dispatch/litellm/deployment.yaml",
+        ("Service", "workers-litellm"): "ducktape/cluster/k8s/x/haku/dispatch/litellm/service.yaml",
+        (
+            "CiliumNetworkPolicy",
+            "workers-litellm-zone-pods-only",
+        ): "ducktape/cluster/k8s/x/haku/dispatch/litellm/cnp-workers-litellm.yaml",
+        ("ServiceMonitor", "litellm"): "ducktape/cluster/k8s/litellm/servicemonitor/servicemonitor.yaml",
+    }
+    for identity, source in expected.items():
+        assert generated[identity] == _committed_config(source)
 
 
 if __name__ == "__main__":

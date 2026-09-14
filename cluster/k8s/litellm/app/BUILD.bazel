@@ -4,7 +4,11 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 exports_files(
     [
+        "deployment.yaml",
+        "httproute.yaml",
         "proxy-config.yaml",
+        "service.yaml",
+        "serviceaccount.yaml",
     ],
     visibility = [
         "//cluster:__pkg__",
