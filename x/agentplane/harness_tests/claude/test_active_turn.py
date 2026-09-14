@@ -145,9 +145,11 @@ async def test_interrupt_cancels_each_queued_input_before_native_message(
                 while not is_queued(await process.next_frame()):
                     pass
 
-            response = await scenarios.interrupt(process, cancel_queued=True)
-            assert response["response"]["subtype"] == "success"
-            await initial_exchange.wait_client_closed()
+            # Claude emits each cancellation before acknowledging the interrupt control request.
+            # Read those receipts directly; `scenarios.interrupt()` intentionally consumes frames
+            # until its response and is appropriate only when no intermediate frame matters.
+            interrupt = driver.interrupt(cancel_queued=True)
+            await process.send(interrupt)
             for command_uuid in (first.uuid, second.uuid):
 
                 def is_cancelled(frame: dict[str, Any], expected: str = command_uuid) -> bool:
@@ -159,6 +161,15 @@ async def test_interrupt_cancels_each_queued_input_before_native_message(
 
                 while not is_cancelled(await process.next_frame()):
                     pass
+            while True:
+                response = await process.next_frame()
+                if (
+                    response.get("type") == "control_response"
+                    and response.get("response", {}).get("request_id") == interrupt.request_id
+                ):
+                    break
+            assert response["response"]["subtype"] == "success"
+            await initial_exchange.wait_client_closed()
             assert (await scenarios.await_result(process))["is_error"] is True
 
         await scenarios.send(process, INTERRUPT_RECOVERY)
