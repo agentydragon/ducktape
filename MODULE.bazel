@@ -761,6 +761,14 @@ crate.annotation(
     crate_features = ["offline"],
 )
 
+# sqlx-postgres's offline feature enables serde support on smallvec. Keep the
+# shared dependency feature explicit because crate-universe does not currently
+# render that feature edge from the annotation above.
+crate.annotation(
+    crate = "smallvec",
+    crate_features = ["serde"],
+)
+
 # expose the generated repo (↑ name="crates")
 use_repo(crate, "crates")
 
