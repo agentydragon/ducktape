@@ -9,9 +9,10 @@ on:
       - ".github/workflows/cdk8s-manifests-experiment.yml"
       - "cluster/BUILD.bazel"
       - "cluster/generate_manifests.py"
+      - "cluster/litellm_config.py"
+      - "cluster/litellm_constructs.py"
       - "cluster/test_generate_manifests.py"
       - "cluster/k8s/litellm/**"
-      - "cluster/k8s/x/haku/dispatch/litellm/**"
       - "tana/litellm_proxy/model_registry.py"
       - "pyproject.toml"
       - "requirements_bazel.txt"
@@ -44,10 +45,10 @@ jobs:
           set -euo pipefail
           output_dir="$RUNNER_TEMP/cdk8s-manifests"
           bb run //cluster:generate_manifests -- --output-dir "$output_dir"
-          for manifest in litellm.k8s.yaml tana-litellm.k8s.yaml workers-litellm.k8s.yaml litellm-servicemonitor.k8s.yaml; do
+          for manifest in litellm.k8s.yaml tana-litellm.k8s.yaml litellm-servicemonitor.k8s.yaml; do
             test -s "$output_dir/$manifest"
           done
-          for manifest in litellm.k8s.yaml tana-litellm.k8s.yaml workers-litellm.k8s.yaml; do
+          for manifest in litellm.k8s.yaml tana-litellm.k8s.yaml; do
             grep --fixed-strings --line-regexp --quiet "kind: ConfigMap" "$output_dir/$manifest"
           done
           bb test //cluster:test_generate_manifests
