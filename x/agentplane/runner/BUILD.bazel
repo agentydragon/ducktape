@@ -202,12 +202,12 @@ py_test(
     srcs = ["test_client.py"],
     deps = [
         ":client",
+        ":conftest",
         "//:conftest",
         "//x/agentplane/runner:protocol_pb2",
         "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )

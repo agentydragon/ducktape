@@ -11,6 +11,9 @@ import pytest_bazel
 from x.agentplane.runner import protocol_pb2
 from x.agentplane.runner.client import Attachment
 
+# The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
+# gazelle:include_dep @pypi//protobuf
+
 
 class FakeAttachmentCall:
     def __init__(self) -> None:
