@@ -1,11 +1,11 @@
 """Python rule wrappers that auto-inject repo-root imports."""
 
-load("@rules_python//python:defs.bzl", _py_binary = "py_binary", _py_library = "py_library", _py_test = "py_test")
 load(
     "@aspect_rules_py//py:defs.bzl",
     _aspect_py_binary = "py_binary",
     _aspect_py_image_layer = "py_image_layer",
 )
+load("@rules_python//python:defs.bzl", _py_binary = "py_binary", _py_library = "py_library", _py_test = "py_test")
 
 # Keep the image rule's repository-specific ownership contract in one place while
 # aspect_rules_py migrates ownership from py_image_layer attrs to py_layer_tier.
