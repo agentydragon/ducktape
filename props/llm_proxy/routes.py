@@ -247,6 +247,7 @@ def _upstream_auth_headers(api_shape: LLMApiShape, api_key: str) -> dict[str, st
 
 
 def _log_request(
+    *,
     session: Session,
     agent_run_id: UUID,
     model: str,
