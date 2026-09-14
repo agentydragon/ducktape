@@ -29,9 +29,6 @@ spec:
     # RedisReplication CRD (Opstree operator)
     - name: valkey
       namespace: ducktape-flux
-    # S3 backend: bucket + the s3-identity-registry-cache Secret that Reflector
-    # mirrors into oci-cache for Zot's AWS_* env.
+    # S3 backend: tenant-local Bucket and operator-generated credentials.
     - name: seaweedfs-registry-cache-bucket
-      namespace: ducktape-flux
-    - name: seaweedfs-secrets
       namespace: ducktape-flux
