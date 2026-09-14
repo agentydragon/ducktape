@@ -51,6 +51,14 @@ it("groups a thread whose sandbox is gone under a null sandbox rather than dropp
   expect(group.threads).toEqual([orphan]);
 });
 
+it("keeps target-only Threads in a distinct starting group", () => {
+  const starting = threadView({ id: "t-starting", sandbox: null, session_id: null });
+
+  const [group] = groupThreads([starting], {}, false);
+
+  expect(group).toMatchObject({ sandboxName: null, sandbox: null, starting: true, threads: [starting] });
+});
+
 it("excludes archived threads by default, and a sandbox left with none drops out entirely", () => {
   const archived = threadView({ id: "t-1", sandbox: "sb-a", session_id: "s-1", archived: true });
   const kept = threadView({ id: "t-2", sandbox: "sb-b", session_id: "s-2" });

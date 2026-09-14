@@ -467,6 +467,20 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
     last_event_at: ago(95 * HOUR),
     harness_state: "HARNESS_STATE_STOPPED",
   },
+  {
+    id: "5f1c4a2e-0000-4000-8000-000000000007",
+    sandbox: null,
+    session_id: null,
+    harness: "HARNESS_CLAUDE",
+    model: "harness-claude-model",
+    cwd: "/state/work",
+    created_at: ago(2 * 60_000),
+    name: null,
+    archived: false,
+    last_sequence: 0,
+    last_event_at: null,
+    harness_state: "HARNESS_STATE_UNSPECIFIED",
+  },
 ];
 
 const ACTIONS: ActionRequestView[] = [

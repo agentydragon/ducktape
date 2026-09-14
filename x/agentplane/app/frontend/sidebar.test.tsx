@@ -148,6 +148,17 @@ it("renders a thread whose sandbox is gone as a read-only, struck-through group 
   expect(location()).toBe("/");
 });
 
+it("renders a target-only Thread as Starting without pretending it has a session route", async () => {
+  await render([thread({ id: "t-starting", sandbox: null, session_id: null })], {});
+
+  expect(container.textContent).toContain("Starting");
+  const readonly = container.querySelector(".agentplane-sidebar-row.readonly");
+  expect(readonly?.textContent).toContain("Starting Thread");
+  expect(readonly?.getAttribute("role")).toBeNull();
+  await act(async () => (readonly as HTMLElement).click());
+  expect(location()).toBe("/");
+});
+
 it("opens a thread's session route on click, and highlights the one already open", async () => {
   await render(
     [

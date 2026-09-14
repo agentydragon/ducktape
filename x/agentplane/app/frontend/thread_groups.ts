@@ -6,30 +6,37 @@
 import type { SandboxView, ThreadView } from "./client";
 
 export interface ThreadGroup {
-  sandboxName: string;
-  /** The Sandbox's live view, or null once it no longer exists. */
+  /** Null while the Thread's target has not yet become a runner attachment. */
+  sandboxName: string | null;
+  /** The Sandbox's live view, or null for a target-only/deleted Thread. */
   sandbox: SandboxView | null;
+  /** A target-only Thread is distinct from a Thread whose previously attached Sandbox was deleted. */
+  starting: boolean;
   /** Newest first, matching the API's own order. */
   threads: ThreadView[];
 }
 
 /**
- * One group per Sandbox a visible Thread names, ordered by that group's newest Thread (`threads`
- * arrives newest-first, so the first Thread seen for a Sandbox fixes its group's position).
- * Archived Threads, and a Sandbox left with none once they're excluded, drop out entirely — same
- * "nothing to show" idiom as `sandboxes.tsx`'s own default-off archived filter.
+ * One group per Sandbox plus a `starting` group for target-only Threads. Groups follow the newest
+ * Thread (`threads` arrives newest-first). Archived Threads, and a group left with none once
+ * they're excluded, drop out entirely.
  */
 export function groupThreads(
   threads: ThreadView[],
   sandboxes: Record<string, SandboxView>,
   includeArchived: boolean
 ): ThreadGroup[] {
-  const groups = new Map<string, ThreadGroup>();
+  const groups = new Map<string | null, ThreadGroup>();
   for (const thread of threads) {
     if (!includeArchived && thread.archived) continue;
     let group = groups.get(thread.sandbox);
     if (!group) {
-      group = { sandboxName: thread.sandbox, sandbox: sandboxes[thread.sandbox] ?? null, threads: [] };
+      group = {
+        sandboxName: thread.sandbox,
+        sandbox: thread.sandbox === null ? null : (sandboxes[thread.sandbox] ?? null),
+        starting: thread.sandbox === null,
+        threads: [],
+      };
       groups.set(thread.sandbox, group);
     }
     group.threads.push(thread);
