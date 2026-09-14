@@ -12,12 +12,13 @@ apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Credentials
 metadata:
   name: registry-cache
-  namespace: seaweedfs
+  namespace: oci-cache
 spec:
   seaweedRef:
     name: seaweedfs
+    namespace: seaweedfs
   identityRef:
     name: registry-cache
   secretRef:
-    name: s3-identity-registry-cache
+    name: registry-cache-s3-credentials
   reclaimPolicy: Retain
