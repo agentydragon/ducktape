@@ -75,7 +75,10 @@ volume shared read-only with the agent.
 ## Using the shared cluster cache service
 
 `loom/wayback/deploy/` contains the archived shared write-through cache service.
-Flux registers the suspended package through `cluster/k8s/wayback-cache.yaml`.
+The package is currently parked: Flux registers it through the suspended
+`cluster/k8s/wayback-cache.yaml` wrapper, and its SeaweedFS replay data has been
+purged. Its storage definitions live under `loom/wayback/deploy/storage/` for a
+future, deliberate revival.
 When restored, its ClusterIP service lets repeated lookups reuse stored metadata
 and replay bodies without re-hitting IA. Point the proxy at it through a
 port-forward:

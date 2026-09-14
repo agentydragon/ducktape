@@ -20,8 +20,6 @@ spec:
       namespace: ducktape-flux
     - name: vm-images-publisher
       namespace: ducktape-flux
-    - name: seaweedfs-wayback-archive-bucket
-      namespace: ducktape-flux
     - name: seaweedfs-secrets
       namespace: ducktape-flux
     - name: seaweedfs-cluster

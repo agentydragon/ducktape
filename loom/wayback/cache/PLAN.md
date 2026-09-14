@@ -2,11 +2,11 @@
 
 Last trimmed: 2026-06-12.
 
-Status: v0 is live. The old nginx/PVC `wayback-cache` backend was replaced in
-place by the Rust cache service: CNPG metadata, SeaweedFS S3 replay bodies,
-Prometheus metrics, and a public bearer-auth `:8090` listener. The service is
-split into input pods and filler pods connected by a Postgres fill queue with
-`LISTEN/NOTIFY` wakeups.
+Status: parked as of 2026-09-14. The shared `wayback-cache` deployment is
+suspended and its SeaweedFS replay bucket was explicitly emptied and deleted.
+The source, tests, and deployment manifests remain parked for a future
+revival; the parked package now keeps its storage definitions beside the app
+under `loom/wayback/deploy/storage/`.
 
 Companions:
 

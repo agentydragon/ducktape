@@ -1979,13 +1979,6 @@ spec:
           to: "@artifact/cluster/k8s/seaweedfs/registry-cache-bucket/"
           exclude:
             - flux-kustomization.yaml
-    - name: seaweedfs-wayback-archive-bucket
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/seaweedfs/wayback-archive-bucket/**"
-          to: "@artifact/cluster/k8s/seaweedfs/wayback-archive-bucket/"
-          exclude:
-            - flux-kustomization.yaml
     - name: ssh-mcp
       originRevision: "@repo"
       copy:

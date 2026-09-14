@@ -1,0 +1,49 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  name: wayback-cache
+  namespace: wayback-cache
+  annotations:
+    description: Dedicated SeaweedFS identity for the parked Wayback cache.
+spec:
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  name: wayback-cache
+  namespace: wayback-cache
+spec:
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  identityRef:
+    name: wayback-cache
+  # Generate credentials in the workload namespace for the two Wayback
+  # Deployments; no cross-namespace Secret projection is needed.
+  secretRef:
+    name: wayback-cache-s3-credentials
+    accessKeyField: accessKey
+    secretKeyField: secretKey
+  reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: ResourceReferenceGrant
+metadata:
+  name: wayback-cache
+  namespace: seaweedfs
+spec:
+  from:
+    - group: seaweed.seaweedfs.com
+      kind: Bucket
+      namespace: wayback-cache
+    - group: seaweed.seaweedfs.com
+      kind: S3Credentials
+      namespace: wayback-cache
+  to:
+    - group: seaweed.seaweedfs.com
+      kind: Seaweed
+      name: seaweedfs

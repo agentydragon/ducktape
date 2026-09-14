@@ -41,7 +41,6 @@ resources:
   - props-llm-proxy-image.yaml
   - props-registry-proxy-image.yaml
   - rtl-tcp-image.yaml
-  - wayback-archive-image.yaml
   - haku-managed-agent-image.yaml
   - agentplane-runner-image.yaml
   - agentplane-app-image.yaml

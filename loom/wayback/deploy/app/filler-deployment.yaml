@@ -67,12 +67,12 @@ spec:
             - name: WAYBACK_CACHE_S3_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
-                  name: s3-identity-wayback-archive
+                  name: wayback-cache-s3-credentials
                   key: accessKey
             - name: WAYBACK_CACHE_S3_SECRET_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
-                  name: s3-identity-wayback-archive
+                  name: wayback-cache-s3-credentials
                   key: secretKey
           volumeMounts:
             - name: config

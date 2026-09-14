@@ -32,10 +32,6 @@ spec:
       namespace: ducktape-flux
     - name: gateway
       namespace: ducktape-flux
-    - name: seaweedfs-wayback-archive-bucket
-      namespace: ducktape-flux
-    - name: seaweedfs-secrets
-      namespace: ducktape-flux
     - name: reflector
       namespace: ducktape-flux
     - name: claude-rbac
