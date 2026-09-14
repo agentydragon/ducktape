@@ -116,25 +116,22 @@ model_list:
       mode: embedding
   - model_name: tana/ant-messages/claude-sonnet-4-6
     litellm_params:
-      model: anthropic/claude-sonnet-4-6/medium
-      api_base: http://tana-litellm.litellm.svc.cluster.local:4000
-      api_key: os.environ/LITELLM_MASTER_KEY
+      model: tana/tana/claude-sonnet-4-6/medium
+      custom_llm_provider: tana
     model_info:
       mode: chat
       supports_function_calling: true
   - model_name: tana/ant-messages/claude-opus-4-6
     litellm_params:
-      model: anthropic/claude-opus-4-6/high
-      api_base: http://tana-litellm.litellm.svc.cluster.local:4000
-      api_key: os.environ/LITELLM_MASTER_KEY
+      model: tana/tana/claude-opus-4-6/high
+      custom_llm_provider: tana
     model_info:
       mode: chat
       supports_function_calling: true
   - model_name: tana/ant-messages/claude-haiku-4-5
     litellm_params:
-      model: anthropic/claude-haiku-4-5-20251001
-      api_base: http://tana-litellm.litellm.svc.cluster.local:4000
-      api_key: os.environ/LITELLM_MASTER_KEY
+      model: tana/tana/claude-haiku-4-5-20251001
+      custom_llm_provider: tana
     model_info:
       mode: chat
       supports_function_calling: true
@@ -585,6 +582,9 @@ litellm_settings:
   callbacks:
     - langfuse_otel
     - prometheus
+  custom_provider_map:
+    - provider: tana
+      custom_handler: tana.litellm_proxy.custom_handler.tana_handler
 router_settings:
   # Codex 0.153+ bundles metadata for this exact slug (272k base / 872k
   # configurable maximum). Keep the alias hidden so Codex can select the

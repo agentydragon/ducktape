@@ -1678,13 +1678,6 @@ spec:
           to: "@artifact/cluster/k8s/litellm/servicemonitor/"
           exclude:
             - flux-kustomization.yaml
-    - name: litellm-tana
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/litellm/tana/**"
-          to: "@artifact/cluster/k8s/litellm/tana/"
-          exclude:
-            - flux-kustomization.yaml
     - name: litellm-cheap-experiments-namespace
       originRevision: "@repo"
       copy:

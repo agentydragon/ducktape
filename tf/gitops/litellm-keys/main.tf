@@ -65,7 +65,8 @@ locals {
     "chatgpt/oai-responses/gpt-5.6-luna",
     "chatgpt/oai-responses/gpt-5.3-codex-spark",
   ]
-  # Tana-UI models fronted through tana-litellm (TANA_MODELS in model_rosters.py).
+  # Tana-UI models served by the main LiteLLM proxy's Tana provider
+  # (TANA_MODELS in model_rosters.py).
   tana_client_models = [
     "tana/ant-messages/claude-sonnet-4-6",
     "tana/ant-messages/claude-opus-4-6",
@@ -370,13 +371,13 @@ resource "kubernetes_secret" "haku_console_claude" {
 }
 
 # ============================================================================
-# tana-clients — scoped key for laptop tana-claude (Tana-UI models via tana-litellm)
+# tana-clients — scoped key for laptop tana-claude (Tana-UI models via LiteLLM)
 # ============================================================================
 # Pattern-B pinned key: value in a git SOPS file in this module dir, decrypted with the
 # shared narrow client-key age key (the existing tf-runner
 # SOPS_AGE_KEY). The laptop tana-claude wrapper reads it from its sops-nix secret file.
-# The tana/ant-messages/* upstream reaches tana-litellm with the in-cluster master key, so
-# this scoped key never carries it.
+# The main LiteLLM proxy calls Tana in-process, so this scoped client key never
+# carries the Tana Firebase credential.
 #
 # Gotcha for every pinned key here: the value must start with `sk-`. LiteLLM rejects any
 # other bearer token before it looks the key up at all, as a guard against replayed token

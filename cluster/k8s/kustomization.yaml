@@ -303,7 +303,6 @@ resources:
   - litellm/db/flux-kustomization.yaml
   - litellm/app/flux-kustomization.yaml
   - litellm/keys-tf/flux-kustomization.yaml # zone/dispatcher virtual keys; downstream of the app (needs a serving LiteLLM)
-  - litellm/tana/flux-kustomization.yaml
   - litellm/servicemonitor/flux-kustomization.yaml
 
   # --- cli-proxy-api (Claude Code on ChatGPT/Codex via CLIProxyAPI) ---

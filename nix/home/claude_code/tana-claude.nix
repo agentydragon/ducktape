@@ -1,8 +1,7 @@
-# `tana-claude`: Claude Code on Tana-UI models via the cluster LiteLLM proxy (→
-# tana-litellm), reading the litellm_tana_key sops secret — a tana-scoped virtual key (SSOT in
-# tf/gitops/litellm-keys). LiteLLM fronts the DB-less tana-litellm with the `anthropic/`
-# provider; the upstream reaches tana-litellm with the in-cluster master key, so this key
-# never carries it. Tana encodes reasoning effort in the model name, so each entry is one
+# `tana-claude`: Claude Code on Tana-UI models via the cluster LiteLLM proxy, reading the
+# litellm_tana_key sops secret — a tana-scoped virtual key (SSOT in
+# tf/gitops/litellm-keys). The main proxy's in-process Tana provider owns the Tana
+# credential; this client key never carries it. Tana encodes reasoning effort in the model name, so each entry is one
 # family at its default effort (see cluster/k8s/litellm/app/test_litellm_config.py). See
 # ./gateway.nix for the shared wrapper pattern.
 { pkgs, config }:

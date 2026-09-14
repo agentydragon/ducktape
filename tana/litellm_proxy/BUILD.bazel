@@ -5,7 +5,7 @@ load("@rules_python//python/uv:lock.bzl", "lock")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
-# This package's third-party Python deps come from the package-local litellm
+# This package's third-party Python deps come from the package-local LiteLLM
 # lock (the lock() below), not the repo-wide @pypi hub.
 # gazelle:resolve py litellm @pypi_tana_litellm_proxy//litellm
 # gazelle:resolve py httpx @pypi_tana_litellm_proxy//httpx

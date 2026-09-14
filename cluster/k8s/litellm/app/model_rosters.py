@@ -137,11 +137,12 @@ ASTRA_MAX_TOKENS = 128_000
 # token limits. A newly added 5.6 model must be probed before being added here.
 CODEX_MEASURED_MODELS: list[str] = ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]
 
-# Tana-UI models fronted through tana-litellm. Tana encodes reasoning effort in the
+# Tana-UI models served by the main LiteLLM proxy's in-process Tana provider. Tana
+# encodes reasoning effort in the
 # model name (`/medium`, `/high`), not a `reasoning_effort` param, so there is no clean
 # "one model + effort knob" to map onto; we expose one model per family at its default
-# effort. Each entry: (exposed-name base, tana-litellm downstream model_name). The
-# downstream name's slash stays inside the `anthropic/` arg, never exposed.
+# effort. Each entry: (exposed-name base, Tana provider model suffix). The provider
+# adds its dispatch prefix and preserves the suffix's slash for Tana.
 TANA_MODELS: list[tuple[str, str]] = [
     ("claude-sonnet-4-6", "claude-sonnet-4-6/medium"),
     ("claude-opus-4-6", "claude-opus-4-6/high"),

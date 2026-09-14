@@ -1,4 +1,4 @@
-# Tana LiteLLM proxy appliance runtime.
+# LiteLLM proxy runtime, including the in-process Tana provider.
 #
 # Keep this separate from the repo-wide pyproject.toml lock. LiteLLM's proxy
 # extra owns exact pins for packages such as rich and boto3 that conflict with
