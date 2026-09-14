@@ -28,8 +28,9 @@ non-default ref, alternate flake output, etc.). The resulting object key is
 Crib from <../k8s/gecko/>:
 
 - `namespace/` — dedicated namespace.
-- `app/vm-images-s3-reader.yaml` — `ExternalSecret` pulling `cdiReader*` keys
-  from `seaweedfs/vm-images-s3-credentials` via cross-namespace `SecretStore`.
+- `app/vm-images-s3-reader.yaml` — `ExternalSecret` pulling `accessKey` and
+  `secretKey` from `vm-images-publisher/vm-images-cdi-reader-s3-credentials`
+  via cross-namespace `SecretStore`.
 - `app/datavolume.yaml` — points at the published qcow2 via the public
   `s3.allegedly.works` endpoint (reads work over that path; only writes were
   ever slow).

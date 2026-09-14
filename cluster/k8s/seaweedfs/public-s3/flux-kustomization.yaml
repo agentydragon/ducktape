@@ -18,7 +18,7 @@ spec:
   dependsOn:
     - name: seaweedfs-drivefs-artifacts-bucket
       namespace: ducktape-flux
-    - name: seaweedfs-vm-images-bucket
+    - name: vm-images-publisher
       namespace: ducktape-flux
     - name: seaweedfs-wayback-archive-bucket
       namespace: ducktape-flux

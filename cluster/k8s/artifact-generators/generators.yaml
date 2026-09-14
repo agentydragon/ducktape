@@ -1986,13 +1986,6 @@ spec:
           to: "@artifact/cluster/k8s/seaweedfs/registry-cache-bucket/"
           exclude:
             - flux-kustomization.yaml
-    - name: seaweedfs-vm-images-bucket
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/seaweedfs/vm-images-bucket/**"
-          to: "@artifact/cluster/k8s/seaweedfs/vm-images-bucket/"
-          exclude:
-            - flux-kustomization.yaml
     - name: seaweedfs-wayback-archive-bucket
       originRevision: "@repo"
       copy:
