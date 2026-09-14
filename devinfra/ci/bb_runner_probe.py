@@ -31,6 +31,12 @@ PATHS_TO_STAT = (
     "/home/buildbuddy/workspace/output-base",
     "/home/buildbuddy/workspace/output-base/server",
 )
+FILESYSTEM_PATHS = (
+    "/home/buildbuddy/workspace",
+    "/home/buildbuddy/workspace/output-base",
+    "/tmp",
+    "/var/lib/docker",
+)
 PROC_GLOBAL_FILES = (
     (Path("/proc/sys/kernel/random/boot_id"), "global/boot_id"),
     (Path("/proc/uptime"), "global/uptime"),
@@ -118,6 +124,23 @@ def run_command(argv: list[str], *, timeout: float = 2.0) -> CommandResult:
 
 def command_json(result: CommandResult) -> dict[str, Any]:
     return dataclasses.asdict(result)
+
+
+def filesystem_stats() -> list[dict[str, Any]]:
+    """Capture capacity and free space for runner filesystems.
+
+    Path and mount metadata alone cannot distinguish a full filesystem from a
+    path that merely contains a large output base. Keep the command results
+    raw so the probe remains useful if the runner's mount layout changes.
+    """
+    return [
+        {
+            "path": path,
+            "df": command_json(run_command(["df", "-P", "-k", path])),
+            "statfs": command_json(run_command(["stat", "-f", path])),
+        }
+        for path in FILESYSTEM_PATHS
+    ]
 
 
 def safe_env() -> dict[str, str]:
@@ -404,6 +427,7 @@ def snapshot(
             path_stat(paths.probes_jsonl),
             path_stat(paths.latest_jsonl),
         ],
+        "filesystems": filesystem_stats(),
         "git": git,
         "bazel_servers": servers,
         "proc_snapshot": proc_snapshot,
@@ -440,6 +464,14 @@ def print_summary(data: dict[str, Any], out: Path) -> None:
             "CI_VM_PROBE_SERVER "
             f"pid={proc['pid']} age={proc.get('age_seconds', 0):.1f}s "
             f"start={proc.get('start_time')} sha256={proc['cmdline_sha256']}"
+        )
+    for filesystem in data["filesystems"]:
+        df = filesystem["df"]
+        print(
+            "CI_VM_PROBE_FILESYSTEM "
+            f"path={filesystem['path']} "
+            f"returncode={df['returncode']} "
+            f"df={json.dumps(df['stdout'], sort_keys=True)}"
         )
 
 

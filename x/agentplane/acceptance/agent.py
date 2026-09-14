@@ -15,7 +15,7 @@ import json
 import re
 from dataclasses import dataclass, field
 from http import HTTPStatus
-from typing import TypeVar, cast
+from typing import TypeVar
 from uuid import uuid4
 
 import httpx
@@ -23,7 +23,6 @@ from pydantic import BaseModel
 from tenacity import AsyncRetrying, retry_if_exception, stop_after_delay, wait_fixed
 
 from x.agentplane.app.client import Client
-from x.agentplane.app.presets import Harness
 from x.agentplane.protocol import command_pb2, event_pb2
 from x.agentplane.runner import protocol_pb2
 
@@ -99,7 +98,9 @@ class Agent:
         self._cursor = cursor
 
     @classmethod
-    async def open(cls, client: Client, *, sandbox: str, harness: Harness, model: str, instructions: str = "") -> Agent:
+    async def open(
+        cls, client: Client, *, sandbox: str, harness: protocol_pb2.Harness, model: str, instructions: str = ""
+    ) -> Agent:
         """Open a session, waiting out a runner that is up but not yet listening.
 
         A sandbox reports Running once its Pod has an address, and an address is not a listening
@@ -111,11 +112,7 @@ class Agent:
         is the proto's own default and opens the session the runner would open without the field.
         """
         spec = protocol_pb2.SessionSpec(
-            harness=cast(protocol_pb2.Harness, protocol_pb2.Harness.Value(harness.value)),
-            cwd=WORKING_DIRECTORY,
-            model=model,
-            reasoning_effort="low",
-            instructions=instructions,
+            harness=harness, cwd=WORKING_DIRECTORY, model=model, reasoning_effort="low", instructions=instructions
         )
         # One id across attempts: a 503 is raised before the runner is reached, so no attempt can
         # have left a session behind under a name the next one would not reuse.
