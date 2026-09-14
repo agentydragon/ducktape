@@ -192,10 +192,16 @@ settings and the existing stateful resource, then reconcile the replacement and 
 uses the same resource and PVC identities before cleaning up the old owner. `suspend` alone
 does not make deletion safe.
 
-**Never mix HelmReleases with CRD instances in the same Kustomization.**
+**Do not mix HelmReleases with CRD instances in the same Kustomization unless the
+path is an explicitly documented consolidation exception.**
 Layer 1 (CRD operators) → Layer 2 (secrets with ESO) → Layer 3 (app with HelmRelease),
 each layer's `flux-kustomization.yaml` with `dependsOn` on the previous. Violations are
 caught by `//cluster/validation:test_crd_layering`.
+
+The paths listed in `MIXED_CRD_LAYERING_EXCEPTIONS` are intentional exceptions while
+Flux Kustomizations are being consolidated to reduce needless artifacts and long
+reconcile chains. They still require an explicit transitive dependency on the operator
+that serves the CRDs.
 
 - Flat example: `k8s/aiquota/` — single flux-kustomization, all manifests at root
 - Grouped example: `k8s/langfuse/{namespace,secrets,db,app}/` — multi-layer with dependsOn

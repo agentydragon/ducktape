@@ -188,9 +188,8 @@ spec:
           MINIO_USE_SSL: false
           MINIO_BUCKET_LOOKUP: path
 
-      # SeaweedFS S3 credentials from the Reflector-mirrored s3-identity-forgejo
-      # Secret (source in the seaweedfs namespace). FORGEJO__ is the chart's
-      # env -> app.ini prefix.
+      # SeaweedFS S3 credentials from the operator-owned Secret in the Forgejo
+      # namespace. FORGEJO__ is the chart's env -> app.ini prefix.
       additionalConfigFromEnvs:
         - name: FORGEJO__metrics__TOKEN
           valueFrom:
@@ -200,12 +199,12 @@ spec:
         - name: FORGEJO__storage__MINIO_ACCESS_KEY_ID
           valueFrom:
             secretKeyRef:
-              name: s3-identity-forgejo
+              name: forgejo-s3-credentials
               key: accessKey
         - name: FORGEJO__storage__MINIO_SECRET_ACCESS_KEY
           valueFrom:
             secretKeyRef:
-              name: s3-identity-forgejo
+              name: forgejo-s3-credentials
               key: secretKey
 
     # Trust cluster CA bundle (includes Let's Encrypt staging CA)

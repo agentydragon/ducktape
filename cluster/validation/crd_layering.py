@@ -69,6 +69,7 @@ OPERATOR_CRDS: dict[str, set[str]] = {
     "openclaw-operator": {"OpenClawInstance", "OpenClawSelfConfig"},
     "agentplane-crds": {"EgressPolicy", "EgressBinding", "ActionPolicySet", "ActionPolicyBinding"},
     "sshpiper-crds": {"Pipe"},
+    "seaweedfs-operator": {"Bucket", "S3Identity", "S3Credentials", "ResourceReferenceGrant"},
     # TODO: if non-GHCR image automations are added, add a separate entry here
     # (e.g. "flux-image-automation-dockerhub": {"ImageRepository", ...}).
     "flux-image-automation-ghcr": {"ImageRepository", "ImagePolicy", "ImageUpdateAutomation"},
@@ -76,6 +77,13 @@ OPERATOR_CRDS: dict[str, set[str]] = {
 
 # Derived: CRD kind -> operator name (for error messages)
 CRD_TO_OPERATOR: dict[str, str] = {kind: operator for operator, kinds in OPERATOR_CRDS.items() for kind in kinds}
+
+# These components are currently consolidating unnecessarily split Flux
+# Kustomizations. Keeping their resources together removes artifacts and
+# shortens the long reconcile chains created by the splits. The operator
+# dependency check still requires each Kustomization to come after SeaweedFS.
+# Remove entries as the consolidation lands; this is not a general exemption.
+MIXED_CRD_LAYERING_EXCEPTIONS = {"forgejo/app", "monitoring/loki", "monitoring/mimir", "monitoring/tempo"}
 
 
 class CrdLayeringViolationError(Exception):
@@ -92,6 +100,10 @@ def check_crd_layering(result: KustomizeBuildResult) -> None:
         return
 
     if "overlays" in result.kustomization_path.parts:
+        return
+
+    kustomization_dir = result.kustomization_path.parent.as_posix()
+    if any(kustomization_dir.endswith(f"/{path}") for path in MIXED_CRD_LAYERING_EXCEPTIONS):
         return
 
     has_helmrelease = any(r.kind == "HelmRelease" for r in result.resources)
