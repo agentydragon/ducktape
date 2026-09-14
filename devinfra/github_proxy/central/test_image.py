@@ -34,12 +34,13 @@ async def test_image_boots_with_readonly_secrets_and_persistent_capture(tmp_path
     outer = certificates(public_tls, "outer", "localhost")
     certificates(interception_ca, "interception", None)
     password = "test-private-image-client-password"
-    (client / "credentials.json").write_text(json.dumps({"test-image": password}))
+    (client / "username").write_text("test-image")
+    (client / "password").write_text(password)
     (configuration / "config.json").write_text(
         json.dumps(
             {
                 "proxy_hostname": "localhost",
-                "credential_files": ["/run/client/credentials.json"],
+                "credential_dirs": ["/run/client"],
                 "proxy_tls_cert_file": "/run/public-tls/outer.crt",
                 "proxy_tls_key_file": "/run/public-tls/outer.key",
                 "interception_ca_cert_file": "/run/interception-ca/interception.crt",

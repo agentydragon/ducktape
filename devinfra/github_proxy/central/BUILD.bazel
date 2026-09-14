@@ -49,6 +49,7 @@ oci_layout_rloc(
 
 py_test(
     name = "test_image",
+    size = "medium",
     srcs = ["test_image.py"],
     data = [
         ":image_layout",

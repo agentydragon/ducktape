@@ -96,13 +96,17 @@ spec:
               - secret:
                   name: github-api-proxy-wyrm2-credentials
                   items:
-                    - key: credentials.json
-                      path: wyrm2.json
+                    - key: username
+                      path: wyrm2/username
+                    - key: password
+                      path: wyrm2/password
               - secret:
                   name: github-api-proxy-rugged-credentials
                   items:
-                    - key: credentials.json
-                      path: rugged.json
+                    - key: username
+                      path: rugged/username
+                    - key: password
+                      path: rugged/password
         - name: outer-tls
           secret:
             secretName: github-api-proxy-server-tls

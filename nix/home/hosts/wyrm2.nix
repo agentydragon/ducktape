@@ -27,20 +27,9 @@
     remote = {
       host = "github-proxy.allegedly.works";
       port = 8443;
-      credentialsFile = config.sops.secrets.github_api_proxy_credentials.path;
+      credentialsSopsFile = ../../../cluster/k8s/github-api-proxy/secrets/wyrm2-credentials.sops.yaml;
       caCertificate = ../modules/github-api-proxy-ca.pem;
     };
-  };
-
-  sops.secrets.github_api_proxy_credentials = {
-    sopsFile = ../../../cluster/k8s/github-api-proxy/secrets/wyrm2-credentials.sops.yaml;
-    key = "stringData/credentials.json";
-    mode = "0600";
-  };
-
-  systemd.user.services.github-api-proxy.Unit = {
-    After = [ "sops-nix.service" ];
-    Requires = [ "sops-nix.service" ];
   };
 
   ducktape.attic = {

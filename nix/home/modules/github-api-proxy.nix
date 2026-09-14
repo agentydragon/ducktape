@@ -18,7 +18,7 @@ let
   rawDesktop = ducktapePackages.claude-desktop;
 
   caBundle = "${stateDir}/ca-bundle.pem";
-  relayConfig = "%t/github-api-relay/squid.conf";
+  relayConfig = "${stateDir}/squid.conf";
   prepareTrust = pkgs.writeShellApplication {
     name = "github-api-proxy-prepare-trust";
     runtimeInputs = [
@@ -113,9 +113,9 @@ in
         default = 443;
         description = "HTTPS parent port.";
       };
-      credentialsFile = lib.mkOption {
-        type = lib.types.str;
-        description = "Owner-only runtime JSON file containing one username to 64-character lowercase hex password mapping; use a decrypted SOPS path, never a Nix path literal.";
+      credentialsSopsFile = lib.mkOption {
+        type = lib.types.path;
+        description = "SOPS file containing the host's username and password fields.";
       };
       caCertificate = lib.mkOption {
         type = lib.types.path;
@@ -132,35 +132,49 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    assertions = [
-      {
-        assertion = !(lib.hasPrefix builtins.storeDir cfg.remote.credentialsFile);
-        message = "GitHub proxy credentials must be a runtime secret outside the Nix store.";
-      }
-    ];
+    sops.secrets.github_proxy_username = {
+      sopsFile = cfg.remote.credentialsSopsFile;
+      key = "stringData/username";
+      mode = "0600";
+    };
+    sops.secrets.github_proxy_password = {
+      sopsFile = cfg.remote.credentialsSopsFile;
+      key = "stringData/password";
+      mode = "0600";
+    };
+    sops.templates."github-api-proxy-squid.conf" = {
+      path = relayConfig;
+      mode = "0600";
+      content = ''
+        http_port 127.0.0.1:${toString cfg.port}
+        visible_hostname github-api-relay
+        http_access deny manager
+        http_access allow localhost
+        http_access deny all
+        cache_peer ${cfg.remote.host} parent ${toString cfg.remote.port} 0 no-query no-digest default tls tls-min-version=1.2 tls-default-ca=off tls-cafile=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt ssldomain=${cfg.remote.host} login=${config.sops.placeholder.github_proxy_username}:${config.sops.placeholder.github_proxy_password}
+        never_direct allow all
+        cache deny all
+        cache_mem 0 MB
+        access_log none
+        cache_store_log none
+        cache_log /dev/null
+        pid_filename none
+        pinger_enable off
+        shutdown_lifetime 1 seconds
+        connect_timeout 5 seconds
+        peer_connect_timeout 5 seconds
+        forwarded_for delete
+        via off
+      '';
+    };
     systemd.user.services.github-api-proxy = {
       Unit.Description = "Transport relay to the central GitHub API proxy";
+      Unit.After = [ "sops-nix.service" ];
+      Unit.Requires = [ "sops-nix.service" ];
       Install.WantedBy = [ "default.target" ];
       Service = {
         Type = "simple";
         UMask = "0077";
-        RuntimeDirectory = "github-api-relay";
-        RuntimeDirectoryMode = "0700";
-        ExecStartPre = lib.escapeShellArgs [
-          "${ducktapePackages.ducktape}/bin/github-proxy-relay-config"
-          "--host"
-          cfg.remote.host
-          "--port"
-          (toString cfg.remote.port)
-          "--listen-port"
-          (toString cfg.port)
-          "--credentials-file"
-          cfg.remote.credentialsFile
-          "--ca-bundle"
-          "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
-          "--output"
-          relayConfig
-        ];
         ExecStart = "${pkgs.squid}/bin/squid -N -f ${relayConfig}";
         # Squid parser/fatal diagnostics can echo its secret-bearing cache_peer.
         # Health is the authenticated launcher probe plus the unit exit status.
