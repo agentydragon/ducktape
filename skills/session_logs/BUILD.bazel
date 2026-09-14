@@ -1,12 +1,20 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//skills:defs.bzl", "skill_package")
 
+# skill_package() owns the package target named session_logs; keep the parser
+# library separate from that generated target.
+# The Python entry points are packaged files and their library/test targets are
+# declared below rather than generated one-per-file.
+# gazelle:exclude *.py
+# keep: package sources are excluded from Gazelle because skill_package() owns
+# the package target and the parser targets are declared here.
 py_library(
     name = "session_logs_lib",
     srcs = ["session_logs.py"],
     visibility = ["//visibility:public"],
 )
 
+# keep: package sources are excluded from Gazelle; this is the parser test.
 py_test(
     name = "test_session_logs",
     srcs = ["test_session_logs.py"],
