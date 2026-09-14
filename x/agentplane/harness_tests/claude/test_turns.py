@@ -15,6 +15,9 @@ SEED_INPUT = "Reply with exactly: CRASH_RESUME_SEED_OK"
 IN_FLIGHT_INPUT = "Reply with exactly: CRASHED_IN_FLIGHT_FATE"
 QUEUED_INPUT = "Reply with exactly: CRASHED_QUEUE_FATE"
 RECOVERY_INPUT = "Reply with exactly: CRASH_RESUME_OK"
+INTERRUPTED_RESUME_INPUT = "Reply with exactly: INTERRUPTED_RESUME_INPUT"
+INTERRUPTED_RESUME_PARTIAL = "INTERRUPTED_RESUME_PARTIAL"
+INTERRUPTED_RESUME_RECOVERY = "Reply with exactly: INTERRUPTED_RESUME_RECOVERY_OK"
 
 
 async def test_baseline_turn(claude: ClaudeHarness, anthropic_messages: AnthropicMessages) -> None:
@@ -62,6 +65,45 @@ async def test_idle_resume_replays_the_transcript_from_disk(
             await exchange.send(*stream.events)
         assert (await prompt.result()).result == "IDLE_RESUME_OK"
     frames.assert_success(second.native_frames(), "IDLE_RESUME_OK")
+
+
+async def test_resume_after_an_interrupted_partial_turn_replays_only_completed_history(
+    claude: ClaudeHarness, anthropic_messages: AnthropicMessages
+) -> None:
+    """A terminated interrupted turn does not become context for a fresh Claude process.
+
+    This is deliberately distinct from a process killed while its turn is active below: the first
+    harness observes the interrupt and closes its upstream stream before it is killed.  The resumed
+    request is the native boundary the runner can rely on, so assert its typed Anthropic context
+    rather than inferring durability from the stream-json terminal frame.
+    """
+    async with claude.start(anthropic_messages, session_id=CRASHED_SESSION) as seeded:
+        seed_prompt = await seeded.send(SEED_INPUT)
+        async with await anthropic_messages.await_next_request() as exchange:
+            await exchange.send(*sse.message_stream([sse.Text("CRASH_RESUME_SEED_OK")], model=MODEL).events)
+        seed = await seed_prompt.result()
+        assert seed.session_id == CRASHED_SESSION
+
+    async with claude.start(anthropic_messages, resume_id=CRASHED_SESSION) as interrupted:
+        prompt = await interrupted.send(INTERRUPTED_RESUME_INPUT)
+        async with await anthropic_messages.await_next_request() as exchange:
+            await exchange.send(
+                *sse.message_stream([sse.Text(INTERRUPTED_RESUME_PARTIAL)], model=MODEL).through("text_delta").events
+            )
+            await prompt.active()
+            assert (await interrupted.interrupt(cancel_queued=False)).response.subtype == "success"
+            await exchange.wait_client_closed()
+        assert (await prompt.result()).is_error is True
+        assert await interrupted.crash() < 0
+
+    async with claude.start(anthropic_messages, resume_id=CRASHED_SESSION) as resumed:
+        recovery = await resumed.send(INTERRUPTED_RESUME_RECOVERY)
+        async with await anthropic_messages.await_next_request() as exchange:
+            replay = exchange.request
+            assert replay.texts("user") == [SEED_INPUT, INTERRUPTED_RESUME_RECOVERY]
+            assert replay.texts("assistant") == ["CRASH_RESUME_SEED_OK"]
+            await exchange.send(*sse.message_stream([sse.Text("INTERRUPTED_RESUME_RECOVERY_OK")], model=MODEL).events)
+        assert (await recovery.result()).result == "INTERRUPTED_RESUME_RECOVERY_OK"
 
 
 async def test_crash_before_a_completed_turn_leaves_claudes_session_unresumable(
