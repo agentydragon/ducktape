@@ -98,7 +98,7 @@ class Feed:
             thread_id = await self.store.thread(
                 self.lease.sandbox, self.session_id, attached.spec, sandbox_uid=self.sandbox_uid
             )
-            stored = await self.store.last_sequence(thread_id)
+            stored = await self.store.last_sequence(thread_id, self.session_id)
             if stored > attached.last_sequence:
                 if await self.store.feed_state(thread_id) is None:
                     await self.store.set_attached(thread_id, attached, lease=self.lease)
@@ -116,7 +116,7 @@ class Feed:
             try:
                 while True:
                     event = await attachment.next_event()
-                    await self.store.record(thread_id, [event], lease=self.lease)
+                    await self.store.record(thread_id, self.session_id, [event], lease=self.lease)
                     attachment.seen.clear()
             except StreamClosedError:
                 await self.store.end_feed(thread_id, lease=self.lease, error=None)
@@ -234,7 +234,7 @@ class RunnerBridge:
                             summary.harness_state == pb.HARNESS_STATE_STOPPED
                             and snapshot is not None
                             and snapshot.end is not None
-                            and await self._store.last_sequence(thread_id) == summary.last_sequence
+                            and await self._store.last_sequence(thread_id, summary.session_id) == summary.last_sequence
                         ):
                             continue
                         feed = Feed(
@@ -312,7 +312,7 @@ class RunnerBridge:
                 async with asyncio.timeout(15):
                     while True:
                         waiter.clear()
-                        if await self._store.last_sequence(thread_id) >= attachment.attached.last_sequence:
+                        if await self._store.last_sequence(thread_id, session_id) >= attachment.attached.last_sequence:
                             break
                         await waiter.wait()
             return attachment.attached
@@ -388,13 +388,15 @@ class RunnerBridge:
             yield _frame("attached", MessageToDict(snapshot.attached))
             while True:
                 waiter.clear()
-                while page := await self._store.events(thread_id, after_sequence=cursor, limit=REPLAY_PAGE):
+                while page := await self._store.runner_events(
+                    thread_id, session_id, after_sequence=cursor, limit=REPLAY_PAGE
+                ):
                     for event in page:
                         yield _frame("event", MessageToDict(event), event_id=event.sequence)
                         cursor = event.sequence
                 snapshot = await self._store.feed_state(thread_id)
                 if snapshot is not None and snapshot.end is not None:
-                    if await self._store.last_sequence(thread_id) > cursor:
+                    if await self._store.last_sequence(thread_id, session_id) > cursor:
                         continue
                     match snapshot.end:
                         case FeedEnd():
@@ -426,7 +428,7 @@ def _frame(event: str, data: dict[str, object], *, event_id: int | None = None) 
     return ("\n".join(lines) + "\n\n").encode()
 
 
-def _parse[M: pb.Command | pb.SessionSpec](message: M, body: dict[str, object]) -> M:
+def parse_message[M: pb.Command | pb.SessionSpec](message: M, body: dict[str, object]) -> M:
     try:
         return ParseDict(body, message)
     except ParseError as error:
@@ -469,7 +471,7 @@ async def open_session(bridge: Bridge, name: str, body: NewSession, request: Req
         resolved = binding.thread_defaults.proto_json(body.session_id) | resolved
     if binding is not None and binding.bootstrap:
         await bridge.initialize(name, binding.bootstrap)
-    spec = _parse(pb.SessionSpec(), resolved)
+    spec = parse_message(pb.SessionSpec(), resolved)
     spec.instructions = presets.instructions_for(spec.instructions)
     attached = await bridge.open_session(name, body.session_id, spec)
     return MessageToDict(attached)
@@ -495,7 +497,7 @@ async def session_events(
 
 @router.post("/{session_id}/inputs", status_code=status.HTTP_202_ACCEPTED)
 async def send_input(bridge: Bridge, name: str, session_id: str, body: dict[str, object]) -> Response:
-    command = _parse(pb.Command(), body)
+    command = parse_message(pb.Command(), body)
     if not command.command_id or not command.HasField("submit_input"):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="expected SubmitInput command")
     await bridge.command(name, session_id, command)
@@ -504,7 +506,7 @@ async def send_input(bridge: Bridge, name: str, session_id: str, body: dict[str,
 
 @router.post("/{session_id}/interrupt", status_code=status.HTTP_202_ACCEPTED)
 async def interrupt_session(bridge: Bridge, name: str, session_id: str, body: dict[str, object]) -> Response:
-    command = _parse(pb.Command(), body)
+    command = parse_message(pb.Command(), body)
     if not command.command_id or not command.HasField("interrupt_turn"):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="expected InterruptTurn command")
     await bridge.command(name, session_id, command)
@@ -515,7 +517,7 @@ async def interrupt_session(bridge: Bridge, name: str, session_id: str, body: di
 async def switch_session_model(
     bridge: Bridge, name: str, session_id: str, body: dict[str, object], request: Request
 ) -> Response:
-    command = _parse(pb.Command(), body)
+    command = parse_message(pb.Command(), body)
     if not command.command_id or not command.HasField("change_model") or not command.change_model.model:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="expected ChangeModel command")
     summaries = await bridge.list_sessions(name)
@@ -534,7 +536,7 @@ async def switch_session_model(
 
 @router.post("/{session_id}/shutdown", status_code=status.HTTP_202_ACCEPTED)
 async def shutdown_session(bridge: Bridge, name: str, session_id: str, body: dict[str, object]) -> Response:
-    command = _parse(pb.Command(), body)
+    command = parse_message(pb.Command(), body)
     if not command.command_id or not command.HasField("stop_runner_session"):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="expected StopRunnerSession command"

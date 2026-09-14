@@ -658,7 +658,7 @@ def test_models_lists_what_each_harness_may_run(client: TestClient) -> None:
     }
 
 
-async def test_thread_input_is_durable_and_its_state_is_projected_from_runner_events(
+async def test_thread_command_replay_keeps_app_persistence_and_runner_receipts_distinct(
     inventory: SandboxInventory,
     bridge: RunnerBridge,
     store: TrajectoryStore,
@@ -677,56 +677,55 @@ async def test_thread_input_is_durable_and_its_state_is_projected_from_runner_ev
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
     ) as http:
-        accepted = await http.post(
-            f"/threads/{thread_id}/inputs", json={"command_id": "input-1", "text": "Inspect the red check."}
-        )
-        assert accepted.status_code == 202, accepted.text
-        accepted_view = accepted.json()
-        assert {key: value for key, value in accepted_view.items() if key != "accepted_at"} == {
-            "command": {"commandId": "input-1", "submitInput": {"text": "Inspect the red check."}},
-            "ordinal": 1,
-            "state": "accepted",
-            "reason": None,
+        command = {"commandId": "input-1", "submitInput": {"text": "Inspect the red check."}}
+        accepted = await http.post(f"/threads/{thread_id}/commands", json=command)
+        assert accepted.status_code == 201, accepted.text
+        accepted_record = accepted.json()
+        assert accepted_record == {
+            "threadId": str(thread_id),
+            "replayCursor": "1",
+            "command": {"ordinal": "1", "command": command},
         }
-        assert accepted_view["accepted_at"]
+        # Retrying the client-chosen Command id is the same immutable app-side outbox record.
+        assert (await http.post(f"/threads/{thread_id}/commands", json=command)).json() == accepted_record
         assert (
             await http.post(
-                f"/threads/{thread_id}/inputs", json={"command_id": "input-1", "text": "Inspect the red check."}
+                f"/threads/{thread_id}/commands", json={"commandId": "input-1", "submitInput": {"text": "different"}}
             )
-        ).json()["ordinal"] == 1
-        assert (
-            await http.post(f"/threads/{thread_id}/inputs", json={"command_id": "input-1", "text": "different"})
         ).status_code == 409
-        assert (await http.post(f"/threads/{thread_id}/inputs", json={"command_id": "missing-text"})).status_code == 422
+        assert (
+            await http.post(f"/threads/{thread_id}/commands", json={"commandId": "missing-operation"})
+        ).status_code == 422
 
+        # This is the complete durable state a page reload receives before any runner is online.
+        before_runner = await http.get(f"/threads/{thread_id}/records")
+        assert before_runner.status_code == 200
+        assert before_runner.json() == {
+            "threadId": str(thread_id),
+            "lastReplayCursor": "1",
+            "records": [accepted_record],
+        }
         lease = await store.acquire_ingestion("live", timedelta(minutes=1))
         assert lease is not None
         await store.record(
-            thread_id, [_event(1, command_received=pb.CommandReceived(command_id="input-1"))], lease=lease
-        )
-        received = await http.get(f"/threads/{thread_id}/commands")
-        assert received.status_code == 200
-        assert received.json()[0]["state"] == "received"
-
-        await store.record(
             thread_id,
-            [
-                _event(
-                    2,
-                    harness_user_message_confirmed=pb.HarnessUserMessageConfirmed(
-                        harness_message_id="native-user-1",
-                        text="Inspect the red check.",
-                        origin_command_ids=["input-1"],
-                        turn_id="turn-1",
-                    ),
-                )
-            ],
+            "runner-session",
+            [_event(1, command_received=pb.CommandReceived(command_id="input-1"))],
             lease=lease,
         )
-        confirmed = await http.get(f"/threads/{thread_id}/commands")
-        assert confirmed.status_code == 200
-        assert confirmed.json()[0]["state"] == "confirmed"
-        assert (await http.get("/threads/00000000-0000-0000-0000-000000000000/commands")).status_code == 404
+        # Runner receipt is a later exact Event with its own runner-session identity, not a state
+        # fabricated onto the command record. Replaying after the first cursor sees just it.
+        received = await http.get(f"/threads/{thread_id}/records?after_replay_cursor=1")
+        assert received.status_code == 200
+        received_records = received.json()["records"]
+        assert len(received_records) == 1
+        assert received_records[0]["replayCursor"] == "2"
+        assert received_records[0]["runnerEvent"]["runnerSessionId"] == "runner-session"
+        assert received_records[0]["runnerEvent"]["event"]["commandReceived"] == {"commandId": "input-1"}
+        assert "state" not in received_records[0]
+        reloaded = await http.get(f"/threads/{thread_id}/records")
+        assert reloaded.json()["records"] == [accepted_record, received_records[0]]
+        assert (await http.get("/threads/00000000-0000-0000-0000-000000000000/records")).status_code == 404
 
 
 async def test_a_thread_is_found_by_its_session_and_renamed_in_place(

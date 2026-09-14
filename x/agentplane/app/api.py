@@ -6,8 +6,6 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack
-from datetime import datetime
-from enum import StrEnum
 from typing import Annotated
 from uuid import UUID
 
@@ -73,13 +71,7 @@ from x.agentplane.app.oidc import OIDCSettings, build_oauth, operator_session
 from x.agentplane.app.operator_sessions import OperatorSessionMiddleware
 from x.agentplane.app.presets import Harness, PresetCatalog, SandboxBinding, SandboxPresetView
 from x.agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown
-from x.agentplane.app.trajectory import (
-    ThreadCommandConflictError,
-    ThreadCommandSnapshot,
-    ThreadNotFoundError,
-    ThreadView,
-    TrajectoryStore,
-)
+from x.agentplane.app.trajectory import ThreadCommandConflictError, ThreadNotFoundError, ThreadView, TrajectoryStore
 from x.agentplane.runner import protocol_pb2 as pb
 from x.agentplane.runner.client import RunnerError
 
@@ -508,74 +500,6 @@ class ThreadRename(BaseModel):
         return value
 
 
-class ThreadCommandState(StrEnum):
-    """The furthest runner observation for one accepted Thread command."""
-
-    ACCEPTED = "accepted"
-    RECEIVED = "received"
-    CONFIRMED = "confirmed"
-    EFFECTIVE = "effective"
-    REJECTED = "rejected"
-    NOOP = "noop"
-
-
-class ThreadCommandView(BaseModel):
-    """Immutable desired command plus its pure runner-event projection."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    command: dict[str, object]
-    ordinal: int
-    accepted_at: datetime
-    state: ThreadCommandState
-    reason: str | None = None
-
-
-class ThreadInput(BaseModel):
-    """One ordinary user message accepted into an existing Thread's durable outbox."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    command_id: str = Field(min_length=1, max_length=200)
-    text: str = Field(min_length=1)
-
-
-def _thread_command_views(
-    commands: list[ThreadCommandSnapshot], observations: list[pb.Event]
-) -> list[ThreadCommandView]:
-    state: dict[str, tuple[ThreadCommandState, str | None]] = {}
-    for event in observations:
-        match event.WhichOneof("observation"):
-            case "command_received":
-                state[event.command_received.command_id] = (ThreadCommandState.RECEIVED, None)
-            case "command_rejected":
-                state[event.command_rejected.command_id] = (ThreadCommandState.REJECTED, event.command_rejected.reason)
-            case "command_noop":
-                state[event.command_noop.command_id] = (ThreadCommandState.NOOP, event.command_noop.reason)
-            case "harness_user_message_confirmed":
-                for command_id in event.harness_user_message_confirmed.origin_command_ids:
-                    state[command_id] = (ThreadCommandState.CONFIRMED, None)
-            case "model_changed":
-                state[event.model_changed.command_id] = (ThreadCommandState.EFFECTIVE, None)
-            case "turn_completed" if event.turn_completed.interrupted_by_command_id:
-                state[event.turn_completed.interrupted_by_command_id] = (ThreadCommandState.EFFECTIVE, None)
-            case "harness_exited" if event.harness_exited.stopped_by_command_id:
-                state[event.harness_exited.stopped_by_command_id] = (ThreadCommandState.EFFECTIVE, None)
-    views: list[ThreadCommandView] = []
-    for command in commands:
-        command_state, reason = state.get(command.command.command_id, (ThreadCommandState.ACCEPTED, None))
-        views.append(
-            ThreadCommandView(
-                command=MessageToDict(command.command),
-                ordinal=command.ordinal,
-                accepted_at=command.accepted_at,
-                state=command_state,
-                reason=reason,
-            )
-        )
-    return views
-
-
 @threads.get("")
 async def list_threads(
     store: Store,
@@ -588,21 +512,32 @@ async def list_threads(
     return await store.list_threads(sandbox=sandbox, session_id=session_id, include_archived=include_archived)
 
 
-@threads.get("/{thread_id}/commands")
-async def thread_commands(store: Store, thread_id: UUID) -> list[ThreadCommandView]:
-    """Outbox records with states projected from the runner's persisted event timeline."""
-    if await store.get_thread(thread_id) is None:
-        raise ThreadNotFoundError(thread_id)
-    return _thread_command_views(await store.thread_commands(thread_id), await store.command_observations(thread_id))
-
-
-@threads.post("/{thread_id}/inputs", status_code=status.HTTP_202_ACCEPTED)
-async def submit_thread_input(store: Store, thread_id: UUID, body: ThreadInput) -> ThreadCommandView:
-    """Commit one user input. Reconciliation, not this request, talks to the runner."""
-    command = await store.request_thread_command(
-        thread_id, pb.Command(command_id=body.command_id, submit_input=pb.SubmitInput(text=body.text))
+@threads.post("/{thread_id}/commands", status_code=status.HTTP_201_CREATED)
+async def request_thread_command(store: Store, thread_id: UUID, body: dict[str, object]) -> dict[str, object]:
+    """Store one exact protocol Command in the Thread outbox; this request never talks to a runner."""
+    command = runner_bridge.parse_message(pb.Command(), body)
+    if not command.command_id or command.WhichOneof("operation") is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="a Thread command needs a non-empty commandId and operation",
+        )
+    accepted = await store.request_thread_command(thread_id, command)
+    return MessageToDict(
+        (await store.thread_records(thread_id, after_replay_cursor=accepted.replay_cursor - 1, limit=1)).records[0]
     )
-    return _thread_command_views([command], await store.command_observations(thread_id))[0]
+
+
+@threads.get("/{thread_id}/records")
+async def thread_records(
+    store: Store,
+    thread_id: UUID,
+    after_replay_cursor: Annotated[
+        int, Query(ge=0, description="Replay entries with a greater app transport cursor.")
+    ] = 0,
+    limit: Annotated[int, Query(ge=1, le=10_000)] = 10_000,
+) -> dict[str, object]:
+    """A durable replay snapshot, not a projection of a Thread into one cross-session transcript."""
+    return MessageToDict(await store.thread_records(thread_id, after_replay_cursor=after_replay_cursor, limit=limit))
 
 
 class ThreadsWithSandboxes(BaseModel):
@@ -656,19 +591,6 @@ async def archive_thread(store: Store, thread_id: UUID) -> Response:
 async def unarchive_thread(store: Store, thread_id: UUID) -> Response:
     await store.unarchive(thread_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@threads.get("/{thread_id}/events")
-async def thread_events(
-    store: Store,
-    thread_id: UUID,
-    after: Annotated[int, Query(ge=0, description="Events with a greater sequence.")] = 0,
-    limit: Annotated[int, Query(ge=1, le=10_000)] = 10_000,
-) -> list[dict[str, object]]:
-    """The stored events as proto-JSON of the runner protocol's Event, in sequence order."""
-    if await store.get_thread(thread_id) is None:
-        raise ThreadNotFoundError(thread_id)
-    return [MessageToDict(event) for event in await store.events(thread_id, after_sequence=after, limit=limit)]
 
 
 def create_app(

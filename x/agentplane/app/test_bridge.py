@@ -225,9 +225,11 @@ async def _stored_events(http: httpx.AsyncClient, thread_id: str, *, until: str)
         stop=stop_after_delay(30), wait=wait_fixed(0.2), retry=retry_if_exception_type(AssertionError)
     ):
         with attempt:
-            response = await http.get(f"/threads/{thread_id}/events")
+            response = await http.get(f"/threads/{thread_id}/records")
             assert response.status_code == 200, response.text
-            events: list[dict[str, Any]] = response.json()
+            events = [
+                record["runnerEvent"]["event"] for record in response.json()["records"] if "runnerEvent" in record
+            ]
             assert any(until in event for event in events), f"no {until} stored yet"
     return events
 
@@ -253,7 +255,7 @@ async def test_the_feed_records_a_turn_nobody_is_watching(
                 f"{SESSIONS}/unwatched/shutdown", json={"commandId": "stop-unwatched", "stopRunnerSession": {}}
             )
         ).status_code == 202
-        assert (await http.get("/threads/00000000-0000-0000-0000-000000000000/events")).status_code == 404
+        assert (await http.get("/threads/00000000-0000-0000-0000-000000000000/records")).status_code == 404
 
 
 async def test_the_bridge_reports_what_the_runner_refuses(app_url: str) -> None:
@@ -324,7 +326,7 @@ async def test_durable_input_survives_the_accepting_app_replica_crash(
             stop=stop_after_delay(10), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
         ):
             with attempt:
-                events = await store.events(thread.id, limit=100)
+                events = await store.runner_events(thread.id, thread.session_id, limit=100)
                 assert any(
                     event.HasField("command_received")
                     and event.command_received.command_id == accepted.command.command_id
@@ -452,7 +454,7 @@ async def test_inventory_change_discovers_existing_runner_session_without_browse
             with attempt:
                 threads = await store.list_threads()
                 assert len(threads) == 1
-                assert await store.last_sequence(threads[0].id) > 0
+                assert await store.last_sequence(threads[0].id, threads[0].session_id) > 0
         assert threads[0].sandbox == SANDBOX
         assert threads[0].session_id == SESSION
     finally:
