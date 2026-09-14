@@ -69,9 +69,11 @@ go_deps.module(
     path = "github.com/router-for-me/CLIProxyAPI/v7",
     version = "v7.0.0-20260908173309-7fac6b15bcfe",
 )
-
-# The pinned live-session sources still import the v3 STUN path. Keep that
-# repository visible alongside the v4 module used by the newer WebRTC sources.
+# The pinned upstream CLIProxyAPI source archive's generated BUILD graph still
+# imports pion/stun/v3 even though its go.mod has moved to pion/stun/v4. Keep
+# the isolated go_deps repository visible alongside the v4 module used by the
+# newer WebRTC sources until the pinned source and BUILD graph stop referring
+# to the v3 label.
 go_deps.module(
     path = "github.com/pion/stun/v3",
     sum = "h1:uRXMTlGLf89WgItGNyZ6aR5jMTX0NBbybXADpQCzn+E=",
