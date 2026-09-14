@@ -88,6 +88,9 @@ resource "authentik_provider_proxy" "alloy_otlp" {
   jwt_federation_providers = [authentik_provider_oauth2.alloy_otlp_client_credentials.id]
 }
 
+# TODO(authentik-meta-hide): Now that the 2026.8 provider is active, consider
+# `meta_hide = true`; this proxy application is an OTLP plumbing endpoint, not a
+# user-facing launcher target. Verify this changes presentation only.
 resource "authentik_application" "alloy_otlp" {
   name              = "Alloy OTLP"
   slug              = "alloy-otlp"
@@ -117,6 +120,9 @@ resource "authentik_provider_oauth2" "alloy_otlp_client_credentials" {
   ]
 }
 
+# TODO(authentik-meta-hide): Now that the 2026.8 provider is active, consider
+# `meta_hide = true`; this client-credentials application exists only for the
+# Alloy token rotator and should not be a launcher target.
 resource "authentik_application" "alloy_otlp_client_credentials" {
   name              = "alloy-otlp-client-credentials"
   slug              = "alloy-otlp-client-credentials"
@@ -137,6 +143,11 @@ resource "authentik_policy_binding" "alloy_otlp_client_credentials" {
   order  = 0
 }
 
+# TODO(authentik-provider-2026.8): Recheck whether the upgraded provider can
+# discover Authentik's auto-materialized client_credentials service account after
+# the OAuth2 provider exists. If it can, replace this pre-created shape and its
+# bindings with a data source only after plan/apply and token-identity checks.
+#
 # Pre-create the service-account user shape that Authentik otherwise
 # auto-materializes for client_credentials grants. The kubectl-sandbox provider
 # proved that issued tokens authenticate as this username, but reading it as a

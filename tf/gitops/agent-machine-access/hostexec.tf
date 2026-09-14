@@ -76,6 +76,9 @@ resource "authentik_provider_oauth2" "hostexec" {
 # machine providers, e.g. stalwart-haku). No policy binding: access is the
 # federation trust above plus the operator's group membership, not an interactive
 # application grant.
+# TODO(authentik-meta-hide): Now that the 2026.8 provider is active, consider
+# `meta_hide = true`; these per-host token-exchange targets are operator plumbing,
+# not interactive launcher entries. Verify this changes presentation only.
 resource "authentik_application" "hostexec" {
   for_each = authentik_provider_oauth2.hostexec
 
