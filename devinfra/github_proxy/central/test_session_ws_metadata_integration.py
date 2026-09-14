@@ -15,8 +15,8 @@ from mitmproxy.options import Options
 from mitmproxy.proxy.server_hooks import ServerConnectionHookData
 from mitmproxy.tools.dump import DumpMaster
 
-from devinfra.github_api_capture import session_ws_metadata
-from devinfra.github_api_capture.session_ws_metadata import SessionWebSocketMetadata
+from devinfra.github_proxy.central import session_ws_metadata
+from devinfra.github_proxy.central.session_ws_metadata import SessionWebSocketMetadata
 
 
 class LoopbackUpstream:

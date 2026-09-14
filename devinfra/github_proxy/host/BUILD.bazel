@@ -1,0 +1,32 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+exports_files(["prepare_trust.sh"])
+
+py_library(
+    name = "relay_config",
+    srcs = ["relay_config.py"],
+    visibility = ["//:__pkg__"],
+)
+
+py_test(
+    name = "test_relay_config",
+    size = "medium",
+    srcs = ["test_relay_config.py"],
+    data = [
+        "prepare_trust.sh",
+        "//devinfra/github_proxy/host/testing:squid_image",
+    ],
+    requires_docker = True,
+    deps = [
+        ":relay_config",
+        "//:conftest",
+        "//util:oci",
+        "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
+        "@pypi//cryptography",
+        "@pypi//docker",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//tenacity",
+    ],
+)

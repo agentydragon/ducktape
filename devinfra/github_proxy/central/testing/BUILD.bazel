@@ -1,0 +1,15 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//devinfra/github_proxy/central:__pkg__"],
+)
+
+py_library(
+    name = "certificates",
+    srcs = ["certificates.py"],
+    deps = [
+        "@pypi//cryptography",
+        "@pypi//mitmproxy",
+    ],
+)

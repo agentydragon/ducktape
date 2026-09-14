@@ -5,7 +5,7 @@ from aiohttp import BasicAuth
 from mitmproxy import connection, http
 from pydantic import SecretStr
 
-from cluster.proxies.github_api_proxy.metrics import CLIENT_METADATA_KEY, UNAUTHENTICATED, Metrics, Route, route
+from devinfra.github_proxy.central.metrics import CLIENT_METADATA_KEY, UNAUTHENTICATED, Metrics, Route, route
 
 
 def scrub(flow: http.HTTPFlow) -> None:

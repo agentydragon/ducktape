@@ -5,7 +5,7 @@ import pytest_bazel
 from aiohttp.test_utils import TestClient, TestServer
 from mitmproxy import connection, http
 
-from cluster.proxies.github_api_proxy.metrics import (
+from devinfra.github_proxy.central.metrics import (
     CLIENT_METADATA_KEY,
     MAX_COST_BODY_BYTES,
     CostStatus,
