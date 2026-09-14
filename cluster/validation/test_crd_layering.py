@@ -32,8 +32,23 @@ def _build_result(kustomization_path: Path, build_output_file: Path) -> Kustomiz
         (Path("/k8s/cert-manager-config/base/kustomization.yaml"), "cert_manager_nested"),
         (Path("/k8s/vault/config/base/kustomization.yaml"), "vault_nested"),
         (Path("/k8s/test-app/overlays/production/kustomization.yaml"), "mixed_helmrelease_and_crd"),
+        (Path("/k8s/forgejo/app/kustomization.yaml"), "mixed_helmrelease_and_crd"),
+        (Path("/k8s/monitoring/loki/kustomization.yaml"), "mixed_helmrelease_and_crd"),
+        (Path("/k8s/monitoring/mimir/kustomization.yaml"), "mixed_helmrelease_and_crd"),
+        (Path("/k8s/monitoring/tempo/kustomization.yaml"), "mixed_helmrelease_and_crd"),
     ],
-    ids=["helmrelease_only", "crd_only", "operator_with_crd", "cert_manager_nested", "vault_nested", "overlay_skipped"],
+    ids=[
+        "helmrelease_only",
+        "crd_only",
+        "operator_with_crd",
+        "cert_manager_nested",
+        "vault_nested",
+        "overlay_skipped",
+        "forgejo_consolidation_exception",
+        "loki_consolidation_exception",
+        "mimir_consolidation_exception",
+        "tempo_consolidation_exception",
+    ],
 )
 def test_valid_cases(kustomization_path: Path, testdata_name: str) -> None:
     check_crd_layering(_build_result(kustomization_path, _TESTDATA / f"{testdata_name}.yaml"))
