@@ -126,11 +126,11 @@ pub(crate) struct RegexAnchorSubstitution<'a> {
 
 impl VisitMut for RegexAnchorSubstitution<'_> {
     fn visit_mut_expr(&mut self, expr: &mut Expr) {
-        if let Expr::Lit(Lit::Str(str_lit)) = expr {
-            if let Some(pattern) = self.patterns.get(&span_key(str_lit.span)) {
-                *expr = regex_predicate_call(pattern);
-                return;
-            }
+        if let Expr::Lit(Lit::Str(str_lit)) = expr
+            && let Some(pattern) = self.patterns.get(&span_key(str_lit.span))
+        {
+            *expr = regex_predicate_call(pattern);
+            return;
         }
         expr.visit_mut_children_with(self);
     }
@@ -147,12 +147,11 @@ pub(crate) fn collect_regex_anchor_candidates(init: &Expr) -> BTreeMap<AnchorSpa
     }
     impl Visit for Collector {
         fn visit_expr(&mut self, expr: &Expr) {
-            if let Expr::Lit(Lit::Str(str_lit)) = expr {
-                if let Some(pattern) =
+            if let Expr::Lit(Lit::Str(str_lit)) = expr
+                && let Some(pattern) =
                     regex_anchor_pattern(str_lit.value.to_string_lossy().as_ref())
-                {
-                    self.candidates.insert(span_key(str_lit.span), pattern);
-                }
+            {
+                self.candidates.insert(span_key(str_lit.span), pattern);
             }
             expr.visit_children_with(self);
         }

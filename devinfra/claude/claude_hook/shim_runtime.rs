@@ -164,18 +164,17 @@ fn resolve_binary_from_env(
             continue;
         }
         let dir_path = Path::new(dir);
-        if let (Some(a), Ok(b)) = (shim_canon.as_ref(), dir_path.canonicalize()) {
-            if a == &b {
-                continue;
-            }
+        if let (Some(a), Ok(b)) = (shim_canon.as_ref(), dir_path.canonicalize())
+            && a == &b
+        {
+            continue;
         }
         let candidate = dir_path.join(binary);
-        if candidate.is_file() {
-            if let Ok(m) = std::fs::metadata(&candidate) {
-                if m.permissions().mode() & 0o111 != 0 {
-                    return Some(candidate);
-                }
-            }
+        if candidate.is_file()
+            && let Ok(m) = std::fs::metadata(&candidate)
+            && m.permissions().mode() & 0o111 != 0
+        {
+            return Some(candidate);
         }
     }
     None
@@ -229,12 +228,13 @@ fn percent_decode(input: &str) -> String {
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;
     while i < bytes.len() {
-        if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let (Some(hi), Some(lo)) = (from_hex(bytes[i + 1]), from_hex(bytes[i + 2])) {
-                out.push((hi << 4) | lo);
-                i += 3;
-                continue;
-            }
+        if bytes[i] == b'%'
+            && i + 2 < bytes.len()
+            && let (Some(hi), Some(lo)) = (from_hex(bytes[i + 1]), from_hex(bytes[i + 2]))
+        {
+            out.push((hi << 4) | lo);
+            i += 3;
+            continue;
         }
         out.push(bytes[i]);
         i += 1;

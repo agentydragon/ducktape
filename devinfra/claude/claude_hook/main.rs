@@ -237,10 +237,10 @@ fn write_session_bazelrc(
     // Write a per-session BuildBuddy credential file, scoped to repositories
     // that enable their rbe configuration, then import it. Keep this private:
     // it contains the BuildBuddy API key.
-    if let Some(api_key) = env_overlay.get("BUILDBUDDY_API_KEY") {
-        if let Some(bb_bazelrc) = write_buildbuddy_bazelrc(session_dir, api_key) {
-            lines.push(format!("try-import {}", bb_bazelrc.display()));
-        }
+    if let Some(api_key) = env_overlay.get("BUILDBUDDY_API_KEY")
+        && let Some(bb_bazelrc) = write_buildbuddy_bazelrc(session_dir, api_key)
+    {
+        lines.push(format!("try-import {}", bb_bazelrc.display()));
     }
 
     lines.push(format!("try-import {}", bbr_bazelrc.display()));
@@ -412,17 +412,17 @@ async fn handle_hook(
     };
 
     // Drain mailbox into output.system_message for REPL hooks.
-    if req.hook.is_repl() {
-        if let Some(s) = session {
-            let mailbox = s.drain_messages();
-            let bg = s.drain_bg_output();
-            if let Some(msg) = format_system_message(mailbox, bg) {
-                let out = output.get_or_insert_with(HookOutput::default);
-                out.system_message = Some(match out.system_message.take() {
-                    Some(existing) if !existing.is_empty() => format!("{existing}\n\n{msg}"),
-                    _ => msg,
-                });
-            }
+    if req.hook.is_repl()
+        && let Some(s) = session
+    {
+        let mailbox = s.drain_messages();
+        let bg = s.drain_bg_output();
+        if let Some(msg) = format_system_message(mailbox, bg) {
+            let out = output.get_or_insert_with(HookOutput::default);
+            out.system_message = Some(match out.system_message.take() {
+                Some(existing) if !existing.is_empty() => format!("{existing}\n\n{msg}"),
+                _ => msg,
+            });
         }
     }
 

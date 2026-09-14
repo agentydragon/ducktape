@@ -192,22 +192,22 @@ pub fn record_startup_failure(daemon_dir: &Path) {
         last_failure_epoch: now_epoch(),
     };
     let path = daemon_dir.join(STARTUP_FAILURE_FILE);
-    if let Ok(json) = serde_json::to_vec(&data) {
-        if let Ok(mut tmp) = tempfile::NamedTempFile::new_in(daemon_dir) {
-            use std::io::Write;
-            tmp.write_all(&json).ok();
-            if let Err(e) = tmp.persist(&path) {
-                eprintln!("lifecycle: failed to persist {}: {e}", path.display());
-            }
+    if let Ok(json) = serde_json::to_vec(&data)
+        && let Ok(mut tmp) = tempfile::NamedTempFile::new_in(daemon_dir)
+    {
+        use std::io::Write;
+        tmp.write_all(&json).ok();
+        if let Err(e) = tmp.persist(&path) {
+            eprintln!("lifecycle: failed to persist {}: {e}", path.display());
         }
     }
 }
 
 pub fn clear_startup_failure(daemon_dir: &Path) {
-    if let Err(e) = std::fs::remove_file(daemon_dir.join(STARTUP_FAILURE_FILE)) {
-        if e.kind() != std::io::ErrorKind::NotFound {
-            eprintln!("lifecycle: failed to clear startup_failure.json: {e}");
-        }
+    if let Err(e) = std::fs::remove_file(daemon_dir.join(STARTUP_FAILURE_FILE))
+        && e.kind() != std::io::ErrorKind::NotFound
+    {
+        eprintln!("lifecycle: failed to clear startup_failure.json: {e}");
     }
 }
 
@@ -273,15 +273,15 @@ pub async fn ensure_daemon(sock_path: &Path, daemon_dir: &Path) -> Result<(), St
     }
 
     // Clean stale state.
-    if sock_path.exists() {
-        if let Err(e) = std::fs::remove_file(sock_path) {
-            eprintln!("lifecycle: failed to remove stale socket: {e}");
-        }
+    if sock_path.exists()
+        && let Err(e) = std::fs::remove_file(sock_path)
+    {
+        eprintln!("lifecycle: failed to remove stale socket: {e}");
     }
-    if pidfile.exists() {
-        if let Err(e) = std::fs::remove_file(&pidfile) {
-            eprintln!("lifecycle: failed to remove stale pidfile: {e}");
-        }
+    if pidfile.exists()
+        && let Err(e) = std::fs::remove_file(&pidfile)
+    {
+        eprintln!("lifecycle: failed to remove stale pidfile: {e}");
     }
 
     let forked = crate::fork_daemon(daemon_dir, sock_path);
