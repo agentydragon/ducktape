@@ -21,4 +21,8 @@ spec:
     - apiVersion: seaweed.seaweedfs.com/v1
       kind: Bucket
       name: pr-visuals
-      namespace: seaweedfs
+      namespace: flux-system
+    - apiVersion: seaweed.seaweedfs.com/v1
+      kind: S3Credentials
+      name: pr-visuals-writer
+      namespace: flux-system
