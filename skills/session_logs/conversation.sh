@@ -9,21 +9,53 @@ set -euo pipefail
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 
 usage() {
-  echo "usage: $0 [claude|codex] [TRANSCRIPT.jsonl]" >&2
+  echo "usage: $0 [--max-display-text-length N] [claude|codex] [TRANSCRIPT.jsonl]" >&2
   exit 2
 }
+
+MAX_DISPLAY_TEXT_LENGTH=1000
+POSITIONAL=()
+while (($# > 0)); do
+  case "$1" in
+    --max-display-text-length)
+      (($# >= 2)) || usage
+      MAX_DISPLAY_TEXT_LENGTH=$2
+      shift 2
+      ;;
+    --max-display-text-length=*)
+      MAX_DISPLAY_TEXT_LENGTH=${1#*=}
+      shift
+      ;;
+    --)
+      shift
+      POSITIONAL+=("$@")
+      break
+      ;;
+    *)
+      POSITIONAL+=("$1")
+      shift
+      ;;
+  esac
+done
+
+if [[ ! "$MAX_DISPLAY_TEXT_LENGTH" =~ ^[0-9]+$ ]] || ((MAX_DISPLAY_TEXT_LENGTH < 100)); then
+  echo "Error: --max-display-text-length must be an integer of at least 100" >&2
+  exit 2
+fi
+
+set -- "${POSITIONAL[@]}"
 
 HARNESS=
 SESSION_FILE=
 case $# in
   0)
-    SESSION_FILE=$("$SCRIPT_DIR/find-current-session.sh")
+    SESSION_FILE=$("$SCRIPT_DIR/find_current_session.sh")
     ;;
   1)
     case "$1" in
       claude | codex)
         HARNESS=$1
-        SESSION_FILE=$("$SCRIPT_DIR/find-current-session.sh" "$HARNESS")
+        SESSION_FILE=$("$SCRIPT_DIR/find_current_session.sh" "$HARNESS")
         ;;
       *)
         SESSION_FILE=$1
@@ -69,88 +101,8 @@ printf 'Transcript: %s\nHarness: %s\nCompaction markers: %s\n' \
   "$SESSION_FILE" "$HARNESS" "$COMPACTIONS"
 printf '%s\n' 'The complete JSONL is scanned; continue after every compaction marker.'
 
-jq -sr --arg harness "$HARNESS" '
-  def claude_user_text:
-    if (.message.content | type) == "string" then
-      .message.content
-    elif (.message.content | type) == "array" then
-      [.message.content[]? | select(.type == "text") | .text // ""] | join("\n")
-    else
-      ""
-    end;
-
-  def codex_user_text:
-    [.payload.content[]? |
-      select(.type == "input_text" or .type == "text") | .text // ""] | join("\n");
-
-  def user_text($entry):
-    if $harness == "claude" then ($entry | claude_user_text)
-    else ($entry | codex_user_text)
-    end;
-
-  def is_user($entry):
-    if $harness == "claude" then
-      ($entry.type == "user" and (($entry | claude_user_text) | length > 0)
-       and (($entry | claude_user_text | startswith("<task-notification>") | not))
-       and (($entry | claude_user_text | startswith("<system-reminder>") | not)))
-    else
-      ($entry.type == "response_item" and $entry.payload.type == "message"
-       and $entry.payload.role == "user" and (($entry | codex_user_text) | length > 0))
-    end;
-
-  def assistant_text($entry):
-    if $harness == "claude" then
-      [.message.content[]? |
-        if .type == "text" then "[text]\n" + (.text // "")
-        elif .type == "thinking" then "[thinking]\n" + (.thinking // "")
-        elif .type == "tool_use" then "[tool_use: " + (.name // "unknown") + "]"
-        else empty
-        end] | join("\n")
-    else
-      [.payload.content[]? | select(.type == "output_text" or .type == "text") |
-        .text // ""] | join("\n")
-    end;
-
-  def is_assistant($entry):
-    if $harness == "claude" then $entry.type == "assistant"
-    else ($entry.type == "response_item" and $entry.payload.type == "message"
-          and $entry.payload.role == "assistant")
-    end;
-
-  def is_compaction($entry):
-    if $harness == "claude" then
-      ($entry.type == "system" and $entry.subtype == "compact_boundary")
-    else
-      ($entry.type == "event_msg" and $entry.payload.type == "context_compacted")
-    end;
-
-  def render_recent:
-    if length == 0 then
-      "(no preceding assistant message in transcript)\n"
-    else
-      to_entries |
-      map("--- preceding assistant message \(.key + 1) @ \(.value.timestamp) ---\n\(.value.text)\n") |
-      join("\n")
-    end;
-
-  foreach .[] as $entry
-    ({recent: [], user_count: 0};
-     .emitted = null |
-     if is_compaction($entry) then
-       .emitted = "\n### Compaction marker @ " + ($entry.timestamp // "unknown") +
-         " — keep scanning; earlier JSONL entries remain part of this conversation.\n"
-     elif is_assistant($entry) then
-       .recent += [{timestamp: ($entry.timestamp // "unknown"), text: ($entry | assistant_text($entry))}] |
-       .recent = .recent[-2:]
-     elif is_user($entry) then
-       .user_count += 1 |
-       ($entry | user_text($entry)) as $text |
-       .emitted =
-         ("\n## User message " + (.user_count | tostring) + " @ " + ($entry.timestamp // "unknown") + "\n" +
-          (.recent | render_recent) +
-          "--- user message ---\n" + $text + "\n")
-     else
-       .
-     end;
-     .emitted // empty)
-' "$SESSION_FILE"
+jq -sr \
+  --arg harness "$HARNESS" \
+  --argjson max_display_text_length "$MAX_DISPLAY_TEXT_LENGTH" \
+  -f "$SCRIPT_DIR/conversation.jq" \
+  "$SESSION_FILE"

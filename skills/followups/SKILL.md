@@ -65,11 +65,11 @@ Run the paved helper for the applicable harness, then read its entire output:
 
 ```bash
 # Claude Code 2.1.260
-CLAUDE_SESSION=$(~/.claude/skills/session_logs/find-current-session.sh claude)
+CLAUDE_SESSION=$(~/.claude/skills/session_logs/find_current_session.sh claude)
 ~/.claude/skills/session_logs/conversation.sh claude "$CLAUDE_SESSION"
 
 # Codex CLI 0.153.4
-CODEX_SESSION=$(~/.codex/skills/session_logs/find-current-session.sh codex)
+CODEX_SESSION=$(~/.codex/skills/session_logs/find_current_session.sh codex)
 ~/.codex/skills/session_logs/conversation.sh codex "$CODEX_SESSION"
 ```
 
