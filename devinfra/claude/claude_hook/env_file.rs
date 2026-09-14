@@ -47,10 +47,10 @@ pub fn write_env_file(
 
     let content = format!("{}\n", lines.join("\n"));
 
-    if let Some(parent) = env_file.parent() {
-        if let Err(e) = std::fs::create_dir_all(parent) {
-            eprintln!("env_file: failed to create parent dir: {e}");
-        }
+    if let Some(parent) = env_file.parent()
+        && let Err(e) = std::fs::create_dir_all(parent)
+    {
+        eprintln!("env_file: failed to create parent dir: {e}");
     }
 
     // Atomic write via tempfile + persist; set 0o600 since the file
