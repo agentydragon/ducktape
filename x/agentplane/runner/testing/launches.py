@@ -20,7 +20,7 @@ RUNNER_BINARY = "_main/x/agentplane/runner/main_bin"
 TOKEN = "test-key"
 
 
-def spec(harness: pb.Harness.ValueType, cwd: Path) -> pb.SessionSpec:
+def spec(harness: pb.Harness, cwd: Path) -> pb.SessionSpec:
     if harness == pb.HARNESS_CLAUDE:
         model = claude_harness.MODEL
     elif harness == pb.HARNESS_CODEX:
@@ -41,7 +41,7 @@ def environment(home: Path) -> dict[str, str]:
     }
 
 
-def config(harness: pb.Harness.ValueType, endpoint: str, *, state_dir: Path, home: Path) -> RunnerConfig:
+def config(harness: pb.Harness, endpoint: str, *, state_dir: Path, home: Path) -> RunnerConfig:
     return RunnerConfig(
         state_dir=state_dir,
         environment=environment(home),
@@ -59,11 +59,7 @@ def codex_launch(endpoint: str) -> CodexLaunch:
 
 
 def runner_command(
-    harness: pb.Harness.ValueType,
-    endpoint: str,
-    *,
-    state_dir: Path,
-    test_debug_checkpoint: tuple[str, str] | None = None,
+    harness: pb.Harness, endpoint: str, *, state_dir: Path, test_debug_checkpoint: tuple[str, str] | None = None
 ) -> list[str]:
     """The runner as its own process, configured like `config` is."""
     command = [str(get_required_path(RUNNER_BINARY)), "--state-dir", str(state_dir)]

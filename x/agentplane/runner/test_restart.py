@@ -80,7 +80,7 @@ async def _exited(pid: int) -> None:
 
 @pytest.fixture
 async def start_runner(
-    harness: pb.Harness.ValueType, endpoint: AnthropicMessages | OpenAIResponses, tmp_path: Path
+    harness: pb.Harness, endpoint: AnthropicMessages | OpenAIResponses, tmp_path: Path
 ) -> AsyncIterator[Callable[..., Awaitable[RunnerProcess]]]:
     started: list[RunnerProcess] = []
 

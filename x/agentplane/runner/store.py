@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
+from typing import cast
 
 from pydantic import BaseModel, Field
 
@@ -39,7 +40,7 @@ class SessionRecord(BaseModel):
 
     def spec(self) -> pb.SessionSpec:
         return pb.SessionSpec(
-            harness=pb.Harness.ValueType(pb.Harness.Value(self.harness)),
+            harness=cast(pb.Harness, pb.Harness.Value(self.harness)),
             cwd=self.cwd,
             model=self.model,
             reasoning_effort=self.reasoning_effort,
