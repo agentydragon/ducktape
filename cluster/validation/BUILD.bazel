@@ -637,8 +637,8 @@ py_test(
     deps = [
         ":conftest",
         "//:conftest",
-        "//haku/x/dispatch/deploy/litellm:generate_workers_litellm",
         "//haku/x/dispatch:config",
+        "//haku/x/dispatch/deploy/litellm:generate_workers_litellm",
         "@pypi//pytest_bazel",
     ],
 )

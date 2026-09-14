@@ -11,9 +11,7 @@ from util.bazel.runfiles import get_required_path
 
 
 def test_haku_dispatch_deploy_renders() -> None:
-    result = asyncio.run(
-        run_kustomize_build(get_required_path("ducktape/haku/x/dispatch/deploy/kustomization.yaml"))
-    )
+    result = asyncio.run(run_kustomize_build(get_required_path("ducktape/haku/x/dispatch/deploy/kustomization.yaml")))
     resources = {(resource.kind, resource.name, resource.namespace) for resource in result.resources}
 
     assert ("Namespace", "haku-dispatch", "") in resources
