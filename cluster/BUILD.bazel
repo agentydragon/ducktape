@@ -18,6 +18,8 @@ py_library(
 
 py_binary(
     name = "generate_manifests",
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     main_module = "cluster.generate_manifests",
     visibility = ["//visibility:public"],
     deps = [":generate_manifests_lib"],
@@ -31,7 +33,9 @@ py_test(
         "//cluster/k8s/litellm/tana:custom_handler.py",
         "//cluster/k8s/litellm/tana:proxy-config.yaml",
         "//cluster/k8s/x/haku/dispatch/litellm:workers-litellm-config.yaml",
+        "@nodejs_linux_amd64//:bin/node",
     ],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":generate_manifests_lib",
         "//util/bazel:runfiles",
