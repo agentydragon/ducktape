@@ -21,18 +21,9 @@ from cluster.k8s.litellm.app.model_rosters import (
     Provider,
     exposed_name,
 )
-from tana.litellm_proxy.model_registry import TANA_LLM_PROXY_RESPONDING_MODELS
 
 _OLLAMA_BASE = "http://ollama.ollama.svc.cluster.local:11434"
 _CLIPROXY_BASE = "http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317"
-
-TANA_CUSTOM_HANDLER = """\
-from __future__ import annotations
-
-from tana.litellm_proxy.custom_handler import tana_handler
-
-__all__ = ["tana_handler"]
-"""
 
 
 @dataclass(frozen=True)
@@ -58,6 +49,7 @@ def _model_entry(
     supports_function_calling: bool = False,
     model_info: dict[str, int] | None = None,
     extra_body: dict | None = None,
+    custom_llm_provider: str | None = None,
 ) -> dict:
     """Build one LiteLLM model entry while omitting unset optional fields."""
     litellm_params: dict = {"model": model}
@@ -67,6 +59,8 @@ def _model_entry(
         litellm_params["api_key"] = api_key
     if extra_body is not None:
         litellm_params["extra_body"] = extra_body
+    if custom_llm_provider is not None:
+        litellm_params["custom_llm_provider"] = custom_llm_provider
 
     info: dict = {"mode": mode}
     if supports_function_calling:
@@ -240,11 +234,10 @@ def _tana_entries() -> list[dict]:
     return [
         _model_entry(
             exposed_name(Provider.TANA, ApiShape.ANT_MESSAGES, exposed),
-            f"anthropic/{downstream}",
+            f"tana/tana/{downstream}",
             "chat",
-            api_base="http://tana-litellm.litellm.svc.cluster.local:4000",
-            api_key="os.environ/LITELLM_MASTER_KEY",
             supports_function_calling=True,
+            custom_llm_provider="tana",
         )
         for exposed, downstream in TANA_MODELS
     ]
@@ -350,7 +343,13 @@ def main_proxy_config() -> dict:
             *_anthropic_entries(),
             *_simple_provider_entries(),
         ],
-        "litellm_settings": {"drop_params": True, "callbacks": ["langfuse_otel", "prometheus"]},
+        "litellm_settings": {
+            "drop_params": True,
+            "callbacks": ["langfuse_otel", "prometheus"],
+            "custom_provider_map": [
+                {"provider": "tana", "custom_handler": "tana.litellm_proxy.custom_handler.tana_handler"}
+            ],
+        },
         "router_settings": {
             "model_group_alias": {
                 "gpt-6-astra": {
@@ -363,28 +362,5 @@ def main_proxy_config() -> dict:
     }
 
 
-def tana_proxy_config() -> dict:
-    return {
-        "model_list": [
-            {
-                "model_name": model.model_id,
-                "litellm_params": {"model": f"tana/tana/{model.model_id}", "custom_llm_provider": "tana"},
-                "model_info": {"mode": "chat", "supports_function_calling": True},
-            }
-            for model in TANA_LLM_PROXY_RESPONDING_MODELS
-        ],
-        "litellm_settings": {
-            "drop_params": True,
-            "callbacks": ["langfuse_otel"],
-            "custom_provider_map": [{"provider": "tana", "custom_handler": "custom_handler.tana_handler"}],
-        },
-    }
-
-
 def proxy_configs() -> tuple[ConfigMapSpec, ...]:
-    return (
-        ConfigMapSpec("litellm", "litellm", {"config.yaml": main_proxy_config()}),
-        ConfigMapSpec(
-            "tana-litellm", "litellm", {"config.yaml": tana_proxy_config(), "custom_handler.py": TANA_CUSTOM_HANDLER}
-        ),
-    )
+    return (ConfigMapSpec("litellm", "litellm", {"config.yaml": main_proxy_config()}),)

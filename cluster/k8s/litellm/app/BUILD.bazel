@@ -5,6 +5,7 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 exports_files(
     [
         "deployment.yaml",
+        "forgejo-images-creds-eso.yaml",
         "httproute.yaml",
         "proxy-config.yaml",
         "service.yaml",

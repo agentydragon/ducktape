@@ -80,7 +80,7 @@ def proxy_specs() -> tuple[ProxySpec, ...]:
     return (
         ProxySpec(
             config=configs["litellm"],
-            image="litellm/litellm:1.100.1",
+            image="git.allegedly.works/ducktape-ci/tana-litellm-proxy:devel-20260914084437-6a8e3e2",
             replicas=2,
             env=_langfuse_env(
                 _secret_env("LITELLM_MASTER_KEY", "litellm-master-key", "api-key"),
@@ -91,9 +91,12 @@ def proxy_specs() -> tuple[ProxySpec, ...]:
                 _secret_env("GEMINI_API_KEY", "litellm-gemini-key", "GEMINI_API_KEY"),
                 _secret_env("MISTRAL_API_KEY", "litellm-mistral-key", "MISTRAL_API_KEY"),
                 _secret_env("CLIPROXY_CLIENT_KEY", "litellm-cliproxy-key", "CLIPROXY_CLIENT_KEY"),
+                _secret_env("TANA_FIREBASE_REFRESH_TOKEN", "tana-firebase-refresh-token", "refresh_token"),
             ),
             startup_failure_threshold=36,
             resources={"requests": {"cpu": "100m", "memory": "1Gi"}, "limits": {"cpu": "2", "memory": "4Gi"}},
+            image_pull_policy="Always",
+            image_pull_secrets=({"name": "forgejo-images-creds"},),
             service_account_name="litellm",
             termination_grace_period_seconds=90,
             node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
@@ -111,22 +114,6 @@ def proxy_specs() -> tuple[ProxySpec, ...]:
             strategy={"type": "RollingUpdate", "rollingUpdate": {"maxSurge": 1, "maxUnavailable": 0}},
             service=ServiceSpec(labels={"app.kubernetes.io/name": "litellm"}),
             hostname="litellm.allegedly.works",
-        ),
-        ProxySpec(
-            config=configs["tana-litellm"],
-            image="git.allegedly.works/ducktape-ci/tana-litellm-proxy:devel-20260913074202-77faa01",
-            replicas=1,
-            env=_langfuse_env(
-                _secret_env("LITELLM_MASTER_KEY", "litellm-master-key", "api-key"),
-                _secret_env("TANA_FIREBASE_REFRESH_TOKEN", "tana-firebase-refresh-token", "refresh_token"),
-            ),
-            startup_failure_threshold=12,
-            image_pull_policy="Always",
-            image_pull_secrets=({"name": "forgejo-images-creds"},),
-            automount_service_account_token=False,
-            termination_grace_period_seconds=90,
-            service=ServiceSpec(labels={"app.kubernetes.io/name": "tana-litellm"}),
-            hostname="tana-litellm.allegedly.works",
             forgejo_image_credentials=True,
         ),
     )
