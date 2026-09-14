@@ -31,7 +31,7 @@ spec:
     # Global configuration
     global:
       deploymentAnnotations:
-        secret.reloader.stakater.com/reload: "authentik-db-app,authentik-secrets,authentik-user-password"
+        secret.reloader.stakater.com/reload: "authentik-db-app,authentik-user-password"
         configmap.reloader.stakater.com/reload: "authentik-sso-blueprints"
 
     # Mount SSO blueprint ConfigMap into worker for native blueprint processing
