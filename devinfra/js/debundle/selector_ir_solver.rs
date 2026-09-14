@@ -106,13 +106,13 @@ fn merge_assignment_bindings(mut row: AssignmentRow) -> Option<AssignmentRow> {
     row.sort_by_key(|(var, _value)| *var);
     let mut merged = Vec::with_capacity(row.len());
     for (var, value) in row {
-        if let Some((last_var, last_value)) = merged.last() {
-            if *last_var == var {
-                if *last_value != value {
-                    return None;
-                }
-                continue;
+        if let Some((last_var, last_value)) = merged.last()
+            && *last_var == var
+        {
+            if *last_value != value {
+                return None;
             }
+            continue;
         }
         merged.push((var, value));
     }
@@ -1476,7 +1476,7 @@ fn collect_child_list_assignment_rows(
     let mut lo = candidate_min;
     let mut hi = latest_start;
     if segment_index == 0 && constraint.anchored_left {
-        hi = hi.min(0);
+        hi = 0;
     }
     if segment_index == constraint.segments.len() - 1 && constraint.anchored_right {
         lo = lo.max(latest_start);

@@ -1247,15 +1247,15 @@ fn binding_to_owner(graph: &OwnerGraphReport) -> Result<BTreeMap<String, String>
     let mut out = BTreeMap::new();
     for node in &graph.nodes {
         for binding in &node.declared_bindings {
-            if let Some(existing) = out.insert(binding.binding.to_string(), node.id.clone()) {
-                if existing != node.id {
-                    bail!(
-                        "malformed owner graph: binding {:?} declared by multiple owners \
-                         ({existing}, {})",
-                        binding.binding,
-                        node.id,
-                    );
-                }
+            if let Some(existing) = out.insert(binding.binding.to_string(), node.id.clone())
+                && existing != node.id
+            {
+                bail!(
+                    "malformed owner graph: binding {:?} declared by multiple owners \
+                     ({existing}, {})",
+                    binding.binding,
+                    node.id,
+                );
             }
         }
     }

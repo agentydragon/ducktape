@@ -985,14 +985,14 @@ fn anonymous_addressability(
             );
             continue;
         }
-        if let Some(addressable_ids) = &context.addressable_anonymous_owner_ids {
-            if !addressable_ids.contains(&node.id) {
-                unaddressable_owner_ids.push(node.id.clone());
-                notes.insert(
-                    "contains anonymous owner(s) whose full-AST selector is ambiguous or unavailable"
-                        .to_string(),
-                );
-            }
+        if let Some(addressable_ids) = &context.addressable_anonymous_owner_ids
+            && !addressable_ids.contains(&node.id)
+        {
+            unaddressable_owner_ids.push(node.id.clone());
+            notes.insert(
+                "contains anonymous owner(s) whose full-AST selector is ambiguous or unavailable"
+                    .to_string(),
+            );
         }
     }
     unaddressable_owner_ids.sort();

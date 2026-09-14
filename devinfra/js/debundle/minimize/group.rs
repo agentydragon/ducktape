@@ -116,11 +116,11 @@ fn collect_expr_anchors(expr: &Expr, depth: u32, candidates: &mut AnchorCandidat
         }
         Expr::Object(object) => {
             for prop in &object.props {
-                if let PropOrSpread::Prop(prop) = prop {
-                    if let Prop::KeyValue(key_value) = prop.as_ref() {
-                        candidates.structural.push(span_key(key_value.key.span()));
-                        collect_expr_anchors(&key_value.value, depth, candidates);
-                    }
+                if let PropOrSpread::Prop(prop) = prop
+                    && let Prop::KeyValue(key_value) = prop.as_ref()
+                {
+                    candidates.structural.push(span_key(key_value.key.span()));
+                    collect_expr_anchors(&key_value.value, depth, candidates);
                 }
             }
         }
@@ -561,10 +561,10 @@ fn keep_shallow_group_selector(
 
     let mut candidates = AnchorCandidates::default();
     for (idx, declarator) in var.decls.iter().enumerate() {
-        if target_slots.contains(&idx) {
-            if let Some(init) = &declarator.init {
-                collect_expr_anchors(init, 0, &mut candidates);
-            }
+        if target_slots.contains(&idx)
+            && let Some(init) = &declarator.init
+        {
+            collect_expr_anchors(init, 0, &mut candidates);
         }
     }
 

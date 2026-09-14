@@ -81,7 +81,7 @@ impl VisitMut for RuntimeSourceRewriter {
         let Expr::Lit(Lit::Str(source)) = &*first.expr else {
             return;
         };
-        first.expr = Box::new(new_url_expr(&self.rewrite(&str_value(source))));
+        *first.expr = new_url_expr(&self.rewrite(&str_value(source)));
     }
 }
 

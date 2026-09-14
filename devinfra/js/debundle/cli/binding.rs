@@ -743,17 +743,17 @@ pub fn run_bindings_assign(
         let old_effective = member_effective_name_value(&member)
             .with_context(|| format!("member {:?} has no effective binding name", p.req.sym))?;
         let annotation = remove_annotation(doc, &old_effective)?;
-        if let Some(new_readable) = &p.req.readable {
-            if let Some(map) = member.as_mapping_mut() {
-                map.insert(yk("name"), Value::String(new_readable.clone()));
-            }
+        if let Some(new_readable) = &p.req.readable
+            && let Some(map) = member.as_mapping_mut()
+        {
+            map.insert(yk("name"), Value::String(new_readable.clone()));
         }
         let new_effective = member_effective_name_value(&member)
             .with_context(|| format!("member {:?} has no effective binding name", p.req.sym))?;
         pulled_annotations.insert(p.req.sym.clone(), (new_effective, annotation));
         pulled.insert(p.req.sym.clone(), member);
     }
-    for (_, (_, doc)) in docs.iter_mut() {
+    for (_, doc) in docs.values_mut() {
         collapse_null_members(doc);
     }
 
@@ -1168,7 +1168,7 @@ pub fn run_bindings_unassign(
             remove_annotation(doc, &export_name)?;
         }
     }
-    for (_, (_, doc)) in docs.iter_mut() {
+    for (_, doc) in docs.values_mut() {
         collapse_null_members(doc);
     }
 

@@ -304,10 +304,11 @@ fn compute_slack(
         if relaxed_match == baseline_emit || !seen.insert(relaxed_match.clone()) {
             continue;
         }
-        if let [only] = resolve(relaxed_match.clone())?.as_slice() {
-            if only.body_idx == target_body_idx && only.binding_name == target_binding_name {
-                slack.push(SlackRelaxation { relaxed_match });
-            }
+        if let [only] = resolve(relaxed_match.clone())?.as_slice()
+            && only.body_idx == target_body_idx
+            && only.binding_name == target_binding_name
+        {
+            slack.push(SlackRelaxation { relaxed_match });
         }
     }
     Ok(slack)
@@ -538,13 +539,13 @@ impl VisitMut for Relaxer<'_> {
     }
 
     fn visit_mut_new_expr(&mut self, new_expr: &mut NewExpr) {
-        if self.kind == Relaxation::DropCallArg {
-            if let Some(args) = new_expr.args.as_mut() {
-                for arg in args.iter_mut() {
-                    if self.take(is_droppable_arg(arg)) {
-                        *arg = args_hole();
-                        break;
-                    }
+        if self.kind == Relaxation::DropCallArg
+            && let Some(args) = new_expr.args.as_mut()
+        {
+            for arg in args.iter_mut() {
+                if self.take(is_droppable_arg(arg)) {
+                    *arg = args_hole();
+                    break;
                 }
             }
         }

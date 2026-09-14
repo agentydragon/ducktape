@@ -1156,7 +1156,7 @@ fn place_declarator_segments(
     let mut lo = cand_min;
     let mut hi = latest_start;
     if seg_idx == 0 && anchored_left {
-        hi = hi.min(0);
+        hi = 0;
     }
     if seg_idx == segments.len() - 1 && anchored_right {
         lo = lo.max(latest_start);
