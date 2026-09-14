@@ -35,7 +35,7 @@ from x.agentplane.app.trajectory import TrajectoryStore
 # gazelle:include_dep @pypi//psycopg
 # The bridge tests run one script against a local runner over both harnesses; those fixtures live
 # with the runner.
-from x.agentplane.runner.conftest import config, harness, model, runner, spec, upstream, workspace
+from x.agentplane.runner.conftest import config, harness, model, runner, spec, workspace
 
 
 @pytest.fixture
