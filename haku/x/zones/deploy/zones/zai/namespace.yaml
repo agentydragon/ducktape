@@ -1,6 +1,6 @@
 # The z.ai/GLM worker zone (L2 — public-by-construction briefs only). Pure
 # perimeter: nothing runs here but validator-stamped Jobs. Egress fence:
-# agents/haku-zones-mitmproxy (CCNP haku-zones-force-proxy-egress). Design:
+# haku/x/zones/deploy/proxy (CCNP haku-zones-force-proxy-egress). Design:
 # haku/archive/2026_08_multi_agent.md.
 apiVersion: v1
 kind: Namespace

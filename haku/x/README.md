@@ -15,3 +15,8 @@ live namespaces and their contents rather than silently orphaning them.
 
 The global LiteLLM z.ai provider and unrelated z.ai integrations are not part of
 this archive.
+
+The retired deployment packages are kept beside the Haku code they served:
+
+- dispatch plane: [`dispatch/`](dispatch/)
+- worker-zone perimeter: [`zones/`](zones/)

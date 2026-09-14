@@ -14,7 +14,7 @@ modify it, so it structurally cannot bypass its own admission gate.
 Design context and the not-yet-built roadmap: <../../archive/2026_08_multi_agent.md>. Haku's
 security model (its dispatch enforcement entry left with the retirement): <../../docs/security.md>.
 Cluster wiring: <deploy/README.md>; zone perimeters:
-<../../../cluster/k8s/x/haku/zones/README.md>.
+<../zones/README.md>.
 
 ## Request flow (`POST /jobs`)
 

@@ -19,7 +19,7 @@ Archived, documented elsewhere:
 
 - Dispatcher service + worker image: <../x/dispatch/README.md>
 - Cluster wiring (workers-LiteLLM, CNPG, and the three-hop key chain): <../x/dispatch/deploy/README.md>
-- Zone perimeters and the trust model: <../../cluster/k8s/x/haku/zones/README.md>
+- Zone perimeters and the trust model: <../x/zones/README.md>
 - Security contract (enforcement inventory): <../docs/security.md>
 - Settled options survey (dispatch plane, Centaur deep-eval, harness): <2026_07_02_dispatch_plane_options.md>
 

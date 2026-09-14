@@ -4,7 +4,7 @@
 # cluster-manifest-ignored). Model lists must match the zone key in
 # tf/gitops/litellm-keys/main.tf and the generated workers-LiteLLM config —
 # parity-tested by //cluster/validation:test_haku_dispatch_zones_contract. Each zone's namespace
-# must be its stamped perimeter (cluster/k8s/x/haku/zones/<zone>/ + the
+# must be its stamped perimeter (haku/x/zones/deploy/zones/<zone>/ + the
 # dispatcher's rbac-zone-<zone>.yaml); adding a zone is a reviewed, multi-file
 # change (build-order step 5 for oai).
 zai:
