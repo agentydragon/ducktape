@@ -7,7 +7,6 @@ import pytest_bazel
 from x.agentplane.harness_tests.claude import anthropic_sse as sse, frames
 from x.agentplane.harness_tests.claude.harness import MODEL, ClaudeHarness
 from x.agentplane.harness_tests.claude.messages import AnthropicMessages
-from x.agentplane.native.claude import async_scenarios as scenarios
 
 PROBE_FAILURE = (
     'sh -c \'printf "probe stdout before failure\\n"; printf "probe stderr before failure\\n" >&2; exit 23\''
@@ -17,9 +16,8 @@ PROBE_FAILURE = (
 async def test_parallel_shell_tools_report_both_streams_and_exit_codes(
     claude: ClaudeHarness, anthropic_messages: AnthropicMessages
 ) -> None:
-    async with claude.start(anthropic_messages) as process:
-        await scenarios.launch_handshake(process)
-        await scenarios.send(process, "Use the shell probe and report its outcomes.")
+    async with claude.start(anthropic_messages) as run:
+        prompt = await run.send("Use the shell probe and report its outcomes.")
 
         async with await anthropic_messages.await_next_request() as exchange:
             stream = sse.message_stream(
@@ -51,9 +49,9 @@ async def test_parallel_shell_tools_report_both_streams_and_exit_codes(
             stream = sse.message_stream([sse.Text("SHELL_PROBE_DONE")], model=MODEL)
             await exchange.send(*stream.events)
 
-        assert (await scenarios.await_result(process))["result"] == "SHELL_PROBE_DONE"
-        assert process.alive()
-    captured = process.stdout_frames()
+        assert (await prompt.result()).result == "SHELL_PROBE_DONE"
+        assert run.running
+    captured = run.native_frames()
     frames.assert_success(captured, "SHELL_PROBE_DONE")
     results = frames.assert_tool_lifecycles(captured, ["Bash", "Bash"])
     assert any("PROBE_STDOUT" in str(result) for result in results)
@@ -66,10 +64,9 @@ async def test_file_edit_round_trip_changes_the_workspace(
     editable = claude.workspace / "editable.txt"
     editable.write_text("before\n")
     path = str(editable)
-    async with claude.start(anthropic_messages) as process:
-        await scenarios.launch_handshake(process)
-        await scenarios.send(
-            process, "Read editable.txt, change it to exactly `after\\n`, reread it, then reply FILE_EDIT_DONE."
+    async with claude.start(anthropic_messages) as run:
+        prompt = await run.send(
+            "Read editable.txt, change it to exactly `after\\n`, reread it, then reply FILE_EDIT_DONE."
         )
 
         async with await anthropic_messages.await_next_request() as exchange:
@@ -106,8 +103,8 @@ async def test_file_edit_round_trip_changes_the_workspace(
             stream = sse.message_stream([sse.Text("FILE_EDIT_DONE")], model=MODEL)
             await exchange.send(*stream.events)
 
-        assert (await scenarios.await_result(process))["result"] == "FILE_EDIT_DONE"
-    captured = process.stdout_frames()
+        assert (await prompt.result()).result == "FILE_EDIT_DONE"
+    captured = run.native_frames()
     frames.assert_success(captured, "FILE_EDIT_DONE")
     frames.assert_tool_lifecycles(captured, ["Read", "Edit", "Read"])
 

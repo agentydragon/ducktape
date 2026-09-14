@@ -14,14 +14,70 @@ from x.agentplane.native.process import text, text_record, write_jsonl
 
 FrameResponder = Callable[[dict[str, Any]], Awaitable[BaseModel | None]]
 
+# Tool results ride inside single frames, so a line can run to megabytes. Keep the test transport
+# aligned with the runner, otherwise a behavior test can fail before exercising the harness.
+_LINE_LIMIT = 64 * 1024 * 1024
+
+
+class NativeProcessEofError(RuntimeError):
+    """The native harness closed stdout before the awaited frame arrived."""
+
+
+class FrameCursor:
+    """One non-destructive reader of a native process's ordered stdout trace."""
+
+    def __init__(self, trace: _FrameTrace, position: int):
+        self._trace = trace
+        self._position = position
+
+    async def next(self) -> dict[str, Any]:
+        self._position, frame = await self._trace.next(self._position)
+        return frame
+
+
+class _FrameTrace:
+    """The append-only native stdout trace; cursors never consume one another's receipts."""
+
+    def __init__(self) -> None:
+        self._frames: list[dict[str, Any]] = []
+        self._changed = asyncio.Event()
+        self._closed = False
+        self._failure: BaseException | None = None
+
+    def cursor(self) -> FrameCursor:
+        return FrameCursor(self, len(self._frames))
+
+    async def append(self, frame: dict[str, Any]) -> None:
+        self._frames.append(frame)
+        self._changed.set()
+
+    async def close(self, failure: BaseException | None = None) -> None:
+        self._closed = True
+        self._failure = failure
+        self._changed.set()
+
+    async def next(self, position: int) -> tuple[int, dict[str, Any]]:
+        while True:
+            if position < len(self._frames):
+                return position + 1, self._frames[position]
+            if self._failure is not None:
+                raise self._failure
+            if self._closed:
+                raise NativeProcessEofError("native harness stdout closed before the awaited frame arrived")
+            changed = self._changed
+            changed.clear()
+            if position < len(self._frames) or self._closed or self._failure is not None:
+                continue
+            await changed.wait()
+
 
 class AsyncNativeProcess:
-    """The native frame pipe, exposing ordered receipt rather than predicate waits."""
+    """The native frame pipe, recording an ordered trace for independent test readers."""
 
     def __init__(self, logs: Path, command: list[str], *, cwd: Path, environment: dict[str, str]):
         self.logs, self.command, self.cwd, self.environment = logs, command, cwd, environment
         self.process: asyncio.subprocess.Process | None = None
-        self._frames: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        self._frames = _FrameTrace()
         self._stdout_task: asyncio.Task[None] | None = None
         self._stderr_task: asyncio.Task[None] | None = None
         self._stdin_lock = asyncio.Lock()
@@ -36,6 +92,7 @@ class AsyncNativeProcess:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             start_new_session=True,
+            limit=_LINE_LIMIT,
         )
         self._stdout_task = asyncio.create_task(self._stdout())
         self._stderr_task = asyncio.create_task(self._stderr())
@@ -59,8 +116,9 @@ class AsyncNativeProcess:
             self.process.stdin.write(b"".join(payload + b"\n" for payload in payloads))
             await self.process.stdin.drain()
 
-    async def next_frame(self) -> dict[str, Any]:
-        return await self._frames.get()
+    def frames(self) -> FrameCursor:
+        """Start observing future stdout frames without consuming another observer's trace."""
+        return self._frames.cursor()
 
     def alive(self) -> bool:
         return self.process is not None and self.process.returncode is None
@@ -94,17 +152,23 @@ class AsyncNativeProcess:
     async def _stdout(self) -> None:
         assert self.process is not None
         assert self.process.stdout is not None
-        while line := await self.process.stdout.readline():
-            value = text(line.rstrip(b"\r\n"))
-            write_jsonl(self.logs / "stdout.jsonl", text_record(value.encode()))
-            frame = json.loads(value)
-            if not isinstance(frame, dict):
-                raise ValueError("native stdout frame must be a JSON object")
-            if self.frame_responder is not None:
-                response = await self.frame_responder(frame)
-                if response is not None:
-                    await self.send(response)
-            await self._frames.put(frame)
+        try:
+            while line := await self.process.stdout.readline():
+                value = text(line.rstrip(b"\r\n"))
+                write_jsonl(self.logs / "stdout.jsonl", text_record(value.encode()))
+                frame = json.loads(value)
+                if not isinstance(frame, dict):
+                    raise ValueError("native stdout frame must be a JSON object")
+                await self._frames.append(frame)
+                if self.frame_responder is not None:
+                    response = await self.frame_responder(frame)
+                    if response is not None:
+                        await self.send(response)
+        except BaseException as error:
+            await self._frames.close(error)
+            raise
+        else:
+            await self._frames.close()
 
     async def _stderr(self) -> None:
         assert self.process is not None

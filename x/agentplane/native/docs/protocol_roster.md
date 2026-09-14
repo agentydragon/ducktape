@@ -11,8 +11,9 @@ assertion pins it, or only one branch is exercised.
 
 ## Claude Code 2.1.252
 
-Driver: `x/agentplane/native/claude/{driver,scenarios}.py`. Every test runs `launch_handshake`
-(`control_request` `initialize` → `control_response`), sends `user` frames, and auto-allows
+Driver: `x/agentplane/native/claude/{driver,scenarios,async_run}.py`. Every test enters a
+`ClaudeRun`, which runs the `initialize` handshake (`control_request` `initialize` →
+`control_response`), sends `user` frames, and auto-allows
 `can_use_tool` in `harness_tests/claude/harness.py`.
 
 ### Session lifecycle

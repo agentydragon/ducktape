@@ -245,6 +245,8 @@ class ResultFrame(BaseModel):
     session_id: str
     user_message_uuid: str | None = None
     num_turns: int
+    # Present on a failed resume, before Claude has a durable transcript to report as `result`.
+    errors: list[str] = Field(default_factory=list)
 
 
 class UnknownFrame(BaseModel):
