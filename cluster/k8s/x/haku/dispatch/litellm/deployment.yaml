@@ -24,7 +24,7 @@ spec:
     spec:
       containers:
         - name: litellm
-          image: litellm/litellm:1.90.2
+          image: litellm/litellm:v1.100.1
           args: ["--config", "/etc/litellm/config.yaml"]
           ports:
             - name: http
