@@ -28,13 +28,16 @@ from fastmcp.tools import Tool
 from fastmcp.tools.base import ToolResult
 from fastmcp.utilities.versions import VersionSpec
 
-type HTTPClientProvider[ClientT: httpx.AsyncClient = httpx.AsyncClient] = Callable[
+# The provider is also used by clients from the httpx2 compatibility fork. The
+# OpenAPI adapter relies on FastMCP's runtime-compatible client contract; keeping
+# the old httpx subclass bound here rejects those clients statically.
+type HTTPClientProvider[ClientT = Any] = Callable[
     ..., AbstractAsyncContextManager[ClientT]
 ]
 _INJECTED_CLIENT_PARAMETER = "_fastmcp_request_scoped_http_client"
 
 
-def borrowed_http_client_provider[ClientT: httpx.AsyncClient](client: ClientT) -> HTTPClientProvider[ClientT]:
+def borrowed_http_client_provider[ClientT](client: ClientT) -> HTTPClientProvider[ClientT]:
     """Adapt a caller-owned client to the sole provider-based API.
 
     This is useful for tests and local tooling that already manage a fixed
