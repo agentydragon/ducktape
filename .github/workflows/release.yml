@@ -58,6 +58,11 @@ env:
 jobs:
   matrix:
     name: Compute release matrix
+    # A manual dispatch can be started from any branch in the Actions UI. Never
+    # publish deployable artifacts from a feature branch: sync-pins intentionally
+    # follows the newest published release for each artifact, so doing that would
+    # make an unmerged branch's artifact the repository-wide pin.
+    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/devel'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
