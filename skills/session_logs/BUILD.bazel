@@ -1,12 +1,28 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//skills:defs.bzl", "skill_package")
+
+py_library(
+    name = "session_logs_lib",
+    srcs = ["session_logs.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "test_session_logs",
+    srcs = ["test_session_logs.py"],
+    deps = [
+        ":session_logs_lib",
+        "@pypi//pytest_bazel",
+    ],
+)
 
 skill_package(
     name = "session_logs",
     srcs = [
         "SKILL.md",
-        "analyze_session.sh",
-        "conversation.jq",
-        "conversation.sh",
-        "find_current_session.sh",
+        "analyze_session.py",
+        "conversation.py",
+        "find_current_session.py",
+        "session_logs.py",
     ],
 )
