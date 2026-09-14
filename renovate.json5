@@ -52,6 +52,13 @@
     "third_party/manifold_mcp_server/pnpm-lock.yaml",
     // Generated from pixi.toml; keep the manifest as Renovate's input.
     "skills/freecad/conda/pixi.lock",
+    // These npm inputs are coupled to Nix package metadata and must move
+    // together with the version/hash or release-specific patch in the Nix
+    // consumer; an npm-only Renovate PR would leave the Nix build invalid.
+    "nix/packages/prettier/package.json",
+    "nix/packages/prettier/package-lock.json",
+    "openclaw/npm_wrapper/package.json",
+    "openclaw/npm_wrapper/package-lock.json",
   ],
   packageRules: [
     {
