@@ -403,6 +403,7 @@ py_library(
     srcs = ["trajectory.py"],
     deps = [
         ":changes",
+        ":inventory",
         ":operator_sessions",
         ":presets",
         ":trajectory_updates",
@@ -420,6 +421,7 @@ py_test(
     srcs = ["test_trajectory.py"],
     deps = [
         ":conftest",
+        ":inventory",
         ":presets",
         ":trajectory",
         "//:conftest",
