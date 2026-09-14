@@ -158,9 +158,6 @@ spec:
 
         metrics:
           ENABLED: true
-          TOKEN: ""
-          # TODO: Set a metrics token and add bearerTokenSecret to the ServiceMonitor
-          # via a SOPS-managed secret (follow LiteLLM token pattern).
 
         security:
           INSTALL_LOCK: true
@@ -195,6 +192,11 @@ spec:
       # Secret (source in the seaweedfs namespace). FORGEJO__ is the chart's
       # env -> app.ini prefix.
       additionalConfigFromEnvs:
+        - name: FORGEJO__metrics__TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: forgejo-metrics-token
+              key: token
         - name: FORGEJO__storage__MINIO_ACCESS_KEY_ID
           valueFrom:
             secretKeyRef:
