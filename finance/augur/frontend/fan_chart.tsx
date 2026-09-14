@@ -83,7 +83,7 @@ function FanEventMarker({
       data-product-rollout-event-marker-month={monthIndex}
       data-product-rollout-event-marker-selected={isSelected ? "true" : "false"}
       data-product-rollout-event-marker-hovered={isHovered ? "true" : "false"}
-      onClick={() => onSelectEventMonth?.(monthIndex)}
+      onMouseDown={() => onSelectEventMonth?.(monthIndex)}
       onKeyDown={(keyboardEvent) => {
         if (keyboardEvent.key !== "Enter" && keyboardEvent.key !== " ") return;
         keyboardEvent.preventDefault();
