@@ -66,9 +66,7 @@ class Client:
         await self._http.aclose()
 
     async def _json(self, method: str, path: str, **kwargs: Any) -> Any:
-        """The decoded body, or None when there is none: the app answers 202 to an accepted input
-        and 204 to a lifecycle command, both with an empty body, so the status alone does not say
-        whether there is anything to decode."""
+        """The decoded body, or None for a response such as a 204 lifecycle command."""
         response = await self._http.request(method, path, **kwargs)
         response.raise_for_status()
         return response.json() if response.content else None
@@ -123,8 +121,18 @@ class Client:
         answered = await self._json("POST", f"/sandboxes/{name}/sessions", json=body.model_dump())
         return Attachment(ParseDict(answered, pb.Attached()))
 
-    async def send_input(self, name: str, session_id: str, message: pb.Command) -> None:
-        await self._json("POST", f"/sandboxes/{name}/sessions/{session_id}/inputs", json=MessageToDict(message))
+    async def submit_input(self, name: str, session_id: str, message: pb.Command) -> None:
+        """Commit one ordinary input through the session's durable Thread, never directly to a runner."""
+        if not message.command_id or not message.HasField("submit_input"):
+            raise ValueError("submit_input requires a non-empty SubmitInput command")
+        threads = await self._json("GET", "/threads", params={"sandbox": name, "session_id": session_id})
+        if len(threads) != 1:
+            raise ValueError(f"expected exactly one Thread for {name}/{session_id}, found {len(threads)}")
+        await self._json(
+            "POST",
+            f"/threads/{threads[0]['id']}/inputs",
+            json={"command_id": message.command_id, "text": message.submit_input.text},
+        )
 
     async def events(self, name: str, session_id: str, *, after: int, read_seconds: float) -> AsyncIterator[pb.Event]:
         """The session's events from `after`. Ends when the stream does; `read_seconds` bounds how

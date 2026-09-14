@@ -21,6 +21,7 @@ import type {
   Decision,
   PolicyView,
   SandboxView,
+  ThreadCommandView,
   ThreadView,
 } from "../client";
 import type { SandboxesSnapshot, SandboxSnapshot, WatchHealth } from "../live";
@@ -403,6 +404,43 @@ const THREADS: ThreadView[] = [
     harness_state: "HARNESS_STATE_RUNNING",
   },
 ];
+
+/** The command read model is separate from the transcript. In the states scenario i3 has crossed
+ * the runner receipt boundary but not yet appeared as a harness-confirmed input bubble. */
+const THREAD_COMMANDS: Record<string, ThreadCommandView[]> = {
+  [THREADS[0].id]: [
+    {
+      command: { commandId: "i1", submitInput: { text: "List the repository files." } },
+      ordinal: 1,
+      accepted_at: ago(58 * 60_000),
+      state: "confirmed",
+      reason: null,
+    },
+  ],
+  [THREADS[2].id]: [
+    {
+      command: { commandId: "i1", submitInput: { text: "Delete the stale branch." } },
+      ordinal: 1,
+      accepted_at: ago(29 * 60_000),
+      state: "confirmed",
+      reason: null,
+    },
+    {
+      command: { commandId: "i2", submitInput: { text: "Run the test suite twice, thinking it over first." } },
+      ordinal: 2,
+      accepted_at: ago(20 * 60_000),
+      state: "confirmed",
+      reason: null,
+    },
+    {
+      command: { commandId: "i3", submitInput: { text: "Also inspect the BuildBuddy failure." } },
+      ordinal: 3,
+      accepted_at: ago(5_000),
+      state: "received",
+      reason: null,
+    },
+  ],
+};
 
 /**
  * The sidebar's own cross-sandbox fixture (`GET /threads/with-sandboxes`): the three THREADS above
@@ -798,7 +836,8 @@ const EVENTS_STATES: Event[] = [
     value: { itemId: "tool#2", outcome: { case: "tool", value: { output: "1 test regressed", succeeded: false } } },
   }),
   // Turn t2 stays active: the run above (r#0, tool#1, tool#2) is what an in-progress, partly-failed
-  // step looks like. i3 is never accepted: this is what a message queued mid-turn looks like.
+  // step looks like. i3 is runner-received but not harness-confirmed: this is what a queued input
+  // looks like before it may become a conversation item.
   event(23, { case: "commandReceived", value: { commandId: "i3" } }),
 ];
 
@@ -894,6 +933,7 @@ routes.push(
           (!query.has("session_id") || thread.session_id === query.get("session_id"))
       ),
   ],
+  ["GET", /^\/threads\/([^/]+)\/commands$/, (match) => THREAD_COMMANDS[match[1]] ?? []],
   [
     "GET",
     /^\/threads\/with-sandboxes$/,

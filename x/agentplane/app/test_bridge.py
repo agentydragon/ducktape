@@ -148,6 +148,7 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
         assert opened.status_code == 201, opened.text
         assert opened.json()["harnessState"] == "HARNESS_STATE_RUNNING"
         assert [row["sessionId"] for row in (await http.get(SESSIONS)).json()] == [SESSION]
+        (thread,) = (await http.get("/threads", params={"sandbox": SANDBOX, "session_id": SESSION})).json()
 
         async with http.stream("GET", EVENTS) as first_tab:
             first = first_tab.aiter_lines()
@@ -155,8 +156,8 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
             reopened = await http.post(SESSIONS, json={"session_id": SESSION, "spec": MessageToDict(spec)})
             assert reopened.status_code == 201, reopened.text
             accepted = await http.post(
-                f"{SESSIONS}/{SESSION}/inputs",
-                json={"commandId": "input-1", "submitInput": {"text": "Reply with exactly: BRIDGE_OK"}},
+                f"/threads/{thread['id']}/inputs",
+                json={"command_id": "input-1", "text": "Reply with exactly: BRIDGE_OK"},
             )
             assert accepted.status_code == 202, accepted.text
             await model.reply(await model.request(), Text("BRIDGE_OK"))
@@ -175,8 +176,8 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
                 assert (await next_message(second)).event == "attached"
                 assert await read_until(second, "turnCompleted") == seen
                 accepted = await http.post(
-                    f"{SESSIONS}/{SESSION}/inputs",
-                    json={"commandId": "input-2", "submitInput": {"text": "Reply with exactly: BRIDGE_TWO"}},
+                    f"/threads/{thread['id']}/inputs",
+                    json={"command_id": "input-2", "text": "Reply with exactly: BRIDGE_TWO"},
                 )
                 assert accepted.status_code == 202, accepted.text
                 await model.reply(await model.request(), Text("BRIDGE_TWO"))
@@ -239,9 +240,10 @@ async def test_the_feed_records_a_turn_nobody_is_watching(
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
         opened = await http.post(SESSIONS, json={"session_id": "unwatched", "spec": MessageToDict(spec)})
         assert opened.status_code == 201, opened.text
+        (thread,) = (await http.get("/threads", params={"sandbox": SANDBOX, "session_id": "unwatched"})).json()
         accepted = await http.post(
-            f"{SESSIONS}/unwatched/inputs",
-            json={"commandId": "input-1", "submitInput": {"text": "Reply with exactly: UNWATCHED_OK"}},
+            f"/threads/{thread['id']}/inputs",
+            json={"command_id": "input-1", "text": "Reply with exactly: UNWATCHED_OK"},
         )
         assert accepted.status_code == 202, accepted.text
         await model.reply(await model.request(), Text("UNWATCHED_OK"))
@@ -256,13 +258,12 @@ async def test_the_feed_records_a_turn_nobody_is_watching(
         assert (await http.get("/threads/00000000-0000-0000-0000-000000000000/events")).status_code == 404
 
 
-async def test_the_bridge_reports_what_the_runner_refuses(app_url: str) -> None:
+async def test_session_input_routes_are_gone_and_open_still_reports_runner_refusal(app_url: str) -> None:
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
-        unknown = await http.post(
+        removed = await http.post(
             f"{SESSIONS}/never-opened/inputs", json={"commandId": "x", "submitInput": {"text": "hello"}}
         )
-        assert unknown.status_code == 409
-        assert "does not exist" in unknown.json()["detail"]
+        assert removed.status_code == 404
         malformed = await http.post(
             SESSIONS, json={"session_id": "s", "spec": {"harness": "HARNESS_CLAUDE", "nope": 1}}
         )
