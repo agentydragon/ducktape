@@ -1,0 +1,88 @@
+# Prove that a cdk8s program can run as a Bazel-local generator while Flux
+# remains the eventual applier. This is deliberately a smoke artifact outside
+# cluster/k8s; it is not part of the live cluster source yet.
+name: cdk8s manifest generation experiment
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/cdk8s-manifests-experiment.yml"
+      - "cluster/BUILD.bazel"
+      - "cluster/generate_manifests.mjs"
+      - "package.json"
+      - "pnpm-lock.yaml"
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the smoke output to the cluster-manifests branch
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    name: Generate cdk8s smoke manifests
+    runs-on: ubuntu-latest
+    env:
+      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-nix-devtools
+        with:
+          package: citools
+      - name: Run generator through Bazel
+        run: |
+          set -euo pipefail
+          output_dir="$RUNNER_TEMP/cdk8s-manifests"
+          bb run //cluster:generate_manifests -- --output-dir "$output_dir"
+          manifest="$output_dir/cdk8s-bazel-smoke.k8s.yaml"
+          test -s "$manifest"
+          grep --fixed-strings --line-regexp --quiet "kind: ConfigMap" "$manifest"
+          echo "Generated $manifest"
+      - name: Upload generated smoke artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: cdk8s-manifests-${{ github.run_id }}
+          path: ${{ runner.temp }}/cdk8s-manifests
+          if-no-files-found: error
+
+  publish:
+    name: Publish smoke output to cluster-manifests
+    if: github.event_name == 'workflow_dispatch' && inputs.publish
+    needs: [generate]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v7
+        with:
+          name: cdk8s-manifests-${{ github.run_id }}
+          path: ${{ runner.temp }}/cdk8s-manifests
+      - name: Commit generated output to cluster-manifests
+        run: |
+          set -euo pipefail
+          if git fetch origin "refs/heads/cluster-manifests:refs/remotes/origin/cluster-manifests"; then
+            git switch --create cluster-manifests --track origin/cluster-manifests
+          else
+            git switch --orphan cluster-manifests
+            git rm --cached --ignore-unmatch -- .
+          fi
+          mkdir -p cdk8s-bazel-smoke
+          cp "$RUNNER_TEMP/cdk8s-manifests/cdk8s-bazel-smoke.k8s.yaml" cdk8s-bazel-smoke/
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add cdk8s-bazel-smoke/cdk8s-bazel-smoke.k8s.yaml
+          if git diff --cached --quiet; then
+            echo "Generated output is unchanged"
+          else
+            git commit -m "chore: update cdk8s smoke manifests"
+            git push origin HEAD:cluster-manifests
+          fi
