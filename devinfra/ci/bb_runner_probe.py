@@ -31,12 +31,7 @@ PATHS_TO_STAT = (
     "/home/buildbuddy/workspace/output-base",
     "/home/buildbuddy/workspace/output-base/server",
 )
-FILESYSTEM_PATHS = (
-    "/home/buildbuddy/workspace",
-    "/home/buildbuddy/workspace/output-base",
-    "/tmp",
-    "/var/lib/docker",
-)
+FILESYSTEM_PATHS = ("/home/buildbuddy/workspace", "/home/buildbuddy/workspace/output-base", "/tmp", "/var/lib/docker")
 PROC_GLOBAL_FILES = (
     (Path("/proc/sys/kernel/random/boot_id"), "global/boot_id"),
     (Path("/proc/uptime"), "global/uptime"),
