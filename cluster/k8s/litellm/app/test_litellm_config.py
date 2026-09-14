@@ -4,7 +4,7 @@ import pytest_bazel
 import yaml
 from more_itertools import one
 
-from cluster.k8s.litellm.app.model_rosters import ANTHROPIC_MODELS, CLIPROXY_MODELS, ApiShape, Provider, exposed_name
+from cluster.k8s.litellm.app.model_rosters import ApiShape
 from cluster.validation.terraform_hcl import locals_blocks
 from util.bazel.runfiles import get_required_path
 
@@ -15,46 +15,11 @@ def _load_config(filename: str) -> dict:
     return loaded
 
 
-# The Codex-subscription names appear in three places: CLIPROXY_MODELS (model_rosters.py),
-# and `oai_lane_models` + `codex_client_models` in tf/gitops/litellm-keys/main.tf, which
-# scope the virtual keys. A comment in that file asks the lists to be kept in sync; these
-# pin it instead, so adding a Codex model cannot half-land and leave a key allowlisting a
-# model that does not exist (or omitting one that does).
+# Terraform's model-key locals are also used below to verify that every
+# allowlisted model is served by the LiteLLM proxy.
 def _litellm_keys_locals() -> dict:
     blocks = locals_blocks(get_required_path("ducktape/tf/gitops/litellm-keys/main.tf"))
     return one(blocks)
-
-
-def test_terraform_codex_allowlists_match_the_cliproxy_model_list() -> None:
-    tf_locals = _litellm_keys_locals()
-    assert tf_locals["oai_lane_models"] == [
-        exposed_name(Provider.CHATGPT, ApiShape.OAI_RESPONSES, model) for model in CLIPROXY_MODELS
-    ]
-    assert tf_locals["codex_client_models"] == [
-        exposed_name(Provider.CHATGPT, ApiShape.ANT_MESSAGES, model) for model in CLIPROXY_MODELS
-    ]
-
-
-# The Claude-subscription names live in ANTHROPIC_MODELS (model_rosters.py) and `claude_client_models`
-# in tf/gitops/litellm-keys/main.tf, which scopes the haku-console-claude runner key. This pins the
-# two in sync, so a new Claude model cannot half-land and leave the key allowlisting one the proxy
-# does not serve (or omitting one it does).
-def test_terraform_claude_allowlist_matches_the_anthropic_model_list() -> None:
-    tf_locals = _litellm_keys_locals()
-    assert tf_locals["claude_client_models"] == [
-        exposed_name(Provider.ANTHROPIC_MAX20, ApiShape.ANT_MESSAGES, model) for model in ANTHROPIC_MODELS
-    ]
-
-
-def test_agentplane_staging_offers_all_native_subscription_models() -> None:
-    config = yaml.safe_load(get_required_path("ducktape/cluster/k8s/agentplane-staging/app/config.yaml").read_text())
-    tf_locals = _litellm_keys_locals()
-    assert config["models"] == {
-        "HARNESS_CLAUDE": tf_locals["claude_client_models"],
-        "HARNESS_CODEX": tf_locals["oai_lane_models"],
-    }
-    for preset in config["thread_presets"].values():
-        assert preset["model"] in config["models"][preset["harness"]]
 
 
 # main.tf's own comment: "Model names must match generated model_name entries in

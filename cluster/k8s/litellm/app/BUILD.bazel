@@ -19,13 +19,25 @@ py_test(
     name = "test_litellm_config",
     srcs = ["test_litellm_config.py"],
     data = [
-        "deployment.yaml",
-        "httproute.yaml",
         "kustomization.yaml",
         "proxy-config.yaml",
-        "service.yaml",
+        "//tf/gitops/litellm-keys:main.tf",
+    ],
+    deps = [
+        ":model_rosters",
+        "//cluster/validation:terraform_hcl",
+        "//util/bazel:runfiles",
+        "@pypi//more_itertools",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_model_roster_consumers",
+    srcs = ["test_model_roster_consumers.py"],
+    data = [
         "//cluster/k8s:agentplane_staging_model_config",
-        "//cluster/k8s:haku_console_config",
         "//tf/gitops/litellm-keys:main.tf",
     ],
     deps = [
