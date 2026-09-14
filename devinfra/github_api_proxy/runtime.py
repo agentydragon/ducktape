@@ -11,12 +11,12 @@ from mitmproxy.addons.tlsconfig import TlsConfig
 from mitmproxy.options import Options
 from mitmproxy.tools.dump import DumpMaster
 
-from cluster.proxies.github_api_proxy.auth import Authenticate
-from cluster.proxies.github_api_proxy.capture import PrivateSave, SessionMetadata
-from cluster.proxies.github_api_proxy.config import Settings
-from cluster.proxies.github_api_proxy.destinations import OriginLoop, PublicOrigins
-from cluster.proxies.github_api_proxy.metrics import Metrics
-from cluster.proxies.github_api_proxy.tls import OuterTlsConfig
+from devinfra.github_api_proxy.auth import Authenticate
+from devinfra.github_api_proxy.capture import PrivateSave, SessionMetadata
+from devinfra.github_api_proxy.config import Settings
+from devinfra.github_api_proxy.destinations import OriginLoop, PublicOrigins
+from devinfra.github_api_proxy.metrics import Metrics
+from devinfra.github_api_proxy.tls import OuterTlsConfig
 
 
 def private_pem(path: Path, cert_file: Path, key_file: Path, *, require_ca: bool) -> None:

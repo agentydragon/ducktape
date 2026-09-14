@@ -159,7 +159,7 @@ the launcher never downloads a replacement. The cluster Certificate owner is
 
 Do not activate the relay until the central authenticated readiness and real
 application route are verified. Mitigation is controlled only by the
-[central proxy configuration](../../cluster/proxies/github_api_proxy/README.md).
+[central proxy configuration](../github_api_proxy/README.md).
 
 Both hosts use NixOS-inline Home Manager: the normal deployment owner is
 `nixosConfigurations.<host>`, not a standalone `home-manager switch`. Build and
@@ -191,7 +191,7 @@ targets; neither source activation nor a successful build removes these.
 
 ### Validation
 
-`bbr test //devinfra/github_api_capture:test_relay_config` runs real Squid on RBE
+`bbr test //devinfra/github_api_proxy/host:test_relay_config` runs real Squid on RBE
 against a synthetic TLS-authenticated parent and independent HTTPS origin.
 It checks successful nested TLS and authenticated readiness, no leaked parent
 authorization at the origin, rejection of wrong credentials or bad parent TLS,

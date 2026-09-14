@@ -11,7 +11,7 @@ import pytest_bazel
 from mitmproxy import connection, ctx, exceptions, http
 from mitmproxy.websocket import WebSocketData, WebSocketMessage
 
-from devinfra.github_api_capture.session_ws_metadata import (
+from devinfra.github_api_proxy.session_ws_metadata import (
     MAX_JSON_BYTES,
     OPTION_NAMES,
     ROUTE,

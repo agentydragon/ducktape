@@ -5,7 +5,7 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from cluster.proxies.github_api_proxy.config import ClientPasswords, Settings
+from devinfra.github_api_proxy.config import ClientPasswords, Settings
 
 
 def test_secret_errors_do_not_disclose_passwords() -> None:

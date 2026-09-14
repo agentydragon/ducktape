@@ -30,12 +30,12 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 from tenacity import retry, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from devinfra.github_api_capture.relay_config import render
+from devinfra.github_api_proxy.host.relay_config import render
 from util.bazel import runfiles
 from util.oci import OciImage, load_oci_image
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
-SQUID = OciImage("_main/devinfra/github_api_capture/squid_image.rloc", "github-api-relay-squid:test")
+SQUID = OciImage("_main/devinfra/github_api_proxy/host/testing/squid_image.rloc", "github-api-relay-squid:test")
 USERNAME = "test-relay-client"
 PASSWORD = "0123456789abcdef" * 4
 AUTHORIZATION = "Basic " + base64.b64encode(f"{USERNAME}:{PASSWORD}".encode()).decode()
@@ -283,7 +283,7 @@ def test_missing_credentials_fail_closed(tmp_path: Path) -> None:
     result = subprocess.run(
         [
             sys.executable,
-            str(runfiles.get_required_path("_main/devinfra/github_api_capture/relay_config.py")),
+            str(runfiles.get_required_path("_main/devinfra/github_api_proxy/host/relay_config.py")),
             "--host",
             "proxy.test",
             "--port",
@@ -313,7 +313,7 @@ def test_pinned_ca_replaces_old_bundle_and_nss(tmp_path: Path, squid_image: str)
     os.utime(new_ca, (1, 1))
     state = tmp_path / "state"
     nss = state / "nss"
-    script = runfiles.get_required_path("_main/devinfra/github_api_capture/prepare_trust.sh")
+    script = runfiles.get_required_path("_main/devinfra/github_api_proxy/host/prepare_trust.sh")
     with closing(docker.from_env()) as client:
         for ca in (old_ca, new_ca):
             client.containers.run(

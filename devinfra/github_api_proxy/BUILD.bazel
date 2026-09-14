@@ -6,7 +6,7 @@ load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 py_binary(
     name = "main_bin",
-    main_module = "cluster.proxies.github_api_proxy.main",
+    main_module = "devinfra.github_api_proxy.main",
     deps = [":main"],
 )
 
@@ -56,8 +56,8 @@ py_test(
     ],
     requires_docker = True,
     deps = [
-        ":testing",
         "//:conftest",
+        "//devinfra/github_api_proxy/testing:certificates",
         "//util:oci",
         "//util/testing:container_logs",
         "@pypi//aiohttp",
@@ -94,9 +94,16 @@ py_library(
     deps = [
         ":auth",
         ":metrics",
-        "//devinfra/github_api_capture:session_ws_metadata",
+        ":session_ws_metadata",
         "@pypi//mitmproxy",
     ],
+)
+
+py_library(
+    name = "session_ws_metadata",
+    srcs = ["session_ws_metadata.py"],
+    visibility = ["//devinfra/github_api_proxy:__pkg__"],
+    deps = ["@pypi//mitmproxy"],
 )
 
 py_library(
@@ -188,8 +195,8 @@ py_test(
         ":destinations",
         ":metrics",
         ":runtime",
-        ":testing",
         "//:conftest",
+        "//devinfra/github_api_proxy/testing:certificates",
         "@pypi//aiohttp",
         "@pypi//mitmproxy",
         "@pypi//prometheus_client",
@@ -224,11 +231,27 @@ py_test(
     ],
 )
 
-py_library(
-    name = "testing",
-    srcs = ["testing.py"],
+py_test(
+    name = "test_session_ws_metadata",
+    srcs = ["test_session_ws_metadata.py"],
     deps = [
-        "@pypi//cryptography",
+        ":session_ws_metadata",
+        "//:conftest",
         "@pypi//mitmproxy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_session_ws_metadata_integration",
+    srcs = ["test_session_ws_metadata_integration.py"],
+    deps = [
+        ":session_ws_metadata",
+        "//:conftest",
+        "@pypi//aiohttp",
+        "@pypi//mitmproxy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

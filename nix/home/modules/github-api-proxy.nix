@@ -25,7 +25,7 @@ let
       pkgs.coreutils
       pkgs.nssTools
     ];
-    text = builtins.readFile ../../../devinfra/github_api_capture/prepare_trust.sh;
+    text = builtins.readFile ../../../devinfra/github_api_proxy/host/prepare_trust.sh;
   };
 
   # Every runtime in a session has to trust the interception CA, not just Node.
@@ -148,7 +148,7 @@ in
         RuntimeDirectoryMode = "0700";
         ExecStartPre = lib.escapeShellArgs [
           "${pkgs.python314}/bin/python3"
-          "${../../../devinfra/github_api_capture/relay_config.py}"
+          "${../../../devinfra/github_api_proxy/host/relay_config.py}"
           "--host"
           cfg.remote.host
           "--port"

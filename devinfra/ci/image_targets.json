@@ -115,8 +115,8 @@
       "registry": "forgejo"
     },
     "github-api-proxy": {
-      "target": "//cluster/proxies/github_api_proxy:image",
-      "test": "//cluster/proxies/github_api_proxy:tests",
+      "target": "//devinfra/github_api_proxy:image",
+      "test": "//devinfra/github_api_proxy:tests",
       "registry": "forgejo"
     },
     "haku-console": {
