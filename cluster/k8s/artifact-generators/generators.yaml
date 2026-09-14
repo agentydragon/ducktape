@@ -1712,13 +1712,6 @@ spec:
           to: "@artifact/cluster/k8s/monitoring/alloy/"
           exclude:
             - flux-kustomization.yaml
-    - name: monitoring-control-plane-auth
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/monitoring/control-plane-auth/**"
-          to: "@artifact/cluster/k8s/monitoring/control-plane-auth/"
-          exclude:
-            - flux-kustomization.yaml
     - name: monitoring-alloy-otlp-bearer-token-tf
       originRevision: "@repo"
       copy:
