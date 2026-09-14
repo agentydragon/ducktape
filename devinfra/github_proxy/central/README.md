@@ -8,7 +8,7 @@ and a separate private HTTP metrics listener. The image entrypoint accepts the s
 ```json
 {
   "proxy_hostname": "proxy.example.test",
-  "credential_files": ["/run/clients/first.json", "/run/clients/second.json"],
+  "credential_dirs": ["/run/clients/first", "/run/clients/second"],
   "proxy_tls_cert_file": "/run/outer-tls/tls.crt",
   "proxy_tls_key_file": "/run/outer-tls/tls.key",
   "interception_ca_cert_file": "/run/interception-ca/tls.crt",
@@ -19,8 +19,8 @@ and a separate private HTTP metrics listener. The image entrypoint accepts the s
 }
 ```
 
-Each credential file is a JSON object mapping client IDs to nonempty passwords.
-IDs match `[a-z][a-z0-9_-]{0,31}`; duplicates across files are rejected and the
+Each credential directory contains `username` and `password` files. IDs match
+`[a-z][a-z0-9_-]{0,31}`; duplicates across directories are rejected and the
 combined set is limited to 64 clients. Generate independent high-entropy passwords.
 Credential and certificate changes take effect on restart. Mounted certificate/key
 pairs are checked; the interception certificate must be a CA. Private working PEMs

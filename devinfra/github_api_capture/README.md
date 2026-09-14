@@ -99,23 +99,24 @@ hostname against the standard CA bundle, and never falls back to an origin.
 Only the central service intercepts or captures. The relay has no disk/content
 cache, access/flow logs, signing key, or local mitigation mode.
 
-`remote.credentialsFile` must name an owner-only runtime file, not a Nix-store
-path. Its JSON object contains exactly one client identifier matching
-`[A-Za-z0-9._-]{1,64}` and a 32-byte lowercase hexadecimal password:
+`remote.credentialsSopsFile` names the encrypted SOPS source for the host's
+credential. It contains separate `username` and `password` fields. The username
+is exactly one client identifier matching `[A-Za-z0-9._-]{1,64}`, and the
+password is a 32-byte lowercase hexadecimal value:
 
-```json
-{
-  "example-desktop": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-}
+```yaml
+stringData:
+  username: example-desktop
+  password: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 ```
 
 For the per-host SOPS Kubernetes Secret, Home Manager can select
-`key = "stringData/credentials.json"` and pass `config.sops.secrets.<name>.path`.
-Use the host's own file and recipient; do not install another host's credentials.
-The renderer writes Squid's secret-bearing configuration into the service's
-owner-only runtime directory. Credentials never enter the Nix store, arguments,
-or logs. Squid diagnostics can echo configuration, so its output is discarded;
-unit status and the bounded authenticated launcher probe expose failure.
+`stringData/username` and `stringData/password` directly. Use the host's own
+file and recipient; do not install another host's credentials. `sops-nix`
+renders Squid's secret-bearing configuration into the owner's state directory.
+Credentials never enter the Nix store, arguments, or logs. Squid diagnostics
+can echo configuration, so its output is discarded; unit status and the bounded
+authenticated launcher probe expose failure.
 
 `remote.caCertificate` is a verified, pinned **public** central interception CA
 PEM. It is distinct from the public roots used for the outer HTTPS proxy hop.
@@ -139,13 +140,13 @@ Desktop and opt-in `claude-proxied` sessions share this relay and credential.
 The host opt-ins are <../../nix/home/hosts/wyrm2.nix> and
 <../../nix/home/hosts/rugged.nix>: `github-proxy.allegedly.works:8443` is their
 single parent. Each selects its own
-`cluster/k8s/github-api-proxy/secrets/<host>-credentials.sops.yaml`, key
-`stringData/credentials.json`. Home Manager's existing `sops-nix.service` decrypts
-it as the configured user into `%r/secrets.d`, mode `0600`, with a stable
-`~/.config/sops-nix/secrets/github_api_proxy_credentials` symlink. The relay is
-ordered after and requires that service. On credential rotation, reconcile the
-central Secret, activate the corresponding Home Manager configuration, then
-restart the relay so its private runtime configuration receives the new value.
+`cluster/k8s/github-api-proxy/secrets/<host>-credentials.sops.yaml`. Home
+Manager's `sops-nix.service` reads its `stringData/username` and
+`stringData/password` fields and renders the owner-only Squid configuration
+template. The relay is ordered after and requires that service. On credential
+rotation, reconcile the central Secret, activate the corresponding Home Manager
+configuration, then restart the relay so its private runtime configuration
+receives the new value.
 
 <../../nix/home/modules/github-api-proxy-ca.pem> pins only the public
 `tls.crt` from Secret `github-api-proxy/github-api-proxy-interception-ca`.
@@ -159,7 +160,7 @@ the launcher never downloads a replacement. The cluster Certificate owner is
 
 Do not activate the relay until the central authenticated readiness and real
 application route are verified. Mitigation is controlled only by the
-[central proxy configuration](../github_api_proxy/README.md).
+[central proxy configuration](../github_proxy/central/README.md).
 
 Both hosts use NixOS-inline Home Manager: the normal deployment owner is
 `nixosConfigurations.<host>`, not a standalone `home-manager switch`. Build and
@@ -191,16 +192,6 @@ targets; neither source activation nor a successful build removes these.
 
 ### Validation
 
-`bbr test //devinfra/github_proxy/host:test_relay_config` runs real Squid on RBE
-against a synthetic TLS-authenticated parent and independent HTTPS origin.
-It checks successful nested TLS and authenticated readiness, no leaked parent
-authorization at the origin, rejection of wrong credentials or bad parent TLS,
-and absence of direct origin fallback when the parent is unavailable.
-
-The test image uses Debian `squid-openssl` `7.6-2`, resolved from the snapshot
-source pinned in `MODULE.bazel`; the host service uses the repository-pinned Nix
-Squid `7.6`.
-The test also executes the actual CA preparation script against an old bundle
-and NSS nickname before switching to a new certificate with an old timestamp.
-Validate the rendered Home Manager unit and the pinned host binary before rollout
-as well.
+The host relay configuration is rendered by `sops-nix` and executed by the
+repository-pinned Nix Squid package. Validate the rendered Home Manager unit,
+the generated owner-only template, and the pinned host binary before rollout.

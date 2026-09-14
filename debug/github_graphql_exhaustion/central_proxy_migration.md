@@ -29,7 +29,7 @@ was performed at this checkpoint.
 Credential [#5688](https://github.com/agentydragon/ducktape/pull/5688) merged at
 04:16:03 UTC as `e0ce3819a9582c6cbf3732b2dc197a19023f7f5d`. Flux reported
 `github-api-proxy-secrets` Ready/Healthy on that revision at 04:18:11 UTC; both
-host Secrets exist with the expected `credentials.json` key. Its Bazel,
+host Secrets exist with the expected username/password fields. Its Bazel,
 Pre-commit and Gazelle checks passed; this is not a claim that all checks
 completed. Real wyrm2 credential authentication passed the central canary below;
 rugged's runtime decryption and authentication remain unverified.

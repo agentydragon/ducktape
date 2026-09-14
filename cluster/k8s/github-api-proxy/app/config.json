@@ -1,6 +1,6 @@
 {
   "proxy_hostname": "github-proxy.allegedly.works",
-  "credential_files": ["/run/github-api-proxy/clients/wyrm2.json", "/run/github-api-proxy/clients/rugged.json"],
+  "credential_dirs": ["/run/github-api-proxy/clients/wyrm2", "/run/github-api-proxy/clients/rugged"],
   "proxy_tls_cert_file": "/run/github-api-proxy/outer-tls/tls.crt",
   "proxy_tls_key_file": "/run/github-api-proxy/outer-tls/tls.key",
   "interception_ca_cert_file": "/run/github-api-proxy/interception-ca/tls.crt",

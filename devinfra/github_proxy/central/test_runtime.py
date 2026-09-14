@@ -115,10 +115,15 @@ async def proxy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterato
     outer = certificates(tmp_path, "outer", "localhost")
     interception = certificates(tmp_path, "interception", None)
     upstream = certificates(tmp_path, "upstream", "upstream.test")
-    credentials = tmp_path / "alpha.json"
-    credentials.write_text(json.dumps({"test-alpha": PASSWORD}))
-    second_credentials = tmp_path / "beta.json"
-    second_credentials.write_text(json.dumps({"test-beta": SECOND_PASSWORD}))
+    credentials = tmp_path / "alpha"
+    second_credentials = tmp_path / "beta"
+    for path, username, password in (
+        (credentials, "test-alpha", PASSWORD),
+        (second_credentials, "test-beta", SECOND_PASSWORD),
+    ):
+        path.mkdir()
+        (path / "username").write_text(username)
+        (path / "password").write_text(password)
     origins = LocalOrigins(0, 0)
     client_port: int | None = None
     original_connect = asyncio.SelectorEventLoop.sock_connect
@@ -177,7 +182,7 @@ async def proxy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterato
             origins.http_port = runner.addresses[0][1]
     settings = Settings(
         proxy_hostname="localhost",
-        credential_files=[credentials, second_credentials],
+        credential_dirs=[credentials, second_credentials],
         proxy_tls_cert_file=outer.cert,
         proxy_tls_key_file=outer.key,
         interception_ca_cert_file=interception.cert,

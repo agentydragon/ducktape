@@ -228,7 +228,6 @@ rec {
       "cluster.skills.hetzner_vnc_screenshot.vnc_screenshot"
       "cluster.skills.proxmox_vm.vm_interact"
       "devinfra.gc.output_base_gc"
-      "devinfra.github_proxy.host.relay_config"
       "devinfra.ws.cli"
     ];
     propagatedBuildInputs = with python314Packages; [
