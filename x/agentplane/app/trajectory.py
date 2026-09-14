@@ -53,6 +53,10 @@ class Thread(Base):
     __tablename__ = "thread"
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    # A Thread stays pinned to one Sandbox across runner-session replacements. A new-Sandbox
+    # start has neither value until its reconciler creates and observes the concrete object.
+    sandbox: Mapped[str | None] = mapped_column(Text)
+    sandbox_uid: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
     # A harness/spec projection survives between runner-session attachments. A later runner
     # session may change the live model projection, but its identity never becomes a Thread id.
     harness: Mapped[Harness] = mapped_column(
@@ -72,22 +76,17 @@ class Thread(Base):
 
 
 class ThreadRunnerSession(Base):
-    """One actual runner session associated with a durable Thread."""
+    """One runner-session identity within the Thread's static Sandbox."""
 
     __tablename__ = "thread_runner_session"
     __table_args__ = (
-        UniqueConstraint("sandbox", "runner_session_id"),
         Index("thread_runner_session_one_active", "thread_id", unique=True, postgresql_where=text("active")),
     )
 
-    thread_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
-    )
-    sandbox: Mapped[str] = mapped_column(Text, primary_key=True)
+    thread_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"))
+    # Agentplane mints runner-session ids, so this global idempotency key never needs a repeated
+    # Sandbox column to identify the runner session.
     runner_session_id: Mapped[str] = mapped_column(Text, primary_key=True)
-    # Migrated associations and test embeddings do not have a Kubernetes UID. A later desired
-    # Thread-start reconciler will require one before claiming a selected Sandbox.
-    sandbox_uid: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
     # A Thread retains prior sessions but exposes exactly one current command target.
     active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("true"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
@@ -233,20 +232,33 @@ class TrajectoryStore:
         """Find the product Thread for an actual runner attachment, creating it on first sight."""
         async with self._sessions.begin() as session:
             existing = await session.scalar(
-                select(ThreadRunnerSession.thread_id).where(
-                    ThreadRunnerSession.sandbox == sandbox, ThreadRunnerSession.runner_session_id == session_id
-                )
+                select(Thread).join(ThreadRunnerSession).where(ThreadRunnerSession.runner_session_id == session_id)
             )
             if existing is not None:
-                return existing
+                _match_thread_sandbox(existing, sandbox, sandbox_uid)
+                if existing.sandbox_uid is None and sandbox_uid is not None:
+                    existing.sandbox_uid = sandbox_uid
+                    await _notify(session)
+                return existing.id
 
             thread_id = uuid4()
             session.add(
-                Thread(id=thread_id, harness=Harness(pb.Harness.Name(spec.harness)), model=spec.model, cwd=spec.cwd)
+                Thread(
+                    id=thread_id,
+                    sandbox=sandbox,
+                    sandbox_uid=sandbox_uid,
+                    harness=Harness(pb.Harness.Name(spec.harness)),
+                    model=spec.model,
+                    cwd=spec.cwd,
+                )
             )
-            winner = await _activate_runner_session(session, thread_id, sandbox, sandbox_uid, session_id)
+            winner = await _activate_runner_session(session, thread_id, session_id)
             if winner != thread_id:
                 await session.execute(delete(Thread).where(Thread.id == thread_id))
+                winning_thread = await session.get(Thread, winner)
+                if winning_thread is None:  # pragma: no cover - the session insert returned its thread id.
+                    raise RuntimeError("runner-session insert conflicted without a winning Thread")
+                _match_thread_sandbox(winning_thread, sandbox, sandbox_uid)
                 return winner
             await session.flush()
             await _notify(session)
@@ -407,7 +419,7 @@ class TrajectoryStore:
         threads are excluded unless asked for, mirroring the Sandbox inventory's own default."""
         query = _thread_views_query().order_by(Thread.created_at.desc())
         if sandbox is not None:
-            query = query.where(ThreadRunnerSession.sandbox == sandbox)
+            query = query.where(Thread.sandbox == sandbox)
         if session_id is not None:
             query = query.where(ThreadRunnerSession.runner_session_id == session_id)
         if not include_archived:
@@ -506,9 +518,7 @@ def _thread_command_snapshot(command: ThreadCommand) -> ThreadCommandSnapshot:
     )
 
 
-async def _activate_runner_session(
-    session: AsyncSession, thread_id: UUID, sandbox: str, sandbox_uid: UUID | None, runner_session_id: str
-) -> UUID:
+async def _activate_runner_session(session: AsyncSession, thread_id: UUID, runner_session_id: str) -> UUID:
     """Make this proven association the sole active target for its Thread."""
     await session.execute(
         update(ThreadRunnerSession)
@@ -517,26 +527,25 @@ async def _activate_runner_session(
     )
     inserted = await session.scalar(
         insert(ThreadRunnerSession)
-        .values(
-            thread_id=thread_id,
-            sandbox=sandbox,
-            sandbox_uid=sandbox_uid,
-            runner_session_id=runner_session_id,
-            active=True,
-        )
-        .on_conflict_do_nothing(index_elements=[ThreadRunnerSession.sandbox, ThreadRunnerSession.runner_session_id])
+        .values(thread_id=thread_id, runner_session_id=runner_session_id, active=True)
+        .on_conflict_do_nothing(index_elements=[ThreadRunnerSession.runner_session_id])
         .returning(ThreadRunnerSession.thread_id)
     )
     if inserted is not None:
         return inserted
     winner = await session.scalar(
-        select(ThreadRunnerSession.thread_id).where(
-            ThreadRunnerSession.sandbox == sandbox, ThreadRunnerSession.runner_session_id == runner_session_id
-        )
+        select(ThreadRunnerSession.thread_id).where(ThreadRunnerSession.runner_session_id == runner_session_id)
     )
-    if winner is None:  # pragma: no cover - the conflict above names this unique key.
+    if winner is None:  # pragma: no cover - the conflict above names this primary key.
         raise RuntimeError("runner-session insert conflicted without a winning association")
     return winner
+
+
+def _match_thread_sandbox(thread: Thread, sandbox: str, sandbox_uid: UUID | None) -> None:
+    if thread.sandbox != sandbox:
+        raise ValueError("runner session already belongs to a Thread pinned to a different Sandbox")
+    if thread.sandbox_uid is not None and sandbox_uid is not None and thread.sandbox_uid != sandbox_uid:
+        raise ValueError("runner session observed a different Kubernetes UID for its Thread Sandbox")
 
 
 def _positive_duration(duration: timedelta) -> None:
@@ -553,11 +562,7 @@ async def _fence(session: AsyncSession, lease: IngestionLease, thread_id: UUID) 
     now = (await session.scalars(select(func.clock_timestamp()))).one()
     if owned is None or owned.token != lease.token or owned.expires_at <= now:
         raise IngestionLeaseLostError(lease.sandbox)
-    sandbox = await session.scalar(
-        select(ThreadRunnerSession.sandbox).where(
-            ThreadRunnerSession.thread_id == thread_id, ThreadRunnerSession.active.is_(True)
-        )
-    )
+    sandbox = await session.scalar(select(Thread.sandbox).where(Thread.id == thread_id))
     if sandbox != lease.sandbox:
         raise IngestionLeaseLostError("lease does not own this thread's sandbox")
 
@@ -615,9 +620,11 @@ def _view(
     harness_state = (
         ParseDict(attached, pb.Attached()).harness_state if attached is not None else pb.HARNESS_STATE_UNSPECIFIED
     )
+    if thread.sandbox is None:  # pragma: no cover - only a target-only Thread lacks an attachment.
+        raise RuntimeError("Thread with a runner session has no pinned Sandbox")
     return ThreadView(
         id=thread.id,
-        sandbox=runner.sandbox,
+        sandbox=thread.sandbox,
         session_id=runner.runner_session_id,
         harness=thread.harness,
         model=thread.model,

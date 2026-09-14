@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
@@ -87,6 +87,17 @@ async def test_a_session_is_one_thread_and_its_events_read_back_in_order(
     assert [event.sequence for event in await store.events(thread, after_sequence=1, limit=2)] == [2, 3]
     assert await store.last_sequence(thread) == 4
     assert await store.last_sequence(other) == 0
+
+
+async def test_runner_session_cannot_rebind_a_thread_to_a_different_static_sandbox(store: TrajectoryStore) -> None:
+    sandbox_uid = uuid4()
+    thread = await store.thread("sb-1", "s-1", SPEC, sandbox_uid=sandbox_uid)
+
+    assert await store.thread("sb-1", "s-1", SPEC, sandbox_uid=sandbox_uid) == thread
+    with pytest.raises(ValueError, match="different Sandbox"):
+        await store.thread("sb-2", "s-1", SPEC, sandbox_uid=sandbox_uid)
+    with pytest.raises(ValueError, match="different Kubernetes UID"):
+        await store.thread("sb-1", "s-1", SPEC, sandbox_uid=uuid4())
 
 
 async def test_thread_commands_are_ordered_idempotent_and_reject_payload_reuse(store: TrajectoryStore) -> None:

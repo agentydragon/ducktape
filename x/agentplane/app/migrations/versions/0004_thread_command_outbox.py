@@ -14,20 +14,16 @@ def upgrade() -> None:
     op.create_table(
         "thread_runner_session",
         sa.Column(
-            "thread_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
+            "thread_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("thread.id", ondelete="CASCADE"), nullable=False
         ),
-        sa.Column("sandbox", sa.Text(), primary_key=True),
         sa.Column("runner_session_id", sa.Text(), primary_key=True),
-        # Historical Thread rows predate UID persistence. New associations write it when known.
-        sa.Column("sandbox_uid", postgresql.UUID(as_uuid=True)),
         sa.Column("active", sa.Boolean(), nullable=False, server_default=sa.text("true")),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.UniqueConstraint("sandbox", "runner_session_id"),
     )
     op.execute(
         """
-        INSERT INTO thread_runner_session (thread_id, sandbox, runner_session_id, sandbox_uid, active, created_at)
-        SELECT id, sandbox, session_id, NULL, true, created_at
+        INSERT INTO thread_runner_session (thread_id, runner_session_id, active, created_at)
+        SELECT id, session_id, true, created_at
         FROM thread
         """
     )
@@ -38,6 +34,8 @@ def upgrade() -> None:
         unique=True,
         postgresql_where=sa.text("active"),
     )
+    # Existing Threads already name their static Sandbox; only the Kubernetes object UID is new.
+    op.add_column("thread", sa.Column("sandbox_uid", postgresql.UUID(as_uuid=True)))
     op.create_table(
         "thread_command",
         sa.Column(
@@ -51,7 +49,7 @@ def upgrade() -> None:
     )
     op.drop_constraint("thread_sandbox_session_id_key", "thread", type_="unique")
     op.drop_column("thread", "session_id")
-    op.drop_column("thread", "sandbox")
+    op.alter_column("thread", "sandbox", existing_type=sa.Text(), nullable=True)
 
 
 def downgrade() -> None:
