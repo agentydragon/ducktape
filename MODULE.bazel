@@ -29,9 +29,24 @@ bazel_dep(name = "protobuf", version = "36.1.bcr.1")
 bazel_dep(name = "rules_proto", version = "7.1.0")
 bazel_dep(name = "rules_cc", version = "0.2.22")
 bazel_dep(name = "or-tools", version = "9.15")
+
+# OR-Tools 9.15 still selects bzip2 1.0.8.bcr.2, whose native cc_binary
+# declaration is removed by Bazel 9. Use the BCR compatibility release.
+bazel_dep(name = "bzip2", version = "1.0.8.bcr.4")
 bazel_dep(name = "abseil-cpp", version = "20260817.0")
 bazel_dep(name = "googletest", version = "1.18.0.bcr.1")
 bazel_dep(name = "googleapis", version = "0.0.0-20260825-d10ac924")
+
+# googleapis' generated BUILD still relies on Bazel 8's native py_test. Keep
+# the narrow compatibility patch until a released googleapis module carries
+# a Bazel 9-compatible generated BUILD.
+single_version_override(
+    module_name = "googleapis",
+    patch_strip = 1,
+    patches = ["//third_party/patches:googleapis_bazel9_py_test.patch"],
+    version = "0.0.0-20260825-d10ac924",
+)
+
 bazel_dep(name = "googleapis-go", version = "1.1.5")
 bazel_dep(name = "rules_shell", version = "0.8.0")  # Required by buildifier_prebuilt
 bazel_dep(name = "buildifier_prebuilt", version = "8.5.1.4")
