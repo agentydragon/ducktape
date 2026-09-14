@@ -46,6 +46,9 @@ dependencies = [
     "hass-client>=1.3.1",
     # Python cdk8s uses jsii to synthesize ordinary Kubernetes YAML.
     "cdk8s>=2.70.101,<3",
+    # cdk8s-plus supplies typed Kubernetes resources such as ConfigMap; the
+    # core cdk8s ApiObject intentionally only models metadata.
+    "cdk8s-plus-33>=2.5,<3",
     "aiohttp>=3.14.3",
     "requests>=2.32.5",
 

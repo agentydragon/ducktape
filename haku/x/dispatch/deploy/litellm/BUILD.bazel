@@ -2,6 +2,11 @@
 
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
+exports_files(
+    ["workers-litellm-config.yaml"],
+    visibility = ["//cluster:__pkg__"],
+)
+
 py_library(
     name = "generate_workers_litellm",
     srcs = ["generate_workers_litellm.py"],

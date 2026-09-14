@@ -1,6 +1,6 @@
 # gazelle:ignore
 
-load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 exports_files([".tflint.hcl"])
 
@@ -8,7 +8,12 @@ py_library(
     name = "generate_manifests_lib",
     srcs = ["generate_manifests.py"],
     visibility = ["//visibility:private"],
-    deps = ["@pypi//cdk8s"],
+    deps = [
+        "//cluster/k8s/litellm/app:model_rosters",
+        "//tana/litellm_proxy:model_registry",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_33",
+    ],
 )
 
 py_binary(
@@ -16,6 +21,24 @@ py_binary(
     main_module = "cluster.generate_manifests",
     visibility = ["//visibility:public"],
     deps = [":generate_manifests_lib"],
+)
+
+py_test(
+    name = "test_generate_manifests",
+    srcs = ["test_generate_manifests.py"],
+    data = [
+        "//cluster/k8s/litellm/app:proxy-config.yaml",
+        "//cluster/k8s/litellm/tana:custom_handler.py",
+        "//cluster/k8s/litellm/tana:proxy-config.yaml",
+        "//cluster/k8s/x/haku/dispatch/litellm:workers-litellm-config.yaml",
+    ],
+    deps = [
+        ":generate_manifests_lib",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
 )
 
 py_library(

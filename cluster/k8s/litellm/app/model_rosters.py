@@ -108,6 +108,19 @@ CLIPROXY_MODELS: list[str] = [
     "gpt-5.3-codex-spark",
 ]
 
+# Historical Haku dispatch-lane roster. The active main proxy no longer serves
+# z.ai, but the archived worker config and zone contract still use these names.
+ZAI_ANTHROPIC_MODELS: list[str] = [
+    "glm-4.5",
+    "glm-4.5-air",
+    "glm-4.6",
+    "glm-4.7",
+    "glm-5",
+    "glm-5-turbo",
+    "glm-5.1",
+    "glm-5.2",
+]
+
 # Context window + max output tokens for the Codex-subscription models. Measured,
 # not published: litellm's model_cost DB (live-fetched from BerriAI) has exact
 # entries for the real OpenAI models at their raw-API windows -- gpt-5.6-{sol,terra,

@@ -69,6 +69,7 @@ manifest:
     cattr: cattrs
     cattrs: cattrs
     cdk8s: cdk8s
+    cdk8s_plus_33: cdk8s_plus_33
     certifi: certifi
     cffi: cffi
     cfgv: cfgv
@@ -556,4 +557,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 20e12c3ecf0813b57d4bfdcdc97637f2ff92a253a5d1876d3fedbb279623232a
+integrity: 34cac02ea4d996c2c76205b9097fe1a09fc7fb9c64d7ff8e4941aec66832dcd0
