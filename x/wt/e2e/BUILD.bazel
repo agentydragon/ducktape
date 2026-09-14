@@ -1,5 +1,7 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
+package(default_testonly = True)
+
 py_library(
     name = "conftest",
     testonly = True,

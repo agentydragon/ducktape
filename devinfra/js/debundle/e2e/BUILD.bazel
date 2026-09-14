@@ -1,5 +1,7 @@
 load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
 
+package(default_testonly = True)
+
 # End-to-end tests treating the debundler as a black-box binary.
 
 rust_library(
