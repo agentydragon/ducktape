@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import grpc
 import pytest
@@ -27,15 +27,15 @@ from x.agentplane.runner.testing.scripted_model import ScriptedModel
 
 
 @pytest.fixture(params=[pb.HARNESS_CLAUDE, pb.HARNESS_CODEX], ids=["claude", "codex"])
-def harness(request: pytest.FixtureRequest) -> pb.Harness.ValueType:
-    return pb.Harness.ValueType(request.param)
+def harness(request: pytest.FixtureRequest) -> pb.Harness:
+    return cast(pb.Harness, request.param)
 
 
 ModelEndpoint = AnthropicMessages | OpenAIResponses
 
 
 @pytest.fixture
-async def endpoint(harness: pb.Harness.ValueType) -> AsyncIterator[ModelEndpoint]:
+async def endpoint(harness: pb.Harness) -> AsyncIterator[ModelEndpoint]:
     server: ModelEndpoint = AnthropicMessages() if harness == pb.HARNESS_CLAUDE else OpenAIResponses()
     await server.start()
     try:
@@ -45,7 +45,7 @@ async def endpoint(harness: pb.Harness.ValueType) -> AsyncIterator[ModelEndpoint
 
 
 @pytest.fixture
-def model(harness: pb.Harness.ValueType, endpoint: ModelEndpoint) -> ScriptedModel[Any]:
+def model(harness: pb.Harness, endpoint: ModelEndpoint) -> ScriptedModel[Any]:
     if harness == pb.HARNESS_CLAUDE:
         assert isinstance(endpoint, AnthropicMessages)
         return ClaudeModel(endpoint)
@@ -63,12 +63,12 @@ def workspace(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def spec(harness: pb.Harness.ValueType, workspace: Path) -> pb.SessionSpec:
+def spec(harness: pb.Harness, workspace: Path) -> pb.SessionSpec:
     return launches.spec(harness, workspace)
 
 
 @pytest.fixture
-def config(harness: pb.Harness.ValueType, endpoint: ModelEndpoint, tmp_path: Path) -> RunnerConfig:
+def config(harness: pb.Harness, endpoint: ModelEndpoint, tmp_path: Path) -> RunnerConfig:
     return launches.config(harness, endpoint.origin, state_dir=tmp_path / "state", home=tmp_path / "home")
 
 

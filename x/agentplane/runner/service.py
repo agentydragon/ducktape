@@ -131,7 +131,7 @@ class Runner:
 
     @staticmethod
     async def _record_initialization_output(
-        stream: asyncio.StreamReader, attempt: int, source: pb.InitializationStream.ValueType, log: InitializationLog
+        stream: asyncio.StreamReader, attempt: int, source: pb.InitializationStream, log: InitializationLog
     ) -> None:
         while data := await stream.read(4096):
             log.append_output(attempt, source, data)

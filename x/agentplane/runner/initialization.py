@@ -55,7 +55,7 @@ class InitializationLog:
     def since(self, after_sequence: int) -> Sequence[pb.InitializationEvent]:
         return self._events[after_sequence:]
 
-    def append_output(self, attempt: int, stream: pb.InitializationStream.ValueType, data: bytes) -> None:
+    def append_output(self, attempt: int, stream: pb.InitializationStream, data: bytes) -> None:
         self._append(
             pb.InitializationEvent(
                 sequence=self.last_sequence + 1,

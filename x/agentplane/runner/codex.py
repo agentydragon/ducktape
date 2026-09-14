@@ -27,7 +27,7 @@ from x.agentplane.runner.config import CodexLaunch
 if TYPE_CHECKING:
     from x.agentplane.runner.session import Frame, Session
 
-_TURN_STATUSES: dict[wire.TurnStatus | str, pb.TurnStatus.ValueType] = {
+_TURN_STATUSES: dict[wire.TurnStatus | str, pb.TurnStatus] = {
     wire.TurnStatus.COMPLETED: pb.TURN_STATUS_COMPLETED,
     wire.TurnStatus.INTERRUPTED: pb.TURN_STATUS_INTERRUPTED,
     wire.TurnStatus.FAILED: pb.TURN_STATUS_FAILED,
