@@ -46,9 +46,8 @@ use anyhow::Result;
 use binding_targets::declaration_name_strings;
 use serde::Serialize;
 use swc_ecma_ast::{
-    BindingIdent, ExportDecl, ExportDefaultDecl, ExportSpecifier, GetterProp, Ident, MemberExpr,
-    MemberProp, ModuleDecl, ModuleExportName, ModuleItem, NamedExport, Prop, PropName, SetterProp,
-    Stmt,
+    BindingIdent, ExportDecl, ExportDefaultDecl, ExportSpecifier, Ident, MemberExpr, MemberProp,
+    ModuleDecl, ModuleExportName, ModuleItem, NamedExport, Prop, PropName, Stmt,
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
@@ -434,16 +433,16 @@ impl Visit for ReferenceCounter<'_> {
                 // reference). Only visit the default expression.
                 assign.value.visit_with(self);
             }
-            Prop::Getter(GetterProp { key, body, .. }) => {
-                self.visit_prop_name_computed(key);
-                body.visit_with(self);
+            Prop::Getter(getter) => {
+                self.visit_prop_name_computed(&getter.key);
+                getter.function.body.visit_with(self);
             }
-            Prop::Setter(SetterProp {
-                key, param, body, ..
-            }) => {
-                self.visit_prop_name_computed(key);
-                param.visit_with(self);
-                body.visit_with(self);
+            Prop::Setter(setter) => {
+                self.visit_prop_name_computed(&setter.key);
+                for param in &setter.function.params {
+                    param.pat.visit_with(self);
+                }
+                setter.function.body.visit_with(self);
             }
             Prop::Method(method) => {
                 self.visit_prop_name_computed(&method.key);

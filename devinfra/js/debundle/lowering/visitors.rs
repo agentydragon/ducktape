@@ -308,22 +308,33 @@ macro_rules! impl_rename_visit_mut {
         }
 
         fn visit_mut_function(&mut self, function: &mut Function) {
-            let scope =
-                shadowed_by_params(function.params.iter().map(|p| &p.pat), &self.rename_names());
+            let names = self.rename_names();
+            let mut scope = shadowed_by_params(function.params.iter().map(|p| &p.pat), &names);
+            if let Some(body) = &function.body {
+                scope.extend(shadowed_by_block_decls(&body.stmts, &names));
+            }
             self.with_rename_scope(scope, |s| function.visit_mut_children_with(s));
         }
 
         fn visit_mut_arrow_expr(&mut self, arrow: &mut ArrowExpr) {
-            let scope = shadowed_by_params(arrow.params.iter(), &self.rename_names());
+            let names = self.rename_names();
+            let mut scope = shadowed_by_params(arrow.params.iter(), &names);
+            if let ArrowFunctionBody::FunctionBody(body) = arrow.body.as_ref() {
+                scope.extend(shadowed_by_block_decls(&body.stmts, &names));
+            }
             self.with_rename_scope(scope, |s| arrow.visit_mut_children_with(s));
         }
 
         fn visit_mut_constructor(&mut self, constructor: &mut Constructor) {
+            let names = self.rename_names();
             let params = constructor.params.iter().filter_map(|p| match p {
                 ParamOrTsParamProp::Param(param) => Some(&param.pat),
                 ParamOrTsParamProp::TsParamProp(_) => None,
             });
-            let scope = shadowed_by_params(params, &self.rename_names());
+            let mut scope = shadowed_by_params(params, &names);
+            if let Some(body) = &constructor.body {
+                scope.extend(shadowed_by_block_decls(&body.stmts, &names));
+            }
             self.with_rename_scope(scope, |s| constructor.visit_mut_children_with(s));
         }
 
@@ -483,22 +494,33 @@ impl Visit for RenameCaptureProbe<'_> {
     }
 
     fn visit_function(&mut self, function: &Function) {
-        let scope =
-            shadowed_by_params(function.params.iter().map(|p| &p.pat), &self.rename_names());
+        let names = self.rename_names();
+        let mut scope = shadowed_by_params(function.params.iter().map(|p| &p.pat), &names);
+        if let Some(body) = &function.body {
+            scope.extend(shadowed_by_block_decls(&body.stmts, &names));
+        }
         self.with_rename_scope(scope, |s| function.visit_children_with(s));
     }
 
     fn visit_arrow_expr(&mut self, arrow: &ArrowExpr) {
-        let scope = shadowed_by_params(arrow.params.iter(), &self.rename_names());
+        let names = self.rename_names();
+        let mut scope = shadowed_by_params(arrow.params.iter(), &names);
+        if let ArrowFunctionBody::FunctionBody(body) = arrow.body.as_ref() {
+            scope.extend(shadowed_by_block_decls(&body.stmts, &names));
+        }
         self.with_rename_scope(scope, |s| arrow.visit_children_with(s));
     }
 
     fn visit_constructor(&mut self, constructor: &Constructor) {
+        let names = self.rename_names();
         let params = constructor.params.iter().filter_map(|p| match p {
             ParamOrTsParamProp::Param(param) => Some(&param.pat),
             ParamOrTsParamProp::TsParamProp(_) => None,
         });
-        let scope = shadowed_by_params(params, &self.rename_names());
+        let mut scope = shadowed_by_params(params, &names);
+        if let Some(body) = &constructor.body {
+            scope.extend(shadowed_by_block_decls(&body.stmts, &names));
+        }
         self.with_rename_scope(scope, |s| constructor.visit_children_with(s));
     }
 

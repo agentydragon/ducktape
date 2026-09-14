@@ -107,14 +107,16 @@ impl Visit for UnsupportedAnythingCollector {
                 if prop_name_is_anything(&prop.key) {
                     self.push("an object getter key");
                 }
-                prop.body.visit_with(self);
+                prop.function.body.visit_with(self);
             }
             Prop::Setter(prop) => {
                 if prop_name_is_anything(&prop.key) {
                     self.push("an object setter key");
                 }
-                prop.param.visit_with(self);
-                prop.body.visit_with(self);
+                for param in &prop.function.params {
+                    param.pat.visit_with(self);
+                }
+                prop.function.body.visit_with(self);
             }
             Prop::Method(prop) => {
                 if prop_name_is_anything(&prop.key) {

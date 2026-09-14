@@ -263,90 +263,87 @@ fn rewrite_index_html(
 
     let html = rewrite_str(
         source_html,
-        RewriteStrSettings {
-            element_content_handlers: vec![
-                element!("script[type][src]", {
-                    let state = Rc::clone(&state);
-                    let first_script_replacement = first_script_replacement.clone();
-                    move |element| {
-                        if !attribute_eq_ignore_ascii_case(element, "type", "module") {
-                            return Ok(());
-                        }
-                        let src = element
-                            .get_attribute("src")
-                            .context("script tag missing src")?;
-                        let _ = normalize_url_path(&src)?;
-                        let mut state = state.borrow_mut();
-                        if state.script_inserted {
-                            element.remove();
-                        } else {
-                            state.script_inserted = true;
-                            element.replace(&first_script_replacement, ContentType::Html);
-                        }
-                        Ok(())
-                    }
-                }),
-                element!("link[rel][href]", move |element| {
-                    if !attribute_contains_token_ignore_ascii_case(element, "rel", "modulepreload")
-                    {
+        RewriteStrSettings::new()
+            .append_element_content_handler(element!("script[type][src]", {
+                let state = Rc::clone(&state);
+                let first_script_replacement = first_script_replacement.clone();
+                move |element| {
+                    if !attribute_eq_ignore_ascii_case(element, "type", "module") {
                         return Ok(());
                     }
-                    let href = element
-                        .get_attribute("href")
-                        .context("preload tag missing href")?;
-                    let path = normalize_url_path(&href)?;
-                    if path.ends_with(".js") {
-                        let href = runtime_js_href(artifact, &path, out_dir, runtime_root)?;
-                        element.set_attribute("href", &href)?;
+                    let src = element
+                        .get_attribute("src")
+                        .context("script tag missing src")?;
+                    let _ = normalize_url_path(&src)?;
+                    let mut state = state.borrow_mut();
+                    if state.script_inserted {
+                        element.remove();
+                    } else {
+                        state.script_inserted = true;
+                        element.replace(&first_script_replacement, ContentType::Html);
                     }
                     Ok(())
-                }),
-                element!("head", {
-                    let state = Rc::clone(&state);
-                    move |element| {
-                        if should_insert_comment {
-                            let mut state = state.borrow_mut();
-                            if !state.head_comment_inserted {
-                                state.head_comment_inserted = true;
-                                element.prepend(&comment_html, ContentType::Html);
-                            }
+                }
+            }))
+            .append_element_content_handler(element!("link[rel][href]", move |element| {
+                if !attribute_contains_token_ignore_ascii_case(element, "rel", "modulepreload") {
+                    return Ok(());
+                }
+                let href = element
+                    .get_attribute("href")
+                    .context("preload tag missing href")?;
+                let path = normalize_url_path(&href)?;
+                if path.ends_with(".js") {
+                    let href = runtime_js_href(artifact, &path, out_dir, runtime_root)?;
+                    element.set_attribute("href", &href)?;
+                }
+                Ok(())
+            }))
+            .append_element_content_handler(element!("head", {
+                let state = Rc::clone(&state);
+                move |element| {
+                    if should_insert_comment {
+                        let mut state = state.borrow_mut();
+                        if !state.head_comment_inserted {
+                            state.head_comment_inserted = true;
+                            element.prepend(&comment_html, ContentType::Html);
                         }
-                        Ok(())
                     }
-                }),
-                element!("body", {
+                    Ok(())
+                }
+            }))
+            .append_element_content_handler(element!("body", {
+                let state = Rc::clone(&state);
+                let body_script_insertion = body_script_insertion.clone();
+                move |element| {
+                    state.borrow_mut().body_seen = true;
                     let state = Rc::clone(&state);
                     let body_script_insertion = body_script_insertion.clone();
-                    move |element| {
-                        state.borrow_mut().body_seen = true;
-                        let state = Rc::clone(&state);
-                        let body_script_insertion = body_script_insertion.clone();
-                        element.on_end_tag(end_tag!(move |end_tag| {
-                            let mut state = state.borrow_mut();
-                            if !state.script_inserted {
-                                state.script_inserted = true;
-                                end_tag.before(&body_script_insertion, ContentType::Html);
-                            }
-                            Ok(())
-                        }))
-                    }
-                }),
-                element!("*", |element| {
-                    let rewrites = element
-                        .attributes()
-                        .iter()
-                        .filter_map(|attribute| {
-                            root_absolute_harness_url(&attribute.value())
-                                .map(|value| (attribute.name_preserve_case(), value))
-                        })
-                        .collect::<Vec<_>>();
-                    for (name, value) in rewrites {
-                        element.set_attribute(&name, &value)?;
-                    }
-                    Ok(())
-                }),
-            ],
-            document_content_handlers: vec![end!({
+                    element.on_end_tag(end_tag!(move |end_tag| {
+                        let mut state = state.borrow_mut();
+                        if !state.script_inserted {
+                            state.script_inserted = true;
+                            end_tag.before(&body_script_insertion, ContentType::Html);
+                        }
+                        Ok(())
+                    }))
+                }
+            }))
+            .append_element_content_handler(element!("*", |element| {
+                let rewrites = element
+                    .attributes()
+                    .iter()
+                    .filter_map(|attribute| {
+                        root_absolute_harness_url(&attribute.value())
+                            .map(|value| (attribute.name_preserve_case(), value))
+                    })
+                    .collect::<Vec<_>>();
+                for (name, value) in rewrites {
+                    element.set_attribute(&name, &value)?;
+                }
+                Ok(())
+            }))
+            .append_document_content_handler(end!({
                 let state = Rc::clone(&state);
                 move |document_end| {
                     let mut state = state.borrow_mut();
@@ -357,9 +354,7 @@ fn rewrite_index_html(
                     }
                     Ok(())
                 }
-            })],
-            ..RewriteStrSettings::new()
-        },
+            })),
     )
     .context("rewriting index HTML")?;
 
@@ -381,43 +376,35 @@ fn collect_html_entries(html: &str) -> Result<HtmlEntries> {
     let entries = Rc::new(RefCell::new(HtmlEntries::default()));
     rewrite_str(
         html,
-        RewriteStrSettings {
-            element_content_handlers: vec![
-                element!("script[type][src]", {
-                    let entries = Rc::clone(&entries);
-                    move |element| {
-                        if attribute_eq_ignore_ascii_case(element, "type", "module") {
-                            let src = element
-                                .get_attribute("src")
-                                .context("script tag missing src")?;
-                            entries.borrow_mut().module_scripts.push(HtmlEntry {
-                                path: normalize_url_path(&src)?,
-                            });
-                        }
-                        Ok(())
+        RewriteStrSettings::new()
+            .append_element_content_handler(element!("script[type][src]", {
+                let entries = Rc::clone(&entries);
+                move |element| {
+                    if attribute_eq_ignore_ascii_case(element, "type", "module") {
+                        let src = element
+                            .get_attribute("src")
+                            .context("script tag missing src")?;
+                        entries.borrow_mut().module_scripts.push(HtmlEntry {
+                            path: normalize_url_path(&src)?,
+                        });
                     }
-                }),
-                element!("link[rel][href]", {
-                    let entries = Rc::clone(&entries);
-                    move |element| {
-                        if attribute_contains_token_ignore_ascii_case(
-                            element,
-                            "rel",
-                            "modulepreload",
-                        ) {
-                            let href = element
-                                .get_attribute("href")
-                                .context("preload tag missing href")?;
-                            entries.borrow_mut().module_preloads.push(HtmlEntry {
-                                path: normalize_url_path(&href)?,
-                            });
-                        }
-                        Ok(())
+                    Ok(())
+                }
+            }))
+            .append_element_content_handler(element!("link[rel][href]", {
+                let entries = Rc::clone(&entries);
+                move |element| {
+                    if attribute_contains_token_ignore_ascii_case(element, "rel", "modulepreload") {
+                        let href = element
+                            .get_attribute("href")
+                            .context("preload tag missing href")?;
+                        entries.borrow_mut().module_preloads.push(HtmlEntry {
+                            path: normalize_url_path(&href)?,
+                        });
                     }
-                }),
-            ],
-            ..RewriteStrSettings::new()
-        },
+                    Ok(())
+                }
+            })),
     )
     .context("collecting HTML entry tags")?;
     Ok(entries.borrow().clone())

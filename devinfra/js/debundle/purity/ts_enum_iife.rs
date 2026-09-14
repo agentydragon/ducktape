@@ -102,10 +102,12 @@ pub(crate) fn is_ts_enum_iife_call_for_binding(call: &CallExpr, binding: &str) -
             };
             let param_name = param_ident.id.sym.as_ref();
             match arrow.body.as_ref() {
-                BlockStmtOrExpr::Expr(body_expr) => {
+                ArrowFunctionBody::Expr(body_expr) => {
                     is_ts_enum_iife_body_expr(strip_parens(body_expr.as_ref()), param_name)
                 }
-                BlockStmtOrExpr::BlockStmt(block) => is_ts_enum_iife_body_block(block, param_name),
+                ArrowFunctionBody::FunctionBody(block) => {
+                    is_ts_enum_iife_body_block(block, param_name)
+                }
             }
         }
         Expr::Fn(function) => {
@@ -168,7 +170,7 @@ fn is_ts_enum_iife_body_expr(expr: &Expr, param: &str) -> bool {
         .all(|e| is_ts_enum_iife_property_write(strip_parens(e.as_ref()), param))
 }
 
-fn is_ts_enum_iife_body_block(block: &BlockStmt, param: &str) -> bool {
+fn is_ts_enum_iife_body_block(block: &FunctionBody, param: &str) -> bool {
     let Some((last, rest)) = block.stmts.split_last() else {
         return false;
     };

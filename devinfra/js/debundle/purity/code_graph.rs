@@ -335,7 +335,7 @@ struct ChunkFunction<'a> {
     /// purity classification (`classify_param_purity`).
     params: Vec<&'a Pat>,
     /// Block-bodied function/arrow.
-    block_body: Option<&'a BlockStmt>,
+    block_body: Option<&'a FunctionBody>,
     /// Concise-arrow expression body (`(x) => expr`).
     expr_body: Option<&'a Expr>,
     /// Every binding-ident name introduced by this function — its
@@ -393,7 +393,7 @@ impl Visit for BindingNameCollector {
 /// extra names only ever cause more reads to be treated as impure.
 fn collect_function_bindings<'p>(
     params: impl Iterator<Item = &'p Pat>,
-    block_body: Option<&BlockStmt>,
+    block_body: Option<&FunctionBody>,
     expr_body: Option<&Expr>,
 ) -> BTreeSet<String> {
     let mut collector = BindingNameCollector {
@@ -478,7 +478,7 @@ fn push_var_functions<'a>(var: &'a VarDecl, out: &mut Vec<ChunkFunction<'a>>) {
                 });
             }
             Expr::Arrow(arrow) => match arrow.body.as_ref() {
-                BlockStmtOrExpr::BlockStmt(block) => {
+                ArrowFunctionBody::FunctionBody(block) => {
                     out.push(ChunkFunction {
                         name,
                         params: arrow.params.iter().collect(),
@@ -491,7 +491,7 @@ fn push_var_functions<'a>(var: &'a VarDecl, out: &mut Vec<ChunkFunction<'a>>) {
                         ),
                     });
                 }
-                BlockStmtOrExpr::Expr(expr) => {
+                ArrowFunctionBody::Expr(expr) => {
                     out.push(ChunkFunction {
                         name,
                         params: arrow.params.iter().collect(),

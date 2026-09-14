@@ -24,11 +24,12 @@ use std::collections::{BTreeMap, HashMap};
 use js_ast::statement_ordinal_for_body_index;
 use serde::{Deserialize, Serialize};
 use swc_ecma_ast::{
-    ArrayPat, AssignTarget, AssignTargetPat, BlockStmt, BlockStmtOrExpr, Callee, Class,
-    ClassMember, Decl, DefaultDecl, Expr, ExprOrSpread, ForHead, Function, ImportSpecifier, Lit,
-    MemberExpr, MemberProp, MetaPropKind, Module, ModuleDecl, ModuleItem, ObjectPat, ObjectPatProp,
-    OptChainBase, ParamOrTsParamProp, Pat, PrivateName, Prop, PropName, PropOrSpread,
-    SimpleAssignTarget, Stmt, SuperProp, Tpl, UsingDecl, VarDecl, VarDeclOrExpr, VarDeclarator,
+    ArrayPat, ArrowFunctionBody, AssignTarget, AssignTargetPat, BlockStmt, Callee, Class,
+    ClassMember, Decl, DefaultDecl, Expr, ExprOrSpread, ForHead, Function, FunctionBody,
+    ImportSpecifier, Lit, MemberExpr, MemberProp, MetaPropKind, Module, ModuleDecl, ModuleItem,
+    ObjectPat, ObjectPatProp, OptChainBase, ParamOrTsParamProp, Pat, PrivateName, Prop, PropName,
+    PropOrSpread, SimpleAssignTarget, Stmt, SuperProp, Tpl, UsingDecl, VarDecl, VarDeclOrExpr,
+    VarDeclarator,
 };
 
 pub type NodeId = u32;
@@ -665,7 +666,7 @@ impl Extractor {
             self.facts.child.push((id, index as u32, pat));
         }
         if let Some(body) = &function.body {
-            let block = self.block(body)?;
+            let block = self.function_body(body)?;
             self.facts
                 .child
                 .push((id, function.params.len() as u32, block));
@@ -676,6 +677,15 @@ impl Extractor {
     fn block(&mut self, block: &BlockStmt) -> Result<NodeId, Unsupported> {
         let id = self.node(NodeKind::Block);
         for (index, stmt) in block.stmts.iter().enumerate() {
+            let stmt = self.stmt(stmt)?;
+            self.facts.child.push((id, index as u32, stmt));
+        }
+        Ok(id)
+    }
+
+    fn function_body(&mut self, body: &FunctionBody) -> Result<NodeId, Unsupported> {
+        let id = self.node(NodeKind::Block);
+        for (index, stmt) in body.stmts.iter().enumerate() {
             let stmt = self.stmt(stmt)?;
             self.facts.child.push((id, index as u32, stmt));
         }
@@ -723,7 +733,7 @@ impl Extractor {
                     }
                 }
                 if let Some(body) = &constructor.body {
-                    let body = self.block(body)?;
+                    let body = self.function_body(body)?;
                     self.facts.child.push((id, next, body));
                 }
                 Ok(id)
@@ -1041,8 +1051,8 @@ impl Extractor {
                     self.facts.child.push((id, index as u32, param));
                 }
                 let body = match &*arrow.body {
-                    BlockStmtOrExpr::BlockStmt(block) => self.block(block)?,
-                    BlockStmtOrExpr::Expr(expr) => self.expr(expr)?,
+                    ArrowFunctionBody::FunctionBody(block) => self.function_body(block)?,
+                    ArrowFunctionBody::Expr(expr) => self.expr(expr)?,
                 };
                 self.facts.child.push((id, arrow.params.len() as u32, body));
                 Ok(id)
@@ -1174,8 +1184,8 @@ impl Extractor {
                     let id = self.node(NodeKind::Getter);
                     let key = self.prop_key(&getter.key)?;
                     self.facts.child.push((id, 0, key));
-                    if let Some(body) = &getter.body {
-                        let body = self.block(body)?;
+                    if let Some(body) = &getter.function.body {
+                        let body = self.function_body(body)?;
                         self.facts.child.push((id, 1, body));
                     }
                     Ok(id)
@@ -1184,10 +1194,10 @@ impl Extractor {
                     let id = self.node(NodeKind::Setter);
                     let key = self.prop_key(&setter.key)?;
                     self.facts.child.push((id, 0, key));
-                    let param = self.pat(&setter.param)?;
+                    let param = self.pat(&setter.function.params[0].pat)?;
                     self.facts.child.push((id, 1, param));
-                    if let Some(body) = &setter.body {
-                        let body = self.block(body)?;
+                    if let Some(body) = &setter.function.body {
+                        let body = self.function_body(body)?;
                         self.facts.child.push((id, 2, body));
                     }
                     Ok(id)

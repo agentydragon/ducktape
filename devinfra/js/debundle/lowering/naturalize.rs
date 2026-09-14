@@ -326,7 +326,9 @@ impl VisitMut for SealedScopeRenameApplier<'_> {
         }
         let mut renamer = RenameAndShorthandNaturalizer::new(&local);
         function.params.visit_mut_with(&mut renamer);
-        rename_root_body(&mut renamer, function.body.as_mut());
+        if let Some(body) = function.body.as_mut() {
+            rename_root_stmts(&mut renamer, &mut body.stmts);
+        }
         assert_no_heuristic_capture(&renamer);
     }
 
@@ -339,8 +341,10 @@ impl VisitMut for SealedScopeRenameApplier<'_> {
         let mut renamer = RenameAndShorthandNaturalizer::new(&local);
         arrow.params.visit_mut_with(&mut renamer);
         match &mut *arrow.body {
-            BlockStmtOrExpr::BlockStmt(block) => rename_root_body(&mut renamer, Some(block)),
-            BlockStmtOrExpr::Expr(expr) => expr.visit_mut_with(&mut renamer),
+            ArrowFunctionBody::FunctionBody(body) => {
+                rename_root_stmts(&mut renamer, &mut body.stmts)
+            }
+            ArrowFunctionBody::Expr(expr) => expr.visit_mut_with(&mut renamer),
         }
         assert_no_heuristic_capture(&renamer);
     }
@@ -355,7 +359,9 @@ impl VisitMut for SealedScopeRenameApplier<'_> {
         for param in &mut constructor.params {
             param.visit_mut_with(&mut renamer);
         }
-        rename_root_body(&mut renamer, constructor.body.as_mut());
+        if let Some(body) = constructor.body.as_mut() {
+            rename_root_stmts(&mut renamer, &mut body.stmts);
+        }
         assert_no_heuristic_capture(&renamer);
     }
 }
@@ -426,7 +432,7 @@ where
 /// Names bound in a function's root scope: its params plus lexical
 /// declarations directly in its body statements (no descent into nested
 /// function/arrow bodies). Return-object aliases of these names are
-/// scope-local renames; `rename_root_body` treats the root declarations
+/// scope-local renames; `rename_root_stmts` treats the root declarations
 /// as rename targets, so the declaration and its references move together.
 fn function_root_binding_names(function: &Function) -> BTreeSet<String> {
     let mut names = BTreeSet::new();
@@ -602,11 +608,9 @@ fn assert_no_heuristic_capture(renamer: &RenameAndShorthandNaturalizer<'_>) {
 /// still suppressed. Visiting statements one-by-one (rather than the enclosing
 /// block node) is what skips `visit_mut_block_stmt`'s own-decl shadow push for
 /// the root block.
-fn rename_root_body(renamer: &mut RenameAndShorthandNaturalizer<'_>, body: Option<&mut BlockStmt>) {
-    if let Some(body) = body {
-        for stmt in &mut body.stmts {
-            stmt.visit_mut_with(renamer);
-        }
+fn rename_root_stmts(renamer: &mut RenameAndShorthandNaturalizer<'_>, stmts: &mut [Stmt]) {
+    for stmt in stmts {
+        stmt.visit_mut_with(renamer);
     }
 }
 
@@ -647,7 +651,9 @@ impl VisitMut for ScopedHeuristicNaturalizer<'_> {
         // shadow; nested subtrees still suppress.
         let mut renamer = RenameAndShorthandNaturalizer::new(&local);
         function.params.visit_mut_with(&mut renamer);
-        rename_root_body(&mut renamer, function.body.as_mut());
+        if let Some(body) = function.body.as_mut() {
+            rename_root_stmts(&mut renamer, &mut body.stmts);
+        }
     }
 
     fn visit_mut_arrow_expr(&mut self, arrow: &mut ArrowExpr) {
@@ -665,8 +671,10 @@ impl VisitMut for ScopedHeuristicNaturalizer<'_> {
         let mut renamer = RenameAndShorthandNaturalizer::new(&local);
         arrow.params.visit_mut_with(&mut renamer);
         match &mut *arrow.body {
-            BlockStmtOrExpr::BlockStmt(block) => rename_root_body(&mut renamer, Some(block)),
-            BlockStmtOrExpr::Expr(expr) => expr.visit_mut_with(&mut renamer),
+            ArrowFunctionBody::FunctionBody(body) => {
+                rename_root_stmts(&mut renamer, &mut body.stmts)
+            }
+            ArrowFunctionBody::Expr(expr) => expr.visit_mut_with(&mut renamer),
         }
     }
 
@@ -684,7 +692,9 @@ impl VisitMut for ScopedHeuristicNaturalizer<'_> {
         for param in &mut constructor.params {
             param.visit_mut_with(&mut renamer);
         }
-        rename_root_body(&mut renamer, constructor.body.as_mut());
+        if let Some(body) = constructor.body.as_mut() {
+            rename_root_stmts(&mut renamer, &mut body.stmts);
+        }
     }
 }
 

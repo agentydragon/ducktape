@@ -1089,12 +1089,12 @@ fn item_var_decl(item: &ModuleItem) -> Option<&VarDecl> {
     }
 }
 
-fn function_like_body(expr: &Expr) -> Option<&BlockStmt> {
+fn function_like_body(expr: &Expr) -> Option<&FunctionBody> {
     match expr {
         Expr::Fn(function) => function.function.body.as_ref(),
         Expr::Arrow(arrow) => match arrow.body.as_ref() {
-            BlockStmtOrExpr::BlockStmt(body) => Some(body),
-            BlockStmtOrExpr::Expr(_) => None,
+            ArrowFunctionBody::FunctionBody(body) => Some(body),
+            ArrowFunctionBody::Expr(_) => None,
         },
         _ => None,
     }
@@ -1313,7 +1313,7 @@ fn arrow_has_default_to_ident(arrow: &ArrowExpr, name: &str) -> bool {
 }
 
 fn vite_map_deps_body_access(arrow: &ArrowExpr, input_param: &str) -> Option<(String, String)> {
-    let BlockStmtOrExpr::Expr(body) = arrow.body.as_ref() else {
+    let ArrowFunctionBody::Expr(body) = arrow.body.as_ref() else {
         return None;
     };
     let Expr::Call(call) = body.as_ref() else {
@@ -1332,7 +1332,7 @@ fn vite_map_deps_body_access(arrow: &ArrowExpr, input_param: &str) -> Option<(St
         return None;
     };
     let callback_param = pat_ident_name(callback_param)?.to_owned();
-    let BlockStmtOrExpr::Expr(callback_body) = callback.body.as_ref() else {
+    let ArrowFunctionBody::Expr(callback_body) = callback.body.as_ref() else {
         return None;
     };
     let Expr::Member(member) = callback_body.as_ref() else {

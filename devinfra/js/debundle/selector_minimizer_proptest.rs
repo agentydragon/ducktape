@@ -142,13 +142,13 @@ fn function_node(body: Vec<Stmt>) -> Function {
     let mut body = body;
     assign_unique_const_names(&mut body);
     Function {
+        this_param: None,
         params: vec![param("a"), param("b")],
         decorators: vec![],
         span: DUMMY_SP,
         ctxt: SyntaxContext::empty(),
-        body: Some(BlockStmt {
+        body: Some(FunctionBody {
             span: DUMMY_SP,
-            ctxt: SyntaxContext::empty(),
             stmts: body,
         }),
         is_generator: false,
