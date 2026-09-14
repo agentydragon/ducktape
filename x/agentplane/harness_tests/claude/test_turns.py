@@ -19,6 +19,9 @@ RECOVERY_INPUT = "Reply with exactly: CRASH_RESUME_OK"
 INTERRUPTED_RESUME_INPUT = "Reply with exactly: INTERRUPTED_RESUME_INPUT"
 INTERRUPTED_RESUME_PARTIAL = "INTERRUPTED_RESUME_PARTIAL"
 INTERRUPTED_RESUME_RECOVERY = "Reply with exactly: INTERRUPTED_RESUME_RECOVERY_OK"
+RETAINED_QUEUE_FIRST = "Reply only after seeing RETAINED_QUEUE_CRASH_FIRST."
+RETAINED_QUEUE_SECOND = "Reply only after seeing RETAINED_QUEUE_CRASH_SECOND."
+RETAINED_QUEUE_RECOVERY = "Reply with exactly: RETAINED_QUEUE_CRASH_RECOVERY_OK"
 
 
 async def test_baseline_turn(claude: ClaudeHarness, anthropic_messages: AnthropicMessages) -> None:
@@ -117,6 +120,57 @@ async def test_resume_after_an_interrupted_partial_turn_replays_only_completed_m
             assert replay.texts("assistant") == ["CRASH_RESUME_SEED_OK"]
             await exchange.send(*sse.message_stream([sse.Text("INTERRUPTED_RESUME_RECOVERY_OK")], model=MODEL).events)
         assert (await recovery.result()).result == "INTERRUPTED_RESUME_RECOVERY_OK"
+
+
+async def test_resume_after_interrupt_then_crash_drops_retained_queued_inputs(
+    claude: ClaudeHarness, anthropic_messages: AnthropicMessages
+) -> None:
+    """A plain interrupt's reported survivors are process-local, not resumed history.
+
+    Claude says that the two queued native inputs survived an active-turn interrupt.  Killing that
+    harness before it drains them then starts a fresh `--resume` process: the recovery request has
+    the completed seed exchange and recovery input only.  This is distinct from normal plain
+    interruption (where survivors later coalesce) and from a raw crash (where no interrupt named
+    the still-queued UUIDs).
+    """
+    async with claude.start(anthropic_messages, session_id=CRASHED_SESSION) as seeded:
+        seed_prompt = await seeded.send(SEED_INPUT)
+        async with await anthropic_messages.await_next_request() as exchange:
+            await exchange.send(*sse.message_stream([sse.Text("CRASH_RESUME_SEED_OK")], model=MODEL).events)
+        assert (await seed_prompt.result()).session_id == CRASHED_SESSION
+
+    async with claude.start(anthropic_messages, resume_id=CRASHED_SESSION, replay_user_messages=True) as interrupted:
+        active = await interrupted.send("Keep this turn active until the process is killed.")
+        async with await anthropic_messages.await_next_request() as exchange:
+            await exchange.send(
+                *sse.message_stream([sse.Text("never finished")], model=MODEL).through("content_block_start").events
+            )
+            await active.active()
+
+            first, second = await interrupted.send_many([RETAINED_QUEUE_FIRST, RETAINED_QUEUE_SECOND])
+            for queued in (first, second):
+                await queued.lifecycle(wire.CommandState.QUEUED)
+
+            receipt = await interrupted.interrupt(cancel_queued=False)
+            assert receipt.response.subtype == "success"
+            assert receipt.response.response == {"still_queued": [first.uuid, second.uuid]}
+            await exchange.wait_client_closed()
+        assert (await active.result()).is_error is True
+        assert await interrupted.crash() < 0
+
+    async with claude.start(anthropic_messages, resume_id=CRASHED_SESSION) as resumed:
+        recovery = await resumed.send(RETAINED_QUEUE_RECOVERY)
+        async with await anthropic_messages.await_next_request() as exchange:
+            replay = exchange.request
+            conversation_user_texts = [
+                text for text in replay.texts("user") if not text.startswith("<system-reminder>")
+            ]
+            assert conversation_user_texts == [SEED_INPUT, RETAINED_QUEUE_RECOVERY]
+            assert replay.texts("assistant") == ["CRASH_RESUME_SEED_OK"]
+            assert RETAINED_QUEUE_FIRST not in replay.texts("user")
+            assert RETAINED_QUEUE_SECOND not in replay.texts("user")
+            await exchange.send(*sse.message_stream([sse.Text("RETAINED_QUEUE_CRASH_RECOVERY_OK")], model=MODEL).events)
+        assert (await recovery.result()).result == "RETAINED_QUEUE_CRASH_RECOVERY_OK"
 
 
 async def test_crash_before_a_completed_turn_leaves_claudes_session_unresumable(
