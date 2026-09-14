@@ -21,7 +21,7 @@ tf_providers_versions(
         "manual",
         "no-sandbox",
     ],
-    tf_version = "1.11.2",
+    tf_version = "1.12.6",
 )
 
 tf_module(

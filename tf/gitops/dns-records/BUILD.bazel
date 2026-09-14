@@ -10,7 +10,7 @@ tf_providers_versions(
     providers = {
         "aws": "hashicorp/aws:~>5.0",
     },
-    tf_version = "1.9.8",
+    tf_version = "1.12.6",
 )
 
 tf_module(

@@ -21,7 +21,7 @@ tf_providers_versions(
         "tls": "hashicorp/tls:~>4.4.0",
         "ovh": "ovh/ovh:~>2.0",
     },
-    tf_version = "1.9.8",
+    tf_version = "1.12.6",
 )
 
 tf_module(
