@@ -33,6 +33,7 @@ resources:
   - kube-system/flux-kustomization.yaml
   - descheduler/flux-kustomization.yaml
   - cnpg/flux-kustomization.yaml
+  - cnpg-barman-cloud/flux-kustomization.yaml
   - valkey/flux-kustomization.yaml
   - reflector/flux-kustomization.yaml
   - node-feature-discovery/flux-kustomization.yaml
@@ -177,6 +178,7 @@ resources:
   # --- authentik ---
   - authentik/namespace/flux-kustomization.yaml
   - authentik/db/flux-kustomization.yaml
+  - authentik/db-backups/flux-kustomization.yaml
   - authentik/app/flux-kustomization.yaml
   - authentik/servicemonitor/flux-kustomization.yaml
   - authentik/secrets/flux-kustomization.yaml
@@ -386,6 +388,7 @@ resources:
   - seaweedfs/operator/flux-kustomization.yaml
   - seaweedfs/db/flux-kustomization.yaml
   - seaweedfs/cluster/flux-kustomization.yaml
+  - seaweedfs/authentik-db-backups-bucket/flux-kustomization.yaml
   - seaweedfs/vm-images-bucket/flux-kustomization.yaml
   - seaweedfs/drivefs-artifacts-bucket/flux-kustomization.yaml
   - seaweedfs/forgejo-bucket/flux-kustomization.yaml

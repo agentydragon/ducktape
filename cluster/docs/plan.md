@@ -506,9 +506,11 @@ Proxmox-only gap.)
       OVH-hosted PVC or object storage. No such CronJob exists today — the one
       precedent (tofu-state's) was deleted 2026-06-02; see "Set up offsite tofu-state
       backup" in Next Actions.
-- [ ] Longer term: CNPG `ScheduledBackup` + Barman to S3-compatible store (SeaweedFS
-      S3 gateway, or an external cloud bucket) for continuous WAL archiving and
-      point-in-time recovery
+- [x] Authentik's OVH-HA cluster uses CNPG-I Barman Cloud with daily base backups,
+      continuous WAL archiving, and 30-day retention in its dedicated SeaweedFS S3
+      bucket (`k8s/authentik/db/`).
+- [ ] Extend CNPG `ScheduledBackup` + Barman to the remaining clusters for continuous
+      WAL archiving and point-in-time recovery.
 - [ ] Verify Proxmox ZFS auto-snapshot schedule covers CNPG data directories
 
 ### Velero PVC Backup

@@ -33,6 +33,8 @@ spec:
       namespace: ducktape-flux
     - name: authentik-db # Wait for CNPG cluster ready and authentik-db-app secret to exist
       namespace: ducktape-flux
+    - name: authentik-db-backups # Require the one-off baseline backup before app upgrades
+      namespace: ducktape-flux
     - name: authentik-secrets # Admin password, secret key, bootstrap token (SOPS)
       namespace: ducktape-flux
     - name: authentik-sso-secrets # Supporting identity and Google OAuth inputs

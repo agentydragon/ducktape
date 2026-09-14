@@ -35,5 +35,13 @@ spec:
     storageClass: local-path-ovh
     size: 8Gi
 
+  # The plugin sidecar archives WAL continuously and provides physical base
+  # backups to the Authentik-specific SeaweedFS ObjectStore.
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: authentik-db-ovh
+
   monitoring:
     enablePodMonitor: true
