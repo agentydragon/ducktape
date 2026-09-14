@@ -74,6 +74,9 @@ class Thread(Base):
     # NULL while unnamed; never the empty string.
     name: Mapped[str | None] = mapped_column(Text)
     archived: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
+    # The Thread archive is an app Event source. Its cursor is distinct from every imported
+    # runner-source cursor and is allocated under the Thread row lock.
+    archive_cursor: Mapped[int] = mapped_column(BigInteger, default=0, server_default=text("0"))
 
 
 class ThreadRunnerSession(Base):
@@ -90,16 +93,24 @@ class ThreadRunnerSession(Base):
     runner_session_id: Mapped[str] = mapped_column(Text, primary_key=True)
     # A Thread retains prior sessions but exposes exactly one current command target.
     active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("true"))
+    # The runner's durable Event-source identity, learned from the first imported EventEntry.
+    event_source_id: Mapped[str | None] = mapped_column(Text)
+    # Durable runner-source checkpoint. This is intentionally not the Thread archive cursor.
+    import_cursor: Mapped[int] = mapped_column(BigInteger, default=0, server_default=text("0"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
 
 class Event(Base):
     __tablename__ = "event"
+    __table_args__ = (UniqueConstraint("thread_id", "origin_source_id", "origin_sequence"),)
 
     thread_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
     )
     cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    # Origin remains immutable while an importer assigns this Thread archive's cursor.
+    origin_source_id: Mapped[str] = mapped_column(Text)
+    origin_sequence: Mapped[int] = mapped_column(BigInteger)
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     # The observation's oneof case, for filtering without opening the payload; "native" for frames.
     kind: Mapped[str] = mapped_column(Text)
@@ -286,7 +297,7 @@ class TrajectoryStore:
             thread = await session.scalar(select(Thread).where(Thread.id == thread_id).with_for_update())
             if thread is None:
                 raise ThreadNotFoundError(thread_id)
-            snapshot = await _append_thread_command(session, thread_id, command)
+            snapshot = await _append_thread_command(session, thread, command)
             await _notify(session, commands=True)
             return snapshot
 
@@ -321,7 +332,14 @@ class TrajectoryStore:
         receipt_query = (
             select(Event.thread_id, Event.payload)
             .join(Thread, Thread.id == Event.thread_id)
-            .where(Thread.sandbox == sandbox, Event.kind == "command_admitted")
+            .join(
+                ThreadRunnerSession, (ThreadRunnerSession.thread_id == Thread.id) & ThreadRunnerSession.active.is_(True)
+            )
+            .where(
+                Thread.sandbox == sandbox,
+                Event.kind == "command_admitted",
+                Event.origin_source_id == ThreadRunnerSession.event_source_id,
+            )
         )
         async with self._sessions() as session:
             received = {
@@ -347,43 +365,74 @@ class TrajectoryStore:
 
     async def last_cursor(self, thread_id: UUID) -> int:
         async with self._sessions() as session:
-            return (
-                await session.scalar(
-                    select(func.coalesce(func.max(Event.cursor), 0)).where(Event.thread_id == thread_id)
+            return await session.scalar(select(Thread.archive_cursor).where(Thread.id == thread_id)) or 0
+
+    async def import_cursor(self, thread_id: UUID, runner_session_id: str) -> int:
+        """The committed checkpoint in one runner Event source, never a Thread archive cursor."""
+        async with self._sessions() as session:
+            cursor = await session.scalar(
+                select(ThreadRunnerSession.import_cursor).where(
+                    ThreadRunnerSession.thread_id == thread_id,
+                    ThreadRunnerSession.runner_session_id == runner_session_id,
                 )
-                or 0
             )
+            if cursor is None:
+                raise ValueError(f"{runner_session_id!r} is not associated with Thread {thread_id}")
+            return cursor
 
     async def record(
-        self, thread_id: UUID, entries: Sequence[event_log_pb2.EventEntry], *, lease: IngestionLease
+        self,
+        thread_id: UUID,
+        entries: Sequence[event_log_pb2.EventEntry],
+        *,
+        lease: IngestionLease,
+        runner_session_id: str | None = None,
     ) -> None:
-        """Store entries; one already stored under its cursor is left as it was, so a replay after
-        a reconnect is harmless."""
+        """Import runner entries under Thread-archive cursors, idempotently by immutable origin."""
         if not entries:
             return
-        rows = [
-            {
-                "thread_id": thread_id,
-                "cursor": entry.cursor,
-                "at": entry.event.at.ToDatetime(tzinfo=UTC),
-                "kind": entry.event.WhichOneof("observation") or "",
-                "payload": MessageToDict(entry),
-            }
-            for entry in entries
-        ]
+        ordered = sorted(entries, key=lambda entry: entry.cursor)
+        source_id = _validate_runner_entries(ordered)
         async with self._sessions.begin() as session:
             await _fence(session, lease, thread_id)
-            inserted = list(
-                await session.scalars(insert(Event).values(rows).on_conflict_do_nothing().returning(Event.payload))
+            thread = await session.scalar(select(Thread).where(Thread.id == thread_id).with_for_update())
+            if thread is None:
+                raise ThreadNotFoundError(thread_id)
+            if runner_session_id is None:
+                runner = await session.scalar(
+                    select(ThreadRunnerSession).where(
+                        ThreadRunnerSession.thread_id == thread_id, ThreadRunnerSession.active.is_(True)
+                    )
+                )
+            else:
+                runner = await session.get(ThreadRunnerSession, runner_session_id)
+            if runner is None or runner.thread_id != thread_id:
+                raise ValueError(f"{runner_session_id!r} is not associated with Thread {thread_id}")
+            if runner.event_source_id is None:
+                runner.event_source_id = source_id
+            elif runner.event_source_id != source_id:
+                raise ValueError(f"runner session {runner_session_id!r} changed its durable Event source")
+            _validate_runner_progress(runner.import_cursor, ordered)
+            known_origins = set(
+                await session.scalars(
+                    select(Event.origin_sequence).where(
+                        Event.thread_id == thread_id,
+                        Event.origin_source_id == source_id,
+                        Event.origin_sequence.in_([entry.origin.sequence for entry in ordered]),
+                    )
+                )
             )
+            inserted = [entry for entry in ordered if entry.origin.sequence not in known_origins]
+            for entry in inserted:
+                archive_entry = event_log_pb2.EventEntry(origin=entry.origin, event=entry.event)
+                _archive_entry(thread, archive_entry)
+                session.add(_event_row(thread_id, archive_entry))
+            runner.import_cursor = max(runner.import_cursor, ordered[-1].cursor)
             state = await session.get(FeedState, thread_id)
             if state is not None:
                 attached = ParseDict(state.attached, protocol_pb2.Attached())
                 previous_model = attached.spec.model
-                for entry in sorted(
-                    (ParseDict(payload, event_log_pb2.EventEntry()) for payload in inserted),
-                    key=lambda entry: entry.cursor,
-                ):
+                for entry in inserted:
                     # An Attached snapshot describes the runner at its cursor. Replaying the
                     # earlier log fills history, but must not rewind that snapshot's state.
                     if entry.cursor <= attached.last_cursor:
@@ -397,13 +446,39 @@ class TrajectoryStore:
                         update(Thread).where(Thread.id == thread_id).values(model=attached.spec.model)
                     )
                 await session.flush()
-            await _notify(
-                session,
-                commands=any(
-                    ParseDict(payload, event_log_pb2.EventEntry()).event.HasField("command_admitted")
-                    for payload in inserted
-                ),
+            await _notify(session, commands=any(entry.event.HasField("command_admitted") for entry in inserted))
+
+    async def runner_events(
+        self, thread_id: UUID, runner_session_id: str, *, after_cursor: int = 0, limit: int
+    ) -> list[event_log_pb2.EventEntry]:
+        """Replay one runner source for the retained manual session surface.
+
+        The Thread archive has its own cursor. This reconstructs the runner source cursor from
+        immutable origin so the manual Sandbox/session UI remains an underlying-object view.
+        """
+        async with self._sessions() as session:
+            source_id = await session.scalar(
+                select(ThreadRunnerSession.event_source_id).where(
+                    ThreadRunnerSession.thread_id == thread_id,
+                    ThreadRunnerSession.runner_session_id == runner_session_id,
+                )
             )
+            if source_id is None:
+                return []
+            payloads = await session.scalars(
+                select(Event.payload)
+                .where(
+                    Event.thread_id == thread_id,
+                    Event.origin_source_id == source_id,
+                    Event.origin_sequence > after_cursor,
+                )
+                .order_by(Event.origin_sequence)
+                .limit(limit)
+            )
+            entries = [ParseDict(payload, event_log_pb2.EventEntry()) for payload in payloads]
+            for entry in entries:
+                entry.cursor = entry.origin.sequence
+            return entries
 
     async def acquire_ingestion(self, sandbox: str, duration: timedelta) -> IngestionLease | None:
         _positive_duration(duration)
@@ -554,28 +629,35 @@ def _validate_command(command: command_pb2.Command) -> None:
 
 
 async def _append_thread_command(
-    session: AsyncSession, thread_id: UUID, command: command_pb2.Command
+    session: AsyncSession, thread: Thread, command: command_pb2.Command
 ) -> ThreadCommandSnapshot:
     _validate_command(command)
     encoded = MessageToDict(command)
-    existing = await session.get(ThreadCommand, (thread_id, command.command_id))
+    existing = await session.get(ThreadCommand, (thread.id, command.command_id))
     if existing is not None:
         if existing.command != encoded:
             raise ThreadCommandConflictError("command id was already used for a different Thread command")
         return _thread_command_snapshot(existing)
     latest_ordinal = await session.scalar(
-        select(func.coalesce(func.max(ThreadCommand.ordinal), 0)).where(ThreadCommand.thread_id == thread_id)
+        select(func.coalesce(func.max(ThreadCommand.ordinal), 0)).where(ThreadCommand.thread_id == thread.id)
     )
     if latest_ordinal is None:  # SQL coalesce guarantees a row; retain an explicit typed invariant.
         raise RuntimeError("Thread command ordinal aggregate returned no value")
     row = ThreadCommand(
-        thread_id=thread_id,
+        thread_id=thread.id,
         command_id=command.command_id,
         ordinal=latest_ordinal + 1,
         command=encoded,
         accepted_at=datetime.now(UTC),
     )
     session.add(row)
+    event = event_log_pb2.EventEntry()
+    event.event.at.FromDatetime(row.accepted_at)
+    event.event.command_admitted.command.CopyFrom(command)
+    event.origin.source_id = _thread_archive_source_id(thread.id)
+    event.origin.sequence = row.ordinal
+    _archive_entry(thread, event)
+    session.add(_event_row(thread.id, event))
     return _thread_command_snapshot(row)
 
 
@@ -586,6 +668,53 @@ def _thread_command_snapshot(command: ThreadCommand) -> ThreadCommandSnapshot:
         ordinal=command.ordinal,
         accepted_at=command.accepted_at,
     )
+
+
+def _thread_archive_source_id(thread_id: UUID) -> str:
+    """The app's immutable origin namespace for app facts in one Thread archive."""
+    return f"thread:{thread_id}"
+
+
+def _archive_entry(thread: Thread, entry: event_log_pb2.EventEntry) -> None:
+    """Assign the next app-source cursor without changing an immutable origin or Event."""
+    thread.archive_cursor += 1
+    entry.cursor = thread.archive_cursor
+
+
+def _event_row(thread_id: UUID, entry: event_log_pb2.EventEntry) -> Event:
+    return Event(
+        thread_id=thread_id,
+        cursor=entry.cursor,
+        origin_source_id=entry.origin.source_id,
+        origin_sequence=entry.origin.sequence,
+        at=entry.event.at.ToDatetime(tzinfo=UTC),
+        kind=entry.event.WhichOneof("observation") or "",
+        payload=MessageToDict(entry),
+    )
+
+
+def _validate_runner_entries(entries: Sequence[event_log_pb2.EventEntry]) -> str:
+    source_id = entries[0].origin.source_id
+    if not source_id:
+        raise ValueError("runner EventEntry origin needs a source id")
+    previous_cursor: int | None = None
+    for entry in entries:
+        if entry.origin.source_id != source_id or entry.origin.sequence != entry.cursor:
+            raise ValueError("runner EventEntry origin must exactly identify its source cursor")
+        if entry.cursor == previous_cursor:
+            raise ValueError("runner EventEntry batch contains a duplicate source cursor")
+        previous_cursor = entry.cursor
+    return source_id
+
+
+def _validate_runner_progress(import_cursor: int, entries: Sequence[event_log_pb2.EventEntry]) -> None:
+    expected = import_cursor
+    for entry in entries:
+        if entry.cursor <= expected:
+            continue
+        if entry.cursor != expected + 1:
+            raise ValueError(f"runner EventEntry cursor skipped from {expected} to {entry.cursor}")
+        expected = entry.cursor
 
 
 async def _activate_runner_session(session: AsyncSession, thread_id: UUID, runner_session_id: str) -> UUID:

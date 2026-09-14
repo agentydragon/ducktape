@@ -95,6 +95,21 @@ async def test_a_session_is_one_thread_and_its_events_read_back_in_order(
     assert await store.last_cursor(other) == 0
 
 
+async def test_runner_event_batch_rejects_duplicate_source_cursor(
+    store: TrajectoryStore, lease: IngestionLease
+) -> None:
+    thread = await store.thread("sb-1", "s-1", SPEC)
+
+    with pytest.raises(ValueError, match="duplicate source cursor"):
+        await store.record(
+            thread,
+            [_event(1, harness_started=event_pb2.HarnessStarted()), _event(1, harness_lost=event_pb2.HarnessLost())],
+            lease=lease,
+        )
+
+    assert await store.last_cursor(thread) == 0
+
+
 async def test_runner_session_cannot_rebind_a_thread_to_a_different_static_sandbox(store: TrajectoryStore) -> None:
     sandbox_uid = uuid4()
     thread = await store.thread("sb-1", "s-1", SPEC, sandbox_uid=sandbox_uid)
@@ -124,6 +139,36 @@ async def test_thread_commands_are_ordered_idempotent_and_reject_payload_reuse(s
         await store.request_thread_command(thread, command_pb2.Command())
     with pytest.raises(ThreadNotFoundError):
         await store.request_thread_command(UUID(int=0), command)
+
+
+async def test_app_command_admission_and_runner_admission_keep_distinct_origins(
+    store: TrajectoryStore, lease: IngestionLease
+) -> None:
+    thread = await store.thread("sb-1", "s-1", SPEC)
+    command = command_pb2.Command(command_id="first", submit_input=command_pb2.SubmitInput(text="First."))
+
+    accepted = await store.request_thread_command(thread, command)
+    assert await store.request_thread_command(thread, command) == accepted
+    (app_admission,) = await store.events(thread, limit=10)
+    assert (app_admission.cursor, app_admission.origin.source_id, app_admission.origin.sequence) == (
+        1,
+        f"thread:{thread}",
+        accepted.ordinal,
+    )
+    assert app_admission.event.command_admitted.command == command
+    assert [delivery.command for delivery in await store.commands_awaiting_runner_receipt("sb-1")] == [accepted]
+
+    runner_admission = _event(1, command_admitted=event_pb2.CommandAdmitted(command=command))
+    await store.record(thread, [runner_admission], lease=lease, runner_session_id="s-1")
+
+    entries = await store.events(thread, limit=10)
+    assert [(entry.cursor, entry.origin.source_id, entry.origin.sequence) for entry in entries] == [
+        (1, f"thread:{thread}", 1),
+        (2, "test-runner", 1),
+    ]
+    assert await store.import_cursor(thread, "s-1") == 1
+    assert await store.runner_events(thread, "s-1", limit=10) == [runner_admission]
+    assert await store.commands_awaiting_runner_receipt("sb-1") == []
 
 
 async def test_thread_command_ordinals_are_serialised_across_replicas(

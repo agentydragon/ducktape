@@ -99,7 +99,7 @@ class Feed:
             thread_id = await self.store.thread(
                 self.lease.sandbox, self.session_id, attached.spec, sandbox_uid=self.sandbox_uid
             )
-            stored = await self.store.last_cursor(thread_id)
+            stored = await self.store.import_cursor(thread_id, self.session_id)
             if stored > attached.last_cursor:
                 if await self.store.feed_state(thread_id) is None:
                     await self.store.set_attached(thread_id, attached, lease=self.lease)
@@ -117,7 +117,7 @@ class Feed:
             try:
                 while True:
                     entry = await attachment.next_entry()
-                    await self.store.record(thread_id, [entry], lease=self.lease)
+                    await self.store.record(thread_id, [entry], lease=self.lease, runner_session_id=self.session_id)
                     attachment.seen.clear()
             except StreamClosedError:
                 await self.store.end_feed(thread_id, lease=self.lease, error=None)
@@ -235,7 +235,7 @@ class RunnerBridge:
                             summary.harness_state == protocol_pb2.HARNESS_STATE_STOPPED
                             and snapshot is not None
                             and snapshot.end is not None
-                            and await self._store.last_cursor(thread_id) == summary.last_cursor
+                            and await self._store.import_cursor(thread_id, summary.session_id) == summary.last_cursor
                         ):
                             continue
                         feed = Feed(
@@ -315,7 +315,7 @@ class RunnerBridge:
                 async with asyncio.timeout(15):
                     while True:
                         waiter.clear()
-                        if await self._store.last_cursor(thread_id) >= attachment.attached.last_cursor:
+                        if await self._store.import_cursor(thread_id, session_id) >= attachment.attached.last_cursor:
                             break
                         await waiter.wait()
             return attachment.attached
@@ -393,13 +393,15 @@ class RunnerBridge:
             yield _frame("attached", MessageToDict(snapshot.attached))
             while True:
                 waiter.clear()
-                while page := await self._store.events(thread_id, after_cursor=cursor, limit=REPLAY_PAGE):
+                while page := await self._store.runner_events(
+                    thread_id, session_id, after_cursor=cursor, limit=REPLAY_PAGE
+                ):
                     for entry in page:
                         yield _frame("event", MessageToDict(entry), event_id=entry.cursor)
                         cursor = entry.cursor
                 snapshot = await self._store.feed_state(thread_id)
                 if snapshot is not None and snapshot.end is not None:
-                    if await self._store.last_cursor(thread_id) > cursor:
+                    if await self._store.import_cursor(thread_id, session_id) > cursor:
                         continue
                     match snapshot.end:
                         case FeedEnd():
