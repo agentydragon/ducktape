@@ -11,6 +11,8 @@ py_library(
         "@pypi//pandas",
         "@pypi//pydantic",
         "@pypi//requests",
+        # types-requests imports urllib3's public types during mypy analysis.
+        "@pypi//urllib3",
     ],
 )
 
