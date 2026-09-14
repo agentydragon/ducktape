@@ -16,23 +16,23 @@ evidence says so.
 ```mermaid
 flowchart LR
     H[Harness-native state<br/>private Claude/Codex history] --> R[Runner session<br/>command journal + sequenced events]
-    A[App durable state<br/>Thread + command outbox] --> R
+    A[App durable state<br/>Thread archive + command outbox] --> R
     R --> I[leased event ingester]
-    I --> E[app copy of runner event segments]
+    I --> E[Thread archive<br/>imported runner EventEntries]
     K[Kubernetes Sandbox<br/>desired spec + observed status] --> A
     A --> F[Frontend<br/>pure Thread projection]
     E --> F
     K --> F
 ```
 
-| Representation                    | Owner and identity                                                                                                     | Ordering / promise                                                                                                                 | It is not                                                          |
-| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| Harness-native conversation       | Claude Code or Codex; native thread/session/message ids are harness-owned.                                             | Whatever that harness can resume and report. It can include context, queue state, compaction, and facts the runner never observes. | A portable LLM transcript or cross-harness canonical conversation. |
-| Runner session                    | Runner state volume, client-chosen session id; it owns a command journal and Event log.                                | Dense, strictly increasing Event sequence within that session, replayed across reconnect/restart.                                  | The durable product Thread or an Attach transport stream.          |
-| Thread                            | App PostgreSQL thread id; product identity used in URLs, sidebar, and archive.                                         | Owns ordered desired commands; may use several runner-session associations over time.                                              | A native harness thread or runner session.                         |
-| Thread runner-session association | App record of one Thread attached to one runner session in one concrete Sandbox; a successor can name its predecessor. | One ordered runner Event segment. No invented global runner order across segments.                                                 | Proof of native continuation before the runner records it.         |
-| Sandbox lifecycle / bootstrap     | Kubernetes owns Sandbox desired state and observed CR/Pod status; runner initialization owns its sandbox-scoped log.   | Kubernetes status/resource order and initialization sequence are their own orders.                                                 | Runner/harness Event sequence, a command receipt, or transcript.   |
-| Thread-page projection            | Frontend reducer over app-replayed records.                                                                            | Deterministic from durable Thread commands and copied runner Event segments plus a projection version.                             | Another authority over runner or Kubernetes facts.                 |
+| Representation                    | Owner and identity                                                                                                     | Ordering / promise                                                                                                                 | It is not                                                               |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Harness-native conversation       | Claude Code or Codex; native thread/session/message ids are harness-owned.                                             | Whatever that harness can resume and report. It can include context, queue state, compaction, and facts the runner never observes. | A portable LLM transcript or cross-harness canonical conversation.      |
+| Runner session                    | Runner state volume, client-chosen session id; it owns a command journal and Event log.                                | Dense, strictly increasing source-local Event-entry cursor, replayed across reconnect/restart.                                     | The durable product Thread or an Attach transport stream.               |
+| Thread                            | App PostgreSQL thread id; product identity used in URLs, sidebar, and archive.                                         | Owns ordered desired commands; may use several runner-session associations over time.                                              | A native harness thread or runner session.                              |
+| Thread runner-session association | App record of one Thread attached to one runner session in one concrete Sandbox; a successor can name its predecessor. | One ordered runner Event source segment with an app import checkpoint. No invented global runner order across segments.            | Proof of native continuation before the runner records it.              |
+| Sandbox lifecycle / bootstrap     | Kubernetes owns Sandbox desired state and observed CR/Pod status; runner initialization owns its sandbox-scoped log.   | Kubernetes status/resource order and initialization sequence are their own orders.                                                 | Runner/harness Event sequence, command admission/effect, or transcript. |
+| Thread-page projection            | Frontend reducer over app-archive EventEntries.                                                                        | Deterministic from app-origin admissions and imported runner Event segments plus a projection version.                             | Another authority over runner or Kubernetes facts.                      |
 
 The harness is deliberately below the product boundary. A Thread aims to remain a
 stable, useful history when its **same harness** exits and resumes, but Agentplane
@@ -79,17 +79,17 @@ stream.
 
 The SQL shape may evolve, but these identities and boundaries are required:
 
-| Record                      | Required contents and invariant                                                                                                                                                                                |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Thread**                  | Product Thread id, presentation fields, and archive state. The id is minted before the first command and is never a runner-session id.                                                                         |
-| **ThreadSandboxTarget**     | Either an existing Sandbox name/UID or fully resolved creation input until Kubernetes creates the correlated object. Afterwards it pins the concrete name/UID without mirroring mutable Sandbox lifecycle.     |
-| **ThreadRunnerSessionPlan** | Planned runner-session id and immutable session spec; it may exist before a Sandbox UID or running harness. A successor plan may name the prior association only as requested continuation intent.             |
-| **ThreadRunnerSession**     | Actual Thread-to-Sandbox-UID-to-runner-session association, written only after runner evidence. It stores any predecessor/continuation proof the runner supplied. One is the active delivery target at a time. |
-| **ThreadCommand**           | Thread id, stable command id, one Thread ordinal, and the exact immutable protobuf `Command` payload. Its committed presence is app receipt; it is desired intent, never a mutable launch phase.               |
-| **Copied runner Event**     | Thread runner-session association plus runner sequence and exact Event payload. Its uniqueness makes replay idempotent and is the normal-projection input.                                                     |
+| Record                        | Required contents and invariant                                                                                                                                                                                                       |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Thread**                    | Product Thread id, presentation fields, and archive state. The id is minted before the first command and is never a runner-session id.                                                                                                |
+| **ThreadSandboxTarget**       | Either an existing Sandbox name/UID or fully resolved creation input until Kubernetes creates the correlated object. Afterwards it pins the concrete name/UID without mirroring mutable Sandbox lifecycle.                            |
+| **ThreadRunnerSessionPlan**   | Planned runner-session id and immutable session spec; it may exist before a Sandbox UID or running harness. A successor plan may name the prior association only as requested continuation intent.                                    |
+| **ThreadRunnerSession**       | Actual Thread-to-Sandbox-UID-to-runner-session association, written only after runner evidence. It stores any predecessor/continuation proof the runner supplied. One is the active delivery target at a time.                        |
+| **ThreadCommand**             | Thread id, stable command id, one Thread ordinal, and the exact immutable protobuf `Command` payload. It is atomically paired with an app-origin `CommandAdmitted` archive entry; it is desired intent, never a mutable launch phase. |
+| **Thread archive EventEntry** | Thread archive cursor, immutable origin, and exact Event payload. App-origin entries record app facts; runner-origin entries retain runner-session identity and sequence. Origin uniqueness makes import idempotent.                  |
 
 The runner journal is runner-owned recovery support, not an app table or a second
-outbox. Its native correlation and durable receipt/effect records reach the app only
+outbox. Its native correlation and durable admission/effect records reach the app only
 through replayable Events. The existing Thread-start persistence is a transition toward
 the atomic **Thread + target + session plan + first Thread command** write; it must not
 remain a parallel launch subsystem.
@@ -109,80 +109,86 @@ append first ThreadCommand                 commit
         reconcile Sandbox prerequisites, runner association, then command
                             |
                             v
-                 copied runner receipt/effect/outcome Events
+                 imported runner admission/effect/outcome EventEntries
 ```
 
 Kubernetes status is a prerequisite observation, never a Thread-command phase. The
 outbox and runner Event copy therefore express one desired record and one actual
 record without an app-owned imitation of Sandbox lifecycle.
 
-### One `Command` / `Event` language through the app
+### One followable `Command` / `Event` log language
 
-The app does not translate an ordinary product command into a frontend-specific input
-body and then translate it again for the runner. The generated protobuf `Command` is
-the payload on both hops, with one stable `command_id`:
+The integration app and each runner session are durable Event sources for different
+reasons. The runner's state volume lets a runner continue while the app is unavailable.
+The app's Thread archive retains product history after a Sandbox is deleted. They use
+one generated, source-neutral command and Event-log language; their HTTP/SSE and gRPC
+transports, resource lookup, and authorization remain separate.
 
-```text
-frontend -- Command(id) --> app ThreadCommand ledger
-app ThreadCommand ledger -- same Command(id) --> runner journal
-runner -- Event(CommandReceived / effect / terminal outcome) --> app copy --> frontend
-```
+`Command` has one stable `command_id` end-to-end. `Event` is a semantic fact, including
+the runner/harness facts and `CommandAdmitted`, which says that the source emitting it
+has durably recorded the exact Command and owns trying to process it. Invalid requests
+are refused before admission as transport errors; they have no durable Event.
 
-Committing the `ThreadCommand` is the app's additional durable boundary: the app has
-the command even if no runner exists or it has not attempted delivery. It is not a
-runner `CommandReceived` Event and must not be rendered as one. The runner alone emits
-`CommandReceived`, causal effects, rejections, and no-ops. App validation that refuses
-to store a command is a request error, not a fabricated runner rejection.
-
-The app-to-frontend replay stream therefore has a small typed transport envelope, not
-a second command/event vocabulary:
+Every replayed record is an `EventEntry`:
 
 ```text
-ThreadRecord {
-  thread_id
-  replay_cursor                  // lossless browser replay only, not transcript order
-  command: { ordinal, payload: Command }
-       | runner_event: { runner_session_association, payload: Event }
+EventEntry {
+  cursor  // position in the source serving this follow; only a replay cursor
+  origin  // immutable original source identity + source sequence
+  event   // generated semantic Event
 }
 ```
 
-The envelope supplies the Thread identity, command ordinal or runner-session
-association, and a durable browser replay cursor. A runner Event sequence remains
-ordered only within its runner session; the app cursor must never be used to invent a
-cross-session conversation order. Sandbox/Kubernetes lifecycle observations remain
-separately-provenanced operational state, not runner Events.
+For a runner follow, `cursor` and `origin` both identify the runner-session sequence.
+When the app imports that entry, the Thread archive assigns a new archive cursor but
+retains the runner origin. An app-admitted command has a Thread-archive origin. Thus an
+archive cursor is never a harness transcript order or a replacement for runner
+sequence. Kubernetes/Sandbox lifecycle observations remain separately-provenanced
+operational state, not runner Events.
 
-The browser sends generated `Command` JSON, observes the echoed durable `Command`
-record, and reduces the same generated `Event` payload the runner emitted. It can
-therefore reconstruct after reload and across browsers without a server-side
-conversation-item protocol: a command with no `CommandReceived` is awaiting runner
-admission; receipt/effect/terminal UI state is a pure fold of that command and later
-runner Events. The normal conversation spine still projects runner Events only, so an
-app-stored command remains in the distinct pending queue until native evidence places
-it in the conversation.
+The common follow operation is `Follow(after_cursor)`: install the live subscription,
+then replay entries strictly after that source-local cursor, then follow live entries.
+Reconnect resumes from the last delivered cursor. Notifications only wake a durable
+re-read; they carry neither payload nor ordering. The runner's `Attach` wraps this with
+session selection, `SessionSpec`, and bidirectional command transport. The app exposes
+the same generated `Command`, `Follow`, and `EventEntry` messages over its Thread
+HTTP/SSE surface. There is no `ThreadRecord`, browser-only replay cursor, or parallel
+frontend Event vocabulary.
 
-## Command protocol: intent, receipt, then outcome
+```text
+frontend -- Command(id) --> app Thread outbox + Thread-origin CommandAdmitted
+app outbox -- same Command(id) --> runner journal + runner-origin CommandAdmitted
+runner EventEntry -- exact origin/payload --> app importer --> Thread archive --> frontend
+```
 
-The app outbox and runner journal are different records.
+The browser follows the Thread archive, so reload and Sandbox deletion retain the
+same product record. Normal conversation projection uses only runner-origin entries;
+an app-origin admission stays in the distinct pending queue until runner evidence
+settles it. Raw mode shows both the archive cursor and immutable origin.
 
-| Stage               | Durable authority                           | Meaning                                                                                                                                   | Truthful UI state                           |
-| ------------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
-| App stored          | App Thread-command ledger                   | The app durably has this exact `Command`; no runner admission is observed.                                                                | Awaiting runner admission.                  |
-| Dispatch attempted  | App delivery diagnostics, when retained     | A replica attempted idempotent delivery; a lost response cannot prove admission. Retry the same id.                                       | Still awaiting runner admission.            |
-| Runner admitted     | Runner journal plus `CommandReceived` Event | Runner durably recorded this command. It has not promised native delivery, model selection, interruption, or timing.                      | Runner admitted; awaiting outcome.          |
-| Effect              | Causal runner Event                         | The operation took effect: harness user-message confirmation, model changed, interrupted turn completion, or command-caused harness exit. | The completed effect at its Event position. |
-| Terminal non-effect | Causal runner Event                         | Command rejection cannot take effect; no-op became inapplicable.                                                                          | Rejected/no-op, with reason.                |
+## Command protocol: admission, effect, then terminal outcome
 
-Receipt and terminal outcome replay separately. A runner restart reconciles its own
-journaled nonterminal command under the original command id; the app never treats a
-timeout as failure and never manufactures a generic **uncertain** terminal state. An
-unreachable runner or Sandbox is a prerequisite observation, not an outcome.
+The app outbox and runner journal are distinct durable sources. Both may emit the same
+`CommandAdmitted` Event, but its origin says who has made the promise.
 
-The runner serializes command _admission_ under its session lock. Command receipt
-therefore has runner-journal admission order. That is not HTTP arrival order across
-concurrent app requests or Attach streams, and not a promise that terminal effects
-occur in that order. A terminal Event names the causal command; its runner sequence,
-not a cross-layer timestamp, is the ordering fact the view may use.
+| Stage               | Durable authority                                                | Meaning                                                                                                                                              | Truthful UI state                               |
+| ------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| App admission       | Thread archive and Thread-command outbox                         | The integration app durably owns this exact Command and will reconcile delivery. No runner fact is implied.                                          | Awaiting runner admission.                      |
+| Runner admission    | Runner command journal and runner-origin `CommandAdmitted` Event | The runner durably owns the exact Command and will try to process it. It has not promised native delivery, model selection, interruption, or timing. | Runner admitted; awaiting effect.               |
+| Effect              | Causal runner-origin Event                                       | The operation took effect: harness user-message confirmation, model change, interrupted turn completion, or command-caused harness exit.             | Render the effect at its runner Event position. |
+| Terminal non-effect | Causal runner-origin `CommandNoop` or `CommandFailed` Event      | The admitted operation validly did nothing, or could not be completed.                                                                               | No-op/failed, with reason.                      |
+
+There is no durable “sent” Event: a lost delivery response proves nothing. The app
+retries the same id until it imports runner admission. A runner restart reconciles its
+own admitted nonterminal command under that id; the app never treats a timeout as
+failure and never manufactures a generic **uncertain** terminal state. An unreachable
+runner or Sandbox is a prerequisite observation, not a command outcome.
+
+The runner serializes command admission under its session lock. Its admission order is
+not HTTP arrival order across concurrent app requests or Attach streams, and it does
+not promise terminal-effect order. A causal Event names its command; the runner-origin
+sequence, not an archive cursor or cross-layer timestamp, is the ordering fact the
+view may use.
 
 Thread ordinal defines desired order, but command eligibility is operation-aware. A
 runner-admitted model change blocks a later command that would start a new turn until it has
@@ -196,12 +202,12 @@ rules, not a claim that terminal runner effects have one universal ordering.
 Submit input is requested input. It becomes a user-message card only at harness user
 message confirmation, which carries exact native text, a harness message id, turn id,
 and all originating command ids. Claude may coalesce compatible queued inputs with
-newlines; Codex may preserve them separately. The receipt records grouping the harness
+newlines; Codex may preserve them separately. The confirmation records grouping the harness
 actually confirmed instead of inventing one-input/one-message.
 
 ### Interrupting before queued input reaches native history
 
-An interrupted turn is not by itself an outcome for received inputs waiting in a
+An interrupted turn is not by itself an outcome for runner-admitted inputs waiting in a
 harness queue. After the causal interrupt outcome, the runner must settle every such
 input command from native evidence:
 
@@ -219,19 +225,41 @@ invented uncertain state.
 
 ### Controls have effects, not invented scheduling modes
 
-Model change, interrupt turn, and stop runner session use the same receipt/effect rule.
-A model picker is not successful when the app accepts it or the runner receives it:
+Model change, interrupt turn, and stop runner session use the same admission/effect rule.
+A model picker is not successful when the app or runner admits it:
 success is the model-changed Event. Claude and Codex can reach that fact by different
 native mechanisms, including a later Codex turn boundary. The protocol deliberately
 does not offer arbitrary **now**/**at boundary** choices.
 
 A future runner capability snapshot may report an operation-specific, time-local fact
 such as “a model change would be promptly admissible now” or “the runner is busy and
-would retain it.” It is advisory: it races with the command and never replaces receipt
+would retain it.” It is advisory: it races with the command and never replaces admission
 or terminal effect/outcome. It must name the operation and harness evidence, not become
 a generic capability flag.
 
 ## Reconciliation and external prerequisites
+
+### Following, import, and archive retention
+
+The app archive is not a transient browser proxy. For every Thread runner-session
+association, the fenced ingester stores an import checkpoint in that runner source's
+cursor space. It follows the runner from that checkpoint, imports each `EventEntry`
+idempotently by its immutable origin, appends it to the Thread archive, and commits the
+new checkpoint with the imported entry. App restart, lease takeover, and a disconnect
+therefore replay from the runner without duplication; a runner can keep accumulating
+entries while the app is down.
+
+The browser follows only the committed Thread archive. That archive includes app-origin
+admissions and imported runner-origin entries, and remains readable after the Sandbox,
+Pod, runner, and their local state volume are deliberately deleted. Its order is an
+archive/import order useful for replay and raw diagnostics, never a conversation order
+across runner sessions.
+
+Managed Sandbox deletion has a catch-up barrier: before deleting the runner state that
+holds a session log, the app must follow and import that source through its terminal
+entry. An externally destroyed runner volume before import is irrecoverable; the app
+records the incomplete source rather than inventing missing Events. Kubernetes status
+continues to explain that operational failure outside the conversation spine.
 
 For the oldest eligible Thread command, any app replica repeatedly reads the Thread
 target, active runner-session association, copied Events, and Kubernetes snapshot,
@@ -243,8 +271,8 @@ then performs only the missing idempotent step:
 3. Open or resume the planned runner session when its contract requires it. Persist a
    Thread runner-session association only after runner evidence identifies the actual
    attachment and any native continuation.
-4. Dispatch the stable command id, then wait for copied runner receipt and terminal
-   Event. Retry delivery/observation paths; never replace the id.
+4. Dispatch the stable command id, then wait for copied runner admission and terminal
+   causal Event. Retry delivery/observation paths; never replace the id.
 
 Suspending/resuming a Sandbox is Kubernetes lifecycle, not a runner command and not
 proof that a harness is ready for a Thread. A Sandbox resume can preserve processes,
@@ -257,7 +285,7 @@ message into a new Sandbox,” without fusing Sandbox, runner, and harness state
 
 ### Deferred: commands unsettled across successor sessions
 
-When a runner session/harness goes away with a received-but-unsettled Thread command,
+When a runner session/harness goes away with a runner-admitted-but-unsettled Thread command,
 the product may eventually choose either to recover it only in the predecessor session,
 or to let a successor session resume and deliver it. Both can be sensible in different
 native harness situations. This contract deliberately chooses neither yet: a successor
@@ -271,13 +299,13 @@ Harness process loss and Sandbox suspension are separate fault domains. Before m
 either path product-automatic, pinned Claude and Codex tests must establish this
 matrix against the mocked LLM server and a real runner state directory:
 
-| Situation                                                  | Facts that remain separate                                                                                   | Required assertion                                                                                                                                                                                      |
-| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Harness process is killed while its runner remains         | Runner observes process loss/exit; the harness-native continuation may or may not resume in a new process.   | The Event log records loss and later restart/continuation evidence. No input/model command is duplicated; each is confirmed, rejected/no-op, or remains pending only under the deferred successor rule. |
-| Runner process is killed, state volume remains             | Runner journal/Event log survive; the former child process does not.                                         | Reattach replays exact receipt/effect history and runner recovery reconciles the same command ids. The new harness process is checked for actual native resume behavior.                                |
-| Sandbox is suspended then resumed                          | Kubernetes lifecycle says neither that a runner Attachment survived nor that native harness resume occurred. | The app shows operational suspension/reachability separately, re-establishes runner evidence before delivery, and preserves Thread/command queue through reload.                                        |
-| Sandbox/pod is recreated during resume                     | Kubernetes may provide a new runner and the runner may provide a new harness process.                        | Record which predecessor/continuation proof exists; do not infer same-Thread native resume from Sandbox readiness.                                                                                      |
-| Pending inputs are interrupted, then any case above occurs | Input queue fate is harness-native; interruption and process loss are distinct.                              | Each command is confirmed, rejected/no-op, or later confirmed when proven, with no duplicate mocked-LLM request. Unsupported recovery remains visibly pending.                                          |
+| Situation                                                  | Facts that remain separate                                                                                   | Required assertion                                                                                                                                                                                    |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Harness process is killed while its runner remains         | Runner observes process loss/exit; the harness-native continuation may or may not resume in a new process.   | The Event log records loss and later restart/continuation evidence. No input/model command is duplicated; each is confirmed, failed/no-op, or remains pending only under the deferred successor rule. |
+| Runner process is killed, state volume remains             | Runner journal/Event log survive; the former child process does not.                                         | Reattach replays exact admission/effect history and runner recovery reconciles the same command ids. The new harness process is checked for actual native resume behavior.                            |
+| Sandbox is suspended then resumed                          | Kubernetes lifecycle says neither that a runner Attachment survived nor that native harness resume occurred. | The app shows operational suspension/reachability separately, re-establishes runner evidence before delivery, and preserves Thread/command queue through reload.                                      |
+| Sandbox/pod is recreated during resume                     | Kubernetes may provide a new runner and the runner may provide a new harness process.                        | Record which predecessor/continuation proof exists; do not infer same-Thread native resume from Sandbox readiness.                                                                                    |
+| Pending inputs are interrupted, then any case above occurs | Input queue fate is harness-native; interruption and process loss are distinct.                              | Each command is confirmed, fails/no-ops, or is later confirmed when proven, with no duplicate mocked-LLM request. Unsupported recovery remains visibly pending.                                       |
 
 This matrix is evidence-first. It may supply facts needed for the deferred
 cross-session-delivery choice, but does not pre-decide that choice.
@@ -312,17 +340,18 @@ same stored segment gives the same cards.
   confirmed it, with origin command ids available for inspection.
 - Item/turn Events create assistant text, reasoning, tool-call, and streaming cards in
   runner sequence. Normal mode compacts deltas; Raw mode expands exact Event order.
-- Model change, interrupt, stop, rejection, and no-op are distinct control/system
+- Model change, interrupt, stop, failure, and no-op are distinct control/system
   cards, never assistant/user bubbles. The causal Event determines their position.
 - A harness can emit assistant items before confirming later queued input. Confirmed
   input appears where it was processed, not where the browser submitted it.
 
-The command queue is separate from the conversation spine. The frontend folds replayed
-app-stored `Command` records with copied Events to list pending inputs, runner-admitted
-inputs, model changes awaiting effect, targeted interrupts, and so on. It survives
-reload from the outbox plus copied Events. It never makes a pending input look like
-transcript content or a runner-admitted model change look applied. Terminal entries
-leave it for the appropriate control/message card and inspectable history.
+The command queue is separate from the conversation spine. The frontend folds
+app-origin and runner-origin `CommandAdmitted` entries with later causal Events by
+command id to list pending inputs, runner-admitted inputs, model changes awaiting
+effect, targeted interrupts, and so on. It survives reload from the Thread archive.
+It never makes a pending input look like transcript content or a runner-admitted model
+change look applied. Terminal entries leave it for the appropriate control/message card
+and inspectable history.
 
 Sandbox status, bootstrap progress, runner reachability, and a deleted target are
 separate operational status. They explain blocked delivery but are not inserted into the
@@ -331,44 +360,46 @@ harness conversation timeline.
 ### Raw mode is additive, never a fictitious total order
 
 Raw mode remains on this Thread page and preserves normal cards at runner positions. It
-adds expandable `ThreadRecord` provenance, exact generated `Command`/`Event` payloads,
-native frames, source sequences, command ids, harness ids, and projection provenance.
-Streaming, coalescing, receipts, and terminal effects are therefore debuggable beside
-the normal view.
+adds each `EventEntry`'s archive cursor and immutable origin, exact generated
+`Command`/`Event` payloads, native frames, source sequences, command ids, harness ids,
+and projection provenance. Streaming, coalescing, admissions, and terminal effects are
+therefore debuggable beside the normal view.
 
 Runner Events belong on the per-session conversation spine because the runner owns
 their sequence. App outbox acceptance/delivery observations and Kubernetes lifecycle
 facts do not share it. Raw mode shows them in linked, visually distinct diagnostic
 records—by command id, Sandbox identity, and their own durable order—rather than
-interleaving timestamps into a fictitious global timeline. An unreceipted command is
-visibly unreceived; a Kubernetes pause never masquerades as a harness Event.
+interleaving timestamps into a fictitious global timeline. An app-admitted command not
+yet runner-admitted is visibly pending; a Kubernetes pause never masquerades as a harness Event.
 
 ### Client server state
 
 The React client uses a server-state cache (for example, TanStack Query) for a Thread
-record snapshot/replay and separate Sandbox operational state. SSE/transactional change
-notifications invalidate or replace those server snapshots. A mutation may show only a
-`Command` after the app has durably stored it; no component owns provisioning, delivery
-retry, or inferred completion in local state.
+archive follow and separate Sandbox operational state. SSE/transactional change
+notifications wake a durable follow from its last archive cursor. A mutation may show
+only its app-origin `CommandAdmitted` entry after durable storage; no component owns
+provisioning, delivery retry, or inferred completion in local state.
 
 ## Implementation sequence
 
 1. Normalize Thread identity versus runner-session association and persist the command outbox.
-   Keep a Thread on one durable runner session at first: that session's Event sequence survives
-   runner-process restart and reconnect, so successor-session Event segments are not an initial
-   delivery prerequisite.
-2. Prove native input behavior, then implement the multi-replica outbox reconciler for an
-   existing Thread/Sandbox/runner session. It delivers the stable input id and persists only
-   runner-authoritative receipt/effect/no-op/rejection Events.
-3. Extend that working path to atomically create a Thread, select or create its Sandbox target,
-   establish the planned runner session, and deliver its first outbox command. Do not expose a
-   combined Sandbox+Thread start on the persistence-only foundation.
-4. Ship the additive unified composer and durable pending-command queue; preserve
-   manual Sandbox/session surfaces.
-5. Add controls through the same outbox only after their per-harness receipt/effect
-   recovery gates pass.
-6. Decide and implement successor-session delivery, including per-association Event segments,
-   only after the deferred native continuation evidence exists.
+   Keep a Thread on one durable runner session at first: that source's Event sequence survives
+   runner-process restart and reconnect, so successor-session delivery is not an initial
+   prerequisite.
+2. Hard-cut the runner to the shared source-neutral `Command`, `Event`, `Follow`, and
+   `EventEntry` protocol. Prove runner replay, durable runner admission, and causal effects with
+   the native harness and crash suites.
+3. Implement the integration-app Thread archive and importer: atomically pair app admission with
+   the outbox, follow each runner source from its committed checkpoint, preserve origin while
+   assigning archive cursors, and enforce the managed-deletion catch-up barrier.
+4. Extend that working existing-Thread path to atomically create a Thread, select or create its
+   Sandbox target, establish the planned runner session, and admit/deliver its first command. Do
+   not expose combined Sandbox+Thread start on the persistence-only foundation.
+5. Ship the additive composer and durable pending-command queue from the Thread archive; preserve
+   manual Sandbox/session surfaces. Add controls through the same outbox only after their
+   per-harness admission/effect recovery gates pass.
+6. Decide and implement successor-session delivery only after the deferred native continuation
+   evidence exists.
 
 ### Product command cutover
 
@@ -376,7 +407,7 @@ The Thread page has one command ingress: it persists `SubmitInput`, `InterruptTu
 `ChangeModel`, and `StopRunnerSession` in the Thread outbox. The reconciler is the only normal
 app component that may turn that durable intent into a runner `Command` write. This does not make
 the runner transport indirect; it forbids a second app/UI path that can bypass durable intent and
-its receipt/effect projection.
+its admission/effect projection.
 
 Accordingly, the direct session-command HTTP routes for input, interrupt, model change, and runner
 stop are removed with this cutover, along with their normal frontend callers. No compatibility
@@ -387,13 +418,14 @@ fallback from product UI.
 
 ## Required guarantees and tests
 
-| Contract           | Required evidence                                                                                                                                                                                                                                                                                                       |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Native translation | Scripted Claude and Codex tests against the mocked LLM server cover input grouping, interruption, queued-input fate after interrupt, harness loss, Sandbox suspend/resume, model effects, restart/resume, and native correlation. A common Event is emitted only for proven behavior.                                   |
-| Runner recovery    | Real-process crash tests cover journal-before-receipt, receipt-before-dispatch, native effect before public Event, and terminal Event before app ingestion, including an interrupt racing queued inputs and a runner/harness restart. Test checkpoints use the normal replayable runner stream only under test options. |
-| App reconciliation | Integration tests kill/restart delivering replicas at each delivery window, run competing replicas, and prove one durable command id converges without duplicate native effect. PostgreSQL locks/fences are exercised.                                                                                                  |
-| Projection         | Replay/property tests project identical stored Event segments identically; visual tests prove a pending command is absent from normal transcript until causal Event.                                                                                                                                                    |
-| Reload and UI      | Cover new Sandbox+Thread, new Thread in existing Sandbox, history, Sandbox starting/suspended/missing, streaming, receipt-without-effect (especially queued model change), terminal outcome, and Raw provenance. Reload retains the same Thread and pending/observed state.                                             |
+| Contract           | Required evidence                                                                                                                                                                                                                                                                                                           |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Native translation | Scripted Claude and Codex tests against the mocked LLM server cover input grouping, interruption, queued-input fate after interrupt, harness loss, Sandbox suspend/resume, model effects, restart/resume, and native correlation. A common Event is emitted only for proven behavior.                                       |
+| Runner recovery    | Real-process crash tests cover journal-before-admission, admission-before-dispatch, native effect before public Event, and terminal Event before app ingestion, including an interrupt racing queued inputs and a runner/harness restart. Test checkpoints use the normal replayable runner stream only under test options. |
+| Archive import     | Integration tests kill/restart ingesting and delivering replicas, run competing replicas, prove origin-idempotent runner import from checkpoints, and prove a command id converges without duplicate native effect. PostgreSQL locks/fences are exercised.                                                                  |
+| Deletion retention | A managed Sandbox deletion waits for the Thread archive to import its runner terminal entry; afterward the browser can replay the same archive. Externally lost, unimported runner state is explicitly recorded as incomplete rather than fabricated.                                                                       |
+| Projection         | Replay/property tests project identical archived EventEntries identically; visual tests prove a pending command is absent from normal transcript until causal runner Event.                                                                                                                                                 |
+| Reload and UI      | Cover new Sandbox+Thread, new Thread in existing Sandbox, history, Sandbox starting/suspended/missing, streaming, runner admission without effect (especially queued model change), terminal outcome, and Raw cursor/origin provenance. Reload retains the same Thread and pending/observed state.                          |
 
 Manual object-lifecycle surfaces remain: create a Sandbox without a Thread, inspect or
 open a runner session, and operate Sandbox lifecycle directly. Thread-first is a
@@ -402,7 +434,7 @@ reliable higher-level workflow, not concealment of the underlying objects.
 ## Non-goals and cutover
 
 - No cross-harness native transcript portability.
-- No claim that a Sandbox transition, bootstrap action, gRPC write, or runner receipt
+- No claim that a Sandbox transition, bootstrap action, gRPC write, or runner admission
   is a harness effect.
 - No generic unqualified “policy”: targeting names explicit egress policies and action
   policy sets.
