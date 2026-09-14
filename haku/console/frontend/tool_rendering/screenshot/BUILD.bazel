@@ -10,6 +10,7 @@ TSCONFIG = "//haku/console/frontend:tsconfig"
 # shared Puppeteer driver each server's `js_test` runs as its entry point.
 js_library(
     name = "render",
+    testonly = True,
     srcs = ["render.mjs"],
 )
 
