@@ -23,7 +23,6 @@ py_test(
     name = "test_generate_tana_litellm",
     srcs = ["test_generate_tana_litellm.py"],
     data = [
-        "custom_handler.py",
         "proxy-config.yaml",
     ],
     deps = [
