@@ -121,7 +121,9 @@ class RequestScopedOpenAPIClients(Transform):
             # 3.4.4.  model_copy() preserves its generated route/director while
             # ensuring this private client assignment is invocation-local.
             bound = tool.model_copy()
-            bound._client = _RequestCompatibleClient(_fastmcp_request_scoped_http_client)
+            # FastMCP's private field is annotated as its legacy httpx client;
+            # this adapter deliberately supplies the compatible httpx2 wrapper.
+            setattr(bound, "_client", _RequestCompatibleClient(_fastmcp_request_scoped_http_client))
             return await bound.run(arguments)
 
         wrapped = Tool.from_tool(tool, transform_fn=without_injected_parameters(dispatch))
