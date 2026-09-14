@@ -148,6 +148,7 @@ py_test(
         ":messages",
         "//:conftest",
         "//x/agentplane/harness_tests:conftest",
+        "//x/agentplane/native/claude:blocks",
         "//x/agentplane/native/claude:scenarios",
         "//x/agentplane/native/claude:wire",
         "@pypi//pytest_bazel",
