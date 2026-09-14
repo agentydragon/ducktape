@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 
+import httpx
 import httpx2
 import pytest
 import pytest_bazel
@@ -21,8 +22,10 @@ from grocy_mcp.batch_tools import build_batch_tools_mcp
 from grocy_mcp.client import GrocyClient
 from grocy_mcp.mcp_types import ServerSettings
 from mcp_infra.request_scoped_openapi import borrowed_http_client_provider
+
 BASE_URL = "https://grocy.example.com/api"
-pytestmark = pytest.mark.httpx2(base_url=BASE_URL)
+# Not every test calls every route _setup_entity_routes registers.
+pytestmark = pytest.mark.httpx2(base_url=BASE_URL, assert_all_called=False)
 
 PRODUCTS = [{"id": 1, "name": "TestProduct", "qu_id_stock": 1, "location_id": 1}]
 LOCATIONS = [{"id": 1, "name": "TestLoc"}]
@@ -39,10 +42,10 @@ def _settings() -> ServerSettings:
 
 def _setup_entity_routes(router: respx.Router) -> None:
     """Register routes the Grocy client's entity methods need."""
-    router.get("/api/objects/products").respond(json=PRODUCTS)
-    router.get("/api/objects/locations").respond(json=LOCATIONS)
-    router.get("/api/objects/quantity_units").respond(json=QUS)
-    router.get("/api/objects/quantity_unit_conversions_resolved").respond(json=CONVERSIONS)
+    router.get("/objects/products").respond(json=PRODUCTS)
+    router.get("/objects/locations").respond(json=LOCATIONS)
+    router.get("/objects/quantity_units").respond(json=QUS)
+    router.get("/objects/quantity_unit_conversions_resolved").respond(json=CONVERSIONS)
 
 
 @pytest.fixture
@@ -60,9 +63,9 @@ async def test_add_stock_post_not_retried_when_get_fails(mcp_client: tuple[Clien
     """POST succeeds on first try, GET for new_amount fails -> POST must NOT be retried."""
     client, router = mcp_client
 
-    post_route = router.post("/api/stock/products/1/add").respond(json=ADD_RESPONSE)
+    post_route = router.post("/stock/products/1/add").respond(json=ADD_RESPONSE)
     # GET for new_amount fails
-    router.get("/api/stock/products/1").respond(status_code=500)
+    router.get("/stock/products/1").respond(status_code=500)
 
     result = await client.call_tool(
         "stock_add", {"items": [{"product": 1, "amount": 5, "qu": "pieces", "location": "TestLoc"}]}
@@ -81,10 +84,13 @@ async def test_add_stock_post_retried_on_transient_failure(mcp_client: tuple[Cli
     """POST fails with 500 then succeeds -> POST should be retried (legitimate)."""
     client, router = mcp_client
 
-    post_route = router.post("/api/stock/products/1/add").mock(
-        side_effect=[httpx2.Response(500, json={}), httpx2.Response(200, json=ADD_RESPONSE)]
+    post_route = router.post("/stock/products/1/add").mock(
+        # respx's side_effect only recognizes real httpx.Response (see Route.resolve's
+        # isinstance check); httpx2.Response looks identical but isn't cloned/bound to
+        # the request, which respx needs to replay these across the two calls.
+        side_effect=[httpx.Response(500, json={}), httpx.Response(200, json=ADD_RESPONSE)]
     )
-    router.get("/api/stock/products/1").respond(json=STOCK_RESPONSE)
+    router.get("/stock/products/1").respond(json=STOCK_RESPONSE)
 
     result = await client.call_tool(
         "stock_add", {"items": [{"product": 1, "amount": 5, "qu": "pieces", "location": "TestLoc"}]}
@@ -101,9 +107,7 @@ async def test_mutating_post_not_retried_on_timeout(mcp_client: tuple[Client, re
     """A timeout on a mutating POST must NOT re-send — a re-POST would double-apply it."""
     client, router = mcp_client
 
-    post_route = router.post("/api/stock/products/1/consume").mock(
-        side_effect=[httpx2.ReadTimeout("simulated timeout")]
-    )
+    post_route = router.post("/stock/products/1/consume").mock(side_effect=[httpx2.ReadTimeout("simulated timeout")])
 
     result = await client.call_tool(
         "stock_consume", {"items": [{"product": 1, "amount": 5, "qu": "pieces", "location": "TestLoc"}]}
@@ -123,8 +127,8 @@ async def test_read_get_still_retried_on_timeout(mcp_client: tuple[Client, respx
     """Regression guard: reads/GETs still retry on timeout (only mutations changed)."""
     client, router = mcp_client
 
-    stock_route = router.get("/api/stock").mock(
-        side_effect=[httpx2.ReadTimeout("simulated timeout"), httpx2.Response(200, json=[])]
+    stock_route = router.get("/stock").mock(
+        side_effect=[httpx2.ReadTimeout("simulated timeout"), httpx.Response(200, json=[])]
     )
 
     result = await client.call_tool("stock_get", {"products": [], "locations": []})
@@ -159,7 +163,7 @@ async def test_http_errors_are_compact_and_include_status_url_and_body(mcp_clien
     """HTTP backend errors should be concise and actionable (no Python traceback)."""
     client, router = mcp_client
     error_payload = {"error_message": "Amount to be consumed cannot be > current stock amount"}
-    router.post("/api/stock/products/1/consume").respond(status_code=400, json=error_payload)
+    router.post("/stock/products/1/consume").respond(status_code=400, json=error_payload)
 
     result = await client.call_tool(
         "stock_consume", {"items": [{"product": 1, "amount": 5, "qu": "pieces", "location": "TestLoc"}]}

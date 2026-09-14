@@ -10,8 +10,10 @@ import respx
 
 from grocy_mcp.client import GrocyClient, Resolved, ResolvedQU
 from grocy_mcp.grocy_types import EntityType
+
 BASE_URL = "http://grocy.test/api"
-pytestmark = pytest.mark.httpx2(base_url=BASE_URL)
+# Not every test calls every route _setup_routes registers.
+pytestmark = pytest.mark.httpx2(base_url=BASE_URL, assert_all_called=False)
 
 PRODUCTS = [
     {"id": 1, "name": "Rice", "qu_id_stock": 3, "location_id": 1},
@@ -37,12 +39,12 @@ CONVERSIONS = [
 
 def _setup_routes(router: respx.Router) -> None:
     """Register standard Grocy API mock routes on the given router."""
-    router.get("/api/objects/products").respond(json=PRODUCTS)
-    router.get("/api/objects/locations").respond(json=LOCATIONS)
-    router.get("/api/objects/quantity_units").respond(json=QUS)
-    router.get("/api/objects/product_groups").respond(json=[])
-    router.get("/api/objects/shopping_lists").respond(json=[{"id": 1, "name": "Shopping list"}])
-    router.get("/api/objects/quantity_unit_conversions_resolved").respond(json=CONVERSIONS)
+    router.get("/objects/products").respond(json=PRODUCTS)
+    router.get("/objects/locations").respond(json=LOCATIONS)
+    router.get("/objects/quantity_units").respond(json=QUS)
+    router.get("/objects/product_groups").respond(json=[])
+    router.get("/objects/shopping_lists").respond(json=[{"id": 1, "name": "Shopping list"}])
+    router.get("/objects/quantity_unit_conversions_resolved").respond(json=CONVERSIONS)
 
 
 @pytest.fixture
@@ -160,9 +162,9 @@ async def test_product_specific_conversion_overrides_global(httpx2_mock: respx.R
     ]
 
     router = httpx2_mock
-    router.get("/api/objects/products").respond(json=PRODUCTS)
-    router.get("/api/objects/quantity_units").respond(json=QUS)
-    router.get("/api/objects/quantity_unit_conversions_resolved").respond(json=conversions_with_global)
+    router.get("/objects/products").respond(json=PRODUCTS)
+    router.get("/objects/quantity_units").respond(json=QUS)
+    router.get("/objects/quantity_unit_conversions_resolved").respond(json=conversions_with_global)
 
     async with GrocyClient(base_url=BASE_URL) as client:
         # Should use product-specific factor (0.8), not global (1.0)
@@ -198,8 +200,8 @@ async def test_entity_operations_fetch_fresh_per_call(httpx2_mock: respx.Router)
     correct, intended cost.
     """
     router = httpx2_mock
-    products_route = router.get("/api/objects/products").respond(json=PRODUCTS)
-    router.get("/api/objects/quantity_units").respond(json=QUS)
+    products_route = router.get("/objects/products").respond(json=PRODUCTS)
+    router.get("/objects/quantity_units").respond(json=QUS)
 
     async with GrocyClient(base_url=BASE_URL) as client:
         await client.resolve_entity(EntityType.PRODUCT, "Rice")
