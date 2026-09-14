@@ -156,6 +156,7 @@ py_library(
 
 py_library(
     name = "stock_like_priors",
+    testonly = True,
     srcs = ["stock_like_priors.py"],
     deps = [
         "//finance/augur/model:schemas",
@@ -282,6 +283,7 @@ py_test(
 
 py_library(
     name = "bayes_dilution",
+    testonly = True,
     srcs = ["bayes_dilution.py"],
     deps = [
         ":private_equity",
@@ -382,6 +384,7 @@ py_library(
 
 py_library(
     name = "ornstein_uhlenbeck",
+    testonly = True,
     srcs = ["ornstein_uhlenbeck.py"],
     deps = [
         "//finance/augur/model:structural_macro",

@@ -261,6 +261,7 @@ py_library(
 
 py_library(
     name = "funding",
+    testonly = True,
     srcs = ["funding.py"],
     deps = [
         ":wire",
@@ -299,6 +300,7 @@ py_test(
 
 py_library(
     name = "action_projection",
+    testonly = True,
     srcs = ["action_projection.py"],
     deps = [
         "//finance/augur/sim:metric_composition",
