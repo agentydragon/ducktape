@@ -6,6 +6,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 import httpx
+import httpx2
 from authlib.oauth2 import OAuth2Error
 from fastmcp.server.auth.auth import AccessToken, TokenVerifier
 from fastmcp.server.auth.oidc_proxy import OIDCProxy
@@ -32,10 +33,15 @@ _RETRY_AFTER_SECONDS = 60
 
 
 def _transient_upstream_error(exc: BaseException | None) -> bool:
-    """True for upstream failures that say nothing about the grant's validity."""
-    if isinstance(exc, httpx.TransportError):  # DNS, connect, timeout, protocol errors
+    """True for upstream failures that say nothing about the grant's validity.
+
+    FastMCP 3 uses ``httpx`` while the mcp-sdk v2/FastMCP 4 stack uses the
+    compatible ``httpx2`` fork. Keep the classifier dual-stack while the
+    repository migrates those consumers independently.
+    """
+    if isinstance(exc, (httpx.TransportError, httpx2.TransportError)):
         return True
-    return isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code >= 500
+    return isinstance(exc, (httpx.HTTPStatusError, httpx2.HTTPStatusError)) and exc.response.status_code >= 500
 
 
 def _is_transient_token_error(exc: BaseException) -> bool:
@@ -60,7 +66,7 @@ def _upstream_oauth_rejection(exc: BaseException | None) -> bool:
     refresh token, missing JTI mapping — i.e. normal client churn that never
     reached Authentik, and must not fire the upstream-failure alert.
     """
-    return isinstance(exc, OAuth2Error | httpx.HTTPStatusError)
+    return isinstance(exc, OAuth2Error) or isinstance(exc, (httpx.HTTPStatusError, httpx2.HTTPStatusError))
 
 
 class RetryableJWTVerifier(JWTVerifier):
