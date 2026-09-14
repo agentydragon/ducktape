@@ -14,6 +14,7 @@
 #
 # General Settings:
 #   theme                     : string   : UI theme ("dark", "light")
+#   agentPushNotifEnabled    : boolean  : Enable agent push notifications
 #   language                  : string   : Response language ("japanese", "spanish", etc.)
 #   model                     : string   : Default model:
 #                                          "default"    - account-tier default (clears override)
@@ -587,6 +588,7 @@ in
 
     settings = {
       theme = "dark";
+      agentPushNotifEnabled = true;
       attribution.commit = ""; # Disable "Co-authored-by" in commits
       attribution.pr = ""; # Disable attribution in PR descriptions
       showThinkingSummaries = true;
