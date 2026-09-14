@@ -136,6 +136,30 @@ async def test_thread_command_ordinals_are_serialised_across_replicas(
     assert {snapshot.command.command_id for snapshot in commands} == {"first", "second"}
 
 
+async def test_only_the_first_unreceived_command_is_ready_for_active_runner_delivery(
+    store: TrajectoryStore, lease: IngestionLease
+) -> None:
+    thread = await store.thread("sb-1", "s-1", SPEC)
+    first = await store.request_thread_command(
+        thread, pb.Command(command_id="first", submit_input=pb.SubmitInput(text="First."))
+    )
+    second = await store.request_thread_command(
+        thread, pb.Command(command_id="second", submit_input=pb.SubmitInput(text="Second."))
+    )
+
+    awaiting = await store.commands_awaiting_runner_receipt("sb-1")
+    assert [(delivery.command, delivery.sandbox, delivery.runner_session_id) for delivery in awaiting] == [
+        (first, "sb-1", "s-1")
+    ]
+
+    await store.record(thread, [_event(1, command_received=pb.CommandReceived(command_id="first"))], lease=lease)
+
+    awaiting = await store.commands_awaiting_runner_receipt("sb-1")
+    assert [(delivery.command, delivery.sandbox, delivery.runner_session_id) for delivery in awaiting] == [
+        (second, "sb-1", "s-1")
+    ]
+
+
 async def test_threads_list_with_their_progress(store: TrajectoryStore, lease: IngestionLease) -> None:
     thread = await store.thread("sb-1", "s-1", SPEC)
     empty = await store.thread("sb-2", "s-9", pb.SessionSpec(harness=pb.HARNESS_CODEX, cwd="/w", model="m"))
@@ -262,6 +286,21 @@ async def test_commits_wake_another_replica_and_leave_durable_replay(
         await store.record(thread, [_event(1, harness_lost=pb.HarnessLost())], lease=lease)
         await asyncio.wait_for(changed.wait(), timeout=5)
         assert [event.sequence for event in await replica.events(thread, limit=10)] == [1]
+
+
+async def test_command_receipts_wake_the_dedicated_cross_replica_outbox_invalidator(
+    store: TrajectoryStore, replica: TrajectoryStore, lease: IngestionLease
+) -> None:
+    thread = await store.thread("sb-1", "s-1", SPEC)
+    changed = asyncio.Event()
+    with replica.command_changes.subscribe(changed):
+        await store.request_thread_command(
+            thread, pb.Command(command_id="input-1", submit_input=pb.SubmitInput(text="deliver me"))
+        )
+        await asyncio.wait_for(changed.wait(), timeout=5)
+        changed.clear()
+        await store.record(thread, [_event(1, command_received=pb.CommandReceived(command_id="input-1"))], lease=lease)
+        await asyncio.wait_for(changed.wait(), timeout=5)
 
 
 async def test_only_current_lease_can_write_or_renew(

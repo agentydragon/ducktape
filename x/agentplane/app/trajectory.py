@@ -40,7 +40,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from x.agentplane.app.changes import Changes
 from x.agentplane.app.operator_sessions import Base, OperatorSessionStore
 from x.agentplane.app.presets import Harness
-from x.agentplane.app.trajectory_updates import CHANNEL, TrajectoryUpdates
+from x.agentplane.app.trajectory_updates import CHANNEL, COMMANDS_PAYLOAD, TrajectoryUpdates
 from x.agentplane.runner import protocol_pb2 as pb
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -175,6 +175,15 @@ class ThreadCommandSnapshot:
     accepted_at: datetime
 
 
+@dataclass(frozen=True)
+class ThreadCommandDelivery:
+    """One Thread command whose active runner session has not durably received it yet."""
+
+    command: ThreadCommandSnapshot
+    sandbox: str
+    runner_session_id: str
+
+
 class ThreadView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -213,7 +222,8 @@ class TrajectoryStore:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
         self.operator_sessions = OperatorSessionStore(engine)
         self.changes = Changes()
-        self._updates = TrajectoryUpdates(engine.url, self.changes)
+        self.command_changes = Changes()
+        self._updates = TrajectoryUpdates(engine.url, self.changes, self.command_changes)
 
     @classmethod
     def connect(cls, database_url: str) -> TrajectoryStore:
@@ -276,7 +286,7 @@ class TrajectoryStore:
             if thread is None:
                 raise ThreadNotFoundError(thread_id)
             snapshot = await _append_thread_command(session, thread_id, command)
-            await _notify(session)
+            await _notify(session, commands=True)
             return snapshot
 
     async def thread_commands(self, thread_id: UUID) -> list[ThreadCommandSnapshot]:
@@ -288,6 +298,51 @@ class TrajectoryStore:
                 .order_by(ThreadCommand.ordinal, ThreadCommand.command_id)
             )
             return [_thread_command_snapshot(command) for command in commands]
+
+    async def commands_awaiting_runner_receipt(self, sandbox: str) -> list[ThreadCommandDelivery]:
+        """Return each Thread's earliest command not yet durably received by its active session.
+
+        The runner emits ``CommandReceived`` only after journaling a command.  That receipt, copied
+        into the Thread event log, is the hand-off from this app-owned outbox to the runner.  A
+        reconciler must retain commands after their receipt until their separate causal outcome is
+        projected, but may offer later commands to the runner then: the runner owns their execution
+        order and native queue semantics.
+        """
+        command_query = (
+            select(ThreadCommand, ThreadRunnerSession)
+            .join(Thread, Thread.id == ThreadCommand.thread_id)
+            .join(
+                ThreadRunnerSession, (ThreadRunnerSession.thread_id == Thread.id) & ThreadRunnerSession.active.is_(True)
+            )
+            .where(Thread.sandbox == sandbox)
+            .order_by(ThreadCommand.thread_id, ThreadCommand.ordinal, ThreadCommand.command_id)
+        )
+        receipt_query = (
+            select(Event.thread_id, Event.payload)
+            .join(Thread, Thread.id == Event.thread_id)
+            .where(Thread.sandbox == sandbox, Event.kind == "command_received")
+        )
+        async with self._sessions() as session:
+            received = {
+                (thread_id, ParseDict(payload, pb.Event()).command_received.command_id)
+                for thread_id, payload in await session.execute(receipt_query)
+            }
+            deliveries: list[ThreadCommandDelivery] = []
+            seen_threads: set[UUID] = set()
+            for command, runner_session in await session.execute(command_query):
+                if command.thread_id in seen_threads:
+                    continue
+                if (command.thread_id, command.command_id) in received:
+                    continue
+                seen_threads.add(command.thread_id)
+                deliveries.append(
+                    ThreadCommandDelivery(
+                        command=_thread_command_snapshot(command),
+                        sandbox=sandbox,
+                        runner_session_id=runner_session.runner_session_id,
+                    )
+                )
+            return deliveries
 
     async def last_sequence(self, thread_id: UUID) -> int:
         async with self._sessions() as session:
@@ -315,16 +370,15 @@ class TrajectoryStore:
         ]
         async with self._sessions.begin() as session:
             await _fence(session, lease, thread_id)
-            inserted = await session.scalars(
-                insert(Event).values(rows).on_conflict_do_nothing().returning(Event.payload)
+            inserted = list(
+                await session.scalars(insert(Event).values(rows).on_conflict_do_nothing().returning(Event.payload))
             )
+            inserted_events = [ParseDict(payload, pb.Event()) for payload in inserted]
             state = await session.get(FeedState, thread_id)
             if state is not None:
                 attached = ParseDict(state.attached, pb.Attached())
                 previous_model = attached.spec.model
-                for event in sorted(
-                    (ParseDict(payload, pb.Event()) for payload in inserted), key=lambda event: event.sequence
-                ):
+                for event in sorted(inserted_events, key=lambda event: event.sequence):
                     # An Attached snapshot describes the runner at its cursor. Replaying the
                     # earlier log fills history, but must not rewind that snapshot's state.
                     if event.sequence <= attached.last_sequence:
@@ -338,7 +392,7 @@ class TrajectoryStore:
                         update(Thread).where(Thread.id == thread_id).values(model=attached.spec.model)
                     )
                 await session.flush()
-            await _notify(session)
+            await _notify(session, commands=any(event.HasField("command_received") for event in inserted_events))
 
     async def acquire_ingestion(self, sandbox: str, duration: timedelta) -> IngestionLease | None:
         _positive_duration(duration)
@@ -567,9 +621,9 @@ async def _fence(session: AsyncSession, lease: IngestionLease, thread_id: UUID) 
         raise IngestionLeaseLostError("lease does not own this thread's sandbox")
 
 
-async def _notify(session: AsyncSession) -> None:
+async def _notify(session: AsyncSession, *, commands: bool = False) -> None:
     # PostgreSQL delivers NOTIFY only on commit; payloads carry no trajectory or identity data.
-    await session.execute(select(func.pg_notify(CHANNEL, "")))
+    await session.execute(select(func.pg_notify(CHANNEL, COMMANDS_PAYLOAD if commands else "")))
 
 
 def _project_attached(attached: pb.Attached, event: pb.Event) -> None:
