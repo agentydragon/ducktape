@@ -32,7 +32,7 @@ from x.agentplane.app.testing.kubernetes import (
     sandbox,
 )
 from x.agentplane.app.trajectory import TrajectoryStore
-from x.agentplane.runner import protocol_pb2 as pb
+from x.agentplane.runner import protocol_pb2
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
 # gazelle:include_dep @pypi//httpx
@@ -411,13 +411,13 @@ def test_bound_thread_defaults_resolve_before_bootstrap_and_explicit_launch_fiel
     ).json()
     calls: list[tuple[str, object]] = []
 
-    async def initialize(name: str, script: str) -> pb.InitializeResult:
+    async def initialize(name: str, script: str) -> protocol_pb2.InitializeResult:
         calls.append(("initialize", script))
-        return pb.InitializeResult(executed=True)
+        return protocol_pb2.InitializeResult(executed=True)
 
-    async def open_session(name: str, session_id: str, spec: pb.SessionSpec) -> pb.Attached:
+    async def open_session(name: str, session_id: str, spec: protocol_pb2.SessionSpec) -> protocol_pb2.Attached:
         calls.append(("open", spec))
-        return pb.Attached(session_id=session_id, spec=spec)
+        return protocol_pb2.Attached(session_id=session_id, spec=spec)
 
     monkeypatch.setattr(bridge, "initialize", initialize)
     monkeypatch.setattr(bridge, "open_session", open_session)
@@ -431,9 +431,9 @@ def test_bound_thread_defaults_resolve_before_bootstrap_and_explicit_launch_fiel
     assert calls[0] == ("initialize", "mkdir -p /state/workspaces")
     assert calls[1][0] == "open"
     spec = calls[1][1]
-    assert isinstance(spec, pb.SessionSpec)
+    assert isinstance(spec, protocol_pb2.SessionSpec)
     assert (spec.harness, spec.cwd, spec.model, spec.reasoning_effort, spec.instructions) == (
-        pb.HARNESS_CODEX,
+        protocol_pb2.HARNESS_CODEX,
         "/state/workspaces/thread-1",
         "thread-model",
         "medium",
@@ -444,11 +444,11 @@ def test_bound_thread_defaults_resolve_before_bootstrap_and_explicit_launch_fiel
 def test_shared_instructions_are_also_added_to_direct_session_launches(
     client: TestClient, bridge: RunnerBridge, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    captured: list[pb.SessionSpec] = []
+    captured: list[protocol_pb2.SessionSpec] = []
 
-    async def open_session(name: str, session_id: str, spec: pb.SessionSpec) -> pb.Attached:
+    async def open_session(name: str, session_id: str, spec: protocol_pb2.SessionSpec) -> protocol_pb2.Attached:
         captured.append(spec)
-        return pb.Attached(session_id=session_id, spec=spec)
+        return protocol_pb2.Attached(session_id=session_id, spec=spec)
 
     monkeypatch.setattr(bridge, "open_session", open_session)
     response = client.post(
@@ -458,8 +458,8 @@ def test_shared_instructions_are_also_added_to_direct_session_launches(
 
     assert response.status_code == 201, response.text
     assert captured == [
-        pb.SessionSpec(
-            harness=pb.HARNESS_CLAUDE, cwd="/w", model="plain-model", instructions="shared agent instructions"
+        protocol_pb2.SessionSpec(
+            harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="plain-model", instructions="shared agent instructions"
         )
     ]
 
@@ -662,7 +662,7 @@ async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
 ) -> None:
     """Over ASGI on this loop, not TestClient's thread: the store's pooled asyncpg connections
     belong to the loop that opened them."""
-    spec = pb.SessionSpec(harness=pb.HARNESS_CLAUDE, cwd="/w", model="test-model")
+    spec = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
     thread_id = str(await store.thread("live", "s-1", spec))
     await store.thread("live", "s-2", spec)
     app = create_app(
@@ -697,7 +697,7 @@ async def test_a_thread_archives_and_unarchives_and_hides_from_the_default_listi
     action_policy: ActionPolicyInventory,
     reviewer: TokenReviewer,
 ) -> None:
-    spec = pb.SessionSpec(harness=pb.HARNESS_CLAUDE, cwd="/w", model="test-model")
+    spec = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
     thread_id = str(await store.thread("live", "s-1", spec))
     app = create_app(
         inventory, bridge, store, TEST_MODELS, egress, decisions, live_index, action_policy, reviewer=reviewer
@@ -735,7 +735,7 @@ async def test_threads_with_sandboxes_pairs_each_thread_with_its_sandbox_or_none
     several Threads is not duplicated once per Thread."""
     custom_objects.objects[("sandboxes", "live")] = sandbox("live")
     core_v1.pods["live"] = pod("live", phase="Running", ready=True, ip="10.0.0.7")
-    spec = pb.SessionSpec(harness=pb.HARNESS_CLAUDE, cwd="/w", model="test-model")
+    spec = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
     live_thread = await store.thread("live", "s-1", spec)
     other_live_thread = await store.thread("live", "s-2", spec)
     gone_thread = await store.thread("gone", "s-3", spec)

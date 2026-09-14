@@ -15,7 +15,7 @@ import json
 import re
 from dataclasses import dataclass, field
 from http import HTTPStatus
-from typing import TypeVar, cast
+from typing import TypeVar
 from uuid import uuid4
 
 import httpx
@@ -23,8 +23,8 @@ from pydantic import BaseModel
 from tenacity import AsyncRetrying, retry_if_exception, stop_after_delay, wait_fixed
 
 from x.agentplane.app.client import Client
-from x.agentplane.app.presets import Harness
-from x.agentplane.runner import protocol_pb2 as pb
+from x.agentplane.protocol import command_pb2, event_pb2
+from x.agentplane.runner import protocol_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -59,7 +59,7 @@ class Turn:
 
     tool_outputs: list[str] = field(default_factory=list)
     text: list[str] = field(default_factory=list)
-    status: pb.TurnStatus | None = None
+    status: event_pb2.TurnStatus | None = None
 
     @property
     def answer(self) -> str:
@@ -91,14 +91,16 @@ class Turn:
 class Agent:
     """A session on one sandbox. `run` sends a prompt and returns when the turn completes."""
 
-    def __init__(self, client: Client, *, sandbox: str, session_id: str, sequence: int) -> None:
+    def __init__(self, client: Client, *, sandbox: str, session_id: str, cursor: int) -> None:
         self._client = client
         self._sandbox = sandbox
         self._session_id = session_id
-        self._sequence = sequence
+        self._cursor = cursor
 
     @classmethod
-    async def open(cls, client: Client, *, sandbox: str, harness: Harness, model: str, instructions: str = "") -> Agent:
+    async def open(
+        cls, client: Client, *, sandbox: str, harness: protocol_pb2.Harness, model: str, instructions: str = ""
+    ) -> Agent:
         """Open a session, waiting out a runner that is up but not yet listening.
 
         A sandbox reports Running once its Pod has an address, and an address is not a listening
@@ -109,12 +111,8 @@ class Agent:
         `instructions` are the session's standing orders, in front of the model on every turn; empty
         is the proto's own default and opens the session the runner would open without the field.
         """
-        spec = pb.SessionSpec(
-            harness=cast(pb.Harness, pb.Harness.Value(harness.value)),
-            cwd=WORKING_DIRECTORY,
-            model=model,
-            reasoning_effort="low",
-            instructions=instructions,
+        spec = protocol_pb2.SessionSpec(
+            harness=harness, cwd=WORKING_DIRECTORY, model=model, reasoning_effort="low", instructions=instructions
         )
         # One id across attempts: a 503 is raised before the runner is reached, so no attempt can
         # have left a session behind under a name the next one would not reuse.
@@ -128,25 +126,25 @@ class Agent:
             with attempt:
                 attachment = await client.open_session(sandbox, session_id, spec)
                 return cls(
-                    client,
-                    sandbox=sandbox,
-                    session_id=attachment.attached.session_id,
-                    sequence=attachment.last_sequence,
+                    client, sandbox=sandbox, session_id=attachment.attached.session_id, cursor=attachment.last_cursor
                 )
         raise AssertionError("unreachable: reraise=True either returns an agent or raises")
 
     async def run(self, prompt: str) -> Turn:
         """Send `prompt` and collect the turn it starts. Nothing else drives this session, so reading
         the cursor before submitting cannot miss an event."""
-        after = self._sequence
+        after = self._cursor
         await self._client.send_input(
             self._sandbox,
             self._session_id,
-            pb.Command(command_id=f"input-{uuid4().hex[:8]}", submit_input=pb.SubmitInput(text=prompt)),
+            command_pb2.Command(
+                command_id=f"input-{uuid4().hex[:8]}", submit_input=command_pb2.SubmitInput(text=prompt)
+            ),
         )
         turn = Turn()
-        async for event in self._client.events(self._sandbox, self._session_id, after=after, read_seconds=TURN_SECONDS):
-            self._sequence = event.sequence
+        async for entry in self._client.events(self._sandbox, self._session_id, after=after, read_seconds=TURN_SECONDS):
+            self._cursor = entry.cursor
+            event = entry.event
             match event.WhichOneof("observation"):
                 case "item_completed":
                     _completed(event.item_completed, turn)
@@ -158,7 +156,7 @@ class Agent:
         raise AssertionError(f"the session's stream ended before the turn completed:\n{turn.transcript}")
 
 
-def _completed(item: pb.ItemCompleted, turn: Turn) -> None:
+def _completed(item: event_pb2.ItemCompleted, turn: Turn) -> None:
     match item.WhichOneof("outcome"):
         case "tool":
             turn.tool_outputs.append(item.tool.output)

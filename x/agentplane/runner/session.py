@@ -11,7 +11,7 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from x.agentplane.native.transport import Frame, FrameMatcher, NativeReceipt
-from x.agentplane.runner import protocol_pb2 as pb
+from x.agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from x.agentplane.runner.adapter import HarnessAdapter
 from x.agentplane.runner.command_journal import CommandConflictError, CommandJournal
 from x.agentplane.runner.config import RunnerConfig
@@ -48,11 +48,11 @@ class Session:
         self.config = config
         self.make_adapter = make_adapter
         self.directory = store.directory(session_id)
-        self.log = EventLog(self.directory / "events-v2.jsonl")
-        self.journal = CommandJournal(self.directory / "commands-v2.jsonl")
+        self.log = EventLog(self.directory / "events-v3.jsonl", str(record.event_source_id))
+        self.journal = CommandJournal(self.directory / "commands-v3.jsonl")
         self.harness_running = False
         self.active_turn_id = ""
-        self.received_commands: set[str] = set()
+        self.admitted_commands: set[str] = set()
         self.terminal_commands: set[str] = set()
         # Per-process only. A restarted runner consults the durable journal and intentionally
         # tries outstanding commands again using their original ids.
@@ -60,8 +60,8 @@ class Session:
         self._interrupt_commands: dict[str, str] = {}
         self._stop_command_id = ""
         self._debug_checkpoints_reached: set[tuple[str, str]] = set()
-        for event in self.log.events:
-            self._apply(event)
+        for entry in self.log.entries:
+            self._apply(entry.event)
         self.process: HarnessProcess | None = None
         self.adapter: HarnessAdapter | None = None
         self._tasks: list[asyncio.Task[None]] = []
@@ -70,7 +70,7 @@ class Session:
         self._stopping = False
         self._lock = asyncio.Lock()
 
-    def _apply(self, event: pb.Event) -> None:
+    def _apply(self, event: event_pb2.Event) -> None:
         match event.WhichOneof("observation"):
             case "harness_started":
                 self.harness_running = True
@@ -86,10 +86,10 @@ class Session:
                 self.active_turn_id = ""
                 if event.turn_completed.interrupted_by_command_id:
                     self.terminal_commands.add(event.turn_completed.interrupted_by_command_id)
-            case "command_received":
-                self.received_commands.add(event.command_received.command_id)
-            case "command_rejected":
-                self.terminal_commands.add(event.command_rejected.command_id)
+            case "command_admitted":
+                self.admitted_commands.add(event.command_admitted.command.command_id)
+            case "command_failed":
+                self.terminal_commands.add(event.command_failed.command_id)
             case "command_noop":
                 self.terminal_commands.add(event.command_noop.command_id)
             case "harness_user_message_confirmed":
@@ -99,31 +99,33 @@ class Session:
             case "debug_checkpoint":
                 self._debug_checkpoints_reached.add((event.debug_checkpoint.name, event.debug_checkpoint.command_id))
 
-    def emit(self, observation: Observation, *, sources: Sequence[int] | None = None) -> pb.Event:
+    def emit(self, observation: Observation, *, sources: Sequence[int] | None = None) -> event_log_pb2.EventEntry:
         """Append to the log. Inside frame translation, the frame's Native event is the default source."""
         if sources is None:
             sources = [self._translating] if self._translating else []
-        event = self.log.append(observation, sources=sources)
-        self._apply(event)
-        return event
+        entry = self.log.append(observation, sources=sources)
+        self._apply(entry.event)
+        return entry
 
     def recover_after_restart(self) -> None:
         """The runner that wrote the log is gone, and so is any harness it was running."""
-        # A crash between journal commit and public event must not make the app forget a command.
-        # The same durable receipt is replayed before any later reconciliation attempt.
+        # A crash between journal commit and public Event must not make the app forget a command.
+        # The same durable admission is replayed before any later reconciliation attempt.
         for entry in self.journal.entries:
-            if entry.command.command_id not in self.received_commands:
-                self.emit(pb.CommandReceived(command_id=entry.command.command_id), sources=[])
+            if entry.command.command_id not in self.admitted_commands:
+                self.emit(event_pb2.CommandAdmitted(command=entry.command), sources=[])
             if entry.state == "terminal" and entry.command.command_id not in self.terminal_commands:
                 if entry.outcome is None:  # CommandJournal rejects this on load; keep recovery defensive.
                     raise ValueError(f"terminal command {entry.command.command_id!r} has no durable outcome")
                 self.emit(entry.outcome, sources=[])
         if not self.harness_running:
             return
-        self.emit(pb.HarnessLost())
+        self.emit(event_pb2.HarnessLost())
         if self.active_turn_id:
             self._record_turn_completed(
-                self.active_turn_id, pb.TURN_STATUS_PROCESS_LOST, "the runner restarted while the turn was active"
+                self.active_turn_id,
+                event_pb2.TURN_STATUS_PROCESS_LOST,
+                "the runner restarted while the turn was active",
             )
 
     @property
@@ -157,20 +159,19 @@ class Session:
             if self.record.native_session_id != native_session_id:
                 self.record.native_session_id = native_session_id
                 self.store.write(self.session_id, self.record)
-            self.emit(pb.HarnessStarted(resumed=resumed, pid=process.process.pid), sources=[])
+            self.emit(event_pb2.HarnessStarted(resumed=resumed, pid=process.process.pid), sources=[])
             await self._reconcile_commands(recovering=True)
 
-    async def command(self, command: pb.Command) -> None:
+    async def command(self, command: command_pb2.Command) -> None:
         async with self._lock:
             if not command.command_id or command.WhichOneof("operation") is None:
-                return
+                raise ValueError("command requires command_id and operation")
             try:
-                received = self.journal.receive(command)
+                admitted = self.journal.admit(command)
             except CommandConflictError as error:
-                self.emit(pb.CommandRejected(command_id=command.command_id, reason=str(error)), sources=[])
-                return
-            if received or command.command_id not in self.received_commands:
-                self.emit(pb.CommandReceived(command_id=command.command_id), sources=[])
+                raise ValueError(str(error)) from error
+            if admitted or command.command_id not in self.admitted_commands:
+                self.emit(event_pb2.CommandAdmitted(command=command), sources=[])
             await self._dispatch(command)
 
     async def _reconcile_commands(self, *, recovering: bool = False) -> None:
@@ -179,7 +180,7 @@ class Session:
             if entry.command.command_id not in self.terminal_commands:
                 await self._dispatch(entry.command, recovering=recovering)
 
-    async def _dispatch(self, command: pb.Command, *, recovering: bool = False) -> None:
+    async def _dispatch(self, command: command_pb2.Command, *, recovering: bool = False) -> None:
         command_id = command.command_id
         entry = self.journal.get(command_id)
         if entry is None or command_id in self.terminal_commands:
@@ -194,7 +195,7 @@ class Session:
         if operation == "submit_input":
             text = command.submit_input.text
             if not text:
-                self._reject(command_id, "submit_input.text is required")
+                self._fail(command_id, "submit_input.text is required")
                 return
             self.journal.dispatch_planned(command_id)
             self._dispatched_commands.add(command_id)
@@ -203,12 +204,12 @@ class Session:
                 await self.adapter.submit(command_id, text)
             except (HarnessGoneError, RuntimeError) as error:
                 self._dispatched_commands.discard(command_id)
-                self._reject(command_id, str(error))
+                self._fail(command_id, str(error))
             return
         if operation == "change_model":
             model = command.change_model.model
             if not model:
-                self._reject(command_id, "change_model.model is required")
+                self._fail(command_id, "change_model.model is required")
                 return
             if model == self.record.model:
                 self._noop(command_id, "the requested model is already active")
@@ -219,12 +220,12 @@ class Session:
                 await self.adapter.change_model(command_id, model)
             except (HarnessGoneError, RuntimeError) as error:
                 self._dispatched_commands.discard(command_id)
-                self._reject(command_id, str(error))
+                self._fail(command_id, str(error))
             return
         if operation == "interrupt_turn":
             target = command.interrupt_turn.turn_id
             if not target:
-                self._reject(command_id, "interrupt_turn.turn_id is required")
+                self._fail(command_id, "interrupt_turn.turn_id is required")
                 return
             if target != self.active_turn_id:
                 self._noop(command_id, f"turn {target!r} is no longer active")
@@ -237,7 +238,7 @@ class Session:
             except (HarnessGoneError, RuntimeError) as error:
                 self._interrupt_commands.pop(target, None)
                 self._dispatched_commands.discard(command_id)
-                self._reject(command_id, str(error))
+                self._fail(command_id, str(error))
             return
         if operation == "stop_runner_session":
             self.journal.dispatch_planned(command_id)
@@ -245,20 +246,20 @@ class Session:
             self._stop_command_id = command_id
             await self._shutdown_locked()
             return
-        self._reject(command_id, f"unrecognized command operation {operation!r}")
+        self._fail(command_id, f"unrecognized command operation {operation!r}")
 
     def _effect(self, command_id: str, observation: Observation, *, sources: Sequence[int] | None = None) -> None:
         self.journal.native_effect_observed(command_id)
         self.journal.terminal(command_id, outcome=observation)
         self.emit(observation, sources=sources)
 
-    def _reject(self, command_id: str, reason: str) -> None:
-        observation = pb.CommandRejected(command_id=command_id, reason=reason)
+    def _fail(self, command_id: str, reason: str) -> None:
+        observation = event_pb2.CommandFailed(command_id=command_id, reason=reason)
         self.journal.terminal(command_id, outcome=observation)
         self.emit(observation, sources=[])
 
     def _noop(self, command_id: str, reason: str) -> None:
-        observation = pb.CommandNoop(command_id=command_id, reason=reason)
+        observation = event_pb2.CommandNoop(command_id=command_id, reason=reason)
         self.journal.terminal(command_id, outcome=observation)
         self.emit(observation, sources=[])
 
@@ -270,7 +271,9 @@ class Session:
         self.record.model = model
         self.store.write(self.session_id, self.record)
         self._effect(
-            command_id, pb.ModelChanged(command_id=command_id, previous_model=previous, model=model), sources=sources
+            command_id,
+            event_pb2.ModelChanged(command_id=command_id, previous_model=previous, model=model),
+            sources=sources,
         )
 
     async def confirm_user_message(
@@ -283,7 +286,7 @@ class Session:
         sources: Sequence[int] | None = None,
     ) -> None:
         """Record one confirmed harness message, preserving all application command origins."""
-        observation = pb.HarnessUserMessageConfirmed(
+        observation = event_pb2.HarnessUserMessageConfirmed(
             harness_message_id=harness_message_id,
             text=text,
             origin_command_ids=list(origin_command_ids),
@@ -313,28 +316,28 @@ class Session:
             or key in self._debug_checkpoints_reached
         ):
             return
-        self.emit(pb.DebugCheckpoint(name=name, command_id=command_id), sources=[])
+        self.emit(event_pb2.DebugCheckpoint(name=name, command_id=command_id), sources=[])
         await asyncio.Event().wait()
 
-    async def turn_completed(self, turn_id: str, status: pb.TurnStatus, error: str = "") -> None:
+    async def turn_completed(self, turn_id: str, status: event_pb2.TurnStatus, error: str = "") -> None:
         """Translate one native terminal turn result and release commands waiting on it."""
         async with self._lock:
             self._record_turn_completed(turn_id, status, error)
             await self._reconcile_commands()
 
-    def _record_turn_completed(self, turn_id: str, status: pb.TurnStatus, error: str = "") -> None:
+    def _record_turn_completed(self, turn_id: str, status: event_pb2.TurnStatus, error: str = "") -> None:
         interrupt_command_id = self._interrupt_commands.pop(turn_id, "")
-        observation = pb.TurnCompleted(
+        observation = event_pb2.TurnCompleted(
             turn_id=turn_id,
             status=status,
             error=error,
-            interrupted_by_command_id=(interrupt_command_id if status == pb.TURN_STATUS_INTERRUPTED else ""),
+            interrupted_by_command_id=(interrupt_command_id if status == event_pb2.TURN_STATUS_INTERRUPTED else ""),
         )
-        if interrupt_command_id and status == pb.TURN_STATUS_INTERRUPTED:
+        if interrupt_command_id and status == event_pb2.TURN_STATUS_INTERRUPTED:
             self.journal.native_effect_observed(interrupt_command_id, native_correlation={"turn_id": turn_id})
             self.journal.terminal(interrupt_command_id, outcome=observation)
         self.emit(observation)
-        if interrupt_command_id and status != pb.TURN_STATUS_INTERRUPTED:
+        if interrupt_command_id and status != event_pb2.TURN_STATUS_INTERRUPTED:
             self._noop(interrupt_command_id, "the turn completed before interruption took effect")
 
     async def shutdown(self) -> None:
@@ -360,17 +363,17 @@ class Session:
         await asyncio.gather(*self._tasks)
 
     async def _await_turn_end(self) -> None:
-        cursor = self.log.last_sequence
+        cursor = self.log.last_cursor
         while self.active_turn_id and self.running:
             await self.log.wait_beyond(cursor)
-            cursor = self.log.last_sequence
+            cursor = self.log.last_cursor
 
     async def send(self, frame: BaseModel) -> None:
         """Durably record one outbound raw frame, then write it to the harness pipe."""
         if self.process is None or not self.running:
             raise HarnessGoneError("the harness is not running")
         line = frame.model_dump_json(by_alias=True)
-        self.emit(pb.Native(direction=pb.DIRECTION_TO_HARNESS, line=line), sources=[])
+        self.emit(event_pb2.Native(direction=event_pb2.DIRECTION_TO_HARNESS, line=line), sources=[])
         await self.process.write_line(line)
 
     async def request(self, frame: BaseModel, *, matches: FrameMatcher, timeout_s: float = 60) -> NativeReceipt:
@@ -386,7 +389,7 @@ class Session:
     async def _read_stdout(self, process: HarnessProcess, adapter: HarnessAdapter) -> None:
         try:
             async for line in process.lines():
-                event = self.emit(pb.Native(direction=pb.DIRECTION_FROM_HARNESS, line=line), sources=[])
+                entry = self.emit(event_pb2.Native(direction=event_pb2.DIRECTION_FROM_HARNESS, line=line), sources=[])
                 try:
                     frame = json.loads(line)
                 except ValueError:
@@ -395,12 +398,12 @@ class Session:
                 if not isinstance(frame, dict):
                     logger.warning("session %s: non-object frame on the harness stdout", self.session_id)
                     continue
-                self._resolve_waiters(frame, event.sequence)
-                self._translating = event.sequence
+                self._resolve_waiters(frame, entry.origin.sequence)
+                self._translating = entry.origin.sequence
                 try:
-                    await adapter.on_frame(frame, event.sequence)
+                    await adapter.on_frame(frame, entry.origin.sequence)
                 except Exception:  # a frame the adapter cannot translate must not stop the reader
-                    logger.exception("session %s: frame %d not translated", self.session_id, event.sequence)
+                    logger.exception("session %s: frame %d not translated", self.session_id, entry.origin.sequence)
                 finally:
                     self._translating = 0
         finally:
@@ -414,21 +417,21 @@ class Session:
         self._waiters = []
         stop_command_id = self._stop_command_id if self._stopping else ""
         if stop_command_id:
-            observation = pb.HarnessExited(
+            observation = event_pb2.HarnessExited(
                 exit_code=exit_code, stopped_by_runner=self._stopping, stopped_by_command_id=stop_command_id
             )
             self.journal.native_effect_observed(stop_command_id)
             self.journal.terminal(stop_command_id, outcome=observation)
             self._stop_command_id = ""
         else:
-            observation = pb.HarnessExited(
+            observation = event_pb2.HarnessExited(
                 exit_code=exit_code, stopped_by_runner=self._stopping, stopped_by_command_id=""
             )
         self.emit(observation, sources=[])
         if self.active_turn_id:
             self._record_turn_completed(
                 self.active_turn_id,
-                pb.TURN_STATUS_PROCESS_LOST,
+                event_pb2.TURN_STATUS_PROCESS_LOST,
                 f"the harness exited with {exit_code=} during the turn",
             )
 
@@ -439,7 +442,7 @@ class Session:
 
     async def _read_stderr(self, process: HarnessProcess) -> None:
         async for chunk in process.stderr_chunks():
-            self.emit(pb.HarnessStderr(text=chunk), sources=[])
+            self.emit(event_pb2.HarnessStderr(text=chunk), sources=[])
 
     async def stop(self) -> None:
         """Runner shutdown: stop the harness without interrupting; the log records the exit."""

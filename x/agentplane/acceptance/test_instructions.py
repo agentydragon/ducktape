@@ -25,7 +25,10 @@ import pytest_bazel
 from x.agentplane.acceptance.agent import Agent
 from x.agentplane.app.client import Client
 from x.agentplane.app.inventory import SandboxView
-from x.agentplane.app.presets import Harness
+from x.agentplane.runner import protocol_pb2
+
+# `protocol_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
+# gazelle:include_dep @pypi//protobuf
 
 Sandboxes = Callable[..., Awaitable[SandboxView]]
 
@@ -45,7 +48,7 @@ PROMPT = "In one short sentence, say what a checksum is. Do not use any tool."
 
 
 async def test_the_model_obeys_the_standing_instruction_its_session_was_opened_with(
-    client: Client, sandbox: Sandboxes, harness: Harness, model: str
+    client: Client, sandbox: Sandboxes, harness: protocol_pb2.Harness, model: str
 ) -> None:
     """The instruction reaches the model, and the marker is the model's own doing rather than its
     habit: two sessions on one sandbox, the same prompt, differing only in whether the session was

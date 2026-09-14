@@ -15,13 +15,13 @@ from pathlib import Path
 
 from google.protobuf.json_format import MessageToDict, ParseDict
 
-from x.agentplane.runner import protocol_pb2 as pb
+from x.agentplane.protocol import command_pb2
 from x.agentplane.runner.event_log import Observation, decode_observation, encode_observation
 
 
 @dataclass(frozen=True)
 class JournalEntry:
-    command: pb.Command
+    command: command_pb2.Command
     state: str
     native_correlation: dict[str, str]
     outcome: Observation | None
@@ -32,7 +32,7 @@ class CommandConflictError(ValueError):
 
 
 class CommandJournal:
-    """Append-only received/dispatch/effect/terminal records, synced before their public event."""
+    """Append-only admission/dispatch/effect/terminal records, synced before their public Event."""
 
     def __init__(self, path: Path) -> None:
         self.path = path
@@ -49,15 +49,15 @@ class CommandJournal:
     def get(self, command_id: str) -> JournalEntry | None:
         return self._entries.get(command_id)
 
-    def receive(self, command: pb.Command) -> bool:
+    def admit(self, command: command_pb2.Command) -> bool:
         """Persist a command once. Returns false for an exact retry, rejects an id collision."""
         previous = self._entries.get(command.command_id)
         if previous is not None:
             if previous.command != command:
                 raise CommandConflictError(f"command id {command.command_id!r} was reused for different work")
             return False
-        self._append({"record": "received", "command": MessageToDict(command)})
-        self._entries[command.command_id] = JournalEntry(command, "received", {}, None)
+        self._append({"record": "admitted", "command": MessageToDict(command)})
+        self._entries[command.command_id] = JournalEntry(command, "admitted", {}, None)
         self._order.append(command.command_id)
         return True
 
@@ -103,13 +103,13 @@ class CommandJournal:
                 record = row["record"]
             except (KeyError, TypeError, ValueError) as error:
                 raise ValueError(f"corrupt command journal {self.path} line {line_number}") from error
-            if record == "received":
-                command = ParseDict(row["command"], pb.Command())
+            if record == "admitted":
+                command = ParseDict(row["command"], command_pb2.Command())
                 if not command.command_id or command.WhichOneof("operation") is None:
                     raise ValueError(f"corrupt command journal {self.path} line {line_number}: invalid command")
                 if command.command_id in self._entries:
                     raise ValueError(f"corrupt command journal {self.path} line {line_number}: duplicate command")
-                self._entries[command.command_id] = JournalEntry(command, "received", {}, None)
+                self._entries[command.command_id] = JournalEntry(command, "admitted", {}, None)
                 self._order.append(command.command_id)
                 continue
             command_id = row.get("command_id")

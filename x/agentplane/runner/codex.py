@@ -17,7 +17,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 from x.agentplane.native.codex import facade, scenarios, wire
-from x.agentplane.runner import protocol_pb2 as pb
+from x.agentplane.protocol import event_pb2
 from x.agentplane.runner.adapter import HarnessAdapter
 from x.agentplane.runner.config import CodexLaunch
 
@@ -27,10 +27,10 @@ from x.agentplane.runner.config import CodexLaunch
 if TYPE_CHECKING:
     from x.agentplane.runner.session import Frame, Session
 
-_TURN_STATUSES: dict[wire.TurnStatus | str, pb.TurnStatus] = {
-    wire.TurnStatus.COMPLETED: pb.TURN_STATUS_COMPLETED,
-    wire.TurnStatus.INTERRUPTED: pb.TURN_STATUS_INTERRUPTED,
-    wire.TurnStatus.FAILED: pb.TURN_STATUS_FAILED,
+_TURN_STATUSES: dict[wire.TurnStatus | str, event_pb2.TurnStatus] = {
+    wire.TurnStatus.COMPLETED: event_pb2.TURN_STATUS_COMPLETED,
+    wire.TurnStatus.INTERRUPTED: event_pb2.TURN_STATUS_INTERRUPTED,
+    wire.TurnStatus.FAILED: event_pb2.TURN_STATUS_FAILED,
 }
 # Fields of an unmodeled tool item that describe its outcome rather than its arguments.
 _OUTCOME_FIELDS = frozenset({"status", "aggregatedOutput", "exitCode", "durationMs", "processId"})
@@ -95,8 +95,8 @@ class CodexAdapter(HarnessAdapter):
         if response.error is not None or response.result is None:
             reason = response.error.message if response.error is not None else "turn/start returned no result"
             if selected_change is not None:
-                self.session._reject(selected_change[0], f"Codex did not select the requested model: {reason}")
-            self.session._reject(command_id, reason)
+                self.session._fail(selected_change[0], f"Codex did not select the requested model: {reason}")
+            self.session._fail(command_id, reason)
             return
         if selected_change is not None:
             # The native response proves Codex accepted the turn that selected this model. This,
@@ -104,7 +104,9 @@ class CodexAdapter(HarnessAdapter):
             self.session.model_changed(*selected_change, sources=[sequence])
         turn_id = wire.TurnResult.model_validate(response.result).turn.id
         if turn_id != self.session.active_turn_id:
-            self.session.emit(pb.TurnStarted(turn_id=turn_id, model=self.session.record.model), sources=[sequence])
+            self.session.emit(
+                event_pb2.TurnStarted(turn_id=turn_id, model=self.session.record.model), sources=[sequence]
+            )
         await self.session.confirm_user_message(
             harness_message_id=turn_id, text=text, origin_command_ids=[command_id], turn_id=turn_id, sources=[sequence]
         )
@@ -143,13 +145,16 @@ class CodexAdapter(HarnessAdapter):
                 )
             case wire.TurnStarted(params=params):
                 if params.turn.id != self.session.active_turn_id:
-                    self.session.emit(pb.TurnStarted(turn_id=params.turn.id, model=self.session.record.model))
+                    self.session.emit(event_pb2.TurnStarted(turn_id=params.turn.id, model=self.session.record.model))
             case wire.TurnCompleted(params=params):
                 turn = params.turn
                 status = _TURN_STATUSES.get(turn.status)
                 if status is None:
                     # A terminal status these models do not know cannot be reported as success.
-                    status, error = pb.TURN_STATUS_FAILED, f"the turn ended with an unrecognized status {turn.status!r}"
+                    status, error = (
+                        event_pb2.TURN_STATUS_FAILED,
+                        f"the turn ended with an unrecognized status {turn.status!r}",
+                    )
                 else:
                     error = turn.error.message if turn.error is not None else ""
                 await self.session.turn_completed(turn.id, status, error)
@@ -158,9 +163,9 @@ class CodexAdapter(HarnessAdapter):
             case wire.ItemCompleted(params=params):
                 self._item_completed(params.item)
             case wire.AgentMessageDelta(params=params) | wire.ReasoningSummaryTextDelta(params=params):
-                self.session.emit(pb.TextDelta(item_id=params.item_id, text=params.delta))
+                self.session.emit(event_pb2.TextDelta(item_id=params.item_id, text=params.delta))
             case wire.CommandExecutionOutputDelta(params=params):
-                self.session.emit(pb.ToolOutputDelta(item_id=params.item_id, text=params.delta))
+                self.session.emit(event_pb2.ToolOutputDelta(item_id=params.item_id, text=params.delta))
 
     def _item_started(self, item: wire.Item) -> None:
         if isinstance(item, wire.UserMessageItem) or item.id in self._items:
@@ -168,17 +173,21 @@ class CodexAdapter(HarnessAdapter):
         self._items.add(item.id)
         match item:
             case wire.AgentMessageItem():
-                self.session.emit(pb.ItemStarted(item_id=item.id, kind=pb.ITEM_KIND_ASSISTANT_TEXT))
+                self.session.emit(event_pb2.ItemStarted(item_id=item.id, kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT))
             case wire.ReasoningItem():
-                self.session.emit(pb.ItemStarted(item_id=item.id, kind=pb.ITEM_KIND_REASONING))
+                self.session.emit(event_pb2.ItemStarted(item_id=item.id, kind=event_pb2.ITEM_KIND_REASONING))
             case wire.CommandExecutionItem():
-                self.session.emit(pb.ItemStarted(item_id=item.id, kind=pb.ITEM_KIND_TOOL_CALL, tool_name=item.type))
+                self.session.emit(
+                    event_pb2.ItemStarted(item_id=item.id, kind=event_pb2.ITEM_KIND_TOOL_CALL, tool_name=item.type)
+                )
                 arguments: dict[str, object] = {"command": item.command, "cwd": item.cwd}
-                self.session.emit(pb.ToolArguments(item_id=item.id, arguments_json=json.dumps(arguments)))
+                self.session.emit(event_pb2.ToolArguments(item_id=item.id, arguments_json=json.dumps(arguments)))
             case wire.UnknownItem():
-                self.session.emit(pb.ItemStarted(item_id=item.id, kind=pb.ITEM_KIND_TOOL_CALL, tool_name=item.type))
+                self.session.emit(
+                    event_pb2.ItemStarted(item_id=item.id, kind=event_pb2.ITEM_KIND_TOOL_CALL, tool_name=item.type)
+                )
                 arguments = {key: value for key, value in _extras(item).items() if key not in _OUTCOME_FIELDS}
-                self.session.emit(pb.ToolArguments(item_id=item.id, arguments_json=json.dumps(arguments)))
+                self.session.emit(event_pb2.ToolArguments(item_id=item.id, arguments_json=json.dumps(arguments)))
 
     def _item_completed(self, item: wire.Item) -> None:
         if isinstance(item, wire.UserMessageItem):
@@ -186,14 +195,14 @@ class CodexAdapter(HarnessAdapter):
         self._item_started(item)
         match item:
             case wire.AgentMessageItem(text=text):
-                self.session.emit(pb.ItemCompleted(item_id=item.id, text=text))
+                self.session.emit(event_pb2.ItemCompleted(item_id=item.id, text=text))
             case wire.ReasoningItem(summary=summary):
-                self.session.emit(pb.ItemCompleted(item_id=item.id, text="\n".join(summary)))
+                self.session.emit(event_pb2.ItemCompleted(item_id=item.id, text="\n".join(summary)))
             case wire.CommandExecutionItem():
                 self.session.emit(
-                    pb.ItemCompleted(
+                    event_pb2.ItemCompleted(
                         item_id=item.id,
-                        tool=pb.ToolResult(
+                        tool=event_pb2.ToolResult(
                             output=item.aggregated_output or "",
                             succeeded=item.status is wire.CommandExecutionStatus.COMPLETED,
                         ),
@@ -202,9 +211,11 @@ class CodexAdapter(HarnessAdapter):
             case wire.UnknownItem():
                 outcome = {key: value for key, value in _extras(item).items() if key in _OUTCOME_FIELDS}
                 self.session.emit(
-                    pb.ItemCompleted(
+                    event_pb2.ItemCompleted(
                         item_id=item.id,
-                        tool=pb.ToolResult(output=json.dumps(outcome), succeeded=outcome.get("status") == "completed"),
+                        tool=event_pb2.ToolResult(
+                            output=json.dumps(outcome), succeeded=outcome.get("status") == "completed"
+                        ),
                     )
                 )
 

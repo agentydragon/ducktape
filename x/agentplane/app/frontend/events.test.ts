@@ -1,15 +1,20 @@
 import { create, type MessageInitShape } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 
-import { EMPTY, groupItems, reduce, timeline, type Item, type Row } from "./events";
-import { Direction, EventSchema, ItemKind, TurnStatus, type Event } from "./protocol_pb";
+import { EMPTY, eventOf, groupItems, reduce, timeline, type Item, type Row } from "./events";
+import { Direction, EventSchema, ItemKind, TurnStatus } from "../../protocol/event_pb";
+import { EventEntrySchema, type EventEntry } from "../../protocol/event_log_pb";
 
 function event(
-  sequence: number,
+  cursor: number,
   observation: MessageInitShape<typeof EventSchema>["observation"],
   sources: number[] = []
-): Event {
-  return create(EventSchema, { sequence: BigInt(sequence), observation, sourceSequences: sources.map(BigInt) });
+): EventEntry {
+  return create(EventEntrySchema, {
+    cursor: BigInt(cursor),
+    origin: { sourceId: "test-runner", sequence: BigInt(cursor) },
+    event: create(EventSchema, { observation, sourceSequences: sources.map(BigInt) }),
+  });
 }
 
 function rowId(row: Row): string {
@@ -23,10 +28,13 @@ function rowId(row: Row): string {
   }
 }
 
-const script: Event[] = [
+const script: EventEntry[] = [
   event(1, { case: "harnessStarted", value: { resumed: false, pid: 7 } }),
   event(2, { case: "turnStarted", value: { turnId: "t1" } }),
-  event(3, { case: "commandReceived", value: { commandId: "i1" } }),
+  event(3, {
+    case: "commandAdmitted",
+    value: { command: { commandId: "i1", operation: { case: "submitInput", value: { text: "hi" } } } },
+  }),
   event(4, { case: "native", value: { direction: Direction.TO_HARNESS, line: '{"text":"hi"}' } }),
   event(
     5,
@@ -59,7 +67,7 @@ describe("reduce", () => {
   it("folds a turn's events into items in order, with streamed text and tool results", () => {
     const state = script.reduce(reduce, EMPTY);
     expect(state.harness).toBe("running");
-    expect(state.lastSequence).toBe("18");
+    expect(state.lastCursor).toBe("18");
     expect(state.turns).toMatchObject([
       { id: "t1", status: TurnStatus.COMPLETED, error: "", itemIds: ["m#0", "toolu_1"] },
     ]);
@@ -76,13 +84,16 @@ describe("reduce", () => {
     ]);
   });
 
-  it("keeps an input's rejection reason and a lost harness", () => {
+  it("keeps an input command's failure reason and a lost harness", () => {
     const state = [
-      event(1, { case: "commandReceived", value: { commandId: "i1" } }),
-      event(2, { case: "commandRejected", value: { commandId: "i1", reason: "nope" } }),
+      event(1, {
+        case: "commandAdmitted",
+        value: { command: { commandId: "i1", operation: { case: "submitInput", value: { text: "hi" } } } },
+      }),
+      event(2, { case: "commandFailed", value: { commandId: "i1", reason: "nope" } }),
       event(3, { case: "harnessLost", value: {} }),
     ].reduce(reduce, EMPTY);
-    expect(state.inputs).toMatchObject([{ id: "i1", state: "rejected", detail: "nope", text: "", turnId: null }]);
+    expect(state.inputs).toMatchObject([{ id: "i1", state: "failed", detail: "nope", text: "", turnId: null }]);
     expect(state.harness).toBe("lost");
   });
 });
@@ -97,7 +108,7 @@ function testItem(id: string, kind: ItemKind): Item {
     output: "",
     completed: true,
     succeeded: null,
-    firstSequence: 0n,
+    firstCursor: 0n,
   };
 }
 
@@ -123,21 +134,21 @@ describe("groupItems", () => {
 });
 
 describe("timeline", () => {
-  it("is every event once, in ascending sequence order", () => {
-    const inOrder = script.map((event) => String(event.sequence));
-    expect(timeline(script.reduce(reduce, EMPTY)).map((step) => String(step.event.sequence))).toEqual(inOrder);
+  it("is every entry once, in ascending cursor order", () => {
+    const inOrder = script.map((entry) => String(entry.cursor));
+    expect(timeline(script.reduce(reduce, EMPTY)).map((step) => String(step.entry.cursor))).toEqual(inOrder);
     // Backwards through the fold, so the ordering is the comparison's doing and not arrival's — and
     // a decimal-string comparison would put 10 before 2.
-    expect(timeline([...script].reverse().reduce(reduce, EMPTY)).map((step) => String(step.event.sequence))).toEqual(
+    expect(timeline([...script].reverse().reduce(reduce, EMPTY)).map((step) => String(step.entry.cursor))).toEqual(
       inOrder
     );
   });
 
-  it("announces each row at the sequence that started it, and nowhere else", () => {
+  it("announces each row at the cursor that started it, and nowhere else", () => {
     const steps = timeline(script.reduce(reduce, EMPTY));
     // The row renders above its own event, so one sequence carries both.
     const announced = steps.flatMap((step) =>
-      step.row ? [[String(step.event.sequence), step.row.kind, rowId(step.row)]] : []
+      step.row ? [[String(step.entry.cursor), step.row.kind, rowId(step.row)]] : []
     );
     expect(announced).toEqual([
       ["2", "turn", "t1"],
@@ -149,9 +160,9 @@ describe("timeline", () => {
 
   it("leaves what no row was built from where it happened", () => {
     const steps = timeline(script.reduce(reduce, EMPTY));
-    const stderr = steps.findIndex((step) => step.event.observation.case === "harnessStderr");
-    const completed = steps.findIndex((step) => step.event.observation.case === "turnCompleted");
-    const lastItem = steps.findIndex((step) => step.event.sequence === 16n);
+    const stderr = steps.findIndex((step) => eventOf(step.entry).observation.case === "harnessStderr");
+    const completed = steps.findIndex((step) => eventOf(step.entry).observation.case === "turnCompleted");
+    const lastItem = steps.findIndex((step) => step.entry.cursor === 16n);
     expect(lastItem).toBeLessThan(stderr);
     expect(stderr).toBeLessThan(completed);
   });

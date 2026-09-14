@@ -7,6 +7,9 @@ package(default_visibility = ["//x/agentplane:__subpackages__"])
 
 # gazelle:resolve py x.agentplane.runner.protocol_pb2 //x/agentplane/runner:protocol_pb2
 # gazelle:resolve py x.agentplane.runner.protocol_pb2_grpc //x/agentplane/runner:protocol_pb2_grpc
+# gazelle:resolve py x.agentplane.protocol.command_pb2 //x/agentplane/protocol:command_pb2
+# gazelle:resolve py x.agentplane.protocol.event_pb2 //x/agentplane/protocol:event_pb2
+# gazelle:resolve py x.agentplane.protocol.event_log_pb2 //x/agentplane/protocol:event_log_pb2
 
 # No test here is small, and none of that is about the tests being slow: on the CI executor image
 # they are killed at a small target's 60s with the budget spent fetching inputs rather than running
@@ -254,6 +257,7 @@ py_library(
         ":presets",
         ":shutdown",
         ":trajectory",
+        "//x/agentplane/protocol:command_pb2",
         "//x/agentplane/runner:client",
         "//x/agentplane/runner:protocol_pb2",
         "@pypi//fastapi",
@@ -291,6 +295,7 @@ py_test(
         ":presets",
         ":trajectory",
         "//:conftest",
+        "//x/agentplane/protocol:command_pb2",
         "//x/agentplane/runner:client",
         "//x/agentplane/runner:conftest",
         "//x/agentplane/runner:protocol_pb2",
@@ -405,6 +410,7 @@ py_library(
         ":operator_sessions",
         ":presets",
         ":trajectory_updates",
+        "//x/agentplane/protocol:event_log_pb2",
         "//x/agentplane/runner:protocol_pb2",
         "@pypi//asyncpg",
         "@pypi//protobuf",
@@ -422,6 +428,8 @@ py_test(
         ":presets",
         ":trajectory",
         "//:conftest",
+        "//x/agentplane/protocol:event_log_pb2",
+        "//x/agentplane/protocol:event_pb2",
         "//x/agentplane/runner:protocol_pb2",
         "@pypi//protobuf",
         "@pypi//pytest",
@@ -630,6 +638,8 @@ py_library(
         ":egress",
         ":inventory",
         ":presets",
+        "//x/agentplane/protocol:command_pb2",
+        "//x/agentplane/protocol:event_log_pb2",
         "//x/agentplane/runner:protocol_pb2",
         "@pypi//httpx",
         "@pypi//protobuf",

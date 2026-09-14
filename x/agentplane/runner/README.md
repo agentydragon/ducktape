@@ -9,9 +9,10 @@ bbr test //x/agentplane/runner/...
 
 ## Layout
 
-- `protocol.proto`: the contract. `protocol_pb2*` are generated at build time by the
-  `py_grpc_library` macro in `devinfra/python/grpc.bzl`, from `grpcio-tools` with `mypy-protobuf`
-  stubs.
+- `protocol.proto`: the contract. Its messages (`protocol_pb2`) are generated through standard
+  `proto_library` and `py_proto_library` rules; the service-only `protocol_pb2_grpc` module uses
+  the narrow `py_grpc_service_library` fallback in `devinfra/python/grpc.bzl` with the pinned
+  `grpcio-tools` and `mypy-protobuf` plugins.
 - `service.py`: the `Attach` RPC, session lookup, and `serve()`; `main.py` is the process entry
   point, configured by flags and credentialed from its environment.
 - `session.py`: one session's log, harness process, and derived state; `event_log.py` is the

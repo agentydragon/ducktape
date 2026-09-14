@@ -43,16 +43,16 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
 - A session survives the runner process. A runner that starts on a state directory loads every
   session in it; what the previous runner had running is reported as lost (below).
 - `ListSessions` returns every session in the state directory with its spec, harness state,
-  active turn, and last sequence, so a client that keeps no record of its own finds them again.
+  active turn, and last cursor, so a client that keeps no record of its own finds them again.
 
 ## Attachments
 
 - One `Attach` stream is one attachment. The first client message is `Open`; the first server
   message is `Attached`, carrying the spec, the harness state, the active turn id, and
-  `last_sequence`, the log position at attach time.
-- The runner then replays every event with a sequence greater than `Open.after_sequence`, in
-  order, and continues with live events. A client that passes the last sequence it processed sees
-  neither a gap nor a duplicate; a cursor beyond `last_sequence` ends the stream with an error.
+  `last_cursor`, the log position at attach time.
+- The runner then replays every `EventEntry` with a cursor greater than `Open.follow.after_cursor`,
+  in order, and continues with live entries. A client that passes the last cursor it processed sees
+  neither a gap nor a duplicate; a cursor beyond `last_cursor` ends the stream with an error.
 - Multiple attachments independently replay and follow the session. Each may issue client-chosen,
   idempotent `Command`s; the runner serializes them with the session lock and deduplicates by
   `command_id`.
@@ -63,15 +63,17 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
 
 ## Events
 
-Every event carries a session-scoped `sequence`, dense from 1 and strictly increasing across
-attachments and runner restarts, and a timestamp. Derived events name the `Native` events they
-came from in `source_sequences`; the harness frames themselves are delivered verbatim, in both
-directions, so harness-native detail is one lookup away.
+Every observation is delivered in a common `EventEntry`: the runner's session log assigns a dense
+cursor from 1 and a stable source id plus source sequence in its `origin`. Cursors order a
+particular serving log; an importer may assign a different cursor without changing the origin or
+event. The event has a timestamp. Derived events name the `Native` events they came from in
+`source_sequences`; the harness frames themselves are delivered verbatim, in both directions, so
+harness-native detail is one lookup away.
 
 | Family  | Events                                                                                                                                       |
 | ------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | harness | `HarnessStarted` (resumed, pid), `HarnessExited` (exit code, stopped by the runner), `HarnessLost`, `HarnessStderr`                          |
-| command | `CommandReceived`, `CommandRejected`, `CommandNoop`, `HarnessUserMessageConfirmed`, `ModelChanged`                                           |
+| command | `CommandAdmitted`, `CommandFailed`, `CommandNoop`, `HarnessUserMessageConfirmed`, `ModelChanged`                                             |
 | turn    | `TurnStarted`, `TurnCompleted` (`COMPLETED`, `INTERRUPTED`, `FAILED`, `PROCESS_LOST`)                                                        |
 | item    | `ItemStarted` (assistant text, reasoning, tool call), `TextDelta`, `ToolArgumentsDelta`, `ToolArguments`, `ToolOutputDelta`, `ItemCompleted` |
 | native  | `Native` (direction, exact line)                                                                                                             |
@@ -84,10 +86,11 @@ harness's outcome. Tool names and argument shapes are the harness's own.
 ## Commands and effects
 
 - A `Command` is client-chosen and idempotent. The runner fsyncs it in its command journal before
-  appending `CommandReceived`. That receipt proves only the runner's durable boundary. It does not
-  claim a native effect or a scheduling category.
+  appending `CommandAdmitted`. Admission means the runner owns trying to process that exact command;
+  it does not claim a native effect or a scheduling category. Malformed commands are transport
+  errors and have no admission event.
 - A later causal event is the terminal result: `HarnessUserMessageConfirmed`, `ModelChanged`, an
-  interrupted `TurnCompleted`, `CommandRejected`, or `CommandNoop`. Retrying the same command id
+  interrupted `TurnCompleted`, `CommandFailed`, or `CommandNoop`. Retrying the same command id
   never creates another native command. A runner restart reconciles any nonterminal journal entry
   with its original id; if an effect was synced before its public event append, recovery appends
   that exact effect.
@@ -111,7 +114,7 @@ harness's outcome. Tool names and argument shapes are the harness's own.
 
 ## Durability and restart
 
-- The public log is written before an event is delivered. Command receipts, terminal command
+- The public log is written before an event is delivered. Command admissions, terminal command
   outcomes, harness lifecycle, and turns are synced; deltas and native evidence are flushed but
   not synced, so a crash can shorten their tail but cannot reorder a durable outcome.
 - A runner that finds a session it had running reports `HarnessLost`, then `TurnCompleted` with
@@ -157,7 +160,7 @@ session and a new transcript.
   outright can lose the conversation since its last completed fence. The runner stops harnesses by
   closing stdin, and the runner's own termination does the same for every session, so the pod's
   SIGTERM path gives Claude an orderly flush opportunity but does not turn an earlier
-  `CommandReceived` into proof of native persistence. See
+  `CommandAdmitted` into proof of native persistence. See
   [`../docs/claude_runtime_contracts.md`](../docs/claude_runtime_contracts.md).
 - Codex reports no aggregated output for a shell command that outlived its first read, and keeps a
   streamed model connection open after an interrupt; neither changes the events above.
