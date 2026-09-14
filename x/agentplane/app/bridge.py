@@ -278,25 +278,21 @@ class RunnerBridge:
     async def open_session(
         self, sandbox: str, session_id: str, spec: protocol_pb2.SessionSpec
     ) -> protocol_pb2.Attached:
-        attachment = await (await self._client(sandbox)).attach(session_id, spec=spec)
-        try:
-            await attachment.detach()
-            await attachment.drain_until_end()
-            thread_id = await self._store.thread(sandbox, session_id, attachment.attached.spec)
-            await self.start([sandbox])
-            # In particular, do not return a resumed session while the database still says its
-            # previous harness ended. Commands remain runner-first; this only synchronizes Open.
-            waiter = asyncio.Event()
-            with self._store.changes.subscribe(waiter):
-                async with asyncio.timeout(15):
-                    while True:
-                        waiter.clear()
-                        if await self._store.last_cursor(thread_id) >= attachment.attached.last_cursor:
-                            break
-                        await waiter.wait()
-            return attachment.attached
-        finally:
-            attachment.cancel()
+        async with await (await self._client(sandbox)).attach(session_id, spec=spec) as attachment:
+            attached = attachment.attached
+        thread_id = await self._store.thread(sandbox, session_id, attached.spec)
+        await self.start([sandbox])
+        # In particular, do not return a resumed session while the database still says its
+        # previous harness ended. Commands remain runner-first; this only synchronizes Open.
+        waiter = asyncio.Event()
+        with self._store.changes.subscribe(waiter):
+            async with asyncio.timeout(15):
+                while True:
+                    waiter.clear()
+                    if await self._store.last_cursor(thread_id) >= attached.last_cursor:
+                        break
+                    await waiter.wait()
+        return attached
 
     async def command(self, thread_id: UUID, command: command_pb2.Command) -> event_log_pb2.EventEntry:
         """Return only after this Thread's matching runner admission is in the app archive."""

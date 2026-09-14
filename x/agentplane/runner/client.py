@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
+from types import TracebackType
+from typing import Self
 
 import grpc
 
@@ -32,6 +34,20 @@ class Attachment:
         self._call = call
         self.attached = attached
         self.seen: list[event_log_pb2.EventEntry] = []
+        self._detach_sent = False
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
+    ) -> None:
+        if exc_type is not None:
+            # Cleanup must not replace the caller's original failure.
+            self.cancel()
+            return
+        await self.detach()
+        await self.drain_until_end()
 
     @property
     def cursor(self) -> int:
@@ -60,7 +76,11 @@ class Attachment:
         )
 
     async def detach(self) -> None:
+        """Ask the runner to end this attachment, at most once."""
+        if self._detach_sent:
+            return
         await self._call.write(protocol_pb2.ClientMessage(detach=protocol_pb2.Detach()))
+        self._detach_sent = True
 
     async def next_entry(self) -> event_log_pb2.EventEntry:
         message = await self._call.read()

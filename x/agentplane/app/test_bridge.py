@@ -679,9 +679,8 @@ async def test_inventory_change_discovers_existing_runner_session_without_browse
     bridge = RunnerBridge(address_of=address_of, store=store, discover_sandboxes=discover, sandbox_changes=changes)
     client = RunnerClient(runner.target)
     try:
-        attachment = await client.attach(SESSION, spec=spec)
-        await attachment.detach()
-        await attachment.drain_until_end()
+        async with await client.attach(SESSION, spec=spec):
+            pass
         await bridge.start([])
         async with asyncio.timeout(10):
             await discovered.wait()
