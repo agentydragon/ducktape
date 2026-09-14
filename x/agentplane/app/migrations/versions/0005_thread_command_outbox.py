@@ -19,7 +19,6 @@ def upgrade() -> None:
         sa.Column("runner_session_id", sa.Text(), primary_key=True),
         sa.Column("active", sa.Boolean(), nullable=False, server_default=sa.text("true")),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.UniqueConstraint("sandbox", "runner_session_id"),
     )
     op.execute(
         """
