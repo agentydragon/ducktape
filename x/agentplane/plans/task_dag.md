@@ -63,6 +63,7 @@ flowchart TB
     UISHELL_NEWTHREAD_SANDBOX["Planned UI<br/>pre-scoped '+ New thread' on a Sandbox's page<br/>Sandbox/preset already fixed"]:::future
     UISHELL_NEWTHREAD_LANDING["Planned UI<br/>sidebar '+' unscoped new-thread composer<br/>Sandbox/preset/model pickers + prompt"]:::future
     NEWTHREAD_DURABLE["Planned backend<br/>server-owned sandbox+thread provisioning<br/>must survive a browser close or app-server restart mid-submit"]:::future
+    THREAD_OUTBOX_CUTOVER["Required cutover<br/>all product Thread commands via outbox<br/>retire direct session-command pushes"]:::future
     THREAD_SUCCESSOR_DELIVERY["Deferred decision<br/>unsettled Thread command across<br/>successor runner session"]:::future
     CONTROL_STATE["Deferred decision<br/>dynamic runtime control state<br/>model/effort acceptance"]:::future
     UISHELL_SIDEBAR_LIVE["Bug + planned fix<br/>sidebar Thread/Sandbox state goes stale<br/>rename, sandbox status icon never push-update"]:::future
@@ -80,6 +81,9 @@ flowchart TB
     AG -. hosted Thread lifecycle .-> RETIRE_AGENT
 
     INPUT_DELIVERY -. reliable Thread ingress .-> ING
+    INPUT_DELIVERY --> THREAD_OUTBOX_CUTOVER
+    NEWTHREAD_DURABLE --> THREAD_OUTBOX_CUTOVER
+    CONTROL_STATE --> THREAD_OUTBOX_CUTOVER
     T3 -. product work .-> PROD
 
     ACCESS -. authority choice .-> EGRESS_CHANGE
@@ -122,7 +126,7 @@ Haku Console migration is split: Agent/conversation management and tool-call/app
 can retire on different schedules after their respective replacement surfaces exist.
 
 The session-first UI shell (`UISHELL_DRAWER`, `UISHELL_NEWTHREAD_SANDBOX`,
-`UISHELL_NEWTHREAD_LANDING`, `NEWTHREAD_DURABLE`, `THREAD_SUCCESSOR_DELIVERY`, `UISHELL_SIDEBAR_LIVE`, `UISHELL_SIDEBAR_ALL_SANDBOXES`,
+`UISHELL_NEWTHREAD_LANDING`, `NEWTHREAD_DURABLE`, `THREAD_OUTBOX_CUTOVER`, `THREAD_SUCCESSOR_DELIVERY`, `UISHELL_SIDEBAR_LIVE`, `UISHELL_SIDEBAR_ALL_SANDBOXES`,
 `UISHELL_SIDEBAR_SANDBOX_LINK`, `UISHELL_NEWSANDBOX_NAV`, `THREAD_BROWSE_PAGINATE`) is a separate
 frontend-ergonomics track: it is not gated by, and does not gate, the Action Service milestones
 above. `UISHELL_NEWTHREAD_SANDBOX` and `UISHELL_NEWTHREAD_LANDING` can each ship a working happy-path
@@ -543,6 +547,29 @@ dropped/no-op, or later confirmed—never as an unbounded received state.
 The harness-loss/Sandbox suspend-resume matrix, which keeps Kubernetes, runner, and native
 continuation evidence separate, is in
 [Thread, runner, and harness layering](../docs/thread_layering.md#required-harness-loss-and-sandbox-lifecycle-cross-check).
+
+### `THREAD_OUTBOX_CUTOVER` — retire direct session-command pushes
+
+**Required cutover:** once `INPUT_DELIVERY`, `NEWTHREAD_DURABLE`, and `CONTROL_STATE` have
+their stated evidence, every product Thread command—`SubmitInput`, `InterruptTurn`,
+`ChangeModel`, and `StopRunnerSession`—first commits a `ThreadCommand` to the durable outbox.
+The app's reconciler is then the only normal app component that writes that command to a runner.
+The full receipt/effect and pending-queue contract is [Thread, runner, and harness
+layering](../docs/thread_layering.md#command-protocol-intent-receipt-then-outcome).
+
+Remove the direct session-command HTTP routes and their frontend helpers
+(`/sandboxes/{name}/sessions/{session_id}/inputs`, `interrupt`, `model`, and `shutdown`) in the
+same atomic cutover; do not keep compatibility aliases or a second product delivery path. A
+manual object-lifecycle surface still creates, suspends, resumes, attaches to, and inspects a
+Sandbox/runner session, but a normal runner command must first be associated with a Thread and
+use its outbox. Test-only/debug-only runner control, if ever needed, must be explicitly isolated
+from product API/UI behavior.
+
+Acceptance is end-to-end: the unified Thread page records the command before a runner exists or
+is reachable; reload and an app-replica crash preserve it; reconciliation reaches the runner with
+the same command id; and receipt/effect/no-op/rejection, rather than an HTTP response, determines
+what the UI claims. This includes an interrupt racing queued inputs and a model change received
+before it can take effect.
 
 ### `THREAD_SUCCESSOR_DELIVERY` — unsettled command across a successor runner session
 

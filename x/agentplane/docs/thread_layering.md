@@ -318,6 +318,21 @@ delivery retry, or inferred completion in local state.
 5. Decide and implement successor-session delivery only after the deferred native
    continuation evidence exists.
 
+### Product command cutover
+
+The Thread page has one command ingress: it persists `SubmitInput`, `InterruptTurn`,
+`ChangeModel`, and `StopRunnerSession` in the Thread outbox. The reconciler is the only normal
+app component that may turn that durable intent into a runner `Command` write. This does not make
+the runner transport indirect; it forbids a second app/UI path that can bypass durable intent and
+its receipt/effect projection.
+
+Accordingly, the direct session-command HTTP routes for input, interrupt, model change, and runner
+stop are removed with this cutover, along with their normal frontend callers. No compatibility
+aliases remain. Manual Sandbox/runner lifecycle and inspection surfaces still exist, but a normal
+runner command from them must name or create a Thread and enter the same outbox. A test-only or
+explicitly diagnostic runner control can exist only as a separately bounded surface, never as a
+fallback from product UI.
+
 ## Required guarantees and tests
 
 | Contract           | Required evidence                                                                                                                                                                                                                                                                                                       |
