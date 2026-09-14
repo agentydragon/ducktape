@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import httpx
+import httpx2
 import pytest
 import pytest_bazel
 
@@ -43,7 +44,7 @@ def test_token_request_headers_explicitly_prefer_json_and_preserve_authenticatio
 
 
 async def test_token_error_preserves_standard_oauth_details_without_tokens() -> None:
-    response = httpx.Response(
+    response = httpx2.Response(
         401,
         json={
             "error": "invalid_grant",
@@ -70,7 +71,7 @@ async def test_token_error_preserves_standard_oauth_details_without_tokens() -> 
 
 
 async def test_token_error_preserves_bounded_plain_text_detail() -> None:
-    response = httpx.Response(502, text="  upstream\nproxy timed out  " + "x" * 600)
+    response = httpx2.Response(502, text="  upstream\nproxy timed out  " + "x" * 600)
 
     with pytest.raises(TokenResponseError) as exc_info:
         await parse_token_response(response, label="MCP OAuth token refresh")
@@ -81,7 +82,7 @@ async def test_token_error_preserves_bounded_plain_text_detail() -> None:
 
 
 async def test_token_error_does_not_dump_unknown_json_fields() -> None:
-    response = httpx.Response(400, json={"detail": "contains internal data", "refresh_token": "secret"})
+    response = httpx2.Response(400, json={"detail": "contains internal data", "refresh_token": "secret"})
 
     with pytest.raises(TokenResponseError) as exc_info:
         await parse_token_response(response, label="MCP OAuth token refresh")

@@ -12,7 +12,7 @@ from __future__ import annotations
 import datetime
 from uuid import UUID
 
-import httpx
+import httpx2
 from mcp.shared.auth import OAuthToken
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
@@ -104,7 +104,7 @@ class PostgresAuthentikOperatorTokenStore:
             "client_id": self._client_id,
             "client_secret": self._client_secret,
         }
-        async with httpx.AsyncClient(timeout=_TOKEN_ENDPOINT_TIMEOUT_SECONDS) as http:
+        async with httpx2.AsyncClient(timeout=_TOKEN_ENDPOINT_TIMEOUT_SECONDS) as http:
             response = await http.post(
                 authentik_token_endpoint_for_issuer(self._issuer), data=data, headers=token_request_headers()
             )

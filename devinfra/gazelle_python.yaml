@@ -435,6 +435,7 @@ manifest:
     pytest_bazel: pytest_bazel
     pytest_cov: pytest_cov
     pytest_env: pytest_env
+    pytest_httpx2: pytest_httpx2
     pytest_mock: pytest_mock
     pytest_playwright: pytest_playwright
     pytest_postgresql: pytest_postgresql
@@ -548,4 +549,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 6c177c40e492ac8e14ca7d13e312f300108b5adfd7d1d35455ecbbafb394d85e
+integrity: ee52af167c9820901cbe48fc73a34fc3425c8cd8a7dcdf48053fc363e2c85b0c

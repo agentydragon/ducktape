@@ -265,6 +265,7 @@ dependencies = [
     "pytest-postgresql>=9.1,<10",
     "pytest-playwright>=0.9.0",
     "pytest-bazel>=0.1.6",
+    "pytest-httpx2>=1.0.0",
     "pytest-shard>=0.1.2",
     "testcontainers[postgres]>=4.14.1",
     "respx>=0.22",

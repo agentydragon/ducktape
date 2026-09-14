@@ -1,6 +1,7 @@
 """Tests for PostgresAuthentikOperatorTokenStore: login capture, fresh read, refresh, and misses.
 
-Postgres-backed (requires_docker); respx mocks the Authentik token endpoint for the refresh path.
+Postgres-backed (requires_docker); pytest-httpx2 intercepts the refresh path even though
+the production code constructs its httpx2.AsyncClient internally.
 """
 
 from __future__ import annotations
@@ -8,7 +9,6 @@ from __future__ import annotations
 import datetime
 from uuid import UUID
 
-import httpx
 import pytest
 import pytest_bazel
 import respx
@@ -18,7 +18,7 @@ from haku.console.identity.authentik_operator_token import PostgresAuthentikOper
 from haku.console.oauth.token_state import PostgresTokenStateStore
 
 ISSUER = "https://auth.test/application/o/haku-console/"
-# The store derives this endpoint from ISSUER (strips the provider slug); respx mocks it.
+# The store derives this endpoint from ISSUER (strips the provider slug).
 TOKEN_ENDPOINT = "https://auth.test/application/o/token/"
 
 
@@ -69,7 +69,9 @@ async def test_missing_token_returns_none(store: PostgresAuthentikOperatorTokenS
     assert await store.access_token_for(operator_id=operator_id) is None
 
 
-async def test_refreshes_expired_token(store: PostgresAuthentikOperatorTokenStore, operator_id: UUID) -> None:
+async def test_refreshes_expired_token(
+    store: PostgresAuthentikOperatorTokenStore, operator_id: UUID, httpx2_mock: respx.Router
+) -> None:
     await store.store_login_token(
         operator_id=operator_id,
         access_token="at-old",
@@ -78,17 +80,17 @@ async def test_refreshes_expired_token(store: PostgresAuthentikOperatorTokenStor
         scope="openid",
         expires_at=_utc(-10),
     )
-    with respx.mock:
-        route = respx.post(TOKEN_ENDPOINT).mock(
-            return_value=httpx.Response(
-                200,
-                json={"access_token": "at-new", "refresh_token": "rt-new", "token_type": "Bearer", "expires_in": 3600},
-            )
-        )
-        assert await store.access_token_for(operator_id=operator_id) == "at-new"
-    body = route.calls.last.request.content.decode()
-    assert "grant_type=refresh_token" in body
-    assert "refresh_token=rt-old" in body
+
+    route = httpx2_mock.post(TOKEN_ENDPOINT).respond(
+        json={"access_token": "at-new", "refresh_token": "rt-new", "token_type": "Bearer", "expires_in": 3600}
+    )
+    assert await store.access_token_for(operator_id=operator_id) == "at-new"
+
+    assert route.call_count == 1
+    request = route.calls.last.request
+    assert str(request.url) == TOKEN_ENDPOINT
+    assert "grant_type=refresh_token" in request.content.decode()
+    assert "refresh_token=rt-old" in request.content.decode()
     # The refreshed token is persisted, so a later read serves it without another refresh (outside mock).
     assert await store.access_token_for(operator_id=operator_id) == "at-new"
 
