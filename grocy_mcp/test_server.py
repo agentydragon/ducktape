@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-import httpx
+import httpx2
 import pytest
 import pytest_bazel
 from fastmcp import Client, FastMCP
@@ -69,14 +69,14 @@ async def test_batch_client_dependency_is_hidden_and_lives_for_one_call() -> Non
     exited: list[GrocyClient] = []
     backend_requests: list[str] = []
 
-    async def backend(request: httpx.Request) -> httpx.Response:
+    async def backend(request: httpx2.Request) -> httpx2.Response:
         backend_requests.append(request.url.path)
-        return httpx.Response(200, json=[])
+        return httpx2.Response(200, json=[])
 
     @asynccontextmanager
     async def per_call_client() -> AsyncIterator[GrocyClient]:
         async with GrocyClient(
-            base_url="https://grocy.example.com/api", transport=httpx.MockTransport(backend)
+            base_url="https://grocy.example.com/api", transport=httpx2.MockTransport(backend)
         ) as client:
             entered.append(client)
             try:
