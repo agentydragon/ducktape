@@ -20,10 +20,10 @@ instead, which has no such constraint. The legacy workflow has been removed.
 
 - `namespace.yaml` — privileged PodSecurity (Job needs `/dev/kvm` for the
   qemu-efi image builder).
-- `s3-credentials.yaml` — cross-namespace ExternalSecret pulling the
-  `ciWriterAccessKey` / `ciWriterSecretKey` from
-  `seaweedfs/vm-images-s3-credentials` and rendering them as
-  `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` env vars.
+- `storage/` — the existing `vm-images` Bucket plus its SeaweedFS identities
+  and publisher-local `S3Credentials`. The operator generates
+  `vm-images-ci-writer-s3-credentials` and
+  `vm-images-cdi-reader-s3-credentials` in this namespace.
 - `cronjob.yaml` — suspended CronJob carrying the PodTemplate. Operators
   trigger one-off Jobs from it via `kubectl create job --from=cronjob/…`.
 - `publish.sh` — the build + upload script, mounted into the pod via

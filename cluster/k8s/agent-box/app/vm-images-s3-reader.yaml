@@ -8,18 +8,18 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: agent-box-vm-images-s3-reader
-  namespace: seaweedfs
+  namespace: vm-images-publisher
 rules:
   - apiGroups: [""]
     resources: ["secrets"]
-    resourceNames: ["vm-images-s3-credentials"]
+    resourceNames: ["vm-images-cdi-reader-s3-credentials"]
     verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: agent-box-vm-images-s3-reader
-  namespace: seaweedfs
+  namespace: vm-images-publisher
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -46,7 +46,7 @@ spec:
         serviceAccount:
           name: agent-box-secret-reader
           namespace: agent-box
-      remoteNamespace: seaweedfs
+      remoteNamespace: vm-images-publisher
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
@@ -66,9 +66,9 @@ spec:
   data:
     - secretKey: accessKeyId
       remoteRef:
-        key: vm-images-s3-credentials
-        property: cdiReaderAccessKey
+        key: vm-images-cdi-reader-s3-credentials
+        property: accessKey
     - secretKey: secretKey
       remoteRef:
-        key: vm-images-s3-credentials
-        property: cdiReaderSecretKey
+        key: vm-images-cdi-reader-s3-credentials
+        property: secretKey

@@ -20,15 +20,21 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    - name: external-secrets-operator
-      namespace: ducktape-flux
-    - name: seaweedfs-public-s3
+    - name: seaweedfs-cluster
       namespace: ducktape-flux
   wait: true
   healthChecks:
-    - apiVersion: external-secrets.io/v1
-      kind: ExternalSecret
-      name: vm-images-s3-writer
+    - apiVersion: seaweed.seaweedfs.com/v1
+      kind: Bucket
+      name: vm-images
+      namespace: vm-images-publisher
+    - apiVersion: seaweed.seaweedfs.com/v1
+      kind: S3Credentials
+      name: vm-images-ci-writer
+      namespace: vm-images-publisher
+    - apiVersion: seaweed.seaweedfs.com/v1
+      kind: S3Credentials
+      name: vm-images-cdi-reader
       namespace: vm-images-publisher
     - apiVersion: batch/v1
       kind: CronJob

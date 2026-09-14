@@ -288,7 +288,6 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         ("seaweedfs-public-s3", "seaweedfs/public-s3"),
         ("seaweedfs-registry-cache-bucket", "seaweedfs/registry-cache-bucket"),
         ("seaweedfs-secrets", "seaweedfs/secrets"),
-        ("seaweedfs-vm-images-bucket", "seaweedfs/vm-images-bucket"),
         ("seaweedfs-wayback-archive-bucket", "seaweedfs/wayback-archive-bucket"),
         ("ssh-mcp", "ssh-mcp"),
         ("ssh-mcp-secrets", "ssh-mcp/secrets"),

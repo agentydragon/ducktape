@@ -23,16 +23,14 @@ identities are:
 
 ## Source Of Truth
 
-Secrets come from SOPS and are applied by Flux:
+The `vm-images` Bucket and its SeaweedFS identities are managed by the single
+`vm-images-publisher` Flux Kustomization. Its `S3Credentials` resources generate
+the publisher-local `vm-images-ci-writer-s3-credentials` and
+`vm-images-cdi-reader-s3-credentials` Secrets. Do not manually create or copy
+these Secrets during normal operation; Flux and the SeaweedFS operator own them.
 
-```text
-cluster/k8s/seaweedfs/public-s3/vm-images-credentials.sops.yaml
-```
-
-Do not manually create `vm-images-s3-credentials` during normal operation. Local
-admin shells may not be able to decrypt this file because it is encrypted to the
-cluster SOPS key; that is intentional. Commit and push the SOPS file, then let
-Flux decrypt it.
+The writer Job reads its local Secret directly. CDI reader Secrets in consumer
+namespaces are projected by the app-local ExternalSecrets in agent-box and gecko.
 
 ## Publishing A Bootstrap Image
 
@@ -97,8 +95,8 @@ sudo nixos-rebuild switch --flake github:agentydragon/ducktape?ref=devel#gecko
 
 - The `vm-images` Bucket must exist before the public gateway starts. SeaweedFS
   can auto-create bucket directories from identity actions, which bypasses the
-  Bucket CR adoption path. The Flux wiring applies `seaweedfs-vm-images-bucket`
-  first and gates `seaweedfs-public-s3` on it.
+  Bucket CR adoption path. The Flux wiring applies `vm-images-publisher` first
+  and gates `seaweedfs-public-s3` on it.
 - New SeaweedFS collections need free logical volume slots on enough volume
   servers to satisfy `defaultReplication: "001"`. The bootstrap publish path
   exposed this when the old 30GB `volumeSizeLimitMB` left two volume servers at
@@ -109,8 +107,8 @@ sudo nixos-rebuild switch --flake github:agentydragon/ducktape?ref=devel#gecko
   path sustained ~250 KiB/s and could not complete multi-GiB uploads inside
   Envoy's stream timeout window — the publisher therefore runs in-cluster
   against `http://public-s3.seaweedfs.svc:8333`.
-- The first manual spike created `vm-images-s3-credentials` directly and was
-  removed. The paved path is SOPS -> Flux -> Kubernetes Secret -> ExternalSecret
-  rendered gateway config.
+- The first manual spike created an aggregate vm-images Secret directly and was
+  removed. The paved path is SeaweedFS `S3Credentials` -> operator-generated
+  local Secrets -> app-local ExternalSecret projections where needed.
 - The dedicated gateway runs as non-root and uses the restricted PodSecurity
   settings expected by current namespace admission.
