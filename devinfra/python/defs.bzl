@@ -1,6 +1,47 @@
 """Python rule wrappers that auto-inject repo-root imports."""
 
 load("@rules_python//python:defs.bzl", _py_binary = "py_binary", _py_library = "py_library", _py_test = "py_test")
+load(
+    "@aspect_rules_py//py:defs.bzl",
+    _aspect_py_binary = "py_binary",
+    _aspect_py_image_layer = "py_image_layer",
+)
+
+# Keep the image rule's repository-specific ownership contract in one place while
+# aspect_rules_py migrates ownership from py_image_layer attrs to py_layer_tier.
+aspect_py_binary = _aspect_py_binary
+
+_ASPECT_IMAGE_LAYER_TIERS = {
+    ("1000", "1000"): "//devinfra/python:layer_tier_1000",
+    ("65532", "65532"): "//devinfra/python:layer_tier_65532",
+    ("65534", "65534"): "//devinfra/python:layer_tier_65534",
+}
+
+def py_image_layer(owner = None, group = None, layer_tier = None, **kwargs):
+    """py_image_layer with the repository's historical UID/GID contract.
+
+    aspect_rules_py v2 moved ownership from py_image_layer's owner/group attrs to
+    py_layer_tier targets. Existing images deliberately keep their old ownership;
+    this wrapper makes that API migration mechanical and auditable.
+    """
+    if owner == None and group == None:
+        if layer_tier == None:
+            _aspect_py_image_layer(**kwargs)
+        else:
+            _aspect_py_image_layer(layer_tier = layer_tier, **kwargs)
+        return
+
+    if owner == None:
+        owner = "0"
+    if group == None:
+        group = "0"
+    if layer_tier != None:
+        fail("py_image_layer cannot combine owner/group with an explicit layer_tier")
+
+    tier = _ASPECT_IMAGE_LAYER_TIERS.get((owner, group))
+    if tier == None:
+        fail("unsupported py_image_layer owner/group pair: %s/%s" % (owner, group))
+    _aspect_py_image_layer(layer_tier = tier, **kwargs)
 
 def repo_imports():
     """Compute imports path to the repository root from the current package.
