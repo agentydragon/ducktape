@@ -218,4 +218,6 @@ def response_stream(items: list[Item], *, model: str) -> ResponseStream:
             "response": {**envelope, "status": "completed", "output": output, "usage": _USAGE},
         }
     )
-    return ResponseStream((*emitter.events, SseEvent("done", b"data: [DONE]\n\n")))
+    # Responses SSE terminates at response.completed.  Unlike Chat Completions, its wire
+    # protocol has no trailing [DONE] sentinel; the HTTP response may close immediately.
+    return ResponseStream(tuple(emitter.events))
