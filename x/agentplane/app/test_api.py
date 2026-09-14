@@ -770,6 +770,9 @@ async def test_thread_start_persists_a_concrete_target_and_first_outbox_command(
         [first] = (await http.get(f"/threads/{thread_id}/commands")).json()
         assert first["command"] == {"commandId": "first-input", "submitInput": {"text": "Why did CI fail?"}}
         assert first["ordinal"] == 1
+        starting = (await http.get("/threads/with-sandboxes")).json()
+        assert [thread["id"] for thread in starting["threads"]] == [thread_id]
+        assert starting["sandboxes"] == {}
 
         # A response retry never has to resolve mutable policy resources again.
         del custom_objects.objects[("egresspolicies", "github")]
