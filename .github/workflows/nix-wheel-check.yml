@@ -174,9 +174,9 @@ jobs:
         uses: ./.github/actions/bb-remote
         with:
           args: build ${{ steps.inputs.outputs.bazel_targets }}
-          # Artifact builds also extract the large external repository graph;
-          # start from a clean runner filesystem rather than reusing a full one.
-          recycle_runner: false
+          # Rotate away from the exhausted workspace while retaining warm
+          # runner reuse for subsequent artifact builds.
+          runner_recycling_key: ducktape-nix-wheel-v2
           run_from_commit: ${{ steps.source.outputs.sha }}
 
       # Emit the JSON blob flake.nix's artifacts logic consumes. Every pin
