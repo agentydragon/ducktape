@@ -7,7 +7,7 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 import grpc
@@ -62,6 +62,7 @@ from x.agentplane.app.identity import CallerIdentity, TokenReviewer, require_cal
 from x.agentplane.app.inventory import (
     SANDBOX_BINDING_ANNOTATION,
     NewSandbox,
+    SandboxCreationSpec,
     SandboxInventory,
     SandboxNotFoundError,
     SandboxRunningError,
@@ -70,12 +71,16 @@ from x.agentplane.app.inventory import (
 from x.agentplane.app.live import LiveIndex, router as live_router
 from x.agentplane.app.oidc import OIDCSettings, build_oauth, operator_session
 from x.agentplane.app.operator_sessions import OperatorSessionMiddleware
-from x.agentplane.app.presets import Harness, PresetCatalog, SandboxBinding, SandboxPresetView
+from x.agentplane.app.presets import Harness, PresetCatalog, SandboxBinding, SandboxPresetView, ThreadDefaults
 from x.agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown
 from x.agentplane.app.trajectory import (
+    ExistingSandboxTarget,
+    NewSandboxTarget,
+    NewThreadStartRequest,
     ThreadCommandConflictError,
     ThreadCommandSnapshot,
     ThreadNotFoundError,
+    ThreadStartRequestConflictError,
     ThreadView,
     TrajectoryStore,
 )
@@ -536,6 +541,169 @@ def _thread_command(body: dict[str, object]) -> pb.Command:
     return command
 
 
+class ExistingThreadStartTarget(BaseModel):
+    """Start a new Thread in the exact live Sandbox selected by the operator."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["existing"]
+    sandbox: str = Field(min_length=1)
+
+
+class NewThreadStartTarget(BaseModel):
+    """Create a Sandbox from concrete form fields, then start its first Thread."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["new"]
+    sandbox: NewSandbox
+
+
+ThreadStartTarget = Annotated[ExistingThreadStartTarget | NewThreadStartTarget, Field(discriminator="kind")]
+
+
+class FirstThreadInput(BaseModel):
+    """The first desired SubmitInput; its command id is durable outbox identity."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    command_id: str = Field(min_length=1, max_length=200)
+    text: str = Field(min_length=1)
+
+
+class NewThreadStart(BaseModel):
+    """A client-minted product Thread, its target, planned runner session, and first input."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    thread_id: UUID
+    runner_session_id: str = Field(min_length=1, max_length=200)
+    target: ThreadStartTarget
+    thread_overrides: ThreadDefaults = Field(default_factory=ThreadDefaults)
+    first_input: FirstThreadInput
+
+
+def _resolve_thread_spec(
+    *,
+    inherited: ThreadDefaults,
+    overrides: ThreadDefaults,
+    runner_session_id: str,
+    presets: PresetCatalog,
+    catalog: ModelCatalog,
+) -> pb.SessionSpec:
+    """Resolve editable Thread fields now, before a durable target can outlive current presets."""
+    try:
+        spec = ParseDict(overrides.over(inherited).proto_json(runner_session_id), pb.SessionSpec())
+    except ParseError as error:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"invalid Thread fields: {error}") from error
+    if spec.harness not in (pb.HARNESS_CLAUDE, pb.HARNESS_CODEX) or not spec.model or not spec.cwd:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, "a Thread without inherited defaults needs harness, model, and cwd"
+        )
+    harness = Harness(pb.Harness.Name(spec.harness))
+    if spec.model not in catalog[harness]:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, f"model {spec.model!r} is not available for {harness}"
+        )
+    spec.instructions = presets.instructions_for(spec.instructions)
+    return spec
+
+
+async def _sandbox_creation(
+    spec: NewSandbox, *, egress: EgressInventory, action_policy: ActionPolicyInventory
+) -> SandboxCreationSpec:
+    """Validate and freeze concrete new-Sandbox fields; presets are never retained as desired state."""
+    policies = egress.launch_policies(spec.policies)
+    await egress.require_policies(policies)
+    await action_policy.require_policy_sets(spec.action_policy_sets)
+    return SandboxCreationSpec(
+        slug=spec.slug,
+        template=spec.template,
+        egress_policies=policies,
+        action_policy_sets=spec.action_policy_sets,
+        thread_defaults=spec.thread_defaults,
+        bootstrap=spec.bootstrap,
+    )
+
+
+async def _start_thread_request(
+    body: NewThreadStart,
+    *,
+    store: TrajectoryStore,
+    inventory: SandboxInventory,
+    egress: EgressInventory,
+    action_policy: ActionPolicyInventory,
+    presets: PresetCatalog,
+    catalog: ModelCatalog,
+) -> ThreadView:
+    # A retry after response loss must read the immutable accepted intent without consulting a
+    # changed preset, inventory, or policy set. The store guards conflicting reuse at its boundary.
+    if await store.thread_start_request(body.thread_id) is not None:
+        existing = await store.get_thread(body.thread_id)
+        if existing is None:  # pragma: no cover - the request has a foreign key to Thread.
+            raise RuntimeError("Thread start request has no product Thread")
+        return existing
+
+    target: ExistingSandboxTarget | NewSandboxTarget
+    match body.target:
+        case ExistingThreadStartTarget(sandbox=name):
+            sandbox = await inventory.get(name)
+            inherited = (
+                sandbox.binding.thread_defaults
+                if sandbox.binding is not None and sandbox.binding.thread_defaults is not None
+                else ThreadDefaults()
+            )
+            target = ExistingSandboxTarget(sandbox.name, sandbox.uid)
+        case NewThreadStartTarget(sandbox=new_sandbox):
+            creation = await _sandbox_creation(new_sandbox, egress=egress, action_policy=action_policy)
+            inherited = creation.thread_defaults or ThreadDefaults()
+            target = NewSandboxTarget(creation)
+    spec = _resolve_thread_spec(
+        inherited=inherited,
+        overrides=body.thread_overrides,
+        runner_session_id=body.runner_session_id,
+        presets=presets,
+        catalog=catalog,
+    )
+    await store.request_thread_start(
+        NewThreadStartRequest(
+            thread_id=body.thread_id,
+            target=target,
+            runner_session_id=body.runner_session_id,
+            session_spec=spec,
+            first_input=pb.Command(
+                command_id=body.first_input.command_id, submit_input=pb.SubmitInput(text=body.first_input.text)
+            ),
+        )
+    )
+    created = await store.get_thread(body.thread_id)
+    if created is None:  # pragma: no cover - request_thread_start created it transactionally.
+        raise RuntimeError("new Thread disappeared before its response")
+    return created
+
+
+@threads.post("", status_code=status.HTTP_201_CREATED)
+async def start_thread(
+    body: NewThreadStart,
+    store: Store,
+    inventory: Inventory,
+    egress: Egress,
+    action_policy: ActionPolicy,
+    presets: Presets,
+    catalog: Annotated[ModelCatalog, Depends(_models)],
+) -> ThreadView:
+    """Persist first Thread input in the outbox before its Sandbox or runner exists."""
+    return await _start_thread_request(
+        body,
+        store=store,
+        inventory=inventory,
+        egress=egress,
+        action_policy=action_policy,
+        presets=presets,
+        catalog=catalog,
+    )
+
+
 @threads.get("")
 async def list_threads(
     store: Store,
@@ -574,10 +742,11 @@ async def request_thread_command(
 
 
 class ThreadsWithSandboxes(BaseModel):
-    """Every Thread across every Sandbox the operator can see, plus each Thread's own still-existing
-    Sandbox, keyed by name. Normalized rather than one Sandbox view per Thread that shares it: a
-    Sandbox with many Threads would otherwise have its view duplicated once per Thread. A Thread's
-    own `sandbox` name absent from `sandboxes` means that Sandbox row is gone."""
+    """Every Thread plus each attached Thread's still-existing Sandbox, keyed by name.
+
+    A target-only Thread remains visible with null attachment fields. An attached Thread whose
+    non-null Sandbox name is absent from `sandboxes` belongs to a deleted Sandbox.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -591,12 +760,9 @@ async def list_threads_with_sandboxes(
     inventory: Inventory,
     include_archived: Annotated[bool, Query(description="Also list archived threads.")] = False,
 ) -> ThreadsWithSandboxes:
-    """Every Thread across every Sandbox the operator can see, newest first, with each Thread's own
-    still-existing Sandbox included once regardless of how many Threads it hosts. A Thread survives
-    its Sandbox's deletion here rather than disappearing with it; look it up by `thread.sandbox` in
-    `sandboxes` and treat a miss as deleted."""
+    """Every Thread, newest first, with each attached Thread's still-existing Sandbox once."""
     thread_views = await store.list_threads(include_archived=include_archived)
-    referenced = {thread.sandbox for thread in thread_views}
+    referenced = {thread.sandbox for thread in thread_views if thread.sandbox is not None}
     sandboxes = {view.name: view for view in await inventory.list_sandboxes() if view.name in referenced}
     return ThreadsWithSandboxes(threads=thread_views, sandboxes=sandboxes)
 
@@ -712,7 +878,10 @@ def create_app(
         return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"detail": str(error)})
 
     @app.exception_handler(ThreadCommandConflictError)
-    async def _thread_command_conflict(_request: Request, error: ThreadCommandConflictError) -> JSONResponse:
+    @app.exception_handler(ThreadStartRequestConflictError)
+    async def _thread_command_conflict(
+        _request: Request, error: ThreadCommandConflictError | ThreadStartRequestConflictError
+    ) -> JSONResponse:
         return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": str(error)})
 
     @app.get("/healthz", include_in_schema=False)

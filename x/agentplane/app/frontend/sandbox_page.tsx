@@ -164,11 +164,11 @@ export function SandboxPage({
   const threads = live.snapshot?.threads ?? [];
   // The store's copy of each session's thread, which outlives the runner's own list.
   const threadBySession: Record<string, ThreadView> = Object.fromEntries(
-    threads.map((thread) => [thread.session_id, thread])
+    threads.flatMap((thread) => (thread.session_id === null ? [] : [[thread.session_id, thread]]))
   );
   // Thread names by session id: the store's copy, which outlives the runner's list.
   const names = Object.fromEntries(
-    threads.flatMap((thread) => (thread.name ? [[thread.session_id, thread.name]] : []))
+    threads.flatMap((thread) => (thread.session_id !== null && thread.name ? [[thread.session_id, thread.name]] : []))
   );
   const visibleSessions = sessions.filter(
     (session) => includeArchived || !threadBySession[session.sessionId]?.archived
