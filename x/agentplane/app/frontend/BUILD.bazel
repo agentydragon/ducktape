@@ -759,7 +759,7 @@ vitest_bin.vitest_test(
     args = ["run"],
     chdir = package_name(),
     data = [
-        "vitest.config.ts",
+        "vitest.config.mts",
         ":action_policy_test",
         ":actions_history_test",
         ":actions_test",

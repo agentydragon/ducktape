@@ -1375,12 +1375,12 @@ ts_library(
     ],
 )
 
-# vitest loads this config itself, so it must stay a `.ts` file in the runfiles rather than be
+# vitest loads this config itself, so it must stay an `.mts` file in the runfiles rather than be
 # compiled to one. `no_emit` type-checks it anyway, through the generated
 # :vitest_config_typecheck_test.
 ts_project(
     name = "vitest_config",
-    srcs = ["vitest.config.ts"],
+    srcs = ["vitest.config.mts"],
     extends = ":tsconfig",
     no_emit = True,
     resolve_json_module = True,
@@ -1398,7 +1398,7 @@ vitest_bin.vitest_test(
     args = ["run"],
     chdir = package_name(),
     data = [
-        "vitest.config.ts",
+        "vitest.config.mts",
         ":approval_state_test",
         ":bridge_client_test",
         ":bridge_test_lib",
