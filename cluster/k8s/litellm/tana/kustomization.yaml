@@ -13,4 +13,3 @@ configMapGenerator:
       disableNameSuffixHash: true
     files:
       - config.yaml=proxy-config.yaml
-      - custom_handler.py=custom_handler.py

@@ -15,7 +15,7 @@ from devinfra.prettier import prettier_format_in_place
 from tana.litellm_proxy.model_registry import TANA_LLM_PROXY_RESPONDING_MODELS
 from util.bazel.workspace import get_build_workspace_directory
 
-_CUSTOM_HANDLER = "custom_handler.tana_handler"
+_CUSTOM_HANDLER = "tana.litellm_proxy.custom_handler.tana_handler"
 
 
 def _model_entry(model_id: str) -> dict:

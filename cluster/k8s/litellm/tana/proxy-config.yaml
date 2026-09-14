@@ -468,4 +468,4 @@ litellm_settings:
     - langfuse_otel
   custom_provider_map:
     - provider: tana
-      custom_handler: custom_handler.tana_handler
+      custom_handler: tana.litellm_proxy.custom_handler.tana_handler

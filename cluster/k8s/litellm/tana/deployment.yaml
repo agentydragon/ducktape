@@ -92,5 +92,3 @@ spec:
             items:
               - key: config.yaml
                 path: config.yaml
-              - key: custom_handler.py
-                path: custom_handler.py
