@@ -473,9 +473,8 @@ spec:
 
     # Disable components we don't need
     kubeApiServer:
-      # Scraped natively from ../alloy/config.alloy instead. The chart's
-      # ServiceMonitor authenticates with `bearerTokenFile`, which Alloy will not
-      # read out of a ServiceMonitor, so it produced no scrape config at all.
+      # Scraped natively from ../alloy/config.alloy instead, preserving the
+      # explicit auth and rule labels used by that configuration.
       enabled: false
     kubelet:
       # Same as kubeApiServer: scraped natively in ../alloy/config.alloy.
