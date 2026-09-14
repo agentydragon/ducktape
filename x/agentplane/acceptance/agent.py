@@ -139,7 +139,7 @@ class Agent:
         """Send `prompt` and collect the turn it starts. Nothing else drives this session, so reading
         the cursor before submitting cannot miss an event."""
         after = self._sequence
-        await self._client.send_input(
+        await self._client.submit_input(
             self._sandbox,
             self._session_id,
             pb.Command(command_id=f"input-{uuid4().hex[:8]}", submit_input=pb.SubmitInput(text=prompt)),

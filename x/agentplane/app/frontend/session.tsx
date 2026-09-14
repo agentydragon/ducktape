@@ -30,11 +30,13 @@ import {
   findThread,
   interruptSession,
   renameThread,
-  sendInput,
   shutdownSession,
+  submitThreadInput,
+  threadCommands,
   models,
   switchModel,
   type Harness,
+  type ThreadCommandView,
   type ThreadView,
 } from "./client";
 import "./session.css";
@@ -54,7 +56,7 @@ import {
 import { FrameView } from "./frame";
 import { HighlightedText } from "./json_view";
 import { Markdown } from "./markdown";
-import { AttachedSchema, EventSchema, ItemKind, TurnStatus } from "./protocol_pb";
+import { AttachedSchema, CommandSchema, EventSchema, ItemKind, TurnStatus } from "./protocol_pb";
 
 const KIND_LABELS: Partial<Record<ItemKind, string>> = {
   [ItemKind.ASSISTANT_TEXT]: "assistant",
@@ -104,6 +106,37 @@ function InputView({ input }: { input: InputState }): JSX.Element {
         <Text style={{ whiteSpace: "pre-wrap" }}>{input.text || `input ${input.id}`}</Text>
       </Paper>
     </Group>
+  );
+}
+
+function pendingInputText(command: ThreadCommandView): string | null {
+  const parsed = fromJson(CommandSchema, command.command as JsonValue);
+  return parsed.operation.case === "submitInput" ? parsed.operation.value.text : null;
+}
+
+/** Input becomes a conversation bubble only at harness confirmation. Until then it remains above
+ * the composer, where `accepted` and `received` say exactly which durable boundary it has crossed. */
+function PendingInputQueue({ commands }: { commands: ThreadCommandView[] }): JSX.Element | null {
+  const pending = commands.flatMap((command) => {
+    const text = pendingInputText(command);
+    return text !== null && (command.state === "accepted" || command.state === "received") ? [{ command, text }] : [];
+  });
+  if (pending.length === 0) return null;
+  return (
+    <Stack gap="xs" aria-label="Pending inputs">
+      {pending.map(({ command, text }) => (
+        <Paper key={command.ordinal} withBorder p="xs">
+          <Group justify="space-between" gap="xs" wrap="nowrap">
+            <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
+              {text}
+            </Text>
+            <Badge color={command.state === "accepted" ? "yellow" : "blue"} variant="light">
+              {command.state === "accepted" ? "Waiting for runner" : "Received by runner"}
+            </Badge>
+          </Group>
+        </Paper>
+      ))}
+    </Stack>
   );
 }
 
@@ -364,8 +397,10 @@ export function SessionView({
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const submitting = useRef(false);
-  const pendingInput = useRef<{ sandbox: string; sessionId: string; text: string; commandId: string } | null>(null);
+  const pendingInput = useRef<{ threadId: string; text: string; commandId: string } | null>(null);
   const [thread, setThread] = useState<ThreadView | null>(null);
+  const [commands, setCommands] = useState<ThreadCommandView[]>([]);
+  const [commandVersion, setCommandVersion] = useState(0);
   const [model, setModel] = useState<string | null>(null);
   const [modelOptions, setModelOptions] = useState<string[]>([]);
   const [modelPending, setModelPending] = useState(false);
@@ -385,6 +420,8 @@ export function SessionView({
   useEffect(() => {
     // EventSource reconnects on its own and resends the last id it saw, which the bridge turns
     // into the runner's cursor, so a dropped connection loses nothing.
+    setThread(null);
+    setCommands([]);
     const source = new EventSource(eventsUrl(sandbox, sessionId));
     source.addEventListener("attached", (message: MessageEvent<string>) => {
       setStatus("attached");
@@ -406,6 +443,14 @@ export function SessionView({
       const event = fromJson(EventSchema, JSON.parse(message.data) as JsonValue);
       if (event.observation.case === "modelChanged") setModel(event.observation.value.model);
       if (event.observation.case === "commandRejected") setError(event.observation.value.reason);
+      if (
+        event.observation.case === "commandReceived" ||
+        event.observation.case === "commandRejected" ||
+        event.observation.case === "commandNoop" ||
+        event.observation.case === "harnessUserMessageConfirmed"
+      ) {
+        setCommandVersion((current) => current + 1);
+      }
       setState((current) => reduce(current, event));
     });
     // The runner ending the stream is final: a reconnect would Open the session again, which
@@ -425,6 +470,22 @@ export function SessionView({
     return () => source.close();
   }, [sandbox, sessionId]);
 
+  useEffect(() => {
+    if (thread === null) return;
+    let disposed = false;
+    threadCommands(thread.id).then(
+      (next) => {
+        if (!disposed) setCommands(next);
+      },
+      (reason: unknown) => {
+        if (!disposed) setError(displayableError(reason));
+      }
+    );
+    return () => {
+      disposed = true;
+    };
+  }, [thread?.id, commandVersion]);
+
   async function selectModel(next: string | null): Promise<void> {
     if (!next || next === model) return;
     setModelPending(true);
@@ -439,20 +500,18 @@ export function SessionView({
 
   async function submit(): Promise<void> {
     const text = draft.trim();
-    if (!text || submitting.current) return;
-    if (
-      pendingInput.current?.text !== text ||
-      pendingInput.current.sandbox !== sandbox ||
-      pendingInput.current.sessionId !== sessionId
-    ) {
-      pendingInput.current = { sandbox, sessionId, text, commandId: crypto.randomUUID() };
+    if (!text || thread === null || thread.sandbox !== sandbox || thread.session_id !== sessionId || submitting.current)
+      return;
+    if (pendingInput.current?.text !== text || pendingInput.current.threadId !== thread.id) {
+      pendingInput.current = { threadId: thread.id, text, commandId: crypto.randomUUID() };
     }
     submitting.current = true;
     setSending(true);
     try {
-      // A failed HTTP response may follow runner receipt. Retry the same command id so a lost
-      // response cannot turn a retry into a second user-message request.
-      await sendInput(sandbox, sessionId, pendingInput.current.commandId, text);
+      // A failed response can follow the committed outbox write. Retry the same command id so it
+      // cannot turn a retry into another desired user message; runner receipt remains separate.
+      const command = await submitThreadInput(thread.id, pendingInput.current.commandId, text);
+      setCommands((current) => [...current.filter((item) => item.ordinal !== command.ordinal), command]);
       pendingInput.current = null;
       setDraft("");
       setError(null);
@@ -543,13 +602,14 @@ export function SessionView({
           that's the row already in thumb reach, and it's one thing keeping the header a
           two-line-tall row instead of three. */}
       <Stack gap="xs" style={{ flexShrink: 0 }}>
+        <PendingInputQueue commands={commands} />
         <Textarea
           placeholder="Enter sends, Ctrl+Enter for a new line"
           value={draft}
           autosize
           minRows={2}
           maxRows={12}
-          disabled={state.harness !== "running" || sending}
+          disabled={thread === null || state.harness !== "running" || sending}
           onChange={(e) => setDraft(e.currentTarget.value)}
           onKeyDown={composerKey}
         />

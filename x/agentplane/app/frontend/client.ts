@@ -31,6 +31,7 @@ export type SandboxView = components["schemas"]["SandboxView"];
 export type NewSandbox = components["schemas"]["NewSandbox"];
 export type Condition = components["schemas"]["Condition"];
 export type ThreadView = components["schemas"]["ThreadView"];
+export type ThreadCommandView = components["schemas"]["ThreadCommandView"];
 export type ThreadsWithSandboxes = components["schemas"]["ThreadsWithSandboxes"];
 export type BindingView = components["schemas"]["BindingView"];
 export type PolicyView = components["schemas"]["PolicyView"];
@@ -224,18 +225,24 @@ export async function switchModel(sandbox: string, sessionId: string, commandId:
   if (error) throw new Error(displayableError(error));
 }
 
-export async function sendInput(sandbox: string, sessionId: string, commandId: string, text: string): Promise<void> {
-  const { error } = await api.POST("/sandboxes/{name}/sessions/{session_id}/inputs", {
-    params: { path: { name: sandbox, session_id: sessionId } },
-    body: toJson(
-      CommandSchema,
-      create(CommandSchema, {
-        commandId,
-        operation: { case: "submitInput", value: { text } },
-      })
-    ) as JsonObject,
+/** Durable desired commands with their runner-reported receipt/effect state. */
+export async function threadCommands(threadId: string): Promise<ThreadCommandView[]> {
+  const { data, error } = await api.GET("/threads/{thread_id}/commands", {
+    params: { path: { thread_id: threadId } },
   });
   if (error) throw new Error(displayableError(error));
+  return data;
+}
+
+/** Commit ordinary user input to its Thread. The delivery reconciler, not this request, writes to
+ * the runner; a returned `accepted` state is therefore deliberately not a runner receipt. */
+export async function submitThreadInput(threadId: string, commandId: string, text: string): Promise<ThreadCommandView> {
+  const { data, error } = await api.POST("/threads/{thread_id}/inputs", {
+    params: { path: { thread_id: threadId } },
+    body: { command_id: commandId, text },
+  });
+  if (error) throw new Error(displayableError(error));
+  return data;
 }
 
 export async function interruptSession(

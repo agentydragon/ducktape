@@ -493,15 +493,6 @@ async def session_events(
     )
 
 
-@router.post("/{session_id}/inputs", status_code=status.HTTP_202_ACCEPTED)
-async def send_input(bridge: Bridge, name: str, session_id: str, body: dict[str, object]) -> Response:
-    command = _parse(pb.Command(), body)
-    if not command.command_id or not command.HasField("submit_input"):
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="expected SubmitInput command")
-    await bridge.command(name, session_id, command)
-    return Response(status_code=status.HTTP_202_ACCEPTED)
-
-
 @router.post("/{session_id}/interrupt", status_code=status.HTTP_202_ACCEPTED)
 async def interrupt_session(bridge: Bridge, name: str, session_id: str, body: dict[str, object]) -> Response:
     command = _parse(pb.Command(), body)
