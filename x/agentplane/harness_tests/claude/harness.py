@@ -7,8 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from x.agentplane.harness_tests.claude.messages import AnthropicMessages
-from x.agentplane.native.async_process import AsyncNativeProcess
-from x.agentplane.native.claude import driver, scenarios, wire
+from x.agentplane.native.claude import async_run, driver, scenarios, wire
 
 # A routed name in the shape a LiteLLM deployment gives Claude Code; the family suffix lets it
 # resolve the model's context window. The scripted upstream never dispatches on it.
@@ -30,7 +29,9 @@ class ClaudeHarness:
         resume_id: str | None = None,
         session_id: str | None = None,
         replay_user_messages: bool = False,
-    ) -> AsyncNativeProcess:
+        hooks: bool = False,
+        initialize: bool = True,
+    ) -> async_run.ClaudeRun:
         # Launched as it ships: the RBE worker's glibc userland is the supported test environment.
         command = scenarios.command(
             self.binary,
@@ -43,12 +44,17 @@ class ClaudeHarness:
             **self.base_environment,
             **scenarios.environment(endpoint=anthropic_messages.origin, token="test-key", config_dir=str(self.config)),
         }
-        process = AsyncNativeProcess(self.logs, command, cwd=self.workspace, environment=environment)
-        # The inbound permission frame is recorded in stdout.jsonl before this responder writes its
-        # approval, which is recorded in stdin.jsonl. The native trace therefore includes both
-        # sides of every fixture-injected approval.
-        process.frame_responder = _allow_permission
-        return process
+        # The inbound permission frame is recorded before this responder writes its approval, so
+        # the run's native trace includes both sides of every fixture-injected approval.
+        return async_run.ClaudeRun(
+            self.logs,
+            command,
+            cwd=self.workspace,
+            environment=environment,
+            responder=_allow_permission,
+            hooks=hooks,
+            initialize=initialize,
+        )
 
 
 async def _allow_permission(frame: dict[str, Any]) -> wire.ControlResponse | None:

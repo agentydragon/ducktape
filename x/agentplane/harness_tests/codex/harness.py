@@ -6,8 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from x.agentplane.harness_tests.codex.responses import OpenAIResponses
-from x.agentplane.native.async_process import AsyncNativeProcess
-from x.agentplane.native.codex import scenarios
+from x.agentplane.native.codex import async_run, scenarios
 
 # Not in Codex's model catalog: a catalog model id switches Codex to code mode (one JS `exec` tool
 # the model scripts against), while a routed or unknown id keeps the classic function-call shape.
@@ -23,11 +22,35 @@ class CodexHarness:
     binary: str
     base_environment: dict[str, str]
 
-    def start(self, openai_responses: OpenAIResponses) -> AsyncNativeProcess:
+    def start(
+        self,
+        openai_responses: OpenAIResponses,
+        *,
+        persist: bool = False,
+        config: dict[str, object] | None = None,
+        instructions: str = "",
+        resume_thread_id: str | None = None,
+        resume_base_instructions: str = "",
+        resume_instructions: str = "",
+    ) -> async_run.CodexRun:
         endpoint = f"{openai_responses.origin}/v1"
         environment = {
             **self.base_environment,
             **scenarios.environment(endpoint=endpoint, token="test-key", codex_home=str(self.codex_home)),
         }
         command = scenarios.command(self.binary, endpoint=endpoint)
-        return AsyncNativeProcess(self.logs, command, cwd=self.workspace, environment=environment)
+        return async_run.CodexRun(
+            self.logs,
+            command,
+            cwd=self.workspace,
+            environment=environment,
+            thread_cwd=str(self.workspace),
+            model=MODEL,
+            effort=EFFORT,
+            persist=persist,
+            config=config,
+            instructions=instructions,
+            resume_thread_id=resume_thread_id,
+            resume_base_instructions=resume_base_instructions,
+            resume_instructions=resume_instructions,
+        )

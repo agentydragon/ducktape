@@ -18,11 +18,12 @@ py_library(
 )
 
 py_library(
-    name = "async_scenarios",
+    name = "async_run",
     testonly = True,
-    srcs = ["async_scenarios.py"],
+    srcs = ["async_run.py"],
     deps = [
         ":driver",
+        ":wire",
         "//x/agentplane/native:async_process",
     ],
 )

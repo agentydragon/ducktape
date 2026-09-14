@@ -20,7 +20,9 @@ the tests outside Bazel with a Nix-built Python is not supported: the binaries f
   parsed request exchange and explicitly send, close, respond to, abort, or await client closure.
 - `model_endpoint.py`: private HTTP lifecycle and fixture teardown that rejects every unsettled
   exchange.
-- `async_process.py`: the ordered async native-frame pipe used by behavior tests.
+- `native/{claude,codex}/async_run.py`: harness-specific async context managers that own launch
+  and handshake. Each exposes typed input/turn handles and independent event cursors over the
+  append-only native trace, so observing one receipt cannot drop another.
 - `claude/anthropic_sse.py`, `codex/responses_sse.py`: response builders in the two SSE dialects,
   shaped after real routes. Thinking blocks and reasoning items are part of the vocabulary because
   the harness has to echo them back.
@@ -33,7 +35,7 @@ the tests outside Bazel with a Nix-built Python is not supported: the binaries f
 The test modules cover plain turns plus clean and crash-resume behavior (`test_turns.py`), tool round trips
 (`test_tools.py`), input and control during an active turn (`test_active_turn.py`), upstream
 connection loss (`test_connection_loss.py`), and, for Codex, developer instructions across a
-resume (`test_instructions.py`). The scenarios drive the harnesses
+resume (`test_instructions.py`). The harness runs drive the binaries
 through <../native/README.md>; features each harness has beyond what these tests exercise are
 listed in <../native/docs/protocol_roster.md>.
 

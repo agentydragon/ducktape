@@ -7,9 +7,9 @@ import shlex
 import pytest_bazel
 
 from x.agentplane.harness_tests.codex import frames, responses_sse as sse
-from x.agentplane.harness_tests.codex.harness import EFFORT, MODEL, CodexHarness
+from x.agentplane.harness_tests.codex.harness import MODEL, CodexHarness
 from x.agentplane.harness_tests.codex.responses import OpenAIResponses
-from x.agentplane.native.codex import async_scenarios as scenarios, wire
+from x.agentplane.native.codex import wire
 
 PROBE_FAILURE = (
     'sh -c \'printf "probe stdout before failure\\n"; printf "probe stderr before failure\\n" >&2; exit 23\''
@@ -19,13 +19,8 @@ PROBE_FAILURE = (
 async def test_parallel_shell_commands_report_output_and_exit_codes(
     codex: CodexHarness, openai_responses: OpenAIResponses
 ) -> None:
-    async with codex.start(openai_responses) as process:
-        thread_id = (await scenarios.launch_handshake(process, cwd=str(codex.workspace), model=MODEL, effort=EFFORT))[
-            "thread_id"
-        ]
-        await scenarios.start_turn(
-            process, thread_id=thread_id, request_id="capture-3", text="Use the shell probe and report its outcomes."
-        )
+    async with codex.start(openai_responses) as run:
+        turn = await run.start_turn("Use the shell probe and report its outcomes.")
 
         async with await openai_responses.await_next_request() as exchange:
             stream = sse.response_stream(
@@ -62,9 +57,9 @@ async def test_parallel_shell_commands_report_output_and_exit_codes(
             stream = sse.response_stream([sse.Message("SHELL_PROBE_DONE")], model=MODEL)
             await exchange.send(*stream.events)
 
-        assert (await scenarios.await_turn_completed(process))["params"]["turn"]["status"] == "completed"
-        assert process.alive()
-    captured = process.stdout_frames()
+        assert (await turn.completed()).params.turn.status is wire.TurnStatus.COMPLETED
+        assert run.running
+    captured = run.native_frames()
     frames.assert_success(captured, "SHELL_PROBE_DONE")
     commands = frames.assert_item_lifecycles(captured, wire.CommandExecutionItem)
     assert len(commands) == 2
@@ -82,15 +77,9 @@ async def test_file_edit_round_trip_changes_the_workspace(
 ) -> None:
     editable = codex.workspace / "editable.txt"
     editable.write_text("before\n")
-    async with codex.start(openai_responses) as process:
-        thread_id = (await scenarios.launch_handshake(process, cwd=str(codex.workspace), model=MODEL, effort=EFFORT))[
-            "thread_id"
-        ]
-        await scenarios.start_turn(
-            process,
-            thread_id=thread_id,
-            request_id="capture-3",
-            text="Read editable.txt, change it to exactly `after\\n`, reread it, then reply FILE_EDIT_DONE.",
+    async with codex.start(openai_responses) as run:
+        turn = await run.start_turn(
+            "Read editable.txt, change it to exactly `after\\n`, reread it, then reply FILE_EDIT_DONE."
         )
 
         async with await openai_responses.await_next_request() as exchange:
@@ -127,8 +116,8 @@ async def test_file_edit_round_trip_changes_the_workspace(
             stream = sse.response_stream([sse.Message("FILE_EDIT_DONE")], model=MODEL)
             await exchange.send(*stream.events)
 
-        assert (await scenarios.await_turn_completed(process))["params"]["turn"]["status"] == "completed"
-    captured = process.stdout_frames()
+        assert (await turn.completed()).params.turn.status is wire.TurnStatus.COMPLETED
+    captured = run.native_frames()
     frames.assert_success(captured, "FILE_EDIT_DONE")
     commands = frames.assert_item_lifecycles(captured, wire.CommandExecutionItem)
     # Codex wraps each exec_command in a login shell.
