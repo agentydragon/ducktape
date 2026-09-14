@@ -48,7 +48,7 @@ bazel_dep(name = "ducktape_haku", version = "0.1.0")
 bazel_dep(name = "ducktape_manifold_mcp_server", version = "0.1.0", dev_dependency = True)
 bazel_dep(name = "ducktape_claude_web_env_environment_manager", version = "0.1.0", dev_dependency = True)
 
-bazel_dep(name = "rules_mypy", version = "0.40.0")
+bazel_dep(name = "rules_mypy", version = "0.41.0")
 bazel_dep(name = "rules_conda", version = "0.3.2")
 
 # aspect_rules_lint's lint actions create empty output files with `touch`, but some
@@ -82,21 +82,6 @@ single_version_override(
     module_name = "pybind11_abseil",
     patch_strip = 1,
     patches = ["//third_party/patches:pybind11_abseil_rename_pypi_hub.patch"],
-)
-
-# This archive pin is a fork commit retained while the mypy cache-disk work is
-# evaluated. The pinned commit itself does not contain the documented
-# `include_external` or symlink-copy changes: the repository-local runner supplies
-# the symlink merge, and `include_external` remains disabled until the fork's
-# site-packages issue is resolved. Retire the override after focused Bazel mypy
-# validation against BCR 0.40.0 if the local runner is sufficient; otherwise wait
-# for a released rules_mypy/fork version containing the needed changes. No exact
-# upstream issue or released implementation currently supersedes this decision.
-archive_override(
-    module_name = "rules_mypy",
-    sha256 = "938b128e28ddbf610ce09f3603d6797a8f023904908d16fb94748c193cda1122",
-    strip_prefix = "rules_mypy-355ae265ccef0e5928a440f2f1a2a9796298ec62",
-    urls = ["https://github.com/agentydragon/rules_mypy/archive/355ae265ccef0e5928a440f2f1a2a9796298ec62.tar.gz"],
 )
 
 # Terraform/OpenTofu validation (cluster/)

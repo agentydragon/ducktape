@@ -17,7 +17,7 @@ ruff = lint_ruff_aspect(
 
 # Mypy aspect, enabled by default on Bazel builds
 # Uses root mypy.ini for configuration
-# Uses custom mypy_cli to run under Python 3.14 (needed to parse homeassistant's 3.14 syntax)
+# Uses an upstream-produced mypy_cli under Python 3.14 (needed to parse homeassistant's 3.14 syntax)
 #
 # Type checking behavior:
 # - Packages with py.typed (rich, structlog, aiohttp, aiodocker) are fully
@@ -32,7 +32,8 @@ mypy_aspect = mypy(
     # Disable cache propagation to prevent CI disk exhaustion.
     # Without this, each target writes new cache files for pypi deps it uses,
     # leading to O(n²) disk usage with ~9,670 targets.
-    # TODO: Enable include_external=True once site-packages issue is fixed in fork
+    # Keep cache propagation disabled until the external site-packages path is safe
+    # at repository scale.
     cache = False,
 )
 
