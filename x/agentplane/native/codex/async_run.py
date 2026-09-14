@@ -131,7 +131,7 @@ class CodexRun:
                     instructions=self._instructions,
                 )
             )
-            self._thread_id_value = _thread_id(response)
+            self._thread_id_value = _response_thread_id(response)
         else:
             response = await self._request(
                 driver.thread_resume(
@@ -141,7 +141,7 @@ class CodexRun:
                     instructions=self._resume_instructions,
                 )
             )
-            self._thread_id_value = _thread_id(response)
+            self._thread_id_value = _response_thread_id(response)
         return self
 
     async def __aexit__(self, *args: object) -> None:
@@ -158,7 +158,9 @@ class CodexRun:
 
     @property
     def thread_id(self) -> str:
-        return self._thread_id()
+        if self._thread_id_value is None:
+            raise RuntimeError("Codex run did not start a thread")
+        return self._thread_id_value
 
     def events(self) -> CodexEvents:
         return CodexEvents(self._native().frames())
@@ -167,7 +169,7 @@ class CodexRun:
         return self._native().stdout_frames()
 
     async def start_turn(self, text: str, *, model: str | None = None) -> CodexTurn:
-        thread_id = self._thread_id()
+        thread_id = self.thread_id
         events = self.events()
         response = await self._request(
             driver.turn_start(self._request_id(), thread_id=thread_id, text=text, model=model)
@@ -206,16 +208,11 @@ class CodexRun:
         self._next_request_id += 1
         return request_id
 
-    def _thread_id(self) -> str:
-        if self._thread_id_value is None:
-            raise RuntimeError("Codex run did not start a thread")
-        return self._thread_id_value
-
     def _assert_turn(self, turn: CodexTurn) -> None:
-        if turn.thread_id != self._thread_id():
+        if turn.thread_id != self.thread_id:
             raise ValueError(f"turn {turn.id} does not belong to this Codex run")
 
 
-def _thread_id(response: wire.Response) -> str:
+def _response_thread_id(response: wire.Response) -> str:
     result = wire.ThreadResult.model_validate(response.result)
     return result.thread.id
