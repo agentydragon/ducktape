@@ -1,5 +1,5 @@
-# Adopt the existing DriveFS reader and writer keys without rotating either.
-# They remain delivered by the current SOPS/manual paths during this phase;
+# Register the externally managed DriveFS reader and writer keys without
+# rotating either. They remain delivered by the current SOPS/manual paths;
 # Bucket/drivefs-artifacts-bucket.yaml remains their native permission source.
 apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Identity
@@ -21,10 +21,11 @@ spec:
     name: seaweedfs
   identityRef:
     name: drivefs-artifacts-writer
-  # These fields already exist in a user-managed SOPS Secret. The operator
-  # adopts them verbatim instead of generating replacement credentials.
+  # These fields are supplied by the external source Secret. The operator
+  # registers them verbatim instead of generating replacement credentials.
   secretRef:
     name: drivefs-artifacts-s3-credentials
+    namespace: seaweedfs-credentials
     accessKeyField: writerAccessKey
     secretKeyField: writerSecretKey
   reclaimPolicy: Retain
@@ -49,9 +50,11 @@ spec:
     name: seaweedfs
   identityRef:
     name: drivefs-artifacts-reader
-  # Shares the same SOPS Secret as the writer but adopts only the reader pair.
+  # Shares the same external Secret as the writer but registers only the
+  # reader pair.
   secretRef:
     name: drivefs-artifacts-s3-credentials
+    namespace: seaweedfs-credentials
     accessKeyField: readerAccessKey
     secretKeyField: readerSecretKey
   reclaimPolicy: Retain

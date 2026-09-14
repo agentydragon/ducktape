@@ -1,7 +1,6 @@
-# Adopt the existing Claude web-session credential rather than rotating it.
-# The SOPS Secret remains the delivery mechanism until external sessions have
-# a supported alternative; S3Credentials registers that same key pair with
-# filer-backed IAM, while the policy below becomes the authorization SSOT.
+# Register the externally managed Claude web-session credential without
+# rotating it. The source Secret lives outside the operator's namespace so the
+# operator reads the pair without taking ownership of its contents.
 apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Identity
 metadata:
@@ -22,10 +21,11 @@ spec:
     name: seaweedfs
   identityRef:
     name: claude-reader
-  # Both fields already exist in this SOPS-managed Secret. The operator adopts
-  # the pair exactly as-is instead of generating a replacement credential.
+  # The fields are supplied by the externally managed Secret. The operator
+  # registers the pair exactly as-is instead of generating a replacement.
   secretRef:
     name: claude-reader-s3-credentials
+    namespace: seaweedfs-credentials
     accessKeyField: claudeReaderAccessKey
     secretKeyField: claudeReaderSecretKey
   reclaimPolicy: Retain

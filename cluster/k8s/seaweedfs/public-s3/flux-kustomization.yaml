@@ -16,6 +16,8 @@ spec:
     # gateway configuration now contains only the credential-free anonymous read.
     namespace: ducktape-flux
   dependsOn:
+    - name: seaweedfs-external-credentials
+      namespace: ducktape-flux
     - name: seaweedfs-drivefs-artifacts-bucket
       namespace: ducktape-flux
     - name: vm-images-publisher
