@@ -269,6 +269,79 @@ async def test_the_bridge_reports_what_the_runner_refuses(app_url: str) -> None:
         assert malformed.status_code == 422
 
 
+async def test_durable_input_survives_the_accepting_app_replica_crash(
+    runner: RunnerHandle,
+    store: TrajectoryStore,
+    db_url: str,
+    model: ScriptedModel,
+    spec: pb.SessionSpec,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A committed input does not depend on the replica that accepted it staying alive.
+
+    The delivery bridge is the separately leased replica.  Disable its periodic reconciliation so
+    this is an integration proof that the Postgres wake-up, rather than a timing poll, drives the
+    hand-off after the accepting replica closes.
+    """
+    monkeypatch.setattr("x.agentplane.app.bridge.RECONCILE_S", 3600)
+
+    async def address_of(name: str) -> str:
+        assert name == SANDBOX
+        return runner.target
+
+    client = RunnerClient(runner.target)
+    accepting = TrajectoryStore.connect(db_url)
+    accepting_closed = False
+    bridge = RunnerBridge(address_of=address_of, store=store)
+    try:
+        await accepting.start_updates()
+        attachment = await client.attach(SESSION, spec=spec)
+        try:
+            await attachment.detach()
+            await attachment.drain_until_end()
+        finally:
+            attachment.cancel()
+
+        await bridge.start([SANDBOX])
+        async for attempt in AsyncRetrying(
+            stop=stop_after_delay(10), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
+        ):
+            with attempt:
+                threads = await store.list_threads(sandbox=SANDBOX, session_id=SESSION)
+                assert len(threads) == 1
+                thread = threads[0]
+
+        command = pb.Command(command_id="durable-input", submit_input=pb.SubmitInput(text="DURABLE_INPUT"))
+        accepted = await accepting.request_thread_command(thread.id, command)
+        await accepting.close()
+        accepting_closed = True
+
+        request = await model.request()
+        assert request.user_texts == ["DURABLE_INPUT"]
+        await model.reply(request, Text("DURABLE_DELIVERED"))
+
+        async for attempt in AsyncRetrying(
+            stop=stop_after_delay(10), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
+        ):
+            with attempt:
+                events = await store.events(thread.id, limit=100)
+                assert any(
+                    event.HasField("command_received")
+                    and event.command_received.command_id == accepted.command.command_id
+                    for event in events
+                )
+                assert any(
+                    event.HasField("harness_user_message_confirmed")
+                    and list(event.harness_user_message_confirmed.origin_command_ids) == [accepted.command.command_id]
+                    for event in events
+                )
+    finally:
+        if not accepting_closed:
+            await accepting.close()
+        await bridge.close()
+        await client.close()
+
+
 @dataclass
 class Replicas:
     owner: RunnerBridge

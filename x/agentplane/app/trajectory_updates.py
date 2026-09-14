@@ -13,13 +13,15 @@ from sqlalchemy.engine import URL
 from x.agentplane.app.changes import Changes
 
 CHANNEL = "agentplane_trajectory_updates"
+COMMANDS_PAYLOAD = "thread-commands"
 logger = logging.getLogger(__name__)
 
 
 class TrajectoryUpdates:
-    def __init__(self, database_url: URL, changes: Changes) -> None:
+    def __init__(self, database_url: URL, changes: Changes, command_changes: Changes) -> None:
         self._dsn = database_url.set(drivername="postgresql").render_as_string(hide_password=False)
         self._changes = changes
+        self._command_changes = command_changes
         self._connection: asyncpg.Connection[Any] | None = None
         self._lost = asyncio.Event()
         self._task: asyncio.Task[None] | None = None
@@ -47,6 +49,7 @@ class TrajectoryUpdates:
         # LISTEN is not a durable queue. Every successful reconnect requires a database read,
         # even if no notification arrives after it (all writes may have happened in the gap).
         self._changes.notify()
+        self._command_changes.notify()
 
     async def _recover(self) -> None:
         while True:
@@ -72,9 +75,12 @@ class TrajectoryUpdates:
             self._task = None
         await self._disconnect()
 
-    def _notified(self, _connection: object, _pid: int, _channel: str, _payload: object) -> None:
+    def _notified(self, _connection: object, _pid: int, _channel: str, payload: object) -> None:
         self._changes.notify()
+        if payload == COMMANDS_PAYLOAD:
+            self._command_changes.notify()
 
     def _terminated(self, _connection: object) -> None:
         self._lost.set()
         self._changes.notify()
+        self._command_changes.notify()
