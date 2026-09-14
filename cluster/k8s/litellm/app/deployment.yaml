@@ -66,7 +66,7 @@ spec:
               app.kubernetes.io/name: litellm
       containers:
         - name: litellm
-          image: git.allegedly.works/ducktape-ci/tana-litellm-proxy:devel-20260913074202-77faa01 # {"$imagepolicy": "flux-system:tana-litellm-proxy"}
+          image: git.allegedly.works/ducktape-ci/tana-litellm-proxy:devel-20260914084437-6a8e3e2 # {"$imagepolicy": "flux-system:tana-litellm-proxy"}
           imagePullPolicy: Always
           args: ["--config", "/etc/litellm/config.yaml"]
           ports:
