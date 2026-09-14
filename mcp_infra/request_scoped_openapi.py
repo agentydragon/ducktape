@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from copy import deepcopy
-from typing import Any, overload
+from typing import Any, cast, overload
 
 import httpx
 from fastmcp.dependencies import Depends
@@ -123,7 +123,7 @@ class RequestScopedOpenAPIClients(Transform):
             bound = tool.model_copy()
             # FastMCP's private field is annotated as its legacy httpx client;
             # this adapter deliberately supplies the compatible httpx2 wrapper.
-            setattr(bound, "_client", _RequestCompatibleClient(_fastmcp_request_scoped_http_client))
+            cast(Any, bound)._client = _RequestCompatibleClient(_fastmcp_request_scoped_http_client)
             return await bound.run(arguments)
 
         wrapped = Tool.from_tool(tool, transform_fn=without_injected_parameters(dispatch))
