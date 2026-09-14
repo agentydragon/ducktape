@@ -10,6 +10,7 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
+        "//util/testing:undeclared_outputs",
         "@pypi//pytest",
     ],
 )

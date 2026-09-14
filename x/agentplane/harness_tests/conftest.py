@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+from util.testing.undeclared_outputs import undeclared_outputs_dir
+
 
 @pytest.fixture
 def workspace(tmp_path: Path) -> Path:
@@ -16,9 +18,10 @@ def workspace(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def native_logs(tmp_path: Path) -> Path:
-    logs = tmp_path / "native"
-    logs.mkdir()
+def native_logs(request: pytest.FixtureRequest) -> Path:
+    """Persist each native process trace for both assertions and failed-test diagnosis."""
+    logs = undeclared_outputs_dir() / "native" / str(request.node.name)
+    logs.mkdir(parents=True)
     for name in ("stdin.jsonl", "stdout.jsonl", "stderr.jsonl"):
         (logs / name).touch()
     return logs
