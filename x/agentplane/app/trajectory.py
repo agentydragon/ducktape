@@ -249,8 +249,9 @@ class ThreadView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: UUID
-    sandbox: str
-    session_id: str
+    # A target-only Thread is visible before its target produces a runner attachment.
+    sandbox: str | None
+    session_id: str | None
     harness: Harness = Field(description="The runner protocol Harness enum member.")
     model: str
     cwd: str
@@ -835,7 +836,9 @@ def _thread_views_query():
     )
     return (
         select(Thread, ThreadRunnerSession, last.c.last_sequence, last.c.last_at, FeedState.attached)
-        .join(ThreadRunnerSession, (ThreadRunnerSession.thread_id == Thread.id) & ThreadRunnerSession.active.is_(True))
+        .outerjoin(
+            ThreadRunnerSession, (ThreadRunnerSession.thread_id == Thread.id) & ThreadRunnerSession.active.is_(True)
+        )
         .outerjoin(last, last.c.thread_id == Thread.id)
         .outerjoin(FeedState, FeedState.thread_id == Thread.id)
     )
@@ -851,7 +854,7 @@ async def _thread_view(session: AsyncSession, thread_id: UUID) -> ThreadView | N
 
 def _view(
     thread: Thread,
-    runner: ThreadRunnerSession,
+    runner: ThreadRunnerSession | None,
     last_sequence: int | None,
     last_at: datetime | None,
     attached: dict[str, object] | None,
@@ -859,12 +862,12 @@ def _view(
     harness_state = (
         ParseDict(attached, pb.Attached()).harness_state if attached is not None else pb.HARNESS_STATE_UNSPECIFIED
     )
-    if thread.sandbox is None:  # pragma: no cover - attachment pins the Sandbox first.
+    if runner is not None and thread.sandbox is None:  # pragma: no cover - attachment pins the Sandbox first.
         raise RuntimeError("Thread with a runner session has no pinned Sandbox")
     return ThreadView(
         id=thread.id,
-        sandbox=thread.sandbox,
-        session_id=runner.runner_session_id,
+        sandbox=thread.sandbox if runner is not None else None,
+        session_id=runner.runner_session_id if runner is not None else None,
         harness=thread.harness,
         model=thread.model,
         cwd=thread.cwd,

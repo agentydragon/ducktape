@@ -101,9 +101,16 @@ async def test_thread_start_atomically_creates_a_target_only_thread_and_first_ou
     assert accepted.target == request.target
     assert accepted.runner_session_id == request.runner_session_id
     assert accepted.session_spec == SPEC
-    # A target-only Thread has no runner attachment, so it remains outside the legacy Thread
-    # projection until the start route and its Starting UI arrive in the join layer.
-    assert await store.get_thread(accepted.thread_id) is None
+    # The start/UI join makes the pre-attachment target visible without inventing a runner session.
+    view = await store.get_thread(accepted.thread_id)
+    assert view is not None
+    assert (view.sandbox, view.session_id, view.harness, view.model, view.cwd) == (
+        None,
+        None,
+        Harness.CLAUDE,
+        "test-model",
+        "/state/work",
+    )
     [first] = await store.thread_commands(accepted.thread_id)
     assert (first.ordinal, first.command) == (1, request.first_input)
     assert await store.thread_start_request(accepted.thread_id) == accepted
