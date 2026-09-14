@@ -95,13 +95,23 @@ class ClaudeRun:
         self._process: AsyncNativeProcess | None = None
 
     async def __aenter__(self) -> ClaudeRun:
-        process = AsyncNativeProcess(self._logs, self._command, cwd=self._cwd, environment=dict(self._environment))
-        process.frame_responder = self._responder
+        process = AsyncNativeProcess(
+            self._logs,
+            self._command,
+            cwd=self._cwd,
+            environment=dict(self._environment),
+            frame_responder=self._responder,
+        )
         self._process = await process.__aenter__()
-        if self._initialize:
-            response = await self.initialize()
-            if not isinstance(response, wire.ControlResponseFrame):
-                raise RuntimeError(f"Claude initialization failed: {response}")
+        try:
+            if self._initialize:
+                response = await self.initialize()
+                if not isinstance(response, wire.ControlResponseFrame):
+                    raise RuntimeError(f"Claude initialization failed: {response}")
+        except BaseException:
+            self._process = None
+            await process.close()
+            raise
         return self
 
     async def __aexit__(self, *args: object) -> None:

@@ -47,11 +47,11 @@ class _FrameTrace:
     def cursor(self) -> FrameCursor:
         return FrameCursor(self, len(self._frames))
 
-    async def append(self, frame: dict[str, Any]) -> None:
+    def append(self, frame: dict[str, Any]) -> None:
         self._frames.append(frame)
         self._changed.set()
 
-    async def close(self, failure: BaseException | None = None) -> None:
+    def close(self, failure: BaseException | None = None) -> None:
         self._closed = True
         self._failure = failure
         self._changed.set()
@@ -74,14 +74,22 @@ class _FrameTrace:
 class AsyncNativeProcess:
     """The native frame pipe, recording an ordered trace for independent test readers."""
 
-    def __init__(self, logs: Path, command: list[str], *, cwd: Path, environment: dict[str, str]):
+    def __init__(
+        self,
+        logs: Path,
+        command: list[str],
+        *,
+        cwd: Path,
+        environment: dict[str, str],
+        frame_responder: FrameResponder | None = None,
+    ):
         self.logs, self.command, self.cwd, self.environment = logs, command, cwd, environment
         self.process: asyncio.subprocess.Process | None = None
         self._frames = _FrameTrace()
         self._stdout_task: asyncio.Task[None] | None = None
         self._stderr_task: asyncio.Task[None] | None = None
         self._stdin_lock = asyncio.Lock()
-        self.frame_responder: FrameResponder | None = None
+        self._frame_responder = frame_responder
 
     async def __aenter__(self) -> AsyncNativeProcess:
         self.process = await asyncio.create_subprocess_exec(
@@ -159,16 +167,16 @@ class AsyncNativeProcess:
                 frame = json.loads(value)
                 if not isinstance(frame, dict):
                     raise ValueError("native stdout frame must be a JSON object")
-                await self._frames.append(frame)
-                if self.frame_responder is not None:
-                    response = await self.frame_responder(frame)
+                self._frames.append(frame)
+                if self._frame_responder is not None:
+                    response = await self._frame_responder(frame)
                     if response is not None:
                         await self.send(response)
         except BaseException as error:
-            await self._frames.close(error)
+            self._frames.close(error)
             raise
         else:
-            await self._frames.close()
+            self._frames.close()
 
     async def _stderr(self) -> None:
         assert self.process is not None

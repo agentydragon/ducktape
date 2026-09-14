@@ -115,33 +115,36 @@ class CodexRun:
         self._thread_id_value: str | None = None
 
     async def __aenter__(self) -> CodexRun:
-        self._process = await AsyncNativeProcess(
-            self._logs, self._command, cwd=self._cwd, environment=dict(self._environment)
-        ).__aenter__()
-        await self._initialize()
-        if self._resume_thread_id is None:
-            response = await self._request(
-                driver.thread_start(
-                    self._request_id(),
-                    cwd=self._thread_cwd,
-                    model=self._model,
-                    effort=self._effort,
-                    persist=self._persist,
-                    config=self._config,
-                    instructions=self._instructions,
+        process = AsyncNativeProcess(self._logs, self._command, cwd=self._cwd, environment=dict(self._environment))
+        self._process = await process.__aenter__()
+        try:
+            await self._initialize()
+            if self._resume_thread_id is None:
+                response = await self._request(
+                    driver.thread_start(
+                        self._request_id(),
+                        cwd=self._thread_cwd,
+                        model=self._model,
+                        effort=self._effort,
+                        persist=self._persist,
+                        config=self._config,
+                        instructions=self._instructions,
+                    )
                 )
-            )
-            self._thread_id_value = _response_thread_id(response)
-        else:
-            response = await self._request(
-                driver.thread_resume(
-                    self._request_id(),
-                    thread_id=self._resume_thread_id,
-                    base_instructions=self._resume_base_instructions,
-                    instructions=self._resume_instructions,
+            else:
+                response = await self._request(
+                    driver.thread_resume(
+                        self._request_id(),
+                        thread_id=self._resume_thread_id,
+                        base_instructions=self._resume_base_instructions,
+                        instructions=self._resume_instructions,
+                    )
                 )
-            )
             self._thread_id_value = _response_thread_id(response)
+        except BaseException:
+            self._process = None
+            await process.close()
+            raise
         return self
 
     async def __aexit__(self, *args: object) -> None:
