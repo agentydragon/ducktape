@@ -23,6 +23,7 @@ py_library(
 
 py_library(
     name = "testing_models",
+    testonly = True,
     srcs = ["testing_models.py"],
     visibility = ["//visibility:public"],
     deps = ["@pypi//pydantic"],

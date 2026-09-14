@@ -1,6 +1,9 @@
 load("//devinfra/python:defs.bzl", "py_library")
 
-package(default_visibility = ["//x/wt:__subpackages__"])
+package(
+    default_testonly = True,
+    default_visibility = ["//x/wt:__subpackages__"],
+)
 
 py_library(
     name = "asserts",
