@@ -55,7 +55,7 @@ py_library(
     deps = [
         "//util/bazel:workspace",
         "@pypi//requests",
-        "@pypi//urllib3",
+        "@pypi//urllib3",  # keep: mypy checks requests stubs' transitive imports
     ],
 )
 
