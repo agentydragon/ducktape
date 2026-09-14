@@ -550,7 +550,10 @@ oci_image(
     name = "server_image",
     base = "@debian_trixie_slim_linux_amd64",
     entrypoint = py_image_entrypoint("server_bin"),
-    env = py_image_env(binary_name = "server_bin"),
+    env = py_image_env(
+        binary_name = "server_bin",
+        extra_env = {"SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt"},
+    ),
     labels = {
         "org.opencontainers.image.source": "https://github.com/agentydragon/ducktape",
         "org.opencontainers.image.title": "haku-console",
