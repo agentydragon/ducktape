@@ -88,7 +88,7 @@ resource "authentik_provider_proxy" "alloy_otlp" {
   jwt_federation_providers = [authentik_provider_oauth2.alloy_otlp_client_credentials.id]
 }
 
-# TODO(authentik-meta-hide): Once the 2026.8 provider is active, consider
+# TODO(authentik-meta-hide): Now that the 2026.8 provider is active, consider
 # `meta_hide = true`; this proxy application is an OTLP plumbing endpoint, not a
 # user-facing launcher target. Verify this changes presentation only.
 resource "authentik_application" "alloy_otlp" {
@@ -120,7 +120,7 @@ resource "authentik_provider_oauth2" "alloy_otlp_client_credentials" {
   ]
 }
 
-# TODO(authentik-meta-hide): Once the 2026.8 provider is active, consider
+# TODO(authentik-meta-hide): Now that the 2026.8 provider is active, consider
 # `meta_hide = true`; this client-credentials application exists only for the
 # Alloy token rotator and should not be a launcher target.
 resource "authentik_application" "alloy_otlp_client_credentials" {
