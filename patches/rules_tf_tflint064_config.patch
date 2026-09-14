@@ -1,0 +1,10 @@
+--- a/tf/toolchains/tflint/config.hcl
++++ b/tf/toolchains/tflint/config.hcl
+@@ -1,5 +1,5 @@
+ config {
+     format = "compact"
+-    module = true
++    call_module_type = "all"
+     force = false
+     disabled_by_default = false
+ }
