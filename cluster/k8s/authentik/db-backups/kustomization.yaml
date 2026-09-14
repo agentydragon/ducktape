@@ -5,5 +5,4 @@ resources:
   - iam.yaml
   - object-store.yaml
   - scheduled-backup.yaml
-  - backup.yaml
   - seaweed-reference-grant.yaml

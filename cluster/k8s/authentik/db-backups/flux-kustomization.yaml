@@ -4,7 +4,7 @@ metadata:
   name: authentik-db-backups
   namespace: ducktape-flux
   annotations:
-    description: Creates the Authentik CNPG backup schedule and one-time pre-upgrade backup.
+    description: Creates the Authentik CNPG backup schedule and its SeaweedFS storage.
 spec:
   interval: 10m
   retryInterval: 1m
@@ -33,13 +33,6 @@ spec:
       kind: ObjectStore
       name: authentik-db-ovh
       namespace: authentik
-  # Report the one-off baseline backup through this Kustomization, but do not
-  # make Authentik availability depend on backup completion.
-  healthCheckExprs:
-    - apiVersion: postgresql.cnpg.io/v1
-      kind: Backup
-      current: has(status.phase) && status.phase == 'completed'
-      failed: has(status.phase) && status.phase == 'failed'
   dependsOn:
     - name: authentik-db
       namespace: ducktape-flux
