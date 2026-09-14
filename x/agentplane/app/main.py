@@ -10,6 +10,7 @@ import socket
 from collections.abc import MutableMapping
 from pathlib import Path
 from typing import Any, cast
+from uuid import UUID
 
 import httpx
 import uvicorn
@@ -246,11 +247,16 @@ async def async_main(settings: Settings) -> None:
         async def running_sandboxes() -> list[str]:
             return [view.name for view in live.sandbox_views() if view.state is ProvisioningState.RUNNING]
 
+        def sandbox_uid_of(name: str) -> UUID | None:
+            view = live.sandbox_view(name)
+            return view.uid if view is not None else None
+
         bridge = RunnerBridge(
             address_of=runner_address(live, settings.runner_port),
             store=store,
             discover_sandboxes=running_sandboxes,
             sandbox_changes=live.changes,
+            sandbox_uid_of=sandbox_uid_of,
         )
         operator_actions = (
             FederatedOperatorActions(settings.action_federation, oidc, actions_http)

@@ -1,10 +1,12 @@
 """Trajectories outlive sandboxes: every runner event, `Native` frames included, copied into
 PostgreSQL as it arrives.
 
-A thread is one runner session, keyed by the sandbox and the client-chosen session id; its events
-are stored as the protocol's own proto-JSON under the session's sequence, so a thread reads back
-without a runner and a deleted sandbox loses nothing. The schema is owned by the Alembic migrations
-under `migrations/`, applied by `database_migrate.py` as a separate deploy step.
+A product Thread is not a runner session. A `ThreadRunnerSession` records a proven association to
+one runner session at one point in the Thread's life. `ThreadCommand` is the app-owned desired
+side: one ordered, immutable command outbox per Thread. Events are stored as the protocol's own
+proto-JSON, so a Thread reads back without a runner and a deleted Sandbox loses nothing. The schema
+is owned by the Alembic migrations under `migrations/`, applied by `database_migrate.py` as a
+separate deploy step.
 """
 
 from __future__ import annotations
@@ -22,6 +24,7 @@ from sqlalchemy import (
     DateTime,
     Enum as SqlEnum,
     ForeignKey,
+    Index,
     Text,
     UniqueConstraint,
     delete,
@@ -48,11 +51,10 @@ from x.agentplane.runner import protocol_pb2 as pb
 
 class Thread(Base):
     __tablename__ = "thread"
-    __table_args__ = (UniqueConstraint("sandbox", "session_id"),)
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
-    sandbox: Mapped[str] = mapped_column(Text)
-    session_id: Mapped[str] = mapped_column(Text)
+    # A harness/spec projection survives between runner-session attachments. A later runner
+    # session may change the live model projection, but its identity never becomes a Thread id.
     harness: Mapped[Harness] = mapped_column(
         SqlEnum(
             Harness,
@@ -67,6 +69,28 @@ class Thread(Base):
     # NULL while unnamed; never the empty string.
     name: Mapped[str | None] = mapped_column(Text)
     archived: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
+
+
+class ThreadRunnerSession(Base):
+    """One actual runner session associated with a durable Thread."""
+
+    __tablename__ = "thread_runner_session"
+    __table_args__ = (
+        UniqueConstraint("sandbox", "runner_session_id"),
+        Index("thread_runner_session_one_active", "thread_id", unique=True, postgresql_where=text("active")),
+    )
+
+    thread_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
+    )
+    sandbox: Mapped[str] = mapped_column(Text, primary_key=True)
+    runner_session_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    # Migrated associations and test embeddings do not have a Kubernetes UID. A later desired
+    # Thread-start reconciler will require one before claiming a selected Sandbox.
+    sandbox_uid: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    # A Thread retains prior sessions but exposes exactly one current command target.
+    active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("true"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
 
 class Event(Base):
@@ -102,6 +126,22 @@ class FeedState(Base):
     end: Mapped[dict[str, str] | None] = mapped_column(JSONB(none_as_null=True))
 
 
+class ThreadCommand(Base):
+    """One immutable, ordered app-side command intent for a Thread."""
+
+    __tablename__ = "thread_command"
+    __table_args__ = (UniqueConstraint("thread_id", "ordinal"),)
+
+    thread_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
+    )
+    # The runner's idempotency key is scoped to the durable Thread command log.
+    command_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    ordinal: Mapped[int] = mapped_column(BigInteger)
+    command: Mapped[dict[str, object]] = mapped_column(JSONB)
+    accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+
+
 @dataclass(frozen=True)
 class IngestionLease:
     sandbox: str
@@ -126,6 +166,14 @@ class FeedError:
 class FeedSnapshot:
     attached: pb.Attached
     end: FeedEnd | FeedError | None
+
+
+@dataclass(frozen=True)
+class ThreadCommandSnapshot:
+    thread_id: UUID
+    command: pb.Command
+    ordinal: int
+    accepted_at: datetime
 
 
 class ThreadView(BaseModel):
@@ -153,6 +201,13 @@ class ThreadNotFoundError(Exception):
         super().__init__(f"no thread {thread_id}")
 
 
+class ThreadCommandConflictError(Exception):
+    """A command id was reused with a different immutable command payload."""
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(detail)
+
+
 class TrajectoryStore:
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
@@ -172,29 +227,55 @@ class TrajectoryStore:
     async def start_updates(self) -> None:
         await self._updates.start()
 
-    async def thread(self, sandbox: str, session_id: str, spec: pb.SessionSpec) -> UUID:
-        """The thread for a session, created from its spec on first sight."""
+    async def thread(
+        self, sandbox: str, session_id: str, spec: pb.SessionSpec, *, sandbox_uid: UUID | None = None
+    ) -> UUID:
+        """Find the product Thread for an actual runner attachment, creating it on first sight."""
         async with self._sessions.begin() as session:
-            created = await session.scalar(
-                insert(Thread)
-                .values(
-                    sandbox=sandbox,
-                    session_id=session_id,
-                    harness=Harness(pb.Harness.Name(spec.harness)),
-                    model=spec.model,
-                    cwd=spec.cwd,
+            existing = await session.scalar(
+                select(ThreadRunnerSession.thread_id).where(
+                    ThreadRunnerSession.sandbox == sandbox, ThreadRunnerSession.runner_session_id == session_id
                 )
-                .on_conflict_do_nothing(index_elements=[Thread.sandbox, Thread.session_id])
-                .returning(Thread.id)
             )
-            if created is not None:
-                await _notify(session)
-                return created
-            return (
-                await session.scalars(
-                    select(Thread.id).where(Thread.sandbox == sandbox, Thread.session_id == session_id)
-                )
-            ).one()
+            if existing is not None:
+                return existing
+
+            thread_id = uuid4()
+            session.add(
+                Thread(id=thread_id, harness=Harness(pb.Harness.Name(spec.harness)), model=spec.model, cwd=spec.cwd)
+            )
+            winner = await _activate_runner_session(session, thread_id, sandbox, sandbox_uid, session_id)
+            if winner != thread_id:
+                await session.execute(delete(Thread).where(Thread.id == thread_id))
+                return winner
+            await session.flush()
+            await _notify(session)
+            return thread_id
+
+    async def request_thread_command(self, thread_id: UUID, command: pb.Command) -> ThreadCommandSnapshot:
+        """Append a generic desired command, idempotently, to one existing Thread.
+
+        The Thread row is locked before assigning its next ordinal, so concurrent app replicas
+        establish one durable command order at commit time.
+        """
+        _validate_command(command)
+        async with self._sessions.begin() as session:
+            thread = await session.scalar(select(Thread).where(Thread.id == thread_id).with_for_update())
+            if thread is None:
+                raise ThreadNotFoundError(thread_id)
+            snapshot = await _append_thread_command(session, thread_id, command)
+            await _notify(session)
+            return snapshot
+
+    async def thread_commands(self, thread_id: UUID) -> list[ThreadCommandSnapshot]:
+        """Read durable desired commands in the order a reconciler must consider them."""
+        async with self._sessions() as session:
+            commands = await session.scalars(
+                select(ThreadCommand)
+                .where(ThreadCommand.thread_id == thread_id)
+                .order_by(ThreadCommand.ordinal, ThreadCommand.command_id)
+            )
+            return [_thread_command_snapshot(command) for command in commands]
 
     async def last_sequence(self, thread_id: UUID) -> int:
         async with self._sessions() as session:
@@ -324,37 +405,22 @@ class TrajectoryStore:
     ) -> list[ThreadView]:
         """Newest first; each filter given narrows the list to threads matching it. Archived
         threads are excluded unless asked for, mirroring the Sandbox inventory's own default."""
-        last = (
-            select(
-                Event.thread_id, func.max(Event.sequence).label("last_sequence"), func.max(Event.at).label("last_at")
-            )
-            .group_by(Event.thread_id)
-            .subquery()
-        )
-        query = (
-            select(Thread, last.c.last_sequence, last.c.last_at, FeedState.attached)
-            .outerjoin(last, last.c.thread_id == Thread.id)
-            .outerjoin(FeedState, FeedState.thread_id == Thread.id)
-            .order_by(Thread.created_at.desc())
-        )
+        query = _thread_views_query().order_by(Thread.created_at.desc())
         if sandbox is not None:
-            query = query.where(Thread.sandbox == sandbox)
+            query = query.where(ThreadRunnerSession.sandbox == sandbox)
         if session_id is not None:
-            query = query.where(Thread.session_id == session_id)
+            query = query.where(ThreadRunnerSession.runner_session_id == session_id)
         if not include_archived:
             query = query.where(Thread.archived.is_(False))
         async with self._sessions() as session:
             return [
-                _view(thread, last_sequence, last_at, attached)
-                for thread, last_sequence, last_at, attached in await session.execute(query)
+                _view(thread, runner, last_sequence, last_at, attached)
+                for thread, runner, last_sequence, last_at, attached in await session.execute(query)
             ]
 
     async def get_thread(self, thread_id: UUID) -> ThreadView | None:
         async with self._sessions() as session:
-            thread = await session.get(Thread, thread_id)
-            if thread is None:
-                return None
-            return _view(thread, *await _last(session, thread_id))
+            return await _thread_view(session, thread_id)
 
     async def rename(self, thread_id: UUID, name: str | None) -> ThreadView:
         """Set or, with None, clear the thread's name."""
@@ -364,7 +430,9 @@ class TrajectoryStore:
                 raise ThreadNotFoundError(thread_id)
             thread.name = name
             await session.flush()
-            renamed = _view(thread, *await _last(session, thread_id))
+            renamed = await _thread_view(session, thread_id)
+            if renamed is None:  # pragma: no cover - the locked row exists.
+                raise RuntimeError("renamed Thread disappeared before it could be projected")
             await _notify(session)
         return renamed
 
@@ -382,7 +450,9 @@ class TrajectoryStore:
                 raise ThreadNotFoundError(thread_id)
             thread.archived = archived
             await session.flush()
-            view = _view(thread, *await _last(session, thread_id))
+            view = await _thread_view(session, thread_id)
+            if view is None:  # pragma: no cover - the locked row exists.
+                raise RuntimeError("archived Thread disappeared before it could be projected")
             await _notify(session)
         return view
 
@@ -396,6 +466,77 @@ class TrajectoryStore:
                 .limit(limit)
             )
             return [ParseDict(payload, pb.Event()) for payload in payloads]
+
+
+def _validate_command(command: pb.Command) -> None:
+    if not command.command_id or command.WhichOneof("operation") is None:
+        raise ValueError("a Thread command needs a non-empty command id and operation")
+
+
+async def _append_thread_command(session: AsyncSession, thread_id: UUID, command: pb.Command) -> ThreadCommandSnapshot:
+    _validate_command(command)
+    encoded = MessageToDict(command)
+    existing = await session.get(ThreadCommand, (thread_id, command.command_id))
+    if existing is not None:
+        if existing.command != encoded:
+            raise ThreadCommandConflictError("command id was already used for a different Thread command")
+        return _thread_command_snapshot(existing)
+    latest_ordinal = await session.scalar(
+        select(func.coalesce(func.max(ThreadCommand.ordinal), 0)).where(ThreadCommand.thread_id == thread_id)
+    )
+    if latest_ordinal is None:  # SQL coalesce guarantees a row; retain an explicit typed invariant.
+        raise RuntimeError("Thread command ordinal aggregate returned no value")
+    row = ThreadCommand(
+        thread_id=thread_id,
+        command_id=command.command_id,
+        ordinal=latest_ordinal + 1,
+        command=encoded,
+        accepted_at=datetime.now(UTC),
+    )
+    session.add(row)
+    return _thread_command_snapshot(row)
+
+
+def _thread_command_snapshot(command: ThreadCommand) -> ThreadCommandSnapshot:
+    return ThreadCommandSnapshot(
+        thread_id=command.thread_id,
+        command=ParseDict(command.command, pb.Command()),
+        ordinal=command.ordinal,
+        accepted_at=command.accepted_at,
+    )
+
+
+async def _activate_runner_session(
+    session: AsyncSession, thread_id: UUID, sandbox: str, sandbox_uid: UUID | None, runner_session_id: str
+) -> UUID:
+    """Make this proven association the sole active target for its Thread."""
+    await session.execute(
+        update(ThreadRunnerSession)
+        .where(ThreadRunnerSession.thread_id == thread_id, ThreadRunnerSession.active.is_(True))
+        .values(active=False)
+    )
+    inserted = await session.scalar(
+        insert(ThreadRunnerSession)
+        .values(
+            thread_id=thread_id,
+            sandbox=sandbox,
+            sandbox_uid=sandbox_uid,
+            runner_session_id=runner_session_id,
+            active=True,
+        )
+        .on_conflict_do_nothing(index_elements=[ThreadRunnerSession.sandbox, ThreadRunnerSession.runner_session_id])
+        .returning(ThreadRunnerSession.thread_id)
+    )
+    if inserted is not None:
+        return inserted
+    winner = await session.scalar(
+        select(ThreadRunnerSession.thread_id).where(
+            ThreadRunnerSession.sandbox == sandbox, ThreadRunnerSession.runner_session_id == runner_session_id
+        )
+    )
+    if winner is None:  # pragma: no cover - the conflict above names this unique key.
+        raise RuntimeError("runner-session insert conflicted without a winning association")
+    return winner
 
 
 def _positive_duration(duration: timedelta) -> None:
@@ -412,7 +553,11 @@ async def _fence(session: AsyncSession, lease: IngestionLease, thread_id: UUID) 
     now = (await session.scalars(select(func.clock_timestamp()))).one()
     if owned is None or owned.token != lease.token or owned.expires_at <= now:
         raise IngestionLeaseLostError(lease.sandbox)
-    sandbox = await session.scalar(select(Thread.sandbox).where(Thread.id == thread_id))
+    sandbox = await session.scalar(
+        select(ThreadRunnerSession.sandbox).where(
+            ThreadRunnerSession.thread_id == thread_id, ThreadRunnerSession.active.is_(True)
+        )
+    )
     if sandbox != lease.sandbox:
         raise IngestionLeaseLostError("lease does not own this thread's sandbox")
 
@@ -437,25 +582,43 @@ def _project_attached(attached: pb.Attached, event: pb.Event) -> None:
             attached.spec.model = event.model_changed.model
 
 
-async def _last(session: AsyncSession, thread_id: UUID) -> tuple[int | None, datetime | None, dict[str, object] | None]:
-    last = await session.execute(
-        select(func.max(Event.sequence), func.max(Event.at)).where(Event.thread_id == thread_id)
+def _thread_views_query():
+    """One current runner association plus durable transcript progress for each Thread."""
+    last = (
+        select(Event.thread_id, func.max(Event.sequence).label("last_sequence"), func.max(Event.at).label("last_at"))
+        .group_by(Event.thread_id)
+        .subquery()
     )
-    last_sequence, last_at = last.one()
-    state = await session.get(FeedState, thread_id)
-    return last_sequence, last_at, (state.attached if state is not None else None)
+    return (
+        select(Thread, ThreadRunnerSession, last.c.last_sequence, last.c.last_at, FeedState.attached)
+        .join(ThreadRunnerSession, (ThreadRunnerSession.thread_id == Thread.id) & ThreadRunnerSession.active.is_(True))
+        .outerjoin(last, last.c.thread_id == Thread.id)
+        .outerjoin(FeedState, FeedState.thread_id == Thread.id)
+    )
+
+
+async def _thread_view(session: AsyncSession, thread_id: UUID) -> ThreadView | None:
+    row = (await session.execute(_thread_views_query().where(Thread.id == thread_id))).one_or_none()
+    if row is None:
+        return None
+    thread, runner, last_sequence, last_at, attached = row
+    return _view(thread, runner, last_sequence, last_at, attached)
 
 
 def _view(
-    thread: Thread, last_sequence: int | None, last_at: datetime | None, attached: dict[str, object] | None
+    thread: Thread,
+    runner: ThreadRunnerSession,
+    last_sequence: int | None,
+    last_at: datetime | None,
+    attached: dict[str, object] | None,
 ) -> ThreadView:
     harness_state = (
         ParseDict(attached, pb.Attached()).harness_state if attached is not None else pb.HARNESS_STATE_UNSPECIFIED
     )
     return ThreadView(
         id=thread.id,
-        sandbox=thread.sandbox,
-        session_id=thread.session_id,
+        sandbox=runner.sandbox,
+        session_id=runner.runner_session_id,
         harness=thread.harness,
         model=thread.model,
         cwd=thread.cwd,
