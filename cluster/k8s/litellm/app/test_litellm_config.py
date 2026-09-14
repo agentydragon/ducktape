@@ -55,12 +55,13 @@ def test_hidden_model_aliases_target_served_models() -> None:
 
 
 # The shape segment names the wire LiteLLM speaks upstream (model_rosters.py), so the name and
-# the wiring must agree on both halves. The definer half must match the handler
-# `litellm_params.model`'s prefix selects -- the check that catches naming a Google-wire entry
-# `oai-chat`, or an Ollama-native one. The protocol half is pinned by `model_info.mode`, which is
-# what separates two shapes sharing a definer (oai-chat vs oai-responses, goog-generate vs
-# goog-embed). A provider absent from this map has not declared which wire it speaks, so adding
-# one is a deliberate edit rather than a silent pass.
+# the wiring must agree on both halves. The definer half must match the provider prefix selected
+# by `litellm_params.model` -- the check that catches naming a Google-wire entry `oai-chat`, or an
+# Ollama-native one. For a custom provider, this map records the wire that its adapter emits. The
+# protocol half is pinned by `model_info.mode`, which is what separates two shapes sharing a
+# definer (oai-chat vs oai-responses, goog-generate vs goog-embed). A provider absent from this map
+# has not declared which wire it speaks, so adding one is a deliberate edit rather than a silent
+# pass.
 _UPSTREAM_DEFINER = {
     "anthropic": "ant",
     "openai": "oai",
@@ -68,6 +69,9 @@ _UPSTREAM_DEFINER = {
     "groq": "oai",  # OpenAI-compatible chat at api.groq.com/openai/v1
     "gemini": "goog",
     "ollama": "olm",
+    # The in-process Tana adapter speaks Anthropic Messages on the wire while
+    # using its own LiteLLM provider prefix for dispatch.
+    "tana": "ant",
 }
 _SHAPE_MODE = {
     ApiShape.ANT_MESSAGES: "chat",
@@ -93,6 +97,15 @@ def test_shape_segment_matches_each_entry_upstream_wire() -> None:
         assert _UPSTREAM_DEFINER[upstream] == shape.partition("-")[0], name
         assert entry["model_info"]["mode"] == _SHAPE_MODE[shape], name
     assert shapes_seen == set(ApiShape)
+
+
+def test_tana_routes_register_the_in_process_provider() -> None:
+    config = _load_config("proxy-config.yaml")
+    tana_entries = [entry for entry in config["model_list"] if entry["model_name"].startswith("tana/")]
+
+    assert tana_entries
+    assert all(entry["litellm_params"]["custom_llm_provider"] == "tana" for entry in tana_entries)
+    assert any(item["provider"] == "tana" for item in config["litellm_settings"]["custom_provider_map"])
 
 
 def test_config_maps_mount_their_matching_committed_configs() -> None:

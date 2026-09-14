@@ -15,7 +15,7 @@ import {
 } from "@mantine/core";
 // Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
 import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
-import { useEffect, useState } from "react";
+import { type JSX, useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 
 import { fromJson, type JsonValue } from "@bufbuild/protobuf";
@@ -36,7 +36,7 @@ import { EgressSection } from "./egress";
 import { JsonView } from "./json_view";
 import { ConfirmDelete, DeleteButton, SuspendResume } from "./lifecycle";
 import { liveSandboxUrl, LiveStatus, useLive, type SandboxSnapshot } from "./live";
-import { HarnessState, SessionSpecSchema, type SessionSummary } from "./protocol_pb";
+import { HarnessState, SessionSpecSchema, type SessionSummary } from "../../runner/protocol_pb";
 
 const HARNESSES: { value: Harness; label: string }[] = [
   { value: "HARNESS_CLAUDE", label: "Claude" },
@@ -408,7 +408,7 @@ export function SandboxPage({
                       </Table.Td>
                       <Table.Td>{HarnessState[session.harnessState]}</Table.Td>
                       <Table.Td>{session.activeTurnId || "—"}</Table.Td>
-                      <Table.Td>{String(session.lastSequence)}</Table.Td>
+                      <Table.Td>{String(session.lastCursor)}</Table.Td>
                       <Table.Td style={{ width: "1%", whiteSpace: "nowrap" }}>
                         {thread && (
                           <Menu position="bottom-end">

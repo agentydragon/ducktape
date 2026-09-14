@@ -1,5 +1,5 @@
 import { Button, Code, Group, Paper, Stack, Text, Title } from "@mantine/core";
-import { useCallback, useEffect, useState } from "react";
+import { type JSX, useCallback, useEffect, useState } from "react";
 
 type Device = { endpoint: string; user_agent: string | null; created_at: string };
 

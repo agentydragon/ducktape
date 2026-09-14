@@ -1,5 +1,5 @@
 import { Badge, Button, Code, Group, Paper, Stack, Text, Title } from "@mantine/core";
-import { useCallback, useEffect, useState } from "react";
+import { type JSX, useCallback, useEffect, useState } from "react";
 
 import {
   actionService,

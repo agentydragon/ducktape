@@ -62,7 +62,10 @@ flowchart TB
     UISHELL_DRAWER["Planned UI<br/>pending-approval badge + drawer<br/>global subscription, non-modal"]:::future
     UISHELL_NEWTHREAD_SANDBOX["Planned UI<br/>pre-scoped '+ New thread' on a Sandbox's page<br/>Sandbox/preset already fixed"]:::future
     UISHELL_NEWTHREAD_LANDING["Planned UI<br/>sidebar '+' unscoped new-thread composer<br/>Sandbox/preset/model pickers + prompt"]:::future
+    THREAD_COMMAND_DELIVERY["Planned backend<br/>reconcile durable Thread input to runner<br/>receipt/effect + crash recovery"]:::future
+    THREAD_REPLAY_PROTOCOL["Planned protocol<br/>one protobuf Command/Event language<br/>durable app-to-frontend replay"]:::future
     NEWTHREAD_DURABLE["Planned backend<br/>server-owned sandbox+thread provisioning<br/>must survive a browser close or app-server restart mid-submit"]:::future
+    THREAD_OUTBOX_CUTOVER["Required cutover<br/>all product Thread commands via outbox<br/>retire direct session-command pushes"]:::future
     THREAD_SUCCESSOR_DELIVERY["Deferred decision<br/>unsettled Thread command across<br/>successor runner session"]:::future
     CONTROL_STATE["Deferred decision<br/>dynamic runtime control state<br/>model/effort acceptance"]:::future
     UISHELL_SIDEBAR_LIVE["Bug + planned fix<br/>sidebar Thread/Sandbox state goes stale<br/>rename, sandbox status icon never push-update"]:::future
@@ -80,6 +83,14 @@ flowchart TB
     AG -. hosted Thread lifecycle .-> RETIRE_AGENT
 
     INPUT_DELIVERY -. reliable Thread ingress .-> ING
+    INPUT_DELIVERY --> THREAD_COMMAND_DELIVERY
+    THREAD_COMMAND_DELIVERY --> THREAD_REPLAY_PROTOCOL
+    THREAD_REPLAY_PROTOCOL --> NEWTHREAD_DURABLE
+    THREAD_REPLAY_PROTOCOL --> UISHELL_NEWTHREAD_SANDBOX
+    THREAD_REPLAY_PROTOCOL --> UISHELL_NEWTHREAD_LANDING
+    THREAD_COMMAND_DELIVERY --> THREAD_OUTBOX_CUTOVER
+    THREAD_REPLAY_PROTOCOL --> THREAD_OUTBOX_CUTOVER
+    CONTROL_STATE --> THREAD_OUTBOX_CUTOVER
     T3 -. product work .-> PROD
 
     ACCESS -. authority choice .-> EGRESS_CHANGE
@@ -122,7 +133,7 @@ Haku Console migration is split: Agent/conversation management and tool-call/app
 can retire on different schedules after their respective replacement surfaces exist.
 
 The session-first UI shell (`UISHELL_DRAWER`, `UISHELL_NEWTHREAD_SANDBOX`,
-`UISHELL_NEWTHREAD_LANDING`, `NEWTHREAD_DURABLE`, `THREAD_SUCCESSOR_DELIVERY`, `UISHELL_SIDEBAR_LIVE`, `UISHELL_SIDEBAR_ALL_SANDBOXES`,
+`UISHELL_NEWTHREAD_LANDING`, `THREAD_COMMAND_DELIVERY`, `NEWTHREAD_DURABLE`, `THREAD_OUTBOX_CUTOVER`, `THREAD_SUCCESSOR_DELIVERY`, `UISHELL_SIDEBAR_LIVE`, `UISHELL_SIDEBAR_ALL_SANDBOXES`,
 `UISHELL_SIDEBAR_SANDBOX_LINK`, `UISHELL_NEWSANDBOX_NAV`, `THREAD_BROWSE_PAGINATE`) is a separate
 frontend-ergonomics track: it is not gated by, and does not gate, the Action Service milestones
 above. `UISHELL_NEWTHREAD_SANDBOX` and `UISHELL_NEWTHREAD_LANDING` can each ship a working happy-path
@@ -446,6 +457,27 @@ received. No acknowledgement, retry, steering, cancellation, or completion may b
 runner. Keep unsupported operations native or explicitly unavailable. **Deferred:** generic queue
 management and unproven per-input cancellation.
 
+### `THREAD_COMMAND_DELIVERY` — deliver existing-Thread input through the outbox
+
+**Immediate backend step:** the persistence-only Thread command outbox is allowed to land first,
+but it is not yet a product command ingress. Build a multi-replica reconciler for an existing
+Thread's current Sandbox and runner session: take the oldest eligible `SubmitInput`, deliver its
+stable command id, ingest the runner's receipt/effect/no-op/rejection Events, and recover without
+duplicate native input after app-replica crash, runner reconnect, or browser reload. The runner's
+session-scoped Event sequence already survives runner-process restarts; this item does not add a
+successor runner session or a second Event sequence to a Thread.
+
+Do not add a normal command HTTP/UI entrypoint that merely writes an unconsumed outbox row. The
+existing direct session command path remains only until this reconciler has an end-to-end
+`SubmitInput` path; the combined new Sandbox+Thread request is explicitly downstream in
+`NEWTHREAD_DURABLE`, not an alternate way to test or bypass delivery.
+
+Acceptance covers an existing running Thread and an existing suspended/resumed Sandbox separately:
+the app persists the input before delivery, retries the same id after each failure window, and
+shows the exact runner-authoritative receipt/effect state after reload. It uses the behavior
+evidence from `INPUT_DELIVERY`; it does not make model-change or interrupt controls generally
+available before their own gate.
+
 ### `PROD` — production-capable governed action execution
 
 **Milestone:** a production Agentplane instance, distinct from staging, governing Actions for real
@@ -527,10 +559,11 @@ question, not decided.
 
 ### `NEWTHREAD_DURABLE` — server-owned sandbox+thread provisioning
 
-**Planned backend:** implement the Thread-command outbox and reconciler in
-[Thread, runner, and harness layering](../docs/thread_layering.md). The new-Thread transaction
-must atomically mint the Thread identity, persist its Sandbox target/session plan, and append its
-first Thread command. Any replica must resume reconciliation after the browser or another replica
+**Prerequisite:** `THREAD_COMMAND_DELIVERY`. The combined start is an extension of a working
+existing-Thread outbox path, not a persistence-only feature. Its transaction must atomically mint
+the Thread identity, persist its Sandbox target/session plan, and append its first Thread command;
+the same reconciler then materializes/selects the target, establishes the runner session, and
+delivers that command. Any replica must resume reconciliation after the browser or another replica
 disappears; Kubernetes remains the Sandbox lifecycle authority and the runner remains the command
 receipt/effect authority.
 
@@ -543,6 +576,59 @@ dropped/no-op, or later confirmed—never as an unbounded received state.
 The harness-loss/Sandbox suspend-resume matrix, which keeps Kubernetes, runner, and native
 continuation evidence separate, is in
 [Thread, runner, and harness layering](../docs/thread_layering.md#required-harness-loss-and-sandbox-lifecycle-cross-check).
+
+### `THREAD_REPLAY_PROTOCOL` — one protobuf language across the app boundary
+
+**Planned protocol:** frontend-to-app, app-to-runner, runner-to-app, and app-to-frontend
+reuse the generated runner `Command` and `Event` payloads. A browser submits a
+caller-minted `Command.command_id`; the app's transaction appends that exact `Command`
+to the Thread outbox, the reconciler sends that exact payload to the runner, and the app
+relays the runner's exact `Event` payload after durable copying. The app-to-frontend
+protocol adds only a typed `ThreadRecord` envelope for Thread identity, command ordinal
+or runner-session association, and a replay cursor. It does not add a frontend command
+body, a `ThreadCommandView` state vocabulary, or app-produced conversation items.
+
+The committed command record is the one app-specific boundary: it says the app has the
+command but the runner has not necessarily admitted it. `CommandReceived` remains a
+runner Event, so the frontend distinguishes awaiting runner admission from runner
+admitted by folding the replayed `Command` and `Event` records. The replay cursor is a
+lossless browser transport cursor, never a synthetic ordering across runner sessions;
+Kubernetes/Sandbox lifecycle stays separately provenanced operational state.
+
+**Acceptance evidence:** a fresh or reconnecting browser reconstructs normal and Raw
+Thread views using only typed replay records from PostgreSQL. Normal conversation cards
+are a pure frontend projection of runner Events; the pending queue is a pure fold of
+app-stored Commands plus runner receipts/effects. The raw view exposes the exact payload
+and provenance. No product route directly pushes a command to a runner, and no
+server-side UI projection or duplicated JSON command/event schema remains.
+
+### `THREAD_OUTBOX_CUTOVER` — retire direct session-command pushes
+
+**Required cutover:** once `THREAD_COMMAND_DELIVERY` and `CONTROL_STATE` have their stated
+evidence, every product Thread command—`SubmitInput`, `InterruptTurn`,
+`ChangeModel`, and `StopRunnerSession`—first commits a `ThreadCommand` to the durable outbox.
+The app's reconciler is then the only normal app component that writes that command to a runner.
+The full receipt/effect and pending-queue contract is [Thread, runner, and harness
+layering](../docs/thread_layering.md#command-protocol-intent-receipt-then-outcome).
+
+The product ingress is the generated protobuf `Command` at the Thread command route;
+the app-to-frontend replay uses the corresponding generated `Command` and `Event`
+payloads in its `ThreadRecord` envelope. Do not retain a frontend-specific input body or
+independently-maintained command-status protocol.
+
+Remove the direct session-command HTTP routes and their frontend helpers
+(`/sandboxes/{name}/sessions/{session_id}/inputs`, `interrupt`, `model`, and `shutdown`) in the
+same atomic cutover; do not keep compatibility aliases or a second product delivery path. A
+manual object-lifecycle surface still creates, suspends, resumes, attaches to, and inspects a
+Sandbox/runner session, but a normal runner command must first be associated with a Thread and
+use its outbox. Test-only/debug-only runner control, if ever needed, must be explicitly isolated
+from product API/UI behavior.
+
+Acceptance is end-to-end: the unified Thread page records the command before a runner exists or
+is reachable; reload and an app-replica crash preserve it; reconciliation reaches the runner with
+the same command id; and receipt/effect/no-op/rejection, rather than an HTTP response, determines
+what the UI claims. This includes an interrupt racing queued inputs and a model change received
+before it can take effect.
 
 ### `THREAD_SUCCESSOR_DELIVERY` — unsettled command across a successor runner session
 

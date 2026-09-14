@@ -12,7 +12,7 @@ from pathlib import PurePosixPath
 
 import grpc
 
-from x.agentplane.runner import protocol_pb2 as pb, protocol_pb2_grpc
+from x.agentplane.runner import protocol_pb2, protocol_pb2_grpc
 from x.agentplane.runner.adapter import HarnessAdapter
 from x.agentplane.runner.claude import ClaudeAdapter
 from x.agentplane.runner.codex import CodexAdapter
@@ -38,12 +38,12 @@ class InitializationConflictError(Exception):
 
 
 def make_adapter(session: Session) -> HarnessAdapter:
-    harness = pb.Harness.Value(session.record.harness)
-    if harness == pb.HARNESS_CLAUDE:
+    harness = protocol_pb2.Harness.Value(session.record.harness)
+    if harness == protocol_pb2.HARNESS_CLAUDE:
         if session.config.claude is None:
             raise RuntimeError("this runner is not configured for Claude sessions")
         return ClaudeAdapter(session, session.config.claude)
-    if harness == pb.HARNESS_CODEX:
+    if harness == protocol_pb2.HARNESS_CODEX:
         if session.config.codex is None:
             raise RuntimeError("this runner is not configured for Codex sessions")
         return CodexAdapter(session, session.config.codex)
@@ -59,7 +59,9 @@ class Runner:
         self._initialization_log: InitializationLog | None = None
         self._initialization_task: asyncio.Task[None] | None = None
 
-    async def initialize(self, request: pb.InitializeRequest) -> tuple[InitializationLog, asyncio.Task[None] | None]:
+    async def initialize(
+        self, request: protocol_pb2.InitializeRequest
+    ) -> tuple[InitializationLog, asyncio.Task[None] | None]:
         """Select one sandbox bootstrap and return its replayable log and current execution."""
         source = request.script.encode()
         if not source or len(source) > _MAX_BOOTSTRAP_BYTES:
@@ -116,10 +118,10 @@ class Runner:
         assert process.stdout is not None
         assert process.stderr is not None
         stdout = asyncio.create_task(
-            self._record_initialization_output(process.stdout, attempt, pb.INITIALIZATION_STREAM_STDOUT, log)
+            self._record_initialization_output(process.stdout, attempt, protocol_pb2.INITIALIZATION_STREAM_STDOUT, log)
         )
         stderr = asyncio.create_task(
-            self._record_initialization_output(process.stderr, attempt, pb.INITIALIZATION_STREAM_STDERR, log)
+            self._record_initialization_output(process.stderr, attempt, protocol_pb2.INITIALIZATION_STREAM_STDERR, log)
         )
         process.stdin.write(source)
         await process.stdin.drain()
@@ -131,7 +133,7 @@ class Runner:
 
     @staticmethod
     async def _record_initialization_output(
-        stream: asyncio.StreamReader, attempt: int, source: pb.InitializationStream.ValueType, log: InitializationLog
+        stream: asyncio.StreamReader, attempt: int, source: protocol_pb2.InitializationStream, log: InitializationLog
     ) -> None:
         while data := await stream.read(4096):
             log.append_output(attempt, source, data)
@@ -152,7 +154,7 @@ class Runner:
             )
         return self.sessions[session_id]
 
-    async def open(self, request: pb.Open) -> Session:
+    async def open(self, request: protocol_pb2.Open) -> Session:
         try:
             session_id = validate_session_id(request.session_id)
         except ValueError as error:
@@ -164,7 +166,7 @@ class Runner:
         else:
             if not request.HasField("spec"):
                 raise OpenError(f"session {session_id} does not exist and Open carries no spec")
-            if request.spec.harness not in (pb.HARNESS_CLAUDE, pb.HARNESS_CODEX):
+            if request.spec.harness not in (protocol_pb2.HARNESS_CLAUDE, protocol_pb2.HARNESS_CODEX):
                 raise OpenError("spec.harness must be CLAUDE or CODEX")
             if not request.spec.cwd or not request.spec.model:
                 raise OpenError("spec.cwd and spec.model are required")
@@ -191,13 +193,15 @@ class Runner:
         if self._initialization_log is not None:
             self._initialization_log.close()
 
-    def summaries(self) -> list[pb.SessionSummary]:
+    def summaries(self) -> list[protocol_pb2.SessionSummary]:
         return [
-            pb.SessionSummary(
+            protocol_pb2.SessionSummary(
                 session_id=session.session_id,
                 spec=session.record.spec(),
-                last_sequence=session.log.last_sequence,
-                harness_state=pb.HARNESS_STATE_RUNNING if session.running else pb.HARNESS_STATE_STOPPED,
+                last_cursor=session.log.last_cursor,
+                harness_state=protocol_pb2.HARNESS_STATE_RUNNING
+                if session.running
+                else protocol_pb2.HARNESS_STATE_STOPPED,
                 active_turn_id=session.active_turn_id,
             )
             for session in sorted(self.sessions.values(), key=lambda session: session.session_id)
@@ -209,8 +213,8 @@ class RunnerService(protocol_pb2_grpc.RunnerServicer):
         self.runner = runner
 
     async def Initialize(  # noqa: N802  # gRPC names servicer methods after the RPC
-        self, request: pb.InitializeRequest, context: grpc.aio.ServicerContext
-    ) -> AsyncIterator[pb.InitializationEvent]:
+        self, request: protocol_pb2.InitializeRequest, context: grpc.aio.ServicerContext
+    ) -> AsyncIterator[protocol_pb2.InitializationEvent]:
         try:
             log, execution = await self.runner.initialize(request)
             if request.after_sequence > log.last_sequence:
@@ -241,42 +245,44 @@ class RunnerService(protocol_pb2_grpc.RunnerServicer):
             await log.wait_beyond(cursor)
 
     async def ListSessions(  # noqa: N802  # gRPC names servicer methods after the RPC
-        self, request: pb.ListSessionsRequest, context: grpc.aio.ServicerContext
-    ) -> pb.ListSessionsResponse:
+        self, request: protocol_pb2.ListSessionsRequest, context: grpc.aio.ServicerContext
+    ) -> protocol_pb2.ListSessionsResponse:
         del request, context
-        return pb.ListSessionsResponse(sessions=self.runner.summaries())
+        return protocol_pb2.ListSessionsResponse(sessions=self.runner.summaries())
 
     async def Attach(  # noqa: N802  # gRPC names servicer methods after the RPC
-        self, request_iterator: AsyncIterator[pb.ClientMessage], context: grpc.aio.ServicerContext
-    ) -> AsyncIterator[pb.ServerMessage]:
+        self, request_iterator: AsyncIterator[protocol_pb2.ClientMessage], context: grpc.aio.ServicerContext
+    ) -> AsyncIterator[protocol_pb2.ServerMessage]:
         del context
         first = await anext(request_iterator, None)
         if first is None or not first.HasField("open"):
-            yield pb.ServerMessage(error="the first client message must be Open")
+            yield protocol_pb2.ServerMessage(error="the first client message must be Open")
             return
         try:
             session = await self.runner.open(first.open)
         except OpenError as error:
-            yield pb.ServerMessage(error=str(error))
+            yield protocol_pb2.ServerMessage(error=str(error))
             return
         except Exception as error:  # the stream must report a launch failure, not hang
             logger.exception("session %s: open failed", first.open.session_id)
-            yield pb.ServerMessage(error=f"open failed: {error}")
+            yield protocol_pb2.ServerMessage(error=f"open failed: {error}")
             return
-        if first.open.after_sequence > session.log.last_sequence:
-            yield pb.ServerMessage(
-                error=f"after_sequence {first.open.after_sequence} is beyond the session log, "
-                f"whose last sequence is {session.log.last_sequence}"
+        if first.open.follow.after_cursor > session.log.last_cursor:
+            yield protocol_pb2.ServerMessage(
+                error=f"after_cursor {first.open.follow.after_cursor} is beyond the session log, "
+                f"whose last cursor is {session.log.last_cursor}"
             )
             return
-        opened_sequence = session.log.last_sequence
+        opened_cursor = session.log.last_cursor
         ended = not session.harness_running
-        yield pb.ServerMessage(
-            attached=pb.Attached(
+        yield protocol_pb2.ServerMessage(
+            attached=protocol_pb2.Attached(
                 session_id=session.session_id,
                 spec=session.record.spec(),
-                last_sequence=session.log.last_sequence,
-                harness_state=pb.HARNESS_STATE_RUNNING if session.running else pb.HARNESS_STATE_STOPPED,
+                last_cursor=session.log.last_cursor,
+                harness_state=protocol_pb2.HARNESS_STATE_RUNNING
+                if session.running
+                else protocol_pb2.HARNESS_STATE_STOPPED,
                 active_turn_id=session.active_turn_id,
             )
         )
@@ -285,21 +291,21 @@ class RunnerService(protocol_pb2_grpc.RunnerServicer):
         consumer = asyncio.create_task(
             _consume(session, request_iterator, closing, failure), name=f"{session.session_id}-commands"
         )
-        cursor = first.open.after_sequence
+        cursor = first.open.follow.after_cursor
         try:
             while True:
-                for event in session.log.since(cursor):
-                    if ended and event.sequence > opened_sequence and event.HasField("harness_started"):
+                for entry in session.log.since(cursor):
+                    if ended and entry.cursor > opened_cursor and entry.event.HasField("harness_started"):
                         return
-                    yield pb.ServerMessage(event=event)
-                    cursor = event.sequence
-                    if event.sequence > opened_sequence and event.HasField("harness_exited"):
+                    yield protocol_pb2.ServerMessage(event_entry=entry)
+                    cursor = entry.cursor
+                    if entry.cursor > opened_cursor and entry.event.HasField("harness_exited"):
                         ended = True
                 if ended:
                     return
                 if closing.is_set():
                     if failure:
-                        yield pb.ServerMessage(error=failure[0])
+                        yield protocol_pb2.ServerMessage(error=failure[0])
                     return
                 await _wake(session, closing, cursor)
         finally:
@@ -329,7 +335,7 @@ async def _finish_command(command: Awaitable[None]) -> None:
 
 
 async def _consume(
-    session: Session, requests: AsyncIterator[pb.ClientMessage], closing: asyncio.Event, failure: list[str]
+    session: Session, requests: AsyncIterator[protocol_pb2.ClientMessage], closing: asyncio.Event, failure: list[str]
 ) -> None:
     try:
         async for message in requests:

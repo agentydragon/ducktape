@@ -1,5 +1,5 @@
 import { ActionIcon, Badge, Button, Group, Indicator, Loader, Stack, Text, Tooltip } from "@mantine/core";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type JSX, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   approvalDisplayFields,

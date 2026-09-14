@@ -23,9 +23,9 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from x.agentplane.native.claude import driver, scenarios, wire
+from x.agentplane.native.claude import driver, facade, scenarios, wire
 from x.agentplane.native.claude.blocks import Block, TextBlock, ThinkingBlock, ToolResultBlock, ToolUseBlock, blocks_of
-from x.agentplane.runner import protocol_pb2 as pb
+from x.agentplane.protocol import event_pb2
 from x.agentplane.runner.adapter import HarnessAdapter
 from x.agentplane.runner.config import ClaudeLaunch
 
@@ -40,6 +40,9 @@ class ClaudeAdapter(HarnessAdapter):
     def __init__(self, session: Session, launch: ClaudeLaunch) -> None:
         self.session = session
         self.launch = launch
+        # The facade only performs typed native I/O. Session still logs every receipt before this
+        # adapter sees it and this adapter alone projects those frames into runner observations.
+        self.harness = facade.ClaudeHarness(session)
         self._native_session_id = session.record.native_session_id or str(uuid4())
         # User frame uuid to command data, until the harness confirms its native message.
         self._pending: dict[str, tuple[str, str]] = {}
@@ -83,34 +86,31 @@ class ClaudeAdapter(HarnessAdapter):
 
     async def handshake(self) -> str:
         # Every start sends the session's standing instructions, so a resumed harness has them too.
-        initialize = driver.initialize(instructions=self.session.record.instructions)
-        await self.session.request(
-            initialize, matches=lambda frame: _control_response_for(frame, initialize.request_id)
-        )
+        response = await self.harness.initialize(instructions=self.session.record.instructions)
+        if not isinstance(response.response, wire.ControlResponseFrame):
+            raise RuntimeError(f"Claude initialization failed: {response.response}")
         return self._native_session_id
 
     async def submit(self, command_id: str, text: str) -> None:
         if not self.session.active_turn_id:
             self.session.emit(
-                pb.TurnStarted(turn_id=f"turn-{uuid4().hex}", model=self.session.record.model), sources=[]
+                event_pb2.TurnStarted(turn_id=f"turn-{uuid4().hex}", model=self.session.record.model), sources=[]
             )
-        frame = driver.user_frame(text)
+        frame = await self.harness.submit(text)
         self._pending[frame.uuid] = (command_id, text)
-        await self.session.write_native(frame)
 
     async def interrupt(self) -> None:
-        await self.session.write_native(driver.interrupt(cancel_queued=False, reason="agentplane"))
+        # Claude accepts this immediately, but its control acknowledgement is not the command's
+        # effect: the translated terminal result is what releases the command.
+        await self.harness.signal_interrupt(cancel_queued=False, reason="agentplane")
 
     async def change_model(self, command_id: str, model: str) -> None:
-        request = driver.set_model(model)
-        response = await self.session.request(
-            request, matches=lambda frame: _control_response_for(frame, request.request_id)
-        )
-        parsed = wire.parse_frame(response.frame)
-        if not isinstance(parsed, wire.ControlResponseFrame) or parsed.response.subtype != "success":
-            detail = parsed.response.error if isinstance(parsed, wire.ControlResponseFrame) else "invalid response"
+        receipt = await self.harness.set_model(model)
+        response = receipt.response
+        if not isinstance(response, wire.ControlResponseFrame) or response.response.subtype != "success":
+            detail = response.response.error if isinstance(response, wire.ControlResponseFrame) else "invalid response"
             raise RuntimeError(f"Claude Code refused model switch: {detail}")
-        self.session.model_changed(command_id, model, sources=[response.sequence])
+        self.session.model_changed(command_id, model, sources=[receipt.sequence])
 
     async def on_frame(self, frame: Frame, source_sequence: int) -> None:
         parsed = wire.parse_frame(frame)
@@ -160,13 +160,13 @@ class ClaudeAdapter(HarnessAdapter):
                         error=f"the agentplane runner does not answer {subtype!r} requests",
                     )
                 )
-        await self.session.write_native(response)
+        await self.harness.send(response)
 
     def _turn_id(self) -> str:
         """The active turn, or a new one for output the harness produces on its own, such as a
         queued input it chose to run as a fresh turn after the previous result."""
         if not self.session.active_turn_id:
-            self.session.emit(pb.TurnStarted(turn_id=f"turn-{uuid4().hex}", model=self.session.record.model))
+            self.session.emit(event_pb2.TurnStarted(turn_id=f"turn-{uuid4().hex}", model=self.session.record.model))
         return self.session.active_turn_id
 
     async def _on_stream_event(self, frame: wire.StreamEventFrame, source_sequence: int) -> None:
@@ -185,9 +185,9 @@ class ClaudeAdapter(HarnessAdapter):
                 item_id = self._block_items.get(index, "")
                 match delta:
                     case wire.TextDelta(text=text) | wire.ThinkingDelta(thinking=text):
-                        self.session.emit(pb.TextDelta(item_id=item_id, text=text))
+                        self.session.emit(event_pb2.TextDelta(item_id=item_id, text=text))
                     case wire.InputJsonDelta(partial_json=partial_json):
-                        self.session.emit(pb.ToolArgumentsDelta(item_id=item_id, partial_json=partial_json))
+                        self.session.emit(event_pb2.ToolArgumentsDelta(item_id=item_id, partial_json=partial_json))
 
     async def _confirm_message_start(self, harness_message_id: str, source_sequence: int) -> None:
         """Confirm the native prompt which caused one Claude model request.
@@ -226,9 +226,9 @@ class ClaudeAdapter(HarnessAdapter):
                 self._start_item(item_id, block)
             match block:
                 case TextBlock(text=text) | ThinkingBlock(thinking=text):
-                    self.session.emit(pb.ItemCompleted(item_id=item_id, text=text))
+                    self.session.emit(event_pb2.ItemCompleted(item_id=item_id, text=text))
                 case ToolUseBlock(input=tool_input):
-                    self.session.emit(pb.ToolArguments(item_id=item_id, arguments_json=json.dumps(tool_input)))
+                    self.session.emit(event_pb2.ToolArguments(item_id=item_id, arguments_json=json.dumps(tool_input)))
 
     async def _on_user(self, frame: wire.UserFrame, source_sequence: int) -> None:
         if frame.is_replay:
@@ -239,8 +239,9 @@ class ClaudeAdapter(HarnessAdapter):
         for block in blocks:
             if isinstance(block, ToolResultBlock):
                 self.session.emit(
-                    pb.ItemCompleted(
-                        item_id=block.tool_use_id, tool=pb.ToolResult(output=block.text, succeeded=not block.is_error)
+                    event_pb2.ItemCompleted(
+                        item_id=block.tool_use_id,
+                        tool=event_pb2.ToolResult(output=block.text, succeeded=not block.is_error),
                     )
                 )
         if any(isinstance(block, ToolResultBlock) for block in blocks):
@@ -311,11 +312,11 @@ class ClaudeAdapter(HarnessAdapter):
         if not self.session.active_turn_id:
             return
         if (result.terminal_reason or "").startswith("aborted"):
-            status, error = pb.TURN_STATUS_INTERRUPTED, ""
+            status, error = event_pb2.TURN_STATUS_INTERRUPTED, ""
         elif result.is_error:
-            status, error = pb.TURN_STATUS_FAILED, result.result or ""
+            status, error = event_pb2.TURN_STATUS_FAILED, result.result or ""
         else:
-            status, error = pb.TURN_STATUS_COMPLETED, ""
+            status, error = event_pb2.TURN_STATUS_COMPLETED, ""
         await self.session.turn_completed(self.session.active_turn_id, status, error)
 
     @staticmethod
@@ -325,24 +326,15 @@ class ClaudeAdapter(HarnessAdapter):
     def _start_item(self, item_id: str, block: Block) -> None:
         match block:
             case TextBlock():
-                kind, tool_name = pb.ITEM_KIND_ASSISTANT_TEXT, ""
+                kind, tool_name = event_pb2.ITEM_KIND_ASSISTANT_TEXT, ""
             case ThinkingBlock():
-                kind, tool_name = pb.ITEM_KIND_REASONING, ""
+                kind, tool_name = event_pb2.ITEM_KIND_REASONING, ""
             case ToolUseBlock(name=name):
-                kind, tool_name = pb.ITEM_KIND_TOOL_CALL, name
+                kind, tool_name = event_pb2.ITEM_KIND_TOOL_CALL, name
             case _:
                 # Tool results complete items rather than start them; unknown block kinds stay
                 # native evidence only.
                 return
         self._items.add(item_id)
         self._turn_id()
-        self.session.emit(pb.ItemStarted(item_id=item_id, kind=kind, tool_name=tool_name))
-
-
-def _control_response_for(frame: Frame, request_id: str) -> bool:
-    response = frame.get("response")
-    return (
-        frame.get("type") == "control_response"
-        and isinstance(response, dict)
-        and response.get("request_id") == request_id
-    )
+        self.session.emit(event_pb2.ItemStarted(item_id=item_id, kind=kind, tool_name=tool_name))

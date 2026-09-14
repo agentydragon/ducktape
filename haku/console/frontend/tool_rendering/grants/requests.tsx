@@ -1,3 +1,4 @@
+import type { JSX } from "react";
 import { Group, Stack } from "@mantine/core";
 import type { z } from "zod";
 

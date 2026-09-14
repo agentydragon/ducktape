@@ -4,8 +4,9 @@ skill_package(
     name = "session_logs",
     srcs = [
         "SKILL.md",
-        "analyze-session.sh",
+        "analyze_session.sh",
+        "conversation.jq",
         "conversation.sh",
-        "find-current-session.sh",
+        "find_current_session.sh",
     ],
 )

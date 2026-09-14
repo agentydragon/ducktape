@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { type JSX, createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
 import { listAgents } from "./client";
 

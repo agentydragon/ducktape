@@ -50,8 +50,8 @@ data "kubernetes_secret" "forgejo_images_creds" {
 
 data "kubernetes_secret" "pr_visuals_s3_credentials" {
   metadata {
-    name      = "s3-identity-pr-visuals-writer"
-    namespace = "seaweedfs"
+    name      = "pr-visuals-s3-credentials"
+    namespace = "flux-system"
   }
 }
 

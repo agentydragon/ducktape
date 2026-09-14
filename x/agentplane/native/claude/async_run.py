@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from x.agentplane.native.async_process import AsyncNativeProcess, FrameCursor, FrameResponder
-from x.agentplane.native.claude import blocks, driver, wire
+from x.agentplane.native.claude import blocks, facade, wire
 from x.agentplane.native.claude.scenarios import HOOK_EVENTS
 
 
@@ -93,6 +93,7 @@ class ClaudeRun:
         self._hooks = hooks
         self._initialize = initialize
         self._process: AsyncNativeProcess | None = None
+        self._harness: facade.ClaudeHarness | None = None
 
     async def __aenter__(self) -> ClaudeRun:
         process = AsyncNativeProcess(
@@ -103,13 +104,14 @@ class ClaudeRun:
             frame_responder=self._responder,
         )
         self._process = await process.__aenter__()
+        self._harness = facade.ClaudeHarness(process)
         try:
             if self._initialize:
                 response = await self.initialize()
                 if not isinstance(response, wire.ControlResponseFrame):
                     raise RuntimeError(f"Claude initialization failed: {response}")
         except BaseException:
-            self._process = None
+            self._process, self._harness = None, None
             await process.close()
             raise
         return self
@@ -122,6 +124,11 @@ class ClaudeRun:
             raise RuntimeError("Claude run was not started")
         return self._process
 
+    def _claude(self) -> facade.ClaudeHarness:
+        if self._harness is None:
+            raise RuntimeError("Claude run was not started")
+        return self._harness
+
     @property
     def running(self) -> bool:
         return self._native().alive()
@@ -133,41 +140,32 @@ class ClaudeRun:
         return self._native().stdout_frames()
 
     async def initialize(self) -> wire.ControlResponseFrame | wire.ResultFrame:
-        events = self.events()
-        request = driver.initialize(
+        receipt = await self._claude().initialize(
             hooks={event: [f"capture-{event}"] for event in HOOK_EVENTS} if self._hooks else None
         )
-        await self._native().send(request)
-        while True:
-            match await events.next():
-                case wire.ControlResponseFrame(response=wire.ControlResponseBody(request_id=request_id)) as frame:
-                    if request_id == request.request_id:
-                        return frame
-                case wire.ResultFrame() as frame:
-                    return frame
+        return receipt.response
 
     async def send(self, text: str) -> ClaudeInput:
         events = self.events()
-        frame = driver.user_frame(text)
-        await self._native().send(frame)
+        frame = await self._claude().submit(text)
         return ClaudeInput(frame, events)
 
     async def send_many(self, texts: list[str]) -> list[ClaudeInput]:
-        inputs = [ClaudeInput(driver.user_frame(text), self.events()) for text in texts]
-        await self._native().send_many([item.frame for item in inputs])
-        return inputs
+        events = [self.events() for _ in texts]
+        frames = await self._claude().submit_many(texts)
+        return [ClaudeInput(frame, observer) for frame, observer in zip(frames, events, strict=True)]
 
     async def interrupt(self, *, cancel_queued: bool) -> wire.ControlResponseFrame:
-        events = self.events()
-        request = driver.interrupt(cancel_queued=cancel_queued)
-        await self._native().send(request)
-        return await events.control_response(request.request_id)
+        response = (await self._claude().interrupt(cancel_queued=cancel_queued)).response
+        if not isinstance(response, wire.ControlResponseFrame):
+            raise RuntimeError(f"Claude interrupt failed: {response}")
+        return response
 
     async def set_model(self, model: str) -> wire.ControlResponseFrame:
-        events = self.events()
-        request = driver.set_model(model)
-        await self._native().send(request)
-        return await events.control_response(request.request_id)
+        response = (await self._claude().set_model(model)).response
+        if not isinstance(response, wire.ControlResponseFrame):
+            raise RuntimeError(f"Claude model switch failed: {response}")
+        return response
 
     async def crash(self) -> int:
         return await self._native().crash()

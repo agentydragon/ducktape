@@ -1,11 +1,11 @@
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@bazel_skylib//rules:native_binary.bzl", "native_test")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python/uv:lock.bzl", "lock")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
-load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
-# This package's third-party Python deps come from the package-local litellm
+# This package's third-party Python deps come from the package-local LiteLLM
 # lock (the lock() below), not the repo-wide @pypi hub.
 # gazelle:resolve py litellm @pypi_tana_litellm_proxy//litellm
 # gazelle:resolve py httpx @pypi_tana_litellm_proxy//httpx
@@ -181,14 +181,21 @@ py_image_layer(
     owner = "1000",
 )
 
+# Keep the provider source in the same importable package path that the
+# generated LiteLLM config names. The upstream base supplies LiteLLM's full
+# proxy runtime, including Prisma and its generated client.
+pkg_tar(
+    name = "tana_source_layer",
+    srcs = glob(["*.py"]),
+    package_dir = "/app/tana/litellm_proxy",
+)
+
 oci_image(
     name = "image",
-    base = "@debian_trixie_slim_linux_amd64",
-    entrypoint = py_image_entrypoint("server_bin"),
-    env = py_image_env(binary_name = "server_bin"),
+    base = "@litellm_upstream_linux_amd64",
+    env = {"PYTHONPATH": "/app"},
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
-    tars = [":layers"],
-    user = "1000:1000",
+    tars = [":tana_source_layer"],
 )
 
 oci_load(

@@ -1,3 +1,4 @@
+import type { JSX } from "react";
 import { AgentName } from "./agent_names";
 import type { GrantPrincipal } from "./client";
 

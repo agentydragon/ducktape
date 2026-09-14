@@ -6,4 +6,5 @@ resources:
   - rbac
   - db
   - secrets
+  - storage
   - app

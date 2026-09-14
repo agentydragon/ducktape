@@ -26,7 +26,6 @@ py_test(
         "//cluster/k8s/cli-proxy-api:manifests",
         "//cluster/k8s/home-assistant/app:manifests",
         "//cluster/k8s/litellm/app:manifests",
-        "//cluster/k8s/litellm/tana:manifests",
         "//cluster/k8s/talos-cloud-controller-manager:manifests",
         "@multitool//tools/kustomize",
     ],
@@ -806,7 +805,6 @@ py_test(
         "//cluster/k8s/cli-proxy-api:manifests",
         "//cluster/k8s/home-assistant/app:manifests",
         "//cluster/k8s/litellm/app:manifests",
-        "//cluster/k8s/litellm/tana:manifests",
         "//cluster/k8s/talos-cloud-controller-manager:manifests",
     ],
     deps = [

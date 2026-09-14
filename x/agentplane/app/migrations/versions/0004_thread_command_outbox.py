@@ -11,6 +11,11 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # Old rows contain the retired runner-local Event proto-JSON and Attached.last_sequence.
+    # The protocol cutover starts a fresh archive; Thread identity is retained so current
+    # Sandbox/session associations can reconnect under the new EventEntry wire shape.
+    op.execute("TRUNCATE TABLE event, feed_state")
+    op.alter_column("event", "sequence", new_column_name="cursor")
     op.create_table(
         "thread_runner_session",
         sa.Column(

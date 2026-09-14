@@ -1,0 +1,63 @@
+load("@aspect_rules_ts//ts:proto.bzl", "ts_proto_library")
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
+load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
+
+package(default_visibility = ["//visibility:public"])
+
+proto_library(
+    name = "command_proto",
+    srcs = ["command.proto"],
+)
+
+py_proto_library_with_mypy_stubs(
+    name = "command_pb2",
+    deps = [":command_proto"],
+)
+
+ts_proto_library(
+    name = "command_pb",
+    copy_files = False,
+    node_modules = "//:node_modules",
+    proto = ":command_proto",
+)
+
+proto_library(
+    name = "event_proto",
+    srcs = ["event.proto"],
+    deps = [
+        ":command_proto",
+        "@protobuf//:timestamp_proto",
+    ],
+)
+
+py_proto_library_with_mypy_stubs(
+    name = "event_pb2",
+    deps = [":event_proto"],
+)
+
+ts_proto_library(
+    name = "event_pb",
+    copy_files = False,
+    node_modules = "//:node_modules",
+    proto = ":event_proto",
+    deps = [":command_pb"],
+)
+
+proto_library(
+    name = "event_log_proto",
+    srcs = ["event_log.proto"],
+    deps = [":event_proto"],
+)
+
+py_proto_library_with_mypy_stubs(
+    name = "event_log_pb2",
+    deps = [":event_log_proto"],
+)
+
+ts_proto_library(
+    name = "event_log_pb",
+    copy_files = False,
+    node_modules = "//:node_modules",
+    proto = ":event_log_proto",
+    deps = [":event_pb"],
+)

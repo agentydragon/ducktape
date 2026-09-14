@@ -1,5 +1,5 @@
 import { Group, Loader, Stack, Text } from "@mantine/core";
-import type { ReactNode, Ref } from "react";
+import type { JSX, ReactNode, Ref } from "react";
 
 import {
   showsAutoApprovalEvaluation,

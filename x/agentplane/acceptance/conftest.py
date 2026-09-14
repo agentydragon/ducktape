@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import subprocess
 from collections.abc import AsyncIterator, Awaitable, Callable
+from typing import cast
 
 import pytest
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
@@ -17,6 +18,10 @@ from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 from x.agentplane.app.client import Client, is_running
 from x.agentplane.app.inventory import NewSandbox, SandboxView
 from x.agentplane.app.presets import Harness, ThreadDefaults
+from x.agentplane.runner import protocol_pb2
+
+# `protocol_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
+# gazelle:include_dep @pypi//protobuf
 
 BASE_URL = "AGENTPLANE_ACCEPTANCE_URL"
 TOKEN = "AGENTPLANE_ACCEPTANCE_TOKEN"
@@ -90,18 +95,18 @@ async def client(base_url: str, token: str) -> AsyncIterator[Client]:
         yield opened
 
 
-@pytest.fixture(params=list(Harness), ids=[str(harness) for harness in Harness])
-def harness(request: pytest.FixtureRequest) -> Harness:
+@pytest.fixture(params=[protocol_pb2.HARNESS_CLAUDE, protocol_pb2.HARNESS_CODEX], ids=["claude", "codex"])
+def harness(request: pytest.FixtureRequest) -> protocol_pb2.Harness:
     """Every scenario runs on every harness: one runner protocol, so one test body covers both."""
-    assert isinstance(request.param, Harness)
-    return request.param
+    return cast(protocol_pb2.Harness, request.param)
 
 
 @pytest.fixture
-async def model(client: Client, harness: Harness) -> str:
+async def model(client: Client, harness: protocol_pb2.Harness) -> str:
     """A model this deployment offers for this harness, asked of the app rather than hardcoded."""
     catalog = await client.models()
-    offered = catalog[harness]
+    config_harness = Harness(protocol_pb2.Harness.Name(harness))
+    offered = catalog[config_harness]
     assert offered, f"the deployment offers no model for {harness}"
     return offered[0]
 

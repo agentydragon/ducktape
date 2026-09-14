@@ -1678,13 +1678,6 @@ spec:
           to: "@artifact/cluster/k8s/litellm/servicemonitor/"
           exclude:
             - flux-kustomization.yaml
-    - name: litellm-tana
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/litellm/tana/**"
-          to: "@artifact/cluster/k8s/litellm/tana/"
-          exclude:
-            - flux-kustomization.yaml
     - name: litellm-cheap-experiments-namespace
       originRevision: "@repo"
       copy:
@@ -1984,20 +1977,6 @@ spec:
       copy:
         - from: "@repo/cluster/k8s/seaweedfs/registry-cache-bucket/**"
           to: "@artifact/cluster/k8s/seaweedfs/registry-cache-bucket/"
-          exclude:
-            - flux-kustomization.yaml
-    - name: seaweedfs-vm-images-bucket
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/seaweedfs/vm-images-bucket/**"
-          to: "@artifact/cluster/k8s/seaweedfs/vm-images-bucket/"
-          exclude:
-            - flux-kustomization.yaml
-    - name: seaweedfs-wayback-archive-bucket
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/seaweedfs/wayback-archive-bucket/**"
-          to: "@artifact/cluster/k8s/seaweedfs/wayback-archive-bucket/"
           exclude:
             - flux-kustomization.yaml
     - name: ssh-mcp

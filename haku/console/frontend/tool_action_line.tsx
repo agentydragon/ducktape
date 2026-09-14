@@ -1,3 +1,4 @@
+import type { JSX } from "react";
 import { Text } from "@mantine/core";
 
 import { toolActionDescription } from "./tool_rendering/actions";

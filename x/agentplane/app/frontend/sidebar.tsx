@@ -16,7 +16,7 @@ import IconPlayerPause from "@tabler/icons-react/dist/esm/icons/IconPlayerPause.
 import IconPlayerPlay from "@tabler/icons-react/dist/esm/icons/IconPlayerPlay.mjs";
 import IconPlus from "@tabler/icons-react/dist/esm/icons/IconPlus.mjs";
 import IconSettings from "@tabler/icons-react/dist/esm/icons/IconSettings.mjs";
-import { useEffect, useRef, useState, type PointerEvent } from "react";
+import { type JSX, useEffect, useRef, useState, type PointerEvent } from "react";
 import { useLocation, useMatch, useNavigate } from "react-router";
 
 import { archiveThread, displayableError, listThreadsWithSandboxes, type SandboxView, type ThreadView } from "./client";

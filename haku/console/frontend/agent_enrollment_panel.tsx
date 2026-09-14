@@ -1,5 +1,5 @@
 import { Alert, Badge, Button, Group, Loader, Radio, Select, Stack, Text, TextInput } from "@mantine/core";
-import { useEffect, useRef, useState } from "react";
+import { type JSX, useEffect, useRef, useState } from "react";
 
 import {
   decideAgentEnrollment,

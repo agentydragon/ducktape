@@ -91,7 +91,7 @@ jobs:
   release:
     needs: [matrix]
     # Skips cleanly when nothing moved; `matrix` always emits a count.
-    if: needs.matrix.outputs.count != '0'
+    if: needs.matrix.result == 'success' && needs.matrix.outputs.count != '0'
     name: Release ${{ matrix.pkg }}
     runs-on: ubuntu-latest
     timeout-minutes: 30

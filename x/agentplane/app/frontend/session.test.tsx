@@ -8,7 +8,8 @@ import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { sendInput } from "./client";
-import { EventSchema, ItemKind } from "./protocol_pb";
+import { EventSchema, ItemKind } from "../../protocol/event_pb";
+import { EventEntrySchema } from "../../protocol/event_log_pb";
 import { SessionView } from "./session";
 
 vi.mock("./client", async (importOriginal) => ({
@@ -28,8 +29,17 @@ afterEach(async () => {
   vi.resetAllMocks();
 });
 
-function event(sequence: number, observation: MessageInitShape<typeof EventSchema>["observation"]): string {
-  return JSON.stringify(toJson(EventSchema, create(EventSchema, { sequence: BigInt(sequence), observation })));
+function event(cursor: number, observation: MessageInitShape<typeof EventSchema>["observation"]): string {
+  return JSON.stringify(
+    toJson(
+      EventEntrySchema,
+      create(EventEntrySchema, {
+        cursor: BigInt(cursor),
+        origin: { sourceId: "test-runner", sequence: BigInt(cursor) },
+        event: create(EventSchema, { observation }),
+      })
+    )
+  );
 }
 
 async function render(): Promise<{ container: HTMLDivElement; composer: HTMLTextAreaElement; stream: EventTarget }> {
@@ -55,7 +65,7 @@ async function render(): Promise<{ container: HTMLDivElement; composer: HTMLText
     );
   });
   await act(async () => {
-    stream.dispatchEvent(new MessageEvent("event", { data: JSON.stringify({ sequence: "1", harnessStarted: {} }) }));
+    stream.dispatchEvent(new MessageEvent("event", { data: event(1, { case: "harnessStarted", value: {} }) }));
   });
   const composer = container.querySelector("textarea");
   if (!composer) throw new Error("Missing composer");

@@ -13,6 +13,10 @@ spec:
     namespace: ducktape-flux
   timeout: 10m
   dependsOn:
+    - name: external-secrets-config
+      namespace: ducktape-flux
+    - name: forgejo-images
+      namespace: ducktape-flux
     - name: litellm-secrets
       namespace: ducktape-flux
     - name: litellm-db
@@ -20,4 +24,10 @@ spec:
     - name: gateway
       namespace: ducktape-flux
     - name: cert-manager-environment
+      namespace: ducktape-flux
+    - name: langfuse-secrets
+      namespace: ducktape-flux
+    - name: reflector
+      namespace: ducktape-flux
+    - name: tana-mcp
       namespace: ducktape-flux

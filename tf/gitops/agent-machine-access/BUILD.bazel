@@ -4,7 +4,7 @@ tf_providers_versions(
     name = "providers",
     providers = {
         "authentik": "goauthentik/authentik:~>2026.8.0",
-        "kubernetes": "hashicorp/kubernetes:~>2.35",
+        "kubernetes": "hashicorp/kubernetes:~>3.0",
         "random": "hashicorp/random:~>3.9.0",
     },
     tf_version = "1.9.8",

@@ -303,7 +303,6 @@ resources:
   - litellm/db/flux-kustomization.yaml
   - litellm/app/flux-kustomization.yaml
   - litellm/keys-tf/flux-kustomization.yaml # zone/dispatcher virtual keys; downstream of the app (needs a serving LiteLLM)
-  - litellm/tana/flux-kustomization.yaml
   - litellm/servicemonitor/flux-kustomization.yaml
 
   # --- cli-proxy-api (Claude Code on ChatGPT/Codex via CLIProxyAPI) ---
@@ -390,14 +389,12 @@ resources:
   - seaweedfs/operator/flux-kustomization.yaml
   - seaweedfs/db/flux-kustomization.yaml
   - seaweedfs/cluster/flux-kustomization.yaml
-  - seaweedfs/vm-images-bucket/flux-kustomization.yaml
   - seaweedfs/drivefs-artifacts-bucket/flux-kustomization.yaml
   - seaweedfs/forgejo-bucket/flux-kustomization.yaml
   - seaweedfs/langfuse-bucket/flux-kustomization.yaml
   - seaweedfs/registry-cache-bucket/flux-kustomization.yaml
   - seaweedfs/loom-gym-bucket/flux-kustomization.yaml
   - seaweedfs/pr-visuals-bucket/flux-kustomization.yaml
-  - seaweedfs/wayback-archive-bucket/flux-kustomization.yaml
   - seaweedfs/public-coder-agent-backups-bucket/flux-kustomization.yaml
   - seaweedfs/haku-openclaw-spike-backups-bucket/flux-kustomization.yaml
   - seaweedfs/public-s3/flux-kustomization.yaml

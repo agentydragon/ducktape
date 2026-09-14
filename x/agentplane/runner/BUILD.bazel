@@ -1,23 +1,55 @@
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@aspect_rules_ts//ts:proto.bzl", "ts_proto_library")
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files", "pkg_mkdirs", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
-load("//devinfra/python:grpc.bzl", "py_grpc_library")
+load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
+load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 package(default_visibility = ["//visibility:public"])
 
-# The frontend generates its TypeScript from the same file (//x/agentplane/app/frontend:protocol_pb).
+# The runner transport imports the shared Command/Event log messages.
 exports_files(["protocol.proto"])
 
 # gazelle:resolve py x.agentplane.runner.protocol_pb2 //x/agentplane/runner:protocol_pb2
 # gazelle:resolve py x.agentplane.runner.protocol_pb2_grpc //x/agentplane/runner:protocol_pb2_grpc
+# gazelle:resolve py x.agentplane.protocol.command_pb2 //x/agentplane/protocol:command_pb2
+# gazelle:resolve py x.agentplane.protocol.event_pb2 //x/agentplane/protocol:event_pb2
+# gazelle:resolve py x.agentplane.protocol.event_log_pb2 //x/agentplane/protocol:event_log_pb2
 
-py_grpc_library(
-    name = "protocol",
-    proto = "protocol.proto",
+proto_library(
+    name = "protocol_proto",
+    srcs = ["protocol.proto"],
+    deps = [
+        "//x/agentplane/protocol:command_proto",
+        "//x/agentplane/protocol:event_log_proto",
+    ],
+)
+
+py_proto_library_with_mypy_stubs(
+    name = "protocol_pb2",
+    deps = [":protocol_proto"],
+)
+
+py_grpc_service_library(
+    name = "protocol_pb2_grpc",
+    proto = ":protocol_proto",
+    py_proto = ":protocol_pb2",
+)
+
+ts_proto_library(
+    name = "protocol_pb",
+    copy_files = False,
+    node_modules = "//:node_modules",
+    proto = ":protocol_proto",
+    deps = [
+        "//x/agentplane/protocol:command_pb",
+        "//x/agentplane/protocol:event_log_pb",
+    ],
 )
 
 py_binary(
@@ -40,9 +72,10 @@ py_library(
         ":session",
         "//x/agentplane/native/claude:blocks",
         "//x/agentplane/native/claude:driver",
+        "//x/agentplane/native/claude:facade",
         "//x/agentplane/native/claude:scenarios",
         "//x/agentplane/native/claude:wire",
-        "//x/agentplane/runner:protocol_pb2",
+        "//x/agentplane/protocol:event_pb2",
         "@pypi//protobuf",
     ],
 )
@@ -51,6 +84,8 @@ py_library(
     name = "client",
     srcs = ["client.py"],
     deps = [
+        "//x/agentplane/protocol:command_pb2",
+        "//x/agentplane/protocol:event_log_pb2",
         "//x/agentplane/runner:protocol_pb2",
         "//x/agentplane/runner:protocol_pb2_grpc",
         "@pypi//grpcio",
@@ -65,10 +100,10 @@ py_library(
         ":adapter",
         ":config",
         ":session",
-        "//x/agentplane/native/codex:driver",
+        "//x/agentplane/native/codex:facade",
         "//x/agentplane/native/codex:scenarios",
         "//x/agentplane/native/codex:wire",
-        "//x/agentplane/runner:protocol_pb2",
+        "//x/agentplane/protocol:event_pb2",
         "@pypi//protobuf",
     ],
 )
@@ -104,7 +139,7 @@ py_library(
     srcs = ["command_journal.py"],
     deps = [
         ":event_log",
-        "//x/agentplane/runner:protocol_pb2",
+        "//x/agentplane/protocol:command_pb2",
         "@pypi//protobuf",
     ],
 )
@@ -113,7 +148,8 @@ py_library(
     name = "event_log",
     srcs = ["event_log.py"],
     deps = [
-        "//x/agentplane/runner:protocol_pb2",
+        "//x/agentplane/protocol:event_log_pb2",
+        "//x/agentplane/protocol:event_pb2",
         "@pypi//protobuf",
     ],
 )
@@ -161,7 +197,10 @@ py_library(
         ":event_log",
         ":harness_process",
         ":store",
-        "//x/agentplane/runner:protocol_pb2",
+        "//x/agentplane/native:transport",
+        "//x/agentplane/protocol:command_pb2",
+        "//x/agentplane/protocol:event_log_pb2",
+        "//x/agentplane/protocol:event_pb2",
         "@pypi//protobuf",
         "@pypi//pydantic",
     ],
@@ -194,6 +233,20 @@ py_test(
 )
 
 py_test(
+    name = "test_codex_adapter",
+    srcs = ["test_codex_adapter.py"],
+    deps = [
+        ":codex",
+        ":config",
+        ":conftest",
+        ":session",
+        ":store",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_attach",
     size = "large",
     srcs = ["test_attach.py"],
@@ -210,6 +263,7 @@ py_test(
         ":client",
         ":conftest",
         "//:conftest",
+        "//x/agentplane/protocol:event_pb2",
         "//x/agentplane/runner:protocol_pb2",
         "//x/agentplane/runner/testing:events",
         "//x/agentplane/runner/testing:scripted_model",
@@ -239,6 +293,7 @@ py_test(
         "//:conftest",
         "//x/agentplane/harness_tests/claude:messages",
         "//x/agentplane/harness_tests/codex:responses",
+        "//x/agentplane/protocol:event_pb2",
         "//x/agentplane/runner:protocol_pb2",
         "//x/agentplane/runner/testing:events",
         "//x/agentplane/runner/testing:launches",
@@ -266,6 +321,8 @@ py_test(
         ":client",
         ":conftest",
         "//:conftest",
+        "//x/agentplane/protocol:event_log_pb2",
+        "//x/agentplane/protocol:event_pb2",
         "//x/agentplane/runner:protocol_pb2",
         "//x/agentplane/runner/testing:events",
         "//x/agentplane/runner/testing:scripted_model",
@@ -289,6 +346,7 @@ py_test(
         "//util/testing:undeclared_outputs",
         "//x/agentplane/harness_tests/claude:messages",
         "//x/agentplane/harness_tests/codex:responses",
+        "//x/agentplane/protocol:event_pb2",
         "//x/agentplane/runner:protocol_pb2",
         "//x/agentplane/runner/testing:events",
         "//x/agentplane/runner/testing:launches",

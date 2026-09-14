@@ -11,7 +11,7 @@ import {
   TextInput,
   Title,
 } from "@mantine/core";
-import { useEffect, useState } from "react";
+import { type JSX, useEffect, useState } from "react";
 
 import { displayableError, serviceAccountKey } from "./client";
 import { consentService, type ConsentDecision, type ConsentPreview, type ConsentService } from "./consent_client";

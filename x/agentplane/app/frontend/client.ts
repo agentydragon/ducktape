@@ -5,13 +5,13 @@ import type { components, paths } from "./api/schema";
 import { redirectToLogin } from "./operator_login";
 import {
   AttachedSchema,
-  CommandSchema,
   SessionSpecSchema,
   SessionSummarySchema,
   type Attached,
   type SessionSpec,
   type SessionSummary,
-} from "./protocol_pb";
+} from "../../runner/protocol_pb";
+import { CommandSchema } from "../../protocol/command_pb";
 
 export const api: ReturnType<typeof createClient<paths>> = createClient<paths>({ baseUrl: "" });
 
@@ -179,7 +179,8 @@ export function displayableError(error: unknown): string {
 
 /**
  * The bridge's session routes carry proto-JSON of the runner protocol's messages, typed here by
- * protobuf-es from protocol.proto itself; the OpenAPI document knows them only as objects.
+ * protobuf-es from the runner and shared protocol files themselves; the OpenAPI document knows
+ * them only as objects.
  */
 export class RunnerUnavailableError extends Error {}
 

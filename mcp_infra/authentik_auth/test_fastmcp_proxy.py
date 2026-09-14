@@ -5,6 +5,7 @@ from typing import Any, cast
 from unittest.mock import AsyncMock, patch
 
 import httpx
+import httpx2
 import pytest
 import pytest_bazel
 from authlib.oauth2 import OAuth2Error
@@ -22,6 +23,8 @@ from mcp_infra.authentik_auth.fastmcp_proxy import (
     DownstreamClientIdentityOIDCProxy,
     RetryableJWTVerifier,
     RetryableRefreshOIDCProxy,
+    _transient_upstream_error,
+    _upstream_oauth_rejection,
 )
 
 
@@ -78,6 +81,18 @@ def _invalid_grant_from(cause: BaseException | None) -> TokenError:
 def _http_error(status: int) -> httpx.HTTPStatusError:
     request = httpx.Request("POST", "https://auth.example.com/application/o/token/")
     return httpx.HTTPStatusError(f"HTTP {status}", request=request, response=httpx.Response(status, request=request))
+
+
+@pytest.mark.parametrize("http_module", [httpx, httpx2], ids=["httpx", "httpx2"])
+def test_http_error_classification_supports_current_and_next_client(http_module: Any) -> None:
+    """The staged FastMCP migration must classify both HTTP exception families."""
+    for status, transient in [(503, True), (400, False)]:
+        request = http_module.Request("POST", "https://auth.example.com/application/o/token/")
+        error = http_module.HTTPStatusError(
+            f"HTTP {status}", request=request, response=http_module.Response(status, request=request)
+        )
+        assert _transient_upstream_error(error) is transient
+        assert _upstream_oauth_rejection(error)
 
 
 def _failures(outcome: str) -> float:

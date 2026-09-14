@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from copy import deepcopy
-from typing import Any, overload
+from typing import Any, cast, overload
 
 import httpx
 from fastmcp.dependencies import Depends
@@ -28,13 +28,14 @@ from fastmcp.tools import Tool
 from fastmcp.tools.base import ToolResult
 from fastmcp.utilities.versions import VersionSpec
 
-type HTTPClientProvider[ClientT: httpx.AsyncClient = httpx.AsyncClient] = Callable[
-    ..., AbstractAsyncContextManager[ClientT]
-]
+# The provider is also used by clients from the httpx2 compatibility fork. The
+# OpenAPI adapter relies on FastMCP's runtime-compatible client contract; keeping
+# the old httpx subclass bound here rejects those clients statically.
+type HTTPClientProvider[ClientT = Any] = Callable[..., AbstractAsyncContextManager[ClientT]]
 _INJECTED_CLIENT_PARAMETER = "_fastmcp_request_scoped_http_client"
 
 
-def borrowed_http_client_provider[ClientT: httpx.AsyncClient](client: ClientT) -> HTTPClientProvider[ClientT]:
+def borrowed_http_client_provider[ClientT](client: ClientT) -> HTTPClientProvider[ClientT]:
     """Adapt a caller-owned client to the sole provider-based API.
 
     This is useful for tests and local tooling that already manage a fixed
@@ -47,6 +48,41 @@ def borrowed_http_client_provider[ClientT: httpx.AsyncClient](client: ClientT) -
         yield client
 
     return provider
+
+
+class _RequestCompatibleClient:
+    """Present FastMCP's ``httpx`` request API to another httpx-compatible client.
+
+    FastMCP 3.4.7's OpenAPI director always constructs an ``httpx.Request``.
+    Clients from the ``httpx2`` fork reject that request because its body stream
+    is not an ``httpx2`` stream.  Rebuild the already-buffered request through
+    the injected client's own builder before sending it; this preserves the
+    provider's client, transport, auth, and timeout configuration.
+    """
+
+    def __init__(self, client: Any) -> None:
+        self._client = client
+
+    @property
+    def base_url(self) -> Any:
+        return self._client.base_url
+
+    @property
+    def headers(self) -> Any:
+        return self._client.headers
+
+    async def send(self, request: httpx.Request) -> Any:
+        build_request = getattr(self._client, "build_request", None)
+        if build_request is None:
+            return await self._client.send(request)
+        compatible_request = build_request(
+            request.method,
+            str(request.url),
+            headers=request.headers.raw,
+            content=request.content,
+            extensions=request.extensions,
+        )
+        return await self._client.send(compatible_request)
 
 
 class RequestScopedOpenAPIClients(Transform):
@@ -85,7 +121,9 @@ class RequestScopedOpenAPIClients(Transform):
             # 3.4.4.  model_copy() preserves its generated route/director while
             # ensuring this private client assignment is invocation-local.
             bound = tool.model_copy()
-            bound._client = _fastmcp_request_scoped_http_client
+            # FastMCP's private field is annotated as its legacy httpx client;
+            # this adapter deliberately supplies the compatible httpx2 wrapper.
+            cast(Any, bound)._client = _RequestCompatibleClient(_fastmcp_request_scoped_http_client)
             return await bound.run(arguments)
 
         wrapped = Tool.from_tool(tool, transform_fn=without_injected_parameters(dispatch))

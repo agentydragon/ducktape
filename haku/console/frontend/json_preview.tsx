@@ -1,3 +1,4 @@
+import type { JSX } from "react";
 import { CodeBlock } from "./code_block";
 import type { PreviewVariant } from "./tool_rendering/vocabulary";
 

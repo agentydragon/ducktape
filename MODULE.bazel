@@ -147,7 +147,7 @@ tf.download(
         "github": "integrations/github:6.13.0",
         "helm": "hashicorp/helm:3.3.0",
         "http": "hashicorp/http:3.6.2",
-        "kubernetes": "hashicorp/kubernetes:2.38.0",
+        "kubernetes": "hashicorp/kubernetes:3.2.1",
         "libvirt": "dmacvicar/libvirt:0.9.9",
         # CAUTION: low-user-count community provider that authenticates with the
         # LiteLLM master key (tf/gitops/litellm-keys). On every version bump,
@@ -200,6 +200,18 @@ oci.pull(
     image = "mirror.gcr.io/library/debian",
     platforms = ["linux/amd64"],
     tag = "trixie-slim",
+)
+
+# LiteLLM's upstream image includes the proxy runtime's Prisma client,
+# generated query engine, Node.js, and startup entrypoint. The Tana image
+# layers our provider source onto this database-capable image rather than
+# rebuilding that runtime from the Python wheel alone.
+oci.pull(
+    name = "litellm_upstream",
+    digest = "sha256:d85c0b36e2fdd64719e7fc2692431cd5aee0814925e96c2892d1491b13189c23",
+    image = "mirror.gcr.io/litellm/litellm",
+    platforms = ["linux/amd64"],
+    tag = "1.100.1",
 )
 
 # Test infrastructure: PostgreSQL for Testcontainers (match production version)
@@ -312,7 +324,7 @@ oci.pull(
     platforms = ["linux/amd64"],
     tag = "v0.16.22",
 )
-use_repo(oci, "debian_trixie_slim", "debian_trixie_slim_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "grocy", "grocy_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "nginx_unprivileged", "nginx_unprivileged_linux_amd64", "pgvector_pg18", "pgvector_pg18_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "python_3_14_slim", "python_3_14_slim_linux_amd64", "registry_3", "registry_3_linux_amd64", "ryuk", "ryuk_linux_amd64", "stalwart", "stalwart_linux_amd64", "talos_imager", "talos_imager_linux_amd64")
+use_repo(oci, "debian_trixie_slim", "debian_trixie_slim_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "grocy", "grocy_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "litellm_upstream", "litellm_upstream_linux_amd64", "nginx_unprivileged", "nginx_unprivileged_linux_amd64", "pgvector_pg18", "pgvector_pg18_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "python_3_14_slim", "python_3_14_slim_linux_amd64", "registry_3", "registry_3_linux_amd64", "ryuk", "ryuk_linux_amd64", "stalwart", "stalwart_linux_amd64", "talos_imager", "talos_imager_linux_amd64")
 
 # Container image pins from devinfra/image_pins.json.
 # - Generates @image_pins//:pins.bzl with NAME_IMAGE / NAME_DIGEST constants
@@ -526,7 +538,7 @@ use_repo(playwright, playwright_browsers = "playwright")
 
 # Node.js toolchain
 node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node")
-node.toolchain(node_version = "22.11.0")  # LTS 'Jod'
+node.toolchain(node_version = "22.22.2")  # LTS 'Jod'
 
 # TypeScript toolchain for ts_project (//devinfra/js:ts_library.bzl). The bazel_dep alone
 # yields nothing — @npm_typescript does not exist until this extension is used. Version follows
@@ -710,7 +722,7 @@ bazel_dep(name = "rules_rust_prost", version = "0.74.0")
 rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
 rust.toolchain(
     edition = "2024",
-    versions = ["1.88.0"],
+    versions = ["1.98.1"],
 )
 use_repo(rust, "rust_toolchains")
 
@@ -1031,14 +1043,14 @@ http_archive(
     urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.12.1/firecracker-v1.12.1-x86_64.tgz"],
 )
 
-# Node.js v22.11.0 LTS linux-x64 — provides the hermetic Node runtime used by
+# Node.js v22.22.2 LTS linux-x64 — provides the hermetic Node runtime used by
 # development tooling and JavaScript tests.
 http_archive(
     name = "nodejs_linux_amd64",
     build_file_content = 'exports_files(["bin/node"], visibility = ["//visibility:public"])\n',
-    sha256 = "4f862bab52039835efbe613b532238b6e4dde98d139a34e6923193e073438b13",
-    strip_prefix = "node-v22.11.0-linux-x64",
-    urls = ["https://nodejs.org/dist/v22.11.0/node-v22.11.0-linux-x64.tar.gz"],
+    sha256 = "978978a635eef872fa68beae09f0aad0bbbae6757e444da80b570964a97e62a3",
+    strip_prefix = "node-v22.22.2-linux-x64",
+    urls = ["https://nodejs.org/dist/v22.22.2/node-v22.22.2-linux-x64.tar.gz"],
 )
 
 # Crane binary for OCI image push/pull in agent containers and tests.

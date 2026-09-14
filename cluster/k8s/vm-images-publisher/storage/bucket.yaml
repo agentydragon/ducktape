@@ -2,9 +2,12 @@ apiVersion: seaweed.seaweedfs.com/v1
 kind: Bucket
 metadata:
   name: vm-images
-  namespace: seaweedfs
+  namespace: vm-images-publisher
 spec:
   name: vm-images
+  # The physical bucket already exists; this CR is moving to the publisher's
+  # namespace without deleting or recreating its data.
+  adoptExisting: true
   clusterRef:
     name: seaweedfs
     namespace: seaweedfs

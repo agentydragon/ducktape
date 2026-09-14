@@ -35,7 +35,10 @@ from x.agentplane.acceptance.agent import Agent
 from x.agentplane.app.client import Client
 from x.agentplane.app.decisions import Decision, Outcome
 from x.agentplane.app.inventory import SandboxView
-from x.agentplane.app.presets import Harness
+from x.agentplane.runner import protocol_pb2
+
+# `protocol_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
+# gazelle:include_dep @pypi//protobuf
 
 # Staging's seeded policy and the credential it substitutes
 # (cluster/k8s/agentplane-staging/egress/egresspolicy-github-public.yaml).
@@ -123,7 +126,7 @@ async def _decision_for(client: Client, sandbox: str, host: str, *, after: datet
 
 
 async def test_a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
-    client: Client, sandbox: Sandboxes, harness: Harness, model: str
+    client: Client, sandbox: Sandboxes, harness: protocol_pb2.Harness, model: str
 ) -> None:
     """The whole path in one turn: the agent asks what it may reach, uses the credential it is told
     about without ever holding it, is authenticated as the bot, and is refused everywhere the policy
@@ -155,7 +158,7 @@ async def test_a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
 
 
 async def test_the_model_call_itself_goes_through_the_proxy(
-    client: Client, sandbox: Sandboxes, harness: Harness, model: str
+    client: Client, sandbox: Sandboxes, harness: protocol_pb2.Harness, model: str
 ) -> None:
     """The runner holds only an inert placeholder, not the LiteLLM key, so a turn happens at all only
     if the proxy admits the model call and substitutes its sidecar-only workload token for the
@@ -187,7 +190,7 @@ async def test_the_model_call_itself_goes_through_the_proxy(
 
 
 async def test_a_policy_granted_after_the_sandbox_is_running_takes_effect(
-    client: Client, sandbox: Sandboxes, harness: Harness, model: str
+    client: Client, sandbox: Sandboxes, harness: protocol_pb2.Harness, model: str
 ) -> None:
     """Binding at runtime is a live grant, not a restart: one sandbox, refused and then admitted."""
     view = await sandbox(f"accept-bind-{harness}")

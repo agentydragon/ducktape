@@ -1,3 +1,4 @@
+import type { JSX } from "react";
 // Focused result rendering for the in-process `google_calendar` server. Every schema below is
 // generated from FastMCP's advertised outputSchema; the backend's CalendarEvent projection is the
 // shared create/get/list/instances wire contract.

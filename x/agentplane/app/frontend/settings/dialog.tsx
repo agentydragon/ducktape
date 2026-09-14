@@ -1,3 +1,4 @@
+import type { JSX } from "react";
 import { Modal, Tabs } from "@mantine/core";
 
 import { Connections } from "./connections";

@@ -23,8 +23,17 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":artifacts",
-        "@pypi//more_itertools",
         "@pypi//pygithub",
+    ],
+)
+
+py_test(
+    name = "test_sync_pins",
+    srcs = ["test_sync_pins.py"],
+    deps = [
+        ":sync_pins",
+        "//:conftest",
+        "@pypi//pytest_bazel",
     ],
 )
 

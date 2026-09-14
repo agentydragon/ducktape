@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(
     default_testonly = True,
@@ -24,9 +24,24 @@ py_library(
     ],
 )
 
+py_test(
+    name = "test_model_endpoint",
+    srcs = ["test_model_endpoint.py"],
+    deps = [
+        ":conftest",
+        ":model_endpoint",
+        "//:conftest",
+        "//x/agentplane/harness_tests/claude:messages",
+        "@pypi//aiohttp",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 test_suite(
     name = "harness_tests",
     tests = [
+        ":test_model_endpoint",
         "//x/agentplane/harness_tests/claude:test_active_turn",
         "//x/agentplane/harness_tests/claude:test_connection_loss",
         "//x/agentplane/harness_tests/claude:test_tools",

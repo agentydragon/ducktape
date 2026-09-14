@@ -8,7 +8,7 @@
 // label overlap.
 
 import { Group, Loader, Stack } from "@mantine/core";
-import { useEffect, useState } from "react";
+import { type JSX, useEffect, useState } from "react";
 import type { z } from "zod";
 
 import { CodeBlock } from "../../code_block";

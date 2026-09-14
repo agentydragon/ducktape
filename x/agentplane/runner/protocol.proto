@@ -1,40 +1,16 @@
-// Runner protocol: one contract over the native Claude Code and Codex harnesses.
+// Runner transport over the common durable Command/Event log language.
 //
-// A session is one native conversation the runner owns. Its state lives in the runner's state
-// directory: the harness's own persistence (Claude config dir, Codex home) and the runner's session
-// log, an append-only record of every Event below. A client reaches a session over one Attach
-// stream. The first client message is Open; the runner answers with Attached, replays the session
-// log after the client's cursor, then streams live events. Every event carries a session-scoped
-// sequence that survives reconnects and runner restarts, so a client that resumes from the last
-// sequence it processed sees neither a gap nor a duplicate.
-//
-// The vocabulary names the selected agent harness only in SessionSpec.harness. The harness's own frames are still
-// delivered verbatim as Native events, in both directions, and every derived event lists the Native
-// sequences it came from, so harness-native detail is one lookup away without leaking into the contract.
-//
-// Commands. A Command is client-chosen and idempotent. The runner writes it to a durable command
-// journal before emitting CommandReceived. A receipt only proves that durable runner boundary; it
-// intentionally does not promise a timing category. The later causal event says what happened:
-// HarnessUserMessageConfirmed, ModelChanged, an interrupted TurnCompleted, CommandRejected, or
-// CommandNoop. A command journal survives a runner restart and lets the runner reconcile the same
-// command id rather than make the client guess whether an input was taken.
-//
-// Harness lifecycle. Open with a spec starts the harness if it is not running, resuming the native conversation
-// when the session has one. A StopRunnerSession command interrupts an active turn, stops the harness, reports
-// HarnessExited, and ends all observing streams; the session stays resumable. Detach, or a dropped connection,
-// ends the stream only: the harness keeps running and its events keep accruing in the log. A runner
-// that restarts and finds a session it had running reports HarnessLost and TurnCompleted with
-// PROCESS_LOST for an active turn. It never emits an "uncertain" command terminal state: an
-// uncompleted command remains in its journal until the runner can establish a causal result.
-//
-// Attachments independently replay and follow the log; commands share the session lock and input
-// deduplication. Open without a spec never starts the harness and ends after replay if stopped.
+// A runner session owns one native conversation and a state-volume Event source. Attach selects
+// that source, returns a runner-specific snapshot, then follows it. Command, EventEntry, and Follow
+// are source-neutral messages from x/agentplane/protocol: the integration app uses the same messages
+// for its retained Thread archive.
 
 syntax = "proto3";
 
 package ducktape.agentplane.runner.v1;
 
-import "google/protobuf/timestamp.proto";
+import "x/agentplane/protocol/command.proto";
+import "x/agentplane/protocol/event_log.proto";
 
 service Runner {
   rpc Attach(stream ClientMessage) returns (stream ServerMessage);
@@ -90,13 +66,8 @@ message SessionSpec {
   string cwd = 2;
   string model = 3;
   string reasoning_effort = 4;
-  // Standing instructions for the session: what the harness is working on, and the orders that hold
-  // for every turn of it. They reach the model appended to the harness's own system prompt, which
-  // keeps each harness's coding-agent policy in place, and are fixed for the session's life, since
-  // a spec supplied on re-attach must equal the stored one. Empty is a session without any.
-  //
-  // Claude Code re-sends them at each harness start, resume included; Codex stores them in the
-  // thread when it is created and a resume never restates them. See the runner SPEC.
+  // Standing instructions are fixed for the session's life: a spec supplied on re-attach must
+  // equal the stored one. Empty is a session without any.
   string instructions = 5;
 }
 
@@ -105,37 +76,7 @@ message Open {
   // session, and spec, when present, must equal the stored one.
   string session_id = 1;
   SessionSpec spec = 2;
-  // Events with a greater sequence are replayed before live events; 0 replays the whole log. A
-  // value beyond the log's last sequence ends the stream with an error.
-  uint64 after_sequence = 3;
-}
-
-message SubmitInput {
-  string text = 1;
-}
-
-message ChangeModel {
-  string model = 1;
-}
-
-// Ends exactly this active turn. A runner must not carry an interrupt forward to a later turn.
-message InterruptTurn {
-  string turn_id = 1;
-}
-
-// Stops the harness. The runner session stays resumable.
-message StopRunnerSession {}
-
-message Command {
-  // Client-chosen and stable across app/runner reconnects. Every command, including an input,
-  // has one id; a distinct request id is neither needed nor accepted.
-  string command_id = 1;
-  oneof operation {
-    SubmitInput submit_input = 2;
-    ChangeModel change_model = 3;
-    InterruptTurn interrupt_turn = 4;
-    StopRunnerSession stop_runner_session = 5;
-  }
+  ducktape.agentplane.protocol.v1.Follow follow = 3;
 }
 
 // Ends the stream; the harness keeps running.
@@ -144,7 +85,7 @@ message Detach {}
 message ClientMessage {
   oneof message {
     Open open = 1;
-    Command command = 2;
+    ducktape.agentplane.protocol.v1.Command command = 2;
     Detach detach = 3;
   }
 }
@@ -158,8 +99,8 @@ enum HarnessState {
 message Attached {
   string session_id = 1;
   SessionSpec spec = 2;
-  // The last sequence in the session log at attach time; greater sequences are live.
-  uint64 last_sequence = 3;
+  // The last source-local cursor in the session log at attach time; greater cursors are live.
+  uint64 last_cursor = 3;
   HarnessState harness_state = 4;
   // Empty when no turn is active.
   string active_turn_id = 5;
@@ -170,7 +111,7 @@ message ListSessionsRequest {}
 message SessionSummary {
   string session_id = 1;
   SessionSpec spec = 2;
-  uint64 last_sequence = 3;
+  uint64 last_cursor = 3;
   HarnessState harness_state = 4;
   // Empty when no turn is active.
   string active_turn_id = 5;
@@ -180,198 +121,10 @@ message ListSessionsResponse {
   repeated SessionSummary sessions = 1;
 }
 
-enum TurnStatus {
-  TURN_STATUS_UNSPECIFIED = 0;
-  TURN_STATUS_COMPLETED = 1;
-  TURN_STATUS_INTERRUPTED = 2;
-  TURN_STATUS_FAILED = 3;
-  // The harness was gone before it reported a terminal turn result.
-  TURN_STATUS_PROCESS_LOST = 4;
-}
-
-enum ItemKind {
-  ITEM_KIND_UNSPECIFIED = 0;
-  ITEM_KIND_ASSISTANT_TEXT = 1;
-  ITEM_KIND_REASONING = 2;
-  ITEM_KIND_TOOL_CALL = 3;
-}
-
-enum Direction {
-  DIRECTION_UNSPECIFIED = 0;
-  DIRECTION_TO_HARNESS = 1;
-  DIRECTION_FROM_HARNESS = 2;
-}
-
-message HarnessStarted {
-  // The harness resumed the session's native conversation rather than starting a fresh one.
-  bool resumed = 1;
-  // Process id on the runner's host, for operators and for tests that kill it.
-  int32 pid = 2;
-}
-
-message HarnessExited {
-  int32 exit_code = 1;
-  // The runner stopped it for a StopRunnerSession command or its own shutdown; otherwise the
-  // harness ended on its own.
-  bool stopped_by_runner = 2;
-  // The causal effect of this StopRunnerSession command, if one asked the runner to stop it.
-  string stopped_by_command_id = 3;
-}
-
-// The runner restarted and found the harness gone; its exit status is unknown.
-message HarnessLost {}
-
-message HarnessStderr {
-  string text = 1;
-}
-
-// The runner's durable acknowledgement. This does not imply native delivery or an effect timing.
-message CommandReceived {
-  string command_id = 1;
-}
-
-// A terminal negative outcome. A rejected command may be retried only with a new command id.
-message CommandRejected {
-  string command_id = 1;
-  string reason = 2;
-}
-
-// A harmless terminal outcome: interrupting an already completed turn, or selecting the current
-// model, for example. It is deliberately distinct from rejection.
-message CommandNoop {
-  string command_id = 1;
-  string reason = 2;
-}
-
-// A harness-confirmed causal input delivery. Usually harness_message_id names the native user
-// message; Claude active-tool continuations instead name the tool-result frame and cite its
-// following lifecycle cohort in Event.source_sequences. One native delivery may combine multiple
-// requested inputs; text and origin_command_ids preserve that fact rather than pretending harnesses
-// admit or coalesce the same way.
-message HarnessUserMessageConfirmed {
-  string harness_message_id = 1;
-  string text = 2;
-  repeated string origin_command_ids = 3;
-  string turn_id = 4;
-}
-
-message TurnStarted {
-  string turn_id = 1;
-  // The model selected for this turn. A transcript may therefore show a deliberate model change.
-  string model = 2;
-}
-
-// The requested model actually took effect. For Codex this is the next-turn selection boundary;
-// for Claude it follows the native control response.
-message ModelChanged {
-  string command_id = 1;
-  string previous_model = 2;
-  string model = 3;
-}
-
-message TurnCompleted {
-  string turn_id = 1;
-  TurnStatus status = 2;
-  // Set for FAILED and PROCESS_LOST.
-  string error = 3;
-  // Set only when this terminal interrupted outcome was caused by an InterruptTurn command.
-  string interrupted_by_command_id = 4;
-}
-
-// One unit of assistant output within a turn: a text block, a reasoning block, or a tool call.
-message ItemStarted {
-  string item_id = 1;
-  ItemKind kind = 2;
-  // The harness's own name for the tool; set for TOOL_CALL items only.
-  string tool_name = 3;
-}
-
-// Text of an ASSISTANT_TEXT or REASONING item, in order; concatenation is the item's text so far.
-message TextDelta {
-  string item_id = 1;
-  string text = 2;
-}
-
-// A fragment of a TOOL_CALL item's arguments JSON, in order, for harnesses that stream it.
-message ToolArgumentsDelta {
-  string item_id = 1;
-  string partial_json = 2;
-}
-
-// The complete arguments of a TOOL_CALL item, as a JSON object.
-message ToolArguments {
-  string item_id = 1;
-  string arguments_json = 2;
-}
-
-// Output of a running TOOL_CALL item, in order, for harnesses that stream it.
-message ToolOutputDelta {
-  string item_id = 1;
-  string text = 2;
-}
-
-message ToolResult {
-  string output = 1;
-  bool succeeded = 2;
-}
-
-message ItemCompleted {
-  string item_id = 1;
-  oneof outcome {
-    // ASSISTANT_TEXT and REASONING: the item's complete text.
-    string text = 2;
-    ToolResult tool = 3;
-  }
-}
-
-// One harness frame exactly as it crossed the pipe, without its trailing newline.
-message Native {
-  Direction direction = 1;
-  string line = 2;
-}
-
-// A test-only runner pause, emitted only when the hidden runner test-checkpoint options are set.
-// It occupies the normal replayable session event stream so a real-process integration test can
-// crash the runner at a durable boundary without a second signalling transport. Deployments never
-// enable these options.
-message DebugCheckpoint {
-  string name = 1;
-  string command_id = 2;
-}
-
-message Event {
-  // Strictly increasing within a session, across attachments and runner restarts.
-  uint64 sequence = 1;
-  google.protobuf.Timestamp at = 2;
-  // Native events this derived event came from; empty for Native events themselves.
-  repeated uint64 source_sequences = 3;
-  oneof observation {
-    HarnessStarted harness_started = 4;
-    HarnessExited harness_exited = 5;
-    HarnessLost harness_lost = 6;
-    HarnessStderr harness_stderr = 7;
-    CommandReceived command_received = 8;
-    CommandRejected command_rejected = 9;
-    CommandNoop command_noop = 10;
-    HarnessUserMessageConfirmed harness_user_message_confirmed = 11;
-    TurnStarted turn_started = 12;
-    TurnCompleted turn_completed = 13;
-    ItemStarted item_started = 14;
-    TextDelta text_delta = 15;
-    ToolArgumentsDelta tool_arguments_delta = 16;
-    ToolArguments tool_arguments = 17;
-    ToolOutputDelta tool_output_delta = 18;
-    ItemCompleted item_completed = 19;
-    Native native = 20;
-    ModelChanged model_changed = 21;
-    DebugCheckpoint debug_checkpoint = 22;
-  }
-}
-
 message ServerMessage {
   oneof message {
     Attached attached = 1;
-    Event event = 2;
+    ducktape.agentplane.protocol.v1.EventEntry event_entry = 2;
     // The stream ends after an error, such as a malformed command or a spec mismatch.
     string error = 3;
   }

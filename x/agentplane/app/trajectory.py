@@ -3,10 +3,10 @@ PostgreSQL as it arrives.
 
 A product Thread is not a runner session. A `ThreadRunnerSession` records a proven association to
 one runner session at one point in the Thread's life. `ThreadCommand` is the app-owned desired
-side: one ordered, immutable command outbox per Thread. Events are stored as the protocol's own
-proto-JSON, so a Thread reads back without a runner and a deleted Sandbox loses nothing. The schema
-is owned by the Alembic migrations under `migrations/`, applied by `database_migrate.py` as a
-separate deploy step.
+side: one ordered, immutable command outbox per Thread. Runner observations are stored as the
+shared protocol's `EventEntry` proto-JSON, so a Thread reads back without a runner and a deleted
+Sandbox loses nothing. The schema is owned by the Alembic migrations under `migrations/`, applied
+by `database_migrate.py` as a separate deploy step.
 """
 
 from __future__ import annotations
@@ -41,7 +41,8 @@ from x.agentplane.app.changes import Changes
 from x.agentplane.app.operator_sessions import Base, OperatorSessionStore
 from x.agentplane.app.presets import Harness
 from x.agentplane.app.trajectory_updates import CHANNEL, COMMANDS_PAYLOAD, TrajectoryUpdates
-from x.agentplane.runner import protocol_pb2 as pb
+from x.agentplane.protocol import command_pb2, event_log_pb2
+from x.agentplane.runner import protocol_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -98,11 +99,11 @@ class Event(Base):
     thread_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
     )
-    sequence: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     # The observation's oneof case, for filtering without opening the payload; "native" for frames.
     kind: Mapped[str] = mapped_column(Text)
-    # Proto-JSON of the protocol's Event, exactly what the bridge streams.
+    # Proto-JSON of the protocol's EventEntry, exactly what the bridge streams.
     payload: Mapped[dict[str, object]] = mapped_column(JSONB)
 
 
@@ -163,14 +164,14 @@ class FeedError:
 
 @dataclass(frozen=True)
 class FeedSnapshot:
-    attached: pb.Attached
+    attached: protocol_pb2.Attached
     end: FeedEnd | FeedError | None
 
 
 @dataclass(frozen=True)
 class ThreadCommandSnapshot:
     thread_id: UUID
-    command: pb.Command
+    command: command_pb2.Command
     ordinal: int
     accepted_at: datetime
 
@@ -196,7 +197,7 @@ class ThreadView(BaseModel):
     created_at: datetime
     name: str | None = Field(description="The user-given name; None while the thread is unnamed.")
     archived: bool
-    last_sequence: int = Field(description="The highest stored sequence; 0 while nothing is stored.")
+    last_cursor: int = Field(description="The highest stored follow cursor; 0 while nothing is stored.")
     last_event_at: datetime | None = None
     harness_state: str = Field(
         description="The protocol's HarnessState enum member, by name: HARNESS_STATE_RUNNING, "
@@ -237,7 +238,7 @@ class TrajectoryStore:
         await self._updates.start()
 
     async def thread(
-        self, sandbox: str, session_id: str, spec: pb.SessionSpec, *, sandbox_uid: UUID | None = None
+        self, sandbox: str, session_id: str, spec: protocol_pb2.SessionSpec, *, sandbox_uid: UUID | None = None
     ) -> UUID:
         """Find the product Thread for an actual runner attachment, creating it on first sight."""
         async with self._sessions.begin() as session:
@@ -257,7 +258,7 @@ class TrajectoryStore:
                     id=thread_id,
                     sandbox=sandbox,
                     sandbox_uid=sandbox_uid,
-                    harness=Harness(pb.Harness.Name(spec.harness)),
+                    harness=Harness(protocol_pb2.Harness.Name(spec.harness)),
                     model=spec.model,
                     cwd=spec.cwd,
                 )
@@ -274,7 +275,7 @@ class TrajectoryStore:
             await _notify(session)
             return thread_id
 
-    async def request_thread_command(self, thread_id: UUID, command: pb.Command) -> ThreadCommandSnapshot:
+    async def request_thread_command(self, thread_id: UUID, command: command_pb2.Command) -> ThreadCommandSnapshot:
         """Append a generic desired command, idempotently, to one existing Thread.
 
         The Thread row is locked before assigning its next ordinal, so concurrent app replicas
@@ -302,7 +303,7 @@ class TrajectoryStore:
     async def commands_awaiting_runner_receipt(self, sandbox: str) -> list[ThreadCommandDelivery]:
         """Return each Thread's earliest command not yet durably received by its active session.
 
-        The runner emits ``CommandReceived`` only after journaling a command.  That receipt, copied
+        The runner emits ``CommandAdmitted`` only after journaling a command. That receipt, copied
         into the Thread event log, is the hand-off from this app-owned outbox to the runner.  A
         reconciler must retain commands after their receipt until their separate causal outcome is
         projected, but may offer later commands to the runner then: the runner owns their execution
@@ -320,11 +321,11 @@ class TrajectoryStore:
         receipt_query = (
             select(Event.thread_id, Event.payload)
             .join(Thread, Thread.id == Event.thread_id)
-            .where(Thread.sandbox == sandbox, Event.kind == "command_received")
+            .where(Thread.sandbox == sandbox, Event.kind == "command_admitted")
         )
         async with self._sessions() as session:
             received = {
-                (thread_id, ParseDict(payload, pb.Event()).command_received.command_id)
+                (thread_id, ParseDict(payload, event_log_pb2.EventEntry()).event.command_admitted.command.command_id)
                 for thread_id, payload in await session.execute(receipt_query)
             }
             deliveries: list[ThreadCommandDelivery] = []
@@ -344,47 +345,51 @@ class TrajectoryStore:
                 )
             return deliveries
 
-    async def last_sequence(self, thread_id: UUID) -> int:
+    async def last_cursor(self, thread_id: UUID) -> int:
         async with self._sessions() as session:
             return (
                 await session.scalar(
-                    select(func.coalesce(func.max(Event.sequence), 0)).where(Event.thread_id == thread_id)
+                    select(func.coalesce(func.max(Event.cursor), 0)).where(Event.thread_id == thread_id)
                 )
                 or 0
             )
 
-    async def record(self, thread_id: UUID, events: Sequence[pb.Event], *, lease: IngestionLease) -> None:
-        """Store events; one already stored under its sequence is left as it was, so a replay after
+    async def record(
+        self, thread_id: UUID, entries: Sequence[event_log_pb2.EventEntry], *, lease: IngestionLease
+    ) -> None:
+        """Store entries; one already stored under its cursor is left as it was, so a replay after
         a reconnect is harmless."""
-        if not events:
+        if not entries:
             return
         rows = [
             {
                 "thread_id": thread_id,
-                "sequence": event.sequence,
-                "at": event.at.ToDatetime(tzinfo=UTC),
-                "kind": event.WhichOneof("observation") or "",
-                "payload": MessageToDict(event),
+                "cursor": entry.cursor,
+                "at": entry.event.at.ToDatetime(tzinfo=UTC),
+                "kind": entry.event.WhichOneof("observation") or "",
+                "payload": MessageToDict(entry),
             }
-            for event in events
+            for entry in entries
         ]
         async with self._sessions.begin() as session:
             await _fence(session, lease, thread_id)
             inserted = list(
                 await session.scalars(insert(Event).values(rows).on_conflict_do_nothing().returning(Event.payload))
             )
-            inserted_events = [ParseDict(payload, pb.Event()) for payload in inserted]
             state = await session.get(FeedState, thread_id)
             if state is not None:
-                attached = ParseDict(state.attached, pb.Attached())
+                attached = ParseDict(state.attached, protocol_pb2.Attached())
                 previous_model = attached.spec.model
-                for event in sorted(inserted_events, key=lambda event: event.sequence):
+                for entry in sorted(
+                    (ParseDict(payload, event_log_pb2.EventEntry()) for payload in inserted),
+                    key=lambda entry: entry.cursor,
+                ):
                     # An Attached snapshot describes the runner at its cursor. Replaying the
                     # earlier log fills history, but must not rewind that snapshot's state.
-                    if event.sequence <= attached.last_sequence:
+                    if entry.cursor <= attached.last_cursor:
                         continue
-                    _project_attached(attached, event)
-                    if event.HasField("harness_started"):
+                    _project_attached(attached, entry)
+                    if entry.event.HasField("harness_started"):
                         state.end = None
                 state.attached = MessageToDict(attached)
                 if attached.spec.model != previous_model:
@@ -392,7 +397,13 @@ class TrajectoryStore:
                         update(Thread).where(Thread.id == thread_id).values(model=attached.spec.model)
                     )
                 await session.flush()
-            await _notify(session, commands=any(event.HasField("command_received") for event in inserted_events))
+            await _notify(
+                session,
+                commands=any(
+                    ParseDict(payload, event_log_pb2.EventEntry()).event.HasField("command_admitted")
+                    for payload in inserted
+                ),
+            )
 
     async def acquire_ingestion(self, sandbox: str, duration: timedelta) -> IngestionLease | None:
         _positive_duration(duration)
@@ -433,11 +444,14 @@ class TrajectoryStore:
                 )
             )
 
-    async def set_attached(self, thread_id: UUID, attached: pb.Attached, *, lease: IngestionLease) -> None:
+    async def set_attached(self, thread_id: UUID, attached: protocol_pb2.Attached, *, lease: IngestionLease) -> None:
         async with self._sessions.begin() as session:
             await _fence(session, lease, thread_id)
             state = await session.get(FeedState, thread_id)
-            if state is not None and attached.last_sequence < ParseDict(state.attached, pb.Attached()).last_sequence:
+            if (
+                state is not None
+                and attached.last_cursor < ParseDict(state.attached, protocol_pb2.Attached()).last_cursor
+            ):
                 raise ValueError("attachment snapshot is older than the committed feed state")
             values = {"attached": MessageToDict(attached), "end": None}
             await session.execute(
@@ -464,7 +478,7 @@ class TrajectoryStore:
             if state is None:
                 return None
             end = None if state.end is None else FeedError(state.end["message"]) if state.end else FeedEnd()
-            return FeedSnapshot(ParseDict(state.attached, pb.Attached()), end)
+            return FeedSnapshot(ParseDict(state.attached, protocol_pb2.Attached()), end)
 
     async def list_threads(
         self, *, sandbox: str | None = None, session_id: str | None = None, include_archived: bool = False
@@ -480,8 +494,8 @@ class TrajectoryStore:
             query = query.where(Thread.archived.is_(False))
         async with self._sessions() as session:
             return [
-                _view(thread, runner, last_sequence, last_at, attached)
-                for thread, runner, last_sequence, last_at, attached in await session.execute(query)
+                _view(thread, runner, last_cursor, last_at, attached)
+                for thread, runner, last_cursor, last_at, attached in await session.execute(query)
             ]
 
     async def get_thread(self, thread_id: UUID) -> ThreadView | None:
@@ -522,24 +536,26 @@ class TrajectoryStore:
             await _notify(session)
         return view
 
-    async def events(self, thread_id: UUID, *, after_sequence: int = 0, limit: int) -> list[pb.Event]:
-        """Up to `limit` events after the cursor, in sequence order; a reader pages until a short page."""
+    async def events(self, thread_id: UUID, *, after_cursor: int = 0, limit: int) -> list[event_log_pb2.EventEntry]:
+        """Up to `limit` entries after the cursor, in cursor order; a reader pages until a short page."""
         async with self._sessions() as session:
             payloads = await session.scalars(
                 select(Event.payload)
-                .where(Event.thread_id == thread_id, Event.sequence > after_sequence)
-                .order_by(Event.sequence)
+                .where(Event.thread_id == thread_id, Event.cursor > after_cursor)
+                .order_by(Event.cursor)
                 .limit(limit)
             )
-            return [ParseDict(payload, pb.Event()) for payload in payloads]
+            return [ParseDict(payload, event_log_pb2.EventEntry()) for payload in payloads]
 
 
-def _validate_command(command: pb.Command) -> None:
+def _validate_command(command: command_pb2.Command) -> None:
     if not command.command_id or command.WhichOneof("operation") is None:
         raise ValueError("a Thread command needs a non-empty command id and operation")
 
 
-async def _append_thread_command(session: AsyncSession, thread_id: UUID, command: pb.Command) -> ThreadCommandSnapshot:
+async def _append_thread_command(
+    session: AsyncSession, thread_id: UUID, command: command_pb2.Command
+) -> ThreadCommandSnapshot:
     _validate_command(command)
     encoded = MessageToDict(command)
     existing = await session.get(ThreadCommand, (thread_id, command.command_id))
@@ -566,7 +582,7 @@ async def _append_thread_command(session: AsyncSession, thread_id: UUID, command
 def _thread_command_snapshot(command: ThreadCommand) -> ThreadCommandSnapshot:
     return ThreadCommandSnapshot(
         thread_id=command.thread_id,
-        command=ParseDict(command.command, pb.Command()),
+        command=ParseDict(command.command, command_pb2.Command()),
         ordinal=command.ordinal,
         accepted_at=command.accepted_at,
     )
@@ -626,13 +642,14 @@ async def _notify(session: AsyncSession, *, commands: bool = False) -> None:
     await session.execute(select(func.pg_notify(CHANNEL, COMMANDS_PAYLOAD if commands else "")))
 
 
-def _project_attached(attached: pb.Attached, event: pb.Event) -> None:
-    attached.last_sequence = event.sequence
+def _project_attached(attached: protocol_pb2.Attached, entry: event_log_pb2.EventEntry) -> None:
+    attached.last_cursor = entry.cursor
+    event = entry.event
     match event.WhichOneof("observation"):
         case "harness_started":
-            attached.harness_state = pb.HARNESS_STATE_RUNNING
+            attached.harness_state = protocol_pb2.HARNESS_STATE_RUNNING
         case "harness_exited" | "harness_lost":
-            attached.harness_state = pb.HARNESS_STATE_STOPPED
+            attached.harness_state = protocol_pb2.HARNESS_STATE_STOPPED
         case "turn_started":
             attached.active_turn_id = event.turn_started.turn_id
         case "turn_completed":
@@ -644,12 +661,12 @@ def _project_attached(attached: pb.Attached, event: pb.Event) -> None:
 def _thread_views_query():
     """One current runner association plus durable transcript progress for each Thread."""
     last = (
-        select(Event.thread_id, func.max(Event.sequence).label("last_sequence"), func.max(Event.at).label("last_at"))
+        select(Event.thread_id, func.max(Event.cursor).label("last_cursor"), func.max(Event.at).label("last_at"))
         .group_by(Event.thread_id)
         .subquery()
     )
     return (
-        select(Thread, ThreadRunnerSession, last.c.last_sequence, last.c.last_at, FeedState.attached)
+        select(Thread, ThreadRunnerSession, last.c.last_cursor, last.c.last_at, FeedState.attached)
         .join(ThreadRunnerSession, (ThreadRunnerSession.thread_id == Thread.id) & ThreadRunnerSession.active.is_(True))
         .outerjoin(last, last.c.thread_id == Thread.id)
         .outerjoin(FeedState, FeedState.thread_id == Thread.id)
@@ -660,19 +677,21 @@ async def _thread_view(session: AsyncSession, thread_id: UUID) -> ThreadView | N
     row = (await session.execute(_thread_views_query().where(Thread.id == thread_id))).one_or_none()
     if row is None:
         return None
-    thread, runner, last_sequence, last_at, attached = row
-    return _view(thread, runner, last_sequence, last_at, attached)
+    thread, runner, last_cursor, last_at, attached = row
+    return _view(thread, runner, last_cursor, last_at, attached)
 
 
 def _view(
     thread: Thread,
     runner: ThreadRunnerSession,
-    last_sequence: int | None,
+    last_cursor: int | None,
     last_at: datetime | None,
     attached: dict[str, object] | None,
 ) -> ThreadView:
     harness_state = (
-        ParseDict(attached, pb.Attached()).harness_state if attached is not None else pb.HARNESS_STATE_UNSPECIFIED
+        ParseDict(attached, protocol_pb2.Attached()).harness_state
+        if attached is not None
+        else protocol_pb2.HARNESS_STATE_UNSPECIFIED
     )
     if thread.sandbox is None:  # pragma: no cover - only a target-only Thread lacks an attachment.
         raise RuntimeError("Thread with a runner session has no pinned Sandbox")
@@ -686,7 +705,7 @@ def _view(
         created_at=thread.created_at,
         name=thread.name,
         archived=thread.archived,
-        last_sequence=last_sequence or 0,
+        last_cursor=last_cursor or 0,
         last_event_at=last_at,
-        harness_state=pb.HarnessState.Name(harness_state),
+        harness_state=protocol_pb2.HarnessState.Name(harness_state),
     )

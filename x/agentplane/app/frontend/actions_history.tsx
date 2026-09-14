@@ -1,3 +1,4 @@
+import type { JSX } from "react";
 import { Accordion, Badge, Code, Group, Paper, Stack, Text, Title } from "@mantine/core";
 
 import { ActionCaller, ActionContext, RequestAuditDetails, stateLabel, useActionRequests } from "./actions";

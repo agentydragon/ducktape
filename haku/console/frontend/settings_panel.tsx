@@ -1,5 +1,5 @@
 import { ActionIcon, Badge, Button, Group, Loader, Select, Stack, Table, Tabs, Text } from "@mantine/core";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { type JSX, useCallback, useEffect, useState, type ReactNode } from "react";
 
 import { useAsyncResource, type AsyncResource, type AsyncResourceLoader } from "./async_resource";
 import {

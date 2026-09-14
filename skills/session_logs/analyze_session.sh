@@ -12,9 +12,9 @@ usage() {
 }
 
 if [[ $# -eq 0 ]]; then
-  SESSION_FILE=$("$SCRIPT_DIR/find-current-session.sh")
+  SESSION_FILE=$("$SCRIPT_DIR/find_current_session.sh")
 elif [[ $# -eq 1 && ("$1" == claude || "$1" == codex) ]]; then
-  SESSION_FILE=$("$SCRIPT_DIR/find-current-session.sh" "$1")
+  SESSION_FILE=$("$SCRIPT_DIR/find_current_session.sh" "$1")
 elif [[ $# -eq 1 ]]; then
   SESSION_FILE=$1
 else

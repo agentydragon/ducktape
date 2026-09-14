@@ -1,5 +1,5 @@
 import { Button, Center, Loader, Paper, Stack, Text, ThemeIcon, Title } from "@mantine/core";
-import { useEffect, useState } from "react";
+import { type JSX, useEffect, useState } from "react";
 
 import { consumeOAuthConnectionResult, type OAuthConnectionResult } from "./client";
 import { rememberedEmbedPath } from "./routing";
