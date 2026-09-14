@@ -9,6 +9,7 @@ import logging
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from datetime import timedelta
 from typing import Annotated
+from uuid import UUID
 
 import grpc
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response, status
@@ -36,6 +37,7 @@ RECONCILE_S = 2
 LEASE_DURATION = timedelta(seconds=30)
 AddressOf = Callable[[str], Awaitable[str]]
 DiscoverSandboxes = Callable[[], Awaitable[list[str]]]
+SandboxUidOf = Callable[[str], UUID | None]
 
 
 class SandboxNotReachableError(Exception):
@@ -71,11 +73,20 @@ def runner_address(index: LiveIndex, port: int) -> AddressOf:
 class Feed:
     """One lease owner's ingestion connection. Browsers never subscribe to this object."""
 
-    def __init__(self, *, session_id: str, client: RunnerClient, store: TrajectoryStore, lease: IngestionLease):
+    def __init__(
+        self,
+        *,
+        session_id: str,
+        client: RunnerClient,
+        store: TrajectoryStore,
+        lease: IngestionLease,
+        sandbox_uid: UUID | None,
+    ):
         self.session_id = session_id
         self.client = client
         self.store = store
         self.lease = lease
+        self.sandbox_uid = sandbox_uid
         self.task: asyncio.Task[None] | None = None
 
     async def run(self) -> None:
@@ -84,7 +95,9 @@ class Feed:
             async with asyncio.timeout(10):
                 attachment = await self.client.attach(self.session_id)
             attached = attachment.attached
-            thread_id = await self.store.thread(self.lease.sandbox, self.session_id, attached.spec)
+            thread_id = await self.store.thread(
+                self.lease.sandbox, self.session_id, attached.spec, sandbox_uid=self.sandbox_uid
+            )
             stored = await self.store.last_sequence(thread_id)
             if stored > attached.last_sequence:
                 if await self.store.feed_state(thread_id) is None:
@@ -131,11 +144,13 @@ class RunnerBridge:
         store: TrajectoryStore,
         discover_sandboxes: DiscoverSandboxes | None = None,
         sandbox_changes: Changes | None = None,
+        sandbox_uid_of: SandboxUidOf = lambda _sandbox: None,
     ) -> None:
         self._address_of = address_of
         self._store = store
         self._discover_sandboxes = discover_sandboxes
         self._sandbox_changes = sandbox_changes
+        self._sandbox_uid_of = sandbox_uid_of
         self._clients: dict[str, RunnerClient] = {}
         self._feeds: dict[tuple[str, str], Feed] = {}
         self._leases: dict[str, IngestionLease] = {}
@@ -206,7 +221,9 @@ class RunnerBridge:
                             if feed.client is client:
                                 continue
                             await feed.close()
-                        thread_id = await self._store.thread(sandbox, summary.session_id, summary.spec)
+                        thread_id = await self._store.thread(
+                            sandbox, summary.session_id, summary.spec, sandbox_uid=self._sandbox_uid_of(sandbox)
+                        )
                         snapshot = await self._store.feed_state(thread_id)
                         if (
                             summary.harness_state == pb.HARNESS_STATE_STOPPED
@@ -215,7 +232,13 @@ class RunnerBridge:
                             and await self._store.last_sequence(thread_id) == summary.last_sequence
                         ):
                             continue
-                        feed = Feed(session_id=summary.session_id, client=client, store=self._store, lease=lease)
+                        feed = Feed(
+                            session_id=summary.session_id,
+                            client=client,
+                            store=self._store,
+                            lease=lease,
+                            sandbox_uid=self._sandbox_uid_of(sandbox),
+                        )
                         feed.task = asyncio.create_task(feed.run(), name=f"ingest-{sandbox}-{summary.session_id}")
                         self._feeds[key] = feed
                 except grpc.aio.AioRpcError, SandboxNotReachableError, SandboxNotFoundError, TimeoutError:
@@ -250,7 +273,9 @@ class RunnerBridge:
         try:
             await attachment.detach()
             await attachment.drain_until_end()
-            thread_id = await self._store.thread(sandbox, session_id, attachment.attached.spec)
+            thread_id = await self._store.thread(
+                sandbox, session_id, attachment.attached.spec, sandbox_uid=self._sandbox_uid_of(sandbox)
+            )
             await self.start([sandbox])
             # In particular, do not return a resumed session while the database still says its
             # previous harness ended. Commands remain runner-first; this only synchronizes Open.
@@ -301,7 +326,9 @@ class RunnerBridge:
             summary = next((item for item in summaries if item.session_id == session_id), None)
             if summary is None:
                 raise RunnerError(f"session {session_id} does not exist")
-            thread_id = await self._store.thread(sandbox, session_id, summary.spec)
+            thread_id = await self._store.thread(
+                sandbox, session_id, summary.spec, sandbox_uid=self._sandbox_uid_of(sandbox)
+            )
         await self.start([sandbox])
         waiter = asyncio.Event()
         cursor = after_sequence
