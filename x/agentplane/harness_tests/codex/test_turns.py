@@ -16,6 +16,12 @@ RECOVERY_INPUT = "Reply with exactly: CODEX_CRASH_RESUME_OK"
 INTERRUPTED_RESUME_INPUT = "Reply with exactly: CODEX_INTERRUPTED_RESUME_INPUT"
 INTERRUPTED_RESUME_PARTIAL = "CODEX_INTERRUPTED_RESUME_PARTIAL"
 INTERRUPTED_RESUME_RECOVERY = "Reply with exactly: CODEX_INTERRUPTED_RESUME_RECOVERY_OK"
+INTERRUPTED_TURN_MARKER = (
+    "<turn_aborted>\n"
+    "The user interrupted the previous turn on purpose. Any running unified exec processes may still be running "
+    "in the background. If any tools/commands were aborted, they may have partially executed.\n"
+    "</turn_aborted>"
+)
 
 
 async def test_baseline_turn(codex: CodexHarness, openai_responses: OpenAIResponses) -> None:
@@ -78,7 +84,7 @@ async def test_idle_resume_replays_the_thread_from_disk(codex: CodexHarness, ope
 async def test_resume_after_an_interrupted_partial_turn_keeps_the_user_item_not_partial_output(
     codex: CodexHarness, openai_responses: OpenAIResponses
 ) -> None:
-    """A fresh Codex process resumes the interrupted user item, not its partial assistant output.
+    """A fresh Codex process resumes its user item and marker, not partial assistant output.
 
     The interrupt has already completed before the process is killed.  This is therefore distinct
     from the active-process crash test below, and pins the typed Responses request that a runner
@@ -104,15 +110,19 @@ async def test_resume_after_an_interrupted_partial_turn_keeps_the_user_item_not_
                 .through("response.output_text.delta")
                 .events
             )
+            assert (await turn.agent_message_delta()).params.delta == INTERRUPTED_RESUME_PARTIAL
             assert (await interrupted.interrupt(turn)).error is None
-            await exchange.wait_client_closed()
-        assert (await turn.completed()).params.turn.status is wire.TurnStatus.INTERRUPTED
+            # Unlike an interrupt before any output, Codex reports this turn interrupted while
+            # retaining the upstream Responses stream. Finish the scripted response only after
+            # observing that terminal native event.
+            assert (await turn.completed()).params.turn.status is wire.TurnStatus.INTERRUPTED
+            await exchange.close()
         assert await interrupted.crash() < 0
 
     assert [
         frame.params.delta
         for frame in frames.parse(interrupted.native_frames())
-        if isinstance(frame, wire.AgentMessageDelta)
+        if isinstance(frame, wire.AgentMessageDelta) and frame.params.turn_id == turn.id
     ] == [INTERRUPTED_RESUME_PARTIAL]
 
     async with codex.start(openai_responses, resume_thread_id=seeded.thread_id) as resumed:
@@ -125,10 +135,12 @@ async def test_resume_after_an_interrupted_partial_turn_keeps_the_user_item_not_
                 "message:assistant",
                 "message:user",
                 "message:user",
+                "message:user",
             ]
             assert [message.text for message in replay.messages("user")] == [
                 "Reply with exactly: CODEX_INTERRUPTED_RESUME_SEED_OK",
                 INTERRUPTED_RESUME_INPUT,
+                INTERRUPTED_TURN_MARKER,
                 INTERRUPTED_RESUME_RECOVERY,
             ]
             assert [message.text for message in replay.messages("assistant")] == ["CODEX_INTERRUPTED_RESUME_SEED_OK"]
