@@ -155,10 +155,8 @@ class ThreadStartRequest(Base):
     thread_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
     )
-    # Existing targets are pinned to the Kubernetes object chosen by the operator. New targets
-    # carry the immutable creation spec and are later correlated by the planned runner session.
-    sandbox: Mapped[str | None] = mapped_column(Text)
-    sandbox_uid: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True))
+    # The Thread itself owns a selected Sandbox name/UID. Only a new target's immutable creation
+    # spec remains here, until the reconciler binds the created Sandbox to that Thread.
     sandbox_creation: Mapped[dict[str, object] | None] = mapped_column(JSONB(none_as_null=True))
     runner_session_id: Mapped[str] = mapped_column(Text, unique=True)
     session_spec: Mapped[dict[str, object]] = mapped_column(JSONB)
@@ -314,7 +312,17 @@ class TrajectoryStore:
                 select(Thread).join(ThreadRunnerSession).where(ThreadRunnerSession.runner_session_id == session_id)
             )
             if existing is not None:
-                _match_thread_sandbox(existing, sandbox, sandbox_uid)
+                try:
+                    _match_thread_sandbox(existing, sandbox, sandbox_uid)
+                except ValueError as error:
+                    planned_thread_id = await session.scalar(
+                        select(ThreadStartRequest.thread_id).where(ThreadStartRequest.runner_session_id == session_id)
+                    )
+                    if planned_thread_id == existing.id:
+                        raise ThreadStartRequestConflictError(
+                            "planned runner session attached to a different Sandbox"
+                        ) from error
+                    raise
                 if existing.sandbox_uid is None and sandbox_uid is not None:
                     existing.sandbox_uid = sandbox_uid
                     await _notify(session)
@@ -328,12 +336,15 @@ class TrajectoryStore:
                 if thread is None:  # pragma: no cover - the Thread-start request owns this foreign key.
                     raise RuntimeError("Thread-start request lost its product Thread")
                 if thread.sandbox is not None:
-                    _match_thread_sandbox(thread, sandbox, sandbox_uid)
+                    try:
+                        _match_thread_sandbox(thread, sandbox, sandbox_uid)
+                    except ValueError as error:
+                        raise ThreadStartRequestConflictError(
+                            "planned runner session attached to a different Sandbox"
+                        ) from error
                 else:
                     thread.sandbox = sandbox
                     thread.sandbox_uid = sandbox_uid
-                if planned.sandbox is not None and (planned.sandbox, planned.sandbox_uid) != (sandbox, sandbox_uid):
-                    raise ThreadStartRequestConflictError("planned runner session attached to a different Sandbox")
                 if ParseDict(planned.session_spec, pb.SessionSpec()) != spec:
                     raise ThreadStartRequestConflictError(
                         "planned runner session attached with a different SessionSpec"
@@ -371,16 +382,18 @@ class TrajectoryStore:
         accepted desired state without re-resolving a preset or asking Kubernetes again.
         """
         _validate_command(request.first_input)
-        target_values = _target_values(request.target)
+        target_sandbox, target_sandbox_uid, sandbox_creation = _target_values(request.target)
         thread_values = {
             "id": request.thread_id,
+            "sandbox": target_sandbox,
+            "sandbox_uid": target_sandbox_uid,
             "harness": Harness(pb.Harness.Name(request.session_spec.harness)),
             "model": request.session_spec.model,
             "cwd": request.session_spec.cwd,
         }
         request_values = {
             "thread_id": request.thread_id,
-            **target_values,
+            "sandbox_creation": sandbox_creation,
             "runner_session_id": request.runner_session_id,
             "session_spec": MessageToDict(request.session_spec),
         }
@@ -400,8 +413,8 @@ class TrajectoryStore:
             )
             stored = await session.get(ThreadStartRequest, request.thread_id)
             if inserted_request is None:
-                if stored is not None and await _same_thread_start_request(session, stored, request):
-                    return _thread_start_request_snapshot(stored)
+                if stored is not None and await _same_thread_start_request(session, thread, stored, request):
+                    return _thread_start_request_snapshot(thread, stored)
                 if created_thread is not None:
                     await session.execute(delete(Thread).where(Thread.id == request.thread_id))
                 raise ThreadStartRequestConflictError("thread id was already used for a different Thread-start request")
@@ -418,20 +431,27 @@ class TrajectoryStore:
             await _append_thread_command(session, request.thread_id, request.first_input)
             await session.flush()
             await _notify(session)
-            return _thread_start_request_snapshot(stored)
+            return _thread_start_request_snapshot(thread, stored)
 
     async def thread_start_request(self, thread_id: UUID) -> ThreadStartRequestSnapshot | None:
         async with self._sessions() as session:
             stored = await session.get(ThreadStartRequest, thread_id)
-            return _thread_start_request_snapshot(stored) if stored is not None else None
+            if stored is None:
+                return None
+            thread = await session.get(Thread, thread_id)
+            if thread is None:  # pragma: no cover - the request owns this foreign key.
+                raise RuntimeError("Thread-start request lost its product Thread")
+            return _thread_start_request_snapshot(thread, stored)
 
     async def thread_start_requests(self) -> list[ThreadStartRequestSnapshot]:
         """All accepted Thread targets; runner Events, not this table, show command receipt/effect."""
         async with self._sessions() as session:
-            requests = await session.scalars(
-                select(ThreadStartRequest).order_by(ThreadStartRequest.created_at, ThreadStartRequest.thread_id)
+            rows = await session.execute(
+                select(Thread, ThreadStartRequest)
+                .join(ThreadStartRequest, ThreadStartRequest.thread_id == Thread.id)
+                .order_by(ThreadStartRequest.created_at, ThreadStartRequest.thread_id)
             )
-            return [_thread_start_request_snapshot(stored) for stored in requests]
+            return [_thread_start_request_snapshot(thread, stored) for thread, stored in rows]
 
     async def request_thread_command(self, thread_id: UUID, command: pb.Command) -> ThreadCommandSnapshot:
         """Append a generic desired command, idempotently, to one existing Thread.
@@ -688,15 +708,22 @@ def _thread_command_snapshot(command: ThreadCommand) -> ThreadCommandSnapshot:
 
 
 async def _same_thread_start_request(
-    session: AsyncSession, stored: ThreadStartRequest, request: NewThreadStartRequest
+    session: AsyncSession, thread: Thread, stored: ThreadStartRequest, request: NewThreadStartRequest
 ) -> bool:
     """Strict equality is the safe retry rule for the first user message and its target."""
-    target = _target_values(request.target)
+    target_sandbox, target_sandbox_uid, sandbox_creation = _target_values(request.target)
     first_command = await session.get(ThreadCommand, (request.thread_id, request.first_input.command_id))
+    same_target = (
+        stored.sandbox_creation == sandbox_creation
+        if sandbox_creation is not None
+        else (
+            stored.sandbox_creation is None
+            and thread.sandbox == target_sandbox
+            and thread.sandbox_uid == target_sandbox_uid
+        )
+    )
     return (
-        stored.sandbox == target["sandbox"]
-        and stored.sandbox_uid == target["sandbox_uid"]
-        and stored.sandbox_creation == target["sandbox_creation"]
+        same_target
         and stored.runner_session_id == request.runner_session_id
         and ParseDict(stored.session_spec, pb.SessionSpec()) == request.session_spec
         and first_command is not None
@@ -704,28 +731,26 @@ async def _same_thread_start_request(
     )
 
 
-def _target_values(target: SandboxTarget) -> dict[str, str | UUID | dict[str, object] | None]:
+def _target_values(target: SandboxTarget) -> tuple[str | None, UUID | None, dict[str, object] | None]:
     match target:
         case ExistingSandboxTarget(sandbox=sandbox, sandbox_uid=sandbox_uid):
-            return {"sandbox": sandbox, "sandbox_uid": sandbox_uid, "sandbox_creation": None}
+            return sandbox, sandbox_uid, None
         case NewSandboxTarget(creation=creation):
-            return {"sandbox": None, "sandbox_uid": None, "sandbox_creation": creation.model_dump(mode="json")}
+            return None, None, creation.model_dump(mode="json")
 
 
-def _target_snapshot(stored: ThreadStartRequest) -> SandboxTarget:
+def _target_snapshot(thread: Thread, stored: ThreadStartRequest) -> SandboxTarget:
     if stored.sandbox_creation is not None:
-        if stored.sandbox is not None or stored.sandbox_uid is not None:
-            raise RuntimeError("new-Sandbox Thread start request has an existing-Sandbox target")
         return NewSandboxTarget(SandboxCreationSpec.model_validate(stored.sandbox_creation))
-    if stored.sandbox is None or stored.sandbox_uid is None:
-        raise RuntimeError("existing-Sandbox Thread start request has no pinned Sandbox")
-    return ExistingSandboxTarget(stored.sandbox, stored.sandbox_uid)
+    if thread.sandbox is None or thread.sandbox_uid is None:
+        raise RuntimeError("existing-Sandbox Thread start request has no pinned Thread Sandbox")
+    return ExistingSandboxTarget(thread.sandbox, thread.sandbox_uid)
 
 
-def _thread_start_request_snapshot(stored: ThreadStartRequest) -> ThreadStartRequestSnapshot:
+def _thread_start_request_snapshot(thread: Thread, stored: ThreadStartRequest) -> ThreadStartRequestSnapshot:
     return ThreadStartRequestSnapshot(
         thread_id=stored.thread_id,
-        target=_target_snapshot(stored),
+        target=_target_snapshot(thread, stored),
         runner_session_id=stored.runner_session_id,
         session_spec=ParseDict(stored.session_spec, pb.SessionSpec()),
         created_at=stored.created_at,

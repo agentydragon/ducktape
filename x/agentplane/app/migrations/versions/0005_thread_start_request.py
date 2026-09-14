@@ -15,10 +15,8 @@ def upgrade() -> None:
         "thread_start_request",
         # This is the caller-minted durable product Thread id, not a new request/session identity.
         sa.Column("thread_id", postgresql.UUID(as_uuid=True), nullable=False),
-        # An existing target pins the Kubernetes object. A new target stores immutable creation
-        # desired state and is later correlated through its planned runner session.
-        sa.Column("sandbox", sa.Text(), nullable=True),
-        sa.Column("sandbox_uid", postgresql.UUID(as_uuid=True), nullable=True),
+        # An existing target is pinned directly on Thread. A new target records only immutable
+        # creation desired state until its reconciler binds the concrete Sandbox to that Thread.
         sa.Column("sandbox_creation", postgresql.JSONB(none_as_null=True), nullable=True),
         sa.Column("runner_session_id", sa.Text(), nullable=False),
         sa.Column("session_spec", postgresql.JSONB(), nullable=False),
@@ -26,11 +24,6 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["thread_id"], ["thread.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("thread_id"),
         sa.UniqueConstraint("runner_session_id"),
-        sa.CheckConstraint(
-            "(sandbox IS NOT NULL AND sandbox_uid IS NOT NULL AND sandbox_creation IS NULL) "
-            "OR (sandbox IS NULL AND sandbox_uid IS NULL AND sandbox_creation IS NOT NULL)",
-            name="thread_start_request_exactly_one_sandbox_target",
-        ),
     )
 
 

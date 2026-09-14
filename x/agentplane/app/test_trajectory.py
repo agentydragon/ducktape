@@ -137,6 +137,23 @@ async def test_thread_start_pins_an_existing_sandbox_and_claims_its_planned_runn
         ExistingSandboxTarget("", sandbox_uid)
 
 
+async def test_new_sandbox_start_keeps_creation_intent_after_binding_its_thread(store: TrajectoryStore) -> None:
+    request = _thread_start_request()
+    accepted = await store.request_thread_start(request)
+    sandbox_uid = uuid4()
+
+    assert (
+        await store.thread("new-work-a1b2c", accepted.runner_session_id, SPEC, sandbox_uid=sandbox_uid)
+        == accepted.thread_id
+    )
+    # The Thread now owns the concrete Sandbox binding, while this durable request still records
+    # the original creation intent for debugging and reconciliation.
+    assert await store.thread_start_request(accepted.thread_id) == accepted
+    view = await store.get_thread(accepted.thread_id)
+    assert view is not None
+    assert (view.sandbox, view.session_id) == ("new-work-a1b2c", accepted.runner_session_id)
+
+
 async def test_thread_start_retries_wake_other_replicas_and_serialize_on_its_thread_id(
     store: TrajectoryStore, replica: TrajectoryStore
 ) -> None:
