@@ -296,7 +296,7 @@ dependencies = [
     "types-protobuf",
     "types-grpcio",
     "asyncpg-stubs",
-    "pandas-stubs",
+    "pandas-stubs>=3.0.5.260914",
     "sqlalchemy[mypy]>=2.0.32",
     # Runtime packages needed only so their transitive type stubs (types-paramiko
     # via types-docker, types-pytz via pandas-stubs) can resolve in the Bazel mypy
