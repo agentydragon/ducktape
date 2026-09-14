@@ -20,6 +20,9 @@ resource "authentik_provider_oauth2" "agentplane_actions" {
   # No interactive redirects. The generated client secret is never distributed.
 }
 
+# TODO(authentik-meta-hide): Once the 2026.8 provider is active, consider
+# `meta_hide = true`; this action-only federation target is not a user-facing
+# launcher entry. Verify this changes presentation only.
 resource "authentik_application" "agentplane_actions" {
   name              = "Agentplane Actions"
   slug              = "agentplane-actions"

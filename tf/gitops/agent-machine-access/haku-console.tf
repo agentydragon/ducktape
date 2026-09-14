@@ -51,6 +51,9 @@ resource "authentik_provider_oauth2" "haku_console_mcp" {
   ]
 }
 
+# TODO(authentik-meta-hide): Once the 2026.8 provider is active, consider
+# `meta_hide = true`; this is the OIDCProxy upstream plumbing application for
+# Haku's MCP surface, not the user-facing Haku launcher entry below.
 resource "authentik_application" "haku_console_mcp" {
   name              = "Haku Console MCP"
   slug              = "haku-console-mcp"
