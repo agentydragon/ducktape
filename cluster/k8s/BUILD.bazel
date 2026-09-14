@@ -177,7 +177,7 @@ filegroup(
         "monitoring/namespace/namespace.yaml",
         "nix-cache/namespace/namespace.yaml",
         "vm-images-publisher/namespace.yaml",
-        "x/haku/dispatch/namespace/namespace.yaml",
+        "//haku/x/dispatch:deploy/namespace/namespace.yaml",
         "//props:deploy/namespace/namespace.yaml",
     ],
     visibility = ["//cluster/validation:__pkg__"],

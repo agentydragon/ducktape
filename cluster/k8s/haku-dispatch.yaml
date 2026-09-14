@@ -1,0 +1,42 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: haku-dispatch
+  namespace: ducktape-flux
+spec:
+  # Haku dispatch is intentionally parked. Flip this to false only when the
+  # worker-zone and provider wiring has been deliberately restored.
+  suspend: true
+  interval: 10m
+  retryInterval: 1m
+  timeout: 10m
+  path: ./haku/x/dispatch/deploy
+  prune: true
+  wait: true
+  deletionPolicy: WaitForTermination
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  dependsOn:
+    - name: cnpg
+      namespace: ducktape-flux
+    - name: local-path-provisioner
+      namespace: ducktape-flux
+    - name: external-secrets-config
+      namespace: ducktape-flux
+    - name: external-secrets-operator
+      namespace: ducktape-flux
+    - name: litellm
+      namespace: ducktape-flux
+    - name: litellm-keys-tf
+      namespace: ducktape-flux
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: workers-litellm
+      namespace: haku-dispatch
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: dispatcher
+      namespace: haku-dispatch

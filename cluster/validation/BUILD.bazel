@@ -28,8 +28,6 @@ py_test(
         "//cluster/k8s/litellm/app:manifests",
         "//cluster/k8s/litellm/tana:manifests",
         "//cluster/k8s/talos-cloud-controller-manager:manifests",
-        "//cluster/k8s/x/haku/dispatch/dispatcher:manifests",
-        "//cluster/k8s/x/haku/dispatch/litellm:manifests",
         "@multitool//tools/kustomize",
     ],
     deps = [
@@ -553,6 +551,7 @@ py_test(
     data = [
         "//cluster/k8s:haku_manifest_contract_files",
         "//cluster/k8s/cli-proxy-api:manifests",
+        "//haku/x/dispatch:deploy/namespace/namespace.yaml",
     ],
     deps = [
         ":conftest",
@@ -618,7 +617,7 @@ py_test(
     srcs = ["test_haku_dispatch_job_contract.py"],
     data = [
         "//cluster/k8s:kustomization.yaml",
-        "//cluster/k8s/x/haku/dispatch/dispatcher:manifests",
+        "//haku/x/dispatch/deploy/dispatcher:manifests",
     ],
     deps = [
         ":conftest",
@@ -633,13 +632,28 @@ py_test(
     srcs = ["test_haku_dispatch_zones_contract.py"],
     data = [
         "//cluster/k8s:kustomization.yaml",
-        "//cluster/k8s/x/haku/dispatch/dispatcher:manifests",
+        "//haku/x/dispatch/deploy/dispatcher:manifests",
     ],
     deps = [
         ":conftest",
         "//:conftest",
-        "//cluster/k8s/x/haku/dispatch/litellm:generate_workers_litellm",
         "//haku/x/dispatch:config",
+        "//haku/x/dispatch/deploy/litellm:generate_workers_litellm",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_haku_dispatch_deploy",
+    srcs = ["test_haku_dispatch_deploy.py"],
+    data = [
+        "//haku/x/dispatch:deploy_base_files",
+        "//haku/x/dispatch/deploy/dispatcher:manifests",
+        "//haku/x/dispatch/deploy/litellm:manifests",
+    ],
+    deps = [
+        ":kustomize",
+        "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
     ],
 )

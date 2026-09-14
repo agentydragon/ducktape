@@ -262,9 +262,9 @@ Add or update:
 
 - `tf/gitops/litellm-keys/main.tf`: `local_lane_models`,
   `litellm_key.haku_lane_local`, reflected `litellm-key-haku-lane-local`.
-- `cluster/k8s/x/haku/dispatch/litellm/generate_workers_litellm.py`: local model entries
+- `haku/x/dispatch/deploy/litellm/generate_workers_litellm.py`: local model entries
   chained through `litellm_proxy/`.
-- `cluster/k8s/x/haku/dispatch/dispatcher/zones.yaml`: migrate to model lanes,
+- `haku/x/dispatch/deploy/dispatcher/zones.yaml`: migrate to model lanes,
   isolation profiles, and dispatch targets; add a local target.
 - `cluster/validation/test_haku_dispatch_zones_contract.py`: expected target set, model-lane parity, and
   provider/capability compatibility invariants.

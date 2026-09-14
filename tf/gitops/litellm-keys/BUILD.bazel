@@ -4,7 +4,7 @@ exports_files(
     ["main.tf"],
     visibility = [
         "//cluster/k8s/litellm/app:__pkg__",
-        "//cluster/k8s/x/haku/dispatch/litellm:__pkg__",
+        "//haku/x/dispatch/deploy/litellm:__pkg__",
     ],
 )
 

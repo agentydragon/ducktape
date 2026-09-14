@@ -19,7 +19,7 @@ py_library(
 
 py_binary(
     name = "generate_workers_litellm_bin",
-    main_module = "cluster.k8s.x.haku.dispatch.litellm.generate_workers_litellm",
+    main_module = "haku.x.dispatch.deploy.litellm.generate_workers_litellm",
     deps = [":generate_workers_litellm"],
 )
 
@@ -39,8 +39,7 @@ py_test(
     ],
 )
 
-# Cluster manifests for cluster/validation's flux-build test (the
-# //cluster/k8s:cluster_all_files glob stops at this package boundary).
+# Deployment manifests for cluster/validation's focused dispatch render test.
 filegroup(
     name = "manifests",
     srcs = glob(

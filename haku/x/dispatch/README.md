@@ -1,9 +1,10 @@
 # Haku dispatch plane — dispatcher + worker
 
 **Not deployed.** The z.ai lane was retired in August 2026: none of
-`cluster/k8s/x/haku/dispatch/` is listed in the root `cluster/k8s/kustomization.yaml`, so Flux
-applies none of it. The code and the manifests are kept for re-use, and everything below
-describes how the plane works when it runs, not something currently serving.
+`haku/x/dispatch/deploy/` is applied by Flux. Its root registration is intentionally
+suspended in `cluster/k8s/haku-dispatch.yaml`; the code and manifests are kept for re-use,
+and everything below describes how the plane works when it runs, not something currently
+serving.
 
 The ducktape-owned service that lets Haku (the orchestrator) hand well-scoped jobs to
 cheaper, lower-trust worker agents running in per-provider **zones**, without ever
@@ -12,8 +13,7 @@ modify it, so it structurally cannot bypass its own admission gate.
 
 Design context and the not-yet-built roadmap: <../../archive/2026_08_multi_agent.md>. Haku's
 security model (its dispatch enforcement entry left with the retirement): <../../docs/security.md>.
-Cluster wiring:
-<../../../cluster/k8s/x/haku/dispatch/README.md>; zone perimeters:
+Cluster wiring: <deploy/README.md>; zone perimeters:
 <../../../cluster/k8s/x/haku/zones/README.md>.
 
 ## Request flow (`POST /jobs`)

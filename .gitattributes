@@ -86,9 +86,9 @@ cluster/k8s/agentplane-staging/app/config.yaml cluster-manifest-ignored=true
 # SSH MCP settings, mounted via configMapGenerator — not a Kubernetes manifest.
 cluster/k8s/ssh-mcp/settings.yaml cluster-manifest-ignored=true
 # dispatcher Job template (${...} placeholders), mounted via configMapGenerator — not a live manifest.
-cluster/k8s/x/haku/dispatch/dispatcher/job-template.yaml cluster-manifest-ignored=true
+haku/x/dispatch/deploy/dispatcher/job-template.yaml cluster-manifest-ignored=true
 # dispatcher zone wiring, mounted via configMapGenerator — not a K8s manifest.
-cluster/k8s/x/haku/dispatch/dispatcher/zones.yaml cluster-manifest-ignored=true
+haku/x/dispatch/deploy/dispatcher/zones.yaml cluster-manifest-ignored=true
 # haku-console config, mounted via configMapGenerator — not a K8s manifest.
 cluster/k8s/haku/console/config.yaml cluster-manifest-ignored=true
 # per-index haku-indexer chunk config slices, mounted via configMapGenerator — not K8s manifests.

@@ -2119,20 +2119,6 @@ spec:
           to: "@artifact/cluster/k8s/x/google-workspace-mcp/"
           exclude:
             - flux-kustomization.yaml
-    - name: haku-dispatch-dispatcher
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/x/haku/dispatch/dispatcher/**"
-          to: "@artifact/cluster/k8s/x/haku/dispatch/dispatcher/"
-          exclude:
-            - flux-kustomization.yaml
-    - name: haku-dispatch-litellm
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/x/haku/dispatch/litellm/**"
-          to: "@artifact/cluster/k8s/x/haku/dispatch/litellm/"
-          exclude:
-            - flux-kustomization.yaml
     - name: openhands-app
       originRevision: "@repo"
       copy:

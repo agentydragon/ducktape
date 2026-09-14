@@ -11,7 +11,7 @@ spec — pod specs are L0-visible via cluster-diagnostics-reader):
 
 Zone wiring (namespace + model allowlist per zone) is runtime config —
 zones.yaml, configMapGenerator-mounted from
-cluster/k8s/x/haku/dispatch/dispatcher/ next to the Job template. Its model lists
+haku/x/dispatch/deploy/dispatcher/ next to the Job template. Its model lists
 must match the zone key minted in tf/gitops/litellm-keys/main.tf and the
 workers-LiteLLM config (parity-tested in cluster validation).
 """
@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     job_template_path: Path = Field(
         default=Path("/etc/dispatcher/job-template.yaml"),
         validation_alias="JOB_TEMPLATE_PATH",
-        description="Reviewed k8s Job template (configMapGenerator-mounted from cluster/k8s/x/haku/dispatch/dispatcher/).",
+        description="Reviewed k8s Job template (configMapGenerator-mounted from haku/x/dispatch/deploy/dispatcher/).",
     )
     zones_config_path: Path = Field(
         default=Path("/etc/dispatcher/zones.yaml"),

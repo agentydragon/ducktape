@@ -16,6 +16,7 @@ spec:
   sparseCheckout:
     - cluster/k8s/
     - cluster/charts/browsertrix/
+    - haku/x/dispatch/deploy/
     - loom/wayback/deploy/
     - props/deploy/
     - tf/gitops/

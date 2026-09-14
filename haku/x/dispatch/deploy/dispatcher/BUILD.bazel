@@ -7,8 +7,7 @@ exports_files(
     visibility = ["//haku/x/dispatch:__pkg__"],
 )
 
-# Cluster manifests for cluster/validation's flux-build test (the
-# //cluster/k8s:cluster_all_files glob stops at this package boundary).
+# Deployment manifests for cluster/validation's focused dispatch render test.
 filegroup(
     name = "manifests",
     srcs = glob(

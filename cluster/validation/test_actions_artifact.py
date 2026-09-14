@@ -161,8 +161,6 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         ("haku-console-migration", "haku/console/migration"),
         ("haku-console-namespace", "haku/console-namespace"),
         ("haku-console-servicemonitor", "haku/console/servicemonitor"),
-        ("haku-dispatch-dispatcher", "x/haku/dispatch/dispatcher"),
-        ("haku-dispatch-litellm", "x/haku/dispatch/litellm"),
         ("haku-egress-proxy", "agents/haku-egress-proxy"),
         ("haku-egress-proxy-namespace", "agents/haku-egress-proxy-namespace"),
         ("haku-mailbox-app", "haku/mailbox/app"),
