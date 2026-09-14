@@ -244,9 +244,11 @@ py_binary(
 
 - **Shared test support belongs in `<pkg>/testing/` packages.** Fixtures, mocks,
   harnesses, and helper modules get `package(default_testonly = True)` (or an
-  explicit `testonly = True` when the package has mixed ownership). The two
-  exceptions are package `conftest.py` files and actual test-target mains such
-  as `test_some_component.py`; keep those adjacent to the tests they serve.
+  explicit `testonly = True` when the package has mixed ownership). The
+  exceptions are package `conftest.py` files, actual test-target mains such as
+  `test_some_component.py`, `e2e/` umbrella packages containing end-to-end tests
+  and their support, and `x/agentplane/acceptance/` containing acceptance tests
+  and their support; keep each adjacent to the tests it serves.
   A non-test file whose glob-matching name is part of an external contract gets
   `# gazelle:exclude`.
 - **`test_*.py` / `*_test.py` filenames are reserved for `py_test` targets.** Do
