@@ -16,7 +16,7 @@ tf_providers_versions(
         "random": "hashicorp/random:~>3.9.0",
         "sops": "carlpett/sops:~>1.0",
     },
-    tf_version = "1.9.8",
+    tf_version = "1.12.6",
 )
 
 tf_module(

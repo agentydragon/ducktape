@@ -167,7 +167,7 @@ tf.download(
     tfdoc_version = "0.24.0",
     tflint_version = "0.64.0",
     use_tofu = True,
-    version = "1.11.2",  # OpenTofu version (latest as of 2025-12)
+    version = "1.12.6",  # OpenTofu version (latest checked 2026-09)
 )
 use_repo(tf, "tf_toolchains")
 

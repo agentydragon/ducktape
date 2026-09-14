@@ -7,7 +7,7 @@ tf_providers_versions(
         "kubernetes": "hashicorp/kubernetes:~>3.0",
         "random": "hashicorp/random:~>3.9.0",
     },
-    tf_version = "1.9.8",
+    tf_version = "1.12.6",
 )
 
 tf_module(
