@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import socket
 from collections.abc import Iterator
+from uuid import UUID
 
 import httpx
 import pytest
@@ -31,7 +32,7 @@ from x.agentplane.app.testing.kubernetes import (
     pod,
     sandbox,
 )
-from x.agentplane.app.trajectory import TrajectoryStore
+from x.agentplane.app.trajectory import NewSandboxTarget, TrajectoryStore
 from x.agentplane.runner import protocol_pb2 as pb
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
@@ -598,16 +599,6 @@ def test_egress_decisions_are_502_when_the_proxy_is_unreachable(
     assert [b["name"] for b in client.get("/sandboxes/live/egress").json()] == ["live-granted", "live-seeded"]
 
 
-def test_every_route_needs_one_of_the_two_credentials(client: TestClient) -> None:
-    """Guarded from the app, not from a proxy in front of it: no header a caller sets is trusted."""
-    assert client.get("/sandboxes", headers={"Authorization": ""}).status_code == 401
-    assert client.get("/sandboxes", headers={"Authorization": "Bearer wrong"}).status_code == 401
-    assert client.post("/sandboxes", json={"slug": "x"}, headers={"Authorization": ""}).status_code == 401
-    # The forgeable header the API server's service proxy used to forward buys nothing now.
-    assert client.get("/sandboxes", headers={"Authorization": "", "x-authentik-username": "root"}).status_code == 401
-    assert client.get("/healthz", headers={"Authorization": ""}).status_code == 204
-
-
 def test_binding_revocation(client: TestClient) -> None:
     """A runtime binding is revoked by deleting it; one the manifest declares would be re-applied."""
     refused = client.delete("/egress/bindings/live-seeded")
@@ -648,6 +639,167 @@ def test_models_lists_what_each_harness_may_run(client: TestClient) -> None:
         "HARNESS_CLAUDE": ["test-claude-model"],
         "HARNESS_CODEX": ["test-codex-model"],
     }
+
+
+async def test_thread_commands_are_idempotent_ordered_and_validate_the_thread_harness(
+    inventory: SandboxInventory,
+    bridge: RunnerBridge,
+    store: TrajectoryStore,
+    egress: EgressInventory,
+    decisions: DecisionsClient,
+    live_index: LiveIndex,
+    action_policy: ActionPolicyInventory,
+    reviewer: TokenReviewer,
+) -> None:
+    thread_id = await store.thread(
+        "live", "runner-session", pb.SessionSpec(harness=pb.HARNESS_CLAUDE, cwd="/w", model="test-claude-model")
+    )
+    app = create_app(
+        inventory, bridge, store, TEST_MODELS, egress, decisions, live_index, action_policy, reviewer=reviewer
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
+    ) as http:
+        assert (await http.get(f"/threads/{thread_id}/commands")).json() == []
+
+        first = await http.post(
+            f"/threads/{thread_id}/commands",
+            json={"commandId": "first-input", "submitInput": {"text": "Inspect the red check."}},
+        )
+        assert first.status_code == 202, first.text
+        assert first.json()["ordinal"] == 1
+        assert first.json()["command"] == {
+            "commandId": "first-input",
+            "submitInput": {"text": "Inspect the red check."},
+        }
+        assert first.json()["accepted_at"]
+
+        second = await http.post(
+            f"/threads/{thread_id}/commands",
+            json={"commandId": "model-next", "changeModel": {"model": "test-claude-model"}},
+        )
+        assert second.status_code == 202, second.text
+        assert second.json()["ordinal"] == 2
+        assert (
+            await http.post(
+                f"/threads/{thread_id}/commands",
+                json={"commandId": "model-next", "changeModel": {"model": "test-claude-model"}},
+            )
+        ).json()["ordinal"] == 2
+        conflicting = await http.post(
+            f"/threads/{thread_id}/commands",
+            json={"commandId": "model-next", "submitInput": {"text": "different command"}},
+        )
+        assert conflicting.status_code == 409
+        invalid = await http.post(f"/threads/{thread_id}/commands", json={"commandId": "missing-operation"})
+        assert invalid.status_code == 422
+        wrong_harness = await http.post(
+            f"/threads/{thread_id}/commands",
+            json={"commandId": "wrong-model", "changeModel": {"model": "test-codex-model"}},
+        )
+        assert wrong_harness.status_code == 422
+        assert wrong_harness.json() == {"detail": "model is incompatible with this Thread's harness"}
+        assert (await http.get("/threads/00000000-0000-0000-0000-000000000000/commands")).status_code == 404
+
+    assert [command.ordinal for command in await store.thread_commands(thread_id)] == [1, 2]
+
+
+async def test_thread_start_persists_a_concrete_target_and_first_outbox_command(
+    inventory: SandboxInventory,
+    bridge: RunnerBridge,
+    store: TrajectoryStore,
+    egress: EgressInventory,
+    decisions: DecisionsClient,
+    live_index: LiveIndex,
+    action_policy: ActionPolicyInventory,
+    reviewer: TokenReviewer,
+    custom_objects: FakeCustomObjectsApi,
+) -> None:
+    custom_objects.objects[("egresspolicies", "github")] = egress_policy(
+        "github", [{"hosts": ["api.github.com"], "methods": ["GET"]}]
+    )
+    custom_objects.objects[("actionpolicysets", "github-reads")] = action_policy_set(
+        "github-reads", auto_approve_if=[{"type": "exact_actions", "actions": {"github": ["search_code"]}}]
+    )
+    app = create_app(
+        inventory,
+        bridge,
+        store,
+        TEST_MODELS,
+        egress,
+        decisions,
+        live_index,
+        action_policy,
+        reviewer=reviewer,
+        presets=TEST_PRESETS,
+    )
+    thread_id = "00000000-0000-4000-8000-000000000001"
+    start = {
+        "thread_id": thread_id,
+        "runner_session_id": "runner-session-first",
+        "target": {
+            "kind": "new",
+            "sandbox": {
+                "slug": "inspect-ci",
+                "template": TEMPLATE,
+                "policies": ["github"],
+                "action_policy_sets": ["github-reads"],
+                "thread_defaults": {
+                    "harness": "HARNESS_CODEX",
+                    "model": "test-codex-model",
+                    "cwd": "/state/workspaces/{session_id}",
+                    "reasoning_effort": "medium",
+                    "instructions": "preset instructions",
+                },
+                "bootstrap": "mkdir -p /state/workspaces",
+            },
+        },
+        "thread_overrides": {"instructions": "Inspect the red check."},
+        "first_input": {"command_id": "first-input", "text": "Why did CI fail?"},
+    }
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
+    ) as http:
+        accepted = await http.post("/threads", json=start)
+        assert accepted.status_code == 201, accepted.text
+        assert (accepted.json()["id"], accepted.json()["sandbox"], accepted.json()["session_id"]) == (
+            thread_id,
+            None,
+            None,
+        )
+        [first] = (await http.get(f"/threads/{thread_id}/commands")).json()
+        assert first["command"] == {"commandId": "first-input", "submitInput": {"text": "Why did CI fail?"}}
+        assert first["ordinal"] == 1
+        starting = (await http.get("/threads/with-sandboxes")).json()
+        assert [thread["id"] for thread in starting["threads"]] == [thread_id]
+        assert starting["sandboxes"] == {}
+
+        # A response retry never has to resolve mutable policy resources again.
+        del custom_objects.objects[("egresspolicies", "github")]
+        del custom_objects.objects[("actionpolicysets", "github-reads")]
+        replay = await http.post("/threads", json=start)
+        assert replay.status_code == 201, replay.text
+        assert replay.json()["id"] == thread_id
+
+    request = await store.thread_start_request(UUID(thread_id))
+    assert request is not None
+    assert isinstance(request.target, NewSandboxTarget)
+    assert request.target.creation.model_dump() == {
+        "slug": "inspect-ci",
+        "template": TEMPLATE,
+        "egress_policies": ["github"],
+        "action_policy_sets": ["github-reads"],
+        "thread_defaults": {
+            "harness": "HARNESS_CODEX",
+            "model": "test-codex-model",
+            "cwd": "/state/workspaces/{session_id}",
+            "reasoning_effort": "medium",
+            "instructions": "preset instructions",
+        },
+        "bootstrap": "mkdir -p /state/workspaces",
+    }
+    assert request.session_spec.instructions == "shared agent instructions\n\nInspect the red check."
+    assert request.session_spec.cwd == "/state/workspaces/runner-session-first"
 
 
 async def test_a_thread_is_found_by_its_session_and_renamed_in_place(

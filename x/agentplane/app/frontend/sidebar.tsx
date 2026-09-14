@@ -173,7 +173,16 @@ function useThreadsWithSandboxes(): { data: ThreadsData | null; error: string | 
   return { data, error, refresh: () => setGeneration((current) => current + 1) };
 }
 
-function GroupStateIcon({ sandbox }: { sandbox: SandboxView | null }): JSX.Element {
+function GroupStateIcon({ sandbox, starting }: { sandbox: SandboxView | null; starting: boolean }): JSX.Element {
+  if (starting) {
+    return (
+      <Tooltip label="Waiting for Sandbox and runner session" withArrow>
+        <span className="agentplane-sidebar-state-icon pending">
+          <IconClock size={13} />
+        </span>
+      </Tooltip>
+    );
+  }
   if (sandbox === null) {
     return (
       <Tooltip label="Sandbox deleted" withArrow>
@@ -202,17 +211,19 @@ function GroupStateIcon({ sandbox }: { sandbox: SandboxView | null }): JSX.Eleme
 function ThreadRow({
   thread,
   readonly,
+  starting,
   current,
   onOpen,
   onToggleArchived,
 }: {
   thread: ThreadView;
   readonly: boolean;
+  starting: boolean;
   current: boolean;
   onOpen: (thread: ThreadView) => void;
   onToggleArchived: (thread: ThreadView) => void;
 }): JSX.Element {
-  const label = thread.name ?? thread.session_id;
+  const label = thread.name ?? thread.session_id ?? "Starting Thread";
   const dot = threadDotColor(thread);
   const className = [
     "agentplane-sidebar-row",
@@ -227,7 +238,9 @@ function ThreadRow({
       className={className}
       role={readonly ? undefined : "button"}
       tabIndex={readonly ? undefined : 0}
-      title={readonly ? "Sandbox deleted — read only" : undefined}
+      title={
+        readonly ? (starting ? "Waiting for Sandbox and runner session" : "Sandbox deleted — read only") : undefined
+      }
       onClick={readonly ? undefined : () => onOpen(thread)}
       onKeyDown={
         readonly
@@ -271,18 +284,21 @@ function ThreadGroupSection({
   onOpen: (thread: ThreadView) => void;
   onToggleArchived: (thread: ThreadView) => void;
 }): JSX.Element {
-  const deleted = group.sandbox === null;
+  const deleted = group.sandbox === null && !group.starting;
+  const readonly = deleted || group.starting;
   return (
     <div>
       <div className="agentplane-sidebar-group-label">
-        <GroupStateIcon sandbox={group.sandbox} />
+        <GroupStateIcon sandbox={group.sandbox} starting={group.starting} />
         <span
           className="agentplane-sidebar-group-name"
           style={
-            deleted ? { textDecoration: "line-through", textDecorationColor: "var(--mantine-color-dimmed)" } : undefined
+            deleted && !group.starting
+              ? { textDecoration: "line-through", textDecorationColor: "var(--mantine-color-dimmed)" }
+              : undefined
           }
         >
-          {group.sandboxName}
+          {group.sandboxName ?? "Starting"}
         </span>
         <span className="agentplane-sidebar-group-count">
           {group.threads.length} thread{group.threads.length === 1 ? "" : "s"}
@@ -292,8 +308,15 @@ function ThreadGroupSection({
         <ThreadRow
           key={thread.id}
           thread={thread}
-          readonly={deleted}
-          current={current !== null && current.sandbox === thread.sandbox && current.sessionId === thread.session_id}
+          readonly={readonly}
+          starting={group.starting}
+          current={
+            thread.sandbox !== null &&
+            thread.session_id !== null &&
+            current !== null &&
+            current.sandbox === thread.sandbox &&
+            current.sessionId === thread.session_id
+          }
           onOpen={onOpen}
           onToggleArchived={onToggleArchived}
         />
@@ -359,6 +382,7 @@ export function Sidebar({
   }
 
   function open(thread: ThreadView): void {
+    if (thread.sandbox === null || thread.session_id === null) return;
     goTo(`/sandboxes/${encodeURIComponent(thread.sandbox)}/sessions/${encodeURIComponent(thread.session_id)}`);
   }
 

@@ -91,6 +91,24 @@ class NewSandbox(BaseModel):
     bootstrap: str = Field(default="", max_length=65_536, description="Runner initialization script for this Sandbox.")
 
 
+class SandboxCreationSpec(BaseModel):
+    """The concrete, immutable Sandbox target a Thread reconciler will later create.
+
+    It is deliberately separate from ``NewSandbox``: the latter is one HTTP form, while this is
+    durable desired state after egress and action-policy validation. A browser may use a preset to
+    fill its form, but no preset reference is retained here.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    slug: Slug
+    template: str = Field(min_length=1)
+    egress_policies: list[str] = Field(default_factory=list)
+    action_policy_sets: list[str] = Field(default_factory=list)
+    thread_defaults: ThreadDefaults | None = None
+    bootstrap: str = Field(default="", max_length=65_536)
+
+
 class Condition(BaseModel):
     """A Kubernetes status condition, as the Sandbox controller and the kubelet report them."""
 
