@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack
@@ -12,7 +13,7 @@ from uuid import UUID
 import grpc
 import httpx
 import httpx2
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from google.protobuf.json_format import MessageToDict
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -71,7 +72,8 @@ from x.agentplane.app.oidc import OIDCSettings, build_oauth, operator_session
 from x.agentplane.app.operator_sessions import OperatorSessionMiddleware
 from x.agentplane.app.presets import Harness, PresetCatalog, SandboxBinding, SandboxPresetView
 from x.agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown
-from x.agentplane.app.trajectory import ThreadNotFoundError, ThreadView, TrajectoryStore
+from x.agentplane.app.trajectory import ThreadCommandConflictError, ThreadNotFoundError, ThreadView, TrajectoryStore
+from x.agentplane.runner import protocol_pb2 as pb
 from x.agentplane.runner.client import RunnerError
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -511,6 +513,64 @@ async def list_threads(
     return await store.list_threads(sandbox=sandbox, session_id=session_id, include_archived=include_archived)
 
 
+@threads.post("/{thread_id}/commands", status_code=status.HTTP_201_CREATED)
+async def request_thread_command(store: Store, thread_id: UUID, body: dict[str, object]) -> dict[str, object]:
+    """Store one exact protocol Command in the Thread outbox; this request never talks to a runner."""
+    command = runner_bridge.parse_message(pb.Command(), body)
+    if not command.command_id or command.WhichOneof("operation") is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="a Thread command needs a non-empty commandId and operation",
+        )
+    accepted = await store.request_thread_command(thread_id, command)
+    return MessageToDict(
+        (await store.thread_records(thread_id, after_replay_cursor=accepted.replay_cursor - 1, limit=1)).records[0]
+    )
+
+
+@threads.get("/{thread_id}/records")
+async def thread_records(
+    store: Store,
+    thread_id: UUID,
+    after_replay_cursor: Annotated[
+        int, Query(ge=0, description="Replay entries with a greater app transport cursor.")
+    ] = 0,
+    limit: Annotated[int, Query(ge=1, le=10_000)] = 10_000,
+) -> dict[str, object]:
+    """A durable replay snapshot, not a projection of a Thread into one cross-session transcript."""
+    return MessageToDict(await store.thread_records(thread_id, after_replay_cursor=after_replay_cursor, limit=limit))
+
+
+@threads.get("/{thread_id}/records/stream")
+async def thread_record_stream(
+    store: Store,
+    shutdown: Shutdown,
+    thread_id: UUID,
+    after_replay_cursor: Annotated[
+        int, Query(ge=0, description="Replay entries with a greater app transport cursor.")
+    ] = 0,
+    last_event_id: Annotated[
+        int | None, Header(ge=0, description="The replay cursor last delivered to this EventSource.")
+    ] = None,
+) -> StreamingResponse:
+    """A cursor-resumable durable ThreadRecord stream; every SSE data field is proto-JSON."""
+    if await store.get_thread(thread_id) is None:
+        raise ThreadNotFoundError(thread_id)
+    cursor = last_event_id if last_event_id is not None else after_replay_cursor
+
+    async def body() -> AsyncIterator[bytes]:
+        async for record in shutdown.until(store.thread_record_stream(thread_id, after_replay_cursor=cursor)):
+            yield _thread_record_frame(record)
+
+    return StreamingResponse(
+        body(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    )
+
+
+def _thread_record_frame(record: pb.ThreadRecord) -> bytes:
+    return (f"event: record\nid: {record.replay_cursor}\ndata: {json.dumps(MessageToDict(record))}\n\n").encode()
+
+
 class ThreadsWithSandboxes(BaseModel):
     """Every Thread across every Sandbox the operator can see, plus each Thread's own still-existing
     Sandbox, keyed by name. Normalized rather than one Sandbox view per Thread that shares it: a
@@ -562,19 +622,6 @@ async def archive_thread(store: Store, thread_id: UUID) -> Response:
 async def unarchive_thread(store: Store, thread_id: UUID) -> Response:
     await store.unarchive(thread_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@threads.get("/{thread_id}/events")
-async def thread_events(
-    store: Store,
-    thread_id: UUID,
-    after: Annotated[int, Query(ge=0, description="Events with a greater sequence.")] = 0,
-    limit: Annotated[int, Query(ge=1, le=10_000)] = 10_000,
-) -> list[dict[str, object]]:
-    """The stored events as proto-JSON of the runner protocol's Event, in sequence order."""
-    if await store.get_thread(thread_id) is None:
-        raise ThreadNotFoundError(thread_id)
-    return [MessageToDict(event) for event in await store.events(thread_id, after_sequence=after, limit=limit)]
 
 
 def create_app(
@@ -648,6 +695,10 @@ def create_app(
     @app.exception_handler(ThreadNotFoundError)
     async def _thread_not_found(_request: Request, error: ThreadNotFoundError) -> JSONResponse:
         return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"detail": str(error)})
+
+    @app.exception_handler(ThreadCommandConflictError)
+    async def _thread_command_conflict(_request: Request, error: ThreadCommandConflictError) -> JSONResponse:
+        return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": str(error)})
 
     @app.get("/healthz", include_in_schema=False)
     async def healthz() -> Response:

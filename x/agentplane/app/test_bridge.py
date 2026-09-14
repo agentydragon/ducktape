@@ -225,9 +225,11 @@ async def _stored_events(http: httpx.AsyncClient, thread_id: str, *, until: str)
         stop=stop_after_delay(30), wait=wait_fixed(0.2), retry=retry_if_exception_type(AssertionError)
     ):
         with attempt:
-            response = await http.get(f"/threads/{thread_id}/events")
+            response = await http.get(f"/threads/{thread_id}/records")
             assert response.status_code == 200, response.text
-            events: list[dict[str, Any]] = response.json()
+            events = [
+                record["runnerEvent"]["event"] for record in response.json()["records"] if "runnerEvent" in record
+            ]
             assert any(until in event for event in events), f"no {until} stored yet"
     return events
 
@@ -253,7 +255,59 @@ async def test_the_feed_records_a_turn_nobody_is_watching(
                 f"{SESSIONS}/unwatched/shutdown", json={"commandId": "stop-unwatched", "stopRunnerSession": {}}
             )
         ).status_code == 202
-        assert (await http.get("/threads/00000000-0000-0000-0000-000000000000/events")).status_code == 404
+        assert (await http.get("/threads/00000000-0000-0000-0000-000000000000/records")).status_code == 404
+
+
+async def test_thread_record_stream_resumes_from_its_durable_cursor_without_duplicate_commands(
+    app_url: str, spec: pb.SessionSpec
+) -> None:
+    session_id = "thread-record-stream"
+    async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
+        opened = await http.post(SESSIONS, json={"session_id": session_id, "spec": MessageToDict(spec)})
+        assert opened.status_code == 201, opened.text
+        threads = (await http.get("/threads", params={"session_id": session_id})).json()
+        assert len(threads) == 1
+        thread_id = threads[0]["id"]
+        baseline = await http.get(f"/threads/{thread_id}/records")
+        assert baseline.status_code == 200
+        baseline_cursor = baseline.json()["lastReplayCursor"]
+
+        first_command = {"commandId": "first-control", "changeModel": {"model": "first-model"}}
+        async with http.stream(
+            "GET", f"/threads/{thread_id}/records/stream", params={"after_replay_cursor": baseline_cursor}
+        ) as stream:
+            lines = stream.aiter_lines()
+            accepted = await http.post(f"/threads/{thread_id}/commands", json=first_command)
+            assert accepted.status_code == 201, accepted.text
+            async with asyncio.timeout(10):
+                first = await read_until(lines, "command")
+        first_record = first[-1]
+        assert first_record.event == "record"
+        assert first_record.id is not None
+        assert first_record.data == accepted.json()
+
+        second_command = {"commandId": "second-control", "changeModel": {"model": "second-model"}}
+        second = await http.post(f"/threads/{thread_id}/commands", json=second_command)
+        assert second.status_code == 201, second.text
+        # Last-Event-ID wins over a stale query cursor and replays exactly the missed durable entry.
+        async with http.stream(
+            "GET",
+            f"/threads/{thread_id}/records/stream",
+            params={"after_replay_cursor": 0},
+            headers={"Last-Event-ID": str(first_record.id)},
+        ) as stream:
+            async with asyncio.timeout(10):
+                replayed = await read_until(stream.aiter_lines(), "command")
+        assert [
+            message.data["command"]["command"]["commandId"] for message in replayed if "command" in message.data
+        ] == ["second-control"]
+        assert replayed[-1].id is not None
+        assert replayed[-1].data == second.json()
+
+        records = await http.get(f"/threads/{thread_id}/records")
+        assert [
+            record["command"]["command"]["commandId"] for record in records.json()["records"] if "command" in record
+        ] == ["first-control", "second-control"]
 
 
 async def test_the_bridge_reports_what_the_runner_refuses(app_url: str) -> None:
@@ -324,7 +378,7 @@ async def test_durable_input_survives_the_accepting_app_replica_crash(
             stop=stop_after_delay(10), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
         ):
             with attempt:
-                events = await store.events(thread.id, limit=100)
+                events = await store.runner_events(thread.id, thread.session_id, limit=100)
                 assert any(
                     event.HasField("command_received")
                     and event.command_received.command_id == accepted.command.command_id
@@ -452,7 +506,7 @@ async def test_inventory_change_discovers_existing_runner_session_without_browse
             with attempt:
                 threads = await store.list_threads()
                 assert len(threads) == 1
-                assert await store.last_sequence(threads[0].id) > 0
+                assert await store.last_sequence(threads[0].id, threads[0].session_id) > 0
         assert threads[0].sandbox == SANDBOX
         assert threads[0].session_id == SESSION
     finally:

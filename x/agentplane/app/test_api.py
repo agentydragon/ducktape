@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import socket
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
 import pytest_bazel
 from fastapi.testclient import TestClient
+from google.protobuf.timestamp_pb2 import Timestamp
 
 from x.agentplane.app.action_policy import ActionPolicyInventory
 from x.agentplane.app.api import create_app, upstream_http_error
@@ -41,6 +43,12 @@ from x.agentplane.runner import protocol_pb2 as pb
 
 
 TEST_MODELS = {Harness.CLAUDE: ["test-claude-model"], Harness.CODEX: ["test-codex-model"]}
+
+
+def _event(sequence: int, **observation: object) -> pb.Event:
+    at = Timestamp()
+    at.FromDatetime(datetime(2026, 9, 14, 12, 0, sequence, tzinfo=UTC))
+    return pb.Event(sequence=sequence, at=at, **observation)  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize("host", ["identity-provider.invalid", "actions.invalid"])
@@ -648,6 +656,76 @@ def test_models_lists_what_each_harness_may_run(client: TestClient) -> None:
         "HARNESS_CLAUDE": ["test-claude-model"],
         "HARNESS_CODEX": ["test-codex-model"],
     }
+
+
+async def test_thread_command_replay_keeps_app_persistence_and_runner_receipts_distinct(
+    inventory: SandboxInventory,
+    bridge: RunnerBridge,
+    store: TrajectoryStore,
+    egress: EgressInventory,
+    decisions: DecisionsClient,
+    live_index: LiveIndex,
+    action_policy: ActionPolicyInventory,
+    reviewer: TokenReviewer,
+) -> None:
+    thread_id = await store.thread(
+        "live", "runner-session", pb.SessionSpec(harness=pb.HARNESS_CLAUDE, cwd="/w", model="test-claude-model")
+    )
+    app = create_app(
+        inventory, bridge, store, TEST_MODELS, egress, decisions, live_index, action_policy, reviewer=reviewer
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
+    ) as http:
+        command = {"commandId": "input-1", "submitInput": {"text": "Inspect the red check."}}
+        accepted = await http.post(f"/threads/{thread_id}/commands", json=command)
+        assert accepted.status_code == 201, accepted.text
+        accepted_record = accepted.json()
+        assert accepted_record == {
+            "threadId": str(thread_id),
+            "replayCursor": "1",
+            "command": {"ordinal": "1", "command": command},
+        }
+        # Retrying the client-chosen Command id is the same immutable app-side outbox record.
+        assert (await http.post(f"/threads/{thread_id}/commands", json=command)).json() == accepted_record
+        assert (
+            await http.post(
+                f"/threads/{thread_id}/commands", json={"commandId": "input-1", "submitInput": {"text": "different"}}
+            )
+        ).status_code == 409
+        assert (
+            await http.post(f"/threads/{thread_id}/commands", json={"commandId": "missing-operation"})
+        ).status_code == 422
+
+        # This is the complete durable state a page reload receives before any runner is online.
+        before_runner = await http.get(f"/threads/{thread_id}/records")
+        assert before_runner.status_code == 200
+        assert before_runner.json() == {
+            "threadId": str(thread_id),
+            "lastReplayCursor": "1",
+            "records": [accepted_record],
+        }
+        lease = await store.acquire_ingestion("live", timedelta(minutes=1))
+        assert lease is not None
+        await store.record(
+            thread_id,
+            "runner-session",
+            [_event(1, command_received=pb.CommandReceived(command_id="input-1"))],
+            lease=lease,
+        )
+        # Runner receipt is a later exact Event with its own runner-session identity, not a state
+        # fabricated onto the command record. Replaying after the first cursor sees just it.
+        received = await http.get(f"/threads/{thread_id}/records?after_replay_cursor=1")
+        assert received.status_code == 200
+        received_records = received.json()["records"]
+        assert len(received_records) == 1
+        assert received_records[0]["replayCursor"] == "2"
+        assert received_records[0]["runnerEvent"]["runnerSessionId"] == "runner-session"
+        assert received_records[0]["runnerEvent"]["event"]["commandReceived"] == {"commandId": "input-1"}
+        assert "state" not in received_records[0]
+        reloaded = await http.get(f"/threads/{thread_id}/records")
+        assert reloaded.json()["records"] == [accepted_record, received_records[0]]
+        assert (await http.get("/threads/00000000-0000-0000-0000-000000000000/records")).status_code == 404
 
 
 async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
