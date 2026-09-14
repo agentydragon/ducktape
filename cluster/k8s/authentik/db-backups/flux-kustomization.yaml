@@ -16,9 +16,25 @@ spec:
     kind: ExternalArtifact
     name: authentik-db-backups
     namespace: ducktape-flux
-  # Do not let the Authentik app upgrade until the one-off baseline backup is
-  # complete. ScheduledBackup has no completion phase; the expression below
-  # gates only the one-off Backup resource.
+  healthChecks:
+    - apiVersion: seaweed.seaweedfs.com/v1
+      kind: Bucket
+      name: authentik-db-backups
+      namespace: authentik
+    - apiVersion: seaweed.seaweedfs.com/v1
+      kind: S3Identity
+      name: authentik-db-backups
+      namespace: authentik
+    - apiVersion: seaweed.seaweedfs.com/v1
+      kind: S3Credentials
+      name: authentik-db-backups
+      namespace: authentik
+    - apiVersion: barmancloud.cnpg.io/v1
+      kind: ObjectStore
+      name: authentik-db-ovh
+      namespace: authentik
+  # Report the one-off baseline backup through this Kustomization, but do not
+  # make Authentik availability depend on backup completion.
   healthCheckExprs:
     - apiVersion: postgresql.cnpg.io/v1
       kind: Backup
@@ -26,4 +42,10 @@ spec:
       failed: has(status.phase) && status.phase == 'failed'
   dependsOn:
     - name: authentik-db
+      namespace: ducktape-flux
+    - name: cnpg-barman-cloud
+      namespace: ducktape-flux
+    - name: seaweedfs-cluster
+      namespace: ducktape-flux
+    - name: authentik-namespace
       namespace: ducktape-flux
