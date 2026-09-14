@@ -31,9 +31,8 @@ spec:
         namespace: flux-system
       interval: 12h
   # The VolSync chart protects /metrics with Kubernetes token auth, but its
-  # generated ServiceMonitor does not send a bearer token. Alloy already has
-  # RBAC for GET /metrics, so patch the scrape endpoint to use Alloy's mounted
-  # service-account token instead of disabling VolSync metrics auth.
+  # generated ServiceMonitor does not configure credentials. Inject a
+  # Secret-backed token so Alloy does not need to read a local token file.
   postRenderers:
     - kustomize:
         patches:
@@ -42,8 +41,12 @@ spec:
               name: volsync
             patch: |
               - op: add
-                path: /spec/endpoints/0/bearerTokenFile
-                value: /var/run/secrets/kubernetes.io/serviceaccount/token
+                path: /spec/endpoints/0/authorization
+                value:
+                  type: Bearer
+                  credentials:
+                    name: volsync-metrics-token
+                    key: token
   values:
     manageCRDs: true
     nodeSelector:

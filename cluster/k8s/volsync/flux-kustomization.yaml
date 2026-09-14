@@ -22,3 +22,9 @@ spec:
       kind: HelmRelease
       name: volsync
       namespace: volsync-system
+  # The token controller populates data.token asynchronously. Do not declare
+  # the VolSync auth material ready until Alloy can actually use it.
+  healthCheckExprs:
+    - apiVersion: v1
+      kind: Secret
+      current: has(data.token) && data.token != ''
