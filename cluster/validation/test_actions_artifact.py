@@ -211,7 +211,6 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         ("litellm-namespace", "litellm/namespace"),
         ("litellm-secrets", "litellm/secrets"),
         ("litellm-servicemonitor", "litellm/servicemonitor"),
-        ("litellm-tana", "litellm/tana"),
         ("local-path-provisioner", "local-path-provisioner"),
         ("loki-read-proxy", "agents/loki-read-proxy"),
         ("manifold-mcp", "agents/manifold-mcp/app"),
