@@ -31,9 +31,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use swc_common::FileName;
 use swc_common::sync::Lrc;
 use swc_ecma_ast::{
-    BindingIdent, BlockStmtOrExpr, Decl, ExportSpecifier, Expr, FnDecl, Function, ImportSpecifier,
-    Module, ModuleDecl, ModuleExportName, ModuleItem, ObjectPatProp, Pat, Stmt, VarDeclKind,
-    VarDeclarator,
+    ArrowFunctionBody, BindingIdent, Decl, ExportSpecifier, Expr, FnDecl, Function,
+    ImportSpecifier, Module, ModuleDecl, ModuleExportName, ModuleItem, ObjectPatProp, Pat, Stmt,
+    VarDeclKind, VarDeclarator,
 };
 use swc_ecma_parser::{Parser, StringInput, Syntax, TsSyntax, lexer::Lexer};
 use tempfile::TempDir;
@@ -2429,7 +2429,7 @@ pub fn assert_unique_lexical_decls_per_scope(source: &str, target_name: &str) {
                         count += 1;
                     }
                 }
-                if let BlockStmtOrExpr::BlockStmt(block) = &*arrow.body {
+                if let ArrowFunctionBody::FunctionBody(block) = &*arrow.body {
                     for stmt in &block.stmts {
                         if let Stmt::Decl(Decl::Var(var)) = stmt
                             && matches!(var.kind, VarDeclKind::Let | VarDeclKind::Const)

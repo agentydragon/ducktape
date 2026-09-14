@@ -41,9 +41,10 @@ use source_match_holes::{
 use spec::{AnonymousStatementSelector, MemberSelectorSpec, SourceMatchIdentifierMode};
 use swc_common::DUMMY_SP;
 use swc_ecma_ast::{
-    AssignPatProp, BindingIdent, BlockStmt, CallExpr, Class, ClassMember, ClassProp, Decl, Expr,
-    ExprOrSpread, ExprStmt, IdentName, Module, ModuleItem, NewExpr, ObjectLit, ObjectPat,
-    ObjectPatProp, Pat, Prop, PropName, PropOrSpread, Stmt,
+    ArrowExpr, ArrowFunctionBody, AssignPatProp, BindingIdent, BlockStmt, CallExpr, Class,
+    ClassMember, ClassProp, Constructor, Decl, Expr, ExprOrSpread, ExprStmt, Function, IdentName,
+    Module, ModuleItem, NewExpr, ObjectLit, ObjectPat, ObjectPatProp, Pat, Prop, PropName,
+    PropOrSpread, Stmt,
 };
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
@@ -408,6 +409,48 @@ impl Relaxer<'_> {
 }
 
 impl VisitMut for Relaxer<'_> {
+    fn visit_mut_function(&mut self, function: &mut Function) {
+        if self.kind == Relaxation::DropStatement
+            && let Some(body) = function.body.as_mut()
+        {
+            for stmt in &mut body.stmts {
+                if self.take(is_droppable_stmt(stmt)) {
+                    *stmt = stmt_list_hole();
+                    break;
+                }
+            }
+        }
+        function.visit_mut_children_with(self);
+    }
+
+    fn visit_mut_arrow_expr(&mut self, arrow: &mut ArrowExpr) {
+        if self.kind == Relaxation::DropStatement
+            && let ArrowFunctionBody::FunctionBody(body) = arrow.body.as_mut()
+        {
+            for stmt in &mut body.stmts {
+                if self.take(is_droppable_stmt(stmt)) {
+                    *stmt = stmt_list_hole();
+                    break;
+                }
+            }
+        }
+        arrow.visit_mut_children_with(self);
+    }
+
+    fn visit_mut_constructor(&mut self, constructor: &mut Constructor) {
+        if self.kind == Relaxation::DropStatement
+            && let Some(body) = constructor.body.as_mut()
+        {
+            for stmt in &mut body.stmts {
+                if self.take(is_droppable_stmt(stmt)) {
+                    *stmt = stmt_list_hole();
+                    break;
+                }
+            }
+        }
+        constructor.visit_mut_children_with(self);
+    }
+
     fn visit_mut_module(&mut self, module: &mut Module) {
         if self.kind == Relaxation::DropContextStatement {
             // Remove (don't hole) the context statement: a top-level `STMT_LIST`

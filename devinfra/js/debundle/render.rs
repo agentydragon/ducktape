@@ -91,6 +91,15 @@ pub(crate) fn holed_block(block: &BlockStmt, kept: &BTreeSet<AnchorSpan>) -> Blo
     holed
 }
 
+pub(crate) fn holed_function_body(
+    body: &FunctionBody,
+    kept: &BTreeSet<AnchorSpan>,
+) -> FunctionBody {
+    let mut holed = body.clone();
+    holed.stmts = hole_stmts(&body.stmts, kept);
+    holed
+}
+
 /// Hole a function for selector form: every parameter to an `ANYTHING` pattern
 /// (pinning arity, not names) and the body's statements to `STMT_LIST` runs
 /// around the kept anchors. Used both for top-level function selectors and for
@@ -99,7 +108,7 @@ pub(crate) fn hole_function(function: &Function, kept: &BTreeSet<AnchorSpan>) ->
     let mut holed = function.clone();
     holed.params = function.params.iter().map(|_| anything_param()).collect();
     if let Some(body) = &function.body {
-        holed.body = Some(holed_block(body, kept));
+        holed.body = Some(holed_function_body(body, kept));
     }
     holed
 }
@@ -206,11 +215,11 @@ pub(crate) fn hole_expr(expr: &Expr, kept: &BTreeSet<AnchorSpan>) -> Expr {
             let mut holed = arrow.clone();
             holed.params = arrow.params.iter().map(|_| anything_pat()).collect();
             holed.body = Box::new(match arrow.body.as_ref() {
-                BlockStmtOrExpr::BlockStmt(block) => {
-                    BlockStmtOrExpr::BlockStmt(holed_block(block, kept))
+                ArrowFunctionBody::FunctionBody(body) => {
+                    ArrowFunctionBody::FunctionBody(holed_function_body(body, kept))
                 }
-                BlockStmtOrExpr::Expr(expr) => {
-                    BlockStmtOrExpr::Expr(Box::new(hole_expr(expr, kept)))
+                ArrowFunctionBody::Expr(expr) => {
+                    ArrowFunctionBody::Expr(Box::new(hole_expr(expr, kept)))
                 }
             });
             Expr::Arrow(holed)

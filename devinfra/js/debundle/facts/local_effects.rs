@@ -289,12 +289,12 @@ fn vendor_prune_target_first_wrapper_expr(
                 return false;
             };
             match &*arrow.body {
-                BlockStmtOrExpr::BlockStmt(block) => vendor_prune_target_first_wrapper_block(
+                ArrowFunctionBody::FunctionBody(block) => vendor_prune_target_first_wrapper_block(
                     block,
                     &param.to_id(),
                     local_effect_context,
                 ),
-                BlockStmtOrExpr::Expr(expr) => {
+                ArrowFunctionBody::Expr(expr) => {
                     let mut saw_effect = false;
                     vendor_prune_target_first_wrapper_effect_expr(
                         expr,
@@ -326,7 +326,7 @@ fn vendor_prune_target_first_wrapper_function(
 }
 
 fn vendor_prune_target_first_wrapper_block(
-    block: &BlockStmt,
+    block: &FunctionBody,
     target_param: &Id,
     local_effect_context: &LocalEffectContext,
 ) -> bool {
@@ -659,10 +659,10 @@ fn vendor_prune_for_each_callback_targets(
             local_effect_context,
         ),
         Expr::Arrow(arrow) => match &*arrow.body {
-            BlockStmtOrExpr::BlockStmt(block) => {
+            ArrowFunctionBody::FunctionBody(block) => {
                 vendor_prune_for_each_callback_block_targets(block, local_effect_context)
             }
-            BlockStmtOrExpr::Expr(expr) => {
+            ArrowFunctionBody::Expr(expr) => {
                 vendor_prune_for_each_callback_expr_targets(expr, local_effect_context)
             }
         },
@@ -671,7 +671,7 @@ fn vendor_prune_for_each_callback_targets(
 }
 
 fn vendor_prune_for_each_callback_block_targets(
-    block: &BlockStmt,
+    block: &FunctionBody,
     local_effect_context: &LocalEffectContext,
 ) -> Option<BTreeSet<Id>> {
     let mut targets = BTreeSet::new();
@@ -888,7 +888,7 @@ fn local_commonjs_module_iife_target(
     }
 }
 
-fn commonjs_iife_body_mutates_only_module_param(block: &BlockStmt, param: &str) -> bool {
+fn commonjs_iife_body_mutates_only_module_param(block: &FunctionBody, param: &str) -> bool {
     let local_bindings = commonjs_iife_local_bindings(block);
     let mut saw_write = false;
     for stmt in &block.stmts {
@@ -916,7 +916,7 @@ fn commonjs_iife_body_mutates_only_module_param(block: &BlockStmt, param: &str) 
     saw_write
 }
 
-fn commonjs_iife_local_bindings(block: &BlockStmt) -> BTreeSet<String> {
+fn commonjs_iife_local_bindings(block: &FunctionBody) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     for stmt in &block.stmts {
         match stmt {
@@ -1013,7 +1013,7 @@ fn commonjs_truthy_exports_test(expr: &Expr, param: &str) -> bool {
     ) && static_member_name(&member.prop).as_deref() == Some("exports")
 }
 
-fn namespace_iife_body_mutates_only_param(block: &BlockStmt, param: &str) -> bool {
+fn namespace_iife_body_mutates_only_param(block: &FunctionBody, param: &str) -> bool {
     let mut saw_write = false;
     for stmt in &block.stmts {
         let ok = match stmt {

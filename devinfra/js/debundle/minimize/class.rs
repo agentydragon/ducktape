@@ -9,7 +9,7 @@ use swc_ecma_ast::*;
 
 use super::read_off_candidates;
 use crate::render::{
-    AnchorSpan, anything_expr, anything_param, emit_selector, holed_block, ident_node,
+    AnchorSpan, anything_expr, anything_param, emit_selector, holed_function_body, ident_node,
     node_retains_any,
 };
 use crate::{
@@ -114,13 +114,21 @@ fn hole_class_member(member: &ClassMember, kept: &BTreeSet<AnchorSpan>) -> Class
         ClassMember::Method(m) => {
             let mut holed = m.clone();
             holed.function.params = m.function.params.iter().map(|_| anything_param()).collect();
-            holed.function.body = m.function.body.as_ref().map(|body| holed_block(body, kept));
+            holed.function.body = m
+                .function
+                .body
+                .as_ref()
+                .map(|body| holed_function_body(body, kept));
             ClassMember::Method(holed)
         }
         ClassMember::PrivateMethod(m) => {
             let mut holed = m.clone();
             holed.function.params = m.function.params.iter().map(|_| anything_param()).collect();
-            holed.function.body = m.function.body.as_ref().map(|body| holed_block(body, kept));
+            holed.function.body = m
+                .function
+                .body
+                .as_ref()
+                .map(|body| holed_function_body(body, kept));
             ClassMember::PrivateMethod(holed)
         }
         ClassMember::Constructor(ctor) => {
@@ -130,7 +138,10 @@ fn hole_class_member(member: &ClassMember, kept: &BTreeSet<AnchorSpan>) -> Class
                 .iter()
                 .map(|_| ParamOrTsParamProp::Param(anything_param()))
                 .collect();
-            holed.body = ctor.body.as_ref().map(|body| holed_block(body, kept));
+            holed.body = ctor
+                .body
+                .as_ref()
+                .map(|body| holed_function_body(body, kept));
             ClassMember::Constructor(holed)
         }
         // Class fields and other members carrying a kept anchor: keep verbatim.

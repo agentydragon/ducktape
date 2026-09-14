@@ -324,7 +324,7 @@ impl Visit for AdmissionScan<'_> {
     fn visit_getter_prop(&mut self, node: &GetterProp) {
         node.key.visit_with(self);
         self.descend_lazy(|scan| {
-            if let Some(body) = &node.body {
+            if let Some(body) = &node.function.body {
                 body.visit_with(scan);
             }
         });
@@ -332,9 +332,11 @@ impl Visit for AdmissionScan<'_> {
 
     fn visit_setter_prop(&mut self, node: &SetterProp) {
         node.key.visit_with(self);
-        node.param.visit_with(self);
+        for param in &node.function.params {
+            param.pat.visit_with(self);
+        }
         self.descend_lazy(|scan| {
-            if let Some(body) = &node.body {
+            if let Some(body) = &node.function.body {
                 body.visit_with(scan);
             }
         });

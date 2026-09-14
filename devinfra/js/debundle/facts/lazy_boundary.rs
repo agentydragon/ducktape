@@ -61,7 +61,7 @@ pub(crate) fn lazy_visit_method_prop<V: LazyBoundary>(v: &mut V, node: &MethodPr
 pub(crate) fn lazy_visit_getter_prop<V: LazyBoundary>(v: &mut V, node: &GetterProp) {
     node.key.visit_with(v);
     v.descend_lazy(|s| {
-        if let Some(body) = &node.body {
+        if let Some(body) = &node.function.body {
             body.visit_with(s);
         }
     });
@@ -69,9 +69,11 @@ pub(crate) fn lazy_visit_getter_prop<V: LazyBoundary>(v: &mut V, node: &GetterPr
 
 pub(crate) fn lazy_visit_setter_prop<V: LazyBoundary>(v: &mut V, node: &SetterProp) {
     node.key.visit_with(v);
-    node.param.visit_with(v);
+    for param in &node.function.params {
+        param.pat.visit_with(v);
+    }
     v.descend_lazy(|s| {
-        if let Some(body) = &node.body {
+        if let Some(body) = &node.function.body {
             body.visit_with(s);
         }
     });
