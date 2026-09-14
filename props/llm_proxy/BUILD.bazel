@@ -1,6 +1,6 @@
 """Standalone LLM proxy — the agent data plane."""
 
-load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("//devinfra/python:defs.bzl", "py_image_layer", aspect_py_binary = "aspect_py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
