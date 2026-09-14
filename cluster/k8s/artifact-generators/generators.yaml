@@ -106,6 +106,14 @@ spec:
           exclude:
             - flux-kustomization.yaml
 
+    - name: cnpg-barman-cloud
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/cnpg-barman-cloud/**"
+          to: "@artifact/cluster/k8s/cnpg-barman-cloud/"
+          exclude:
+            - flux-kustomization.yaml
+
     - name: external-secrets-config
       originRevision: "@repo"
       copy:
@@ -1070,6 +1078,13 @@ spec:
           to: "@artifact/cluster/k8s/authentik/db/"
           exclude:
             - flux-kustomization.yaml
+    - name: authentik-db-backups
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/authentik/db-backups/**"
+          to: "@artifact/cluster/k8s/authentik/db-backups/"
+          exclude:
+            - flux-kustomization.yaml
     - name: authentik-proxy-routes
       originRevision: "@repo"
       copy:
@@ -1913,6 +1928,13 @@ spec:
       copy:
         - from: "@repo/cluster/k8s/seaweedfs/drivefs-artifacts-bucket/**"
           to: "@artifact/cluster/k8s/seaweedfs/drivefs-artifacts-bucket/"
+          exclude:
+            - flux-kustomization.yaml
+    - name: seaweedfs-authentik-db-backups-bucket
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/seaweedfs/authentik-db-backups-bucket/**"
+          to: "@artifact/cluster/k8s/seaweedfs/authentik-db-backups-bucket/"
           exclude:
             - flux-kustomization.yaml
     - name: seaweedfs-forgejo-bucket

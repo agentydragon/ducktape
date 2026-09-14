@@ -1,0 +1,29 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: authentik-db-backups
+  namespace: ducktape-flux
+  annotations:
+    description: Creates the Authentik CNPG backup schedule and one-time pre-upgrade backup.
+spec:
+  interval: 10m
+  retryInterval: 1m
+  timeout: 15m
+  path: ./cluster/k8s/authentik/db-backups
+  prune: true
+  wait: true
+  sourceRef:
+    kind: ExternalArtifact
+    name: authentik-db-backups
+    namespace: ducktape-flux
+  # Do not let the Authentik app upgrade until the one-off baseline backup is
+  # complete. ScheduledBackup has no completion phase; the expression below
+  # gates only the one-off Backup resource.
+  healthCheckExprs:
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Backup
+      current: has(status.phase) && status.phase == 'completed'
+      failed: has(status.phase) && status.phase == 'failed'
+  dependsOn:
+    - name: authentik-db
+      namespace: ducktape-flux

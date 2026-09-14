@@ -1,0 +1,16 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  name: authentik-db-backups
+  namespace: seaweedfs
+  annotations:
+    description: Private CNPG physical backups and WAL archive for Authentik.
+spec:
+  name: authentik-db-backups
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  reclaimPolicy: Retain
+  access:
+    - user: authentik-db-backups
+      actions: [Read, Write, List, Tagging]
