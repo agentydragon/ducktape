@@ -12,12 +12,11 @@ Observed with Codex app-server 0.152.0:
 
 from __future__ import annotations
 
-import itertools
 import json
 from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
-from x.agentplane.native.codex import driver, scenarios, wire
+from x.agentplane.native.codex import facade, scenarios, wire
 from x.agentplane.runner import protocol_pb2 as pb
 from x.agentplane.runner.adapter import HarnessAdapter
 from x.agentplane.runner.config import CodexLaunch
@@ -42,7 +41,7 @@ class CodexAdapter(HarnessAdapter):
         self.session = session
         self.launch = launch
         self._thread_id = session.record.native_session_id or ""
-        self._request_ids = (f"agentplane-{n}" for n in itertools.count(1))
+        self.harness = facade.CodexHarness(session, request_prefix="agentplane")
         self._items: set[str] = set()
         # Codex chooses the model in turn/start. A received ChangeModel remains here until a
         # subsequent user command actually starts a turn using it.
@@ -63,40 +62,36 @@ class CodexAdapter(HarnessAdapter):
         }
 
     async def handshake(self) -> str:
-        await self._request(driver.initialize(next(self._request_ids)))
-        await self.session.write_native(driver.initialized())
+        await self.harness.initialize()
         record = self.session.record
         if self._thread_id:
-            frame: wire.ThreadStartRequest | wire.ThreadResumeRequest = driver.thread_resume(
-                next(self._request_ids), thread_id=self._thread_id
-            )
+            response = await self.harness.resume_thread(thread_id=self._thread_id)
+            method = "thread/resume"
         else:
             # A thread takes the session's standing instructions once, when it is created. The
             # resume branch above cannot restate them: `ensure_running` only handshakes a process
             # it just spawned, so the resumed thread replays them out of its rollout, and a
             # `developerInstructions` override on the resume would be accepted and ignored.
-            frame = driver.thread_start(
-                next(self._request_ids),
+            response = await self.harness.start_thread(
                 cwd=record.cwd,
                 model=record.model,
                 effort=record.reasoning_effort,
                 persist=True,
                 instructions=record.instructions,
             )
-        response, _ = await self._request(frame)
-        if response.error is not None:
-            raise RuntimeError(f"Codex refused {frame.method}: {response.error.message}")
-        if response.result is None:
-            raise RuntimeError(f"Codex {frame.method} returned no result")
-        self._thread_id = wire.ThreadResult.model_validate(response.result).thread.id
+            method = "thread/start"
+        if response.response.error is not None:
+            raise RuntimeError(f"Codex refused {method}: {response.response.error.message}")
+        if response.response.result is None:
+            raise RuntimeError(f"Codex {method} returned no result")
+        self._thread_id = wire.ThreadResult.model_validate(response.response.result).thread.id
         return self._thread_id
 
     async def submit(self, command_id: str, text: str) -> None:
         selected_change = self._take_pending_model_change()
         selected_model = selected_change[1] if selected_change is not None else self.session.record.model
-        response, sequence = await self._request(
-            driver.turn_start(next(self._request_ids), thread_id=self._thread_id, text=text, model=selected_model)
-        )
+        receipt = await self.harness.start_turn(thread_id=self._thread_id, text=text, model=selected_model)
+        response, sequence = receipt.response, receipt.sequence
         if response.error is not None or response.result is None:
             reason = response.error.message if response.error is not None else "turn/start returned no result"
             if selected_change is not None:
@@ -115,9 +110,7 @@ class CodexAdapter(HarnessAdapter):
         )
 
     async def interrupt(self) -> None:
-        await self._request(
-            driver.interrupt(next(self._request_ids), thread_id=self._thread_id, turn_id=self.session.active_turn_id)
-        )
+        await self.harness.interrupt(thread_id=self._thread_id, turn_id=self.session.active_turn_id)
 
     async def change_model(self, command_id: str, model: str) -> None:
         self._pending_model_changes.append((command_id, model))
@@ -142,7 +135,7 @@ class CodexAdapter(HarnessAdapter):
             case wire.ServerRequest(id=request_id, method=method):
                 # Approvals, user-input requests, and elicitations have no answer path here; a
                 # refusal keeps the turn moving instead of blocking it forever.
-                await self.session.write_native(
+                await self.harness.send(
                     wire.ErrorResponse(
                         id=request_id,
                         error=wire.RpcError(code=-32601, message=f"the agentplane runner does not answer {method}"),
@@ -214,11 +207,6 @@ class CodexAdapter(HarnessAdapter):
                         tool=pb.ToolResult(output=json.dumps(outcome), succeeded=outcome.get("status") == "completed"),
                     )
                 )
-
-    async def _request(self, frame: wire.Request) -> tuple[wire.Response, int]:
-        """Send a request and return its response with the Native sequence it arrived as."""
-        native = await self.session.request(frame, matches=lambda candidate: candidate.get("id") == frame.id)
-        return wire.Response.model_validate(native.frame), native.sequence
 
 
 def _extras(item: wire.UnknownItem) -> dict[str, object]:

@@ -32,7 +32,7 @@ class RecordedSession:
         self.emitted: list[object] = []
         self.noops: list[tuple[str, str]] = []
 
-    async def write_native(self, frame: BaseModel) -> None:
+    async def send(self, frame: BaseModel) -> None:
         self.native.append(frame)
 
     async def confirm_user_message(
@@ -85,6 +85,7 @@ async def test_one_claude_input_is_confirmed_by_its_model_request_correlation() 
     adapter = ClaudeAdapter(
         cast(Session, recorded), ClaudeLaunch(binary=Path("/bin/false"), base_url="http://unused", auth_token="unused")
     )
+    assert cast(object, adapter.harness.transport) is recorded
     await adapter.submit("input-1", "ONE_INPUT")
     uuid = cast(wire.UserInput, recorded.native[0]).uuid
     await adapter.on_frame(_lifecycle(uuid, wire.CommandState.STARTED), 1)

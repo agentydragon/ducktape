@@ -40,6 +40,7 @@ py_library(
         ":session",
         "//x/agentplane/native/claude:blocks",
         "//x/agentplane/native/claude:driver",
+        "//x/agentplane/native/claude:facade",
         "//x/agentplane/native/claude:scenarios",
         "//x/agentplane/native/claude:wire",
         "//x/agentplane/runner:protocol_pb2",
@@ -65,7 +66,7 @@ py_library(
         ":adapter",
         ":config",
         ":session",
-        "//x/agentplane/native/codex:driver",
+        "//x/agentplane/native/codex:facade",
         "//x/agentplane/native/codex:scenarios",
         "//x/agentplane/native/codex:wire",
         "//x/agentplane/runner:protocol_pb2",
@@ -161,6 +162,7 @@ py_library(
         ":event_log",
         ":harness_process",
         ":store",
+        "//x/agentplane/native:transport",
         "//x/agentplane/runner:protocol_pb2",
         "@pypi//protobuf",
         "@pypi//pydantic",
@@ -189,6 +191,20 @@ py_test(
         "//:conftest",
         "//x/agentplane/native/claude:wire",
         "@pypi//pydantic",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_codex_adapter",
+    srcs = ["test_codex_adapter.py"],
+    deps = [
+        ":codex",
+        ":config",
+        ":conftest",
+        ":session",
+        ":store",
+        "//:conftest",
         "@pypi//pytest_bazel",
     ],
 )
