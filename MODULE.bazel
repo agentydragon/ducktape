@@ -752,6 +752,15 @@ crate.from_cargo(
     manifests = ["//:Cargo.toml"],
 )
 
+# sqlx-core 0.9.0's `offline` feature changes the Executor trait. crate-universe
+# currently propagates that feature to the shared core crate without propagating
+# sqlx's corresponding `sqlx-postgres/offline` feature, leaving the generated
+# PostgreSQL implementation incompatible with the generated core trait.
+crate.annotation(
+    crate = "sqlx-postgres",
+    crate_features = ["offline"],
+)
+
 # expose the generated repo (↑ name="crates")
 use_repo(crate, "crates")
 
