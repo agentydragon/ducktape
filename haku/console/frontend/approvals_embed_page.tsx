@@ -1,5 +1,5 @@
 import { Badge, Group, Loader, Stack, Text } from "@mantine/core";
-import { useEffect, useRef, useState } from "react";
+import { type JSX, useEffect, useRef, useState } from "react";
 
 import { makeRecentToolCall, toolApprovalQueueId, type RecentToolCall } from "./approval_state";
 import { useConsoleEvents } from "./console_events";

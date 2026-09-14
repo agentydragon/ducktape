@@ -1,3 +1,4 @@
+import type { JSX } from "react";
 /**
  * The lifecycle controls the sandbox list and the sandbox page share: the suspend/resume button,
  * and deletion, which the API takes only from a suspended sandbox (`inventory.py`). The rule is

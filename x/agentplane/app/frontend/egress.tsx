@@ -1,5 +1,5 @@
 import { Badge, Button, Group, MultiSelect, Stack, Table, Text, Title, Tooltip } from "@mantine/core";
-import { useCallback, useEffect, useState } from "react";
+import { type JSX, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 
 import { api, displayableError, type BindingView, type Decision, type PolicyView } from "./client";

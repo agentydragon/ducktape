@@ -1,5 +1,5 @@
 import { Button, Checkbox, Group, Loader, Text } from "@mantine/core";
-import { useCallback, useRef, useState } from "react";
+import { type JSX, useCallback, useRef, useState } from "react";
 
 import { approvalDisplayFields } from "./approval_state";
 import { displayableError, fetchToolCalls, type ToolCallPage, type ToolCallRecord } from "./client";

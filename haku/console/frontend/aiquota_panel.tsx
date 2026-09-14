@@ -12,7 +12,7 @@
 // Bazel dep (//aiquota/frontend:board) rather than an npm package.
 import { QuotaBoard } from "../../../aiquota/frontend/board";
 import { ActionIcon, Group, Loader, Stack, Text, Tooltip } from "@mantine/core";
-import { useEffect, useMemo, useState } from "react";
+import { type JSX, useEffect, useMemo, useState } from "react";
 
 import type { AiquotaView } from "./client";
 import { AiquotaIcon, CloseIcon } from "./icons";

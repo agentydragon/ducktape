@@ -1,3 +1,4 @@
+import type { JSX } from "react";
 import { Alert, Badge, Code, Group, Stack, Table, Text, Title, Tooltip } from "@mantine/core";
 
 import type {

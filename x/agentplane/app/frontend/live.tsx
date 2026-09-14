@@ -16,7 +16,7 @@
  * healthy load as a fault put an alarm on the screen of every load and moved the page under it.
  */
 import { Alert } from "@mantine/core";
-import { useEffect, useState } from "react";
+import { type JSX, useEffect, useState } from "react";
 
 import type { components } from "./api/schema";
 import { api } from "./client";

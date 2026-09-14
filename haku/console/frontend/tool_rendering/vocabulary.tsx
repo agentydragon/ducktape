@@ -4,7 +4,7 @@
 // form. Leaf module (no widget deps) so index.tsx and every widget can import the type without a
 // cycle.
 import { Badge, type BadgeProps, Text, type TextProps } from "@mantine/core";
-import type { PropsWithChildren } from "react";
+import type { JSX, PropsWithChildren } from "react";
 
 export type PreviewVariant = "compact" | "detailed";
 

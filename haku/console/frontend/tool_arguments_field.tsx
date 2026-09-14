@@ -1,3 +1,4 @@
+import type { JSX } from "react";
 import { CodeBlock } from "./code_block";
 import { Field } from "./field";
 import { JsonPreview } from "./json_preview";

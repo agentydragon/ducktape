@@ -1,5 +1,5 @@
 import { MantineProvider } from "@mantine/core";
-import { act } from "react";
+import { type JSX, act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach } from "vitest";
 

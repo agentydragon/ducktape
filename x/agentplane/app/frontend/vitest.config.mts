@@ -4,6 +4,7 @@ export default defineConfig({
   test: {
     // Specs arrive compiled: each is a ts_library whose tsc action type-checked it and emitted the .js.
     include: ["**/*.test.js"],
+    setupFiles: ["./test_setup.ts"],
   },
   cacheDir: ".vitest-cache",
 });

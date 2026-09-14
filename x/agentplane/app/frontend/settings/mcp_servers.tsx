@@ -1,5 +1,5 @@
 import { Alert, Badge, Button, Group, Paper, Stack, Text, Title } from "@mantine/core";
-import { useCallback, useEffect, useState } from "react";
+import { type JSX, useCallback, useEffect, useState } from "react";
 
 import { displayableError, mcpLinkageService, type McpLinkageService, type McpLinkageView } from "../client";
 

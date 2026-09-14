@@ -1,5 +1,5 @@
 import { Button, Group, Textarea } from "@mantine/core";
-import { useState } from "react";
+import { type JSX, useState } from "react";
 
 import { SUCCESS_COLOR } from "./theme";
 

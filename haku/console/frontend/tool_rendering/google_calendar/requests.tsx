@@ -5,7 +5,7 @@
 // Pydantic cross-field validators may be stricter than that structural schema.
 
 import { Loader, Stack } from "@mantine/core";
-import { useEffect, useState } from "react";
+import { type JSX, useEffect, useState } from "react";
 import { rrulestr } from "rrule";
 import type { z } from "zod";
 

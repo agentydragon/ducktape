@@ -1,6 +1,6 @@
 import { Code } from "@mantine/core";
 import { toJsonString } from "@bufbuild/protobuf";
-import { useMemo } from "react";
+import { type JSX, useMemo } from "react";
 
 import "./frame.css";
 import { highlightJson, looksLikeJson } from "./json_view";

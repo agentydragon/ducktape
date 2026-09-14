@@ -1,5 +1,5 @@
 import { Loader, Text } from "@mantine/core";
-import { useEffect, useState } from "react";
+import { type JSX, useEffect, useState } from "react";
 
 import { type ConfigResponse, displayableError, fetchConfig } from "./client";
 import { AgentNamesProvider } from "./agent_names";

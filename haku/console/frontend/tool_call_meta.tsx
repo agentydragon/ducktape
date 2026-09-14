@@ -1,3 +1,4 @@
+import type { JSX } from "react";
 import { Field } from "./field";
 import { formatTimestamp } from "./time";
 

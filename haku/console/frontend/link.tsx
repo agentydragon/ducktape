@@ -1,5 +1,5 @@
 import { Anchor, type AnchorProps } from "@mantine/core";
-import type { ReactNode } from "react";
+import type { JSX, ReactNode } from "react";
 
 type AnchorStyleProps = Omit<AnchorProps, "href" | "target" | "rel" | "underline" | "children">;
 type ExternalLinkProps = AnchorStyleProps & {

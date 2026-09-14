@@ -1,5 +1,5 @@
 import { Alert, Button, Group, Stack, Table, Text, Title } from "@mantine/core";
-import { useCallback, useEffect, useState } from "react";
+import { type JSX, useCallback, useEffect, useState } from "react";
 
 import {
   ConnectionRequestError,

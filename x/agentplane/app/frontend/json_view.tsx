@@ -2,7 +2,7 @@ import { Code } from "@mantine/core";
 import DOMPurify from "dompurify";
 import hljs from "highlight.js/lib/core";
 import json from "highlight.js/lib/languages/json";
-import { useMemo } from "react";
+import { type JSX, useMemo } from "react";
 
 import "./json_view.css";
 
