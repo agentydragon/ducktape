@@ -274,7 +274,6 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         ("reflector", "reflector"),
         ("reloader", "reloader"),
         ("sdr", "sdr"),
-        ("seaweedfs-authentik-db-backups-bucket", "seaweedfs/authentik-db-backups-bucket"),
         ("seaweedfs-cluster", "seaweedfs/cluster"),
         ("seaweedfs-csi", "seaweedfs-csi"),
         ("seaweedfs-drivefs-artifacts-bucket", "seaweedfs/drivefs-artifacts-bucket"),

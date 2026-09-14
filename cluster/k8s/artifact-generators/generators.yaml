@@ -1930,13 +1930,6 @@ spec:
           to: "@artifact/cluster/k8s/seaweedfs/drivefs-artifacts-bucket/"
           exclude:
             - flux-kustomization.yaml
-    - name: seaweedfs-authentik-db-backups-bucket
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/seaweedfs/authentik-db-backups-bucket/**"
-          to: "@artifact/cluster/k8s/seaweedfs/authentik-db-backups-bucket/"
-          exclude:
-            - flux-kustomization.yaml
     - name: seaweedfs-forgejo-bucket
       originRevision: "@repo"
       copy:

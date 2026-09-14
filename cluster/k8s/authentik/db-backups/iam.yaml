@@ -2,27 +2,30 @@ apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Identity
 metadata:
   name: authentik-db-backups
-  namespace: seaweedfs
+  namespace: authentik
   annotations:
     description: Dedicated SeaweedFS identity for Authentik CNPG backups.
 spec:
   seaweedRef:
     name: seaweedfs
+    namespace: seaweedfs
   reclaimPolicy: Retain
 ---
 apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Credentials
 metadata:
   name: authentik-db-backups
-  namespace: seaweedfs
+  namespace: authentik
 spec:
   seaweedRef:
     name: seaweedfs
+    namespace: seaweedfs
   identityRef:
     name: authentik-db-backups
+  # The operator creates and owns this Secret in the same namespace as the
+  # credential resource, where CNPG's ObjectStore consumes it.
   secretRef:
     name: authentik-db-backup-s3
-    namespace: authentik
     accessKeyField: AWS_ACCESS_KEY_ID
     secretKeyField: AWS_SECRET_ACCESS_KEY
   reclaimPolicy: Retain
