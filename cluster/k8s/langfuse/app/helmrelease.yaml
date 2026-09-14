@@ -21,13 +21,17 @@ spec:
   chart:
     spec:
       chart: langfuse
-      version: "1.5.41"
+      version: "2.1.0"
       sourceRef:
         kind: HelmRepository
         name: langfuse
         namespace: langfuse
   values:
     langfuse:
+      # Chart 2.1.0's appVersion trails the current release; pin both web and
+      # worker to the same current Langfuse image explicitly.
+      image:
+        tag: "4.35.0"
       features:
         # SSO-only: email/password login is disabled below via
         # AUTH_DISABLE_USERNAME_PASSWORD. Signup must stay enabled so the
@@ -105,6 +109,20 @@ spec:
         # name, so Langfuse can keep automatic migrations enabled.
         - name: CLICKHOUSE_CLUSTER_NAME
           value: "default"
+        # v3 -> v4 migration: write both the legacy and events tables while the
+        # new ingestion and read paths are validated. Keep historic backfill
+        # off until dual-write has been observed healthy; it will then rewrite
+        # existing history as-is, including any already-corrupt timestamps.
+        # CLEANUP(langfuse-v4-migration): remove these migration overrides once
+        # compatible producers, v4 API consumers, evaluators, and exports are
+        # verified and historic backfill has completed; that selects v4's
+        # events_only/direct defaults and stops legacy writes.
+        - name: LANGFUSE_MIGRATION_V4_WRITE_MODE
+          value: "dual"
+        - name: LANGFUSE_MIGRATION_V4_NATIVE_OTEL_BEHAVIOUR
+          value: "dual_write"
+        - name: LANGFUSE_BACKGROUND_MIGRATION_V4_ENABLE_HISTORIC_BACKFILL
+          value: "false"
         # --- Authentik SSO (generic OIDC relying party) ---
         # Client credentials come from the langfuse-oidc-config secret, minted
         # by tf/gitops/sso-providers/provider_langfuse.tf in the authentik
