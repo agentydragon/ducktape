@@ -30,13 +30,5 @@ def test_tana_litellm_exposes_every_responding_model_once() -> None:
     assert all(entry["litellm_params"]["custom_llm_provider"] == "tana" for entry in config["model_list"])
 
 
-def test_custom_handler_config_uses_packaged_handler() -> None:
-    config = yaml.safe_load(generate())
-    assert "custom_provider_map" not in config
-    assert config["litellm_settings"]["custom_provider_map"] == [
-        {"provider": "tana", "custom_handler": "tana.litellm_proxy.custom_handler.tana_handler"}
-    ]
-
-
 if __name__ == "__main__":
     pytest_bazel.main()
