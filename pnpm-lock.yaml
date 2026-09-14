@@ -179,7 +179,10 @@ importers:
         version: 8.70.0(eslint@9.39.5(jiti@2.7.0))(typescript@5.9.3)
       '@vitejs/plugin-react':
         specifier: ^6.0.0
-        version: 6.1.1(vite@8.3.0(@types/node@24.13.4)(esbuild@0.28.2)(jiti@2.7.0))
+        version: 6.1.1(vite@8.3.0(@types/node@24.13.4)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.8.3))
+      cdk8s:
+        specifier: ^2.70.101
+        version: 2.70.102(constructs@10.8.1)
       chalk:
         specifier: ^4.1.2
         version: 4.1.2
@@ -2206,6 +2209,16 @@ packages:
   caniuse-lite@1.0.30001810:
     resolution: {integrity: sha512-TITQPUkaz+aVk5GL6NhOdwk1aEaNTSDPsGFWrTuhKGtjTF70jL/Oht2W4c6rXUe5fu7Ie19VIahAXHIIiWWNeg==}
 
+  cdk8s@2.70.102:
+    resolution: {integrity: sha512-Sg+33O+jJMBK9Tiuu44ejkSlLr+1zlE4kVAW5D5U/FnXYYAL+lEeEfAPf5fEaH/Kt84yq+Bi6BDjxVX7RQ4qDg==}
+    engines: {node: '>= 16.20.0'}
+    peerDependencies:
+      constructs: ^10
+    bundledDependencies:
+      - fast-json-patch
+      - follow-redirects
+      - yaml
+
   chai@5.3.3:
     resolution: {integrity: sha512-4zNhdJD/iOjSH0A05ea+Ke6MU5mmpQcbQsSOkgdaUMJ9zTlDTD/GYlwohmIE2u0gaxHYiVHEn1Fw9mZ/ktJWgw==}
     engines: {node: '>=18'}
@@ -2289,6 +2302,9 @@ packages:
 
   confbox@0.3.1:
     resolution: {integrity: sha512-cKUSoKa8YxFZZSmraVi7onONx3amu77ngK3kGpsYHDH7drPwCRkQE1RYMPlLRrMtnciRj274XNRxcHxnKmDSnA==}
+
+  constructs@10.8.1:
+    resolution: {integrity: sha512-98yGXYyhePqPYh3cYu8nzBERmAhC0DONe3UD03okK0nehZ7hYP4wgZuf02a04+uOWxnTJ5Rpp5m0GRNpwyLGGA==}
 
   content-disposition@1.1.0:
     resolution: {integrity: sha512-5jRCH9Z/+DRP7rkvY83B+yGIGX96OYdJmzngqnw2SBSxqCFPd0w2km3s5iawpGX8krnwSGmF0FW5Nhr0Hfai3g==}
@@ -6470,6 +6486,10 @@ snapshots:
 
   caniuse-lite@1.0.30001810: {}
 
+  cdk8s@2.70.102(constructs@10.8.1):
+    dependencies:
+      constructs: 10.8.1
+
   chai@5.3.3:
     dependencies:
       assertion-error: 2.0.1
@@ -6548,6 +6568,8 @@ snapshots:
   confbox@0.2.4: {}
 
   confbox@0.3.1: {}
+
+  constructs@10.8.1: {}
 
   content-disposition@1.1.0: {}
 
