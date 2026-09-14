@@ -8,7 +8,6 @@ objects and sockets stay inside this module.
 from __future__ import annotations
 
 import asyncio
-from contextlib import suppress
 from dataclasses import dataclass
 from types import TracebackType
 from typing import Any, Self, cast
@@ -142,11 +141,18 @@ class ModelExchange[RequestT: BaseModel]:
         if self._settled_by is not None:
             return
         if exc_type is None:
-            await self.close()
+            try:
+                await self.close()
+            except ConnectionError:
+                # A harness may finish processing the final SSE event and close before the test
+                # scope does. That is the same settled client-close state as wait_client_closed().
+                self._settled_by = "client close"
             return
         # Preserve the test failure that left the exchange unfinished.
-        with suppress(ConnectionError):
+        try:
             await self.abort()
+        except ConnectionError:
+            self._settled_by = "client close"
 
     async def respond(self, response: JsonResponse) -> None:
         self._ensure_open("respond")

@@ -146,7 +146,6 @@ async def test_interrupt_cancels_each_queued_input_before_native_message(
             response = await scenarios.interrupt(process, cancel_queued=True)
             assert response["response"]["subtype"] == "success"
             await initial_exchange.wait_client_closed()
-            assert (await scenarios.await_result(process))["is_error"] is True
             for command_uuid in (first.uuid, second.uuid):
 
                 def is_cancelled(frame: dict[str, Any], expected: str = command_uuid) -> bool:
@@ -158,6 +157,7 @@ async def test_interrupt_cancels_each_queued_input_before_native_message(
 
                 while not is_cancelled(await process.next_frame()):
                     pass
+            assert (await scenarios.await_result(process))["is_error"] is True
 
         await scenarios.send(process, INTERRUPT_RECOVERY)
         async with await anthropic_messages.await_next_request() as recovery_exchange:
