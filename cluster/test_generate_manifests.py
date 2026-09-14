@@ -5,7 +5,8 @@ from pathlib import Path
 import pytest_bazel
 import yaml
 
-from cluster.generate_manifests import _config_maps, generate_manifests, main_proxy_config
+from cluster.generate_manifests import _config_maps, generate_manifests
+from cluster.litellm_config import main_proxy_config
 from util.bazel.runfiles import get_required_path
 
 
@@ -24,7 +25,6 @@ def test_config_map_payloads_contain_the_existing_proxy_configs() -> None:
     expected = {
         "litellm": ("litellm", "cluster/k8s/litellm/app/proxy-config.yaml"),
         "tana-litellm": ("litellm", "cluster/k8s/litellm/tana/proxy-config.yaml"),
-        "workers-litellm": ("haku-dispatch", "cluster/k8s/x/haku/dispatch/litellm/workers-litellm-config.yaml"),
     }
     for chart_name, (namespace, source) in expected.items():
         generated_namespace, data = generated[chart_name]
@@ -54,12 +54,6 @@ def test_runtime_resources_match_the_existing_litellm_manifests(tmp_path: Path) 
         ("Deployment", "tana-litellm"): "ducktape/cluster/k8s/litellm/tana/deployment.yaml",
         ("Service", "tana-litellm"): "ducktape/cluster/k8s/litellm/tana/service.yaml",
         ("HTTPRoute", "tana-litellm"): "ducktape/cluster/k8s/litellm/tana/httproute.yaml",
-        ("Deployment", "workers-litellm"): "ducktape/cluster/k8s/x/haku/dispatch/litellm/deployment.yaml",
-        ("Service", "workers-litellm"): "ducktape/cluster/k8s/x/haku/dispatch/litellm/service.yaml",
-        (
-            "CiliumNetworkPolicy",
-            "workers-litellm-zone-pods-only",
-        ): "ducktape/cluster/k8s/x/haku/dispatch/litellm/cnp-workers-litellm.yaml",
         ("ServiceMonitor", "litellm"): "ducktape/cluster/k8s/litellm/servicemonitor/servicemonitor.yaml",
     }
     for identity, source in expected.items():
