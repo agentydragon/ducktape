@@ -63,6 +63,7 @@ flowchart TB
     UISHELL_NEWTHREAD_SANDBOX["Planned UI<br/>pre-scoped '+ New thread' on a Sandbox's page<br/>Sandbox/preset already fixed"]:::future
     UISHELL_NEWTHREAD_LANDING["Planned UI<br/>sidebar '+' unscoped new-thread composer<br/>Sandbox/preset/model pickers + prompt"]:::future
     THREAD_COMMAND_DELIVERY["Planned backend<br/>reconcile durable Thread input to runner<br/>receipt/effect + crash recovery"]:::future
+    THREAD_REPLAY_PROTOCOL["Planned protocol<br/>one protobuf Command/Event language<br/>durable app-to-frontend replay"]:::future
     NEWTHREAD_DURABLE["Planned backend<br/>server-owned sandbox+thread provisioning<br/>must survive a browser close or app-server restart mid-submit"]:::future
     THREAD_OUTBOX_CUTOVER["Required cutover<br/>all product Thread commands via outbox<br/>retire direct session-command pushes"]:::future
     THREAD_SUCCESSOR_DELIVERY["Deferred decision<br/>unsettled Thread command across<br/>successor runner session"]:::future
@@ -83,8 +84,12 @@ flowchart TB
 
     INPUT_DELIVERY -. reliable Thread ingress .-> ING
     INPUT_DELIVERY --> THREAD_COMMAND_DELIVERY
-    THREAD_COMMAND_DELIVERY --> NEWTHREAD_DURABLE
+    THREAD_COMMAND_DELIVERY --> THREAD_REPLAY_PROTOCOL
+    THREAD_REPLAY_PROTOCOL --> NEWTHREAD_DURABLE
+    THREAD_REPLAY_PROTOCOL --> UISHELL_NEWTHREAD_SANDBOX
+    THREAD_REPLAY_PROTOCOL --> UISHELL_NEWTHREAD_LANDING
     THREAD_COMMAND_DELIVERY --> THREAD_OUTBOX_CUTOVER
+    THREAD_REPLAY_PROTOCOL --> THREAD_OUTBOX_CUTOVER
     CONTROL_STATE --> THREAD_OUTBOX_CUTOVER
     T3 -. product work .-> PROD
 
@@ -572,6 +577,31 @@ The harness-loss/Sandbox suspend-resume matrix, which keeps Kubernetes, runner, 
 continuation evidence separate, is in
 [Thread, runner, and harness layering](../docs/thread_layering.md#required-harness-loss-and-sandbox-lifecycle-cross-check).
 
+### `THREAD_REPLAY_PROTOCOL` — one protobuf language across the app boundary
+
+**Planned protocol:** frontend-to-app, app-to-runner, runner-to-app, and app-to-frontend
+reuse the generated runner `Command` and `Event` payloads. A browser submits a
+caller-minted `Command.command_id`; the app's transaction appends that exact `Command`
+to the Thread outbox, the reconciler sends that exact payload to the runner, and the app
+relays the runner's exact `Event` payload after durable copying. The app-to-frontend
+protocol adds only a typed `ThreadRecord` envelope for Thread identity, command ordinal
+or runner-session association, and a replay cursor. It does not add a frontend command
+body, a `ThreadCommandView` state vocabulary, or app-produced conversation items.
+
+The committed command record is the one app-specific boundary: it says the app has the
+command but the runner has not necessarily admitted it. `CommandReceived` remains a
+runner Event, so the frontend distinguishes awaiting runner admission from runner
+admitted by folding the replayed `Command` and `Event` records. The replay cursor is a
+lossless browser transport cursor, never a synthetic ordering across runner sessions;
+Kubernetes/Sandbox lifecycle stays separately provenanced operational state.
+
+**Acceptance evidence:** a fresh or reconnecting browser reconstructs normal and Raw
+Thread views using only typed replay records from PostgreSQL. Normal conversation cards
+are a pure frontend projection of runner Events; the pending queue is a pure fold of
+app-stored Commands plus runner receipts/effects. The raw view exposes the exact payload
+and provenance. No product route directly pushes a command to a runner, and no
+server-side UI projection or duplicated JSON command/event schema remains.
+
 ### `THREAD_OUTBOX_CUTOVER` — retire direct session-command pushes
 
 **Required cutover:** once `THREAD_COMMAND_DELIVERY` and `CONTROL_STATE` have their stated
@@ -580,6 +610,11 @@ evidence, every product Thread command—`SubmitInput`, `InterruptTurn`,
 The app's reconciler is then the only normal app component that writes that command to a runner.
 The full receipt/effect and pending-queue contract is [Thread, runner, and harness
 layering](../docs/thread_layering.md#command-protocol-intent-receipt-then-outcome).
+
+The product ingress is the generated protobuf `Command` at the Thread command route;
+the app-to-frontend replay uses the corresponding generated `Command` and `Event`
+payloads in its `ThreadRecord` envelope. Do not retain a frontend-specific input body or
+independently-maintained command-status protocol.
 
 Remove the direct session-command HTTP routes and their frontend helpers
 (`/sandboxes/{name}/sessions/{session_id}/inputs`, `interrupt`, `model`, and `shutdown`) in the
