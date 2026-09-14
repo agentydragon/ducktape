@@ -659,6 +659,17 @@ py_test(
 )
 
 py_test(
+    name = "test_haku_zones_deploy",
+    srcs = ["test_haku_zones_deploy.py"],
+    data = ["//haku/x/zones/deploy:manifests"],
+    deps = [
+        ":kustomize",
+        "//util/bazel:runfiles",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_agentplane_crd_schemas",
     srcs = ["test_agentplane_crd_schemas.py"],
     data = [

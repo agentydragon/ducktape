@@ -81,8 +81,8 @@ exports_files(
 
 # Just the central ClusterPolicy manifests, so a per-policy test is not
 # invalidated by every unrelated manifest in the cluster (same reasoning as the
-# contract filegroup below). The zone injector under x/haku/zones/policies is not
-# here on purpose — proxy_injection_policy_files already pins it by name.
+# contract filegroup below). The retired Haku zone injector lives with its package
+# under //haku/x/zones/deploy and is intentionally outside this active filegroup.
 filegroup(
     name = "kyverno_policy_files",
     srcs = glob(["kyverno/policies/*.yaml"]),

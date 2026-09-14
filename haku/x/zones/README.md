@@ -7,9 +7,9 @@ namespace + its egress perimeter + the harness + the Job templates that run ther
 level is a property of the zone — the zone's perimeter is what enforces what may enter a
 worker's context, never agent restraint. Jobs are dispatched _to a zone_.
 
-Design + trust model + the not-yet-built zones: <../../../../haku/archive/2026_08_multi_agent.md>.
-The dispatcher that stamps Jobs into these namespaces:
-<../dispatch/README.md>. Security contract: <../../../../haku/docs/security.md>.
+Design + trust model + the not-yet-built zones: <../../archive/2026_08_multi_agent.md>.
+The dispatcher that stamps Jobs into these namespaces: <../dispatch/README.md>.
+Security contract: <../../docs/security.md>.
 
 ## Former live zones
 
@@ -28,7 +28,7 @@ perimeter: namespace + ResourceQuota + LimitRange + a **no-grants worker Service
 nothing via the API, not even its own zone's secrets, only what its pod mounts).
 
 Egress is forced through the shared **`haku-zones-mitmproxy`**
-(`cluster/k8s/x/agents/haku-zones-mitmproxy/`) — the `haku-egress-proxy` pattern minus the
+(`deploy/proxy/`) — the `haku-egress-proxy` pattern minus the
 Google FQDNs, with a clusterwide policy carrying **no `toEntities: cluster` and no
 kube-apiserver** (much tighter than `haku-sandbox`'s fence). The proxy's own egress CNP is
 the FQDN allowlist: v1 = git hosting (`github.com` + friends) + package indexes

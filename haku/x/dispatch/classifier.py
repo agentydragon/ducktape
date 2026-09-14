@@ -2,7 +2,7 @@
 
 The verdict is forced through a tool call so the response parses into a typed
 ClassifierVerdict — no free-text parsing. The base prompt is reviewed like code:
-it IS the zai-zone admission policy (cluster/k8s/x/haku/zones/README.md).
+it IS the zai-zone admission policy (haku/x/zones/README.md).
 
 The classifier judges only the prompt text — it cannot verify who the operator
 is, what repos are private, or what lives in the operator's notes. The base
