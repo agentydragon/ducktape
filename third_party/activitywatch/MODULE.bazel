@@ -13,7 +13,7 @@ bazel_dep(name = "rules_rust", version = "0.74.0")
 
 # Node.js toolchain
 node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node")
-node.toolchain(node_version = "22.11.0")  # LTS 'Jod'
+node.toolchain(node_version = "22.22.2")  # LTS 'Jod'
 
 # Pin pnpm v9 to match pnpm-lock.yaml's lockfileVersion 9 format.
 pnpm = use_extension("@aspect_rules_js//npm:extensions.bzl", "pnpm")

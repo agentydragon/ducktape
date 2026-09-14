@@ -526,7 +526,7 @@ use_repo(playwright, playwright_browsers = "playwright")
 
 # Node.js toolchain
 node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node")
-node.toolchain(node_version = "22.11.0")  # LTS 'Jod'
+node.toolchain(node_version = "22.22.2")  # LTS 'Jod'
 
 # TypeScript toolchain for ts_project (//devinfra/js:ts_library.bzl). The bazel_dep alone
 # yields nothing — @npm_typescript does not exist until this extension is used. Version follows
@@ -1031,14 +1031,14 @@ http_archive(
     urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.12.1/firecracker-v1.12.1-x86_64.tgz"],
 )
 
-# Node.js v22.11.0 LTS linux-x64 — provides the hermetic Node runtime used by
+# Node.js v22.22.2 LTS linux-x64 — provides the hermetic Node runtime used by
 # development tooling and JavaScript tests.
 http_archive(
     name = "nodejs_linux_amd64",
     build_file_content = 'exports_files(["bin/node"], visibility = ["//visibility:public"])\n',
-    sha256 = "4f862bab52039835efbe613b532238b6e4dde98d139a34e6923193e073438b13",
-    strip_prefix = "node-v22.11.0-linux-x64",
-    urls = ["https://nodejs.org/dist/v22.11.0/node-v22.11.0-linux-x64.tar.gz"],
+    sha256 = "978978a635eef872fa68beae09f0aad0bbbae6757e444da80b570964a97e62a3",
+    strip_prefix = "node-v22.22.2-linux-x64",
+    urls = ["https://nodejs.org/dist/v22.22.2/node-v22.22.2-linux-x64.tar.gz"],
 )
 
 # Crane binary for OCI image push/pull in agent containers and tests.
