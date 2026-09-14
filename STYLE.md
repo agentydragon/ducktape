@@ -242,10 +242,15 @@ py_binary(
 )
 ```
 
-- **`test_*.py` / `*_test.py` filenames are reserved for `py_test` targets.** Shared
-  test helpers live in `<pkg>/testing/` packages (`default_testonly`), never in
-  test-glob-named files; a non-test file whose glob-matching name is part of an
-  external contract gets `# gazelle:exclude`.
+- **Shared test support belongs in `<pkg>/testing/` packages.** Fixtures, mocks,
+  harnesses, and helper modules get `package(default_testonly = True)` (or an
+  explicit `testonly = True` when the package has mixed ownership). The two
+  exceptions are package `conftest.py` files and actual test-target mains such
+  as `test_some_component.py`; keep those adjacent to the tests they serve.
+  A non-test file whose glob-matching name is part of an external contract gets
+  `# gazelle:exclude`.
+- **`test_*.py` / `*_test.py` filenames are reserved for `py_test` targets.** Do
+  not use test-glob-named files for shared support code.
 - **`conftest.py` never appears in `py_test.srcs`**: the plugin generates a
   per-package `:conftest` library and deps each test on the whole ancestor conftest
   chain (including `//:conftest`).
