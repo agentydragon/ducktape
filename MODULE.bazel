@@ -202,6 +202,18 @@ oci.pull(
     tag = "trixie-slim",
 )
 
+# LiteLLM's upstream image includes the proxy runtime's Prisma client,
+# generated query engine, Node.js, and startup entrypoint. The Tana image
+# layers our provider source onto this database-capable image rather than
+# rebuilding that runtime from the Python wheel alone.
+oci.pull(
+    name = "litellm_upstream",
+    digest = "sha256:d85c0b36e2fdd64719e7fc2692431cd5aee0814925e96c2892d1491b13189c23",
+    image = "mirror.gcr.io/litellm/litellm",
+    platforms = ["linux/amd64"],
+    tag = "1.100.1",
+)
+
 # Test infrastructure: PostgreSQL for Testcontainers (match production version)
 oci.pull(
     name = "postgres_18",
@@ -312,7 +324,7 @@ oci.pull(
     platforms = ["linux/amd64"],
     tag = "v0.16.22",
 )
-use_repo(oci, "debian_trixie_slim", "debian_trixie_slim_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "grocy", "grocy_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "nginx_unprivileged", "nginx_unprivileged_linux_amd64", "pgvector_pg18", "pgvector_pg18_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "python_3_14_slim", "python_3_14_slim_linux_amd64", "registry_3", "registry_3_linux_amd64", "ryuk", "ryuk_linux_amd64", "stalwart", "stalwart_linux_amd64", "talos_imager", "talos_imager_linux_amd64")
+use_repo(oci, "debian_trixie_slim", "debian_trixie_slim_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "grocy", "grocy_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "litellm_upstream", "litellm_upstream_linux_amd64", "nginx_unprivileged", "nginx_unprivileged_linux_amd64", "pgvector_pg18", "pgvector_pg18_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "python_3_14_slim", "python_3_14_slim_linux_amd64", "registry_3", "registry_3_linux_amd64", "ryuk", "ryuk_linux_amd64", "stalwart", "stalwart_linux_amd64", "talos_imager", "talos_imager_linux_amd64")
 
 # Container image pins from devinfra/image_pins.json.
 # - Generates @image_pins//:pins.bzl with NAME_IMAGE / NAME_DIGEST constants
