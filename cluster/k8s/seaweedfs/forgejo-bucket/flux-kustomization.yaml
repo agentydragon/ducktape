@@ -15,14 +15,13 @@ spec:
   dependsOn:
     - name: seaweedfs-cluster
       namespace: ducktape-flux
-  # Legacy owner retained during the Forgejo storage ownership handoff. The
-  # new Forgejo Kustomization owns the replacement Secret and adopted Bucket;
-  # this legacy Kustomization must not block that rollout on its old failed
-  # S3Credentials resource. Cleanup follows live verification.
-  wait: false
+  # The Bucket and S3Credentials moved to the Forgejo Kustomization and were
+  # live-verified there. Keep this small Kustomization for the cluster-global
+  # S3Identity that the namespaced S3Credentials references.
+  wait: true
   timeout: 5m
   healthChecks:
     - apiVersion: seaweed.seaweedfs.com/v1
-      kind: Bucket
+      kind: S3Identity
       name: forgejo
       namespace: seaweedfs
