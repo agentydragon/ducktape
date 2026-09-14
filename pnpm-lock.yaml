@@ -48,8 +48,8 @@ importers:
         specifier: ^6.43.11
         version: 6.43.11
       '@humanspeak/svelte-markdown':
-        specifier: ^1.0.0
-        version: 1.9.0(svelte@5.57.0(@typescript-eslint/types@8.70.0))
+        specifier: ^1.9.1
+        version: 1.9.1(svelte@5.57.0(@typescript-eslint/types@8.70.0))
       '@lezer/highlight':
         specifier: ^1.2.3
         version: 1.2.3
@@ -296,8 +296,8 @@ importers:
         specifier: ^0.6.3
         version: 0.6.3(svelte@5.57.0(@typescript-eslint/types@8.70.0))
       '@humanspeak/svelte-markdown':
-        specifier: ^1.0.0
-        version: 1.9.0(svelte@5.57.0(@typescript-eslint/types@8.70.0))
+        specifier: ^1.9.1
+        version: 1.9.1(svelte@5.57.0(@typescript-eslint/types@8.70.0))
       chart.js:
         specifier: ^4.4.8
         version: 4.5.1
@@ -899,8 +899,8 @@ packages:
     resolution: {integrity: sha512-im7GIIpgjdD6Fx68xCeiXw3XiDv30/WMRAaodMm+ep0ptYfEUd0cdNeTAylHGIRTJIeByKFHdTmPjAktyDM/JQ==}
     engines: {node: '>=20.19.0'}
 
-  '@humanspeak/svelte-markdown@1.9.0':
-    resolution: {integrity: sha512-WytdiOhUkUjSgXZNs3a7fg8Dwko/4XhKyDVB3lzkpqFEaotaL1Dtg8fz6Rg+ThVJoM2/UDmEtX3avTQON2IxKw==}
+  '@humanspeak/svelte-markdown@1.9.1':
+    resolution: {integrity: sha512-2JjpATdZfhGQurV38LtkUkPkyQzM7eXku6LoDBeK6i69qqOe0OLmMwpqtMnhwG3ItdxXOt/3miPbSaNTFqMl5Q==}
     engines: {node: '>=22'}
     peerDependencies:
       katex: '>=0.16.0'
@@ -5244,7 +5244,7 @@ snapshots:
 
   '@humanspeak/memory-cache@1.2.0': {}
 
-  '@humanspeak/svelte-markdown@1.9.0(svelte@5.57.0(@typescript-eslint/types@8.70.0))':
+  '@humanspeak/svelte-markdown@1.9.1(svelte@5.57.0(@typescript-eslint/types@8.70.0))':
     dependencies:
       '@humanspeak/memory-cache': 1.2.0
       github-slugger: 2.0.0
