@@ -3,7 +3,7 @@ load("@rules_tf//tf:def.bzl", "tf_module", "tf_providers_versions")
 tf_providers_versions(
     name = "providers",
     providers = {
-        "kubernetes": "hashicorp/kubernetes:~>2.35",
+        "kubernetes": "hashicorp/kubernetes:~>3.0",
         "github": "integrations/github:~>6.6",
         "random": "hashicorp/random:~>3.9.0",
     },
