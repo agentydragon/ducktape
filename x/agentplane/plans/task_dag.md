@@ -62,6 +62,7 @@ flowchart TB
     UISHELL_DRAWER["Planned UI<br/>pending-approval badge + drawer<br/>global subscription, non-modal"]:::future
     UISHELL_NEWTHREAD_SANDBOX["Planned UI<br/>pre-scoped '+ New thread' on a Sandbox's page<br/>Sandbox/preset already fixed"]:::future
     UISHELL_NEWTHREAD_LANDING["Planned UI<br/>sidebar '+' unscoped new-thread composer<br/>Sandbox/preset/model pickers + prompt"]:::future
+    THREAD_COMMAND_DELIVERY["Planned backend<br/>reconcile durable Thread input to runner<br/>receipt/effect + crash recovery"]:::future
     NEWTHREAD_DURABLE["Planned backend<br/>server-owned sandbox+thread provisioning<br/>must survive a browser close or app-server restart mid-submit"]:::future
     THREAD_OUTBOX_CUTOVER["Required cutover<br/>all product Thread commands via outbox<br/>retire direct session-command pushes"]:::future
     THREAD_SUCCESSOR_DELIVERY["Deferred decision<br/>unsettled Thread command across<br/>successor runner session"]:::future
@@ -81,8 +82,9 @@ flowchart TB
     AG -. hosted Thread lifecycle .-> RETIRE_AGENT
 
     INPUT_DELIVERY -. reliable Thread ingress .-> ING
-    INPUT_DELIVERY --> THREAD_OUTBOX_CUTOVER
-    NEWTHREAD_DURABLE --> THREAD_OUTBOX_CUTOVER
+    INPUT_DELIVERY --> THREAD_COMMAND_DELIVERY
+    THREAD_COMMAND_DELIVERY --> NEWTHREAD_DURABLE
+    THREAD_COMMAND_DELIVERY --> THREAD_OUTBOX_CUTOVER
     CONTROL_STATE --> THREAD_OUTBOX_CUTOVER
     T3 -. product work .-> PROD
 
@@ -126,7 +128,7 @@ Haku Console migration is split: Agent/conversation management and tool-call/app
 can retire on different schedules after their respective replacement surfaces exist.
 
 The session-first UI shell (`UISHELL_DRAWER`, `UISHELL_NEWTHREAD_SANDBOX`,
-`UISHELL_NEWTHREAD_LANDING`, `NEWTHREAD_DURABLE`, `THREAD_OUTBOX_CUTOVER`, `THREAD_SUCCESSOR_DELIVERY`, `UISHELL_SIDEBAR_LIVE`, `UISHELL_SIDEBAR_ALL_SANDBOXES`,
+`UISHELL_NEWTHREAD_LANDING`, `THREAD_COMMAND_DELIVERY`, `NEWTHREAD_DURABLE`, `THREAD_OUTBOX_CUTOVER`, `THREAD_SUCCESSOR_DELIVERY`, `UISHELL_SIDEBAR_LIVE`, `UISHELL_SIDEBAR_ALL_SANDBOXES`,
 `UISHELL_SIDEBAR_SANDBOX_LINK`, `UISHELL_NEWSANDBOX_NAV`, `THREAD_BROWSE_PAGINATE`) is a separate
 frontend-ergonomics track: it is not gated by, and does not gate, the Action Service milestones
 above. `UISHELL_NEWTHREAD_SANDBOX` and `UISHELL_NEWTHREAD_LANDING` can each ship a working happy-path
@@ -450,6 +452,27 @@ received. No acknowledgement, retry, steering, cancellation, or completion may b
 runner. Keep unsupported operations native or explicitly unavailable. **Deferred:** generic queue
 management and unproven per-input cancellation.
 
+### `THREAD_COMMAND_DELIVERY` — deliver existing-Thread input through the outbox
+
+**Immediate backend step:** the persistence-only Thread command outbox is allowed to land first,
+but it is not yet a product command ingress. Build a multi-replica reconciler for an existing
+Thread's current Sandbox and runner session: take the oldest eligible `SubmitInput`, deliver its
+stable command id, ingest the runner's receipt/effect/no-op/rejection Events, and recover without
+duplicate native input after app-replica crash, runner reconnect, or browser reload. The runner's
+session-scoped Event sequence already survives runner-process restarts; this item does not add a
+successor runner session or a second Event sequence to a Thread.
+
+Do not add a normal command HTTP/UI entrypoint that merely writes an unconsumed outbox row. The
+existing direct session command path remains only until this reconciler has an end-to-end
+`SubmitInput` path; the combined new Sandbox+Thread request is explicitly downstream in
+`NEWTHREAD_DURABLE`, not an alternate way to test or bypass delivery.
+
+Acceptance covers an existing running Thread and an existing suspended/resumed Sandbox separately:
+the app persists the input before delivery, retries the same id after each failure window, and
+shows the exact runner-authoritative receipt/effect state after reload. It uses the behavior
+evidence from `INPUT_DELIVERY`; it does not make model-change or interrupt controls generally
+available before their own gate.
+
 ### `PROD` — production-capable governed action execution
 
 **Milestone:** a production Agentplane instance, distinct from staging, governing Actions for real
@@ -531,10 +554,11 @@ question, not decided.
 
 ### `NEWTHREAD_DURABLE` — server-owned sandbox+thread provisioning
 
-**Planned backend:** implement the Thread-command outbox and reconciler in
-[Thread, runner, and harness layering](../docs/thread_layering.md). The new-Thread transaction
-must atomically mint the Thread identity, persist its Sandbox target/session plan, and append its
-first Thread command. Any replica must resume reconciliation after the browser or another replica
+**Prerequisite:** `THREAD_COMMAND_DELIVERY`. The combined start is an extension of a working
+existing-Thread outbox path, not a persistence-only feature. Its transaction must atomically mint
+the Thread identity, persist its Sandbox target/session plan, and append its first Thread command;
+the same reconciler then materializes/selects the target, establishes the runner session, and
+delivers that command. Any replica must resume reconciliation after the browser or another replica
 disappears; Kubernetes remains the Sandbox lifecycle authority and the runner remains the command
 receipt/effect authority.
 
@@ -550,8 +574,8 @@ continuation evidence separate, is in
 
 ### `THREAD_OUTBOX_CUTOVER` — retire direct session-command pushes
 
-**Required cutover:** once `INPUT_DELIVERY`, `NEWTHREAD_DURABLE`, and `CONTROL_STATE` have
-their stated evidence, every product Thread command—`SubmitInput`, `InterruptTurn`,
+**Required cutover:** once `THREAD_COMMAND_DELIVERY` and `CONTROL_STATE` have their stated
+evidence, every product Thread command—`SubmitInput`, `InterruptTurn`,
 `ChangeModel`, and `StopRunnerSession`—first commits a `ThreadCommand` to the durable outbox.
 The app's reconciler is then the only normal app component that writes that command to a runner.
 The full receipt/effect and pending-queue contract is [Thread, runner, and harness

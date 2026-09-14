@@ -307,16 +307,22 @@ delivery retry, or inferred completion in local state.
 
 ## Implementation sequence
 
-1. Normalize Thread identity versus runner-session association and migrate copied
-   Event/feed storage.
-2. Implement the atomic Thread/outbox write and multi-replica reconciler for new and
-   existing Sandbox targets.
-3. Ship the additive unified composer and durable pending-command queue; preserve
+1. Normalize Thread identity versus runner-session association and persist the command outbox.
+   Keep a Thread on one durable runner session at first: that session's Event sequence survives
+   runner-process restart and reconnect, so successor-session Event segments are not an initial
+   delivery prerequisite.
+2. Prove native input behavior, then implement the multi-replica outbox reconciler for an
+   existing Thread/Sandbox/runner session. It delivers the stable input id and persists only
+   runner-authoritative receipt/effect/no-op/rejection Events.
+3. Extend that working path to atomically create a Thread, select or create its Sandbox target,
+   establish the planned runner session, and deliver its first outbox command. Do not expose a
+   combined Sandbox+Thread start on the persistence-only foundation.
+4. Ship the additive unified composer and durable pending-command queue; preserve
    manual Sandbox/session surfaces.
-4. Add controls through the same outbox only after their per-harness receipt/effect
+5. Add controls through the same outbox only after their per-harness receipt/effect
    recovery gates pass.
-5. Decide and implement successor-session delivery only after the deferred native
-   continuation evidence exists.
+6. Decide and implement successor-session delivery, including per-association Event segments,
+   only after the deferred native continuation evidence exists.
 
 ### Product command cutover
 
