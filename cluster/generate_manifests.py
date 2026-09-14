@@ -130,24 +130,22 @@ def _codex_model_info(model: str) -> dict[str, int]:
 
 
 def _cliproxy_entries() -> list[dict]:
-    entries: list[dict] = []
-    for shape, provider_model, api_base, mode in (
-        (ApiShape.ANT_MESSAGES, "anthropic", _CLIPROXY_BASE, "chat"),
-        (ApiShape.OAI_RESPONSES, "openai", f"{_CLIPROXY_BASE}/v1", "responses"),
-    ):
-        entries.extend(
-            _model_entry(
-                exposed_name(Provider.CHATGPT, shape, model),
-                f"{provider_model}/{model}",
-                mode,
-                api_base=api_base,
-                api_key="os.environ/CLIPROXY_CLIENT_KEY",
-                supports_function_calling=True,
-                model_info=_codex_model_info(model),
-            )
-            for model in CLIPROXY_MODELS
+    return [
+        _model_entry(
+            exposed_name(Provider.CHATGPT, shape, model),
+            f"{provider_model}/{model}",
+            mode,
+            api_base=api_base,
+            api_key="os.environ/CLIPROXY_CLIENT_KEY",
+            supports_function_calling=True,
+            model_info=_codex_model_info(model),
         )
-    return entries
+        for shape, provider_model, api_base, mode in (
+            (ApiShape.ANT_MESSAGES, "anthropic", _CLIPROXY_BASE, "chat"),
+            (ApiShape.OAI_RESPONSES, "openai", f"{_CLIPROXY_BASE}/v1", "responses"),
+        )
+        for model in CLIPROXY_MODELS
+    ]
 
 
 def _tana_entries() -> list[dict]:
