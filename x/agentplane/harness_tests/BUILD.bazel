@@ -1,22 +1,27 @@
 load("//devinfra/python:defs.bzl", "py_library")
 
-package(default_visibility = ["//x/agentplane:__subpackages__"])
+package(
+    default_testonly = True,
+    default_visibility = ["//x/agentplane:__subpackages__"],
+)
 
 py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
-        ":scripted_upstream",
-        "//x/agentplane/native:process",
+        "//util/testing:undeclared_outputs",
         "@pypi//pytest",
     ],
 )
 
 py_library(
-    name = "scripted_upstream",
-    testonly = True,
-    srcs = ["scripted_upstream.py"],
+    name = "model_endpoint",
+    srcs = ["model_endpoint.py"],
+    deps = [
+        "@pypi//aiohttp",
+        "@pypi//pydantic",
+    ],
 )
 
 test_suite(

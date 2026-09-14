@@ -1,11 +1,19 @@
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
 from pathlib import Path
 
 import pytest
 
 from util.bazel.runfiles import get_required_path
 from x.agentplane.harness_tests.claude.harness import ClaudeHarness
+from x.agentplane.harness_tests.claude.messages import AnthropicMessages
+
+
+@pytest.fixture
+async def anthropic_messages() -> AsyncGenerator[AnthropicMessages]:
+    async with AnthropicMessages() as endpoint:
+        yield endpoint
 
 
 @pytest.fixture

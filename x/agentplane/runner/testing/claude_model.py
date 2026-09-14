@@ -6,8 +6,9 @@ import itertools
 
 from x.agentplane.harness_tests.claude import anthropic_sse as sse
 from x.agentplane.harness_tests.claude.harness import MODEL
+from x.agentplane.harness_tests.claude.messages import AnthropicMessages
 from x.agentplane.harness_tests.claude.requests import MessagesRequest
-from x.agentplane.harness_tests.scripted_upstream import ScriptedUpstream, Stream, UpstreamRequest
+from x.agentplane.harness_tests.model_endpoint import ModelExchange, SseEvent
 from x.agentplane.runner.testing.scripted_model import (
     Item,
     ModelRequest,
@@ -21,14 +22,18 @@ from x.agentplane.runner.testing.scripted_model import (
 _signatures = (f"sig_test_{n}" for n in itertools.count(1))
 
 
-class ClaudeModel(ScriptedModel):
-    def __init__(self, upstream: ScriptedUpstream) -> None:
-        super().__init__(upstream, model=MODEL)
+class ClaudeModel(ScriptedModel[MessagesRequest]):
+    def __init__(self, endpoint: AnthropicMessages) -> None:
+        super().__init__(model=MODEL)
+        self.endpoint = endpoint
 
-    def parse(self, raw: UpstreamRequest) -> ModelRequest:
-        request = MessagesRequest.parse(raw)
+    async def next_exchange(self) -> ModelExchange[MessagesRequest]:
+        return await self.endpoint.await_next_request()
+
+    def parse(self, exchange: ModelExchange[MessagesRequest]) -> ModelRequest[MessagesRequest]:
+        request = exchange.request
         return ModelRequest(
-            raw=raw,
+            _exchange=exchange,
             model=request.model,
             system_text=request.system_text,
             # Claude Code adds `<system-reminder>` blocks of its own to the user turn on a resumed
@@ -40,11 +45,11 @@ class ClaudeModel(ScriptedModel):
             streaming=request.stream,
         )
 
-    def stream(self, items: list[Item]) -> Stream:
-        return sse.message_stream([_block(item) for item in items], model=self.model)
+    def stream(self, items: list[Item]) -> tuple[SseEvent, ...]:
+        return sse.message_stream([_block(item) for item in items], model=self.model).events
 
-    def opened_stream(self) -> Stream:
-        return sse.message_stream([sse.Text("never finished")], model=self.model).until("content_block_start").held()
+    def opened_stream(self) -> tuple[SseEvent, ...]:
+        return sse.message_stream([sse.Text("never finished")], model=self.model).through("content_block_start").events
 
 
 def _block(item: Item) -> sse.Block:

@@ -6,7 +6,6 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
-from x.agentplane.harness_tests.scripted_upstream import UpstreamRequest
 from x.agentplane.native.claude.blocks import TextBlock, ThinkingBlock, ToolResultBlock, ToolUseBlock
 
 ContentBlock = Annotated[TextBlock | ThinkingBlock | ToolUseBlock | ToolResultBlock, Field(discriminator="type")]
@@ -36,10 +35,6 @@ class MessagesRequest(BaseModel):
     messages: list[Message]
     tools: list[Tool] = []
     thinking: ThinkingConfig
-
-    @classmethod
-    def parse(cls, request: UpstreamRequest) -> MessagesRequest:
-        return cls.model_validate(request.json)
 
     @property
     def tool_names(self) -> list[str]:

@@ -159,7 +159,7 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
                 json={"commandId": "input-1", "submitInput": {"text": "Reply with exactly: BRIDGE_OK"}},
             )
             assert accepted.status_code == 202, accepted.text
-            model.reply(await model.request(), Text("BRIDGE_OK"))
+            await model.reply(await model.request(), Text("BRIDGE_OK"))
             seen = await read_until(first, "turnCompleted")
             # Every runner event, in order, from the start of the session's log: replay and live alike.
             assert [message.id for message in seen] == list(range(1, len(seen) + 1))
@@ -179,7 +179,7 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
                     json={"commandId": "input-2", "submitInput": {"text": "Reply with exactly: BRIDGE_TWO"}},
                 )
                 assert accepted.status_code == 202, accepted.text
-                model.reply(await model.request(), Text("BRIDGE_TWO"))
+                await model.reply(await model.request(), Text("BRIDGE_TWO"))
                 on_first, on_second = await asyncio.gather(
                     read_until(first, "turnCompleted"), read_until(second, "turnCompleted")
                 )
@@ -216,7 +216,6 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
         ]
         assert any("native" in event for event in stored)
         assert (await http.get(f"/threads/{thread['id']}")).json()["last_sequence"] == len(stored)
-    model.assert_quiescent()
 
 
 async def _stored_events(http: httpx.AsyncClient, thread_id: str, *, until: str) -> list[dict[str, Any]]:
@@ -245,7 +244,7 @@ async def test_the_feed_records_a_turn_nobody_is_watching(
             json={"commandId": "input-1", "submitInput": {"text": "Reply with exactly: UNWATCHED_OK"}},
         )
         assert accepted.status_code == 202, accepted.text
-        model.reply(await model.request(), Text("UNWATCHED_OK"))
+        await model.reply(await model.request(), Text("UNWATCHED_OK"))
         (thread,) = (await http.get("/threads")).json()
         stored = await _stored_events(http, thread["id"], until="turnCompleted")
         assert [event["itemCompleted"]["text"] for event in stored if "itemCompleted" in event] == ["UNWATCHED_OK"]
@@ -255,7 +254,6 @@ async def test_the_feed_records_a_turn_nobody_is_watching(
             )
         ).status_code == 202
         assert (await http.get("/threads/00000000-0000-0000-0000-000000000000/events")).status_code == 404
-    model.assert_quiescent()
 
 
 async def test_the_bridge_reports_what_the_runner_refuses(app_url: str) -> None:
@@ -313,7 +311,7 @@ async def test_replica_commands_and_database_stream_survive_ingestion_owner_exit
         await replicas.survivor.command(
             SANDBOX, SESSION, pb.Command(command_id="input-1", submit_input=pb.SubmitInput(text="FIRST_REPLICA_TURN"))
         )
-        model.reply(await model.request(), Text("FIRST_REPLICA_TURN"))
+        await model.reply(await model.request(), Text("FIRST_REPLICA_TURN"))
         async with asyncio.timeout(10):
             first = await read_until(lines, "turnCompleted")
 
@@ -322,7 +320,7 @@ async def test_replica_commands_and_database_stream_survive_ingestion_owner_exit
         )
         request = await model.request()
         await replicas.owner.close()
-        model.reply(request, Text("AFTER_OWNER_EXIT"))
+        await model.reply(request, Text("AFTER_OWNER_EXIT"))
         async with asyncio.timeout(10):
             second = await read_until(lines, "turnCompleted")
         seen = [*first, *second]
@@ -337,7 +335,6 @@ async def test_replica_commands_and_database_stream_survive_ingestion_owner_exit
         async with asyncio.timeout(10):
             await read_until(lines, "harnessExited")
             assert (await next_message(lines)).event == "end"
-    model.assert_quiescent()
 
 
 async def test_inventory_change_discovers_existing_runner_session_without_browser_open(
@@ -388,7 +385,6 @@ async def test_inventory_change_discovers_existing_runner_session_without_browse
     finally:
         await bridge.close()
         await client.close()
-    model.assert_quiescent()
 
 
 async def test_resumed_session_stream_does_not_end_at_previous_shutdown(
@@ -398,7 +394,7 @@ async def test_resumed_session_stream_does_not_end_at_previous_shutdown(
     await replicas.survivor.command(
         SANDBOX, SESSION, pb.Command(command_id="seed-input", submit_input=pb.SubmitInput(text="BEFORE_RESUME"))
     )
-    model.reply(await model.request(), Text("BEFORE_RESUME"))
+    await model.reply(await model.request(), Text("BEFORE_RESUME"))
     async with aclosing(replicas.survivor.events(SANDBOX, SESSION, after_sequence=0)) as frames:
         async with asyncio.timeout(10):
             await read_until(frame_lines(frames), "turnCompleted")
@@ -422,7 +418,7 @@ async def test_resumed_session_stream_does_not_end_at_previous_shutdown(
             SESSION,
             pb.Command(command_id="resumed-input", submit_input=pb.SubmitInput(text="RESUMED_REPLICA")),
         )
-        model.reply(await model.request(), Text("RESUMED_REPLICA"))
+        await model.reply(await model.request(), Text("RESUMED_REPLICA"))
         async with asyncio.timeout(10):
             resumed = await read_until(lines, "turnCompleted")
         assert all(message.event == "event" for message in resumed)
@@ -431,7 +427,6 @@ async def test_resumed_session_stream_does_not_end_at_previous_shutdown(
         await replicas.survivor.stop_runner_session(
             SANDBOX, SESSION, pb.Command(command_id="stop-after-resume", stop_runner_session=pb.StopRunnerSession())
         )
-    model.assert_quiescent()
 
 
 async def test_stored_conversation_stream_does_not_require_reachable_runner(

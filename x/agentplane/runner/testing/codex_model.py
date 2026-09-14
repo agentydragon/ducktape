@@ -7,7 +7,8 @@ import itertools
 from x.agentplane.harness_tests.codex import responses_sse as sse
 from x.agentplane.harness_tests.codex.harness import MODEL
 from x.agentplane.harness_tests.codex.requests import ResponsesRequest
-from x.agentplane.harness_tests.scripted_upstream import ScriptedUpstream, Stream, UpstreamRequest
+from x.agentplane.harness_tests.codex.responses import OpenAIResponses
+from x.agentplane.harness_tests.model_endpoint import ModelExchange, SseEvent
 from x.agentplane.runner.testing.scripted_model import (
     Item,
     ModelRequest,
@@ -21,14 +22,18 @@ from x.agentplane.runner.testing.scripted_model import (
 _encrypted = (f"enc_test_{n}" for n in itertools.count(1))
 
 
-class CodexModel(ScriptedModel):
-    def __init__(self, upstream: ScriptedUpstream) -> None:
-        super().__init__(upstream, model=MODEL)
+class CodexModel(ScriptedModel[ResponsesRequest]):
+    def __init__(self, endpoint: OpenAIResponses) -> None:
+        super().__init__(model=MODEL)
+        self.endpoint = endpoint
 
-    def parse(self, raw: UpstreamRequest) -> ModelRequest:
-        request = ResponsesRequest.parse(raw)
+    async def next_exchange(self) -> ModelExchange[ResponsesRequest]:
+        return await self.endpoint.await_next_request()
+
+    def parse(self, exchange: ModelExchange[ResponsesRequest]) -> ModelRequest[ResponsesRequest]:
+        request = exchange.request
         return ModelRequest(
-            raw=raw,
+            _exchange=exchange,
             model=request.model,
             system_text="\n".join([request.instructions, *(message.text for message in request.messages("developer"))]),
             user_texts=[message.text for message in request.messages("user")],
@@ -38,11 +43,11 @@ class CodexModel(ScriptedModel):
             streaming=request.stream,
         )
 
-    def stream(self, items: list[Item]) -> Stream:
-        return sse.response_stream([_item(item) for item in items], model=self.model)
+    def stream(self, items: list[Item]) -> tuple[SseEvent, ...]:
+        return sse.response_stream([_item(item) for item in items], model=self.model).events
 
-    def opened_stream(self) -> Stream:
-        return sse.response_stream([sse.Message("never finished")], model=self.model).until("response.created").held()
+    def opened_stream(self) -> tuple[SseEvent, ...]:
+        return sse.response_stream([sse.Message("never finished")], model=self.model).through("response.created").events
 
 
 def _item(item: Item) -> sse.Item:

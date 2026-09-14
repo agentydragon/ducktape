@@ -9,6 +9,16 @@ py_library(
 )
 
 py_library(
+    name = "async_process",
+    testonly = True,
+    srcs = ["async_process.py"],
+    deps = [
+        ":process",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "tagged",
     srcs = ["tagged.py"],
 )

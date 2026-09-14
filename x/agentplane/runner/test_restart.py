@@ -14,7 +14,8 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from x.agentplane.harness_tests.scripted_upstream import ScriptedUpstream
+from x.agentplane.harness_tests.claude.messages import AnthropicMessages
+from x.agentplane.harness_tests.codex.responses import OpenAIResponses
 from x.agentplane.runner import protocol_pb2 as pb
 from x.agentplane.runner.client import RunnerClient
 from x.agentplane.runner.testing import events, launches
@@ -79,7 +80,7 @@ async def _exited(pid: int) -> None:
 
 @pytest.fixture
 async def start_runner(
-    harness: pb.Harness.ValueType, upstream: ScriptedUpstream, tmp_path: Path
+    harness: pb.Harness.ValueType, endpoint: AnthropicMessages | OpenAIResponses, tmp_path: Path
 ) -> AsyncIterator[Callable[..., Awaitable[RunnerProcess]]]:
     started: list[RunnerProcess] = []
 
@@ -94,7 +95,7 @@ async def start_runner(
         }
         process = await asyncio.create_subprocess_exec(
             *launches.runner_command(
-                harness, upstream, state_dir=tmp_path / "state", test_debug_checkpoint=test_debug_checkpoint
+                harness, endpoint.origin, state_dir=tmp_path / "state", test_debug_checkpoint=test_debug_checkpoint
             ),
             env=environment,
             stdout=asyncio.subprocess.PIPE,
@@ -120,7 +121,7 @@ async def test_a_restarted_runner_reports_the_loss_and_resumes_the_conversation(
     first = await client.attach("restart-1", spec=spec)
     await first.send("input-1", "Reply with exactly: SEED_OK")
     request = await model.request()
-    model.reply(request, Text("SEED_OK"))
+    await model.reply(request, Text("SEED_OK"))
     await first.until(events.turn_completed)
     await first.detach()
     await first.drain_until_end()
@@ -140,14 +141,13 @@ async def test_a_restarted_runner_reports_the_loss_and_resumes_the_conversation(
     request = await model.request()
     assert request.user_texts == ["Reply with exactly: SEED_OK", "Reply with exactly: RESUMED_OK"]
     assert request.assistant_texts == ["SEED_OK"]
-    model.reply(request, Text("RESUMED_OK"))
+    await model.reply(request, Text("RESUMED_OK"))
     done = await second.until(events.turn_completed)
     assert done.turn_completed.status == pb.TURN_STATUS_COMPLETED
     events.assert_contiguous([*first.seen, *second.seen])
     await second.stop_runner_session("stop-after-crash")
     await second.drain_until_end()
     await client.close()
-    model.assert_quiescent()
 
 
 async def test_crash_after_runner_receipt_before_native_dispatch_retries_once(
@@ -168,7 +168,7 @@ async def test_crash_after_runner_receipt_before_native_dispatch_retries_once(
     # harness's first-thread bootstrap contract.
     await first.send("seed-before-retry", "Reply with exactly: RETRY_SEED_OK")
     seed_request = await model.request()
-    model.reply(seed_request, Text("RETRY_SEED_OK"))
+    await model.reply(seed_request, Text("RETRY_SEED_OK"))
     await first.until(events.turn_completed)
     await first.send(command_id, "Reply with exactly: RETRIED_ONCE_OK")
     await first.until(events.is_kind("command_received"))
@@ -185,15 +185,14 @@ async def test_crash_after_runner_receipt_before_native_dispatch_retries_once(
     second = await client.attach("restart-retry-1", spec=spec, after_sequence=first.cursor)
     request = await model.request()
     assert request.user_texts[-1] == "Reply with exactly: RETRIED_ONCE_OK"
-    assert len(model.upstream.observed) == 2
-    model.reply(request, Text("RETRIED_ONCE_OK"))
+    assert model.request_count == 2
+    await model.reply(request, Text("RETRIED_ONCE_OK"))
     confirmed = await second.until(events.is_kind("harness_user_message_confirmed"))
     assert confirmed.harness_user_message_confirmed.origin_command_ids == [command_id]
     await second.until(events.turn_completed)
     await second.stop_runner_session("stop-after-retry")
     await second.drain_until_end()
     await client.close()
-    model.assert_quiescent()
 
 
 async def test_crash_after_terminal_effect_persists_replays_that_effect(
@@ -208,7 +207,7 @@ async def test_crash_after_terminal_effect_persists_replays_that_effect(
     first = await client.attach("restart-effect-1", spec=spec)
     await first.send("seed-before-effect", "Reply with exactly: EFFECT_SEED_OK")
     seed_request = await model.request()
-    model.reply(seed_request, Text("EFFECT_SEED_OK"))
+    await model.reply(seed_request, Text("EFFECT_SEED_OK"))
     await first.until(events.turn_completed)
     await first.send(command_id, "Reply with exactly: EFFECT_REPLAY_OK")
     await first.until(events.is_kind("command_received"))
@@ -217,7 +216,7 @@ async def test_crash_after_terminal_effect_persists_replays_that_effect(
     # harness-neutral terminal-effect checkpoint: either harness may then reach the same durable
     # runner boundary without the test assuming a shared native ordering.
     target_request = await model.request()
-    model.reply(target_request, Text("EFFECT_REPLAY_OK"))
+    await model.reply(target_request, Text("EFFECT_REPLAY_OK"))
     debug = await first.until(events.is_kind("debug_checkpoint"))
     assert (debug.debug_checkpoint.name, debug.debug_checkpoint.command_id) == ("after-terminal-outcome", command_id)
     assert not [
@@ -253,7 +252,7 @@ async def test_sigterm_stops_the_harness_cleanly_and_the_next_runner_resumes(
     client = RunnerClient(first_runner.target)
     first = await client.attach("sigterm-1", spec=spec)
     await first.send("input-1", "Reply with exactly: SEED_OK")
-    model.reply(await model.request(), Text("SEED_OK"))
+    await model.reply(await model.request(), Text("SEED_OK"))
     await first.until(events.turn_completed)
     (running,) = await client.list_sessions()
     assert running.session_id == "sigterm-1"
@@ -281,14 +280,13 @@ async def test_sigterm_stops_the_harness_cleanly_and_the_next_runner_resumes(
     await second.send("input-2", "Reply with exactly: RESUMED_OK")
     request = await model.request()
     assert request.user_texts == ["Reply with exactly: SEED_OK", "Reply with exactly: RESUMED_OK"]
-    model.reply(request, Text("RESUMED_OK"))
+    await model.reply(request, Text("RESUMED_OK"))
     done = await second.until(events.turn_completed)
     assert done.turn_completed.status == pb.TURN_STATUS_COMPLETED
     events.assert_contiguous([*first.seen, *second.seen])
     await second.stop_runner_session("stop-after-sigterm")
     await second.drain_until_end()
     await client.close()
-    model.assert_quiescent()
 
 
 if __name__ == "__main__":

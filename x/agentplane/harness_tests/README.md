@@ -16,13 +16,11 @@ the tests outside Bazel with a Nix-built Python is not supported: the binaries f
 
 ## Pieces
 
-- `scripted_upstream.py`: a loopback model endpoint the test drives one request at a time.
-  `next_request()` hands over what the harness sent; `respond()` answers with a `Stream` (SSE
-  packets, optionally truncated after a named packet to simulate a lost connection, or held open),
-  a `Body` (a non-streaming JSON response), or `Refuse` (close before any bytes). `always()`
-  registers a standing rule for traffic the harness generates on its own, such as a retry storm.
-  A request no step answers holds its connection open, so a missing step surfaces as a native
-  timeout rather than a vacuous pass.
+- `claude/messages.py` and `codex/responses.py`: API-shaped loopback endpoints. Tests await a
+  parsed request exchange and explicitly send, close, respond to, abort, or await client closure.
+- `model_endpoint.py`: private HTTP lifecycle and fixture teardown that rejects every unsettled
+  exchange.
+- `async_process.py`: the ordered async native-frame pipe used by behavior tests.
 - `claude/anthropic_sse.py`, `codex/responses_sse.py`: response builders in the two SSE dialects,
   shaped after real routes. Thinking blocks and reasoning items are part of the vocabulary because
   the harness has to echo them back.
