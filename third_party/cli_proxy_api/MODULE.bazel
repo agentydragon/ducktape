@@ -69,6 +69,7 @@ go_deps.module(
     path = "github.com/router-for-me/CLIProxyAPI/v7",
     version = "v7.0.0-20260908173309-7fac6b15bcfe",
 )
+
 # The pinned live-session sources still import the v3 STUN path. Keep that
 # repository visible alongside the v4 module used by the newer WebRTC sources.
 go_deps.module(
@@ -76,14 +77,15 @@ go_deps.module(
     sum = "h1:uRXMTlGLf89WgItGNyZ6aR5jMTX0NBbybXADpQCzn+E=",
     version = "v3.1.7",
 )
+
 # The pinned WebRTC BUILD files retain rtp/v2 labels even though their Go
 # sources use the v1 import path; normalize those generated labels to the
 # source-compatible module.
 go_deps.module_override(
-    path = "github.com/pion/webrtc/v4",
     patch_cmds = [
         "sed -i 's/@com_github_pion_rtp_v2\\/\\//@com_github_pion_rtp\\/\\//g' BUILD.bazel",
     ],
+    path = "github.com/pion/webrtc/v4",
 )
 go_deps.archive_override(
     patch_strip = 1,
