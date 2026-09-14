@@ -535,7 +535,8 @@ in
     "d /home/agentydragon/.cache/bazel/_bazel_agentydragon 0755 agentydragon users -"
     "d /home/agentydragon/.cache/bazel/_bazel_agentydragon/cache 0755 agentydragon users -"
     "d /home/agentydragon/.cache/bazel/_bazel_agentydragon/cache/repos 0755 agentydragon users -"
-    "d /tmp 1777 root root -"
+    # Keep the dedicated scratch filesystem bounded without disrupting active files.
+    "q /tmp 1777 root root 4d"
     # Steam library mount (/dev/vdb) must be user-writable; the fresh ext4 root
     # is created root:root, so chown it after the mount lands.
     "d /games 0755 agentydragon users -"
