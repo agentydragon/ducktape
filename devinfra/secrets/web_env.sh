@@ -6,7 +6,8 @@
 #   github-pat-agentydragon-agent.yaml: admin, all user keys, claude-web, ci
 #   claude-web-k8s-jwt.yaml:          admin, all user keys, claude-web
 #   alloy-otlp-bearer-token.yaml:     admin, all user keys, claude-web
-#   public-s3/claude-reader-credentials.sops.yaml: admin, cluster-secrets, claude-web
+#   seaweedfs/external-credentials/claude-reader-credentials.sops.yaml:
+#       admin, cluster-secrets, claude-web
 #   claude-web-attic.yaml:            admin, claude-web
 #   haku-attic.yaml:                  admin, haku, all user keys
 #
@@ -51,7 +52,7 @@ try_export DUCKTAPE_CI_READ_GITHUB_TOKEN "$REPO_ROOT/secrets/github-ci-read-pat.
 # every AWS SDK call in the session default to these creds — override
 # AWS_* if you ever need real AWS access. SeaweedFS ignores the region but SigV4
 # requires one to be set.
-_s3_reader="$REPO_ROOT/cluster/k8s/seaweedfs/public-s3/claude-reader-credentials.sops.yaml"
+_s3_reader="$REPO_ROOT/cluster/k8s/seaweedfs/external-credentials/claude-reader-credentials.sops.yaml"
 try_export AWS_ACCESS_KEY_ID "$_s3_reader" '["stringData"]["claudeReaderAccessKey"]' "SeaweedFS claude-reader access key (read-only)"
 try_export AWS_SECRET_ACCESS_KEY "$_s3_reader" '["stringData"]["claudeReaderSecretKey"]' "SeaweedFS claude-reader secret key (read-only)"
 export AWS_ENDPOINT_URL="https://s3.allegedly.works"

@@ -1,0 +1,10 @@
+# Canonical SOPS-managed SeaweedFS credentials. Keep these outside the
+# operator's namespace so the operator can consume them read-only.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: seaweedfs-credentials
+  labels:
+    name: seaweedfs-credentials
+  annotations:
+    description: Externally managed SeaweedFS S3 credential source Secrets.

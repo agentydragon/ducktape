@@ -65,12 +65,11 @@ creation_rules:
           - *gecko-agentydragon
           - *agent-box-codex-user
 
-  # DriveFS artifacts S3 gateway credentials, now hosted on the consolidated
-  # public-s3 gateway. Flux applies the Secret (cluster-secrets), user machines
-  # read writer credentials to upload new binaries (user keys), and
-  # gaffer-private CI reads reader credentials to fetch binaries during builds
-  # (CI key).
-  - path_regex: cluster/k8s/seaweedfs/public-s3/drivefs-artifacts-credentials\.sops\.yaml$
+  # DriveFS artifacts S3 credentials. Flux applies the Secret in the dedicated
+  # external-credentials namespace (cluster-secrets), user machines read writer
+  # credentials to upload new binaries (user keys), and gaffer-private CI reads
+  # reader credentials to fetch binaries during builds (CI key).
+  - path_regex: cluster/k8s/seaweedfs/external-credentials/drivefs-artifacts-credentials\.sops\.yaml$
     encrypted_regex: ^(data|stringData)$
     key_groups:
       - age:
@@ -82,12 +81,11 @@ creation_rules:
           - *iguana-agentydragon
           - *ci
 
-  # Claude S3 credentials for the consolidated public-s3 gateway. Flux
-  # applies the Secret and ESO assembles it into the gateway config
-  # (cluster-secrets); Claude Code web sessions decrypt it directly (claude-web)
-  # to use s3.allegedly.works: read across the allowed buckets, write only to
-  # loom-gym (eval-run results).
-  - path_regex: cluster/k8s/seaweedfs/public-s3/claude-reader-credentials\.sops\.yaml$
+  # Claude S3 credentials. Flux applies the Secret in the dedicated
+  # external-credentials namespace (cluster-secrets); Claude Code web sessions
+  # decrypt it directly (claude-web) to use s3.allegedly.works: read across the
+  # allowed buckets, write only to loom-gym (eval-run results).
+  - path_regex: cluster/k8s/seaweedfs/external-credentials/claude-reader-credentials\.sops\.yaml$
     encrypted_regex: ^(data|stringData)$
     key_groups:
       - age:

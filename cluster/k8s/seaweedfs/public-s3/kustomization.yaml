@@ -1,19 +1,12 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  # Credential Secrets (name/Secret names kept stable for the remaining
-  # credentialed gateway consumers). Each file has its own .sops.yaml
-  # recipient set:
-  #   drivefs-artifacts: admin, cluster-secrets, all user keys, ci
-  #   claude-reader:     admin, cluster-secrets, claude-web
-  - drivefs-artifacts-credentials.sops.yaml
-  # Registers unchanged DriveFS reader/writer keys with native IAM. The SOPS
-  # Secret remains for existing CI and external/manual delivery paths only.
+  # Registers unchanged DriveFS reader/writer keys with native IAM. The
+  # externally managed source Secret is applied by the dedicated
+  # seaweedfs-external-credentials Kustomization.
   - drivefs-artifacts-iam.yaml
-  - claude-reader-credentials.sops.yaml
-  # Registers the unchanged SOPS-provided Claude credential with native IAM
-  # and declares its authorization policy. The SOPS Secret remains for the
-  # external Claude web-session delivery path, not the public gateway config.
+  # Registers the unchanged external Claude credential with native IAM and
+  # declares its authorization policy.
   - claude-reader-iam.yaml
   # Credentialed tenants are native IAM; the remaining anonymous read rule is
   # public bootstrap configuration and needs no Secret or external provider.

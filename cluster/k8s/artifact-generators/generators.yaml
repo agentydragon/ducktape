@@ -530,6 +530,14 @@ spec:
           exclude:
             - flux-kustomization.yaml
 
+    - name: seaweedfs-external-credentials
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/seaweedfs/external-credentials/**"
+          to: "@artifact/cluster/k8s/seaweedfs/external-credentials/"
+          exclude:
+            - flux-kustomization.yaml
+
     - name: ssh-mcp-secrets
       originRevision: "@repo"
       copy:
