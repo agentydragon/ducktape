@@ -17,15 +17,20 @@ SECOND_INPUT = "Reply ONLY SECOND_INPUT_OBSERVED after your current work."
 THIRD_INPUT = "Reply ONLY THIRD_INPUT_OBSERVED after your current work."
 COALESCED_FIRST = "Reply only after seeing COALESCED_FIRST."
 COALESCED_SECOND = "Reply only after seeing COALESCED_SECOND."
+COALESCED_THIRD = "Reply only after seeing COALESCED_THIRD."
+INTERRUPTED_QUEUE_FIRST = "Reply only after seeing INTERRUPTED_QUEUE_FIRST."
+INTERRUPTED_QUEUE_SECOND = "Reply only after seeing INTERRUPTED_QUEUE_SECOND."
+INTERRUPT_RECOVERY = "Reply with exactly: INTERRUPT_QUEUE_RECOVERY_OK"
 SELECTED_MODEL = "agentplane-switched/claude-haiku-4-5-20251001"
 
 
 def test_queued_inputs_coalesce_into_one_native_user_message(claude: ClaudeHarness, upstream: ScriptedUpstream) -> None:
     """Claude batches compatible queued prompts with newlines, retaining the last frame UUID.
 
-    With replay enabled it also emits a synthetic echo for each batch follower before the merged
-    native user message. The command-lifecycle frames remain per submitted input. The runner must
-    therefore preserve both origins on the latter, not mistake the synthetic echo for delivery.
+    With replay enabled it emits a synthetic echo for the batch leader and the final merged native
+    user message. The command-lifecycle frames remain per submitted input. The runner must
+    therefore preserve every origin from those lifecycle frames, not mistake the synthetic echo
+    for delivery.
     """
     with claude.start(upstream, replay_user_messages=True) as process:
         scenarios.launch_handshake(process)
@@ -35,15 +40,19 @@ def test_queued_inputs_coalesce_into_one_native_user_message(claude: ClaudeHarne
         content_started = next(
             index for index, packet in enumerate(initial_stream.packets) if packet.kind == "content_block_start"
         )
-        # Keep the first query active while both later messages enter the native queue, then let
-        # that turn finish. This is the headless driver's actual batching boundary: two direct
-        # stdin writes before a turn begins are drained one-at-a-time by the input reader.
+        # Keep the first query active while later messages enter the native queue, then let that
+        # turn finish. This is the headless driver's actual batching boundary: direct stdin
+        # writes before a turn begins are drained one-at-a-time by the input reader.
+        initial_request = MessagesRequest.parse(initial_raw)
+        assert initial_request.last_message.role == "user"
+        assert initial_request.texts("user")[-1] == "Finish this first turn before taking later messages."
         upstream.respond(initial_raw, Stream(initial_stream.packets[: content_started + 1]).held())
         scenarios.await_active(process)
         first = driver.user_frame(COALESCED_FIRST)
         second = driver.user_frame(COALESCED_SECOND)
-        process.write_many([first, second])
-        for command_uuid in (first.uuid, second.uuid):
+        third = driver.user_frame(COALESCED_THIRD)
+        process.write_many([first, second, third])
+        for command_uuid in (first.uuid, second.uuid, third.uuid):
 
             def is_queued(frame: dict[str, Any], expected: str = command_uuid) -> bool:
                 return (
@@ -58,7 +67,11 @@ def test_queued_inputs_coalesce_into_one_native_user_message(claude: ClaudeHarne
 
         raw = upstream.next_request()
         request = MessagesRequest.parse(raw)
-        assert request.texts("user")[-1] == f"{COALESCED_FIRST}\n{COALESCED_SECOND}"
+        coalesced = f"{COALESCED_FIRST}\n{COALESCED_SECOND}\n{COALESCED_THIRD}"
+        assert request.last_message.role == "user"
+        assert request.texts("user")[-1] == coalesced
+        assert [text for text in request.texts("user") if "COALESCED_" in text] == [coalesced]
+        assert request.texts("assistant") == ["INITIAL_TURN_DONE"]
         upstream.respond(raw, sse.message_stream([sse.Text("COALESCED_OK")], model=MODEL))
         assert scenarios.await_result(process)["result"] == "COALESCED_OK"
 
@@ -68,28 +81,90 @@ def test_queued_inputs_coalesce_into_one_native_user_message(claude: ClaudeHarne
         for frame in parsed
         if isinstance(frame, wire.CommandLifecycleFrame) and frame.state is wire.CommandState.QUEUED
     ]
-    assert queued[-2:] == [first.uuid, second.uuid]
+    assert queued[-3:] == [first.uuid, second.uuid, third.uuid]
     follower_and_merged = [
         (frame.uuid, frame.message.content)
         for frame in parsed
         if isinstance(frame, wire.UserFrame)
         and frame.is_replay
-        and frame.message.content in {COALESCED_FIRST, f"{COALESCED_FIRST}\n{COALESCED_SECOND}"}
+        and frame.message.content
+        in {
+            COALESCED_FIRST,
+            f"{COALESCED_FIRST}\n{COALESCED_SECOND}",
+            f"{COALESCED_FIRST}\n{COALESCED_SECOND}\n{COALESCED_THIRD}",
+        }
     ]
     assert follower_and_merged == [
         (first.uuid, COALESCED_FIRST),
-        (second.uuid, f"{COALESCED_FIRST}\n{COALESCED_SECOND}"),
+        (third.uuid, f"{COALESCED_FIRST}\n{COALESCED_SECOND}\n{COALESCED_THIRD}"),
     ]
     replayed = [
         frame
         for frame in parsed
-        if isinstance(frame, wire.UserFrame)
-        and frame.is_replay
-        and frame.message.content == f"{COALESCED_FIRST}\n{COALESCED_SECOND}"
+        if isinstance(frame, wire.UserFrame) and frame.is_replay and frame.message.content == coalesced
     ]
     assert len(replayed) == 1
-    assert replayed[0].uuid == second.uuid
-    assert replayed[0].message.content == f"{COALESCED_FIRST}\n{COALESCED_SECOND}"
+    assert replayed[0].uuid == third.uuid
+    assert replayed[0].message.content == coalesced
+    upstream.assert_quiescent()
+
+
+def test_interrupt_cancels_each_queued_input_before_native_message(
+    claude: ClaudeHarness, upstream: ScriptedUpstream
+) -> None:
+    """An interrupt with cancel_queued drops every queued input before it reaches the model.
+
+    This pins the native per-input cancellation frames and the absence of both texts from the
+    subsequent model request. The runner can therefore settle every originating command as a
+    no-op instead of leaving a durable receipt permanently pending.
+    """
+    with claude.start(upstream, replay_user_messages=True) as process:
+        scenarios.launch_handshake(process)
+        scenarios.send(process, "Keep this first turn active until interrupted.")
+        initial_raw = upstream.next_request()
+        stream = sse.message_stream([sse.Text("never finished")], model=MODEL)
+        upstream.respond(initial_raw, stream.until("content_block_start").held())
+        scenarios.await_active(process)
+
+        first = driver.user_frame(INTERRUPTED_QUEUE_FIRST)
+        second = driver.user_frame(INTERRUPTED_QUEUE_SECOND)
+        process.write_many([first, second])
+        for command_uuid in (first.uuid, second.uuid):
+
+            def is_queued(frame: dict[str, Any], expected: str = command_uuid) -> bool:
+                return (
+                    frame.get("type") == "command_lifecycle"
+                    and frame.get("command_uuid") == expected
+                    and frame.get("state") == "queued"
+                )
+
+            process.await_frame(is_queued, timeout=30)
+
+        response = scenarios.interrupt(process, cancel_queued=True)
+        assert response["response"]["subtype"] == "success"
+        assert initial_raw.client_closed.wait(30)
+        assert scenarios.await_result(process)["is_error"] is True
+
+        scenarios.send(process, INTERRUPT_RECOVERY)
+        recovery_raw = upstream.next_request()
+        request = MessagesRequest.parse(recovery_raw)
+        assert request.last_message.role == "user"
+        assert request.texts("user")[-1] == INTERRUPT_RECOVERY
+        assert all(
+            marker not in text
+            for marker in (INTERRUPTED_QUEUE_FIRST, INTERRUPTED_QUEUE_SECOND)
+            for text in request.texts("user")
+        )
+        upstream.respond(recovery_raw, sse.message_stream([sse.Text("INTERRUPT_QUEUE_RECOVERY_OK")], model=MODEL))
+        assert scenarios.await_result(process)["result"] == "INTERRUPT_QUEUE_RECOVERY_OK"
+
+    cancelled = [
+        frame.command_uuid
+        for frame in (wire.parse_frame(raw) for raw in process.stdout_frames())
+        if isinstance(frame, wire.CommandLifecycleFrame) and frame.state is wire.CommandState.CANCELLED
+    ]
+    assert cancelled.count(first.uuid) == 1
+    assert cancelled.count(second.uuid) == 1
     upstream.assert_quiescent()
 
 
