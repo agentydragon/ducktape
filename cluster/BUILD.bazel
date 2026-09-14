@@ -6,13 +6,18 @@ exports_files([".tflint.hcl"])
 
 py_library(
     name = "generate_manifests_lib",
-    srcs = ["generate_manifests.py"],
+    srcs = [
+        "generate_manifests.py",
+        "litellm_config.py",
+        "litellm_constructs.py",
+    ],
     visibility = ["//visibility:private"],
     deps = [
         "//cluster/k8s/litellm/app:model_rosters",
         "//tana/litellm_proxy:model_registry",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_33",
+        "@pypi//constructs",
     ],
 )
 
@@ -41,10 +46,6 @@ py_test(
         "//cluster/k8s/litellm/tana:httproute.yaml",
         "//cluster/k8s/litellm/tana:proxy-config.yaml",
         "//cluster/k8s/litellm/tana:service.yaml",
-        "//cluster/k8s/x/haku/dispatch/litellm:cnp-workers-litellm.yaml",
-        "//cluster/k8s/x/haku/dispatch/litellm:deployment.yaml",
-        "//cluster/k8s/x/haku/dispatch/litellm:service.yaml",
-        "//cluster/k8s/x/haku/dispatch/litellm:workers-litellm-config.yaml",
         "@nodejs_linux_amd64//:bin/node",
     ],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
