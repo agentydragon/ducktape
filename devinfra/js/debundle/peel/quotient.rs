@@ -883,10 +883,10 @@ impl QuotientGraph {
         // (and the absorbed loser side of the overlay) share an
         // id with their target.
         let project = |c: ClassId| -> ClassId {
-            if let Some((a, b)) = overlay {
-                if c == a || c == b {
-                    return if a < b { a } else { b };
-                }
+            if let Some((a, b)) = overlay
+                && (c == a || c == b)
+            {
+                return if a < b { a } else { b };
             }
             c
         };
@@ -1142,10 +1142,10 @@ impl QuotientGraph {
             return CycleEvidence::default();
         }
         let project = |c: ClassId| -> ClassId {
-            if let Some((a, b)) = overlay {
-                if c == a || c == b {
-                    return if a < b { a } else { b };
-                }
+            if let Some((a, b)) = overlay
+                && (c == a || c == b)
+            {
+                return if a < b { a } else { b };
             }
             c
         };

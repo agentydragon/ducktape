@@ -444,10 +444,8 @@ pub fn gate_post_edit_partition(
     )]
     .into_iter()
     .collect();
-    let mut next_idx = 1usize;
-    for (module_idx, module) in post_spec.modules.iter().enumerate() {
+    for (next_idx, (module_idx, module)) in (1usize..).zip(post_spec.modules.iter().enumerate()) {
         let mid = ModuleId::logical(next_idx);
-        next_idx += 1;
         let raw = module_path_from_file(&module.path, modules_root);
         module_path_by_id.insert(
             mid,

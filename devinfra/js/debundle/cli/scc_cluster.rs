@@ -131,10 +131,10 @@ pub fn run_scc(args: SccArgs) -> Result<()> {
         if args.residual_only && !touches_residual {
             continue;
         }
-        if let Some(want) = &restrict_to_module {
-            if !scc.modules.contains(want) {
-                continue;
-            }
+        if let Some(want) = &restrict_to_module
+            && !scc.modules.contains(want)
+        {
+            continue;
         }
         // Resolve each interned key to its human path via the module
         // table for the `labels` view; the wire stores the path once.

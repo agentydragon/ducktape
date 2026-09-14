@@ -495,12 +495,11 @@ fn recompute_evidence(graph: &OwnerGraphReport, modules: &[ModulePath]) -> Resul
         // recorded `R -> callee` edge (see graph.rs `partition_endpoints`).
         // Match that filter here so the recomputed evidence count
         // agrees with the pre-trim cycles.json output.
-        if let Some(EdgeRoleReport::PromotedAtInit { callee_owner }) = &edge.role {
-            if let Some(&callee_mod) = owner_module.get(callee_owner.as_str()) {
-                if callee_mod != from_mod {
-                    continue;
-                }
-            }
+        if let Some(EdgeRoleReport::PromotedAtInit { callee_owner }) = &edge.role
+            && let Some(&callee_mod) = owner_module.get(callee_owner.as_str())
+            && callee_mod != from_mod
+        {
+            continue;
         }
         if matches!(edge.edge_kind, DepKind::Sequenced) {
             // Mirror `build_module_quotient`'s sequenced-edge dedup

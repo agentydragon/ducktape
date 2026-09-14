@@ -6,7 +6,6 @@
 
 use std::sync::Mutex;
 
-use rayon::prelude::*;
 use swc_common::GLOBALS;
 use swc_common::{BytePos, Spanned};
 

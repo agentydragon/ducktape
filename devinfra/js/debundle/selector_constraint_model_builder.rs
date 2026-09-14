@@ -5162,7 +5162,7 @@ mod tests {
                 };
                 value += i128::from(variable_value.0) * i128::from(*coefficient);
             }
-            constraint.domain.chunks_exact(2).any(|interval| {
+            constraint.domain.as_chunks::<2>().0.iter().any(|interval| {
                 i128::from(interval[0]) <= value && value <= i128::from(interval[1])
             })
         }) && model.all_different.iter().all(|constraint| {
