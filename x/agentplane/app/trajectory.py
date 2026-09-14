@@ -11,7 +11,8 @@ separate deploy step.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import asyncio
+from collections.abc import AsyncGenerator, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
@@ -413,6 +414,29 @@ class TrajectoryStore:
                     record.runner_event.event.CopyFrom(ParseDict(event.payload, pb.Event()))
                 snapshot.last_replay_cursor = entry.replay_cursor
             return snapshot
+
+    async def thread_record_stream(
+        self, thread_id: UUID, *, after_replay_cursor: int = 0
+    ) -> AsyncGenerator[pb.ThreadRecord]:
+        """Yield durable Thread records after one app transport cursor.
+
+        PostgreSQL notifications are wake-ups, not a source of record payloads or ordering.  Every
+        wake-up re-reads the ledger, so a listener reconnect gap and coalesced writes cannot drop
+        a record.  The yielded cursor remains an app replay cursor only; it does not order native
+        events across runner sessions.
+        """
+        cursor = after_replay_cursor
+        waiter = asyncio.Event()
+        with self.changes.subscribe(waiter):
+            while True:
+                waiter.clear()
+                snapshot = await self.thread_records(thread_id, after_replay_cursor=cursor, limit=1_000)
+                if snapshot.records:
+                    for record in snapshot.records:
+                        yield record
+                    cursor = snapshot.last_replay_cursor
+                    continue
+                await waiter.wait()
 
     async def commands_awaiting_runner_receipt(self, sandbox: str) -> list[ThreadCommandDelivery]:
         """Return each Thread's earliest command not yet durably received by its active session.

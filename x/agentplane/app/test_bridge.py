@@ -258,6 +258,58 @@ async def test_the_feed_records_a_turn_nobody_is_watching(
         assert (await http.get("/threads/00000000-0000-0000-0000-000000000000/records")).status_code == 404
 
 
+async def test_thread_record_stream_resumes_from_its_durable_cursor_without_duplicate_commands(
+    app_url: str, spec: pb.SessionSpec
+) -> None:
+    session_id = "thread-record-stream"
+    async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
+        opened = await http.post(SESSIONS, json={"session_id": session_id, "spec": MessageToDict(spec)})
+        assert opened.status_code == 201, opened.text
+        threads = (await http.get("/threads", params={"session_id": session_id})).json()
+        assert len(threads) == 1
+        thread_id = threads[0]["id"]
+        baseline = await http.get(f"/threads/{thread_id}/records")
+        assert baseline.status_code == 200
+        baseline_cursor = baseline.json()["lastReplayCursor"]
+
+        first_command = {"commandId": "first-control", "changeModel": {"model": "first-model"}}
+        async with http.stream(
+            "GET", f"/threads/{thread_id}/records/stream", params={"after_replay_cursor": baseline_cursor}
+        ) as stream:
+            lines = stream.aiter_lines()
+            accepted = await http.post(f"/threads/{thread_id}/commands", json=first_command)
+            assert accepted.status_code == 201, accepted.text
+            async with asyncio.timeout(10):
+                first = await read_until(lines, "command")
+        first_record = first[-1]
+        assert first_record.event == "record"
+        assert first_record.id is not None
+        assert first_record.data == accepted.json()
+
+        second_command = {"commandId": "second-control", "changeModel": {"model": "second-model"}}
+        second = await http.post(f"/threads/{thread_id}/commands", json=second_command)
+        assert second.status_code == 201, second.text
+        # Last-Event-ID wins over a stale query cursor and replays exactly the missed durable entry.
+        async with http.stream(
+            "GET",
+            f"/threads/{thread_id}/records/stream",
+            params={"after_replay_cursor": 0},
+            headers={"Last-Event-ID": str(first_record.id)},
+        ) as stream:
+            async with asyncio.timeout(10):
+                replayed = await read_until(stream.aiter_lines(), "command")
+        assert [
+            message.data["command"]["command"]["commandId"] for message in replayed if "command" in message.data
+        ] == ["second-control"]
+        assert replayed[-1].id is not None
+        assert replayed[-1].data == second.json()
+
+        records = await http.get(f"/threads/{thread_id}/records")
+        assert [
+            record["command"]["command"]["commandId"] for record in records.json()["records"] if "command" in record
+        ] == ["first-control", "second-control"]
+
+
 async def test_the_bridge_reports_what_the_runner_refuses(app_url: str) -> None:
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
         unknown = await http.post(

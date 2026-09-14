@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack
@@ -12,7 +13,7 @@ from uuid import UUID
 import grpc
 import httpx
 import httpx2
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from google.protobuf.json_format import MessageToDict
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -538,6 +539,36 @@ async def thread_records(
 ) -> dict[str, object]:
     """A durable replay snapshot, not a projection of a Thread into one cross-session transcript."""
     return MessageToDict(await store.thread_records(thread_id, after_replay_cursor=after_replay_cursor, limit=limit))
+
+
+@threads.get("/{thread_id}/records/stream")
+async def thread_record_stream(
+    store: Store,
+    shutdown: Shutdown,
+    thread_id: UUID,
+    after_replay_cursor: Annotated[
+        int, Query(ge=0, description="Replay entries with a greater app transport cursor.")
+    ] = 0,
+    last_event_id: Annotated[
+        int | None, Header(ge=0, description="The replay cursor last delivered to this EventSource.")
+    ] = None,
+) -> StreamingResponse:
+    """A cursor-resumable durable ThreadRecord stream; every SSE data field is proto-JSON."""
+    if await store.get_thread(thread_id) is None:
+        raise ThreadNotFoundError(thread_id)
+    cursor = last_event_id if last_event_id is not None else after_replay_cursor
+
+    async def body() -> AsyncIterator[bytes]:
+        async for record in shutdown.until(store.thread_record_stream(thread_id, after_replay_cursor=cursor)):
+            yield _thread_record_frame(record)
+
+    return StreamingResponse(
+        body(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    )
+
+
+def _thread_record_frame(record: pb.ThreadRecord) -> bytes:
+    return (f"event: record\nid: {record.replay_cursor}\ndata: {json.dumps(MessageToDict(record))}\n\n").encode()
 
 
 class ThreadsWithSandboxes(BaseModel):

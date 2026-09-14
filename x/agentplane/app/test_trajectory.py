@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
+from contextlib import aclosing
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
@@ -149,6 +150,37 @@ async def test_thread_replay_records_keep_runner_receipt_as_exact_separate_evide
     assert (await store.thread_records(thread, after_replay_cursor=accepted.replay_cursor, limit=100)).records == [
         receipt
     ]
+
+
+async def test_thread_record_stream_wakes_another_replica_and_replays_without_duplicates(
+    store: TrajectoryStore, replica: TrajectoryStore
+) -> None:
+    thread = await store.thread("sb-1", "s-1", SPEC)
+    first_command = pb.Command(command_id="first", change_model=pb.ChangeModel(model="first-model"))
+
+    async with aclosing(replica.thread_record_stream(thread)) as stream:
+
+        async def next_record() -> pb.ThreadRecord:
+            return await anext(stream)
+
+        pending_record = asyncio.create_task(next_record())
+        accepted = await store.request_thread_command(thread, first_command)
+        delivered = await asyncio.wait_for(pending_record, timeout=5)
+
+    assert delivered.WhichOneof("record") == "command"
+    assert delivered.replay_cursor == accepted.replay_cursor
+    assert delivered.command.command == first_command
+    # Retrying never becomes a second transport record, even while another replica owns the stream.
+    assert await store.request_thread_command(thread, first_command) == accepted
+    assert [record.replay_cursor for record in (await replica.thread_records(thread, limit=100)).records] == [
+        accepted.replay_cursor
+    ]
+
+    second_command = pb.Command(command_id="second", change_model=pb.ChangeModel(model="second-model"))
+    second = await store.request_thread_command(thread, second_command)
+    async with aclosing(replica.thread_record_stream(thread, after_replay_cursor=accepted.replay_cursor)) as replay:
+        replayed = await asyncio.wait_for(anext(replay), timeout=5)
+    assert (replayed.replay_cursor, replayed.command.command) == (second.replay_cursor, second_command)
 
 
 async def test_thread_command_ordinals_are_serialised_across_replicas(
