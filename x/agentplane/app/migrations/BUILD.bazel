@@ -8,6 +8,7 @@ filegroup(
         "//x/agentplane/app/migrations/versions:0001_trajectory_store.py",
         "//x/agentplane/app/migrations/versions:0002_thread_archived.py",
         "//x/agentplane/app/migrations/versions:0003_thread_harness.py",
+        "//x/agentplane/app/migrations/versions:0004_thread_command_outbox.py",
     ],
     visibility = ["//x/agentplane/app:__pkg__"],
 )

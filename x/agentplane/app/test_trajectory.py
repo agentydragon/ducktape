@@ -1,5 +1,4 @@
-"""The store's contract: a thread per session, events kept verbatim and idempotently, read back
-without a runner."""
+"""The store's contract: durable Threads own runner-session associations, commands, and events."""
 
 from __future__ import annotations
 
@@ -21,6 +20,7 @@ from x.agentplane.app.trajectory import (
     IngestionLease,
     IngestionLeaseLostError,
     SandboxIngestion,
+    ThreadCommandConflictError,
     ThreadNotFoundError,
     TrajectoryStore,
 )
@@ -87,6 +87,42 @@ async def test_a_session_is_one_thread_and_its_events_read_back_in_order(
     assert [event.sequence for event in await store.events(thread, after_sequence=1, limit=2)] == [2, 3]
     assert await store.last_sequence(thread) == 4
     assert await store.last_sequence(other) == 0
+
+
+async def test_thread_commands_are_ordered_idempotent_and_reject_payload_reuse(store: TrajectoryStore) -> None:
+    thread = await store.thread("sb-1", "s-1", SPEC)
+    command = pb.Command(command_id="model-next", change_model=pb.ChangeModel(model="next-model"))
+
+    first = await store.request_thread_command(thread, command)
+
+    assert (first.thread_id, first.ordinal, first.command) == (thread, 1, command)
+    assert await store.request_thread_command(thread, command) == first
+    assert await store.thread_commands(thread) == [first]
+    with pytest.raises(ThreadCommandConflictError, match="command id"):
+        await store.request_thread_command(
+            thread, pb.Command(command_id="model-next", change_model=pb.ChangeModel(model="other-model"))
+        )
+    with pytest.raises(ValueError, match="command id"):
+        await store.request_thread_command(thread, pb.Command())
+    with pytest.raises(ThreadNotFoundError):
+        await store.request_thread_command(UUID(int=0), command)
+
+
+async def test_thread_command_ordinals_are_serialised_across_replicas(
+    store: TrajectoryStore, replica: TrajectoryStore
+) -> None:
+    thread = await store.thread("sb-1", "s-1", SPEC)
+    first = pb.Command(command_id="first", submit_input=pb.SubmitInput(text="First."))
+    second = pb.Command(command_id="second", submit_input=pb.SubmitInput(text="Second."))
+
+    left, right = await asyncio.gather(
+        store.request_thread_command(thread, first), replica.request_thread_command(thread, second)
+    )
+
+    assert {snapshot.ordinal for snapshot in (left, right)} == {1, 2}
+    commands = await store.thread_commands(thread)
+    assert [snapshot.ordinal for snapshot in commands] == [1, 2]
+    assert {snapshot.command.command_id for snapshot in commands} == {"first", "second"}
 
 
 async def test_threads_list_with_their_progress(store: TrajectoryStore, lease: IngestionLease) -> None:
