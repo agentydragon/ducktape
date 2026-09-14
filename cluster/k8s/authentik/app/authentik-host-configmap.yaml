@@ -5,3 +5,4 @@ metadata:
   namespace: authentik
 data:
   AUTHENTIK_HOST: "https://auth.allegedly.works"
+  AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS: "10.42.0.0/24"
