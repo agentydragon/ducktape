@@ -1,4 +1,4 @@
-"""Async stdin/stdout/stderr pipes for native harness behavior tests."""
+"""Async stdin/stdout/stderr pipes with non-destructive native-frame observation."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from x.agentplane.native.process import text, text_record, write_jsonl
+from x.agentplane.native.transport import FrameMatcher, NativeReceipt
 
 FrameResponder = Callable[[dict[str, Any]], Awaitable[BaseModel | None]]
 
@@ -31,15 +32,18 @@ class FrameCursor:
         self._position = position
 
     async def next(self) -> dict[str, Any]:
-        self._position, frame = await self._trace.next(self._position)
-        return frame
+        return (await self.receipt()).frame
+
+    async def receipt(self) -> NativeReceipt:
+        self._position, receipt = await self._trace.next(self._position)
+        return receipt
 
 
 class _FrameTrace:
     """The append-only native stdout trace; cursors never consume one another's receipts."""
 
     def __init__(self) -> None:
-        self._frames: list[dict[str, Any]] = []
+        self._frames: list[NativeReceipt] = []
         self._changed = asyncio.Event()
         self._closed = False
         self._failure: BaseException | None = None
@@ -48,7 +52,7 @@ class _FrameTrace:
         return FrameCursor(self, len(self._frames))
 
     def append(self, frame: dict[str, Any]) -> None:
-        self._frames.append(frame)
+        self._frames.append(NativeReceipt(frame=frame, sequence=len(self._frames) + 1))
         self._changed.set()
 
     def close(self, failure: BaseException | None = None) -> None:
@@ -56,7 +60,7 @@ class _FrameTrace:
         self._failure = failure
         self._changed.set()
 
-    async def next(self, position: int) -> tuple[int, dict[str, Any]]:
+    async def next(self, position: int) -> tuple[int, NativeReceipt]:
         while True:
             if position < len(self._frames):
                 return position + 1, self._frames[position]
@@ -72,7 +76,7 @@ class _FrameTrace:
 
 
 class AsyncNativeProcess:
-    """The native frame pipe, recording an ordered trace for independent test readers."""
+    """The native frame pipe, recording an ordered trace for independent readers."""
 
     def __init__(
         self,
@@ -123,6 +127,19 @@ class AsyncNativeProcess:
         async with self._stdin_lock:
             self.process.stdin.write(b"".join(payload + b"\n" for payload in payloads))
             await self.process.stdin.drain()
+
+    async def request(self, frame: BaseModel, *, matches: FrameMatcher, timeout_s: float = 60) -> NativeReceipt:
+        """Write a frame and non-destructively await a later matching stdout receipt."""
+        cursor = self.frames()
+        await self.send(frame)
+
+        async def wait() -> NativeReceipt:
+            while True:
+                receipt = await cursor.receipt()
+                if matches(receipt.frame):
+                    return receipt
+
+        return await asyncio.wait_for(wait(), timeout=timeout_s)
 
     def frames(self) -> FrameCursor:
         """Start observing future stdout frames without consuming another observer's trace."""

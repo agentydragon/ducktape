@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from x.agentplane.native.async_process import AsyncNativeProcess, FrameCursor
-from x.agentplane.native.codex import driver, wire
+from x.agentplane.native.codex import facade, wire
 
 
 class CodexEvents:
@@ -111,38 +111,33 @@ class CodexRun:
         self._resume_base_instructions = resume_base_instructions
         self._resume_instructions = resume_instructions
         self._process: AsyncNativeProcess | None = None
-        self._next_request_id = 1
+        self._harness: facade.CodexHarness | None = None
         self._thread_id_value: str | None = None
 
     async def __aenter__(self) -> CodexRun:
         process = AsyncNativeProcess(self._logs, self._command, cwd=self._cwd, environment=dict(self._environment))
         self._process = await process.__aenter__()
+        self._harness = facade.CodexHarness(process, request_prefix="capture")
         try:
             await self._initialize()
             if self._resume_thread_id is None:
-                response = await self._request(
-                    driver.thread_start(
-                        self._request_id(),
-                        cwd=self._thread_cwd,
-                        model=self._model,
-                        effort=self._effort,
-                        persist=self._persist,
-                        config=self._config,
-                        instructions=self._instructions,
-                    )
+                receipt = await self._codex().start_thread(
+                    cwd=self._thread_cwd,
+                    model=self._model,
+                    effort=self._effort,
+                    persist=self._persist,
+                    config=self._config,
+                    instructions=self._instructions,
                 )
             else:
-                response = await self._request(
-                    driver.thread_resume(
-                        self._request_id(),
-                        thread_id=self._resume_thread_id,
-                        base_instructions=self._resume_base_instructions,
-                        instructions=self._resume_instructions,
-                    )
+                receipt = await self._codex().resume_thread(
+                    thread_id=self._resume_thread_id,
+                    base_instructions=self._resume_base_instructions,
+                    instructions=self._resume_instructions,
                 )
-            self._thread_id_value = _response_thread_id(response)
+            self._thread_id_value = _response_thread_id(_require(receipt))
         except BaseException:
-            self._process = None
+            self._process, self._harness = None, None
             await process.close()
             raise
         return self
@@ -154,6 +149,11 @@ class CodexRun:
         if self._process is None:
             raise RuntimeError("Codex run was not started")
         return self._process
+
+    def _codex(self) -> facade.CodexHarness:
+        if self._harness is None:
+            raise RuntimeError("Codex run was not started")
+        return self._harness
 
     @property
     def running(self) -> bool:
@@ -174,42 +174,23 @@ class CodexRun:
     async def start_turn(self, text: str, *, model: str | None = None) -> CodexTurn:
         thread_id = self.thread_id
         events = self.events()
-        response = await self._request(
-            driver.turn_start(self._request_id(), thread_id=thread_id, text=text, model=model)
-        )
+        response = _require(await self._codex().start_turn(thread_id=thread_id, text=text, model=model))
         result = wire.TurnResult.model_validate(response.result)
         return CodexTurn(thread_id, result.turn.id, events)
 
     async def steer(self, turn: CodexTurn, text: str) -> wire.Response:
         self._assert_turn(turn)
-        return await self._request(
-            driver.steer(self._request_id(), thread_id=turn.thread_id, turn_id=turn.id, text=text)
-        )
+        return _require(await self._codex().steer(thread_id=turn.thread_id, turn_id=turn.id, text=text))
 
     async def interrupt(self, turn: CodexTurn) -> wire.Response:
         self._assert_turn(turn)
-        return await self._request(driver.interrupt(self._request_id(), thread_id=turn.thread_id, turn_id=turn.id))
+        return _require(await self._codex().interrupt(thread_id=turn.thread_id, turn_id=turn.id))
 
     async def crash(self) -> int:
         return await self._native().crash()
 
     async def _initialize(self) -> None:
-        initialize = driver.initialize(self._request_id())
-        await self._request(initialize)
-        await self._native().send(driver.initialized())
-
-    async def _request(self, request: wire.Request) -> wire.Response:
-        events = self.events()
-        await self._native().send(request)
-        response = await events.response(request.id)
-        if response.error is not None:
-            raise RuntimeError(f"Codex request failed: {response.error}")
-        return response
-
-    def _request_id(self) -> str:
-        request_id = f"capture-{self._next_request_id}"
-        self._next_request_id += 1
-        return request_id
+        _require(await self._codex().initialize())
 
     def _assert_turn(self, turn: CodexTurn) -> None:
         if turn.thread_id != self.thread_id:
@@ -219,3 +200,10 @@ class CodexRun:
 def _response_thread_id(response: wire.Response) -> str:
     result = wire.ThreadResult.model_validate(response.result)
     return result.thread.id
+
+
+def _require(receipt: facade.CodexReceipt) -> wire.Response:
+    response = receipt.response
+    if response.error is not None:
+        raise RuntimeError(f"Codex request failed: {response.error}")
+    return response

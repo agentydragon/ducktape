@@ -33,10 +33,21 @@ py_library(
     srcs = ["async_run.py"],
     deps = [
         ":blocks",
-        ":driver",
+        ":facade",
         ":scenarios",
         ":wire",
         "//x/agentplane/native:async_process",
+    ],
+)
+
+py_library(
+    name = "facade",
+    srcs = ["facade.py"],
+    deps = [
+        ":driver",
+        ":wire",
+        "//x/agentplane/native:transport",
+        "@pypi//pydantic",
     ],
 )
 

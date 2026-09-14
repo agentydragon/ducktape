@@ -6,12 +6,11 @@ import asyncio
 import json
 import logging
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from pydantic import BaseModel
 
+from x.agentplane.native.transport import Frame, FrameMatcher, NativeReceipt
 from x.agentplane.runner import protocol_pb2 as pb
 from x.agentplane.runner.adapter import HarnessAdapter
 from x.agentplane.runner.command_journal import CommandConflictError, CommandJournal
@@ -25,17 +24,8 @@ from x.agentplane.runner.store import SessionRecord, SessionStore
 
 logger = logging.getLogger(__name__)
 
-Frame = dict[str, Any]
-
 # Shutdown interrupts an active turn and gives the harness this long to report its end.
 _INTERRUPT_GRACE_S = 15
-
-
-@dataclass(frozen=True)
-class NativeFrame:
-    frame: Frame
-    # The Native event's sequence, for derived events to cite.
-    sequence: int
 
 
 class HarnessGoneError(RuntimeError):
@@ -75,7 +65,7 @@ class Session:
         self.process: HarnessProcess | None = None
         self.adapter: HarnessAdapter | None = None
         self._tasks: list[asyncio.Task[None]] = []
-        self._waiters: list[tuple[Callable[[Frame], bool], asyncio.Future[NativeFrame]]] = []
+        self._waiters: list[tuple[FrameMatcher, asyncio.Future[NativeReceipt]]] = []
         self._translating = 0
         self._stopping = False
         self._lock = asyncio.Lock()
@@ -375,21 +365,20 @@ class Session:
             await self.log.wait_beyond(cursor)
             cursor = self.log.last_sequence
 
-    async def write_native(self, frame: BaseModel) -> None:
+    async def send(self, frame: BaseModel) -> None:
+        """Durably record one outbound raw frame, then write it to the harness pipe."""
         if self.process is None or not self.running:
             raise HarnessGoneError("the harness is not running")
         line = frame.model_dump_json(by_alias=True)
         self.emit(pb.Native(direction=pb.DIRECTION_TO_HARNESS, line=line), sources=[])
         await self.process.write_line(line)
 
-    async def request(
-        self, frame: BaseModel, *, matches: Callable[[Frame], bool], timeout_s: float = 60
-    ) -> NativeFrame:
+    async def request(self, frame: BaseModel, *, matches: FrameMatcher, timeout_s: float = 60) -> NativeReceipt:
         """Write a frame and return the first later frame `matches` accepts."""
-        waiter: asyncio.Future[NativeFrame] = asyncio.get_running_loop().create_future()
+        waiter: asyncio.Future[NativeReceipt] = asyncio.get_running_loop().create_future()
         self._waiters.append((matches, waiter))
         try:
-            await self.write_native(frame)
+            await self.send(frame)
             return await asyncio.wait_for(waiter, timeout=timeout_s)
         finally:
             self._waiters = [entry for entry in self._waiters if entry[1] is not waiter]
@@ -446,7 +435,7 @@ class Session:
     def _resolve_waiters(self, frame: Frame, sequence: int) -> None:
         for matches, waiter in self._waiters:
             if not waiter.done() and matches(frame):
-                waiter.set_result(NativeFrame(frame, sequence))
+                waiter.set_result(NativeReceipt(frame, sequence))
 
     async def _read_stderr(self, process: HarnessProcess) -> None:
         async for chunk in process.stderr_chunks():

@@ -27,6 +27,22 @@ async def test_independent_cursors_observe_the_same_native_frame(tmp_path) -> No
         assert await second.next() == {"sequence": 1}
 
 
+async def test_request_matching_does_not_consume_another_native_observer(tmp_path) -> None:
+    command = [
+        sys.executable,
+        "-c",
+        "import sys; sys.stdin.readline(); print('{\"notice\": 1}', flush=True); print('{\"reply\": 2}', flush=True)",
+    ]
+    async with AsyncNativeProcess(tmp_path, command, cwd=tmp_path, environment=dict(os.environ)) as process:
+        observer = process.frames()
+        receipt = await process.request(Trigger(trigger="go"), matches=lambda frame: frame.get("reply") == 2)
+
+        assert receipt.frame == {"reply": 2}
+        assert receipt.sequence == 2
+        assert await observer.next() == {"notice": 1}
+        assert await observer.next() == {"reply": 2}
+
+
 async def test_waiting_for_a_frame_reports_stdout_eof(tmp_path) -> None:
     async with AsyncNativeProcess(
         tmp_path, [sys.executable, "-c", "pass"], cwd=tmp_path, environment=dict(os.environ)
