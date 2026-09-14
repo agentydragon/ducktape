@@ -33,6 +33,12 @@
       depTypeTemplate: "terraform_provider_mirror",
     },
   ],
+  // The generated Bazel lockfiles are ignored below. Extend Renovate's pip
+  // requirements matcher to the canonical .in inputs so those environments
+  // remain visible; the default matcher only covers .txt and .pip files.
+  pip_requirements: {
+    managerFilePatterns: ["/(^|\\/)requirements\\.in$/"],
+  },
   ignorePaths: [
     "props/specimens/**",
     "devinfra/claude/web_env/**",
