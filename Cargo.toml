@@ -8,7 +8,7 @@ edition = "2024"
 
 [dependencies]
 log = "^0.4.34"
-env_logger = "^0.11.8"
+env_logger = "^0.11.11"
 # rust_decimal must use `serde-arbitrary-precision` to match `serde_json`, which
 # is built with `arbitrary_precision` on workspace-wide (feature unification).
 # Any other format (or `serde` alone) deserializes a JSON number as
@@ -20,35 +20,35 @@ tokio = { version = "^1.53.1", features = ["macros", "rt-multi-thread", "net", "
 reqwest = {version="^0.13.5", features=["form", "json", "rustls"], default-features=false}
 serde = {version="^1.0.229", features=["derive"]}
 url = {version="^2.5.8", features=["serde"]}
-serde_json = "^1.0.149"
+serde_json = "^1.0.151"
 # worthy
 chrono = {features=["serde"], version="^0.4.45"}
 chrono-tz = "^0.10.4"
 serde-xml-rs = "^0.8.2"
 petgraph = "^0.8.3"
-rustc-hash = "^2.1.2"
+rustc-hash = "^2.1.3"
 # debundle selector index: roaring bitmaps for posting-list intersection
-roaring = "^0.11.0"
+roaring = "^0.11.5"
 # debundle relational-selector solver: in-process Datalog (CQ over the program graph)
 ascent = "^0.8.1"
 # debundle: derive enum -> wire-string (snake_case) so kind spellings aren't hand-rolled
 strum = { version = "^0.28.0", features = ["derive"] }
 #tokio = { version = "*", features = ["full", "time"] }
-warp = "^0.4.2"
-futures = "^0.3.31"
+warp = "^0.4.3"
+futures = "^0.3.34"
 rusty-money = "^0.5.0"
 serde_yaml = "^0.9.34"
 structopt = "^0.3.26"
 xdg = "^3.0.0"
 alphavantage = "^0.7.1"
-shellexpand = "^3.1.1"
+shellexpand = "^3.1.2"
 currency_layer = "^0.2.0"
-async-trait = "^0.1.89"
+async-trait = "^0.1.92"
 rust_decimal_macros = "^1.40.0"
 term-table = "^1.4.0"
 uuid = { version="^1.26.1", features=["v4"] }
-shlex = "^2.0.0"
-glob = "^0.3.3"
+shlex = "^2.0.1"
+glob = "^0.3.4"
 csv = "^1.4.0"
 scraper = "^0.27.0"
 # process_api RE dependencies
@@ -56,15 +56,15 @@ tokio-tungstenite = "^0.30.0"
 tokio-vsock = "^0.7.2"
 hyper = { version = "^1.11.1", features = ["http1", "server"] }
 hyper-util = { version = "^0.1.20", features = ["tokio"] }
-http = "^1.4.0"
-http-body-util = "^0.1.3"
+http = "^1.5.0"
+http-body-util = "^0.1.5"
 clap = { version = "^4.6.6", features = ["derive", "env"] }
 nix = { version = "^0.31.3", features = ["signal", "process", "fs"] }
 # claude-hook (Rust hook daemon)
 axum = { version = "^0.8.9", features = ["json"] }
-tower = "^0.5.2"
-tempfile = "^3.20.0"
-bytes = "^1.11.0"
+tower = "^0.5.3"
+tempfile = "^3.27.0"
+bytes = "^1.12.1"
 parking_lot = "^0.12.5"
 libc = "^0.2.172"
 jsonwebtoken = "^11.0.0"
@@ -76,23 +76,23 @@ sha2 = "^0.11.0"
 # rig-core's default `reqwest-rustls` feature pulls aws-lc-rs → aws-lc-sys (needs cmake).
 # Use native-tls instead (system OpenSSL on Linux, no cmake required).
 rig-core = { version = "^0.42.0", default-features = false, features = ["derive", "native-tls"] }
-bollard = "^0.21.0"
+bollard = "^0.21.1"
 swc_atoms = "^10.0.0"
 swc_common = { version = "^26.0.0", features = ["concurrent"] }
-swc_ecma_ast = "^29.0.0"
+swc_ecma_ast = "^29.0.1"
 swc_ecma_codegen = "^32.0.0"
 swc_ecma_parser = "^45.0.0"
-swc_ecma_transforms_base = "^49.0.0"
-swc_ecma_utils = "^35.0.0"
+swc_ecma_transforms_base = "^49.0.1"
+swc_ecma_utils = "^35.0.2"
 swc_ecma_visit = "^29.0.0"
 relative-path = "^2.0.1"
-lol_html = "^3.0.0"
-humantime = "^2.3.0"
+lol_html = "^3.0.1"
+humantime = "^2.4.0"
 rayon = "^1.12.0"
-regex = "^1.12.3"
+regex = "^1.13.1"
 # debundle property-based test suites (test-only consumer; single
 # [dependencies] section because crate_universe pins one root manifest)
-proptest = "^1.6.0"
+proptest = "^1.11.0"
 # tana/firebase_session_extractor
 rusty-leveldb = "^4.0.1"
 v8_valueserializer = "^0.1.2"
@@ -100,20 +100,20 @@ prometheus = "^0.14.0"
 # x/codex_execpolicy_audit — pulled in so crate_universe renders them into @crates
 # for the overlaid codex-shell-command + codex-utils-absolute-path BUILD files.
 # Versions pinned to openai/codex's workspace deps for API compatibility.
-base64 = "0.23.0"
+base64 = "0.23.1"
 dirs = "7"
-dunce = "1.0.4"
-once_cell = "1.20.2"
+dunce = "1.0.5"
+once_cell = "1.21.4"
 tree-sitter = "0.27.0"
-tree-sitter-bash = "0.25"
+tree-sitter-bash = "0.25.1"
 which = "^8.0.6"
 # codex-utils-absolute-path (a dep of codex-shell-command) derives JsonSchema + TS.
-schemars = "1.0.0"
-ts-rs = "12"
+schemars = "1.2.2"
+ts-rs = "12.0.1"
 # codex-execpolicy (the real Starlark rule engine) deps.
-multimap = "0.10.0"
+multimap = "0.10.1"
 starlark = { version = "0.14.2", default-features = false }
-thiserror = "2.0.17"
+thiserror = "2.0.20"
 
 [[bin]]
 name = "ducktape_fake"
