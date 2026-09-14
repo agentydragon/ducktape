@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: alloy-control-plane-token
+  namespace: monitoring
+  annotations:
+    description: Long-lived service-account token for monitoring control-plane ServiceMonitors.
+    kubernetes.io/service-account.name: alloy
+type: kubernetes.io/service-account-token
