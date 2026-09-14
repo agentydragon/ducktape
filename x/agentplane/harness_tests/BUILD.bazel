@@ -29,6 +29,7 @@ py_test(
     srcs = ["test_model_endpoint.py"],
     deps = [
         ":model_endpoint",
+        "//:conftest",
         "//x/agentplane/harness_tests/claude:messages",
         "@pypi//aiohttp",
         "@pypi//pytest",
