@@ -20,12 +20,12 @@ original problem.
 The packaged skill contains three executable helpers:
 
 ```bash
-find_current_session.sh [claude|codex]
-analyze_session.sh [claude|codex|TRANSCRIPT.jsonl]
-conversation.sh [--max-display-text-length N] [claude|codex] [TRANSCRIPT.jsonl]
+find_current_session.py [claude|codex]
+analyze_session.py [claude|codex|TRANSCRIPT.jsonl]
+conversation.py [--max-display-text-length N] [claude|codex] [TRANSCRIPT.jsonl]
 ```
 
-`conversation.sh` prints every user window in chronological order. Each window
+`conversation.py` prints every user window in chronological order. Each window
 contains up to two preceding assistant messages. Each user or assistant message
 is capped at 1,000 characters by default; longer text is cut in the middle and
 marked with an instruction for requesting a larger display. Pass
@@ -43,9 +43,9 @@ When running from a checkout rather than an installed package, use
 Validated on this machine with Claude Code `2.1.260`:
 
 ```bash
-CLAUDE_SESSION=$(~/.claude/skills/session_logs/find_current_session.sh claude)
-~/.claude/skills/session_logs/analyze_session.sh "$CLAUDE_SESSION"
-~/.claude/skills/session_logs/conversation.sh claude "$CLAUDE_SESSION"
+CLAUDE_SESSION=$(~/.claude/skills/session_logs/find_current_session.py claude)
+~/.claude/skills/session_logs/analyze_session.py "$CLAUDE_SESSION"
+~/.claude/skills/session_logs/conversation.py claude "$CLAUDE_SESSION"
 ```
 
 Claude stores project transcripts as JSONL under
@@ -62,9 +62,9 @@ traffic rather than user turns. Compaction is recorded as
 Validated on this machine with Codex CLI `0.153.4`:
 
 ```bash
-CODEX_SESSION=$(~/.codex/skills/session_logs/find_current_session.sh codex)
-~/.codex/skills/session_logs/analyze_session.sh "$CODEX_SESSION"
-~/.codex/skills/session_logs/conversation.sh codex "$CODEX_SESSION"
+CODEX_SESSION=$(~/.codex/skills/session_logs/find_current_session.py codex)
+~/.codex/skills/session_logs/analyze_session.py "$CODEX_SESSION"
+~/.codex/skills/session_logs/conversation.py codex "$CODEX_SESSION"
 ```
 
 Codex stores transcripts as
@@ -80,13 +80,13 @@ Harness-injected role-user setup blocks are retained for completeness and should
 be distinguished from the user's actual request while interpreting the result.
 
 If the session-id environment variable is missing or the helper reports an
-ambiguous candidate, inspect `analyze_session.sh` output and choose the file
+ambiguous candidate, inspect `analyze_session.py` output and choose the file
 whose session id, working directory, and activity match this agent. Never guess
 from a post-compaction summary alone.
 
 ## Using the recovered conversation
 
-After running `conversation.sh`:
+After running `conversation.py`:
 
 1. Read all emitted user windows, including the first one and everything after
    every compaction marker.
@@ -103,8 +103,8 @@ After running `conversation.sh`:
 For a compact inventory rather than the full conversation:
 
 ```bash
-~/.codex/skills/session_logs/analyze_session.sh codex
-~/.claude/skills/session_logs/analyze_session.sh claude
+~/.codex/skills/session_logs/analyze_session.py codex
+~/.claude/skills/session_logs/analyze_session.py claude
 ```
 
 Pass an explicit transcript path to either helper when reviewing an older
