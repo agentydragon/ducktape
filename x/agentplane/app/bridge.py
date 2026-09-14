@@ -24,6 +24,7 @@ from x.agentplane.app.live import LiveIndex
 from x.agentplane.app.presets import Harness, PresetCatalog
 from x.agentplane.app.shutdown import Shutdown
 from x.agentplane.app.trajectory import FeedEnd, FeedError, IngestionLease, IngestionLeaseLostError, TrajectoryStore
+from x.agentplane.protocol import command_pb2
 from x.agentplane.runner import protocol_pb2
 from x.agentplane.runner.client import Attachment, RunnerClient, RunnerError, StreamClosedError
 
@@ -293,10 +294,10 @@ class RunnerBridge:
         finally:
             attachment.cancel()
 
-    async def command(self, sandbox: str, session_id: str, command: protocol_pb2.Command) -> None:
+    async def command(self, sandbox: str, session_id: str, command: command_pb2.Command) -> None:
         await self._command(sandbox, session_id, lambda attachment: attachment.command(command))
 
-    async def stop_runner_session(self, sandbox: str, session_id: str, command: protocol_pb2.Command) -> None:
+    async def stop_runner_session(self, sandbox: str, session_id: str, command: command_pb2.Command) -> None:
         await self._command(sandbox, session_id, lambda attachment: attachment.command(command), ends_stream=True)
 
     async def _command(
@@ -385,7 +386,7 @@ def _frame(event: str, data: dict[str, object], *, event_id: int | None = None) 
     return ("\n".join(lines) + "\n\n").encode()
 
 
-def _parse[M: protocol_pb2.Command | protocol_pb2.SessionSpec](message: M, body: dict[str, object]) -> M:
+def _parse[M: command_pb2.Command | protocol_pb2.SessionSpec](message: M, body: dict[str, object]) -> M:
     try:
         return ParseDict(body, message)
     except ParseError as error:
@@ -454,7 +455,7 @@ async def session_events(
 
 @router.post("/{session_id}/inputs", status_code=status.HTTP_202_ACCEPTED)
 async def send_input(bridge: Bridge, name: str, session_id: str, body: dict[str, object]) -> Response:
-    command = _parse(protocol_pb2.Command(), body)
+    command = _parse(command_pb2.Command(), body)
     if not command.command_id or not command.HasField("submit_input"):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="expected SubmitInput command")
     await bridge.command(name, session_id, command)
@@ -463,7 +464,7 @@ async def send_input(bridge: Bridge, name: str, session_id: str, body: dict[str,
 
 @router.post("/{session_id}/interrupt", status_code=status.HTTP_202_ACCEPTED)
 async def interrupt_session(bridge: Bridge, name: str, session_id: str, body: dict[str, object]) -> Response:
-    command = _parse(protocol_pb2.Command(), body)
+    command = _parse(command_pb2.Command(), body)
     if not command.command_id or not command.HasField("interrupt_turn"):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="expected InterruptTurn command")
     await bridge.command(name, session_id, command)
@@ -474,7 +475,7 @@ async def interrupt_session(bridge: Bridge, name: str, session_id: str, body: di
 async def switch_session_model(
     bridge: Bridge, name: str, session_id: str, body: dict[str, object], request: Request
 ) -> Response:
-    command = _parse(protocol_pb2.Command(), body)
+    command = _parse(command_pb2.Command(), body)
     if not command.command_id or not command.HasField("change_model") or not command.change_model.model:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="expected ChangeModel command")
     summaries = await bridge.list_sessions(name)
@@ -493,7 +494,7 @@ async def switch_session_model(
 
 @router.post("/{session_id}/shutdown", status_code=status.HTTP_202_ACCEPTED)
 async def shutdown_session(bridge: Bridge, name: str, session_id: str, body: dict[str, object]) -> Response:
-    command = _parse(protocol_pb2.Command(), body)
+    command = _parse(command_pb2.Command(), body)
     if not command.command_id or not command.HasField("stop_runner_session"):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="expected StopRunnerSession command"

@@ -41,7 +41,7 @@ from x.agentplane.app.changes import Changes
 from x.agentplane.app.operator_sessions import Base, OperatorSessionStore
 from x.agentplane.app.presets import Harness
 from x.agentplane.app.trajectory_updates import CHANNEL, TrajectoryUpdates
-from x.agentplane.protocol import event_log_pb2
+from x.agentplane.protocol import command_pb2, event_log_pb2
 from x.agentplane.runner import protocol_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -170,7 +170,7 @@ class FeedSnapshot:
 @dataclass(frozen=True)
 class ThreadCommandSnapshot:
     thread_id: UUID
-    command: protocol_pb2.Command
+    command: command_pb2.Command
     ordinal: int
     accepted_at: datetime
 
@@ -264,9 +264,7 @@ class TrajectoryStore:
             await _notify(session)
             return thread_id
 
-    async def request_thread_command(
-        self, thread_id: UUID, command: protocol_pb2.Command
-    ) -> ThreadCommandSnapshot:
+    async def request_thread_command(self, thread_id: UUID, command: command_pb2.Command) -> ThreadCommandSnapshot:
         """Append a generic desired command, idempotently, to one existing Thread.
 
         The Thread row is locked before assigning its next ordinal, so concurrent app replicas
@@ -327,7 +325,8 @@ class TrajectoryStore:
                 attached = ParseDict(state.attached, protocol_pb2.Attached())
                 previous_model = attached.spec.model
                 for entry in sorted(
-                    (ParseDict(payload, event_log_pb2.EventEntry()) for payload in inserted), key=lambda entry: entry.cursor
+                    (ParseDict(payload, event_log_pb2.EventEntry()) for payload in inserted),
+                    key=lambda entry: entry.cursor,
                 ):
                     # An Attached snapshot describes the runner at its cursor. Replaying the
                     # earlier log fills history, but must not rewind that snapshot's state.
@@ -383,9 +382,7 @@ class TrajectoryStore:
                 )
             )
 
-    async def set_attached(
-        self, thread_id: UUID, attached: protocol_pb2.Attached, *, lease: IngestionLease
-    ) -> None:
+    async def set_attached(self, thread_id: UUID, attached: protocol_pb2.Attached, *, lease: IngestionLease) -> None:
         async with self._sessions.begin() as session:
             await _fence(session, lease, thread_id)
             state = await session.get(FeedState, thread_id)
@@ -477,9 +474,7 @@ class TrajectoryStore:
             await _notify(session)
         return view
 
-    async def events(
-        self, thread_id: UUID, *, after_cursor: int = 0, limit: int
-    ) -> list[event_log_pb2.EventEntry]:
+    async def events(self, thread_id: UUID, *, after_cursor: int = 0, limit: int) -> list[event_log_pb2.EventEntry]:
         """Up to `limit` entries after the cursor, in cursor order; a reader pages until a short page."""
         async with self._sessions() as session:
             payloads = await session.scalars(
@@ -491,13 +486,13 @@ class TrajectoryStore:
             return [ParseDict(payload, event_log_pb2.EventEntry()) for payload in payloads]
 
 
-def _validate_command(command: protocol_pb2.Command) -> None:
+def _validate_command(command: command_pb2.Command) -> None:
     if not command.command_id or command.WhichOneof("operation") is None:
         raise ValueError("a Thread command needs a non-empty command id and operation")
 
 
 async def _append_thread_command(
-    session: AsyncSession, thread_id: UUID, command: protocol_pb2.Command
+    session: AsyncSession, thread_id: UUID, command: command_pb2.Command
 ) -> ThreadCommandSnapshot:
     _validate_command(command)
     encoded = MessageToDict(command)
@@ -525,7 +520,7 @@ async def _append_thread_command(
 def _thread_command_snapshot(command: ThreadCommand) -> ThreadCommandSnapshot:
     return ThreadCommandSnapshot(
         thread_id=command.thread_id,
-        command=ParseDict(command.command, protocol_pb2.Command()),
+        command=ParseDict(command.command, command_pb2.Command()),
         ordinal=command.ordinal,
         accepted_at=command.accepted_at,
     )

@@ -24,7 +24,7 @@ from x.agentplane.app.trajectory import (
     ThreadNotFoundError,
     TrajectoryStore,
 )
-from x.agentplane.protocol import event_log_pb2, event_pb2
+from x.agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from x.agentplane.runner import protocol_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -95,9 +95,7 @@ async def test_a_session_is_one_thread_and_its_events_read_back_in_order(
     assert await store.last_cursor(other) == 0
 
 
-async def test_runner_session_cannot_rebind_a_thread_to_a_different_static_sandbox(
-    store: TrajectoryStore,
-) -> None:
+async def test_runner_session_cannot_rebind_a_thread_to_a_different_static_sandbox(store: TrajectoryStore) -> None:
     sandbox_uid = uuid4()
     thread = await store.thread("sb-1", "s-1", SPEC, sandbox_uid=sandbox_uid)
 
@@ -110,7 +108,7 @@ async def test_runner_session_cannot_rebind_a_thread_to_a_different_static_sandb
 
 async def test_thread_commands_are_ordered_idempotent_and_reject_payload_reuse(store: TrajectoryStore) -> None:
     thread = await store.thread("sb-1", "s-1", SPEC)
-    command = protocol_pb2.Command(command_id="model-next", change_model=protocol_pb2.ChangeModel(model="next-model"))
+    command = command_pb2.Command(command_id="model-next", change_model=command_pb2.ChangeModel(model="next-model"))
 
     first = await store.request_thread_command(thread, command)
 
@@ -119,10 +117,11 @@ async def test_thread_commands_are_ordered_idempotent_and_reject_payload_reuse(s
     assert await store.thread_commands(thread) == [first]
     with pytest.raises(ThreadCommandConflictError, match="command id"):
         await store.request_thread_command(
-            thread, protocol_pb2.Command(command_id="model-next", change_model=protocol_pb2.ChangeModel(model="other-model"))
+            thread,
+            command_pb2.Command(command_id="model-next", change_model=command_pb2.ChangeModel(model="other-model")),
         )
     with pytest.raises(ValueError, match="command id"):
-        await store.request_thread_command(thread, protocol_pb2.Command())
+        await store.request_thread_command(thread, command_pb2.Command())
     with pytest.raises(ThreadNotFoundError):
         await store.request_thread_command(UUID(int=0), command)
 
@@ -131,8 +130,8 @@ async def test_thread_command_ordinals_are_serialised_across_replicas(
     store: TrajectoryStore, replica: TrajectoryStore
 ) -> None:
     thread = await store.thread("sb-1", "s-1", SPEC)
-    first = protocol_pb2.Command(command_id="first", submit_input=protocol_pb2.SubmitInput(text="First."))
-    second = protocol_pb2.Command(command_id="second", submit_input=protocol_pb2.SubmitInput(text="Second."))
+    first = command_pb2.Command(command_id="first", submit_input=command_pb2.SubmitInput(text="First."))
+    second = command_pb2.Command(command_id="second", submit_input=command_pb2.SubmitInput(text="Second."))
 
     left, right = await asyncio.gather(
         store.request_thread_command(thread, first), replica.request_thread_command(thread, second)
