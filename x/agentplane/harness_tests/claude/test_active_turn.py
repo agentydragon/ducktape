@@ -18,6 +18,9 @@ COALESCED_THIRD = "Reply only after seeing COALESCED_THIRD."
 INTERRUPTED_QUEUE_FIRST = "Reply only after seeing INTERRUPTED_QUEUE_FIRST."
 INTERRUPTED_QUEUE_SECOND = "Reply only after seeing INTERRUPTED_QUEUE_SECOND."
 INTERRUPT_RECOVERY = "Reply with exactly: INTERRUPT_QUEUE_RECOVERY_OK"
+SURVIVING_QUEUE_FIRST = "Reply only after seeing PLAIN_INTERRUPT_QUEUE_FIRST."
+SURVIVING_QUEUE_SECOND = "Reply only after seeing PLAIN_INTERRUPT_QUEUE_SECOND."
+PLAIN_INTERRUPT_RESULT = "PLAIN_INTERRUPT_QUEUE_DELIVERED"
 SELECTED_MODEL = "agentplane-switched/claude-haiku-4-5-20251001"
 
 
@@ -150,6 +153,53 @@ async def test_interrupt_cancels_each_queued_input_before_native_message(
     ]
     assert cancelled.count(first.uuid) == 1
     assert cancelled.count(second.uuid) == 1
+
+
+async def test_plain_interrupt_preserves_queued_inputs_for_the_next_native_request(
+    claude: ClaudeHarness, anthropic_messages: AnthropicMessages
+) -> None:
+    """The runner's normal Claude interrupt aborts only the active turn, not queued input.
+
+    The native receipt names the still-queued UUIDs.  Their later model request contains both
+    inputs as one newline-coalesced user message, so neither command is silently lost when an
+    interrupt races with native queue delivery.
+    """
+    async with claude.start(anthropic_messages, replay_user_messages=True) as run:
+        initial = await run.send("Keep this first turn active until interrupted without cancelling the queue.")
+        async with await anthropic_messages.await_next_request() as initial_exchange:
+            stream = sse.message_stream([sse.Text("never finished")], model=MODEL)
+            await initial_exchange.send(*stream.through("content_block_start").events)
+            await initial.active()
+
+            first, second = await run.send_many([SURVIVING_QUEUE_FIRST, SURVIVING_QUEUE_SECOND])
+            for prompt in (first, second):
+                await prompt.lifecycle(wire.CommandState.QUEUED)
+
+            interrupt = await run.interrupt(cancel_queued=False)
+            assert interrupt.response.subtype == "success"
+            assert interrupt.response.response == {"still_queued": [first.uuid, second.uuid]}
+            await initial_exchange.wait_client_closed()
+            assert (await initial.result()).is_error is True
+
+        async with await anthropic_messages.await_next_request() as queued_exchange:
+            request = queued_exchange.request
+            coalesced = f"{SURVIVING_QUEUE_FIRST}\n{SURVIVING_QUEUE_SECOND}"
+            assert request.last_message.role == "user"
+            assert request.texts("user")[-1] == coalesced
+            assert [text for text in request.texts("user") if "PLAIN_INTERRUPT_QUEUE_" in text] == [coalesced]
+            stream = sse.message_stream([sse.Text(PLAIN_INTERRUPT_RESULT)], model=MODEL)
+            events = run.events()
+            await queued_exchange.send(*stream.events)
+            await queued_exchange.close()
+            assert (await events.result()).result == PLAIN_INTERRUPT_RESULT
+
+    parsed = [wire.parse_frame(frame) for frame in run.native_frames()]
+    started = [
+        frame.command_uuid
+        for frame in parsed
+        if isinstance(frame, wire.CommandLifecycleFrame) and frame.state is wire.CommandState.STARTED
+    ]
+    assert started[-2:] == [first.uuid, second.uuid]
 
 
 async def test_set_model_during_an_active_turn_controls_the_next_model_request(
