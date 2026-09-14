@@ -58,6 +58,10 @@ class _Abort:
 _Action = _Send | _Respond | _Close | _Abort
 
 
+class ModelRequestParseError(ValueError):
+    """The native harness reached the fixture but did not speak its typed request wire format."""
+
+
 class _HttpExchange:
     def __init__(self, request: web.Request):
         self._request = request
@@ -188,7 +192,7 @@ class ModelEndpoint[RequestT: BaseModel]:
     """aiohttp lifecycle shared by concrete wire-shaped endpoint fixtures."""
 
     def __init__(self) -> None:
-        self._pending: asyncio.Queue[ModelExchange[RequestT]] = asyncio.Queue()
+        self._pending: asyncio.Queue[ModelExchange[RequestT] | ModelRequestParseError] = asyncio.Queue()
         self._exchanges: list[ModelExchange[RequestT]] = []
         self._runner: web.AppRunner | None = None
         self._origin: str | None = None
@@ -219,13 +223,19 @@ class ModelEndpoint[RequestT: BaseModel]:
                 await self._runner.cleanup()
 
     async def _next_exchange(self) -> ModelExchange[RequestT]:
-        return await self._pending.get()
+        match await self._pending.get():
+            case ModelRequestParseError() as error:
+                raise error
+            case ModelExchange() as exchange:
+                return exchange
 
     async def _post(self, request: web.Request) -> web.StreamResponse:
         try:
             exchange = ModelExchange(self._parse_request(await request.json()), _HttpExchange(request))
         except Exception as error:
-            raise web.HTTPBadRequest(text=str(error)) from error
+            parse_error = ModelRequestParseError(f"typed model fixture rejected a native request: {error}")
+            await self._pending.put(parse_error)
+            raise web.HTTPBadRequest(text=str(parse_error)) from error
         self._exchanges.append(exchange)
         await self._pending.put(exchange)
         return await exchange._http.serve()
