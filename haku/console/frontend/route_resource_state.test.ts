@@ -1,6 +1,8 @@
 import { act, createElement } from "react";
 import { MantineProvider } from "@mantine/core";
 import { createRoot } from "react-dom/client";
+// @vitest-environment happy-dom
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import * as client from "./client";

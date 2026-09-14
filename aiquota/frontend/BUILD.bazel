@@ -192,7 +192,7 @@ vitest_bin.vitest_test(
     args = ["run"],
     chdir = package_name(),
     data = [
-        "vitest.config.ts",
+        "vitest.config.mts",
         ":format_test",
         ":quotas_test",
         "//:node_modules/vitest",

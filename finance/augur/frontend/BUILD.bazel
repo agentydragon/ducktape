@@ -697,11 +697,11 @@ ts_library(
     ],
 )
 
-# vitest loads this config itself, so it stays a `.ts` in the runfiles rather than being compiled
+# vitest loads this config itself, so it stays an `.mts` in the runfiles rather than being compiled
 # away; no_emit type-checks it anyway, through the generated :vitest_config_typecheck_test.
 ts_project(
     name = "vitest_config",
-    srcs = ["vitest.config.ts"],
+    srcs = ["vitest.config.mts"],
     extends = ":tsconfig",
     no_emit = True,
     resolve_json_module = True,
@@ -717,7 +717,7 @@ vitest_bin.vitest_test(
     args = ["run"],
     chdir = package_name(),
     data = [
-        "vitest.config.ts",
+        "vitest.config.mts",
         ":sanity_bands_test_lib",
         "//:node_modules/vitest",
     ],
@@ -728,7 +728,7 @@ vitest_bin.vitest_test(
     args = ["run"],
     chdir = package_name(),
     data = [
-        "vitest.config.ts",
+        "vitest.config.mts",
         ":budget_adjustments_test_lib",
         "//:node_modules/vitest",
     ],
@@ -739,7 +739,7 @@ vitest_bin.vitest_test(
     args = ["run"],
     chdir = package_name(),
     data = [
-        "vitest.config.ts",
+        "vitest.config.mts",
         ":input_helpers_test_lib",
         "//:node_modules/vitest",
     ],
@@ -753,7 +753,7 @@ vitest_bin.vitest_test(
     ],
     chdir = package_name(),
     data = [
-        "vitest.config.ts",
+        "vitest.config.mts",
         ":format_test_lib",
         "//:node_modules/vitest",
     ],
@@ -767,7 +767,7 @@ vitest_bin.vitest_test(
     ],
     chdir = package_name(),
     data = [
-        "vitest.config.ts",
+        "vitest.config.mts",
         ":data_helpers_test_lib",
         "//:node_modules/vitest",
     ],
@@ -781,7 +781,7 @@ vitest_bin.vitest_test(
     ],
     chdir = package_name(),
     data = [
-        "vitest.config.ts",
+        "vitest.config.mts",
         ":url_state_test_lib",
         "//:node_modules/vitest",
     ],
@@ -795,7 +795,7 @@ vitest_bin.vitest_test(
     ],
     chdir = package_name(),
     data = [
-        "vitest.config.ts",
+        "vitest.config.mts",
         ":product_test_lib",
         "//:node_modules/happy-dom",
         "//:node_modules/vitest",
