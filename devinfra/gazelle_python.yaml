@@ -547,4 +547,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 33af5e2cee84982d1f70e7ecd3a38a603bb463961228e5166b6c144536af5e78
+integrity: fe1e6d8e8815ff10046850218d27d25ffce41ca8ea1d104bcfdcfdb56d5bf2a7
