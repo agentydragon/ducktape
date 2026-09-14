@@ -65,6 +65,7 @@ async def test_queued_inputs_coalesce_into_one_native_user_message(
                 while not is_queued(await process.next_frame()):
                     pass
             await initial_exchange.send(*initial_stream.events[content_started + 1 :])
+            await initial_exchange.close()
             assert (await scenarios.await_result(process))["result"] == "INITIAL_TURN_DONE"
 
         async with await anthropic_messages.await_next_request() as exchange:
@@ -76,6 +77,7 @@ async def test_queued_inputs_coalesce_into_one_native_user_message(
             assert request.texts("assistant") == ["INITIAL_TURN_DONE"]
             stream = sse.message_stream([sse.Text("COALESCED_OK")], model=MODEL)
             await exchange.send(*stream.events)
+            await exchange.close()
             assert (await scenarios.await_result(process))["result"] == "COALESCED_OK"
 
     parsed = [wire.parse_frame(frame) for frame in process.stdout_frames()]
@@ -171,6 +173,7 @@ async def test_interrupt_cancels_each_queued_input_before_native_message(
             )
             stream = sse.message_stream([sse.Text("INTERRUPT_QUEUE_RECOVERY_OK")], model=MODEL)
             await recovery_exchange.send(*stream.events)
+            await recovery_exchange.close()
             assert (await scenarios.await_result(process))["result"] == "INTERRUPT_QUEUE_RECOVERY_OK"
 
     cancelled = [
