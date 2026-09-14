@@ -103,7 +103,6 @@ py_library(
     deps = [
         "@pypi//fastmcp_slim",
         "@pypi//httpx",
-        "@pypi//httpx2",
     ],
 )
 
