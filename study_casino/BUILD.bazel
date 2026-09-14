@@ -411,9 +411,15 @@ oci_image(
     name = "image",
     base = "@debian_trixie_slim_linux_amd64",
     entrypoint = py_image_entrypoint("server_bin"),
-    env = py_image_env(binary_name = "server_bin"),
+    env = py_image_env(
+        binary_name = "server_bin",
+        extra_env = {"SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt"},
+    ),
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
-    tars = [":server_layers"],
+    tars = [
+        ":server_layers",
+        "//third_party/debian_slim:cacerts",
+    ],
     user = "1000:1000",
     visibility = ["//visibility:public"],
 )
