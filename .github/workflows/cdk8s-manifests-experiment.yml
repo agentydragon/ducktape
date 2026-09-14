@@ -1,4 +1,4 @@
-# Prove that a cdk8s program can run as a Bazel-local generator while Flux
+# Prove that a Python cdk8s program can run as a Bazel-local generator while Flux
 # remains the eventual applier. This is deliberately a smoke artifact outside
 # cluster/k8s; it is not part of the live cluster source yet.
 name: cdk8s manifest generation experiment
@@ -8,9 +8,9 @@ on:
     paths:
       - ".github/workflows/cdk8s-manifests-experiment.yml"
       - "cluster/BUILD.bazel"
-      - "cluster/generate_manifests.mjs"
-      - "package.json"
-      - "pnpm-lock.yaml"
+      - "cluster/generate_manifests.py"
+      - "pyproject.toml"
+      - "requirements_bazel.txt"
   workflow_dispatch:
     inputs:
       publish:

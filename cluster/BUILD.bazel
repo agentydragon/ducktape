@@ -1,25 +1,21 @@
 # gazelle:ignore
 
-load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
 exports_files([".tflint.hcl"])
 
-js_library(
+py_library(
     name = "generate_manifests_lib",
-    srcs = ["generate_manifests.mjs"],
+    srcs = ["generate_manifests.py"],
     visibility = ["//visibility:private"],
-    deps = ["//:node_modules/cdk8s"],
+    deps = ["@pypi//cdk8s"],
 )
 
-# A local Bazel binary is intentional here: the eventual GitHub workflow can run
-# this with `bb run`, write the generated YAML into a temporary checkout, and
-# commit/publish that output without giving GitHub cluster credentials.
-js_binary(
+py_binary(
     name = "generate_manifests",
-    data = [":generate_manifests_lib"],
-    entry_point = "generate_manifests.mjs",
+    main_module = "cluster.generate_manifests",
     visibility = ["//visibility:public"],
+    deps = [":generate_manifests_lib"],
 )
 
 py_library(
