@@ -6,6 +6,11 @@ streams sessions to the browser over SSE, keeps a watch over the objects its vie
 is pushed rather than polled for, and copies every event into the trajectory store as it arrives.
 The staging instance lives in `cluster/k8s/agentplane-staging/`.
 
+The current bridge's session-shaped storage and direct command routes are implementation state, not
+the desired product model. [Thread, runner, and harness layering](../docs/thread_layering.md) is
+the authoritative contract for the durable Thread-command outbox, multi-session Thread history,
+and the conversation/Raw projections that replace those assumptions.
+
 ```sh
 bbr test //x/agentplane/app/...
 ```

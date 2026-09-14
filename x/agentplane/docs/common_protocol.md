@@ -1,89 +1,53 @@
-# Common protocol
+# Common runner protocol
 
-The shared seam over Claude Code and Codex is the runner under [`../runner/`](../runner/); its
-contract is [`../runner/SPEC.md`](../runner/SPEC.md). This page records what that seam may own,
-what stays harness-native, and the vocabulary the layers above it use. The scripted tests under
-[`../harness_tests/`](../harness_tests/) and the live probe under [`../capture/`](../capture/)
-are the evidence every rule here rests on.
+Status: **target hard-cut seam.** The current wire remains documented by the runner
+specification until that cutover lands; this page does not add a compatibility mapping
+between the old and target command shapes.
 
-## What the seam owns
+The runner is the shared seam over Claude Code and Codex. Exact wire fields, replay,
+and journal recovery are in [the runner specification](../runner/SPEC.md). The
+cross-layer identity, command, projection, and UI contract is
+[Thread, runner, and harness layering](thread_layering.md). That document is the
+authoritative definition of Thread command versus runner Command, app-versus-runner
+receipt, replica ownership, and Raw-mode ordering.
 
-- One bidirectional stream per attachment, `Attach`, over `Open`, `Command`, and `Detach`, plus
-  sequenced events. A command is `SubmitInput`, `ChangeModel`, `InterruptTurn`, or
-  `StopRunnerSession`.
-- Only behavior the scripted tests prove with the real binaries. Its own tests are one
-  interaction script per scenario run against both harnesses, so a caller never switches on
-  the harness.
-- One `SubmitInput` operation and no steer operation: both harnesses take an input during a turn
-  into that turn.
-- Harness ids and frames, delivered verbatim as `Native` events with the derived events citing
-  them, so harness detail is one lookup away rather than collapsed.
+## What the runner seam owns
 
-The runner makes its own journal durable before `CommandReceived`, reconciles uncompleted commands
-after restart, and never emits an indeterminate outcome. It does not present an unsupported
-operation as successful. It is an internal boundary: distinct from the browser-facing API, and
-silent on Thread naming, archive presentation, timeline design, and HTTP resource shape.
+- One bidirectional Attach stream per runner session over Open, Command, and Detach,
+  plus replayable sequenced Events.
+- A durable command-journal receipt before CommandReceived and causal effect/outcome
+  Events afterwards. It does not call an unsupported native operation successful.
+- Native harness frames delivered verbatim as Native Events, with derived Events citing
+  their source sequences.
+- Only common behavior proved by the scripted Claude/Codex harness tests. A caller
+  selects a harness through SessionSpec.harness, not with adapter-specific operations.
 
-## Harness differences that stay visible
+The current commands are `SubmitInput`, `ChangeModel`, `InterruptTurn`, and
+`StopRunnerSession`. `SubmitInput` joins a running turn; it is not a common steer or
+queue abstraction. The runner reconciles uncompleted commands after restart and
+never emits an indeterminate outcome.
 
-- Claude and Codex expose different native control and lifecycle frames.
-- With `CLAUDE_CODE_MAX_RETRIES` bounded, Claude retries a stream lost before or after visible
-  text as a non-streaming request; Codex emits retry notices and eventually fails the turn.
-- Codex `turn/steer` requires `expectedTurnId` and joins the running turn; the runner does not
-  use it, since a plain `turn/start` during a turn joins it too.
-- Codex also exposes a separate durable per-thread queue the runner does not use
-  (`thread/queue/{add,list,update,delete,reorder,start}`, `codex-rs/ext/queue`): unlike join, a
-  queued item never touches the active turn and only starts a new one once the thread goes idle,
-  and `delete` is race-free (mutex-serialized against dispatch, returns whether it actually still
-  removed something) up to that point — evidence in <harness_protocols.md>. That is a
-  materially different shape from join/steer's all-or-nothing `turn/interrupt`.
-- Claude's side of that question is now written up in
-  [`claude_input_queue.md`](claude_input_queue.md): it too has a real
-  enqueued/dequeued state — inputs are queued under a caller-supplied uuid, withdrawn by
-  `cancel_async_message`, and reported via `command_lifecycle` frames — so "one `SubmitInput`
-  operation and no steer verb" is due a revisit against both harnesses, not just Codex. The two
-  queues are not
-  the same object, though: Codex's sits beside the turn and deletes race-free, while Claude's
-  feeds the turn and **coalesces**, which silently moves the unit of withdrawal from the input to
-  the batch. Any common enqueue/withdraw verb has to survive that asymmetry.
-- Steering, queued input, interruption, and resume use harness-native mechanisms and outcomes.
-  A related operation on both sides is not evidence that the two are equivalent.
-- Runtime model control is a durable command. Claude reports its native `set_model` control effect;
-  Codex reports `ModelChanged` only when a later native `turn/start` proves its selection. Those
-  different mechanisms stay in their adapters.
+The runner is internal. It neither names product Threads nor owns the browser API,
+PostgreSQL outbox, Kubernetes Sandbox lifecycle, authorization, or presentation.
 
-These are constraints on the adapters, not a license to manufacture common semantics the
-harnesses did not demonstrate. A behavior that is unsupported or supported differently is
-recorded as such in the adapter, never smoothed over with a generic state machine or retry policy.
+## Harness differences remain evidence
 
-## Vocabulary above the seam
+Claude and Codex can have different native control/lifecycle frames, retry behavior,
+input queues, and model-change mechanisms. Common runner Events record only the
+meaning both adapters can prove; native frames keep the underlying difference
+inspectable. Similar native operations are not evidence of identical semantics.
 
-The layers above the runner speak in product nouns. They are not fields in native transcripts,
-and the runner does not know them:
-
-- **Thread**: a durable, user-visible interaction context, served by one runner session at a
-  time.
-- **Thread command**: an app-owned desired operation with a stable id; delivery to the runner is a
-  runner `Command` with the same id.
-- **Turn**: one harness execution bracket, the runner's `TurnStarted` to `TurnCompleted`.
-- **Runner**: the process serving a Thread's session.
-- **Timeline event**: a presentation of runner events, owned by whichever app renders it.
-
-## What stays out of the seam
-
-The runner is consumed by, and never defines, the browser-facing API, Thread persistence,
-Kubernetes and Agent Sandbox lifecycle, leases and fencing, authorization, credentials,
-approvals, subscription adapters, and the conversation UI. None of them reinterprets the raw
-evidence; they read the runner's events and its `Native` frames.
+In particular, input coalescing/queueing, steering, interruption, resume, and runtime
+model control remain adapter responsibilities. The native constraints and evidence are
+documented alongside the relevant adapter tests and captures, including
+[Claude input queue behavior](claude_input_queue.md). Any future common enqueue,
+withdraw, or capability surface must preserve the demonstrated asymmetry rather than
+make an app-side generic queue.
 
 ## Capture evidence contract
 
-A live probe run preserves native frames in both directions with their complete payloads and
-framing boundaries, file order within each transcript, harness-native request, session,
-thread, turn, item, and tool ids, model request bodies and streamed response chunks, and enough
-process-exit information to diagnose a failed run. Its output stays outside Git as an
-investigation artifact; nothing consumes it mechanically, and the behavioral assertions live in
-the scripted tests. It carries no routine byte lengths, hashes, parsed-object copies, duplicate
-timestamps, sequence registries, or outer copies of harness ids: the ordered payload already
-supplies that. Refreshing a pinned harness against it is described in
-[the harness tests README](../harness_tests/README.md).
+A live capture preserves complete native frames in both directions, framing/file order,
+native request/session/thread/turn/item/tool ids, model request bodies and streamed
+chunks, and enough process-exit evidence to diagnose a failed run. It is investigation
+evidence outside Git; behavioral assertions belong in scripted tests. Refreshing pinned
+harness evidence is described in [the harness tests README](../harness_tests/README.md).
