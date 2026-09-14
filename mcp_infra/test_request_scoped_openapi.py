@@ -10,6 +10,7 @@ from copy import deepcopy
 from typing import Any
 
 import httpx
+import httpx2
 import pytest
 import pytest_bazel
 from fastmcp.server.providers.openapi import OpenAPIProvider, OpenAPITool
@@ -135,6 +136,35 @@ async def test_rejects_openapi_parameter_that_collides_with_injected_client(
     provider.add_transform(RequestScopedOpenAPIClients(client_provider))
     with pytest.raises(ValueError, match="uses reserved parameter"):
         await provider.get_tool("echo")
+
+
+async def test_rebuilds_fastmcp_request_for_httpx2_client(
+    echo_provider: OpenAPIProvider, placeholder_client: httpx.AsyncClient
+) -> None:
+    observed: list[type[object]] = []
+
+    async def backend(request: httpx2.Request) -> httpx2.Response:
+        observed.append(type(request))
+        return httpx2.Response(200, json={"value": request.url.params["value"]})
+
+    @asynccontextmanager
+    async def httpx2_client() -> AsyncIterator[httpx2.AsyncClient]:
+        async with httpx2.AsyncClient(
+            base_url="https://backend.invalid", transport=httpx2.MockTransport(backend)
+        ) as client:
+            yield client
+
+    parent = await echo_provider.get_tool("echo")
+    assert isinstance(parent, OpenAPITool)
+    echo_provider.add_transform(RequestScopedOpenAPIClients(httpx2_client))
+    wrapped = await echo_provider.get_tool("echo")
+    assert wrapped is not None
+
+    result = await wrapped.run({"value": "httpx2"})
+
+    assert result.structured_content == {"value": "httpx2"}
+    assert observed == [httpx2.Request]
+    assert parent._client is placeholder_client
 
 
 async def test_concurrent_calls_keep_request_clients_isolated(

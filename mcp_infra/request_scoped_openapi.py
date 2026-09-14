@@ -50,6 +50,41 @@ def borrowed_http_client_provider[ClientT](client: ClientT) -> HTTPClientProvide
     return provider
 
 
+class _RequestCompatibleClient:
+    """Present FastMCP's ``httpx`` request API to another httpx-compatible client.
+
+    FastMCP 3.4.7's OpenAPI director always constructs an ``httpx.Request``.
+    Clients from the ``httpx2`` fork reject that request because its body stream
+    is not an ``httpx2`` stream.  Rebuild the already-buffered request through
+    the injected client's own builder before sending it; this preserves the
+    provider's client, transport, auth, and timeout configuration.
+    """
+
+    def __init__(self, client: Any) -> None:
+        self._client = client
+
+    @property
+    def base_url(self) -> Any:
+        return self._client.base_url
+
+    @property
+    def headers(self) -> Any:
+        return self._client.headers
+
+    async def send(self, request: httpx.Request) -> Any:
+        build_request = getattr(self._client, "build_request", None)
+        if build_request is None:
+            return await self._client.send(request)
+        compatible_request = build_request(
+            request.method,
+            str(request.url),
+            headers=request.headers.raw,
+            content=request.content,
+            extensions=request.extensions,
+        )
+        return await self._client.send(compatible_request)
+
+
 class RequestScopedOpenAPIClients(Transform):
     """Resolve an ``AsyncClient`` dependency for each generated tool call."""
 
@@ -86,7 +121,7 @@ class RequestScopedOpenAPIClients(Transform):
             # 3.4.4.  model_copy() preserves its generated route/director while
             # ensuring this private client assignment is invocation-local.
             bound = tool.model_copy()
-            bound._client = _fastmcp_request_scoped_http_client
+            bound._client = _RequestCompatibleClient(_fastmcp_request_scoped_http_client)
             return await bound.run(arguments)
 
         wrapped = Tool.from_tool(tool, transform_fn=without_injected_parameters(dispatch))
