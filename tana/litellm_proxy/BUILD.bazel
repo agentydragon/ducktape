@@ -164,8 +164,8 @@ py_test(
 
 aspect_py_binary(
     name = "server_bin",
-    srcs = ["@@rules_python++pip+pypi_tana_litellm_proxy_314_litellm//:rules_python_wheel_entry_point_litellm.py"],
-    main = "@@rules_python++pip+pypi_tana_litellm_proxy_314_litellm//:rules_python_wheel_entry_point_litellm.py",
+    srcs = ["@pypi_tana_litellm_proxy//litellm:bin/litellm"],
+    main = "@pypi_tana_litellm_proxy//litellm:bin/litellm",
     deps = [
         ":__init__",
         ":custom_handler",
