@@ -209,7 +209,7 @@ pub fn in_common_currency(
 
     // TODO: from config
     let start = denomination_to_node[base];
-    trace!("Start: {:?}", &start);
+    trace!("Start: {:?}", start);
     let costs = bellman_ford(&g, start);
     trace!("costs={costs:?}");
 

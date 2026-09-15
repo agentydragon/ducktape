@@ -604,7 +604,7 @@ impl VisitMut for SourceCanonicalizer<'_> {
             && let Some(args) = &mut node.args
             && let Some(first) = args.first_mut()
         {
-            first.expr = Box::new(new_url_expr(&rewritten));
+            *first.expr = new_url_expr(&rewritten);
         }
         node.visit_mut_children_with(self);
     }

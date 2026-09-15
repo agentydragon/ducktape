@@ -965,7 +965,7 @@ impl CompiledSelectorProblemBuilder {
         let id = AllowedTupleConstraintId(self.allowed_tuples.len());
         let domains = self.validate_allowed_tuple_variables(variables)?;
         let arity = variables.len();
-        if values.len() % arity != 0 {
+        if !values.len().is_multiple_of(arity) {
             return Err(CompiledSelectorProblemError::TupleArityMismatch {
                 id,
                 tuple_index: values.len() / arity,
@@ -1936,10 +1936,10 @@ impl CompiledSelectorProblemBuilder {
                 coefficients: coefficients.len(),
             });
         }
-        if domain.is_empty() || domain.len() % 2 != 0 {
+        if domain.is_empty() || !domain.len().is_multiple_of(2) {
             return Err(CompiledSelectorProblemError::InvalidLinearDomain);
         }
-        for interval in domain.chunks_exact(2) {
+        for interval in domain.as_chunks::<2>().0 {
             if interval[0] > interval[1] {
                 return Err(CompiledSelectorProblemError::InvalidLinearDomain);
             }

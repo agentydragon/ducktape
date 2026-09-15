@@ -59,7 +59,7 @@ pub fn prepare_js_chunks(
         .collect();
     let jobs = ordered_ids
         .iter()
-        .zip(chunks.into_iter())
+        .zip(chunks)
         .map(|((chunk_id, chunk_name), mut chunk)| {
             let entry_file = chunk.entry_file.clone();
             let entry_artifact_file = chunk.remove_file(&entry_file).with_context(|| {
@@ -130,16 +130,15 @@ pub fn prepare_js_chunks(
                 needs_ast_for_chunk(&chunk_name, spec, &import_index, &vendor_target_chunk_ids)
                     || prepared.has_rewritable_specifier;
 
-            if !needs_ast {
-                if let Some(pos) = prepared
+            if !needs_ast
+                && let Some(pos) = prepared
                     .files
                     .iter()
                     .position(|f| f.path == prepared.entry_file)
-                {
-                    let file = prepared.files.remove(pos);
-                    if let Some(rendered) = file.into_rendered_source() {
-                        prepared.files.insert(pos, rendered);
-                    }
+            {
+                let file = prepared.files.remove(pos);
+                if let Some(rendered) = file.into_rendered_source() {
+                    prepared.files.insert(pos, rendered);
                 }
             }
 
@@ -405,10 +404,10 @@ fn needs_ast_for_chunk(
 
     // Check if this chunk imports a vendor target
     for vendor_target in vendor_target_chunk_ids {
-        if let Some(callers) = import_index.get(vendor_target) {
-            if callers.iter().any(|caller| caller == chunk_id) {
-                return true;
-            }
+        if let Some(callers) = import_index.get(vendor_target)
+            && callers.iter().any(|caller| caller == chunk_id)
+        {
+            return true;
         }
     }
 

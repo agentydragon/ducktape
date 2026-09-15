@@ -795,10 +795,7 @@ impl MaterializedOutputChunkIndex {
             if let Some(entry) = self.by_dir_prefix.get(&resolved_path[..end]) {
                 return Some(*entry);
             }
-            match resolved_path[..end].rfind('/') {
-                Some(next) => end = next,
-                None => return None,
-            }
+            end = resolved_path[..end].rfind('/')?;
         }
     }
 }

@@ -73,10 +73,10 @@ impl Converter for AlphaVantageConverter {
                     continue;
                 }
                 let exchange_rate = client.get_exchange_rate(currency_from, currency_to).await;
-                if exchange_rate.is_err() {
-                    error!("for {currency_from}:{currency_to} -> {exchange_rate:?}: skip");
+                if let Ok(exchange_rate) = exchange_rate {
+                    trace!("{exchange_rate:?}: ok");
                 } else {
-                    trace!("{:?}: ok", exchange_rate.unwrap());
+                    error!("for {currency_from}:{currency_to} -> {exchange_rate:?}: skip");
                 }
             }
         }
