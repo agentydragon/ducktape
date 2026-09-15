@@ -63,7 +63,6 @@ flowchart TB
     UISHELL_NEWTHREAD_SANDBOX["Deferred combined UI<br/>pre-scoped '+ New thread' on a Sandbox's page<br/>Sandbox selected, Thread fields editable"]:::future
     UISHELL_NEWTHREAD_LANDING["Deferred combined UI<br/>sidebar '+' unscoped new-thread composer<br/>Sandbox/preset/model pickers + prompt"]:::future
     COMMAND_QUEUE_DECISION["Deferred decision<br/>accept commands while runner unavailable?<br/>current slice uses runner admission first"]:::decision
-    APP_EVENT_REPLICATION["Remaining acceptance<br/>app process loss around ingestion commit<br/>replica takeover and browser catch-up"]:::active
     CLAUDE_RECOVERY["Required evidence then implementation<br/>Claude execution before durable runner proof<br/>native correlation and safe recovery"]:::active
     CODEX_RECOVERY["Required evidence then implementation<br/>Codex execution before durable runner proof<br/>native correlation and safe recovery"]:::active
     RUNNER_COMMAND_SCHEDULING["Required correctness<br/>durable admission separate from native I/O<br/>responsive interrupts and model/input progress"]:::active
@@ -93,8 +92,6 @@ flowchart TB
     AG -. hosted Thread lifecycle .-> RETIRE_AGENT
 
     INPUT_DELIVERY -. reliable Thread ingress .-> ING
-    APP_EVENT_REPLICATION --> THREAD_COMMAND_INGRESS
-    APP_EVENT_REPLICATION --> THREAD_REPLAY_PROTOCOL
     THREAD_COMMAND_INGRESS --> THREAD_PENDING_UI
     THREAD_REPLAY_PROTOCOL --> THREAD_PENDING_UI
     RUNNER_COMMAND_SCHEDULING --> THREAD_PENDING_UI
@@ -102,9 +99,7 @@ flowchart TB
     THREAD_EVENT_CONTINUITY --> THREAD_SUCCESSOR_DELIVERY
     CLAUDE_RECOVERY -. native continuation evidence .-> THREAD_SUCCESSOR_DELIVERY
     CODEX_RECOVERY -. native continuation evidence .-> THREAD_SUCCESSOR_DELIVERY
-    APP_EVENT_REPLICATION --> SANDBOX_LIFECYCLE_DURABILITY
     COMMAND_QUEUE_DECISION -. if app-first acceptance chosen .-> THREAD_COMMAND_DELIVERY
-    APP_EVENT_REPLICATION --> THREAD_COMMAND_DELIVERY
     RUNNER_COMMAND_SCHEDULING --> THREAD_COMMAND_DELIVERY
     THREAD_COMMAND_DELIVERY --> THREAD_OUTBOX_CUTOVER
     THREAD_PENDING_UI --> THREAD_OUTBOX_CUTOVER
@@ -165,9 +160,9 @@ change. UI reducers and visual cases can proceed against established Events whil
 native recovery research runs. Automatic recovery is gated separately for each harness
 and operation by its evidence; do not claim it from a working ordinary command path.
 
-**Current dispatch wave:** admission/scheduling and app Event replication are independent
-implementation lanes; native recovery follows each harness's
-evidence. Then integrate command ingress, exact browser replay, and pending/Raw UI.
+**Current dispatch wave:** app Event replication has process-kill and HTTP/SSE catch-up
+acceptance. Integrate canonical command ingress, exact browser replay, and pending/Raw UI
+alongside admission/scheduling; native recovery follows each harness's evidence.
 Do not wait for every native recovery scenario before implementing ordinary controls.
 Reuse existing agent worktrees. Each self-contained change gets its own PR against
 `devel`; stack only on required implementation content and remove completed tasks as
@@ -504,17 +499,6 @@ sequence. Review them for independently useful changes to salvage into appropria
 slices; do not stack new work on their deferred queue design. Preserve the runner's
 own journal in either option.
 
-### `APP_EVENT_REPLICATION` — validate and commit the copied prefix
-
-**Remaining process-level acceptance:** kill the app around an ingestion commit and
-prove a replacement replica resumes from the committed prefix, with the matching feed
-projection and exact browser replay/live handoff. Test both uncommitted loss and a
-committed batch whose notification/response was never observed. The store's integrity
-and lease rules are in [replica-safe runner delivery](../app/README.md#replica-safe-runner-delivery);
-the cross-layer acceptance contract is
-[Event replication](../docs/thread_layering.md#runner-independence-and-event-durability).
-This is independent of native recovery and app queue placement.
-
 ### `CLAUDE_RECOVERY` — native execution before durable runner evidence
 
 **Evidence first, then runner implementation:** pin the uncovered crash window where
@@ -597,7 +581,7 @@ choose successor command replay (`THREAD_SUCCESSOR_DELIVERY`).
 
 ### `THREAD_COMMAND_INGRESS` — trustworthy runner-first submission
 
-**Next command slice, after `APP_EVENT_REPLICATION`:** implement the
+**Next command slice:** implement the
 [runner-admission-first response boundary](../docs/thread_layering.md#runner-admission-first).
 Use one generated `Command` route for input, model, interrupt, and stop. “Saved” requires
 the runner admission in the app's committed Event prefix; it does not wait for effect.
@@ -736,14 +720,20 @@ committed PostgreSQL prefix, preserving cursor and provenance. Ordinary commands
 use generated `Command` on both hops. Normal conversation and admitted-command state
 are frontend projections of this log; an app delivery queue is not a dependency.
 
-Reliable reconnect acceptance requires `APP_EVENT_REPLICATION`. Native crash-recovery research is not a prerequisite for
-the replay/projection implementation.
+App-process loss and HTTP/SSE handoff are covered by
+[replica-safe runner delivery](../app/README.md#replica-safe-runner-delivery).
+Native crash-recovery research is not a prerequisite for the replay/projection implementation.
 
 Implement [reconnect and catch-up](../docs/thread_layering.md#reconnect-and-catch-up):
 contiguous replay, duplicate checking, gap-free live handoff, lost notifications, and
 browser reload with a matching cached prefix or replay from zero. Keep operational
 snapshots visibly separate. A combined activity projection, if later needed, must
 identify its app observation order rather than impersonate the runner log.
+
+The current `Attached` snapshot may be ahead of the copied Event prefix. Make its runner
+provenance/as-of cursor explicit in the API and frontend; it must not seed or overwrite
+conversation or pending-command reductions of the copied log. Test the snapshot-ahead
+case through browser reload and catch-up, not only eventual convergence.
 
 Do not implement #6985's command/Event union as the runner timeline. An optional app
 queue may expose an atomic pending snapshot alongside replay; two append-only browser
