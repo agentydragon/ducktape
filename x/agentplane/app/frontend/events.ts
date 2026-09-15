@@ -23,7 +23,6 @@ export interface Item {
 export interface Turn {
   id: string;
   status: TurnStatus | null;
-  error: string;
   itemIds: string[];
   firstCursor: bigint;
 }
@@ -217,14 +216,11 @@ export function reduce(previous: SessionState, entry: EventEntry): SessionState 
     case "turnStarted":
       return {
         ...state,
-        turns: [
-          ...state.turns,
-          { id: observation.value.turnId, status: null, error: "", itemIds: [], firstCursor: entry.cursor },
-        ],
+        turns: [...state.turns, { id: observation.value.turnId, status: null, itemIds: [], firstCursor: entry.cursor }],
       };
     case "turnCompleted": {
-      const { turnId, status, error } = observation.value;
-      return { ...state, turns: state.turns.map((turn) => (turn.id === turnId ? { ...turn, status, error } : turn)) };
+      const { turnId, status } = observation.value;
+      return { ...state, turns: state.turns.map((turn) => (turn.id === turnId ? { ...turn, status } : turn)) };
     }
     case "itemStarted": {
       const { itemId, kind, toolName } = observation.value;

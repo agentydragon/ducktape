@@ -5,6 +5,7 @@ fetch, EventSource, rendering, and page reload are not replaced by the visual ha
 """
 
 import asyncio
+import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import timedelta
@@ -296,6 +297,134 @@ async def expect_history_bottom(page: Page) -> None:
             return area.scrollHeight - area.clientHeight - area.scrollTop <= 2;
         }"""
     )
+
+
+@pytest.mark.parametrize("raw", [False, True], ids=["desktop-normal", "phone-raw"])
+async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
+    thread_browser: ThreadBrowser, raw: bool, request: pytest.FixtureRequest
+) -> None:
+    page, source = thread_browser.page, thread_browser.source
+    if raw:
+        await page.set_viewport_size({"width": 412, "height": 915})
+    thread_browser.opened.replay.set()
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
+    if raw:
+        await show_raw(page)
+    composer = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
+    await composer.fill("Test input confirmed before a model error")
+    await composer.press("Enter")
+    async with asyncio.timeout(15):
+        command = await source.commands.get()
+    source.append(
+        event_pb2.Event(
+            harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
+                harness_message_id="test-error-input",
+                origin_command_ids=[command.command_id],
+                text=command.submit_input.text,
+                turn_id="test-browser-turn",
+            )
+        )
+    )
+    partial = "".join(f"\n\nTest partial paragraph {number}" for number in range(30))
+    source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-browser-item", text=partial)))
+    await expect(page.get_by_text("Test partial paragraph 29", exact=True)).to_have_count(1)
+    await expect_history_bottom(page)
+    diagnostic = "Test model request failed: HTTP 429\n<img src=x onerror=\"throw new Error('unsafe diagnostic')\">"
+    native = source.append(
+        event_pb2.Event(
+            native=event_pb2.Native(
+                direction=event_pb2.DIRECTION_FROM_HARNESS, line=json.dumps({"type": "error", "message": diagnostic})
+            )
+        )
+    )
+    source.attached.active_turn_id = ""
+    failed = source.append(
+        event_pb2.Event(
+            source_sequences=[native.cursor],
+            turn_completed=event_pb2.TurnCompleted(
+                turn_id="test-browser-turn", status=event_pb2.TURN_STATUS_FAILED, error=diagnostic
+            ),
+        )
+    )
+    error_text = page.get_by_text(diagnostic, exact=True)
+    await expect(error_text).to_have_count(1)
+    await expect(error_text).to_be_in_viewport()
+    await expect_history_bottom(page)
+    await expect(page.locator(".agentplane-user-bubble")).to_have_text(command.submit_input.text)
+    await expect(page.get_by_role("region", name="Pending commands")).to_have_count(0)
+    await expect(page.get_by_role("button", name="Retry", exact=True)).to_have_count(0)
+    await expect(page.get_by_role("img", name="Streaming", exact=True)).to_have_count(0)
+    await expect(page.get_by_role("img", name="Incomplete in retained history", exact=True)).to_have_count(1)
+    await expect(composer).to_be_enabled()
+    await expect(page.get_by_role("button", name="Interrupt", exact=True)).to_be_disabled()
+    await expect(page.locator('img[src="x"]')).to_have_count(0)
+    await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-failed.png")
+
+    await page.reload()
+    await expect(error_text).to_be_in_viewport()
+    await expect(page.get_by_text("Test partial paragraph 29", exact=True)).to_have_count(1)
+    await expect(page.locator(".agentplane-user-bubble")).to_have_text(command.submit_input.text)
+    await expect(page.get_by_role("region", name="Pending commands")).to_have_count(0)
+    if raw:
+        await expect_raw_prefix(page, failed.cursor)
+        for entry in (native, failed):
+            frame = page.locator(f'[data-event-cursor="{entry.cursor}"]')
+            await frame.locator("summary").click()
+            assert (
+                json_format.Parse(await frame.locator("[data-event-envelope]").inner_text(), event_log_pb2.EventEntry())
+                == entry
+            )
+            await frame.locator("summary").click()
+
+    await composer.fill("Test distinct input after the failed turn")
+    await composer.press("Enter")
+    async with asyncio.timeout(15):
+        following = await source.commands.get()
+    assert following.command_id != command.command_id
+    assert following.submit_input.text == "Test distinct input after the failed turn"
+    source.append(event_pb2.Event(turn_started=event_pb2.TurnStarted(turn_id="test-following-turn")))
+    source.append(
+        event_pb2.Event(
+            harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
+                harness_message_id="test-following-input",
+                origin_command_ids=[following.command_id],
+                text=following.submit_input.text,
+                turn_id="test-following-turn",
+            )
+        )
+    )
+    source.append(
+        event_pb2.Event(
+            item_started=event_pb2.ItemStarted(item_id="test-following-reply", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
+        )
+    )
+    source.append(
+        event_pb2.Event(
+            item_completed=event_pb2.ItemCompleted(item_id="test-following-reply", text="Test later successful reply")
+        )
+    )
+    source.append(
+        event_pb2.Event(
+            turn_completed=event_pb2.TurnCompleted(
+                turn_id="test-following-turn", status=event_pb2.TURN_STATUS_COMPLETED
+            )
+        )
+    )
+    await expect(page.get_by_text("Turn test-following-turn: COMPLETED", exact=True)).to_have_count(1)
+    await expect(page.get_by_text("Test later successful reply", exact=True)).to_have_count(1)
+    await expect(error_text).to_have_count(1)
+    await expect(page.locator(".agentplane-user-bubble")).to_have_text(
+        [command.submit_input.text, following.submit_input.text]
+    )
+    await expect(page.get_by_role("region", name="Command outcomes")).to_have_count(0)
+    assert source.commands.empty()
+    (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
+    archived = await thread_browser.store.events(thread.id, limit=100)
+    assert archived == source.entries
+    assert [entry.event.command_admitted.command for entry in archived if entry.event.HasField("command_admitted")] == [
+        command,
+        following,
+    ]
 
 
 async def test_browser_sends_a_command_and_renders_only_the_confirmed_input(thread_browser: ThreadBrowser) -> None:

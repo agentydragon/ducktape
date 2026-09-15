@@ -407,6 +407,10 @@ other operator routes do. Which lists the service enforces is its contract
   Cards are labelled as current aggregates, not historical snapshots at their first cursor. The
   [projection contract](../docs/thread_layering.md#timeline-pending-queue-and-operational-state) separates
   this evidence from the pending-command queue and operational snapshot.
+- **Failed model turns:** normal and Raw views show the terminal failure and its plain-text
+  diagnostic at the completion position, retaining any partial output. A confirmed input remains
+  confirmed; a failed turn neither creates a delivery retry nor resends that input. Later input
+  can start another turn while the harness remains available.
 
 ## Action live updates and browser notifications
 

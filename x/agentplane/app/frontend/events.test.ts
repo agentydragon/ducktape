@@ -68,9 +68,7 @@ describe("reduce", () => {
     const state = script.reduce(reduce, EMPTY);
     expect(state.harness).toBe("running");
     expect(state.lastCursor).toBe("18");
-    expect(state.turns).toMatchObject([
-      { id: "t1", status: TurnStatus.COMPLETED, error: "", itemIds: ["m#0", "toolu_1"] },
-    ]);
+    expect(state.turns).toMatchObject([{ id: "t1", status: TurnStatus.COMPLETED, itemIds: ["m#0", "toolu_1"] }]);
     expect(state.items["m#0"]).toMatchObject({ kind: ItemKind.ASSISTANT_TEXT, text: "Hello", completed: true });
     expect(state.items["toolu_1"]).toMatchObject({
       toolName: "Bash",
