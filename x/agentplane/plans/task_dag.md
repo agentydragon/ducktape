@@ -23,16 +23,20 @@ Proposed execution order for the Thread correctness/UI track:
   deployed Claude/Codex acceptance (`THREAD_DEPLOYED_ACCEPTANCE`), including the current
   model-path availability failure (`EGRESS_IDENTITY_AVAILABILITY`). Keep one runner-owned
   command queue; no app outbox or combined-start expansion in this batch.
-- **P1:** end-to-end LLM error handling (`LLM_ERROR_SURFACE`), duplicate turn-status
-  presentation (`THREAD_TURN_STATUS_UI`), compact activity mocks (`THREAD_ACTIVITY_MOCKS`),
-  continuation after Sandbox resume (`THREAD_SUSPEND_RESUME`), and
-  evidence-gated native recovery. Start `THREAD_TAIL_FIRST` with a profiling/contract
-  slice, then bounded reads and `THREAD_LAZY_HISTORY`; do not start with a frontend rewrite.
+- **P1, current batch:** end-to-end LLM error evidence (`LLM_ERROR_SURFACE`) and the
+  conversation-view sync design gate (`THREAD_VIEW_SYNC`). Design reduced-state
+  bootstrap/live updates, on-demand Raw, and bounded payloads together before
+  implementing `THREAD_TAIL_FIRST`, `THREAD_VIEW_CATCHUP`, `THREAD_LAZY_HISTORY`, and
+  `THREAD_PAYLOAD_LAZY`.
+  Select frontend state libraries after defining ownership and synchronization contracts.
+  Duplicate turn-status presentation (`THREAD_TURN_STATUS_UI`), compact activity mocks
+  (`THREAD_ACTIVITY_MOCKS`), Sandbox continuation (`THREAD_SUSPEND_RESUME`), and native
+  resume/recovery remain on the board but are excluded from this dispatch batch.
 - **P2:** browser-driven acceptance against the deployed cluster (`CLUSTER_BROWSER_ACCEPTANCE`)
   and driver-hosted tools (`DT`). Neither blocks the current API-level acceptance closure.
-- **Low priority:** adopting harness-native subagents as Threads (`NATIVE_SUBAGENT_THREADS`).
-  On-demand native evidence and detailed tool payloads (`THREAD_PAYLOAD_LAZY`) remain
-  later design work.
+- **Low priority:** adopting harness-native subagents as Threads (`NATIVE_SUBAGENT_THREADS`)
+  and optional app-wide/per-Thread raw-evidence retention controls (`THREAD_EVIDENCE_RETENTION`).
+  The first view-sync implementation keeps the archive lossless.
 
 The independent Action Service track still has credentialed-provider acceptance (`MCPAUTH`),
 console policy parity (`CONSOLE_POLICIES`), and Haku MCP/tool-approval retirement (`MCPAGG`,
@@ -86,9 +90,12 @@ flowchart TB
     SANDBOX_VM_ISOLATION["Deferred investigation<br/>selectable container or VM Sandbox implementation<br/>contain agent resource exhaustion"]:::future
     THREAD_EVENT_CONTINUITY["Planned identity cutover<br/>one Thread journal across incarnations<br/>exclusive runner writer and retained state"]:::future
     THREAD_COMMAND_DELIVERY["Deferred backend<br/>app outbox delivery to existing runner<br/>only if app-first acceptance is chosen later"]:::future
-    THREAD_TAIL_FIRST["Future performance<br/>open recent conversation window first<br/>bounded catch-up for long-running Threads"]:::future
+    THREAD_VIEW_SYNC["P1 design gate<br/>derived conversation snapshot + updates<br/>on-demand Raw and state ownership"]:::decision
+    THREAD_TAIL_FIRST["Planned performance<br/>recent reduced items, not old token replay<br/>bounded short and long Thread loads"]:::future
+    THREAD_VIEW_CATCHUP["Planned reconnect correctness<br/>bounded catch-up after long gaps<br/>refresh state without losing reading position"]:::future
     THREAD_LAZY_HISTORY["Future UI<br/>load older Thread history on demand<br/>stable scroll and concurrent live following"]:::future
-    THREAD_PAYLOAD_LAZY["Deferred design<br/>native evidence and tool details on demand<br/>explicit partial-data and replay contract"]:::future
+    THREAD_PAYLOAD_LAZY["Planned bounded delivery<br/>Raw evidence and tool details on demand<br/>explicit partial-data contract"]:::future
+    THREAD_EVIDENCE_RETENTION["Low-priority design<br/>optional app-wide / per-Thread raw retention<br/>lossless storage remains the default contract"]:::future
     THREAD_SUBMIT_500["Reported bug<br/>message submission and Retry return 500<br/>Awaiting saved confirmation persists"]:::active
     THREAD_DEPLOYED_ACCEPTANCE["P0 remaining acceptance<br/>deployed commands/events cutover<br/>real Claude and Codex via devbox"]:::active
     EGRESS_IDENTITY_AVAILABILITY["P0 observed availability failure<br/>egress authentication ApiException / 502<br/>trace Kubernetes, ingress, LiteLLM hops"]:::active
@@ -115,6 +122,9 @@ flowchart TB
     AG -. hosted Thread lifecycle .-> RETIRE_AGENT
 
     INPUT_DELIVERY -. reliable Thread ingress .-> ING
+    THREAD_VIEW_SYNC --> THREAD_TAIL_FIRST
+    THREAD_VIEW_SYNC --> THREAD_PAYLOAD_LAZY
+    THREAD_TAIL_FIRST --> THREAD_VIEW_CATCHUP
     THREAD_TAIL_FIRST --> THREAD_LAZY_HISTORY
     THREAD_ACTIVITY_MOCKS --> THREAD_ACTIVITY_DENSITY
     THREAD_EVENT_CONTINUITY --> THREAD_SUCCESSOR_DELIVERY
@@ -967,40 +977,57 @@ Verify the relay-retention change from [#7035](https://github.com/agentydragon/d
 on its deployed image before removing this task; its gated service-consumer test
 demonstrates the cancellation mechanism, not the original staging attempt's packet order.
 
-### `THREAD_TAIL_FIRST` — recent history first for long-running Threads
+### `THREAD_VIEW_SYNC` — design the derived conversation read contract
 
-**Observed on staging:** the operator reported roughly 1,000 Events in an already
-small conversation, with visible catch-up taking about 2–3 seconds. Measure and cover
-that case as well as month-long histories; identify transfer, replay, projection, and
-render costs rather than assuming the event count alone explains the delay.
+**Current design gate:** update the existing
+[layering design](../docs/thread_layering.md#planned-conversation-view-synchronization),
+the contract SSOT. The staging inspection linked there demonstrates that a short
+conversation already downloads thousands of generation Events. Normal mode should
+sync reduced item state, not merely a shorter slice of that raw stream.
 
-**Future work, not a gate on the current UI cutover:** opening a Thread that has run
-continuously for a month should show roughly the last screenful or two first, without
-transferring or reducing its entire Event log from the beginning. Add bounded,
-cursor-addressed recent-window reads and a gap-free handoff to live following.
+Resolve projection ownership/rebuild, cursor-bound snapshot/live handoff, partial
+windows/details, command reconciliation, on-demand exact Raw evidence, and frontend
+state ownership. Include concrete message/sequence sketches for load, reconnect,
+lost submit response, and concurrent history/detail fetches. Choose library and
+implementation slices only after these contracts are reviewable; no dependency or
+runtime migration is implied by recording this plan. Preserve the runner-only queue.
 
-Design the checkpoint/window contract explicitly: folding a suffix from empty state
-cannot recover an older pending admission, the current model, or a streaming item
-whose start precedes the window. Current command/control state must remain correct
-without loading every historical message. Any projection checkpoint is derived from
-the authoritative Events at a named cursor, not a new Event counter or independent
-truth; operational snapshots remain distinguishable. Keep native evidence and
-off-window references fetchable, and mark incomplete item context honestly.
+### `THREAD_TAIL_FIRST` — bounded reduced-state loading for short and long Threads
 
-Acceptance uses a large synthetic history with pending commands and item starts
-before the returned window. Assert bounded initial transfer/render work, correct
-current state, and no missed or duplicated Events across the window/live boundary.
-Do not hide a full-history download behind a fast first paint. This concerns history
-inside one Thread, not the all-Threads search/list task `THREAD_BROWSE_PAGINATE`.
+**After `THREAD_VIEW_SYNC`:** implement the server projection, bounded recent-item
+bootstrap, and live-update handoff defined in the layering design. Completed text
+loads assembled; active items load their accumulated state plus subsequent changes.
+Neither browser nor server should replay a Thread's full history on each page open.
+
+Acceptance includes a short, high-delta conversation like the staging report and a
+month-long synthetic history. Cover old pending commands, old settled commands still
+retained locally after a lost response, applied controls, and pre-window streaming
+items. Compare snapshot-plus-updates with full projection and bound initial transfer
+and processing work. Raw remains accessible on demand; no hidden full-history fetch.
+This is distinct from all-Threads search/list task `THREAD_BROWSE_PAGINATE`.
+
+### `THREAD_VIEW_CATCHUP` — bounded catch-up after a long gap
+
+**Build on the cursor-bound view bootstrap:** implement the short-replay versus
+explicit rebootstrap contract in
+[long-gap catch-up](../docs/thread_layering.md#long-gap-catch-up-and-upward-history-loading).
+A sleeping/reloaded tab must reach current state without replaying every missed text
+delta. Preserve locally retained commands, refresh outcomes/controls, and prevent
+old in-flight responses from replacing the new snapshot. Catch-up while scrolled up
+must preserve the reading anchor rather than force navigation to the tail.
+
+Acceptance includes long gaps with completed messages, old commands settling, model
+changes, a streaming item completing, expired update history, and reconnect racing an
+older-page/detail fetch. Bound catch-up work and retain explicit source/loss checks.
 
 ### `THREAD_PAYLOAD_LAZY` — load native evidence and tool details on demand
 
-**Later design work:** extend selective synchronization beyond native protocol frames
+**Designed in `THREAD_VIEW_SYNC`, implement as reviewable slices:** extend selective synchronization beyond native protocol frames
 to detailed tool-call arguments and outputs, including large streamed payloads. Initial
 Thread sync should transfer the metadata and summaries needed to display the conversation
 and its current state, not every detail behind a collapsed tool card. Fetch those details
-when a user expands the item or follows a Raw/evidence link. Even the reported small
-conversation already had about 1,000 Events.
+when a user expands the item or follows a Raw/evidence link. Raw remains an additive
+view of the same conversation, with exact retained frames available on demand.
 
 Retain full-fidelity payloads at their authority. Preserve item identity, ordering,
 status, command outcomes, and causal references in the lightweight representation;
@@ -1010,9 +1037,10 @@ and unavailable evidence. A partial browser representation must not masquerade a
 complete, untransformed Event prefix. Hydrating an older payload must not advance the
 live cursor, reorder items, or regress newer state.
 
-Define catch-up/reconnect and on-demand hydration guarantees alongside the tail-first
-and lazy-history contracts before selecting a protocol change. This broadens the later
-payload-loading task, not the first `THREAD_TAIL_FIRST` profiling/contract slice.
+Follow the catch-up/reconnect and hydration guarantees in the layering design; do not
+create a competing raw/normal contract here. Omitting payloads from initial transfer
+does not change retention. Optional retention is `THREAD_EVIDENCE_RETENTION`, not a
+dependency of lossless on-demand delivery.
 Acceptance covers large tool inputs/outputs omitted from initial transfer, expansion
 during streaming, reconnect during a detail fetch, references outside the loaded history
 window, and unavailable payloads. Prove bounded initial transfer/projection work and
@@ -1028,10 +1056,25 @@ the context/native evidence around a referenced item.
 
 Acceptance covers page overlaps and boundaries, tool/streaming items spanning pages,
 reconnect during a history fetch, exhausted history, and Raw/normal presentation.
-Loading old Events must neither regress live model/harness/pending-command state nor
-advance the live replay cursor. Deduplicate only agreeing entries and surface gaps or
-conflicts. Virtualized rendering can bound DOM cost but does not replace lazy network
-and projection loading.
+Use stable item boundaries rather than offsets that move with live arrivals; test
+repeated upward scrolling, visible-anchor preservation, request failure/retry,
+page eviction/refetch, and independent long-gap catch-up while viewing old history.
+Loading older projected items or raw evidence must neither regress live
+model/harness/pending-command state nor advance live coverage. Merge by the projection
+revision contract; deduplicate only agreeing raw entries and surface gaps/conflicts.
+Virtualized rendering can bound DOM cost but does not replace lazy network and
+projection loading.
+
+### `THREAD_EVIDENCE_RETENTION` — optional raw-frame retention controls
+
+**Low-priority follow-up, not part of initial view sync:** consider an app-wide
+default and per-Thread overrides for underlying native-frame retention. Preserve
+the [retention design boundary](../docs/thread_layering.md#on-demand-raw-and-payload-retention):
+delivery filtering, capture/retention, and normalized-delta compaction are separate.
+Settle storage authority, policy precedence/change timing, evidence availability,
+rebuild, and recovery guarantees before removing anything. Test Raw with retained,
+not-loaded, capture-disabled, expired, and unavailable evidence. No plan checkbox or
+hidden Raw panel authorizes dropping data; current lossless retention is unchanged.
 
 ### `THREAD_OUTBOX_CUTOVER` — one ingress if the app queue is chosen
 

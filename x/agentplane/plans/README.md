@@ -31,5 +31,6 @@ generic MCP, configured Identities, Connection grants, and OAuth/consent. The
 the other implemented contracts.
 [Thread, runner, and harness layering](../docs/thread_layering.md) owns the command/Event
 architecture and distinguishes the implemented runner-admission/app-archive path from
-pending Thread identity continuity, native recovery, and optional app-first acceptance.
+planned reduced conversation-view sync with on-demand Raw, pending Thread identity
+continuity, native recovery, and optional app-first acceptance.
 Deployed acceptance is tracked in the DAG; code or CI evidence alone does not satisfy it.
