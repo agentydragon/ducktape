@@ -3,14 +3,12 @@
 import json
 import logging
 import os
-import re
 import subprocess
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
 from typing import Any, Literal, cast
-from urllib.parse import parse_qs
 from uuid import UUID, uuid4
 
 import httpx
@@ -25,6 +23,7 @@ from x.agentplane.acceptance.operator_login import (
     LoginBlockedError,
     OperatorCredentials,
     app_origin,
+    follow_dex_authorization,
     login_operator,
     read_operator_credentials,
 )
@@ -57,7 +56,6 @@ from x.agentplane.runner import protocol_pb2
 # A status write follows the informer's next watch event; the bound covers a relist after a
 # dropped watch, not a healthy round trip.
 POLICY_READY_SECONDS = 120.0
-DEX_OAUTH_PATH = re.compile(r"/dex/(auth|auth/local|auth/local/login|approval|callback)/?")
 
 
 class McpReport(BaseModel):
@@ -184,64 +182,6 @@ infer or fabricate a result.
     assert report.output == {"content": [f"Echo: {marker}"]}, turn.transcript
 
 
-async def _follow_dex_authorization(
-    authorization_url: str, operator_bff: httpx.AsyncClient, operator_credentials: OperatorCredentials
-) -> tuple[str, str]:
-    """Follow the MCP authorization redirect with only the Dex cookies from app login.
-
-    The app session stays on `operator_bff`; this client carries only host-scoped Dex cookies and
-    refuses to follow anything except the known Dex endpoints and the exact MCP callback.
-    """
-    __tracebackhide__ = True
-    try:
-        authorization = httpx.URL(authorization_url)
-        issuer = httpx.URL(operator_credentials.issuer.get_secret_value())
-        app = app_origin(str(operator_bff.base_url))
-    except httpx.InvalidURL, ValueError:
-        pytest.fail("BLOCKED: Dex authorization URL or operator issuer is invalid", pytrace=False)
-    dex = issuer.copy_with(path="/", query=None, fragment=None)
-    if authorization.copy_with(path="/", query=None, fragment=None) != dex or not DEX_OAUTH_PATH.fullmatch(
-        authorization.path
-    ):
-        pytest.fail("BLOCKED: MCP authorization did not target the configured Dex origin", pytrace=False)
-
-    async with httpx.AsyncClient(follow_redirects=False, timeout=30) as browser:
-        copied = 0
-        for cookie in operator_bff.cookies.jar:
-            domain = cookie.domain
-            value = cookie.value
-            if domain is None or value is None or domain.lstrip(".") != dex.host:
-                continue
-            browser.cookies.set(cookie.name, value, domain=domain, path=cookie.path or "/")
-            copied += 1
-        if copied == 0:
-            pytest.fail("BLOCKED: app login did not establish a Dex session cookie", pytrace=False)
-
-        response = await browser.get(authorization)
-        for _ in range(12):
-            if not response.is_redirect:
-                # A 200 Dex login form means the existing app login did not establish a reusable
-                # Dex session. Never submit the operator password in this separate flow.
-                pytest.fail("BLOCKED: Dex required a fresh interactive login during MCP linkage", pytrace=False)
-            location = response.headers.get("location")
-            if not location:
-                pytest.fail("BLOCKED: Dex returned a redirect without a location", pytrace=False)
-            target = response.url.join(location)
-            if target.scheme != "https" or target.userinfo or target.fragment:
-                pytest.fail("BLOCKED: Dex returned an unsafe MCP authorization redirect", pytrace=False)
-            target_origin = target.copy_with(path="/", query=None, fragment=None)
-            if target_origin == dex and DEX_OAUTH_PATH.fullmatch(target.path):
-                response = await browser.get(target)
-                continue
-            if target_origin == app and target.path == "/mcp-linkage/callback":
-                query = parse_qs(target.query.decode())
-                if "state" not in query or "code" not in query:
-                    pytest.fail("BLOCKED: Dex callback omitted OAuth state or code", pytrace=False)
-                return query["state"][0], query["code"][0]
-            pytest.fail("BLOCKED: Dex returned a redirect outside the MCP callback", pytrace=False)
-    pytest.fail("BLOCKED: Dex authorization exceeded its redirect bound", pytrace=False)
-
-
 async def test_operator_links_oauth_mcp_server(
     operator_bff: httpx.AsyncClient,
     operator_credentials: OperatorCredentials,
@@ -257,7 +197,17 @@ async def test_operator_links_oauth_mcp_server(
     assert start_response.status_code == HTTPStatus.OK, start_response.text
     authorization_url = start_response.json()["authorization_url"]
 
-    state, code = await _follow_dex_authorization(authorization_url, operator_bff, operator_credentials)
+    try:
+        async with httpx.AsyncClient(follow_redirects=False, timeout=30) as dex_browser:
+            state, code = await follow_dex_authorization(
+                authorization_url,
+                dex_browser,
+                operator_credentials,
+                callback_app=operator_bff.base_url,
+                callback_path="/mcp-linkage/callback",
+            )
+    except LoginBlockedError as exc:
+        pytest.fail(str(exc), pytrace=False)
 
     callback = await operator_bff.get("/mcp-linkage/callback", params={"state": state, "code": code})
     assert callback.status_code == HTTPStatus.SEE_OTHER, callback.text
