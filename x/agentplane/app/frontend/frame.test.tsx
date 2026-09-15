@@ -35,9 +35,9 @@ it("keeps native evidence and the full exact protobuf envelope inspectable", () 
   expect(frame?.dataset.eventCursor).toBe("12");
   expect(frame?.id).toBe("agentplane-event-12");
   expect(frame?.querySelector("summary")?.textContent).toContain("Native frame · FROM_HARNESS");
-  expect(container.querySelector("code")?.textContent).toBe('{"text":"hello"}\n');
+  expect(container.querySelector(".agentplane-hljs")?.textContent).toBe('{"text":"hello"}\n');
   expect(container.textContent).toContain("caused by native-source:8, native-source:10");
-  const serialized = container.querySelector("[data-event-envelope] code")?.textContent;
+  const serialized = container.querySelector("[data-event-envelope]")?.textContent;
   if (!serialized) throw new Error("Missing generated EventEntry envelope");
   expect(fromJsonString(EventEntrySchema, serialized)).toEqual(value);
 });
@@ -71,5 +71,5 @@ it("treats native markup as data in both the readable payload and envelope", () 
   const line = '<img src=x onerror="alert(1)">';
   const container = render(entry({ case: "native", value: { direction: Direction.FROM_HARNESS, line } }));
   expect(container.querySelector("img")).toBeNull();
-  expect(container.querySelector("code")?.textContent).toBe(line);
+  expect(container.querySelector(".agentplane-hljs")?.textContent).toBe(line);
 });
