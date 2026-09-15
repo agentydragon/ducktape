@@ -344,12 +344,7 @@ async def test_tool_surface_splits_pass_through_and_request(agent_client: Client
         "approval_mode": "approval_required",
     }
     # The read tools are present.
-    assert {
-        "get_mcp_server_status",
-        "get_tool_call",
-        "list_tool_calls",
-        "list_mcp_servers",
-    } <= tools.keys()
+    assert {"get_mcp_server_status", "get_tool_call", "list_tool_calls", "list_mcp_servers"} <= tools.keys()
     assert "actor" not in tools["get_tool_call"].input_schema.get("properties", {})
     assert "actor" not in tools["list_tool_calls"].input_schema.get("properties", {})
     assert "actor" not in tools["list_mcp_servers"].input_schema.get("properties", {})

@@ -473,7 +473,7 @@ class McpActionGroupExecutor:
         try:
             async with asyncio.timeout(self._lifecycle_timeout.total_seconds()):
                 actions = await self._discover_catalog(connection.client)
-        except (_InvalidMcpCatalogError, ValidationError):
+        except _InvalidMcpCatalogError, ValidationError:
             # A legacy-protocol peer's tool list is parsed against that era's stricter wire
             # model (e.g. input_schema requiring type: "object" at the root); a schema that
             # violates it fails there, before our own jsonschema check ever runs.
@@ -559,7 +559,7 @@ class McpActionGroupExecutor:
             async with asyncio.timeout(self._lifecycle_timeout.total_seconds()):
                 tools = await client.list_tools()
             actions = self._catalog_from_tools(tools)
-        except (_InvalidMcpCatalogError, ValidationError):
+        except _InvalidMcpCatalogError, ValidationError:
             # A legacy-protocol peer's tool list is parsed against that era's stricter wire
             # model (e.g. input_schema requiring type: "object" at the root); a schema that
             # violates it fails inside list_tools() itself, before our own jsonschema check
@@ -630,7 +630,7 @@ def _mcp_error_kind(result: Any) -> str | None:
             continue
         try:
             payload = json.loads(block.text)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             continue
         if isinstance(payload, dict):
             kind = cast(object, payload.get("kind"))

@@ -99,7 +99,7 @@ def _oauth_error_detail(response: httpx2.Response) -> tuple[str, str | None]:
     """
     try:
         payload: Any = response.json()
-    except (json.JSONDecodeError, UnicodeDecodeError):
+    except json.JSONDecodeError, UnicodeDecodeError:
         excerpt = " ".join(response.text.split())[:_ERROR_BODY_LIMIT]
         return (f": {excerpt}" if excerpt else ""), None
 

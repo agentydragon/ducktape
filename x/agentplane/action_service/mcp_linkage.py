@@ -422,7 +422,7 @@ class McpLinkageAuthority:
         except McpLinkageError:
             _observe_oauth_metric("discovery", "rejected", started)
             raise
-        except (httpx2.HTTPError, ValueError):
+        except httpx2.HTTPError, ValueError:
             _observe_oauth_metric("discovery", "transport", started)
             raise McpLinkageConflictError("MCP OAuth metadata discovery failed") from None
         finally:
@@ -596,7 +596,7 @@ class McpLinkageAuthority:
             body = response.json()
         except _RefreshError:
             raise
-        except (httpx2.HTTPError, ValueError):
+        except httpx2.HTTPError, ValueError:
             _observe_oauth_metric(operation, "transport", started)
             raise _RefreshError("MCP OAuth token endpoint unavailable", action="retrying") from None
         finally:

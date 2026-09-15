@@ -433,7 +433,7 @@ async def action_stream(
                     yield chunk
         except TimeoutError:
             return
-        except (httpx.RequestError, httpx2.HTTPStatusError, httpx2.TransportError):
+        except httpx.RequestError, httpx2.HTTPStatusError, httpx2.TransportError:
             # Headers are already sent. End the SSE connection so EventSource reconnects.
             logger.warning("Action stream interrupted after response start", exc_info=True)
 

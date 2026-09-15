@@ -202,7 +202,7 @@ def recording_proxy(
                 try:
                     self.wfile.write(frame)
                     self.wfile.flush()
-                except (BrokenPipeError, ConnectionResetError):
+                except BrokenPipeError, ConnectionResetError:
                     return False
                 return True
 
