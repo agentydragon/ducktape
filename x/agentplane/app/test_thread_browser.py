@@ -11,7 +11,8 @@ from datetime import timedelta
 
 import pytest
 import pytest_bazel
-from playwright.async_api import Page, async_playwright, expect
+from google.protobuf import json_format
+from playwright.async_api import APIResponse, Page, Request, Route, async_playwright, expect
 
 from util.bazel.runfiles import get_required_path
 from util.testing.frontend_visual import CONTAINER_BASE_BROWSER_ARGS, chromium_executable
@@ -19,7 +20,7 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 from x.agentplane.app.testing.replication_process import app_process
 from x.agentplane.app.testing.replication_source import SANDBOX, SESSION, Opened, ReplicationSource
 from x.agentplane.app.trajectory import TrajectoryStore
-from x.agentplane.protocol import event_pb2
+from x.agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -177,6 +178,96 @@ async def test_browser_sends_a_command_and_renders_only_the_confirmed_input(thre
     )
     await expect(page.locator(".agentplane-user-bubble")).to_have_text(command.submit_input.text)
     await expect(composer).to_have_value("")
+
+
+async def test_reload_retries_an_unsaved_command_with_its_original_identity(thread_browser: ThreadBrowser) -> None:
+    page, source = thread_browser.page, thread_browser.source
+    thread_browser.opened.replay.set()
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
+    intercepted: asyncio.Queue[Request] = asyncio.Queue()
+
+    async def lose_request(route: Route) -> None:
+        intercepted.put_nowait(route.request)
+        await route.abort()
+
+    await page.route("**/threads/*/commands", lose_request, times=1)
+    composer = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
+    await composer.fill("Test input retained across an unsent request")
+    await composer.press("Enter")
+    async with asyncio.timeout(15):
+        original = await intercepted.get()
+    assert original.post_data is not None
+    command = json_format.Parse(original.post_data, command_pb2.Command())
+    assert command.command_id
+    assert command.submit_input.text == "Test input retained across an unsent request"
+    await expect(page.get_by_role("button", name="Retry", exact=True)).to_be_enabled()
+    (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
+    assert await thread_browser.store.events(thread.id, limit=100) == source.entries[:4]
+
+    await page.reload()
+    await expect(page.get_by_text(command.submit_input.text, exact=True)).to_be_visible()
+    await expect(page.get_by_text("Awaiting saved confirmation", exact=True)).to_be_visible()
+    await expect(page.locator(".agentplane-user-bubble")).to_have_count(0)
+    async with page.expect_request(original.url) as retried:
+        await page.get_by_role("button", name="Retry", exact=True).click()
+    retry = await retried.value
+    assert retry.post_data is not None
+    assert json_format.Parse(retry.post_data, command_pb2.Command()) == command
+    async with asyncio.timeout(15):
+        assert await source.commands.get() == command
+    await expect(page.get_by_text("Saved · awaiting effect", exact=True)).to_have_count(1)
+    await expect(page.get_by_text("Awaiting saved confirmation", exact=True)).to_have_count(0)
+    await expect(page.locator(".agentplane-user-bubble")).to_have_count(0)
+    admissions = [
+        entry.event.command_admitted.command
+        for entry in await thread_browser.store.events(thread.id, limit=100)
+        if entry.event.HasField("command_admitted")
+    ]
+    assert admissions == [command]
+
+
+async def test_streamed_admission_survives_a_lost_http_reply_and_reload(thread_browser: ThreadBrowser) -> None:
+    page, source = thread_browser.page, thread_browser.source
+    thread_browser.opened.replay.set()
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
+    replies: asyncio.Queue[APIResponse] = asyncio.Queue()
+    drop_reply = asyncio.Event()
+
+    async def hold_reply(route: Route) -> None:
+        # This is a real response from the app after PostgreSQL admission commit. Only its
+        # delivery to this browser is withheld; the independent SSE stream remains connected.
+        replies.put_nowait(await route.fetch())
+        await drop_reply.wait()
+        await route.abort()
+
+    await page.route("**/threads/*/commands", hold_reply, times=1)
+    try:
+        composer = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
+        await composer.fill("Test input saved without its HTTP reply")
+        await composer.press("Enter")
+        async with asyncio.timeout(15):
+            response = await replies.get()
+            command = await source.commands.get()
+        assert response.status == 200
+        admission = json_format.Parse(await response.text(), event_log_pb2.EventEntry())
+        assert admission.event.command_admitted.command == command
+        (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
+        assert admission in await thread_browser.store.events(thread.id, limit=100)
+        await expect(page.get_by_text("Saved · awaiting effect", exact=True)).to_have_count(1)
+        await expect(page.locator(".agentplane-user-bubble")).to_have_count(0)
+
+        async with page.expect_event("requestfailed", predicate=lambda request: request.url == response.url):
+            drop_reply.set()
+        await expect(page.get_by_text("Saved · awaiting effect", exact=True)).to_have_count(1)
+        await expect(page.get_by_text("Awaiting saved confirmation", exact=True)).to_have_count(0)
+        await page.reload()
+        await expect(page.get_by_text(command.submit_input.text, exact=True)).to_have_count(1)
+        await expect(page.get_by_text("Saved · awaiting effect", exact=True)).to_have_count(1)
+        await expect(page.get_by_role("button", name="Retry", exact=True)).to_have_count(0)
+        await expect(page.locator(".agentplane-user-bubble")).to_have_count(0)
+    finally:
+        drop_reply.set()
+        await page.unroute_all(behavior="wait")
 
 
 async def test_ahead_snapshot_is_not_a_conversation_or_effective_model(thread_browser: ThreadBrowser) -> None:
