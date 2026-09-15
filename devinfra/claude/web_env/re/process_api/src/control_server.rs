@@ -297,7 +297,7 @@ async fn handle_request(
         (Method::POST, "/container_name") => {
             let body = match read_body(req).await {
                 Ok(b) => b,
-                Err(resp) => return Ok(resp),
+                Err(resp) => return Ok(*resp),
             };
 
             match std::str::from_utf8(&body) {
@@ -349,7 +349,7 @@ async fn handle_request(
 
             let body = match read_body(req).await {
                 Ok(b) => b,
-                Err(resp) => return Ok(resp),
+                Err(resp) => return Ok(*resp),
             };
 
             match serde_json::from_slice::<firecracker_init::MountRootConfig>(&body) {
@@ -509,7 +509,7 @@ async fn handle_request(
         (Method::POST, "/auth_public_key/write_etc_files") => {
             let body = match read_body(req).await {
                 Ok(b) => b,
-                Err(resp) => return Ok(resp),
+                Err(resp) => return Ok(*resp),
             };
 
             #[derive(serde::Deserialize)]
@@ -575,32 +575,31 @@ async fn handle_request(
                             }
                         }
                     }
-
                     // Write /etc/hosts and /etc/resolv.conf
                     let hosts_len = req_body.etc_hosts.as_ref().map_or(0, |s| s.len());
                     let resolv_len = req_body.resolv_conf.as_ref().map_or(0, |s| s.len());
 
-                    if let Some(ref hosts) = req_body.etc_hosts {
-                        if let Err(e) = std::fs::write("/etc/hosts", hosts) {
-                            log::error!("[CONTROL] /write_etc_files: write failed: {e}");
-                            return Ok(Response::builder()
-                                .status(StatusCode::INTERNAL_SERVER_ERROR)
-                                .body(Full::new(Bytes::from(format!(
-                                    "/write_etc_files: write failed: {e}\n"
-                                ))))
-                                .unwrap());
-                        }
+                    if let Some(ref hosts) = req_body.etc_hosts
+                        && let Err(e) = std::fs::write("/etc/hosts", hosts)
+                    {
+                        log::error!("[CONTROL] /write_etc_files: write failed: {e}");
+                        return Ok(Response::builder()
+                            .status(StatusCode::INTERNAL_SERVER_ERROR)
+                            .body(Full::new(Bytes::from(format!(
+                                "/write_etc_files: write failed: {e}\n"
+                            ))))
+                            .unwrap());
                     }
-                    if let Some(ref resolv) = req_body.resolv_conf {
-                        if let Err(e) = std::fs::write("/etc/resolv.conf", resolv) {
-                            log::error!("[CONTROL] /write_etc_files: write failed: {e}");
-                            return Ok(Response::builder()
-                                .status(StatusCode::INTERNAL_SERVER_ERROR)
-                                .body(Full::new(Bytes::from(format!(
-                                    "/write_etc_files: write failed: {e}\n"
-                                ))))
-                                .unwrap());
-                        }
+                    if let Some(ref resolv) = req_body.resolv_conf
+                        && let Err(e) = std::fs::write("/etc/resolv.conf", resolv)
+                    {
+                        log::error!("[CONTROL] /write_etc_files: write failed: {e}");
+                        return Ok(Response::builder()
+                            .status(StatusCode::INTERNAL_SERVER_ERROR)
+                            .body(Full::new(Bytes::from(format!(
+                                "/write_etc_files: write failed: {e}\n"
+                            ))))
+                            .unwrap());
                     }
 
                     // Binary: edebff2c — the CA PEM is fanned out through the
@@ -678,7 +677,7 @@ async fn handle_request(
         (Method::POST, "/sync_clock") => {
             let body = match read_body(req).await {
                 Ok(b) => b,
-                Err(resp) => return Ok(resp),
+                Err(resp) => return Ok(*resp),
             };
 
             // Parse unix nanos from body (JSON with realtime_unix_nanos field,
@@ -740,15 +739,17 @@ async fn handle_request(
 }
 
 /// Read the full body of an HTTP request.
-async fn read_body(req: Request<Incoming>) -> Result<Bytes, Response<Full<Bytes>>> {
+async fn read_body(req: Request<Incoming>) -> Result<Bytes, Box<Response<Full<Bytes>>>> {
     match http_body_util::BodyExt::collect(req.into_body()).await {
         Ok(collected) => Ok(collected.to_bytes()),
         Err(e) => {
             log::warn!("[CONTROL] Failed to read request body: {e}");
-            Err(Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body(Full::new(Bytes::from("Failed to read body\n")))
-                .unwrap())
+            Err(Box::new(
+                Response::builder()
+                    .status(StatusCode::BAD_REQUEST)
+                    .body(Full::new(Bytes::from("Failed to read body\n")))
+                    .unwrap(),
+            ))
         }
     }
 }
@@ -870,15 +871,12 @@ async fn build_healthcheck_response(
 
     let mut controllers_with_usage = process_controllers;
     for pc in &mut controllers_with_usage {
-        if let Some(ref mut cg) = pc.cgroup {
-            if let Some(ref cp) = cg.memory_cgroup_path {
-                if let Ok(usage) =
-                    cgroup::read_memory_usage(&std::path::PathBuf::from(cp), controller.version)
-                        .await
-                {
-                    cg.memory_usage_bytes = Some(usage);
-                }
-            }
+        if let Some(ref mut cg) = pc.cgroup
+            && let Some(ref cp) = cg.memory_cgroup_path
+            && let Ok(usage) =
+                cgroup::read_memory_usage(&std::path::PathBuf::from(cp), controller.version).await
+        {
+            cg.memory_usage_bytes = Some(usage);
         }
     }
 

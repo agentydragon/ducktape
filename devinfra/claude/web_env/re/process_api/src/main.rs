@@ -182,12 +182,11 @@ async fn main() {
     };
 
     // Set CPU shares if configured
-    if let Some(shares) = cli.cpu_shares {
-        if let Err(e) =
+    if let Some(shares) = cli.cpu_shares
+        && let Err(e) =
             cgroup::set_cpu_shares(&controller.base_path, controller.version, shares).await
-        {
-            log::warn!("Failed to set CPU shares: {e}");
-        }
+    {
+        log::warn!("Failed to set CPU shares: {e}");
     }
 
     // Detect container name from /container_info.json (if present).
@@ -658,13 +657,13 @@ async fn run_dial_uds_ws_listener(
 
     loop {
         // Check parent dir exists
-        if let Some(parent) = std::path::Path::new(uds_path).parent() {
-            if !parent.exists() {
-                log::debug!("[DEBUG] dial-uds not ready (parent dir absent)");
-                tokio::select! {
-                    _ = tokio::time::sleep(Duration::from_millis(500)) => { continue; }
-                    _ = shutdown_rx.recv() => { break; }
-                }
+        if let Some(parent) = std::path::Path::new(uds_path).parent()
+            && !parent.exists()
+        {
+            log::debug!("[DEBUG] dial-uds not ready (parent dir absent)");
+            tokio::select! {
+                _ = tokio::time::sleep(Duration::from_millis(500)) => { continue; }
+                _ = shutdown_rx.recv() => { break; }
             }
         }
 
@@ -736,10 +735,10 @@ async fn run_uds_ws_listener(
     _max_ws_buffer_size: usize,
 ) {
     // Remove existing socket file
-    if std::path::Path::new(uds_path).exists() {
-        if let Err(e) = std::fs::remove_file(uds_path) {
-            log::warn!("[WARN] Failed to remove existing UDS socket file: {e}");
-        }
+    if std::path::Path::new(uds_path).exists()
+        && let Err(e) = std::fs::remove_file(uds_path)
+    {
+        log::warn!("[WARN] Failed to remove existing UDS socket file: {e}");
     }
 
     // Ensure parent directory exists

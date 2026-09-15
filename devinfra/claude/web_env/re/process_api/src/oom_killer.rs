@@ -105,13 +105,13 @@ async fn write_oom_kill_log(
     cmdline: &str,
 ) {
     let log_dir = std::path::Path::new("/var/log/.process_api");
-    if !log_dir.exists() {
-        if let Err(e) = tokio::fs::create_dir_all(log_dir).await {
-            log::debug!(
-                "[DEBUG] container_oom_monitor: Failed to create directory for OOM killed process {process_id}: {e}"
-            );
-            return;
-        }
+    if !log_dir.exists()
+        && let Err(e) = tokio::fs::create_dir_all(log_dir).await
+    {
+        log::debug!(
+            "[DEBUG] container_oom_monitor: Failed to create directory for OOM killed process {process_id}: {e}"
+        );
+        return;
     }
 
     let log_path = log_dir.join("oom_killed.log");
@@ -231,13 +231,12 @@ pub async fn container_oom_monitor(
 
         for (process_id, pid, cgroup_path) in &process_cgroups {
             if let Ok(proc_usage) = cgroup::read_memory_usage(cgroup_path, controller.version).await
+                && proc_usage > largest_usage
             {
-                if proc_usage > largest_usage {
-                    largest_usage = proc_usage;
-                    largest_pid = Some(*pid);
-                    largest_process_id = Some(process_id.clone());
-                    largest_cgroup_path = Some(cgroup_path.clone());
-                }
+                largest_usage = proc_usage;
+                largest_pid = Some(*pid);
+                largest_process_id = Some(process_id.clone());
+                largest_cgroup_path = Some(cgroup_path.clone());
             }
         }
 
