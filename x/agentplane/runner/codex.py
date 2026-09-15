@@ -88,23 +88,23 @@ class CodexAdapter(HarnessAdapter):
         return self._thread_id
 
     async def submit(self, command_id: str, text: str) -> None:
-        selected_change = self._take_pending_model_change()
+        selected_change = await self._take_pending_model_change()
         selected_model = selected_change[1] if selected_change is not None else self.session.record.model
         receipt = await self.harness.start_turn(thread_id=self._thread_id, text=text, model=selected_model)
         response, sequence = receipt.response, receipt.sequence
         if response.error is not None or response.result is None:
             reason = response.error.message if response.error is not None else "turn/start returned no result"
             if selected_change is not None:
-                self.session._fail(selected_change[0], f"Codex did not select the requested model: {reason}")
-            self.session._fail(command_id, reason)
+                await self.session._fail(selected_change[0], f"Codex did not select the requested model: {reason}")
+            await self.session._fail(command_id, reason)
             return
         if selected_change is not None:
             # The native response proves Codex accepted the turn that selected this model. This,
             # rather than command receipt or a guessed future boundary, is its causal effect.
-            self.session.model_changed(*selected_change, sources=[sequence])
+            await self.session.model_changed(*selected_change, sources=[sequence])
         turn_id = wire.TurnResult.model_validate(response.result).turn.id
         if turn_id != self.session.active_turn_id:
-            self.session.emit(
+            await self.session.emit(
                 event_pb2.TurnStarted(turn_id=turn_id, model=self.session.record.model), sources=[sequence]
             )
         await self.session.confirm_user_message(
@@ -117,7 +117,7 @@ class CodexAdapter(HarnessAdapter):
     async def change_model(self, command_id: str, model: str) -> None:
         self._pending_model_changes.append((command_id, model))
 
-    def _take_pending_model_change(self) -> tuple[str, str] | None:
+    async def _take_pending_model_change(self) -> tuple[str, str] | None:
         """Choose the newest requested model for the next native turn.
 
         Earlier pending requests never changed a native selection, so they are terminal no-ops
@@ -129,7 +129,9 @@ class CodexAdapter(HarnessAdapter):
         *superseded, selected = self._pending_model_changes
         self._pending_model_changes = []
         for command_id, _ in superseded:
-            self.session._noop(command_id, "superseded by a later model command before any Codex turn selected it")
+            await self.session._noop(
+                command_id, "superseded by a later model command before any Codex turn selected it"
+            )
         return selected
 
     async def on_frame(self, frame: Frame, source_sequence: int) -> None:
@@ -145,7 +147,9 @@ class CodexAdapter(HarnessAdapter):
                 )
             case wire.TurnStarted(params=params):
                 if params.turn.id != self.session.active_turn_id:
-                    self.session.emit(event_pb2.TurnStarted(turn_id=params.turn.id, model=self.session.record.model))
+                    await self.session.emit(
+                        event_pb2.TurnStarted(turn_id=params.turn.id, model=self.session.record.model)
+                    )
             case wire.TurnCompleted(params=params):
                 turn = params.turn
                 status = _TURN_STATUSES.get(turn.status)
@@ -159,47 +163,47 @@ class CodexAdapter(HarnessAdapter):
                     error = turn.error.message if turn.error is not None else ""
                 await self.session.turn_completed(turn.id, status, error)
             case wire.ItemStarted(params=params):
-                self._item_started(params.item)
+                await self._item_started(params.item)
             case wire.ItemCompleted(params=params):
-                self._item_completed(params.item)
+                await self._item_completed(params.item)
             case wire.AgentMessageDelta(params=params) | wire.ReasoningSummaryTextDelta(params=params):
-                self.session.emit(event_pb2.TextDelta(item_id=params.item_id, text=params.delta))
+                await self.session.emit(event_pb2.TextDelta(item_id=params.item_id, text=params.delta))
             case wire.CommandExecutionOutputDelta(params=params):
-                self.session.emit(event_pb2.ToolOutputDelta(item_id=params.item_id, text=params.delta))
+                await self.session.emit(event_pb2.ToolOutputDelta(item_id=params.item_id, text=params.delta))
 
-    def _item_started(self, item: wire.Item) -> None:
+    async def _item_started(self, item: wire.Item) -> None:
         if isinstance(item, wire.UserMessageItem) or item.id in self._items:
             return
         self._items.add(item.id)
         match item:
             case wire.AgentMessageItem():
-                self.session.emit(event_pb2.ItemStarted(item_id=item.id, kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT))
+                await self.session.emit(event_pb2.ItemStarted(item_id=item.id, kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT))
             case wire.ReasoningItem():
-                self.session.emit(event_pb2.ItemStarted(item_id=item.id, kind=event_pb2.ITEM_KIND_REASONING))
+                await self.session.emit(event_pb2.ItemStarted(item_id=item.id, kind=event_pb2.ITEM_KIND_REASONING))
             case wire.CommandExecutionItem():
-                self.session.emit(
+                await self.session.emit(
                     event_pb2.ItemStarted(item_id=item.id, kind=event_pb2.ITEM_KIND_TOOL_CALL, tool_name=item.type)
                 )
                 arguments: dict[str, object] = {"command": item.command, "cwd": item.cwd}
-                self.session.emit(event_pb2.ToolArguments(item_id=item.id, arguments_json=json.dumps(arguments)))
+                await self.session.emit(event_pb2.ToolArguments(item_id=item.id, arguments_json=json.dumps(arguments)))
             case wire.UnknownItem():
-                self.session.emit(
+                await self.session.emit(
                     event_pb2.ItemStarted(item_id=item.id, kind=event_pb2.ITEM_KIND_TOOL_CALL, tool_name=item.type)
                 )
                 arguments = {key: value for key, value in _extras(item).items() if key not in _OUTCOME_FIELDS}
-                self.session.emit(event_pb2.ToolArguments(item_id=item.id, arguments_json=json.dumps(arguments)))
+                await self.session.emit(event_pb2.ToolArguments(item_id=item.id, arguments_json=json.dumps(arguments)))
 
-    def _item_completed(self, item: wire.Item) -> None:
+    async def _item_completed(self, item: wire.Item) -> None:
         if isinstance(item, wire.UserMessageItem):
             return
-        self._item_started(item)
+        await self._item_started(item)
         match item:
             case wire.AgentMessageItem(text=text):
-                self.session.emit(event_pb2.ItemCompleted(item_id=item.id, text=text))
+                await self.session.emit(event_pb2.ItemCompleted(item_id=item.id, text=text))
             case wire.ReasoningItem(summary=summary):
-                self.session.emit(event_pb2.ItemCompleted(item_id=item.id, text="\n".join(summary)))
+                await self.session.emit(event_pb2.ItemCompleted(item_id=item.id, text="\n".join(summary)))
             case wire.CommandExecutionItem():
-                self.session.emit(
+                await self.session.emit(
                     event_pb2.ItemCompleted(
                         item_id=item.id,
                         tool=event_pb2.ToolResult(
@@ -210,7 +214,7 @@ class CodexAdapter(HarnessAdapter):
                 )
             case wire.UnknownItem():
                 outcome = {key: value for key, value in _extras(item).items() if key in _OUTCOME_FIELDS}
-                self.session.emit(
+                await self.session.emit(
                     event_pb2.ItemCompleted(
                         item_id=item.id,
                         tool=event_pb2.ToolResult(

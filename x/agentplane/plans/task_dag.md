@@ -63,7 +63,6 @@ flowchart TB
     UISHELL_NEWTHREAD_SANDBOX["Deferred combined UI<br/>pre-scoped '+ New thread' on a Sandbox's page<br/>Sandbox selected, Thread fields editable"]:::future
     UISHELL_NEWTHREAD_LANDING["Deferred combined UI<br/>sidebar '+' unscoped new-thread composer<br/>Sandbox/preset/model pickers + prompt"]:::future
     COMMAND_QUEUE_DECISION["Deferred decision<br/>accept commands while runner unavailable?<br/>current slice uses runner admission first"]:::decision
-    RUNNER_EVENT_DURABILITY["Required correctness<br/>persist every Event before publication<br/>torn-write recovery without cursor reuse"]:::active
     APP_EVENT_REPLICATION["Required correctness<br/>contiguous, exact Event copying<br/>transactional checkpoint and fenced ingestion"]:::active
     CLAUDE_RECOVERY["Required evidence then implementation<br/>Claude execution before durable runner proof<br/>native correlation and safe recovery"]:::active
     CODEX_RECOVERY["Required evidence then implementation<br/>Codex execution before durable runner proof<br/>native correlation and safe recovery"]:::active
@@ -95,17 +94,14 @@ flowchart TB
 
     INPUT_DELIVERY -. reliable Thread ingress .-> ING
     APP_EVENT_REPLICATION --> THREAD_COMMAND_INGRESS
-    RUNNER_EVENT_DURABILITY --> THREAD_REPLAY_PROTOCOL
     APP_EVENT_REPLICATION --> THREAD_REPLAY_PROTOCOL
     THREAD_COMMAND_INGRESS --> THREAD_PENDING_UI
     THREAD_REPLAY_PROTOCOL --> THREAD_PENDING_UI
     RUNNER_COMMAND_SCHEDULING --> THREAD_PENDING_UI
-    RUNNER_EVENT_DURABILITY --> THREAD_EVENT_CONTINUITY
     RUNNER_WRITER_HANDOFF --> THREAD_EVENT_CONTINUITY
     THREAD_EVENT_CONTINUITY --> THREAD_SUCCESSOR_DELIVERY
     CLAUDE_RECOVERY -. native continuation evidence .-> THREAD_SUCCESSOR_DELIVERY
     CODEX_RECOVERY -. native continuation evidence .-> THREAD_SUCCESSOR_DELIVERY
-    RUNNER_EVENT_DURABILITY --> SANDBOX_LIFECYCLE_DURABILITY
     APP_EVENT_REPLICATION --> SANDBOX_LIFECYCLE_DURABILITY
     COMMAND_QUEUE_DECISION -. if app-first acceptance chosen .-> THREAD_COMMAND_DELIVERY
     APP_EVENT_REPLICATION --> THREAD_COMMAND_DELIVERY
@@ -507,18 +503,6 @@ sequence. Review them for independently useful changes to salvage into appropria
 slices; do not stack new work on their deferred queue design. Preserve the runner's
 own journal in either option.
 
-### `RUNNER_EVENT_DURABILITY` — persist Events before publication
-
-**Required correctness:** implement
-[publication durability](../docs/thread_layering.md#runner-independence-and-event-durability)
-for every replayable Event, including Native frames and streaming deltas. Any batching
-must publish only after its durability fence. Keep recording independent of app
-availability.
-
-Acceptance covers torn Event/command journal tails, stable replay and cursor identity,
-and loss of unsynced storage. Process SIGKILL alone does not exercise loss of the
-kernel's write cache. Keep native execution recovery and scheduling in their own PRs.
-
 ### `APP_EVENT_REPLICATION` — validate and commit the copied prefix
 
 **Required correctness:** reject gaps and conflicting duplicate payloads/provenance.
@@ -598,7 +582,7 @@ evidence without blocking ordinary messaging and UI work.
 app-minted Thread identity, explicit incarnation association, retained runner journal,
 and exclusive writer handoff. Thread owns its static Sandbox; association rows do not
 duplicate it. App and browser checkpoints refer to the runner's sequence.
-Requires `RUNNER_EVENT_DURABILITY` and `RUNNER_WRITER_HANDOFF`, not the entire native
+Requires `RUNNER_WRITER_HANDOFF`, not the entire native
 recovery backlog.
 
 A successor reopens the journal; it cannot replace missing state with “app cursor + 1.”
@@ -751,8 +735,7 @@ committed PostgreSQL prefix, preserving cursor and provenance. Ordinary commands
 use generated `Command` on both hops. Normal conversation and admitted-command state
 are frontend projections of this log; an app delivery queue is not a dependency.
 
-Reliable reconnect acceptance requires `RUNNER_EVENT_DURABILITY` and
-`APP_EVENT_REPLICATION`. Native crash-recovery research is not a prerequisite for
+Reliable reconnect acceptance requires `APP_EVENT_REPLICATION`. Native crash-recovery research is not a prerequisite for
 the replay/projection implementation.
 
 Implement [reconnect and catch-up](../docs/thread_layering.md#reconnect-and-catch-up):

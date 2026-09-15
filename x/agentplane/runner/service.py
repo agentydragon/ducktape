@@ -8,6 +8,7 @@ import json
 import logging
 import os
 from collections.abc import AsyncIterator, Awaitable
+from contextlib import AsyncExitStack
 from pathlib import PurePosixPath
 
 import grpc
@@ -18,6 +19,7 @@ from x.agentplane.runner.claude import ClaudeAdapter
 from x.agentplane.runner.codex import CodexAdapter
 from x.agentplane.runner.config import RunnerConfig
 from x.agentplane.runner.initialization import InitializationLog
+from x.agentplane.runner.journal import Journal
 from x.agentplane.runner.session import Session
 from x.agentplane.runner.store import SessionRecord, SessionStore, validate_session_id
 
@@ -55,6 +57,8 @@ class Runner:
         self.config = config
         self.store = SessionStore(config.state_dir / "sessions")
         self.sessions: dict[str, Session] = {}
+        self._sessions_lock = asyncio.Lock()
+        self._resources = AsyncExitStack()
         self._initialize_lock = asyncio.Lock()
         self._initialization_log: InitializationLog | None = None
         self._initialization_task: asyncio.Task[None] | None = None
@@ -138,21 +142,28 @@ class Runner:
         while data := await stream.read(4096):
             log.append_output(attempt, source, data)
 
-    def startup(self) -> None:
+    async def startup(self) -> None:
         """Load every stored session and record what the previous runner process took with it."""
         for session_id in self.store.session_ids():
-            self._load(session_id).recover_after_restart()
+            session = await self._load(session_id)
+            await session.recover_after_restart()
 
-    def _load(self, session_id: str) -> Session:
-        if session_id not in self.sessions:
-            self.sessions[session_id] = Session(
-                session_id,
-                record=self.store.read(session_id),
-                store=self.store,
-                config=self.config,
-                make_adapter=make_adapter,
-            )
-        return self.sessions[session_id]
+    async def _load(self, session_id: str) -> Session:
+        async with self._sessions_lock:
+            if session_id not in self.sessions:
+                record = self.store.read(session_id)
+                journal = await self._resources.enter_async_context(
+                    Journal.open(self.store.directory(session_id) / "journal.sqlite", str(record.event_source_id))
+                )
+                self.sessions[session_id] = Session(
+                    session_id,
+                    record=record,
+                    journal=journal,
+                    store=self.store,
+                    config=self.config,
+                    make_adapter=make_adapter,
+                )
+            return self.sessions[session_id]
 
     async def open(self, request: protocol_pb2.Open) -> Session:
         try:
@@ -160,7 +171,7 @@ class Runner:
         except ValueError as error:
             raise OpenError(str(error)) from error
         if self.store.exists(session_id):
-            session = self._load(session_id)
+            session = await self._load(session_id)
             if request.HasField("spec") and request.spec != session.record.spec():
                 raise OpenError(f"session {session_id} exists with a different spec")
         else:
@@ -174,10 +185,7 @@ class Runner:
                 raise OpenError(f"spec.cwd must be an absolute path, not {request.spec.cwd!r}")
             record = SessionRecord.from_spec(request.spec)
             self.store.write(session_id, record)
-            session = Session(
-                session_id, record=record, store=self.store, config=self.config, make_adapter=make_adapter
-            )
-            self.sessions[session_id] = session
+            session = await self._load(session_id)
         if request.HasField("spec"):
             await session.ensure_running()
         return session
@@ -190,6 +198,7 @@ class Runner:
             tasks.append(self._initialization_task)
         if tasks:
             await asyncio.gather(*tasks)
+        await self._resources.aclose()
         if self._initialization_log is not None:
             self._initialization_log.close()
 
@@ -198,7 +207,7 @@ class Runner:
             protocol_pb2.SessionSummary(
                 session_id=session.session_id,
                 spec=session.record.spec(),
-                last_cursor=session.log.last_cursor,
+                last_cursor=session.journal.last_cursor,
                 harness_state=protocol_pb2.HARNESS_STATE_RUNNING
                 if session.running
                 else protocol_pb2.HARNESS_STATE_STOPPED,
@@ -267,19 +276,19 @@ class RunnerService(protocol_pb2_grpc.RunnerServicer):
             logger.exception("session %s: open failed", first.open.session_id)
             yield protocol_pb2.ServerMessage(error=f"open failed: {error}")
             return
-        if first.open.follow.after_cursor > session.log.last_cursor:
+        if first.open.follow.after_cursor > session.journal.last_cursor:
             yield protocol_pb2.ServerMessage(
                 error=f"after_cursor {first.open.follow.after_cursor} is beyond the session log, "
-                f"whose last cursor is {session.log.last_cursor}"
+                f"whose last cursor is {session.journal.last_cursor}"
             )
             return
-        opened_cursor = session.log.last_cursor
+        opened_cursor = session.journal.last_cursor
         ended = not session.harness_running
         yield protocol_pb2.ServerMessage(
             attached=protocol_pb2.Attached(
                 session_id=session.session_id,
                 spec=session.record.spec(),
-                last_cursor=session.log.last_cursor,
+                last_cursor=session.journal.last_cursor,
                 harness_state=protocol_pb2.HARNESS_STATE_RUNNING
                 if session.running
                 else protocol_pb2.HARNESS_STATE_STOPPED,
@@ -294,7 +303,7 @@ class RunnerService(protocol_pb2_grpc.RunnerServicer):
         cursor = first.open.follow.after_cursor
         try:
             while True:
-                for entry in session.log.since(cursor):
+                for entry in session.journal.since(cursor):
                     if ended and entry.cursor > opened_cursor and entry.event.HasField("harness_started"):
                         return
                     yield protocol_pb2.ServerMessage(event_entry=entry)
@@ -315,7 +324,7 @@ class RunnerService(protocol_pb2_grpc.RunnerServicer):
 
 
 async def _wake(session: Session, closing: asyncio.Event, cursor: int) -> None:
-    waits = [asyncio.create_task(session.log.wait_beyond(cursor)), asyncio.create_task(closing.wait())]
+    waits = [asyncio.create_task(session.journal.wait_beyond(cursor)), asyncio.create_task(closing.wait())]
     try:
         done, _ = await asyncio.wait(waits, return_when=asyncio.FIRST_COMPLETED)
         for completed in done:
@@ -361,9 +370,14 @@ async def _consume(
 async def serve(config: RunnerConfig, *, address: str = "127.0.0.1:0") -> tuple[grpc.aio.Server, Runner, int]:
     """Start a runner and its server; the returned port is the bound one."""
     runner = Runner(config)
-    runner.startup()
     server = grpc.aio.server()
-    protocol_pb2_grpc.add_RunnerServicer_to_server(RunnerService(runner), server)
-    port = server.add_insecure_port(address)
-    await server.start()
+    try:
+        await runner.startup()
+        protocol_pb2_grpc.add_RunnerServicer_to_server(RunnerService(runner), server)
+        port = server.add_insecure_port(address)
+        await server.start()
+    except BaseException:
+        await server.stop(0)
+        await runner.stop()
+        raise
     return server, runner, port

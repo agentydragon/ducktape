@@ -156,7 +156,7 @@ async def test_crash_after_runner_receipt_before_native_dispatch_retries_once(
 ) -> None:
     """This is intentionally a real runner/harness process test, not a mocked Session method.
 
-    The checkpoint is after the fsynced ``dispatch_planned`` journal record and before either native
+    The checkpoint is after the committed ``dispatch_planned`` record and before either native
     adapter receives the command. Killing the runner there proves a fresh runner delivers the same
     command once, with its original id, rather than dropping it or guessing a terminal result.
     """
@@ -202,10 +202,10 @@ async def test_crash_after_runner_receipt_before_native_dispatch_retries_once(
 async def test_crash_after_terminal_effect_persists_replays_that_effect(
     start_runner: Callable[..., Awaitable[RunnerProcess]], model: ScriptedModel, spec: protocol_pb2.SessionSpec
 ) -> None:
-    """A journaled terminal outcome cannot disappear if the public Event append loses the process."""
+    """A committed terminal effect replays exactly after process death, without receipt repair."""
     command_id = "replay-persisted-effect"
     # This case needs only the real harness/runner protocol path; let dispatch proceed to the
-    # native confirmation gate, then crash before Session emits its public confirmation event.
+    # native confirmation gate, then crash after its atomic command/Event commit.
     first_runner = await start_runner(test_debug_checkpoint=("after-terminal-outcome", command_id))
     client = RunnerClient(first_runner.target)
     first = await client.attach("restart-effect-1", spec=spec)
@@ -226,14 +226,13 @@ async def test_crash_after_terminal_effect_persists_replays_that_effect(
         "after-terminal-outcome",
         command_id,
     )
-    assert not [
+    [published] = [
         entry
         for entry in events.of_kind(first.seen, "harness_user_message_confirmed")
         if command_id in entry.event.harness_user_message_confirmed.origin_command_ids
     ]
-    # The runner has journaled the effect but is intentionally not allowed to append its public
-    # Event. Killing it now isolates that journal/Event append window rather than a harness's
-    # upstream-response boundary.
+    # Command outcome and Event already committed together, before the checkpoint.
+    assert published.cursor < debug.cursor
     harness_pids = [entry.event.harness_started.pid for entry in events.of_kind(first.seen, "harness_started")]
     await first_runner.crash(harness_pids)
     await client.close()
@@ -243,12 +242,22 @@ async def test_crash_after_terminal_effect_persists_replays_that_effect(
     # Do not start a replacement harness here. This boundary proves the runner's own durable
     # event replay before a later continuation contract decides how to resume an interrupted native
     # turn; attaching without a spec is the protocol's diagnostic/replay path.
-    second = await client.attach("restart-effect-1", after_cursor=first.cursor)
-    confirmed = await second.until(events.is_kind("harness_user_message_confirmed"))
+    second = await client.attach("restart-effect-1")
+    confirmed = await second.until(lambda entry: entry.cursor == published.cursor)
+    assert confirmed.SerializeToString() == published.SerializeToString()
     assert confirmed.event.harness_user_message_confirmed.text == "Reply with exactly: EFFECT_REPLAY_OK"
     assert confirmed.event.harness_user_message_confirmed.origin_command_ids == [command_id]
-    assert len(events.of_kind(second.seen, "harness_user_message_confirmed")) == 1
     await second.drain_until_end()
+    assert (
+        len(
+            [
+                entry
+                for entry in events.of_kind(second.seen, "harness_user_message_confirmed")
+                if command_id in entry.event.harness_user_message_confirmed.origin_command_ids
+            ]
+        )
+        == 1
+    )
     await client.close()
 
 

@@ -115,8 +115,8 @@ declared storage failures. Every published entry, including Native frames and st
 deltas, must survive the supported restart boundary and retain its cursor. Persist
 before publication; batching may amortize synchronization but publication must wait
 for the batch's durability fence. Losing an already published tail can otherwise
-reuse cursors for different facts. The current selective-fsync implementation needs
-work before it satisfies this stronger guarantee.
+reuse cursors for different facts. The runner commits every public entry through
+its SQLite durability fence.
 
 The app ingester commits copied entries and advances its contiguous checkpoint in the
 same transaction. Duplicate entries must agree in payload and provenance; a key conflict
@@ -471,7 +471,7 @@ presentation, not server delivery orchestration.
 | Native adaptation                           | Separate Claude/Codex scripted tests assert exact relevant model request contents and input cohorts, not just natural-language prompt instructions     |
 | Admission and relay loss                    | Crash before admission and after admission before app copy; preserve id/text, deduplicate same id, reject changed payload, recover across replicas     |
 | Native execution before outcome persistence | Kill real harness/runner at that exact window; prove how history/correlation prevents duplicate LLM input or explicitly gate automatic recovery        |
-| Outcome persisted before public Event       | Replay the exact outcome and causal provenance after restart; multi-input coalesced receipts settle every origin once                                  |
+| Command outcome and public Event commit     | Commit or roll back the exact outcome and Event together; multi-input coalesced receipts settle every origin atomically                                |
 | Streaming durability                        | Kill process and exercise unsynced-storage loss; published Native/delta entries never disappear or reuse their cursor                                  |
 | Model and interrupt scheduling              | Codex pending model plus next input makes progress; applied UI state waits for effect; interrupt does not block behind input completion                |
 | Queued input interrupted                    | Each input is confirmed, dropped with evidence, or demonstrably retained for later processing; no inferred queue fate                                  |
@@ -490,9 +490,21 @@ and the operation's target semantics establish that this is safe.
 
 ## Review boundaries
 
-The [current runner specification](../runner/SPEC.md) and implementation still expose
-a session-scoped journal. The target Thread identity/cursor change, publication
-durability, native crash recovery, and saved-response boundary each need implementation
+### Runner SQLite mode
+
+The runner uses SQLite rollback journaling with `synchronous=EXTRA`, including the
+directory fence after journal removal. The Bazel Python runtime verified for this
+cutover links SQLite 3.50.4, which predates the
+[WAL-reset repair](https://sqlite.org/wal.html#walreset). WAL is inappropriate until
+the linked runtime contains that repair (3.50.7 backport or 3.51.3 and later).
+The runner's serialized connection does not require WAL's concurrent-reader benefit.
+SQLite owns crash recovery; no custom JSONL repair or old-format import remains.
+
+### Remaining identity and delivery boundaries
+
+The [current runner specification](../runner/SPEC.md) exposes a session-scoped SQLite
+journal with atomic command/Event commits and publication after the storage fence.
+The target Thread identity/cursor change, native crash recovery, and saved-response boundary need implementation
 and integration evidence. An app outbox is a separate decision about accepting work
 before the runner can; it does not satisfy those gates by existing.
 

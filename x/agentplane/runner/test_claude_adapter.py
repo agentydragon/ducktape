@@ -47,10 +47,10 @@ class RecordedSession:
         self.confirmed.append((harness_message_id, text, origin_command_ids, turn_id))
         self.confirmed_sources.append(sources)
 
-    def _noop(self, command_id: str, reason: str) -> None:
+    async def _noop(self, command_id: str, reason: str) -> None:
         self.noops.append((command_id, reason))
 
-    def emit(self, observation: object, *, sources: list[int] | None = None) -> None:
+    async def emit(self, observation: object, *, sources: list[int] | None = None) -> None:
         self.emitted.append(observation)
 
 

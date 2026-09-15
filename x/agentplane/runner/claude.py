@@ -93,7 +93,7 @@ class ClaudeAdapter(HarnessAdapter):
 
     async def submit(self, command_id: str, text: str) -> None:
         if not self.session.active_turn_id:
-            self.session.emit(
+            await self.session.emit(
                 event_pb2.TurnStarted(turn_id=f"turn-{uuid4().hex}", model=self.session.record.model), sources=[]
             )
         frame = await self.harness.submit(text)
@@ -110,7 +110,7 @@ class ClaudeAdapter(HarnessAdapter):
         if not isinstance(response, wire.ControlResponseFrame) or response.response.subtype != "success":
             detail = response.response.error if isinstance(response, wire.ControlResponseFrame) else "invalid response"
             raise RuntimeError(f"Claude Code refused model switch: {detail}")
-        self.session.model_changed(command_id, model, sources=[receipt.sequence])
+        await self.session.model_changed(command_id, model, sources=[receipt.sequence])
 
     async def on_frame(self, frame: Frame, source_sequence: int) -> None:
         parsed = wire.parse_frame(frame)
@@ -135,11 +135,11 @@ class ClaudeAdapter(HarnessAdapter):
                 if pending := self._pending.pop(command_uuid, None):
                     command_id, _ = pending
                     self._started_inputs = [item for item in self._started_inputs if item[0] != command_uuid]
-                    self.session._noop(command_id, "Claude cancelled the queued user input before taking it")
+                    await self.session._noop(command_id, "Claude cancelled the queued user input before taking it")
             case wire.StreamEventFrame() as streamed:
                 await self._on_stream_event(streamed, source_sequence)
             case wire.AssistantFrame(message=message):
-                self._on_assistant(message)
+                await self._on_assistant(message)
             case wire.UserFrame() as user:
                 await self._on_user(user, source_sequence)
             case wire.ResultFrame() as result:
@@ -162,11 +162,13 @@ class ClaudeAdapter(HarnessAdapter):
                 )
         await self.harness.send(response)
 
-    def _turn_id(self) -> str:
+    async def _turn_id(self) -> str:
         """The active turn, or a new one for output the harness produces on its own, such as a
         queued input it chose to run as a fresh turn after the previous result."""
         if not self.session.active_turn_id:
-            self.session.emit(event_pb2.TurnStarted(turn_id=f"turn-{uuid4().hex}", model=self.session.record.model))
+            await self.session.emit(
+                event_pb2.TurnStarted(turn_id=f"turn-{uuid4().hex}", model=self.session.record.model)
+            )
         return self.session.active_turn_id
 
     async def _on_stream_event(self, frame: wire.StreamEventFrame, source_sequence: int) -> None:
@@ -180,14 +182,16 @@ class ClaudeAdapter(HarnessAdapter):
             case wire.ContentBlockStart(index=index, content_block=block):
                 item_id = self._item_id(block, index, self._message_id)
                 self._block_items[index] = item_id
-                self._start_item(item_id, block)
+                await self._start_item(item_id, block)
             case wire.ContentBlockDelta(index=index, delta=delta):
                 item_id = self._block_items.get(index, "")
                 match delta:
                     case wire.TextDelta(text=text) | wire.ThinkingDelta(thinking=text):
-                        self.session.emit(event_pb2.TextDelta(item_id=item_id, text=text))
+                        await self.session.emit(event_pb2.TextDelta(item_id=item_id, text=text))
                     case wire.InputJsonDelta(partial_json=partial_json):
-                        self.session.emit(event_pb2.ToolArgumentsDelta(item_id=item_id, partial_json=partial_json))
+                        await self.session.emit(
+                            event_pb2.ToolArgumentsDelta(item_id=item_id, partial_json=partial_json)
+                        )
 
     async def _confirm_message_start(self, harness_message_id: str, source_sequence: int) -> None:
         """Confirm the native prompt which caused one Claude model request.
@@ -213,22 +217,24 @@ class ClaudeAdapter(HarnessAdapter):
             harness_message_id=harness_message_id,
             text="\n".join(item[1] for item in confirmed),
             origin_command_ids=[item[0] for item in confirmed],
-            turn_id=self._turn_id(),
+            turn_id=await self._turn_id(),
             sources=[*(sequence for _, sequence in contributors), source_sequence],
         )
 
-    def _on_assistant(self, message: wire.AssistantMessage) -> None:
+    async def _on_assistant(self, message: wire.AssistantMessage) -> None:
         for block in message.content:
             index = self._blocks_completed.get(message.id, 0)
             self._blocks_completed[message.id] = index + 1
             item_id = self._item_id(block, index, message.id)
             if item_id not in self._items:
-                self._start_item(item_id, block)
+                await self._start_item(item_id, block)
             match block:
                 case TextBlock(text=text) | ThinkingBlock(thinking=text):
-                    self.session.emit(event_pb2.ItemCompleted(item_id=item_id, text=text))
+                    await self.session.emit(event_pb2.ItemCompleted(item_id=item_id, text=text))
                 case ToolUseBlock(input=tool_input):
-                    self.session.emit(event_pb2.ToolArguments(item_id=item_id, arguments_json=json.dumps(tool_input)))
+                    await self.session.emit(
+                        event_pb2.ToolArguments(item_id=item_id, arguments_json=json.dumps(tool_input))
+                    )
 
     async def _on_user(self, frame: wire.UserFrame, source_sequence: int) -> None:
         if frame.is_replay:
@@ -238,7 +244,7 @@ class ClaudeAdapter(HarnessAdapter):
         blocks = list(blocks_of(message.content))
         for block in blocks:
             if isinstance(block, ToolResultBlock):
-                self.session.emit(
+                await self.session.emit(
                     event_pb2.ItemCompleted(
                         item_id=block.tool_use_id,
                         tool=event_pb2.ToolResult(output=block.text, succeeded=not block.is_error),
@@ -275,7 +281,7 @@ class ClaudeAdapter(HarnessAdapter):
             harness_message_id=frame.uuid,
             text=text,
             origin_command_ids=[item[0] for item in confirmed],
-            turn_id=self._turn_id(),
+            turn_id=await self._turn_id(),
             sources=[*(sequence for _, sequence in contributors), source_sequence],
         )
 
@@ -304,7 +310,7 @@ class ClaudeAdapter(HarnessAdapter):
             harness_message_id=harness_message_id,
             text="\n".join(item[1] for item in confirmed),
             origin_command_ids=[item[0] for item in confirmed],
-            turn_id=self._turn_id(),
+            turn_id=await self._turn_id(),
             sources=[tool_result_sequence, *(sequence for _, sequence in contributors)],
         )
 
@@ -323,7 +329,7 @@ class ClaudeAdapter(HarnessAdapter):
     def _item_id(block: Block, index: int, message_id: str) -> str:
         return block.id if isinstance(block, ToolUseBlock) else f"{message_id}#{index}"
 
-    def _start_item(self, item_id: str, block: Block) -> None:
+    async def _start_item(self, item_id: str, block: Block) -> None:
         match block:
             case TextBlock():
                 kind, tool_name = event_pb2.ITEM_KIND_ASSISTANT_TEXT, ""
@@ -336,5 +342,5 @@ class ClaudeAdapter(HarnessAdapter):
                 # native evidence only.
                 return
         self._items.add(item_id)
-        self._turn_id()
-        self.session.emit(event_pb2.ItemStarted(item_id=item_id, kind=kind, tool_name=tool_name))
+        await self._turn_id()
+        await self.session.emit(event_pb2.ItemStarted(item_id=item_id, kind=kind, tool_name=tool_name))
