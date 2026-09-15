@@ -250,12 +250,13 @@ Flux `Receiver` at `flux-webhook.allegedly.works`. GitHub webhook registered by
 ## InvenTree API Token Provisioning
 
 Via the `inventree-token-provisioner` image
-(`cluster/provisioners/inventree_token_provisioner/`), run as a Job plus a weekly
+(`cluster/archive/inventree_token_provisioner/`), run as a Job plus a weekly
 renewal CronJob: admin credentials -> InvenTree REST API -> get-or-create the
 `sandbox-agent` user, issue a named API token, write the `inventree-api-token`
 Secret in the `inventree` namespace; an ESO `ClusterExternalSecret` mirrors it
-into `claude-sandbox`. Renews when fewer than 30 days remain. Suspended together
-with InvenTree.
+into `claude-sandbox`. Renews when fewer than 30 days remain. Decommissioned
+together with InvenTree; the provisioner source remains available if the app is
+revived, but its CI image target is archived rather than published automatically.
 
 ## CPU limits policy (VPA)
 
@@ -338,6 +339,16 @@ not currently reconciled cluster state.
   app declarations remain in Git.
 - **Wayback cache**: `loom/wayback/deploy/` — decommissioned by operator
   request; its parked Flux declaration and deployment package remain in Git.
+- **Browsertrix**: `x/browsertrix/` — decommissioned; its revival package remains
+  in Git.
+- **ArchiveBox**: `x/archivebox/` — decommissioned; its revival package remains
+  in Git.
+- **Google Workspace MCP**: `x/google-workspace-mcp/` — decommissioned; its
+  revival package remains in Git.
+- **egress-proxy-rugged**: `egress-proxy-rugged/` — decommissioned; its
+  configuration remains in Git.
+- **InvenTree**: `inventree/` — decommissioned; its revival package remains in
+  Git.
 
 ## Suspended Kustomizations
 
@@ -350,21 +361,9 @@ the open question is unsuspending, not hardware.
 - **agent-box**: `agent-box`, `agent-box-namespace` — inactive while the unschedulable
   legacy VM is retired; the VM and its local disk stay untouched until explicitly
   deleted.
-- **ArchiveBox**: `archivebox`, `archivebox-namespace` — retained suspended so Flux
-  cannot recreate the retired objects.
-- **Browsertrix**: `browsertrix`, `browsertrix-{namespace,retained}`,
-  `seaweedfs-browsertrix-bucket` — manifests retained suspended (#4248).
 - **BuildBuddy Executor**: `buildbuddy-executor` — scaled to 0; Proxmox-pinned, and
   atlas/wyrm2 being back removes that blocker — re-enable when needed.
-- **egress-proxy-rugged** — decommissioned by operator request; configuration kept,
-  reconciliation stopped.
 - **gecko**: `gecko`, `gecko-namespace` — same legacy-VM retirement hold as agent-box.
-- **Google Workspace MCP**: `google-workspace-mcp` — parked 2026-05-13; resources + PVC deleted.
-- **InvenTree**: `inventree`, `inventree-{namespace,secrets,db,token-provisioner}` —
-  nice-to-have, parked under capacity pressure; Proxmox-pinned, so atlas/wyrm2
-  being back removes that blocker. Before unsuspending: mint the SOPS admin/db
-  secrets (<../k8s/TODO.md>). The app's formerly dangling `dependsOn` now points
-  at `sso-providers-tf` (#4908).
 - **props**: `props`, `props-{namespace,secrets,db,agent-rbac}` — suspended 2026-08-20
   for a temporary teardown.
 

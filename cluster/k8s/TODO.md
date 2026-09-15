@@ -27,10 +27,10 @@ committed. `NO_PROXY` in `inject-mitmproxy.yaml` is unchanged.
       `secrets/*-forgejo-tea-token.yaml`; keep `.sops.yaml`, home-manager
       modules, and rotator configs in sync when moving them.
 
-## InvenTree secrets if unsuspending
+## InvenTree secrets if reviving
 
 - [ ] Add SOPS secrets for InvenTree admin and database passwords before
-      unsuspending it. The old Vault `kv/inventree/*` values are gone with
+      reviving it. The old Vault `kv/inventree/*` values are gone with
       Vault (decommissioned 2026-04-19; <../docs/decisions.md> § "Secrets: SOPS
       SSOT"), so generate fresh values.
 

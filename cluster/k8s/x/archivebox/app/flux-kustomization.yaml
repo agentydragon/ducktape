@@ -5,6 +5,7 @@ metadata:
   namespace: ducktape-flux
   annotations:
     description: Suspended ArchiveBox experiment; former Authentik header SSO and split local/SeaweedFS CSI storage.
+    ducktape.org/parked: "true"
 spec:
   # Retain the declaration without allowing Flux to recreate retired objects.
   suspend: true

@@ -402,10 +402,6 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
 - [ ] Proxmox SPICE proxy routing via cluster ingress
 - [ ] OpenClaw: retain the Authentik identity-aware proxy, but adopt OpenClaw's native
       `trusted-proxy` auth mode with a narrow proxy source and user allowlist.
-- [ ] Google Workspace MCP: decide deliberately whether to adopt its Google-backed OAuth
-      2.1 multi-user mode. Do not treat it as Authentik-native OIDC: v1.14.2 external-provider
-      mode still requires and validates Google access tokens. Keep the Authentik browser
-      gate until the replacement topology is tested end to end.
 - [ ] Ollama: per-user auth (Authentik JWTs or LiteLLM proxy)
 - [ ] LiteLLM: `ollama/` provider drops `tool_calls` — use `openai-chat` variants for now
 - [ ] Verify ntfy.sh notifications

@@ -168,14 +168,6 @@ endpoints:
 
   # ── services ──────────────────────────────────────────────────────────
 
-  - name: InventTree
-    group: services
-    url: https://inventree.allegedly.works/api/
-    interval: 60s
-    conditions:
-      - "[STATUS] == 200"
-      - "[BODY].server == InvenTree"
-
   - name: Nix Cache
     group: services
     url: https://cache.allegedly.works/public/nix-cache-info

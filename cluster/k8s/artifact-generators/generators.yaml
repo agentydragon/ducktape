@@ -570,14 +570,6 @@ spec:
           exclude:
             - flux-kustomization.yaml
 
-    - name: inventree-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/inventree/namespace/**"
-          to: "@artifact/cluster/k8s/inventree/namespace/"
-          exclude:
-            - flux-kustomization.yaml
-
     - name: authentik-sso-secrets
       originRevision: "@repo"
       copy:
@@ -675,14 +667,6 @@ spec:
       copy:
         - from: "@repo/cluster/k8s/home-assistant/**"
           to: "@artifact/cluster/k8s/home-assistant/"
-          exclude:
-            - flux-kustomization.yaml
-
-    - name: inventree-secrets
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/inventree/secrets/**"
-          to: "@artifact/cluster/k8s/inventree/secrets/"
           exclude:
             - flux-kustomization.yaml
 
@@ -1190,13 +1174,6 @@ spec:
           to: "@artifact/cluster/k8s/docker-ci/"
           exclude:
             - flux-kustomization.yaml
-    - name: egress-proxy-rugged
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/egress-proxy-rugged/**"
-          to: "@artifact/cluster/k8s/egress-proxy-rugged/"
-          exclude:
-            - flux-kustomization.yaml
     - name: evidence-market-roster
       originRevision: "@repo"
       copy:
@@ -1559,27 +1536,6 @@ spec:
           to: "@artifact/cluster/k8s/infra-drift/"
           exclude:
             - flux-kustomization.yaml
-    - name: inventree-app
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/inventree/app/**"
-          to: "@artifact/cluster/k8s/inventree/app/"
-          exclude:
-            - flux-kustomization.yaml
-    - name: inventree-db
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/inventree/db/**"
-          to: "@artifact/cluster/k8s/inventree/db/"
-          exclude:
-            - flux-kustomization.yaml
-    - name: inventree-token-provisioner
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/inventree/token-provisioner/**"
-          to: "@artifact/cluster/k8s/inventree/token-provisioner/"
-          exclude:
-            - flux-kustomization.yaml
     - name: keda
       originRevision: "@repo"
       copy:
@@ -1788,20 +1744,6 @@ spec:
       copy:
         - from: "@repo/cluster/k8s/node-feature-discovery/**"
           to: "@artifact/cluster/k8s/node-feature-discovery/"
-          exclude:
-            - flux-kustomization.yaml
-    - name: archivebox-app
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/x/archivebox/app/**"
-          to: "@artifact/cluster/k8s/x/archivebox/app/"
-          exclude:
-            - flux-kustomization.yaml
-    - name: archivebox-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/x/archivebox/namespace/**"
-          to: "@artifact/cluster/k8s/x/archivebox/namespace/"
           exclude:
             - flux-kustomization.yaml
     - name: authelia-app
@@ -2047,41 +1989,6 @@ spec:
       copy:
         - from: "@repo/cluster/k8s/website/**"
           to: "@artifact/cluster/k8s/website/"
-          exclude:
-            - flux-kustomization.yaml
-    - name: browsertrix-app
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/x/browsertrix/app/**"
-          to: "@artifact/cluster/k8s/x/browsertrix/app/"
-          exclude:
-            - flux-kustomization.yaml
-    - name: browsertrix-bucket
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/x/browsertrix/bucket/**"
-          to: "@artifact/cluster/k8s/x/browsertrix/bucket/"
-          exclude:
-            - flux-kustomization.yaml
-    - name: browsertrix-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/x/browsertrix/namespace/**"
-          to: "@artifact/cluster/k8s/x/browsertrix/namespace/"
-          exclude:
-            - flux-kustomization.yaml
-    - name: browsertrix-retained
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/x/browsertrix/retained/**"
-          to: "@artifact/cluster/k8s/x/browsertrix/retained/"
-          exclude:
-            - flux-kustomization.yaml
-    - name: google-workspace-mcp
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/x/google-workspace-mcp/**"
-          to: "@artifact/cluster/k8s/x/google-workspace-mcp/"
           exclude:
             - flux-kustomization.yaml
 ---

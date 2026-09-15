@@ -33,7 +33,6 @@ resources:
   - plaid-mcp-sync-image.yaml
   - forgejo-token-rotation-image.yaml
   - matrix-user-provisioner-image.yaml
-  - token-provisioner-image.yaml
   - ha-mcp-token-provisioner-image.yaml
   - attic-jwt-rotation-image.yaml
   - authentik-jwt-rotation-image.yaml
