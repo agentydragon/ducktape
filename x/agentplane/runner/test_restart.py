@@ -8,17 +8,21 @@ import errno
 import os
 import signal
 from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 import pytest_bazel
 
+from util.bazel.runfiles import get_required_path, own_repo_rlocation
 from x.agentplane.harness_tests.claude.messages import AnthropicMessages
 from x.agentplane.harness_tests.codex.responses import OpenAIResponses
 from x.agentplane.protocol import event_pb2
 from x.agentplane.runner import protocol_pb2
 from x.agentplane.runner.client import RunnerClient
+from x.agentplane.runner.harness_process import HarnessProcess
+from x.agentplane.runner.store import StateOwner
 from x.agentplane.runner.testing import events, launches
 from x.agentplane.runner.testing.scripted_model import ScriptedModel, Text
 
@@ -79,6 +83,17 @@ async def _exited(pid: int) -> None:
         os.close(fd)
 
 
+def _runner_environment(tmp_path: Path) -> dict[str, str]:
+    return {
+        **launches.environment(tmp_path / "home"),
+        # The runner binary is a Bazel py_binary inside this test's runfiles tree and finds its
+        # own runfiles through these.
+        **{key: os.environ[key] for key in ("RUNFILES_DIR", "RUNFILES_MANIFEST_FILE") if key in os.environ},
+        "ANTHROPIC_AUTH_TOKEN": launches.TOKEN,
+        "OPENAI_API_KEY": launches.TOKEN,
+    }
+
+
 @pytest.fixture
 async def start_runner(
     harness: protocol_pb2.Harness, endpoint: AnthropicMessages | OpenAIResponses, tmp_path: Path
@@ -86,19 +101,11 @@ async def start_runner(
     started: list[RunnerProcess] = []
 
     async def start(*, test_debug_checkpoint: tuple[str, str] | None = None) -> RunnerProcess:
-        environment = {
-            **launches.environment(tmp_path / "home"),
-            # The runner binary is a Bazel py_binary inside this test's runfiles tree and finds its
-            # own runfiles through these.
-            **{key: os.environ[key] for key in ("RUNFILES_DIR", "RUNFILES_MANIFEST_FILE") if key in os.environ},
-            "ANTHROPIC_AUTH_TOKEN": launches.TOKEN,
-            "OPENAI_API_KEY": launches.TOKEN,
-        }
         process = await asyncio.create_subprocess_exec(
             *launches.runner_command(
                 harness, endpoint.origin, state_dir=tmp_path / "state", test_debug_checkpoint=test_debug_checkpoint
             ),
-            env=environment,
+            env=_runner_environment(tmp_path),
             stdout=asyncio.subprocess.PIPE,
             start_new_session=True,
         )
@@ -112,6 +119,210 @@ async def start_runner(
     yield start
     for runner in started:
         await runner.stop()
+
+
+async def test_competing_runner_cannot_take_state_or_dispatch_before_replacement(
+    harness: protocol_pb2.Harness,
+    endpoint: AnthropicMessages | OpenAIResponses,
+    model: ScriptedModel,
+    spec: protocol_pb2.SessionSpec,
+    start_runner: Callable[..., Awaitable[RunnerProcess]],
+    tmp_path: Path,
+) -> None:
+    """A retained-state owner fences a contender until its native child is gone."""
+    command_id = "fenced-replacement"
+    first_runner = await start_runner(test_debug_checkpoint=("after-dispatch-planned", command_id))
+    client = RunnerClient(first_runner.target)
+    first = await client.attach("writer-handoff-1", spec=spec)
+    await first.send("handoff-seed", "Reply with exactly: HANDOFF_SEED_OK")
+    await model.reply(await model.request(), Text("HANDOFF_SEED_OK"))
+    await first.until(events.turn_completed)
+    await first.send(command_id, "Reply with exactly: HANDOFF_REPLACEMENT_OK")
+    await first.until(events.is_kind("command_admitted"))
+    checkpoint = await first.until(events.is_kind("debug_checkpoint"))
+    harness_pids = [entry.event.harness_started.pid for entry in events.of_kind(first.seen, "harness_started")]
+
+    contender = await asyncio.create_subprocess_exec(
+        *launches.runner_command(harness, endpoint.origin, state_dir=tmp_path / "state"),
+        env=_runner_environment(tmp_path),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        start_new_session=True,
+    )
+    stdout, stderr = await contender.communicate()
+    assert contender.returncode != 0
+    assert stdout == b""
+    assert "runner state directory" in stderr.decode()
+    assert "already owned" in stderr.decode()
+
+    await first_runner.crash(harness_pids)
+    await client.close()
+
+    replacement_runner = await start_runner()
+    client = RunnerClient(replacement_runner.target)
+    replacement = await client.attach("writer-handoff-1", spec=spec, after_cursor=checkpoint.cursor)
+    lost = await replacement.until(events.is_kind("harness_lost"))
+    # The checkpoint pauses command dispatch, not the independent native-output reader.
+    assert lost.cursor > checkpoint.cursor
+    assert lost.origin.source_id == checkpoint.origin.source_id
+    request = await model.request()
+    assert request.user_texts[-1] == "Reply with exactly: HANDOFF_REPLACEMENT_OK"
+    assert model.request_count == 2
+    await model.reply(request, Text("HANDOFF_REPLACEMENT_OK"))
+    confirmed = await replacement.until(events.is_kind("harness_user_message_confirmed"))
+    assert confirmed.event.harness_user_message_confirmed.origin_command_ids == [command_id]
+    await replacement.until(events.turn_completed)
+    await replacement.stop_runner_session("stop-after-writer-handoff")
+    await replacement.drain_until_end()
+    events.assert_contiguous([*first.seen, *replacement.seen])
+    await client.close()
+
+
+async def test_state_fence_survives_native_leader_exit_until_its_child_group_is_stopped(
+    harness: protocol_pb2.Harness,
+    endpoint: AnthropicMessages | OpenAIResponses,
+    start_runner: Callable[..., Awaitable[RunnerProcess]],
+    tmp_path: Path,
+) -> None:
+    """A background native tool retains the inherited fence after its harness leader exits."""
+    state_dir = tmp_path / "state"
+    owner = StateOwner(state_dir)
+    process = HarnessProcess(
+        [str(get_required_path(own_repo_rlocation("x/agentplane/runner/harness_background_child_testonly")))],
+        cwd=tmp_path,
+        environment={},
+        state_owner_descriptor=owner.descriptor,
+    )
+    tool_pid: int | None = None
+    owner_descriptor_closed = False
+    try:
+        await process.start()
+        tool_pid = int(await anext(process.lines()))
+        # Closing a dead runner's descriptor does not unlock the shared open file description
+        # inherited by the supervisor/native group. ``StateOwner.close`` is intentionally not
+        # used: its orderly-shutdown unlock would release that shared lock for every descendant.
+        os.close(owner.descriptor)
+        owner_descriptor_closed = True
+
+        contender = await asyncio.create_subprocess_exec(
+            *launches.runner_command(harness, endpoint.origin, state_dir=state_dir),
+            env=_runner_environment(tmp_path),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            start_new_session=True,
+        )
+        try:
+            # Either failure reaches EOF without ever listening, or an ownership regression
+            # immediately exposes a listener. Neither case needs a timing-based probe.
+            assert contender.stdout is not None
+            assert contender.stderr is not None
+            assert await contender.stdout.readline() == b""
+            stderr = await contender.stderr.read()
+            await contender.wait()
+            assert contender.returncode != 0
+            assert "runner state directory" in stderr.decode()
+            assert "already owned" in stderr.decode()
+        finally:
+            if contender.returncode is None:
+                os.killpg(contender.pid, signal.SIGKILL)
+                await contender.wait()
+
+        # SIGUSR1 is the supervisor's parent-death signal. The native leader exits on its
+        # graceful group SIGTERM, while this tool ignores it; the supervisor must then force-stop
+        # the remaining group before its inherited lock can be released.
+        os.killpg(process.process.pid, signal.SIGUSR1)
+        await asyncio.wait_for(_exited(tool_pid), timeout=10)
+        # A successor can acquire the retained state only after the supervisor has dropped the
+        # same inherited descriptor. This is stronger than waiting on its stdout-owning process.
+        successor = await start_runner()
+        await successor.stop()
+    finally:
+        if not owner_descriptor_closed:
+            owner.close()
+        if tool_pid is not None:
+            with suppress(ProcessLookupError):
+                os.killpg(process.native_pid, signal.SIGKILL)
+
+
+async def test_native_leader_exit_stops_background_tool(tmp_path: Path) -> None:
+    """Leader exit must fence tools even while the runner (this test process) stays alive."""
+    owner = StateOwner(tmp_path / "state")
+    process = HarnessProcess(
+        [str(get_required_path(own_repo_rlocation("x/agentplane/runner/harness_background_child_testonly")))],
+        cwd=tmp_path,
+        environment={},
+        state_owner_descriptor=owner.descriptor,
+    )
+    try:
+        await process.start()
+        try:
+            tool_pid = int(await anext(process.lines()))
+            # Only the leader dies: no stop/parent-death signal reaches its supervisor.
+            os.kill(process.native_pid, signal.SIGKILL)
+            async with asyncio.timeout(10):
+                await _exited(tool_pid)
+                assert await process.wait() == 128 + signal.SIGKILL
+        finally:
+            with suppress(ProcessLookupError):
+                os.killpg(process.native_pid, signal.SIGKILL)
+            await process.wait()
+    finally:
+        owner.close()
+
+
+async def test_runner_sigkill_fences_an_active_native_group_before_successor_dispatch(
+    harness: protocol_pb2.Harness,
+    endpoint: AnthropicMessages | OpenAIResponses,
+    model: ScriptedModel,
+    spec: protocol_pb2.SessionSpec,
+    start_runner: Callable[..., Awaitable[RunnerProcess]],
+    tmp_path: Path,
+) -> None:
+    """A successor cannot dispatch while the killed runner's native harness awaits upstream."""
+    first_runner = await start_runner()
+    client = RunnerClient(first_runner.target)
+    first = await client.attach("writer-handoff-active", spec=spec)
+    await first.send("active-before-crash", "Reply with exactly: ACTIVE_FENCE_OK")
+    active_request = await model.request()
+    assert active_request.user_texts[-1] == "Reply with exactly: ACTIVE_FENCE_OK"
+    await model.hold(active_request)
+    await first.until(events.is_kind("harness_user_message_confirmed"))
+    harness_pids = [entry.event.harness_started.pid for entry in events.of_kind(first.seen, "harness_started")]
+
+    contender = await asyncio.create_subprocess_exec(
+        *launches.runner_command(harness, endpoint.origin, state_dir=tmp_path / "state"),
+        env=_runner_environment(tmp_path),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        start_new_session=True,
+    )
+    _, stderr = await contender.communicate()
+    assert contender.returncode != 0
+    assert "runner state directory" in stderr.decode()
+    assert "already owned" in stderr.decode()
+    assert model.request_count == 1
+
+    # ``crash`` waits the actual native harness PID, not merely the dead runner or supervisor.
+    await first_runner.crash(harness_pids)
+    await client.close()
+
+    replacement_runner = await start_runner()
+    client = RunnerClient(replacement_runner.target)
+    recovered = await client.attach("writer-handoff-active", after_cursor=first.cursor)
+    await recovered.until(events.is_kind("harness_lost"))
+    await recovered.drain_until_end()
+
+    # Once the old group is fenced, a replacement owns the same state volume and can dispatch.
+    replacement = await client.attach("writer-handoff-successor", spec=spec)
+    await replacement.send("successor-input", "Reply with exactly: SUCCESSOR_FENCE_OK")
+    successor_request = await model.request()
+    assert successor_request.user_texts[-1] == "Reply with exactly: SUCCESSOR_FENCE_OK"
+    assert model.request_count == 2
+    await model.reply(successor_request, Text("SUCCESSOR_FENCE_OK"))
+    await replacement.until(events.turn_completed)
+    await replacement.stop_runner_session("stop-after-active-fence")
+    await replacement.drain_until_end()
+    await client.close()
 
 
 async def test_a_restarted_runner_reports_the_loss_and_resumes_the_conversation(

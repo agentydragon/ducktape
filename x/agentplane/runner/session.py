@@ -44,11 +44,13 @@ class Session:
         store: SessionStore,
         config: RunnerConfig,
         make_adapter: Callable[[Session], HarnessAdapter],
+        state_owner_descriptor: int,
     ) -> None:
         self.session_id = session_id
         self.record = record
         self.store = store
         self.config = config
+        self.state_owner_descriptor = state_owner_descriptor
         self.make_adapter = make_adapter
         self.directory = store.directory(session_id)
         self.journal = journal
@@ -152,7 +154,12 @@ class Session:
             # The session's working directory is the spec's; a fresh one is created for the harness.
             cwd = Path(self.record.cwd)
             await asyncio.to_thread(cwd.mkdir, parents=True, exist_ok=True)
-            process = HarnessProcess(adapter.command(), cwd=cwd, environment=adapter.environment())
+            process = HarnessProcess(
+                adapter.command(),
+                cwd=cwd,
+                environment=adapter.environment(),
+                state_owner_descriptor=self.state_owner_descriptor,
+            )
             await process.start()
             self.process, self.adapter, self._stopping = process, adapter, False
             self._tasks = [
@@ -171,7 +178,7 @@ class Session:
             if self.record.native_session_id != native_session_id:
                 self.record.native_session_id = native_session_id
                 self.store.write(self.session_id, self.record)
-            await self.emit(event_pb2.HarnessStarted(resumed=resumed, pid=process.process.pid), sources=[])
+            await self.emit(event_pb2.HarnessStarted(resumed=resumed, pid=process.native_pid), sources=[])
             await self._reconcile_commands(recovering=True)
 
     async def command(self, command: command_pb2.Command) -> None:

@@ -21,7 +21,7 @@ from x.agentplane.runner.config import RunnerConfig
 from x.agentplane.runner.initialization import InitializationLog
 from x.agentplane.runner.journal import Journal
 from x.agentplane.runner.session import Session
-from x.agentplane.runner.store import SessionRecord, SessionStore, validate_session_id
+from x.agentplane.runner.store import SessionRecord, SessionStore, StateOwner, validate_session_id
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -55,7 +55,12 @@ def make_adapter(session: Session) -> HarnessAdapter:
 class Runner:
     def __init__(self, config: RunnerConfig) -> None:
         self.config = config
-        self.store = SessionStore(config.state_dir / "sessions")
+        self._state_owner = StateOwner(config.state_dir)
+        try:
+            self.store = SessionStore(config.state_dir / "sessions")
+        except BaseException:
+            self._state_owner.close()
+            raise
         self.sessions: dict[str, Session] = {}
         self._sessions_lock = asyncio.Lock()
         self._resources = AsyncExitStack()
@@ -161,6 +166,7 @@ class Runner:
                     journal=journal,
                     store=self.store,
                     config=self.config,
+                    state_owner_descriptor=self._state_owner.descriptor,
                     make_adapter=make_adapter,
                 )
             return self.sessions[session_id]
@@ -196,15 +202,30 @@ class Runner:
         ]
         if self._initialization_task is not None:
             tasks.append(self._initialization_task)
+        sessions_stopped = False
         try:
             if tasks:
                 await asyncio.gather(*tasks, return_exceptions=True)
                 for task in tasks:
                     task.result()
+            sessions_stopped = True
         finally:
-            await self._resources.aclose()
-            if self._initialization_log is not None:
-                self._initialization_log.close()
+            resources_closed = False
+            try:
+                await self._resources.aclose()
+                resources_closed = True
+            finally:
+                log_closed = False
+                try:
+                    if self._initialization_log is not None:
+                        self._initialization_log.close()
+                    log_closed = True
+                finally:
+                    # If orderly shutdown failed, let process exit close its descriptor. The
+                    # native supervisor inherited that descriptor and fences its child group;
+                    # explicitly unlocking here could admit a replacement too early.
+                    if sessions_stopped and resources_closed and log_closed:
+                        self._state_owner.close()
 
     def summaries(self) -> list[protocol_pb2.SessionSummary]:
         return [

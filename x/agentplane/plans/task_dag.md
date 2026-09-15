@@ -25,7 +25,7 @@ Proposed execution order for the Thread correctness/UI track:
   command queue; no app outbox or combined-start expansion in this batch.
 - **P1:** end-to-end LLM error handling (`LLM_ERROR_SURFACE`), duplicate turn-status
   presentation (`THREAD_TURN_STATUS_UI`), compact activity mocks (`THREAD_ACTIVITY_MOCKS`),
-  continuation after Sandbox resume (`THREAD_SUSPEND_RESUME`), retained-state writer fencing and
+  continuation after Sandbox resume (`THREAD_SUSPEND_RESUME`), and
   evidence-gated native recovery. Start `THREAD_TAIL_FIRST` with a profiling/contract
   slice, then bounded reads and `THREAD_LAZY_HISTORY`; do not start with a frontend rewrite.
 - **P2:** browser-driven acceptance against the deployed cluster (`CLUSTER_BROWSER_ACCEPTANCE`)
@@ -81,7 +81,6 @@ flowchart TB
     COMMAND_QUEUE_DECISION["Deferred decision<br/>accept commands while runner unavailable?<br/>current slice uses runner admission first"]:::decision
     CLAUDE_RECOVERY["Required evidence then implementation<br/>Claude execution before durable runner proof<br/>native correlation and safe recovery"]:::active
     CODEX_RECOVERY["Required evidence then implementation<br/>Codex execution before durable runner proof<br/>native correlation and safe recovery"]:::active
-    RUNNER_WRITER_HANDOFF["Planned correctness<br/>exclusive runner ownership of retained state<br/>fence old writer and native dispatch"]:::future
     SANDBOX_LIFECYCLE_DURABILITY["Planned lifecycle correctness<br/>retained state through suspension<br/>archive before managed storage deletion"]:::future
     THREAD_SUSPEND_RESUME["Reported continuation failure<br/>Thread stays finalized after Sandbox resume<br/>resume native conversation and allow new input"]:::active
     SANDBOX_VM_ISOLATION["Deferred investigation<br/>selectable container or VM Sandbox implementation<br/>contain agent resource exhaustion"]:::future
@@ -118,7 +117,6 @@ flowchart TB
     INPUT_DELIVERY -. reliable Thread ingress .-> ING
     THREAD_TAIL_FIRST --> THREAD_LAZY_HISTORY
     THREAD_ACTIVITY_MOCKS --> THREAD_ACTIVITY_DENSITY
-    RUNNER_WRITER_HANDOFF --> THREAD_EVENT_CONTINUITY
     THREAD_EVENT_CONTINUITY --> THREAD_SUCCESSOR_DELIVERY
     CLAUDE_RECOVERY -. native continuation evidence .-> THREAD_SUCCESSOR_DELIVERY
     CODEX_RECOVERY -. native continuation evidence .-> THREAD_SUCCESSOR_DELIVERY
@@ -184,10 +182,9 @@ native recovery research runs. Automatic recovery is gated separately for each h
 and operation by its evidence; do not claim it from a working ordinary command path.
 
 **Proposed next dispatch wave:** finish deployed relay verification and operator-login
-acceptance, then use three independent lanes: conversation UI fixes;
-runner writer fencing; and one narrowly scoped native-evidence gap at a time. The
-coordinating agent owns deployed acceptance, landing/CI, and the tail-first profiling
-and contract probe. Native evidence does not block independent UI work or fencing.
+acceptance, then use two independent lanes: conversation UI fixes and one narrowly scoped
+native-evidence gap at a time. The coordinating agent owns deployed acceptance, landing/CI, and
+the tail-first profiling and contract probe. Native evidence does not block independent UI work.
 Keep ordinary attachment cleanup (`RUNNER_ATTACHMENT_SCOPE`) separate from the delivery
 incident and native recovery semantics.
 Reuse existing agent worktrees. Each self-contained change gets its own PR against
@@ -744,17 +741,6 @@ PRs, with real-process crash tests preserving command provenance. The same
 [recovery contract](../docs/thread_layering.md#command-protocol-intent-admission-then-outcome)
 applies; neither harness waits for the other's research to land its own proven change.
 
-### `RUNNER_WRITER_HANDOFF` — exclusive ownership of retained runner state
-
-**Planned correctness:** establish the exclusive state-volume ownership and replacement
-handoff needed by [Thread continuity](../docs/thread_layering.md#one-thread-event-high-water-mark-across-harness-sessions).
-Fence the old runner's journal writes and native dispatch before a successor continues.
-The PostgreSQL ingestion lease is not this fence.
-
-Acceptance starts competing/replacement runner processes against the same retained
-state and proves that only the owner can append or dispatch. Preserve the native
-recovery artifacts; a copied app cursor cannot substitute for missing runner state.
-
 ### `SANDBOX_LIFECYCLE_DURABILITY` — preserve state through suspension and deletion
 
 **Planned lifecycle correctness:** verify the actual runner state mount, native artifacts,
@@ -835,11 +821,10 @@ This investigation does not block current container correctness work.
 
 **Identity/storage cutover:** implement
 [one Thread high-water mark](../docs/thread_layering.md#one-thread-event-high-water-mark-across-harness-sessions):
-app-minted Thread identity, explicit incarnation association, retained runner journal,
-and exclusive writer handoff. Thread owns its static Sandbox; association rows do not
-duplicate it. App and browser checkpoints refer to the runner's sequence.
-Requires `RUNNER_WRITER_HANDOFF`, not the entire native
-recovery backlog.
+app-minted Thread identity, explicit incarnation association, and a retained runner journal on
+the landed exclusive writer fence. Thread owns its static Sandbox; association rows do not
+duplicate it. App and browser checkpoints refer to the runner's sequence. Native recovery remains
+separately evidence-gated.
 
 A successor reopens the journal; it cannot replace missing state with “app cursor + 1.”
 Test runner replacement, fenced old writers, native resume, and unavailable recovery
