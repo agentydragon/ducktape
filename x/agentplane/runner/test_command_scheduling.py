@@ -16,7 +16,7 @@ from x.agentplane.runner.config import RunnerConfig
 from x.agentplane.runner.harness_process import HarnessProcess
 from x.agentplane.runner.journal import Journal
 from x.agentplane.runner.session import Session
-from x.agentplane.runner.store import SessionRecord, SessionStore
+from x.agentplane.runner.store import SessionRecord, SessionStore, StateOwner
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -64,24 +64,31 @@ class RunningProcess:
 async def session_with_blocked_adapter(tmp_path: Path) -> AsyncIterator[tuple[Session, BlockingAdapter]]:
     state_dir = tmp_path / "state"
     store = SessionStore(state_dir / "sessions")
+    owner = StateOwner(state_dir)
     record = SessionRecord(
         harness="HARNESS_CODEX", cwd=str(tmp_path / "workspace"), model="test-model", reasoning_effort="low"
     )
     store.write("scheduling-1", record)
     adapter = BlockingAdapter()
-    async with Journal.open(store.directory("scheduling-1") / "journal.sqlite", str(record.event_source_id)) as journal:
-        session = Session(
-            "scheduling-1",
-            record=record,
-            journal=journal,
-            store=store,
-            config=RunnerConfig(state_dir=state_dir),
-            make_adapter=lambda _session: adapter,
-        )
-        session.adapter = adapter
-        session.process = cast(HarnessProcess, RunningProcess())
-        session.active_turn_id = "turn-1"
-        yield session, adapter
+    try:
+        async with Journal.open(
+            store.directory("scheduling-1") / "journal.sqlite", str(record.event_source_id)
+        ) as journal:
+            session = Session(
+                "scheduling-1",
+                record=record,
+                journal=journal,
+                store=store,
+                config=RunnerConfig(state_dir=state_dir),
+                make_adapter=lambda _session: adapter,
+                state_owner_descriptor=owner.descriptor,
+            )
+            session.adapter = adapter
+            session.process = cast(HarnessProcess, RunningProcess())
+            session.active_turn_id = "turn-1"
+            yield session, adapter
+    finally:
+        owner.close()
 
 
 async def test_interrupt_is_admitted_and_dispatched_while_a_prior_input_blocks(tmp_path: Path) -> None:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import os
 import re
 from pathlib import Path
@@ -17,6 +18,39 @@ from x.agentplane.runner import protocol_pb2
 
 
 _SESSION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+
+
+class StateOwnershipError(RuntimeError):
+    """Another runner owns the retained state directory, or the filesystem cannot fence it."""
+
+
+class StateOwner:
+    """Lifetime exclusive writer ownership for one retained runner state directory."""
+
+    def __init__(self, root: Path) -> None:
+        make_directory(root)
+        descriptor = os.open(root / ".agentplane-runner-owner", os.O_RDWR | os.O_CREAT, 0o600)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            os.close(descriptor)
+            raise StateOwnershipError(f"runner state directory {root} is already owned") from error
+        except OSError as error:
+            os.close(descriptor)
+            raise StateOwnershipError(f"cannot fence runner state directory {root}: {error}") from error
+        self._descriptor: int | None = descriptor
+
+    @property
+    def descriptor(self) -> int:
+        if self._descriptor is None:
+            raise RuntimeError("runner state ownership is already closed")
+        return self._descriptor
+
+    def close(self) -> None:
+        if self._descriptor is not None:
+            fcntl.flock(self._descriptor, fcntl.LOCK_UN)
+            os.close(self._descriptor)
+            self._descriptor = None
 
 
 def sync_directory(path: Path) -> None:

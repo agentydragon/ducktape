@@ -80,7 +80,6 @@ flowchart TB
     COMMAND_QUEUE_DECISION["Deferred decision<br/>accept commands while runner unavailable?<br/>current slice uses runner admission first"]:::decision
     CLAUDE_RECOVERY["Required evidence then implementation<br/>Claude execution before durable runner proof<br/>native correlation and safe recovery"]:::active
     CODEX_RECOVERY["Required evidence then implementation<br/>Codex execution before durable runner proof<br/>native correlation and safe recovery"]:::active
-    RUNNER_WRITER_HANDOFF["Planned correctness<br/>exclusive runner ownership of retained state<br/>fence old writer and native dispatch"]:::future
     SANDBOX_LIFECYCLE_DURABILITY["Planned lifecycle correctness<br/>retained state through suspension<br/>archive before managed storage deletion"]:::future
     THREAD_SUSPEND_RESUME["Reported continuation failure<br/>Thread stays finalized after Sandbox resume<br/>resume native conversation and allow new input"]:::active
     SANDBOX_VM_ISOLATION["Deferred investigation<br/>selectable container or VM Sandbox implementation<br/>contain agent resource exhaustion"]:::future
@@ -117,7 +116,6 @@ flowchart TB
     INPUT_DELIVERY -. reliable Thread ingress .-> ING
     THREAD_TAIL_FIRST --> THREAD_LAZY_HISTORY
     THREAD_ACTIVITY_MOCKS --> THREAD_ACTIVITY_DENSITY
-    RUNNER_WRITER_HANDOFF --> THREAD_EVENT_CONTINUITY
     THREAD_EVENT_CONTINUITY --> THREAD_SUCCESSOR_DELIVERY
     CLAUDE_RECOVERY -. native continuation evidence .-> THREAD_SUCCESSOR_DELIVERY
     CODEX_RECOVERY -. native continuation evidence .-> THREAD_SUCCESSOR_DELIVERY
@@ -181,8 +179,8 @@ native recovery research runs. Automatic recovery is gated separately for each h
 and operation by its evidence; do not claim it from a working ordinary command path.
 
 **Proposed next dispatch wave:** finish deployed relay verification and operator-login
-acceptance, then use three independent lanes: conversation UI fixes;
-runner writer fencing; and one narrowly scoped native-evidence gap at a time. The
+acceptance, then use two independent lanes: conversation UI fixes and one narrowly scoped
+native-evidence gap at a time. The
 coordinating agent owns deployed acceptance, landing/CI, and the tail-first profiling
 and contract probe. Native evidence does not block independent UI work or fencing.
 Keep ordinary attachment cleanup (`RUNNER_ATTACHMENT_SCOPE`) separate from the delivery
@@ -697,17 +695,6 @@ Land the native evidence and resulting runner changes as independently reviewabl
 PRs, with real-process crash tests preserving command provenance. The same
 [recovery contract](../docs/thread_layering.md#command-protocol-intent-admission-then-outcome)
 applies; neither harness waits for the other's research to land its own proven change.
-
-### `RUNNER_WRITER_HANDOFF` — exclusive ownership of retained runner state
-
-**Planned correctness:** establish the exclusive state-volume ownership and replacement
-handoff needed by [Thread continuity](../docs/thread_layering.md#one-thread-event-high-water-mark-across-harness-sessions).
-Fence the old runner's journal writes and native dispatch before a successor continues.
-The PostgreSQL ingestion lease is not this fence.
-
-Acceptance starts competing/replacement runner processes against the same retained
-state and proves that only the owner can append or dispatch. Preserve the native
-recovery artifacts; a copied app cursor cannot substitute for missing runner state.
 
 ### `SANDBOX_LIFECYCLE_DURABILITY` — preserve state through suspension and deletion
 

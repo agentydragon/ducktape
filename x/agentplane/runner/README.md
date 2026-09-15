@@ -60,9 +60,18 @@ The connection uses `journal_mode=DELETE` and `synchronous=EXTRA`; publication r
 An async lock owns each complete transaction; the driver's per-statement queue alone does not.
 Explicit `BEGIN IMMEDIATE` reserves the writer before reading ids/cursors; no transaction spans
 harness or network I/O. One retained connection serves the existing single runner-session writer.
-Thread identity and fencing a replacement runner's native execution remain separate contracts.
+That SQLite transaction is not the native-execution fence: a runner owns its whole retained state
+directory through a nonblocking lifetime lock on the fixed `.agentplane-runner-owner` inode before
+opening a journal, listening, or launching a harness. A contender exits before it can serve state.
+The lock's open descriptor is inherited by the native-process supervisor. If the runner dies, that
+supervisor terminates and reaps the native harness process group while retaining the descriptor, so
+the replacement cannot start until native work is fenced. A child that remains in the group keeps
+the inherited lock even after its harness leader exits. See <SPEC.md#durability-and-restart> for
+the supported-storage and escaped-process boundary.
 
 Keep `journal.sqlite` and any recovery journal together on the surviving state volume. The checked-in
 staging/testing templates mount `/state` from `local-path-ovh-hdd` PVCs. Network filesystems
-and deleting the only state volume are not supported recovery paths. Session metadata and native
-resume files remain beside the database. There is no JSONL reader or old-data migration.
+and deleting the only state volume are not supported recovery paths. That node-local `ReadWriteOnce`
+mount is the required ownership assumption; RWO alone does not prevent two processes on its node
+from opening it. Session metadata and native resume files remain beside the database. There is no
+JSONL reader or old-data migration.

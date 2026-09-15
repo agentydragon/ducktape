@@ -114,6 +114,22 @@ harness's outcome. Tool names and argument shapes are the harness's own.
 
 ## Durability and restart
 
+- One runner has exclusive lifetime ownership of one retained `state_dir`. It takes a nonblocking
+  POSIX exclusive lock on the fixed `<state_dir>/.agentplane-runner-owner` inode before it reads
+  sessions, opens a journal, listens, runs initialization, or starts a harness. A contender that
+  cannot take that lock exits without serving the directory. The normal runner shutdown releases
+  ownership only after its sessions stop and their journals close.
+- The owner descriptor crosses the runner/harness boundary through a native-process supervisor.
+  When the runner dies, its harness-input writer disappears and the supervisor receives
+  parent-death notification. It sends `SIGTERM` to the native harness process group, gives the
+  leader five seconds to preserve native resume state, and then force-stops the group. If the
+  leader exits first but a tool remains, it force-stops that remainder immediately. The supervisor
+  and any child that still retains the inherited descriptor hold ownership until they exit, so a
+  replacement cannot append Events or dispatch native work in that interval. This fences the
+  native harness process group, including a normal tool child; a process that deliberately escapes
+  that group and closes inherited descriptors is outside the runner's containment contract. The
+  supported state mount is the checked-in node-local `local-path-ovh-hdd` PVC. A remote or otherwise
+  unreliable locking filesystem is unsupported rather than a substitute cross-host fencing authority.
 - A command admission and its public Event commit atomically. A terminal outcome and its public
   Event also commit atomically, including every origin of a coalesced user message. Recovery
   retains their exact payloads and association; it does not reconstruct missing receipt Events.
