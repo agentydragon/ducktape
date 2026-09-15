@@ -581,3 +581,19 @@ py_test(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_test(
+    name = "test_service",
+    srcs = ["test_service.py"],
+    deps = [
+        ":config",
+        ":conftest",
+        ":service",
+        ":store",
+        "//:conftest",
+        "//x/agentplane/runner:protocol_pb2",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

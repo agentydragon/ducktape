@@ -196,11 +196,15 @@ class Runner:
         ]
         if self._initialization_task is not None:
             tasks.append(self._initialization_task)
-        if tasks:
-            await asyncio.gather(*tasks)
-        await self._resources.aclose()
-        if self._initialization_log is not None:
-            self._initialization_log.close()
+        try:
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
+                for task in tasks:
+                    task.result()
+        finally:
+            await self._resources.aclose()
+            if self._initialization_log is not None:
+                self._initialization_log.close()
 
     def summaries(self) -> list[protocol_pb2.SessionSummary]:
         return [
