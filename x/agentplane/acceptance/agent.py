@@ -89,12 +89,10 @@ class Turn:
 
 
 class Agent:
-    """A session on one sandbox. `run` sends a prompt and returns when the turn completes."""
+    """One Thread. `run` sends a prompt and returns when the turn completes."""
 
-    def __init__(self, client: Client, *, sandbox: str, session_id: str, thread_id: UUID, cursor: int) -> None:
+    def __init__(self, client: Client, *, thread_id: UUID, cursor: int) -> None:
         self._client = client
-        self._sandbox = sandbox
-        self._session_id = session_id
         self._thread_id = thread_id
         self._cursor = cursor
 
@@ -127,13 +125,7 @@ class Agent:
             with attempt:
                 attachment = await client.open_session(sandbox, session_id, spec)
                 thread = await client.thread(sandbox, attachment.attached.session_id)
-                return cls(
-                    client,
-                    sandbox=sandbox,
-                    session_id=attachment.attached.session_id,
-                    thread_id=thread.id,
-                    cursor=attachment.last_cursor,
-                )
+                return cls(client, thread_id=thread.id, cursor=attachment.last_cursor)
         raise AssertionError("unreachable: reraise=True either returns an agent or raises")
 
     async def run(self, prompt: str) -> Turn:
