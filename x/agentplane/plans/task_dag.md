@@ -708,9 +708,9 @@ are frontend projections of this log; an app delivery queue is not a dependency.
 App-process loss and HTTP/SSE handoff are covered by
 [replica-safe runner delivery](../app/README.md#replica-safe-runner-delivery).
 The built SPA also has real-Chromium retained/live/reload, ahead-of-prefix snapshot,
-and rejected runner gap/source-change acceptance. Extend that surface for canonical
-admission, persisted same-id retry, and pending controls; mocked component streams
-alone do not cover those boundaries.
+rejected runner gap/source-change, canonical admission, persisted same-id retry after
+a pre-forward abort, and streamed admission after post-commit response loss. Mocked
+component streams alone do not cover those boundaries.
 Keep a genuinely unobserved committed admission (both HTTP reply and SSE lost) separate
 from a request aborted before forwarding. Also exercise an HTTP admission arriving ahead
 of the browser's contiguous Event prefix without skipping preceding Events.
