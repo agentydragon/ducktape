@@ -95,6 +95,7 @@ export class LocalCommands {
 
   acknowledge(command: Command, admission: EventEntry): void {
     checkAdmission(command, admission);
+    this.checkKnownAdmission(command, admission);
     const stored = localStorage.getItem(this.key(command.commandId));
     // Replay may already have removed it while this HTTP request was outstanding. A late HTTP
     // completion must not resurrect a command the Event projection now owns.
@@ -132,6 +133,7 @@ export class LocalCommands {
       if (stored === null) continue;
       const existing = decode(stored);
       checkAdmission(existing.command, entry);
+      this.checkKnownAdmission(existing.command, entry);
       if (existing.admission && !equals(EventEntrySchema, existing.admission, entry)) {
         throw new Error("Replayed admission conflicts with saved HTTP evidence");
       }
@@ -145,6 +147,13 @@ export class LocalCommands {
     return `${this.prefix}${encodeURIComponent(id)}`;
   }
 
+  private checkKnownAdmission(command: Command, admission: EventEntry): void {
+    const known = this.snapshot.commands.find((value) => value.command.commandId === command.commandId)?.admission;
+    if (known && !equals(EventEntrySchema, known, admission)) {
+      throw new Error("Conflicting command admission evidence");
+    }
+  }
+
   private onStorage = (event: StorageEvent): void => {
     if (event.key === null || event.key.startsWith(this.prefix)) this.reload();
   };
@@ -152,11 +161,23 @@ export class LocalCommands {
   private reload(): void {
     try {
       const commands: LocalCommand[] = [];
+      const known = new Map(this.snapshot.commands.map((value) => [value.command.commandId, value]));
       for (let index = 0; index < localStorage.length; index++) {
         const key = localStorage.key(index);
         if (!key?.startsWith(this.prefix)) continue;
         const text = localStorage.getItem(key);
-        if (text !== null) commands.push(decode(text));
+        if (text !== null) {
+          const value = decode(text);
+          const receipt = known.get(value.command.commandId)?.admission;
+          if (receipt) {
+            checkAdmission(value.command, receipt);
+            if (value.admission && !equals(EventEntrySchema, value.admission, receipt)) {
+              throw new Error("Stored command admission conflicts with observed evidence");
+            }
+            value.admission = receipt;
+          }
+          commands.push(value);
+        }
       }
       commands.sort(
         (left, right) =>

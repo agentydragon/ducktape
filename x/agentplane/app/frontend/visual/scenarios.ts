@@ -32,7 +32,7 @@ export interface Scenario extends ScenarioOptions {
   openMobileSidebar?: boolean;
   /** Stop replay early or omit one entry, exposing synchronization state without fabricating Events. */
   sessionReplay?: "catching-up" | "gap";
-  pendingCommands?: boolean;
+  pendingCommands?: "mixed" | "controls" | "outcomes";
 }
 
 /** A Pixel 6's CSS viewport: the app is used from a phone, so every page has to fit its width. */
@@ -244,7 +244,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     element: "#app",
     route: SESSION_STATES_ROUTE,
     viewport: { width: 1200, height: 1100 },
-    pendingCommands: true,
+    pendingCommands: "mixed",
     readySelectors: ['[aria-label="Pending commands"]'],
     captureViewport: true,
   },
@@ -252,7 +252,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     element: "#app",
     route: SESSION_STATES_ROUTE,
     viewport: PHONE,
-    pendingCommands: true,
+    pendingCommands: "mixed",
     readySelectors: ['[aria-label="Pending commands"]'],
     captureViewport: true,
   },
@@ -260,8 +260,24 @@ export const SCENARIOS: Record<string, Scenario> = {
     element: "#app",
     route: `${SESSION_STATES_ROUTE}?raw=1`,
     viewport: { width: 1200, height: 1100 },
-    pendingCommands: true,
+    pendingCommands: "mixed",
     readySelectors: ['[aria-label="Pending commands"]'],
+    captureViewport: true,
+  },
+  session_pending_controls: {
+    element: "#app",
+    route: SESSION_STATES_ROUTE,
+    viewport: { width: 1200, height: 1100 },
+    pendingCommands: "controls",
+    readySelectors: ['[data-command-id="queued-interrupt"]'],
+    captureViewport: true,
+  },
+  session_command_outcomes_phone: {
+    element: "#app",
+    route: SESSION_STATES_ROUTE,
+    viewport: PHONE,
+    pendingCommands: "outcomes",
+    readySelectors: ['[aria-label="Command outcomes"]'],
     captureViewport: true,
   },
   session_catching_up: {

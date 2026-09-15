@@ -78,7 +78,7 @@ it("rejects conflicting HTTP/replay evidence and keeps the saved record inspecta
   store.remember(COMMAND);
   store.acknowledge(COMMAND, admission());
   expect(() => store.acknowledge(COMMAND, admission(10n))).toThrow("Conflicting");
-  expect(() => store.observePrefix([admission(10n)])).toThrow("conflicts");
+  expect(() => store.observePrefix([admission(10n)])).toThrow("Conflicting");
   expect(new LocalCommands("thread").getSnapshot().commands[0].admission).toEqual(admission());
 });
 
@@ -144,6 +144,12 @@ it("keeps observed admission visible if persisting its receipt fails", () => {
   store.acknowledge(COMMAND, admission());
   expect(store.getSnapshot().commands[0].admission).toEqual(admission());
   expect(store.getSnapshot().error).toContain("receipt storage full");
+  expect(() => store.acknowledge(COMMAND, admission(10n))).toThrow("Conflicting");
+  expect(() => store.observePrefix([admission(10n)])).toThrow("Conflicting");
+  const unsubscribe = store.subscribe(() => {});
+  window.dispatchEvent(new StorageEvent("storage", { key: null }));
+  expect(store.getSnapshot().commands[0].admission).toEqual(admission());
   store.observePrefix([admission()]);
   expect(store.getSnapshot().commands).toEqual([]);
+  unsubscribe();
 });

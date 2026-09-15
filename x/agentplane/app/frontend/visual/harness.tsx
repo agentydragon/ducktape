@@ -840,7 +840,26 @@ const PENDING_EVENTS = [
   }),
 ];
 
-if (scenario.pendingCommands) {
+const COMMAND_OUTCOMES = [
+  event(26, {
+    case: "harnessUserMessageConfirmed",
+    value: { harnessMessageId: "user-3", turnId: "t2", text: "fixture input", originCommandIds: ["i3"] },
+  }),
+  event(27, {
+    case: "turnCompleted",
+    value: { turnId: "t2", status: TurnStatus.COMPLETED },
+  }),
+  event(28, {
+    case: "commandFailed",
+    value: { commandId: "queued-model", reason: "The requested model is not available to this harness." },
+  }),
+  event(29, {
+    case: "commandNoop",
+    value: { commandId: "queued-interrupt", reason: "The target turn ended before the interrupt took effect." },
+  }),
+];
+
+if (scenario.pendingCommands === "mixed") {
   const local = new LocalCommands(THREADS[2].id);
   local.remember(
     create(CommandSchema, {
@@ -1035,6 +1054,7 @@ class HarnessEventSource extends EventTarget {
     const attached = isStatesSession ? ATTACHED_STATES : ATTACHED;
     let entries = isStatesSession ? EVENTS_STATES : EVENTS;
     if (scenario.pendingCommands) entries = [...entries, ...PENDING_EVENTS];
+    if (scenario.pendingCommands === "outcomes") entries = [...entries, ...COMMAND_OUTCOMES];
     if (scenario.sessionReplay === "catching-up") entries = entries.slice(0, 8);
     if (scenario.sessionReplay === "gap") entries = entries.filter((entry) => entry.cursor !== 9n);
     entries = entries.filter((entry) => entry.cursor > BigInt(url.searchParams.get("after") ?? "0"));

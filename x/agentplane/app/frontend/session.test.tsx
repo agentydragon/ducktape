@@ -281,6 +281,29 @@ it("does not regress streamed admission when the HTTP reply is lost", async () =
   expect(container.querySelector('[aria-label="Pending commands"]')).toBeNull();
 });
 
+it("keeps replayed admission authoritative when local cleanup fails and storage changes", async () => {
+  vi.mocked(command).mockRejectedValue(new Error("lost reply"));
+  const { container, composer, stream } = await render();
+  await type(composer, "already saved");
+  await act(async () => enter(composer));
+  const value = vi.mocked(command).mock.calls[0][1];
+  vi.spyOn(localStorage, "removeItem").mockImplementation(() => {
+    throw new Error("local cleanup failed");
+  });
+  await act(async () => {
+    stream.dispatchEvent(
+      new MessageEvent("event", { data: event(2, { case: "commandAdmitted", value: { command: value } }) })
+    );
+  });
+  await act(async () => window.dispatchEvent(new StorageEvent("storage", { key: null })));
+  expect(localStorage.length).toBe(1);
+  expect(container.textContent).toContain("Saved · awaiting effect");
+  expect(container.textContent).not.toContain("Awaiting saved confirmation");
+  expect(container.textContent).not.toContain("lost reply");
+  expect([...container.querySelectorAll("button")].some((button) => button.textContent === "Retry")).toBe(false);
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("local cleanup failed");
+});
+
 it("does not advance replay from a later HTTP admission or skip intervening assistant output", async () => {
   vi.mocked(command).mockImplementation(async (_thread, value) => admission(value, 5n));
   const { container, composer, stream } = await render();
