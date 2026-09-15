@@ -10,10 +10,15 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from types import TracebackType
-from typing import Any, Self, cast
+from typing import Any, Protocol, Self, cast
 
 from aiohttp import web
-from pydantic import BaseModel
+
+
+class StreamableRequest(Protocol):
+    """The typed model request contract needed to select its response wire framing."""
+
+    stream: bool
 
 
 @dataclass(frozen=True)
@@ -82,6 +87,12 @@ class _HttpExchange:
     async def wait_closed(self) -> None:
         await self._closed.wait()
 
+    def abandon(self) -> None:
+        """Close a test-failed exchange without awaiting a harness retry."""
+        transport = self._request.transport
+        if transport is not None:
+            transport.close()
+
     async def serve(self) -> web.StreamResponse:
         stream: web.StreamResponse | None = None
         try:
@@ -128,7 +139,7 @@ class _HttpExchange:
             self._closed.set()
 
 
-class ModelExchange[RequestT: BaseModel]:
+class ModelExchange[RequestT: StreamableRequest]:
     """A parsed request and the only authority for its scripted response."""
 
     def __init__(self, request: RequestT, http: _HttpExchange):
@@ -152,11 +163,10 @@ class ModelExchange[RequestT: BaseModel]:
                 # scope does. That is the same settled client-close state as wait_client_closed().
                 self._settled_by = "client close"
             return
-        # Preserve the test failure that left the exchange unfinished.
-        try:
-            await self.abort()
-        except ConnectionError:
-            self._settled_by = "client close"
+        # Preserve the test failure that left the exchange unfinished. Waiting for an abort action
+        # here can instead wait for the harness's unscripted retry and hide that original failure.
+        self._http.abandon()
+        self._settled_by = "test failure"
 
     async def respond(self, response: JsonResponse) -> None:
         self._ensure_open("respond")
@@ -165,6 +175,8 @@ class ModelExchange[RequestT: BaseModel]:
 
     async def send(self, *events: SseEvent) -> None:
         self._ensure_open("send")
+        if not self.request.stream:
+            raise RuntimeError("cannot send SSE to a non-streaming model request; use respond()")
         for event in events:
             await self._http.submit(_Send(event, asyncio.get_running_loop().create_future()))
 
@@ -188,7 +200,7 @@ class ModelExchange[RequestT: BaseModel]:
             raise RuntimeError(f"cannot {action}: exchange already settled by {self._settled_by}")
 
 
-class ModelEndpoint[RequestT: BaseModel]:
+class ModelEndpoint[RequestT: StreamableRequest]:
     """aiohttp lifecycle shared by concrete wire-shaped endpoint fixtures."""
 
     def __init__(self) -> None:
