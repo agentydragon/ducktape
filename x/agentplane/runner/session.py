@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections import deque
 from collections.abc import Callable, Sequence
 from contextvars import ContextVar
 from pathlib import Path
@@ -58,6 +59,12 @@ class Session:
         # Per-process only. A restarted runner consults the durable journal and intentionally
         # tries outstanding commands again using their original ids.
         self._dispatched_commands: set[str] = set()
+        # Admission is serialized and durable, while native operations run afterwards. Normal
+        # operations retain their admission order; controls bypass an unrelated blocked input.
+        self._scheduled_commands: set[str] = set()
+        self._normal_commands: deque[command_pb2.Command] = deque()
+        self._normal_dispatch_task: asyncio.Task[None] | None = None
+        self._dispatch_tasks: set[asyncio.Task[None]] = set()
         self._interrupt_commands: dict[str, str] = {}
         self._stop_command_id = ""
         self._debug_checkpoints_reached: set[tuple[str, str]] = set()
@@ -70,6 +77,7 @@ class Session:
         self._translating: ContextVar[int] = ContextVar("native_source", default=0)
         self._stopping = False
         self._lock = asyncio.Lock()
+        self._shutdown_lock = asyncio.Lock()
 
     def _apply(self, event: event_pb2.Event) -> None:
         match event.WhichOneof("observation"):
@@ -167,24 +175,58 @@ class Session:
             await self._reconcile_commands(recovering=True)
 
     async def command(self, command: command_pb2.Command) -> None:
+        """Durably admit a command before arranging its potentially blocking native work."""
         async with self._lock:
             if admission := await self.journal.admit(command):
                 self._apply(admission.event)
-            await self._dispatch(command)
+            self._schedule(command)
 
     async def _reconcile_commands(self, *, recovering: bool = False) -> None:
         """Resume journaled work after this process has a fresh native harness attachment."""
         for command in await self.journal.pending_commands():
-            await self._dispatch(command, recovering=recovering)
+            self._schedule(command, recovering=recovering)
 
-    async def _dispatch(self, command: command_pb2.Command, *, recovering: bool = False) -> None:
+    def _schedule(self, command: command_pb2.Command, *, recovering: bool = False) -> None:
+        """Arrange one admitted command's native work without extending the admission critical section."""
         command_id = command.command_id
         if command_id in self.terminal_commands:
             return
-        if command_id in self._dispatched_commands and not recovering:
-            return
         if recovering:
+            self._scheduled_commands.discard(command_id)
             self._dispatched_commands.discard(command_id)
+        elif command_id in self._scheduled_commands:
+            return
+        self._scheduled_commands.add(command_id)
+        operation = command.WhichOneof("operation")
+        if operation in {"interrupt_turn", "stop_runner_session"}:
+            self._track_dispatch(
+                asyncio.create_task(self._dispatch(command), name=f"{self.session_id}-{command_id}-control")
+            )
+            return
+        self._normal_commands.append(command)
+        if self._normal_dispatch_task is None:
+            self._normal_dispatch_task = self._track_dispatch(
+                asyncio.create_task(self._dispatch_normal_commands(), name=f"{self.session_id}-normal-commands")
+            )
+
+    def _track_dispatch(self, task: asyncio.Task[None]) -> asyncio.Task[None]:
+        self._dispatch_tasks.add(task)
+        task.add_done_callback(self._dispatch_tasks.discard)
+        return task
+
+    async def _dispatch_normal_commands(self) -> None:
+        try:
+            while self._normal_commands:
+                await self._dispatch(self._normal_commands.popleft())
+        finally:
+            self._normal_dispatch_task = None
+
+    async def _dispatch(self, command: command_pb2.Command) -> None:
+        command_id = command.command_id
+        if command_id in self.terminal_commands:
+            return
+        if command_id in self._dispatched_commands:
+            return
         if self.adapter is None or not self.running:
             return
         operation = command.WhichOneof("operation")
@@ -230,7 +272,7 @@ class Session:
             self._dispatched_commands.add(command_id)
             self._interrupt_commands[target] = command_id
             try:
-                await self.adapter.interrupt()
+                await self.adapter.interrupt(target)
             except (HarnessGoneError, RuntimeError) as error:
                 self._interrupt_commands.pop(target, None)
                 self._dispatched_commands.discard(command_id)
@@ -240,7 +282,7 @@ class Session:
             await self.journal.dispatch_planned(command_id)
             self._dispatched_commands.add(command_id)
             self._stop_command_id = command_id
-            await self._shutdown_locked()
+            await self._shutdown()
             return
         await self._fail(command_id, f"unrecognized command operation {operation!r}")
 
@@ -332,25 +374,27 @@ class Session:
 
     async def shutdown(self) -> None:
         """Stop the harness; the session stays resumable. HarnessExited is in the log on return."""
-        async with self._lock:
-            await self._shutdown_locked()
+        await self._shutdown()
 
-    async def _shutdown_locked(self) -> None:
-        if self.process is None or self.adapter is None or not self.running:
-            if self._stop_command_id:
-                await self._noop(self._stop_command_id, "the harness is already stopped")
-                self._stop_command_id = ""
-            return
-        self._stopping = True
-        if self.active_turn_id:
-            await self.adapter.interrupt()
-            turn_end = asyncio.create_task(self._await_turn_end())
-            try:
-                await asyncio.wait_for(turn_end, timeout=_INTERRUPT_GRACE_S)
-            except TimeoutError:
-                logger.warning("session %s: the harness did not end its turn within the grace period", self.session_id)
-        await self.process.stop()
-        await asyncio.gather(*self._tasks)
+    async def _shutdown(self) -> None:
+        async with self._shutdown_lock:
+            if self.process is None or self.adapter is None or not self.running:
+                if self._stop_command_id:
+                    await self._noop(self._stop_command_id, "the harness is already stopped")
+                    self._stop_command_id = ""
+                return
+            self._stopping = True
+            if turn_id := self.active_turn_id:
+                await self.adapter.interrupt(turn_id)
+                turn_end = asyncio.create_task(self._await_turn_end())
+                try:
+                    await asyncio.wait_for(turn_end, timeout=_INTERRUPT_GRACE_S)
+                except TimeoutError:
+                    logger.warning(
+                        "session %s: the harness did not end its turn within the grace period", self.session_id
+                    )
+            await self.process.stop()
+            await asyncio.gather(*self._tasks)
 
     async def _await_turn_end(self) -> None:
         cursor = self.journal.last_cursor
@@ -445,8 +489,12 @@ class Session:
 
     async def stop(self) -> None:
         """Runner shutdown: stop the harness without interrupting; the log records the exit."""
-        async with self._lock:
+        async with self._shutdown_lock:
             if self.process is not None and self.running:
                 self._stopping = True
                 await self.process.stop()
                 await asyncio.gather(*self._tasks)
+        tasks = [task for task in self._dispatch_tasks if task is not asyncio.current_task()]
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)

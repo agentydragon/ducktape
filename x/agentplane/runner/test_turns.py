@@ -198,10 +198,10 @@ async def test_claude_inputs_during_a_tool_are_confirmed_from_the_started_cohort
     await session.drain_until_end()
 
 
-async def test_model_command_reaches_the_first_upstream_request_that_selects_it(
+async def test_model_change_then_input_is_admitted_without_waiting_for_model_effect(
     client: RunnerClient, model: ScriptedModel, harness: protocol_pb2.Harness, spec: protocol_pb2.SessionSpec
 ) -> None:
-    """Drive the pinned harnesses through the loopback server, rather than trusting runner state."""
+    """The next input may follow model admission; the harness evidence still defines the effect."""
     attached = await client.attach("switch-model-1", spec=spec)
     selected = (
         "agentplane-switched/claude-haiku-4-5-20251001"
@@ -209,18 +209,19 @@ async def test_model_command_reaches_the_first_upstream_request_that_selects_it(
         else "agentplane-switched-model"
     )
     await attached.switch_model("switch-1", selected)
-    admitted = await attached.until(events.is_kind("command_admitted"))
-    assert admitted.event.command_admitted.command.command_id == "switch-1"
-
     await attached.send("input-1", "Reply with exactly: SWITCHED_MODEL_OK")
     request = await model.request()
     assert request.model == selected
+    assert request.user_texts == ["Reply with exactly: SWITCHED_MODEL_OK"]
     await model.reply(request, Text("SWITCHED_MODEL_OK"))
     changed = await attached.until(events.is_kind("model_changed"))
     assert changed.event.model_changed.model == selected
     started = await attached.until(events.is_kind("turn_started"))
     assert started.event.turn_started.model == selected
     await attached.until(events.turn_completed)
+    assert [
+        entry.event.command_admitted.command.command_id for entry in events.of_kind(attached.seen, "command_admitted")
+    ] == ["switch-1", "input-1"]
     await attached.detach()
     await attached.drain_until_end()
 
