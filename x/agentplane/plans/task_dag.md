@@ -24,7 +24,8 @@ Proposed execution order for the Thread correctness/UI track:
   model-path availability failure (`EGRESS_IDENTITY_AVAILABILITY`). Keep one runner-owned
   command queue; no app outbox or combined-start expansion in this batch.
 - **P1:** end-to-end LLM error handling (`LLM_ERROR_SURFACE`), duplicate turn-status
-  presentation (`THREAD_TURN_STATUS_UI`), and sidebar freshness,
+  presentation (`THREAD_TURN_STATUS_UI`), compact activity mocks (`THREAD_ACTIVITY_MOCKS`),
+  and sidebar freshness,
   alongside retained-state writer fencing and
   evidence-gated native recovery. Start `THREAD_TAIL_FIRST` with a profiling/contract
   slice, then bounded reads and `THREAD_LAZY_HISTORY`; do not start with a frontend rewrite.
@@ -93,6 +94,8 @@ flowchart TB
     EGRESS_IDENTITY_AVAILABILITY["P0 observed availability failure<br/>egress authentication ApiException / 502<br/>trace Kubernetes, ingress, LiteLLM hops"]:::active
     LLM_ERROR_SURFACE["P1 correctness<br/>native LLM errors through protocol and UI<br/>partial output, retries, terminal failure"]:::future
     THREAD_TURN_STATUS_UI["Reported UI duplication<br/>turn header and completion entry repeat status<br/>one clear outcome with Raw evidence preserved"]:::future
+    THREAD_ACTIVITY_MOCKS["P1 UI design<br/>mock compact tool/reasoning activity<br/>one-line calls with individual expansion"]:::future
+    THREAD_ACTIVITY_DENSITY["Planned UI after mock review<br/>compact activity with per-item disclosure<br/>preserve status, ordering, and Raw evidence"]:::future
     CLUSTER_BROWSER_ACCEPTANCE["P2 deployed browser acceptance<br/>in-cluster frontend button clicks<br/>screenshots and behavioral assertions"]:::future
     NATIVE_SUBAGENT_THREADS["Low-priority exploration<br/>adopt native Claude/Codex subagents<br/>as linked Agentplane Threads"]:::future
     RUNNER_ATTACHMENT_SCOPE["Pending refactor<br/>scope ordinary runner attachments<br/>retain admission/drain/cancel semantics"]:::future
@@ -114,6 +117,7 @@ flowchart TB
 
     INPUT_DELIVERY -. reliable Thread ingress .-> ING
     THREAD_TAIL_FIRST --> THREAD_LAZY_HISTORY
+    THREAD_ACTIVITY_MOCKS --> THREAD_ACTIVITY_DENSITY
     RUNNER_WRITER_HANDOFF --> THREAD_EVENT_CONTINUITY
     THREAD_EVENT_CONTINUITY --> THREAD_SUCCESSOR_DELIVERY
     CLAUDE_RECOVERY -. native continuation evidence .-> THREAD_SUCCESSOR_DELIVERY
@@ -394,6 +398,31 @@ interruptions at their actual timeline position. Raw mode must still expose the
 underlying Events without posing their debug details as another conversation outcome.
 Cover adjacent turns, empty turns, streaming completion, failure, interruption, and
 reload/reconnect in behavioral and visual tests; do not delete evidence to tidy the UI.
+
+### `THREAD_ACTIVITY_MOCKS` — design compact tool and reasoning activity
+
+**P1, mocks before implementation:** long tool/reasoning runs require too much scrolling.
+The current run disclosure expands into full tool cards; grouping alone does not give
+each tool its own compact disclosure. Mock default one-line tool summaries with individual
+click-to-expand details, and compact reasoning steps, before choosing the final layout.
+Compare a compact per-item list with a grouped run that expands into those same compact
+rows; keep assistant answers and user messages readable in their actual order.
+
+Include many mixed steps, long tool names/arguments/output, running and failed calls,
+an expanded call while others stream, narrow screens, and normal/Raw views. Summaries
+must not imply success or invent unavailable reasoning. Review the mocks with the operator
+before changing production presentation; this task does not settle the layout.
+
+### `THREAD_ACTIVITY_DENSITY` — implement the reviewed compact activity design
+
+Implement the selected mocks with individually expandable tools, keyboard-accessible
+disclosures, visible running/failure state, and stable expansion/scroll behavior while
+Events arrive. Preserve timeline order and Raw evidence. Add behavioral and visual
+coverage of the reviewed cases, including reload and reconnect.
+
+This presentation slice can use already-loaded details; it does not depend on
+`THREAD_PAYLOAD_LAZY`. Later on-demand loading must retain the same interaction and
+explicitly distinguish unloaded, streaming, empty, and unavailable details.
 
 ### `CLUSTER_BROWSER_ACCEPTANCE` — browser-driven acceptance in the cluster
 
