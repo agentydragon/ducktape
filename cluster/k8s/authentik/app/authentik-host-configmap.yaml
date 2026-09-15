@@ -5,4 +5,9 @@ metadata:
   namespace: authentik
 data:
   AUTHENTIK_HOST: "https://auth.allegedly.works"
-  AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS: "10.42.0.0/24"
+  # Cilium Gateway API uses host-network TPROXY. Gateway hairpins can therefore
+  # reach Authentik with the caller's cluster-pod source address instead of the
+  # Envoy node address. Authentik 2026.8 otherwise ignores X-Forwarded-Proto and
+  # emits HTTP OIDC metadata for an HTTPS public request. The CiliumNetworkPolicy
+  # in this directory remains the reachability boundary for Authentik's HTTP ports.
+  AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS: "10.42.0.0/24,10.244.0.0/16"
