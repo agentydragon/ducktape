@@ -9,6 +9,93 @@ bursts; etcd health checks occasionally fail `context deadline exceeded`. No dat
 no quorum loss observed. **Recurred 2026-06-28 as a full outage** (two control planes
 NotReady, Forgejo 500s) — see the dated section below.
 
+## 2026-08-27 follow-up — direct per-cgroup I/O attribution
+
+The June analysis below measured a control-plane set that no longer exists: `{103656, 103711,
+102453}`, three KS-5 boxes with HDD etcd. Since the Stage 2 reshuffle (2026-07-05) the control
+planes are `{103656, 104952, 104963}` — one KS-5 HDD plus two KS-GAME NVMe — and `103711`/`102453`
+are workers. Both sets of numbers are kept: the June table describes the topology that produced the
+outages, this one describes what is live now.
+
+### Method: etcd is directly attributable, no subtraction needed
+
+The June section notes that etcd "does not appear in cAdvisor — its share is the node total minus
+the containers". That was a limitation of kubelet's embedded cAdvisor, which only walks `/kubepods`.
+Talos runs etcd in its own cgroup, so cgroup v2 `io.stat` attributes it exactly, per block device:
+
+```bash
+talosctl -e <node> -n <node> cgroups --preset=io          # whole tree, human-readable
+bazel run //cluster/scripts:talos_cgroup_io -- --node <node> --repeat 5
+```
+
+`podruntime/{etcd,kubelet,runtime}` separate etcd, kubelet and containerd; `kubepods` is workload
+pods; `system` is Talos' own services. The script handles the traps; if reading `io.stat` by hand,
+they are:
+
+- `-e <node>` must be passed explicitly, or the call fails `PermissionDenied: no request forwarding`.
+- Counters are cumulative since boot, so rates need two samples differenced.
+- **Guaranteed-QoS pods sit directly under `kubepods/`**, not under a `guaranteed/` subdirectory.
+  Enumerating only the QoS subdirectories silently hides them.
+- **Rates are extremely bursty and not cleanly additive.** One cgroup read 151 KiB/s in one window
+  and 99 MiB/s in the next, while its parent read 191 KiB/s in that same window — cgroup v2 charges
+  writeback to the dirtying cgroup at writeback time. Treat single windows as indicative only.
+- **NVMe enumeration order differs between the two KS-GAME nodes**, so which device holds etcd must
+  be read from `/proc/mounts`, never assumed:
+
+| Node           | `/var` (etcd) | data disk (`/var/mnt/…`) |
+| -------------- | ------------- | ------------------------ |
+| `ovh-ns103656` | `sda5`        | `sdb`                    |
+| `ovh-ns104952` | `nvme0n1p5`   | `nvme1n1`                |
+| `ovh-ns104963` | `nvme1n1p5`   | `nvme0n1`                |
+
+### Measurements (2026-08-26/27)
+
+etcd's own write rate to its disk, stable across repeated windows:
+
+| Node (etcd disk)            | `podruntime/etcd` write   | per-write size |
+| --------------------------- | ------------------------- | -------------- |
+| `ovh-ns103656` (`sda`, HDD) | ~640 KiB/s, ~119 w/s      | ~5.4 KiB       |
+| `ovh-ns104952` (`nvme0n1`)  | ~810 KiB/s, ~146 w/s      | ~5.6 KiB       |
+| `ovh-ns104963` (`nvme1n1`)  | ~840–1150 KiB/s, ~150 w/s | ~5.6 KiB       |
+
+I/O pressure (`io.pressure`, `some`, % of time stalled) — the decisive measurement:
+
+| Node           | `podruntime` avg60 | `podruntime/etcd` avg60 | `kubepods` avg60 |
+| -------------- | ------------------ | ----------------------- | ---------------- |
+| `ovh-ns103656` | **20.57**          | **11.55**               | 4.83             |
+| `ovh-ns104952` | 0.01               | 0.00                    | 0.00             |
+| `ovh-ns104963` | 0.26               | 0.20                    | 0.00             |
+
+Non-etcd writes landing on the etcd disk: `103656` ~40 KiB/s, versus tens of MiB/s in some windows
+on both NVMe control planes. Given the burstiness caveat above, treat the NVMe figures as "much
+larger than `103656`" rather than as a ratio.
+
+### What this says
+
+**etcd is fsync-bound, not bandwidth-bound.** Its writes average ~5.4 KiB against workloads' ~62–66
+KiB, and it is the large majority of write _operations_ on `103656`'s etcd disk while being a
+minority of the bytes. The harm is queue depth in front of etcd's fsyncs, not throughput — which is
+why an HDD hurts it so specifically, and why a batch job writing bulk data was disproportionately
+damaging.
+
+**On `103656` it is the disk, not the tenants.** Workload write on its etcd spindle is now ~40
+KiB/s, against the 490–988 KiB/s per-pod figures in the June table — the taint and the June pins
+did their job — and it still stalls ~20% of the time. Evicting further workloads there has little
+left to recover. The remaining lever is Stage 3 (retire the last HDD etcd seat), not more pins. The
+NVMe control planes carry far more non-etcd traffic on their etcd disks at ~zero pressure, which is
+the same point from the other direction.
+
+**PVC data is already off the etcd disk.** All `local-path-ovh{,-hdd,-ssd}` classes are
+`nodePathMap`-routed to each node's data disk, and no plain `local-path` StorageClass exists, so no
+PVC lands on `/var`. This lever is spent.
+
+**The largest movable non-etcd writer on every control plane is API-server audit logging.**
+`--audit-log-path=/var/log/audit/kube/kube-apiserver.log` sits on the etcd disk by construction,
+rotating a 100 MB file roughly every 13 minutes (`--audit-log-maxsize=100`, `-maxbackup=10`) —
+~11 GB/day of sustained sequential write sharing the spindle etcd fsyncs on. Unlike `emptyDir` and
+container writable layers, this one is redirectable: point it at the data disk, or trim the audit
+policy. Worth doing on `103656` specifically while it remains an HDD etcd seat.
+
 ## 2026-08-17 follow-up — isolate `ovh-ns103656` while measuring the effect
 
 `ovh-ns103656` again flapped `NotReady`; the two SSD-backed control planes preserved
