@@ -722,9 +722,10 @@ are frontend projections of this log; an app delivery queue is not a dependency.
 
 App-process loss and HTTP/SSE handoff are covered by
 [replica-safe runner delivery](../app/README.md#replica-safe-runner-delivery).
-The built SPA also has a real-Chromium retained/live/reload acceptance test. Extend that
-surface for canonical admission, persisted same-id retry, pending controls, and replay
-integrity failures; mocked component streams alone do not cover those boundaries.
+The built SPA also has real-Chromium retained/live/reload, ahead-of-prefix snapshot,
+and rejected runner gap/source-change acceptance. Extend that surface for canonical
+admission, persisted same-id retry, and pending controls; mocked component streams
+alone do not cover those boundaries.
 Native crash-recovery research is not a prerequisite for the replay/projection implementation.
 
 The frontend `EventStream` now owns a verified, contiguous prefix: exact duplicates
@@ -735,7 +736,7 @@ the view labels catch-up and does not present a historical model as currently ap
 After catch-up only model Events beyond `N` override that snapshot.
 
 Remaining: canonical Thread replay/metadata wiring, persistent local unconfirmed
-Commands, pending-command projection, and real-browser reload/reconnect acceptance.
+Commands, pending-command projection, and browser reload/reconnect while commands remain unconfirmed.
 The current Session command handling is not yet reload-safe; this stream owner alone
 does not complete `THREAD_PENDING_UI` or the API cutover.
 

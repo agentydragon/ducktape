@@ -112,6 +112,9 @@ native harness recovery, or PostgreSQL host/storage loss.
 PostgreSQL archive, and controlled protocol source. It covers retained replay, live streaming,
 terminal turn state, and document reload without duplicated conversation text. Unlike the visual
 fixture, it does not replace browser fetch or EventSource. Playwright traces are test artifacts.
+It also holds replay behind an ahead-of-prefix snapshot and injects a runner gap/source change:
+the browser must show catch-up or a stopped-stream error, preserve only verified conversation
+content, and disable controls until it has the required evidence.
 
 Rollout prerequisite: existing sandbox runners must support independent attachments before the new
 app bridge is deployed; old runner processes are not upgraded merely by publishing the new image.
