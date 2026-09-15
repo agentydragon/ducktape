@@ -23,7 +23,7 @@ rust_binary(
         "@crates//:env_logger",
         "@crates//:futures",
         "@crates//:log",
-        "@crates//:rig-core",
+        "@crates//:rig",
         "@crates//:serde",
         "@crates//:serde_json",
         "@crates//:tokio",
