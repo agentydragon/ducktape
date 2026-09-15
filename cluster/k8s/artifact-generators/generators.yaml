@@ -594,14 +594,6 @@ spec:
           exclude:
             - flux-kustomization.yaml
 
-    - name: firecrawl-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/firecrawl/namespace/**"
-          to: "@artifact/cluster/k8s/firecrawl/namespace/"
-          exclude:
-            - flux-kustomization.yaml
-
     - name: flux-image-automation-ghcr
       originRevision: "@repo"
       copy:
@@ -1210,20 +1202,6 @@ spec:
       copy:
         - from: "@repo/cluster/k8s/evidence/**"
           to: "@artifact/cluster/k8s/evidence/"
-          exclude:
-            - flux-kustomization.yaml
-    - name: firecrawl
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/firecrawl/app/**"
-          to: "@artifact/cluster/k8s/firecrawl/app/"
-          exclude:
-            - flux-kustomization.yaml
-    - name: firecrawl-db
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/firecrawl/db/**"
-          to: "@artifact/cluster/k8s/firecrawl/db/"
           exclude:
             - flux-kustomization.yaml
     - name: flux-grafana-secrets
@@ -2106,49 +2084,6 @@ spec:
           to: "@artifact/cluster/k8s/x/google-workspace-mcp/"
           exclude:
             - flux-kustomization.yaml
-    - name: openhands-app
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/x/openhands/app/**"
-          to: "@artifact/cluster/k8s/x/openhands/app/"
-          exclude:
-            - flux-kustomization.yaml
-    - name: openhands-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/x/openhands/namespace/**"
-          to: "@artifact/cluster/k8s/x/openhands/namespace/"
-          exclude:
-            - flux-kustomization.yaml
-    - name: openhands-sandboxes
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/x/openhands/sandboxes/**"
-          to: "@artifact/cluster/k8s/x/openhands/sandboxes/"
-          exclude:
-            - flux-kustomization.yaml
-    - name: tandoor-app
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/x/tandoor/app/**"
-          to: "@artifact/cluster/k8s/x/tandoor/app/"
-          exclude:
-            - flux-kustomization.yaml
-    - name: tandoor-db
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/x/tandoor/db/**"
-          to: "@artifact/cluster/k8s/x/tandoor/db/"
-          exclude:
-            - flux-kustomization.yaml
-    - name: tandoor-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/x/tandoor/namespace/**"
-          to: "@artifact/cluster/k8s/x/tandoor/namespace/"
-          exclude:
-            - flux-kustomization.yaml
-
 ---
 apiVersion: source.extensions.fluxcd.io/v1beta1
 kind: ArtifactGenerator

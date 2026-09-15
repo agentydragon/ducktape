@@ -1,10 +1,13 @@
+# Wayback is intentionally parked. Keep this control object with the deployment
+# package, but out of the active root Flux bundle, so the archived service and
+# its stale health status are not reconciled into the cluster.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: wayback-cache
   namespace: ducktape-flux
 spec:
-  # Archived by operator request. Set false to restore the complete package.
+  # Set false only to deliberately restore the complete package.
   suspend: true
   interval: 10m
   retryInterval: 1m
