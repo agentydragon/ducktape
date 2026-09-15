@@ -17,6 +17,9 @@ bbr test //x/agentplane/runner/...
   point, configured by flags and credentialed from its environment.
 - `session.py`: one session's log, harness process, and derived state; `event_log.py` is the
   append-only JSONL log; `store.py` the session record on disk.
+- `journal_file.py`: Event and command appends flush and fsync before publishing state, with
+  directory fences for newly created state paths and renamed session metadata. A storage error
+  poisons the writer until it is reopened for recovery.
 - `harness_process.py`: one native harness child, its pipes, line framing, and exit; no protocol
   knowledge.
 - `config.py`: the runner-owned launch configuration, one `*Launch` per harness (binary, endpoint,
@@ -40,3 +43,10 @@ runs the runner as its own process so a crash takes its harnesses with it. `test
 the built runner image as a container (Docker, so on RBE) through one scripted turn per harness;
 `test_image_packaging.py` inspects its OCI layout for the harnesses, their tools, and the
 entrypoint.
+
+`test_event_durability.py` records file contents and directory entries only at successful fsync
+boundaries, then rebuilds a fresh storage image without unsynced writes. It verifies replay and
+publication ordering, failed fences, command identity/outcomes, and session metadata discovery.
+This is an explicit power-loss model; it does not validate a physical device's fsync behavior.
+`test_journal_process.py` separately kills a real journal-writing process and replays its published
+Events from a new process. Process SIGKILL alone does not simulate loss of the kernel write cache.

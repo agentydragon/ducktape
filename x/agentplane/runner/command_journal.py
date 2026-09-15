@@ -8,7 +8,6 @@ the same command after a process restart.  The replayable Event log remains the 
 from __future__ import annotations
 
 import json
-import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,6 +16,7 @@ from google.protobuf.json_format import MessageToDict, ParseDict
 
 from x.agentplane.protocol import command_pb2
 from x.agentplane.runner.event_log import Observation, decode_observation, encode_observation
+from x.agentplane.runner.journal_file import JournalFile
 
 
 @dataclass(frozen=True)
@@ -40,7 +40,7 @@ class CommandJournal:
         self._order: list[str] = []
         if path.exists():
             self._load()
-        self._file = path.open("ab")
+        self._file = JournalFile(path)
 
     @property
     def entries(self) -> Sequence[JournalEntry]:
@@ -132,9 +132,7 @@ class CommandJournal:
             self._entries[command_id] = JournalEntry(entry.command, record, correlation, outcome)
 
     def _append(self, row: dict[str, object]) -> None:
-        self._file.write((json.dumps(row, sort_keys=True) + "\n").encode())
-        self._file.flush()
-        os.fsync(self._file.fileno())
+        self._file.append((json.dumps(row, sort_keys=True) + "\n").encode())
 
     def close(self) -> None:
         self._file.close()

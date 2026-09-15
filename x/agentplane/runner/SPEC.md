@@ -115,9 +115,15 @@ harness's outcome. Tool names and argument shapes are the harness's own.
 
 ## Durability and restart
 
-- The public log is written before an event is delivered. Command admissions, terminal command
-  outcomes, harness lifecycle, and turns are synced; deltas and native evidence are flushed but
-  not synced, so a crash can shorten their tail but cannot reorder a durable outcome.
+- Every public Event, including native frames and streaming deltas, crosses the runner storage
+  durability fence before it becomes available to followers. Reopening the surviving state volume
+  preserves the published prefix with the same payloads and cursors. Session metadata and journal
+  filenames are persisted before the session publishes Events. This relies on the filesystem and
+  storage honoring successful synchronization; it does not cover destruction of the state volume.
+- A failed journal write or synchronization publishes no new Event and prevents further appends
+  through that writer. Followers see an error after their recorded prefix; recovery requires
+  reopening the journal. The interrupted append may or may not survive, but cannot reuse a cursor
+  already published for another Event. Harness output recording failures stop the harness.
   This does not yet guarantee an immutable published prefix under host/storage failure:
   a follower may already hold an unsynced entry missing from the recovered runner log.
   The stronger publication/replay contract is in

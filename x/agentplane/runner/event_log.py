@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
@@ -15,6 +14,7 @@ from google.protobuf.json_format import MessageToDict, ParseDict
 from google.protobuf.message import Message
 
 from x.agentplane.protocol import event_log_pb2, event_pb2
+from x.agentplane.runner.journal_file import JournalFile
 
 logger = logging.getLogger(__name__)
 
@@ -63,22 +63,6 @@ _FIELDS: dict[type[Message], str] = {
 }
 _OBSERVATIONS: dict[str, type[Message]] = {field: message for message, field in _FIELDS.items()}
 
-# Events a restarted runner reasons from are synced to disk before they are reported; deltas and
-# native evidence are flushed but not synced, since losing a tail of them only shortens the record.
-_SYNCED = (
-    event_pb2.HarnessStarted,
-    event_pb2.HarnessExited,
-    event_pb2.HarnessLost,
-    event_pb2.CommandAdmitted,
-    event_pb2.CommandFailed,
-    event_pb2.CommandNoop,
-    event_pb2.HarnessUserMessageConfirmed,
-    event_pb2.ModelChanged,
-    event_pb2.TurnStarted,
-    event_pb2.TurnCompleted,
-    event_pb2.DebugCheckpoint,
-)
-
 
 class EventLog:
     def __init__(self, path: Path, source_id: str) -> None:
@@ -87,7 +71,7 @@ class EventLog:
         self._entries: list[event_log_pb2.EventEntry] = []
         if path.exists():
             self._load()
-        self._file = path.open("ab")
+        self._file = JournalFile(path)
         self._changed = asyncio.Event()
 
     def _load(self) -> None:
@@ -131,10 +115,11 @@ class EventLog:
         entry = event_log_pb2.EventEntry(
             cursor=cursor, origin=event_log_pb2.EventOrigin(source_id=self.source_id, sequence=cursor), event=event
         )
-        self._file.write(json.dumps(MessageToDict(entry, preserving_proto_field_name=True)).encode() + b"\n")
-        self._file.flush()
-        if isinstance(observation, _SYNCED):
-            os.fsync(self._file.fileno())
+        try:
+            self._file.append(json.dumps(MessageToDict(entry, preserving_proto_field_name=True)).encode() + b"\n")
+        except OSError:
+            self._changed.set()
+            raise
         self._entries.append(entry)
         changed, self._changed = self._changed, asyncio.Event()
         changed.set()
@@ -146,6 +131,7 @@ class EventLog:
 
     async def wait_beyond(self, cursor: int) -> None:
         while self.last_cursor <= cursor:
+            self._file.check_writable()
             await self._changed.wait()
 
     def close(self) -> None:
