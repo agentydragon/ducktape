@@ -47,7 +47,11 @@ from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.test_fixtures.callers import PERSONAL, eligible_callers
 from x.agentplane.action_service.updates import ActionUpdates
-from x.agentplane.app.action_federation import ExchangeFederationSettings, FederatedOperatorActions
+from x.agentplane.app.action_federation import (
+    DirectFederationSettings,
+    ExchangeFederationSettings,
+    FederatedOperatorActions,
+)
 from x.agentplane.app.action_policy import (
     MANAGED_BY_APP,
     MANAGED_BY_LABEL,
@@ -97,6 +101,11 @@ def operator_connection() -> str:
 
 
 @pytest.fixture
+def direct_federation() -> bool:
+    return False
+
+
+@pytest.fixture
 async def review(
     db_url: str,
     inventory: SandboxInventory,
@@ -108,6 +117,7 @@ async def review(
     action_policy: ActionPolicyInventory,
     reviewer: TokenReviewer,
     operator_connection: str,
+    direct_federation: bool,
 ) -> AsyncIterator[Review]:
     apply_migrations(db_url)
     server = FastMCP("test-review")
@@ -132,8 +142,12 @@ async def review(
         idp_sock = bind_free_port()
         idp_origin, app_url = f"http://127.0.0.1:{idp_sock.getsockname()[1]}", "http://test-app.invalid"
         idp_url = f"{idp_origin}/application/o/login/"
-        target_issuer = f"{idp_origin}/application/o/actions/"
-        target = OperatorOidcSettings(issuer=target_issuer, audience="test-actions", jwks_uri=f"{idp_url}jwks/")
+        target_issuer = idp_url if direct_federation else f"{idp_origin}/application/o/actions/"
+        target = OperatorOidcSettings(
+            issuer=target_issuer,
+            audience="test-app" if direct_federation and operator_connection != "wrong-audience" else "test-actions",
+            jwks_uri=f"{idp_url}jwks/",
+        )
         policies = eligible_callers(PERSONAL)
         service = ActionService(
             ActionStore(make_sessionmaker(engine)), catalog, {"test_review": executor}, policies=policies
@@ -231,16 +245,25 @@ async def review(
             session_secret="test-only-session-secret",
             public_base_url=app_url,
         )
-        federation = ExchangeFederationSettings(
-            service_url="http://test-actions.invalid",
-            token_endpoint=f"http://127.0.0.1:{pick_free_port()}/exchange"
-            if operator_connection == "exchange-disconnected"
-            else f"{idp_origin}/exchange",
-            login_jwks_uri=f"{idp_origin}/federation-keys?private=test-private-query"
-            if operator_connection in {"jwks-unavailable", "jwks-malformed"}
-            else f"{idp_url}jwks/",
-            target=target,
-            scope="openid profile",
+        federation = (
+            DirectFederationSettings(
+                service_url="http://test-actions.invalid",
+                login_jwks_uri=f"{idp_url}jwks/",
+                target=target,
+                scope="openid profile",
+            )
+            if direct_federation
+            else ExchangeFederationSettings(
+                service_url="http://test-actions.invalid",
+                token_endpoint=f"http://127.0.0.1:{pick_free_port()}/exchange"
+                if operator_connection == "exchange-disconnected"
+                else f"{idp_origin}/exchange",
+                login_jwks_uri=f"{idp_origin}/federation-keys?private=test-private-query"
+                if operator_connection in {"jwks-unavailable", "jwks-malformed"}
+                else f"{idp_url}jwks/",
+                target=target,
+                scope="openid profile",
+            )
         )
         operator_client = (
             None if operator_connection == "disabled" else FederatedOperatorActions(federation, oidc, downstream_http)
@@ -471,7 +494,10 @@ async def test_connection_management_fails_closed_without_valid_federation(
     assert (await review.browser.get("/connection-service-accounts")).status_code == expected
 
 
-async def test_operator_decision_reaches_canonical_service_and_mcp_once(review: Review) -> None:
+@pytest.mark.parametrize("direct_federation", [False, True], ids=["exchange", "direct"])
+async def test_operator_decision_reaches_canonical_service_and_mcp_once(
+    review: Review, direct_federation: bool
+) -> None:
     browser, service = review.browser, review.service
     pending = await service.submit(
         ActionRequestInput(
@@ -551,22 +577,30 @@ async def test_operator_decision_reaches_canonical_service_and_mcp_once(review: 
     ]
     assert (await browser.post(path, json=decision)).json()["execution"]["id"] == final["execution"]["id"]
     assert review.calls == ["hi"]
+    if direct_federation:
+        assert review.exchanged_subjects == []
+    else:
+        assert set(review.exchanged_subjects) == {SUBJECT_A}
 
 
 @pytest.mark.parametrize(
-    ("operator_connection", "expected"),
+    ("operator_connection", "expected", "direct_federation"),
     [
-        ("disabled", 503),
-        ("target-subject-mismatch", 403),
-        ("wrong-issuer", 403),
-        ("wrong-audience", 403),
-        ("expired", 403),
-        ("swapped-operator", 403),
-        ("source-mismatch", 403),
-        ("exchange-rejected", 400),
+        ("disabled", 503, False),
+        ("target-subject-mismatch", 403, False),
+        ("wrong-issuer", 403, False),
+        ("wrong-audience", 403, False),
+        ("expired", 403, False),
+        ("swapped-operator", 403, False),
+        ("source-mismatch", 403, False),
+        ("exchange-rejected", 400, False),
+        pytest.param("wrong-audience", 403, True, id="direct-wrong-audience"),
+        pytest.param("source-mismatch", 403, True, id="direct-source-mismatch"),
     ],
 )
-async def test_unconfigured_or_rejected_service_auth_fails_closed(review: Review, expected: int) -> None:
+async def test_unconfigured_or_rejected_service_auth_fails_closed(
+    review: Review, expected: int, direct_federation: bool
+) -> None:
     pending = await review.service.submit(
         ActionRequestInput(
             idempotency_key="test-blocked",
@@ -592,6 +626,8 @@ async def test_unconfigured_or_rejected_service_auth_fails_closed(review: Review
     ).status_code == expected
     assert (await review.service.get(pending.id, CALLER)).state is ActionState.DECISION_PENDING
     assert review.calls == []
+    if direct_federation:
+        assert review.exchanged_subjects == []
 
 
 @pytest.mark.parametrize(
