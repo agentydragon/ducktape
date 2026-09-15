@@ -8,6 +8,8 @@ import pytest_bazel
 from x.agentplane.protocol import event_pb2
 from x.agentplane.runner.event_log import EventLog
 
+# gazelle:include_dep @pypi//protobuf
+
 
 def test_every_partial_final_record_recovers_the_exact_prefix(tmp_path: Path) -> None:
     path = tmp_path / "events.jsonl"

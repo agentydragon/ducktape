@@ -8,6 +8,8 @@ import pytest_bazel
 from x.agentplane.protocol import command_pb2, event_pb2
 from x.agentplane.runner.command_journal import CommandConflictError, CommandJournal
 
+# gazelle:include_dep @pypi//protobuf
+
 
 def test_partial_admission_and_transitions_recover_previous_durable_facts(tmp_path: Path) -> None:
     path = tmp_path / "commands.jsonl"
