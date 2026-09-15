@@ -1,13 +1,12 @@
 """Generate a QR code SVG with an optional Bebas Neue caption below."""
 
 import argparse
-import importlib
 import subprocess
 from pathlib import Path
-from typing import Any, cast
 
 import qrcode
 import svg
+from PIL import ImageFont
 
 _FONT_FAMILY = "Bebas Neue"
 _BORDER = 4  # quiet-zone modules
@@ -19,23 +18,10 @@ _TARGET_QR_W = 672  # ~7in — fills most of the page width
 
 
 def _font_text_width_at_1em(text: str) -> float:
-    """Return the advance width of text in units of 1em, using fontconfig + fonttools."""
+    """Return the rendered width of text in units of 1em."""
     font_path = subprocess.check_output(["fc-match", _FONT_FAMILY, "--format=%{file}"], text=True).strip()
-    # fontTools has no usable static API surface here: TTFont's table schema is
-    # populated dynamically, and Python 3.14's mypy checks otherwise descend
-    # into the package's own uncleanly-annotated implementation files.
-    ttlib = cast(Any, importlib.import_module("fontTools.ttLib"))
-    font = ttlib.TTFont(font_path)
-    cmap = font.getBestCmap()
-    hmtx = font["hmtx"].metrics
-    # TTFont table attributes are populated dynamically from the font's
-    # sstruct schema, so the generated fontTools type cannot expose this field.
-    head = cast(Any, font["head"])
-    units_per_em: int = head.unitsPerEm
-    if cmap is None:
-        raise ValueError(f"Font {font_path} has no cmap table")
-    total: int = sum(hmtx.get(cmap.get(ord(c), ".notdef"), (0, 0))[0] for c in text)
-    return total / units_per_em
+    font = ImageFont.truetype(font_path, size=1000)
+    return font.getlength(text) / 1000
 
 
 def generate(text: str, output: Path, caption: str | None = None) -> None:

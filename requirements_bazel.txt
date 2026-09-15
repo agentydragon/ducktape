@@ -1820,7 +1820,6 @@ fonttools==4.65.0 \
     --hash=sha256:fcf39949f56911348514b466714efa9118bec3d2be249e1c487263f7cda6edab \
     --hash=sha256:ffc918702661f1d74d2fbb2f5551036b64f6d2d743139e105289b694bcd16f54
     # via
-    #   ducktape (pyproject.toml)
     #   ezdxf
     #   matplotlib
 formulaic==1.2.2 \
