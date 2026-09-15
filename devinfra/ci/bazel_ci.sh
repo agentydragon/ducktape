@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The ducktape CI build: bazel test + build via `bb remote`, plus the bazel-diff
-# affected-target selection for pull requests.
+# affected-target selection for ordinary pull requests.
 #
 # Lives here rather than inline in .github/workflows/bazel-ci.yml because it is ~200 lines
 # of bash with three functions, and a script embedded in a YAML string is invisible to
@@ -78,12 +78,37 @@ finalize_bb_runner_probe() {
 }
 trap finalize_bb_runner_probe EXIT
 
-# On PRs, test/build only the targets bazel-diff reports as
-# affected by the diff from the merge commit's base parent to the
-# synthetic merge tree. Devel-branch push runs
-# below still test `//...`, so a PR that IS in the affected set
-# of a broken area still fails as it should; PRs unrelated to
-# the broken area are unblocked.
+# Dependency manifests and build-rule code can change targets that bazel-diff cannot
+# reliably connect to the checked-in source graph. In particular, a version bump may
+# update a generated external repository or a nested package graph without producing
+# a useful impacted target. These paths therefore force the same graph-wide sweep that
+# devel pushes use. Keep this list conservative: a false positive costs one broad CI
+# run, while a false negative is the failure mode this gate is intended to prevent.
+graph_wide_change_reason() {
+  local path
+  while IFS= read -r path; do
+    case "$path" in
+      .bazelrc | .bazelversion | .bazelignore | MODULE.bazel | MODULE.bazel.lock | WORKSPACE | WORKSPACE.bazel | WORKSPACE.bzlmod | WORKSPACE.bzlmod.lock | \
+        */MODULE.bazel | */MODULE.bazel.lock | */WORKSPACE | */WORKSPACE.bazel | */WORKSPACE.bzlmod | */WORKSPACE.bzlmod.lock | \
+        *.bzl | \
+        .github/workflows/bazel-ci.yml | .github/workflows/ci.yml | devinfra/ci/bazel_ci.sh | \
+        Cargo.toml | */Cargo.toml | Cargo.lock | */Cargo.lock | \
+        go.mod | */go.mod | go.sum | */go.sum | \
+        package.json | */package.json | pnpm-lock.yaml | */pnpm-lock.yaml | \
+        pyproject.toml | */pyproject.toml | requirements*.txt | */requirements*.txt | \
+        uv.lock | */uv.lock | poetry.lock | */poetry.lock | Pipfile.lock | */Pipfile.lock)
+        printf '%s' "$path"
+        return 0
+        ;;
+    esac
+  done
+  return 1
+}
+
+# On PRs, test/build only the targets bazel-diff reports as affected by ordinary
+# source changes. Graph-wide changes use `//...`; devel-branch push runs below also
+# use `//...`. The graph-wide path deliberately runs before bazel-diff so a stale or
+# incomplete external graph cannot make a dependency update appear unaffected.
 #
 # `bazel-diff` binary comes from the RBE image via
 # nix/packages/bazel-diff.nix (pinned to v47.0.0).
@@ -127,76 +152,83 @@ if [ -n "$PR_HEAD_SHA" ]; then
   echo "pr-head:         $PR_HEAD"
   echo "merge:           $HEAD_SHA"
 
-  mkdir -p /tmp/bd-cache
-  # `bazel query` (not cquery) — cheap: no analysis, no toolchain
-  # resolution. Peak RAM ~1-2 GB per revision.
-  git -c advice.detachedHead=false checkout --quiet --force "$BASE"
-  bazel-diff generate-hashes -w "$PWD" -b bazel /tmp/bd-cache/base.json
-  # bazel-diff may resolve repository metadata and rewrite a tracked lockfile
-  # while hashing the base revision. Force the checkout so those generated
-  # changes cannot prevent switching back to the merge tree.
-  git -c advice.detachedHead=false checkout --quiet --force "$HEAD_SHA"
-  bazel-diff generate-hashes -w "$PWD" -b bazel /tmp/bd-cache/head.json
-  bazel-diff get-impacted-targets \
-    -w "$PWD" \
-    -sh /tmp/bd-cache/base.json -fh /tmp/bd-cache/head.json \
-    >/tmp/affected-raw.txt
+  git diff --name-only "$BASE" "$HEAD_SHA" >/tmp/changed-files.txt
+  if GRAPH_WIDE_REASON=$(graph_wide_change_reason </tmp/changed-files.txt); then
+    echo "graph-wide change: $GRAPH_WIDE_REASON"
+    TARGETS="//..."
+    echo 'tests(//...)' >/tmp/test-query.txt
+  else
+    mkdir -p /tmp/bd-cache
+    # `bazel query` (not cquery) — cheap: no analysis, no toolchain
+    # resolution. Peak RAM ~1-2 GB per revision.
+    git -c advice.detachedHead=false checkout --quiet --force "$BASE"
+    bazel-diff generate-hashes -w "$PWD" -b bazel /tmp/bd-cache/base.json
+    # bazel-diff may resolve repository metadata and rewrite a tracked lockfile
+    # while hashing the base revision. Force the checkout so those generated
+    # changes cannot prevent switching back to the merge tree.
+    git -c advice.detachedHead=false checkout --quiet --force "$HEAD_SHA"
+    bazel-diff generate-hashes -w "$PWD" -b bazel /tmp/bd-cache/head.json
+    bazel-diff get-impacted-targets \
+      -w "$PWD" \
+      -sh /tmp/bd-cache/base.json -fh /tmp/bd-cache/head.json \
+      >/tmp/affected-raw.txt
 
-  # bazel-diff's impacted set includes plain source-file labels
-  # (e.g. a .py file referenced from a BUILD file but not wrapped
-  # in a rule). `bazel build`/`bazel test` treat those as a
-  # silent no-op ("is a source file, nothing will be built for
-  # it") -- harmless but noisy. Filter them out up front so the
-  # affected set passed to build/test only contains rules.
-  #
-  # Explicit labels do not get Bazel's normal wildcard semantics:
-  # unlike `//...`, an explicit manual target is still selected.
-  # Exclude manual-tagged targets here so the affected target file
-  # has the same behavior as the normal wildcard target expansion.
-  #
-  # Each label is double-quoted inside set(...): aspect_rules_js
-  # node_modules targets for scoped pnpm packages are named with
-  # a '+' (e.g. //:.aspect_rules_js/node_modules/@lezer+json@1.0.3/dir),
-  # and an unquoted '+' in a set() expression is parsed as the
-  # set-union operator, so a PR that newly affects such a target
-  # (any PR adding a scoped npm dep) breaks the query with a
-  # syntax error. Quoting makes the '+' a literal label character.
-  #
-  # TODO: this set()/except/tests() query shuffling in shell is brittle; consider a
-  # small python helper that takes affected-raw.txt and writes the resolved affected
-  # set + test-query files directly, instead of building query expressions in shell.
-  quote() { sed '/^$/d; s/.*/"&"/' "$1" | tr '\n' ' '; }
-  {
-    printf 'set('
-    quote /tmp/affected-raw.txt
-    printf ') except kind("source file", set('
-    quote /tmp/affected-raw.txt
-    printf ')) except attr("tags", "manual", set('
-    quote /tmp/affected-raw.txt
-    printf '))\n'
-  } \
-    >/tmp/affected-query.txt
-  bazel query --query_file=/tmp/affected-query.txt >/tmp/affected.txt
+    # bazel-diff's impacted set includes plain source-file labels
+    # (e.g. a .py file referenced from a BUILD file but not wrapped
+    # in a rule). `bazel build`/`bazel test` treat those as a
+    # silent no-op ("is a source file, nothing will be built for
+    # it") -- harmless but noisy. Filter them out up front so the
+    # affected set passed to build/test only contains rules.
+    #
+    # Explicit labels do not get Bazel's normal wildcard semantics:
+    # unlike `//...`, an explicit manual target is still selected.
+    # Exclude manual-tagged targets here so the affected target file
+    # has the same behavior as the normal wildcard target expansion.
+    #
+    # Each label is double-quoted inside set(...): aspect_rules_js
+    # node_modules targets for scoped pnpm packages are named with
+    # a '+' (e.g. //:.aspect_rules_js/node_modules/@lezer+json@1.0.3/dir),
+    # and an unquoted '+' in a set() expression is parsed as the
+    # set-union operator, so a PR that newly affects such a target
+    # (any PR adding a scoped npm dep) breaks the query with a
+    # syntax error. Quoting makes the '+' a literal label character.
+    #
+    # TODO: this set()/except/tests() query shuffling in shell is brittle; consider a
+    # small python helper that takes affected-raw.txt and writes the resolved affected
+    # set + test-query files directly, instead of building query expressions in shell.
+    quote() { sed '/^$/d; s/.*/"&"/' "$1" | tr '\n' ' '; }
+    {
+      printf 'set('
+      quote /tmp/affected-raw.txt
+      printf ') except kind("source file", set('
+      quote /tmp/affected-raw.txt
+      printf ')) except attr("tags", "manual", set('
+      quote /tmp/affected-raw.txt
+      printf '))\n'
+    } \
+      >/tmp/affected-query.txt
+    bazel query --query_file=/tmp/affected-query.txt >/tmp/affected.txt
 
-  N=$(wc -l </tmp/affected.txt)
-  echo "affected targets: $N"
-  if [ "$N" -eq 0 ]; then
-    echo "No targets affected by this PR — skipping test/build."
-    exit 0
+    N=$(wc -l </tmp/affected.txt)
+    echo "affected targets: $N"
+    if [ "$N" -eq 0 ]; then
+      echo "No targets affected by this PR — skipping test/build."
+      exit 0
+    fi
+    TARGETS="--target_pattern_file=/tmp/affected.txt"
+    # `bazel query` has no --target_pattern_file flag (only
+    # build/test/etc. do), so the affected set can't be handed to
+    # `tests(...)` the same way it's handed to `bazel test`.
+    # set(...) embeds the same patterns in the query expression
+    # instead, written to a file (--query_file) rather than argv
+    # so a large affected set can't hit command-line length limits.
+    {
+      printf 'tests(set('
+      quote /tmp/affected.txt
+      printf '))\n'
+    } \
+      >/tmp/test-query.txt
   fi
-  TARGETS="--target_pattern_file=/tmp/affected.txt"
-  # `bazel query` has no --target_pattern_file flag (only
-  # build/test/etc. do), so the affected set can't be handed to
-  # `tests(...)` the same way it's handed to `bazel test`.
-  # set(...) embeds the same patterns in the query expression
-  # instead, written to a file (--query_file) rather than argv
-  # so a large affected set can't hit command-line length limits.
-  {
-    printf 'tests(set('
-    quote /tmp/affected.txt
-    printf '))\n'
-  } \
-    >/tmp/test-query.txt
 else
   # push to devel / workflow_dispatch: full sweep.
   TARGETS="//..."
