@@ -73,6 +73,7 @@ it("shares one subscription, closes on detach, and resumes only with its retaine
   expect(source.closed).toBe(true);
   const unsubscribe = store.subscribe(() => {});
   expect(new URL(Source.instances[1].url).searchParams.get("after")).toBe("1");
+  expect(store.getSnapshot().connection.kind).toBe("reconnecting");
   expect(new URL(Source.instances[1].url).searchParams.get("limit")).toBe("100");
   source.entry(entry(2n)); // An event queued by a detached transport must not leak into its successor.
   expect(store.getSnapshot().conversation.lastCursor).toBe("1");

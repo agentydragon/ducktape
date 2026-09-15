@@ -98,6 +98,10 @@ export class EventStream {
     url.searchParams.set("after", this.snapshot.conversation.lastCursor);
     const source = new EventSource(url.href);
     this.source = source;
+    this.publish({
+      ...this.snapshot,
+      connection: { kind: this.snapshot.conversation.lastCursor === "0" ? "connecting" : "reconnecting" },
+    });
     source.addEventListener("open", () => {
       if (this.source === source) this.publish({ ...this.snapshot, connection: { kind: "following" } });
     });

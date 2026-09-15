@@ -31,7 +31,7 @@ import {
 } from "react";
 import { useSearchParams } from "react-router";
 
-import { toJson } from "@bufbuild/protobuf";
+import { toJson, type JsonObject } from "@bufbuild/protobuf";
 
 import {
   displayableError,
@@ -404,7 +404,7 @@ function SessionContents({ sandbox, sessionId, onBack }: SessionViewProps): JSX.
     if (!attached) return;
     let active = true;
     const harness = attached.spec
-      ? (toJson(SessionSpecSchema, attached.spec).harness as Harness | undefined)
+      ? ((toJson(SessionSpecSchema, attached.spec) as JsonObject).harness as Harness | undefined)
       : undefined;
     const onError = (reason: unknown): void => {
       if (active) setError(displayableError(reason));
