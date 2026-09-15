@@ -11,7 +11,9 @@ import json
 import os
 import re
 import subprocess
+from dataclasses import dataclass
 from typing import Literal
+from urllib.parse import parse_qs
 
 import httpx
 from bs4 import BeautifulSoup
@@ -22,6 +24,10 @@ from x.agentplane.app.oidc import SECURE_COOKIE
 KUBE_PROXY = "https://haku-kubeapi.allegedly.works"
 DEFAULT_SECRET_PATH = "/api/v1/namespaces/public-coder-agent/secrets/agentplane-testing-acceptance-operator"
 SECRET_PATH = DEFAULT_SECRET_PATH
+_DEX_AUTHORIZATION_PATH = "/dex/auth"
+_DEX_LOCAL_FORM_PATH = re.compile(r"/dex/auth/local(?:/login)?/?")
+_DEX_LOCAL_LOGIN_PATH = re.compile(r"/dex/auth/local/login/?")
+_DEX_OAUTH_PATH = re.compile(r"/dex/(auth|auth/local|auth/local/login|approval|callback)/?")
 
 
 class LoginBlockedError(Exception):
@@ -128,6 +134,134 @@ def _destination(
     raise LoginBlockedError("BLOCKED: OIDC redirect outside the app callback or Authentik authorization/flow endpoints")
 
 
+@dataclass
+class DexPasswordLogin:
+    """One guarded submission of Dex's local password form.
+
+    Dex's local connector puts its short-lived authorization request ID in the form action query.
+    Retaining that action unchanged is essential; credentials are added only to a same-origin
+    HTTPS local-login POST.  Both the app bootstrap and the separate MCP authorization use this
+    narrow provider adapter.
+    """
+
+    dex: httpx.URL
+    password_sent: bool = False
+
+    async def submit(
+        self, browser: httpx.AsyncClient, response: httpx.Response, credentials: OperatorCredentials
+    ) -> httpx.Response:
+        __tracebackhide__ = True
+        if self.password_sent:
+            raise LoginBlockedError("BLOCKED: Dex rejected the operator password; not retrying credentials")
+        if _origin(response.url) != self.dex or _DEX_LOCAL_FORM_PATH.fullmatch(response.url.path) is None:
+            raise LoginBlockedError("BLOCKED: Dex password form was not served by the configured local-login endpoint")
+        form = BeautifulSoup(response.text, "html.parser").find("form")
+        if form is None or not form.get("action"):
+            raise LoginBlockedError("BLOCKED: Dex login form was not found")
+        target = response.url.join(str(form["action"]))
+        if (
+            target.scheme != "https"
+            or target.userinfo
+            or target.fragment
+            or _origin(target) != self.dex
+            or _DEX_LOCAL_LOGIN_PATH.fullmatch(target.path) is None
+        ):
+            raise LoginBlockedError("BLOCKED: Dex login form submitted credentials outside its local-login endpoint")
+        payload = {
+            str(input_tag["name"]): str(input_tag.get("value", ""))
+            for input_tag in form.find_all("input")
+            if input_tag.get("name")
+        }
+        payload.update(login=credentials.login.get_secret_value(), password=credentials.password.get_secret_value())
+        self.password_sent = True
+        return await browser.post(
+            target, data=payload, headers={"Origin": str(self.dex).rstrip("/"), "Referer": str(response.url)}
+        )
+
+
+def _required_query_value(url: httpx.URL, name: str, *, stage: str) -> str:
+    values = parse_qs(url.query.decode(), keep_blank_values=True).get(name, [])
+    if len(values) != 1 or not values[0]:
+        raise LoginBlockedError(f"BLOCKED: {stage} omitted an unambiguous OAuth {name}")
+    return values[0]
+
+
+def _dex_browser_cookies(browser: httpx.AsyncClient, dex: httpx.URL) -> None:
+    if any(cookie.domain is None or cookie.domain.lstrip(".") != dex.host for cookie in browser.cookies.jar):
+        raise LoginBlockedError("BLOCKED: Dex authorization returned a cookie for another origin")
+
+
+async def follow_dex_authorization(
+    authorization_url: str,
+    browser: httpx.AsyncClient,
+    credentials: OperatorCredentials,
+    *,
+    callback_app: httpx.URL,
+    callback_path: str,
+) -> tuple[str, str]:
+    """Authorize a separate OAuth client through a fresh Dex local-password browser.
+
+    The browser never follows the application callback: it returns its state/code to the
+    application client that initiated the linkage.  That keeps app-session cookies out of Dex and
+    leaves callback validation and the token exchange at the existing BFF boundary.
+    """
+
+    __tracebackhide__ = True
+    try:
+        authorization = httpx.URL(authorization_url)
+        issuer = httpx.URL(credentials.issuer.get_secret_value())
+    except httpx.InvalidURL:
+        raise LoginBlockedError("BLOCKED: Dex authorization URL or operator issuer is invalid") from None
+    if issuer.scheme != "https" or issuer.userinfo or issuer.query or issuer.fragment:
+        raise LoginBlockedError("BLOCKED: operator Secret has an invalid HTTPS issuer")
+    dex = _origin(issuer)
+    app = app_origin(str(callback_app))
+    if (
+        authorization.scheme != "https"
+        or authorization.userinfo
+        or authorization.fragment
+        or _origin(authorization) != dex
+        or authorization.path != _DEX_AUTHORIZATION_PATH
+    ):
+        raise LoginBlockedError("BLOCKED: MCP authorization did not target the configured Dex authorization endpoint")
+    if callback_path != "/mcp-linkage/callback":
+        raise LoginBlockedError("BLOCKED: MCP authorization callback path is not allowed")
+    if browser.cookies or "Authorization" in browser.headers:
+        raise LoginBlockedError(
+            "BLOCKED: Dex linkage requires a fresh browser without app session or bearer credentials"
+        )
+    original_state = _required_query_value(authorization, "state", stage="MCP authorization")
+    # Do not rebuild the URL: the BFF-owned state and PKCE challenge enter Dex byte-for-byte here.
+    _required_query_value(authorization, "code_challenge", stage="MCP authorization")
+    password_login = DexPasswordLogin(dex)
+
+    response = await browser.get(authorization)
+    for _ in range(12):
+        _dex_browser_cookies(browser, dex)
+        if response.is_redirect:
+            if response.request.method == "POST" and response.status_code in (307, 308):
+                raise LoginBlockedError("BLOCKED: Dex requested replay of a credential POST")
+            location = response.headers.get("location")
+            if not location:
+                raise LoginBlockedError("BLOCKED: Dex returned a redirect without a location")
+            target = response.url.join(location)
+            if target.scheme != "https" or target.userinfo or target.fragment:
+                raise LoginBlockedError("BLOCKED: Dex returned an unsafe MCP authorization redirect")
+            if _origin(target) == dex and _DEX_OAUTH_PATH.fullmatch(target.path):
+                response = await browser.get(target)
+                continue
+            if _origin(target) == app and target.path == callback_path:
+                state = _required_query_value(target, "state", stage="Dex callback")
+                if state != original_state:
+                    raise LoginBlockedError("BLOCKED: Dex callback changed the BFF OAuth state")
+                return state, _required_query_value(target, "code", stage="Dex callback")
+            raise LoginBlockedError("BLOCKED: Dex returned a redirect outside the MCP callback")
+        if response.status_code != 200:
+            raise LoginBlockedError(f"BLOCKED: Dex authorization returned HTTP {response.status_code}")
+        response = await password_login.submit(browser, response, credentials)
+    raise LoginBlockedError("BLOCKED: Dex authorization exceeded its redirect bound")
+
+
 async def login_operator(
     http: httpx.AsyncClient, credentials: OperatorCredentials, *, provider: Literal["authentik", "dex"] = "authentik"
 ) -> None:
@@ -149,6 +283,7 @@ async def login_operator(
     response = await http.get("/auth/login")
     identified = False
     password_sent = False
+    dex_password_login = DexPasswordLogin(idp)
     # Bounds include both HTTP redirects and FlowExecutor stages; never retry a rejected password.
     for _ in range(20):
         # Refuse broad-domain cookies before another request can send them to the other origin.
@@ -173,25 +308,8 @@ async def login_operator(
         if response.status_code != 200:
             stage = "app login" if _origin(response.url) == app else f"{provider} authorization"
             raise LoginBlockedError(f"BLOCKED: {stage} returned HTTP {response.status_code}")
-        if provider == "dex" and re.fullmatch(r"/dex/auth/local(?:/login)?/?", response.url.path):
-            # Dex's local connector is a normal HTML form. Keep the provider adapter deliberately
-            # small: the app's authorization-code, state, nonce, PKCE, and callback checks remain
-            # the contract under test; this only avoids reproducing Authentik's FlowExecutor.
-            form = BeautifulSoup(response.text, "html.parser").find("form")
-            if form is None or not form.get("action"):
-                raise LoginBlockedError("BLOCKED: Dex login form was not found")
-            target = _destination(response.url, str(form["action"]), app, idp, provider)
-            dex_payload = {
-                str(input_tag["name"]): str(input_tag.get("value", ""))
-                for input_tag in form.find_all("input")
-                if input_tag.get("name")
-            }
-            dex_payload.update(
-                login=credentials.login.get_secret_value(), password=credentials.password.get_secret_value()
-            )
-            response = await http.post(
-                target, data=dex_payload, headers={"Origin": str(idp).rstrip("/"), "Referer": str(response.url)}
-            )
+        if provider == "dex" and _DEX_LOCAL_FORM_PATH.fullmatch(response.url.path):
+            response = await dex_password_login.submit(http, response, credentials)
             continue
         if re.fullmatch(r"/if/flow/[a-zA-Z0-9_-]+/", response.url.path):
             # GET the UI first to obtain Authentik's normal session/CSRF cookies, then do what its UI does.

@@ -52,12 +52,14 @@ the contiguous sequence and state progression. No canonical operator API fallbac
 `test_operator_links_oauth_mcp_server` exercises the operator-managed MCP OAuth linkage flow
 end to end against a real, deployed, OAuth-protected MCP server -- the `example` server, a
 Dex-backed fixture with one `echo` tool, deployed the same way as `everything`. It starts the
-linkage through the BFF, follows Dex's authorization redirects using the Dex session established
-by the existing operator login, completes the callback through the BFF, asserts the server reaches
-`linked` status, and executes the protected tool through a real Agentplane agent. Unlike the real
-GitHub/Kubernetes providers linked in staging, nothing here is mocked or fabricated: this is the
-same code path an operator uses to link any OAuth MCP server, run against a server this repo
-controls end to end.
+linkage through the BFF, then follows Dex's ordinary local-password form in a separate fresh
+browser. Dex 2.45.1 does not establish reusable SSO cookies for this password-connector path, so
+the app session is never copied to Dex. The separate browser stops at the exact linkage callback;
+the BFF then validates the unchanged state and completes its own callback/token boundary. The test
+asserts the server reaches `linked` status and executes the protected tool through a real
+Agentplane agent. Unlike the real GitHub/Kubernetes providers linked in staging, nothing here is
+mocked or fabricated: this is the same code path an operator uses to link any OAuth MCP server,
+run against a server this repo controls end to end.
 
 These cases read only `public-coder-agent/agentplane-testing-acceptance-operator` via
 `kubectl get --raw=/api/v1/namespaces/public-coder-agent/secrets/agentplane-testing-acceptance-operator`
