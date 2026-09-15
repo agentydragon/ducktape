@@ -28,7 +28,7 @@ spec:
               emptyDir: {}
           containers:
             - name: sync
-              image: git.allegedly.works/ducktape-ci/cpap-sync:devel-20260915071117-fcba6a0 # {"$imagepolicy": "flux-system:cpap-sync"}
+              image: git.allegedly.works/ducktape-ci/cpap-sync:devel-20260915084643-a8b1ac6 # {"$imagepolicy": "flux-system:cpap-sync"}
               securityContext:
                 allowPrivilegeEscalation: false
                 capabilities:
