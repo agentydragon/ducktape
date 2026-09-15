@@ -766,7 +766,6 @@ crate.annotation(
 # render that feature edge from the annotation above.
 crate.annotation(
     crate = "smallvec",
-    deps = ["@crates//:serde"],
     crate_features = ["serde"],
     deps = ["@crates//:serde"],
 )
