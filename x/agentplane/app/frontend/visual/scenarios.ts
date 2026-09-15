@@ -40,13 +40,13 @@ const PHONE = { width: 412, height: 915, deviceScaleFactor: 2.625 };
 
 const CONSENT_ROUTE = "/connection-enrollments/test-only-opaque-handle";
 const SANDBOX_ROUTE = "/sandboxes/demo-a1b2";
-const SESSION_ROUTE = `${SANDBOX_ROUTE}/sessions/s-1`;
+const SESSION_ROUTE = "/threads/5f1c4a2e-0000-4000-8000-000000000001";
 // A standalone failed tool call, a run whose reasoning is still streaming beside a tool call that
 // already failed, and a message queued mid-turn -- every status the session view's badge-to-dot
 // restyle touches that the main `session` fixture doesn't produce on its own. The run's own
 // open/closed state isn't URL-synced (unlike a reasoning block's), so it renders folded, which is
 // fine here: its summary is exactly where the streaming/failed dots these scenarios exist for show.
-const SESSION_STATES_ROUTE = `${SANDBOX_ROUTE}/sessions/s-2`;
+const SESSION_STATES_ROUTE = "/threads/5f1c4a2e-0000-4000-8000-000000000002";
 // `%23` is the `#` of the item id: the view scrolls to the newest event, so the block to show open
 // is the second turn's, and the first stays folded beside it.
 const REASONING = "reasoning=r%231";
@@ -197,6 +197,27 @@ export const SCENARIOS: Record<string, Scenario> = {
   },
 
   session: { element: "#app", route: SESSION_ROUTE, viewport: { width: 1200, height: 900 }, captureViewport: true },
+  session_deleted_sandbox: {
+    element: "#app",
+    route: "/threads/5f1c4a2e-0000-4000-8000-000000000005",
+    viewport: { width: 1200, height: 900 },
+    readySelectors: ['[role="status"]'],
+    captureViewport: true,
+  },
+  session_deleted_sandbox_phone: {
+    element: "#app",
+    route: "/threads/5f1c4a2e-0000-4000-8000-000000000005",
+    viewport: PHONE,
+    readySelectors: ['[role="status"]'],
+    captureViewport: true,
+  },
+  session_suspended_sandbox: {
+    element: "#app",
+    route: "/threads/5f1c4a2e-0000-4000-8000-000000000004",
+    viewport: { width: 1200, height: 900 },
+    readySelectors: ['[role="status"]'],
+    captureViewport: true,
+  },
   session_phone: {
     element: "#app",
     route: SESSION_ROUTE,

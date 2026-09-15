@@ -7,6 +7,7 @@ fetch, EventSource, rendering, and page reload are not replaced by the visual ha
 import asyncio
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from datetime import timedelta
 
 import pytest
 import pytest_bazel
@@ -53,7 +54,7 @@ class ThreadBrowser:
 
 
 @pytest.fixture
-async def thread_browser(page: Page, db_url: str, store: TrajectoryStore) -> AsyncIterator[ThreadBrowser]:
+def thread_source() -> ReplicationSource:
     source = ReplicationSource()
     source.attached.active_turn_id = "test-browser-turn"
     source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
@@ -70,12 +71,56 @@ async def thread_browser(page: Page, db_url: str, store: TrajectoryStore) -> Asy
     source.append(
         event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-browser-item", text="Test retained prefix"))
     )
+    return source
+
+
+@pytest.fixture
+async def thread_browser(
+    page: Page, db_url: str, store: TrajectoryStore, thread_source: ReplicationSource
+) -> AsyncIterator[ThreadBrowser]:
+    source = thread_source
+    thread_id = await store.thread(SANDBOX, SESSION, source.attached.spec)
     directory = get_required_path("_main/x/agentplane/app/frontend/dist/index.html").parent
     async with source.serve() as target, app_process(db_url, target, frontend_directory=directory) as app:
         async with asyncio.timeout(30):
             opened = await source.opened.get()
-            await page.goto(f"{app.url}/#/sandboxes/{SANDBOX}/sessions/{SESSION}")
+            await page.goto(f"{app.url}/#/threads/{thread_id}")
         yield ThreadBrowser(page, source, store, opened)
+
+
+async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
+    page: Page, db_url: str, store: TrajectoryStore, thread_source: ReplicationSource
+) -> None:
+    thread_id = await store.thread(SANDBOX, SESSION, thread_source.attached.spec)
+    lease = await store.acquire_ingestion(SANDBOX, timedelta(minutes=1))
+    assert lease is not None
+    await store.set_attached(thread_id, thread_source.attached, lease=lease)
+    await store.record(thread_id, thread_source.entries, lease=lease)
+    await store.rename(thread_id, "Test archived conversation")
+    await store.release_ingestion(lease)
+    directory = get_required_path("_main/x/agentplane/app/frontend/dist/index.html").parent
+    async with app_process(db_url, "127.0.0.1:1", frontend_directory=directory, sandbox_state=None) as app:
+        url = f"{app.url}/#/threads/{thread_id}"
+        await page.goto(url)
+        await expect(page.get_by_role("textbox", name="Thread name", exact=True)).to_have_value(
+            "Test archived conversation"
+        )
+        await expect(page.get_by_text("Test retained prefix", exact=True)).to_have_count(1)
+        await expect(
+            page.get_by_text("Sandbox no longer exists. Showing archived Thread history.", exact=True)
+        ).to_be_visible()
+        await expect(page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")).to_be_disabled()
+        await expect(page.get_by_role("combobox", name="Model", exact=True)).to_be_disabled()
+        await expect(page.get_by_role("button", name="Interrupt", exact=True)).to_be_disabled()
+        await expect(page.get_by_role("img", name="Streaming", exact=True)).to_have_count(0)
+        await expect(page.get_by_role("img", name="Incomplete in retained history", exact=True)).to_have_count(1)
+        await page.reload()
+        await expect(page).to_have_url(url)
+        await expect(page.get_by_text("Test retained prefix", exact=True)).to_have_count(1)
+        await expect(
+            page.get_by_text("Sandbox no longer exists. Showing archived Thread history.", exact=True)
+        ).to_be_visible()
+        assert await store.events(thread_id, limit=100) == thread_source.entries
 
 
 async def test_browser_replays_streams_and_reloads_one_exact_conversation(thread_browser: ThreadBrowser) -> None:

@@ -137,9 +137,9 @@ class Client:
         return ParseDict(answered, event_log_pb2.EventEntry())
 
     async def events(
-        self, name: str, session_id: str, *, after: int, read_seconds: float
+        self, thread_id: UUID, *, after: int, read_seconds: float
     ) -> AsyncIterator[event_log_pb2.EventEntry]:
-        """The session's events from `after`. Ends when the stream does; `read_seconds` bounds how
+        """The Thread's events from `after`. Ends when the stream does; `read_seconds` bounds how
         long a single frame may take to arrive, so a wedged session fails a caller rather than
         hanging it.
 
@@ -149,7 +149,7 @@ class Client:
         leaks into the frame after it.
         """
         timeout = httpx.Timeout(REQUEST_SECONDS, read=read_seconds)
-        url = f"/sandboxes/{name}/sessions/{session_id}/events"
+        url = f"/threads/{thread_id}/events/stream"
         async with self._http.stream(
             "GET", url, params={"after": after}, headers={"Accept": "text/event-stream"}, timeout=timeout
         ) as response:
@@ -168,7 +168,7 @@ class Client:
                     if frame == "end":
                         return
                     if frame == "error":
-                        raise SessionStreamError(f"{name}/{session_id}: {payload}")
+                        raise SessionStreamError(f"Thread {thread_id}: {payload}")
                     if frame == "event" and payload:
                         yield _event(payload)
 

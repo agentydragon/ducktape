@@ -214,9 +214,9 @@ after their first use. HTTP/SSE carry the same generated payload in protobuf JSO
 Attachment setup is omitted where a stream is already open: each new gRPC attachment
 starts with `Open` and receives `Attached` before commands/replay. The app's command
 relay and its independent ingester may use different attachments.
-An HTTP mutation response containing the archived admission is a proposed response
-contract. Thread URLs and the `thread_id` selector on `Open` are proposed; current
-`Open` only selects `session_id`. Native sketches omit unrelated request fields.
+Thread URLs and HTTP command responses containing the exact archived admission are implemented.
+The `thread_id` selector on runner `Open` remains proposed; current `Open` only selects
+`session_id`. Native sketches omit unrelated request fields.
 
 ### Runner admission first
 
@@ -224,8 +224,8 @@ The browser retains a command id and payload before sending. The app relays it t
 runner; the product reports “saved” after the contiguous PostgreSQL copy contains the
 runner's `CommandAdmitted` for that exact command. Since that Event contains the full
 command, the saved input and pending controls survive reload and Sandbox deletion
-without an app delivery queue. This response boundary is proposed, not implemented
-by the current bridge.
+without an app delivery queue. The current bridge implements this archived-admission response
+boundary; browser-local recovery and pending presentation are separate acceptance work.
 
 A timeout preserves the browser's local submission as “awaiting saved confirmation.”
 Reload catches up and matches by id; retry uses the same id against the same surviving
@@ -510,8 +510,9 @@ SQLite owns crash recovery; no custom JSONL repair or old-format import remains.
 
 The [current runner specification](../runner/SPEC.md) exposes a session-scoped SQLite
 journal with atomic command/Event commits and publication after the storage fence.
-The target Thread identity/cursor change, native crash recovery, and saved-response boundary need implementation
-and integration evidence. An app outbox is a separate decision about accepting work
+The target runner Thread identity/cursor change and native crash recovery need implementation
+and integration evidence. Canonical Thread pages replay the archived prefix without a live runner;
+the app's saved-response boundary waits for archived admission, not command effect. An app outbox is a separate decision about accepting work
 before the runner can; it does not satisfy those gates by existing.
 
 No cross-harness transcript portability, inferred native effects, or old-protocol

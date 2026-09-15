@@ -31,9 +31,9 @@ import {
 } from "react";
 import { useSearchParams } from "react-router";
 
-import { create, toJson, type JsonObject } from "@bufbuild/protobuf";
+import { create } from "@bufbuild/protobuf";
 
-import { displayableError, eventsUrl, findThread, renameThread, models, type Harness, type ThreadView } from "./client";
+import { displayableError, eventsUrl, getThread, renameThread, models, type ThreadView } from "./client";
 import "./session.css";
 
 import {
@@ -52,9 +52,9 @@ import { HighlightedText } from "./json_view";
 import { Markdown } from "./markdown";
 import { ItemKind, TurnStatus } from "../../protocol/event_pb";
 import { CommandSchema } from "../../protocol/command_pb";
-import { SessionSpecSchema } from "../../runner/protocol_pb";
 import { useCommandSubmission } from "./command_submission";
 import { PendingCommands } from "./pending_commands";
+import { LiveStatus, liveSandboxesUrl, useLive, type SandboxesSnapshot } from "./live";
 
 const KIND_LABELS: Partial<Record<ItemKind, string>> = {
   [ItemKind.ASSISTANT_TEXT]: "assistant",
@@ -115,7 +115,18 @@ const REASONING_PARAM = "reasoning";
  * block is opened on its own: which ones are open is recorded in the URL, by item id, so a reading
  * can be linked to and survives a reload.
  */
-function ReasoningView({ item }: { item: Item }): JSX.Element {
+function IncompleteStatus({ live, style }: { live: boolean; style?: CSSProperties }): JSX.Element {
+  return (
+    <StatusDot
+      breathing={live}
+      color={live ? "yellow" : "gray"}
+      label={live ? "Streaming" : "Incomplete in retained history"}
+      style={style}
+    />
+  );
+}
+
+function ReasoningView({ item, live }: { item: Item; live: boolean }): JSX.Element {
   const [searchParams, setSearchParams] = useSearchParams();
   const open = new Set((searchParams.get(REASONING_PARAM) ?? "").split(",").filter((id) => id));
   function toggle(): void {
@@ -137,7 +148,7 @@ function ReasoningView({ item }: { item: Item }): JSX.Element {
         <Accordion.Control>
           <Group gap="xs">
             <Badge variant="light">reasoning</Badge>
-            {!item.completed && <StatusDot breathing color="yellow" label="Streaming" />}
+            {!item.completed && <IncompleteStatus live={live} />}
           </Group>
         </Accordion.Control>
         <Accordion.Panel>
@@ -148,8 +159,8 @@ function ReasoningView({ item }: { item: Item }): JSX.Element {
   );
 }
 
-function ItemView({ item }: { item: Item }): JSX.Element {
-  if (item.kind === ItemKind.REASONING) return <ReasoningView item={item} />;
+function ItemView({ item, live }: { item: Item; live: boolean }): JSX.Element {
+  if (item.kind === ItemKind.REASONING) return <ReasoningView item={item} live={live} />;
   // Assistant text needs no kind label: it's the only unlabeled content in the transcript besides
   // the user's own bubble, so the absence of a badge already reads as "the reply" -- a status dot,
   // when there is one, is all it still needs.
@@ -165,7 +176,7 @@ function ItemView({ item }: { item: Item }): JSX.Element {
           {item.toolName && <Text fw={600}>{item.toolName}</Text>}
           {/* Assistant text has no header row to toggle a dot inside of -- see the pinned dot
               below, which doesn't grow/shrink the card as text streams in. */}
-          {!isAssistant && streaming && <StatusDot breathing color="yellow" label="Streaming" />}
+          {!isAssistant && streaming && <IncompleteStatus live={live} />}
           {failed && <StatusDot color="red" label="Failed" />}
         </Group>
       )}
@@ -180,7 +191,7 @@ function ItemView({ item }: { item: Item }): JSX.Element {
       {/* Pinned to the card, not the header: growing reply text must not make a badge row pop in
           and out above it, so this sits out of flow at the corner instead of a separate line. */}
       {isAssistant && streaming && (
-        <StatusDot breathing color="yellow" label="Streaming" style={{ position: "absolute", right: 8, bottom: 8 }} />
+        <IncompleteStatus live={live} style={{ position: "absolute", right: 8, bottom: 8 }} />
       )}
     </Paper>
   );
@@ -199,7 +210,7 @@ function summarizeRun(items: Item[]): string {
 
 /** A run of tool calls/reasoning collapsed behind a summary, so a long chain of intermediate
  * steps does not bury the answer that follows it; expanding shows each step as usual. */
-function ItemRunView({ items }: { items: Item[] }): JSX.Element {
+function ItemRunView({ items, live }: { items: Item[]; live: boolean }): JSX.Element {
   const [open, setOpen] = useState(false);
   return (
     <Accordion
@@ -213,14 +224,14 @@ function ItemRunView({ items }: { items: Item[] }): JSX.Element {
         <Accordion.Control>
           <Group gap="xs">
             <Badge variant="light">{summarizeRun(items)}</Badge>
-            {items.some((item) => !item.completed) && <StatusDot breathing color="yellow" label="Streaming" />}
+            {items.some((item) => !item.completed) && <IncompleteStatus live={live} />}
             {items.some((item) => item.succeeded === false) && <StatusDot color="red" label="Failed" />}
           </Group>
         </Accordion.Control>
         <Accordion.Panel>
           <Stack gap="xs">
             {items.map((item) => (
-              <ItemView key={item.id} item={item} />
+              <ItemView key={item.id} item={item} live={live} />
             ))}
           </Stack>
         </Accordion.Panel>
@@ -229,14 +240,14 @@ function ItemRunView({ items }: { items: Item[] }): JSX.Element {
   );
 }
 
-function ItemGroupView({ group }: { group: ItemGroup }): JSX.Element {
-  if (group.kind === "single") return <ItemView item={group.item} />;
+function ItemGroupView({ group, live }: { group: ItemGroup; live: boolean }): JSX.Element {
+  if (group.kind === "single") return <ItemView item={group.item} live={live} />;
   // Reasoning already has its own URL-addressable disclosure; keep that state as the only
   // disclosure for a lone reasoning item while tool calls use the run summary consistently.
   if (group.items.length === 1 && group.items[0].kind === ItemKind.REASONING) {
-    return <ItemView item={group.items[0]} />;
+    return <ItemView item={group.items[0]} live={live} />;
   }
-  return <ItemRunView items={group.items} />;
+  return <ItemRunView items={group.items} live={live} />;
 }
 
 function TurnHeader({ turn }: { turn: Turn }): JSX.Element {
@@ -253,14 +264,14 @@ function TurnHeader({ turn }: { turn: Turn }): JSX.Element {
   );
 }
 
-function RowView({ row }: { row: Row }): JSX.Element {
+function RowView({ row, live }: { row: Row; live: boolean }): JSX.Element {
   switch (row.kind) {
     case "turn":
       return <TurnHeader turn={row.turn} />;
     case "input":
       return <InputView input={row.input} />;
     case "item":
-      return <ItemView item={row.item} />;
+      return <ItemView item={row.item} live={live} />;
   }
 }
 
@@ -270,16 +281,16 @@ function RowView({ row }: { row: Row }): JSX.Element {
  * away commits too, so a rename is never lost by clicking elsewhere -- renaming again is one edit,
  * where losing what was typed is not recoverable at all.
  *
- * The placeholder is the session id, which is what an unnamed thread is called; a blank name clears
+ * The placeholder is the Thread id; a blank name clears
  * it back to that.
  */
 function ThreadTitle({
-  sessionId,
+  threadId,
   thread,
   onRenamed,
   onError,
 }: {
-  sessionId: string;
+  threadId: string;
   thread: ThreadView | null;
   onRenamed: (thread: ThreadView) => void;
   onError: (message: string) => void;
@@ -301,19 +312,18 @@ function ThreadTitle({
   }
 
   return (
-    // The title and the session id beside it; on a phone the pair takes a row of its own.
+    // The title and its stable id; on a phone the pair takes a row of its own.
     <Group gap="xs" className="agentplane-thread-name">
       <TextInput
         aria-label="Thread name"
-        // The thread exists once the bridge has opened the session; nothing to name before that.
         disabled={thread === null}
         variant="unstyled"
         size="xl"
         value={shown}
-        placeholder={sessionId}
+        placeholder={threadId}
         maxLength={200}
         classNames={{ input: "agentplane-thread-name-input" }}
-        style={{ flex: 1 }}
+        style={{ flex: "1 1 12rem", minWidth: 0 }}
         onChange={(e) => setDraft(e.currentTarget.value)}
         onBlur={() => void commit()}
         onKeyDown={(e) => {
@@ -322,8 +332,8 @@ function ThreadTitle({
         }}
       />
       {thread?.name && (
-        <Text size="sm" c="dimmed">
-          {sessionId}
+        <Text size="sm" c="dimmed" style={{ overflowWrap: "anywhere", maxWidth: "100%" }}>
+          {threadId}
         </Text>
       )}
     </Group>
@@ -344,37 +354,41 @@ function connectionStatus(
   if (replaying) return { color: "yellow", breathing: true, label: "Catching up…" };
   if (harness === "lost") return { color: "red", label: "Harness lost" };
   if (connection.kind === "following" && harness === null) {
-    return { color: "yellow", breathing: true, label: "Attached · waiting for harness" };
+    return { color: "yellow", label: "Following Thread log · no harness observed" };
   }
   if (connection.kind === "ended") return { color: "gray", label: `Stream ended · harness ${harness ?? "unknown"}` };
-  const status = "attached";
+  const status = "Following Thread log · last observed";
   if (harness === "stopped") return { color: "gray", label: `${status} · harness stopped` };
   return { color: "green", label: `${status} · harness ${harness ?? "unknown"}` };
 }
 
 interface SessionViewProps {
-  sandbox: string;
-  sessionId: string;
+  threadId: string;
   onBack: () => void;
 }
 
 export function SessionView(props: SessionViewProps): JSX.Element {
   // All local state belongs to this target, including drafts and outstanding HTTP continuations.
-  return <SessionContents key={JSON.stringify([props.sandbox, props.sessionId])} {...props} />;
+  return <SessionContents key={props.threadId} {...props} />;
 }
 
-function SessionContents({ sandbox, sessionId, onBack }: SessionViewProps): JSX.Element {
-  const [stream] = useState(() => new EventStream(eventsUrl(sandbox, sessionId)));
+function SessionContents({ threadId, onBack }: SessionViewProps): JSX.Element {
+  const [stream] = useState(() => new EventStream(eventsUrl(threadId)));
   const snapshot = useSyncExternalStore(stream.subscribe, stream.getSnapshot);
   const { conversation: state, attached, connection } = snapshot;
   const replaying = catchingUp(snapshot);
   const model = appliedModel(snapshot);
-  const unavailable = replaying || connection.kind === "failed" || connection.kind === "ended";
+  const environment = useLive<SandboxesSnapshot>(liveSandboxesUrl());
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const submitting = useRef(false);
   const [thread, setThread] = useState<ThreadView | null>(null);
-  const commands = useCommandSubmission(thread?.id ?? null, stream);
+  const commands = useCommandSubmission(threadId, stream);
+  const sandbox = environment.snapshot?.sandboxes.find((candidate) => candidate.name === thread?.sandbox);
+  const inventoryFresh = environment.connection === "connected" && environment.health?.fresh;
+  const sandboxAvailable = inventoryFresh && sandbox?.state === "running";
+  const unavailable = !sandboxAvailable || replaying || connection.kind === "failed" || connection.kind === "ended";
+  const receiving = !unavailable && connection.kind === "following" && state.harness === "running";
   const [modelOptions, setModelOptions] = useState<string[]>([]);
   // The switch is in the URL, like the sandbox page's tab and the reasoning blocks that are open,
   // so a reading can be linked to and survives a reload.
@@ -390,25 +404,33 @@ function SessionContents({ sandbox, sessionId, onBack }: SessionViewProps): JSX.
   }
 
   useEffect(() => {
-    if (!attached) return;
     let active = true;
-    const harness = attached.spec
-      ? ((toJson(SessionSpecSchema, attached.spec) as JsonObject).harness as Harness | undefined)
-      : undefined;
     const onError = (reason: unknown): void => {
       if (active) setError(displayableError(reason));
     };
-    models().then((catalog) => {
-      if (active) setModelOptions(harness ? (catalog[harness] ?? []) : []);
-    }, onError);
-    // The bridge stores the thread before it sends `attached`, so it is there to look up now.
-    findThread(sandbox, sessionId).then((value) => {
+    getThread(threadId).then((value) => {
       if (active) setThread(value);
     }, onError);
     return () => {
       active = false;
     };
-  }, [attached, sandbox, sessionId]);
+  }, [threadId]);
+
+  useEffect(() => {
+    if (!thread) return;
+    let active = true;
+    models().then(
+      (catalog) => {
+        if (active) setModelOptions(catalog[thread.harness] ?? []);
+      },
+      (reason: unknown) => {
+        if (active) setError(displayableError(reason));
+      }
+    );
+    return () => {
+      active = false;
+    };
+  }, [thread?.harness]);
 
   function selectModel(next: string | null): void {
     if (!thread || !next || next === model) return;
@@ -463,10 +485,23 @@ function SessionContents({ sandbox, sessionId, onBack }: SessionViewProps): JSX.
     <Stack style={{ flex: 1, minHeight: 0 }}>
       <Group style={{ flexShrink: 0 }}>
         <Button variant="subtle" onClick={onBack}>
-          ← {sandbox}
+          ← Threads
         </Button>
-        <ThreadTitle sessionId={sessionId} thread={thread} onRenamed={setThread} onError={setError} />
+        <ThreadTitle threadId={threadId} thread={thread} onRenamed={setThread} onError={setError} />
       </Group>
+      <LiveStatus live={environment} />
+      {thread && environment.snapshot && !sandbox && (
+        <Text role="status" c="dimmed">
+          {inventoryFresh
+            ? "Sandbox no longer exists. Showing archived Thread history."
+            : "Sandbox absent from last inventory snapshot. Current availability unknown."}
+        </Text>
+      )}
+      {sandbox && sandbox.state !== "running" && (
+        <Text role="status" c="dimmed">
+          Last observed Sandbox state: {sandbox.state}. Showing retained Thread history.
+        </Text>
+      )}
       {error && <Text c="red">{error}</Text>}
       {commands.error && (
         <Text c="red" role="alert">
@@ -488,7 +523,12 @@ function SessionContents({ sandbox, sessionId, onBack }: SessionViewProps): JSX.
           {showRaw ? (
             timeline(state).map(({ entry, row }) => (
               <Fragment key={String(entry.cursor)}>
-                {row && <RowView row={row} />}
+                {row && (
+                  <RowView
+                    row={row}
+                    live={receiving && row.kind === "item" && activeTurn?.itemIds.includes(row.item.id) === true}
+                  />
+                )}
                 <FrameView entry={entry} />
               </Fragment>
             ))
@@ -503,7 +543,11 @@ function SessionContents({ sandbox, sessionId, onBack }: SessionViewProps): JSX.
                       <InputView key={input.id} input={input} />
                     ))}
                   {groupItems(turn.itemIds.flatMap((id) => (state.items[id] ? [state.items[id]] : []))).map((group) => (
-                    <ItemGroupView key={group.kind === "single" ? group.item.id : group.items[0].id} group={group} />
+                    <ItemGroupView
+                      key={group.kind === "single" ? group.item.id : group.items[0].id}
+                      group={group}
+                      live={receiving && turn.status === null}
+                    />
                   ))}
                 </Stack>
               ))}

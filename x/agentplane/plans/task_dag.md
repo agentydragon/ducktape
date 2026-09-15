@@ -182,7 +182,8 @@ build on that chrome, as do four correctness/completeness gaps found in the land
 `UISHELL_NEWSANDBOX_NAV`. `THREAD_BROWSE_PAGINATE` is explicitly deferred, not designed: finding one
 old Thread once the sidebar's working-set list outgrows it needs its own paginated/searchable page
 eventually, flagged now only so the with-sandboxes endpoint isn't assumed to stay one unpaginated
-call forever. See [session-first navigation](session_first_navigation.md).
+call forever. Stable Thread pages already replay archived history after Sandbox deletion; their
+identity and operational-state boundary is specified in [Thread layering](../docs/thread_layering.md).
 
 ### `BB` — BuildBuddy hosted-run credential boundary
 
@@ -730,9 +731,10 @@ replays from zero. `Attached@N` remains separate from consumed prefix `K`: while
 the view labels catch-up and does not present a historical model as currently applied.
 After catch-up only model Events beyond `N` override that snapshot.
 
-Remaining: canonical Thread replay/metadata wiring and real-browser reload/reconnect
-while commands remain unconfirmed. Persistent local Commands and the pending projection
-are in #7016; the stream owner alone does not complete `THREAD_PENDING_UI` or the API cutover.
+Canonical Thread metadata and replay routes now read the same retained history without a runner,
+including a real-browser deleted-Sandbox reload test in #7019. Persistent local Commands and the
+pending projection are in #7016. Remaining: real-browser reload/reconnect while commands remain
+unconfirmed and full additive Raw evidence; the stream owner alone does not complete these gates.
 
 Implement [reconnect and catch-up](../docs/thread_layering.md#reconnect-and-catch-up):
 contiguous replay, duplicate checking, gap-free live handoff, lost notifications, and

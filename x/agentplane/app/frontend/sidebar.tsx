@@ -225,20 +225,16 @@ function ThreadRow({
   return (
     <div
       className={className}
-      role={readonly ? undefined : "button"}
-      tabIndex={readonly ? undefined : 0}
+      role="button"
+      tabIndex={0}
       title={readonly ? "Sandbox deleted — read only" : undefined}
-      onClick={readonly ? undefined : () => onOpen(thread)}
-      onKeyDown={
-        readonly
-          ? undefined
-          : (event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                onOpen(thread);
-              }
-            }
-      }
+      onClick={() => onOpen(thread)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpen(thread);
+        }
+      }}
     >
       <span className={`agentplane-sidebar-dot ${dot}`} title={dot === "ok" ? "Harness running" : "Idle"} />
       <span className="agentplane-sidebar-row-name">{label}</span>
@@ -267,7 +263,7 @@ function ThreadGroupSection({
   onToggleArchived,
 }: {
   group: ThreadGroup;
-  current: { sandbox: string; sessionId: string } | null;
+  current: string | null;
   onOpen: (thread: ThreadView) => void;
   onToggleArchived: (thread: ThreadView) => void;
 }): JSX.Element {
@@ -293,7 +289,7 @@ function ThreadGroupSection({
           key={thread.id}
           thread={thread}
           readonly={deleted}
-          current={current !== null && current.sandbox === thread.sandbox && current.sessionId === thread.session_id}
+          current={current === thread.id}
           onOpen={onOpen}
           onToggleArchived={onToggleArchived}
         />
@@ -318,7 +314,7 @@ export function Sidebar({
 }): JSX.Element {
   const navigate = useNavigate();
   const location = useLocation();
-  const sessionRoute = useMatch("/sandboxes/:name/sessions/:sessionId");
+  const threadRoute = useMatch("/threads/:threadId");
   const [includeArchived, setIncludeArchived] = useState(false);
   const { width, setWidth, resizeBy } = useSidebarWidth();
   const { data, error, refresh } = useThreadsWithSandboxes();
@@ -335,13 +331,7 @@ export function Sidebar({
   const threads = data?.threads ?? [];
   const groups = groupThreads(threads, data?.sandboxes ?? {}, includeArchived);
   const archived = archivedCount(threads);
-  const current =
-    sessionRoute?.params.name !== undefined && sessionRoute.params.sessionId !== undefined
-      ? {
-          sandbox: decodeURIComponent(sessionRoute.params.name),
-          sessionId: decodeURIComponent(sessionRoute.params.sessionId),
-        }
-      : null;
+  const current = threadRoute?.params.threadId ?? null;
 
   async function toggleArchived(thread: ThreadView): Promise<void> {
     try {
@@ -359,7 +349,7 @@ export function Sidebar({
   }
 
   function open(thread: ThreadView): void {
-    goTo(`/sandboxes/${encodeURIComponent(thread.sandbox)}/sessions/${encodeURIComponent(thread.session_id)}`);
+    goTo(`/threads/${encodeURIComponent(thread.id)}`);
   }
 
   return (

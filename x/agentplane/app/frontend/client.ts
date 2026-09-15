@@ -226,13 +226,21 @@ export async function command(threadId: string, message: Command): Promise<Event
   return fromJson(EventEntrySchema, data as JsonValue);
 }
 
-export function eventsUrl(sandbox: string, sessionId: string): string {
-  return `/sandboxes/${encodeURIComponent(sandbox)}/sessions/${encodeURIComponent(sessionId)}/events`;
+export function eventsUrl(threadId: string): string {
+  return `/threads/${encodeURIComponent(threadId)}/events/stream`;
+}
+
+export async function getThread(threadId: string): Promise<ThreadView> {
+  const { data, error } = await api.GET("/threads/{thread_id}", { params: { path: { thread_id: threadId } } });
+  if (error) throw new Error(displayableError(error));
+  return data;
 }
 
 /** A session's thread, or null before the bridge has opened the session. */
 export async function findThread(sandbox: string, sessionId: string): Promise<ThreadView | null> {
-  const { data, error } = await api.GET("/threads", { params: { query: { sandbox, session_id: sessionId } } });
+  const { data, error } = await api.GET("/threads", {
+    params: { query: { sandbox, session_id: sessionId, include_archived: true } },
+  });
   if (error) throw new Error(displayableError(error));
   return data[0] ?? null;
 }

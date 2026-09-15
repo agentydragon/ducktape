@@ -47,7 +47,6 @@ from x.agentplane.runner.testing.scripted_model import ScriptedModel, Text
 SANDBOX = "bridge-test-sandbox"
 SESSION = "bridge-1"
 SESSIONS = f"/sandboxes/{SANDBOX}/sessions"
-EVENTS = f"{SESSIONS}/{SESSION}/events"
 
 
 async def _thread_id(http: httpx.AsyncClient, session_id: str = SESSION) -> str:
@@ -165,7 +164,7 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
         assert [row["sessionId"] for row in (await http.get(SESSIONS)).json()] == [SESSION]
         thread_id = await _thread_id(http)
 
-        async with http.stream("GET", EVENTS) as first_tab:
+        async with http.stream("GET", f"/threads/{thread_id}/events/stream") as first_tab:
             first = first_tab.aiter_lines()
             assert (await next_message(first)).event == "attached"
             reopened = await http.post(SESSIONS, json={"session_id": SESSION, "spec": MessageToDict(spec)})
@@ -201,7 +200,7 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
             assert [item["text"] for item in completed] == ["BRIDGE_OK"]
 
             # A second tab loads the first tab's history, then both follow the same committed log.
-            async with http.stream("GET", EVENTS) as second_tab:
+            async with http.stream("GET", f"/threads/{thread_id}/events/stream") as second_tab:
                 second = second_tab.aiter_lines()
                 assert (await next_message(second)).event == "attached"
                 assert await read_until(second, "turnCompleted") == seen
@@ -231,7 +230,9 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
         # A browser reconnecting sends the last id it saw; the next event follows it without a gap.
         cut = seen[len(seen) // 2].id
         assert cut is not None
-        async with http.stream("GET", EVENTS, headers={"Last-Event-ID": str(cut)}) as stream:
+        async with http.stream(
+            "GET", f"/threads/{thread_id}/events/stream", headers={"Last-Event-ID": str(cut)}
+        ) as stream:
             lines = stream.aiter_lines()
             assert (await next_message(lines)).event == "attached"
             assert (await next_message(lines)).id == cut + 1
@@ -542,7 +543,7 @@ async def test_replica_commands_and_database_stream_survive_ingestion_owner_exit
 ) -> None:
     await replicas.owner.open_session(SANDBOX, SESSION, spec)
     thread = await store.thread(SANDBOX, SESSION, spec)
-    async with aclosing(replicas.survivor.events(SANDBOX, SESSION, after_cursor=0)) as frames:
+    async with aclosing(replicas.survivor.events(thread, after_cursor=0)) as frames:
         lines = frame_lines(frames)
         assert (await next_message(lines)).event == "attached"
         await replicas.survivor.command(
@@ -637,14 +638,14 @@ async def test_resumed_session_stream_does_not_end_at_previous_shutdown(
         thread, command_pb2.Command(command_id="seed-input", submit_input=command_pb2.SubmitInput(text="BEFORE_RESUME"))
     )
     await model.reply(await model.request(), Text("BEFORE_RESUME"))
-    async with aclosing(replicas.survivor.events(SANDBOX, SESSION, after_cursor=0)) as frames:
+    async with aclosing(replicas.survivor.events(thread, after_cursor=0)) as frames:
         async with asyncio.timeout(10):
             await read_until(frame_lines(frames), "turnCompleted")
     await replicas.survivor.command(
         thread,
         command_pb2.Command(command_id="stop-before-resume", stop_runner_session=command_pb2.StopRunnerSession()),
     )
-    async with aclosing(replicas.survivor.events(SANDBOX, SESSION, after_cursor=0)) as frames:
+    async with aclosing(replicas.survivor.events(thread, after_cursor=0)) as frames:
         lines = frame_lines(frames)
         assert (await next_message(lines)).event == "attached"
         async with asyncio.timeout(10):
@@ -653,7 +654,7 @@ async def test_resumed_session_stream_does_not_end_at_previous_shutdown(
     cursor = stopped[-1].id
     assert cursor is not None
     await replicas.survivor.open_session(SANDBOX, SESSION, spec)
-    async with aclosing(replicas.survivor.events(SANDBOX, SESSION, after_cursor=cursor)) as frames:
+    async with aclosing(replicas.survivor.events(thread, after_cursor=cursor)) as frames:
         lines = frame_lines(frames)
         assert (await next_message(lines)).event == "attached"
         await replicas.survivor.command(
@@ -681,7 +682,7 @@ async def test_stored_conversation_stream_does_not_require_reachable_runner(
     thread = await store.thread(SANDBOX, SESSION, spec)
     stop = command_pb2.Command(command_id="stop-for-offline", stop_runner_session=command_pb2.StopRunnerSession())
     admitted = await replicas.survivor.command(thread, stop)
-    async with aclosing(replicas.survivor.events(SANDBOX, SESSION, after_cursor=0)) as frames:
+    async with aclosing(replicas.survivor.events(thread, after_cursor=0)) as frames:
         lines = frame_lines(frames)
         await next_message(lines)
         async with asyncio.timeout(10):
@@ -703,11 +704,12 @@ async def test_stored_conversation_stream_does_not_require_reachable_runner(
         # sandbox disappears: this answer must not attempt a new runner attachment.
         assert await offline.command(thread, stop) == admitted
         assert not tried_to_contact_runner
-        async with asyncio.timeout(10), aclosing(offline.events(SANDBOX, SESSION, after_cursor=0)) as frames:
+        async with asyncio.timeout(10), aclosing(offline.events(thread, after_cursor=0)) as frames:
             lines = frame_lines(frames)
             assert (await next_message(lines)).event == "attached"
             assert await read_until(lines, "harnessExited") == stored
             assert (await next_message(lines)).event == "end"
+        assert not tried_to_contact_runner
     finally:
         await offline.close()
 
