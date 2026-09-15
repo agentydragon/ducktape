@@ -3,6 +3,10 @@
   extends: ["config:recommended"],
   dependencyDashboard: true,
   prCreation: "approval",
+  // Keep approved updates arriving as a controlled stream. This limits the
+  // number of independently merged changes that can be waiting for devel CI.
+  prConcurrentLimit: 3,
+  prHourlyLimit: 1,
   // Renovate's native Nix manager is opt-in while it remains in beta. It owns
   // flake input updates; release artifacts under nix/artifact-pins.json have
   // their own sync-pins workflow and are intentionally not part of this.
@@ -71,6 +75,88 @@
     "openclaw/npm_wrapper/package-lock.json",
   ],
   packageRules: [
+    {
+      // These managers can alter the Bazel graph, generated code, toolchains,
+      // or deployed runtime behavior. Keep their non-patch updates isolated
+      // so a red devel result still has a small failure surface.
+      description: "Keep high-risk dependency updates isolated",
+      matchManagers: [
+        "bazel",
+        "cargo",
+        "gomod",
+        "npm",
+        "pip_requirements",
+        "pep621",
+        "nix",
+        "flux",
+        "kubernetes",
+        "helm-values",
+      ],
+      matchUpdateTypes: ["major", "minor", "pin", "pinDigest", "digest"],
+      groupName: null,
+      automerge: false,
+      minimumReleaseAge: "3 days",
+    },
+    {
+      description: "Keep mirrored Terraform provider updates isolated",
+      matchDepTypes: ["terraform_provider_mirror"],
+      matchUpdateTypes: ["major", "minor", "patch", "pin", "pinDigest", "digest"],
+      groupName: null,
+      automerge: false,
+      minimumReleaseAge: "3 days",
+    },
+    {
+      // Patch updates can be reviewed together when they stay within one
+      // ecosystem. Do not create a cross-ecosystem bulk bump.
+      description: "Batch Bazel patch updates only",
+      matchManagers: ["bazel"],
+      matchUpdateTypes: ["patch"],
+      groupName: "Bazel patch updates",
+      automerge: false,
+    },
+    {
+      description: "Batch Rust patch updates only",
+      matchManagers: ["cargo"],
+      matchUpdateTypes: ["patch"],
+      groupName: "Rust patch updates",
+      automerge: false,
+    },
+    {
+      description: "Batch Go patch updates only",
+      matchManagers: ["gomod"],
+      matchUpdateTypes: ["patch"],
+      groupName: "Go patch updates",
+      automerge: false,
+    },
+    {
+      description: "Batch npm patch updates only",
+      matchManagers: ["npm"],
+      matchUpdateTypes: ["patch"],
+      groupName: "npm patch updates",
+      automerge: false,
+    },
+    {
+      description: "Batch Python patch updates only",
+      matchManagers: ["pip_requirements", "pep621"],
+      matchUpdateTypes: ["patch"],
+      groupName: "Python patch updates",
+      automerge: false,
+    },
+    {
+      description: "Batch Nix patch updates only",
+      matchManagers: ["nix"],
+      matchUpdateTypes: ["patch"],
+      groupName: "Nix patch updates",
+      automerge: false,
+    },
+    {
+      description: "Keep deployed dependency patches isolated",
+      matchManagers: ["flux", "kubernetes", "helm-values"],
+      matchUpdateTypes: ["patch"],
+      groupName: null,
+      automerge: false,
+      minimumReleaseAge: "3 days",
+    },
     {
       description: "Leave Bazel-owned pnpm lock regeneration to Bazel",
       matchManagers: ["npm"],
