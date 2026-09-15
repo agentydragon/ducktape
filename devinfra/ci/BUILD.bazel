@@ -97,6 +97,12 @@ py_library(
 )
 
 py_library(
+    name = "bazel_ci",
+    srcs = ["bazel_ci.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
     name = "collect_bazel_ci_profiles",
     srcs = ["collect_bazel_ci_profiles.py"],
     visibility = ["//:__subpackages__"],
@@ -162,6 +168,12 @@ py_binary(
     name = "bb_runner_probe_bin",
     main_module = "devinfra.ci.bb_runner_probe",
     deps = [":bb_runner_probe"],
+)
+
+py_binary(
+    name = "bazel_ci_bin",
+    main_module = "devinfra.ci.bazel_ci",
+    deps = [":bazel_ci"],
 )
 
 py_binary(
@@ -237,8 +249,9 @@ py_test(
 py_test(
     name = "test_bazel_ci",
     srcs = ["test_bazel_ci.py"],
-    data = ["bazel_ci.sh"],
+    data = ["bazel_ci.py"],
     deps = [
+        ":bazel_ci",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
