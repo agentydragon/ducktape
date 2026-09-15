@@ -11,6 +11,12 @@ common --repo_env=DO_NOT_TRACK=1
 build --per_file_copt=external/protobuf[+]/.*@-Wno-deprecated-declarations
 build --host_per_file_copt=external/protobuf[+]/.*@-Wno-deprecated-declarations
 
+# Suppress -Wmaybe-uninitialized from protobuf's own C decoder implementation.
+# The diagnostic originates in external/protobuf+/upb/wire/decode.c rather than
+# repository code, so keep the exception scoped to protobuf and both configs.
+build --per_file_copt=external/protobuf[+]/.*@-Wno-maybe-uninitialized
+build --host_per_file_copt=external/protobuf[+]/.*@-Wno-maybe-uninitialized
+
 # Suppress noisy warnings from OR-Tools' own sources — upstream code rather
 # than something this repo can fix. Keep this scoped to OR-Tools so repo code
 # still uses the normal warning policy.
