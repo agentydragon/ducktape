@@ -32,7 +32,9 @@ async def test_reattach_resumes_from_the_cursor_without_gap_or_duplicate(
 
     async with await client.attach("reattach-1", after_cursor=first.cursor) as second:
         assert second.attached.harness_state == protocol_pb2.HARNESS_STATE_RUNNING
-        assert second.attached.active_turn_id == events.of_kind(first.seen, "turn_started")[-1].event.turn_started.turn_id
+        assert (
+            second.attached.active_turn_id == events.of_kind(first.seen, "turn_started")[-1].event.turn_started.turn_id
+        )
         request = await model.request()
         assert "wait_finished" in request.tool_outputs[0].text
         await model.reply(request, Text("RECONNECTED_OK"))

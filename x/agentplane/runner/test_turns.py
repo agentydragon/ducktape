@@ -80,7 +80,9 @@ async def test_tool_call_reports_arguments_and_result(
         assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
         seen = session.seen
         (call,) = events.items(seen, event_pb2.ITEM_KIND_TOOL_CALL)
-        (started,) = [entry for entry in events.of_kind(seen, "item_started") if entry.event.item_started.item_id == call]
+        (started,) = [
+            entry for entry in events.of_kind(seen, "item_started") if entry.event.item_started.item_id == call
+        ]
         assert started.event.item_started.tool_name
         assert "printf TOOL_OUTPUT" in json.dumps(json.loads(events.tool_arguments(seen, call)))
         result = events.completed(seen, call)
