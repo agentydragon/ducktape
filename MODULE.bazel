@@ -767,6 +767,7 @@ crate.annotation(
 crate.annotation(
     crate = "smallvec",
     crate_features = ["serde"],
+    deps = ["@crates//:serde"],
 )
 
 # expose the generated repo (↑ name="crates")
