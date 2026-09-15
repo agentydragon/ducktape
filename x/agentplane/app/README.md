@@ -133,6 +133,9 @@ without reloading the document: native EventSource reconnects with `Last-Event-I
 unobserved suffix once, and reconciles pending input without another command send. Raw rows and
 normal conversation assertions use the same prefix. These browser cases complement the API/runner
 tests for idempotent retry of already-admitted commands; reload catch-up still disables Retry.
+Conversation scrolling follows new messages, streaming growth, and viewport resizing only while
+at the bottom. Scrolling into earlier history preserves the reading position; returning to the
+bottom resumes following. Chromium tests exercise normal and Raw modes on desktop and phone.
 
 Rollout prerequisite: existing sandbox runners must support independent attachments before the new
 app bridge is deployed; old runner processes are not upgraded merely by publishing the new image.

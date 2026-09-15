@@ -54,6 +54,7 @@ import { CommandSchema } from "../../protocol/command_pb";
 import { AttachedSchema } from "../../runner/protocol_pb";
 import { useCommandSubmission } from "./command_submission";
 import { PendingCommands } from "./pending_commands";
+import { ConversationScroll } from "./conversation_scroll";
 import { LiveStatus, liveSandboxesUrl, useLive, type SandboxesSnapshot } from "./live";
 
 const KIND_LABELS: Partial<Record<ItemKind, string>> = {
@@ -552,38 +553,34 @@ function SessionContents({ threadId, onBack }: SessionViewProps): JSX.Element {
           </ScrollArea.Autosize>
         </details>
       )}
-      {/* `minHeight: 0` so this shrinks instead of pushing the composer off: a flex child
-          defaults to its content's height as its floor. */}
-      <ScrollArea style={{ flex: 1, minHeight: 0 }}>
-        <Stack>
-          {showRaw && (
-            <Text size="xs" c="dimmed">
-              Cards are current aggregates through event {state.lastCursor}, anchored where first observed. Evidence
-              below each card preserves Event order; it is not a snapshot of the card at that earlier time.
-            </Text>
-          )}
-          {timelineBlocks(state).map(({ content, entries }) => {
-            const group = content?.kind === "items" ? content.group : null;
-            const item = group?.kind === "single" ? group.item : group?.items[0];
-            const live = receiving && item !== undefined && activeTurn?.itemIds.includes(item.id) === true;
-            return (
-              <Fragment key={String(entries[0].cursor)}>
-                {content && (
-                  <Stack gap="xs" data-conversation-anchor={String(entries[0].cursor)}>
-                    {showRaw && (
-                      <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-                        {contentIdentity(content)}
-                      </Text>
-                    )}
-                    <ContentView content={content} live={live} />
-                  </Stack>
-                )}
-                {showRaw && entries.map((entry) => <FrameView key={String(entry.cursor)} entry={entry} />)}
-              </Fragment>
-            );
-          })}
-        </Stack>
-      </ScrollArea>
+      <ConversationScroll>
+        {showRaw && (
+          <Text size="xs" c="dimmed">
+            Cards are current aggregates through event {state.lastCursor}, anchored where first observed. Evidence below
+            each card preserves Event order; it is not a snapshot of the card at that earlier time.
+          </Text>
+        )}
+        {timelineBlocks(state).map(({ content, entries }) => {
+          const group = content?.kind === "items" ? content.group : null;
+          const item = group?.kind === "single" ? group.item : group?.items[0];
+          const live = receiving && item !== undefined && activeTurn?.itemIds.includes(item.id) === true;
+          return (
+            <Fragment key={String(entries[0].cursor)}>
+              {content && (
+                <Stack gap="xs" data-conversation-anchor={String(entries[0].cursor)}>
+                  {showRaw && (
+                    <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+                      {contentIdentity(content)}
+                    </Text>
+                  )}
+                  <ContentView content={content} live={live} />
+                </Stack>
+              )}
+              {showRaw && entries.map((entry) => <FrameView key={String(entry.cursor)} entry={entry} />)}
+            </Fragment>
+          );
+        })}
+      </ConversationScroll>
       {/* The model picker and stop control sit under the composer, not the header: on a phone
           that's the row already in thumb reach, and it's one thing keeping the header a
           two-line-tall row instead of three. */}

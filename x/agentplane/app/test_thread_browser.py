@@ -162,6 +162,113 @@ async def test_browser_replays_streams_and_reloads_one_exact_conversation(thread
     assert await thread_browser.store.events(thread.id, limit=100) == source.entries
 
 
+@pytest.mark.parametrize("raw", [False, True], ids=["normal", "raw"])
+@pytest.mark.parametrize("phone", [False, True], ids=["desktop", "phone"])
+async def test_conversation_follows_bottom_until_reader_scrolls_up(
+    thread_browser: ThreadBrowser, raw: bool, phone: bool, request: pytest.FixtureRequest
+) -> None:
+    page, source = thread_browser.page, thread_browser.source
+    if phone:
+        await page.set_viewport_size({"width": 412, "height": 915})
+    thread_browser.opened.replay.set()
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
+    if raw:
+        await show_raw(page)
+    history = page.get_by_role("region", name="Thread history", exact=True)
+    source.append(
+        event_pb2.Event(
+            item_completed=event_pb2.ItemCompleted(item_id="test-browser-item", text="Test retained prefix")
+        )
+    )
+    for number in range(18):
+        item_id = f"test-scroll-item-{number}"
+        text = f"Test earlier message {number}\n\n" + "A retained paragraph for the reading viewport. " * 8
+        source.append(
+            event_pb2.Event(
+                item_started=event_pb2.ItemStarted(item_id=item_id, kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
+            )
+        )
+        source.append(event_pb2.Event(item_completed=event_pb2.ItemCompleted(item_id=item_id, text=text)))
+    source.append(
+        event_pb2.Event(
+            item_started=event_pb2.ItemStarted(item_id="test-scroll-tail", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
+        )
+    )
+    source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-scroll-tail", text="Test tail seed")))
+    await expect(page.get_by_text("Test tail seed", exact=True)).to_have_count(1)
+    await page.wait_for_function(
+        """() => {
+            const area = document.querySelector('[aria-label="Thread history"]');
+            return area.scrollHeight > area.clientHeight * 2 &&
+                area.scrollHeight - area.clientHeight - area.scrollTop <= 2;
+        }"""
+    )
+
+    # One existing card grows through several native deltas, without a new message or scroll.
+    for number in range(5):
+        source.append(
+            event_pb2.Event(
+                text_delta=event_pb2.TextDelta(
+                    item_id="test-scroll-tail", text=f"\n\nTest streaming paragraph {number}"
+                )
+            )
+        )
+    await expect(page.get_by_text("Test streaming paragraph 4", exact=True)).to_have_count(1)
+    await expect_history_bottom(page)
+    await page.set_viewport_size({"width": 360 if phone else 800, "height": 650})
+    await expect_history_bottom(page)
+    await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-following.png")
+
+    # A real DOM scroll fires the viewport's event; no component state or layout is mocked.
+    await history.evaluate("area => area.scrollTo({ top: 100 })")
+    await page.wait_for_function("() => document.querySelector('[aria-label=\"Thread history\"]').scrollTop === 100")
+    source.append(
+        event_pb2.Event(
+            text_delta=event_pb2.TextDelta(item_id="test-scroll-tail", text="\n\nTest output while reading")
+        )
+    )
+    await expect(page.get_by_text("Test output while reading", exact=True)).to_have_count(1)
+    source.append(
+        event_pb2.Event(
+            item_started=event_pb2.ItemStarted(item_id="test-scroll-next", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
+        )
+    )
+    source.append(
+        event_pb2.Event(
+            item_completed=event_pb2.ItemCompleted(item_id="test-scroll-next", text="Test new message while reading")
+        )
+    )
+    await expect(page.get_by_text("Test new message while reading", exact=True)).to_have_count(1)
+    # Wait for the paint following layout/ResizeObserver, so a premature assertion cannot miss
+    # an unwanted jump scheduled by that observer. No elapsed-time delay stands in for rendering.
+    await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+    assert await history.evaluate("area => area.scrollTop") == 100
+    await page.set_viewport_size({"width": 360 if phone else 800, "height": 700})
+    await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+    assert await history.evaluate("area => area.scrollTop") == 100
+    await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-reading.png")
+
+    await history.evaluate("area => area.scrollTo({ top: area.scrollHeight })")
+    await expect_history_bottom(page)
+    source.append(
+        event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-scroll-tail", text="\n\nTest following again"))
+    )
+    await expect(page.get_by_text("Test following again", exact=True)).to_have_count(1)
+    await expect_history_bottom(page)
+    # Increasing the viewport height must keep following too, including browser scroll clamping.
+    await page.set_viewport_size({"width": 412 if phone else 1280, "height": 900})
+    await expect_history_bottom(page)
+
+
+async def expect_history_bottom(page: Page) -> None:
+    await page.wait_for_function(
+        """() => {
+            const area = document.querySelector('[aria-label="Thread history"]');
+            return area.scrollHeight - area.clientHeight - area.scrollTop <= 2;
+        }"""
+    )
+
+
 async def test_browser_sends_a_command_and_renders_only_the_confirmed_input(thread_browser: ThreadBrowser) -> None:
     page, source = thread_browser.page, thread_browser.source
     thread_browser.opened.replay.set()
