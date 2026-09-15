@@ -57,26 +57,30 @@ separate native spending-amount or allocation-weight callback API.
 
 The action session supports one decision-making household with scripted
 counterparties, public securities, reduced-form TLH portfolios, cash, due claims
-and held dated bonds. It does not support household housing or PE actions.
+and held dated bonds, and services a mortgage that exists at month zero as a
+tracked contract. It does not support household housing purchases or PE actions.
 Configured scenario adapters use Python-controlled financial steps while retaining
 their scripted housing/PE events and funding conventions; they do not provide an
 alternative executable policy interface.
 
 For each active path, the common session:
 
-1. Applies scheduled financial events and component market updates, and assembles
-   due claims. TLH advances before investor operations, including scheduled ones.
-2. Exposes current actor-scoped observations, once that month.
+1. Applies scheduled financial events and component market updates, then lets each
+   counterparty (bills, mortgages, property tax, the tax authority) demand what is
+   due this month. TLH advances before investor operations, including scheduled
+   ones.
+2. Posts each actor its mail for the month, once: every emitter's statement, its
+   typed dues and last month's receipts.
 3. Executes the submitted actions in caller order.
 4. Stops on rejection or remaining unpaid claims, otherwise closes the month
    and prepares the next decision.
 
-Observations include current owned accounts, public lots/basis, TLH statements, declared empty
-holding pools and their current prices, due claims, recorded tax facts, held
-dated-bond facts, and current/origin CPI when modeled. Missing CPI is explicit.
-They do not expose another actor's private books, future realized paths or a
-future tax assessment as a current liability. Copied observations cannot mutate
-canonical books.
+An actor's mail covers its current owned accounts, public lots/basis, TLH statements,
+declared empty holding pools and their current prices, due claims, recorded tax
+facts, held dated-bond facts, and current/origin CPI when modeled. Missing CPI is
+explicit. It does not expose another actor's private books, future realized paths or
+a future tax assessment as a current liability. Statements are copies; nothing an
+actor receives can mutate canonical books.
 
 Exact lot sales, quantity purchases, cash transfers, claim payments and chosen
 consumption are economic requests. Helpers may propose funding or rebalancing
@@ -118,8 +122,9 @@ amounts. Imports, execution and recorded lot state retain the total without
 deriving and re-quantizing a per-unit basis; sales apportion it and full
 liquidation consumes the remainder.
 
-The configured runner retains all-or-none funding groups and automatic allocation
-controls. Those are not common-session settlement requirements.
+All-or-none funding of a month's claims is a household's choice, not a settlement
+rule: the world settles each payment on its own, and the app household declines
+every claim on an account whose month it cannot fund in full.
 
 A reduced-form TLH portfolio owns its internal holdings and adjusted basis in
 Python. The household observes its value and reported tax basis, and chooses
@@ -130,12 +135,12 @@ Canonical accounting settles its financial effects and determines household tax.
 The approximation does not reconstruct constituent trades or establish statutory
 TLH fidelity. See <docs/tlh.md> for model and numerical conventions.
 
-## Preserved configured capabilities and limits
+## Declared housing and private-equity capabilities and limits
 
-Configured scenarios support property purchase/ownership, mortgages, carrying
-costs, rent/occupancy changes, disposal and PE liquidity events. These are not yet
-callable housing/PE actions in the common session. Changing a policy does not
-make an existing contract cease to exist.
+A declared housing table supports property purchase/ownership, mortgages, carrying
+costs, rent/occupancy changes and disposal; a private holding brings its issuer's
+liquidity events. These are not yet callable housing/PE actions in the common
+session. Changing a policy does not make an existing contract cease to exist.
 
 Mortgage installments, interest and payoff reconcile to the outstanding principal
 in the liability ledger. Servicing state and reporting do not maintain independent
@@ -149,8 +154,7 @@ merely by reaching the horizon.
 PE paths distinguish marks, voluntary opportunities, eligibility/capacity,
 liquidity blocks and forced sale/recovery. A stated recovery cashout is a total
 for the remaining position, not a per-unit quote; proceeds and disposed basis
-reconcile to it. The configured path still depends on tender-policy setup even
-for compulsory recovery. It does not yet guarantee policy-independent compulsory
+reconcile to it. Compulsory recovery still depends on a declared tender policy. It does not yet guarantee policy-independent compulsory
 events or require explicit responses to every voluntary opportunity.
 
 Taxes are settled financial consequences, not a terminal-wealth haircut.

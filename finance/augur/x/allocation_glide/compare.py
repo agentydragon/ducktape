@@ -7,6 +7,7 @@ This is a composition example, not a named retirement-study reproduction.
 
 import argparse
 import json
+from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
 from typing import Literal
@@ -14,89 +15,124 @@ from typing import Literal
 import numpy as np
 
 from finance.augur.model.series import InflationKey, SecurityKey
-from finance.augur.sim.artifacts import write_prepared_input
-from finance.augur.sim.compiler.execution import compile_run
+from finance.augur.sim.bills import Biller
+from finance.augur.sim.books import AccountRef
+from finance.augur.sim.compiler.execution import compile_series
 from finance.augur.sim.external_series import ExternalSeriesContext
-from finance.augur.sim.prepared import CompiledRun
-from finance.augur.sim.results import Finished, Rollout
-from finance.augur.sim.scenario import (
-    Agent,
-    InitialAccountBalance,
-    InitialLot,
-    Scenario,
-    ScheduledObligation,
-    SeriesIndexedAmount,
+from finance.augur.sim.fixed_point import currency_amount_to_quanta, quantity_scale_for_asset, quantity_to_quanta
+from finance.augur.sim.ids import AgentId
+from finance.augur.sim.market_path import MarketPath
+from finance.augur.sim.prepared import (
+    PreparedAccount,
+    PreparedHoldingPool,
+    PreparedIndexedAmount,
+    PreparedLot,
+    PreparedObligation,
+    PreparedSeries,
 )
+from finance.augur.sim.results import Finished, Rollout
+from finance.augur.sim.scenario import ORDINARY_INCOME
 from finance.augur.sim.session import ActionSession
+from finance.augur.sim.world import World
 from finance.augur.x.allocation_glide.policy import decide
 
+QUANTUM = Decimal("0.01")
+RETIREE = AgentId("test-retiree")
+COUNTERPARTY = "test-world"
 GROWTH = SecurityKey(symbol="test-growth")
 STEADY = SecurityKey(symbol="test-steady")
 HORIZON_MONTHS = 60
 
 
-def prepare() -> CompiledRun:
-    scenario = Scenario(
-        agents=[Agent(agent_id="test-retiree"), Agent(agent_id="test-world")],
-        initial_cash=[
-            InitialAccountBalance(agent_id="test-retiree", account_id="checking", balance=Decimal(10_000)),
-            InitialAccountBalance(agent_id="test-world", account_id="checking", balance=Decimal(0)),
-        ],
-        initial_lots=[
-            InitialLot(
-                lot_id=f"test-opening-{asset.symbol}",
-                agent_id="test-retiree",
-                account_id="checking",
-                asset=asset,
-                purchase_month_index=-24,
-                quantity=500,
-                cost_basis=50000,
-            )
-            for asset in (GROWTH, STEADY)
-        ],
-        scheduled_obligations=[
-            ScheduledObligation(
-                month=month,
-                obligation_id="test-consumption",
-                obligation_type="cash_spend",
-                agent_id="test-retiree",
-                from_account_id="checking",
-                to_agent_id="test-world",
-                to_account_id="checking",
-                amount_due=SeriesIndexedAmount(
-                    base_amount=Decimal(6_000), series=InflationKey(), adjustment_period_months=12
-                ),
-            )
-            for month in range(0, HORIZON_MONTHS, 12)
-        ],
-        tax_profiles=[],
-        horizon_months=HORIZON_MONTHS,
-    )
+@dataclass(frozen=True)
+class Situation:
+    """What every path shares: the three stipulated paths and the horizon; the books are declared per path."""
+
+    series: tuple[PreparedSeries, ...]
+    rollout_count: int
+
+
+def situation() -> Situation:
     month = np.arange(HORIZON_MONTHS + 1)
     growth = np.full((3, HORIZON_MONTHS + 1), 100.0)
     growth[0, 12:] = 80.0
     growth[1, 12:] = 120.0
     steady = np.full_like(growth, 100.0)
     cpi = np.broadcast_to(1.025 ** (month // 12), growth.shape)
-    return compile_run(
-        scenario,
+    paths = ExternalSeriesContext.from_level_blocks(
+        [(GROWTH, growth), (STEADY, steady), (InflationKey(), cpi)], rollout_count=3, horizon_months=HORIZON_MONTHS
+    )
+    return Situation(
+        series=compile_series(paths, rollout_count=3, horizon_months=HORIZON_MONTHS, currency_quantum=QUANTUM),
         rollout_count=3,
-        external_series=ExternalSeriesContext.from_level_blocks(
-            [(GROWTH, growth), (STEADY, steady), (InflationKey(), cpi)], rollout_count=3, horizon_months=HORIZON_MONTHS
-        ),
-        jurisdictions={},
-        locations={},
     )
 
 
+def compose(case: Situation, rollout_id: int) -> World:
+    """USD 10,000 cash, 500 units of each security at USD 100 basis, and a CPI-indexed USD 6,000 yearly spend."""
+    world = World(
+        MarketPath(case.series, rollout_id, rollout_count=case.rollout_count),
+        horizon_months=HORIZON_MONTHS,
+        income_sources=(ORDINARY_INCOME,),
+    )
+    for name, balance in ((RETIREE, Decimal(10_000)), (COUNTERPARTY, Decimal(0))):
+        world.declare_account(
+            PreparedAccount(
+                account=AccountRef(agent_id=name, account_id="checking"),
+                opening_balance=int(currency_amount_to_quanta(balance, quantum=QUANTUM)),
+            )
+        )
+    for asset in (GROWTH, STEADY):
+        scale = quantity_scale_for_asset(asset)
+        world.declare_pool(
+            PreparedHoldingPool(
+                agent_id=RETIREE, account_id="checking", asset_id=str(asset.symbol), quantity_scale=scale
+            )
+        )
+        world.hold(
+            PreparedLot(
+                lot_id=f"test-opening-{asset.symbol}",
+                agent_id=RETIREE,
+                account_id="checking",
+                asset_id=str(asset.symbol),
+                purchase_month=-24,
+                quantity_scale=scale,
+                units=int(quantity_to_quanta(500, scale=scale)),
+                basis=int(currency_amount_to_quanta(Decimal(50_000), quantum=QUANTUM)),
+            )
+        )
+    for month in range(0, HORIZON_MONTHS, 12):
+        world.track(
+            Biller(
+                PreparedObligation(
+                    month=month,
+                    obligation_id="test-consumption",
+                    obligation_type="cash_spend",
+                    from_account=AccountRef(agent_id=RETIREE, account_id="checking"),
+                    to_account=AccountRef(agent_id=COUNTERPARTY, account_id="checking"),
+                    amount_due=PreparedIndexedAmount(
+                        base_amount=int(currency_amount_to_quanta(Decimal(6_000), quantum=QUANTUM)),
+                        series_id=InflationKey().wire_id,
+                        base_month_index=0,
+                        adjustment_period_months=12,
+                    ),
+                    property_id=None,
+                    deduction_category=None,
+                    deductible_fraction_ppb=1_000_000_000,
+                )
+            )
+        )
+    return world
+
+
 def execute(
-    prepared: CompiledRun,
+    case: Situation,
     *,
     annual_step: int,
     rollout_ids: list[int],
     capture: Literal["summary", "dense", "forensic"] = "summary",
 ) -> list[Rollout]:
-    session = ActionSession(prepared, "test-retiree", rollout_ids, capture=capture)
+    session = ActionSession({id_: compose(case, id_) for id_ in rollout_ids}, RETIREE, capture=capture)
     try:
         batch = session.start()
         while not isinstance(batch, Finished):
@@ -107,11 +143,9 @@ def execute(
 
 
 def compare(output_dir: Path) -> None:
-    """Compile once; retain compact populations and independently replay selected traces."""
-    run = prepare()
+    """Compose the same situation for every cell; retain compact populations and independently replay selected traces."""
+    run = situation()
     output_dir.mkdir(parents=True, exist_ok=False)
-    input_path = output_dir / "execution-input.json"
-    write_prepared_input(run, input_path)
     for name, step in (("constant", 0), ("glide", 5)):
         population = execute(run, annual_step=step, rollout_ids=[0, 1, 2])
         (output_dir / f"{name}.json").write_text(Finished(rollouts=population).model_dump_json())

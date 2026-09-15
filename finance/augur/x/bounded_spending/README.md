@@ -1,6 +1,7 @@
 # Executable bounded spending
 
-Python loads paths, compiles a portfolio, and owns the monthly action loop.
+Python loads paths, composes the portfolio onto one `World` per path, and owns the
+monthly action loop.
 The annual rule chooses spending at months 0, 12, … as a percentage of current
 cash plus public holdings, bounded by cut/raise limits around the previous
 withdrawal adjusted for CPI. Zero cut/raise limits hold real spending constant.
@@ -39,10 +40,12 @@ bb run //finance/augur/x/bounded_spending:compare_bin -- \
   --trace-rollout 2
 ```
 
-Use a new directory. It retains `execution-input.json`, `policies.json`,
-`paths.json`, and compact `fixed_real.json` / `bounded.json` actor results.
-Repeat `--trace-rollout` for selected `*.trace-N.json` actor results with detailed
-traces; replay uses fresh policy memory and original path IDs.
+Use a new directory. It retains `policies.json`, `paths.json`, and compact
+`fixed_real.json` / `bounded.json` actor results. Repeat `--trace-rollout` for
+selected `*.trace-N.json` actor results with detailed traces; replay re-composes the
+situation with fresh policy memory on the original path IDs. There is no
+execution-input artifact: the situation is code (`situation.py:compose` on the Trinity
+paths), declared onto each path's `World` without a `Scenario`.
 
 Every result has a summary containing observed account cash/public marks, exact
 ending books, canonical tax/payment records and precise stop reasons. No post-stop
@@ -68,14 +71,16 @@ an authoring comparison through the same batch interface, not another engine API
 from finance.augur.x.bounded_spending.python_policy import (
     BatchPolicy, Parameters, SpendingPolicy, run,
 )
-from finance.augur.x.bounded_spending.stress_paths import prepare
+from finance.augur.x.bounded_spending.stress_paths import equity_only
 
-prepared = prepare(rollout_count=3, horizon_months=36)
+compose = equity_only(rollout_count=3, horizon_months=36)
 policy = SpendingPolicy(BatchPolicy(Parameters(400, 1000, 500), 3), {("brokerage", "STOCKS"): 1})
-output = run(prepared, policy, [0, 1, 2])
+output = run(compose, policy, [0, 1, 2])
 ```
 
-The caller owns input paths; policies receive only current actor observations.
+`run` takes a `compose(rollout_id) -> World` callable and composes a fresh world per
+selected path; the caller owns paths and books, and policies receive only current
+actor observations.
 Fresh policy instances are required for new runs/replay. Chunking and reordering
 affect authoring only: all active responses are submitted together exactly once
 per month. Python policies must not use neighboring rows as economic information.
@@ -90,9 +95,9 @@ bbr run -c opt //finance/augur/x/bounded_spending:profile_bin -- \
 ```
 
 Compare `scalar` and `batch` with identical capture/dimensions.
-The real cProfile records construction, Python policy authoring, action/observation
-transfer, native steps and final JSON decoding. Input compilation is outside the
-profile; process memory includes preparation. These are not isolated native
+The real cProfile records world composition, Python policy authoring,
+action/observation transfer, native steps and final JSON decoding. Path compilation is
+outside the profile; process memory includes it. These are not isolated native
 compute or heap measurements, and no cost budget or language verdict is inferred.
 Historical native-control measurements remain pinned to their measured commit in
 the [profiling investigation](../../../../debug/augur_python_policy_batches_20260909.md).

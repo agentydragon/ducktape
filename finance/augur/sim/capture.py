@@ -198,22 +198,38 @@ class FinancialCapture:
         """Call after the world closes a month and before the next one opens."""
         world = self.world
         accounting = world.accounting
+        # An absent domain contributes nothing this month.
         properties = world.properties
-        distributions = [*world.distributions.outcomes, *world.managed.distributions]
+        managed = world.managed
+        pe = world.private_equity
+        distributions = [
+            *([] if world.distributions is None else world.distributions.outcomes),
+            *([] if managed is None else managed.distributions),
+        ]
+        tlh_effects: list[FinancialEffect] = [] if managed is None else managed.effects
+        private_equity_events: list[private_equity.ProtocolEvent] = [] if pe is None else pe.events
+        private_equity_opportunities: list[private_equity.Opportunity] = [] if pe is None else pe.opportunities
+        bond_cashflows: list[BondCashflowOutcome] = [] if world.bonds is None else world.bonds.cashflows
+        purchases: list[Purchase] = [] if properties is None else properties.purchases
+        residences: list[Residence] = [] if properties is None else properties.residences
+        rented_fractions: list[RentedFraction] = [] if properties is None else properties.rented_fractions
+        improvements: list[CapitalImprovement] = [] if properties is None else properties.improvements
+        sales: list[Sale] = [] if properties is None else properties.sales
+        originations: list[Origination] = [] if properties is None else properties.originations
         self.journal_entry_count += len(accounting.journal)
         self.disposition_count += len(world.holdings.dispositions)
-        self.private_equity_event_count += len(world.private_equity.events)
-        self.private_equity_opportunity_count += len(world.private_equity.opportunities)
+        self.private_equity_event_count += len(private_equity_events)
+        self.private_equity_opportunity_count += len(private_equity_opportunities)
         self.tax_accrual_count += len(accounting.tax_accruals)
         self.tax_payment_count += len(accounting.tax_payments)
         self.tax_settlement_count += len(accounting.tax_settlements)
-        self.bond_cashflow_count += len(world.bonds.cashflows)
+        self.bond_cashflow_count += len(bond_cashflows)
         self.distribution_count += len(distributions)
-        self.property_purchase_count += len(properties.purchases)
-        self.primary_residence_event_count += len(properties.residences)
-        self.property_rented_fraction_event_count += len(properties.rented_fractions)
-        self.capital_improvement_count += len(properties.improvements)
-        self.property_sale_count += len(properties.sales)
+        self.property_purchase_count += len(purchases)
+        self.primary_residence_event_count += len(residences)
+        self.property_rented_fraction_event_count += len(rented_fractions)
+        self.capital_improvement_count += len(improvements)
+        self.property_sale_count += len(sales)
         self.mortgage_payment_count += len(accounting.mortgage_payments)
         if self.capture == "summary":
             return
@@ -222,21 +238,21 @@ class FinancialCapture:
             self.journal.extend(accounting.journal)
         self.transfers.extend(accounting.transfers)
         self.dispositions.extend(world.holdings.dispositions)
-        self.tlh_financial_effects.extend(world.managed.effects)
-        self.private_equity_events.extend(world.private_equity.events)
-        self.private_equity_opportunities.extend(world.private_equity.opportunities)
+        self.tlh_financial_effects.extend(tlh_effects)
+        self.private_equity_events.extend(private_equity_events)
+        self.private_equity_opportunities.extend(private_equity_opportunities)
         self.obligations.extend(world.obligations)
         self.tax_accruals.extend(accounting.tax_accruals)
         self.tax_payments.extend(accounting.tax_payments)
         self.tax_settlements.extend(accounting.tax_settlements)
-        self.bond_cashflows.extend(world.bonds.cashflows)
+        self.bond_cashflows.extend(bond_cashflows)
         self.distributions.extend(distributions)
-        self.property_purchases.extend(properties.purchases)
-        self.primary_residence_events.extend(properties.residences)
-        self.property_rented_fraction_events.extend(properties.rented_fractions)
-        self.capital_improvements.extend(properties.improvements)
-        self.property_sales.extend(properties.sales)
-        self.mortgage_originations.extend(properties.originations)
+        self.property_purchases.extend(purchases)
+        self.primary_residence_events.extend(residences)
+        self.property_rented_fraction_events.extend(rented_fractions)
+        self.capital_improvements.extend(improvements)
+        self.property_sales.extend(sales)
+        self.mortgage_originations.extend(originations)
         self.mortgage_payments.extend(accounting.mortgage_payments)
 
     def financial(self) -> FinancialOutput | None:
@@ -276,7 +292,7 @@ class FinancialCapture:
             ending_properties=book.properties,
             ending_mortgages=book.mortgages,
             ending_tax_liabilities=book.tax_liabilities,
-            ending_tlh_portfolios=list(self.world.managed.marks.values()),
+            ending_tlh_portfolios=self.world.marks(),
             journal_entry_count=self.journal_entry_count,
             disposition_count=self.disposition_count,
             private_equity_event_count=self.private_equity_event_count,
