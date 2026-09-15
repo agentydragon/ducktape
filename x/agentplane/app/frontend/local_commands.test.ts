@@ -24,21 +24,20 @@ beforeEach(() => localStorage.clear());
 afterEach(() => vi.restoreAllMocks());
 
 it("retains the exact command and immutable Thread target across a new page owner", () => {
-  const store = new LocalCommands("sandbox", "session");
-  store.remember("thread", COMMAND);
-  const restored = new LocalCommands("sandbox", "session").getSnapshot().commands;
+  const store = new LocalCommands("thread");
+  store.remember(COMMAND);
+  const restored = new LocalCommands("thread").getSnapshot().commands;
   expect(restored).toHaveLength(1);
-  expect(restored[0].threadId).toBe("thread");
   expect(equals(CommandSchema, restored[0].command, COMMAND)).toBe(true);
-  expect(new LocalCommands("sandbox", "other-session").getSnapshot().commands).toEqual([]);
+  expect(new LocalCommands("other-thread").getSnapshot().commands).toEqual([]);
 });
 
 it("retains ahead-of-prefix HTTP admission evidence until matching replay takes ownership", () => {
-  const store = new LocalCommands("sandbox", "session");
-  store.remember("thread", COMMAND);
+  const store = new LocalCommands("thread");
+  store.remember(COMMAND);
   const admitted = admission();
   store.acknowledge(COMMAND, admitted);
-  const restored = new LocalCommands("sandbox", "session");
+  const restored = new LocalCommands("thread");
   expect(restored.getSnapshot().commands[0].admission).toEqual(admitted);
   restored.observePrefix([
     create(EventEntrySchema, {
@@ -50,12 +49,12 @@ it("retains ahead-of-prefix HTTP admission evidence until matching replay takes 
   expect(restored.getSnapshot().commands).toHaveLength(1);
   restored.observePrefix([admitted]);
   expect(restored.getSnapshot().commands).toEqual([]);
-  expect(new LocalCommands("sandbox", "session").getSnapshot().commands).toEqual([]);
+  expect(new LocalCommands("thread").getSnapshot().commands).toEqual([]);
 });
 
 it("does not resurrect local input when replay wins the race with its HTTP response", () => {
-  const store = new LocalCommands("sandbox", "session");
-  store.remember("thread", COMMAND);
+  const store = new LocalCommands("thread");
+  store.remember(COMMAND);
   store.observePrefix([admission()]);
   store.acknowledge(COMMAND, admission());
   expect(store.getSnapshot().commands).toEqual([]);
@@ -63,8 +62,8 @@ it("does not resurrect local input when replay wins the race with its HTTP respo
 });
 
 it("rejects mismatched admission without removing the original input", () => {
-  const store = new LocalCommands("sandbox", "session");
-  store.remember("thread", COMMAND);
+  const store = new LocalCommands("thread");
+  store.remember(COMMAND);
   const changed = create(CommandSchema, {
     commandId: COMMAND.commandId,
     operation: { case: "submitInput", value: { text: "changed" } },
@@ -75,24 +74,24 @@ it("rejects mismatched admission without removing the original input", () => {
 });
 
 it("rejects conflicting HTTP/replay evidence and keeps the saved record inspectable", () => {
-  const store = new LocalCommands("sandbox", "session");
-  store.remember("thread", COMMAND);
+  const store = new LocalCommands("thread");
+  store.remember(COMMAND);
   store.acknowledge(COMMAND, admission());
   expect(() => store.acknowledge(COMMAND, admission(10n))).toThrow("Conflicting");
   expect(() => store.observePrefix([admission(10n)])).toThrow("conflicts");
-  expect(new LocalCommands("sandbox", "session").getSnapshot().commands[0].admission).toEqual(admission());
+  expect(new LocalCommands("thread").getSnapshot().commands[0].admission).toEqual(admission());
 });
 
 it("does not overwrite another tab's distinct pending commands", () => {
-  const first = new LocalCommands("sandbox", "session");
-  const second = new LocalCommands("sandbox", "session");
+  const first = new LocalCommands("thread");
+  const second = new LocalCommands("thread");
   const unsubscribe = first.subscribe(() => {});
-  first.remember("thread", COMMAND);
+  first.remember(COMMAND);
   const model = create(CommandSchema, {
     commandId: "model",
     operation: { case: "changeModel", value: { model: "next" } },
   });
-  second.remember("thread", model);
+  second.remember(model);
   window.dispatchEvent(new StorageEvent("storage", { key: null }));
   expect(
     first
@@ -100,40 +99,51 @@ it("does not overwrite another tab's distinct pending commands", () => {
       .commands.map((value) => value.command.commandId)
       .sort()
   ).toEqual(["input-1", "model"]);
-  expect(new LocalCommands("sandbox", "session").getSnapshot().commands).toHaveLength(2);
+  expect(new LocalCommands("thread").getSnapshot().commands).toHaveLength(2);
   unsubscribe();
 });
 
-it("refuses target or payload changes under an existing local command id", () => {
-  const store = new LocalCommands("sandbox", "session");
-  const existing = store.remember("thread", COMMAND);
-  expect(store.remember("thread", COMMAND)).toEqual(existing);
-  expect(() => store.remember("other-thread", COMMAND)).toThrow("cannot be reused");
+it("refuses payload changes under an existing local command id", () => {
+  const store = new LocalCommands("thread");
+  const existing = store.remember(COMMAND);
+  expect(store.remember(COMMAND)).toEqual(existing);
   expect(() =>
     store.remember(
-      "thread",
       create(CommandSchema, { commandId: COMMAND.commandId, operation: { case: "stopRunnerSession", value: {} } })
     )
   ).toThrow("cannot be reused");
 });
 
 it("fails persistence before a caller can claim submission when storage is full", () => {
-  const store = new LocalCommands("sandbox", "session");
-  vi.spyOn(Storage.prototype, "setItem").mockImplementationOnce(() => {
+  const store = new LocalCommands("thread");
+  vi.spyOn(localStorage, "setItem").mockImplementationOnce(() => {
     throw new DOMException("storage full", "QuotaExceededError");
   });
-  expect(() => store.remember("thread", COMMAND)).toThrow("storage full");
+  expect(() => store.remember(COMMAND)).toThrow("storage full");
   expect(store.getSnapshot().commands).toEqual([]);
 });
 
 it("preserves undecodable stored data and reports the problem instead of starting empty", () => {
-  const store = new LocalCommands("sandbox", "session");
-  store.remember("thread", COMMAND);
+  const store = new LocalCommands("thread");
+  store.remember(COMMAND);
   const key = localStorage.key(0);
   if (key === null) throw new Error("Missing stored command");
   localStorage.setItem(key, "broken data");
-  const restored = new LocalCommands("sandbox", "session");
+  const restored = new LocalCommands("thread");
   expect(restored.getSnapshot().error).not.toBeNull();
-  expect(() => restored.remember("thread", COMMAND)).toThrow();
+  expect(() => restored.remember(COMMAND)).toThrow();
   expect(localStorage.getItem(key)).toBe("broken data");
+});
+
+it("keeps observed admission visible if persisting its receipt fails", () => {
+  const store = new LocalCommands("thread");
+  store.remember(COMMAND);
+  vi.spyOn(localStorage, "setItem").mockImplementationOnce(() => {
+    throw new DOMException("receipt storage full", "QuotaExceededError");
+  });
+  store.acknowledge(COMMAND, admission());
+  expect(store.getSnapshot().commands[0].admission).toEqual(admission());
+  expect(store.getSnapshot().error).toContain("receipt storage full");
+  store.observePrefix([admission()]);
+  expect(store.getSnapshot().commands).toEqual([]);
 });

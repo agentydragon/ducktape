@@ -72,6 +72,8 @@ flowchart TB
     THREAD_PENDING_UI["Planned UI<br/>pending inputs, model changes, interrupts<br/>additive Raw evidence"]:::future
     THREAD_COMMAND_DELIVERY["Deferred backend<br/>app outbox delivery to existing runner<br/>only if app-first acceptance is chosen later"]:::future
     THREAD_REPLAY_PROTOCOL["Planned protocol<br/>one protobuf Command/Event language<br/>durable app-to-frontend replay"]:::future
+    THREAD_TAIL_FIRST["Future performance<br/>open recent conversation window first<br/>bounded catch-up for long-running Threads"]:::future
+    THREAD_LAZY_HISTORY["Future UI<br/>load older Thread history on demand<br/>stable scroll and concurrent live following"]:::future
     NEWTHREAD_DURABLE["Deferred combined workflow<br/>server-owned sandbox+thread provisioning<br/>survive browser close and app restart"]:::future
     THREAD_OUTBOX_CUTOVER["Deferred cutover<br/>all product commands via app outbox if chosen<br/>no competing relay path"]:::future
     THREAD_SUCCESSOR_DELIVERY["Deferred decision<br/>unsettled Thread command across<br/>successor runner session"]:::future
@@ -92,6 +94,8 @@ flowchart TB
 
     INPUT_DELIVERY -. reliable Thread ingress .-> ING
     THREAD_REPLAY_PROTOCOL --> THREAD_PENDING_UI
+    THREAD_REPLAY_PROTOCOL --> THREAD_TAIL_FIRST
+    THREAD_TAIL_FIRST --> THREAD_LAZY_HISTORY
     RUNNER_COMMAND_SCHEDULING --> THREAD_PENDING_UI
     RUNNER_WRITER_HANDOFF --> THREAD_EVENT_CONTINUITY
     THREAD_EVENT_CONTINUITY --> THREAD_SUCCESSOR_DELIVERY
@@ -738,6 +742,42 @@ case through browser reload and catch-up, not only eventual convergence.
 Do not implement #6985's command/Event union as the runner timeline. An optional app
 queue may expose an atomic pending snapshot alongside replay; two append-only browser
 feeds are not an established requirement.
+
+### `THREAD_TAIL_FIRST` — recent history first for long-running Threads
+
+**Future work, not a gate on the current UI cutover:** opening a Thread that has run
+continuously for a month should show roughly the last screenful or two first, without
+transferring or reducing its entire Event log from the beginning. Add bounded,
+cursor-addressed recent-window reads and a gap-free handoff to live following.
+
+Design the checkpoint/window contract explicitly: folding a suffix from empty state
+cannot recover an older pending admission, the current model, or a streaming item
+whose start precedes the window. Current command/control state must remain correct
+without loading every historical message. Any projection checkpoint is derived from
+the authoritative Events at a named cursor, not a new Event counter or independent
+truth; operational snapshots remain distinguishable. Keep native evidence and
+off-window references fetchable, and mark incomplete item context honestly.
+
+Acceptance uses a large synthetic history with pending commands and item starts
+before the returned window. Assert bounded initial transfer/render work, correct
+current state, and no missed or duplicated Events across the window/live boundary.
+Do not hide a full-history download behind a fast first paint. This concerns history
+inside one Thread, not the all-Threads search/list task `THREAD_BROWSE_PAGINATE`.
+
+### `THREAD_LAZY_HISTORY` — fetch older conversation history only when needed
+
+**Future work:** build on `THREAD_TAIL_FIRST`'s bounded history contract. Fetch older
+pages on upward navigation or explicit loading; opening a Thread must not eventually
+download everything back to its start without user demand. Preserve the visible scroll
+anchor while prepending history, follow new Events concurrently, and support loading
+the context/native evidence around a referenced item.
+
+Acceptance covers page overlaps and boundaries, tool/streaming items spanning pages,
+reconnect during a history fetch, exhausted history, and Raw/normal presentation.
+Loading old Events must neither regress live model/harness/pending-command state nor
+advance the live replay cursor. Deduplicate only agreeing entries and surface gaps or
+conflicts. Virtualized rendering can bound DOM cost but does not replace lazy network
+and projection loading.
 
 ### `THREAD_OUTBOX_CUTOVER` — one ingress if the app queue is chosen
 

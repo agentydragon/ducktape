@@ -39,6 +39,7 @@ import {
 } from "../../../runner/protocol_pb";
 import { routes } from "./network";
 import { SCENARIOS, type Scenario } from "./scenarios";
+import { LocalCommands } from "../local_commands";
 
 /** Resolved before any fixture is built: the scenario's fields are what the fixtures vary on. */
 function resolveScenario(): Scenario {
@@ -818,6 +819,40 @@ const EVENTS_STATES: EventEntry[] = [
   event(23, admitted("i3")),
 ];
 
+const PENDING_EVENTS = [
+  event(24, {
+    case: "commandAdmitted",
+    value: {
+      command: {
+        commandId: "queued-model",
+        operation: { case: "changeModel", value: { model: "next-model" } },
+      },
+    },
+  }),
+  event(25, {
+    case: "commandAdmitted",
+    value: {
+      command: {
+        commandId: "queued-interrupt",
+        operation: { case: "interruptTurn", value: { turnId: "t2" } },
+      },
+    },
+  }),
+];
+
+if (scenario.pendingCommands) {
+  const local = new LocalCommands(THREADS[2].id);
+  local.remember(
+    create(CommandSchema, {
+      commandId: "locally-retained",
+      operation: {
+        case: "submitInput",
+        value: { text: "Continue when ready. This message has no saved confirmation yet." },
+      },
+    })
+  );
+}
+
 // Only what a page still asks for: the sandboxes, their bindings and their threads arrive on the
 // live streams above.
 routes.push(
@@ -999,6 +1034,7 @@ class HarnessEventSource extends EventTarget {
     const isStatesSession = url.pathname.endsWith(`/sessions/${ATTACHED_STATES.sessionId}/events`);
     const attached = isStatesSession ? ATTACHED_STATES : ATTACHED;
     let entries = isStatesSession ? EVENTS_STATES : EVENTS;
+    if (scenario.pendingCommands) entries = [...entries, ...PENDING_EVENTS];
     if (scenario.sessionReplay === "catching-up") entries = entries.slice(0, 8);
     if (scenario.sessionReplay === "gap") entries = entries.filter((entry) => entry.cursor !== 9n);
     entries = entries.filter((entry) => entry.cursor > BigInt(url.searchParams.get("after") ?? "0"));

@@ -33,16 +33,7 @@ import { useSearchParams } from "react-router";
 
 import { create, toJson, type JsonObject } from "@bufbuild/protobuf";
 
-import {
-  command,
-  displayableError,
-  eventsUrl,
-  findThread,
-  renameThread,
-  models,
-  type Harness,
-  type ThreadView,
-} from "./client";
+import { displayableError, eventsUrl, findThread, renameThread, models, type Harness, type ThreadView } from "./client";
 import "./session.css";
 
 import {
@@ -62,6 +53,8 @@ import { Markdown } from "./markdown";
 import { ItemKind, TurnStatus } from "../../protocol/event_pb";
 import { CommandSchema } from "../../protocol/command_pb";
 import { SessionSpecSchema } from "../../runner/protocol_pb";
+import { useCommandSubmission } from "./command_submission";
+import { PendingCommands } from "./pending_commands";
 
 const KIND_LABELS: Partial<Record<ItemKind, string>> = {
   [ItemKind.ASSISTANT_TEXT]: "assistant",
@@ -379,12 +372,10 @@ function SessionContents({ sandbox, sessionId, onBack }: SessionViewProps): JSX.
   const unavailable = replaying || connection.kind === "failed" || connection.kind === "ended";
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
-  const [sending, setSending] = useState(false);
   const submitting = useRef(false);
-  const pendingInput = useRef<{ threadId: string; text: string; commandId: string } | null>(null);
   const [thread, setThread] = useState<ThreadView | null>(null);
+  const commands = useCommandSubmission(thread?.id ?? null, stream);
   const [modelOptions, setModelOptions] = useState<string[]>([]);
-  const [modelPending, setModelPending] = useState(false);
   // The switch is in the URL, like the sandbox page's tab and the reasoning blocks that are open,
   // so a reading can be linked to and survives a reload.
   const [searchParams, setSearchParams] = useSearchParams();
@@ -419,50 +410,35 @@ function SessionContents({ sandbox, sessionId, onBack }: SessionViewProps): JSX.
     };
   }, [attached, sandbox, sessionId]);
 
-  async function selectModel(next: string | null): Promise<void> {
+  function selectModel(next: string | null): void {
     if (!thread || !next || next === model) return;
-    setModelPending(true);
-    try {
-      await command(
-        thread.id,
-        create(CommandSchema, {
-          commandId: crypto.randomUUID(),
-          operation: { case: "changeModel", value: { model: next } },
-        })
-      );
-    } catch (reason: unknown) {
-      setError(displayableError(reason));
-    } finally {
-      setModelPending(false);
-    }
+    commands.submit(
+      create(CommandSchema, {
+        commandId: crypto.randomUUID(),
+        operation: { case: "changeModel", value: { model: next } },
+      })
+    );
   }
 
-  async function submit(): Promise<void> {
-    const text = draft.trim();
-    if (!thread || !text || submitting.current) return;
-    if (pendingInput.current?.text !== text || pendingInput.current.threadId !== thread.id) {
-      pendingInput.current = { threadId: thread.id, text, commandId: crypto.randomUUID() };
-    }
+  // Guard repeated Enter within one render, not the lifetime of any HTTP request or command.
+  useEffect(() => {
+    submitting.current = false;
+  }, [draft]);
+
+  function submit(): void {
+    if (!thread || !draft.trim() || submitting.current || unavailable || state.harness !== "running") return;
     submitting.current = true;
-    setSending(true);
-    try {
-      // A failed HTTP response may follow runner receipt. Retry the same command id so a lost
-      // response cannot turn a retry into a second user-message request.
-      await command(
-        thread.id,
+    if (
+      commands.submit(
         create(CommandSchema, {
-          commandId: pendingInput.current.commandId,
-          operation: { case: "submitInput", value: { text } },
+          commandId: crypto.randomUUID(),
+          operation: { case: "submitInput", value: { text: draft } },
         })
-      );
-      pendingInput.current = null;
+      )
+    ) {
       setDraft("");
-      setError(null);
-    } catch (reason: unknown) {
-      setError(displayableError(reason));
-    } finally {
+    } else {
       submitting.current = false;
-      setSending(false);
     }
   }
 
@@ -481,15 +457,6 @@ function SessionContents({ sandbox, sessionId, onBack }: SessionViewProps): JSX.
     requestAnimationFrame(() => field.setSelectionRange(at + 1, at + 1));
   }
 
-  async function run(action: () => Promise<unknown>): Promise<void> {
-    try {
-      await action();
-      setError(null);
-    } catch (reason: unknown) {
-      setError(displayableError(reason));
-    }
-  }
-
   const activeTurn = state.turns.find((turn) => turn.status === null);
   return (
     // App owns the viewport height; use only the space left below its navigation.
@@ -501,6 +468,11 @@ function SessionContents({ sandbox, sessionId, onBack }: SessionViewProps): JSX.
         <ThreadTitle sessionId={sessionId} thread={thread} onRenamed={setThread} onError={setError} />
       </Group>
       {error && <Text c="red">{error}</Text>}
+      {commands.error && (
+        <Text c="red" role="alert">
+          Local command recovery: {commands.error}
+        </Text>
+      )}
       {connection.kind === "failed" && (
         <Text c="red" role="alert">
           Event stream stopped: {connection.reason}. Showing verified history through event {state.lastCursor}.
@@ -535,13 +507,6 @@ function SessionContents({ sandbox, sessionId, onBack }: SessionViewProps): JSX.
                   ))}
                 </Stack>
               ))}
-              {state.inputs
-                .filter((input) => input.state === "failed")
-                .map((input) => (
-                  <Text key={input.id} c="orange">
-                    input {input.id} {input.state} {input.detail}
-                  </Text>
-                ))}
             </>
           )}
         </Stack>
@@ -550,6 +515,11 @@ function SessionContents({ sandbox, sessionId, onBack }: SessionViewProps): JSX.
           that's the row already in thumb reach, and it's one thing keeping the header a
           two-line-tall row instead of three. */}
       <Stack gap="xs" style={{ flexShrink: 0 }}>
+        <PendingCommands
+          commands={commands}
+          retryDisabled={unavailable || !thread || state.harness !== "running"}
+          raw={showRaw}
+        />
         {replaying && connection.kind !== "failed" && (
           <Text size="sm" c="dimmed" role="status">
             Catching up: {state.lastCursor} / {String(attached?.lastCursor)} events
@@ -561,7 +531,7 @@ function SessionContents({ sandbox, sessionId, onBack }: SessionViewProps): JSX.
           autosize
           minRows={2}
           maxRows={12}
-          disabled={unavailable || !thread || state.harness !== "running" || sending}
+          disabled={unavailable || !thread || state.harness !== "running"}
           onChange={(e) => setDraft(e.currentTarget.value)}
           onKeyDown={composerKey}
         />
@@ -574,12 +544,11 @@ function SessionContents({ sandbox, sessionId, onBack }: SessionViewProps): JSX.
               value={model}
               onChange={(next) => void selectModel(next)}
               placeholder={connection.kind === "failed" ? "Model unavailable" : replaying ? "Catching up…" : "Model"}
-              disabled={unavailable || !thread || state.harness !== "running" || modelPending}
+              disabled={unavailable || !thread || state.harness !== "running"}
               w={200}
             />
           </Group>
           <Group gap="xs" wrap="nowrap">
-            {sending && <Text role="status">Sending…</Text>}
             {/* Opens upward: the composer sits at the bottom of the viewport, so there's rarely
                 room below the trigger -- Mantine's own Floating-UI flip would land here anyway,
                 but "top-end" states the intent rather than leaving it to the fallback. */}
@@ -606,14 +575,11 @@ function SessionContents({ sandbox, sessionId, onBack }: SessionViewProps): JSX.
                   closeMenuOnClick
                   onClick={() => {
                     if (!thread) return;
-                    void run(() =>
-                      command(
-                        thread.id,
-                        create(CommandSchema, {
-                          commandId: crypto.randomUUID(),
-                          operation: { case: "stopRunnerSession", value: {} },
-                        })
-                      )
+                    commands.submit(
+                      create(CommandSchema, {
+                        commandId: crypto.randomUUID(),
+                        operation: { case: "stopRunnerSession", value: {} },
+                      })
                     );
                   }}
                 >
@@ -627,15 +593,12 @@ function SessionContents({ sandbox, sessionId, onBack }: SessionViewProps): JSX.
               color="red"
               aria-label="Interrupt"
               onClick={() => {
-                if (!thread) return;
-                void run(() =>
-                  command(
-                    thread.id,
-                    create(CommandSchema, {
-                      commandId: crypto.randomUUID(),
-                      operation: { case: "interruptTurn", value: { turnId: activeTurn?.id ?? "" } },
-                    })
-                  )
+                if (!thread || !activeTurn) return;
+                commands.submit(
+                  create(CommandSchema, {
+                    commandId: crypto.randomUUID(),
+                    operation: { case: "interruptTurn", value: { turnId: activeTurn.id } },
+                  })
                 );
               }}
               disabled={unavailable || !thread || !activeTurn}

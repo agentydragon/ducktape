@@ -345,7 +345,39 @@ ts_library(
     name = "command_state",
     srcs = ["command_state.ts"],
     tsconfig = TSCONFIG,
-    deps = ["//x/agentplane/runner:protocol_pb"],
+    deps = [
+        "//x/agentplane/protocol:command_pb",
+        "//x/agentplane/protocol:event_log_pb",
+    ],
+)
+
+ts_library(
+    name = "command_submission",
+    srcs = ["command_submission.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":command_state",
+        ":event_stream",
+        ":local_commands",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//x/agentplane/protocol:command_pb",
+    ],
+)
+
+ts_library(
+    name = "pending_commands",
+    srcs = ["pending_commands.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":command_state",
+        ":command_submission",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//x/agentplane/protocol:command_pb",
+    ],
 )
 
 ts_library(
@@ -367,7 +399,8 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@bufbuild/protobuf",
-        "//x/agentplane/runner:protocol_pb",
+        "//x/agentplane/protocol:command_pb",
+        "//x/agentplane/protocol:event_log_pb",
     ],
 )
 
@@ -694,11 +727,13 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":client",
+        ":command_submission",
         ":event_stream",
         ":events",
         ":frame",
         ":json_view",
         ":markdown",
+        ":pending_commands",
         ":session_css",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
@@ -876,6 +911,7 @@ ts_library(
         ":client",
         ":connections_fixture",
         ":live",
+        ":local_commands",
         ":visual_scenarios",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",

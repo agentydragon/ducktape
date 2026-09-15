@@ -4,7 +4,6 @@ import { CommandSchema, type Command } from "../../protocol/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../protocol/event_log_pb";
 
 export interface LocalCommand {
-  threadId: string;
   command: Command;
   submittedAt: number;
   /** HTTP admission evidence can be ahead of the consumed Event prefix. It never advances it. */
@@ -18,19 +17,18 @@ export interface LocalCommandSnapshot {
 
 function decode(text: string): LocalCommand {
   const value = JSON.parse(text) as Record<string, unknown>;
-  if (typeof value.threadId !== "string" || typeof value.submittedAt !== "number") {
-    throw new Error("Invalid locally retained command target or submission time");
+  if (typeof value.submittedAt !== "number") {
+    throw new Error("Invalid locally retained command submission time");
   }
   const command = fromJson(CommandSchema, value.command as JsonValue);
   if (!command.commandId || !command.operation.case) throw new Error("Invalid locally retained Command");
   const admission = value.admission === null ? null : fromJson(EventEntrySchema, value.admission as JsonValue);
   if (admission) checkAdmission(command, admission);
-  return { threadId: value.threadId, submittedAt: value.submittedAt, command, admission };
+  return { submittedAt: value.submittedAt, command, admission };
 }
 
 function encode(value: LocalCommand): string {
   return JSON.stringify({
-    threadId: value.threadId,
     submittedAt: value.submittedAt,
     command: toJson(CommandSchema, value.command),
     admission: value.admission ? toJson(EventEntrySchema, value.admission) : null,
@@ -53,15 +51,14 @@ export function checkAdmission(command: Command, admission: EventEntry): void {
 
 /** Browser recovery only: persistence here makes no server-side delivery promise. Each command
  * has its own key so simultaneous submissions in different tabs cannot overwrite one another.
- * The page scope finds pending input even before its Thread metadata or Event stream is loaded;
- * the immutable Thread id inside each record is always the actual HTTP submission target. */
+ * The immutable Thread scope is also the HTTP submission target. */
 export class LocalCommands {
   private readonly prefix: string;
   private snapshot: LocalCommandSnapshot = { commands: [], error: null };
   private readonly listeners = new Set<() => void>();
 
-  constructor(sandbox: string, sessionId: string) {
-    this.prefix = `agentplane.pending:${JSON.stringify([sandbox, sessionId])}:`;
+  constructor(readonly threadId: string) {
+    this.prefix = `agentplane.pending:${encodeURIComponent(threadId)}:`;
     this.reload();
   }
 
@@ -80,17 +77,17 @@ export class LocalCommands {
   };
 
   /** This must succeed before HTTP is attempted or the composer is cleared. */
-  remember(threadId: string, command: Command): LocalCommand {
+  remember(command: Command): LocalCommand {
     if (this.snapshot.error) throw new Error(this.snapshot.error);
     const stored = localStorage.getItem(this.key(command.commandId));
     if (stored !== null) {
       const existing = decode(stored);
-      if (existing.threadId !== threadId || !equals(CommandSchema, existing.command, command)) {
-        throw new Error("A local command id cannot be reused with a different target or payload");
+      if (!equals(CommandSchema, existing.command, command)) {
+        throw new Error("A local command id cannot be reused with a different payload");
       }
       return existing;
     }
-    const value: LocalCommand = { threadId, command, submittedAt: Date.now(), admission: null };
+    const value: LocalCommand = { command, submittedAt: Date.now(), admission: null };
     localStorage.setItem(this.key(command.commandId), encode(value));
     this.reload();
     return value;
@@ -107,7 +104,20 @@ export class LocalCommands {
     if (existing.admission && !equals(EventEntrySchema, existing.admission, admission)) {
       throw new Error("Conflicting command admission evidence");
     }
-    localStorage.setItem(this.key(command.commandId), encode({ ...existing, admission }));
+    // Admission is already a server fact even if caching that receipt fails. Keep it visible
+    // in this page; the original persisted command and server replay still support reload.
+    try {
+      localStorage.setItem(this.key(command.commandId), encode({ ...existing, admission }));
+    } catch (error) {
+      this.snapshot = {
+        commands: this.snapshot.commands.map((value) =>
+          value.command.commandId === command.commandId ? { ...value, admission } : value
+        ),
+        error: String(error),
+      };
+      for (const listener of this.listeners) listener();
+      return;
+    }
     this.reload();
   }
 
