@@ -85,15 +85,14 @@ harness's outcome. Tool names and argument shapes are the harness's own.
 
 ## Commands and effects
 
-- A `Command` is client-chosen and idempotent. The runner fsyncs it in its command journal before
-  appending `CommandAdmitted`. Admission means the runner owns trying to process that exact command;
+- A `Command` is client-chosen and idempotent. The runner commits the full command and its
+  `CommandAdmitted` Event together. Admission means the runner owns trying to process that exact command;
   it does not claim a native effect or a scheduling category. Malformed commands are transport
   errors and have no admission event.
 - A later causal event is the terminal result: `HarnessUserMessageConfirmed`, `ModelChanged`, an
   interrupted `TurnCompleted`, `CommandFailed`, or `CommandNoop`. Re-submitting an already
   journaled command id does not dispatch it again. Restart recovery is a separate boundary:
-  it reconciles nonterminal journal entries with their original ids; if an effect was synced
-  before its public event append, recovery appends that exact effect. Native execution before
+  it reconciles nonterminal commands with their original ids and replays committed Events unchanged. Native execution before
   durable effect evidence is not yet proven duplicate-free across restart.
 - `SubmitInput` is terminal only when the harness confirms its causal delivery. Its receipt names
   the native message/correlation id, text, turn id, and every originating command id. Claude's
@@ -115,21 +114,21 @@ harness's outcome. Tool names and argument shapes are the harness's own.
 
 ## Durability and restart
 
-- Event and command journals recover complete records in order. An interrupted final record is
-  removed before appending again; malformed complete records, including the final one, prevent
-  recovery. Recovery preserves the preceding Events, command identities, and terminal outcomes.
+- A command admission and its public Event commit atomically. A terminal outcome and its public
+  Event also commit atomically, including every origin of a coalesced user message. Recovery
+  retains their exact payloads and association; it does not reconstruct missing receipt Events.
 - Every public Event, including native frames and streaming deltas, crosses the runner storage
   durability fence before it becomes available to followers. Reopening the surviving state volume
   preserves the published prefix with the same payloads and cursors. Session metadata and journal
   filenames are persisted before the session publishes Events. This relies on the filesystem and
   storage honoring successful synchronization; it does not cover destruction of the state volume.
-- A failed journal write or synchronization publishes no new Event and prevents further appends
+- A failed or cancelled journal transaction publishes no new Event and prevents further appends
   through that writer. Followers see an error after their recorded prefix; recovery requires
-  reopening the journal. The interrupted append may or may not survive, but cannot reuse a cursor
+  reopening the journal. The interrupted transaction may or may not survive, but cannot reuse a cursor
   already published for another Event. Harness output recording failures stop the harness.
 - A runner that finds a session it had running reports `HarnessLost`, then `TurnCompleted` with
-  `PROCESS_LOST` if a turn was active. Its command journal then replays missing durable receipts or
-  terminal effects and reconciles the remaining commands after the next explicit `Open` starts the
+  `PROCESS_LOST` if a turn was active. It replays committed Events unchanged and
+  reconciles the remaining commands after the next explicit `Open` starts the
   harness. There is no indeterminate command outcome.
 - A harness that exits on its own is reported the same way, as `HarnessExited` with the exit code
   instead of `HarnessLost`.

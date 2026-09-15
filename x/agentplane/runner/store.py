@@ -11,13 +11,35 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, Field
 
 from x.agentplane.runner import protocol_pb2
-from x.agentplane.runner.journal_file import make_directory, sync_directory
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
 
 
 _SESSION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+
+
+def sync_directory(path: Path) -> None:
+    descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def make_directory(path: Path) -> None:
+    """Persist each newly created directory's entry in its existing parent."""
+    missing = []
+    parent = path
+    while not parent.exists():
+        missing.append(parent)
+        parent = parent.parent
+    # A previous creation may have failed at its parent fence while leaving the directory in
+    # the kernel cache. Establish that existing entry before extending its path.
+    sync_directory(parent.parent)
+    for directory in reversed(missing):
+        directory.mkdir(exist_ok=True)
+        sync_directory(directory.parent)
 
 
 class SessionRecord(BaseModel):

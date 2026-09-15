@@ -15,14 +15,13 @@ bbr test //x/agentplane/runner/...
   `grpcio-tools` and `mypy-protobuf` plugins.
 - `service.py`: the `Attach` RPC, session lookup, and `serve()`; `main.py` is the process entry
   point, configured by flags and credentialed from its environment.
-- `session.py`: one session's log, harness process, and derived state; `event_log.py` is the
-  append-only JSONL log; `store.py` the session record on disk.
-- `journal_file.py`: Event and command appends flush and fsync before publishing state, with
-  directory fences for newly created state paths and renamed session metadata. A storage error
-  poisons the writer until it is reopened for recovery.
-- `journal_lines.py`: Event/command journal recovery. The terminating newline completes a record;
-  an unterminated final fragment is truncated and synced before subsequent appends. Complete
-  records are decoded and validated by their owning log.
+- `session.py`: one session's harness process and derived state; `store.py` the session metadata
+  and durable directory creation.
+- `journal.py`: one SQLite database per durable runner session. SQLAlchemy/aiosqlite transactions
+  commit command admission/outcome state with their exact protobuf `EventEntry` bytes. Coalesced
+  receipts link all originating commands to one Event in the same transaction. Publication and
+  follower wakeup happen after commit; storage failure or cancelled commit stops the writer until
+  recovery. `observation.py` maps harness-neutral observations to the generated Event vocabulary.
 - `harness_process.py`: one native harness child, its pipes, line framing, and exit; no protocol
   knowledge.
 - `config.py`: the runner-owned launch configuration, one `*Launch` per harness (binary, endpoint,
@@ -47,9 +46,23 @@ the built runner image as a container (Docker, so on RBE) through one scripted t
 `test_image_packaging.py` inspects its OCI layout for the harnesses, their tools, and the
 entrypoint.
 
-`test_event_durability.py` records file contents and directory entries only at successful fsync
-boundaries, then rebuilds a fresh storage image without unsynced writes. It verifies replay and
-publication ordering, failed fences, command identity/outcomes, and session metadata discovery.
-This is an explicit power-loss model; it does not validate a physical device's fsync behavior.
-`test_journal_process.py` separately kills a real journal-writing process and replays its published
-Events from a new process. Process SIGKILL alone does not simulate loss of the kernel write cache.
+`test_journal.py` gates real SQLite commits and injects failure/cancellation before or after commit,
+checking transaction visibility, atomic coalesced receipts, immutable ids, and replay without cursor
+reuse. `test_journal_process.py` kills a real writer and replays its exact published prefix from a
+new process; `test_restart.py` also exercises the real runner and both native harnesses. These are
+not physical power-loss tests. `test_store.py` retains a separate fsync-boundary storage image for
+session metadata and directory discovery.
+
+## SQLite storage
+
+The connection uses `journal_mode=DELETE` and `synchronous=EXTRA`; publication relies on SQLite's
+[durable rollback-journal commits](https://sqlite.org/pragma.html#pragma_synchronous) and storage honoring sync.
+An async lock owns each complete transaction; the driver's per-statement queue alone does not.
+Explicit `BEGIN IMMEDIATE` reserves the writer before reading ids/cursors; no transaction spans
+harness or network I/O. One retained connection serves the existing single runner-session writer.
+Thread identity and fencing a replacement runner's native execution remain separate contracts.
+
+Keep `journal.sqlite` and any recovery journal together on the surviving state volume. The checked-in
+staging/testing templates mount `/state` from `local-path-ovh-hdd` PVCs. Network filesystems
+and deleting the only state volume are not supported recovery paths. Session metadata and native
+resume files remain beside the database. There is no JSONL reader or old-data migration.
