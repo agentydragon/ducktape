@@ -232,14 +232,13 @@ pub async fn kill_and_wait(pid: u32, cgroup_path: Option<&PathBuf>) {
         // Check cgroup readiness if we have a cgroup path
         if let Some(cp) = cgroup_path {
             let procs_path = cp.join("cgroup.procs");
-            if procs_path.exists() {
-                if let Ok(contents) = std::fs::read_to_string(&procs_path) {
-                    if !contents.trim().is_empty() {
-                        log::debug!(
-                            "[DEBUG] Cgroup is not ready. Waiting for process group to finish (PID {pid})"
-                        );
-                    }
-                }
+            if procs_path.exists()
+                && let Ok(contents) = std::fs::read_to_string(&procs_path)
+                && !contents.trim().is_empty()
+            {
+                log::debug!(
+                    "[DEBUG] Cgroup is not ready. Waiting for process group to finish (PID {pid})"
+                );
             }
         }
 
@@ -264,10 +263,10 @@ pub async fn kill_and_wait(pid: u32, cgroup_path: Option<&PathBuf>) {
     }
 
     // Clean up the cgroup directory
-    if let Some(cgroup_path) = cgroup_path {
-        if let Err(e) = cgroup::remove_process_cgroup(cgroup_path).await {
-            log::debug!("[DEBUG] Failed to remove cgroup for {pid}: {e}");
-        }
+    if let Some(cgroup_path) = cgroup_path
+        && let Err(e) = cgroup::remove_process_cgroup(cgroup_path).await
+    {
+        log::debug!("[DEBUG] Failed to remove cgroup for {pid}: {e}");
     }
 }
 
@@ -345,13 +344,13 @@ pub async fn wait_for_child_to_exit(
     //   "[DEBUG] Process {} (PID {}) cpu.stat unavailable ({}); cpu_timeout not
     //    enforced, falling back to wall-clock timeout only"
     let mut cpu_timeout_active = cpu_timeout.is_some();
-    if let (Some(_), Some(cp)) = (cpu_timeout, &cgroup_path) {
-        if let Err(e) = read_cpu_usage_usec(cp).await {
-            log::debug!(
-                "[DEBUG] Process {process_id} (PID {pid}) cpu.stat unavailable ({e}); cpu_timeout not enforced, falling back to wall-clock timeout only"
-            );
-            cpu_timeout_active = false;
-        }
+    if let (Some(_), Some(cp)) = (cpu_timeout, &cgroup_path)
+        && let Err(e) = read_cpu_usage_usec(cp).await
+    {
+        log::debug!(
+            "[DEBUG] Process {process_id} (PID {pid}) cpu.stat unavailable ({e}); cpu_timeout not enforced, falling back to wall-clock timeout only"
+        );
+        cpu_timeout_active = false;
     }
 
     let mut oom_rx = oom_killed_rx;
@@ -386,70 +385,65 @@ pub async fn wait_for_child_to_exit(
         }
 
         // Check timeout
-        if let Some(timeout_dur) = timeout {
-            if start.elapsed() >= timeout_dur {
-                log::debug!(
-                    "[DEBUG] Killed process tree for process (PID {pid}) exceeded timeout of {} seconds",
-                    timeout_dur.as_secs()
-                );
-                kill_and_wait(pid, cgroup_path.as_ref()).await;
-                let reason = ExitReason::TimedOut {
-                    timeout_secs: timeout_dur.as_secs(),
-                };
-                log::debug!("[DEBUG] Exiting wait_for_child_to_exit for process (PID {pid})");
-                if exit_status_tx.send(reason).is_err() {
-                    log::debug!("[DEBUG] Failed to send timeout status for process (PID {pid})");
-                }
-                return;
+        if let Some(timeout_dur) = timeout
+            && start.elapsed() >= timeout_dur
+        {
+            log::debug!(
+                "[DEBUG] Killed process tree for process (PID {pid}) exceeded timeout of {} seconds",
+                timeout_dur.as_secs()
+            );
+            kill_and_wait(pid, cgroup_path.as_ref()).await;
+            let reason = ExitReason::TimedOut {
+                timeout_secs: timeout_dur.as_secs(),
+            };
+            log::debug!("[DEBUG] Exiting wait_for_child_to_exit for process (PID {pid})");
+            if exit_status_tx.send(reason).is_err() {
+                log::debug!("[DEBUG] Failed to send timeout status for process (PID {pid})");
             }
+            return;
         }
 
         // Check CPU-time budget (Binary: edebff2c).
         // Templates: 0x385c4b "[DEBUG] Process {} (PID {}) exceeded cpu_timeout
         // of {} seconds (usage_usec={})" and 0x385c9b "[DEBUG] Failed to send
         // cpu-timeout status for process {} (PID {}): {}".
-        if let (true, Some(budget), Some(cp)) = (cpu_timeout_active, cpu_timeout, &cgroup_path) {
-            if let Ok(usage_usec) = read_cpu_usage_usec(cp).await {
-                if usage_usec >= budget.as_micros() as u64 {
-                    log::debug!(
-                        "[DEBUG] Process {process_id} (PID {pid}) exceeded cpu_timeout of {} seconds (usage_usec={usage_usec})",
-                        budget.as_secs()
-                    );
-                    kill_and_wait(pid, cgroup_path.as_ref()).await;
-                    let reason = ExitReason::CpuTimedOut {
-                        cpu_timeout_secs: budget.as_secs(),
-                    };
-                    log::debug!("[DEBUG] Exiting wait_for_child_to_exit for process (PID {pid})");
-                    if let Err(e) = exit_status_tx.send(reason) {
-                        log::debug!(
-                            "[DEBUG] Failed to send cpu-timeout status for process {process_id} (PID {pid}): {e:?}"
-                        );
-                    }
-                    return;
-                }
+        if let (true, Some(budget), Some(cp)) = (cpu_timeout_active, cpu_timeout, &cgroup_path)
+            && let Ok(usage_usec) = read_cpu_usage_usec(cp).await
+            && usage_usec >= budget.as_micros() as u64
+        {
+            log::debug!(
+                "[DEBUG] Process {process_id} (PID {pid}) exceeded cpu_timeout of {} seconds (usage_usec={usage_usec})",
+                budget.as_secs()
+            );
+            kill_and_wait(pid, cgroup_path.as_ref()).await;
+            let reason = ExitReason::CpuTimedOut {
+                cpu_timeout_secs: budget.as_secs(),
+            };
+            log::debug!("[DEBUG] Exiting wait_for_child_to_exit for process (PID {pid})");
+            if let Err(e) = exit_status_tx.send(reason) {
+                log::debug!(
+                    "[DEBUG] Failed to send cpu-timeout status for process {process_id} (PID {pid}): {e:?}"
+                );
             }
+            return;
         }
 
         // Check per-process memory limit
         if let (Some(limit), Some(cp), Some(version)) =
             (memory_limit_bytes, &cgroup_path, cgroup_version)
+            && let Ok(usage) = cgroup::read_memory_usage(cp, version).await
+            && usage > limit
         {
-            if let Ok(usage) = cgroup::read_memory_usage(cp, version).await {
-                if usage > limit {
-                    log::debug!(
-                        "[DEBUG] Killing process tree OOM killed process (PID {pid}) exceeded memory limit of {limit} bytes (usage: {usage})"
-                    );
-                    kill_and_wait(pid, cgroup_path.as_ref()).await;
-                    let reason = ExitReason::OutOfMemory { limit_bytes: limit };
-                    log::debug!("[DEBUG] Exiting wait_for_child_to_exit for process (PID {pid})");
-                    if exit_status_tx.send(reason).is_err() {
-                        log::debug!(
-                            "[DEBUG] Failed to send OOM killed status for process (PID {pid})"
-                        );
-                    }
-                    return;
-                }
+            log::debug!(
+                "[DEBUG] Killing process tree OOM killed process (PID {pid}) exceeded memory limit of {limit} bytes (usage: {usage})"
+            );
+            kill_and_wait(pid, cgroup_path.as_ref()).await;
+            let reason = ExitReason::OutOfMemory { limit_bytes: limit };
+            log::debug!("[DEBUG] Exiting wait_for_child_to_exit for process (PID {pid})");
+            if exit_status_tx.send(reason).is_err() {
+                log::debug!("[DEBUG] Failed to send OOM killed status for process (PID {pid})");
             }
+            return;
         }
 
         // Check for container-level OOM kill notification
@@ -478,14 +472,14 @@ pub async fn wait_for_child_to_exit(
         }
 
         // Check for stop signal (shutdown)
-        if let Some(ref mut rx) = stop {
-            if rx.try_recv().is_ok() {
-                log::debug!(
-                    "wait_for_child_to_exit received message to stop waiting for process (PID {pid})"
-                );
-                kill_and_wait(pid, cgroup_path.as_ref()).await;
-                break ExitReason::KilledByProcessApi;
-            }
+        if let Some(ref mut rx) = stop
+            && rx.try_recv().is_ok()
+        {
+            log::debug!(
+                "wait_for_child_to_exit received message to stop waiting for process (PID {pid})"
+            );
+            kill_and_wait(pid, cgroup_path.as_ref()).await;
+            break ExitReason::KilledByProcessApi;
         }
 
         // Poll interval

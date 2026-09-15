@@ -369,14 +369,14 @@ pub fn apply_mount_config(config: &MountRootConfig) -> Result<String, String> {
     //   template 0x389691 "[INIT] WARNING: append_ca_cert failed: {}"
     //   template 0x3896dd "append_ca_cert failed at FC PID-1 boot: {}"
     //     written to "{root}/.sandboxing-ca-inject-failed" (template 0x3896be)
-    if let Some(ref content) = config.ca_cert_pem {
-        if let Err(e) = append_ca_cert(content) {
-            eprintln!("[INIT] WARNING: append_ca_cert failed: {e}");
-            let _ = std::fs::write(
-                format!("{}/.sandboxing-ca-inject-failed", config.destination),
-                format!("append_ca_cert failed at FC PID-1 boot: {e}\n"),
-            );
-        }
+    if let Some(ref content) = config.ca_cert_pem
+        && let Err(e) = append_ca_cert(content)
+    {
+        eprintln!("[INIT] WARNING: append_ca_cert failed: {e}");
+        let _ = std::fs::write(
+            format!("{}/.sandboxing-ca-inject-failed", config.destination),
+            format!("append_ca_cert failed at FC PID-1 boot: {e}\n"),
+        );
     }
 
     // Persist config to mount_config.json for future reference
@@ -874,31 +874,31 @@ fn scrub_auth_tokens() {
         if !Path::new(path).exists() {
             continue;
         }
-        if let Ok(data) = std::fs::read_to_string(path) {
-            if let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&data) {
-                let mut modified = false;
-                // Scrub top-level auth_token
-                if json.get("auth_token").is_some() {
-                    json.as_object_mut().map(|obj| obj.remove("auth_token"));
-                    modified = true;
-                }
-                // Scrub auth_token in fuse_mounts array entries
-                if let Some(fuse_mounts) = json.get_mut("fuse_mounts") {
-                    if let Some(arr) = fuse_mounts.as_array_mut() {
-                        for entry in arr.iter_mut() {
-                            if entry.get("auth_token").is_some() {
-                                entry.as_object_mut().map(|obj| obj.remove("auth_token"));
-                                modified = true;
-                            }
-                        }
+        if let Ok(data) = std::fs::read_to_string(path)
+            && let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&data)
+        {
+            let mut modified = false;
+            // Scrub top-level auth_token
+            if json.get("auth_token").is_some() {
+                json.as_object_mut().map(|obj| obj.remove("auth_token"));
+                modified = true;
+            }
+            // Scrub auth_token in fuse_mounts array entries
+            if let Some(fuse_mounts) = json.get_mut("fuse_mounts")
+                && let Some(arr) = fuse_mounts.as_array_mut()
+            {
+                for entry in arr.iter_mut() {
+                    if entry.get("auth_token").is_some() {
+                        entry.as_object_mut().map(|obj| obj.remove("auth_token"));
+                        modified = true;
                     }
                 }
-                if modified {
-                    let _ = std::fs::write(
-                        path,
-                        serde_json::to_string_pretty(&json).unwrap_or_default(),
-                    );
-                }
+            }
+            if modified {
+                let _ = std::fs::write(
+                    path,
+                    serde_json::to_string_pretty(&json).unwrap_or_default(),
+                );
             }
         }
     }

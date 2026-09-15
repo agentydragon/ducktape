@@ -385,10 +385,10 @@ pub async fn list_process_cgroups(base_path: &Path) -> Result<Vec<PathBuf>, Stri
         let path = entry.path();
         if path.is_dir() {
             // Only include numeric-named directories (PID-based cgroups)
-            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if name.parse::<u32>().is_ok() {
-                    cgroups.push(path);
-                }
+            if let Some(name) = path.file_name().and_then(|n| n.to_str())
+                && name.parse::<u32>().is_ok()
+            {
+                cgroups.push(path);
             }
         }
     }

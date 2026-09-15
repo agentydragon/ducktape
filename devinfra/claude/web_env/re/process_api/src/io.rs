@@ -442,12 +442,12 @@ async fn forward_stdin(
     data: &[u8],
     process_id: &str,
 ) {
-    if let Some(stdin) = stdin_writer {
-        if let Err(e) = stdin.write_all(data).await {
-            log::debug!(
-                "[DEBUG] stdin write failed for process {process_id} (process likely exited): {e}"
-            );
-        }
+    if let Some(stdin) = stdin_writer
+        && let Err(e) = stdin.write_all(data).await
+    {
+        log::debug!(
+            "[DEBUG] stdin write failed for process {process_id} (process likely exited): {e}"
+        );
     }
 }
 
@@ -1294,10 +1294,10 @@ async fn handle_create_process(
         );
         proc_handle::kill_and_wait(pid, cgroup_path.as_ref()).await;
         let removed = state::remove_process(&proc_map, &process_id);
-        if let Some(entry) = removed {
-            if entry.proc_handle.killed_by_process_api {
-                log::debug!("{process_id} killed by process_api, removing from map");
-            }
+        if let Some(entry) = removed
+            && entry.proc_handle.killed_by_process_api
+        {
+            log::debug!("{process_id} killed by process_api, removing from map");
         }
     }
 
@@ -1332,13 +1332,12 @@ async fn handle_process_connection(
     // Check container name if expected
     // Read dynamic container name from shared state (updated by control server)
     let actual_name = control_server::get_container_name(&container_name);
-    if let Some(ref expected) = req.expected_container_name {
-        if let Some(ref actual) = actual_name {
-            if expected != actual {
-                log::debug!(
-                    "[DEBUG] Container name mismatch: expected '{expected}', actual '{actual}'"
-                );
-                let _ = send_msg(
+    if let Some(ref expected) = req.expected_container_name
+        && let Some(ref actual) = actual_name
+        && expected != actual
+    {
+        log::debug!("[DEBUG] Container name mismatch: expected '{expected}', actual '{actual}'");
+        let _ = send_msg(
                     &ws_tx,
                     &ServerMessage::InfraError {
                         error: format!(
@@ -1347,9 +1346,7 @@ async fn handle_process_connection(
                     },
                 )
                 .await;
-                return;
-            }
-        }
+        return;
     }
 
     if !should_reattach {
