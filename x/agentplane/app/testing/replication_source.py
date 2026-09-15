@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 
 import grpc
 
-from x.agentplane.protocol import event_log_pb2, event_pb2
+from x.agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from x.agentplane.runner import protocol_pb2
 
 # gazelle:include_dep @pypi//protobuf
@@ -31,6 +31,8 @@ class ReplicationSource:
             session_id=SESSION, spec=SPEC, harness_state=protocol_pb2.HARNESS_STATE_RUNNING
         )
         self.opened: asyncio.Queue[Opened] = asyncio.Queue()
+        self.commands: asyncio.Queue[command_pb2.Command] = asyncio.Queue()
+        self._admissions: dict[str, command_pb2.Command] = {}
         self._changed = asyncio.Event()
 
     def append(self, event: event_pb2.Event) -> event_log_pb2.EventEntry:
@@ -56,15 +58,42 @@ class ReplicationSource:
         opened = Opened(first.open.follow.after_cursor)
         self.opened.put_nowait(opened)
         yield protocol_pb2.ServerMessage(attached=self.attached)
-        # Tests control catch-up independently of the truthful, current Attached snapshot.
-        await opened.replay.wait()
-        cursor = opened.after_cursor
-        while True:
-            self._changed.clear()
-            for entry in self.entries[cursor:]:
-                yield protocol_pb2.ServerMessage(event_entry=entry)
-                cursor = entry.cursor
-            await self._changed.wait()
+        detached = asyncio.Event()
+        async with asyncio.TaskGroup() as tasks:
+            tasks.create_task(self._commands(requests, opened, detached))
+            # Tests can hold an ingestion stream behind its truthful current snapshot. A command
+            # attachment releases its own replay so it can observe that command's admission.
+            await opened.replay.wait()
+            cursor = opened.after_cursor
+            while True:
+                self._changed.clear()
+                while cursor < len(self.entries):
+                    entry = self.entries[cursor]
+                    yield protocol_pb2.ServerMessage(event_entry=entry)
+                    cursor = entry.cursor
+                if detached.is_set():
+                    return
+                await self._changed.wait()
+
+    async def _commands(
+        self, requests: AsyncIterator[protocol_pb2.ClientMessage], opened: Opened, detached: asyncio.Event
+    ) -> None:
+        try:
+            async for message in requests:
+                if message.HasField("detach"):
+                    return
+                assert message.HasField("command")
+                command = message.command
+                self.commands.put_nowait(command)
+                if previous := self._admissions.get(command.command_id):
+                    assert command == previous, "test source received a conflicting command identity"
+                else:
+                    self._admissions[command.command_id] = command
+                    self.append(event_pb2.Event(command_admitted=event_pb2.CommandAdmitted(command=command)))
+                opened.replay.set()
+        finally:
+            detached.set()
+            self._changed.set()
 
     async def list_sessions(
         self, request: protocol_pb2.ListSessionsRequest, context: grpc.aio.ServicerContext
