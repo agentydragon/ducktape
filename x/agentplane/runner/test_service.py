@@ -8,7 +8,7 @@ import pytest_bazel
 from x.agentplane.runner import protocol_pb2
 from x.agentplane.runner.config import RunnerConfig
 from x.agentplane.runner.service import Runner
-from x.agentplane.runner.store import SessionRecord
+from x.agentplane.runner.store import SessionRecord, StateOwner, StateOwnershipError
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -30,6 +30,9 @@ async def test_failed_session_shutdown_still_closes_its_database(
     with pytest.raises(OSError, match="test harness shutdown failure"):
         await runner.stop()
     assert session.journal._connection.closed
+    with pytest.raises(StateOwnershipError):
+        StateOwner(tmp_path)
+    runner._state_owner.close()
 
 
 if __name__ == "__main__":
