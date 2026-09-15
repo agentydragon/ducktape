@@ -24,6 +24,7 @@ from x.agentplane.app.oidc import SECURE_COOKIE
 APP = "https://app.test.invalid"
 IDP = "https://auth.test.invalid"
 CREDENTIALS = OperatorCredentials(
+    login=SecretStr("test-user"),
     username=SecretStr("test-user"),
     password=SecretStr("test-password"),
     issuer=SecretStr(f"{IDP}/application/o/actions/"),
@@ -77,7 +78,7 @@ def test_secret_failures_are_closed_and_do_not_echo_output(
     else:
         results.append(
             subprocess.CompletedProcess(
-                [], 0, stdout=b'{"data":{"username":"","password":"","issuer":"","subject":""}}'
+                [], 0, stdout=b'{"data":{"login":"","username":"","password":"","issuer":"","subject":""}}'
             )
         )
     run = Mock(side_effect=results)
@@ -178,6 +179,7 @@ async def test_login_follows_bff_flow_csrf_and_callback(combined: bool, csrf_coo
 async def test_dex_login_uses_simple_local_form_and_preserves_app_oidc_flow() -> None:
     dex = "https://dex.test.invalid"
     credentials = OperatorCredentials(
+        login=SecretStr("test-user@example.invalid"),
         username=SecretStr("test-user"),
         password=SecretStr("test-password"),
         issuer=SecretStr(f"{dex}/dex"),
@@ -203,7 +205,7 @@ async def test_dex_login_uses_simple_local_form_and_preserves_app_oidc_flow() ->
                 text='<form method="post" action="/dex/auth/local/login"><input value="test-request" name="req"></form>',
             )
         if request.url.path == "/dex/auth/local/login" and request.method == "POST":
-            assert request.content == b"req=test-request&login=test-user&password=test-password"
+            assert request.content == b"req=test-request&login=test-user%40example.invalid&password=test-password"
             return httpx.Response(302, headers={"location": f"{APP}/auth/callback?state=server-state&code=***"})
         if request.url.path == "/auth/callback":
             return httpx.Response(
@@ -223,6 +225,23 @@ async def test_dex_login_uses_simple_local_form_and_preserves_app_oidc_flow() ->
         "GET /auth/callback",
         "GET /auth/me",
     ]
+
+
+@pytest.mark.parametrize("at_app", [True, False], ids=["app", "dex"])
+@pytest.mark.parametrize("status", [401, 503])
+async def test_login_failure_reports_boundary_without_response_details(at_app: bool, status: int) -> None:
+    marker = "must-not-expose-response-details"
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        if not at_app and request.url.path == "/auth/login":
+            return httpx.Response(302, headers={"location": f"{IDP}/dex/auth?state={marker}"})
+        return httpx.Response(status, text=marker)
+
+    async with httpx.AsyncClient(base_url=APP, transport=httpx.MockTransport(respond)) as http:
+        with pytest.raises(LoginBlockedError) as caught:
+            await login_operator(http, CREDENTIALS, provider="dex")
+    stage = "app login" if at_app else "dex authorization"
+    assert str(caught.value) == f"BLOCKED: {stage} returned HTTP {status}"
 
 
 @pytest.mark.parametrize(

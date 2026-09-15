@@ -46,6 +46,7 @@ resource "kubernetes_secret" "agentplane_acceptance_operator" {
     }
   }
   data = {
+    login    = authentik_user.agentplane_acceptance_operator.username
     username = authentik_user.agentplane_acceptance_operator.username
     password = random_password.agentplane_acceptance_operator.result
     issuer   = local.agentplane_actions_issuer

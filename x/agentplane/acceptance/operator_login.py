@@ -25,12 +25,13 @@ SECRET_PATH = DEFAULT_SECRET_PATH
 
 
 class LoginBlockedError(Exception):
-    """Only constant, non-sensitive prerequisite failures cross this boundary."""
+    """Only non-sensitive prerequisite failures cross this boundary; never response contents."""
 
 
 class OperatorCredentials(BaseModel):
     model_config = ConfigDict(frozen=True, hide_input_in_errors=True)
 
+    login: SecretStr
     username: SecretStr
     password: SecretStr
     issuer: SecretStr
@@ -75,14 +76,14 @@ def read_operator_credentials() -> OperatorCredentials:
         data = json.loads(raw)["data"]
         values = {
             key: base64.b64decode(data[key], validate=True).decode()
-            for key in ("username", "password", "issuer", "subject")
+            for key in ("login", "username", "password", "issuer", "subject")
         }
         if not all(values.values()):
             raise ValueError
         return OperatorCredentials(**{key: SecretStr(value) for key, value in values.items()})
     except KeyError, TypeError, ValueError, binascii.Error:
         raise LoginBlockedError(
-            "BLOCKED: reflected operator Secret requires nonempty base64 username/password/issuer/subject"
+            "BLOCKED: reflected operator Secret requires nonempty base64 login/username/password/issuer/subject"
         ) from None
 
 
@@ -170,7 +171,8 @@ async def login_operator(
             response = await http.get(target)
             continue
         if response.status_code != 200:
-            raise LoginBlockedError("BLOCKED: Authentik refused login; check user, flow and CSRF configuration")
+            stage = "app login" if _origin(response.url) == app else f"{provider} authorization"
+            raise LoginBlockedError(f"BLOCKED: {stage} returned HTTP {response.status_code}")
         if provider == "dex" and re.fullmatch(r"/dex/auth/local(?:/login)?/?", response.url.path):
             # Dex's local connector is a normal HTML form. Keep the provider adapter deliberately
             # small: the app's authorization-code, state, nonce, PKCE, and callback checks remain
@@ -185,7 +187,7 @@ async def login_operator(
                 if input_tag.get("name")
             }
             dex_payload.update(
-                login=credentials.username.get_secret_value(), password=credentials.password.get_secret_value()
+                login=credentials.login.get_secret_value(), password=credentials.password.get_secret_value()
             )
             response = await http.post(
                 target, data=dex_payload, headers={"Origin": str(idp).rstrip("/"), "Referer": str(response.url)}
@@ -212,7 +214,7 @@ async def login_operator(
             continue
         payload: dict[str, str] = {}
         if component == "ak-stage-identification" and not identified:
-            payload = {"component": component, "uid_field": credentials.username.get_secret_value()}
+            payload = {"component": component, "uid_field": credentials.login.get_secret_value()}
             identified = True
             if challenge.get("password_fields"):
                 payload["password"] = credentials.password.get_secret_value()
