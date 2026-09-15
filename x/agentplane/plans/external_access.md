@@ -1,9 +1,9 @@
 # Agent access to external systems
 
-Status: **deferred access-model notes, not on the current Action implementation path.** The next
-concrete work is the Action schema and Executor wiring gates in [`task_dag.md`](task_dag.md). This
-file preserves the delegated-versus-brokered vocabulary for choosing the first real adapter without
-turning that adapter into a broad identity, grant, or privilege framework.
+Status: **deferred access-model notes.** Implementation priorities and dependencies live in
+[`task_dag.md`](task_dag.md). This file owns the delegated-versus-brokered design choices, including
+Kubernetes access for Sandboxes, without making a broad identity, grant, or privilege framework
+a prerequisite for individual adapters.
 
 ## Two base models
 
@@ -17,8 +17,8 @@ fence enforces. The target (or the fence) enforces every call; no human is on th
 - Least privilege is bounded by the target's RBAC granularity. Kubernetes and GitHub scope well;
   Gmail offers OAuth scopes only.
 - Denial is final at the target. Escalation needs a separate path.
-- The credential sits in the sandbox, which is fine because it is the agent's own and scoped; the
-  sandbox is the blast radius.
+- The scoped credential may sit in the Sandbox or be held by a credential-substitution proxy.
+  Credential custody is separate from whose authority the target enforces.
 - Audit lives in the target's logs and the fence's logs, not in a ledger of named operations.
 
 **Brokered credential.** Haku holds the operator's privileged credential. The agent calls a Haku
@@ -46,12 +46,46 @@ The common case is a mix, split by operation class rather than by system:
 - **Agent-requested grants.** The agent asks for additional authority on its own identity, the
   operator approves once, and the target enforces from then on. This keeps the apiserver's
   authorization semantics where they belong; the risk is authority issued that cannot be revoked
-  in time. See § Revocation guarantee for minted grants.
+  in time. See [the candidate revocation gate](#candidate-revocation-gate-for-minted-grants).
 - **Broker refuses what delegation already covers.** The Kubernetes redundancy auto-deny is the
   general rule: when the caller's own identity covers a request, the brokered path denies with a
   pointer to the direct path, so the privileged credential is never spent where a scoped one works.
 
-## Revocation guarantee for minted grants
+## Kubernetes Sandbox access decisions
+
+`ACCESS` owns the external-system permission model; `SANDBOX_RBAC` owns its Sandbox lifecycle
+and UI integration, including individually editable fields that presets may prefill. These are
+related tasks, not separate permission systems. The following choices remain open:
+
+- **Credential custody and request path:** does the Sandbox hold a Kubernetes API token and
+  call the apiserver directly, or does a proxy substitute a credential that stays outside the
+  Sandbox? Specify the token audience, rotation, expiry, exposure, and revocation behavior.
+- **Permission authority and enforcement:** manage Kubernetes Roles/ClusterRoles and bindings
+  directly; reconcile them from app-owned grant records; or authorize operations in a broker
+  using the broker's own Kubernetes principal. In the first two cases Kubernetes enforces the
+  Sandbox principal's RBAC; in the third it enforces the broker's authority, so caller-level
+  authorization is also the broker's responsibility. Decide whether there is any app-owned
+  grant model rather than assuming one, and identify a single desired-state owner for each
+  managed object, respecting existing GitOps ownership.
+
+Using a proxy does **not** imply replacing native Kubernetes RBAC: it can substitute a token for
+the Sandbox's own principal while the apiserver remains the per-request authorization authority.
+Conversely, using Kubernetes RBAC objects does not decide whether desired grants live only in
+Kubernetes or are reconciled from an app ledger.
+
+Resolve the principal lifecycle with `SANDBOX_SA` if choosing per-Sandbox ServiceAccounts. Keep
+the existing [workload authentication](../docs/workload_authentication.md) boundary distinct from
+credentials authorizing Kubernetes API calls; authenticating a Sandbox to Agentplane does not
+itself grant Kubernetes access. Any design must explain effective-access inspection, who can
+grant or widen permissions, target audit attribution, failure behavior during reconciliation,
+and how revocation affects already-issued credentials and requests already in flight. The
+proposal below is one candidate, not a settled requirement for `SANDBOX_RBAC`.
+
+## Candidate revocation gate for minted grants
+
+This option assumes app-owned grants reconciled to Kubernetes RBAC and proxy-held credentials.
+Its fail-closed and revocation guarantees need evidence, including complete effective-RBAC
+accounting and the observation-to-use race; they are not established by this planning document.
 
 Authority in Kubernetes is the token times the bindings, and either can be cut at the apiserver.
 "Issued but not revocable" therefore means the reconciler is down or lagging. The guard is a third
@@ -130,7 +164,7 @@ operations fall where.
 
 | System                                       | Delegated identity                                                         | Broker needed for                                                       |
 | -------------------------------------------- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| Kubernetes                                   | ServiceAccount + RBAC via grants, proxy-substituted while reconciled       | anything the agent's RBAC does not cover                                |
+| Kubernetes                                   | Open: [Sandbox access decisions](#kubernetes-sandbox-access-decisions)     | operations outside delegated authority, subject to broker authorization |
 | GitHub                                       | fine-grained token or App installation per repo                            | public-repository policy across search; writes under review             |
 | Forgejo                                      | scoped tokens (controller-minted)                                          | nothing identified yet                                                  |
 | HTTP egress                                  | fence allowlist by origin; path-level allowlists are the natural extension | origins outside the allowlist                                           |
@@ -149,6 +183,23 @@ operations fall where.
 
 ## Open questions
 
+- Evaluate established externalized-authorization designs before inventing a shared decision
+  service: a policy decision point answers a structured principal/operation/resource/context
+  query, while each service or proxy enforces the answer. Compare
+  [OPA's general-purpose decision engine](https://www.openpolicyagent.org/docs) with
+  [OpenFGA's relationship-based authorization](https://openfga.dev/docs/concepts), and consider
+  the authorization services offered by identity platforms such as
+  [Keycloak](https://www.keycloak.org/docs/latest/authorization_services/index.html).
+  Identity authentication and authorization decisions are distinct responsibilities even when
+  one product implements both. Evaluate reuse against existing egress and Action policies;
+  do not assume those distinct contracts should become one undifferentiated policy type.
+- Separate centralized request-time decisions from managing grants in external systems.
+  Identify which enforcement points can consult a shared decision service and which need
+  native grants or a controlled proxy; a decision API alone neither provisions nor revokes
+  target-side authority. Decide whether central policy administration needs remote per-call
+  evaluation or can use locally distributed policy, and specify trusted inputs, cache
+  freshness, revocation latency, outage behavior, and audit evidence. This is an evaluation
+  question, not a commitment to another service or a replacement identity platform.
 - Path-level HTTP allowlists at the egress fence, so "GET on these routes" can be delegated
   without a broker tool per route.
 - Whether raw direct traffic should be mirrored into the ledger from fence logs, or stay separate.
