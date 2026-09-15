@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from enum import StrEnum
 
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import AuthenticationV1Api, CoreV1Api
+
+logger = logging.getLogger(__name__)
 
 POD_NAME_CLAIM = "authentication.kubernetes.io/pod-name"
 POD_UID_CLAIM = "authentication.kubernetes.io/pod-uid"
@@ -70,9 +73,15 @@ class SandboxPrincipalResolver:
 
     async def resolve_with_pod(self, token: str) -> tuple[SandboxPrincipal, k8s_client.V1Pod]:
         """Also return the authoritative live Pod for egress-only source-address correlation."""
-        review = await self._authentication.create_token_review(
-            k8s_client.V1TokenReview(spec=k8s_client.V1TokenReviewSpec(token=token, audiences=[self._audience]))
-        )
+        try:
+            review = await self._authentication.create_token_review(
+                k8s_client.V1TokenReview(spec=k8s_client.V1TokenReviewSpec(token=token, audiences=[self._audience]))
+            )
+        except k8s_client.ApiException as error:
+            logger.warning(
+                "Kubernetes workload authentication failed: operation=create_token_review status=%d", error.status
+            )
+            raise
         status = review.status
         if status is None or not status.authenticated:
             raise SandboxPrincipalRejectedError(RejectionReason.TOKEN_REJECTED, "TokenReview rejected the bearer")
@@ -86,6 +95,9 @@ class SandboxPrincipalResolver:
         try:
             pod = await self._core_v1.read_namespaced_pod(pod_name, namespace)
         except k8s_client.ApiException as error:
+            logger.warning(
+                "Kubernetes workload authentication failed: operation=read_namespaced_pod status=%d", error.status
+            )
             if error.status == 404:
                 raise SandboxPrincipalRejectedError(RejectionReason.POD_MISMATCH, f"Pod {pod_name} is gone") from error
             raise
