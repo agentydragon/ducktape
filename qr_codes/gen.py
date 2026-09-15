@@ -31,7 +31,7 @@ def _font_text_width_at_1em(text: str) -> float:
 
 
 def generate(text: str, output: Path, caption: str | None = None) -> None:
-    qr = qrcode.QRCode(border=_BORDER)
+    qr: qrcode.QRCode = qrcode.QRCode(border=_BORDER)
     qr.add_data(text)
     qr.make(fit=True)
     matrix: list[list[bool | None]] = qr.modules
