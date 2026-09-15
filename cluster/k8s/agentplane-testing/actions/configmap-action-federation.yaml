@@ -11,10 +11,12 @@ data:
       "mode": "direct",
       "service_url": "http://agentplane-actions.agentplane-testing.svc.cluster.local:8080",
       "login_jwks_uri": "https://agentplane-dex-testing.allegedly.works/dex/keys",
+      "login_token_profile": "dex",
       "target": {
         "issuer": "https://agentplane-dex-testing.allegedly.works/dex",
         "audience": "agentplane-testing",
-        "jwks_uri": "https://agentplane-dex-testing.allegedly.works/dex/keys"
+        "jwks_uri": "https://agentplane-dex-testing.allegedly.works/dex/keys",
+        "token_profile": "dex"
       },
       "scope": "openid"
     }
@@ -22,5 +24,6 @@ data:
     {
       "issuer": "https://agentplane-dex-testing.allegedly.works/dex",
       "audience": "agentplane-testing",
-      "jwks_uri": "https://agentplane-dex-testing.allegedly.works/dex/keys"
+      "jwks_uri": "https://agentplane-dex-testing.allegedly.works/dex/keys",
+      "token_profile": "dex"
     }
