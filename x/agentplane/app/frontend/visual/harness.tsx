@@ -1183,8 +1183,16 @@ if (scenario.openEvidence !== undefined) {
     const frame = document.getElementById(`agentplane-event-${scenario.openEvidence}`);
     if (!(frame instanceof HTMLDetailsElement)) return;
     openEvidence.disconnect();
-    frame.open = true;
-    frame.scrollIntoView({ block: "center" });
+    // Initial bottom-following settles after layout. Then scrolling to the closed frame opts
+    // out before opening it, matching a reader navigating back to inspect earlier evidence.
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        frame.scrollIntoView({ block: "center" });
+        requestAnimationFrame(() => {
+          frame.open = true;
+        });
+      })
+    );
   });
   openEvidence.observe(document, { childList: true, subtree: true });
 }
