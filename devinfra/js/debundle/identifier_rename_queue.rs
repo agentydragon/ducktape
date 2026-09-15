@@ -209,7 +209,6 @@ pub fn compute_identifier_rename_queue(
     }
 
     let mut entries: Vec<RenameQueueEntry> = sites_by_name
-        .into_iter()
         .into_values()
         .flat_map(|sites| sites.into_iter())
         .map(|site| RenameQueueEntry {
