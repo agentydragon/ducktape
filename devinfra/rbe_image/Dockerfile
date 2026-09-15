@@ -17,7 +17,8 @@
 # Firecracker init-dockerd -- the guest kernel lacks nftables support), and a
 # non-root "buildbuddy" user with passwordless sudo.
 #
-# We layer on: libssl-dev + pkg-config (Rust toolchain), libtinfo5 (GHC
+# We layer on: libssl-dev + pkg-config (Rust toolchain), lld (the linker used
+# by Bazel's GCC toolchain), libtinfo5 (GHC
 # toolchain), Chromium shared libraries (headless_shell from rules_playwright
 # for visual regression tests), and Liberation fonts (so headless_shell has a
 # real "sans-serif"/"monospace" to substitute -- with zero fonts installed it
@@ -39,6 +40,8 @@ RUN sed -i 's/^Components: main$/Components: main universe/' /etc/apt/sources.li
         # clang: needed by pip to build Python packages with C extensions
         # (e.g., lru-dict) during rules_python whl_library fetch
         clang \
+        # lld: replaces the deprecated gold linker in the GCC toolchain
+        lld \
         # dbus-daemon: needed by tests that spawn a private D-Bus session
         # (e.g. experimental/dbus_fast_example)
         dbus-daemon \

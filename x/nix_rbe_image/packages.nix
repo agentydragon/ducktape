@@ -33,6 +33,8 @@ with pkgs;
   gcc
   gnumake
   binutils
+  # Modern linker selected by the shared RBE Bazel configuration.
+  lld
   patchelf
   cmake
   pkg-config
