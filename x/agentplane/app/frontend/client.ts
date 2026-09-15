@@ -255,7 +255,7 @@ export async function renameThread(threadId: string, name: string | null): Promi
   return data;
 }
 
-/** Every Thread across every Sandbox, paired with each Thread's own still-existing Sandbox; a
+/** Visible Threads plus every existing Sandbox, including those without Threads; a
  * Thread whose `sandbox` name is absent from `sandboxes` has an already-deleted Sandbox. */
 export async function listThreadsWithSandboxes(includeArchived: boolean): Promise<ThreadsWithSandboxes> {
   const { data, error } = await api.GET("/threads/with-sandboxes", {

@@ -51,16 +51,24 @@ it("groups a thread whose sandbox is gone under a null sandbox rather than dropp
   expect(group.threads).toEqual([orphan]);
 });
 
-it("excludes archived threads by default, and a sandbox left with none drops out entirely", () => {
+it("hides archived Threads without hiding their existing Sandbox", () => {
   const archived = threadView({ id: "t-1", sandbox: "sb-a", session_id: "s-1", archived: true });
   const kept = threadView({ id: "t-2", sandbox: "sb-b", session_id: "s-2" });
   const sandboxes = { "sb-a": sandboxView("sb-a"), "sb-b": sandboxView("sb-b") };
 
   const hidden = groupThreads([archived, kept], sandboxes, false);
-  expect(hidden.map((group) => group.sandboxName)).toEqual(["sb-b"]);
+  expect(hidden.map((group) => group.sandboxName)).toEqual(["sb-b", "sb-a"]);
+  expect(hidden[1].threads).toEqual([]);
 
   const shown = groupThreads([archived, kept], sandboxes, true);
   expect(shown.map((group) => group.sandboxName)).toEqual(["sb-a", "sb-b"]);
+});
+
+it("includes a provisioning Sandbox before any Thread exists", () => {
+  const pending = sandboxView("test-provisioning", { state: "waiting_for_pod" });
+  expect(groupThreads([], { [pending.name]: pending }, false)).toEqual([
+    { sandboxName: pending.name, sandbox: pending, threads: [] },
+  ]);
 });
 
 it("counts archived threads across every sandbox regardless of visibility", () => {

@@ -30,6 +30,7 @@ export interface Scenario extends ScenarioOptions {
   /** Click the phone-width hamburger once it mounts: the sidebar drawer has no route of its own
    * (UISHELL_MOBILE). */
   openMobileSidebar?: boolean;
+  threadlessSandbox?: boolean;
   /** Stop replay early or omit one entry, exposing synchronization state without fabricating Events. */
   sessionReplay?: "catching-up" | "gap";
   /** Assistant output precedes coalesced queued input, then model/interrupt effects. */
@@ -108,6 +109,21 @@ export const SCENARIOS: Record<string, Scenario> = {
     outputName: "threads-phone-drawer",
     readySelectors: [".agentplane-sidebar-backdrop", "a.agentplane-sidebar-group-name"],
     openMobileSidebar: true,
+  },
+  threads_provisioning: {
+    element: "#app",
+    route: "/",
+    viewport: { width: 1200, height: 900 },
+    threadlessSandbox: true,
+    readySelectors: ['a[href="#/sandboxes/test-provisioning"]'],
+  },
+  threads_provisioning_phone: {
+    element: "#app",
+    route: "/",
+    viewport: PHONE,
+    threadlessSandbox: true,
+    openMobileSidebar: true,
+    readySelectors: ['a[href="#/sandboxes/test-provisioning"]', ".agentplane-sidebar-backdrop"],
   },
 
   sandboxes: { element: "#app", route: "/sandboxes", viewport: { width: 1200, height: 900 } },

@@ -734,6 +734,7 @@ async def test_threads_with_sandboxes_pairs_each_thread_with_its_sandbox_or_none
     """The cross-sandbox listing: a Thread survives its Sandbox's deletion, and a Sandbox with
     several Threads is not duplicated once per Thread."""
     custom_objects.objects[("sandboxes", "live")] = sandbox("live")
+    custom_objects.objects[("sandboxes", "test-provisioning")] = sandbox("test-provisioning")
     core_v1.pods["live"] = pod("live", phase="Running", ready=True, ip="10.0.0.7")
     spec = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
     live_thread = await store.thread("live", "s-1", spec)
@@ -751,7 +752,8 @@ async def test_threads_with_sandboxes_pairs_each_thread_with_its_sandbox_or_none
         assert default_thread_ids == {str(live_thread), str(other_live_thread)}
         # Neither thread's feed has attached; the sidebar's per-thread status dot reads this as gray.
         assert {row["harness_state"] for row in default_body["threads"]} == {"HARNESS_STATE_UNSPECIFIED"}
-        assert set(default_body["sandboxes"]) == {"live"}
+        assert set(default_body["sandboxes"]) == {"live", "test-provisioning"}
+        assert default_body["sandboxes"]["test-provisioning"]["state"] == "waiting_for_pod"
         assert (default_body["sandboxes"]["live"]["name"], default_body["sandboxes"]["live"]["state"]) == (
             "live",
             "running",
@@ -760,7 +762,7 @@ async def test_threads_with_sandboxes_pairs_each_thread_with_its_sandbox_or_none
         all_body = (await http.get("/threads/with-sandboxes", params={"include_archived": "true"})).json()
         all_thread_ids = {row["id"] for row in all_body["threads"]}
         assert all_thread_ids == {str(live_thread), str(other_live_thread), str(gone_thread)}
-        assert set(all_body["sandboxes"]) == {"live"}, "the deleted 'gone' sandbox must not appear"
+        assert set(all_body["sandboxes"]) == {"live", "test-provisioning"}, "the deleted 'gone' sandbox must not appear"
 
 
 def test_healthz_answers_outside_the_schema(client: TestClient) -> None:
