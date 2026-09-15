@@ -1,6 +1,7 @@
 import {
   Accordion,
   ActionIcon,
+  Alert,
   Badge,
   Box,
   Button,
@@ -258,9 +259,12 @@ function TurnHeader({ turn }: { turn: Turn }): JSX.Element {
         turn {turn.id}
       </Text>
       {turn.status !== null && (
-        <Badge color={turn.status === TurnStatus.COMPLETED ? "green" : "orange"}>{TurnStatus[turn.status]}</Badge>
+        <Badge
+          color={turn.status === TurnStatus.COMPLETED ? "green" : turn.status === TurnStatus.FAILED ? "red" : "orange"}
+        >
+          {TurnStatus[turn.status]}
+        </Badge>
       )}
-      {turn.error && <Text c="red">{turn.error}</Text>}
     </Group>
   );
 }
@@ -275,6 +279,18 @@ function ContentView({ content, live }: { content: ConversationContent; live: bo
       return <ItemGroupView group={content.group} live={live} />;
     case "control": {
       const observation = content.entry.event?.observation;
+      if (observation?.case === "turnCompleted" && observation.value.status === TurnStatus.FAILED) {
+        return (
+          <Alert color="red" title="Turn failed" role="alert">
+            <Text size="sm" c="dimmed">
+              turn {observation.value.turnId}
+            </Text>
+            <Text style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+              {observation.value.error || "The harness reported no error details."}
+            </Text>
+          </Alert>
+        );
+      }
       return (
         <Text size="sm" c="dimmed">
           {observation?.case === "modelChanged" && `Model changed to ${observation.value.model}`}

@@ -38,6 +38,7 @@ export interface Scenario extends ScenarioOptions {
   /** Inspect a real Raw Event disclosure, scrolling its containing timeline into view. */
   openEvidence?: number;
   pendingCommands?: "mixed" | "controls" | "outcomes";
+  failedTurn?: "before-content" | "after-content";
 }
 
 /** A Pixel 6's CSS viewport: the app is used from a phone, so every page has to fit its width. */
@@ -57,6 +58,38 @@ const SESSION_STATES_ROUTE = "/threads/5f1c4a2e-0000-4000-8000-000000000002";
 const REASONING = "reasoning=r%231";
 
 export const SCENARIOS: Record<string, Scenario> = {
+  session_error: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 1200, height: 900 },
+    failedTurn: "before-content",
+    readySelectors: ['[role="alert"]'],
+    captureViewport: true,
+  },
+  session_error_phone: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: PHONE,
+    failedTurn: "after-content",
+    readySelectors: ['[role="alert"]'],
+    captureViewport: true,
+  },
+  session_error_raw: {
+    element: "#app",
+    route: `${SESSION_ROUTE}?raw=1`,
+    viewport: { width: 1200, height: 1100 },
+    failedTurn: "after-content",
+    readySelectors: ['[role="alert"]'],
+    captureViewport: true,
+  },
+  session_error_raw_phone: {
+    element: "#app",
+    route: `${SESSION_ROUTE}?raw=1`,
+    viewport: PHONE,
+    failedTurn: "before-content",
+    readySelectors: ['[role="alert"]'],
+    captureViewport: true,
+  },
   session_interleaved: {
     element: "#app",
     route: SESSION_ROUTE,

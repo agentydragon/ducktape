@@ -450,6 +450,33 @@ it("shows a failed model command as a command outcome, not a user message", asyn
   expect(container.querySelector(".agentplane-user-bubble")).toBeNull();
 });
 
+it.each(['Test API failure\n<img src="x" onerror="throw new Error()">', ""])(
+  "shows failed-turn details as plain text at completion, not at turn start: %s",
+  async (diagnostic) => {
+    const { container, composer, stream } = await render();
+    await act(async () => {
+      const observations: MessageInitShape<typeof EventSchema>["observation"][] = [
+        { case: "turnStarted", value: { turnId: "test-failed-turn" } },
+        { case: "itemStarted", value: { itemId: "partial", kind: ItemKind.ASSISTANT_TEXT } },
+        { case: "textDelta", value: { itemId: "partial", text: "Test partial answer" } },
+        { case: "turnCompleted", value: { turnId: "test-failed-turn", status: TurnStatus.FAILED, error: diagnostic } },
+      ];
+      observations.forEach((observation, index) => {
+        stream.dispatchEvent(new MessageEvent("event", { data: event(index + 2, observation) }));
+      });
+    });
+    const failure = container.querySelector('[data-conversation-anchor="5"] [role="alert"]');
+    expect(failure?.textContent).toContain("Turn failed");
+    expect(failure?.textContent).toContain(diagnostic || "The harness reported no error details.");
+    expect(failure?.querySelector("img")).toBeNull();
+    expect(container.querySelector('[data-conversation-anchor="2"] [role="alert"]')).toBeNull();
+    expect(container.textContent).toContain("Test partial answer");
+    expect(container.querySelectorAll('[aria-label="Streaming"]')).toHaveLength(0);
+    expect(composer.disabled).toBe(false);
+    expect(command).not.toHaveBeenCalled();
+  }
+);
+
 it("collapses a lone tool call behind its run disclosure", async () => {
   const { container, stream } = await render();
   await act(async () => {

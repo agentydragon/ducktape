@@ -877,6 +877,54 @@ const COMMAND_OUTCOMES = [
   }),
 ];
 
+function failedTurnEvents(afterContent: boolean): EventEntry[] {
+  const text = "Inspect the test repository.";
+  const entries = [
+    event(1, { case: "harnessStarted", value: { pid: 9 } }),
+    event(2, {
+      case: "commandAdmitted",
+      value: { command: { commandId: "test-input", operation: { case: "submitInput", value: { text } } } },
+    }),
+    event(3, { case: "turnStarted", value: { turnId: "test-failed-turn" } }),
+    event(4, {
+      case: "harnessUserMessageConfirmed",
+      value: { harnessMessageId: "test-message", originCommandIds: ["test-input"], turnId: "test-failed-turn", text },
+    }),
+  ];
+  if (afterContent) {
+    entries.push(
+      event(5, { case: "itemStarted", value: { itemId: "test-partial", kind: ItemKind.ASSISTANT_TEXT } }),
+      event(6, {
+        case: "textDelta",
+        value: {
+          itemId: "test-partial",
+          text: "The first test files are present.\n\n".repeat(12) + "Checking the remaining files…",
+        },
+      })
+    );
+  }
+  const error =
+    "Test model request failed: HTTP 429\nQuota exhausted for test-request-" +
+    "abcdef".repeat(12) +
+    "\n<diagnostic>test upstream response</diagnostic>";
+  const nativeCursor = entries.length + 1;
+  entries.push(
+    event(nativeCursor, {
+      case: "native",
+      value: { direction: Direction.FROM_HARNESS, line: JSON.stringify({ type: "error", message: error }) },
+    }),
+    event(
+      nativeCursor + 1,
+      {
+        case: "turnCompleted",
+        value: { turnId: "test-failed-turn", status: TurnStatus.FAILED, error },
+      },
+      [nativeCursor]
+    )
+  );
+  return entries;
+}
+
 const INTERLEAVED_EVENTS: EventEntry[] = [
   event(1, { case: "harnessStarted", value: { pid: 7 } }),
   event(2, { case: "turnStarted", value: { turnId: "interleaved-turn", model: "harness-claude-model" } }),
@@ -1159,6 +1207,11 @@ class HarnessEventSource extends EventTarget {
       attached.lastCursor = BigInt(entries.length);
       attached.activeTurnId = "";
       attached.spec = create(SessionSpecSchema, { ...SPEC, model: "next-model" });
+    }
+    if (scenario.failedTurn) {
+      entries = failedTurnEvents(scenario.failedTurn === "after-content");
+      attached.lastCursor = BigInt(entries.length);
+      attached.activeTurnId = "";
     }
     if (scenario.sessionReplay === "catching-up") entries = entries.slice(0, 8);
     if (scenario.sessionReplay === "gap") entries = entries.filter((entry) => entry.cursor !== 9n);
