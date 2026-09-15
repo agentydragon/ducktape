@@ -18,7 +18,7 @@ def _collect_type_hints(fn: Callable[..., Any]) -> dict[str, Any]:
     globs = fn.__globals__
     try:
         return get_type_hints(fn, globalns=globs, localns=globs, include_extras=True)
-    except (NameError, TypeError, AttributeError):
+    except NameError, TypeError, AttributeError:
         return {}
 
 

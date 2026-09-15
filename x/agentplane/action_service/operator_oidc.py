@@ -41,6 +41,6 @@ class OidcOperatorAuthenticator:
     async def authenticate(self, token: str) -> Principal | None:
         try:
             identity = await self._resolver.resolve({"access_token": token, "token_type": "Bearer"})
-        except (InvalidOidcPrincipalError, OidcPrincipalVerificationUnavailableError):
+        except InvalidOidcPrincipalError, OidcPrincipalVerificationUnavailableError:
             return None
         return Principal(issuer=identity.issuer, subject=identity.subject, role=PrincipalRole.OPERATOR)

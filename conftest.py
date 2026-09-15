@@ -24,8 +24,7 @@ def pytest_configure(config: pytest.Config) -> None:
     # External requirements - LLM APIs
     config.addinivalue_line("markers", "live_openai_api: tests requiring OPENAI_API_KEY")
     config.addinivalue_line(
-        "markers",
-        "httpx2(assert_all_called=False, assert_all_mocked=False, base_url=...): configure pytest-httpx2",
+        "markers", "httpx2(assert_all_called=False, assert_all_mocked=False, base_url=...): configure pytest-httpx2"
     )
 
 
