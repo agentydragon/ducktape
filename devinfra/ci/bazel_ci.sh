@@ -91,6 +91,7 @@ graph_wide_change_reason() {
       .bazelrc | .bazelversion | .bazelignore | MODULE.bazel | MODULE.bazel.lock | WORKSPACE | WORKSPACE.bazel | WORKSPACE.bzlmod | WORKSPACE.bzlmod.lock | \
         */MODULE.bazel | */MODULE.bazel.lock | */WORKSPACE | */WORKSPACE.bazel | */WORKSPACE.bzlmod | */WORKSPACE.bzlmod.lock | \
         *.bzl | \
+        .github/workflows/bazel-ci.yml | .github/workflows/ci.yml | devinfra/ci/bazel_ci.sh | \
         Cargo.toml | */Cargo.toml | Cargo.lock | */Cargo.lock | \
         go.mod | */go.mod | go.sum | */go.sum | \
         package.json | */package.json | pnpm-lock.yaml | */pnpm-lock.yaml | \
