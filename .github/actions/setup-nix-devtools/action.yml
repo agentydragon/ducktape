@@ -1,5 +1,5 @@
 name: Setup Nix + Devtools
-description: Install Nix and a flake package output (default .#devtools)
+description: Install Nix with the anonymous bootstrap cache and a flake package output
 
 inputs:
   package:
@@ -10,9 +10,28 @@ inputs:
 runs:
   using: composite
   steps:
+    # Devtools is one of the bootstrap closures pushed to the anonymous public Attic cache.
+    # This is intentionally not setup-nix-attic: pull_request workflows run untrusted code and
+    # must not receive the private main-cache reader token or the SOPS key that decrypts it.
+    - name: Load public Attic trusted key
+      id: attic_key
+      shell: bash
+      run: |
+        key="$(
+          jq -er '
+            [.[] | select(startswith("public:"))]
+            | if length == 1 then .[0] else error("expected one public Attic key") end
+          ' nix/attic-pubkeys.json
+        )"
+        echo "value=$key" >> "$GITHUB_OUTPUT"
+
     - uses: cachix/install-nix-action@v31
       with:
-        extra_nix_config: experimental-features = nix-command flakes
+        extra_nix_config: |
+          experimental-features = nix-command flakes
+          extra-trusted-public-keys = ${{ steps.attic_key.outputs.value }}
+          extra-substituters = https://cache.allegedly.works/public
+          fallback = true
 
     - name: Install ${{ inputs.package }}
       shell: bash
