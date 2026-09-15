@@ -16,7 +16,7 @@ import re
 from dataclasses import dataclass, field
 from http import HTTPStatus
 from typing import TypeVar
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 from pydantic import BaseModel
@@ -91,10 +91,11 @@ class Turn:
 class Agent:
     """A session on one sandbox. `run` sends a prompt and returns when the turn completes."""
 
-    def __init__(self, client: Client, *, sandbox: str, session_id: str, cursor: int) -> None:
+    def __init__(self, client: Client, *, sandbox: str, session_id: str, thread_id: UUID, cursor: int) -> None:
         self._client = client
         self._sandbox = sandbox
         self._session_id = session_id
+        self._thread_id = thread_id
         self._cursor = cursor
 
     @classmethod
@@ -125,8 +126,13 @@ class Agent:
         ):
             with attempt:
                 attachment = await client.open_session(sandbox, session_id, spec)
+                thread = await client.thread(sandbox, attachment.attached.session_id)
                 return cls(
-                    client, sandbox=sandbox, session_id=attachment.attached.session_id, cursor=attachment.last_cursor
+                    client,
+                    sandbox=sandbox,
+                    session_id=attachment.attached.session_id,
+                    thread_id=thread.id,
+                    cursor=attachment.last_cursor,
                 )
         raise AssertionError("unreachable: reraise=True either returns an agent or raises")
 
@@ -134,9 +140,8 @@ class Agent:
         """Send `prompt` and collect the turn it starts. Nothing else drives this session, so reading
         the cursor before submitting cannot miss an event."""
         after = self._cursor
-        await self._client.send_input(
-            self._sandbox,
-            self._session_id,
+        await self._client.command(
+            self._thread_id,
             command_pb2.Command(
                 command_id=f"input-{uuid4().hex[:8]}", submit_input=command_pb2.SubmitInput(text=prompt)
             ),

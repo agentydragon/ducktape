@@ -31,18 +31,15 @@ import {
 } from "react";
 import { useSearchParams } from "react-router";
 
-import { toJson, type JsonObject } from "@bufbuild/protobuf";
+import { create, toJson, type JsonObject } from "@bufbuild/protobuf";
 
 import {
+  command,
   displayableError,
   eventsUrl,
   findThread,
-  interruptSession,
   renameThread,
-  sendInput,
-  shutdownSession,
   models,
-  switchModel,
   type Harness,
   type ThreadView,
 } from "./client";
@@ -63,6 +60,7 @@ import { appliedModel, catchingUp, EventStream, type Connection } from "./event_
 import { HighlightedText } from "./json_view";
 import { Markdown } from "./markdown";
 import { ItemKind, TurnStatus } from "../../protocol/event_pb";
+import { CommandSchema } from "../../protocol/command_pb";
 import { SessionSpecSchema } from "../../runner/protocol_pb";
 
 const KIND_LABELS: Partial<Record<ItemKind, string>> = {
@@ -383,7 +381,7 @@ function SessionContents({ sandbox, sessionId, onBack }: SessionViewProps): JSX.
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const submitting = useRef(false);
-  const pendingInput = useRef<{ sandbox: string; sessionId: string; text: string; commandId: string } | null>(null);
+  const pendingInput = useRef<{ threadId: string; text: string; commandId: string } | null>(null);
   const [thread, setThread] = useState<ThreadView | null>(null);
   const [modelOptions, setModelOptions] = useState<string[]>([]);
   const [modelPending, setModelPending] = useState(false);
@@ -422,10 +420,16 @@ function SessionContents({ sandbox, sessionId, onBack }: SessionViewProps): JSX.
   }, [attached, sandbox, sessionId]);
 
   async function selectModel(next: string | null): Promise<void> {
-    if (!next || next === model) return;
+    if (!thread || !next || next === model) return;
     setModelPending(true);
     try {
-      await switchModel(sandbox, sessionId, crypto.randomUUID(), next);
+      await command(
+        thread.id,
+        create(CommandSchema, {
+          commandId: crypto.randomUUID(),
+          operation: { case: "changeModel", value: { model: next } },
+        })
+      );
     } catch (reason: unknown) {
       setError(displayableError(reason));
     } finally {
@@ -435,20 +439,22 @@ function SessionContents({ sandbox, sessionId, onBack }: SessionViewProps): JSX.
 
   async function submit(): Promise<void> {
     const text = draft.trim();
-    if (!text || submitting.current) return;
-    if (
-      pendingInput.current?.text !== text ||
-      pendingInput.current.sandbox !== sandbox ||
-      pendingInput.current.sessionId !== sessionId
-    ) {
-      pendingInput.current = { sandbox, sessionId, text, commandId: crypto.randomUUID() };
+    if (!thread || !text || submitting.current) return;
+    if (pendingInput.current?.text !== text || pendingInput.current.threadId !== thread.id) {
+      pendingInput.current = { threadId: thread.id, text, commandId: crypto.randomUUID() };
     }
     submitting.current = true;
     setSending(true);
     try {
       // A failed HTTP response may follow runner receipt. Retry the same command id so a lost
       // response cannot turn a retry into a second user-message request.
-      await sendInput(sandbox, sessionId, pendingInput.current.commandId, text);
+      await command(
+        thread.id,
+        create(CommandSchema, {
+          commandId: pendingInput.current.commandId,
+          operation: { case: "submitInput", value: { text } },
+        })
+      );
       pendingInput.current = null;
       setDraft("");
       setError(null);
@@ -475,7 +481,7 @@ function SessionContents({ sandbox, sessionId, onBack }: SessionViewProps): JSX.
     requestAnimationFrame(() => field.setSelectionRange(at + 1, at + 1));
   }
 
-  async function run(action: () => Promise<void>): Promise<void> {
+  async function run(action: () => Promise<unknown>): Promise<void> {
     try {
       await action();
       setError(null);
@@ -555,7 +561,7 @@ function SessionContents({ sandbox, sessionId, onBack }: SessionViewProps): JSX.
           autosize
           minRows={2}
           maxRows={12}
-          disabled={unavailable || state.harness !== "running" || sending}
+          disabled={unavailable || !thread || state.harness !== "running" || sending}
           onChange={(e) => setDraft(e.currentTarget.value)}
           onKeyDown={composerKey}
         />
@@ -568,7 +574,7 @@ function SessionContents({ sandbox, sessionId, onBack }: SessionViewProps): JSX.
               value={model}
               onChange={(next) => void selectModel(next)}
               placeholder={connection.kind === "failed" ? "Model unavailable" : replaying ? "Catching up…" : "Model"}
-              disabled={unavailable || state.harness !== "running" || modelPending}
+              disabled={unavailable || !thread || state.harness !== "running" || modelPending}
               w={200}
             />
           </Group>
@@ -596,9 +602,20 @@ function SessionContents({ sandbox, sessionId, onBack }: SessionViewProps): JSX.
                 <Menu.Item
                   color="red"
                   leftSection={<IconPower size={15} />}
-                  disabled={unavailable || state.harness !== "running"}
+                  disabled={unavailable || !thread || state.harness !== "running"}
                   closeMenuOnClick
-                  onClick={() => void run(() => shutdownSession(sandbox, sessionId, crypto.randomUUID()))}
+                  onClick={() => {
+                    if (!thread) return;
+                    void run(() =>
+                      command(
+                        thread.id,
+                        create(CommandSchema, {
+                          commandId: crypto.randomUUID(),
+                          operation: { case: "stopRunnerSession", value: {} },
+                        })
+                      )
+                    );
+                  }}
                 >
                   Shut down harness
                 </Menu.Item>
@@ -609,10 +626,19 @@ function SessionContents({ sandbox, sessionId, onBack }: SessionViewProps): JSX.
               variant="light"
               color="red"
               aria-label="Interrupt"
-              onClick={() =>
-                void run(() => interruptSession(sandbox, sessionId, crypto.randomUUID(), activeTurn?.id ?? ""))
-              }
-              disabled={unavailable || !activeTurn}
+              onClick={() => {
+                if (!thread) return;
+                void run(() =>
+                  command(
+                    thread.id,
+                    create(CommandSchema, {
+                      commandId: crypto.randomUUID(),
+                      operation: { case: "interruptTurn", value: { turnId: activeTurn?.id ?? "" } },
+                    })
+                  )
+                );
+              }}
+              disabled={unavailable || !thread || !activeTurn}
             >
               <IconPlayerStop size={16} />
             </ActionIcon>

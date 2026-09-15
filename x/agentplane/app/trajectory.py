@@ -38,7 +38,7 @@ from x.agentplane.app.changes import Changes
 from x.agentplane.app.operator_sessions import Base, OperatorSessionStore
 from x.agentplane.app.presets import Harness
 from x.agentplane.app.trajectory_updates import CHANNEL, TrajectoryUpdates
-from x.agentplane.protocol import event_log_pb2
+from x.agentplane.protocol import command_pb2, event_log_pb2
 from x.agentplane.runner import protocol_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -115,6 +115,10 @@ class IngestionLeaseLostError(Exception):
 
 class EventReplicationError(ValueError):
     """The runner stream conflicts with the archived prefix or skips an entry."""
+
+
+class CommandIdConflictError(ValueError):
+    """A Thread command id was already admitted with a different immutable Command."""
 
 
 @dataclass(frozen=True)
@@ -396,6 +400,35 @@ class TrajectoryStore:
             if thread is None:
                 return None
             return _view(thread, *await _last(session, thread_id))
+
+    async def admitted_command(self, thread_id: UUID, command: command_pb2.Command) -> event_log_pb2.EventEntry | None:
+        """The archived admission of this immutable command, if the Thread has one.
+
+        This is deliberately an archive lookup rather than a command outbox. A matching result
+        lets a retry recover a lost HTTP response without contacting a possibly deleted Sandbox;
+        a reused id with different work is a conflict, never an implicit new command.
+        """
+        async with self._sessions() as session:
+            if await session.get(Thread, thread_id) is None:
+                raise ThreadNotFoundError(thread_id)
+            payloads = await session.scalars(
+                select(Event.payload)
+                .where(
+                    Event.thread_id == thread_id,
+                    Event.kind == "command_admitted",
+                    Event.payload["event"]["commandAdmitted"]["command"]["commandId"].as_string() == command.command_id,
+                )
+                .order_by(Event.cursor)
+            )
+            for payload in payloads:
+                entry = ParseDict(payload, event_log_pb2.EventEntry())
+                admitted = entry.event.command_admitted.command
+                if admitted == command:
+                    return entry
+                raise CommandIdConflictError(
+                    f"command id {command.command_id!r} was already admitted with different work"
+                )
+            return None
 
     async def rename(self, thread_id: UUID, name: str | None) -> ThreadView:
         """Set or, with None, clear the thread's name."""
