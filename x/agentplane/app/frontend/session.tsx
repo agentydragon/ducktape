@@ -388,7 +388,7 @@ function SessionContents({ threadId, onBack }: SessionViewProps): JSX.Element {
   const inventoryFresh = environment.connection === "connected" && environment.health?.fresh;
   const sandboxAvailable = inventoryFresh && sandbox?.state === "running";
   const unavailable = !sandboxAvailable || replaying || connection.kind === "failed" || connection.kind === "ended";
-  const receiving = !unavailable && connection.kind === "following";
+  const receiving = !unavailable && connection.kind === "following" && state.harness === "running";
   const [modelOptions, setModelOptions] = useState<string[]>([]);
   // The switch is in the URL, like the sandbox page's tab and the reasoning blocks that are open,
   // so a reading can be linked to and survives a reload.
@@ -523,7 +523,12 @@ function SessionContents({ threadId, onBack }: SessionViewProps): JSX.Element {
           {showRaw ? (
             timeline(state).map(({ entry, row }) => (
               <Fragment key={String(entry.cursor)}>
-                {row && <RowView row={row} live={receiving} />}
+                {row && (
+                  <RowView
+                    row={row}
+                    live={receiving && row.kind === "item" && activeTurn?.itemIds.includes(row.item.id) === true}
+                  />
+                )}
                 <FrameView entry={entry} />
               </Fragment>
             ))
@@ -541,7 +546,7 @@ function SessionContents({ threadId, onBack }: SessionViewProps): JSX.Element {
                     <ItemGroupView
                       key={group.kind === "single" ? group.item.id : group.items[0].id}
                       group={group}
-                      live={receiving}
+                      live={receiving && turn.status === null}
                     />
                   ))}
                 </Stack>

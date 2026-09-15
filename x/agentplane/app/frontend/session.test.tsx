@@ -479,6 +479,27 @@ it("collapses a lone tool call behind its run disclosure", async () => {
   expect(control?.getAttribute("aria-expanded")).toBe("false");
 });
 
+it("does not animate unfinished historical items after their turn or harness ends", async () => {
+  const { container, stream } = await render();
+  async function emit(cursor: number, observation: MessageInitShape<typeof EventSchema>["observation"]) {
+    await act(async () => {
+      stream.dispatchEvent(new MessageEvent("event", { data: event(cursor, observation) }));
+    });
+  }
+  await emit(2, { case: "turnStarted", value: { turnId: "old-turn" } });
+  await emit(3, { case: "itemStarted", value: { itemId: "old-item", kind: ItemKind.ASSISTANT_TEXT } });
+  expect(container.querySelectorAll('[aria-label="Streaming"]')).toHaveLength(1);
+  await emit(4, { case: "turnCompleted", value: { turnId: "old-turn", status: TurnStatus.INTERRUPTED } });
+  await emit(5, { case: "turnStarted", value: { turnId: "new-turn" } });
+  expect(container.querySelectorAll('[aria-label="Streaming"]')).toHaveLength(0);
+  expect(container.querySelectorAll('[aria-label="Incomplete in retained history"]')).toHaveLength(1);
+  await emit(6, { case: "itemStarted", value: { itemId: "new-item", kind: ItemKind.ASSISTANT_TEXT } });
+  expect(container.querySelectorAll('[aria-label="Streaming"]')).toHaveLength(1);
+  await emit(7, { case: "harnessExited", value: { exitCode: 0 } });
+  expect(container.querySelectorAll('[aria-label="Streaming"]')).toHaveLength(0);
+  expect(container.querySelectorAll('[aria-label="Incomplete in retained history"]')).toHaveLength(2);
+});
+
 it("isolates transcript, draft, and late transport callbacks when the target changes", async () => {
   const { container, composer, stream, streams, rerender } = await render();
   await type(composer, "draft for the old target");
