@@ -73,6 +73,9 @@ flowchart TB
     THREAD_REPLAY_PROTOCOL["Planned protocol<br/>one protobuf Command/Event language<br/>durable app-to-frontend replay"]:::future
     THREAD_TAIL_FIRST["Future performance<br/>open recent conversation window first<br/>bounded catch-up for long-running Threads"]:::future
     THREAD_LAZY_HISTORY["Future UI<br/>load older Thread history on demand<br/>stable scroll and concurrent live following"]:::future
+    THREAD_NATIVE_LAZY["Deferred design<br/>fetch native payloads only when requested<br/>explicit partial-data and replay contract"]:::future
+    THREAD_SCROLL_FOLLOW["Queued UI<br/>follow new content only at bottom<br/>preserve position while reading earlier messages"]:::future
+    THREAD_SUBMIT_500["Reported bug<br/>message submission and Retry return 500<br/>Awaiting saved confirmation persists"]:::active
     NEWTHREAD_DURABLE["Deferred combined workflow<br/>server-owned sandbox+thread provisioning<br/>survive browser close and app restart"]:::future
     THREAD_OUTBOX_CUTOVER["Deferred cutover<br/>all product commands via app outbox if chosen<br/>no competing relay path"]:::future
     THREAD_SUCCESSOR_DELIVERY["Deferred decision<br/>unsettled Thread command across<br/>successor runner session"]:::future
@@ -744,7 +747,31 @@ Do not implement #6985's command/Event union as the runner timeline. An optional
 queue may expose an atomic pending snapshot alongside replay; two append-only browser
 feeds are not an established requirement.
 
+### `THREAD_SUBMIT_500` — investigate failed submission and retry
+
+**Reported on staging:** in [Thread 70bf54a7-81e1-46f5-8fed-381ae1ce870f](https://agentplane-staging.allegedly.works/#/threads/70bf54a7-81e1-46f5-8fed-381ae1ce870f),
+submitting “test out the egress boundaries and allowances and autoapproved actions”
+showed “Awaiting saved confirmation” and “Internal Server Error”; Retry also failed.
+Correlate the original Command ID with the app traceback, runner admission journal,
+and archived Event prefix to establish whether admission occurred before the 500.
+Pin the failure and same-ID retry in an integration test: retained input must not be
+lost or duplicated, and the UI must not claim admission or execution without evidence.
+
+### `THREAD_SCROLL_FOLLOW` — follow new content only while at the bottom
+
+**Queued UI work:** when the viewport is at the conversation bottom, keep newly
+arriving messages and streaming growth in view. Scrolling upward opts out; preserve
+the user's reading position until they return to the bottom. Test all three transitions
+in normal and Raw modes, including content resizing. This can land independently of
+tail-first/lazy history; prepending older history must preserve its scroll anchor,
+not trigger bottom-following.
+
 ### `THREAD_TAIL_FIRST` — recent history first for long-running Threads
+
+**Observed on staging:** the operator reported roughly 1,000 Events in an already
+small conversation, with visible catch-up taking about 2–3 seconds. Measure and cover
+that case as well as month-long histories; identify transfer, replay, projection, and
+render costs rather than assuming the event count alone explains the delay.
 
 **Future work, not a gate on the current UI cutover:** opening a Thread that has run
 continuously for a month should show roughly the last screenful or two first, without
@@ -764,6 +791,16 @@ before the returned window. Assert bounded initial transfer/render work, correct
 current state, and no missed or duplicated Events across the window/live boundary.
 Do not hide a full-history download behind a fast first paint. This concerns history
 inside one Thread, not the all-Threads search/list task `THREAD_BROWSE_PAGINATE`.
+
+### `THREAD_NATIVE_LAZY` — consider on-demand native evidence
+
+**Later design work:** evaluate not transferring full native payloads until Raw/debug
+inspection asks for them; even the reported small conversation already had about
+1,000 Events. Retain lossless native evidence at its authority and preserve cursor,
+ordering, and causal references. Make omitted/unloaded data explicit: a filtered or
+partial browser representation must not masquerade as a complete, untransformed Event
+prefix. Define catch-up/reconnect guarantees and on-demand hydration alongside the
+tail-first and lazy-history contracts before selecting a protocol change.
 
 ### `THREAD_LAZY_HISTORY` — fetch older conversation history only when needed
 
