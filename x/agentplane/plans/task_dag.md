@@ -20,10 +20,11 @@ is an explicit temporary operational constraint, never an implicit correctness a
 Proposed execution order for the Thread correctness/UI track:
 
 - **P0:** finish the reported submission/retry failure (`THREAD_SUBMIT_500`) and close
-  deployed Claude/Codex acceptance (`THREAD_DEPLOYED_ACCEPTANCE`). Keep one runner-owned
+  deployed Claude/Codex acceptance (`THREAD_DEPLOYED_ACCEPTANCE`), including the current
+  model-path availability failure (`EGRESS_IDENTITY_AVAILABILITY`). Keep one runner-owned
   command queue; no app outbox or combined-start expansion in this batch.
-- **P1:** everyday conversation usability (`THREAD_SCROLL_FOLLOW`, sidebar freshness and
-  completeness, new-Sandbox navigation), alongside retained-state writer fencing and
+- **P1:** end-to-end LLM error handling (`LLM_ERROR_SURFACE`) and sidebar freshness,
+  alongside retained-state writer fencing and
   evidence-gated native recovery. Start `THREAD_TAIL_FIRST` with a profiling/contract
   slice, then bounded reads and `THREAD_LAZY_HISTORY`; do not start with a frontend rewrite.
 - **P2:** browser-driven acceptance against the deployed cluster (`CLUSTER_BROWSER_ACCEPTANCE`)
@@ -84,9 +85,10 @@ flowchart TB
     THREAD_TAIL_FIRST["Future performance<br/>open recent conversation window first<br/>bounded catch-up for long-running Threads"]:::future
     THREAD_LAZY_HISTORY["Future UI<br/>load older Thread history on demand<br/>stable scroll and concurrent live following"]:::future
     THREAD_NATIVE_LAZY["Deferred design<br/>fetch native payloads only when requested<br/>explicit partial-data and replay contract"]:::future
-    THREAD_SCROLL_FOLLOW["Queued UI<br/>follow new content only at bottom<br/>preserve position while reading earlier messages"]:::future
     THREAD_SUBMIT_500["Reported bug<br/>message submission and Retry return 500<br/>Awaiting saved confirmation persists"]:::active
     THREAD_DEPLOYED_ACCEPTANCE["P0 remaining acceptance<br/>deployed commands/events cutover<br/>real Claude and Codex via devbox"]:::active
+    EGRESS_IDENTITY_AVAILABILITY["P0 observed availability failure<br/>egress authentication ApiException / 502<br/>trace Kubernetes, ingress, LiteLLM hops"]:::active
+    LLM_ERROR_SURFACE["P1 correctness<br/>native LLM errors through protocol and UI<br/>partial output, retries, terminal failure"]:::future
     CLUSTER_BROWSER_ACCEPTANCE["P2 deployed browser acceptance<br/>in-cluster frontend button clicks<br/>screenshots and behavioral assertions"]:::future
     NATIVE_SUBAGENT_THREADS["Low-priority exploration<br/>adopt native Claude/Codex subagents<br/>as linked Agentplane Threads"]:::future
     RUNNER_ATTACHMENT_SCOPE["Pending refactor<br/>scope ordinary runner attachments<br/>retain admission/drain/cancel semantics"]:::future
@@ -95,13 +97,12 @@ flowchart TB
     THREAD_SUCCESSOR_DELIVERY["Deferred decision<br/>unsettled Thread command across<br/>successor runner session"]:::future
     CONTROL_STATE["Deferred decision<br/>dynamic runtime control state<br/>model/effort acceptance"]:::future
     UISHELL_SIDEBAR_LIVE["Bug + planned fix<br/>sidebar Thread/Sandbox state goes stale<br/>rename, sandbox status icon never push-update"]:::future
-    UISHELL_SIDEBAR_ALL_SANDBOXES["Bug<br/>threadless Sandboxes missing from sidebar<br/>e.g. still waiting for a pod to land"]:::future
-    UISHELL_NEWSANDBOX_NAV["Planned UI<br/>'New sandbox' should open the created Sandbox's page<br/>currently just resets the form"]:::future
     THREAD_BROWSE_PAGINATE["Deferred, way later<br/>paginated/searchable all-threads page<br/>find an old Thread once the sidebar list outgrows it"]:::future
     NO_MANUAL_REFRESH["Planned principle<br/>no page in the app needs a Refresh button<br/>push (WS or SSE) everywhere, not just Sandboxes/Actions"]:::future
     ACTION_JSON_POLISH["Planned UI polish<br/>parse MCP content blocks in Action results<br/>rest landed via #6303 (#6309 open)"]:::future
 
     MCPAUTH --> PROD
+    EGRESS_IDENTITY_AVAILABILITY --> THREAD_DEPLOYED_ACCEPTANCE
     ELEVATE --> FORK
     MCPAGG -. replacement surface .-> RETIRE_TOOLS
     CONSOLE_POLICIES -. policy parity .-> RETIRE_TOOLS
@@ -190,9 +191,12 @@ available while combined start is deferred. The persistent left
 sidebar (`UISHELL_SIDEBAR`) and its phone-width collapse behind a hamburger (`UISHELL_MOBILE`) have
 both landed, replacing the top nav row entirely as one atomic cutover; `UISHELL_DRAWER` and
 `UISHELL_NEWTHREAD_LANDING` (the sidebar's own "+", currently a stub that opens the Sandbox list) now
-build on that chrome, as do three correctness/completeness gaps found in the landed sidebar itself:
-`UISHELL_SIDEBAR_LIVE`, `UISHELL_SIDEBAR_ALL_SANDBOXES`, and
-`UISHELL_NEWSANDBOX_NAV`. `THREAD_BROWSE_PAGINATE` is explicitly deferred, not designed: finding one
+build on that chrome. Threadless Sandboxes now appear in the sidebar
+([#7041](https://github.com/agentydragon/ducktape/pull/7041)), and successful manual creation opens
+the new Sandbox's details page ([#7040](https://github.com/agentydragon/ducktape/pull/7040));
+normal and Raw conversation views follow growth only while the reader is at the bottom
+([#7039](https://github.com/agentydragon/ducktape/pull/7039)). `UISHELL_SIDEBAR_LIVE` remains.
+`THREAD_BROWSE_PAGINATE` is explicitly deferred, not designed: finding one
 old Thread once the sidebar's working-set list outgrows it needs its own paginated/searchable page
 eventually, flagged now only so the with-sandboxes endpoint isn't assumed to stay one unpaginated
 call forever. Stable Thread pages already replay archived history after Sandbox deletion; their
@@ -329,6 +333,50 @@ operator-authenticated cases or validate the command-relay candidate on its depl
 Use the [acceptance suite](../acceptance/README.md) as the runbook, retain sanitized
 test/runtime evidence, and verify fixture cleanup. Do not resend the operator's failed
 staging input as a test. This is API-level deployed proof, not browser click-through proof.
+Make the acceptance driver fail on a non-successful native turn with its actual terminal
+diagnostic, before checking downstream tool effects; it currently returns failed turns
+as if the scenario could proceed normally. Do not weaken the downstream assertions or
+automatically retry commands to obtain a green run.
+
+### `EGRESS_IDENTITY_AVAILABILITY` — locate the observed model-path 502
+
+**P0:** the live run [92f9cd4c](https://app.buildbuddy.io/invocation/92f9cd4c-2f08-4914-b14d-cc343381b0b0)
+passed five egress cases, both instruction cases, and the preset case. Claude's late-binding
+case failed before executing its GitHub probe: retained Events show command admission,
+input confirmation, and `TURN_STATUS_FAILED` with an HTTP 502 diagnostic. In the same
+08:01–08:03 UTC window on 2026-09-15, central egress logged three `ApiException` failures
+and `unavailable` refusals before identifying a Sandbox. Its per-Sandbox decision query
+therefore returned no rows. The model vendor is not established as the source of the 502.
+
+Correlate the path from runner/sidecar through central egress authentication, Kubernetes
+TokenReview/live Pod reads, Agentplane LLM ingress, LiteLLM, and the model backend. Identify
+the first failing hop and distinguish policy denial, identity-service unavailability,
+transport failure, and backend rejection using safe status/correlation evidence. Do not
+log bearer headers or relax the fail-closed identity boundary. Fix the established cause
+in a focused PR, rerun the failed case, and retain both failed and successful evidence.
+
+### `LLM_ERROR_SURFACE` — truthful model-turn failures through every layer
+
+**P1, independent of the particular 502 cause:** audit and pin native error behavior for
+Claude and Codex with the scripted LLM endpoints. Cover an HTTP error before content,
+failure after partial streaming, a native retry that succeeds, exhausted retries, and
+a later successful turn. Assert exact request/response evidence; process loss is a
+separate outcome, and a native internal retry is not an app-issued replacement command.
+
+Verify runner normalization and app archival/replay preserve the terminal status and
+available safe diagnostic/native evidence without turning an admitted or confirmed input
+back into an unsaved command. Do not attribute an opaque harness error to LiteLLM, egress,
+or a model vendor without evidence, or invent retryability guarantees. Use the existing
+[layering contract](../docs/thread_layering.md), extending it only where the evidence
+requires a new guarantee; do not create a parallel error protocol.
+
+In normal and Raw views, show the failure at the terminal position even after a long
+streamed turn, preserve partial output, and keep pending command receipts distinct.
+The current reducer retains `TurnCompleted.error`, but its detail is on the turn's
+first-position header and can be offscreen when the terminal row arrives. Add browser
+coverage for bottom-following, reload/replay, and subsequent successful input. Any future
+retry control must explicitly distinguish same-command delivery retry from requesting
+a new model turn; do not silently resend the original input.
 
 ### `CLUSTER_BROWSER_ACCEPTANCE` — browser-driven acceptance in the cluster
 
@@ -756,15 +804,6 @@ Verify the relay-retention change from [#7035](https://github.com/agentydragon/d
 on its deployed image before removing this task; its gated service-consumer test
 demonstrates the cancellation mechanism, not the original staging attempt's packet order.
 
-### `THREAD_SCROLL_FOLLOW` — follow new content only while at the bottom
-
-**Queued UI work:** when the viewport is at the conversation bottom, keep newly
-arriving messages and streaming growth in view. Scrolling upward opts out; preserve
-the user's reading position until they return to the bottom. Test all three transitions
-in normal and Raw modes, including content resizing. This can land independently of
-tail-first/lazy history; prepending older history must preserve its scroll anchor,
-not trigger bottom-following.
-
 ### `THREAD_TAIL_FIRST` — recent history first for long-running Threads
 
 **Observed on staging:** the operator reported roughly 1,000 Events in an already
@@ -854,24 +893,6 @@ state at the moment it was actually observed wasn't captured, so that isn't full
 stream already subscribes to `store.changes`. Add the missing global Thread/Sandbox
 snapshot subscription using those authorities; no new notification system is needed.
 Prove cross-replica rename/status updates, reconnect, and explicit stale-source state.
-
-### `UISHELL_SIDEBAR_ALL_SANDBOXES` — sidebar hides Sandboxes with no Thread yet
-
-**Bug:** `thread_groups.ts`'s `groupThreads` builds one row per Sandbox a _Thread_ names — a Sandbox
-with no Thread yet (e.g. still provisioning: `WAITING_FOR_POD`/`WAITING_FOR_POD_READY` in
-`inventory.py`) never gets a group and is invisible in the sidebar, even though `sandboxes.tsx`'s own
-list page already shows it. The sidebar should show every Sandbox, not only ones a Thread happens to
-name.
-
-**No dependency** on `UISHELL_SIDEBAR_LIVE` above: this widens what `groupThreads`/the
-with-sandboxes response covers to Sandboxes with zero Threads, independent of whether the state shown
-for them is push-updated.
-
-### `UISHELL_NEWSANDBOX_NAV` — "New sandbox" should open the created Sandbox's page
-
-**Bug:** `sandboxes.tsx`'s `create()` POSTs `/sandboxes` and, on success, only resets the form — it
-never navigates anywhere. Clicking "New sandbox" should take the operator straight to the new
-Sandbox's own page instead of leaving them on the list.
 
 ### `THREAD_BROWSE_PAGINATE` — paginated/searchable all-threads page
 
