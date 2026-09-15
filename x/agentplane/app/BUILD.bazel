@@ -863,3 +863,23 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_action_federation",
+    srcs = ["test_action_federation.py"],
+    deps = [
+        ":action_federation",
+        ":conftest",
+        ":oidc",
+        "//:conftest",
+        "//util:net",
+        "//util/testing:asgi",
+        "//util/testing:mock_oidc",
+        "//x/agentplane/action_service:operator_oidc",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
+    ],
+)

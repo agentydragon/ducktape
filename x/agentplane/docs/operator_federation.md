@@ -60,8 +60,9 @@ and the current operator's login access token as `client_assertion`. No client s
 exchange target. This is not RFC 8693 token exchange. Each request creates a fresh exchange client;
 there is no mutable application-global operator-token cache.
 
-To opt in, set the app's `action_federation` YAML key (or `AGENTPLANE_ACTION_FEDERATION` JSON) with
-**all** these fields. Values below are descriptions, not deployable defaults:
+To opt in, set the app's `action_federation` YAML key (or `AGENTPLANE_ACTION_FEDERATION` JSON)
+with these fields. Token profiles default to Authentik; the pins below are descriptions, not
+deployable defaults:
 
 - `mode`: `exchange` for the staging Authentik provider boundary; `direct` only when the login token
   already has the target issuer, audience, and subject format.
@@ -230,6 +231,8 @@ by L7 HTTP inspection of encrypted TLS. A different Gateway/DNS/L7-proxy setup r
 - `//x/agentplane/action_service:test_runtime`: Settings/catalog validation and production runtime composition.
 - `//x/agentplane/app:test_action_api` and `//x/agentplane/action_service:test_operator_oidc`: signed
   offline request/authorization seams, including distinct operator identities and rejected token claims.
+- `//mcp_infra:test_oidc_principal` and `//x/agentplane/app:test_action_federation`: strict shared
+  verification and the independently selected login/target profiles for direct Dex federation.
 
 Run through `bbr`/CI only. There is no parallel copied-literal HCL/manifest contract test: those
 assertions detected edits rather than executing federation. Synthetic Settings JSON also did not

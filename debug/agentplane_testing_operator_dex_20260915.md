@@ -44,6 +44,10 @@ the testing ConfigMap activates the new profile.
 The signed-token security suite, both profiles through the actual Action Service
 operator API, and the changed libraries' type/lint checks passed in
 [45479ab9](https://app.buildbuddy.io/invocation/45479ab9-ec23-43d7-ab14-cf3350a93466).
+The app's direct Dex path accepts the signed token only when both login and target
+profiles explicitly select Dex; leaving either Authentik refuses it. This and the
+unchanged Haku Authentik adapter passed in
+[ece19014](https://app.buildbuddy.io/invocation/ece19014-6779-464d-b9a2-4cfd17173107).
 This is not deployed acceptance: after both candidate changes and images land,
 activate the testing profile, run the real MCP/operator cases from devbox, and
 verify teardown. Do not resend the user's failed staging input.
