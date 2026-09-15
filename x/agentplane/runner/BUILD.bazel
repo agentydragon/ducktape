@@ -140,6 +140,7 @@ py_library(
     deps = [
         ":event_log",
         ":journal_file",
+        ":journal_lines",
         "//x/agentplane/protocol:command_pb2",
         "@pypi//protobuf",
     ],
@@ -150,6 +151,7 @@ py_library(
     srcs = ["event_log.py"],
     deps = [
         ":journal_file",
+        ":journal_lines",
         "//x/agentplane/protocol:event_log_pb2",
         "//x/agentplane/protocol:event_pb2",
         "@pypi//protobuf",
@@ -570,6 +572,25 @@ py_test(
     ],
 )
 
+py_library(
+    name = "journal_lines",
+    srcs = ["journal_lines.py"],
+)
+
+py_test(
+    name = "test_command_journal",
+    srcs = ["test_command_journal.py"],
+    deps = [
+        ":command_journal",
+        ":conftest",
+        "//:conftest",
+        "//x/agentplane/protocol:command_pb2",
+        "//x/agentplane/protocol:event_pb2",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_test(
     name = "test_journal_process",
     srcs = ["test_journal_process.py"],
@@ -581,6 +602,19 @@ py_test(
         "//x/agentplane/protocol:command_pb2",
         "//x/agentplane/protocol:event_pb2",
         "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_event_log",
+    srcs = ["test_event_log.py"],
+    deps = [
+        ":conftest",
+        ":event_log",
+        "//:conftest",
+        "//x/agentplane/protocol:event_pb2",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

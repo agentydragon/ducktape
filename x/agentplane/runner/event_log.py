@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
@@ -15,8 +14,7 @@ from google.protobuf.message import Message
 
 from x.agentplane.protocol import event_log_pb2, event_pb2
 from x.agentplane.runner.journal_file import JournalFile
-
-logger = logging.getLogger(__name__)
+from x.agentplane.runner.journal_lines import journal_lines
 
 Observation = (
     event_pb2.HarnessStarted
@@ -75,29 +73,18 @@ class EventLog:
         self._changed = asyncio.Event()
 
     def _load(self) -> None:
-        """Load entries, dropping only a trailing interrupted append."""
-        data = self.path.read_bytes()
-        offset = 0
-        for raw in data.split(b"\n"):
-            line = raw.strip()
-            if line:
-                try:
-                    entry = ParseDict(json.loads(line), event_log_pb2.EventEntry())
-                    if (
-                        entry.cursor != len(self._entries) + 1
-                        or entry.origin.source_id != self.source_id
-                        or entry.origin.sequence != entry.cursor
-                    ):
-                        raise ValueError("invalid runner EventEntry origin or cursor")
-                    self._entries.append(entry)
-                except ValueError as error:
-                    if offset + len(raw) < len(data):
-                        raise ValueError(f"corrupt session log {self.path} at byte {offset}") from error
-                    logger.warning("%s: dropping an incomplete final line of %d bytes", self.path, len(raw))
-                    with self.path.open("r+b") as existing:
-                        existing.truncate(offset)
-                    return
-            offset += len(raw) + 1
+        for line_number, raw in enumerate(journal_lines(self.path), start=1):
+            try:
+                entry = ParseDict(json.loads(raw), event_log_pb2.EventEntry())
+                if (
+                    entry.cursor != len(self._entries) + 1
+                    or entry.origin.source_id != self.source_id
+                    or entry.origin.sequence != entry.cursor
+                ):
+                    raise ValueError("invalid runner EventEntry origin or cursor")
+            except ValueError as error:
+                raise ValueError(f"corrupt session log {self.path} line {line_number}") from error
+            self._entries.append(entry)
 
     @property
     def last_cursor(self) -> int:
