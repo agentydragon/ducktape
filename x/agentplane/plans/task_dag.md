@@ -584,10 +584,17 @@ choose successor command replay (`THREAD_SUCCESSOR_DELIVERY`).
 
 ### `THREAD_PENDING_UI` — pending commands and additive Raw evidence
 
-**Planned UI:** derive the runner queue from full `CommandAdmitted` payloads and causal
-outcomes. Show queued inputs, model changes awaiting effect, and targeted interrupts
-above the composer; preserve local unconfirmed submissions distinctly. A model command
-must not block submission of the input needed to apply it in Codex.
+**Pending-command portion in review, #7016:** derive the runner queue from full
+`CommandAdmitted` payloads and causal outcomes. Input, model, interrupt, and stop use the
+same submission path; local unconfirmed commands retain their exact payload and Thread
+scope across reload. HTTP admission never advances the replay cursor, and lost HTTP
+responses cannot erase streamed admission. The picker keeps the applied model until
+its causal Event; queued commands do not block later input. Component/storage tests and
+desktop/phone/Raw pending visuals cover these states.
+
+**Remaining:** canonical Thread-page integration, real-browser request/reply loss and
+reload acceptance, and the full additive Raw timeline/correlation surface. These are
+separate reviewable slices, not completed by the pending panel's small Raw id snippets.
 
 Implement [the projection contract](../docs/thread_layering.md#timeline-pending-queue-and-operational-state)
 with reload/replay tests and visual cases: streaming, input coalescing, delayed
@@ -725,10 +732,9 @@ the view labels catch-up and does not present a historical model as currently ap
 After catch-up only model Events beyond `N` override that snapshot.
 
 Canonical Thread metadata and replay routes now read the same retained history without a runner,
-including a real-browser deleted-Sandbox reload test. Remaining: persistent local unconfirmed
-Commands, pending-command projection, and browser reload/reconnect while commands remain unconfirmed.
-The current Session command handling is not yet reload-safe; this stream owner alone
-does not complete `THREAD_PENDING_UI` or the API cutover.
+including a real-browser deleted-Sandbox reload test in #7019. Persistent local Commands and the
+pending projection are in #7016. Remaining: real-browser reload/reconnect while commands remain
+unconfirmed and full additive Raw evidence; the stream owner alone does not complete these gates.
 
 Implement [reconnect and catch-up](../docs/thread_layering.md#reconnect-and-catch-up):
 contiguous replay, duplicate checking, gap-free live handoff, lost notifications, and
