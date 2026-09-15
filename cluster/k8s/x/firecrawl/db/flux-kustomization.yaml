@@ -12,7 +12,7 @@ spec:
     kind: ExternalArtifact
     name: firecrawl-db
     namespace: ducktape-flux
-  path: ./cluster/k8s/firecrawl/db
+  path: ./cluster/k8s/x/firecrawl/db
   prune: true
   wait: true
   dependsOn:

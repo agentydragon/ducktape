@@ -121,3 +121,10 @@ cluster/docs/inference/model_comparison/** rules-lint-ignored=true
 cluster/k8s/x/haku/** cluster-manifest-ignored=true
 cluster/k8s/x/agents/haku-zones-mitmproxy/** cluster-manifest-ignored=true
 cluster/k8s/x/agents/haku-zones-mitmproxy-namespace/** cluster-manifest-ignored=true
+
+# Parked application Flux declarations; preserve them with their deployment
+# manifests for possible revival, but keep them out of active-cluster validation
+# while they are intentionally absent from the root kustomization.
+cluster/k8s/x/firecrawl/**/flux-kustomization.yaml cluster-manifest-ignored=true
+cluster/k8s/x/openhands/**/flux-kustomization.yaml cluster-manifest-ignored=true
+cluster/k8s/x/tandoor/**/flux-kustomization.yaml cluster-manifest-ignored=true

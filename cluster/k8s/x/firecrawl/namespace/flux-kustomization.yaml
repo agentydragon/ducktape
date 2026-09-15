@@ -6,7 +6,7 @@ metadata:
 spec:
   suspend: true
   interval: 1h
-  path: ./cluster/k8s/firecrawl/namespace
+  path: ./cluster/k8s/x/firecrawl/namespace
   prune: false
   sourceRef:
     kind: ExternalArtifact

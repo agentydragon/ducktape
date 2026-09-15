@@ -330,7 +330,7 @@ declarations are no longer included in the active root bundle. Their
 application manifests and per-component Flux declarations are revival inputs,
 not currently reconciled cluster state.
 
-- **Firecrawl**: `firecrawl/` — parked; its namespace, database, and app
+- **Firecrawl**: `x/firecrawl/` — parked; its namespace, database, and app
   declarations remain in Git.
 - **OpenHands**: `x/openhands/` — experimental and not currently used; its
   namespace, secrets, sandbox, and app declarations remain in Git.
