@@ -10,6 +10,7 @@ filegroup(
         "//x/agentplane/app/migrations/versions:0003_thread_harness.py",
         "//x/agentplane/app/migrations/versions:0004_followable_event_entries.py",
         "//x/agentplane/app/migrations/versions:0005_thread_command_outbox.py",
+        "//x/agentplane/app/migrations/versions:0006_thread_replay_records.py",
     ],
     visibility = ["//x/agentplane/app:__pkg__"],
 )

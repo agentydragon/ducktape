@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack
@@ -12,7 +13,7 @@ from uuid import UUID
 import grpc
 import httpx
 import httpx2
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -610,6 +611,61 @@ async def thread_events(
     if await store.get_thread(thread_id) is None:
         raise ThreadNotFoundError(thread_id)
     return [MessageToDict(entry) for entry in await store.events(thread_id, after_cursor=after, limit=limit)]
+
+
+@threads.get("/{thread_id}/records")
+async def thread_records(
+    store: Store,
+    thread_id: UUID,
+    after: Annotated[int, Query(ge=0, description="Thread records with a greater replay cursor.")] = 0,
+    limit: Annotated[int, Query(ge=1, le=10_000)] = 10_000,
+) -> list[dict[str, object]]:
+    """The durable Thread replay envelope: app intent plus exact copied runner evidence."""
+    if await store.get_thread(thread_id) is None:
+        raise ThreadNotFoundError(thread_id)
+    return [MessageToDict(record) for record in await store.thread_records(thread_id, after_cursor=after, limit=limit)]
+
+
+@threads.get("/{thread_id}/records/stream")
+async def thread_record_stream(
+    store: Store,
+    shutdown: Shutdown,
+    thread_id: UUID,
+    after: Annotated[int, Query(ge=0, description="Replay Thread records after this cursor.")] = 0,
+    last_event_id: Annotated[int | None, Header(ge=0)] = None,
+) -> StreamingResponse:
+    """Follow the app's durable Thread-record log, replaying before live records."""
+    if await store.get_thread(thread_id) is None:
+        raise ThreadNotFoundError(thread_id)
+    after_cursor = last_event_id if last_event_id is not None else after
+    if after_cursor > await store.last_thread_record_cursor(thread_id):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="after cursor is beyond the Thread record log")
+    return StreamingResponse(
+        shutdown.until(_follow_thread_records(store, thread_id, after_cursor)),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+async def _follow_thread_records(store: TrajectoryStore, thread_id: UUID, after_cursor: int) -> AsyncIterator[bytes]:
+    """A cursor-bearing replay stream; store notifications are wakeups, never records themselves."""
+    waiter = asyncio.Event()
+    cursor = after_cursor
+    with store.changes.subscribe(waiter):
+        while True:
+            waiter.clear()
+            while page := await store.thread_records(thread_id, after_cursor=cursor, limit=1_000):
+                for record in page:
+                    yield _sse_frame("record", MessageToDict(record), event_id=record.replay_cursor)
+                    cursor = record.replay_cursor
+            try:
+                await asyncio.wait_for(waiter.wait(), timeout=15)
+            except TimeoutError:
+                yield b": keepalive\n\n"
+
+
+def _sse_frame(event: str, data: dict[str, object], *, event_id: int) -> bytes:
+    return f"event: {event}\nid: {event_id}\ndata: {json.dumps(data)}\n\n".encode()
 
 
 def create_app(

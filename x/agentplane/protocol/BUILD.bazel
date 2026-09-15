@@ -61,3 +61,28 @@ ts_proto_library(
     proto = ":event_log_proto",
     deps = [":event_pb"],
 )
+
+proto_library(
+    name = "thread_record_proto",
+    srcs = ["thread_record.proto"],
+    deps = [
+        ":command_proto",
+        ":event_log_proto",
+    ],
+)
+
+py_proto_library_with_mypy_stubs(
+    name = "thread_record_pb2",
+    deps = [":thread_record_proto"],
+)
+
+ts_proto_library(
+    name = "thread_record_pb",
+    copy_files = False,
+    node_modules = "//:node_modules",
+    proto = ":thread_record_proto",
+    deps = [
+        ":command_pb",
+        ":event_log_pb",
+    ],
+)
