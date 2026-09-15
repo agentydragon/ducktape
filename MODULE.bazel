@@ -1174,10 +1174,15 @@ go_deps.module_override(
 
 # go-tree-sitter's generated cgo libraries reference its current allocator
 # symbols in a way LLD rejects. Keep this exception narrow while RBE links use
-# LLD globally.
+# LLD globally. sed against gazelle's own generated BUILD files (patch_cmds
+# runs after gazelle, same as `patches`) rather than a line-numbered patch:
+# gazelle's exact output isn't pinned to a stable line layout, so a positional
+# diff silently breaks (CONTENT_DOES_NOT_MATCH_TARGET) the moment it changes.
 go_deps.module_override(
-    patch_strip = 1,
-    patches = ["//third_party/patches:smacker_go_tree_sitter_lld.patch"],
+    patch_cmds = [
+        """sed -i '/cgo = True,/a\\    clinkopts = ["-fuse-ld=gold"],' BUILD.bazel""",
+        """sed -i '/cgo = True,/a\\    clinkopts = ["-fuse-ld=gold"],' python/BUILD.bazel""",
+    ],
     path = "github.com/smacker/go-tree-sitter",
 )
 
