@@ -86,17 +86,17 @@ async function render(
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
-  const onOpenSession = vi.fn();
+  const onOpenThread = vi.fn();
   await act(async () =>
     root.render(
       <MantineProvider>
         <MemoryRouter>
-          <SandboxPage name="startup-test" onBack={vi.fn()} onOpenSession={onOpenSession} />
+          <SandboxPage name="startup-test" onBack={vi.fn()} onOpenThread={onOpenThread} />
         </MemoryRouter>
       </MantineProvider>
     )
   );
-  return onOpenSession;
+  return onOpenThread;
 }
 
 function newSession(): HTMLButtonElement {
@@ -150,7 +150,7 @@ it("shows creation progress, prevents duplicate clicks, and restores the button 
   const sessions = vi.fn<(request: Request) => Promise<Response>>((request) =>
     request.method === "GET" ? Promise.resolve(Response.json([])) : pending
   );
-  const onOpenSession = await render(sessions);
+  const onOpenThread = await render(sessions);
   await act(async () => newSession().click());
   expect(newSession().textContent).toContain("Creating session");
   expect(newSession().disabled).toBe(true);
@@ -159,7 +159,7 @@ it("shows creation progress, prevents duplicate clicks, and restores the button 
   await act(async () => fail(Response.json({ detail: "session refused" }, { status: 422 })));
   expect(newSession().disabled).toBe(false);
   expect(container.textContent).toContain("session refused");
-  expect(onOpenSession).not.toHaveBeenCalled();
+  expect(onOpenThread).not.toHaveBeenCalled();
 });
 
 it("hides an archived thread's session by default, reveals it via Show archived, and unarchives it", async () => {

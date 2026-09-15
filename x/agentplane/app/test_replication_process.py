@@ -26,8 +26,6 @@ from x.agentplane.runner import protocol_pb2
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//asyncpg
 
-EVENTS = f"/sandboxes/{SANDBOX}/sessions/{SESSION}/events"
-
 
 async def next_entry(stream: AsyncIterator[ServerSentEvent]) -> event_log_pb2.EventEntry:
     message = await anext(stream)
@@ -54,11 +52,13 @@ async def test_killed_ingester_recovers_exact_prefix_and_browser_handoff(
 ) -> None:
     source = ReplicationSource()
     source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
+    thread_id = await store.thread(SANDBOX, SESSION, source.attached.spec)
+    events = f"/threads/{thread_id}/events/stream"
     async with asyncio.timeout(45), source.serve() as target:
         async with (
             app_process(db_url, target, boundary=boundary, cursor=3) as first,
             httpx.AsyncClient(base_url=first.url, timeout=None) as browser,
-            aconnect_sse(browser, "GET", EVENTS) as connection,
+            aconnect_sse(browser, "GET", events) as connection,
         ):
             opened = await source.opened.get()
             assert opened.after_cursor == 0
@@ -144,7 +144,7 @@ async def test_killed_ingester_recovers_exact_prefix_and_browser_handoff(
                 # Last-Event-ID wins over the stale query cursor. The snapshot is explicitly a
                 # runner observation at 5, not proof that the app has copied through cursor 5.
                 async with aconnect_sse(
-                    reconnected, "GET", EVENTS + "?after=0", headers={"Last-Event-ID": "2"}
+                    reconnected, "GET", events + "?after=0", headers={"Last-Event-ID": "2"}
                 ) as resumed:
                     stream = resumed.aiter_sse()
                     snapshot = await anext(stream)

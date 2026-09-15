@@ -82,7 +82,9 @@ export function useLive<T extends { watch: WatchHealth }>(url: string): Live<T> 
       // settles it: the API client sends the browser to log in on a 401.
       if (!probed) {
         probed = true;
-        void api.GET("/models");
+        // The error below already exposes an outage. A failed probe must not leak a rejection
+        // or overwrite a newer snapshot if the stream recovered while this request was pending.
+        void api.GET("/models").catch(() => undefined);
       }
       setState((current) => ({ ...current, connection: "disconnected" }));
     });

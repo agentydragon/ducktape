@@ -732,6 +732,7 @@ ts_library(
         ":events",
         ":frame",
         ":json_view",
+        ":live",
         ":markdown",
         ":pending_commands",
         ":session_css",
@@ -742,8 +743,7 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/react-router",
         "//x/agentplane/protocol:command_pb",
-        "//x/agentplane/protocol:event_log_pb",
-        "//x/agentplane/runner:protocol_pb",
+        "//x/agentplane/protocol:event_pb",
     ],
 )
 

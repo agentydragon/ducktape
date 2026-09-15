@@ -19,10 +19,6 @@ function sandboxPath(name: string): string {
   return `/sandboxes/${encodeURIComponent(name)}`;
 }
 
-function sessionPath(name: string, sessionId: string): string {
-  return `${sandboxPath(name)}/sessions/${encodeURIComponent(sessionId)}`;
-}
-
 function required(value: string | undefined, name: string): string {
   if (value === undefined) throw new Error(`route parameter ${name} is missing`);
   return value;
@@ -61,34 +57,27 @@ function SandboxRoute(): JSX.Element {
     <SandboxPage
       name={name}
       onBack={() => void navigate("/sandboxes")}
-      onOpenSession={(sessionId) => void navigate(sessionPath(name, sessionId))}
+      onOpenThread={(threadId) => void navigate(`/threads/${encodeURIComponent(threadId)}`)}
     />
   );
 }
 
-function SessionRoute(): JSX.Element {
-  const params = useParams();
-  const name = required(params.name, "name");
+function ThreadRoute(): JSX.Element {
+  const threadId = required(useParams().threadId, "threadId");
   const navigate = useNavigate();
-  return (
-    <SessionView
-      sandbox={name}
-      sessionId={required(params.sessionId, "sessionId")}
-      onBack={() => void navigate(sandboxPath(name))}
-    />
-  );
+  return <SessionView threadId={threadId} onBack={() => void navigate("/")} />;
 }
 
 function AppRoutes(): JSX.Element {
   const location = useLocation();
-  const sessionRoute = useMatch("/sandboxes/:name/sessions/:sessionId");
+  const threadRoute = useMatch("/threads/:threadId");
   // Not legacy-path compatibility: api.py's MCP-linkage OAuth callback redirects the browser here
   // on completion, and it needs to land showing the result rather than the Sandboxes list.
   const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(() =>
     location.pathname === "/mcp-servers" ? "mcp-servers" : null
   );
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const fullBleed = sessionRoute !== null;
+  const fullBleed = threadRoute !== null;
   return (
     <div className="agentplane-shell">
       <Sidebar
@@ -112,7 +101,7 @@ function AppRoutes(): JSX.Element {
             <Route path="/actions/:requestId" element={<ActionRequests />} />
             <Route path="/connection-enrollments/:handle" element={<ConsentRoute />} />
             <Route path="/sandboxes/:name" element={<SandboxRoute />} />
-            <Route path="/sandboxes/:name/sessions/:sessionId" element={<SessionRoute />} />
+            <Route path="/threads/:threadId" element={<ThreadRoute />} />
             <Route path="*" element={<ThreadsLanding />} />
           </Routes>
         </div>

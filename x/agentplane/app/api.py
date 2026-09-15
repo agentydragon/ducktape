@@ -12,7 +12,7 @@ from uuid import UUID
 import grpc
 import httpx
 import httpx2
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from google.protobuf.json_format import MessageToDict
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -611,6 +611,29 @@ async def thread_events(
     if await store.get_thread(thread_id) is None:
         raise ThreadNotFoundError(thread_id)
     return [MessageToDict(entry) for entry in await store.events(thread_id, after_cursor=after, limit=limit)]
+
+
+@threads.get("/{thread_id}/events/stream")
+async def thread_event_stream(
+    store: Store,
+    bridge: runner_bridge.Bridge,
+    shutdown: Shutdown,
+    thread_id: UUID,
+    after: Annotated[int, Query(ge=0, description="Replay EventEntries with a greater cursor.")] = 0,
+    last_event_id: Annotated[int | None, Header(ge=0)] = None,
+) -> StreamingResponse:
+    thread = await store.get_thread(thread_id)
+    if thread is None:
+        raise ThreadNotFoundError(thread_id)
+    # EventSource reconnect carries its verified wire position, overriding a stale query.
+    cursor = last_event_id if last_event_id is not None else after
+    if cursor > thread.last_cursor:
+        raise HTTPException(status.HTTP_409_CONFLICT, "cursor is beyond the archived Thread prefix")
+    return StreamingResponse(
+        shutdown.until(bridge.events(thread_id, after_cursor=cursor)),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 def create_app(

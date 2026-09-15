@@ -964,6 +964,7 @@ routes.push(
           (!query.has("session_id") || thread.session_id === query.get("session_id"))
       ),
   ],
+  ["GET", /^\/threads\/([0-9a-f-]+)$/, (match) => THREADS_WITH_SANDBOXES.find((thread) => thread.id === match[1])],
   [
     "GET",
     /^\/threads\/with-sandboxes$/,
@@ -1048,11 +1049,20 @@ class HarnessEventSource extends EventTarget {
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
       return;
     }
-    // The only other stream shape: a session's own events. Which script depends on which session
-    // the URL names -- everything but `s-2` gets the original two-turn script above.
-    const isStatesSession = url.pathname.endsWith(`/sessions/${ATTACHED_STATES.sessionId}/events`);
-    const attached = isStatesSession ? ATTACHED_STATES : ATTACHED;
+    const isStatesSession = url.pathname === `/threads/${THREADS[2].id}/events/stream`;
+    const thread = THREADS_WITH_SANDBOXES.find(
+      (candidate) => url.pathname === `/threads/${candidate.id}/events/stream`
+    );
+    if (!thread) throw new Error(`Unknown Thread stream: ${url.pathname}`);
     let entries = isStatesSession ? EVENTS_STATES : EVENTS;
+    const attached = create(AttachedSchema, {
+      ...(isStatesSession ? ATTACHED_STATES : ATTACHED),
+      sessionId: thread.session_id,
+    });
+    if (thread.sandbox !== "demo-a1b2") {
+      entries = entries.slice(0, thread.last_cursor);
+      attached.lastCursor = BigInt(entries.length);
+    }
     if (scenario.pendingCommands) entries = [...entries, ...PENDING_EVENTS];
     if (scenario.pendingCommands === "outcomes") entries = [...entries, ...COMMAND_OUTCOMES];
     if (scenario.sessionReplay === "catching-up") entries = entries.slice(0, 8);
