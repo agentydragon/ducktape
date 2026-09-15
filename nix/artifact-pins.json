@@ -9,8 +9,8 @@
       "sha256": "32GiCcxF7P+QWbsE4BzB28K5ihKHFcraKipUu03rpIU="
     },
     "bbapi": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/bbapi-a828e37c63b5/bbapi",
-      "sha256": "qCjjfGO18kjttVi//Xlg1FxKJbx+yIE4joHBsqgEnCA="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/bbapi-f69fc48a0062/bbapi",
+      "sha256": "9p/EigBiffsyUe/ujkK6qdFdAHWOY+KnaSrdYgD5pHM="
     },
     "claude-hooks": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-92435270e90d/claude_hooks-0.1.0-py3-none-any.whl",
@@ -33,8 +33,8 @@
       "sha256": "nZmSwtodI8AoCJKSmoy/KaCkds+23SdSw9Hy/PS4tZY="
     },
     "claude-hook-rs": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hook-rs-2c5548d3bf24/claude_hook",
-      "sha256": "LFVI078kX+36dch/n/GU3LHVQ1B9bPp/dz0xWQjLJmg="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hook-rs-c4b4986dd5ea/claude_hook",
+      "sha256": "xLSYbdXqluTgG9i9McpNr1+GLA+Ff0x8XntVm5g37K4="
     },
     "aiquota-extension": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-321f5552ffc8/aiquota.zip",
@@ -49,8 +49,8 @@
       "sha256": "O0pp9MFtXy2UA3qwLlyq+PlcHweMrOfwNwp5X+brK9E="
     },
     "debundle": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-6a6f1b1b40af/debundle",
-      "sha256": "am8bG0CvWKZme242tQD+jBoOJPQWqWztVXGobjysp/4="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-5f48fc496252/debundle",
+      "sha256": "X0j8SWJSNsSKAGYLgzmBYMSsp1GERfuU7xi9htH5v3w="
     },
     "skill-cluster_health": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cluster_health-dd6165877050/cluster_health.skill",
@@ -213,8 +213,8 @@
       "sha256": "zcaOOCVfx/GJzszicLGTJAe5K/Y4bZBdOGcq4soigII="
     },
     "gazelle": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/gazelle-bc2a6ae8f1f6/gazelle_python_binary",
-      "sha256": "vCpq6PH2eJEkOg2bkwHm/8I0p3XMO5e8GBmrim27zyc="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/gazelle-94466fe42a1c/gazelle_python_binary",
+      "sha256": "lEZv5Cocm/7QVzVEuJyg2VOUxKvkJMZolmB0Q3efDDs="
     },
     "hakuctl": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/hakuctl-19245dcb58ca/hakuctl-0.1.0-py3-none-any.whl",

@@ -71,7 +71,7 @@ from x.agentplane.app.oidc import OIDCSettings, build_oauth, operator_session
 from x.agentplane.app.operator_sessions import OperatorSessionMiddleware
 from x.agentplane.app.presets import Harness, PresetCatalog, SandboxBinding, SandboxPresetView
 from x.agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown
-from x.agentplane.app.trajectory import ThreadNotFoundError, ThreadView, TrajectoryStore
+from x.agentplane.app.trajectory import CommandIdConflictError, ThreadNotFoundError, ThreadView, TrajectoryStore
 from x.agentplane.runner.client import RunnerError
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -564,6 +564,42 @@ async def unarchive_thread(store: Store, thread_id: UUID) -> Response:
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@threads.post("/{thread_id}/commands")
+async def thread_command(
+    request: Request,
+    store: Store,
+    catalog: Annotated[ModelCatalog, Depends(_models)],
+    thread_id: UUID,
+    body: dict[str, object],
+) -> dict[str, object]:
+    """Relay one generated Command and return its exact archived CommandAdmitted EventEntry.
+
+    The response establishes runner admission plus PostgreSQL archival, not any eventual native
+    effect. An exact retry is answered from the archive before a deleted Sandbox's runner is
+    needed; command-id reuse with other work is rejected by the same lookup.
+    """
+    command = runner_bridge.parse_command(body)
+    if not command.command_id or command.WhichOneof("operation") is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="command requires id and operation"
+        )
+    if admitted := await store.admitted_command(thread_id, command):
+        return MessageToDict(admitted)
+    thread = await store.get_thread(thread_id)
+    if thread is None:
+        raise ThreadNotFoundError(thread_id)
+    if command.HasField("change_model") and (
+        not command.change_model.model or command.change_model.model not in catalog[thread.harness]
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="model is incompatible with this thread's harness"
+        )
+    bridge = request.app.state.bridge
+    if not isinstance(bridge, runner_bridge.RunnerBridge):
+        raise TypeError(f"app.state.bridge is {type(bridge).__name__}, not RunnerBridge")
+    return MessageToDict(await bridge.command(thread_id, command))
+
+
 @threads.get("/{thread_id}/events")
 async def thread_events(
     store: Store,
@@ -648,6 +684,10 @@ def create_app(
     @app.exception_handler(ThreadNotFoundError)
     async def _thread_not_found(_request: Request, error: ThreadNotFoundError) -> JSONResponse:
         return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"detail": str(error)})
+
+    @app.exception_handler(CommandIdConflictError)
+    async def _command_id_conflict(_request: Request, error: CommandIdConflictError) -> JSONResponse:
+        return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": str(error)})
 
     @app.get("/healthz", include_in_schema=False)
     async def healthz() -> Response:

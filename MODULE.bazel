@@ -1168,6 +1168,15 @@ go_deps.module_override(
     path = "mvdan.cc/garble",
 )
 
+# go-tree-sitter's generated cgo libraries reference its current allocator
+# symbols in a way LLD rejects. Keep this exception narrow while RBE links use
+# LLD globally.
+go_deps.module_override(
+    patch_strip = 1,
+    patches = ["//third_party/patches:smacker_go_tree_sitter_lld.patch"],
+    path = "github.com/smacker/go-tree-sitter",
+)
+
 # ─ redress + GoReSym (reverse engineering tools) ─────────────────────────────
 go_deps.module(
     path = "github.com/TcM1911/r2g2",

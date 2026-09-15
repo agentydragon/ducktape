@@ -20,29 +20,6 @@ rust_library(
 )
 
 rust_library(
-    name = "currencylayer_converter",
-    srcs = ["currencylayer_converter.rs"],
-    edition = "2024",
-    proc_macro_deps = [
-        "@crates//:async-trait",
-    ],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//finance/worthy:converter",
-        "//finance/worthy:denomination",
-        "//finance/worthy:exchange_rate",
-        "@crates//:currency_layer",
-        "@crates//:log",
-        "@crates//:rust_decimal",
-        # currency_layer 0.2.0 exposes rusty-money 0.4's currency types.
-        # Keep this target on the matching crate-universe version; the rest of
-        # Worthy intentionally uses the direct rusty-money 0.5 dependency.
-        "@crates//:rusty-money-0.4.2",
-        "@crates//:serde",
-    ],
-)
-
-rust_library(
     name = "fixer_converter",
     srcs = ["fixer_converter.rs"],
     edition = "2024",

@@ -9,9 +9,10 @@ import logging
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from datetime import timedelta
 from typing import Annotated
+from uuid import UUID
 
 import grpc
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Depends, Header, Query, Request, status
 from fastapi.responses import StreamingResponse
 from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
 from pydantic import BaseModel, ConfigDict, Field
@@ -20,7 +21,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from x.agentplane.app.changes import Changes
 from x.agentplane.app.inventory import ProvisioningState, SandboxInventory, SandboxNotFoundError
 from x.agentplane.app.live import LiveIndex
-from x.agentplane.app.presets import Harness, PresetCatalog
+from x.agentplane.app.presets import PresetCatalog
 from x.agentplane.app.shutdown import Shutdown
 from x.agentplane.app.trajectory import (
     EventReplicationError,
@@ -28,9 +29,10 @@ from x.agentplane.app.trajectory import (
     FeedError,
     IngestionLease,
     IngestionLeaseLostError,
+    ThreadNotFoundError,
     TrajectoryStore,
 )
-from x.agentplane.protocol import command_pb2
+from x.agentplane.protocol import command_pb2, event_log_pb2
 from x.agentplane.runner import protocol_pb2
 from x.agentplane.runner.client import Attachment, RunnerClient, RunnerError, StreamClosedError
 
@@ -290,31 +292,50 @@ class RunnerBridge:
         finally:
             attachment.cancel()
 
-    async def command(self, sandbox: str, session_id: str, command: command_pb2.Command) -> None:
-        await self._command(sandbox, session_id, lambda attachment: attachment.command(command))
+    async def command(self, thread_id: UUID, command: command_pb2.Command) -> event_log_pb2.EventEntry:
+        """Return only after this Thread's matching runner admission is in the app archive."""
+        if admitted := await self._store.admitted_command(thread_id, command):
+            return admitted
+        thread = await self._store.get_thread(thread_id)
+        if thread is None:
+            raise ThreadNotFoundError(thread_id)
+        await self._command(thread.sandbox, thread.session_id, command)
+        await self.start([thread.sandbox])
+        return await self._wait_for_admission(thread_id, command)
 
-    async def stop_runner_session(self, sandbox: str, session_id: str, command: command_pb2.Command) -> None:
-        await self._command(sandbox, session_id, lambda attachment: attachment.command(command), ends_stream=True)
-
-    async def _command(
-        self,
-        sandbox: str,
-        session_id: str,
-        command: Callable[[Attachment], Awaitable[None]],
-        *,
-        ends_stream: bool = False,
-    ) -> None:
+    async def _command(self, sandbox: str, session_id: str, command: command_pb2.Command) -> None:
         attachment = await (await self._client(sandbox)).attach(session_id)
         try:
             if attachment.attached.harness_state != protocol_pb2.HARNESS_STATE_RUNNING:
                 raise RunnerError("session is stopped; explicitly open it before sending commands")
-            await command(attachment)
-            if not ends_stream:
-                await attachment.detach()
-            await attachment.drain_until_end()
-            await self.start([sandbox])
+            await attachment.command(command)
+            # Detach is ordered after the Command on this bidi stream, but the command's native
+            # operation may continue long after runner admission. The feed, not this relay
+            # attachment, copies its resulting Events; do not wait for a Stop's process exit or
+            # another command's harness effect before returning the saved admission receipt.
+            await attachment.detach()
         finally:
             attachment.cancel()
+
+    async def _wait_for_admission(self, thread_id: UUID, command: command_pb2.Command) -> event_log_pb2.EventEntry:
+        """Wait for the ingester's committed prefix, never for a native command effect."""
+        waiter = asyncio.Event()
+        with self._store.changes.subscribe(waiter):
+            async with asyncio.timeout(15):
+                while True:
+                    if admitted := await self._store.admitted_command(thread_id, command):
+                        return admitted
+                    waiter.clear()
+                    # A commit between the first read and clear is visible here even if its NOTIFY
+                    # was already consumed; notifications only wake this durable reread.
+                    if admitted := await self._store.admitted_command(thread_id, command):
+                        return admitted
+                    # LISTEN/NOTIFY is deliberately only a wake-up. If a notification is lost
+                    # while this app is attached, a bounded durable reread still finds the
+                    # committed runner admission without asking the runner to repeat it.
+                    with contextlib.suppress(TimeoutError):
+                        async with asyncio.timeout(RECONCILE_S):
+                            await waiter.wait()
 
     async def events(self, sandbox: str, session_id: str, *, after_cursor: int) -> AsyncGenerator[bytes]:
         threads = await self._store.list_threads(sandbox=sandbox, session_id=session_id)
@@ -387,6 +408,11 @@ def _parse[M: command_pb2.Command | protocol_pb2.SessionSpec](message: M, body: 
         raise MalformedMessageError(f"not a {type(message).__name__}: {error}") from error
 
 
+def parse_command(body: dict[str, object]) -> command_pb2.Command:
+    """Decode the one generated Command shape used by the Thread command route."""
+    return _parse(command_pb2.Command(), body)
+
+
 router = APIRouter(prefix="/sandboxes/{name}/sessions", tags=["sessions"])
 
 
@@ -445,53 +471,3 @@ async def session_events(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
-
-
-@router.post("/{session_id}/inputs", status_code=status.HTTP_202_ACCEPTED)
-async def send_input(bridge: Bridge, name: str, session_id: str, body: dict[str, object]) -> Response:
-    command = _parse(command_pb2.Command(), body)
-    if not command.command_id or not command.HasField("submit_input"):
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="expected SubmitInput command")
-    await bridge.command(name, session_id, command)
-    return Response(status_code=status.HTTP_202_ACCEPTED)
-
-
-@router.post("/{session_id}/interrupt", status_code=status.HTTP_202_ACCEPTED)
-async def interrupt_session(bridge: Bridge, name: str, session_id: str, body: dict[str, object]) -> Response:
-    command = _parse(command_pb2.Command(), body)
-    if not command.command_id or not command.HasField("interrupt_turn"):
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="expected InterruptTurn command")
-    await bridge.command(name, session_id, command)
-    return Response(status_code=status.HTTP_202_ACCEPTED)
-
-
-@router.post("/{session_id}/model", status_code=status.HTTP_202_ACCEPTED)
-async def switch_session_model(
-    bridge: Bridge, name: str, session_id: str, body: dict[str, object], request: Request
-) -> Response:
-    command = _parse(command_pb2.Command(), body)
-    if not command.command_id or not command.HasField("change_model") or not command.change_model.model:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="expected ChangeModel command")
-    summaries = await bridge.list_sessions(name)
-    summary = next((item for item in summaries if item.session_id == session_id), None)
-    if summary is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"unknown session {session_id!r}")
-    harness = Harness(protocol_pb2.Harness.Name(summary.spec.harness))
-    catalog = request.app.state.models
-    if not isinstance(catalog, dict) or command.change_model.model not in catalog[harness]:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="model is incompatible with this harness"
-        )
-    await bridge.command(name, session_id, command)
-    return Response(status_code=status.HTTP_202_ACCEPTED)
-
-
-@router.post("/{session_id}/shutdown", status_code=status.HTTP_202_ACCEPTED)
-async def shutdown_session(bridge: Bridge, name: str, session_id: str, body: dict[str, object]) -> Response:
-    command = _parse(command_pb2.Command(), body)
-    if not command.command_id or not command.HasField("stop_runner_session"):
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="expected StopRunnerSession command"
-        )
-    await bridge.stop_runner_session(name, session_id, command)
-    return Response(status_code=status.HTTP_202_ACCEPTED)

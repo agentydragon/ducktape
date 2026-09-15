@@ -1,4 +1,4 @@
-import { create, fromJson, toJson, type JsonObject, type JsonValue } from "@bufbuild/protobuf";
+import { fromJson, toJson, type JsonObject, type JsonValue } from "@bufbuild/protobuf";
 import createClient from "openapi-fetch";
 
 import type { components, paths } from "./api/schema";
@@ -11,7 +11,8 @@ import {
   type SessionSpec,
   type SessionSummary,
 } from "../../runner/protocol_pb";
-import { CommandSchema } from "../../protocol/command_pb";
+import { CommandSchema, type Command } from "../../protocol/command_pb";
+import { EventEntrySchema, type EventEntry } from "../../protocol/event_log_pb";
 
 export const api: ReturnType<typeof createClient<paths>> = createClient<paths>({ baseUrl: "" });
 
@@ -211,65 +212,18 @@ export async function models(): Promise<ModelCatalog> {
   return data as ModelCatalog;
 }
 
-export async function switchModel(sandbox: string, sessionId: string, commandId: string, model: string): Promise<void> {
-  const { error } = await api.POST("/sandboxes/{name}/sessions/{session_id}/model", {
-    params: { path: { name: sandbox, session_id: sessionId } },
-    body: toJson(
-      CommandSchema,
-      create(CommandSchema, {
-        commandId,
-        operation: { case: "changeModel", value: { model } },
-      })
-    ) as JsonObject,
+/**
+ * The saved command boundary: this is the exact archived CommandAdmitted EventEntry, not a
+ * prediction that a harness has already executed the operation. Replaying the same immutable
+ * command returns that same entry, so a lost HTTP response is safe to retry.
+ */
+export async function command(threadId: string, message: Command): Promise<EventEntry> {
+  const { data, error } = await api.POST("/threads/{thread_id}/commands", {
+    params: { path: { thread_id: threadId } },
+    body: toJson(CommandSchema, message) as JsonObject,
   });
   if (error) throw new Error(displayableError(error));
-}
-
-export async function sendInput(sandbox: string, sessionId: string, commandId: string, text: string): Promise<void> {
-  const { error } = await api.POST("/sandboxes/{name}/sessions/{session_id}/inputs", {
-    params: { path: { name: sandbox, session_id: sessionId } },
-    body: toJson(
-      CommandSchema,
-      create(CommandSchema, {
-        commandId,
-        operation: { case: "submitInput", value: { text } },
-      })
-    ) as JsonObject,
-  });
-  if (error) throw new Error(displayableError(error));
-}
-
-export async function interruptSession(
-  sandbox: string,
-  sessionId: string,
-  commandId: string,
-  turnId: string
-): Promise<void> {
-  const { error } = await api.POST("/sandboxes/{name}/sessions/{session_id}/interrupt", {
-    params: { path: { name: sandbox, session_id: sessionId } },
-    body: toJson(
-      CommandSchema,
-      create(CommandSchema, {
-        commandId,
-        operation: { case: "interruptTurn", value: { turnId } },
-      })
-    ) as JsonObject,
-  });
-  if (error) throw new Error(displayableError(error));
-}
-
-export async function shutdownSession(sandbox: string, sessionId: string, commandId: string): Promise<void> {
-  const { error } = await api.POST("/sandboxes/{name}/sessions/{session_id}/shutdown", {
-    params: { path: { name: sandbox, session_id: sessionId } },
-    body: toJson(
-      CommandSchema,
-      create(CommandSchema, {
-        commandId,
-        operation: { case: "stopRunnerSession", value: {} },
-      })
-    ) as JsonObject,
-  });
-  if (error) throw new Error(displayableError(error));
+  return fromJson(EventEntrySchema, data as JsonValue);
 }
 
 export function eventsUrl(sandbox: string, sessionId: string): string {

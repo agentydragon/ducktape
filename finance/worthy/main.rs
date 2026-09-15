@@ -5,7 +5,6 @@ use asset::Asset;
 use chrono::prelude::*;
 use config::{Config, ConverterConfig, SourceConfig};
 use converter::Converter;
-use currencylayer_converter::CurrencyLayerConverter;
 use denomination::Denomination;
 use exchange_rate::ExchangeRate;
 use fixer_converter::FixerConverter;
@@ -89,7 +88,6 @@ async fn get_source_snapshots(
 }
 
 enum ConverterType {
-    CurrencyLayer,
     AlphaVantage,
     Fixer,
 }
@@ -118,9 +116,6 @@ async fn get_converter_snapshots(
                     AlphaVantageConverter::take_snapshot(config, denominations, base)
                 }
                 Fixer(config) => FixerConverter::take_snapshot(config, denominations, base),
-                CurrencyLayer(config) => {
-                    CurrencyLayerConverter::take_snapshot(config, denominations, base)
-                }
             } // TODO
             .map(move |conversions| {
                 let conversions = conversions.unwrap();
@@ -129,7 +124,6 @@ async fn get_converter_snapshots(
                     converter_type: match converter_config {
                         AlphaVantage(_) => ConverterType::AlphaVantage,
                         Fixer(_) => ConverterType::Fixer,
-                        CurrencyLayer(_) => ConverterType::CurrencyLayer,
                     },
                     snapshot: conversions,
                 }
@@ -527,7 +521,6 @@ fn converter_snapshot_to_json(
     json_output::ConverterSnapshot {
         id: converter_snapshot.id.clone(),
         converter_type: match converter_snapshot.converter_type {
-            ConverterType::CurrencyLayer => json_output::ConverterType::CurrencyLayer,
             ConverterType::AlphaVantage => json_output::ConverterType::AlphaVantage,
             ConverterType::Fixer => json_output::ConverterType::Fixer,
         },
@@ -545,7 +538,6 @@ fn converter_snapshot_from_json(
     ConverterSnapshot {
         id: converter_snapshot.id.clone(),
         converter_type: match converter_snapshot.converter_type {
-            json_output::ConverterType::CurrencyLayer => ConverterType::CurrencyLayer,
             json_output::ConverterType::AlphaVantage => ConverterType::AlphaVantage,
             json_output::ConverterType::Fixer => ConverterType::Fixer,
         },

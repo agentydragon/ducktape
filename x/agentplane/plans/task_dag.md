@@ -68,10 +68,11 @@ flowchart TB
     RUNNER_WRITER_HANDOFF["Planned correctness<br/>exclusive runner ownership of retained state<br/>fence old writer and native dispatch"]:::future
     SANDBOX_LIFECYCLE_DURABILITY["Planned lifecycle correctness<br/>retained state through suspension<br/>archive before managed storage deletion"]:::future
     THREAD_EVENT_CONTINUITY["Planned identity cutover<br/>one Thread journal across incarnations<br/>exclusive runner writer and retained state"]:::future
-    THREAD_COMMAND_INGRESS["Next command slice<br/>runner admission then app archival<br/>same-id retry and reload-safe submission"]:::future
     THREAD_PENDING_UI["Planned UI<br/>pending inputs, model changes, interrupts<br/>additive Raw evidence"]:::future
     THREAD_COMMAND_DELIVERY["Deferred backend<br/>app outbox delivery to existing runner<br/>only if app-first acceptance is chosen later"]:::future
     THREAD_REPLAY_PROTOCOL["Planned protocol<br/>one protobuf Command/Event language<br/>durable app-to-frontend replay"]:::future
+    THREAD_TAIL_FIRST["Future performance<br/>open recent conversation window first<br/>bounded catch-up for long-running Threads"]:::future
+    THREAD_LAZY_HISTORY["Future UI<br/>load older Thread history on demand<br/>stable scroll and concurrent live following"]:::future
     NEWTHREAD_DURABLE["Deferred combined workflow<br/>server-owned sandbox+thread provisioning<br/>survive browser close and app restart"]:::future
     THREAD_OUTBOX_CUTOVER["Deferred cutover<br/>all product commands via app outbox if chosen<br/>no competing relay path"]:::future
     THREAD_SUCCESSOR_DELIVERY["Deferred decision<br/>unsettled Thread command across<br/>successor runner session"]:::future
@@ -91,9 +92,9 @@ flowchart TB
     AG -. hosted Thread lifecycle .-> RETIRE_AGENT
 
     INPUT_DELIVERY -. reliable Thread ingress .-> ING
-    THREAD_COMMAND_INGRESS --> THREAD_PENDING_UI
     THREAD_REPLAY_PROTOCOL --> THREAD_PENDING_UI
-    RUNNER_EVENT_DURABILITY --> THREAD_EVENT_CONTINUITY
+    THREAD_REPLAY_PROTOCOL --> THREAD_TAIL_FIRST
+    THREAD_TAIL_FIRST --> THREAD_LAZY_HISTORY
     RUNNER_WRITER_HANDOFF --> THREAD_EVENT_CONTINUITY
     THREAD_EVENT_CONTINUITY --> THREAD_SUCCESSOR_DELIVERY
     CLAUDE_RECOVERY -. native continuation evidence .-> THREAD_SUCCESSOR_DELIVERY
@@ -565,26 +566,19 @@ Replay of an existing single-session Thread can improve independently; multiple
 incarnations must not ship by inventing a second Event counter. This item does not
 choose successor command replay (`THREAD_SUCCESSOR_DELIVERY`).
 
-### `THREAD_COMMAND_INGRESS` — trustworthy runner-first submission
-
-**Next command slice:** implement the
-[runner-admission-first response boundary](../docs/thread_layering.md#runner-admission-first).
-Use one generated `Command` route for input, model, interrupt, and stop. “Saved” requires
-the runner admission in the app's committed Event prefix; it does not wait for effect.
-Persist browser retry identity and payload through reload until durable confirmation.
-
-Acceptance covers loss before admission, after runner admission but before app copy,
-and after app commit but before the response; retry the exact command in the same
-scope. While the runner is unavailable, preserve the local draft and report that
-server delivery has not been confirmed. Remove redundant per-operation submission
-paths in the same cutover; all normal UI controls share this ingress.
-
 ### `THREAD_PENDING_UI` — pending commands and additive Raw evidence
 
-**Planned UI:** derive the runner queue from full `CommandAdmitted` payloads and causal
-outcomes. Show queued inputs, model changes awaiting effect, and targeted interrupts
-above the composer; preserve local unconfirmed submissions distinctly. A model command
-must not block submission of the input needed to apply it in Codex.
+**Pending-command portion in review, #7016:** derive the runner queue from full
+`CommandAdmitted` payloads and causal outcomes. Input, model, interrupt, and stop use the
+same submission path; local unconfirmed commands retain their exact payload and Thread
+scope across reload. HTTP admission never advances the replay cursor, and lost HTTP
+responses cannot erase streamed admission. The picker keeps the applied model until
+its causal Event; queued commands do not block later input. Component/storage tests and
+desktop/phone/Raw pending visuals cover these states.
+
+**Remaining:** canonical Thread-page integration, real-browser request/reply loss and
+reload acceptance, and the full additive Raw timeline/correlation surface. These are
+separate reviewable slices, not completed by the pending panel's small Raw id snippets.
 
 Implement [the projection contract](../docs/thread_layering.md#timeline-pending-queue-and-operational-state)
 with reload/replay tests and visual cases: streaming, input coalescing, delayed
@@ -592,9 +586,9 @@ confirmation, pending model effect, interrupts, failure/no-op, suspended/missing
 and Raw native/correlation details. An optional app queue would add app intent to this
 view later; pending runner commands do not require it.
 
-Integrated acceptance depends on `THREAD_COMMAND_INGRESS` and
-`THREAD_REPLAY_PROTOCOL`. Reducer/visual PRs can proceed against the established
-durable runner admission and Event paths while per-harness recovery evidence is developed.
+Integrated acceptance depends on `THREAD_REPLAY_PROTOCOL`. Reducer/visual PRs can
+proceed against established Events while that path and per-harness recovery evidence
+are developed.
 
 ### `THREAD_COMMAND_DELIVERY` — optional app command delivery queue
 
@@ -708,7 +702,22 @@ are frontend projections of this log; an app delivery queue is not a dependency.
 
 App-process loss and HTTP/SSE handoff are covered by
 [replica-safe runner delivery](../app/README.md#replica-safe-runner-delivery).
+The built SPA also has real-Chromium retained/live/reload, ahead-of-prefix snapshot,
+and rejected runner gap/source-change acceptance. Extend that surface for canonical
+admission, persisted same-id retry, and pending controls; mocked component streams
+alone do not cover those boundaries.
 Native crash-recovery research is not a prerequisite for the replay/projection implementation.
+
+The frontend `EventStream` now owns a verified, contiguous prefix: exact duplicates
+do not reapply streaming deltas; source changes, gaps, and conflicts stop consumption
+with the last valid prefix visible. A target change gets fresh state, and a cold mount
+replays from zero. `Attached@N` remains separate from consumed prefix `K`: while `K < N`,
+the view labels catch-up and does not present a historical model as currently applied.
+After catch-up only model Events beyond `N` override that snapshot.
+
+Remaining: canonical Thread replay/metadata wiring and real-browser reload/reconnect
+while commands remain unconfirmed. Persistent local Commands and the pending projection
+are in #7016; the stream owner alone does not complete `THREAD_PENDING_UI` or the API cutover.
 
 Implement [reconnect and catch-up](../docs/thread_layering.md#reconnect-and-catch-up):
 contiguous replay, duplicate checking, gap-free live handoff, lost notifications, and
@@ -724,6 +733,42 @@ case through browser reload and catch-up, not only eventual convergence.
 Do not implement #6985's command/Event union as the runner timeline. An optional app
 queue may expose an atomic pending snapshot alongside replay; two append-only browser
 feeds are not an established requirement.
+
+### `THREAD_TAIL_FIRST` — recent history first for long-running Threads
+
+**Future work, not a gate on the current UI cutover:** opening a Thread that has run
+continuously for a month should show roughly the last screenful or two first, without
+transferring or reducing its entire Event log from the beginning. Add bounded,
+cursor-addressed recent-window reads and a gap-free handoff to live following.
+
+Design the checkpoint/window contract explicitly: folding a suffix from empty state
+cannot recover an older pending admission, the current model, or a streaming item
+whose start precedes the window. Current command/control state must remain correct
+without loading every historical message. Any projection checkpoint is derived from
+the authoritative Events at a named cursor, not a new Event counter or independent
+truth; operational snapshots remain distinguishable. Keep native evidence and
+off-window references fetchable, and mark incomplete item context honestly.
+
+Acceptance uses a large synthetic history with pending commands and item starts
+before the returned window. Assert bounded initial transfer/render work, correct
+current state, and no missed or duplicated Events across the window/live boundary.
+Do not hide a full-history download behind a fast first paint. This concerns history
+inside one Thread, not the all-Threads search/list task `THREAD_BROWSE_PAGINATE`.
+
+### `THREAD_LAZY_HISTORY` — fetch older conversation history only when needed
+
+**Future work:** build on `THREAD_TAIL_FIRST`'s bounded history contract. Fetch older
+pages on upward navigation or explicit loading; opening a Thread must not eventually
+download everything back to its start without user demand. Preserve the visible scroll
+anchor while prepending history, follow new Events concurrently, and support loading
+the context/native evidence around a referenced item.
+
+Acceptance covers page overlaps and boundaries, tool/streaming items spanning pages,
+reconnect during a history fetch, exhausted history, and Raw/normal presentation.
+Loading old Events must neither regress live model/harness/pending-command state nor
+advance the live replay cursor. Deduplicate only agreeing entries and surface gaps or
+conflicts. Virtualized rendering can bound DOM cost but does not replace lazy network
+and projection loading.
 
 ### `THREAD_OUTBOX_CUTOVER` — one ingress if the app queue is chosen
 

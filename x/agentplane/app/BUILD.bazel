@@ -10,6 +10,7 @@ package(default_visibility = ["//x/agentplane:__subpackages__"])
 # gazelle:resolve py x.agentplane.protocol.command_pb2 //x/agentplane/protocol:command_pb2
 # gazelle:resolve py x.agentplane.protocol.event_pb2 //x/agentplane/protocol:event_pb2
 # gazelle:resolve py x.agentplane.protocol.event_log_pb2 //x/agentplane/protocol:event_log_pb2
+# gazelle:resolve py httpx_sse @pypi//httpx_sse
 
 # No test here is small, and none of that is about the tests being slow: on the CI executor image
 # they are killed at a small target's 60s with the budget spent fetching inputs rather than running
@@ -258,6 +259,7 @@ py_library(
         ":shutdown",
         ":trajectory",
         "//x/agentplane/protocol:command_pb2",
+        "//x/agentplane/protocol:event_log_pb2",
         "//x/agentplane/runner:client",
         "//x/agentplane/runner:protocol_pb2",
         "@pypi//fastapi",
@@ -297,6 +299,7 @@ py_test(
         "//:conftest",
         "//x/agentplane/protocol:command_pb2",
         "//x/agentplane/protocol:event_log_pb2",
+        "//x/agentplane/protocol:event_pb2",
         "//x/agentplane/runner:client",
         "//x/agentplane/runner:conftest",
         "//x/agentplane/runner:protocol_pb2",
@@ -411,6 +414,7 @@ py_library(
         ":operator_sessions",
         ":presets",
         ":trajectory_updates",
+        "//x/agentplane/protocol:command_pb2",
         "//x/agentplane/protocol:event_log_pb2",
         "//x/agentplane/runner:protocol_pb2",
         "@pypi//asyncpg",
@@ -429,6 +433,7 @@ py_test(
         ":presets",
         ":trajectory",
         "//:conftest",
+        "//x/agentplane/protocol:command_pb2",
         "//x/agentplane/protocol:event_log_pb2",
         "//x/agentplane/protocol:event_pb2",
         "//x/agentplane/runner:protocol_pb2",
@@ -639,6 +644,7 @@ py_library(
         ":egress",
         ":inventory",
         ":presets",
+        ":trajectory",
         "//x/agentplane/protocol:command_pb2",
         "//x/agentplane/protocol:event_log_pb2",
         "//x/agentplane/runner:protocol_pb2",
@@ -825,5 +831,32 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_thread_browser",
+    size = "medium",
+    srcs = ["test_thread_browser.py"],
+    data = [
+        "//x/agentplane/app/frontend:bundle",
+        "@playwright_browsers//:chromium-headless-shell",
+    ],
+    env = {"CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)"},
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":trajectory",
+        "//:conftest",
+        "//util/bazel:runfiles",
+        "//util/testing:frontend_visual",
+        "//util/testing:undeclared_outputs",
+        "//x/agentplane/app/testing:replication_process",
+        "//x/agentplane/app/testing:replication_source",
+        "//x/agentplane/protocol:event_pb2",
+        "@pypi//playwright",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

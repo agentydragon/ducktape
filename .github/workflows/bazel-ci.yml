@@ -162,9 +162,9 @@ jobs:
           runner_recycling_key: ducktape-bazel-ci-v3
           run_from_commit: ${{ steps.source.outputs.sha }}
           linkage_roles: test,build
-          # The build itself lives in devinfra/ci/bazel_ci.sh — see that file's header for
-          # why (a ~200-line bash program in a YAML string is invisible to shfmt and
-          # shellcheck). It runs on the BuildBuddy runner VM, which has the repo checked
+          # The build itself lives in devinfra/ci/bazel_ci.py — see that file's header for
+          # why it runs on the BuildBuddy runner VM rather than the GitHub Actions runner.
+          # The VM has the repo checked
           # out but NOT the GitHub Actions environment, so every value it needs is
           # forwarded explicitly below rather than being ambient.
           env_overrides: |
@@ -173,7 +173,7 @@ jobs:
             PR_BASE_SHA=${{ inputs.pr_base_sha || github.event.pull_request.base.sha }}
             TEST_INVOCATION_ID=${{ steps.invocation-ids.outputs.test }}
             BUILD_INVOCATION_ID=${{ steps.invocation-ids.outputs.build }}
-          script: bash devinfra/ci/bazel_ci.sh
+          script: python3 devinfra/ci/bazel_ci.py
       - name: Upload BuildBuddy linkage
         if: always()
         uses: actions/upload-artifact@v7
