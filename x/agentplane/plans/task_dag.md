@@ -120,7 +120,6 @@ flowchart TB
     THREAD_TAIL_FIRST --> THREAD_LAZY_HISTORY
     THREAD_ACTIVITY_MOCKS --> THREAD_ACTIVITY_DENSITY
     RUNNER_WRITER_HANDOFF --> THREAD_EVENT_CONTINUITY
-    THREAD_EVENT_CONTINUITY --> THREAD_SUSPEND_RESUME
     THREAD_EVENT_CONTINUITY --> THREAD_SUCCESSOR_DELIVERY
     CLAUDE_RECOVERY -. native continuation evidence .-> THREAD_SUCCESSOR_DELIVERY
     CODEX_RECOVERY -. native continuation evidence .-> THREAD_SUCCESSOR_DELIVERY
@@ -728,9 +727,22 @@ appears finalized and cannot accept further messages. Record this as an observed
 symptom, not a diagnosed storage loss or harness failure. Sandbox readiness, an ended
 runner attachment, and the lifetime of its Thread must not be conflated.
 
+**Existing mechanism to wire through:** `Runner.open` with a known `session_id` and
+its matching stored `spec` calls `Session.ensure_running`; the Claude adapter uses
+its retained native resume ID and Codex calls `thread/resume`. `test_attach.py` and
+`test_restart.py` already exercise this path against both harnesses with retained
+conversation assertions. This is not proof of deployed Sandbox resume: the app's
+Sandbox resume route only changes Kubernetes operating mode, ingestion attaches
+without a spec, and the Thread composer disables submission for an ended feed.
+Trace and expose the missing product continuation path, reusing the existing runner
+operation rather than presuming a new native resume protocol is needed. Validate
+deployed state before attributing this particular report to those code paths.
+
 Resume the native conversation in a new harness process as needed, preserve the same
 Thread ID/URL and history, and restore message submission once its runner/harness is
-ready. Reuse `THREAD_EVENT_CONTINUITY`'s retained journal and single Event sequence.
+ready. Preserve the retained journal and single Event sequence; align with
+`THREAD_EVENT_CONTINUITY` without gating a working existing-session resume path on
+that larger identity cutover.
 Do not merely enable the composer against a dead session, create a replacement Thread,
 or treat a fresh harness without the original context as a successful resume. Missing
 recovery state must be explicit. This does not introduce offline command admission or
