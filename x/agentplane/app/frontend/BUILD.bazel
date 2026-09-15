@@ -733,6 +733,17 @@ js_library(
 )
 
 ts_library(
+    name = "conversation_scroll",
+    srcs = ["conversation_scroll.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "session",
     srcs = [
         "session.tsx",
@@ -746,6 +757,7 @@ ts_library(
     deps = [
         ":client",
         ":command_submission",
+        ":conversation_scroll",
         ":event_stream",
         ":events",
         ":frame",
