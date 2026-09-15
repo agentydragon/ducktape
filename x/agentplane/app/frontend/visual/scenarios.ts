@@ -92,7 +92,12 @@ export const SCENARIOS: Record<string, Scenario> = {
   },
   // The sidebar's landing state (UISHELL_SIDEBAR): every group state icon (running, pending,
   // suspended, deleted) and the struck-through read-only group, with no thread open yet.
-  threads: { element: "#app", route: "/", viewport: { width: 1200, height: 900 } },
+  threads: {
+    element: "#app",
+    route: "/",
+    viewport: { width: 1200, height: 900 },
+    readySelectors: ["a.agentplane-sidebar-group-name"],
+  },
   threads_phone: { element: "#app", route: "/", viewport: PHONE, outputName: "threads-phone" },
   // The phone-width sidebar drawer opened over the landing view (UISHELL_MOBILE): the hamburger,
   // the backdrop, and the same group/thread list the desktop sidebar shows.
@@ -101,7 +106,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     route: "/",
     viewport: PHONE,
     outputName: "threads-phone-drawer",
-    readySelectors: [".agentplane-sidebar-backdrop"],
+    readySelectors: [".agentplane-sidebar-backdrop", "a.agentplane-sidebar-group-name"],
     openMobileSidebar: true,
   },
 
