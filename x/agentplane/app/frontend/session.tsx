@@ -19,10 +19,19 @@ import {
 import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
 import IconPlayerStop from "@tabler/icons-react/dist/esm/icons/IconPlayerStop.mjs";
 import IconPower from "@tabler/icons-react/dist/esm/icons/IconPower.mjs";
-import { type JSX, Fragment, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
+import {
+  type JSX,
+  Fragment,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type CSSProperties,
+  type KeyboardEvent,
+} from "react";
 import { useSearchParams } from "react-router";
 
-import { fromJson, type JsonObject, type JsonValue } from "@bufbuild/protobuf";
+import { toJson } from "@bufbuild/protobuf";
 
 import {
   displayableError,
@@ -40,10 +49,7 @@ import {
 import "./session.css";
 
 import {
-  EMPTY,
-  eventOf,
   groupItems,
-  reduce,
   timeline,
   type InputState,
   type Item,
@@ -53,11 +59,11 @@ import {
   type Turn,
 } from "./events";
 import { FrameView } from "./frame";
+import { appliedModel, catchingUp, EventStream, type Connection } from "./event_stream";
 import { HighlightedText } from "./json_view";
 import { Markdown } from "./markdown";
 import { ItemKind, TurnStatus } from "../../protocol/event_pb";
-import { EventEntrySchema } from "../../protocol/event_log_pb";
-import { AttachedSchema } from "../../runner/protocol_pb";
+import { SessionSpecSchema } from "../../runner/protocol_pb";
 
 const KIND_LABELS: Partial<Record<ItemKind, string>> = {
   [ItemKind.ASSISTANT_TEXT]: "assistant",
@@ -333,43 +339,52 @@ function ThreadTitle({
   );
 }
 
-/** Session attachment (`status`) and the harness process (`state.harness`) are two independent
+/** Session attachment and the harness process (`state.harness`) are two independent
  * state machines; this collapses them into one dot by severity, worst axis first, so the header
  * doesn't need a badge per axis. */
 function connectionStatus(
-  status: string,
+  connection: Connection,
+  replaying: boolean,
   harness: SessionState["harness"]
 ): { color: string; breathing?: boolean; label: string } {
-  if (status.startsWith("runner: ")) return { color: "red", label: status };
+  if (connection.kind === "failed") return { color: "red", label: "Event stream stopped" };
+  if (connection.kind === "connecting") return { color: "yellow", breathing: true, label: "Connecting…" };
+  if (connection.kind === "reconnecting") return { color: "yellow", breathing: true, label: "Reconnecting…" };
+  if (replaying) return { color: "yellow", breathing: true, label: "Catching up…" };
   if (harness === "lost") return { color: "red", label: "Harness lost" };
-  if (status === "connecting") return { color: "yellow", breathing: true, label: "Connecting…" };
-  if (status === "reconnecting") return { color: "yellow", breathing: true, label: "Reconnecting…" };
-  if (status === "attached" && harness === null) {
+  if (connection.kind === "following" && harness === null) {
     return { color: "yellow", breathing: true, label: "Attached · waiting for harness" };
   }
-  if (status === "stream ended") return { color: "gray", label: `Stream ended · harness ${harness ?? "unknown"}` };
+  if (connection.kind === "ended") return { color: "gray", label: `Stream ended · harness ${harness ?? "unknown"}` };
+  const status = "attached";
   if (harness === "stopped") return { color: "gray", label: `${status} · harness stopped` };
   return { color: "green", label: `${status} · harness ${harness ?? "unknown"}` };
 }
 
-export function SessionView({
-  sandbox,
-  sessionId,
-  onBack,
-}: {
+interface SessionViewProps {
   sandbox: string;
   sessionId: string;
   onBack: () => void;
-}): JSX.Element {
-  const [state, setState] = useState<SessionState>(EMPTY);
-  const [status, setStatus] = useState("connecting");
+}
+
+export function SessionView(props: SessionViewProps): JSX.Element {
+  // All local state belongs to this target, including drafts and outstanding HTTP continuations.
+  return <SessionContents key={JSON.stringify([props.sandbox, props.sessionId])} {...props} />;
+}
+
+function SessionContents({ sandbox, sessionId, onBack }: SessionViewProps): JSX.Element {
+  const [stream] = useState(() => new EventStream(eventsUrl(sandbox, sessionId)));
+  const snapshot = useSyncExternalStore(stream.subscribe, stream.getSnapshot);
+  const { conversation: state, attached, connection } = snapshot;
+  const replaying = catchingUp(snapshot);
+  const model = appliedModel(snapshot);
+  const unavailable = replaying || connection.kind === "failed" || connection.kind === "ended";
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const submitting = useRef(false);
   const pendingInput = useRef<{ sandbox: string; sessionId: string; text: string; commandId: string } | null>(null);
   const [thread, setThread] = useState<ThreadView | null>(null);
-  const [model, setModel] = useState<string | null>(null);
   const [modelOptions, setModelOptions] = useState<string[]>([]);
   const [modelPending, setModelPending] = useState(false);
   // The switch is in the URL, like the sandbox page's tab and the reasoning blocks that are open,
@@ -386,48 +401,25 @@ export function SessionView({
   }
 
   useEffect(() => {
-    // EventSource reconnects on its own and resends the last id it saw, which the bridge turns
-    // into the runner's cursor, so a dropped connection loses nothing.
-    const source = new EventSource(eventsUrl(sandbox, sessionId));
-    source.addEventListener("attached", (message: MessageEvent<string>) => {
-      setStatus("attached");
-      const json = JSON.parse(message.data) as JsonObject;
-      const attached = fromJson(AttachedSchema, json);
-      const harness =
-        json.spec && typeof json.spec === "object" && !Array.isArray(json.spec)
-          ? (json.spec.harness as Harness | undefined)
-          : undefined;
-      setModel(attached.spec?.model ?? null);
-      models().then(
-        (catalog) => setModelOptions(harness ? (catalog[harness] ?? []) : []),
-        (reason: unknown) => setError(displayableError(reason))
-      );
-      // The bridge stores the thread before it sends `attached`, so it is there to look up now.
-      findThread(sandbox, sessionId).then(setThread, (reason: unknown) => setError(displayableError(reason)));
-    });
-    source.addEventListener("event", (message: MessageEvent<string>) => {
-      const entry = fromJson(EventEntrySchema, JSON.parse(message.data) as JsonValue);
-      const event = eventOf(entry);
-      if (event.observation.case === "modelChanged") setModel(event.observation.value.model);
-      if (event.observation.case === "commandFailed") setError(event.observation.value.reason);
-      setState((current) => reduce(current, entry));
-    });
-    // The runner ending the stream is final: a reconnect would Open the session again, which
-    // restarts a shut-down harness. Only a dropped connection is left to EventSource's own retry.
-    source.addEventListener("end", () => {
-      source.close();
-      setStatus("stream ended");
-    });
-    source.addEventListener("error", (message: globalThis.Event) => {
-      if ("data" in message) {
-        source.close();
-        setStatus(`runner: ${String((message as MessageEvent<string>).data)}`);
-      } else {
-        setStatus("reconnecting");
-      }
-    });
-    return () => source.close();
-  }, [sandbox, sessionId]);
+    if (!attached) return;
+    let active = true;
+    const harness = attached.spec
+      ? (toJson(SessionSpecSchema, attached.spec).harness as Harness | undefined)
+      : undefined;
+    const onError = (reason: unknown): void => {
+      if (active) setError(displayableError(reason));
+    };
+    models().then((catalog) => {
+      if (active) setModelOptions(harness ? (catalog[harness] ?? []) : []);
+    }, onError);
+    // The bridge stores the thread before it sends `attached`, so it is there to look up now.
+    findThread(sandbox, sessionId).then((value) => {
+      if (active) setThread(value);
+    }, onError);
+    return () => {
+      active = false;
+    };
+  }, [attached, sandbox, sessionId]);
 
   async function selectModel(next: string | null): Promise<void> {
     if (!next || next === model) return;
@@ -503,6 +495,11 @@ export function SessionView({
         <ThreadTitle sessionId={sessionId} thread={thread} onRenamed={setThread} onError={setError} />
       </Group>
       {error && <Text c="red">{error}</Text>}
+      {connection.kind === "failed" && (
+        <Text c="red" role="alert">
+          Event stream stopped: {connection.reason}. Showing verified history through event {state.lastCursor}.
+        </Text>
+      )}
       {/* `minHeight: 0` so this shrinks instead of pushing the composer off: a flex child
           defaults to its content's height as its floor. */}
       <ScrollArea style={{ flex: 1, minHeight: 0 }}>
@@ -547,25 +544,31 @@ export function SessionView({
           that's the row already in thumb reach, and it's one thing keeping the header a
           two-line-tall row instead of three. */}
       <Stack gap="xs" style={{ flexShrink: 0 }}>
+        {replaying && connection.kind !== "failed" && (
+          <Text size="sm" c="dimmed" role="status">
+            Catching up: {state.lastCursor} / {String(attached?.lastCursor)} events
+          </Text>
+        )}
         <Textarea
           placeholder="Enter sends, Ctrl+Enter for a new line"
           value={draft}
           autosize
           minRows={2}
           maxRows={12}
-          disabled={state.harness !== "running" || sending}
+          disabled={unavailable || state.harness !== "running" || sending}
           onChange={(e) => setDraft(e.currentTarget.value)}
           onKeyDown={composerKey}
         />
         <Group justify="space-between" wrap="nowrap">
           <Group gap="xs" wrap="nowrap">
-            <StatusDot {...connectionStatus(status, state.harness)} />
+            <StatusDot {...connectionStatus(connection, replaying, state.harness)} />
             <Select
               aria-label="Model"
               data={modelOptions}
               value={model}
               onChange={(next) => void selectModel(next)}
-              disabled={state.harness !== "running" || modelPending}
+              placeholder={replaying ? "Catching up…" : "Model"}
+              disabled={unavailable || state.harness !== "running" || modelPending}
               w={200}
             />
           </Group>
@@ -593,7 +596,7 @@ export function SessionView({
                 <Menu.Item
                   color="red"
                   leftSection={<IconPower size={15} />}
-                  disabled={state.harness !== "running"}
+                  disabled={unavailable || state.harness !== "running"}
                   closeMenuOnClick
                   onClick={() => void run(() => shutdownSession(sandbox, sessionId, crypto.randomUUID()))}
                 >
@@ -609,7 +612,7 @@ export function SessionView({
               onClick={() =>
                 void run(() => interruptSession(sandbox, sessionId, crypto.randomUUID(), activeTurn?.id ?? ""))
               }
-              disabled={!activeTurn}
+              disabled={unavailable || !activeTurn}
             >
               <IconPlayerStop size={16} />
             </ActionIcon>

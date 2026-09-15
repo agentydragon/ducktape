@@ -724,6 +724,18 @@ App-process loss and HTTP/SSE handoff are covered by
 [replica-safe runner delivery](../app/README.md#replica-safe-runner-delivery).
 Native crash-recovery research is not a prerequisite for the replay/projection implementation.
 
+The frontend `EventStream` now owns a verified, contiguous prefix: exact duplicates
+do not reapply streaming deltas; source changes, gaps, and conflicts stop consumption
+with the last valid prefix visible. A target change gets fresh state, and a cold mount
+replays from zero. `Attached@N` remains separate from consumed prefix `K`: while `K < N`,
+the view labels catch-up and does not present a historical model as currently applied.
+After catch-up only model Events beyond `N` override that snapshot.
+
+Remaining: canonical Thread replay/metadata wiring, persistent local unconfirmed
+Commands, pending-command projection, and real-browser reload/reconnect acceptance.
+The current Session command handling is not yet reload-safe; this stream owner alone
+does not complete `THREAD_PENDING_UI` or the API cutover.
+
 Implement [reconnect and catch-up](../docs/thread_layering.md#reconnect-and-catch-up):
 contiguous replay, duplicate checking, gap-free live handoff, lost notifications, and
 browser reload with a matching cached prefix or replay from zero. Keep operational
