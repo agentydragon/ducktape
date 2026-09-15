@@ -57,10 +57,7 @@ py_library(
 py_library(
     name = "scripted_model",
     srcs = ["scripted_model.py"],
-    deps = [
-        "//x/agentplane/harness_tests:model_endpoint",
-        "@pypi//pydantic",
-    ],
+    deps = ["//x/agentplane/harness_tests:model_endpoint"],
 )
 
 py_library(

@@ -11,9 +11,7 @@ import abc
 import asyncio
 from dataclasses import dataclass
 
-from pydantic import BaseModel
-
-from x.agentplane.harness_tests.model_endpoint import ModelExchange, SseEvent
+from x.agentplane.harness_tests.model_endpoint import ModelExchange, SseEvent, StreamableRequest
 
 
 @dataclass(frozen=True)
@@ -42,7 +40,7 @@ class ToolOutput:
 
 
 @dataclass(frozen=True)
-class ModelRequest[RequestT: BaseModel]:
+class ModelRequest[RequestT: StreamableRequest]:
     """What the harness sent upstream, as native-protocol-neutral markers."""
 
     _exchange: ModelExchange[RequestT]
@@ -57,7 +55,7 @@ class ModelRequest[RequestT: BaseModel]:
     streaming: bool
 
 
-class ScriptedModel[RequestT: BaseModel](abc.ABC):
+class ScriptedModel[RequestT: StreamableRequest](abc.ABC):
     def __init__(self, *, model: str) -> None:
         self.model = model
         self.request_count = 0
