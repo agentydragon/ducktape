@@ -33,6 +33,16 @@
       depTypeTemplate: "terraform_provider_mirror",
     },
   ],
+  // The generated Bazel lockfiles are ignored below. Extend Renovate's pip
+  // requirements matcher to the canonical .in inputs so those environments
+  // remain visible; retain the default .txt/.pip matcher as well because
+  // homeassistant/requirements.override.txt is a real source input.
+  pip_requirements: {
+    managerFilePatterns: [
+      "/(^|\\/)[\\w-]*requirements([-._]\\w+)?\\.(txt|pip)$/",
+      "/(^|\\/)requirements\\.in$/",
+    ],
+  },
   ignorePaths: [
     "props/specimens/**",
     "devinfra/claude/web_env/**",
