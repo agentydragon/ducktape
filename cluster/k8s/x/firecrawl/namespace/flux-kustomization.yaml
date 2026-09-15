@@ -3,10 +3,12 @@ kind: Kustomization
 metadata:
   name: firecrawl-namespace
   namespace: ducktape-flux
+  annotations:
+    ducktape.org/parked: "true"
 spec:
   suspend: true
   interval: 1h
-  path: ./cluster/k8s/firecrawl/namespace
+  path: ./cluster/k8s/x/firecrawl/namespace
   prune: false
   sourceRef:
     kind: ExternalArtifact

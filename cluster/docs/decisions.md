@@ -323,6 +323,22 @@ See `cluster/k8s/agents/tana-mcp-facade/deployment.yaml` for a working example
   [#3199]: https://github.com/agentydragon/ducktape/pull/3199
   [#4823]: https://github.com/agentydragon/ducktape/issues/4823
 
+## Parked application manifests
+
+These applications remain in Git for possible revival, but their Flux
+declarations are no longer included in the active root bundle. Their
+application manifests and per-component Flux declarations are revival inputs,
+not currently reconciled cluster state.
+
+- **Firecrawl**: `x/firecrawl/` — parked; its namespace, database, and app
+  declarations remain in Git.
+- **OpenHands**: `x/openhands/` — experimental and not currently used; its
+  namespace, secrets, sandbox, and app declarations remain in Git.
+- **Tandoor**: `x/tandoor/` — replaced by Grocy; its namespace, database, and
+  app declarations remain in Git.
+- **Wayback cache**: `loom/wayback/deploy/` — decommissioned by operator
+  request; its parked Flux declaration and deployment package remain in Git.
+
 ## Suspended Kustomizations
 
 ### Intentionally parked
@@ -342,7 +358,6 @@ the open question is unsuspending, not hardware.
   atlas/wyrm2 being back removes that blocker — re-enable when needed.
 - **egress-proxy-rugged** — decommissioned by operator request; configuration kept,
   reconciliation stopped.
-- **Firecrawl**: `firecrawl`, `firecrawl-{namespace,db}` — parked.
 - **gecko**: `gecko`, `gecko-namespace` — same legacy-VM retirement hold as agent-box.
 - **Google Workspace MCP**: `google-workspace-mcp` — parked 2026-05-13; resources + PVC deleted.
 - **InvenTree**: `inventree`, `inventree-{namespace,secrets,db,token-provisioner}` —
@@ -350,13 +365,8 @@ the open question is unsuspending, not hardware.
   being back removes that blocker. Before unsuspending: mint the SOPS admin/db
   secrets (<../k8s/TODO.md>). The app's formerly dangling `dependsOn` now points
   at `sso-providers-tf` (#4908).
-- **OpenHands**: `openhands`, `openhands-{namespace,secrets,sandboxes}` — experimental, not
-  currently used.
 - **props**: `props`, `props-{namespace,secrets,db,agent-rbac}` — suspended 2026-08-20
   for a temporary teardown.
-- **Tandoor**: `tandoor`, `tandoor-{db,namespace}` — using Grocy instead.
-- **Wayback cache**: `wayback-cache`, `wayback-cache-{namespace,agent-rbac}`,
-  `wayback-archive-db` — decommissioned by operator request; configuration kept.
 
 ### Still down
 

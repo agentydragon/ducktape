@@ -220,8 +220,12 @@ def test_no_orphaned_files(cluster: ParsedCluster, k8s_dir: Path) -> None:
 
 
 def test_no_unwired_flux_kustomizations(cluster: ParsedCluster, k8s_dir: Path) -> None:
-    """Every flux-kustomization.yaml on disk must be referenced in the root kustomization."""
-    on_disk = {f.resolve() for f in k8s_dir.rglob("flux-kustomization.yaml") if "flux-system" not in f.parts}
+    """Every active flux-kustomization.yaml on disk must be referenced in the root kustomization."""
+    on_disk = {
+        f.resolve()
+        for f in k8s_dir.rglob("flux-kustomization.yaml")
+        if "flux-system" not in f.parts and f.resolve() in cluster.all_yaml_files
+    }
 
     root_kust = cluster.kustomize_files[k8s_dir / "kustomization.yaml"]
     referenced = {r for r in root_kust.resolved_resources if r.name == "flux-kustomization.yaml"}

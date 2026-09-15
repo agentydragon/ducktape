@@ -3,6 +3,8 @@ kind: Kustomization
 metadata:
   name: firecrawl-db
   namespace: ducktape-flux
+  annotations:
+    ducktape.org/parked: "true"
 spec:
   suspend: true
   retryInterval: 1m
@@ -12,7 +14,7 @@ spec:
     kind: ExternalArtifact
     name: firecrawl-db
     namespace: ducktape-flux
-  path: ./cluster/k8s/firecrawl/db
+  path: ./cluster/k8s/x/firecrawl/db
   prune: true
   wait: true
   dependsOn:

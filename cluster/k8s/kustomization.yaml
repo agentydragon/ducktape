@@ -191,11 +191,6 @@ resources:
   - oci-cache/namespace/flux-kustomization.yaml
   - oci-cache/app/flux-kustomization.yaml
 
-  # --- firecrawl ---
-  - firecrawl/namespace/flux-kustomization.yaml
-  - firecrawl/db/flux-kustomization.yaml
-  - firecrawl/app/flux-kustomization.yaml
-
   # --- forgejo ---
   - forgejo/namespace/flux-kustomization.yaml
   - forgejo/db/flux-kustomization.yaml
@@ -327,22 +322,8 @@ resources:
   - grocy/vallejo/app/flux-kustomization.yaml
   - grocy/vallejo/user-perms/flux-kustomization.yaml
 
-  # --- archived: tandoor ---
-  - x/tandoor/namespace/flux-kustomization.yaml
-  - x/tandoor/db/flux-kustomization.yaml
-  - x/tandoor/app/flux-kustomization.yaml
-
-  # --- archived: openhands ---
-  - x/openhands/namespace/flux-kustomization.yaml
-  - x/openhands/secrets/flux-kustomization.yaml
-  - x/openhands/sandboxes/flux-kustomization.yaml
-  - x/openhands/app/flux-kustomization.yaml
-
   # --- proxmox-proxy ---
   - proxmox-proxy/flux-kustomization.yaml
-
-  # --- wayback-cache (archived; flip cluster/k8s/wayback-cache.yaml suspend to revive) ---
-  - wayback-cache.yaml
 
   # --- user-agentydragon ---
   - user-agentydragon/flux-kustomization.yaml

@@ -82,16 +82,16 @@ most on the deprecated `local-path-ovh` alias, plus `forgejo-db-ssd` and
   logical databases. This experimental environment deliberately accepts no
   CNPG-level or storage-level replication; the manifest comment is the record.
 
-Parked clusters (suspended Flux Kustomizations; R2/R3 bind again on revival):
+Parked clusters (retained in Git; R2/R3 bind again on revival):
 
 - `Props` (<../../props/deploy/>): suspended 2026-08-20 for a temporary teardown
-  (<decisions.md> § "Suspended Kustomizations").
+  (<decisions.md> § "Parked application manifests").
 - Proxmox-single: `firecrawl-db`, `inventree-db`, `tandoor-db` (`x/`). Their
   manifests still name `local-path`, the chart-default StorageClass retired
   2026-06-03 (`k8s/local-path-provisioner/helmrelease.yaml`) — re-point to
   `local-path-proxmox` when reviving.
 - `wayback-archive-db` (<../../loom/wayback/deploy/db/>): OVH-HA shape,
-  suspended with the rest of wayback-cache.
+  retained in the parked Wayback package, outside the active Flux root.
 - `haku-dispatch-db` (`haku/x/dispatch/deploy/db/`): OVH-HA shape; parked through
   `cluster/k8s/haku-dispatch.yaml` and not currently reconciled.
 
