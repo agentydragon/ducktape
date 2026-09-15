@@ -78,6 +78,7 @@ flowchart TB
     THREAD_OUTBOX_CUTOVER["Deferred cutover<br/>all product commands via app outbox if chosen<br/>no competing relay path"]:::future
     THREAD_SUCCESSOR_DELIVERY["Deferred decision<br/>unsettled Thread command across<br/>successor runner session"]:::future
     CONTROL_STATE["Deferred decision<br/>dynamic runtime control state<br/>model/effort acceptance"]:::future
+    STAGING_SANDBOX_500["Reported staging bug<br/>Sandbox page returns Internal Server Error<br/>identify failed API and server cause"]:::active
     UISHELL_SIDEBAR_LIVE["Bug + planned fix<br/>sidebar Thread/Sandbox state goes stale<br/>rename, sandbox status icon never push-update"]:::future
     UISHELL_SIDEBAR_ALL_SANDBOXES["Bug<br/>threadless Sandboxes missing from sidebar<br/>e.g. still waiting for a pod to land"]:::future
     UISHELL_SIDEBAR_SANDBOX_LINK["Planned UI<br/>sidebar Sandbox name should link to its page<br/>currently plain text"]:::future
@@ -809,6 +810,18 @@ Thread command is recoverable only in its predecessor session or may be delivere
 The required native continuation proof, command-provenance guarantee, and no-duplicate-effect test
 gate are in [Thread, runner, and harness layering](../docs/thread_layering.md#deferred-commands-unsettled-across-successor-sessions).
 Until then there is no automatic cross-session replay.
+
+### `STAGING_SANDBOX_500` — staging Sandbox page returns Internal Server Error
+
+**Reported by the user:** `https://agentplane-staging.allegedly.works/#/sandboxes`
+shows Internal Server Error. Identify the actual failing API request (the hash is
+frontend routing), server traceback, deployed revision, and any schema/configuration
+mismatch before choosing a fix. Investigation is independent of the Thread/Raw UI
+stack; no cause or fix is established yet.
+
+Land a focused fix with a regression test at the failing boundary. Verify the affected
+API and Sandbox page against staging after deployment; a green PR alone does not close
+the live incident. Do not hide it with empty-list fallbacks or restart-only workarounds.
 
 ### `UISHELL_SIDEBAR_LIVE` — sidebar Thread/Sandbox state goes stale
 
