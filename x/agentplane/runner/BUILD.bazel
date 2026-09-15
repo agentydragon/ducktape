@@ -139,6 +139,7 @@ py_library(
     srcs = ["command_journal.py"],
     deps = [
         ":event_log",
+        ":journal_file",
         "//x/agentplane/protocol:command_pb2",
         "@pypi//protobuf",
     ],
@@ -148,6 +149,7 @@ py_library(
     name = "event_log",
     srcs = ["event_log.py"],
     deps = [
+        ":journal_file",
         "//x/agentplane/protocol:event_log_pb2",
         "//x/agentplane/protocol:event_pb2",
         "@pypi//protobuf",
@@ -210,6 +212,7 @@ py_library(
     name = "store",
     srcs = ["store.py"],
     deps = [
+        ":journal_file",
         "//x/agentplane/runner:protocol_pb2",
         "@pypi//protobuf",
         "@pypi//pydantic",
@@ -540,5 +543,44 @@ py_library(
     deps = [
         "//x/agentplane/runner:protocol_pb2",
         "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "journal_file",
+    srcs = ["journal_file.py"],
+)
+
+py_test(
+    name = "test_event_durability",
+    srcs = ["test_event_durability.py"],
+    deps = [
+        ":command_journal",
+        ":conftest",
+        ":event_log",
+        ":store",
+        "//:conftest",
+        "//x/agentplane/protocol:command_pb2",
+        "//x/agentplane/protocol:event_pb2",
+        "//x/agentplane/runner:protocol_pb2",
+        "//x/agentplane/runner/testing:storage_image",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_journal_process",
+    srcs = ["test_journal_process.py"],
+    deps = [
+        ":command_journal",
+        ":conftest",
+        ":event_log",
+        "//:conftest",
+        "//x/agentplane/protocol:command_pb2",
+        "//x/agentplane/protocol:event_pb2",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
     ],
 )

@@ -402,10 +402,15 @@ class Session:
                 self._translating = entry.origin.sequence
                 try:
                     await adapter.on_frame(frame, entry.origin.sequence)
+                except OSError:
+                    raise
                 except Exception:  # a frame the adapter cannot translate must not stop the reader
                     logger.exception("session %s: frame %d not translated", self.session_id, entry.origin.sequence)
                 finally:
                     self._translating = 0
+        except OSError:
+            await process.stop()
+            raise
         finally:
             exit_code = await process.wait()
             self._harness_ended(exit_code)
@@ -441,8 +446,12 @@ class Session:
                 waiter.set_result(NativeReceipt(frame, sequence))
 
     async def _read_stderr(self, process: HarnessProcess) -> None:
-        async for chunk in process.stderr_chunks():
-            self.emit(event_pb2.HarnessStderr(text=chunk), sources=[])
+        try:
+            async for chunk in process.stderr_chunks():
+                self.emit(event_pb2.HarnessStderr(text=chunk), sources=[])
+        except OSError:
+            await process.stop()
+            raise
 
     async def stop(self) -> None:
         """Runner shutdown: stop the harness without interrupting; the log records the exit."""

@@ -317,7 +317,9 @@ class RunnerService(protocol_pb2_grpc.RunnerServicer):
 async def _wake(session: Session, closing: asyncio.Event, cursor: int) -> None:
     waits = [asyncio.create_task(session.log.wait_beyond(cursor)), asyncio.create_task(closing.wait())]
     try:
-        await asyncio.wait(waits, return_when=asyncio.FIRST_COMPLETED)
+        done, _ = await asyncio.wait(waits, return_when=asyncio.FIRST_COMPLETED)
+        for completed in done:
+            completed.result()
     finally:
         for wait in waits:
             wait.cancel()

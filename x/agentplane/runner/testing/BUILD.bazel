@@ -62,3 +62,8 @@ py_library(
         "@pypi//pydantic",
     ],
 )
+
+py_library(
+    name = "storage_image",
+    srcs = ["storage_image.py"],
+)

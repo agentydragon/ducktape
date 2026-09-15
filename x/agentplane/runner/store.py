@@ -11,6 +11,7 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, Field
 
 from x.agentplane.runner import protocol_pb2
+from x.agentplane.runner.journal_file import make_directory, sync_directory
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -61,7 +62,7 @@ def validate_session_id(session_id: str) -> str:
 class SessionStore:
     def __init__(self, root: Path) -> None:
         self.root = root
-        root.mkdir(parents=True, exist_ok=True)
+        make_directory(root)
 
     def directory(self, session_id: str) -> Path:
         return self.root / validate_session_id(session_id)
@@ -77,10 +78,11 @@ class SessionStore:
 
     def write(self, session_id: str, record: SessionRecord) -> None:
         directory = self.directory(session_id)
-        directory.mkdir(exist_ok=True)
+        make_directory(directory)
         staged = directory / "session.json.tmp"
         with staged.open("wb") as output:
             output.write(record.model_dump_json(indent=2).encode())
             output.flush()
             os.fsync(output.fileno())
         staged.replace(directory / "session.json")
+        sync_directory(directory)
