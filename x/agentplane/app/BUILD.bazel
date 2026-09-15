@@ -256,7 +256,6 @@ py_library(
         ":inventory",
         ":live",
         ":presets",
-        ":shutdown",
         ":trajectory",
         "//x/agentplane/protocol:command_pb2",
         "//x/agentplane/protocol:event_log_pb2",

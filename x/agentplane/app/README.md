@@ -2,11 +2,11 @@
 
 The browser and agent surface over Agentplane's sandboxes: a FastAPI service that stamps
 Sandboxes from a `SandboxTemplate`, dials each runner Pod over the runner protocol,
-streams sessions to the browser over SSE, keeps a watch over the objects its views read so a change
+streams retained Thread events to the browser over SSE, keeps a watch over the objects its views read so a change
 is pushed rather than polled for, and copies every event into the trajectory store as it arrives.
 The staging instance lives in `cluster/k8s/agentplane-staging/`.
 
-The current bridge's session-shaped storage and direct command routes are implementation state, not
+The current bridge's session-scoped runner attachment is implementation state, not
 the desired product model. [Thread, runner, and harness layering](../docs/thread_layering.md) is
 the authoritative design for submission durability, the app queue decision,
 multi-session Thread history, and conversation/Raw projections.
@@ -68,10 +68,12 @@ bbr test //x/agentplane/app/...
 
 ### Replica-safe runner delivery
 
-Every app replica can send commands through an independent runner attachment. Inputs go to the
-runner first, with stable `input_id` values: the runner serializes admission and deduplicates retries.
-There is no database command queue. A successful HTTP command response is not a promise that the
-trajectory copy is already committed; the runner's input settlement events describe its outcome.
+Every app replica can send commands through an independent runner attachment. Generated `Command`
+payloads go to `POST /threads/{id}/commands` with stable command ids. The runner serializes admission
+and deduplicates retries. HTTP success returns the exact archived `CommandAdmitted` entry, only after
+the contiguous PostgreSQL prefix includes it; admission does not claim native execution. Identical
+retries return that entry before contacting the runner; a reused id with different payload is rejected.
+There is no database command queue.
 
 One app replica leases each sandbox's ingestion in PostgreSQL. Each write locks and validates
 the lease token against database time, so an expired owner cannot write after takeover. A batch
@@ -102,6 +104,13 @@ changes. Notifications carry no data and are not a durable queue: the database s
 authoritative, and listener reconnects and keepalives trigger catch-up reads. Stored history remains
 readable while the runner is unreachable.
 
+`/#/threads/{id}` loads Thread metadata and `/threads/{id}/events/stream` independently of runner
+discovery. Sidebar entries remain navigable after Sandbox deletion, and reload reads the same retained
+history. Sandbox availability comes from the separate live inventory snapshot, not an invented runner
+Event. Suspended/deleted Sandboxes disable runner controls; incomplete retained items are labelled as
+incomplete history, not actively streaming. The app's ingestion coordinator, not opening a browser
+stream, owns runner discovery and attachment.
+
 `test_replication_process.py` kills real app processes before and after an ingestion commit,
 then verifies replacement lease ownership, the exact PostgreSQL prefix, and HTTP/SSE replay/live
 handoff from the browser's last observed cursor. The test advances the dead owner's database lease
@@ -115,6 +124,8 @@ fixture, it does not replace browser fetch or EventSource. Playwright traces are
 It also holds replay behind an ahead-of-prefix snapshot and injects a runner gap/source change:
 the browser must show catch-up or a stopped-stream error, preserve only verified conversation
 content, and disable controls until it has the required evidence.
+An additional case opens and reloads an archived Thread after Sandbox deletion with no reachable
+runner, preserving exact retained events and visibly incomplete historical output.
 
 Rollout prerequisite: existing sandbox runners must support independent attachments before the new
 app bridge is deployed; old runner processes are not upgraded merely by publishing the new image.
@@ -378,13 +389,12 @@ other operator routes do. Which lists the service enforces is its contract
   it, and nothing brings that back. The rule lives in the API rather than in the browser, so it also
   binds the agent driving staging with a token; the two clicks it costs an operator are suspend and
   then delete. A running sandbox answers `DELETE` with 409 and a message saying to suspend it.
-- **The raw view keeps a frame on one wrapped line, rather than pretty-printing its JSON:** height
-  is what the raw view trades on. Its whole point is reading the order of the session, and measured
-  on the `session_raw` scenario the same window holds thirteen events compact against five
-  pretty-printed — the turn header, the input and the reasoning block all fall off the page.
-  Pretty-printing also does not help the payloads that are genuinely hard to read, since a long
-  string value stays one long line either way; wrapping and highlighting are what make those
-  legible.
+- **Raw is additive:** both modes use the same chronological conversation blocks and disclosure
+  state. Compact Event summaries sit between those blocks; expanded details retain the full generated
+  envelope, native payload, and causal references. JSON wraps instead of forcing horizontal scrolling.
+  Cards are labelled as current aggregates, not historical snapshots at their first cursor. The
+  [projection contract](../docs/thread_layering.md#timeline-pending-queue-and-operational-state) separates
+  this evidence from the pending-command queue and operational snapshot.
 
 ## Action live updates and browser notifications
 

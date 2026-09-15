@@ -50,6 +50,8 @@ function resolveScenario(): Scenario {
 }
 
 const scenario = resolveScenario();
+// Pages in a visual sweep share an origin. Each scene owns its local-command fixtures.
+localStorage.clear();
 
 // visual-test-lib freezes the wall clock before this bundle runs, so relative ages stay put.
 const NOW = Date.now();
@@ -449,7 +451,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
     created_at: ago(72 * HOUR),
     name: "Why did the migration hang",
     archived: false,
-    last_cursor: 4,
+    last_cursor: 18,
     last_event_at: ago(70 * HOUR),
     harness_state: "HARNESS_STATE_STOPPED",
   },
@@ -662,7 +664,11 @@ function event(
   return create(EventEntrySchema, {
     cursor: BigInt(cursor),
     origin: { sourceId: "visual-runner", sequence: BigInt(cursor) },
-    event: create(EventSchema, { observation, sourceSequences: sources.map(BigInt) }),
+    event: create(EventSchema, {
+      at: { seconds: BigInt(Math.floor(NOW / 1000) - 60 + cursor) },
+      observation,
+      sourceSequences: sources.map(BigInt),
+    }),
   });
 }
 
@@ -859,6 +865,76 @@ const COMMAND_OUTCOMES = [
   }),
 ];
 
+const INTERLEAVED_EVENTS: EventEntry[] = [
+  event(1, { case: "harnessStarted", value: { pid: 7 } }),
+  event(2, { case: "turnStarted", value: { turnId: "interleaved-turn", model: "harness-claude-model" } }),
+  event(3, { case: "itemStarted", value: { itemId: "tool-1", kind: ItemKind.TOOL_CALL, toolName: "Read" } }),
+  event(4, { case: "toolArguments", value: { itemId: "tool-1", argumentsJson: '{"path":"README.md"}' } }),
+  event(5, {
+    case: "commandAdmitted",
+    value: {
+      command: { commandId: "input-B", operation: { case: "submitInput", value: { text: "Also inspect tests." } } },
+    },
+  }),
+  event(6, {
+    case: "commandAdmitted",
+    value: {
+      command: { commandId: "input-C", operation: { case: "submitInput", value: { text: "Keep the patch small." } } },
+    },
+  }),
+  event(7, { case: "itemStarted", value: { itemId: "before-input", kind: ItemKind.ASSISTANT_TEXT } }),
+  event(8, {
+    case: "textDelta",
+    value: { itemId: "before-input", text: "I checked the current files before processing the queued messages." },
+  }),
+  event(9, frame(Direction.FROM_HARNESS, { type: "user", text: "Also inspect tests.\nKeep the patch small." })),
+  event(
+    10,
+    {
+      case: "harnessUserMessageConfirmed",
+      value: {
+        harnessMessageId: "coalesced-message",
+        turnId: "interleaved-turn",
+        text: "Also inspect tests.\nKeep the patch small.",
+        originCommandIds: ["input-B", "input-C"],
+      },
+    },
+    [9]
+  ),
+  event(11, {
+    case: "commandAdmitted",
+    value: {
+      command: { commandId: "change-model", operation: { case: "changeModel", value: { model: "next-model" } } },
+    },
+  }),
+  event(12, frame(Direction.FROM_HARNESS, { type: "control_response", model: "next-model" })),
+  event(
+    13,
+    {
+      case: "modelChanged",
+      value: { commandId: "change-model", previousModel: "harness-claude-model", model: "next-model" },
+    },
+    [12]
+  ),
+  event(14, { case: "itemStarted", value: { itemId: "after-input", kind: ItemKind.ASSISTANT_TEXT } }),
+  event(15, { case: "textDelta", value: { itemId: "after-input", text: "Continuing with the new model…" } }),
+  event(16, {
+    case: "commandAdmitted",
+    value: {
+      command: { commandId: "interrupt", operation: { case: "interruptTurn", value: { turnId: "interleaved-turn" } } },
+    },
+  }),
+  event(17, frame(Direction.FROM_HARNESS, { type: "turn_interrupted" })),
+  event(
+    18,
+    {
+      case: "turnCompleted",
+      value: { turnId: "interleaved-turn", status: TurnStatus.INTERRUPTED, interruptedByCommandId: "interrupt" },
+    },
+    [17]
+  ),
+];
+
 if (scenario.pendingCommands === "mixed") {
   const local = new LocalCommands(THREADS[2].id);
   local.remember(
@@ -875,7 +951,11 @@ if (scenario.pendingCommands === "mixed") {
 // Only what a page still asks for: the sandboxes, their bindings and their threads arrive on the
 // live streams above.
 routes.push(
-  ["GET", /^\/models$/, () => ({ HARNESS_CLAUDE: ["harness-claude-model"], HARNESS_CODEX: ["harness-codex-model"] })],
+  [
+    "GET",
+    /^\/models$/,
+    () => ({ HARNESS_CLAUDE: ["harness-claude-model", "next-model"], HARNESS_CODEX: ["harness-codex-model"] }),
+  ],
   [
     "GET",
     /^\/presets$/,
@@ -964,6 +1044,7 @@ routes.push(
           (!query.has("session_id") || thread.session_id === query.get("session_id"))
       ),
   ],
+  ["GET", /^\/threads\/([0-9a-f-]+)$/, (match) => THREADS_WITH_SANDBOXES.find((thread) => thread.id === match[1])],
   [
     "GET",
     /^\/threads\/with-sandboxes$/,
@@ -1048,13 +1129,28 @@ class HarnessEventSource extends EventTarget {
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
       return;
     }
-    // The only other stream shape: a session's own events. Which script depends on which session
-    // the URL names -- everything but `s-2` gets the original two-turn script above.
-    const isStatesSession = url.pathname.endsWith(`/sessions/${ATTACHED_STATES.sessionId}/events`);
-    const attached = isStatesSession ? ATTACHED_STATES : ATTACHED;
+    const isStatesSession = url.pathname === `/threads/${THREADS[2].id}/events/stream`;
+    const thread = THREADS_WITH_SANDBOXES.find(
+      (candidate) => url.pathname === `/threads/${candidate.id}/events/stream`
+    );
+    if (!thread) throw new Error(`Unknown Thread stream: ${url.pathname}`);
     let entries = isStatesSession ? EVENTS_STATES : EVENTS;
+    const attached = create(AttachedSchema, {
+      ...(isStatesSession ? ATTACHED_STATES : ATTACHED),
+      sessionId: thread.session_id,
+    });
+    if (thread.sandbox !== "demo-a1b2") {
+      entries = entries.slice(0, thread.last_cursor);
+      attached.lastCursor = BigInt(entries.length);
+    }
     if (scenario.pendingCommands) entries = [...entries, ...PENDING_EVENTS];
     if (scenario.pendingCommands === "outcomes") entries = [...entries, ...COMMAND_OUTCOMES];
+    if (scenario.interleavedEvents) {
+      entries = INTERLEAVED_EVENTS;
+      attached.lastCursor = BigInt(entries.length);
+      attached.activeTurnId = "";
+      attached.spec = create(SessionSpecSchema, { ...SPEC, model: "next-model" });
+    }
     if (scenario.sessionReplay === "catching-up") entries = entries.slice(0, 8);
     if (scenario.sessionReplay === "gap") entries = entries.filter((entry) => entry.cursor !== 9n);
     entries = entries.filter((entry) => entry.cursor > BigInt(url.searchParams.get("after") ?? "0"));
@@ -1072,6 +1168,17 @@ class HarnessEventSource extends EventTarget {
 }
 
 window.EventSource = HarnessEventSource as unknown as typeof EventSource;
+
+if (scenario.openEvidence !== undefined) {
+  const openEvidence = new MutationObserver(() => {
+    const frame = document.getElementById(`agentplane-event-${scenario.openEvidence}`);
+    if (!(frame instanceof HTMLDetailsElement)) return;
+    openEvidence.disconnect();
+    frame.open = true;
+    frame.scrollIntoView({ block: "center" });
+  });
+  openEvidence.observe(document, { childList: true, subtree: true });
+}
 
 if (scenario.preselectReconnect) {
   const selectExisting = new MutationObserver(() => {

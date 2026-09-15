@@ -23,6 +23,7 @@ import { fromJson, type JsonValue } from "@bufbuild/protobuf";
 import {
   api,
   displayableError,
+  findThread,
   listSessions,
   openSession,
   RunnerUnavailableError,
@@ -135,11 +136,11 @@ function StatusView({ sandbox }: { sandbox: SandboxView }): JSX.Element {
 
 export function SandboxPage({
   name,
-  onOpenSession,
+  onOpenThread,
   onBack,
 }: {
   name: string;
-  onOpenSession: (sessionId: string) => void;
+  onOpenThread: (threadId: string) => void;
   onBack: () => void;
 }): JSX.Element {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -285,11 +286,21 @@ export function SandboxPage({
           instructions,
         } as JsonValue)
       );
-      onOpenSession(sessionId);
+      await openThread(sessionId);
     } catch (reason: unknown) {
       setError(displayableError(reason));
     } finally {
       setCreatingSession(false);
+    }
+  }
+
+  async function openThread(sessionId: string): Promise<void> {
+    try {
+      const thread = threadBySession[sessionId] ?? (await findThread(name, sessionId));
+      if (!thread) throw new Error(`Thread metadata is not available for session ${sessionId}`);
+      onOpenThread(thread.id);
+    } catch (reason: unknown) {
+      setError(displayableError(reason));
     }
   }
 
@@ -402,7 +413,7 @@ export function SandboxPage({
                       <Table.Td>
                         {/* The id is only useful once you're in the session's own detail view (which
                           shows it beside the name); the list links by name where one exists. */}
-                        <Button variant="subtle" onClick={() => onOpenSession(session.sessionId)}>
+                        <Button variant="subtle" onClick={() => void openThread(session.sessionId)}>
                           {names[session.sessionId] ?? session.sessionId}
                         </Button>
                       </Table.Td>

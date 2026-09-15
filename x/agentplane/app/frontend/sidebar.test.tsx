@@ -127,7 +127,7 @@ it("groups threads by sandbox, showing each group's state, name and visible thre
   expect(container.textContent).toContain("Investigate flaky CI");
 });
 
-it("renders a thread whose sandbox is gone as a read-only, struck-through group with no navigation", async () => {
+it("opens retained Thread history even when its Sandbox is gone", async () => {
   await render(
     [thread({ id: "t-1", sandbox: "old-debug-3f9c", session_id: "s-9", name: "Why did the migration hang" })],
     {}
@@ -143,26 +143,26 @@ it("renders a thread whose sandbox is gone as a read-only, struck-through group 
     node.textContent?.includes("Why did the migration hang")
   );
   expect(readonlyRow).toBeDefined();
-  expect(readonlyRow?.getAttribute("role")).toBeNull();
+  expect(readonlyRow?.getAttribute("role")).toBe("button");
   await act(async () => (readonlyRow as HTMLElement).click());
-  expect(location()).toBe("/");
+  expect(location()).toBe("/threads/t-1");
 });
 
-it("opens a thread's session route on click, and highlights the one already open", async () => {
+it("opens the stable Thread route and highlights that Thread", async () => {
   await render(
     [
       thread({ id: "t-1", sandbox: "demo-a1b2", session_id: "s-1", name: "First thread" }),
       thread({ id: "t-2", sandbox: "demo-a1b2", session_id: "s-2", name: "Second thread" }),
     ],
     { "demo-a1b2": sandbox("demo-a1b2") },
-    { initialPath: "/sandboxes/demo-a1b2/sessions/s-2" }
+    { initialPath: "/threads/t-2" }
   );
 
   expect(row("Second thread").className).toContain("current");
   expect(row("First thread").className).not.toContain("current");
 
   await act(async () => row("First thread").click());
-  expect(location()).toBe("/sandboxes/demo-a1b2/sessions/s-1");
+  expect(location()).toBe("/threads/t-1");
 });
 
 it("hides archived threads until the switch is toggled, and archives a thread from its row action", async () => {

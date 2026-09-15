@@ -13,6 +13,7 @@ from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import StrEnum
 from multiprocessing.connection import Connection
 from multiprocessing.process import BaseProcess
@@ -28,14 +29,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, AsyncSessionTransaction, async_
 
 from x.agentplane.app.action_policy import ActionPolicyInventory
 from x.agentplane.app.api import create_app
-from x.agentplane.app.bridge import RunnerBridge
+from x.agentplane.app.bridge import RunnerBridge, SandboxNotReachableError
 from x.agentplane.app.decisions import DecisionsClient
 from x.agentplane.app.egress import EgressInventory
 from x.agentplane.app.identity import CallerIdentity, CallerKind, require_caller
-from x.agentplane.app.inventory import SandboxInventory
+from x.agentplane.app.inventory import ProvisioningState, SandboxInventory, SandboxNotFoundError
 from x.agentplane.app.live import LiveIndex
 from x.agentplane.app.presets import Harness
-from x.agentplane.app.testing.kubernetes import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi
+from x.agentplane.app.testing.kubernetes import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi, pod, sandbox
 from x.agentplane.app.testing.replication_source import SANDBOX
 from x.agentplane.app.trajectory import IngestionLease, TrajectoryStore
 from x.agentplane.protocol import event_log_pb2
@@ -127,8 +128,9 @@ def _run(
     boundary: CommitBoundary | None,
     cursor: int,
     frontend_directory: Path | None,
+    sandbox_state: ProvisioningState | None,
 ) -> None:
-    asyncio.run(_serve(database_url, target, connection, boundary, cursor, frontend_directory))
+    asyncio.run(_serve(database_url, target, connection, boundary, cursor, frontend_directory, sandbox_state))
 
 
 async def _serve(
@@ -138,6 +140,7 @@ async def _serve(
     boundary: CommitBoundary | None,
     cursor: int,
     frontend_directory: Path | None,
+    sandbox_state: ProvisioningState | None,
 ) -> None:
     store = (
         TrajectoryStore.connect(database_url)
@@ -147,10 +150,25 @@ async def _serve(
 
     async def address_of(name: str) -> str:
         assert name == SANDBOX
+        if sandbox_state is None:
+            raise SandboxNotFoundError(name)
+        if sandbox_state is not ProvisioningState.RUNNING:
+            raise SandboxNotReachableError(name, sandbox_state)
         return target
 
     bridge = RunnerBridge(address_of=address_of, store=store)
     custom, core = cast(Any, FakeCustomObjectsApi()), cast(Any, FakeCoreV1Api())
+    index = LiveIndex(stale_after_seconds=90, refreshed={"sandboxes": datetime.now(UTC), "pods": datetime.now(UTC)})
+    if sandbox_state is not None:
+        raw = sandbox(
+            SANDBOX, operating_mode="Suspended" if sandbox_state is ProvisioningState.SUSPENDED else "Running"
+        )
+        custom.objects[("sandboxes", SANDBOX)] = raw
+        index.sandboxes[SANDBOX] = raw
+        if sandbox_state in (ProvisioningState.RUNNING, ProvisioningState.WAITING_FOR_POD_READY):
+            running = pod(SANDBOX, phase="Running", ready=sandbox_state is ProvisioningState.RUNNING, ip="127.0.0.1")
+            core.pods[SANDBOX] = running
+            index.pods[SANDBOX] = running
     async with httpx.AsyncClient(base_url="http://test-unused-decisions.invalid") as decisions_http:
         app = create_app(
             SandboxInventory(namespace=NAMESPACE, custom_objects=custom, core_v1=core),
@@ -159,7 +177,7 @@ async def _serve(
             {harness: ["test-model-before", "test-model-after"] for harness in Harness},
             EgressInventory(namespace=NAMESPACE, custom_objects=custom, default_policies=[]),
             DecisionsClient(decisions_http),
-            LiveIndex(stale_after_seconds=90),
+            index,
             ActionPolicyInventory(namespace=NAMESPACE, custom_objects=custom),
         )
         # Authentication is tested separately; the production routes, HTTP transport, ingestion,
@@ -168,7 +186,7 @@ async def _serve(
         if frontend_directory is not None:
             app.mount("/", StaticFiles(directory=frontend_directory, html=True), name="test-frontend")
         await store.start_updates()
-        await bridge.start([SANDBOX])
+        await bridge.start([SANDBOX] if sandbox_state is ProvisioningState.RUNNING else [])
         try:
             with socket.socket() as listener:
                 listener.bind(("127.0.0.1", 0))
@@ -215,10 +233,13 @@ async def app_process(
     boundary: CommitBoundary | None = None,
     cursor: int = 0,
     frontend_directory: Path | None = None,
+    sandbox_state: ProvisioningState | None = ProvisioningState.RUNNING,
 ) -> AsyncIterator[AppProcess]:
     context = multiprocessing.get_context("spawn")
     parent, child = context.Pipe(duplex=False)
-    process = context.Process(target=_run, args=(database_url, target, child, boundary, cursor, frontend_directory))
+    process = context.Process(
+        target=_run, args=(database_url, target, child, boundary, cursor, frontend_directory, sandbox_state)
+    )
     process.start()
     child.close()
     try:

@@ -12,8 +12,7 @@ from typing import Annotated
 from uuid import UUID
 
 import grpc
-from fastapi import APIRouter, Depends, Header, Query, Request, status
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, Request, status
 from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.exc import SQLAlchemyError
@@ -22,7 +21,6 @@ from x.agentplane.app.changes import Changes
 from x.agentplane.app.inventory import ProvisioningState, SandboxInventory, SandboxNotFoundError
 from x.agentplane.app.live import LiveIndex
 from x.agentplane.app.presets import PresetCatalog
-from x.agentplane.app.shutdown import Shutdown
 from x.agentplane.app.trajectory import (
     EventReplicationError,
     FeedEnd,
@@ -337,32 +335,20 @@ class RunnerBridge:
                         async with asyncio.timeout(RECONCILE_S):
                             await waiter.wait()
 
-    async def events(self, sandbox: str, session_id: str, *, after_cursor: int) -> AsyncGenerator[bytes]:
-        threads = await self._store.list_threads(sandbox=sandbox, session_id=session_id)
-        if threads:
-            thread_id = threads[0].id
-        else:
-            summaries = await self.list_sessions(sandbox)
-            summary = next((item for item in summaries if item.session_id == session_id), None)
-            if summary is None:
-                raise RunnerError(f"session {session_id} does not exist")
-            thread_id = await self._store.thread(sandbox, session_id, summary.spec)
-        await self.start([sandbox])
+    async def events(self, thread_id: UUID, *, after_cursor: int) -> AsyncGenerator[bytes]:
+        """Follow the committed archive without requiring or starting a runner attachment."""
+        if await self._store.get_thread(thread_id) is None:
+            raise ThreadNotFoundError(thread_id)
         waiter = asyncio.Event()
         cursor = after_cursor
         with self._store.changes.subscribe(waiter):
-            async with asyncio.timeout(15):
-                while True:
-                    waiter.clear()
-                    snapshot = await self._store.feed_state(thread_id)
-                    if snapshot is not None:
-                        break
-                    await waiter.wait()
-            if after_cursor > snapshot.attached.last_cursor:
-                raise RunnerError("after_cursor is beyond the stored session log")
-            yield _frame("attached", MessageToDict(snapshot.attached))
+            attached_sent = False
             while True:
                 waiter.clear()
+                snapshot = await self._store.feed_state(thread_id)
+                if not attached_sent and snapshot is not None:
+                    yield _frame("attached", MessageToDict(snapshot.attached))
+                    attached_sent = True
                 while page := await self._store.events(thread_id, after_cursor=cursor, limit=REPLAY_PAGE):
                     for entry in page:
                         yield _frame("event", MessageToDict(entry), event_id=entry.cursor)
@@ -453,21 +439,3 @@ async def open_session(bridge: Bridge, name: str, body: NewSession, request: Req
     spec.instructions = presets.instructions_for(spec.instructions)
     attached = await bridge.open_session(name, body.session_id, spec)
     return MessageToDict(attached)
-
-
-@router.get("/{session_id}/events")
-async def session_events(
-    bridge: Bridge,
-    shutdown: Shutdown,
-    name: str,
-    session_id: str,
-    after: Annotated[int, Query(ge=0, description="Replay EventEntries with a greater cursor.")] = 0,
-    last_event_id: Annotated[int | None, Header(ge=0)] = None,
-) -> StreamingResponse:
-    # A browser's automatic reconnect sends the last id it saw; that wins over the query parameter.
-    after_cursor = last_event_id if last_event_id is not None else after
-    return StreamingResponse(
-        shutdown.until(bridge.events(name, session_id, after_cursor=after_cursor)),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )

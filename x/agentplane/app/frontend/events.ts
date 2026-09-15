@@ -111,6 +111,59 @@ export function groupItems(items: Item[]): ItemGroup[] {
   return groups;
 }
 
+export type ConversationContent =
+  Exclude<Row, { kind: "item" }> | { kind: "items"; group: ItemGroup } | { kind: "control"; entry: EventEntry };
+
+export interface TimelineBlock {
+  content: ConversationContent | null;
+  /** Exact, contiguous evidence after this block's first-observed conversation anchor. */
+  entries: EventEntry[];
+}
+
+const CONTROL_BOUNDARIES: ReadonlySet<Event["observation"]["case"]> = new Set([
+  "commandAdmitted",
+  "commandFailed",
+  "commandNoop",
+  "modelChanged",
+  "turnCompleted",
+  "harnessStarted",
+  "harnessExited",
+  "harnessLost",
+]);
+
+/** Both modes share these conversation anchors and disclosure groups. Raw only adds each
+ * block's exact evidence. Confirmed input and controls split item runs; neither can be moved
+ * to the start of a turn or buried inside a disclosure. Streaming cards are current aggregates
+ * at their first-observed position, not historical snapshots at that position. */
+export function timelineBlocks(state: SessionState): TimelineBlock[] {
+  const blocks: TimelineBlock[] = [];
+  for (const { entry, row } of timeline(state)) {
+    const last = blocks.at(-1);
+    const observation = eventOf(entry).observation;
+    if (row?.kind === "item") {
+      if (last?.content?.kind === "items" && last.content.group.kind === "run" && COLLAPSIBLE.has(row.item.kind)) {
+        last.content.group.items.push(row.item);
+        last.entries.push(entry);
+      } else {
+        blocks.push({ content: { kind: "items", group: groupItems([row.item])[0] }, entries: [entry] });
+      }
+    } else if (row) {
+      blocks.push({ content: row, entries: [entry] });
+    } else if (CONTROL_BOUNDARIES.has(observation.case)) {
+      const content =
+        observation.case === "modelChanged" || observation.case === "turnCompleted"
+          ? ({ kind: "control", entry } as const)
+          : null;
+      blocks.push({ content, entries: [entry] });
+    } else if (last) {
+      last.entries.push(entry);
+    } else {
+      blocks.push({ content: null, entries: [entry] });
+    }
+  }
+  return blocks;
+}
+
 function item(state: SessionState, id: string, firstCursor: bigint): Item {
   return (
     state.items[id] ?? {

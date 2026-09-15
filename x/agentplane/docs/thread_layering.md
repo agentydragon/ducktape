@@ -214,9 +214,9 @@ after their first use. HTTP/SSE carry the same generated payload in protobuf JSO
 Attachment setup is omitted where a stream is already open: each new gRPC attachment
 starts with `Open` and receives `Attached` before commands/replay. The app's command
 relay and its independent ingester may use different attachments.
-An HTTP mutation response containing the archived admission is a proposed response
-contract. Thread URLs and the `thread_id` selector on `Open` are proposed; current
-`Open` only selects `session_id`. Native sketches omit unrelated request fields.
+Thread URLs and HTTP command responses containing the exact archived admission are implemented.
+The `thread_id` selector on runner `Open` remains proposed; current `Open` only selects
+`session_id`. Native sketches omit unrelated request fields.
 
 ### Runner admission first
 
@@ -224,8 +224,8 @@ The browser retains a command id and payload before sending. The app relays it t
 runner; the product reports “saved” after the contiguous PostgreSQL copy contains the
 runner's `CommandAdmitted` for that exact command. Since that Event contains the full
 command, the saved input and pending controls survive reload and Sandbox deletion
-without an app delivery queue. This response boundary is proposed, not implemented
-by the current bridge.
+without an app delivery queue. The current bridge implements this archived-admission response
+boundary; browser-local recovery and pending presentation are separate acceptance work.
 
 A timeout preserves the browser's local submission as “awaiting saved confirmation.”
 Reload catches up and matches by id; retry uses the same id against the same surviving
@@ -340,7 +340,7 @@ sequenceDiagram
     R-->>A2: Attached {last_cursor:90, ...}<br/>exact E81..E90, then live
     A2->>DB: INSERT E81..E90 and checkpoint=90, COMMIT
     DB-->>A2: NOTIFY (wake-up only)
-    F->>A2: GET /threads/T/events?after=75
+    F->>A2: GET /threads/T/events/stream?after=75
     A2->>DB: Read entries with cursor greater than 75
     DB-->>A2: E76..E90
     A2-->>F: SSE id:76, data:E76 ... id:90, data:E90
@@ -368,7 +368,7 @@ sequenceDiagram
     end
     A--xF: Connection lost before saved confirmation reaches browser
     Note over F: Reload
-    F->>A: GET /threads/T/events?after=100
+    F->>A: GET /threads/T/events/stream?after=100
     alt Admission is in app copy
         A-->>F: SSE id:101, data:E(101, command_admitted{command:C})
         F->>F: Match C, retire local submission
@@ -438,6 +438,14 @@ Raw mode adds native frames, exact Events, ids, source references, and command d
 to the same page. A streaming card can span many interleaved Events; expanding it must
 preserve access to their exact order. Normal card order is not the chronology of every
 delta. Confirmed input can appear after assistant output emitted while that input waited.
+
+The app uses one chronological conversation-block projection in both modes. Confirmed input and
+control observations split collapsible item runs; toggling Raw does not substitute a different
+conversation order or reset its disclosures. A block's cards show the current aggregate at their
+first-observed position, explicitly labelled with the consumed prefix in Raw. Its exact Events
+remain in cursor order below the aggregate, including complete native envelopes and causal links.
+The operational `Attached` disclosure stays outside that timeline and shows both advertised and
+consumed cursors. Pending commands remain above the composer, separate from confirmed messages.
 
 ### Shared vocabulary does not require a fabricated single history
 
@@ -510,8 +518,9 @@ SQLite owns crash recovery; no custom JSONL repair or old-format import remains.
 
 The [current runner specification](../runner/SPEC.md) exposes a session-scoped SQLite
 journal with atomic command/Event commits and publication after the storage fence.
-The target Thread identity/cursor change, native crash recovery, and saved-response boundary need implementation
-and integration evidence. An app outbox is a separate decision about accepting work
+The target runner Thread identity/cursor change and native crash recovery need implementation
+and integration evidence. Canonical Thread pages replay the archived prefix without a live runner;
+the app's saved-response boundary waits for archived admission, not command effect. An app outbox is a separate decision about accepting work
 before the runner can; it does not satisfy those gates by existing.
 
 No cross-harness transcript portability, inferred native effects, or old-protocol

@@ -152,14 +152,6 @@
   font-weight: 600;
 }
 
-.agentplane-sidebar-row.readonly {
-  cursor: default;
-}
-
-.agentplane-sidebar-row.readonly:hover {
-  background: none;
-}
-
 .agentplane-sidebar-row.archived {
   opacity: 0.6;
 }

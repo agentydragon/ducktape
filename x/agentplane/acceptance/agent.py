@@ -147,7 +147,7 @@ class Agent:
             ),
         )
         turn = Turn()
-        async for entry in self._client.events(self._sandbox, self._session_id, after=after, read_seconds=TURN_SECONDS):
+        async for entry in self._client.events(self._thread_id, after=after, read_seconds=TURN_SECONDS):
             self._cursor = entry.cursor
             event = entry.event
             match event.WhichOneof("observation"):
