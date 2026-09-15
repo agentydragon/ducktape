@@ -12,7 +12,6 @@ py_library(
         "//mcp_infra:static_bearer",
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
-        "@pypi//mcp_types",
         "@pypi//paramiko",
         "@pypi//pydantic",
         "@pypi//pyyaml",

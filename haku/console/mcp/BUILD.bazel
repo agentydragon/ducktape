@@ -26,10 +26,7 @@ py_library(
 py_library(
     name = "reflection_cache",
     srcs = ["reflection_cache.py"],
-    deps = [
-        "@pypi//mcp",
-        "@pypi//mcp_types",
-    ],
+    deps = ["@pypi//mcp"],
 )
 
 py_library(
@@ -48,7 +45,6 @@ py_library(
         "@pypi//fastapi",
         "@pypi//httpx2",
         "@pypi//mcp",
-        "@pypi//mcp_types",
         "@pypi//prometheus_client",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
@@ -91,7 +87,6 @@ py_library(
         "@pypi//fastapi",
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
-        "@pypi//mcp_types",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
     ],
@@ -129,7 +124,6 @@ py_library(
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
-        "@pypi//mcp_types",
         "@pypi//pydantic",
     ],
 )
@@ -195,7 +189,6 @@ py_test(
         "//:conftest",
         "//haku/console:conftest",
         "@pypi//mcp",
-        "@pypi//mcp_types",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -213,7 +206,6 @@ py_test(
         "//haku/console:mcp_config",
         "//haku/console/notifications:console_events",
         "@pypi//mcp",
-        "@pypi//mcp_types",
         "@pypi//pytest_bazel",
     ],
 )
@@ -233,7 +225,6 @@ py_test(
         "//haku/console/oauth:token_state",
         "@pypi//httpx2",
         "@pypi//mcp",
-        "@pypi//mcp_types",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
@@ -298,7 +289,6 @@ py_test(
         "@pypi//fastapi",
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
-        "@pypi//mcp_types",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -340,7 +330,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//jsonschema",
         "@pypi//mcp",
-        "@pypi//mcp_types",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

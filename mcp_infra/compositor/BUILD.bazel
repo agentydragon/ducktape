@@ -51,7 +51,6 @@ py_library(
         "//openai_utils:pydantic_strict_mode",
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
-        "@pypi//mcp_types",
         "@pypi//pydantic",
     ],
 )
@@ -70,7 +69,6 @@ py_library(
         "//mcp_infra:tool_schemas",
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
-        "@pypi//mcp_types",
         "@pypi//pydantic",
     ],
 )
@@ -134,7 +132,6 @@ py_test(
         "//mcp_infra:conftest",
         "//mcp_infra:snapshots",
         "@pypi//mcp",
-        "@pypi//mcp_types",
         "@pypi//pydantic",
         "@pypi//pytest_bazel",
     ],
@@ -165,7 +162,6 @@ py_test(
         "//mcp_infra:prefix",
         "//mcp_infra:snapshots",
         "@pypi//mcp",
-        "@pypi//mcp_types",
         "@pypi//pytest_bazel",
     ],
 )

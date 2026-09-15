@@ -7,7 +7,6 @@ py_library(
     deps = [
         "//mcp_infra:prefix",
         "@pypi//mcp",
-        "@pypi//mcp_types",
         "@pypi//pydantic",
     ],
 )

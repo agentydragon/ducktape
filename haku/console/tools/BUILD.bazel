@@ -58,7 +58,6 @@ py_library(
         "//gmail_api:messages",
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
-        "@pypi//mcp_types",
         "@pypi//pydantic",
     ],
 )
@@ -72,7 +71,6 @@ py_library(
         ":google_service",
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
-        "@pypi//mcp_types",
         "@pypi//pydantic",
     ],
 )
@@ -154,7 +152,6 @@ py_library(
         "//haku/sandbox:models",
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
-        "@pypi//mcp_types",
         "@pypi//pydantic",
     ],
 )
@@ -171,7 +168,6 @@ py_test(
         "//mcp_infra/exec:models",
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
-        "@pypi//mcp_types",
         "@pypi//pytest_bazel",
     ],
 )
@@ -204,7 +200,6 @@ py_test(
         "@pypi//fastapi",
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
-        "@pypi//mcp_types",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
@@ -339,7 +334,6 @@ py_library(
         "@pypi//fastmcp_slim",
         "@pypi//google_api_python_client",  # keep: discovery docs loaded via importlib.resources (no import stmt)
         "@pypi//mcp",
-        "@pypi//mcp_types",
         "@pypi//pydantic",
     ],
 )
