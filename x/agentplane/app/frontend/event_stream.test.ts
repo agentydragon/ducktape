@@ -43,7 +43,7 @@ beforeEach(() => {
 
 afterEach(() => vi.unstubAllGlobals());
 
-function entry(cursor: bigint, fields: MessageInitShape<typeof EventEntrySchema> = {}): EventEntry {
+function entry(cursor: bigint, fields: Omit<MessageInitShape<typeof EventEntrySchema>, "$typeName"> = {}): EventEntry {
   return create(EventEntrySchema, {
     cursor,
     origin: { sourceId: "runner", sequence: cursor },
