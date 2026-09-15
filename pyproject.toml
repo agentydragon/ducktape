@@ -224,7 +224,7 @@ dependencies = [
     # Keep Redis aligned with the framework beta family; these releases require
     # the newer core floor and are updated together above.
     "agent-framework-redis==1.0.0b260910",
-    "pydantic-ai-slim[openai,anthropic,fastmcp]>=1.107.5,<2",
+    "pydantic-ai-slim[openai,anthropic,fastmcp]>=2.43,<3",
     "openai-agents>=0.22.2",
     # crewai and the langgraph/langchain-* group backed the x/crewai and x/langgraph eval
     # variants, deleted 2026-09-07 (see skills/info_gathering/evals/twenty_questions/x/
