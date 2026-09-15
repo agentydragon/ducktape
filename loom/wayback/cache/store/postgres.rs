@@ -149,30 +149,22 @@ impl PostgresArchiveStore {
             .create_table_from_entity(replay_record::Entity)
             .if_not_exists()
             .to_owned();
-        self.db
-            .execute(&create_table)
-            .await?;
+        self.db.execute(&create_table).await?;
         let create_table = schema
             .create_table_from_entity(metadata_record::Entity)
             .if_not_exists()
             .to_owned();
-        self.db
-            .execute(&create_table)
-            .await?;
+        self.db.execute(&create_table).await?;
         let create_table = schema
             .create_table_from_entity(fill_lease::Entity)
             .if_not_exists()
             .to_owned();
-        self.db
-            .execute(&create_table)
-            .await?;
+        self.db.execute(&create_table).await?;
         let create_table = schema
             .create_table_from_entity(fill_queue::Entity)
             .if_not_exists()
             .to_owned();
-        self.db
-            .execute(&create_table)
-            .await?;
+        self.db.execute(&create_table).await?;
         Ok(())
     }
 
