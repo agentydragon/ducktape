@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 from cluster.validation.k8s import Condition, SecretRef, parse_k8s_resources
@@ -93,6 +93,7 @@ class FluxKustomizationSpec(BaseModel):
     retry_interval: str | None = None
     wait: bool = False
     suspend: bool = False
+    parked: bool = False
     decryption: Decryption | None = None
     post_build: PostBuild | None = None
 
@@ -233,6 +234,7 @@ class _ObjectMeta(BaseModel):
 
     name: str
     namespace: str = ""
+    annotations: dict[str, str] = Field(default_factory=dict)
 
 
 class _FluxKustomizationDoc(BaseModel):
@@ -258,8 +260,12 @@ def parse_flux_kustomizations(flux_file: Path) -> dict[str, FluxKustomizationSpe
             if not (doc.get("apiVersion") or "").startswith("kustomize.toolkit.fluxcd.io"):
                 continue
             parsed = _FluxKustomizationDoc.model_validate(doc)
-            parsed.spec.namespace = parsed.metadata.namespace
-            results[parsed.metadata.name] = parsed.spec
+            results[parsed.metadata.name] = parsed.spec.model_copy(
+                update={
+                    "namespace": parsed.metadata.namespace,
+                    "parked": parsed.metadata.annotations.get("ducktape.org/parked") == "true",
+                }
+            )
 
     return results
 

@@ -69,6 +69,26 @@ spec:
             ("Secret", "optional-settings", True),
         ]
 
+    def test_parses_parked_marker(self, tmp_path: Path) -> None:
+        flux_file = tmp_path / "flux-kustomization.yaml"
+        _write_yaml(
+            flux_file,
+            """
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: parked-app
+  annotations:
+    ducktape.org/parked: "true"
+spec:
+  path: ./cluster/k8s/parked-app
+""",
+        )
+
+        spec = parse_flux_kustomizations(flux_file)["parked-app"]
+
+        assert spec.parked
+
 
 def _write_yaml(path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
