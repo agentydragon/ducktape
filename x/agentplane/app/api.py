@@ -566,21 +566,32 @@ async def unarchive_thread(store: Store, thread_id: UUID) -> Response:
 
 
 @threads.post("/{thread_id}/commands", status_code=status.HTTP_202_ACCEPTED)
-async def submit_thread_command(store: Store, thread_id: UUID, body: dict[str, object]) -> JSONResponse:
-    """Durably store one existing-Thread input before runner delivery is attempted.
+async def submit_thread_command(
+    store: Store, catalog: Annotated[ModelCatalog, Depends(_models)], thread_id: UUID, body: dict[str, object]
+) -> JSONResponse:
+    """Durably store one existing-Thread command before runner delivery is attempted.
 
     The body and response are the generated proto-JSON `Command`. The app-owned durable record is
     desired state, not a fabricated runner Event; replaying command records for the frontend is a
-    separate follow protocol. Controls remain refused until their delivery/effect slices exist.
+    separate follow protocol. The runner's eventual receipt, effect, no-op, or failure remains
+    authoritative.
     """
     try:
         command = ParseDict(body, command_pb2.Command())
     except ParseError as error:
         raise runner_bridge.MalformedMessageError(f"not a Command: {error}") from error
-    if not command.HasField("submit_input"):
+    operation = command.WhichOneof("operation")
+    if operation not in {"submit_input", "change_model", "interrupt_turn"}:
         raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Thread command ingress currently accepts only SubmitInput"
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Thread command ingress accepts SubmitInput, ChangeModel, and InterruptTurn",
         )
+    if operation == "change_model":
+        thread = await store.get_thread(thread_id)
+        if thread is None:
+            raise ThreadNotFoundError(thread_id)
+        if command.change_model.model not in catalog[thread.harness]:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="model is incompatible with this harness")
     try:
         stored = await store.request_thread_command(thread_id, command)
     except ValueError as error:

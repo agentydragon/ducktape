@@ -297,6 +297,7 @@ py_test(
         ":trajectory",
         "//:conftest",
         "//x/agentplane/protocol:command_pb2",
+        "//x/agentplane/protocol:event_log_pb2",
         "//x/agentplane/runner:client",
         "//x/agentplane/runner:conftest",
         "//x/agentplane/runner:protocol_pb2",
