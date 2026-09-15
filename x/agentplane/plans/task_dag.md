@@ -73,6 +73,7 @@ flowchart TB
     THREAD_REPLAY_PROTOCOL["Planned protocol<br/>one protobuf Command/Event language<br/>durable app-to-frontend replay"]:::future
     THREAD_TAIL_FIRST["Future performance<br/>open recent conversation window first<br/>bounded catch-up for long-running Threads"]:::future
     THREAD_LAZY_HISTORY["Future UI<br/>load older Thread history on demand<br/>stable scroll and concurrent live following"]:::future
+    THREAD_NATIVE_LAZY["Deferred design<br/>fetch native payloads only when requested<br/>explicit partial-data and replay contract"]:::future
     THREAD_SCROLL_FOLLOW["Queued UI<br/>follow new content only at bottom<br/>preserve position while reading earlier messages"]:::future
     THREAD_SUBMIT_500["Reported bug<br/>message submission and Retry return 500<br/>Awaiting saved confirmation persists"]:::active
     NEWTHREAD_DURABLE["Deferred combined workflow<br/>server-owned sandbox+thread provisioning<br/>survive browser close and app restart"]:::future
@@ -790,6 +791,16 @@ before the returned window. Assert bounded initial transfer/render work, correct
 current state, and no missed or duplicated Events across the window/live boundary.
 Do not hide a full-history download behind a fast first paint. This concerns history
 inside one Thread, not the all-Threads search/list task `THREAD_BROWSE_PAGINATE`.
+
+### `THREAD_NATIVE_LAZY` — consider on-demand native evidence
+
+**Later design work:** evaluate not transferring full native payloads until Raw/debug
+inspection asks for them; even the reported small conversation already had about
+1,000 Events. Retain lossless native evidence at its authority and preserve cursor,
+ordering, and causal references. Make omitted/unloaded data explicit: a filtered or
+partial browser representation must not masquerade as a complete, untransformed Event
+prefix. Define catch-up/reconnect guarantees and on-demand hydration alongside the
+tail-first and lazy-history contracts before selecting a protocol change.
 
 ### `THREAD_LAZY_HISTORY` — fetch older conversation history only when needed
 
