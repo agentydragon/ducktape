@@ -584,7 +584,7 @@ choose successor command replay (`THREAD_SUCCESSOR_DELIVERY`).
 
 ### `THREAD_PENDING_UI` — pending commands and additive Raw evidence
 
-**Pending-command portion in review, #7016:** derive the runner queue from full
+**Pending-command portion landed, #7016:** derive the runner queue from full
 `CommandAdmitted` payloads and causal outcomes. Input, model, interrupt, and stop use the
 same submission path; local unconfirmed commands retain their exact payload and Thread
 scope across reload. HTTP admission never advances the replay cursor, and lost HTTP
@@ -592,9 +592,13 @@ responses cannot erase streamed admission. The picker keeps the applied model un
 its causal Event; queued commands do not block later input. Component/storage tests and
 desktop/phone/Raw pending visuals cover these states.
 
-**Remaining:** canonical Thread-page integration, real-browser request/reply loss and
-reload acceptance, and the full additive Raw timeline/correlation surface. These are
-separate reviewable slices, not completed by the pending panel's small Raw id snippets.
+Canonical Thread pages are in #7019. Additive Raw uses the same chronological conversation blocks,
+with exact Event envelopes, command/origin correlation, and a separately labelled operational
+snapshot. Interleaved confirmed input and controls split disclosure runs instead of moving to turn
+start. Projection/component tests and desktop/phone scenes cover these presentation boundaries.
+
+**Remaining:** real-browser request/reply loss and reload acceptance, in its separate integration
+slice. Neither the pending panel nor Raw presentation alone proves those transport boundaries.
 
 Implement [the projection contract](../docs/thread_layering.md#timeline-pending-queue-and-operational-state)
 with reload/replay tests and visual cases: streaming, input coalescing, delayed

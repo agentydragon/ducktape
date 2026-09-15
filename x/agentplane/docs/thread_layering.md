@@ -340,7 +340,7 @@ sequenceDiagram
     R-->>A2: Attached {last_cursor:90, ...}<br/>exact E81..E90, then live
     A2->>DB: INSERT E81..E90 and checkpoint=90, COMMIT
     DB-->>A2: NOTIFY (wake-up only)
-    F->>A2: GET /threads/T/events?after=75
+    F->>A2: GET /threads/T/events/stream?after=75
     A2->>DB: Read entries with cursor greater than 75
     DB-->>A2: E76..E90
     A2-->>F: SSE id:76, data:E76 ... id:90, data:E90
@@ -368,7 +368,7 @@ sequenceDiagram
     end
     A--xF: Connection lost before saved confirmation reaches browser
     Note over F: Reload
-    F->>A: GET /threads/T/events?after=100
+    F->>A: GET /threads/T/events/stream?after=100
     alt Admission is in app copy
         A-->>F: SSE id:101, data:E(101, command_admitted{command:C})
         F->>F: Match C, retire local submission
@@ -438,6 +438,14 @@ Raw mode adds native frames, exact Events, ids, source references, and command d
 to the same page. A streaming card can span many interleaved Events; expanding it must
 preserve access to their exact order. Normal card order is not the chronology of every
 delta. Confirmed input can appear after assistant output emitted while that input waited.
+
+The app uses one chronological conversation-block projection in both modes. Confirmed input and
+control observations split collapsible item runs; toggling Raw does not substitute a different
+conversation order or reset its disclosures. A block's cards show the current aggregate at their
+first-observed position, explicitly labelled with the consumed prefix in Raw. Its exact Events
+remain in cursor order below the aggregate, including complete native envelopes and causal links.
+The operational `Attached` disclosure stays outside that timeline and shows both advertised and
+consumed cursors. Pending commands remain above the composer, separate from confirmed messages.
 
 ### Shared vocabulary does not require a fabricated single history
 

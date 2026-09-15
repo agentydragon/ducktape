@@ -744,6 +744,7 @@ ts_library(
         "//:node_modules/react-router",
         "//x/agentplane/protocol:command_pb",
         "//x/agentplane/protocol:event_pb",
+        "//x/agentplane/runner:protocol_pb",
     ],
 )
 

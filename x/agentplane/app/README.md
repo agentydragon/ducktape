@@ -389,13 +389,12 @@ other operator routes do. Which lists the service enforces is its contract
   it, and nothing brings that back. The rule lives in the API rather than in the browser, so it also
   binds the agent driving staging with a token; the two clicks it costs an operator are suspend and
   then delete. A running sandbox answers `DELETE` with 409 and a message saying to suspend it.
-- **The raw view keeps a frame on one wrapped line, rather than pretty-printing its JSON:** height
-  is what the raw view trades on. Its whole point is reading the order of the session, and measured
-  on the `session_raw` scenario the same window holds thirteen events compact against five
-  pretty-printed — the turn header, the input and the reasoning block all fall off the page.
-  Pretty-printing also does not help the payloads that are genuinely hard to read, since a long
-  string value stays one long line either way; wrapping and highlighting are what make those
-  legible.
+- **Raw is additive:** both modes use the same chronological conversation blocks and disclosure
+  state. Compact Event summaries sit between those blocks; expanded details retain the full generated
+  envelope, native payload, and causal references. JSON wraps instead of forcing horizontal scrolling.
+  Cards are labelled as current aggregates, not historical snapshots at their first cursor. The
+  [projection contract](../docs/thread_layering.md#timeline-pending-queue-and-operational-state) separates
+  this evidence from the pending-command queue and operational snapshot.
 
 ## Action live updates and browser notifications
 

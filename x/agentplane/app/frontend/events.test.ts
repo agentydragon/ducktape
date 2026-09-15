@@ -1,7 +1,7 @@
 import { create, type MessageInitShape } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 
-import { EMPTY, eventOf, groupItems, reduce, timeline, type Item, type Row } from "./events";
+import { EMPTY, eventOf, groupItems, reduce, timeline, timelineBlocks, type Item, type Row } from "./events";
 import { Direction, EventSchema, ItemKind, TurnStatus } from "../../protocol/event_pb";
 import { EventEntrySchema, type EventEntry } from "../../protocol/event_log_pb";
 
@@ -164,5 +164,49 @@ describe("timeline", () => {
     const lastItem = steps.findIndex((step) => step.entry.cursor === 16n);
     expect(lastItem).toBeLessThan(stderr);
     expect(stderr).toBeLessThan(completed);
+  });
+});
+
+describe("timelineBlocks", () => {
+  it("keeps an interleaved confirmed input and controls between the item runs they interrupted", () => {
+    const entries = [
+      event(1, { case: "turnStarted", value: { turnId: "turn" } }),
+      event(2, { case: "itemStarted", value: { itemId: "reason-1", kind: ItemKind.REASONING } }),
+      event(3, { case: "textDelta", value: { itemId: "reason-1", text: "thinking" } }),
+      event(4, { case: "itemStarted", value: { itemId: "tool-1", kind: ItemKind.TOOL_CALL } }),
+      event(5, {
+        case: "harnessUserMessageConfirmed",
+        value: { harnessMessageId: "late-input", turnId: "turn", text: "steer" },
+      }),
+      event(6, { case: "itemStarted", value: { itemId: "tool-2", kind: ItemKind.TOOL_CALL } }),
+      event(7, {
+        case: "commandAdmitted",
+        value: { command: { commandId: "model", operation: { case: "changeModel", value: { model: "new-model" } } } },
+      }),
+      event(8, { case: "itemStarted", value: { itemId: "reason-2", kind: ItemKind.REASONING } }),
+      event(9, { case: "modelChanged", value: { commandId: "model", model: "new-model" } }),
+      event(10, { case: "itemStarted", value: { itemId: "tool-3", kind: ItemKind.TOOL_CALL } }),
+      event(11, { case: "turnCompleted", value: { turnId: "turn", status: TurnStatus.INTERRUPTED } }),
+    ];
+    const state = entries.reduce(reduce, EMPTY);
+    const blocks = timelineBlocks(state);
+    expect(blocks.map((block) => [block.entries[0].cursor, block.content?.kind])).toEqual([
+      [1n, "turn"],
+      [2n, "items"],
+      [5n, "input"],
+      [6n, "items"],
+      [7n, undefined],
+      [8n, "items"],
+      [9n, "control"],
+      [10n, "items"],
+      [11n, "control"],
+    ]);
+    expect(blocks[1].content).toMatchObject({
+      kind: "items",
+      group: { kind: "run", items: [{ id: "reason-1", text: "thinking" }, { id: "tool-1" }] },
+    });
+    expect(blocks.flatMap((block) => block.entries)).toEqual(entries);
+    // Building disclosure groups may not mutate the Event projection or accumulate items on rerender.
+    expect(timelineBlocks(state)).toEqual(blocks);
   });
 });

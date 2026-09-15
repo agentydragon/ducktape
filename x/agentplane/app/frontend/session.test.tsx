@@ -500,6 +500,60 @@ it("does not animate unfinished historical items after their turn or harness end
   expect(container.querySelectorAll('[aria-label="Incomplete in retained history"]')).toHaveLength(2);
 });
 
+it("adds Raw evidence without reordering conversation anchors or resetting an expanded tool run", async () => {
+  const { container, stream } = await render();
+  const observations: MessageInitShape<typeof EventSchema>["observation"][] = [
+    { case: "turnStarted", value: { turnId: "turn" } },
+    { case: "itemStarted", value: { itemId: "first-tool", kind: ItemKind.TOOL_CALL, toolName: "First tool" } },
+    { case: "toolArguments", value: { itemId: "first-tool", argumentsJson: '{"command":"first"}' } },
+    { case: "itemStarted", value: { itemId: "second-tool", kind: ItemKind.TOOL_CALL, toolName: "Second tool" } },
+    {
+      case: "harnessUserMessageConfirmed",
+      value: { harnessMessageId: "interleaved", text: "Processed after those tools", turnId: "turn" },
+    },
+    { case: "itemStarted", value: { itemId: "reply", kind: ItemKind.ASSISTANT_TEXT } },
+    { case: "textDelta", value: { itemId: "reply", text: "Current accumulated reply" } },
+    { case: "modelChanged", value: { commandId: "model", model: "next" } },
+    {
+      case: "turnCompleted",
+      value: { turnId: "turn", status: TurnStatus.INTERRUPTED, interruptedByCommandId: "stop" },
+    },
+  ];
+  await act(async () => {
+    observations.forEach((observation, index) => {
+      stream.dispatchEvent(new MessageEvent("event", { data: event(index + 2, observation) }));
+    });
+  });
+  const run = [...container.querySelectorAll("button")].find((button) => button.textContent?.includes("2 tool calls"));
+  if (!run) throw new Error("Missing tool disclosure");
+  await act(async () => run.click());
+  expect(run.getAttribute("aria-expanded")).toBe("true");
+  const anchors = () =>
+    [...container.querySelectorAll("[data-conversation-anchor]")].map((node) =>
+      node.getAttribute("data-conversation-anchor")
+    );
+  const normalAnchors = anchors();
+  expect(normalAnchors).toEqual(["2", "3", "6", "7", "9", "10"]);
+  expect(container.querySelectorAll(".agentplane-user-bubble")).toHaveLength(1);
+  const more = container.querySelector<HTMLButtonElement>('[aria-label="More"]');
+  if (!more) throw new Error("Missing More menu");
+  await act(async () => more.click());
+  const raw = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) =>
+    item.textContent?.includes("Raw frames")
+  );
+  if (!raw) throw new Error("Missing Raw frames toggle");
+  await act(async () => raw.click());
+  expect(anchors()).toEqual(normalAnchors);
+  expect(run.getAttribute("aria-expanded")).toBe("true");
+  expect(container.textContent).toContain("Current accumulated reply");
+  expect(container.textContent).toContain("current aggregates through event 10");
+  expect(container.textContent).toContain("harness message interleaved · first event 6");
+  expect(container.querySelectorAll(".agentplane-user-bubble")).toHaveLength(1);
+  expect(
+    [...container.querySelectorAll("[data-event-cursor]")].map((node) => node.getAttribute("data-event-cursor"))
+  ).toEqual(Array.from({ length: 10 }, (_, index) => String(index + 1)));
+});
+
 it("isolates transcript, draft, and late transport callbacks when the target changes", async () => {
   const { container, composer, stream, streams, rerender } = await render();
   await type(composer, "draft for the old target");
