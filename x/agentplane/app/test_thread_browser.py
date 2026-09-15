@@ -219,9 +219,16 @@ async def test_conversation_follows_bottom_until_reader_scrolls_up(
     await expect_history_bottom(page)
     await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-following.png")
 
-    # A real DOM scroll fires the viewport's event; no component state or layout is mocked.
-    await history.evaluate("area => area.scrollTo({ top: 100 })")
-    await page.wait_for_function("() => document.querySelector('[aria-label=\"Thread history\"]').scrollTop === 100")
+    await history.hover()
+    await page.mouse.wheel(0, -600)
+    await page.wait_for_function(
+        """() => {
+            const area = document.querySelector('[aria-label="Thread history"]');
+            return area.scrollHeight - area.clientHeight - area.scrollTop > 400;
+        }"""
+    )
+    await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+    reading_position = await history.evaluate("area => area.scrollTop")
     source.append(
         event_pb2.Event(
             text_delta=event_pb2.TextDelta(item_id="test-scroll-tail", text="\n\nTest output while reading")
@@ -242,10 +249,10 @@ async def test_conversation_follows_bottom_until_reader_scrolls_up(
     # Wait for the paint following layout/ResizeObserver, so a premature assertion cannot miss
     # an unwanted jump scheduled by that observer. No elapsed-time delay stands in for rendering.
     await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
-    assert await history.evaluate("area => area.scrollTop") == 100
+    assert await history.evaluate("area => area.scrollTop") == reading_position
     await page.set_viewport_size({"width": 360 if phone else 800, "height": 700})
     await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
-    assert await history.evaluate("area => area.scrollTop") == 100
+    assert await history.evaluate("area => area.scrollTop") == reading_position
     await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-reading.png")
 
     await history.evaluate("area => area.scrollTo({ top: area.scrollHeight })")

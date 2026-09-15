@@ -11,12 +11,25 @@ export function ConversationScroll({ children }: { children: ReactNode }): JSX.E
     const body = content.current;
     if (!area || !body) return;
     let following = true;
+    let lastTop = area.scrollTop;
+    let contentHeight = area.scrollHeight;
+    let viewportHeight = area.clientHeight;
     const onScroll = (): void => {
       // scrollTop can be fractional, while the two heights are rounded CSS pixels.
-      following = area.scrollHeight - area.clientHeight - area.scrollTop <= 2;
+      if (area.scrollHeight - area.clientHeight - area.scrollTop <= 2) following = true;
+      // A scroll event from our own write may arrive after another content resize. Only an
+      // actual upward movement opts out; being momentarily behind new content does not.
+      else if (area.scrollTop < lastTop && area.scrollHeight === contentHeight && area.clientHeight === viewportHeight)
+        following = false;
+      lastTop = area.scrollTop;
     };
     const follow = (): void => {
-      if (following) area.scrollTop = area.scrollHeight;
+      if (following) {
+        area.scrollTop = area.scrollHeight;
+        lastTop = area.scrollTop;
+      }
+      contentHeight = area.scrollHeight;
+      viewportHeight = area.clientHeight;
     };
     const observer = new ResizeObserver(follow);
     observer.observe(body);
