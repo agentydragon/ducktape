@@ -27,7 +27,7 @@ afterEach(async () => {
 const CREATED: SandboxView = {
   name: "test-created-sandbox",
   uid: "00000000-0000-4000-8000-000000000001",
-  state: "pending",
+  state: "waiting_for_pod",
   created_at: "2026-01-01T00:00:00Z",
   operating_mode: "Running",
   conditions: [],
