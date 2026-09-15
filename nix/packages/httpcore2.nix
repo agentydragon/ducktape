@@ -1,5 +1,5 @@
 # httpcore2: the low-level transport for httpx2 (pydantic org's http2/httpx successor).
-# Not in nixpkgs as of the pinned nixpkgs revision (first released 2026-05, after the pin).
+# The pinned nixpkgs package is older than httpx2's required 2.13.0 transport.
 {
   lib,
   python3Packages,
@@ -7,12 +7,12 @@
 }:
 python3Packages.buildPythonPackage rec {
   pname = "httpcore2";
-  version = "2.12.0";
+  version = "2.13.0";
   format = "wheel";
 
   src = fetchurl {
-    url = "https://files.pythonhosted.org/packages/d2/74/d370e55600d9bcfa0d9794b0166126d49291a3d2b20c268fc98c453a4948/httpcore2-2.12.0-py3-none-any.whl";
-    hash = "sha256-fgQljOAQE9fWFeW5EKOyf6yTfXqVA4In55ZStLo7TOs=";
+    url = "https://files.pythonhosted.org/packages/7e/0d/117a771a2bb91df334b66bf4da14cd02f21aefbcfe53180f336ce55e8f90/httpcore2-2.13.0-py3-none-any.whl";
+    hash = "sha256-Na5b40eqQEZ7Sl3AMqxn67bScYn8l+jOvPmWFvahu54=";
   };
 
   dependencies = with python3Packages; [
