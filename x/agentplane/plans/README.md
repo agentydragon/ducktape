@@ -10,7 +10,7 @@ execution sequence. This is a priority decision, not a technical dependency.
 
 ## Open plans and gates
 
-- [Task DAG](task_dag.md) — remaining-work dependency map, including `INPUT_DELIVERY`: re-read native queue research and refresh captures before changing the common protocol
+- [Task DAG](task_dag.md) — remaining work and proposed priorities: deployed command acceptance, UI usability/history, native recovery, and deferred cluster-browser/subagent work
 - [Durable SSH-backed processes](ssh_durable_processes.md) — deferred systemd-backed host daemon for processes that outlive an SSH connection
 - [Driver-provided tools and background work](driver_tools_and_background.md) — deferred seam that must reuse the Action contracts
 - [Agent access to external systems](external_access.md) — deferred delegated-versus-brokered access choices
@@ -29,7 +29,7 @@ generic MCP, configured Identities, Connection grants, and OAuth/consent. The
 [workload authentication](../docs/workload_authentication.md),
 [launch presets](../docs/launch_presets.md), and [action policies](../docs/action_policies.md) own
 the other implemented contracts.
-[Thread, runner, and harness layering](../docs/thread_layering.md) is the authoritative target
-contract for the durable Thread-command/reconciliation work tracked in the DAG; it intentionally
-separates that pending work from the currently deployed session-shaped bridge.
+[Thread, runner, and harness layering](../docs/thread_layering.md) owns the command/Event
+architecture and distinguishes the implemented runner-admission/app-archive path from
+pending Thread identity continuity, native recovery, and optional app-first acceptance.
 Deployed acceptance is tracked in the DAG; code or CI evidence alone does not satisfy it.
