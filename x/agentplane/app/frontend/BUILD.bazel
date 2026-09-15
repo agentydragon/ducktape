@@ -341,6 +341,49 @@ ts_library(
     ],
 )
 
+ts_library(
+    name = "command_state",
+    srcs = ["command_state.ts"],
+    tsconfig = TSCONFIG,
+    deps = ["//x/agentplane/runner:protocol_pb"],
+)
+
+ts_library(
+    name = "command_state_test",
+    testonly = True,
+    srcs = ["command_state.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":command_state",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/vitest",
+        "//x/agentplane/runner:protocol_pb",
+    ],
+)
+
+ts_library(
+    name = "local_commands",
+    srcs = ["local_commands.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@bufbuild/protobuf",
+        "//x/agentplane/runner:protocol_pb",
+    ],
+)
+
+ts_library(
+    name = "local_commands_test",
+    testonly = True,
+    srcs = ["local_commands.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":local_commands",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/vitest",
+        "//x/agentplane/runner:protocol_pb",
+    ],
+)
+
 # The lifecycle controls both sandbox views share: suspend/resume, and delete with its confirmation.
 ts_library(
     name = "lifecycle",
@@ -787,12 +830,14 @@ vitest_bin.vitest_test(
         ":actions_history_test",
         ":actions_test",
         ":client_test",
+        ":command_state_test",
         ":connections_test",
         ":consent_test",
         ":event_stream_test",
         ":events_test",
         ":json_view_test",
         ":launch_presets_test",
+        ":local_commands_test",
         ":mcp_servers_test",
         ":push_test",
         ":sandbox_page_test",
