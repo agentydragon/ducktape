@@ -457,15 +457,42 @@ admitted without a terminal outcome. No acknowledgement, retry, steering, cancel
 runner. Keep unsupported operations native or explicitly unavailable. **Deferred:** generic queue
 management and unproven per-input cancellation.
 
+### `THREAD_EVENT_CONTINUITY` — one runner-owned Thread Event log through harness resume
+
+**Required protocol/storage cutover before browser replay:** a Thread has one
+runner-owned, dense Event sequence. The runner receives the app-minted Thread id when
+opening or attaching a harness session; its Event journal is keyed by that Thread id,
+not by a runner-session id. A replacement harness session continues the journal's
+high-water mark, and every `EventEntry.cursor` is that one Thread sequence.
+
+The app persists copied Events as `(thread_id, cursor)`, with runner-session identity
+as provenance only. It reconnects by giving the runner its committed high-water mark;
+the runner replays later entries. If a replacement runner has no surviving local state,
+it initializes its journal strictly after that committed high-water mark. It must not
+reset to zero, emit an overlapping cursor, or ask the app/frontend to merge
+session-local Event logs. This is a hard cutover: change runner protocol/state storage,
+tests, app bridge calls, and runner specification together; do not read old logs or
+support an older cursor scheme.
+
+This does not decide whether a received-but-unsettled **command** is delivered to a
+successor session. That remains `THREAD_SUCCESSOR_DELIVERY`; it is separate from
+continuing the Thread Event log.
+
+**Acceptance evidence:** real-process runner tests create a Thread, emit Events, then
+exercise reconnect, runner recovery, and a replacement harness session. Each next
+Event has the next Thread cursor; the app catches up by that cursor alone; replay never
+duplicates or reorders a copied Event; Raw provenance identifies the producing session
+without creating a second timeline.
+
 ### `THREAD_COMMAND_DELIVERY` — deliver existing-Thread input through the outbox
 
 **Immediate backend step:** the persistence-only Thread command outbox is allowed to land first,
 but it is not yet a product command ingress. Build a multi-replica reconciler for an existing
 Thread's current Sandbox and runner session: take the oldest eligible `SubmitInput`, deliver its
 stable command id, ingest the runner's admission/effect/no-op/failure Events, and recover without
-duplicate native input after app-replica crash, runner reconnect, or browser reload. The runner's
-session-scoped Event sequence already survives runner-process restarts; this item does not add a
-successor runner session or a second Event sequence to a Thread.
+duplicate native input after app-replica crash, runner reconnect, or browser reload. It depends on
+`THREAD_EVENT_CONTINUITY`: the runner's Thread Event sequence survives runner-process and
+harness-session replacement without a second Event sequence.
 
 Do not add a normal command HTTP/UI entrypoint that merely writes an unconsumed outbox row. The
 existing direct session command path remains only until this reconciler has an end-to-end
@@ -583,24 +610,28 @@ continuation evidence separate, is in
 reuse the generated runner `Command` and `Event` payloads. A browser submits a
 caller-minted `Command.command_id`; the app's transaction appends that exact `Command`
 to the Thread outbox, the reconciler sends that exact payload to the runner, and the app
-relays the runner's exact `Event` payload after durable copying. The app-to-frontend
-protocol adds only a typed `ThreadRecord` envelope for Thread identity, command ordinal
-or runner-session association, and a replay cursor. It does not add a frontend command
-body, a `ThreadCommandView` state vocabulary, or app-produced conversation items.
+relays the runner's exact `Event` payload after durable copying. The browser follows two
+separate Thread-scoped feeds: the app-owned command ledger emits the exact `Command`
+with its outbox ordinal as SSE cursor, and the runner-owned Event log relays the exact
+generated `EventEntry`. There is no `ThreadRecord` union, frontend-specific input body,
+`ThreadCommandView` state vocabulary, or app-produced conversation item.
 
 The committed command record is the one app-specific boundary: it says the app has the
 command but the runner has not necessarily admitted it. `CommandAdmitted` remains a
 runner Event, so the frontend distinguishes awaiting runner admission from runner
-admitted by folding the replayed `Command` and `Event` records. The replay cursor is a
-lossless browser transport cursor, never a synthetic ordering across runner sessions;
-Kubernetes/Sandbox lifecycle stays separately provenanced operational state.
+admitted by folding command-ledger entries and Event entries. The Event cursor is the
+runner's one Thread high-water mark, continued across harness sessions by
+`THREAD_EVENT_CONTINUITY`; the command ordinal is only ordering for the separate app
+outbox. Kubernetes/Sandbox lifecycle stays separately-provenanced operational state.
 
 **Acceptance evidence:** a fresh or reconnecting browser reconstructs normal and Raw
-Thread views using only typed replay records from PostgreSQL. Normal conversation cards
-are a pure frontend projection of runner Events; the pending queue is a pure fold of
-app-stored Commands plus runner admissions/effects. The raw view exposes the exact payload
-and provenance. No product route directly pushes a command to a runner, and no
-server-side UI projection or duplicated JSON command/event schema remains.
+Thread views by separately replaying both typed entries from PostgreSQL. Normal
+conversation cards are a pure frontend projection of the single runner Thread Event
+log; the pending queue is a pure fold of app-stored commands plus runner
+admissions/effects. The raw view exposes the exact payload and session provenance without
+placing the command ledger on the conversation timeline. No product route directly
+pushes a command to a runner, and no server-side UI projection or duplicated JSON
+command/event schema remains.
 
 ### `THREAD_OUTBOX_CUTOVER` — retire direct session-command pushes
 
@@ -612,9 +643,9 @@ The full admission/effect and pending-queue contract is [Thread, runner, and har
 layering](../docs/thread_layering.md#command-protocol-intent-admission-then-outcome).
 
 The product ingress is the generated protobuf `Command` at the Thread command route;
-the app-to-frontend replay uses the corresponding generated `Command` and `Event`
-payloads in its `ThreadRecord` envelope. Do not retain a frontend-specific input body or
-independently-maintained command-status protocol.
+the app-to-frontend replay separately exposes the corresponding generated `Command`
+and `Event` payloads in its command ledger and Thread Event log. Do not retain a
+frontend-specific input body or independently-maintained command-status protocol.
 
 Remove the direct session-command HTTP routes and their frontend helpers
 (`/sandboxes/{name}/sessions/{session_id}/inputs`, `interrupt`, `model`, and `shutdown`) in the
