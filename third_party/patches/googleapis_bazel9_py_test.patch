@@ -1,0 +1,15 @@
+--- a/google/devtools/build/v1/BUILD.bazel
++++ b/google/devtools/build/v1/BUILD.bazel
+@@ -168,9 +168,9 @@
+-py_test(
++# Bazel 9 removed native py_test. Ducktape consumes the proto target, not this
++# generated GAPIC test, so retain its sources without loading a Python rule.
++filegroup(
+     name = "build_py_gapic_test",
+     srcs = [
+         "build_py_gapic_pytest.py",
+         "build_py_gapic_test.py",
+     ],
+-    legacy_create_init = False,
+-    deps = [":build_py_gapic"],
+ )

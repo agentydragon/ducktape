@@ -7,6 +7,13 @@ bazel_dep(name = "platforms", version = "1.1.0")
 bazel_dep(name = "aspect_rules_lint", version = "2.9.0")
 bazel_dep(name = "rules_python", version = "1.9.2")
 
+# Keep the isolated smoke workspace on the same Bazel 9-compatible Go/C++
+# toolchain pair as the root module. aspect_rules_lint's release module brings
+# older dev dependencies transitively, and its rules_cc 0.2.0 path still loads
+# Bazel's removed native CcInfo provider.
+bazel_dep(name = "rules_go", version = "0.63.0", repo_name = "io_bazel_rules_go")
+bazel_dep(name = "rules_cc", version = "0.2.22")
+
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
 python.toolchain(
     is_default = True,
