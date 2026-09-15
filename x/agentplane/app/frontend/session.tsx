@@ -567,7 +567,7 @@ function SessionContents({ sandbox, sessionId, onBack }: SessionViewProps): JSX.
               data={modelOptions}
               value={model}
               onChange={(next) => void selectModel(next)}
-              placeholder={replaying ? "Catching up…" : "Model"}
+              placeholder={connection.kind === "failed" ? "Model unavailable" : replaying ? "Catching up…" : "Model"}
               disabled={unavailable || state.harness !== "running" || modelPending}
               w={200}
             />

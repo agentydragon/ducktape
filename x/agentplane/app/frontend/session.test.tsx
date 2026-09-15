@@ -205,6 +205,7 @@ it("shows a replay integrity failure and stops controls at the verified prefix",
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("Event gap: expected 2, received 3");
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("through event 1");
   expect(composer.disabled).toBe(true);
+  expect(container.querySelector<HTMLInputElement>('input[aria-label="Model"]')?.placeholder).toBe("Model unavailable");
 });
 
 it("keeps the model unknown during catch-up instead of showing an older replayed model", async () => {

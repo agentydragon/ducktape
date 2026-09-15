@@ -348,6 +348,7 @@ function egressDecisions(): Decision[] | Response {
 const SPEC: SessionSpec = create(SessionSpecSchema, {
   harness: Harness.CLAUDE,
   cwd: "/state/work",
+  model: "harness-claude-model",
   reasoningEffort: "low",
 });
 
