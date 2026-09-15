@@ -24,6 +24,7 @@ def _write_executable(path: Path, content: str) -> None:
         ("pnpm-lock.yaml", True),
         ("Cargo.toml", True),
         ("pyproject.toml", True),
+        ("devinfra/ci/bazel_ci.sh", True),
         ("devinfra/ci/example.bzl", True),
     ],
 )
