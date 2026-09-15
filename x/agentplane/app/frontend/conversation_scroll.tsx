@@ -24,6 +24,10 @@ export function ConversationScroll({ children }: { children: ReactNode }): JSX.E
       lastTop = area.scrollTop;
     };
     const follow = (): void => {
+      // Returning to the bottom can precede its queued scroll event. If layout has grown
+      // meanwhile, recognize the previous bottom. An anchor adjustment may move beyond
+      // that boundary without the reader returning to the bottom.
+      if (Math.abs(contentHeight - viewportHeight - area.scrollTop) <= 2) following = true;
       if (following) {
         area.scrollTop = area.scrollHeight;
         lastTop = area.scrollTop;

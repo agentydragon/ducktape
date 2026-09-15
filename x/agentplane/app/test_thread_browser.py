@@ -253,9 +253,28 @@ async def test_conversation_follows_bottom_until_reader_scrolls_up(
     await page.set_viewport_size({"width": 360 if phone else 800, "height": 700})
     await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
     assert await history.evaluate("area => area.scrollTop") == reading_position
+    # A late expansion above the reader can advance scrollTop through browser anchoring.
+    # Passing the old bottom that way must not be mistaken for returning to it.
+    await page.get_by_text("Test retained prefix", exact=True).evaluate(
+        """message => {
+            const area = message.closest('[aria-label="Thread history"]');
+            message.style.minHeight = `${area.scrollHeight}px`;
+        }"""
+    )
+    await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+    assert await history.evaluate("area => area.scrollHeight - area.clientHeight - area.scrollTop") > 400
     await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-reading.png")
 
-    await history.evaluate("area => area.scrollTo({ top: area.scrollHeight })")
+    # Scroll events are queued. Grow a rendered item in the same task as returning to the
+    # bottom: when that event arrives, the old bottom is already behind the new content.
+    # This reproduces a late layout expansion without relying on network/frame timing.
+    await page.get_by_text("Test new message while reading", exact=True).evaluate(
+        """message => {
+            const area = message.closest('[aria-label="Thread history"]');
+            area.scrollTo({ top: area.scrollHeight });
+            message.style.minHeight = '240px';
+        }"""
+    )
     await expect_history_bottom(page)
     source.append(
         event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-scroll-tail", text="\n\nTest following again"))
@@ -265,6 +284,7 @@ async def test_conversation_follows_bottom_until_reader_scrolls_up(
     # Increasing the viewport height must keep following too, including browser scroll clamping.
     await page.set_viewport_size({"width": 412 if phone else 1280, "height": 900})
     await expect_history_bottom(page)
+    await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-resumed.png")
 
 
 async def expect_history_bottom(page: Page) -> None:
