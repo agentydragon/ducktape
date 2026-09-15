@@ -31,18 +31,17 @@ import {
 } from "react";
 import { useSearchParams } from "react-router";
 
-import { create } from "@bufbuild/protobuf";
+import { create, toJsonString } from "@bufbuild/protobuf";
 
 import { displayableError, eventsUrl, getThread, renameThread, models, type ThreadView } from "./client";
 import "./session.css";
 
 import {
-  groupItems,
-  timeline,
+  timelineBlocks,
+  type ConversationContent,
   type InputState,
   type Item,
   type ItemGroup,
-  type Row,
   type SessionState,
   type Turn,
 } from "./events";
@@ -52,6 +51,7 @@ import { HighlightedText } from "./json_view";
 import { Markdown } from "./markdown";
 import { ItemKind, TurnStatus } from "../../protocol/event_pb";
 import { CommandSchema } from "../../protocol/command_pb";
+import { AttachedSchema } from "../../runner/protocol_pb";
 import { useCommandSubmission } from "./command_submission";
 import { PendingCommands } from "./pending_commands";
 import { LiveStatus, liveSandboxesUrl, useLive, type SandboxesSnapshot } from "./live";
@@ -264,14 +264,39 @@ function TurnHeader({ turn }: { turn: Turn }): JSX.Element {
   );
 }
 
-function RowView({ row, live }: { row: Row; live: boolean }): JSX.Element {
-  switch (row.kind) {
+function ContentView({ content, live }: { content: ConversationContent; live: boolean }): JSX.Element {
+  switch (content.kind) {
     case "turn":
-      return <TurnHeader turn={row.turn} />;
+      return <TurnHeader turn={content.turn} />;
     case "input":
-      return <InputView input={row.input} />;
-    case "item":
-      return <ItemView item={row.item} live={live} />;
+      return <InputView input={content.input} />;
+    case "items":
+      return <ItemGroupView group={content.group} live={live} />;
+    case "control": {
+      const observation = content.entry.event?.observation;
+      return (
+        <Text size="sm" c="dimmed">
+          {observation?.case === "modelChanged" && `Model changed to ${observation.value.model}`}
+          {observation?.case === "turnCompleted" &&
+            `Turn ${observation.value.turnId}: ${TurnStatus[observation.value.status]}`}
+        </Text>
+      );
+    }
+  }
+}
+
+function contentIdentity(content: ConversationContent): string {
+  switch (content.kind) {
+    case "turn":
+      return `turn ${content.turn.id} · first event ${content.turn.firstCursor}`;
+    case "input":
+      return `harness message ${content.input.id} · first event ${content.input.firstCursor}`;
+    case "items": {
+      const items = content.group.kind === "single" ? [content.group.item] : content.group.items;
+      return items.map((item) => `item ${item.id} · first event ${item.firstCursor}`).join("; ");
+    }
+    case "control":
+      return `observed at event ${content.entry.cursor}`;
   }
 }
 
@@ -513,46 +538,50 @@ function SessionContents({ threadId, onBack }: SessionViewProps): JSX.Element {
           Event stream stopped: {connection.reason}. Showing verified history through event {state.lastCursor}.
         </Text>
       )}
+      {showRaw && attached && (
+        <details>
+          <summary>
+            Operational runner snapshot · advertised event {String(attached.lastCursor)} · consumed event{" "}
+            {state.lastCursor}
+          </summary>
+          <Text size="xs" c="dimmed">
+            Not a replayed Event or the conversation projection. This snapshot can be ahead of retained history.
+          </Text>
+          <ScrollArea.Autosize mah={160}>
+            <HighlightedText text={toJsonString(AttachedSchema, attached)} />
+          </ScrollArea.Autosize>
+        </details>
+      )}
       {/* `minHeight: 0` so this shrinks instead of pushing the composer off: a flex child
           defaults to its content's height as its floor. */}
       <ScrollArea style={{ flex: 1, minHeight: 0 }}>
         <Stack>
-          {/* Raw: the whole session in cursor order, so what happened between two items — a
-              stderr line, the harness starting — reads where it happened. Otherwise the turns,
-              which group what the raw order interleaves. */}
-          {showRaw ? (
-            timeline(state).map(({ entry, row }) => (
-              <Fragment key={String(entry.cursor)}>
-                {row && (
-                  <RowView
-                    row={row}
-                    live={receiving && row.kind === "item" && activeTurn?.itemIds.includes(row.item.id) === true}
-                  />
-                )}
-                <FrameView entry={entry} />
-              </Fragment>
-            ))
-          ) : (
-            <>
-              {state.turns.map((turn) => (
-                <Stack key={turn.id} gap="xs">
-                  <TurnHeader turn={turn} />
-                  {state.inputs
-                    .filter((input) => input.turnId === turn.id)
-                    .map((input) => (
-                      <InputView key={input.id} input={input} />
-                    ))}
-                  {groupItems(turn.itemIds.flatMap((id) => (state.items[id] ? [state.items[id]] : []))).map((group) => (
-                    <ItemGroupView
-                      key={group.kind === "single" ? group.item.id : group.items[0].id}
-                      group={group}
-                      live={receiving && turn.status === null}
-                    />
-                  ))}
-                </Stack>
-              ))}
-            </>
+          {showRaw && (
+            <Text size="xs" c="dimmed">
+              Cards are current aggregates through event {state.lastCursor}, anchored where first observed. Evidence
+              below each card preserves Event order; it is not a snapshot of the card at that earlier time.
+            </Text>
           )}
+          {timelineBlocks(state).map(({ content, entries }) => {
+            const group = content?.kind === "items" ? content.group : null;
+            const item = group?.kind === "single" ? group.item : group?.items[0];
+            const live = receiving && item !== undefined && activeTurn?.itemIds.includes(item.id) === true;
+            return (
+              <Fragment key={String(entries[0].cursor)}>
+                {content && (
+                  <Stack gap="xs" data-conversation-anchor={String(entries[0].cursor)}>
+                    {showRaw && (
+                      <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+                        {contentIdentity(content)}
+                      </Text>
+                    )}
+                    <ContentView content={content} live={live} />
+                  </Stack>
+                )}
+                {showRaw && entries.map((entry) => <FrameView key={String(entry.cursor)} entry={entry} />)}
+              </Fragment>
+            );
+          })}
         </Stack>
       </ScrollArea>
       {/* The model picker and stop control sit under the composer, not the header: on a phone
