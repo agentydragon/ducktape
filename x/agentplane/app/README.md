@@ -126,6 +126,13 @@ the browser must show catch-up or a stopped-stream error, preserve only verified
 content, and disable controls until it has the required evidence.
 An additional case opens and reloads an archived Thread after Sandbox deletion with no reachable
 runner, preserving exact retained events and visibly incomplete historical output.
+Transport-fault cases cover an explicit same-ID retry after a pre-forward abort, loss of both
+admission reply and SSE delivery followed by reload/reconciliation, and an HTTP admission arriving
+ahead of the browser prefix without skipping earlier deltas. A separate test cuts the SSE response
+without reloading the document: native EventSource reconnects with `Last-Event-ID`, replays the
+unobserved suffix once, and reconciles pending input without another command send. Raw rows and
+normal conversation assertions use the same prefix. These browser cases complement the API/runner
+tests for idempotent retry of already-admitted commands; reload catch-up still disables Retry.
 
 Rollout prerequisite: existing sandbox runners must support independent attachments before the new
 app bridge is deployed; old runner processes are not upgraded merely by publishing the new image.

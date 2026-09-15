@@ -69,7 +69,6 @@ flowchart TB
     SANDBOX_LIFECYCLE_DURABILITY["Planned lifecycle correctness<br/>retained state through suspension<br/>archive before managed storage deletion"]:::future
     THREAD_EVENT_CONTINUITY["Planned identity cutover<br/>one Thread journal across incarnations<br/>exclusive runner writer and retained state"]:::future
     THREAD_COMMAND_DELIVERY["Deferred backend<br/>app outbox delivery to existing runner<br/>only if app-first acceptance is chosen later"]:::future
-    THREAD_REPLAY_PROTOCOL["Remaining browser acceptance<br/>unobserved admission and replay boundaries<br/>one canonical Thread Event prefix"]:::active
     THREAD_TAIL_FIRST["Future performance<br/>open recent conversation window first<br/>bounded catch-up for long-running Threads"]:::future
     THREAD_LAZY_HISTORY["Future UI<br/>load older Thread history on demand<br/>stable scroll and concurrent live following"]:::future
     THREAD_NATIVE_LAZY["Deferred design<br/>fetch native payloads only when requested<br/>explicit partial-data and replay contract"]:::future
@@ -159,8 +158,9 @@ and operation by its evidence; do not claim it from a working ordinary command p
 
 **Current dispatch wave:** canonical command ingress, runner admission/scheduling,
 Thread archive replay, pending controls, and additive Raw presentation have landed.
-Finish the named browser transport acceptance gaps and verify the deployed path with
-real Claude and Codex. Native recovery follows each harness's evidence; ordinary
+Browser transport acceptance is covered by the real-Chromium suite described in
+[the app README](../app/README.md#replica-safe-runner-delivery). Verify the deployed path
+with real Claude and Codex. Native recovery follows each harness's evidence; ordinary
 controls do not wait for automatic recovery.
 Reuse existing agent worktrees. Each self-contained change gets its own PR against
 `devel`; stack only on required implementation content and remove completed tasks as
@@ -668,33 +668,6 @@ stable URL and pending input survive app/browser restart, while operational stat
 and runner effects remain distinct. Each preset field is individually editable.
 Do not infer native resume from Sandbox readiness or silently transfer unsettled
 commands into a successor scope.
-
-### `THREAD_REPLAY_PROTOCOL` — remaining browser transport acceptance
-
-**Implementation landed:** canonical generated Command ingress (#7009), runner
-admission/scheduling (#7001), retained Thread pages (#7019), pending controls (#7016),
-and additive Raw evidence (#7022). The contracts remain in
-[Thread layering](../docs/thread_layering.md#timeline-pending-queue-and-operational-state),
-not duplicated here.
-
-App-process loss and HTTP/SSE handoff are covered by
-[replica-safe runner delivery](../app/README.md#replica-safe-runner-delivery).
-The built SPA also has real-Chromium retained/live/reload, ahead-of-prefix snapshot,
-rejected runner gap/source-change, canonical admission, persisted same-id retry after
-a pre-forward abort, and streamed admission after post-commit response loss. It also
-covers genuinely unobserved committed admission (HTTP reply and SSE delivery both lost):
-the same local Command survives reload, then replay reconciles it exactly once without
-another send. Catch-up keeps Retry disabled; this is not a claimed clicked retry after
-reload. The pre-forward-loss browser case covers explicit same-id Retry, and API/runner
-idempotency tests separately cover retry of an already admitted Command.
-An HTTP admission ahead of the browser prefix updates only the pending receipt: earlier
-streaming deltas remain unseen until replay delivers the entire prefix in order, once.
-Mocked component streams alone do not cover those boundaries.
-
-**Remaining:** automatic EventSource reconnect without a document reload while commands
-remain unconfirmed, with Raw evidence against the same verified prefix.
-Follow [reconnect and catch-up](../docs/thread_layering.md#reconnect-and-catch-up);
-native crash-recovery research is not a prerequisite for these browser tests.
 
 ### `THREAD_SUBMIT_500` — investigate failed submission and retry
 

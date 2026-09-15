@@ -425,6 +425,94 @@ async def test_http_admission_ahead_of_replay_does_not_skip_earlier_events(threa
     assert await thread_browser.store.events(thread.id, limit=100) == source.entries
 
 
+@pytest.mark.parametrize("replay_after", [4])
+async def test_eventsource_reconnects_unconfirmed_command_without_reloading(thread_browser: ThreadBrowser) -> None:
+    page, source, app = thread_browser.page, thread_browser.source, thread_browser.app
+    thread_browser.opened.replay.set()
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
+    await show_raw(page)
+    document = await page.evaluate_handle("document")
+    submissions: list[Request] = []
+
+    def record_submission(request: Request) -> None:
+        if request.url.endswith("/commands"):
+            submissions.append(request)
+
+    page.on("request", record_submission)
+    replies: asyncio.Queue[APIResponse] = asyncio.Queue()
+    drop_reply = asyncio.Event()
+
+    async def lose_committed_reply(route: Route) -> None:
+        replies.put_nowait(await route.fetch())
+        await drop_reply.wait()
+        await route.abort()
+
+    await page.route("**/threads/*/commands", lose_committed_reply, times=1)
+    try:
+        composer = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
+        await composer.fill("Test input pending across EventSource reconnect")
+        await composer.press("Enter")
+        async with asyncio.timeout(15):
+            response = await replies.get()
+            command = await source.commands.get()
+            assert (await app.replay_held()).cursor == 5
+        assert response.status == 200
+        admission = json_format.Parse(await response.text(), event_log_pb2.EventEntry())
+        assert admission == source.entries[4]
+        assert admission.event.command_admitted.command == command
+        async with page.expect_event("requestfailed", predicate=lambda request: request.url == response.url):
+            drop_reply.set()
+        pending = page.get_by_role("region", name="Pending commands")
+        await expect(pending.get_by_text("Awaiting saved confirmation", exact=True)).to_be_visible()
+        await expect_raw_prefix(page, 4)
+
+        # Only the response transport ends. Chromium's existing EventSource must initiate this
+        # next request itself, preserving its last observed id rather than the original after=0.
+        async with page.expect_request(lambda request: "/events/stream?" in request.url) as reconnecting:
+            app.disconnect_replay()
+            for text in (" and disconnected delta A", " and disconnected delta B"):
+                source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-browser-item", text=text)))
+        reconnect = await reconnecting.value
+        assert (await reconnect.all_headers())["last-event-id"] == "4"
+        assert reconnect.url.endswith("/events/stream?after=0")
+        async with asyncio.timeout(15):
+            assert (await app.replay_held()).cursor == 5
+        assert await document.evaluate("original => original === document")
+        await expect(pending.locator("[data-command-id]")).to_have_attribute("data-command-id", command.command_id)
+        await expect(pending.get_by_text("Awaiting saved confirmation", exact=True)).to_be_visible()
+        await expect_raw_prefix(page, 4)
+        await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
+
+        app.release_replay()
+        await expect_raw_prefix(page, 7)
+        await expect(
+            page.get_by_text("Test retained prefix and disconnected delta A and disconnected delta B", exact=True)
+        ).to_have_count(1)
+        await expect(pending.get_by_text("Saved · awaiting effect", exact=True)).to_be_visible()
+        source.append(
+            event_pb2.Event(
+                harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
+                    harness_message_id="test-input-after-eventsource-reconnect",
+                    origin_command_ids=[command.command_id],
+                    text=command.submit_input.text,
+                    turn_id="test-browser-turn",
+                )
+            )
+        )
+        await expect(page.locator(".agentplane-user-bubble")).to_have_text(command.submit_input.text)
+        await expect_raw_prefix(page, 8)
+        await expect(pending).to_have_count(0)
+        assert await document.evaluate("original => original === document")
+        assert len(submissions) == 1
+        assert source.commands.empty()
+        (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
+        assert await thread_browser.store.events(thread.id, limit=100) == source.entries
+    finally:
+        drop_reply.set()
+        await page.unroute_all(behavior="wait")
+        await document.dispose()
+
+
 async def test_ahead_snapshot_is_not_a_conversation_or_effective_model(thread_browser: ThreadBrowser) -> None:
     page = thread_browser.page
     await expect(page.get_by_role("status")).to_have_text("Catching up: 0 / 4 events")
