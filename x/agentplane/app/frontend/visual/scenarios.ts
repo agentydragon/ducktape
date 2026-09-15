@@ -81,6 +81,15 @@ export const SCENARIOS: Record<string, Scenario> = {
     readySelectors: ["#agentplane-event-13[open]"],
     captureViewport: true,
   },
+  session_interleaved_native_details: {
+    element: "#app",
+    route: `${SESSION_ROUTE}?raw=1`,
+    viewport: { width: 1200, height: 1100 },
+    interleavedEvents: true,
+    openEvidence: 9,
+    readySelectors: ["#agentplane-event-9[open]"],
+    captureViewport: true,
+  },
   // The sidebar's landing state (UISHELL_SIDEBAR): every group state icon (running, pending,
   // suspended, deleted) and the struck-through read-only group, with no thread open yet.
   threads: { element: "#app", route: "/", viewport: { width: 1200, height: 900 } },

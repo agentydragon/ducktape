@@ -664,7 +664,11 @@ function event(
   return create(EventEntrySchema, {
     cursor: BigInt(cursor),
     origin: { sourceId: "visual-runner", sequence: BigInt(cursor) },
-    event: create(EventSchema, { observation, sourceSequences: sources.map(BigInt) }),
+    event: create(EventSchema, {
+      at: { seconds: BigInt(Math.floor(NOW / 1000) - 60 + cursor) },
+      observation,
+      sourceSequences: sources.map(BigInt),
+    }),
   });
 }
 
@@ -1145,7 +1149,7 @@ class HarnessEventSource extends EventTarget {
       entries = INTERLEAVED_EVENTS;
       attached.lastCursor = BigInt(entries.length);
       attached.activeTurnId = "";
-      attached.spec = create(SessionSpecSchema, { ...attached.spec, model: "next-model" });
+      attached.spec = create(SessionSpecSchema, { ...SPEC, model: "next-model" });
     }
     if (scenario.sessionReplay === "catching-up") entries = entries.slice(0, 8);
     if (scenario.sessionReplay === "gap") entries = entries.filter((entry) => entry.cursor !== 9n);
