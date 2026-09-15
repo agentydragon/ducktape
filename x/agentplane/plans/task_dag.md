@@ -408,6 +408,10 @@ click-to-expand details, and compact reasoning steps, before choosing the final 
 Compare a compact per-item list with a grouped run that expands into those same compact
 rows; keep assistant answers and user messages readable in their actual order.
 
+Collapsed reasoning should preview the available summary text on one line, showing
+as much as fits with ellipsis for overflow; expanding reveals the full text. Cover
+short, long, absent, and streaming summaries at narrow and wide viewport sizes.
+
 Include many mixed steps, long tool names/arguments/output, running and failed calls,
 an expanded call while others stream, narrow screens, and normal/Raw views. Summaries
 must not imply success or invent unavailable reasoning. Review the mocks with the operator
