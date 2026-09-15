@@ -212,7 +212,8 @@ async def test_model_change_then_input_is_admitted_without_waiting_for_model_eff
         assert started.event.turn_started.model == selected
         await attached.until(events.turn_completed)
         assert [
-            entry.event.command_admitted.command.command_id for entry in events.of_kind(attached.seen, "command_admitted")
+            entry.event.command_admitted.command.command_id
+            for entry in events.of_kind(attached.seen, "command_admitted")
         ] == ["switch-1", "input-1"]
 
 
