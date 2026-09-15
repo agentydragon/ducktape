@@ -51,12 +51,13 @@ def borrowed_http_client_provider[ClientT](client: ClientT) -> HTTPClientProvide
 
 
 class _RequestCompatibleClient:
-    """Present FastMCP's ``httpx`` request API to another httpx-compatible client.
+    """Present FastMCP's ``httpx``-shaped client API to another httpx-compatible client.
 
-    FastMCP 3.4.7's OpenAPI director always constructs an ``httpx.Request``.
-    Clients from the ``httpx2`` fork reject that request because its body stream
-    is not an ``httpx2`` stream.  Rebuild the already-buffered request through
-    the injected client's own builder before sending it; this preserves the
+    ``OpenAPITool.run()`` calls ``build_request(...)`` on its client with decomposed
+    request parts, then ``send()`` on the result -- both forwarded here to the
+    injected client, so requests come out already ``httpx2``-native. ``send()``
+    also accepts a raw ``httpx.Request`` directly, rebuilding it through the
+    injected client's own builder so its body stream matches; this preserves the
     provider's client, transport, auth, and timeout configuration.
     """
 
@@ -70,6 +71,9 @@ class _RequestCompatibleClient:
     @property
     def headers(self) -> Any:
         return self._client.headers
+
+    def build_request(self, *args: Any, **kwargs: Any) -> Any:
+        return self._client.build_request(*args, **kwargs)
 
     async def send(self, request: httpx.Request) -> Any:
         build_request = getattr(self._client, "build_request", None)

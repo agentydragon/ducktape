@@ -9,7 +9,6 @@ from contextvars import ContextVar
 from copy import deepcopy
 from typing import Any
 
-import httpx
 import httpx2
 import pytest
 import pytest_bazel
@@ -139,7 +138,7 @@ async def test_rejects_openapi_parameter_that_collides_with_injected_client(
 
 
 async def test_rebuilds_fastmcp_request_for_httpx2_client(
-    echo_provider: OpenAPIProvider, placeholder_client: httpx.AsyncClient
+    echo_provider: OpenAPIProvider, placeholder_client: httpx2.AsyncClient
 ) -> None:
     observed: list[type[object]] = []
 

@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock, patch
 
+import httpx
 import httpx2
 import pytest
 import pytest_bazel
