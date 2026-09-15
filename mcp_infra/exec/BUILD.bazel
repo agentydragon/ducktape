@@ -1,7 +1,6 @@
-load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("//devinfra/deps:check.bzl", "assert_no_deps")
-load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "aspect_py_binary", "py_binary", "py_image_layer", "py_library", "py_test")
 load("//openai_utils/testing:testing.bzl", "live_openai_py_test")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
