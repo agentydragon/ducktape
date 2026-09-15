@@ -504,6 +504,7 @@ py_library(
 
 py_test(
     name = "test_operator_oidc",
+    size = "medium",
     srcs = ["test_operator_oidc.py"],
     deps = [
         ":api",
@@ -589,6 +590,7 @@ py_library(
 
 py_test(
     name = "test_waits",
+    size = "medium",
     srcs = ["test_waits.py"],
     requires_docker = True,
     deps = [
@@ -711,6 +713,7 @@ py_test(
 
 py_test(
     name = "test_mcp_frontend",
+    size = "medium",
     srcs = ["test_mcp_frontend.py"],
     requires_docker = True,
     deps = [
