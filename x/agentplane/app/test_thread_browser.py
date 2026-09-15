@@ -16,7 +16,7 @@ from util.bazel.runfiles import get_required_path
 from util.testing.frontend_visual import CONTAINER_BASE_BROWSER_ARGS, chromium_executable
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from x.agentplane.app.testing.replication_process import app_process
-from x.agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
+from x.agentplane.app.testing.replication_source import SANDBOX, SESSION, Opened, ReplicationSource
 from x.agentplane.app.trajectory import TrajectoryStore
 from x.agentplane.protocol import event_pb2
 
@@ -49,6 +49,7 @@ class ThreadBrowser:
     page: Page
     source: ReplicationSource
     store: TrajectoryStore
+    opened: Opened
 
 
 @pytest.fixture
@@ -73,14 +74,14 @@ async def thread_browser(page: Page, db_url: str, store: TrajectoryStore) -> Asy
     async with source.serve() as target, app_process(db_url, target, frontend_directory=directory) as app:
         async with asyncio.timeout(30):
             opened = await source.opened.get()
-            opened.replay.set()
             await page.goto(f"{app.url}/#/sandboxes/{SANDBOX}/sessions/{SESSION}")
-            await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
-        yield ThreadBrowser(page, source, store)
+        yield ThreadBrowser(page, source, store, opened)
 
 
 async def test_browser_replays_streams_and_reloads_one_exact_conversation(thread_browser: ThreadBrowser) -> None:
     page, source = thread_browser.page, thread_browser.source
+    thread_browser.opened.replay.set()
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-browser-item", text=" and live suffix")))
     complete_text = "Test retained prefix and live suffix"
     await expect(page.get_by_text(complete_text, exact=True)).to_be_visible()
@@ -104,6 +105,60 @@ async def test_browser_replays_streams_and_reloads_one_exact_conversation(thread
     await expect(page.get_by_role("button", name="Interrupt", exact=True)).to_be_disabled()
     (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
     assert await thread_browser.store.events(thread.id, limit=100) == source.entries
+
+
+async def test_ahead_snapshot_is_not_a_conversation_or_effective_model(thread_browser: ThreadBrowser) -> None:
+    page = thread_browser.page
+    await expect(page.get_by_role("status")).to_have_text("Catching up: 0 / 4 events")
+    await expect(page.get_by_role("combobox", name="Model", exact=True)).to_have_value("")
+    await expect(page.get_by_role("combobox", name="Model", exact=True)).to_be_disabled()
+    await expect(page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")).to_be_disabled()
+    await expect(page.get_by_role("button", name="Interrupt", exact=True)).to_be_disabled()
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_have_count(0)
+    (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
+    assert await thread_browser.store.last_cursor(thread.id) == 0
+
+    thread_browser.opened.replay.set()
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
+    await expect(page.get_by_role("status")).to_have_count(0)
+    await expect(page.get_by_role("combobox", name="Model", exact=True)).to_have_value("test-model-before")
+    await expect(page.get_by_role("combobox", name="Model", exact=True)).to_be_enabled()
+    await expect(page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")).to_be_enabled()
+    await expect(page.get_by_role("button", name="Interrupt", exact=True)).to_be_enabled()
+    assert await thread_browser.store.events(thread.id, limit=100) == thread_browser.source.entries
+
+
+@pytest.mark.parametrize(
+    ("fault", "reason"),
+    [("gap", "expected runner cursor 5, received 6"), ("source-change", "runner source changed at cursor 5")],
+)
+async def test_rejected_source_suffix_stops_browser_without_replacing_verified_history(
+    thread_browser: ThreadBrowser, fault: str, reason: str
+) -> None:
+    page, source = thread_browser.page, thread_browser.source
+    thread_browser.opened.replay.set()
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
+    await expect(page.get_by_role("button", name="Interrupt", exact=True)).to_be_enabled()
+
+    # Corrupt the controlled upstream entry before the next event-loop yield can publish it.
+    rejected = source.append(
+        event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-browser-item", text=" INVALID SUFFIX"))
+    )
+    if fault == "gap":
+        rejected.cursor = 6
+        rejected.origin.sequence = 6
+    else:
+        rejected.origin.source_id = "test-conflicting-runner-source"
+
+    await expect(page.get_by_role("alert")).to_contain_text(reason)
+    await expect(page.get_by_role("alert")).to_contain_text("Showing verified history through event 4")
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_have_count(1)
+    await expect(page.get_by_text("INVALID SUFFIX", exact=False)).to_have_count(0)
+    await expect(page.get_by_role("combobox", name="Model", exact=True)).to_be_disabled()
+    await expect(page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")).to_be_disabled()
+    await expect(page.get_by_role("button", name="Interrupt", exact=True)).to_be_disabled()
+    (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
+    assert await thread_browser.store.events(thread.id, limit=100) == source.entries[:4]
 
 
 if __name__ == "__main__":
