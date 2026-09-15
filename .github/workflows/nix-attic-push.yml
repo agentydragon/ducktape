@@ -22,8 +22,14 @@ concurrency:
 
 jobs:
   nix-attic-push:
-    name: Build & push to Attic
+    name: Build & push ${{ matrix.cache }} to Attic
     runs-on: ubuntu-latest
+    strategy:
+      # `main` evaluates every NixOS/home closure. Its host-specific failure
+      # must not prevent independently publishing the public bootstrap set.
+      fail-fast: false
+      matrix:
+        cache: [main, public]
     # 360 min (GitHub-hosted ceiling) so the first run after enabling
     # extra-substituters (below) can do the one-time cold build of paths
     # cache.nixos.org can't serve — notably the unfree CUDA stack
@@ -47,15 +53,15 @@ jobs:
       - name: Configure Attic cache
         run: attic login ducktape https://cache.allegedly.works "$ATTIC_TOKEN"
 
-      - name: Build and push all flake outputs
-        run: devinfra/ci/nix_attic_build_and_push.sh
+      - name: Build and push ${{ matrix.cache }} outputs
+        run: devinfra/ci/nix_attic_build_and_push.sh "${{ matrix.cache }}"
 
       - name: Generate summary
         if: always()
         run: |
           echo "### Nix Attic Push" >> $GITHUB_STEP_SUMMARY
           if [ "${{ job.status }}" = "success" ]; then
-            echo "All flake outputs built and pushed to cache" >> $GITHUB_STEP_SUMMARY
+            echo "${{ matrix.cache }} outputs built and pushed to cache" >> $GITHUB_STEP_SUMMARY
           else
-            echo "Some outputs failed to build" >> $GITHUB_STEP_SUMMARY
+            echo "${{ matrix.cache }} outputs failed to build" >> $GITHUB_STEP_SUMMARY
           fi
