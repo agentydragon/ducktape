@@ -159,7 +159,7 @@ jobs:
           compute_units: 8
           # Rotate the runner/snapshot namespace after the exhausted workspace;
           # recycling remains enabled for subsequent full //... runs.
-          runner_recycling_key: ducktape-bazel-ci-v2
+          runner_recycling_key: ducktape-bazel-ci-v3
           run_from_commit: ${{ steps.source.outputs.sha }}
           linkage_roles: test,build
           # The build itself lives in devinfra/ci/bazel_ci.sh — see that file's header for
