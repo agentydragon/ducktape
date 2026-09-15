@@ -1,18 +1,6 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
-    name = "oidc_principal",
-    srcs = ["oidc_principal.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        "@pypi//cryptography",
-        "@pypi//httpx",
-        "@pypi//pydantic",
-        "@pypi//pyjwt",
-    ],
-)
-
-py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
@@ -53,26 +41,6 @@ py_test(
         "@pypi//joserfc",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_oidc_principal",
-    srcs = ["test_oidc_principal.py"],
-    deps = [
-        ":conftest",
-        ":oidc_principal",
-        "//:conftest",
-        "//mcp_infra:conftest",
-        "//util:net",
-        "//util/testing:asgi",
-        "//util/testing:mock_oidc",
-        "@pypi//cryptography",
-        "@pypi//httpx",
-        "@pypi//pyjwt",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//starlette",
     ],
 )
 

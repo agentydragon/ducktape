@@ -46,7 +46,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 from mcp_infra.authentik_auth.fastmcp_proxy import RetryableRefreshOIDCProxy
-from mcp_infra.authentik_auth.oidc_principal import (
+from mcp_infra.oidc_principal import (
     AuthentikOidcPrincipalResolver,
     InvalidOidcPrincipalError,
     OidcPrincipalVerificationUnavailableError,

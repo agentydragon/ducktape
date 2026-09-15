@@ -660,7 +660,7 @@ py_library(
     deps = [
         ":identity",
         ":oidc",
-        "//mcp_infra/authentik_auth:oidc_principal",
+        "//mcp_infra:oidc_principal",
         "//x/agentplane/action_service:client",
         "//x/agentplane/action_service:operator_oidc",
         "@pypi//authlib",
@@ -861,5 +861,25 @@ py_test(
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_action_federation",
+    srcs = ["test_action_federation.py"],
+    deps = [
+        ":action_federation",
+        ":conftest",
+        ":oidc",
+        "//:conftest",
+        "//util:net",
+        "//util/testing:asgi",
+        "//util/testing:mock_oidc",
+        "//x/agentplane/action_service:operator_oidc",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
     ],
 )

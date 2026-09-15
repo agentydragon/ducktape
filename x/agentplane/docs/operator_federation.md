@@ -60,24 +60,28 @@ and the current operator's login access token as `client_assertion`. No client s
 exchange target. This is not RFC 8693 token exchange. Each request creates a fresh exchange client;
 there is no mutable application-global operator-token cache.
 
-To opt in, set the app's `action_federation` YAML key (or `AGENTPLANE_ACTION_FEDERATION` JSON) with
-**all** these fields. Values below are descriptions, not deployable defaults:
+To opt in, set the app's `action_federation` YAML key (or `AGENTPLANE_ACTION_FEDERATION` JSON)
+with these fields. Token profiles default to Authentik; the pins below are descriptions, not
+deployable defaults:
 
 - `mode`: `exchange` for the staging Authentik provider boundary; `direct` only when the login token
   already has the target issuer, audience, and subject format.
 - `service_url`: canonical Action Service base URL; use a trusted internal route or HTTPS.
 - `token_endpoint`: Authentik's shared HTTPS token endpoint. Loopback HTTP is accepted for tests only.
 - `login_jwks_uri`: pinned JWKS URI for the configured `AGENTPLANE_OIDC_ISSUER` login provider.
+- `login_token_profile`: `authentik` (default) or `dex`; selected by reviewed configuration,
+  never inferred from a presented token.
 - `scope`: the exact reviewed federation scope set; no proxy-outpost `ak_proxy` scope by default.
 - `target.issuer`: exact per-provider issuer of the new Action-only federation target.
-- `target.audience`: that target's OAuth client ID, also required as `azp`.
+- `target.audience`: that target's OAuth client ID, also required as `azp` for Authentik.
 - `target.jwks_uri`: its pinned HTTPS JWKS URI.
+- `target.token_profile`: the target issuer's access-token profile, `authentik` by default.
   Configure the login and Action providers with the same Authentik `sub_mode`, so the exchanged
   token preserves the login token's subject. This is an identity-continuity invariant, not an
   operator authorization list.
 
 Set the Action Service's `operator_oidc` YAML key (or `AGENTPLANE_ACTIONS_OPERATOR_OIDC` JSON) to
-the same `issuer`, `audience`, and `jwks_uri` pins as the app's `target`. Authentik's target
+the same `issuer`, `audience`, `jwks_uri`, and `token_profile` pins as the app's `target`. Authentik's target
 application policy decides who can obtain the target token; the Action Service does not maintain a
 second subject list. Its legacy
 `operator_bearer_file` adapter is mutually exclusive and is **not** a fallback for federation.
@@ -92,6 +96,23 @@ The Authentik target must explicitly trust only the Agentplane login provider th
 is the operator admission boundary; the Action Service only accepts a valid token issued for its
 target audience. Configure network reachability for BFF-to-token/JWKS/Action and Action-to-JWKS
 explicitly. No live cluster change or live-provider claim-mapping validation was performed here.
+
+The isolated testing issuer is Dex, not Authentik. Its pinned
+[v2.45.1 token implementation](https://github.com/dexidp/dex/blob/v2.45.1/server/oauth2.go#L249-L250)
+issues access tokens using its ID-token claim builder, which
+[omits `azp` for a single audience](https://github.com/dexidp/dex/blob/v2.45.1/server/oauth2.go#L363-L367).
+The explicit `dex` profile permits this absence while still rejecting a supplied mismatched
+`azp`. Both profiles require RS256, a pinned issuer/JWKS, a single string audience equal to the
+configured client, a nonblank subject, and valid integral `iat`/`exp`. Multiple audiences and
+cross-client Dex grants are not supported. Authentik's required `azp` contract is unchanged,
+including for Haku and MCP enrollment callers. The shared implementation lives in
+[`mcp_infra/oidc_principal.py`](../../../mcp_infra/oidc_principal.py).
+
+To activate Dex, first deploy app and Action Service images supporting the profile, then set
+`login_token_profile`, `target.token_profile`, and Action Service `token_profile` to `dex` in
+the testing federation ConfigMap. Do not change staging's Authentik profile. Direct federation
+also requires the retained token's issuer, audience and subject to match both sides; selecting
+a profile does not grant a different caller access or bypass the Action Service's verification.
 
 Before declaring staging acceptance, validate the real target's subject continuity and token claims
 with Rai and a denied operator. Do not grant a second account merely for the test; the two-operator
@@ -210,6 +231,8 @@ by L7 HTTP inspection of encrypted TLS. A different Gateway/DNS/L7-proxy setup r
 - `//x/agentplane/action_service:test_runtime`: Settings/catalog validation and production runtime composition.
 - `//x/agentplane/app:test_action_api` and `//x/agentplane/action_service:test_operator_oidc`: signed
   offline request/authorization seams, including distinct operator identities and rejected token claims.
+- `//mcp_infra:test_oidc_principal` and `//x/agentplane/app:test_action_federation`: strict shared
+  verification and the independently selected login/target profiles for direct Dex federation.
 
 Run through `bbr`/CI only. There is no parallel copied-literal HCL/manifest contract test: those
 assertions detected edits rather than executing federation. Synthetic Settings JSON also did not

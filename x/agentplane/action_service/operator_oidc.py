@@ -1,4 +1,4 @@
-"""Pinned Authentik JWT verification for the Authentik-authorized Action audience.
+"""Pinned JWT verification for the configured Action audience.
 
 Authentik's target-provider policy decides who may obtain a token. The Action Service verifies the
 resulting issuer, audience, signature, and lifetime without maintaining a second user allowlist.
@@ -6,14 +6,23 @@ resulting issuer, audience, signature, and lifetime without maintaining a second
 
 from __future__ import annotations
 
+from enum import StrEnum
+
 from pydantic import BaseModel, ConfigDict
 
-from mcp_infra.authentik_auth.oidc_principal import (
+from mcp_infra.oidc_principal import (
     AuthentikOidcPrincipalResolver,
+    DexOidcPrincipalResolver,
     InvalidOidcPrincipalError,
+    OidcPrincipalResolver,
     OidcPrincipalVerificationUnavailableError,
 )
 from x.agentplane.action_service.models import Principal, PrincipalRole
+
+
+class OperatorTokenProfile(StrEnum):
+    AUTHENTIK = "authentik"
+    DEX = "dex"
 
 
 class OperatorOidcSettings(BaseModel):
@@ -22,10 +31,16 @@ class OperatorOidcSettings(BaseModel):
     issuer: str
     audience: str
     jwks_uri: str
+    token_profile: OperatorTokenProfile = OperatorTokenProfile.AUTHENTIK
 
-    def resolver(self) -> AuthentikOidcPrincipalResolver:
+    def resolver(self) -> OidcPrincipalResolver:
         # These are reviewed configuration pins, not metadata taken from the presented token.
-        return AuthentikOidcPrincipalResolver(
+        resolver = (
+            AuthentikOidcPrincipalResolver
+            if self.token_profile is OperatorTokenProfile.AUTHENTIK
+            else DexOidcPrincipalResolver
+        )
+        return resolver(
             expected_issuer=self.issuer,
             discovered_issuer=self.issuer,
             jwks_uri=self.jwks_uri,

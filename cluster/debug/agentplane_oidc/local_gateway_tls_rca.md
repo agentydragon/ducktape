@@ -176,7 +176,7 @@ on the same node). Same family:
 - `*.allegedly.works` is five node A records, TTL 300
   (<../../../tf/gitops/dns-records/main.tf>); CoreDNS runs `loadbalance` and
   `cache 30` (<../../k8s/coredns-custom/config/Corefile>).
-- JWKS: `httpx.get(..., timeout=10)` in <../../../mcp_infra/authentik_auth/oidc_principal.py>,
+- JWKS: `httpx.get(..., timeout=10)` in <../../../mcp_infra/oidc_principal.py>,
   no retries; `socket.create_connection` stops at the first address whose TCP
   connect succeeds, which the policy proxy always is. The TLS reset is
   terminal, so P(fail) ≈ 1/5 per fetch from a Gateway-node pod; observed 4/12

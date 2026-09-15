@@ -1,10 +1,11 @@
-"""Verify an Authentik token response into a minimal OIDC principal."""
+"""Pinned access-token verification with concrete Authentik and Dex claim contracts."""
 
 from __future__ import annotations
 
 import asyncio
 import ipaddress
 import time
+from abc import ABC, abstractmethod
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -116,8 +117,8 @@ def _validate_oidc_url(value: str, *, field_name: str, allow_query: bool) -> Non
         raise ValueError(f"{field_name} must be an absolute HTTPS URL or loopback HTTP URL")
 
 
-class AuthentikOidcPrincipalResolver:
-    """Verify Authentik access tokens using already-discovered OIDC metadata.
+class OidcPrincipalResolver(ABC):
+    """Verify single-audience RS256 access tokens using pinned OIDC metadata.
 
     Construction validates the discovery result once. Resolution performs no
     discovery request; the only network access is the bounded JWKS lookup.
@@ -154,7 +155,7 @@ class AuthentikOidcPrincipalResolver:
         self._jwks_lock = asyncio.Lock()
 
     async def resolve(self, token_response: Mapping[str, Any]) -> VerifiedOidcPrincipal:
-        """Return the issuer-scoped subject established by an Authentik access token."""
+        """Return only the issuer-scoped subject established by a verified access token."""
         try:
             token = _TokenResponse.model_validate(token_response).access_token
             header = jwt.get_unverified_header(token)
@@ -206,7 +207,7 @@ class AuthentikOidcPrincipalResolver:
                 audience=self._client_id,
                 issuer=self._issuer,
                 leeway=_CLOCK_SKEW_SECONDS,
-                options={"require": ["iss", "aud", "azp", "exp", "iat", "sub"], "strict_aud": True},
+                options={"require": ["iss", "aud", "exp", "iat", "sub"], "strict_aud": True},
             )
         except InvalidTokenError, OverflowError, RecursionError, TypeError, ValueError:
             raise InvalidOidcPrincipalError from None
@@ -224,13 +225,16 @@ class AuthentikOidcPrincipalResolver:
             or claims["iss"] != self._issuer
             or not isinstance(claims["aud"], str)
             or claims["aud"] != self._client_id
-            or not isinstance(claims["azp"], str)
-            or claims["azp"] != self._client_id
             or not isinstance(subject, str)
             or not subject.strip()
         ):
             raise InvalidOidcPrincipalError from None
+        self._validate_authorized_party(claims)
         return VerifiedOidcPrincipal(issuer=self._issuer, subject=subject)
+
+    @abstractmethod
+    def _validate_authorized_party(self, claims: Mapping[str, Any]) -> None:
+        """Apply the issuer's access-token contract after common signature and claim checks."""
 
     def _signing_key(self, kid: str) -> PyJWK:
         cached = self._cached_signing_keys
@@ -275,3 +279,22 @@ class AuthentikOidcPrincipalResolver:
     @staticmethod
     def _match_kid(signing_keys: tuple[PyJWK, ...], kid: str) -> PyJWK | None:
         return next((key for key in signing_keys if key.key_id == kid), None)
+
+
+class AuthentikOidcPrincipalResolver(OidcPrincipalResolver):
+    """Authentik access tokens must name the client in both aud and azp."""
+
+    def _validate_authorized_party(self, claims: Mapping[str, Any]) -> None:
+        if claims.get("azp") != self._client_id:
+            raise InvalidOidcPrincipalError
+
+
+class DexOidcPrincipalResolver(OidcPrincipalResolver):
+    """Dex omits azp for single-audience tokens; a supplied azp must still match.
+
+    Cross-client/multiple-audience tokens remain outside this verifier's contract.
+    """
+
+    def _validate_authorized_party(self, claims: Mapping[str, Any]) -> None:
+        if "azp" in claims and claims["azp"] != self._client_id:
+            raise InvalidOidcPrincipalError
