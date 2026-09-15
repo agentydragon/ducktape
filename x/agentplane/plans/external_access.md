@@ -183,6 +183,23 @@ operations fall where.
 
 ## Open questions
 
+- Evaluate established externalized-authorization designs before inventing a shared decision
+  service: a policy decision point answers a structured principal/operation/resource/context
+  query, while each service or proxy enforces the answer. Compare
+  [OPA's general-purpose decision engine](https://www.openpolicyagent.org/docs) with
+  [OpenFGA's relationship-based authorization](https://openfga.dev/docs/concepts), and consider
+  the authorization services offered by identity platforms such as
+  [Keycloak](https://www.keycloak.org/docs/latest/authorization_services/index.html).
+  Identity authentication and authorization decisions are distinct responsibilities even when
+  one product implements both. Evaluate reuse against existing egress and Action policies;
+  do not assume those distinct contracts should become one undifferentiated policy type.
+- Separate centralized request-time decisions from managing grants in external systems.
+  Identify which enforcement points can consult a shared decision service and which need
+  native grants or a controlled proxy; a decision API alone neither provisions nor revokes
+  target-side authority. Decide whether central policy administration needs remote per-call
+  evaluation or can use locally distributed policy, and specify trusted inputs, cache
+  freshness, revocation latency, outage behavior, and audit evidence. This is an evaluation
+  question, not a commitment to another service or a replacement identity platform.
 - Path-level HTTP allowlists at the egress fence, so "GET on these routes" can be delegated
   without a broker tool per route.
 - Whether raw direct traffic should be mirrored into the ledger from fence logs, or stay separate.
