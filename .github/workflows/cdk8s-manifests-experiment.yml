@@ -1,0 +1,93 @@
+# Prove that Python cdk8s can generate the LiteLLM ConfigMap artifacts through
+# Bazel while Flux remains the eventual applier. The generated files are not
+# wired into the live Kustomizations yet; the PR parity test is the guardrail.
+name: cdk8s manifest generation experiment
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/cdk8s-manifests-experiment.yml"
+      - "cluster/BUILD.bazel"
+      - "cluster/generate_manifests.py"
+      - "cluster/litellm_config.py"
+      - "cluster/litellm_constructs.py"
+      - "cluster/test_generate_manifests.py"
+      - "cluster/k8s/litellm/**"
+      - "pyproject.toml"
+      - "requirements_bazel.txt"
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the smoke output to the cluster-manifests branch
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    name: Generate LiteLLM cdk8s manifests
+    runs-on: ubuntu-latest
+    env:
+      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-nix-devtools
+        with:
+          package: citools
+      - name: Run generator through Bazel
+        run: |
+          set -euo pipefail
+          output_dir="$RUNNER_TEMP/cdk8s-manifests"
+          bb run //cluster:generate_manifests -- --output-dir "$output_dir"
+          for manifest in litellm.k8s.yaml litellm-servicemonitor.k8s.yaml; do
+            test -s "$output_dir/$manifest"
+          done
+          grep --fixed-strings --line-regexp --quiet "kind: ConfigMap" "$output_dir/litellm.k8s.yaml"
+          bb test //cluster:test_generate_manifests
+      - name: Upload generated manifests
+        uses: actions/upload-artifact@v7
+        with:
+          name: cdk8s-manifests-${{ github.run_id }}
+          path: ${{ runner.temp }}/cdk8s-manifests
+          if-no-files-found: error
+
+  publish:
+    name: Publish generated output to cluster-manifests
+    if: github.event_name == 'workflow_dispatch' && inputs.publish
+    needs: [generate]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v7
+        with:
+          name: cdk8s-manifests-${{ github.run_id }}
+          path: ${{ runner.temp }}/cdk8s-manifests
+      - name: Commit generated output to cluster-manifests
+        run: |
+          set -euo pipefail
+          if git fetch origin "refs/heads/cluster-manifests:refs/remotes/origin/cluster-manifests"; then
+            git switch --create cluster-manifests --track origin/cluster-manifests
+          else
+            git switch --orphan cluster-manifests
+            git rm --cached --ignore-unmatch -- .
+          fi
+          mkdir -p litellm
+          cp "$RUNNER_TEMP/cdk8s-manifests/"*.k8s.yaml litellm/
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add litellm/*.k8s.yaml
+          if git diff --cached --quiet; then
+            echo "Generated output is unchanged"
+          else
+            git commit -m "chore: update cdk8s LiteLLM manifests"
+            git push origin HEAD:cluster-manifests
+          fi

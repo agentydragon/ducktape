@@ -522,7 +522,9 @@ attrs==26.1.0 \
     --hash=sha256:d03ceb89cb322a8fd706d4fb91940737b6642aa36998fe130a9bc96c985eff32
     # via
     #   aiohttp
+    #   cattrs
     #   cyclopts
+    #   jsii
     #   jsonlines
     #   jsonschema
     #   jsonschema-path
@@ -830,6 +832,20 @@ caio==0.12.4 \
 canonicaljson==2.0.0 \
     --hash=sha256:c38a315de3b5a0532f1ec1f9153cd3d716abfc565a558d00a4835428a34fca5b \
     --hash=sha256:e2fdaef1d7fadc5d9cb59bd3d0d41b064ddda697809ac4325dced721d12f113f
+    # via ducktape (pyproject.toml)
+cattrs==26.2.0 \
+    --hash=sha256:3cf49f69df8326bcf17a3cb3d3d3ec4a856858fe3a7473746c9044c317d3ba55 \
+    --hash=sha256:c680f17cd1df3a1c038ad1db8d90a9c595568cc54c4e8098e7ceb8d7b9bd826b
+    # via jsii
+cdk8s==2.70.102 \
+    --hash=sha256:03cefeb1e1ca83b40fcc8a44f1ee2e20b7516ca8a215d88414e3e275ad316e6b \
+    --hash=sha256:281aa185e785871bc937af8d082fdc19751132d12ab4d90f5177a625114d5a07
+    # via
+    #   ducktape (pyproject.toml)
+    #   cdk8s-plus-33
+cdk8s-plus-33==2.5.54 \
+    --hash=sha256:87a08797213d149cd65eea458cc10fedbd067bb01adbe816f5cafdcaa7114ce2 \
+    --hash=sha256:c5a3235835551a64cb05d000c45e7b1045d69c86a2945019dac4d390f5a32f72
     # via ducktape (pyproject.toml)
 certifi==2026.7.22 \
     --hash=sha256:62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775 \
@@ -1173,6 +1189,12 @@ compact-json==1.8.2 \
     --hash=sha256:b894ab1519e6fe7813351fa96962449f821051b8b5178c609bdda2eabd07abb0 \
     --hash=sha256:dc200148695be04b91ac45cd3cda531aa017fb25609b66b9961a008db25eae77
     # via ducktape (pyproject.toml)
+constructs==10.8.1 \
+    --hash=sha256:9f6e4eb1f6b8b1ac8dcbc85457dcbb1e3f9bd93bbeef03154f6cc7fbbba74b06 \
+    --hash=sha256:f71297db64723889147c82de46dcacaa76b120f856d5b5ac5f65abb22ea88355
+    # via
+    #   cdk8s
+    #   cdk8s-plus-33
 contourpy==1.4.0 \
     --hash=sha256:018227e134b73090b06f911e773a526c77c9af426be29065500ce096a5accd4c \
     --hash=sha256:072a702e2e178f4fcf96f04775d0c059e4c917925abf0d3208ebb6865df3c23d \
@@ -2831,6 +2853,13 @@ joserfc==1.7.5 \
     # via
     #   authlib
     #   fastmcp-slim
+jsii==1.140.0 \
+    --hash=sha256:454c874d963a862f6b90bc013c45a720e51292659f57249d9cae7cb2a189ec0e \
+    --hash=sha256:aa24f27d15d8d7db1ff32a9c56074bc87e728b30330ead97fb149419a3721a50
+    # via
+    #   cdk8s
+    #   cdk8s-plus-33
+    #   constructs
 json5==0.15.0 \
     --hash=sha256:56636a30c0e8a4665fe2179c0212f32eae3796dea89ea6f649b9436ecdb39618 \
     --hash=sha256:7424d1f1eb1d56da6e3d70643f53619862b4ce81440bdb8ecfd6f875e5ba4a71
@@ -5083,6 +5112,14 @@ ptyprocess==0.7.0 \
     # via
     #   pexpect
     #   terminado
+publication==0.0.3 \
+    --hash=sha256:0248885351febc11d8a1098d5c8e3ab2dabcf3e8c0c96db1e17ecd12b53afbe6 \
+    --hash=sha256:68416a0de76dddcdd2930d1c8ef853a743cc96c82416c4e4d3b5d901c6276dc4
+    # via
+    #   cdk8s
+    #   cdk8s-plus-33
+    #   constructs
+    #   jsii
 publicsuffix2==2.20191221 \
     --hash=sha256:00f8cc31aa8d0d5592a5ced19cccba7de428ebca985db26ac852d920ddd6fe7b \
     --hash=sha256:786b5e36205b88758bd3518725ec8cfe7a8173f5269354641f581c6b80a99893
@@ -5756,6 +5793,7 @@ python-dateutil==2.9.0.post0 \
     #   beancount
     #   botocore
     #   hcloud
+    #   jsii
     #   jupyter-client
     #   kubernetes
     #   kubernetes-asyncio
@@ -6888,6 +6926,10 @@ truststore==0.10.4 \
     # via
     #   httpcore2
     #   httpx2
+typeguard==2.13.3 \
+    --hash=sha256:00edaa8da3a133674796cf5ea87d9f4b4c367d77476e185e80251cc13dfbb8c4 \
+    --hash=sha256:5e3e3be01e887e7eafae5af63d1f36c849aaa94e3a0112097312aabfa16284f1
+    # via jsii
 typer==0.27.2 \
     --hash=sha256:269b7eb9d3c202ca84b4bc9618cb04ebb43d3d4d1e567e4c768607232c05f945 \
     --hash=sha256:b3a5fc4342d5fc8fda8fc3010b1cf117e9249aab7fae800c2eff62fd3842d97d
@@ -6979,6 +7021,7 @@ typing-extensions==4.16.0 \
     #   anyio
     #   asyncpg-stubs
     #   beautifulsoup4
+    #   cattrs
     #   ezdxf
     #   fastapi
     #   fastmcp-slim
@@ -6989,6 +7032,7 @@ typing-extensions==4.16.0 \
     #   gymnasium
     #   huggingface-hub
     #   inspect-ai
+    #   jsii
     #   jupyter-client
     #   jupyter-kernel-client
     #   jupyter-mimetypes

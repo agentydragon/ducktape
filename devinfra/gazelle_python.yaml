@@ -66,6 +66,10 @@ manifest:
     cachetools: cachetools
     caio: caio
     canonicaljson: canonicaljson
+    cattr: cattrs
+    cattrs: cattrs
+    cdk8s: cdk8s
+    cdk8s_plus_33: cdk8s_plus_33
     certifi: certifi
     cffi: cffi
     cfgv: cfgv
@@ -78,6 +82,7 @@ manifest:
     colorama: colorama
     comm: comm
     compact_json: compact_json
+    constructs: constructs
     contourpy: contourpy
     coverage: coverage
     cryptography: cryptography
@@ -246,6 +251,7 @@ manifest:
     jiter: jiter
     jmespath: jmespath
     joserfc: joserfc
+    jsii: jsii
     json5: json5
     jsonlines: jsonlines
     jsonpatch: jsonpatch
@@ -266,6 +272,7 @@ manifest:
     jupyter_kernel_client: jupyter_kernel_client
     jupyter_lsp: jupyter_lsp
     jupyter_mcp_server: jupyter_mcp_server
+    jupyter_mcp_tools: jupyter_mcp_tools
     jupyter_mimetypes: jupyter_mimetypes
     jupyter_nbmodel_client: jupyter_nbmodel_client
     jupyter_server: jupyter_server
@@ -308,7 +315,6 @@ manifest:
     matplotlib_inline: matplotlib_inline
     mautrix: mautrix
     mcp: mcp
-    mcp_types: mcp_types
     mdit_py_plugins: mdit_py_plugins
     mdurl: mdurl
     mirakuru: mirakuru
@@ -402,6 +408,7 @@ manifest:
     psycopg2: psycopg2_binary
     psycopg_binary: psycopg_binary
     ptyprocess: ptyprocess
+    publication: publication
     publicsuffix2: publicsuffix2
     punq: punq
     pure_eval: pure_eval
@@ -511,6 +518,7 @@ manifest:
     traitlets: traitlets
     trio: trio
     truststore: truststore
+    typeguard: typeguard
     typer: typer
     typer_di: typer_di
     typing_extensions: typing_extensions
@@ -549,4 +557,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 84550ed330406eeadb716ba48a9c5c61fbadad067ac22b7eea668484d2d1d4ab
+integrity: c9c7cd2cdc0ab8fa6b79ca2bab25c59aea5af68d463fae2d52f985c1f6f96c7f

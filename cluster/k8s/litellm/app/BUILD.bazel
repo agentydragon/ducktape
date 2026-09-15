@@ -4,15 +4,26 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 exports_files(
     [
+        "deployment.yaml",
+        "forgejo-images-creds-eso.yaml",
+        "httproute.yaml",
         "proxy-config.yaml",
+        "service.yaml",
+        "serviceaccount.yaml",
     ],
-    visibility = ["//debug/litellm_probe:__pkg__"],
+    visibility = [
+        "//cluster:__pkg__",
+        "//debug/litellm_probe:__pkg__",
+    ],
 )
 
 py_library(
     name = "model_rosters",
     srcs = ["model_rosters.py"],
-    visibility = ["//haku/x/dispatch/deploy/litellm:__pkg__"],
+    visibility = [
+        "//cluster:__pkg__",
+        "//haku/x/dispatch/deploy/litellm:__pkg__",
+    ],
 )
 
 py_test(

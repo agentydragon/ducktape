@@ -79,6 +79,11 @@ exports_files(
     visibility = ["//cluster/validation:__pkg__"],
 )
 
+exports_files(
+    ["litellm/servicemonitor/servicemonitor.yaml"],
+    visibility = ["//cluster:__pkg__"],
+)
+
 # Just the central ClusterPolicy manifests, so a per-policy test is not
 # invalidated by every unrelated manifest in the cluster (same reasoning as the
 # contract filegroup below). The retired Haku zone injector lives with its package
