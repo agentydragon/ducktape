@@ -167,11 +167,11 @@ a no-loss guarantee. A Thread's archived page still displays the history the app
 
 ## Queue placement decision
 
-**Recommendation for the next slice:** require a reachable runner for submission and
+**Current implementation slice:** require a reachable runner for submission and
 make runner admission, app archival, replay, and UI state trustworthy first. Retain
-the app outbox as an explicit option for “submit while unavailable,” including combined
-Sandbox + Thread + first input. This recommendation is under review; an existing
-outbox PR is not evidence that the choice is already settled.
+the app outbox as a deferred option for “submit while unavailable,” including combined
+Sandbox + Thread + first input. Its additional availability promise remains a future
+product decision.
 
 Both choices use the same generated `Command` and runner `EventEntry` payloads.
 Runner storage is required in either choice. Adding an app outbox does not remove the
