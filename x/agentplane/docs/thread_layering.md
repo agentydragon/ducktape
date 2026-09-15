@@ -447,6 +447,12 @@ already have a separate app source; those are useful state even without a lifecy
 audit log. History/audit, if desired, must persist observations with their source and
 cannot be reconstructed exactly from Kubernetes' current snapshot.
 
+The current runner `Attached` snapshot is another distinct observation: its `last_cursor`
+can exceed the app's copied prefix while replay catches up. The app persists that snapshot
+before the missing Events. Report its runner provenance and as-of cursor separately; do not
+seed or overwrite a conversation or pending-command reducer with state from beyond its
+copied prefix. The current transport's `attached` frame is not a replay checkpoint.
+
 For an app queue, its pending snapshot can join command records and copied Events in
 one PostgreSQL read, reporting the included runner cursor. Reconnect refreshes that
 snapshot; a second append-only browser command feed is not inherently required. The

@@ -803,3 +803,27 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_replication_process",
+    size = "medium",
+    srcs = ["test_replication_process.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":trajectory",
+        "//:conftest",
+        "//x/agentplane/app/testing:replication_process",
+        "//x/agentplane/app/testing:replication_source",
+        "//x/agentplane/protocol:event_log_pb2",
+        "//x/agentplane/protocol:event_pb2",
+        "//x/agentplane/runner:protocol_pb2",
+        "@pypi//asyncpg",
+        "@pypi//httpx",
+        "@pypi//httpx_sse",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)

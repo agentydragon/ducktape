@@ -78,7 +78,12 @@ the lease token against database time, so an expired owner cannot write after ta
 must extend the contiguous copied prefix with the same runner source and original sequence;
 replayed entries must match their complete stored payload. Gaps and conflicts reject the whole
 batch. The maximum stored cursor is therefore the copied checkpoint, committed atomically with
-the Events and feed projection without a separate counter.
+the Events and event-derived feed updates without a separate counter.
+
+`Attached` is a runner snapshot at its own `last_cursor`, persisted before replay. During catch-up
+it can be ahead of the app's copied Event prefix; its model/turn state is not a fold of only that
+prefix. Subsequent Events advance it without rewinding through older replay. Consumers must keep
+that snapshot provenance separate from conversation and pending-command projections of copied Events.
 
 Reconnect replays the last copied entry too, verifying its identity before extending the prefix.
 A conflict or a stream ending before its advertised cursor records a feed error, not a normal
@@ -96,6 +101,12 @@ ingester's in-process queue. Transactional `NOTIFY` wakes readers for event, thr
 changes. Notifications carry no data and are not a durable queue: the database sequence cursor is
 authoritative, and listener reconnects and keepalives trigger catch-up reads. Stored history remains
 readable while the runner is unreachable.
+
+`test_replication_process.py` kills real app processes before and after an ingestion commit,
+then verifies replacement lease ownership, the exact PostgreSQL prefix, and HTTP/SSE replay/live
+handoff from the browser's last observed cursor. The test advances the dead owner's database lease
+expiry explicitly and uses a controlled protocol source; it does not test elapsed lease timing,
+native harness recovery, or PostgreSQL host/storage loss.
 
 Rollout prerequisite: existing sandbox runners must support independent attachments before the new
 app bridge is deployed; old runner processes are not upgraded merely by publishing the new image.

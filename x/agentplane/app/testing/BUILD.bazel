@@ -20,3 +20,40 @@ py_library(
     srcs = ["egress_proxy.py"],
     deps = ["@pypi//httpx"],
 )
+
+py_library(
+    name = "replication_process",
+    srcs = ["replication_process.py"],
+    deps = [
+        ":kubernetes",
+        ":replication_source",
+        "//x/agentplane/app:action_policy",
+        "//x/agentplane/app:api",
+        "//x/agentplane/app:bridge",
+        "//x/agentplane/app:decisions",
+        "//x/agentplane/app:egress",
+        "//x/agentplane/app:identity",
+        "//x/agentplane/app:inventory",
+        "//x/agentplane/app:live",
+        "//x/agentplane/app:presets",
+        "//x/agentplane/app:trajectory",
+        "//x/agentplane/protocol:event_log_pb2",
+        "@pypi//asyncpg",
+        "@pypi//httpx",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_library(
+    name = "replication_source",
+    srcs = ["replication_source.py"],
+    deps = [
+        "//x/agentplane/protocol:event_log_pb2",
+        "//x/agentplane/protocol:event_pb2",
+        "//x/agentplane/runner:protocol_pb2",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+    ],
+)
