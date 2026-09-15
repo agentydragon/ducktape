@@ -233,7 +233,9 @@ class TrajectoryStore:
                             Event.cursor.in_([entry.cursor for entry in entries if entry.cursor <= cursor]),
                         )
                     )
-                ).tuples()
+                )
+                .tuples()
+                .all()
             )
             inserted: list[event_log_pb2.EventEntry] = []
             for entry in entries:
