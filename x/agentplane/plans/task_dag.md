@@ -25,7 +25,7 @@ Proposed execution order for the Thread correctness/UI track:
   command queue; no app outbox or combined-start expansion in this batch.
 - **P1:** end-to-end LLM error handling (`LLM_ERROR_SURFACE`), duplicate turn-status
   presentation (`THREAD_TURN_STATUS_UI`), compact activity mocks (`THREAD_ACTIVITY_MOCKS`),
-  and sidebar freshness,
+  continuation after Sandbox resume (`THREAD_SUSPEND_RESUME`), and sidebar freshness,
   alongside retained-state writer fencing and
   evidence-gated native recovery. Start `THREAD_TAIL_FIRST` with a profiling/contract
   slice, then bounded reads and `THREAD_LAZY_HISTORY`; do not start with a frontend rewrite.
@@ -83,6 +83,7 @@ flowchart TB
     CODEX_RECOVERY["Required evidence then implementation<br/>Codex execution before durable runner proof<br/>native correlation and safe recovery"]:::active
     RUNNER_WRITER_HANDOFF["Planned correctness<br/>exclusive runner ownership of retained state<br/>fence old writer and native dispatch"]:::future
     SANDBOX_LIFECYCLE_DURABILITY["Planned lifecycle correctness<br/>retained state through suspension<br/>archive before managed storage deletion"]:::future
+    THREAD_SUSPEND_RESUME["Reported continuation failure<br/>Thread stays finalized after Sandbox resume<br/>resume native conversation and allow new input"]:::active
     SANDBOX_VM_ISOLATION["Deferred investigation<br/>selectable container or VM Sandbox implementation<br/>contain agent resource exhaustion"]:::future
     THREAD_EVENT_CONTINUITY["Planned identity cutover<br/>one Thread journal across incarnations<br/>exclusive runner writer and retained state"]:::future
     THREAD_COMMAND_DELIVERY["Deferred backend<br/>app outbox delivery to existing runner<br/>only if app-first acceptance is chosen later"]:::future
@@ -119,6 +120,7 @@ flowchart TB
     THREAD_TAIL_FIRST --> THREAD_LAZY_HISTORY
     THREAD_ACTIVITY_MOCKS --> THREAD_ACTIVITY_DENSITY
     RUNNER_WRITER_HANDOFF --> THREAD_EVENT_CONTINUITY
+    THREAD_EVENT_CONTINUITY --> THREAD_SUSPEND_RESUME
     THREAD_EVENT_CONTINUITY --> THREAD_SUCCESSOR_DELIVERY
     CLAUDE_RECOVERY -. native continuation evidence .-> THREAD_SUCCESSOR_DELIVERY
     CODEX_RECOVERY -. native continuation evidence .-> THREAD_SUCCESSOR_DELIVERY
@@ -717,6 +719,33 @@ unreachable runners at deletion, and incomplete recovery state. Storage inspecti
 and native evidence can proceed independently; full archive-preservation acceptance
 requires Event durability and app replication. Gate lifecycle automation on its own
 evidence without blocking ordinary messaging and UI work.
+
+### `THREAD_SUSPEND_RESUME` — continue existing Threads after Sandbox resume
+
+**P1, reported on staging:** after suspending and resuming its Sandbox,
+[Thread 70bf54a7-81e1-46f5-8fed-381ae1ce870f](https://agentplane-staging.allegedly.works/#/threads/70bf54a7-81e1-46f5-8fed-381ae1ce870f)
+appears finalized and cannot accept further messages. Record this as an observed
+symptom, not a diagnosed storage loss or harness failure. Sandbox readiness, an ended
+runner attachment, and the lifetime of its Thread must not be conflated.
+
+Resume the native conversation in a new harness process as needed, preserve the same
+Thread ID/URL and history, and restore message submission once its runner/harness is
+ready. Reuse `THREAD_EVENT_CONTINUITY`'s retained journal and single Event sequence.
+Do not merely enable the composer against a dead session, create a replacement Thread,
+or treat a fresh harness without the original context as a successful resume. Missing
+recovery state must be explicit. This does not introduce offline command admission or
+automatic replay of unsettled predecessor commands (`THREAD_SUCCESSOR_DELIVERY`).
+
+Add integration and deployed acceptance for both Claude and Codex: create at least two
+Threads in one fixture Sandbox, complete a turn in each, suspend until the old Pod is
+gone, resume, and continue each original Thread with a new message. Pin native resume
+and retained context with exact mocked-LLM request assertions; deployed acceptance must
+observe new input confirmation and a completed reply, not just a Ready Pod. Verify
+monotonic replay without duplicate history and no cross-Thread routing/context mix-up.
+Add focused frontend coverage that the original page and a reloaded page both recover
+from the ended attachment and can send successfully. Cover in-flight suspension
+separately with explicit pending-command outcomes. Use owned test fixtures, not the
+operator's affected Thread. Archive-before-deletion work does not gate this regression.
 
 ### `SANDBOX_VM_ISOLATION` — selectable VM-backed Sandbox isolation
 
