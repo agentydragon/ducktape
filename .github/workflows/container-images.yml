@@ -82,7 +82,9 @@ jobs:
       contents: read
       packages: read
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # A cold Nix closure plus Docker layer export can exceed the default on
+    # hosted runners; the build is still making progress when 15 minutes ends.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
 
@@ -113,7 +115,9 @@ jobs:
     name: bb remote Runner
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Keep the production path consistent with the pull-request build above:
+    # cold-cache Nix evaluation and image export can take over 15 minutes.
+    timeout-minutes: 30
     outputs:
       pin_tag: ${{ steps.build.outputs.pin_tag }}
     steps:
