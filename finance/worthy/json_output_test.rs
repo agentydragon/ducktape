@@ -46,23 +46,6 @@ fn parse_snapshot() {
           ],
           "ConverterSnapshots": [
             {
-              "Id": "currencylayer",
-              "Type": "currencylayer",
-              "Params": {},
-              "Snapshot": [
-                {
-                  "Source": {"Type": "currency", "Symbol": "CHF"},
-                  "Target": {"Type": "currency", "Symbol": "USD"},
-                  "TargetPerSource": 1.1
-                },
-                {
-                  "Source": {"Type": "currency", "Symbol": "EUR"},
-                  "Target": {"Type": "currency", "Symbol": "USD"},
-                  "TargetPerSource": 2.2
-                }
-              ]
-            },
-            {
               "Id": "alphavantage",
               "Type": "alphavantage",
               "Params": {},
@@ -129,45 +112,19 @@ fn parse_snapshot() {
                 ],
             },
         ],
-        converter_snapshots: vec![
-            ConverterSnapshot {
-                id: "currencylayer".to_string(),
-                converter_type: CurrencyLayer,
-                snapshot: vec![
-                    Conversion {
-                        source: Currency {
-                            symbol: "CHF".to_string(),
-                        },
-                        target: Currency {
-                            symbol: "USD".to_string(),
-                        },
-                        target_per_source: dec!(1.1),
-                    },
-                    Conversion {
-                        source: Currency {
-                            symbol: "EUR".to_string(),
-                        },
-                        target: Currency {
-                            symbol: "USD".to_string(),
-                        },
-                        target_per_source: dec!(2.2),
-                    },
-                ],
-            },
-            ConverterSnapshot {
-                id: "alphavantage".to_string(),
-                converter_type: AlphaVantage,
-                snapshot: vec![Conversion {
-                    source: Currency {
-                        symbol: "USD".to_string(),
-                    },
-                    target: Stock {
-                        symbol: "GOOG".to_string(),
-                    },
-                    target_per_source: dec!(0.0004),
-                }],
-            },
-        ],
+        converter_snapshots: vec![ConverterSnapshot {
+            id: "alphavantage".to_string(),
+            converter_type: AlphaVantage,
+            snapshot: vec![Conversion {
+                source: Currency {
+                    symbol: "USD".to_string(),
+                },
+                target: Stock {
+                    symbol: "GOOG".to_string(),
+                },
+                target_per_source: dec!(0.0004),
+            }],
+        }],
         total: Asset {
             denomination: Currency {
                 symbol: "CHF".to_string(),
