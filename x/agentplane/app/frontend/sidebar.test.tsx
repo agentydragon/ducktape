@@ -150,6 +150,17 @@ it("opens retained Thread history even when its Sandbox is gone", async () => {
   expect(location()).toBe("/threads/t-1");
 });
 
+it("opens the details of a provisioning Sandbox with no Threads", async () => {
+  const pending = sandbox("test-provisioning", { state: "waiting_for_pod" });
+  await render([], { [pending.name]: pending });
+  expect(container.textContent).toContain("0 threads");
+  expect(container.querySelector(".agentplane-sidebar-state-icon.pending")).not.toBeNull();
+  const link = container.querySelector('a[href="/sandboxes/test-provisioning"]');
+  if (!(link instanceof HTMLAnchorElement)) throw new Error("missing provisioning Sandbox link");
+  await act(async () => link.click());
+  expect(location()).toBe("/sandboxes/test-provisioning");
+});
+
 it.each([false, true])(
   "links a Sandbox name to its details without changing Thread navigation (mobile=%s)",
   async (mobileOpen) => {

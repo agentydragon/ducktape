@@ -122,6 +122,18 @@ const SANDBOXES: SandboxView[] = [
   },
 ];
 
+if (scenario.threadlessSandbox) {
+  SANDBOXES.push({
+    name: "test-provisioning",
+    uid: "0f9c1d2e-0000-4000-8000-000000000007",
+    state: "waiting_for_pod",
+    created_at: ago(30_000),
+    operating_mode: "Running",
+    conditions: [],
+    pod: null,
+  });
+}
+
 const POLICIES: PolicyView[] = [
   {
     name: "github-public",
@@ -1051,10 +1063,7 @@ routes.push(
     (_match, query) => {
       const includeArchived = query.get("include_archived") === "true";
       const threads = THREADS_WITH_SANDBOXES.filter((thread) => includeArchived || !thread.archived);
-      const referenced = new Set(threads.map((thread) => thread.sandbox));
-      const sandboxes = Object.fromEntries(
-        SANDBOXES.filter((candidate) => referenced.has(candidate.name)).map((candidate) => [candidate.name, candidate])
-      );
+      const sandboxes = Object.fromEntries(SANDBOXES.map((candidate) => [candidate.name, candidate]));
       return { threads, sandboxes };
     },
   ]

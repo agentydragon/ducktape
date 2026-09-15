@@ -512,10 +512,8 @@ async def list_threads(
 
 
 class ThreadsWithSandboxes(BaseModel):
-    """Every Thread across every Sandbox the operator can see, plus each Thread's own still-existing
-    Sandbox, keyed by name. Normalized rather than one Sandbox view per Thread that shares it: a
-    Sandbox with many Threads would otherwise have its view duplicated once per Thread. A Thread's
-    own `sandbox` name absent from `sandboxes` means that Sandbox row is gone."""
+    """All visible Threads and every existing Sandbox, including those without Threads. A Thread's
+    `sandbox` name absent from `sandboxes` means that Sandbox row is gone."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -529,13 +527,9 @@ async def list_threads_with_sandboxes(
     inventory: Inventory,
     include_archived: Annotated[bool, Query(description="Also list archived threads.")] = False,
 ) -> ThreadsWithSandboxes:
-    """Every Thread across every Sandbox the operator can see, newest first, with each Thread's own
-    still-existing Sandbox included once regardless of how many Threads it hosts. A Thread survives
-    its Sandbox's deletion here rather than disappearing with it; look it up by `thread.sandbox` in
-    `sandboxes` and treat a miss as deleted."""
+    """Visible Threads newest first, joined with the complete Sandbox inventory."""
     thread_views = await store.list_threads(include_archived=include_archived)
-    referenced = {thread.sandbox for thread in thread_views}
-    sandboxes = {view.name: view for view in await inventory.list_sandboxes() if view.name in referenced}
+    sandboxes = {view.name: view for view in await inventory.list_sandboxes()}
     return ThreadsWithSandboxes(threads=thread_views, sandboxes=sandboxes)
 
 
