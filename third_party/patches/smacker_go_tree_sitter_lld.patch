@@ -1,0 +1,22 @@
+diff --git a/BUILD.bazel b/BUILD.bazel
+--- a/BUILD.bazel
++++ b/BUILD.bazel
+@@ -50,6 +50,7 @@
+         "wasm_store.h",
+     ],
+     cgo = True,
++    clinkopts = ["-fuse-ld=gold"],
+     importpath = "github.com/smacker/go-tree-sitter",
+     visibility = ["//visibility:public"],
+ )
+diff --git a/python/BUILD.bazel b/python/BUILD.bazel
+--- a/python/BUILD.bazel
++++ b/python/BUILD.bazel
+@@ -9,6 +9,7 @@
+         "scanner.c",
+     ],
+     cgo = True,
++    clinkopts = ["-fuse-ld=gold"],
+     importpath = "github.com/smacker/go-tree-sitter/python",
+     visibility = ["//visibility:public"],
+     deps = [":go-tree-sitter"],
