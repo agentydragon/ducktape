@@ -68,9 +68,8 @@ flowchart TB
     RUNNER_WRITER_HANDOFF["Planned correctness<br/>exclusive runner ownership of retained state<br/>fence old writer and native dispatch"]:::future
     SANDBOX_LIFECYCLE_DURABILITY["Planned lifecycle correctness<br/>retained state through suspension<br/>archive before managed storage deletion"]:::future
     THREAD_EVENT_CONTINUITY["Planned identity cutover<br/>one Thread journal across incarnations<br/>exclusive runner writer and retained state"]:::future
-    THREAD_PENDING_UI["Planned UI<br/>pending inputs, model changes, interrupts<br/>additive Raw evidence"]:::future
     THREAD_COMMAND_DELIVERY["Deferred backend<br/>app outbox delivery to existing runner<br/>only if app-first acceptance is chosen later"]:::future
-    THREAD_REPLAY_PROTOCOL["Planned protocol<br/>one protobuf Command/Event language<br/>durable app-to-frontend replay"]:::future
+    THREAD_REPLAY_PROTOCOL["Remaining browser acceptance<br/>unobserved admission and replay boundaries<br/>one canonical Thread Event prefix"]:::active
     THREAD_TAIL_FIRST["Future performance<br/>open recent conversation window first<br/>bounded catch-up for long-running Threads"]:::future
     THREAD_LAZY_HISTORY["Future UI<br/>load older Thread history on demand<br/>stable scroll and concurrent live following"]:::future
     THREAD_NATIVE_LAZY["Deferred design<br/>fetch native payloads only when requested<br/>explicit partial-data and replay contract"]:::future
@@ -94,8 +93,6 @@ flowchart TB
     AG -. hosted Thread lifecycle .-> RETIRE_AGENT
 
     INPUT_DELIVERY -. reliable Thread ingress .-> ING
-    THREAD_REPLAY_PROTOCOL --> THREAD_PENDING_UI
-    THREAD_REPLAY_PROTOCOL --> THREAD_TAIL_FIRST
     THREAD_TAIL_FIRST --> THREAD_LAZY_HISTORY
     RUNNER_WRITER_HANDOFF --> THREAD_EVENT_CONTINUITY
     THREAD_EVENT_CONTINUITY --> THREAD_SUCCESSOR_DELIVERY
@@ -103,7 +100,6 @@ flowchart TB
     CODEX_RECOVERY -. native continuation evidence .-> THREAD_SUCCESSOR_DELIVERY
     COMMAND_QUEUE_DECISION -. if app-first acceptance chosen .-> THREAD_COMMAND_DELIVERY
     THREAD_COMMAND_DELIVERY --> THREAD_OUTBOX_CUTOVER
-    THREAD_PENDING_UI --> THREAD_OUTBOX_CUTOVER
     THREAD_OUTBOX_CUTOVER --> NEWTHREAD_DURABLE
     NEWTHREAD_DURABLE --> UISHELL_NEWTHREAD_SANDBOX
     NEWTHREAD_DURABLE --> UISHELL_NEWTHREAD_LANDING
@@ -161,10 +157,11 @@ change. UI reducers and visual cases can proceed against established Events whil
 native recovery research runs. Automatic recovery is gated separately for each harness
 and operation by its evidence; do not claim it from a working ordinary command path.
 
-**Current dispatch wave:** app Event replication has process-kill and HTTP/SSE catch-up
-acceptance. Integrate canonical command ingress, exact browser replay, and pending/Raw UI
-alongside admission/scheduling; native recovery follows each harness's evidence.
-Do not wait for every native recovery scenario before implementing ordinary controls.
+**Current dispatch wave:** canonical command ingress, runner admission/scheduling,
+Thread archive replay, pending controls, and additive Raw presentation have landed.
+Finish the named browser transport acceptance gaps and verify the deployed path with
+real Claude and Codex. Native recovery follows each harness's evidence; ordinary
+controls do not wait for automatic recovery.
 Reuse existing agent worktrees. Each self-contained change gets its own PR against
 `devel`; stack only on required implementation content and remove completed tasks as
 their work lands.
@@ -569,34 +566,6 @@ Replay of an existing single-session Thread can improve independently; multiple
 incarnations must not ship by inventing a second Event counter. This item does not
 choose successor command replay (`THREAD_SUCCESSOR_DELIVERY`).
 
-### `THREAD_PENDING_UI` — pending commands and additive Raw evidence
-
-**Pending-command portion landed, #7016:** derive the runner queue from full
-`CommandAdmitted` payloads and causal outcomes. Input, model, interrupt, and stop use the
-same submission path; local unconfirmed commands retain their exact payload and Thread
-scope across reload. HTTP admission never advances the replay cursor, and lost HTTP
-responses cannot erase streamed admission. The picker keeps the applied model until
-its causal Event; queued commands do not block later input. Component/storage tests and
-desktop/phone/Raw pending visuals cover these states.
-
-Canonical Thread pages are in #7019. Additive Raw uses the same chronological conversation blocks,
-with exact Event envelopes, command/origin correlation, and a separately labelled operational
-snapshot. Interleaved confirmed input and controls split disclosure runs instead of moving to turn
-start. Projection/component tests and desktop/phone scenes cover these presentation boundaries.
-
-**Remaining:** real-browser request/reply loss and reload acceptance, in its separate integration
-slice. Neither the pending panel nor Raw presentation alone proves those transport boundaries.
-
-Implement [the projection contract](../docs/thread_layering.md#timeline-pending-queue-and-operational-state)
-with reload/replay tests and visual cases: streaming, input coalescing, delayed
-confirmation, pending model effect, interrupts, failure/no-op, suspended/missing Sandbox,
-and Raw native/correlation details. An optional app queue would add app intent to this
-view later; pending runner commands do not require it.
-
-Integrated acceptance depends on `THREAD_REPLAY_PROTOCOL`. Reducer/visual PRs can
-proceed against established Events while that path and per-harness recovery evidence
-are developed.
-
 ### `THREAD_COMMAND_DELIVERY` — optional app command delivery queue
 
 **Deferred for this slice, conditional on `COMMAND_QUEUE_DECISION`:** if the app promises acceptance while the
@@ -700,12 +669,13 @@ and runner effects remain distinct. Each preset field is individually editable.
 Do not infer native resume from Sandbox readiness or silently transfer unsettled
 commands into a successor scope.
 
-### `THREAD_REPLAY_PROTOCOL` — same runner Event log through the app
+### `THREAD_REPLAY_PROTOCOL` — remaining browser transport acceptance
 
-**Planned protocol:** relay exact generated runner `EventEntry` payloads from the
-committed PostgreSQL prefix, preserving cursor and provenance. Ordinary commands
-use generated `Command` on both hops. Normal conversation and admitted-command state
-are frontend projections of this log; an app delivery queue is not a dependency.
+**Implementation landed:** canonical generated Command ingress (#7009), runner
+admission/scheduling (#7001), retained Thread pages (#7019), pending controls (#7016),
+and additive Raw evidence (#7022). The contracts remain in
+[Thread layering](../docs/thread_layering.md#timeline-pending-queue-and-operational-state),
+not duplicated here.
 
 App-process loss and HTTP/SSE handoff are covered by
 [replica-safe runner delivery](../app/README.md#replica-safe-runner-delivery).
@@ -713,38 +683,13 @@ The built SPA also has real-Chromium retained/live/reload, ahead-of-prefix snaps
 rejected runner gap/source-change, canonical admission, persisted same-id retry after
 a pre-forward abort, and streamed admission after post-commit response loss. Mocked
 component streams alone do not cover those boundaries.
-Keep a genuinely unobserved committed admission (both HTTP reply and SSE lost) separate
+**Remaining:** keep a genuinely unobserved committed admission (both HTTP reply and SSE lost) separate
 from a request aborted before forwarding. Also exercise an HTTP admission arriving ahead
 of the browser's contiguous Event prefix without skipping preceding Events.
-Native crash-recovery research is not a prerequisite for the replay/projection implementation.
-
-The frontend `EventStream` now owns a verified, contiguous prefix: exact duplicates
-do not reapply streaming deltas; source changes, gaps, and conflicts stop consumption
-with the last valid prefix visible. A target change gets fresh state, and a cold mount
-replays from zero. `Attached@N` remains separate from consumed prefix `K`: while `K < N`,
-the view labels catch-up and does not present a historical model as currently applied.
-After catch-up only model Events beyond `N` override that snapshot.
-
-Canonical Thread metadata and replay routes now read the same retained history without a runner,
-including a real-browser deleted-Sandbox reload test in #7019. Persistent local Commands and the
-pending projection are in #7016. Browser reload of an unconfirmed command is covered in #7020.
-Remaining: real-browser reconnect while commands remain unconfirmed and full additive Raw evidence;
-the stream owner alone does not complete these transport gates.
-
-Implement [reconnect and catch-up](../docs/thread_layering.md#reconnect-and-catch-up):
-contiguous replay, duplicate checking, gap-free live handoff, lost notifications, and
-browser reload with a matching cached prefix or replay from zero. Keep operational
-snapshots visibly separate. A combined activity projection, if later needed, must
-identify its app observation order rather than impersonate the runner log.
-
-The current `Attached` snapshot may be ahead of the copied Event prefix. Make its runner
-provenance/as-of cursor explicit in the API and frontend; it must not seed or overwrite
-conversation or pending-command reductions of the copied log. Test the snapshot-ahead
-case through browser reload and catch-up, not only eventual convergence.
-
-Do not implement #6985's command/Event union as the runner timeline. An optional app
-queue may expose an atomic pending snapshot alongside replay; two append-only browser
-feeds are not an established requirement.
+Exercise reconnect with unconfirmed commands and Raw evidence against that same prefix.
+The existing snapshot-ahead browser case is not proof of the HTTP-receipt-ahead case.
+Follow [reconnect and catch-up](../docs/thread_layering.md#reconnect-and-catch-up);
+native crash-recovery research is not a prerequisite for these browser tests.
 
 ### `THREAD_SUBMIT_500` — investigate failed submission and retry
 
