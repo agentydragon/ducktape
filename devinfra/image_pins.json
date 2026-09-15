@@ -1,7 +1,7 @@
 {
   "rbe_worker": {
     "image": "ghcr.io/agentydragon/rbe-worker",
-    "digest": "sha256:ec068c8cd90f8470686c207bff4c952de889c7365703bbb9402b9ec7c2222c4d"
+    "digest": "sha256:876b92329660f88a9282dc5ddc419a7b2ea3d629fc31212712a96a00eb7020b6"
   },
   "bbr_runner": {
     "image": "ghcr.io/agentydragon/bbr-runner",
