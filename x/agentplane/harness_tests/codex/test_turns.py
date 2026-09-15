@@ -13,6 +13,7 @@ TOOLS = ["exec_command", "write_stdin", "request_user_input"]
 IN_FLIGHT_INPUT = "Reply with exactly: CODEX_CRASHED_IN_FLIGHT_REPLAYED"
 QUEUED_INPUT = "Reply with exactly: CODEX_CRASHED_QUEUE_FATE"
 RECOVERY_INPUT = "Reply with exactly: CODEX_CRASH_RESUME_OK"
+REDISPATCH_INPUT = "Reply with exactly: CODEX_CRASH_WINDOW_REDISTPATCH"
 INTERRUPTED_RESUME_INPUT = "Reply with exactly: CODEX_INTERRUPTED_RESUME_INPUT"
 INTERRUPTED_RESUME_PARTIAL = "CODEX_INTERRUPTED_RESUME_PARTIAL"
 INTERRUPTED_RESUME_RECOVERY = "Reply with exactly: CODEX_INTERRUPTED_RESUME_RECOVERY_OK"
@@ -174,6 +175,43 @@ async def test_resume_after_crash_replays_the_in_flight_turn_but_not_its_live_fo
             stream = sse.response_stream([sse.Message("CODEX_CRASH_RESUME_OK")], model=MODEL)
             await exchange.send(*stream.events)
         assert (await recovery.completed()).params.turn.status is wire.TurnStatus.COMPLETED
+
+
+async def test_resumed_redispatch_of_an_accepted_input_duplicates_native_history(
+    codex: CodexHarness, openai_responses: OpenAIResponses
+) -> None:
+    """Codex preserves accepted input but cannot correlate a replacement `turn/start` to it."""
+    async with codex.start(openai_responses, persist=True) as first:
+        accepted = await first.start_turn(REDISPATCH_INPUT)
+        await accepted.started()
+        async with await openai_responses.await_next_request() as exchange:
+            request = exchange.request
+            assert request.item_kinds == ["message:user"]
+            assert [message.text for message in request.messages("user")] == [REDISPATCH_INPUT]
+            assert request.client_metadata.thread_id == first.thread_id
+            assert request.client_metadata.turn_id == accepted.id
+            assert await first.crash() < 0
+            await exchange.wait_client_closed()
+    assert not [
+        frame
+        for frame in frames.parse(first.native_frames())
+        if isinstance(frame, wire.TurnCompleted) and frame.params.turn.id == accepted.id
+    ]
+
+    async with codex.start(openai_responses, resume_thread_id=first.thread_id) as resumed:
+        assert resumed.thread_id == first.thread_id
+        redispatched = await resumed.start_turn(REDISPATCH_INPUT)
+        assert redispatched.id != accepted.id
+        async with await openai_responses.await_next_request() as exchange:
+            request = exchange.request
+            assert request.item_kinds == ["message:user", "message:user"]
+            assert [message.text for message in request.messages("user")] == [REDISPATCH_INPUT, REDISPATCH_INPUT]
+            assert request.client_metadata.thread_id == first.thread_id
+            assert request.client_metadata.turn_id == redispatched.id
+            await exchange.send(
+                *sse.response_stream([sse.Message("CODEX_CRASH_WINDOW_REDISTPATCH")], model=MODEL).events
+            )
+        assert (await redispatched.completed()).params.turn.status is wire.TurnStatus.COMPLETED
 
 
 if __name__ == "__main__":
