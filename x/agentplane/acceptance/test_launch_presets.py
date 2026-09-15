@@ -48,17 +48,14 @@ async def test_public_coder_preset_launches_an_initialized_editable_codex_thread
     async for attempt in runner_startup_retries():
         with attempt:
             first = await client.open_bound_session(view.name, first_id)
-    assert (
-        first.attached.spec.harness,
-        first.attached.spec.model,
-        first.attached.spec.reasoning_effort,
-        first.attached.spec.instructions,
-    ) == (
+    assert (first.attached.spec.harness, first.attached.spec.model, first.attached.spec.reasoning_effort) == (
         protocol_pb2.HARNESS_CODEX,
         preset.thread_defaults.model,
         preset.thread_defaults.reasoning_effort,
-        INSTRUCTIONS,
     )
+    # The app prepends its configured platform guidance to every session. The editable task
+    # instructions remain the exact final block; the Sandbox binding above stores only that edit.
+    assert first.attached.spec.instructions.rsplit("\n\n", 1)[-1] == INSTRUCTIONS
 
     thread = await client.thread(view.name, first.attached.session_id)
     agent = Agent(client, thread_id=thread.id, cursor=first.last_cursor)
