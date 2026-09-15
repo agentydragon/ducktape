@@ -18,6 +18,9 @@ from x.agentplane.runner.journal import Journal
 from x.agentplane.runner.session import Session
 from x.agentplane.runner.store import SessionRecord, SessionStore
 
+# The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
+# gazelle:include_dep @pypi//protobuf
+
 
 class BlockingAdapter(HarnessAdapter):
     def __init__(self) -> None:

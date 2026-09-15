@@ -532,6 +532,7 @@ py_test(
     deps = [
         ":adapter",
         ":config",
+        ":conftest",
         ":harness_process",
         ":session",
         ":store",
