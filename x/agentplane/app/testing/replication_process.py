@@ -11,7 +11,7 @@ import multiprocessing
 import signal
 import socket
 from collections.abc import AsyncIterator, Sequence
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -67,29 +67,38 @@ class ReplayHeld:
     cursor: int
 
 
-@dataclass(frozen=True)
-class ReleaseReplay:
-    pass
+class ReplayAction(StrEnum):
+    RELEASE = "release"
+    DISCONNECT = "disconnect"
+
+
+class ReplayDisconnectError(Exception):
+    """Unwind the held response after sending EOF, without a protocol end Event."""
 
 
 class ReplayGate:
     def __init__(self, after_cursor: int, connection: Connection) -> None:
         self.after_cursor = after_cursor
         self._connection = connection
-        self._release: asyncio.Task[None] | None = None
+        self._release: asyncio.Task[ReplayAction] | None = None
 
-    async def hold(self, cursor: int) -> None:
+    async def hold(self, cursor: int) -> ReplayAction:
         if self._release is None:
             self._release = asyncio.create_task(self._wait_for_release())
         if not self._release.done():
             self._connection.send(ReplayHeld(cursor))
         # Closing the old browser document cancels its response, not the gate shared with the
         # reloaded document's new SSE connection.
-        await asyncio.shield(self._release)
+        pending = self._release
+        action = await asyncio.shield(pending)
+        if action is ReplayAction.DISCONNECT and self._release is pending:
+            self._release = None
+        return action
 
-    async def _wait_for_release(self) -> None:
+    async def _wait_for_release(self) -> ReplayAction:
         command = await receive(self._connection)
-        assert isinstance(command, ReleaseReplay), command
+        assert isinstance(command, ReplayAction), command
+        return command
 
 
 class GatedThreadReplay:
@@ -101,12 +110,18 @@ class GatedThreadReplay:
         async def gated_send(message: Message) -> None:
             if message["type"] == "http.response.body":
                 for line in message.get("body", b"").splitlines():
-                    if line.startswith(b"id: ") and (cursor := int(line[4:])) > self._gate.after_cursor:
-                        await self._gate.hold(cursor)
+                    if (
+                        line.startswith(b"id: ")
+                        and (cursor := int(line[4:])) > self._gate.after_cursor
+                        and await self._gate.hold(cursor) is ReplayAction.DISCONNECT
+                    ):
+                        await send({"type": "http.response.body", "body": b"", "more_body": False})
+                        raise ReplayDisconnectError
             await send(message)
 
         thread_replay = scope["type"] == "http" and scope["path"].endswith("/events/stream")
-        await self._app(scope, receive, gated_send if thread_replay else send)
+        with suppress(ReplayDisconnectError):
+            await self._app(scope, receive, gated_send if thread_replay else send)
 
 
 @dataclass(frozen=True)
@@ -280,7 +295,10 @@ class AppProcess:
         return observation
 
     def release_replay(self) -> None:
-        self.observations.send(ReleaseReplay())
+        self.observations.send(ReplayAction.RELEASE)
+
+    def disconnect_replay(self) -> None:
+        self.observations.send(ReplayAction.DISCONNECT)
 
     async def kill(self) -> None:
         self.process.kill()
