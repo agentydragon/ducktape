@@ -138,7 +138,7 @@ spec:
               subPath: ca-certificates.crt
               readOnly: true
         - name: egress-sidecar
-          image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:devel-20260913223959-00ae0b0 # {"$imagepolicy": "flux-system:agentplane-egress-sidecar"}
+          image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:devel-20260915071457-fcba6a0 # {"$imagepolicy": "flux-system:agentplane-egress-sidecar"}
           # The image's entrypoint is the sidecar's Bazel launcher (see the runner above); only
           # settings are given, as environment.
           env:
