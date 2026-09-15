@@ -111,7 +111,7 @@ spec:
               drop: ["ALL"]
       containers:
         - name: actions
-          image: git.allegedly.works/ducktape-ci/agentplane-action-service:devel-20260915215916-f831950 # {"$imagepolicy": "flux-system:agentplane-action-service"}
+          image: git.allegedly.works/ducktape-ci/agentplane-action-service:devel-20260915225846-3299654 # {"$imagepolicy": "flux-system:agentplane-action-service"}
           imagePullPolicy: Always
           args:
             - --host=0.0.0.0
