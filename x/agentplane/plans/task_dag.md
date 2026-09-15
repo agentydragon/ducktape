@@ -767,6 +767,11 @@ not trigger bottom-following.
 
 ### `THREAD_TAIL_FIRST` — recent history first for long-running Threads
 
+**Observed on staging:** the operator reported roughly 1,000 Events in an already
+small conversation, with visible catch-up taking about 2–3 seconds. Measure and cover
+that case as well as month-long histories; identify transfer, replay, projection, and
+render costs rather than assuming the event count alone explains the delay.
+
 **Future work, not a gate on the current UI cutover:** opening a Thread that has run
 continuously for a month should show roughly the last screenful or two first, without
 transferring or reducing its entire Event log from the beginning. Add bounded,
