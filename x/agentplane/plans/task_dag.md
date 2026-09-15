@@ -681,13 +681,18 @@ App-process loss and HTTP/SSE handoff are covered by
 [replica-safe runner delivery](../app/README.md#replica-safe-runner-delivery).
 The built SPA also has real-Chromium retained/live/reload, ahead-of-prefix snapshot,
 rejected runner gap/source-change, canonical admission, persisted same-id retry after
-a pre-forward abort, and streamed admission after post-commit response loss. Mocked
-component streams alone do not cover those boundaries.
-**Remaining:** keep a genuinely unobserved committed admission (both HTTP reply and SSE lost) separate
-from a request aborted before forwarding. Also exercise an HTTP admission arriving ahead
-of the browser's contiguous Event prefix without skipping preceding Events.
-Exercise reconnect with unconfirmed commands and Raw evidence against that same prefix.
-The existing snapshot-ahead browser case is not proof of the HTTP-receipt-ahead case.
+a pre-forward abort, and streamed admission after post-commit response loss. It also
+covers genuinely unobserved committed admission (HTTP reply and SSE delivery both lost):
+the same local Command survives reload, then replay reconciles it exactly once without
+another send. Catch-up keeps Retry disabled; this is not a claimed clicked retry after
+reload. The pre-forward-loss browser case covers explicit same-id Retry, and API/runner
+idempotency tests separately cover retry of an already admitted Command.
+An HTTP admission ahead of the browser prefix updates only the pending receipt: earlier
+streaming deltas remain unseen until replay delivers the entire prefix in order, once.
+Mocked component streams alone do not cover those boundaries.
+
+**Remaining:** automatic EventSource reconnect without a document reload while commands
+remain unconfirmed, with Raw evidence against the same verified prefix.
 Follow [reconnect and catch-up](../docs/thread_layering.md#reconnect-and-catch-up);
 native crash-recovery research is not a prerequisite for these browser tests.
 
