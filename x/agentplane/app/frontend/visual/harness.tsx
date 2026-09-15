@@ -449,7 +449,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
     created_at: ago(72 * HOUR),
     name: "Why did the migration hang",
     archived: false,
-    last_cursor: 4,
+    last_cursor: 18,
     last_event_at: ago(70 * HOUR),
     harness_state: "HARNESS_STATE_STOPPED",
   },

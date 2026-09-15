@@ -323,7 +323,7 @@ function ThreadTitle({
         placeholder={threadId}
         maxLength={200}
         classNames={{ input: "agentplane-thread-name-input" }}
-        style={{ flex: 1 }}
+        style={{ flex: "1 1 12rem", minWidth: 0 }}
         onChange={(e) => setDraft(e.currentTarget.value)}
         onBlur={() => void commit()}
         onKeyDown={(e) => {
@@ -332,7 +332,7 @@ function ThreadTitle({
         }}
       />
       {thread?.name && (
-        <Text size="sm" c="dimmed">
+        <Text size="sm" c="dimmed" style={{ overflowWrap: "anywhere", maxWidth: "100%" }}>
           {threadId}
         </Text>
       )}
