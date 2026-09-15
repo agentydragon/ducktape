@@ -527,6 +527,25 @@ py_library(
 )
 
 py_test(
+    name = "test_command_scheduling",
+    srcs = ["test_command_scheduling.py"],
+    deps = [
+        ":adapter",
+        ":config",
+        ":conftest",
+        ":harness_process",
+        ":journal",
+        ":session",
+        ":store",
+        "//:conftest",
+        "//x/agentplane/protocol:command_pb2",
+        "//x/agentplane/protocol:event_pb2",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_journal_process",
     srcs = ["test_journal_process.py"],
     deps = [

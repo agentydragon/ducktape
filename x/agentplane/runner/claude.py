@@ -99,9 +99,10 @@ class ClaudeAdapter(HarnessAdapter):
         frame = await self.harness.submit(text)
         self._pending[frame.uuid] = (command_id, text)
 
-    async def interrupt(self) -> None:
+    async def interrupt(self, turn_id: str) -> None:
         # Claude accepts this immediately, but its control acknowledgement is not the command's
         # effect: the translated terminal result is what releases the command.
+        del turn_id  # Claude's native protocol only interrupts its current turn.
         await self.harness.signal_interrupt(cancel_queued=False, reason="agentplane")
 
     async def change_model(self, command_id: str, model: str) -> None:

@@ -357,7 +357,7 @@ async def test_stop_command_returns_after_admission_before_native_shutdown_effec
         assert opened.status_code == 201, opened.text
         thread_id = await _thread_id(http)
         session = runner.runner.sessions[SESSION]
-        original_shutdown = session._shutdown_locked
+        original_shutdown = session._shutdown
         shutdown_entered = asyncio.Event()
         allow_shutdown = asyncio.Event()
 
@@ -366,7 +366,7 @@ async def test_stop_command_returns_after_admission_before_native_shutdown_effec
             await allow_shutdown.wait()
             await original_shutdown()
 
-        monkeypatch.setattr(session, "_shutdown_locked", gated_shutdown)
+        monkeypatch.setattr(session, "_shutdown", gated_shutdown)
         response = asyncio.create_task(
             http.post(_commands(thread_id), json={"commandId": "stop-gated", "stopRunnerSession": {}})
         )

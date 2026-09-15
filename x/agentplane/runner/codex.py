@@ -111,8 +111,8 @@ class CodexAdapter(HarnessAdapter):
             harness_message_id=turn_id, text=text, origin_command_ids=[command_id], turn_id=turn_id, sources=[sequence]
         )
 
-    async def interrupt(self) -> None:
-        await self.harness.interrupt(thread_id=self._thread_id, turn_id=self.session.active_turn_id)
+    async def interrupt(self, turn_id: str) -> None:
+        await self.harness.interrupt(thread_id=self._thread_id, turn_id=turn_id)
 
     async def change_model(self, command_id: str, model: str) -> None:
         self._pending_model_changes.append((command_id, model))
