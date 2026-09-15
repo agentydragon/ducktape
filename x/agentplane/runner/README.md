@@ -20,6 +20,9 @@ bbr test //x/agentplane/runner/...
 - `journal_file.py`: Event and command appends flush and fsync before publishing state, with
   directory fences for newly created state paths and renamed session metadata. A storage error
   poisons the writer until it is reopened for recovery.
+- `journal_lines.py`: Event/command journal recovery. The terminating newline completes a record;
+  an unterminated final fragment is truncated and synced before subsequent appends. Complete
+  records are decoded and validated by their owning log.
 - `harness_process.py`: one native harness child, its pipes, line framing, and exit; no protocol
   knowledge.
 - `config.py`: the runner-owned launch configuration, one `*Launch` per harness (binary, endpoint,

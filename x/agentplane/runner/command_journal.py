@@ -17,6 +17,7 @@ from google.protobuf.json_format import MessageToDict, ParseDict
 from x.agentplane.protocol import command_pb2
 from x.agentplane.runner.event_log import Observation, decode_observation, encode_observation
 from x.agentplane.runner.journal_file import JournalFile
+from x.agentplane.runner.journal_lines import journal_lines
 
 
 @dataclass(frozen=True)
@@ -97,7 +98,7 @@ class CommandJournal:
         self._entries[command_id] = JournalEntry(entry.command, state, correlation, recorded_outcome)
 
     def _load(self) -> None:
-        for line_number, raw in enumerate(self.path.read_text().splitlines(), start=1):
+        for line_number, raw in enumerate(journal_lines(self.path), start=1):
             try:
                 row = json.loads(raw)
                 record = row["record"]
