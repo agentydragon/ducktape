@@ -375,13 +375,10 @@ or a model vendor without evidence, or invent retryability guarantees. Use the e
 [layering contract](../docs/thread_layering.md), extending it only where the evidence
 requires a new guarantee; do not create a parallel error protocol.
 
-In normal and Raw views, show the failure at the terminal position even after a long
-streamed turn, preserve partial output, and keep pending command receipts distinct.
-The current reducer retains `TurnCompleted.error`, but its detail is on the turn's
-first-position header and can be offscreen when the terminal row arrives. Add browser
-coverage for bottom-following, reload/replay, and subsequent successful input. Any future
-retry control must explicitly distinguish same-command delivery retry from requesting
-a new model turn; do not silently resend the original input.
+Finish native-backed verification of these failures through the app archive and normal/Raw
+views, including reload and a later successful input; controlled-source browser coverage is
+not native harness evidence. Any future retry control must explicitly distinguish same-command
+delivery retry from requesting a new model turn; do not silently resend the original input.
 
 ### `CLUSTER_BROWSER_ACCEPTANCE` — browser-driven acceptance in the cluster
 
