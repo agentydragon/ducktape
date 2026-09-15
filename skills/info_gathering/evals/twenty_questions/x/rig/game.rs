@@ -12,8 +12,8 @@
 
 use crate::docker_exec::ScratchContainer;
 use chrono::Utc;
-use rig::client::{CompletionClient, ProviderClient};
-use rig::completion::{Chat, Completion, CompletionModel, CompletionResponse, ToolDefinition};
+use rig::client::{AgentClientExt, CompletionClient, ProviderClient};
+use rig::completion::{Chat, Prompt};
 use rig::message::{AssistantContent, Message, ToolChoice};
 use rig::tool::Tool;
 use runfiles::{Runfiles, rlocation};
@@ -198,26 +198,29 @@ impl Tool for SimAnswerTool {
     type Args = AnswerArgs;
     type Output = String;
 
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: "answer".to_string(),
-            description: "Answer the player's yes/no question with yes, no, or sort_of."
-                .to_string(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "response": {
-                        "type": "string",
-                        "enum": ["yes", "no", "sort_of"],
-                        "description": "Your answer to the question"
-                    }
-                },
-                "required": ["response"]
-            }),
-        }
+    fn description(&self) -> String {
+        "Answer the player's yes/no question with yes, no, or sort_of.".to_string()
     }
 
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+    fn parameters(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "response": {
+                    "type": "string",
+                    "enum": ["yes", "no", "sort_of"],
+                    "description": "Your answer to the question"
+                }
+            },
+            "required": ["response"]
+        })
+    }
+
+    async fn call(
+        &self,
+        _context: &mut rig::tool::ToolContext,
+        args: Self::Args,
+    ) -> Result<Self::Output, Self::Error> {
         let resp = args.response.clone();
         let mut guard = self
             .action
@@ -243,18 +246,22 @@ impl Tool for SimCorrectAnswerTool {
     type Args = CorrectAnswerArgs;
     type Output = String;
 
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: "correct_answer".to_string(),
-            description: "The player correctly guessed the secret.".to_string(),
-            parameters: json!({
-                "type": "object",
-                "properties": {}
-            }),
-        }
+    fn description(&self) -> String {
+        "The player correctly guessed the secret.".to_string()
     }
 
-    async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
+    fn parameters(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {}
+        })
+    }
+
+    async fn call(
+        &self,
+        _context: &mut rig::tool::ToolContext,
+        _args: Self::Args,
+    ) -> Result<Self::Output, Self::Error> {
         let mut guard = self
             .action
             .lock()
@@ -281,24 +288,29 @@ impl Tool for SimInvalidInputTool {
     type Args = InvalidInputArgs;
     type Output = String;
 
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: "invalid_input".to_string(),
-            description: "The player's input is not a valid yes/no question or guess. Does NOT consume a turn.".to_string(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "reason": {
-                        "type": "string",
-                        "description": "Brief explanation of why the input is invalid"
-                    }
-                },
-                "required": ["reason"]
-            }),
-        }
+    fn description(&self) -> String {
+        "The player's input is not a valid yes/no question or guess. Does NOT consume a turn."
+            .to_string()
     }
 
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+    fn parameters(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string",
+                    "description": "Brief explanation of why the input is invalid"
+                }
+            },
+            "required": ["reason"]
+        })
+    }
+
+    async fn call(
+        &self,
+        _context: &mut rig::tool::ToolContext,
+        args: Self::Args,
+    ) -> Result<Self::Output, Self::Error> {
         let reason = args.reason.clone();
         let mut guard = self
             .action
@@ -315,8 +327,8 @@ impl Tool for SimInvalidInputTool {
 
 /// Issue a single completion request to the simulator agent and extract the
 /// tool call from the response.
-async fn sim_single_turn<M: CompletionModel>(
-    sim: &impl Completion<M>,
+async fn sim_single_turn(
+    sim: &rig::agent::Agent,
     prompt: &str,
     history: Vec<Message>,
     sim_action: &SharedAction,
@@ -326,15 +338,14 @@ async fn sim_single_turn<M: CompletionModel>(
         *guard = None;
     }
 
-    let response: CompletionResponse<M::Response> = sim
-        .completion(prompt, history)
+    let response = sim
+        .prompt(prompt)
+        .history(history)
+        .extended_details()
         .await
-        .map_err(|e| anyhow::anyhow!("Simulator completion build error: {e}"))?
-        .send()
-        .await
-        .map_err(|e| anyhow::anyhow!("Simulator completion send error: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("Simulator completion error: {e}"))?;
 
-    for content in response.choice.iter() {
+    for content in response.content.iter() {
         match content {
             AssistantContent::ToolCall(tc) => {
                 let name = &tc.function.name;
@@ -376,7 +387,7 @@ async fn sim_single_turn<M: CompletionModel>(
 // ---------------------------------------------------------------------------
 
 // Because Rig's Tool trait requires a concrete type for the simulator
-// completion, we cannot use `impl Completion<M>` inside the tool struct.
+// completion, we cannot use a generic simulator type inside the tool struct.
 // Instead, we use a closure-based approach: the game loop creates a callback
 // that captures the simulator, and the tools invoke it through an Arc.
 
@@ -402,25 +413,28 @@ impl Tool for AskYesNoQuestionTool {
     type Args = AskYesNoQuestionArgs;
     type Output = String;
 
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: "ask_yes_no_question".to_string(),
-            description: "Ask a yes/no question to narrow down the answer. Uses one turn."
-                .to_string(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "question": {
-                        "type": "string",
-                        "description": "A yes/no question about the secret"
-                    }
-                },
-                "required": ["question"]
-            }),
-        }
+    fn description(&self) -> String {
+        "Ask a yes/no question to narrow down the answer. Uses one turn.".to_string()
     }
 
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+    fn parameters(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "question": {
+                    "type": "string",
+                    "description": "A yes/no question about the secret"
+                }
+            },
+            "required": ["question"]
+        })
+    }
+
+    async fn call(
+        &self,
+        _context: &mut rig::tool::ToolContext,
+        args: Self::Args,
+    ) -> Result<Self::Output, Self::Error> {
         {
             let gs = self
                 .game_state
@@ -467,24 +481,28 @@ impl Tool for GuessAnswerTool {
     type Args = GuessAnswerArgs;
     type Output = String;
 
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: "guess_answer".to_string(),
-            description: "Make a guess at the answer. Uses one turn.".to_string(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "answer": {
-                        "type": "string",
-                        "description": "Your guess for the secret"
-                    }
-                },
-                "required": ["answer"]
-            }),
-        }
+    fn description(&self) -> String {
+        "Make a guess at the answer. Uses one turn.".to_string()
     }
 
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+    fn parameters(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "answer": {
+                    "type": "string",
+                    "description": "Your guess for the secret"
+                }
+            },
+            "required": ["answer"]
+        })
+    }
+
+    async fn call(
+        &self,
+        _context: &mut rig::tool::ToolContext,
+        args: Self::Args,
+    ) -> Result<Self::Output, Self::Error> {
         {
             let gs = self
                 .game_state
@@ -544,35 +562,39 @@ impl Tool for ExecTool {
     type Args = ExecArgs;
     type Output = String;
 
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: "exec".to_string(),
-            description: "Execute a command in a scratch container. Use this to run code, \
-                test hypotheses, or compute things during the game. Does NOT use a turn."
-                .to_string(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "cmd": {
-                        "type": "array",
-                        "items": { "type": "string" },
-                        "description": "Command and arguments to execute"
-                    },
-                    "cwd": {
-                        "type": "string",
-                        "description": "Working directory (optional)"
-                    },
-                    "timeout_ms": {
-                        "type": "integer",
-                        "description": "Timeout in milliseconds (default 30000)"
-                    }
-                },
-                "required": ["cmd"]
-            }),
-        }
+    fn description(&self) -> String {
+        "Execute a command in a scratch container. Use this to run code, \
+            test hypotheses, or compute things during the game. Does NOT use a turn."
+            .to_string()
     }
 
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+    fn parameters(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "cmd": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Command and arguments to execute"
+                },
+                "cwd": {
+                    "type": "string",
+                    "description": "Working directory (optional)"
+                },
+                "timeout_ms": {
+                    "type": "integer",
+                    "description": "Timeout in milliseconds (default 30000)"
+                }
+            },
+            "required": ["cmd"]
+        })
+    }
+
+    async fn call(
+        &self,
+        _context: &mut rig::tool::ToolContext,
+        args: Self::Args,
+    ) -> Result<Self::Output, Self::Error> {
         let cmd_str = args
             .cmd
             .iter()
@@ -673,7 +695,7 @@ pub async fn run_game(
 
     let result = match api {
         "openai" => {
-            let client = rig::providers::openai::Client::from_env();
+            let client = rig::providers::openai::Client::from_env()?;
             run_with_client(
                 &client,
                 model_name,
@@ -685,7 +707,7 @@ pub async fn run_game(
             .await
         }
         "anthropic" => {
-            let client = rig::providers::anthropic::Client::from_env();
+            let client = rig::providers::anthropic::Client::from_env()?;
             run_with_client(
                 &client,
                 model_name,
@@ -755,7 +777,7 @@ where
             let sim_action = sim_action.clone();
             let msg = player_message.to_string();
             Box::pin(
-                async move { invoke_simulator_erased(&*sim, &game_state, &sim_action, &msg).await },
+                async move { invoke_simulator_erased(&sim, &game_state, &sim_action, &msg).await },
             )
         })
     };
@@ -784,10 +806,8 @@ where
 }
 
 /// Type-erased simulator invocation so the closure doesn't need M as a parameter.
-/// This works because the agent built by `client.agent(...).build()` implements
-/// `Completion<M>` for its specific M, and we call it through the concrete type.
-async fn invoke_simulator_erased<M: CompletionModel>(
-    sim: &impl Completion<M>,
+async fn invoke_simulator_erased(
+    sim: &rig::agent::Agent,
     game_state: &SharedGameState,
     sim_action: &SharedAction,
     player_message: &str,
@@ -799,7 +819,7 @@ async fn invoke_simulator_erased<M: CompletionModel>(
         gs.sim_history.clone()
     };
 
-    sim_single_turn::<M>(sim, player_message, sim_history, sim_action)
+    sim_single_turn(sim, player_message, sim_history, sim_action)
         .await
         .map_err(|e| ToolCallError(format!("simulator error: {e}")))?;
 
@@ -881,8 +901,9 @@ async fn run_game_loop(
     // Send the first message to the guesser. The guesser's Chat loop will
     // auto-execute tool calls until it produces a text response or hits
     // max_turns. Each game tool call internally runs a simulator turn.
+    let mut chat_history = Vec::new();
     let _guesser_response = guesser
-        .chat(config.first_message, Vec::new())
+        .chat(config.first_message, &mut chat_history)
         .await
         .map_err(|e| anyhow::anyhow!("Guesser error: {e}"))?;
 
