@@ -130,9 +130,12 @@ if [ -n "$PR_HEAD_SHA" ]; then
   mkdir -p /tmp/bd-cache
   # `bazel query` (not cquery) — cheap: no analysis, no toolchain
   # resolution. Peak RAM ~1-2 GB per revision.
-  git -c advice.detachedHead=false checkout --quiet "$BASE"
+  git -c advice.detachedHead=false checkout --quiet --force "$BASE"
   bazel-diff generate-hashes -w "$PWD" -b bazel /tmp/bd-cache/base.json
-  git -c advice.detachedHead=false checkout --quiet "$HEAD_SHA"
+  # bazel-diff may resolve repository metadata and rewrite a tracked lockfile
+  # while hashing the base revision. Force the checkout so those generated
+  # changes cannot prevent switching back to the merge tree.
+  git -c advice.detachedHead=false checkout --quiet --force "$HEAD_SHA"
   bazel-diff generate-hashes -w "$PWD" -b bazel /tmp/bd-cache/head.json
   bazel-diff get-impacted-targets \
     -w "$PWD" \
