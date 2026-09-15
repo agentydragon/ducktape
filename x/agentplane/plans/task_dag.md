@@ -71,7 +71,7 @@ flowchart TB
     ACTION_PROVENANCE_PRUNE["Deferred idea<br/>prune ActionRequestInput origin/correlation<br/>collapse to one client-authored identifier?"]:::future
     CONNECTION_SA_REBIND["Planned mutation<br/>rebind a Connection's ServiceAccount in place<br/>no mutation exists; only a fresh OAuth consent does"]:::future
     SANDBOX_SA["Deferred design<br/>one ServiceAccount per Sandbox<br/>a native Kubernetes identity to separate and grant on"]:::future
-    SANDBOX_RBAC["Planned Kubernetes access<br/>Sandbox role bindings and lifecycle<br/>individually editable, optionally preset"]:::future
+    SANDBOX_RBAC["Planned Kubernetes access<br/>Sandbox permissions and lifecycle<br/>individually editable, optionally preset"]:::future
     DENY_LISTS["Deferred behavior<br/>autoDenyIf / autoDenyUnless<br/>when an Action needs them"]:::future
     CONSOLE_POLICIES["Deferred migration<br/>console auto-approval policies not yet sets<br/>each needs an ActionGroup, a kind, or DENY_LISTS"]:::future
 
@@ -130,8 +130,8 @@ flowchart TB
     T3 -. product work .-> PROD
 
     ACCESS -. authority choice .-> EGRESS_CHANGE
-    SANDBOX_SA --> SANDBOX_RBAC
-    ACCESS -. Kubernetes credential boundary .-> SANDBOX_RBAC
+    SANDBOX_SA -. if per-Sandbox ServiceAccounts chosen .-> SANDBOX_RBAC
+    ACCESS -. Kubernetes authority and credential choices .-> SANDBOX_RBAC
 ```
 
 Completed work is off this board: the credentialless MCP vertical, whose deployed Claude/Codex
@@ -274,8 +274,8 @@ integration app at launch, with an `ownerReference` like the bindings it writes,
 controller); whether the ServiceAccount then becomes the one policy subject for both caller classes,
 collapsing the `sandbox` and `serviceAccount` subject forms and the two operator policy-read routes
 into one; and how the workload token's pinning of the live Sandbox (name and UID from TokenReview
-and the Pod) carries over. `SANDBOX_RBAC` consumes the chosen Sandbox-principal lifecycle;
-it does not require unifying the Action policy subject forms.
+and the Pod) carries over. `SANDBOX_RBAC` consumes this principal lifecycle if per-Sandbox
+ServiceAccounts are chosen; it does not require unifying the Action policy subject forms.
 
 ### `SANDBOX_RBAC` — manage Sandbox Kubernetes access, optionally through presets
 
@@ -283,32 +283,33 @@ it does not require unifying the Action policy subject forms.
 role selections and namespace/cluster scope for a Sandbox, for example “public-coder
 Sandboxes receive these Kubernetes roles.” Add the same individually editable fields
 to Sandbox creation and optional preset defaults. Presets only prefill values; neither
-the apiserver nor credential handling interprets preset names as authority. Reuse
-Kubernetes Roles/ClusterRoles and bindings rather than copying their rules into egress
-or Action policies. This does not require the broad `PROFILES` design.
+the apiserver nor credential handling interprets preset names as authority. This does
+not require the broad `PROFILES` design.
 
-Use `SANDBOX_SA` to establish independently attributable Sandbox principals and their
-lifecycle. Separate ServiceAccounts may share role definitions without sharing identity;
+Resolve independently attributable Sandbox principals and their lifecycle with `ACCESS`
+and, if using per-Sandbox ServiceAccounts, `SANDBOX_SA`. Separate ServiceAccounts can
+share role definitions without sharing identity;
 Threads inside one Sandbox share its workload authority. Preserve live Sandbox UID/Pod
 attribution in workload authentication. Distinct ServiceAccounts in accepted namespaces
 are already supported by that authenticator; a wholesale identity-model replacement is
 not a prerequisite. Any unification with external-caller identities is a separate decision.
 
-Define who may select or grant each role/scope, how live access is inspected and changed,
-and which controller owns ServiceAccounts and bindings, including cross-namespace
-cleanup. Respect existing GitOps ownership. Resolve the Kubernetes-specific credential
-boundary under `ACCESS`: direct audience-appropriate credentials versus proxy-held
-credentials, with explicit exposure, rotation, expiry, and revocation semantics. Merely
-creating a RoleBinding does not provide a usable or safely revocable API access path.
+The credential path and whether/how Kubernetes RBAC objects represent grants remain
+open under `ACCESS`; their canonical design questions are in
+[external-system permissions](external_access.md#kubernetes-sandbox-access-decisions).
+This task integrates the chosen model into Sandbox creation, access inspection/change,
+and lifecycle cleanup, including cross-namespace resources where applicable. Respect
+existing GitOps ownership. Merely creating a RoleBinding does not provide a usable or
+safely revocable API access path.
 Current `ELEVATE` grants Action policy bindings, not Kubernetes roles; any Kubernetes
 elevation workflow must authorize the grant itself.
 
 **Acceptance:** launch with a public-coder-style preset and without a preset using the
-same explicit fields; prove equivalent effective RBAC, including overrides and an empty
+same explicit fields; prove equivalent effective access, including overrides and an empty
 selection. Real API requests succeed only for intended operations/scopes; unauthorized
 role selection, another Sandbox's identity, and privilege-escalating grants are refused.
 Cover independent grants for two Sandboxes, inspection of effective access, revocation
-and reconciliation failure, suspend/resume, deletion/name reuse, and orphan-binding
+and reconciliation failure, suspend/resume, deletion/name reuse, and orphan-grant
 cleanup. Preset edits must not silently widen existing Sandboxes' grants. Verify the
 chosen credential boundary without exposing privileged credentials in evidence.
 
@@ -574,6 +575,9 @@ with explicit precedence and negative tests for stale, cross-Agent, or caller-su
 brokered operator credential, or a hybrid. Keep target-side RBAC and egress enforcement authoritative;
 use grants/revocation reconciliation where a broker mints delegated authority. This is the broader
 external-access policy behind `MCPAUTH` and the SSH MCP server, not a prerequisite for the completed credentialless MCP vertical.
+The [external-access design](external_access.md) is the source of truth for these choices;
+its [Kubernetes decisions](external_access.md#kubernetes-sandbox-access-decisions) also
+cover `SANDBOX_RBAC`, separately from that task's Sandbox/preset UI and lifecycle wiring.
 
 **Acceptance evidence:** a selected system proves the credential boundary, approval behavior, and
 revocation/expiry semantics without putting a reusable privileged credential in the harness.
