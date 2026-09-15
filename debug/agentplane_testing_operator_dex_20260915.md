@@ -29,9 +29,9 @@ Dex's pinned source confirms this is its single-audience token shape, not a
 transient signing-key fetch failure. The maintained verification and deployment
 contract is in [operator federation](../x/agentplane/docs/operator_federation.md).
 
-Direct federation also reconstructs the token response without `token_type`, which
-the target verifier requires. [#7057](https://github.com/agentydragon/ducktape/pull/7057)
-addresses this independent envelope defect. Its signed-token BFF regression failed
+The deployed direct-federation code also reconstructed the token response without
+the required `token_type`. [#7057](https://github.com/agentydragon/ducktape/pull/7057)
+has landed the independent envelope correction. Its signed-token BFF regression failed
 before the change in [3a06cbc8](https://app.buildbuddy.io/invocation/3a06cbc8-fa13-48ed-8421-136a813eb779).
 
 ## Candidate and remaining proof
@@ -48,6 +48,6 @@ The app's direct Dex path accepts the signed token only when both login and targ
 profiles explicitly select Dex; leaving either Authentik refuses it. This and the
 unchanged Haku Authentik adapter passed in
 [ece19014](https://app.buildbuddy.io/invocation/ece19014-6779-464d-b9a2-4cfd17173107).
-This is not deployed acceptance: after both candidate changes and images land,
+This is not deployed acceptance: after the Dex candidate and both service images land,
 activate the testing profile, run the real MCP/operator cases from devbox, and
 verify teardown. Do not resend the user's failed staging input.
