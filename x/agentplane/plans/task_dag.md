@@ -11,18 +11,30 @@ this backlog. See the [Action Service specification](../action_service/SPEC.md),
 ## Operator priority
 
 All Agentplane components and their acceptance contracts are multi-replica by default. Durable
-state belongs to the owning PostgreSQL or Kubernetes authority; cross-replica change fanout uses
+state belongs to its authority: runner SQLite for admitted commands and Events, PostgreSQL for
+the app archive and Action Service, and Kubernetes for Sandbox intent. Cross-replica change fanout uses
 the authority's notification/watch mechanism (PostgreSQL `NOTIFY` for Action Service state), with
 reconnect/replay from durable state rather than process-local memory. A single-replica deployment
 is an explicit temporary operational constraint, never an implicit correctness assumption.
 
-Deployed Claude.ai access to the Action Service MCP facade, the first priority, is met (§ Tested
-on staging). Next is console policy parity (`CONSOLE_POLICIES`), then retiring the Haku Console
-MCP aggregator behind Agentplane's (`MCPAGG`, `RETIRE_TOOLS`). Transcript search/lookup (`T3`) is
-deliberately deferred until a later product-planning point; it is not in the current execution
-sequence. Search is technically independent, so this deferral is a priority decision rather than a
-claim that its implementation depends on MCP. Agent/conversation migration (`RETIRE_AGENT`) is not
-prioritized.
+Proposed execution order for the Thread correctness/UI track:
+
+- **P0:** finish the reported submission/retry failure (`THREAD_SUBMIT_500`) and close
+  deployed Claude/Codex acceptance (`THREAD_DEPLOYED_ACCEPTANCE`). Keep one runner-owned
+  command queue; no app outbox or combined-start expansion in this batch.
+- **P1:** everyday conversation usability (`THREAD_SCROLL_FOLLOW`, sidebar freshness and
+  completeness, new-Sandbox navigation), alongside retained-state writer fencing and
+  evidence-gated native recovery. Start `THREAD_TAIL_FIRST` with a profiling/contract
+  slice, then bounded reads and `THREAD_LAZY_HISTORY`; do not start with a frontend rewrite.
+- **P2:** browser-driven acceptance against the deployed cluster (`CLUSTER_BROWSER_ACCEPTANCE`)
+  and driver-hosted tools (`DT`). Neither blocks the current API-level acceptance closure.
+- **Low priority:** adopting harness-native subagents as Threads (`NATIVE_SUBAGENT_THREADS`).
+  On-demand native payloads (`THREAD_NATIVE_LAZY`) remain later design work.
+
+The independent Action Service track still has credentialed-provider acceptance (`MCPAUTH`),
+console policy parity (`CONSOLE_POLICIES`), and Haku MCP/tool-approval retirement (`MCPAGG`,
+`RETIRE_TOOLS`). Transcript search/lookup (`T3`) and Agent/conversation retirement (`RETIRE_AGENT`)
+remain deferred. Priority is not a dependency between these tracks.
 
 ## DAG
 
@@ -40,7 +52,7 @@ flowchart TB
     SSHDURABLE["Deferred support<br/>systemd-backed durable processes<br/>host daemon + signals/output"]:::future
     RETIRE_AGENT["Deferred migration<br/>retire Haku Console Agent/<br/>conversation management"]:::future
     RETIRE_TOOLS["Deferred migration<br/>retire Haku Console tool-call/<br/>approval management"]:::future
-    INPUT_DELIVERY["P0 behavior, independent<br/>input delivery/replay semantics<br/>harness research and captures first"]:::active
+    INPUT_DELIVERY["Remaining native evidence<br/>input/interrupt/recovery gaps<br/>exact upstream requests and queue fates"]:::active
     T3["Deferred product work<br/>trajectory search and lookup<br/>later prioritization"]:::future
     PC_EGRESS["Milestone<br/>public-coder-agent egress migration<br/>prod Agentplane proxy"]:::milestone
     PROFILES["Deferred decision<br/>capability profiles<br/>Rai design confirmation required"]:::future
@@ -74,6 +86,10 @@ flowchart TB
     THREAD_NATIVE_LAZY["Deferred design<br/>fetch native payloads only when requested<br/>explicit partial-data and replay contract"]:::future
     THREAD_SCROLL_FOLLOW["Queued UI<br/>follow new content only at bottom<br/>preserve position while reading earlier messages"]:::future
     THREAD_SUBMIT_500["Reported bug<br/>message submission and Retry return 500<br/>Awaiting saved confirmation persists"]:::active
+    THREAD_DEPLOYED_ACCEPTANCE["P0 remaining acceptance<br/>deployed commands/events cutover<br/>real Claude and Codex via devbox"]:::active
+    CLUSTER_BROWSER_ACCEPTANCE["P2 deployed browser acceptance<br/>in-cluster frontend button clicks<br/>screenshots and behavioral assertions"]:::future
+    NATIVE_SUBAGENT_THREADS["Low-priority exploration<br/>adopt native Claude/Codex subagents<br/>as linked Agentplane Threads"]:::future
+    RUNNER_ATTACHMENT_SCOPE["Pending refactor<br/>scope ordinary runner attachments<br/>retain admission/drain/cancel semantics"]:::future
     NEWTHREAD_DURABLE["Deferred combined workflow<br/>server-owned sandbox+thread provisioning<br/>survive browser close and app restart"]:::future
     THREAD_OUTBOX_CUTOVER["Deferred cutover<br/>all product commands via app outbox if chosen<br/>no competing relay path"]:::future
     THREAD_SUCCESSOR_DELIVERY["Deferred decision<br/>unsettled Thread command across<br/>successor runner session"]:::future
@@ -156,12 +172,13 @@ change. UI reducers and visual cases can proceed against established Events whil
 native recovery research runs. Automatic recovery is gated separately for each harness
 and operation by its evidence; do not claim it from a working ordinary command path.
 
-**Current dispatch wave:** canonical command ingress, runner admission/scheduling,
-Thread archive replay, pending controls, and additive Raw presentation have landed.
-Browser transport acceptance is covered by the real-Chromium suite described in
-[the app README](../app/README.md#replica-safe-runner-delivery). Verify the deployed path
-with real Claude and Codex. Native recovery follows each harness's evidence; ordinary
-controls do not wait for automatic recovery.
+**Proposed next dispatch wave:** finish deployed relay verification and operator-login
+acceptance, then use three independent lanes: conversation/sidebar UI fixes;
+runner writer fencing; and one narrowly scoped native-evidence gap at a time. The
+coordinating agent owns deployed acceptance, landing/CI, and the tail-first profiling
+and contract probe. Native evidence does not block independent UI work or fencing.
+Keep ordinary attachment cleanup (`RUNNER_ATTACHMENT_SCOPE`) separate from the delivery
+incident and native recovery semantics.
 Reuse existing agent worktrees. Each self-contained change gets its own PR against
 `devel`; stack only on required implementation content and remove completed tasks as
 their work lands.
@@ -301,6 +318,58 @@ Nothing waits on this except `RETIRE_TOOLS`, which needs policy parity for the a
 retires.
 
 ## Named gates and acceptance evidence
+
+### `THREAD_DEPLOYED_ACCEPTANCE` — close the deployed command/Event cutover
+
+**P0:** finish operator-login/MCP-linkage setup and run the explicit egress,
+instructions, launch-preset, and MCP acceptance targets from the cluster devbox
+against the final deployed app/runner images. Existing runs cover egress, instructions,
+basic MCP execution on both harnesses, and preset behavior; they do not close the
+operator-authenticated cases or validate the command-relay candidate on its deployed image.
+Use the [acceptance suite](../acceptance/README.md) as the runbook, retain sanitized
+test/runtime evidence, and verify fixture cleanup. Do not resend the operator's failed
+staging input as a test. This is API-level deployed proof, not browser click-through proof.
+
+### `CLUSTER_BROWSER_ACCEPTANCE` — browser-driven acceptance in the cluster
+
+**P2:** run a real browser from a controlled cluster devbox or dedicated test workload
+against the deployed frontend, app, runner, and real Claude/Codex harnesses. Exercise
+operator login, manual Sandbox/Thread creation, composer submission, pending-to-effective
+controls, normal/Raw views, and reload/reconnect through visible buttons and fields.
+Assert behavior and durable command/Event evidence; screenshots alone are not a pass.
+Capture screenshots and sanitized traces at meaningful transitions and on failure.
+
+Reuse the existing browser fixtures and acceptance setup where appropriate. The
+deterministic real-Chromium transport suite in [the app README](../app/README.md#replica-safe-runner-delivery)
+already covers gated failure/reconnect cases, but its scripted runner is not deployed
+native-harness evidence. Keep both layers. Resolve the Bazel/browser runner, cluster
+identity/network access, and safe artifact-capture boundary explicitly; never capture
+credentials, login form contents, OAuth state, or unrelated user Threads. Clean up only
+resources the run owns. Independent of tail-first history and combined start; expand
+the scenarios as those features land, without making this P2 suite their prerequisite.
+
+### `NATIVE_SUBAGENT_THREADS` — adopt harness-native subagents as Threads
+
+**Low-priority exploration:** when Claude or Codex starts a native subagent, discover
+its native identity and available transcript/events and expose it as a linked child
+Thread in Agentplane. Start with separate harness evidence for creation, output,
+completion, and restart/resume; verify what is observable rather than inferring child
+messages from the parent's tool summary. Preserve native frames and parent/child
+provenance, and deduplicate rediscovery across reconnects and restarts.
+
+Decide the mapping to Sandbox, Thread, and harness incarnation before implementation.
+Adoption is not spawning another Agentplane-managed harness or claiming the parent's
+command receipts for a child. Read-only inspection may be the first useful slice;
+independent input, interrupt, model control, and resume are separate evidence-gated
+capabilities. Nothing in the current delivery/UI batch depends on this.
+
+### `RUNNER_ATTACHMENT_SCOPE` — ordinary attachment ownership
+
+Reconcile [#6862](https://github.com/agentydragon/ducktape/pull/6862) with the current
+relay before landing its async-context-manager migration. Preserve successful
+Detach/drain, exceptional cancellation, and terminal stop behavior, including the
+matching-admission boundary from `THREAD_SUBMIT_500`. Keep the change separately
+reviewable; lifecycle convenience must not reintroduce premature relay cancellation.
 
 ### `MCPAUTH` — credentialed MCP account and OAuth boundary
 
@@ -444,13 +513,17 @@ This track may move independently of Agent/conversation management: Haku Console
 conversations while Agentplane owns external tool calls, or the reverse during a staged migration.
 Preserve tool-call audit/export and rollback evidence before removing the old owner.
 
-### `INPUT_DELIVERY` — native queue evidence before durable Thread-command delivery
+### `INPUT_DELIVERY` — remaining native queue and recovery evidence
 
-**P0 behavior:** an input crossing the app/runner boundary has an honest, correlated delivery
-outcome after disconnect/reconnect, without silently losing it or blindly submitting it twice.
-This work is independent of live Action/MCP staging acceptance and is not Action cancellation.
-Its desired admission/effect outcomes and app presentation are in
+**Remaining evidence:** close the harness-specific queue and recovery gaps, independently of
+live Action/MCP acceptance. The admission/effect outcomes and app presentation are in
 [Thread, runner, and harness layering](../docs/thread_layering.md#command-protocol-intent-admission-then-outcome).
+Do not rebuild the ordinary command/reconnect path or repeat already-pinned scenarios.
+Claude fresh-process resume framing is under investigation in
+[#6996](https://github.com/agentydragon/ducktape/pull/6996); it is not recovery support.
+Long-running Bash interruption, partial output, and queued-message fate are tracked in
+[#6807](https://github.com/agentydragon/ducktape/issues/6807). Reuse native tests and the
+sibling `gaffer-private` checkout; new evidence gates only the operations it proves.
 
 **Needed support — mandatory first step:** re-read the landed
 [Claude queue research](../docs/claude_input_queue.md),
@@ -679,6 +752,10 @@ and archived Event prefix to establish whether admission occurred before the 500
 Pin the failure and same-ID retry in an integration test: retained input must not be
 lost or duplicated, and the UI must not claim admission or execution without evidence.
 
+Verify the relay-retention change from [#7035](https://github.com/agentydragon/ducktape/pull/7035)
+on its deployed image before removing this task; its gated service-consumer test
+demonstrates the cancellation mechanism, not the original staging attempt's packet order.
+
 ### `THREAD_SCROLL_FOLLOW` — follow new content only while at the bottom
 
 **Queued UI work:** when the viewport is at the conversation bottom, keep newly
@@ -761,23 +838,22 @@ Until then there is no automatic cross-session replay.
 ### `UISHELL_SIDEBAR_LIVE` — sidebar Thread/Sandbox state goes stale
 
 **Bug, reported on staging:** the sidebar's Thread list and per-Sandbox status icon
-(`GroupStateIcon` in `sidebar.tsx`) both come from one `useThreadsWithSandboxes()` fetch on mount
-(`listThreadsWithSandboxes`), with a manual-refresh generation counter and no push update after
-that — renaming a Thread (`session.tsx`'s `ThreadTitle`) only updates the open session's own local
-state, and a Sandbox's operating-mode change (running/suspended/pending) never reaches the sidebar
-until a full remount. Observed concretely: a Sandbox suspended on `agentplane-staging`
+(`GroupStateIcon` in `sidebar.tsx`) use `useThreadsWithSandboxes()` and
+`listThreadsWithSandboxes`. The current implementation refetches every eight seconds
+and on manual refresh, not on a live change stream. Thread renames and Sandbox
+operating-mode changes therefore lag until another fetch. Reported on staging: a Sandbox suspended on `agentplane-staging`
 (`s-mtwsuqj1`) still showed its harness as running in the sidebar. Checking the cluster afterward
 found no Pod for that Sandbox in `agent-workspaces` at all, consistent with the suspend contract
 documented in `cluster/k8s/agents/agent-sandbox/README.md` ("pause: pod goes away") — so the leading
 hypothesis is that this was the sidebar's own stale fetch, not a controller/harness bug, though the
 state at the moment it was actually observed wasn't captured, so that isn't fully confirmed.
 
-**Fix:** `sandboxes.tsx`/`sandbox_page.tsx` already get live Sandbox state via `live.tsx`'s
-`useLive`/`/live/sandboxes`; the sidebar needs to consume the same stream instead of its own
-one-shot fetch. Thread rename has no live source at all yet — the with-sandboxes endpoint needs the
-same `Changes`-backed push treatment (`live.py`) that [the push mechanism plan](push_mechanism.md)
-(not yet confirmed) designs for other resources, before the sidebar can reflect a rename without a
-remount.
+**Planned change:** `sandboxes.tsx`/`sandbox_page.tsx` already get live Sandbox state via `live.tsx`'s
+`useLive`/`/live/sandboxes`; the sidebar needs to consume the same stream instead of polling.
+`TrajectoryStore.rename` already emits PostgreSQL notifications, and the per-Sandbox
+stream already subscribes to `store.changes`. Add the missing global Thread/Sandbox
+snapshot subscription using those authorities; no new notification system is needed.
+Prove cross-replica rename/status updates, reconnect, and explicit stale-source state.
 
 ### `UISHELL_SIDEBAR_ALL_SANDBOXES` — sidebar hides Sandboxes with no Thread yet
 
