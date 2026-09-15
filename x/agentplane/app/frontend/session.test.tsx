@@ -245,7 +245,10 @@ it("shows a replay integrity failure and stops controls at the verified prefix",
 });
 
 it("keeps the model unknown during catch-up instead of showing an older replayed model", async () => {
-  const { container, composer, stream } = await render(null, { HARNESS_CLAUDE: ["old", "current", "next"], HARNESS_CODEX: [] });
+  const { container, composer, stream } = await render(null, {
+    HARNESS_CLAUDE: ["old", "current", "next"],
+    HARNESS_CODEX: [],
+  });
   await act(async () => {
     stream.dispatchEvent(
       new MessageEvent("attached", {
@@ -269,7 +272,8 @@ it("keeps the model unknown during catch-up instead of showing an older replayed
     stream.dispatchEvent(new MessageEvent("event", { data: event(3, { case: "harnessStarted", value: {} }) }));
   });
   expect(picker?.value).toBe("current");
-  expect(composer.disabled).toBe(false);
+  // Replay has caught up, but a command needs its durable Thread target before it can be sent.
+  expect(composer.disabled).toBe(true);
   await act(async () => {
     stream.dispatchEvent(
       new MessageEvent("event", { data: event(4, { case: "modelChanged", value: { model: "next" } }) })
