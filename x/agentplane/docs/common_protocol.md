@@ -9,13 +9,13 @@ and journal recovery are in [the runner specification](../runner/SPEC.md). The
 cross-layer identity, command, projection, and UI contract is
 [Thread, runner, and harness layering](thread_layering.md). That document is the
 authoritative definition of Thread command versus runner Command, app-versus-runner
-receipt, replica ownership, and Raw-mode ordering.
+admission, replica ownership, and Raw-mode ordering.
 
 ## What the runner seam owns
 
 - One bidirectional Attach stream per runner session over Open, Command, and Detach,
   plus replayable sequenced Events.
-- A durable command-journal receipt before CommandReceived and causal effect/outcome
+- Durable command-journal admission represented by `CommandAdmitted`, before causal effect/outcome
   Events afterwards. It does not call an unsupported native operation successful.
 - Native harness frames delivered verbatim as Native Events, with derived Events citing
   their source sequences.

@@ -62,7 +62,7 @@ flowchart TB
     UISHELL_DRAWER["Planned UI<br/>pending-approval badge + drawer<br/>global subscription, non-modal"]:::future
     UISHELL_NEWTHREAD_SANDBOX["Planned UI<br/>pre-scoped '+ New thread' on a Sandbox's page<br/>Sandbox/preset already fixed"]:::future
     UISHELL_NEWTHREAD_LANDING["Planned UI<br/>sidebar '+' unscoped new-thread composer<br/>Sandbox/preset/model pickers + prompt"]:::future
-    THREAD_COMMAND_DELIVERY["Planned backend<br/>reconcile durable Thread input to runner<br/>receipt/effect + crash recovery"]:::future
+    THREAD_COMMAND_DELIVERY["Planned backend<br/>reconcile durable Thread input to runner<br/>admission/effect + crash recovery"]:::future
     THREAD_REPLAY_PROTOCOL["Planned protocol<br/>one protobuf Command/Event language<br/>durable app-to-frontend replay"]:::future
     NEWTHREAD_DURABLE["Planned backend<br/>server-owned sandbox+thread provisioning<br/>must survive a browser close or app-server restart mid-submit"]:::future
     THREAD_OUTBOX_CUTOVER["Required cutover<br/>all product Thread commands via outbox<br/>retire direct session-command pushes"]:::future
@@ -420,8 +420,8 @@ Preserve tool-call audit/export and rollback evidence before removing the old ow
 **P0 behavior:** an input crossing the app/runner boundary has an honest, correlated delivery
 outcome after disconnect/reconnect, without silently losing it or blindly submitting it twice.
 This work is independent of live Action/MCP staging acceptance and is not Action cancellation.
-Its desired receipt/effect outcomes and app presentation are in
-[Thread, runner, and harness layering](../docs/thread_layering.md#command-protocol-intent-receipt-then-outcome).
+Its desired admission/effect outcomes and app presentation are in
+[Thread, runner, and harness layering](../docs/thread_layering.md#command-protocol-intent-admission-then-outcome).
 
 **Needed support — mandatory first step:** re-read the landed
 [Claude queue research](../docs/claude_input_queue.md),
@@ -447,13 +447,13 @@ native-harness CI tests against the controlled model endpoint. Missing capabilit
 experiments stay explicit, not normalized into success. This research may justify common-protocol
 changes, but it does not preselect a queue facade, selective cancellation, or a new persistence layer.
 
-**Acceptance evidence:** exercise disconnect before delivery, delivery before observed receipt,
+**Acceptance evidence:** exercise disconnect before delivery, delivery before observed admission,
 reconnect/replay with the same command id, and restart. Prove duplicate-ID handling at each actual
 boundary rather than assuming native idempotency. Include Claude coalescing/interrupt/withdrawal
 and Codex join-versus-durable-queue cases, preserving raw native evidence and harness differences.
 In both harnesses, queue several inputs, interrupt before native message confirmation, and prove
 each input is confirmed, terminally dropped/no-op, or later confirmed; none may remain indefinitely
-received. No acknowledgement, retry, steering, cancellation, or completion may be invented by the
+admitted without a terminal outcome. No acknowledgement, retry, steering, cancellation, or completion may be invented by the
 runner. Keep unsupported operations native or explicitly unavailable. **Deferred:** generic queue
 management and unproven per-input cancellation.
 
@@ -462,7 +462,7 @@ management and unproven per-input cancellation.
 **Immediate backend step:** the persistence-only Thread command outbox is allowed to land first,
 but it is not yet a product command ingress. Build a multi-replica reconciler for an existing
 Thread's current Sandbox and runner session: take the oldest eligible `SubmitInput`, deliver its
-stable command id, ingest the runner's receipt/effect/no-op/rejection Events, and recover without
+stable command id, ingest the runner's admission/effect/no-op/failure Events, and recover without
 duplicate native input after app-replica crash, runner reconnect, or browser reload. The runner's
 session-scoped Event sequence already survives runner-process restarts; this item does not add a
 successor runner session or a second Event sequence to a Thread.
@@ -474,7 +474,7 @@ existing direct session command path remains only until this reconciler has an e
 
 Acceptance covers an existing running Thread and an existing suspended/resumed Sandbox separately:
 the app persists the input before delivery, retries the same id after each failure window, and
-shows the exact runner-authoritative receipt/effect state after reload. It uses the behavior
+shows the exact runner-authoritative admission/effect state after reload. It uses the behavior
 evidence from `INPUT_DELIVERY`; it does not make model-change or interrupt controls generally
 available before their own gate.
 
@@ -501,9 +501,9 @@ second tool-request lifecycle; the settled harness behavior and the seam are in
 
 ### `CONTROL_STATE` — dynamic runtime control acceptance
 
-**Deferred native-capability work:** the receipt/effect contract, display of a
-received-but-not-effective model change, and any future time-local capability snapshot
-are specified in [Thread, runner, and harness layering](../docs/thread_layering.md#command-protocol-intent-receipt-then-outcome).
+**Deferred native-capability work:** the admission/effect contract, display of an
+admitted-but-not-effective model change, and any future time-local capability snapshot
+are specified in [Thread, runner, and harness layering](../docs/thread_layering.md#command-protocol-intent-admission-then-outcome).
 The harness-specific evidence still needed for model/effort capability reporting is in
 [runtime control acceptance](../docs/runtime_control.md). Do not introduce an app-side
 common active-turn gate or make the picker claim success before a causal effect.
@@ -565,14 +565,14 @@ the Thread identity, persist its Sandbox target/session plan, and append its fir
 the same reconciler then materializes/selects the target, establishes the runner session, and
 delivers that command. Any replica must resume reconciliation after the browser or another replica
 disappears; Kubernetes remains the Sandbox lifecycle authority and the runner remains the command
-receipt/effect authority.
+admission/effect authority.
 
 Acceptance includes reload-stable Thread URLs, the distinct pending-command queue above the composer
-(including received-but-not-effective model changes), app-replica crash delivery windows, and the
+(including admitted-but-not-effective model changes), app-replica crash delivery windows, and the
 normal/Raw projection rules in that contract. The deferred fate of an unsettled command across a
 successor runner session is explicitly not decided by this item. It also requires both harnesses'
 mocked-LLM tests and runner crash tests to settle queued inputs after an interrupt as confirmed,
-dropped/no-op, or later confirmed—never as an unbounded received state.
+dropped/no-op, or later confirmed—never as an unbounded admitted state.
 The harness-loss/Sandbox suspend-resume matrix, which keeps Kubernetes, runner, and native
 continuation evidence separate, is in
 [Thread, runner, and harness layering](../docs/thread_layering.md#required-harness-loss-and-sandbox-lifecycle-cross-check).
@@ -589,7 +589,7 @@ or runner-session association, and a replay cursor. It does not add a frontend c
 body, a `ThreadCommandView` state vocabulary, or app-produced conversation items.
 
 The committed command record is the one app-specific boundary: it says the app has the
-command but the runner has not necessarily admitted it. `CommandReceived` remains a
+command but the runner has not necessarily admitted it. `CommandAdmitted` remains a
 runner Event, so the frontend distinguishes awaiting runner admission from runner
 admitted by folding the replayed `Command` and `Event` records. The replay cursor is a
 lossless browser transport cursor, never a synthetic ordering across runner sessions;
@@ -598,7 +598,7 @@ Kubernetes/Sandbox lifecycle stays separately provenanced operational state.
 **Acceptance evidence:** a fresh or reconnecting browser reconstructs normal and Raw
 Thread views using only typed replay records from PostgreSQL. Normal conversation cards
 are a pure frontend projection of runner Events; the pending queue is a pure fold of
-app-stored Commands plus runner receipts/effects. The raw view exposes the exact payload
+app-stored Commands plus runner admissions/effects. The raw view exposes the exact payload
 and provenance. No product route directly pushes a command to a runner, and no
 server-side UI projection or duplicated JSON command/event schema remains.
 
@@ -608,8 +608,8 @@ server-side UI projection or duplicated JSON command/event schema remains.
 evidence, every product Thread command—`SubmitInput`, `InterruptTurn`,
 `ChangeModel`, and `StopRunnerSession`—first commits a `ThreadCommand` to the durable outbox.
 The app's reconciler is then the only normal app component that writes that command to a runner.
-The full receipt/effect and pending-queue contract is [Thread, runner, and harness
-layering](../docs/thread_layering.md#command-protocol-intent-receipt-then-outcome).
+The full admission/effect and pending-queue contract is [Thread, runner, and harness
+layering](../docs/thread_layering.md#command-protocol-intent-admission-then-outcome).
 
 The product ingress is the generated protobuf `Command` at the Thread command route;
 the app-to-frontend replay uses the corresponding generated `Command` and `Event`
@@ -626,13 +626,13 @@ from product API/UI behavior.
 
 Acceptance is end-to-end: the unified Thread page records the command before a runner exists or
 is reachable; reload and an app-replica crash preserve it; reconciliation reaches the runner with
-the same command id; and receipt/effect/no-op/rejection, rather than an HTTP response, determines
-what the UI claims. This includes an interrupt racing queued inputs and a model change received
+the same command id; and admission/effect/no-op/failure, rather than an HTTP response, determines
+what the UI claims. This includes an interrupt racing queued inputs and a model change admitted
 before it can take effect.
 
 ### `THREAD_SUCCESSOR_DELIVERY` — unsettled command across a successor runner session
 
-**Deferred decision:** when a harness/session is replaced, decide whether a received-but-unsettled
+**Deferred decision:** when a harness/session is replaced, decide whether an admitted-but-unsettled
 Thread command is recoverable only in its predecessor session or may be delivered by a successor.
 The required native continuation proof, command-provenance guarantee, and no-duplicate-effect test
 gate are in [Thread, runner, and harness layering](../docs/thread_layering.md#deferred-commands-unsettled-across-successor-sessions).
