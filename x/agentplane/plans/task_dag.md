@@ -992,6 +992,15 @@ lost submit response, and concurrent history/detail fetches. Choose library and
 implementation slices only after these contracts are reviewable; no dependency or
 runtime migration is implied by recording this plan. Preserve the runner-only queue.
 
+**Dispatched evaluation:** a test-only TanStack DB adapter/collection spike, using the
+real library under Bazel. Prove snapshot/update visibility together with coverage,
+64-bit protobuf cursors, older-page/live races, long-gap replacement and stale
+responses, lazy Raw evidence, selective subscriptions, and bounded loaded state.
+Use a minimal typed transport sketch without declaring it the production wire API.
+Keep the runner/app/UI production path unchanged. Report fit and gaps, then select
+the integration; Redux Toolkit with RTK Query is the fallback, not a simultaneous
+second implementation. Library behavior alone is not deployed loading acceptance.
+
 ### `THREAD_TAIL_FIRST` — bounded reduced-state loading for short and long Threads
 
 **After `THREAD_VIEW_SYNC`:** implement the server projection, bounded recent-item

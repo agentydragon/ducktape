@@ -539,9 +539,29 @@ than substituting for it.
   generated Command and archived-admission response.
 - **Frontend ownership:** decide one owner of normalized live entities, separate from
   immutable fetched pages/details and local drafts. Retire full-history refolding and
-  per-Event whole-view subscriptions. Evaluate caching/reactive libraries against this
-  contract; TanStack Query plus Zustand is a candidate, not an approved dependency or
-  a reason to keep independently mutable duplicate copies of server state.
+  per-Event whole-view subscriptions. Evaluate TanStack DB first through a typed,
+  read-only custom sync adapter; Redux Toolkit with RTK Query is the fallback candidate.
+  A test-only library spike is approved, not a production migration. TanStack Query
+  plus Zustand remains possible but leaves more collection/synchronization machinery
+  to the app. No option should maintain independently mutable duplicate copies of the
+  same live server state or optimistically manufacture command effects.
+
+The design follows snapshot-plus-change-feed synchronization of a materialized read
+model. [Kubernetes list/watch](https://kubernetes.io/docs/reference/using-api/api-concepts/#efficient-detection-of-changes)
+is a reference for snapshot/watch handoff and expired-cursor resynchronization, not
+a dependency or a reason to treat projection changes as runner Events.
+[TanStack DB custom collections](https://tanstack.com/db/latest/docs/guides/collection-options-creator)
+can host the app's own sync protocol; adopting a separate database sync service is
+not required. Use on-demand loading, not progressive full-history synchronization.
+
+Library evaluation must observe the subscriber boundary: rows, command/control state,
+and coverage become visible together. Per-collection transactions do not by themselves
+prove cross-collection atomicity. Exercise protobuf cursors beyond JavaScript's safe
+integer range, overlapping history/live updates, long-gap snapshot replacement with
+late requests, and on-demand evidence that cannot advance live coverage. Verify
+selective subscriptions and loaded-state bounds with the actual library; do not infer
+network or rendering performance from a store-only test. Keep the prototype isolated
+from production callers, and record unsupported cases before selecting the integration.
 
 Conceptual messages below are design sketches, not selected endpoint/protobuf names:
 
