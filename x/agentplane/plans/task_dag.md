@@ -23,14 +23,17 @@ Proposed execution order for the Thread correctness/UI track:
   deployed Claude/Codex acceptance (`THREAD_DEPLOYED_ACCEPTANCE`), including the current
   model-path availability failure (`EGRESS_IDENTITY_AVAILABILITY`). Keep one runner-owned
   command queue; no app outbox or combined-start expansion in this batch.
-- **P1:** end-to-end LLM error handling (`LLM_ERROR_SURFACE`) and sidebar freshness,
+- **P1:** end-to-end LLM error handling (`LLM_ERROR_SURFACE`), duplicate turn-status
+  presentation (`THREAD_TURN_STATUS_UI`), compact activity mocks (`THREAD_ACTIVITY_MOCKS`),
+  continuation after Sandbox resume (`THREAD_SUSPEND_RESUME`), and sidebar freshness,
   alongside retained-state writer fencing and
   evidence-gated native recovery. Start `THREAD_TAIL_FIRST` with a profiling/contract
   slice, then bounded reads and `THREAD_LAZY_HISTORY`; do not start with a frontend rewrite.
 - **P2:** browser-driven acceptance against the deployed cluster (`CLUSTER_BROWSER_ACCEPTANCE`)
   and driver-hosted tools (`DT`). Neither blocks the current API-level acceptance closure.
 - **Low priority:** adopting harness-native subagents as Threads (`NATIVE_SUBAGENT_THREADS`).
-  On-demand native payloads (`THREAD_NATIVE_LAZY`) remain later design work.
+  On-demand native evidence and detailed tool payloads (`THREAD_PAYLOAD_LAZY`) remain
+  later design work.
 
 The independent Action Service track still has credentialed-provider acceptance (`MCPAUTH`),
 console policy parity (`CONSOLE_POLICIES`), and Haku MCP/tool-approval retirement (`MCPAGG`,
@@ -62,7 +65,7 @@ flowchart TB
     LIVE_CLEAN["Deferred cleanup<br/>executor heartbeat identity/<br/>row retention"]:::future
 
     BB["Deferred decision<br/>BuildBuddy hosted-run credential boundary"]:::future
-    ING["Deferred support<br/>Event & Notification Hub<br/>external events -> Agent/Thread ingress"]:::future
+    ING["Deferred support<br/>Event & Notification Hub<br/>Action decisions and subscribed external events -> Thread ingress"]:::future
     DT["P2 deferred<br/>driver-provided declarations/background control"]:::future
     AG["Deferred<br/>hosted Thread lifecycle<br/>cross-Identity read policy"]:::future
     PROD["Milestone<br/>production-capable governed action execution"]:::milestone
@@ -80,15 +83,20 @@ flowchart TB
     CODEX_RECOVERY["Required evidence then implementation<br/>Codex execution before durable runner proof<br/>native correlation and safe recovery"]:::active
     RUNNER_WRITER_HANDOFF["Planned correctness<br/>exclusive runner ownership of retained state<br/>fence old writer and native dispatch"]:::future
     SANDBOX_LIFECYCLE_DURABILITY["Planned lifecycle correctness<br/>retained state through suspension<br/>archive before managed storage deletion"]:::future
+    THREAD_SUSPEND_RESUME["Reported continuation failure<br/>Thread stays finalized after Sandbox resume<br/>resume native conversation and allow new input"]:::active
+    SANDBOX_VM_ISOLATION["Deferred investigation<br/>selectable container or VM Sandbox implementation<br/>contain agent resource exhaustion"]:::future
     THREAD_EVENT_CONTINUITY["Planned identity cutover<br/>one Thread journal across incarnations<br/>exclusive runner writer and retained state"]:::future
     THREAD_COMMAND_DELIVERY["Deferred backend<br/>app outbox delivery to existing runner<br/>only if app-first acceptance is chosen later"]:::future
     THREAD_TAIL_FIRST["Future performance<br/>open recent conversation window first<br/>bounded catch-up for long-running Threads"]:::future
     THREAD_LAZY_HISTORY["Future UI<br/>load older Thread history on demand<br/>stable scroll and concurrent live following"]:::future
-    THREAD_NATIVE_LAZY["Deferred design<br/>fetch native payloads only when requested<br/>explicit partial-data and replay contract"]:::future
+    THREAD_PAYLOAD_LAZY["Deferred design<br/>native evidence and tool details on demand<br/>explicit partial-data and replay contract"]:::future
     THREAD_SUBMIT_500["Reported bug<br/>message submission and Retry return 500<br/>Awaiting saved confirmation persists"]:::active
     THREAD_DEPLOYED_ACCEPTANCE["P0 remaining acceptance<br/>deployed commands/events cutover<br/>real Claude and Codex via devbox"]:::active
     EGRESS_IDENTITY_AVAILABILITY["P0 observed availability failure<br/>egress authentication ApiException / 502<br/>trace Kubernetes, ingress, LiteLLM hops"]:::active
     LLM_ERROR_SURFACE["P1 correctness<br/>native LLM errors through protocol and UI<br/>partial output, retries, terminal failure"]:::future
+    THREAD_TURN_STATUS_UI["Reported UI duplication<br/>turn header and completion entry repeat status<br/>one clear outcome with Raw evidence preserved"]:::future
+    THREAD_ACTIVITY_MOCKS["P1 UI design<br/>mock compact tool/reasoning activity<br/>one-line calls with individual expansion"]:::future
+    THREAD_ACTIVITY_DENSITY["Planned UI after mock review<br/>compact activity with per-item disclosure<br/>preserve status, ordering, and Raw evidence"]:::future
     CLUSTER_BROWSER_ACCEPTANCE["P2 deployed browser acceptance<br/>in-cluster frontend button clicks<br/>screenshots and behavioral assertions"]:::future
     NATIVE_SUBAGENT_THREADS["Low-priority exploration<br/>adopt native Claude/Codex subagents<br/>as linked Agentplane Threads"]:::future
     RUNNER_ATTACHMENT_SCOPE["Pending refactor<br/>scope ordinary runner attachments<br/>retain admission/drain/cancel semantics"]:::future
@@ -110,6 +118,7 @@ flowchart TB
 
     INPUT_DELIVERY -. reliable Thread ingress .-> ING
     THREAD_TAIL_FIRST --> THREAD_LAZY_HISTORY
+    THREAD_ACTIVITY_MOCKS --> THREAD_ACTIVITY_DENSITY
     RUNNER_WRITER_HANDOFF --> THREAD_EVENT_CONTINUITY
     THREAD_EVENT_CONTINUITY --> THREAD_SUCCESSOR_DELIVERY
     CLAUDE_RECOVERY -. native continuation evidence .-> THREAD_SUCCESSOR_DELIVERY
@@ -375,6 +384,50 @@ Finish native-backed verification of these failures through the app archive and 
 views, including reload and a later successful input; controlled-source browser coverage is
 not native harness evidence. Any future retry control must explicitly distinguish same-command
 delivery retry from requesting a new model turn; do not silently resend the original input.
+
+### `THREAD_TURN_STATUS_UI` — avoid redundant turn-completion presentation
+
+**Reported on staging:** the conversation shows both `Turn <id>: COMPLETED` and a
+`turn <id>` header with a `COMPLETED` badge. The supplied examples name different
+turns; do not infer duplicate source Events from the text alone. The current
+`session.tsx` renders status in both `TurnHeader` and the terminal control entry.
+Reproduce the affected view and correlate turn IDs and Event cursors before deciding
+whether this is redundant presentation, duplicate projection, or a source problem.
+
+Give each turn one clear terminal outcome in normal mode, retaining failures and
+interruptions at their actual timeline position. Raw mode must still expose the
+underlying Events without posing their debug details as another conversation outcome.
+Cover adjacent turns, empty turns, streaming completion, failure, interruption, and
+reload/reconnect in behavioral and visual tests; do not delete evidence to tidy the UI.
+
+### `THREAD_ACTIVITY_MOCKS` — design compact tool and reasoning activity
+
+**P1, mocks before implementation:** long tool/reasoning runs require too much scrolling.
+The current run disclosure expands into full tool cards; grouping alone does not give
+each tool its own compact disclosure. Mock default one-line tool summaries with individual
+click-to-expand details, and compact reasoning steps, before choosing the final layout.
+Compare a compact per-item list with a grouped run that expands into those same compact
+rows; keep assistant answers and user messages readable in their actual order.
+
+Collapsed reasoning should preview the available summary text on one line, showing
+as much as fits with ellipsis for overflow; expanding reveals the full text. Cover
+short, long, absent, and streaming summaries at narrow and wide viewport sizes.
+
+Include many mixed steps, long tool names/arguments/output, running and failed calls,
+an expanded call while others stream, narrow screens, and normal/Raw views. Summaries
+must not imply success or invent unavailable reasoning. Review the mocks with the operator
+before changing production presentation; this task does not settle the layout.
+
+### `THREAD_ACTIVITY_DENSITY` — implement the reviewed compact activity design
+
+Implement the selected mocks with individually expandable tools, keyboard-accessible
+disclosures, visible running/failure state, and stable expansion/scroll behavior while
+Events arrive. Preserve timeline order and Raw evidence. Add behavioral and visual
+coverage of the reviewed cases, including reload and reconnect.
+
+This presentation slice can use already-loaded details; it does not depend on
+`THREAD_PAYLOAD_LAZY`. Later on-demand loading must retain the same interaction and
+explicitly distinguish unloaded, streaming, empty, and unavailable details.
 
 ### `CLUSTER_BROWSER_ACCEPTANCE` — browser-driven acceptance in the cluster
 
@@ -666,6 +719,69 @@ and native evidence can proceed independently; full archive-preservation accepta
 requires Event durability and app replication. Gate lifecycle automation on its own
 evidence without blocking ordinary messaging and UI work.
 
+### `THREAD_SUSPEND_RESUME` — continue existing Threads after Sandbox resume
+
+**P1, reported on staging:** after suspending and resuming its Sandbox,
+[Thread 70bf54a7-81e1-46f5-8fed-381ae1ce870f](https://agentplane-staging.allegedly.works/#/threads/70bf54a7-81e1-46f5-8fed-381ae1ce870f)
+appears finalized and cannot accept further messages. Record this as an observed
+symptom, not a diagnosed storage loss or harness failure. Sandbox readiness, an ended
+runner attachment, and the lifetime of its Thread must not be conflated.
+
+**Existing mechanism to wire through:** `Runner.open` with a known `session_id` and
+its matching stored `spec` calls `Session.ensure_running`; the Claude adapter uses
+its retained native resume ID and Codex calls `thread/resume`. `test_attach.py` and
+`test_restart.py` already exercise this path against both harnesses with retained
+conversation assertions. This is not proof of deployed Sandbox resume: the app's
+Sandbox resume route only changes Kubernetes operating mode, ingestion attaches
+without a spec, and the Thread composer disables submission for an ended feed.
+Trace and expose the missing product continuation path, reusing the existing runner
+operation rather than presuming a new native resume protocol is needed. Validate
+deployed state before attributing this particular report to those code paths.
+
+Resume the native conversation in a new harness process as needed, preserve the same
+Thread ID/URL and history, and restore message submission once its runner/harness is
+ready. Preserve the retained journal and single Event sequence; align with
+`THREAD_EVENT_CONTINUITY` without gating a working existing-session resume path on
+that larger identity cutover.
+Do not merely enable the composer against a dead session, create a replacement Thread,
+or treat a fresh harness without the original context as a successful resume. Missing
+recovery state must be explicit. This does not introduce offline command admission or
+automatic replay of unsettled predecessor commands (`THREAD_SUCCESSOR_DELIVERY`).
+
+Add integration and deployed acceptance for both Claude and Codex: create at least two
+Threads in one fixture Sandbox, complete a turn in each, suspend until the old Pod is
+gone, resume, and continue each original Thread with a new message. Pin native resume
+and retained context with exact mocked-LLM request assertions; deployed acceptance must
+observe new input confirmation and a completed reply, not just a Ready Pod. Verify
+monotonic replay without duplicate history and no cross-Thread routing/context mix-up.
+Add focused frontend coverage that the original page and a reloaded page both recover
+from the ended attachment and can send successfully. Cover in-flight suspension
+separately with explicit pending-command outcomes. Use owned test fixtures, not the
+operator's affected Thread. Archive-before-deletion work does not gate this regression.
+
+### `SANDBOX_VM_ISOLATION` — selectable VM-backed Sandbox isolation
+
+**Deferred investigation:** evaluate running harnesses and agent-controlled tools in
+VMs or microVMs to contain resource exhaustion, especially an agent workload OOM-killing
+its own runner/Pod. Revisit the [runtime isolation decision](../docs/adr_sandbox_proxy_gateway.md#not-firecrackerkatagvisor-immediately)
+for availability as well as container escape. Verify the suggested Claude Code Web
+comparison before using it as evidence; no runtime is selected by this task.
+
+If implemented, make the Sandbox implementation an explicit creation-time choice,
+retaining container-backed Sandboxes alongside VM-backed ones, not a global replacement
+or a harness-specific choice. Presets only prefill this individually editable field.
+Expose unsupported capabilities honestly; a creation-time selection does not promise
+live migration between implementations.
+
+Define where the runner, journal, proxy, and untrusted processes live and which memory
+budgets protect them. A VM label alone is not an OOM guarantee: account for guest,
+hypervisor/container, and host limits and reserve resources for the control plane.
+Compare failure containment, startup overhead, storage retention, suspend/resume,
+network/egress enforcement, debugging, and cluster support. Acceptance must force guest
+memory exhaustion and process loss, then prove the claimed control/journal survival,
+truthful failure reporting, and recovery without invented or duplicated command effects.
+This investigation does not block current container correctness work.
+
 ### `THREAD_EVENT_CONTINUITY` — one runner-owned Thread Event log through harness resume
 
 **Identity/storage cutover:** implement
@@ -735,6 +851,21 @@ subscription matching, deduplication, batching/debounce, rate limits, backpressu
 and Thread wake/queue semantics. It is not an executor or an Action decision authority. It consumes
 the canonical Action event sequence, preserving individual events and ordering, and adds no second
 Action outbox or event store; cross-Identity delivery requires an explicit read policy.
+
+Make Action approval and denial notifications an explicit first consumer: deliver the
+decision to the requesting Agent/Thread, correlated with the original Action request.
+Distinguish approval from execution success and preserve later execution results/errors.
+Use this same ingress for subscribed external notifications, with an agent-facing
+interface to create, inspect, update, and cancel subscriptions (initially including
+GitHub event filters), subject to source authorization and destination access checks.
+
+Define notification identity, provenance, ordering, retry/deduplication, and the point
+at which delivery is confirmed by the harness. Notifications are not fabricated human
+messages or runner observations. Specify busy, suspended, and unavailable Thread
+behavior before promising offline delivery; this deferred Hub must not silently add
+an app command queue to the current runner-only design. Test approval/denial while an
+agent is busy or disconnected, duplicate/replayed events, subscription cancellation,
+unauthorized sources/destinations, and truthful delivery state after reconnect.
 
 ### `UISHELL_DRAWER` — pending-approval badge and drawer
 
@@ -828,15 +959,30 @@ current state, and no missed or duplicated Events across the window/live boundar
 Do not hide a full-history download behind a fast first paint. This concerns history
 inside one Thread, not the all-Threads search/list task `THREAD_BROWSE_PAGINATE`.
 
-### `THREAD_NATIVE_LAZY` — consider on-demand native evidence
+### `THREAD_PAYLOAD_LAZY` — load native evidence and tool details on demand
 
-**Later design work:** evaluate not transferring full native payloads until Raw/debug
-inspection asks for them; even the reported small conversation already had about
-1,000 Events. Retain lossless native evidence at its authority and preserve cursor,
-ordering, and causal references. Make omitted/unloaded data explicit: a filtered or
-partial browser representation must not masquerade as a complete, untransformed Event
-prefix. Define catch-up/reconnect guarantees and on-demand hydration alongside the
-tail-first and lazy-history contracts before selecting a protocol change.
+**Later design work:** extend selective synchronization beyond native protocol frames
+to detailed tool-call arguments and outputs, including large streamed payloads. Initial
+Thread sync should transfer the metadata and summaries needed to display the conversation
+and its current state, not every detail behind a collapsed tool card. Fetch those details
+when a user expands the item or follows a Raw/evidence link. Even the reported small
+conversation already had about 1,000 Events.
+
+Retain full-fidelity payloads at their authority. Preserve item identity, ordering,
+status, command outcomes, and causal references in the lightweight representation;
+do not omit facts needed for pending commands or applied control state. Make unloaded
+details explicit and distinguish them from empty content, still-streaming content,
+and unavailable evidence. A partial browser representation must not masquerade as a
+complete, untransformed Event prefix. Hydrating an older payload must not advance the
+live cursor, reorder items, or regress newer state.
+
+Define catch-up/reconnect and on-demand hydration guarantees alongside the tail-first
+and lazy-history contracts before selecting a protocol change. This broadens the later
+payload-loading task, not the first `THREAD_TAIL_FIRST` profiling/contract slice.
+Acceptance covers large tool inputs/outputs omitted from initial transfer, expansion
+during streaming, reconnect during a detail fetch, references outside the loaded history
+window, and unavailable payloads. Prove bounded initial transfer/projection work and
+exact hydrated contents without gaps, duplicates, or loss of the live suffix.
 
 ### `THREAD_LAZY_HISTORY` — fetch older conversation history only when needed
 
