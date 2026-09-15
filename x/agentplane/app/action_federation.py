@@ -148,7 +148,7 @@ class FederatedOperatorActions:
             if (upstream.issuer, upstream.subject) != (session.issuer, session.subject):
                 raise OperatorFederationError("operator_federation_identity_mismatch")
             if self._config.mode == "direct":
-                token = {"access_token": session.access_token.get_secret_value()}
+                token = {"access_token": session.access_token.get_secret_value(), "token_type": "Bearer"}
             else:
                 assert self._config.token_endpoint is not None
                 # Authlib mutates token state: create a fresh OAuth client for each exchange.
