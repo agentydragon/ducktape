@@ -29,8 +29,10 @@ build --host_per_file_copt=external/protobuf[+]/.*@-Wno-deprecated-declarations
 #   ortools/sat/cp_model_expand.cc.
 # -Wparentheses: objective comparisons in ortools/sat/cp_model_presolve.cc
 #   rely on C++ operator precedence that gcc warns about.
-build --per_file_copt=external/or-tools[+]/.*@-Wno-sign-compare,-Wno-range-loop-construct,-Wno-comment,-Wno-deprecated-declarations,-Wno-narrowing,-Wno-unused-but-set-variable,-Wno-parentheses
-build --host_per_file_copt=external/or-tools[+]/.*@-Wno-sign-compare,-Wno-range-loop-construct,-Wno-comment,-Wno-deprecated-declarations,-Wno-narrowing,-Wno-unused-but-set-variable,-Wno-parentheses
+# -Wunused-result: OR-Tools ignores protobuf TextFormat::PrintToString's
+#   boolean result in its debug-string helpers.
+build --per_file_copt=external/or-tools[+]/.*@-Wno-sign-compare,-Wno-range-loop-construct,-Wno-comment,-Wno-deprecated-declarations,-Wno-narrowing,-Wno-unused-but-set-variable,-Wno-parentheses,-Wno-unused-result
+build --host_per_file_copt=external/or-tools[+]/.*@-Wno-sign-compare,-Wno-range-loop-construct,-Wno-comment,-Wno-deprecated-declarations,-Wno-narrowing,-Wno-unused-but-set-variable,-Wno-parentheses,-Wno-unused-result
 
 # OR-Tools' bitset header instantiates Abseil check templates in these
 # repository-owned translation units, so the external-source filter above does

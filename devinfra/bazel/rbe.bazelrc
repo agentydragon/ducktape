@@ -9,6 +9,10 @@ build:rbe --incompatible_strict_action_env
 # Host platform auto-detected; //:rbe_linux_x64 is the execution platform.
 build:rbe --remote_executor=grpcs://remote.buildbuddy.io
 build:rbe --extra_execution_platforms=//:rbe_linux_x64
+# toolchains_buildbuddy's generated GCC toolchain adds -fuse-ld=gold to its
+# default link flags. Append LLD so the worker's GCC driver selects the modern
+# linker while retaining the toolchain's system-library search paths.
+build:rbe --linkopt=-fuse-ld=lld
 # Never fall back to local execution: RBE connectivity and compatibility
 # failures must be visible, and the RBE shell path is not valid on NixOS.
 build:rbe --spawn_strategy=remote
