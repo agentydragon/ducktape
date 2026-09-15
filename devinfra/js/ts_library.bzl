@@ -14,7 +14,7 @@ Where that check runs depends on `isolated_typecheck`. By default emit and check
 action, so `bazel build` of the target fails on a type error. Under `isolated_typecheck`
 they are separate actions and the build target carries only the emit — the check moves to
 the generated `<name>_typecheck` target, which is not tagged `manual` and so is included
-by `//...` and by the bazel-diff affected set that <../ci/bazel_ci.sh> builds. CI still
+by `//...` and by the bazel-diff affected set that <../ci/bazel_ci.py> builds. CI still
 fails; a bare `bazel build //pkg:lib` no longer does.
 
 Deviation from stock `ts_project`: the tsconfig is passed as a dict rather than a label,

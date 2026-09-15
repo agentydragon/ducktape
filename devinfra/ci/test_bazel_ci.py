@@ -1,12 +1,13 @@
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 import pytest_bazel
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-BAZEL_CI = REPO_ROOT / "devinfra/ci/bazel_ci.sh"
+BAZEL_CI = REPO_ROOT / "devinfra/ci/bazel_ci.py"
 
 
 def _write_executable(path: Path, content: str) -> None:
@@ -24,7 +25,7 @@ def _write_executable(path: Path, content: str) -> None:
         ("pnpm-lock.yaml", True),
         ("Cargo.toml", True),
         ("pyproject.toml", True),
-        ("devinfra/ci/bazel_ci.sh", True),
+        ("devinfra/ci/bazel_ci.py", True),
         ("devinfra/ci/example.bzl", True),
     ],
 )
@@ -33,6 +34,7 @@ def test_pr_target_selection(tmp_path: Path, changed_file: str, graph_wide: bool
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     bazel_diff_args_log = tmp_path / "bazel-diff-args.log"
+    affected_targets_log = tmp_path / "affected-targets.log"
     query_log = tmp_path / "query.log"
     test_args_log = tmp_path / "test-args.log"
 
@@ -105,6 +107,9 @@ elif args and args[0] == "shutdown":
 elif args and args[0] in {"test", "build"}:
     if args[0] == "test":
         Path({str(test_args_log)!r}).write_text("\\n".join(args))
+        target_file = next((arg.split("=", 1)[1] for arg in args if arg.startswith("--target_pattern_file=")), None)
+        if target_file:
+            Path({str(affected_targets_log)!r}).write_text(Path(target_file).read_text())
 else:
     raise SystemExit(f"unexpected bazel args: {{args}}")
 """,
@@ -124,7 +129,7 @@ else:
         }
     )
     result = subprocess.run(
-        ["bash", str(BAZEL_CI)], cwd=REPO_ROOT, env=env, capture_output=True, text=True, check=False
+        [sys.executable, str(BAZEL_CI)], cwd=REPO_ROOT, env=env, capture_output=True, text=True, check=False
     )
 
     assert result.returncode == 0, result.stderr + result.stdout
@@ -133,14 +138,14 @@ else:
         assert f"graph-wide change: {changed_file}" in result.stdout
         assert not bazel_diff_args_log.exists()
         assert "//..." in test_args
-        assert "--target_pattern_file=/tmp/affected.txt" not in test_args
+        assert not any(arg.startswith("--target_pattern_file=") for arg in test_args)
     else:
-        assert Path("/tmp/affected.txt").read_text() == (
+        assert affected_targets_log.read_text() == (
             "//:.aspect_rules_js/node_modules/@lezer+json@1.0.3/dir\n//ci:normal_test\n"
         )
         bazel_diff_args = bazel_diff_args_log.read_text().splitlines()
         assert bazel_diff_args[:3] == ["get-impacted-targets", "-w", str(REPO_ROOT)]
-        assert "--target_pattern_file=/tmp/affected.txt" in test_args
+        assert any(arg.startswith("--target_pattern_file=") for arg in test_args)
         query = query_log.read_text()
         assert 'except kind("source file", set(' in query
         assert 'except attr("tags", "manual", set(' in query
