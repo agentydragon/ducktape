@@ -20,7 +20,7 @@ function entry(observation: MessageInitShape<typeof EventSchema>["observation"])
 function render(value: EventEntry): HTMLDivElement {
   const container = document.createElement("div");
   container.innerHTML = renderToStaticMarkup(
-    <MantineProvider>
+    <MantineProvider env="test">
       <FrameView entry={value} />
     </MantineProvider>
   );

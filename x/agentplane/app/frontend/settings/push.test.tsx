@@ -36,7 +36,7 @@ it("lists registered browsers, identifies this browser, and unregisters it local
   try {
     await act(async () =>
       root.render(
-        <MantineProvider>
+        <MantineProvider env="test">
           <PushSettings />
         </MantineProvider>
       )
@@ -81,7 +81,7 @@ it.each(["Forbidden", ""])("shows failed configuration HTTP status and body (sta
   try {
     await act(async () =>
       root.render(
-        <MantineProvider>
+        <MantineProvider env="test">
           <PushSettings />
         </MantineProvider>
       )
@@ -112,7 +112,7 @@ it("explains pending settings and a failed load without claiming the server is u
   try {
     await act(async () =>
       root.render(
-        <MantineProvider>
+        <MantineProvider env="test">
           <PushSettings />
         </MantineProvider>
       )

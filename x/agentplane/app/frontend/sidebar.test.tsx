@@ -108,7 +108,7 @@ async function render(
   const onMobileClose = vi.fn();
   await act(async () =>
     root.render(
-      <MantineProvider>
+      <MantineProvider env="test">
         <MemoryRouter initialEntries={[options.initialPath ?? "/"]}>
           <Sidebar
             settingsOpen={options.settingsOpen ?? false}

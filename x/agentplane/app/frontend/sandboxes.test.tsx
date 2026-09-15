@@ -72,7 +72,7 @@ async function render(codexModels: string[] = ["test-codex-a", "test-codex-b"]) 
   mounted.push({ root, container });
   await act(async () =>
     root.render(
-      <MantineProvider>
+      <MantineProvider env="test">
         <MemoryRouter>
           <SandboxList onOpen={onOpen} />
         </MemoryRouter>

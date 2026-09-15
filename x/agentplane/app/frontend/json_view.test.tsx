@@ -20,7 +20,7 @@ async function render(element: JSX.Element): Promise<HTMLDivElement> {
   document.body.append(container);
   const root = createRoot(container);
   mounted.push({ root, container });
-  await act(async () => root.render(<MantineProvider>{element}</MantineProvider>));
+  await act(async () => root.render(<MantineProvider env="test">{element}</MantineProvider>));
   return container;
 }
 
