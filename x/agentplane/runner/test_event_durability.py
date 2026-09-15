@@ -141,6 +141,10 @@ def test_failed_command_fence_retains_previous_identity_and_outcome(storage: Sto
 
 
 def test_new_session_and_replaced_metadata_remain_findable(storage: StorageImage, tmp_path: Path) -> None:
+    storage.fail_path = storage.root
+    with pytest.raises(OSError, match="injected storage fence failure"):
+        SessionStore(storage.root / "state" / "sessions")
+    storage.fail_path = None
     store = SessionStore(storage.root / "state" / "sessions")
     record = SessionRecord.from_spec(protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, model="test-model"))
     store.write("test-session", record)

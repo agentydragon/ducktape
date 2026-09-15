@@ -19,6 +19,9 @@ def make_directory(path: Path) -> None:
     while not parent.exists():
         missing.append(parent)
         parent = parent.parent
+    # A previous creation may have failed at its parent fence while leaving the directory in
+    # the kernel cache. Establish that existing entry before extending its path.
+    sync_directory(parent.parent)
     for directory in reversed(missing):
         directory.mkdir(exist_ok=True)
         sync_directory(directory.parent)
