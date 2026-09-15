@@ -66,6 +66,11 @@ using the existing kubeconfig and Haku Console Kubernetes proxy
 pre-issued cookie are used. Missing proxy/RBAC/reflection or malformed Secret data
 fails **BLOCKED**, without printing kubectl output or decoded values.
 
+The Secret's `login` is the identifier submitted to the identity provider; `username`
+is the expected operator name returned by the app. Dex's local password connector
+uses the configured email for login, which is distinct from its display username.
+Both the testing ESO definition and staging Terraform definition supply these fields.
+
 A fresh `httpx` cookie jar starts at the app's `/auth/login`, follows the configured
 OIDC provider's redirects and returns to the app's `/auth/callback`. The app owns OAuth
 state, nonce, PKCE, token exchange and server-side session storage. Mutation requests use
