@@ -30,7 +30,8 @@ Proposed execution order for the Thread correctness/UI track:
 - **P2:** browser-driven acceptance against the deployed cluster (`CLUSTER_BROWSER_ACCEPTANCE`)
   and driver-hosted tools (`DT`). Neither blocks the current API-level acceptance closure.
 - **Low priority:** adopting harness-native subagents as Threads (`NATIVE_SUBAGENT_THREADS`).
-  On-demand native payloads (`THREAD_NATIVE_LAZY`) remain later design work.
+  On-demand native evidence and detailed tool payloads (`THREAD_PAYLOAD_LAZY`) remain
+  later design work.
 
 The independent Action Service track still has credentialed-provider acceptance (`MCPAUTH`),
 console policy parity (`CONSOLE_POLICIES`), and Haku MCP/tool-approval retirement (`MCPAGG`,
@@ -84,7 +85,7 @@ flowchart TB
     THREAD_COMMAND_DELIVERY["Deferred backend<br/>app outbox delivery to existing runner<br/>only if app-first acceptance is chosen later"]:::future
     THREAD_TAIL_FIRST["Future performance<br/>open recent conversation window first<br/>bounded catch-up for long-running Threads"]:::future
     THREAD_LAZY_HISTORY["Future UI<br/>load older Thread history on demand<br/>stable scroll and concurrent live following"]:::future
-    THREAD_NATIVE_LAZY["Deferred design<br/>fetch native payloads only when requested<br/>explicit partial-data and replay contract"]:::future
+    THREAD_PAYLOAD_LAZY["Deferred design<br/>native evidence and tool details on demand<br/>explicit partial-data and replay contract"]:::future
     THREAD_SUBMIT_500["Reported bug<br/>message submission and Retry return 500<br/>Awaiting saved confirmation persists"]:::active
     THREAD_DEPLOYED_ACCEPTANCE["P0 remaining acceptance<br/>deployed commands/events cutover<br/>real Claude and Codex via devbox"]:::active
     EGRESS_IDENTITY_AVAILABILITY["P0 observed availability failure<br/>egress authentication ApiException / 502<br/>trace Kubernetes, ingress, LiteLLM hops"]:::active
@@ -828,15 +829,30 @@ current state, and no missed or duplicated Events across the window/live boundar
 Do not hide a full-history download behind a fast first paint. This concerns history
 inside one Thread, not the all-Threads search/list task `THREAD_BROWSE_PAGINATE`.
 
-### `THREAD_NATIVE_LAZY` — consider on-demand native evidence
+### `THREAD_PAYLOAD_LAZY` — load native evidence and tool details on demand
 
-**Later design work:** evaluate not transferring full native payloads until Raw/debug
-inspection asks for them; even the reported small conversation already had about
-1,000 Events. Retain lossless native evidence at its authority and preserve cursor,
-ordering, and causal references. Make omitted/unloaded data explicit: a filtered or
-partial browser representation must not masquerade as a complete, untransformed Event
-prefix. Define catch-up/reconnect guarantees and on-demand hydration alongside the
-tail-first and lazy-history contracts before selecting a protocol change.
+**Later design work:** extend selective synchronization beyond native protocol frames
+to detailed tool-call arguments and outputs, including large streamed payloads. Initial
+Thread sync should transfer the metadata and summaries needed to display the conversation
+and its current state, not every detail behind a collapsed tool card. Fetch those details
+when a user expands the item or follows a Raw/evidence link. Even the reported small
+conversation already had about 1,000 Events.
+
+Retain full-fidelity payloads at their authority. Preserve item identity, ordering,
+status, command outcomes, and causal references in the lightweight representation;
+do not omit facts needed for pending commands or applied control state. Make unloaded
+details explicit and distinguish them from empty content, still-streaming content,
+and unavailable evidence. A partial browser representation must not masquerade as a
+complete, untransformed Event prefix. Hydrating an older payload must not advance the
+live cursor, reorder items, or regress newer state.
+
+Define catch-up/reconnect and on-demand hydration guarantees alongside the tail-first
+and lazy-history contracts before selecting a protocol change. This broadens the later
+payload-loading task, not the first `THREAD_TAIL_FIRST` profiling/contract slice.
+Acceptance covers large tool inputs/outputs omitted from initial transfer, expansion
+during streaming, reconnect during a detail fetch, references outside the loaded history
+window, and unavailable payloads. Prove bounded initial transfer/projection work and
+exact hydrated contents without gaps, duplicates, or loss of the live suffix.
 
 ### `THREAD_LAZY_HISTORY` — fetch older conversation history only when needed
 
