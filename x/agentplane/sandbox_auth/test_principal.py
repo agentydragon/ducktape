@@ -12,6 +12,7 @@ import pytest
 import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import AuthenticationV1Api, CoreV1Api
+from multidict import CIMultiDict, CIMultiDictProxy
 
 from x.agentplane.sandbox_auth.principal import (
     POD_NAME_CLAIM,
@@ -288,6 +289,88 @@ async def test_bearer_never_appears_in_principal_error_repr_or_logs(caplog: pyte
     assert secret not in repr(
         SandboxPrincipal(NAMESPACE, "runner", SUBJECT, POD_NAME, POD_UID, SANDBOX_NAME, SANDBOX_UID)
     )
+
+
+def credential_bearing_api_error(status: int) -> k8s_client.ApiException:
+    error = k8s_client.ApiException(status=status, reason=f"credential-bearing-reason: {TOKEN}")
+    error.body = f"credential-bearing-body: {TOKEN}".encode()
+    error.headers = CIMultiDictProxy(
+        CIMultiDict({"Authorization": f"Bearer {TOKEN}", "X-Private": "credential-bearing-header"})
+    )
+    return error
+
+
+@pytest.mark.parametrize("status", [0, 403, 503])
+async def test_tokenreview_api_failure_logs_only_operation_and_status(
+    status: int, caplog: pytest.LogCaptureFixture
+) -> None:
+    error = credential_bearing_api_error(status)
+    subject_resolver, authentication, core_v1 = resolver({}, {})
+    authentication.side_effect = error
+
+    with caplog.at_level(logging.WARNING), pytest.raises(k8s_client.ApiException) as rejected:
+        await subject_resolver.resolve(TOKEN)
+
+    assert rejected.value is error
+    authentication.assert_awaited_once()
+    core_v1.assert_not_awaited()
+    assert caplog.record_tuples == [
+        (
+            "x.agentplane.sandbox_auth.principal",
+            logging.WARNING,
+            f"Kubernetes workload authentication failed: operation=create_token_review status={status}",
+        )
+    ]
+    assert caplog.records[0].exc_info is None
+    assert TOKEN not in caplog.text
+    assert "credential-bearing" not in caplog.text
+
+
+@pytest.mark.parametrize("status", [0, 403, 503])
+async def test_live_pod_api_failure_logs_only_operation_and_status(
+    status: int, caplog: pytest.LogCaptureFixture
+) -> None:
+    error = credential_bearing_api_error(status)
+    subject_resolver, authentication, core_v1 = resolver({TOKEN: review()}, {(NAMESPACE, POD_NAME): error})
+
+    with caplog.at_level(logging.WARNING), pytest.raises(k8s_client.ApiException) as rejected:
+        await subject_resolver.resolve(TOKEN)
+
+    assert rejected.value is error
+    authentication.assert_awaited_once()
+    core_v1.assert_awaited_once_with(POD_NAME, NAMESPACE)
+    assert caplog.record_tuples == [
+        (
+            "x.agentplane.sandbox_auth.principal",
+            logging.WARNING,
+            f"Kubernetes workload authentication failed: operation=read_namespaced_pod status={status}",
+        )
+    ]
+    assert caplog.records[0].exc_info is None
+    assert TOKEN not in caplog.text
+    assert "credential-bearing" not in caplog.text
+
+
+async def test_live_pod_404_keeps_mismatch_rejection_and_safe_diagnostic(caplog: pytest.LogCaptureFixture) -> None:
+    error = credential_bearing_api_error(404)
+    subject_resolver, _, core_v1 = resolver({TOKEN: review()}, {(NAMESPACE, POD_NAME): error})
+
+    with caplog.at_level(logging.WARNING), pytest.raises(SandboxPrincipalRejectedError) as rejected:
+        await subject_resolver.resolve(TOKEN)
+
+    assert rejected.value.reason is RejectionReason.POD_MISMATCH
+    assert rejected.value.__cause__ is error
+    core_v1.assert_awaited_once_with(POD_NAME, NAMESPACE)
+    assert caplog.record_tuples == [
+        (
+            "x.agentplane.sandbox_auth.principal",
+            logging.WARNING,
+            "Kubernetes workload authentication failed: operation=read_namespaced_pod status=404",
+        )
+    ]
+    assert caplog.records[0].exc_info is None
+    assert TOKEN not in caplog.text
+    assert "credential-bearing" not in caplog.text
 
 
 if __name__ == "__main__":

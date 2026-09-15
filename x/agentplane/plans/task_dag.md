@@ -348,6 +348,11 @@ input confirmation, and `TURN_STATUS_FAILED` with an HTTP 502 diagnostic. In the
 and `unavailable` refusals before identifying a Sandbox. Its per-Sandbox decision query
 therefore returned no rows. The model vendor is not established as the source of the 502.
 
+The shared workload resolver now logs the fixed Kubernetes operation and numeric API status
+without exception bodies, reasons, headers or tracebacks. The historical type-only logs cannot
+identify which operation failed. After this diagnostic reaches the proxy, retain new safe
+failure evidence and correlate it with Kubernetes health; this is not an incident repair.
+
 Correlate the path from runner/sidecar through central egress authentication, Kubernetes
 TokenReview/live Pod reads, Agentplane LLM ingress, LiteLLM, and the model backend. Identify
 the first failing hop and distinguish policy denial, identity-service unavailability,

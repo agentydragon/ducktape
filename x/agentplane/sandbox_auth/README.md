@@ -19,6 +19,11 @@ Sandbox owner with a name and UID. Deleted or replaced Pods and incomplete or am
 fail closed. No caller-supplied Sandbox header, body field, source address, operator identity, role,
 permission, Agent, or Thread participates.
 
+Kubernetes API failures log only the fixed operation (`create_token_review` or
+`read_namespaced_pod`) and numeric status, never exception reason, body, headers or traceback.
+The original API exception still propagates; a live Pod read returning 404 remains a Pod mismatch.
+These diagnostics distinguish the failed authentication hop, not the underlying outage's cause.
+
 `SandboxPrincipalAuthenticator` is the small FastAPI dependency shared by first-party destination
 services. It accepts exactly one well-formed Bearer credential and returns 401 otherwise. The bearer
 is sent only to TokenReview: it is absent from the principal, exception text, and representations.
