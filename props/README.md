@@ -140,9 +140,9 @@ Props has one canonical deployment package under `props/deploy/`. It is a Kustom
 package containing the namespace, database, secrets, RBAC, and application resources.
 The retired Forgejo Terraform files remain under `props/deploy/forgejo/` for state
 and cleanup provenance, but are intentionally not included in this package. Flux
-registers that package through
-`cluster/k8s/props.yaml`; the registration is currently suspended while Props is
-parked. Set `suspend: false` there to revive it.
+registers that package through the parked declaration at
+`props/deploy/flux-kustomization.yaml`. To revive Props, restore that declaration to
+the root Flux bundle and set `suspend: false` there.
 
 ### Components
 

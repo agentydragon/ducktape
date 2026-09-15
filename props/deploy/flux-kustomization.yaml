@@ -1,10 +1,13 @@
+# Props is intentionally parked. This control object lives with the package so
+# removing Props from the root Flux bundle also removes its stale health status.
+# It is intentionally not listed in deploy/kustomization.yaml: when Props is
+# revived, the control object must not recursively manage its own declaration.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: props
   namespace: ducktape-flux
 spec:
-  # Props is intentionally parked. Flip this to false to revive the package.
   suspend: true
   interval: 10m
   retryInterval: 1m
