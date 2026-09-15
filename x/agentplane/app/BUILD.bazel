@@ -852,6 +852,8 @@ py_test(
         "//util/testing:undeclared_outputs",
         "//x/agentplane/app/testing:replication_process",
         "//x/agentplane/app/testing:replication_source",
+        "//x/agentplane/protocol:command_pb2",
+        "//x/agentplane/protocol:event_log_pb2",
         "//x/agentplane/protocol:event_pb2",
         "@pypi//playwright",
         "@pypi//protobuf",

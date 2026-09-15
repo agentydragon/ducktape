@@ -708,9 +708,12 @@ are frontend projections of this log; an app delivery queue is not a dependency.
 App-process loss and HTTP/SSE handoff are covered by
 [replica-safe runner delivery](../app/README.md#replica-safe-runner-delivery).
 The built SPA also has real-Chromium retained/live/reload, ahead-of-prefix snapshot,
-and rejected runner gap/source-change acceptance. Extend that surface for canonical
-admission, persisted same-id retry, and pending controls; mocked component streams
-alone do not cover those boundaries.
+rejected runner gap/source-change, canonical admission, persisted same-id retry after
+a pre-forward abort, and streamed admission after post-commit response loss. Mocked
+component streams alone do not cover those boundaries.
+Keep a genuinely unobserved committed admission (both HTTP reply and SSE lost) separate
+from a request aborted before forwarding. Also exercise an HTTP admission arriving ahead
+of the browser's contiguous Event prefix without skipping preceding Events.
 Native crash-recovery research is not a prerequisite for the replay/projection implementation.
 
 The frontend `EventStream` now owns a verified, contiguous prefix: exact duplicates
@@ -722,8 +725,9 @@ After catch-up only model Events beyond `N` override that snapshot.
 
 Canonical Thread metadata and replay routes now read the same retained history without a runner,
 including a real-browser deleted-Sandbox reload test in #7019. Persistent local Commands and the
-pending projection are in #7016. Remaining: real-browser reload/reconnect while commands remain
-unconfirmed; the stream owner alone does not complete those transport gates.
+pending projection are in #7016. Browser reload of an unconfirmed command is covered in #7020.
+Remaining: real-browser reconnect while commands remain unconfirmed and full additive Raw evidence;
+the stream owner alone does not complete these transport gates.
 
 Implement [reconnect and catch-up](../docs/thread_layering.md#reconnect-and-catch-up):
 contiguous replay, duplicate checking, gap-free live handoff, lost notifications, and
