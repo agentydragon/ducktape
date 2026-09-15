@@ -11,7 +11,7 @@ becomes an Agentplane guarantee. No proprietary source is reproduced here.
 
 | Priority | Boundary                       | Current gap                                                                                                                                                                                 |
 | -------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P0       | App command outbox             | The runner durably receipts and reconciles commands, but the app still needs its own desired `ThreadCommand` outbox before it can survive loss before runner delivery.                      |
+| P0       | App command outbox             | The runner durably admits and reconciles commands, but the app still needs its own desired `ThreadCommand` outbox before it can survive loss before runner delivery.                        |
 | P0       | Driver-hosted MCP              | The wire is documented in [driver_tools.md](driver_tools.md), but the runner neither declares SDK MCP servers during initialization nor routes `mcp_message`.                               |
 | P1       | Permission and dialog recovery | The runner deliberately auto-allows tool permission requests and rejects other controls. A future interactive host must use `tool_use_id`, not a transient request id, as its recovery key. |
 | P1       | Background task state          | Claude exposes a replace-set snapshot plus detail edges; the current adapter retains these only as native frames.                                                                           |
@@ -25,7 +25,7 @@ These IDs are local shorthand for implementation work, not upstream issue number
 ### C1: command effect is now causal
 
 The runner no longer treats `command_lifecycle: queued` as a user-message result. It records
-`CommandReceived` at its durable journal boundary. A normal prompt is correlated by Claude's
+`CommandAdmitted` at its durable journal boundary. A normal prompt is correlated by Claude's
 following `stream_event.message_start.user_message_uuid`; a coalesced queued message retains its
 newline-joined text and every origin command id at that representative UUID (with a replayed native
 echo when Claude emits one). For active-turn inputs Claude emits neither correlation nor replayed
@@ -105,7 +105,7 @@ active batch applies to every contributor.
 
 Agentplane must consequently keep these facts separate:
 
-- runner receipt and durable logging of the caller's input;
+- runner `CommandAdmitted` and durable logging of the caller's input;
 - Claude command-queue admission (`queued`);
 - Claude transcript/turn admission (`started` or replayed user evidence); and
 - terminal completion or cancellation for every contributing UUID.

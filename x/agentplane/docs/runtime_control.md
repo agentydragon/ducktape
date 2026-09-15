@@ -3,11 +3,11 @@
 `ChangeModel` is an implemented durable runner command. The cross-layer command
 lifecycle and UI contract are authoritative in
 [Thread, runner, and harness layering](thread_layering.md). An app acceptance or
-runner receipt is not a model change; only the causal `ModelChanged` Event says the
+runner admission is not a model change; only the causal `ModelChanged` Event says the
 change took effect. The task-DAG entry is
 [CONTROL_STATE](../plans/task_dag.md#control_state--dynamic-runtime-control-acceptance).
 
-`CommandReceived` says only that the runner stored the command. There is no public
+`CommandAdmitted` says only that the runner stored the command. There is no public
 timing selector or generic active-turn conditional: the runner waits for
 harness-native evidence.
 
@@ -21,11 +21,11 @@ harness-native evidence.
   requested model until the next native `turn/start` response proves that selection.
   A later pending request supersedes an earlier one, which ends as `CommandNoop`; a
   native refusal ends both the selected model command and input command as
-  `CommandRejected`.
+  `CommandFailed`.
 
-The receipt/effect split is deliberately preferable to static **now** or **at
+The admission/effect split is deliberately preferable to static **now** or **at
 boundary** options. It lets the runner report exactly when the harness says a
-requested change took effect, even when that is later than receipt.
+requested change took effect, even when that is later than admission.
 
 The pinned native surface and mock-LLM tests are summarized in the
 [protocol roster](../native/docs/protocol_roster.md).
@@ -39,7 +39,7 @@ a command. Before adding it, demonstrate for each harness:
 - which native exchange establishes admission, application, or future-turn selection;
 - how an active turn's effective model remains separately auditable;
 - what replay/reconnect state it needs; and
-- whether a received command can recover to effect, rejection, or no-op after relevant
+- whether an admitted command can recover to effect, failure, or no-op after relevant
   crash windows.
 
 Reasoning effort needs its own evidence. Claude's launch configuration and Codex's
