@@ -25,7 +25,7 @@ Proposed execution order for the Thread correctness/UI track:
   command queue; no app outbox or combined-start expansion in this batch.
 - **P1:** end-to-end LLM error handling (`LLM_ERROR_SURFACE`), duplicate turn-status
   presentation (`THREAD_TURN_STATUS_UI`), compact activity mocks (`THREAD_ACTIVITY_MOCKS`),
-  continuation after Sandbox resume (`THREAD_SUSPEND_RESUME`), retained-state writer fencing and
+  continuation after Sandbox resume (`THREAD_SUSPEND_RESUME`), and
   evidence-gated native recovery. Start `THREAD_TAIL_FIRST` with a profiling/contract
   slice, then bounded reads and `THREAD_LAZY_HISTORY`; do not start with a frontend rewrite.
 - **P2:** browser-driven acceptance against the deployed cluster (`CLUSTER_BROWSER_ACCEPTANCE`)
@@ -180,9 +180,8 @@ and operation by its evidence; do not claim it from a working ordinary command p
 
 **Proposed next dispatch wave:** finish deployed relay verification and operator-login
 acceptance, then use two independent lanes: conversation UI fixes and one narrowly scoped
-native-evidence gap at a time. The
-coordinating agent owns deployed acceptance, landing/CI, and the tail-first profiling
-and contract probe. Native evidence does not block independent UI work or fencing.
+native-evidence gap at a time. The coordinating agent owns deployed acceptance, landing/CI, and
+the tail-first profiling and contract probe. Native evidence does not block independent UI work.
 Keep ordinary attachment cleanup (`RUNNER_ATTACHMENT_SCOPE`) separate from the delivery
 incident and native recovery semantics.
 Reuse existing agent worktrees. Each self-contained change gets its own PR against
@@ -776,11 +775,10 @@ This investigation does not block current container correctness work.
 
 **Identity/storage cutover:** implement
 [one Thread high-water mark](../docs/thread_layering.md#one-thread-event-high-water-mark-across-harness-sessions):
-app-minted Thread identity, explicit incarnation association, retained runner journal,
-and exclusive writer handoff. Thread owns its static Sandbox; association rows do not
-duplicate it. App and browser checkpoints refer to the runner's sequence.
-Requires `RUNNER_WRITER_HANDOFF`, not the entire native
-recovery backlog.
+app-minted Thread identity, explicit incarnation association, and a retained runner journal on
+the landed exclusive writer fence. Thread owns its static Sandbox; association rows do not
+duplicate it. App and browser checkpoints refer to the runner's sequence. Native recovery remains
+separately evidence-gated.
 
 A successor reopens the journal; it cannot replace missing state with “app cursor + 1.”
 Test runner replacement, fenced old writers, native resume, and unavailable recovery
