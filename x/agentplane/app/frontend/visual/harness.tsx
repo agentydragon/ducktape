@@ -348,6 +348,7 @@ function egressDecisions(): Decision[] | Response {
 const SPEC: SessionSpec = create(SessionSpecSchema, {
   harness: Harness.CLAUDE,
   cwd: "/state/work",
+  model: "harness-claude-model",
   reasoningEffort: "low",
 });
 
@@ -997,7 +998,10 @@ class HarnessEventSource extends EventTarget {
     // the URL names -- everything but `s-2` gets the original two-turn script above.
     const isStatesSession = url.pathname.endsWith(`/sessions/${ATTACHED_STATES.sessionId}/events`);
     const attached = isStatesSession ? ATTACHED_STATES : ATTACHED;
-    const entries = isStatesSession ? EVENTS_STATES : EVENTS;
+    let entries = isStatesSession ? EVENTS_STATES : EVENTS;
+    if (scenario.sessionReplay === "catching-up") entries = entries.slice(0, 8);
+    if (scenario.sessionReplay === "gap") entries = entries.filter((entry) => entry.cursor !== 9n);
+    entries = entries.filter((entry) => entry.cursor > BigInt(url.searchParams.get("after") ?? "0"));
     this.dispatchEvent(new MessageEvent("attached", { data: toJsonString(AttachedSchema, attached) }));
     for (const entry of entries) {
       this.dispatchEvent(

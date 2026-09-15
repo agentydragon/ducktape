@@ -315,6 +315,30 @@ ts_library(
     ],
 )
 
+ts_library(
+    name = "event_stream",
+    srcs = ["event_stream.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":events",
+        "//:node_modules/@bufbuild/protobuf",
+        "//x/agentplane/runner:protocol_pb",
+    ],
+)
+
+ts_library(
+    name = "event_stream_test",
+    testonly = True,
+    srcs = ["event_stream.test.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":event_stream",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/vitest",
+        "//x/agentplane/runner:protocol_pb",
+    ],
+)
+
 # The lifecycle controls both sandbox views share: suspend/resume, and delete with its confirmation.
 ts_library(
     name = "lifecycle",
@@ -625,6 +649,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":client",
+        ":event_stream",
         ":events",
         ":frame",
         ":json_view",
@@ -656,6 +681,7 @@ ts_library(
         "//:node_modules/react-dom",
         "//:node_modules/react-router",
         "//:node_modules/vitest",
+        "//x/agentplane/runner:protocol_pb",
     ],
 )
 
@@ -758,6 +784,7 @@ vitest_bin.vitest_test(
         ":client_test",
         ":connections_test",
         ":consent_test",
+        ":event_stream_test",
         ":events_test",
         ":json_view_test",
         ":launch_presets_test",

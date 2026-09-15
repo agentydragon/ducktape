@@ -30,6 +30,8 @@ export interface Scenario extends ScenarioOptions {
   /** Click the phone-width hamburger once it mounts: the sidebar drawer has no route of its own
    * (UISHELL_MOBILE). */
   openMobileSidebar?: boolean;
+  /** Stop replay early or omit one entry, exposing synchronization state without fabricating Events. */
+  sessionReplay?: "catching-up" | "gap";
 }
 
 /** A Pixel 6's CSS viewport: the app is used from a phone, so every page has to fit its width. */
@@ -236,6 +238,20 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: { width: 1200, height: 900 },
     outputName: "session-states",
     captureViewport: true,
+  },
+  session_catching_up: {
+    element: "#app",
+    route: SESSION_ROUTE,
+    viewport: { width: 1200, height: 900 },
+    sessionReplay: "catching-up",
+    readySelectors: ['[role="status"]'],
+  },
+  session_replay_gap: {
+    element: "#app",
+    route: `${SESSION_ROUTE}?raw=1`,
+    viewport: { width: 1200, height: 900 },
+    sessionReplay: "gap",
+    readySelectors: ['[role="alert"]'],
   },
   // The existing nav/header chrome (its own decluttering is separately tracked) leaves little
   // vertical room at phone width, so the queued-input dot at the bottom falls off the page -- same
