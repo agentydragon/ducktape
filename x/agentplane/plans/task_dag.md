@@ -65,7 +65,6 @@ flowchart TB
     COMMAND_QUEUE_DECISION["Deferred decision<br/>accept commands while runner unavailable?<br/>current slice uses runner admission first"]:::decision
     CLAUDE_RECOVERY["Required evidence then implementation<br/>Claude execution before durable runner proof<br/>native correlation and safe recovery"]:::active
     CODEX_RECOVERY["Required evidence then implementation<br/>Codex execution before durable runner proof<br/>native correlation and safe recovery"]:::active
-    RUNNER_COMMAND_SCHEDULING["Required correctness<br/>durable admission separate from native I/O<br/>responsive interrupts and model/input progress"]:::active
     RUNNER_WRITER_HANDOFF["Planned correctness<br/>exclusive runner ownership of retained state<br/>fence old writer and native dispatch"]:::future
     SANDBOX_LIFECYCLE_DURABILITY["Planned lifecycle correctness<br/>retained state through suspension<br/>archive before managed storage deletion"]:::future
     THREAD_EVENT_CONTINUITY["Planned identity cutover<br/>one Thread journal across incarnations<br/>exclusive runner writer and retained state"]:::future
@@ -94,13 +93,12 @@ flowchart TB
     INPUT_DELIVERY -. reliable Thread ingress .-> ING
     THREAD_COMMAND_INGRESS --> THREAD_PENDING_UI
     THREAD_REPLAY_PROTOCOL --> THREAD_PENDING_UI
-    RUNNER_COMMAND_SCHEDULING --> THREAD_PENDING_UI
+    RUNNER_EVENT_DURABILITY --> THREAD_EVENT_CONTINUITY
     RUNNER_WRITER_HANDOFF --> THREAD_EVENT_CONTINUITY
     THREAD_EVENT_CONTINUITY --> THREAD_SUCCESSOR_DELIVERY
     CLAUDE_RECOVERY -. native continuation evidence .-> THREAD_SUCCESSOR_DELIVERY
     CODEX_RECOVERY -. native continuation evidence .-> THREAD_SUCCESSOR_DELIVERY
     COMMAND_QUEUE_DECISION -. if app-first acceptance chosen .-> THREAD_COMMAND_DELIVERY
-    RUNNER_COMMAND_SCHEDULING --> THREAD_COMMAND_DELIVERY
     THREAD_COMMAND_DELIVERY --> THREAD_OUTBOX_CUTOVER
     THREAD_PENDING_UI --> THREAD_OUTBOX_CUTOVER
     THREAD_OUTBOX_CUTOVER --> NEWTHREAD_DURABLE
@@ -524,18 +522,6 @@ PRs, with real-process crash tests preserving command provenance. The same
 [recovery contract](../docs/thread_layering.md#command-protocol-intent-admission-then-outcome)
 applies; neither harness waits for the other's research to land its own proven change.
 
-### `RUNNER_COMMAND_SCHEDULING` — admit promptly and schedule native operations
-
-**Required correctness:** separate short durable command admission from native I/O
-that may block. Preserve runner admission order and operation-specific scheduling.
-An interrupt must be admitted and handled without waiting behind unrelated queued
-input completion; the target remains the clicked turn.
-
-Test a slow native exchange with a subsequent interrupt, and a queued Codex model
-change followed by the input that applies it. The app does not wait for one command's
-effect before sending another. See
-[the model/input flow](../docs/thread_layering.md#runner-admission-first).
-
 ### `RUNNER_WRITER_HANDOFF` — exclusive ownership of retained runner state
 
 **Planned correctness:** establish the exclusive state-volume ownership and replacement
@@ -606,9 +592,9 @@ confirmation, pending model effect, interrupts, failure/no-op, suspended/missing
 and Raw native/correlation details. An optional app queue would add app intent to this
 view later; pending runner commands do not require it.
 
-Integrated acceptance depends on `THREAD_COMMAND_INGRESS`, `THREAD_REPLAY_PROTOCOL`,
-and `RUNNER_COMMAND_SCHEDULING`. Reducer/visual PRs can proceed against established
-Events while those paths and per-harness recovery evidence are developed.
+Integrated acceptance depends on `THREAD_COMMAND_INGRESS` and
+`THREAD_REPLAY_PROTOCOL`. Reducer/visual PRs can proceed against the established
+durable runner admission and Event paths while per-harness recovery evidence is developed.
 
 ### `THREAD_COMMAND_DELIVERY` — optional app command delivery queue
 
