@@ -8,8 +8,8 @@ The staging instance lives in `cluster/k8s/agentplane-staging/`.
 
 The current bridge's session-shaped storage and direct command routes are implementation state, not
 the desired product model. [Thread, runner, and harness layering](../docs/thread_layering.md) is
-the authoritative contract for the durable Thread-command outbox, multi-session Thread history,
-and the conversation/Raw projections that replace those assumptions.
+the authoritative design for submission durability, the app queue decision,
+multi-session Thread history, and conversation/Raw projections.
 
 ```sh
 bbr test //x/agentplane/app/...

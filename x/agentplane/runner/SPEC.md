@@ -90,10 +90,11 @@ harness's outcome. Tool names and argument shapes are the harness's own.
   it does not claim a native effect or a scheduling category. Malformed commands are transport
   errors and have no admission event.
 - A later causal event is the terminal result: `HarnessUserMessageConfirmed`, `ModelChanged`, an
-  interrupted `TurnCompleted`, `CommandFailed`, or `CommandNoop`. Retrying the same command id
-  never creates another native command. A runner restart reconciles any nonterminal journal entry
-  with its original id; if an effect was synced before its public event append, recovery appends
-  that exact effect.
+  interrupted `TurnCompleted`, `CommandFailed`, or `CommandNoop`. Re-submitting an already
+  journaled command id does not dispatch it again. Restart recovery is a separate boundary:
+  it reconciles nonterminal journal entries with their original ids; if an effect was synced
+  before its public event append, recovery appends that exact effect. Native execution before
+  durable effect evidence is not yet proven duplicate-free across restart.
 - `SubmitInput` is terminal only when the harness confirms its causal delivery. Its receipt names
   the native message/correlation id, text, turn id, and every originating command id. Claude's
   normal request carries its representative input UUID on `stream_event.message_start`; compatible
@@ -117,6 +118,10 @@ harness's outcome. Tool names and argument shapes are the harness's own.
 - The public log is written before an event is delivered. Command admissions, terminal command
   outcomes, harness lifecycle, and turns are synced; deltas and native evidence are flushed but
   not synced, so a crash can shorten their tail but cannot reorder a durable outcome.
+  This does not yet guarantee an immutable published prefix under host/storage failure:
+  a follower may already hold an unsynced entry missing from the recovered runner log.
+  The stronger publication/replay contract is in
+  [the layering design](../docs/thread_layering.md#runner-independence-and-event-durability).
 - A runner that finds a session it had running reports `HarnessLost`, then `TurnCompleted` with
   `PROCESS_LOST` if a turn was active. Its command journal then replays missing durable receipts or
   terminal effects and reconciles the remaining commands after the next explicit `Open` starts the
@@ -198,3 +203,4 @@ hooks off, so the runner's own handling of it is read off the harnesses' schemas
 - Log compaction or retention; a session log grows for the session's lifetime.
 - Transport security; the listener is plaintext on loopback.
 - Recovery semantics for a turn lost mid-tool beyond reporting `PROCESS_LOST`.
+- Duplicate-free recovery when native execution precedes durable runner evidence.

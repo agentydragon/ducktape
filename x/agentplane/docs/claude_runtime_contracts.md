@@ -9,14 +9,14 @@ becomes an Agentplane guarantee. No proprietary source is reproduced here.
 
 ## Priority for Agentplane
 
-| Priority | Boundary                       | Current gap                                                                                                                                                                                 |
-| -------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P0       | App command outbox             | The runner durably admits and reconciles commands, but the app still needs its own desired `ThreadCommand` outbox before it can survive loss before runner delivery.                        |
-| P0       | Driver-hosted MCP              | The wire is documented in [driver_tools.md](driver_tools.md), but the runner neither declares SDK MCP servers during initialization nor routes `mcp_message`.                               |
-| P1       | Permission and dialog recovery | The runner deliberately auto-allows tool permission requests and rejects other controls. A future interactive host must use `tool_use_id`, not a transient request id, as its recovery key. |
-| P1       | Background task state          | Claude exposes a replace-set snapshot plus detail edges; the current adapter retains these only as native frames.                                                                           |
-| P1       | Remote delivery ambiguity      | Claude's managed remote transport distinguishes never-uploaded calls from calls that may have landed. Agentplane's app-to-runner stream has no equivalent classification.                   |
-| P2       | Limits and refusal fallback    | Rate-limit and fallback events remain native-only, and a fallback that needs a user dialog cannot complete through the current runner.                                                      |
+| Priority | Boundary                       | Current gap                                                                                                                                                                                           |
+| -------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P0       | Command delivery and recovery  | Stable retry identity, a defined saved-response boundary, and native execution recovery need proof. Queue placement is decided in [the layering design](thread_layering.md#queue-placement-decision). |
+| P2       | Driver-hosted MCP              | The wire is documented in [driver_tools.md](driver_tools.md), but the runner neither declares SDK MCP servers during initialization nor routes `mcp_message`.                                         |
+| P1       | Permission and dialog recovery | The runner deliberately auto-allows tool permission requests and rejects other controls. A future interactive host must use `tool_use_id`, not a transient request id, as its recovery key.           |
+| P1       | Background task state          | Claude exposes a replace-set snapshot plus detail edges; the current adapter retains these only as native frames.                                                                                     |
+| P1       | Remote delivery ambiguity      | Claude's managed remote transport distinguishes never-uploaded calls from calls that may have landed. Agentplane's app-to-runner stream has no equivalent classification.                             |
+| P2       | Limits and refusal fallback    | Rate-limit and fallback events remain native-only, and a fallback that needs a user dialog cannot complete through the current runner.                                                                |
 
 ## Known Agentplane bugs and recommended work
 
@@ -52,10 +52,11 @@ If that stream fails, the app cannot distinguish a command that never reached th
 that arrived before the acknowledgement was lost. A stable command id resolves a retry only after
 the runner has logged it.
 
-**Recommendation.** Persist an outbound command ledger in the app with at least queued, written,
-and runner-acknowledged states. Reconcile it against the runner log on reattach and expose
-never-delivered versus possibly-delivered outcomes. Exercise loss before write, after write but
-before acknowledgement, and after the runner's durable input event.
+**Required evidence.** Exercise loss before write, after write but before acknowledgement,
+and after runner admission. Retain the same command id across retries and reload.
+[The layering design](thread_layering.md#queue-placement-decision) owns the choice of
+runner-first admission versus an app outbox; both need native crash-recovery proof.
+Lack of an observed admission does not prove that a command was never delivered.
 
 ### C4: background state has no typed reset path
 
