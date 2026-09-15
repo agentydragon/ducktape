@@ -1,9 +1,8 @@
 """Request-scoped HTTP clients for FastMCP OpenAPI tools.
 
-FastMCP 3.4.4 binds one ``httpx.AsyncClient`` to every ``OpenAPITool`` when
-the OpenAPI provider is constructed.  Unlike function-backed tools, those
-tools have no dependency-injection seam for choosing a client at invocation
-time.
+FastMCP binds one ``httpx2.AsyncClient`` to every ``OpenAPITool`` when the
+OpenAPI provider is constructed.  Unlike function-backed tools, those tools
+have no dependency-injection seam for choosing a client at invocation time.
 
 ``RequestScopedOpenAPIClients`` adapts each generated tool into a transformed
 tool whose client comes from FastMCP's call-scoped ``Depends`` resolver.  The
@@ -20,6 +19,7 @@ from copy import deepcopy
 from typing import Any, cast, overload
 
 import httpx
+import httpx2
 from fastmcp.dependencies import Depends
 from fastmcp.server.dependencies import without_injected_parameters
 from fastmcp.server.providers.openapi import OpenAPITool
@@ -51,12 +51,13 @@ def borrowed_http_client_provider[ClientT](client: ClientT) -> HTTPClientProvide
 
 
 class _RequestCompatibleClient:
-    """Present FastMCP's ``httpx`` request API to another httpx-compatible client.
+    """Present FastMCP's ``httpx``-shaped client API to another httpx-compatible client.
 
-    FastMCP 3.4.7's OpenAPI director always constructs an ``httpx.Request``.
-    Clients from the ``httpx2`` fork reject that request because its body stream
-    is not an ``httpx2`` stream.  Rebuild the already-buffered request through
-    the injected client's own builder before sending it; this preserves the
+    ``OpenAPITool.run()`` calls ``build_request(...)`` on its client with decomposed
+    request parts, then ``send()`` on the result -- both forwarded here to the
+    injected client, so requests come out already ``httpx2``-native. ``send()``
+    also accepts a raw ``httpx.Request`` directly, rebuilding it through the
+    injected client's own builder so its body stream matches; this preserves the
     provider's client, transport, auth, and timeout configuration.
     """
 
@@ -70,6 +71,9 @@ class _RequestCompatibleClient:
     @property
     def headers(self) -> Any:
         return self._client.headers
+
+    def build_request(self, *args: Any, **kwargs: Any) -> Any:
+        return self._client.build_request(*args, **kwargs)
 
     async def send(self, request: httpx.Request) -> Any:
         build_request = getattr(self._client, "build_request", None)
@@ -115,11 +119,11 @@ class RequestScopedOpenAPIClients(Transform):
         injected_client = Depends(client_provider)
 
         async def dispatch(
-            _fastmcp_request_scoped_http_client: httpx.AsyncClient = injected_client, **arguments: Any
+            _fastmcp_request_scoped_http_client: httpx2.AsyncClient = injected_client, **arguments: Any
         ) -> ToolResult:
-            # OpenAPITool has no public per-call client factory in FastMCP
-            # 3.4.4.  model_copy() preserves its generated route/director while
-            # ensuring this private client assignment is invocation-local.
+            # OpenAPITool has no public per-call client factory.  model_copy()
+            # preserves its generated route/director while ensuring this
+            # private client assignment is invocation-local.
             bound = tool.model_copy()
             # FastMCP's private field is annotated as its legacy httpx client;
             # this adapter deliberately supplies the compatible httpx2 wrapper.

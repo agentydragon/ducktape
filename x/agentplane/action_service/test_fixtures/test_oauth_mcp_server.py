@@ -8,6 +8,7 @@ from urllib.parse import parse_qs, urlsplit
 from uuid import uuid4
 
 import httpx
+import httpx2
 import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -60,7 +61,7 @@ async def test_full_linkage_cycle_and_tool_call(engine: AsyncEngine, execution_l
             client_id=CLIENT_ID,
             redirect_uri=REDIRECT_URI,
         )
-        async with httpx.AsyncClient(follow_redirects=False) as http:
+        async with httpx2.AsyncClient(follow_redirects=False) as http:
             authority = McpLinkageAuthority(make_sessionmaker(engine), {"example": server}, http=http)
             operator = Principal(issuer="test-oauth-fixture", subject="operator", role=PrincipalRole.OPERATOR)
 

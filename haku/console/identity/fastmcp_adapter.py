@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Any, Protocol, SupportsFloat, cast, override
 from uuid import UUID
 
 import fastmcp
-import httpx
+import httpx2
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth.auth import AccessToken, AuthProvider, MultiAuth, TokenVerifier
 from fastmcp.server.auth.middleware import RequireAuthMiddleware
@@ -58,7 +58,7 @@ if TYPE_CHECKING:
     from mcp.server.auth.provider import AuthorizationCode, AuthorizationParams
     from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
-_SUPPORTED_FASTMCP_VERSION = "3.4.7"
+_SUPPORTED_FASTMCP_VERSION = "4.0.3"
 _RETRY_AFTER_SECONDS = 60
 _INVALID_GRANT = "The Agent authorization grant is invalid."
 
@@ -576,7 +576,7 @@ class HakuMcpActorResolver:
             grant_id = _grant_id_from_claims(token.claims)
             client_id = _required_nonblank_string(token.client_id, field_name="client_id")
             token_scopes = frozenset(token.scopes)
-        except KeyError, TypeError, ValueError:
+        except (KeyError, TypeError, ValueError):
             raise ToolError("Agent grant is invalid") from None
 
         try:
@@ -700,7 +700,7 @@ class HakuAgentOAuthProxy(RetryableRefreshOIDCProxy):
             _validate_grant_authorization(
                 authorization, grant_id=authorization.grant_id, client_id=client_id, scopes=granted_scopes
             )
-        except InvalidOidcPrincipalError, EnrollmentRejectedError, GrantRejectedError:
+        except (InvalidOidcPrincipalError, EnrollmentRejectedError, GrantRejectedError):
             await self._code_store.delete(key=authorization_code.code)
             raise TokenError("invalid_grant", _INVALID_GRANT) from None
         except ExchangeAlreadyClaimedError:
@@ -812,7 +812,7 @@ class HakuAgentOAuthProxy(RetryableRefreshOIDCProxy):
                 raise GrantRejectedError
             after = await self._resolve_authorization(reference, returned_scopes)
             _require_same_actor(authorization, after, scopes=returned_scopes)
-        except GrantRejectedError, KeyError, TypeError, ValueError:
+        except (GrantRejectedError, KeyError, TypeError, ValueError):
             return None
         except AgentGrantAuthorityUnavailableError as error:
             raise BearerVerificationUnavailableError("Agent authorization is temporarily unavailable") from error
@@ -992,9 +992,9 @@ def _require_same_actor(before: GrantAuthorization, after: GrantAuthorization, *
 
 
 def _transient_upstream_error(error: BaseException) -> bool:
-    if isinstance(error, httpx.TransportError):
+    if isinstance(error, httpx2.TransportError):
         return True
-    return isinstance(error, httpx.HTTPStatusError) and error.response.status_code >= 500
+    return isinstance(error, httpx2.HTTPStatusError) and error.response.status_code >= 500
 
 
 def _service_unavailable(detail: str) -> HTTPException:

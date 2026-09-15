@@ -20,7 +20,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal, cast
 
-import httpx
+import httpx2
 import jsonschema
 import mcp.types
 from fastmcp.client import Client, ClientTransport
@@ -108,14 +108,14 @@ class _ToolListChangeHandler(MessageHandler):
         self._changed.set()
 
 
-class _LinkageBearerAuth(httpx.Auth):
+class _LinkageBearerAuth(httpx2.Auth):
     requires_response_body = False
 
     def __init__(self, linkage: McpLinkageAuthority, server_id: str) -> None:
         self._linkage = linkage
         self._server_id = server_id
 
-    async def async_auth_flow(self, request: httpx.Request):
+    async def async_auth_flow(self, request: httpx2.Request):
         token = await self._linkage.access_token_for_execution(self._server_id)
         request.headers["Authorization"] = f"Bearer {token}"
         yield request
@@ -421,11 +421,11 @@ class McpActionGroupExecutor:
                 logger.warning("MCP tool name does not fit the catalog key pattern; skipping")
                 continue
             try:
-                jsonschema.validators.validator_for(tool.inputSchema).check_schema(tool.inputSchema)
+                jsonschema.validators.validator_for(tool.input_schema).check_schema(tool.input_schema)
                 if key in actions:
                     raise ValueError("duplicate MCP tool name")
                 actions[key] = ActionDefinition(
-                    description=tool.description or f"MCP tool {tool.name}", input_schema=tool.inputSchema
+                    description=tool.description or f"MCP tool {tool.name}", input_schema=tool.input_schema
                 )
             except (jsonschema.SchemaError, ValueError) as error:
                 raise _InvalidMcpCatalogError from error
@@ -473,7 +473,10 @@ class McpActionGroupExecutor:
         try:
             async with asyncio.timeout(self._lifecycle_timeout.total_seconds()):
                 actions = await self._discover_catalog(connection.client)
-        except _InvalidMcpCatalogError:
+        except (_InvalidMcpCatalogError, ValidationError):
+            # A legacy-protocol peer's tool list is parsed against that era's stricter wire
+            # model (e.g. input_schema requiring type: "object" at the root); a schema that
+            # violates it fails there, before our own jsonschema check ever runs.
             self._mark_unavailable(McpUnavailableReason.INVALID_CATALOG)
         except Exception:
             self._session_failed(connection)
@@ -555,13 +558,12 @@ class McpActionGroupExecutor:
         try:
             async with asyncio.timeout(self._lifecycle_timeout.total_seconds()):
                 tools = await client.list_tools()
-        except Exception:
-            self._session_failed(connection)
-            return self._unavailable_result()
-
-        try:
             actions = self._catalog_from_tools(tools)
-        except _InvalidMcpCatalogError:
+        except (_InvalidMcpCatalogError, ValidationError):
+            # A legacy-protocol peer's tool list is parsed against that era's stricter wire
+            # model (e.g. input_schema requiring type: "object" at the root); a schema that
+            # violates it fails inside list_tools() itself, before our own jsonschema check
+            # ever runs -- both mean the same thing: the backend's schema is unusable.
             if self._connection is connection:
                 self._mark_unavailable(McpUnavailableReason.INVALID_CATALOG)
                 self._tool_list_changed.set()
@@ -569,6 +571,9 @@ class McpActionGroupExecutor:
                 state=ExecutionState.FAILED,
                 error={"kind": "mcp_invalid_schema", "message": "backend tool schema is invalid"},
             )
+        except Exception:
+            self._session_failed(connection)
+            return self._unavailable_result()
         tool = actions.get(name)
         if tool is None:
             return ExecutionResult(
@@ -625,7 +630,7 @@ def _mcp_error_kind(result: Any) -> str | None:
             continue
         try:
             payload = json.loads(block.text)
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             continue
         if isinstance(payload, dict):
             kind = cast(object, payload.get("kind"))

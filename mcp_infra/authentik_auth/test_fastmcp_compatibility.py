@@ -12,6 +12,7 @@ import pytest
 import pytest_bazel
 from fastmcp.server.auth.auth import AccessToken, AuthProvider, MultiAuth, TokenVerifier
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
+from joserfc.errors import JoseError
 from mcp.server.auth.provider import RefreshToken, TokenError
 
 
@@ -195,6 +196,10 @@ async def test_public_access_token_revocation_does_not_delete_token_family() -> 
     state._refresh_token_store = AsyncMock()
     state._jti_mapping_store = AsyncMock()
     state._upstream_token_store = AsyncMock()
+    # Not a FastMCP-issued JWT (an opaque test token), so revoke_token's ID-JAG
+    # jti-tracking branch must not fire.
+    state._jwt_issuer = Mock()
+    state._jwt_issuer.verify_token.side_effect = JoseError("not a fastmcp jwt")
 
     await OAuthProxy.revoke_token(
         proxy, AccessToken(token="fastmcp-access", client_id="dcr-client", scopes=[], expires_at=None)
@@ -212,6 +217,10 @@ async def test_public_refresh_revocation_deletes_only_refresh_metadata() -> None
     state._refresh_token_store = AsyncMock()
     state._jti_mapping_store = AsyncMock()
     state._upstream_token_store = AsyncMock()
+    # Not a FastMCP-issued JWT (an opaque test token), so revoke_token's ID-JAG
+    # jti-tracking branch must not fire.
+    state._jwt_issuer = Mock()
+    state._jwt_issuer.verify_token.side_effect = JoseError("not a fastmcp jwt")
 
     await OAuthProxy.revoke_token(proxy, RefreshToken(token="fastmcp-refresh", client_id="dcr-client", scopes=[]))
 

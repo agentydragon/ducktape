@@ -96,6 +96,14 @@ class FakeMcpServer:
         method = body["method"]
         if method == "notifications/initialized":
             return Response(status_code=202)
+        if method == "server/discover":
+            # This peer only speaks the legacy initialize handshake. A real legacy server
+            # answers an unrecognized method with a JSON-RPC error, not a transport failure --
+            # that's what lets the client's mode="auto" probe fall back to initialize() instead
+            # of treating the peer as broken (see mcp.client._probe.negotiate_auto).
+            return JSONResponse(
+                {"jsonrpc": "2.0", "id": body["id"], "error": {"code": -32601, "message": "Method not found"}}
+            )
         if method == "initialize":
             return JSONResponse(
                 {
@@ -227,6 +235,7 @@ async def test_http_session_discovery_call_and_shutdown(
         assert result.state is ExecutionState.SUCCEEDED
         assert result.result == {"echoed": "hi", "api_key": "test-only-backend-secret"}
         assert [post["method"] for post in fake_server.posts] == [
+            "server/discover",
             "initialize",
             "notifications/initialized",
             "tools/list",
@@ -240,7 +249,9 @@ async def test_http_session_discovery_call_and_shutdown(
         await executor.close()
     assert fake_server.requests[-1].method == "DELETE"
     assert all("authorization" not in request.headers for request in fake_server.requests)
-    for request in fake_server.requests[1:]:
+    # Neither `server/discover` nor `initialize` itself carries a session id -- the server only
+    # assigns one in the `initialize` response, echoed starting with the next request.
+    for request in fake_server.requests[2:]:
         assert request.headers["mcp-session-id"] == "test-http-session"
         assert request.headers["mcp-protocol-version"]
 
@@ -404,7 +415,10 @@ async def test_invalid_discovery_clears_stale_actions(
 ) -> None:
     assert "echo" in http_group.actions
     if invalid == "schema":
-        fake_server.tools[0]["inputSchema"] = {"type": "test-invalid-type"}
+        fake_server.tools[0]["inputSchema"] = {
+            "type": "object",
+            "properties": {"invalid": {"type": "test-invalid-type"}},
+        }
     else:
         fake_server.tools.append(fake_server.tools[0])
     await executor.refresh_catalog()
@@ -419,7 +433,7 @@ async def test_invalid_live_schema_refuses_before_call(
     execution_request: ExecutionRequest,
     execution_lease: ExecutionLease,
 ) -> None:
-    fake_server.tools[0]["inputSchema"] = {"type": "test-invalid-type"}
+    fake_server.tools[0]["inputSchema"] = {"type": "object", "properties": {"invalid": {"type": "test-invalid-type"}}}
     result = await executor.execute(execution_request, execution_lease)
     assert result.error == {"kind": "mcp_invalid_schema", "message": "backend tool schema is invalid"}
     assert fake_server.calls == []
@@ -432,7 +446,10 @@ async def test_runtime_serves_unavailable_group_and_recovers_without_restart(
     if failure == "unavailable":
         fake_server.list_unavailable = True
     else:
-        fake_server.tools[0]["inputSchema"] = {"type": "test-invalid-type"}
+        fake_server.tools[0]["inputSchema"] = {
+            "type": "object",
+            "properties": {"invalid": {"type": "test-invalid-type"}},
+        }
     async with running_executor(ActionCatalog(groups={"remote": http_group})):
         assert not http_group.available
         await wait_retry(http_group)
@@ -543,7 +560,10 @@ async def test_production_http_composition_one_execution_no_replay(
         if outcome == "schema_mismatch":
             fake_server.tools[0]["inputSchema"]["required"] = ["other"]
         if outcome == "invalid_schema":
-            fake_server.tools[0]["inputSchema"] = {"type": "test-invalid-type"}
+            fake_server.tools[0]["inputSchema"] = {
+                "type": "object",
+                "properties": {"invalid": {"type": "test-invalid-type"}},
+            }
         decision = DecisionInput(verdict=Verdict.ALLOW, expected_version=pending.version, idempotency_key="allow-once")
         await service.decide(pending.id, decision, operator)
         expected = {

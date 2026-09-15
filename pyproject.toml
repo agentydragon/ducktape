@@ -32,6 +32,9 @@ dependencies = [
     "uvicorn[standard]>=0.53.0",
     "httpx>=0.27.0",
     "httpx2>=2.13.0",
+    # mcp/fastmcp v4 use httpx2 for SSE and no longer pull this in transitively;
+    # x/agentplane's replication tests use it directly against a real httpx SSE client.
+    "httpx-sse>=0.4.3",
     # IDNA A-label canonicalization for exact-origin HTTP grants (haku/console).
     "idna>=3.4",
     "websockets>=15.0",
@@ -59,9 +62,14 @@ dependencies = [
     "tiktoken>=0.14.0",
     "tenacity>=8.2.0",
 
-    # MCP
-    "mcp[cli]>=1.30.0",
-    "fastmcp>=3.4.7,<3.5",
+    # MCP. mcp-sdk v2 (2026-07-28) and fastmcp v4 rework the protocol to be stateless by
+    # default, eliminating the shared per-replica session-manager task group that v1/v3 wedges
+    # permanently on an uncaught CancelledError from a mid-request client disconnect (#5786).
+    # fastmcp's own minor version is capped, matching its predecessor's cap: fastmcp moves fast
+    # post-major-bump, and a repin needs the same deliberate re-audit as any other FastMCP
+    # version bump (see haku/console/docs/agent_authority.md § "The FastMCP seam").
+    "mcp[cli]>=2.0.0",
+    "fastmcp>=4.0.3,<4.1",
     "py-key-value-aio[valkey]>=0.4.4",
 
     # Docker

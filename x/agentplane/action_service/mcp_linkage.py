@@ -14,7 +14,7 @@ from pathlib import Path
 from urllib.parse import urlencode
 from uuid import UUID, uuid4
 
-import httpx
+import httpx2
 from mcp.client.auth.utils import (
     build_oauth_authorization_server_metadata_discovery_urls,
     build_protected_resource_metadata_discovery_urls,
@@ -140,7 +140,7 @@ class McpLinkageAuthority:
         self,
         sessions: SessionMaker,
         servers: dict[str, McpOAuthServer],
-        http: httpx.AsyncClient | None = None,
+        http: httpx2.AsyncClient | None = None,
         engine: AsyncEngine | None = None,
     ) -> None:
         self._sessions = sessions
@@ -366,7 +366,7 @@ class McpLinkageAuthority:
     async def _discover(self, server: McpOAuthServer) -> tuple[str, str, str | None, list[str]]:
         """Discover MCP protected-resource and authorization-server metadata before linking."""
         started = asyncio.get_running_loop().time()
-        client = self._http or httpx.AsyncClient(timeout=10, follow_redirects=False)
+        client = self._http or httpx2.AsyncClient(timeout=10, follow_redirects=False)
         close = self._http is None
         try:
             probe = await client.get(server.server_url)
@@ -422,7 +422,7 @@ class McpLinkageAuthority:
         except McpLinkageError:
             _observe_oauth_metric("discovery", "rejected", started)
             raise
-        except httpx.HTTPError, ValueError:
+        except (httpx2.HTTPError, ValueError):
             _observe_oauth_metric("discovery", "transport", started)
             raise McpLinkageConflictError("MCP OAuth metadata discovery failed") from None
         finally:
@@ -584,7 +584,7 @@ class McpLinkageAuthority:
             data["resource"] = resource
         if client_secret:
             data["client_secret"] = client_secret
-        client = self._http or httpx.AsyncClient(timeout=15)
+        client = self._http or httpx2.AsyncClient(timeout=15)
         close = self._http is None
         try:
             # GitHub's token endpoint answers form-encoded unless asked for JSON.
@@ -596,7 +596,7 @@ class McpLinkageAuthority:
             body = response.json()
         except _RefreshError:
             raise
-        except httpx.HTTPError, ValueError:
+        except (httpx2.HTTPError, ValueError):
             _observe_oauth_metric(operation, "transport", started)
             raise _RefreshError("MCP OAuth token endpoint unavailable", action="retrying") from None
         finally:

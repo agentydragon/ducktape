@@ -17,7 +17,7 @@ from fastmcp.server.auth.auth import AccessToken
 from fastmcp.server.dependencies import CurrentAccessToken, get_access_token, get_http_request
 from fastmcp.tools import ToolResult
 from more_itertools import one
-from pydantic import BaseModel, Field, JsonValue
+from pydantic import BaseModel, BeforeValidator, Field, JsonValue
 from starlette.requests import Request
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -52,9 +52,33 @@ IdempotencyKey = Annotated[
 ]
 
 
+def _parse_request_id(value: UUID | str) -> UUID:
+    """Accept the JSON string form of a UUID before FastMCP's strict model validation."""
+    return value if isinstance(value, UUID) else UUID(value)
+
+
+McpRequestId = Annotated[UUID, BeforeValidator(_parse_request_id)]
+
+
 class IncludeField(StrEnum):
     INPUT_SCHEMA = "input_schema"
     DESCRIPTION = "description"
+
+
+def _parse_include_field(value: IncludeField | str) -> IncludeField:
+    """Accept the JSON string form before FastMCP's strict enum validation."""
+    return value if isinstance(value, IncludeField) else IncludeField(value)
+
+
+McpIncludeField = Annotated[IncludeField, BeforeValidator(_parse_include_field)]
+
+
+def _parse_wait_until(value: WaitUntil | str) -> WaitUntil:
+    """Accept the JSON string form before FastMCP's strict enum validation."""
+    return value if isinstance(value, WaitUntil) else WaitUntil(value)
+
+
+McpWaitUntil = Annotated[WaitUntil, BeforeValidator(_parse_wait_until)]
 
 
 class ActionSummary(BaseModel):
@@ -216,7 +240,7 @@ def create_server(
         group: Key | None = None,
         after: ActionIdentity | None = None,
         limit: PageSize = 30,
-        include_fields: set[IncludeField] | None = None,
+        include_fields: list[McpIncludeField] | None = None,
     ) -> ToolResult:
         """Discover available Action identifiers without loading their full schemas or descriptions.
         Use this before get_action when the group/name is unknown; this never submits an Action.
@@ -241,19 +265,19 @@ def create_server(
                 last = page[-1]
                 next_after = ActionIdentity(group=last.group, name=last.name)
                 break
-            page.append(_summary(catalog, identity, include_fields or set()))
+            page.append(_summary(catalog, identity, set(include_fields or ())))
         return _result(ActionPage(actions=page, next_after=next_after), exclude_none=True)
 
     @server.tool(annotations={"readOnlyHint": True})
     @_tool_errors
-    async def get_action(group: Key, name: Key, include_fields: set[IncludeField] | None = None) -> ToolResult:
+    async def get_action(group: Key, name: Key, include_fields: list[McpIncludeField] | None = None) -> ToolResult:
         """Read one Action definition, not a submitted request or its execution status.
         Provide group/name from list_actions; request input_schema before constructing unfamiliar arguments.
         Full description and input_schema appear only when named in include_fields; defaults are compact.
         Unknown names fail clearly; use get_action_request instead when you have a durable request ID.
         """
         return _result(
-            _summary(catalog, ActionIdentity(group=group, name=name), include_fields or set()), exclude_none=True
+            _summary(catalog, ActionIdentity(group=group, name=name), set(include_fields or ())), exclude_none=True
         )
 
     @server.tool(annotations={"readOnlyHint": True})
@@ -277,7 +301,7 @@ def create_server(
     async def request_action(
         request: ActionRequestInput,
         wait_seconds: WaitSeconds = 0,
-        wait_until: WaitUntil = WaitUntil.TERMINAL,
+        wait_until: McpWaitUntil = WaitUntil.TERMINAL,
         caller: Caller = CALLER,
     ) -> ToolResult:
         """Submit one Action for policy evaluation, human decision if needed, and single-shot execution.
@@ -297,10 +321,10 @@ def create_server(
     @server.tool(annotations={"readOnlyHint": True})
     @_tool_errors
     async def get_action_request(
-        request_id: UUID | None = None,
+        request_id: McpRequestId | None = None,
         idempotency_key: IdempotencyKey | None = None,
         wait_seconds: WaitSeconds = 0,
-        wait_until: WaitUntil = WaitUntil.TERMINAL,
+        wait_until: McpWaitUntil = WaitUntil.TERMINAL,
         caller: Caller = CALLER,
     ) -> ToolResult:
         """Read your submitted Action's current receipt, Decision, and safe execution result/error.
@@ -325,7 +349,7 @@ def create_server(
 
     @server.tool(annotations={"readOnlyHint": False, "idempotentHint": True})
     @_tool_errors
-    async def cancel_action_request(request_id: UUID, caller: Caller = CALLER) -> ToolResult:
+    async def cancel_action_request(request_id: McpRequestId, caller: Caller = CALLER) -> ToolResult:
         """Withdraw your Action request only before its execution has been claimed for dispatch.
         Provide the durable request ID; no version is required, and another caller's requests are inaccessible.
         Returns cancelled, already_cancelled, already_finished, or too_late together with the current receipt.
@@ -336,7 +360,10 @@ def create_server(
     @server.tool(annotations={"readOnlyHint": True})
     @_tool_errors
     async def list_action_request_events(
-        request_id: UUID, after_sequence: Annotated[int, Field(ge=0)] = 0, limit: PageSize = 30, caller: Caller = CALLER
+        request_id: McpRequestId,
+        after_sequence: Annotated[int, Field(ge=0)] = 0,
+        limit: PageSize = 30,
+        caller: Caller = CALLER,
     ) -> ToolResult:
         """Read an ordered page of canonical state transitions for your Action request.
         Start after_sequence at zero or at the last sequence already received; use next_after_sequence for more pages.

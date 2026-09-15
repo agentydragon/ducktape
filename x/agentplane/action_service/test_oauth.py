@@ -10,7 +10,7 @@ import secrets
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock
 from urllib.parse import parse_qs, urlsplit
 
@@ -639,7 +639,7 @@ async def test_external_grant_reaches_canonical_mcp_admission_and_cancel(
         )
         assert cancelled.request.external_grant == grant.provenance()
         repeat = await _call_mcp_result(http, bearer, "request_action", {"request": request})
-        assert repeat.isError, repeat
+        assert repeat.is_error, repeat
         recovered = ActionRequestView.model_validate(
             await _call_mcp(http, bearer, "get_action_request", {"idempotency_key": key})
         )
@@ -673,9 +673,9 @@ def _no_workload() -> AsyncMock:
 
 async def _call_mcp(http: httpx.AsyncClient, bearer: str, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     result = await _call_mcp_result(http, bearer, name, arguments)
-    assert not result.isError, result
-    assert result.structuredContent is not None
-    return result.structuredContent
+    assert not result.is_error, result
+    assert result.structured_content is not None
+    return cast(dict[str, Any], result.structured_content)
 
 
 async def _call_mcp_result(

@@ -5,11 +5,11 @@ py_library(
     srcs = ["flat_mixin.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//agent_core:pydantic_utils",
         "//mcp_infra:flat_tool",
         "//openai_utils:json_schema",
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
+        "@pypi//mcp_types",
         "@pypi//pydantic",
     ],
 )
@@ -57,6 +57,7 @@ py_test(
         "//openai_utils:pydantic_strict_mode",
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
+        "@pypi//mcp_types",
         "@pypi//more_itertools",
         "@pypi//pydantic",
         "@pypi//pytest",

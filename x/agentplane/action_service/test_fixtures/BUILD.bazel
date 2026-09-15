@@ -30,6 +30,7 @@ py_library(
     deps = [
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
+        "@pypi//mcp_types",
         "@pypi//pydantic",
     ],
 )
@@ -52,6 +53,7 @@ py_test(
         "//x/agentplane/action_service:mcp_linkage",
         "//x/agentplane/action_service:models",
         "@pypi//httpx",
+        "@pypi//httpx2",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],

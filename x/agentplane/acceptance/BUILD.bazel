@@ -223,8 +223,9 @@ py_library(
     srcs = ["dcr.py"],
     deps = [
         "@pypi//fastmcp_slim",
-        "@pypi//httpx",
+        "@pypi//httpx2",
         "@pypi//mcp",
+        "@pypi//mcp_types",
         "@pypi//py_key_value_aio",
         "@pypi//pydantic",
     ],

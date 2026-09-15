@@ -23,7 +23,7 @@ from typing import Annotated, Literal, cast
 from urllib.parse import quote, urlencode, urljoin
 from uuid import UUID
 
-import httpx
+import httpx2
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from mcp.client.auth.oauth2 import PKCEParameters
@@ -37,7 +37,6 @@ from mcp.client.auth.utils import (
     handle_protected_resource_response,
     handle_registration_response,
 )
-from mcp.client.streamable_http import MCP_PROTOCOL_VERSION
 from mcp.shared.auth import (
     OAuthClientInformationFull,
     OAuthClientMetadata,
@@ -46,6 +45,7 @@ from mcp.shared.auth import (
     ProtectedResourceMetadata,
 )
 from mcp.shared.auth_utils import check_resource_allowed, resource_url_from_server_url
+from mcp.shared.inbound import MCP_PROTOCOL_VERSION_HEADER
 from mcp.types import LATEST_PROTOCOL_VERSION
 from prometheus_client import Histogram
 from pydantic import BaseModel, ConfigDict, Field
@@ -483,11 +483,11 @@ def _oauth_status_from_row(
 
 
 def _metadata_request_headers() -> dict[str, str]:
-    return {MCP_PROTOCOL_VERSION: LATEST_PROTOCOL_VERSION}
+    return {MCP_PROTOCOL_VERSION_HEADER: LATEST_PROTOCOL_VERSION}
 
 
 async def _discover_protected_resource(
-    client: httpx.AsyncClient, server_url: str, auth_probe: httpx.Response
+    client: httpx2.AsyncClient, server_url: str, auth_probe: httpx2.Response
 ) -> ProtectedResourceMetadata | None:
     metadata_url = extract_resource_metadata_from_www_auth(auth_probe)
     for url in build_protected_resource_metadata_discovery_urls(metadata_url, server_url):
@@ -498,7 +498,7 @@ async def _discover_protected_resource(
 
 
 async def _discover_oauth_metadata(
-    client: httpx.AsyncClient, server_url: str, resource_metadata: ProtectedResourceMetadata | None
+    client: httpx2.AsyncClient, server_url: str, resource_metadata: ProtectedResourceMetadata | None
 ) -> OAuthMetadata | None:
     auth_server_url = str(resource_metadata.authorization_servers[0]) if resource_metadata else None
     for url in build_oauth_authorization_server_metadata_discovery_urls(auth_server_url, server_url):
@@ -522,7 +522,7 @@ def _resource_for_oauth(server_url: str, resource_metadata: ProtectedResourceMet
 
 
 async def _register_oauth_client(
-    client: httpx.AsyncClient,
+    client: httpx2.AsyncClient,
     server_url: str,
     oauth_metadata: OAuthMetadata | None,
     client_metadata: OAuthClientMetadata,
@@ -540,7 +540,7 @@ async def _register_oauth_client(
 
 
 def _authorization_base_url(server_url: str) -> str:
-    parsed = httpx.URL(server_url)
+    parsed = httpx2.URL(server_url)
     return f"{parsed.scheme}://{parsed.host}{f':{parsed.port}' if parsed.port else ''}"
 
 
@@ -565,7 +565,7 @@ async def _resolve_operator_oauth_client(
     # Bind to a local so the RemoteServerOAuthAuth narrowing survives the awaits below.
     oauth = server.backend.auth
     try:
-        async with httpx.AsyncClient(follow_redirects=False, timeout=10.0) as client:
+        async with httpx2.AsyncClient(follow_redirects=False, timeout=10.0) as client:
             auth_probe = await client.get(server_url, headers=_metadata_request_headers())
             resource_metadata = await _discover_protected_resource(client, server_url, auth_probe)
             oauth_metadata = await _discover_oauth_metadata(client, server_url, resource_metadata)
@@ -687,9 +687,9 @@ async def _exchange_operator_oauth_code(
     data, headers = _token_request_auth(data, flow)
     started = time.monotonic()
     try:
-        async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+        async with httpx2.AsyncClient(timeout=timeout_seconds) as client:
             response = await client.post(flow.token_endpoint, data=data, headers=headers)
-    except httpx.RequestError as e:
+    except httpx2.RequestError as e:
         _observe_token_request("exchange", "transport", started)
         raise HTTPException(
             status_code=502,
@@ -717,9 +717,9 @@ async def _refresh_operator_oauth_token(token_client: _OperatorOAuthTokenClient,
     data, headers = _token_request_auth(data, token_client)
     started = time.monotonic()
     try:
-        async with httpx.AsyncClient(timeout=token_client.timeout_seconds) as http:
+        async with httpx2.AsyncClient(timeout=token_client.timeout_seconds) as http:
             response = await http.post(token_client.token_endpoint, data=data, headers=headers)
-    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout) as e:
+    except (httpx2.ConnectError, httpx2.ConnectTimeout, httpx2.PoolTimeout) as e:
         _observe_token_request("refresh", "connect", started)
         raise RefreshError(
             token_request_error_message(
@@ -728,7 +728,7 @@ async def _refresh_operator_oauth_token(token_client: _OperatorOAuthTokenClient,
             kind=RefreshFailureKind.CONNECT,
             action=RefreshFailureAction.RETRYING,
         ) from e
-    except httpx.RequestError as e:
+    except httpx2.RequestError as e:
         # The request was sent but no response arrived, so whether the server rotated the token is
         # unknown. Retry rather than demanding a reconnect: the very next attempt resolves the
         # ambiguity by itself, and neither outcome is worse than giving up here.

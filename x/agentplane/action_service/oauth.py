@@ -155,8 +155,8 @@ class ActionsOAuthProxy(DownstreamClientIdentityOIDCProxy):
         enrollments: EnrollmentAuthority,
         connections: ConnectionAuthority,
     ) -> None:
-        if fastmcp.__version__ != "3.4.7":
-            raise RuntimeError("ActionsOAuthProxy requires compatibility verification against FastMCP 3.4.7")
+        if fastmcp.__version__ != "4.0.3":
+            raise RuntimeError("ActionsOAuthProxy requires compatibility verification against FastMCP 4.0.3")
         signing_key = settings.jwt_signing_key_file.read_text().strip()
         client_secret = settings.upstream_client_secret_file.read_text().strip()
         if len(signing_key) < 32 or not client_secret:
@@ -261,7 +261,7 @@ class ActionsOAuthProxy(DownstreamClientIdentityOIDCProxy):
             raise _refused("token exchange", _CONNECTION_GONE) from None
         except (EnrollmentRejectedError, GrantRejectedError, ConnectionConflictError) as error:
             raise _refused("token exchange", str(error)) from None
-        except OidcPrincipalVerificationUnavailableError, SQLAlchemyError:
+        except (OidcPrincipalVerificationUnavailableError, SQLAlchemyError):
             raise _unavailable() from None
 
         context = _ISSUING.set(grant.id)
@@ -398,7 +398,7 @@ class ActionsOAuthProxy(DownstreamClientIdentityOIDCProxy):
         """
         try:
             return jwt.decode(token, options={"verify_signature": False}).get("iss") == str(self.base_url)
-        except jwt.InvalidTokenError, ValueError:
+        except (jwt.InvalidTokenError, ValueError):
             return False
 
     async def revoke_token(self, token: McpAccessToken | RefreshToken) -> None:

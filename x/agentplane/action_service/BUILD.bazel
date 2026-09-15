@@ -29,9 +29,10 @@ py_library(
         ":models",
         ":service",
         "@pypi//fastmcp_slim",
-        "@pypi//httpx",
+        "@pypi//httpx2",
         "@pypi//jsonschema",
         "@pypi//mcp",
+        "@pypi//mcp_types",
         "@pypi//pydantic",
         "@pypi//tenacity",
     ],
@@ -44,8 +45,9 @@ py_library(
         ":catalog",
         ":db",
         ":models",
-        "@pypi//httpx",
+        "@pypi//httpx2",
         "@pypi//mcp",
+        "@pypi//mcp_types",
         "@pypi//prometheus_client",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
@@ -502,6 +504,7 @@ py_library(
 
 py_test(
     name = "test_operator_oidc",
+    size = "medium",
     srcs = ["test_operator_oidc.py"],
     deps = [
         ":api",
@@ -587,6 +590,7 @@ py_library(
 
 py_test(
     name = "test_waits",
+    size = "medium",
     srcs = ["test_waits.py"],
     requires_docker = True,
     deps = [
@@ -709,6 +713,7 @@ py_test(
 
 py_test(
     name = "test_mcp_frontend",
+    size = "medium",
     srcs = ["test_mcp_frontend.py"],
     requires_docker = True,
     deps = [
@@ -728,7 +733,7 @@ py_test(
         "//x/agentplane/sandbox_auth:principal",
         "@pypi//fastapi",
         "@pypi//fastmcp_slim",
-        "@pypi//httpx",
+        "@pypi//httpx2",
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -786,6 +791,7 @@ py_library(
         "@pypi//fastapi",
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
+        "@pypi//mcp_types",
         "@pypi//starlette",
     ],
 )
@@ -804,6 +810,7 @@ py_library(
         "@pypi//fastapi",
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
+        "@pypi//mcp_types",
         "@pypi//py_key_value_aio",
         "@pypi//pydantic",
         "@pypi//pyjwt",
@@ -841,6 +848,7 @@ py_test(
         "@pypi//fastmcp_slim",
         "@pypi//httpx",
         "@pypi//mcp",
+        "@pypi//mcp_types",
         "@pypi//py_key_value_aio",
         "@pypi//pydantic",
         "@pypi//pytest",
@@ -881,7 +889,7 @@ py_test(
         ":mcp_linkage",
         ":models",
         "//:conftest",
-        "@pypi//httpx",
+        "@pypi//httpx2",
         "@pypi//more_itertools",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
@@ -905,6 +913,7 @@ py_test(
         "//:conftest",
         "//x/agentplane/sandbox_auth:principal",
         "@pypi//httpx",
+        "@pypi//httpx2",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",

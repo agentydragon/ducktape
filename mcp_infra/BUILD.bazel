@@ -103,6 +103,7 @@ py_library(
     deps = [
         "@pypi//fastmcp_slim",
         "@pypi//httpx",
+        "@pypi//httpx2",
     ],
 )
 
@@ -114,7 +115,6 @@ py_test(
         ":request_scoped_openapi",
         "//:conftest",
         "@pypi//fastmcp_slim",
-        "@pypi//httpx",
         "@pypi//httpx2",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -152,6 +152,7 @@ py_library(
     deps = [
         ":prefix",
         "@pypi//mcp",
+        "@pypi//mcp_types",
         "@pypi//pydantic",
     ],
 )

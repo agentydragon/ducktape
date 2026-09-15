@@ -11,7 +11,7 @@ from datetime import timedelta
 from unittest.mock import AsyncMock
 from uuid import UUID
 
-import httpx
+import httpx2
 import pytest
 import pytest_bazel
 from fastapi import FastAPI
@@ -109,14 +109,14 @@ def _policy_index() -> PolicyIndex:
     return index
 
 
-class EgressSubstitution(httpx.AsyncBaseTransport):
+class EgressSubstitution(httpx2.AsyncBaseTransport):
     """The runner supplies only a public placeholder; substitution is an external boundary."""
 
     def __init__(self, app: FastAPI, token: str) -> None:
-        self._upstream = httpx.ASGITransport(app)
+        self._upstream = httpx2.ASGITransport(app)
         self._token = token
 
-    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+    async def handle_async_request(self, request: httpx2.Request) -> httpx2.Response:
         assert request.headers["authorization"] == f"Bearer {WORKLOAD_CREDENTIAL_PLACEHOLDER}"
         request.headers["authorization"] = f"Bearer {self._token}"
         return await self._upstream.handle_async_request(request)
@@ -138,16 +138,16 @@ class Frontend:
     def client(self, token: str = "test-token-a", *, egress: bool = False) -> Client[StreamableHttpTransport]:
         def factory(
             headers: dict[str, str] | None = None,
-            timeout: httpx.Timeout | None = None,
-            auth: httpx.Auth | None = None,
+            timeout: httpx2.Timeout | None = None,
+            auth: httpx2.Auth | None = None,
             *,
             follow_redirects: bool = True,
-        ) -> httpx.AsyncClient:
-            transport = EgressSubstitution(self.app, token) if egress else httpx.ASGITransport(self.app)
-            return httpx.AsyncClient(
+        ) -> httpx2.AsyncClient:
+            transport = EgressSubstitution(self.app, token) if egress else httpx2.ASGITransport(self.app)
+            return httpx2.AsyncClient(
                 transport=transport,
                 headers=headers,
-                timeout=timeout or httpx.Timeout(30),
+                timeout=timeout or httpx2.Timeout(30),
                 auth=auth,
                 follow_redirects=follow_redirects,
             )
@@ -272,9 +272,9 @@ async def test_compact_catalog_opt_in_pagination_and_small_generic_schema(fronte
         tools = await client.list_tools()
         assert len(tools) == 7
         cancellation = next(tool for tool in tools if tool.name == "cancel_action_request")
-        assert set(cancellation.inputSchema["properties"]) == {"request_id"}
-        assert cancellation.inputSchema["required"] == ["request_id"]
-        assert all("args" not in tool.inputSchema["properties"] for tool in tools)
+        assert set(cancellation.input_schema["properties"]) == {"request_id"}
+        assert cancellation.input_schema["required"] == ["request_id"]
+        assert all("args" not in tool.input_schema["properties"] for tool in tools)
         assert "test-full-description" not in " ".join(tool.model_dump_json() for tool in tools)
         page = await client.call_tool("list_actions", {"limit": 1})
         assert page.structured_content == {
@@ -386,7 +386,7 @@ async def test_a_caller_reads_the_effective_policy_of_itself_or_a_named_target(f
         )
         assert CallerActionPolicyView.model_validate(unwatched.structured_content).bindings == []
     assert await frontend.store.list_requests(OPERATOR) == []
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(frontend.app), base_url="http://actions.test") as http:
+    async with httpx2.AsyncClient(transport=httpx2.ASGITransport(frontend.app), base_url="http://actions.test") as http:
         over_http = await http.get("/v1/action-policy", headers={"Authorization": "Bearer test-token-a"})
         assert over_http.status_code == 200, over_http.text
         assert CallerActionPolicyView.model_validate(over_http.json()) == own
@@ -395,7 +395,9 @@ async def test_a_caller_reads_the_effective_policy_of_itself_or_a_named_target(f
 
 @pytest.mark.parametrize("authorization", [None, "Bearer test-operator", f"Bearer {WORKLOAD_CREDENTIAL_PLACEHOLDER}"])
 async def test_transport_requires_real_workload_bearer(frontend: Frontend, authorization: str | None) -> None:
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(frontend.app), base_url="http://actions.test") as client:
+    async with httpx2.AsyncClient(
+        transport=httpx2.ASGITransport(frontend.app), base_url="http://actions.test"
+    ) as client:
         headers = {"Authorization": authorization} if authorization is not None else {}
         for method in ("POST", "DELETE"):
             response = await client.request(method, "/mcp", headers=headers)
@@ -420,7 +422,7 @@ async def test_transport_requires_real_workload_bearer(frontend: Frontend, autho
     ids=["initialize", "tools/list"],
 )
 async def test_protocol_setup_needs_a_bearer_at_the_transport(frontend: Frontend, body: dict[str, object]) -> None:
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(frontend.app), base_url="http://actions.test") as http:
+    async with httpx2.AsyncClient(transport=httpx2.ASGITransport(frontend.app), base_url="http://actions.test") as http:
         response = await http.post(
             "/mcp",
             headers={"Accept": "application/json, text/event-stream", "MCP-Protocol-Version": "2025-11-25"},
@@ -470,7 +472,7 @@ async def test_revalidates_live_pod_and_rejects_duplicate_auth_and_forgery(front
         assert invalid.is_error
         assert await frontend.store.list_requests(OPERATOR) == []
         frontend.core.read_namespaced_pod.side_effect = k8s_client.ApiException(status=404)
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(frontend.app), base_url="http://actions.test") as http:
+    async with httpx2.AsyncClient(transport=httpx2.ASGITransport(frontend.app), base_url="http://actions.test") as http:
         revoked = await http.post(
             "/mcp",
             headers={"Authorization": "Bearer test-token-a"},
@@ -484,7 +486,7 @@ async def test_revalidates_live_pod_and_rejects_duplicate_auth_and_forgery(front
 
 
 async def test_origin_is_not_categorically_rejected_and_loopback_guard_stays_active(frontend: Frontend) -> None:
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(frontend.app), base_url="http://127.0.0.1") as http:
+    async with httpx2.AsyncClient(transport=httpx2.ASGITransport(frontend.app), base_url="http://127.0.0.1") as http:
         headers = {
             "Authorization": "Bearer test-token-a",
             "Accept": "application/json, text/event-stream",

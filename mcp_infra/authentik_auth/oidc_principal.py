@@ -158,7 +158,7 @@ class AuthentikOidcPrincipalResolver:
         try:
             token = _TokenResponse.model_validate(token_response).access_token
             header = jwt.get_unverified_header(token)
-        except InvalidTokenError, RecursionError, ValidationError, TypeError, ValueError:
+        except (InvalidTokenError, RecursionError, ValidationError, TypeError, ValueError):
             raise InvalidOidcPrincipalError from None
 
         kid = header.get("kid")
@@ -208,7 +208,7 @@ class AuthentikOidcPrincipalResolver:
                 leeway=_CLOCK_SKEW_SECONDS,
                 options={"require": ["iss", "aud", "azp", "exp", "iat", "sub"], "strict_aud": True},
             )
-        except InvalidTokenError, OverflowError, RecursionError, TypeError, ValueError:
+        except (InvalidTokenError, OverflowError, RecursionError, TypeError, ValueError):
             raise InvalidOidcPrincipalError from None
         except PyJWTError:
             raise OidcPrincipalVerificationUnavailableError from None

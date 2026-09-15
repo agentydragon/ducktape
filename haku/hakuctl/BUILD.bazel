@@ -9,6 +9,7 @@ py_library(
         "//util:typer",
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
+        "@pypi//mcp_types",
         "@pypi//rich",
         "@pypi//typer",
     ],
@@ -54,7 +55,7 @@ py_wheel(
     # (hakuctl). When adding a dependency, update BOTH places.
     requires = [
         "ducktape-util",
-        "fastmcp>=3.4.4,<3.5",
+        "fastmcp>=4.0.3,<4.1",
         "mcp",
         "rich",
         "typer",

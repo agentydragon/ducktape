@@ -266,7 +266,6 @@ manifest:
     jupyter_kernel_client: jupyter_kernel_client
     jupyter_lsp: jupyter_lsp
     jupyter_mcp_server: jupyter_mcp_server
-    jupyter_mcp_tools: jupyter_mcp_tools
     jupyter_mimetypes: jupyter_mimetypes
     jupyter_nbmodel_client: jupyter_nbmodel_client
     jupyter_server: jupyter_server
@@ -309,6 +308,7 @@ manifest:
     matplotlib_inline: matplotlib_inline
     mautrix: mautrix
     mcp: mcp
+    mcp_types: mcp_types
     mdit_py_plugins: mdit_py_plugins
     mdurl: mdurl
     mirakuru: mirakuru
@@ -549,4 +549,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 76d89b8c1946dceb7c13e6bd4cc63fe809b0db331f9492679ced7fe5c4a0967b
+integrity: 84550ed330406eeadb716ba48a9c5c61fbadad067ac22b7eea668484d2d1d4ab

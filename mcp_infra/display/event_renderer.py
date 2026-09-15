@@ -225,7 +225,7 @@ class DisplayEventsHandler(BaseHandler):
     def _pp_json(self, obj: object) -> str:
         try:
             text = pydantic_core.to_json(obj, indent=2, fallback=str).decode("utf-8")
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             text = str(obj)
         return self._truncate_text(text)
 
@@ -235,5 +235,5 @@ def _coerce_str(x: object) -> str:
         return x
     try:
         return pydantic_core.to_json(x, fallback=str).decode("utf-8")
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return str(x)

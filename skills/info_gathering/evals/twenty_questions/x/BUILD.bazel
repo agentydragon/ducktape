@@ -1,3 +1,10 @@
+# CLEANUP(added 2026-09-07): agent_framework and pydantic_ai are excluded from gazelle
+#   management while their BUILD.bazel targets are emptied out (see the tombstone comment in
+#   each) -- neither framework's MCP integration has a release compatible with mcp-sdk >=2.0
+#   yet. Drop each line once its framework is restored. (crewai and langgraph, previously
+#   excluded here too, are fully deleted rather than tombstoned -- see crewai.md/langgraph.md.)
+# gazelle:exclude agent_framework
+# gazelle:exclude pydantic_ai
 load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
 py_library(

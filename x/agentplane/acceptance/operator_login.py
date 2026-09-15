@@ -54,7 +54,7 @@ def _kubectl(*args: str) -> bytes:
             check=False,
             timeout=30,
         )
-    except OSError, subprocess.TimeoutExpired:
+    except (OSError, subprocess.TimeoutExpired):
         raise LoginBlockedError("BLOCKED: kubectl/kubeconfig unavailable or Kubernetes proxy timed out") from None
     if result.returncode:
         raise LoginBlockedError(
@@ -87,7 +87,7 @@ def read_operator_credentials() -> OperatorCredentials:
         if not all(values.values()):
             raise ValueError
         return OperatorCredentials(**{key: SecretStr(value) for key, value in values.items()})
-    except KeyError, TypeError, ValueError, binascii.Error:
+    except (KeyError, TypeError, ValueError, binascii.Error):
         raise LoginBlockedError(
             "BLOCKED: reflected operator Secret requires nonempty base64 login/username/password/issuer/subject"
         ) from None
