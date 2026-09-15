@@ -13,6 +13,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from types import TracebackType
 from typing import Any, Self
+from uuid import UUID
 
 import httpx
 from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
@@ -23,6 +24,7 @@ from x.agentplane.app.decisions import Decision
 from x.agentplane.app.egress import BindingView, PolicyView
 from x.agentplane.app.inventory import NewSandbox, ProvisioningState, SandboxView
 from x.agentplane.app.presets import Harness, SandboxPresetView
+from x.agentplane.app.trajectory import ThreadView
 from x.agentplane.protocol import command_pb2, event_log_pb2
 from x.agentplane.runner import protocol_pb2
 
@@ -67,9 +69,7 @@ class Client:
         await self._http.aclose()
 
     async def _json(self, method: str, path: str, **kwargs: Any) -> Any:
-        """The decoded body, or None when there is none: the app answers 202 to an accepted input
-        and 204 to a lifecycle command, both with an empty body, so the status alone does not say
-        whether there is anything to decode."""
+        """The decoded body, or None for a successful empty lifecycle response."""
         response = await self._http.request(method, path, **kwargs)
         response.raise_for_status()
         return response.json() if response.content else None
@@ -124,8 +124,17 @@ class Client:
         answered = await self._json("POST", f"/sandboxes/{name}/sessions", json=body.model_dump())
         return Attachment(ParseDict(answered, protocol_pb2.Attached()))
 
-    async def send_input(self, name: str, session_id: str, message: command_pb2.Command) -> None:
-        await self._json("POST", f"/sandboxes/{name}/sessions/{session_id}/inputs", json=MessageToDict(message))
+    async def thread(self, sandbox: str, session_id: str) -> ThreadView:
+        """Resolve the persistent Thread created by a manual runner-session open."""
+        threads = await self._json("GET", "/threads", params={"sandbox": sandbox, "session_id": session_id})
+        if not threads:
+            raise RuntimeError(f"no persisted Thread for {sandbox}/{session_id}")
+        return ThreadView.model_validate(threads[0])
+
+    async def command(self, thread_id: UUID, command: command_pb2.Command) -> event_log_pb2.EventEntry:
+        """Return the archived runner CommandAdmitted entry, not a native command outcome."""
+        answered = await self._json("POST", f"/threads/{thread_id}/commands", json=MessageToDict(command))
+        return ParseDict(answered, event_log_pb2.EventEntry())
 
     async def events(
         self, name: str, session_id: str, *, after: int, read_seconds: float

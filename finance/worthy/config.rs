@@ -1,6 +1,5 @@
 use alphavantage_converter::AlphaVantageConverterConfig;
 use asset::Asset;
-use currencylayer_converter::CurrencyLayerConverterConfig;
 use fixer_converter::FixerConverterConfig;
 use ibflex_source::IBFlexSourceConfig;
 use rust_decimal::prelude::Decimal;
@@ -26,7 +25,6 @@ pub struct SourceConfig {
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
 pub enum ConverterConfig {
-    CurrencyLayer(CurrencyLayerConverterConfig),
     AlphaVantage(AlphaVantageConverterConfig),
     Fixer(FixerConverterConfig),
 }

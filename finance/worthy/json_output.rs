@@ -63,8 +63,6 @@ pub struct Asset {
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub enum ConverterType {
-    #[serde(rename = "currencylayer")]
-    CurrencyLayer,
     #[serde(rename = "alphavantage")]
     AlphaVantage,
     #[serde(rename = "fixer")]
