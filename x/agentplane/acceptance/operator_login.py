@@ -12,13 +12,16 @@ import os
 import re
 import subprocess
 from dataclasses import dataclass
+from http import HTTPStatus
 from typing import Literal
 from urllib.parse import parse_qs
+from uuid import uuid4
 
 import httpx
 from bs4 import BeautifulSoup
 from pydantic import BaseModel, ConfigDict, SecretStr
 
+from x.agentplane.app.action_federation import UpstreamFailure
 from x.agentplane.app.oidc import SECURE_COOKIE
 
 KUBE_PROXY = "https://haku-kubeapi.allegedly.works"
@@ -32,6 +35,33 @@ _DEX_OAUTH_PATH = re.compile(r"/dex/(auth|auth/local|auth/local/login|approval|c
 
 class LoginBlockedError(Exception):
     """Only non-sensitive prerequisite failures cross this boundary; never response contents."""
+
+
+async def verify_action_federation(http: httpx.AsyncClient) -> None:
+    """An absent Action proves authenticated federation without listing anyone's requests."""
+    __tracebackhide__ = True
+    request_id = uuid4()
+    try:
+        response = await http.get(f"/actions/{request_id}")
+        failure = UpstreamFailure.model_validate(response.json()["detail"])
+        upstream = httpx.URL(failure.url)
+        if (
+            response.status_code == HTTPStatus.NOT_FOUND
+            and failure.upstream_status == HTTPStatus.NOT_FOUND
+            and failure.method == "GET"
+            and failure.error_type == "HTTPStatusError"
+            and upstream.scheme in {"http", "https"}
+            and upstream.host
+            and not (upstream.userinfo or upstream.query or upstream.fragment)
+            and upstream.path == f"/v1/operator/action-requests/{request_id}"
+        ):
+            return
+    except httpx.HTTPError, httpx.InvalidURL, ValueError, KeyError, TypeError:
+        # Malformed responses and transport exceptions may contain private auth material.
+        pass
+    raise LoginBlockedError(
+        "BLOCKED: BFF Action federation preflight refused; verify dedicated operator target identity"
+    ) from None
 
 
 class OperatorCredentials(BaseModel):

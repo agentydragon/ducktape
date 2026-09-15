@@ -4,11 +4,12 @@ import base64
 import json
 import subprocess
 from unittest.mock import Mock
+from uuid import UUID
 
 import httpx
 import pytest
 import pytest_bazel
-from pydantic import SecretStr
+from pydantic import JsonValue, SecretStr
 
 from x.agentplane.acceptance.operator_login import (
     KUBE_PROXY,
@@ -19,6 +20,7 @@ from x.agentplane.acceptance.operator_login import (
     follow_dex_authorization,
     login_operator,
     read_operator_credentials,
+    verify_action_federation,
 )
 from x.agentplane.app.oidc import SECURE_COOKIE
 
@@ -39,6 +41,94 @@ DEX_CREDENTIALS = OperatorCredentials(
     issuer=SecretStr(f"{DEX}/dex"),
     subject=SecretStr("test-subject"),
 )
+
+
+def _missing_action_detail(request: httpx.Request) -> dict[str, JsonValue]:
+    request_id = UUID(request.url.path.removeprefix("/actions/"))
+    return {
+        "method": "GET",
+        "url": f"http://actions.test.invalid/v1/operator/action-requests/{request_id}",
+        "upstream_status": 404,
+        "error_type": "HTTPStatusError",
+    }
+
+
+async def test_federation_preflight_accepts_only_the_correlated_upstream_not_found() -> None:
+    probes: list[httpx.Request] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        probes.append(request)
+        assert request.method == "GET"
+        assert request.url.host == "app.test.invalid"
+        return httpx.Response(404, json={"detail": _missing_action_detail(request)})
+
+    async with httpx.AsyncClient(base_url=APP, transport=httpx.MockTransport(respond)) as http:
+        await verify_action_federation(http)
+        await verify_action_federation(http)
+    assert len(probes) == 2
+    assert probes[0].url != probes[1].url
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("upstream_status", 403),
+        ("method", "POST"),
+        ("error_type", "ConnectError"),
+        ("url", "https://idp.test.invalid/keys"),
+        ("url", "http://actions.test.invalid/v1/operator/action-requests/00000000-0000-0000-0000-000000000000"),
+        ("url", "relative-url"),
+    ],
+)
+async def test_federation_preflight_rejects_other_upstream_failures(field: str, value: JsonValue) -> None:
+    def respond(request: httpx.Request) -> httpx.Response:
+        detail = _missing_action_detail(request)
+        detail[field] = value
+        return httpx.Response(404, json={"detail": detail})
+
+    async with httpx.AsyncClient(base_url=APP, transport=httpx.MockTransport(respond)) as http:
+        with pytest.raises(LoginBlockedError, match="BFF Action federation preflight refused"):
+            await verify_action_federation(http)
+
+
+@pytest.mark.parametrize("status", [200, 401, 403, 503])
+async def test_federation_preflight_requires_the_bff_not_found_status(status: int) -> None:
+    def respond(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status, json={"detail": _missing_action_detail(request)})
+
+    async with httpx.AsyncClient(base_url=APP, transport=httpx.MockTransport(respond)) as http:
+        with pytest.raises(LoginBlockedError, match="BFF Action federation preflight refused"):
+            await verify_action_federation(http)
+
+
+@pytest.mark.parametrize("failure", ["html", "legacy", "malformed", "transport", "private-url"])
+async def test_federation_preflight_withholds_response_and_transport_details(
+    failure: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    marker = "must-not-be-in-failure-output"
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        match failure:
+            case "html":
+                return httpx.Response(404, text=marker)
+            case "legacy":
+                return httpx.Response(404, json={"detail": "Action Service rejected the request"})
+            case "malformed":
+                return httpx.Response(404, json={"detail": {"upstream_status": marker}})
+            case "transport":
+                raise httpx.ConnectError(marker, request=request)
+            case "private-url":
+                detail = _missing_action_detail(request)
+                detail["url"] = f"{detail['url']}?access_token={marker}"
+                return httpx.Response(404, json={"detail": detail})
+            case _:
+                raise AssertionError(failure)
+
+    async with httpx.AsyncClient(base_url=APP, transport=httpx.MockTransport(respond)) as http:
+        with pytest.raises(LoginBlockedError, match="BFF Action federation preflight refused") as caught:
+            await verify_action_federation(http)
+    assert marker not in str(caught.value)
+    assert capsys.readouterr() == ("", "")
 
 
 def _mcp_authorization() -> str:

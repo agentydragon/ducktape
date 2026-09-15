@@ -51,3 +51,23 @@ unchanged Haku Authentik adapter passed in
 This is not deployed acceptance: after the Dex candidate and both service images land,
 activate the testing profile, run the real MCP/operator cases from devbox, and
 verify teardown. Do not resend the user's failed staging input.
+
+## Testing activation and acceptance, 2026-09-15
+
+[#7066](https://github.com/agentydragon/ducktape/pull/7066) activated all three Dex
+profile fields. Flux applied merge `76fa24ce` and reported Healthy at 23:27:29Z.
+The reloaded app (`devel-20260915230405-dd0439f`) and Action Service
+(`devel-20260915225846-3299654`) were Ready; both images contain #7059.
+
+The controlled-devbox [live MCP run](https://app.buildbuddy.io/invocation/3277d91f-c663-4b46-9c52-39fe2fa55d18)
+passed real MCP Action execution on Claude and Codex, but all eight operator cases
+stopped at the fixture's post-login probe. A [focused diagnostic](https://app.buildbuddy.io/invocation/4583177a-fa32-4a11-9d1a-f38e89eff687)
+proved that the response was the correct `404` with structured `UpstreamFailure`
+metadata: `GET`, `HTTPStatusError`, upstream status `404`, and the exact fresh
+`/v1/operator/action-requests/<probe-id>` path. The fixture still expected the
+legacy detail string replaced by #6129. No credential material was printed.
+
+Both runs used the devbox's existing Haku-mediated kubeconfig. The complete suite
+returned to its zero-Sandbox/zero-policy-object baseline without manual cleanup.
+Operator scenarios still need rerunning with the corrected preflight; these results
+do not establish OAuth linkage, BFF decisions, or argument-schema policy acceptance.
