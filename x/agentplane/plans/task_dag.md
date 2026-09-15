@@ -725,8 +725,9 @@ After catch-up only model Events beyond `N` override that snapshot.
 
 Canonical Thread metadata and replay routes now read the same retained history without a runner,
 including a real-browser deleted-Sandbox reload test in #7019. Persistent local Commands and the
-pending projection are in #7016. Remaining: real-browser reload/reconnect while commands remain
-unconfirmed; the stream owner alone does not complete those transport gates.
+ pending projection are in #7016. Browser reload of an unconfirmed command is covered in #7020.
+ Remaining: real-browser reconnect while commands remain unconfirmed and full additive Raw evidence;
+ the stream owner alone does not complete these transport gates.
 
 Implement [reconnect and catch-up](../docs/thread_layering.md#reconnect-and-catch-up):
 contiguous replay, duplicate checking, gap-free live handoff, lost notifications, and
