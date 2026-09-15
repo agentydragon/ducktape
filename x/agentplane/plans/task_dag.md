@@ -343,7 +343,7 @@ Use the [acceptance suite](../acceptance/README.md) as the runbook, retain sanit
 test/runtime evidence, and verify fixture cleanup. Do not resend the operator's failed
 staging input as a test. This is API-level deployed proof, not browser click-through proof.
 Testing operator federation still needs the explicit Dex access-token claim profile.
-See the [sanitized investigation](../../../debug/agentplane_testing_operator_dex_20260915.md).
+See the [sanitized investigation](../debug/agentplane_testing_operator_dex_20260915.md).
 After the Dex code and both images land, activate the testing profile and rerun the
 operator cases; signed offline tests alone do not close this gate.
 

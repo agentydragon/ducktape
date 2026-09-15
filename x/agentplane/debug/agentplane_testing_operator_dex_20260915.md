@@ -27,7 +27,7 @@ whether old stored tokens remain unexpired. Every sampled token lacks `azp`; the
 configured Authentik verifier requires it, so these tokens cannot pass that verifier.
 Dex's pinned source confirms this is its single-audience token shape, not a
 transient signing-key fetch failure. The maintained verification and deployment
-contract is in [operator federation](../x/agentplane/docs/operator_federation.md).
+contract is in [operator federation](../docs/operator_federation.md).
 
 The deployed direct-federation code also reconstructed the token response without
 the required `token_type`. [#7057](https://github.com/agentydragon/ducktape/pull/7057)
