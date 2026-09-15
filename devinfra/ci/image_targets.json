@@ -176,10 +176,6 @@
       "target": "//cluster/rotators/attic_jwt_rotation:image",
       "registry": "forgejo"
     },
-    "inventree-token-provisioner": {
-      "target": "//cluster/provisioners/inventree_token_provisioner:image",
-      "registry": "forgejo"
-    },
     "ha-mcp-token-provisioner": {
       "target": "//cluster/provisioners/ha_mcp_token_provisioner:image",
       "test": "//cluster/provisioners/ha_mcp_token_provisioner/...",

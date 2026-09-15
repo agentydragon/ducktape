@@ -10,7 +10,6 @@ resources:
   - activitywatch-httproute.yaml
   - agents-mitmproxy-httproute.yaml
   - proxmox-httproute.yaml
-  - google-workspace-mcp-httproute.yaml
   - plaid-mcp-httproute.yaml
   - goldilocks-httproute.yaml
   - sdr-httproute.yaml

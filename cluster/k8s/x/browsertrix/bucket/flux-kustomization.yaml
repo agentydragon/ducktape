@@ -5,6 +5,8 @@ metadata:
   # the live Bucket before its explicit retirement.
   name: seaweedfs-browsertrix-bucket
   namespace: ducktape-flux
+  annotations:
+    ducktape.org/parked: "true"
 spec:
   suspend: true
   interval: 10m

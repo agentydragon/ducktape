@@ -5,8 +5,8 @@ import datetime
 import pytest
 import pytest_bazel
 
-from cluster.provisioners.inventree_token_provisioner import provision
-from cluster.provisioners.inventree_token_provisioner.provision import (
+from cluster.archive.inventree_token_provisioner import provision
+from cluster.archive.inventree_token_provisioner.provision import (
     SANDBOX_USERNAME,
     TOKEN_NAME,
     find_token,

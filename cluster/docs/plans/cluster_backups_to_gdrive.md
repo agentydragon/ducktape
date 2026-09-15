@@ -180,7 +180,7 @@ least-privilege token and doesn't broaden the agent-facing read-only Google toke
 
 It reuses the same `google-client-credentials` OAuth client airlock already loads
 (`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`), and the consent screen is already
-published (google-workspace-mcp proves it), so there is **no GCP console work and
+published, so there is **no GCP console work and
 no off-cluster `rclone authorize`** — acquisition is one browser visit to the
 callback URL (see runbook).
 
@@ -242,7 +242,7 @@ immutable, so this transfers incrementally and is Drive-friendly.
 
 No GCP console work, no `rclone authorize`, no SOPS token — airlock handles
 acquisition, storage, and refresh. The OAuth client and a published consent screen
-already exist (google-workspace-mcp uses them).
+already exist independently of the decommissioned Google Workspace MCP service.
 
 1. **Land the airlock provider entry** (step 4) so airlock exposes
    `/oauth/callback/google_drive_backup`.

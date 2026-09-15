@@ -49,7 +49,6 @@ resources:
   - dns-automation/flux-kustomization.yaml
   - infra-drift/flux-kustomization.yaml # plan-only drift watch on cluster/terraform/main
   - kube-api-proxy/flux-kustomization.yaml
-  - egress-proxy-rugged/flux-kustomization.yaml
   - github-api-proxy/identity/flux-kustomization.yaml
   - github-api-proxy/secrets/flux-kustomization.yaml
   - github-api-proxy/app/flux-kustomization.yaml
@@ -69,7 +68,6 @@ resources:
   - agents/attic-jwt-rotation/flux-kustomization.yaml
   - agents/alloy-otlp-bearer/flux-kustomization.yaml
   - agents/airlock/flux-kustomization.yaml
-  - x/google-workspace-mcp/flux-kustomization.yaml
   - agents/tana-mcp/flux-kustomization.yaml
   - agents/tana-mcp-facade/flux-kustomization.yaml
   - agents/tana-mcp-facade/monitoring/flux-kustomization.yaml
@@ -255,13 +253,6 @@ resources:
   - atuin/app/flux-kustomization.yaml
   - atuin/user-provisioner/flux-kustomization.yaml
 
-  # --- inventree ---
-  - inventree/namespace/flux-kustomization.yaml
-  - inventree/secrets/flux-kustomization.yaml
-  - inventree/db/flux-kustomization.yaml
-  - inventree/app/flux-kustomization.yaml
-  - inventree/token-provisioner/flux-kustomization.yaml
-
   # --- langfuse ---
   - langfuse/namespace/flux-kustomization.yaml
   - langfuse/agent-rbac/flux-kustomization.yaml
@@ -342,13 +333,6 @@ resources:
   - agent-box/namespace/flux-kustomization.yaml
   - agent-box/app/flux-kustomization.yaml
   - website/flux-kustomization.yaml
-  - x/browsertrix/namespace/flux-kustomization.yaml
-  - x/browsertrix/app/flux-kustomization.yaml
-  - x/browsertrix/bucket/flux-kustomization.yaml
-  - x/browsertrix/retained/flux-kustomization.yaml
-  - x/archivebox/namespace/flux-kustomization.yaml
-  - x/archivebox/app/flux-kustomization.yaml
-
   # --- cpap-sync ---
   - cpap-sync/flux-kustomization.yaml
 
