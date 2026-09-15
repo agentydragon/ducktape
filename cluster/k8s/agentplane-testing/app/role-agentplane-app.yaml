@@ -13,7 +13,7 @@ metadata:
 rules:
   - apiGroups: ["extensions.agents.x-k8s.io"]
     resources: ["sandboxtemplates"]
-    verbs: ["get"]
+    verbs: ["get", "list"]
   - apiGroups: ["agents.x-k8s.io"]
     resources: ["sandboxes"]
     verbs: ["create", "get", "list", "watch", "patch", "delete"]

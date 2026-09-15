@@ -1,4 +1,4 @@
-# `bb remote` runner image: where devinfra/ci/bazel_ci.sh runs.
+# `bb remote` runner image: where devinfra/ci/bazel_ci.py runs.
 #
 # The runner is the Bazel *client* -- it runs bazel-diff over the affected set
 # and drives the invocation. It needs the repo's developer tooling; a Bazel
