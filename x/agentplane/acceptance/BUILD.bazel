@@ -6,6 +6,7 @@ package(
 )
 
 # gazelle:resolve py x.agentplane.protocol.command_pb2 //x/agentplane/protocol:command_pb2
+# gazelle:resolve py x.agentplane.protocol.event_log_pb2 //x/agentplane/protocol:event_log_pb2
 # gazelle:resolve py x.agentplane.protocol.event_pb2 //x/agentplane/protocol:event_pb2
 # gazelle:resolve py x.agentplane.runner.protocol_pb2 //x/agentplane/runner:protocol_pb2
 
@@ -239,6 +240,8 @@ py_test(
         ":conftest",
         "//:conftest",
         "//x/agentplane/app:client",
+        "//x/agentplane/protocol:event_log_pb2",
+        "//x/agentplane/protocol:event_pb2",
         "//x/agentplane/runner:protocol_pb2",
         "@pypi//httpx",
         "@pypi//protobuf",
