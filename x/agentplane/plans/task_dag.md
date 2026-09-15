@@ -69,7 +69,6 @@ flowchart TB
     RUNNER_WRITER_HANDOFF["Planned correctness<br/>exclusive runner ownership of retained state<br/>fence old writer and native dispatch"]:::future
     SANDBOX_LIFECYCLE_DURABILITY["Planned lifecycle correctness<br/>retained state through suspension<br/>archive before managed storage deletion"]:::future
     THREAD_EVENT_CONTINUITY["Planned identity cutover<br/>one Thread journal across incarnations<br/>exclusive runner writer and retained state"]:::future
-    THREAD_COMMAND_INGRESS["Next command slice<br/>runner admission then app archival<br/>same-id retry and reload-safe submission"]:::future
     THREAD_PENDING_UI["Planned UI<br/>pending inputs, model changes, interrupts<br/>additive Raw evidence"]:::future
     THREAD_COMMAND_DELIVERY["Deferred backend<br/>app outbox delivery to existing runner<br/>only if app-first acceptance is chosen later"]:::future
     THREAD_REPLAY_PROTOCOL["Planned protocol<br/>one protobuf Command/Event language<br/>durable app-to-frontend replay"]:::future
@@ -92,7 +91,6 @@ flowchart TB
     AG -. hosted Thread lifecycle .-> RETIRE_AGENT
 
     INPUT_DELIVERY -. reliable Thread ingress .-> ING
-    THREAD_COMMAND_INGRESS --> THREAD_PENDING_UI
     THREAD_REPLAY_PROTOCOL --> THREAD_PENDING_UI
     RUNNER_COMMAND_SCHEDULING --> THREAD_PENDING_UI
     RUNNER_WRITER_HANDOFF --> THREAD_EVENT_CONTINUITY
@@ -579,20 +577,6 @@ Replay of an existing single-session Thread can improve independently; multiple
 incarnations must not ship by inventing a second Event counter. This item does not
 choose successor command replay (`THREAD_SUCCESSOR_DELIVERY`).
 
-### `THREAD_COMMAND_INGRESS` — trustworthy runner-first submission
-
-**Next command slice:** implement the
-[runner-admission-first response boundary](../docs/thread_layering.md#runner-admission-first).
-Use one generated `Command` route for input, model, interrupt, and stop. “Saved” requires
-the runner admission in the app's committed Event prefix; it does not wait for effect.
-Persist browser retry identity and payload through reload until durable confirmation.
-
-Acceptance covers loss before admission, after runner admission but before app copy,
-and after app commit but before the response; retry the exact command in the same
-scope. While the runner is unavailable, preserve the local draft and report that
-server delivery has not been confirmed. Remove redundant per-operation submission
-paths in the same cutover; all normal UI controls share this ingress.
-
 ### `THREAD_PENDING_UI` — pending commands and additive Raw evidence
 
 **Planned UI:** derive the runner queue from full `CommandAdmitted` payloads and causal
@@ -606,8 +590,8 @@ confirmation, pending model effect, interrupts, failure/no-op, suspended/missing
 and Raw native/correlation details. An optional app queue would add app intent to this
 view later; pending runner commands do not require it.
 
-Integrated acceptance depends on `THREAD_COMMAND_INGRESS`, `THREAD_REPLAY_PROTOCOL`,
-and `RUNNER_COMMAND_SCHEDULING`. Reducer/visual PRs can proceed against established
+Integrated acceptance depends on `THREAD_REPLAY_PROTOCOL` and
+`RUNNER_COMMAND_SCHEDULING`. Reducer/visual PRs can proceed against established
 Events while those paths and per-harness recovery evidence are developed.
 
 ### `THREAD_COMMAND_DELIVERY` — optional app command delivery queue

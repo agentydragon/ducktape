@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from x.agentplane.app import trajectory
 from x.agentplane.app.presets import Harness
 from x.agentplane.app.trajectory import (
+    CommandIdConflictError,
     EventReplicationError,
     FeedEnd,
     FeedError,
@@ -27,7 +28,7 @@ from x.agentplane.app.trajectory import (
     ThreadNotFoundError,
     TrajectoryStore,
 )
-from x.agentplane.protocol import event_log_pb2, event_pb2
+from x.agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from x.agentplane.runner import protocol_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -96,6 +97,25 @@ async def test_a_session_is_one_thread_and_its_events_read_back_in_order(
     assert [entry.cursor for entry in await store.events(thread, after_cursor=1, limit=2)] == [2, 3]
     assert await store.last_cursor(thread) == 4
     assert await store.last_cursor(other) == 0
+
+
+async def test_archived_command_admission_is_an_exact_retry_key(store: TrajectoryStore, lease: IngestionLease) -> None:
+    thread = await store.thread("sb-1", "s-1", SPEC)
+    command = command_pb2.Command(
+        command_id="submit-1", submit_input=command_pb2.SubmitInput(text="persist this exact input")
+    )
+    admitted = _event(1, command_admitted=event_pb2.CommandAdmitted(command=command))
+    await store.record(thread, [admitted], lease=lease)
+
+    # The saved runner Event is the retry receipt, including its runner origin/cursor; it is not
+    # rebuilt from a separate app command row.
+    assert await store.admitted_command(thread, command) == admitted
+    with pytest.raises(CommandIdConflictError, match="different work"):
+        await store.admitted_command(
+            thread, command_pb2.Command(command_id="submit-1", submit_input=command_pb2.SubmitInput(text="other input"))
+        )
+    with pytest.raises(ThreadNotFoundError):
+        await store.admitted_command(UUID(int=0), command)
 
 
 async def test_threads_list_with_their_progress(store: TrajectoryStore, lease: IngestionLease) -> None:
