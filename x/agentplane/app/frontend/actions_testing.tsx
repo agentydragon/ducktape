@@ -64,7 +64,7 @@ export async function render(service: ActionService, View: View): Promise<HTMLDi
   mounted.push({ root, container });
   await act(async () => {
     root.render(
-      <MantineProvider>
+      <MantineProvider env="test">
         <View service={service} />
       </MantineProvider>
     );

@@ -505,6 +505,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":client",
+        ":live",
         ":sandboxes",
         ":sidebar_css",
         ":thread_groups",
@@ -523,6 +524,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":client",
+        ":live",
         ":sidebar",
         ":thread_groups",
         "//:node_modules/@mantine/core",

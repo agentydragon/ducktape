@@ -33,7 +33,7 @@ async function render(
   mounted.push({ root, container });
   await act(async () =>
     root.render(
-      <MantineProvider>
+      <MantineProvider env="test">
         <Settings opened={opened} tab={tab} onTabChange={onTabChange} onClose={onClose} />
       </MantineProvider>
     )

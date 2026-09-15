@@ -89,7 +89,7 @@ async function render(
   const onOpenThread = vi.fn();
   await act(async () =>
     root.render(
-      <MantineProvider>
+      <MantineProvider env="test">
         <MemoryRouter>
           <SandboxPage name="startup-test" onBack={vi.fn()} onOpenThread={onOpenThread} />
         </MemoryRouter>

@@ -27,7 +27,7 @@ async function render(
   const service: McpLinkageService = { list, status: vi.fn(), start: vi.fn(), disconnect: vi.fn(), ...overrides };
   await act(async () =>
     root.render(
-      <MantineProvider>
+      <MantineProvider env="test">
         <McpServers service={service} />
       </MantineProvider>
     )

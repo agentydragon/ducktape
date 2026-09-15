@@ -35,7 +35,7 @@ async function render(service: ConsentService, navigate = vi.fn()): Promise<HTML
   mounted.push({ root, container });
   await act(async () => {
     root.render(
-      <MantineProvider>
+      <MantineProvider env="test">
         <ConnectionConsent handle="opaque-handle" service={service} navigate={navigate} />
       </MantineProvider>
     );

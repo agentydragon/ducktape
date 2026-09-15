@@ -23,7 +23,7 @@ import type {
   SandboxView,
   ThreadView,
 } from "../client";
-import type { SandboxesSnapshot, SandboxSnapshot, WatchHealth } from "../live";
+import type { SandboxesSnapshot, SandboxSnapshot, ThreadsSnapshot, WatchHealth } from "../live";
 import { Direction, EventSchema, ItemKind, TurnStatus } from "../../../protocol/event_pb";
 import { CommandSchema } from "../../../protocol/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../../protocol/event_log_pb";
@@ -419,7 +419,7 @@ const THREADS: ThreadView[] = [
 ];
 
 /**
- * The sidebar's own cross-sandbox fixture (`GET /threads/with-sandboxes`): the three THREADS above
+ * The sidebar's cross-sandbox fixture: the three THREADS above
  * (all `demo-a1b2`), one each for the pending and suspended sandboxes, one archived, and one whose
  * `sandbox` names no live SandboxView at all -- the struck-through, read-only group.
  */
@@ -1104,17 +1104,7 @@ routes.push(
           (!query.has("session_id") || thread.session_id === query.get("session_id"))
       ),
   ],
-  ["GET", /^\/threads\/([0-9a-f-]+)$/, (match) => THREADS_WITH_SANDBOXES.find((thread) => thread.id === match[1])],
-  [
-    "GET",
-    /^\/threads\/with-sandboxes$/,
-    (_match, query) => {
-      const includeArchived = query.get("include_archived") === "true";
-      const threads = THREADS_WITH_SANDBOXES.filter((thread) => includeArchived || !thread.archived);
-      const sandboxes = Object.fromEntries(SANDBOXES.map((candidate) => [candidate.name, candidate]));
-      return { threads, sandboxes };
-    },
-  ]
+  ["GET", /^\/threads\/([0-9a-f-]+)$/, (match) => THREADS_WITH_SANDBOXES.find((thread) => thread.id === match[1])]
 );
 
 const FRESH: WatchHealth = {
@@ -1165,6 +1155,17 @@ class HarnessEventSource extends EventTarget {
   }
 
   private serve(url: URL): void {
+    if (url.pathname === "/live/threads") {
+      const snapshot: ThreadsSnapshot = {
+        sandboxes: SANDBOXES,
+        threads: THREADS_WITH_SANDBOXES,
+        updates_connected: scenario.sidebarSource !== "database-disconnected",
+        watch: watch(),
+      };
+      this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
+      if (scenario.sidebarSource === "disconnected") this.dispatchEvent(new Event("error"));
+      return;
+    }
     if (url.pathname === "/live/sandboxes") {
       const snapshot: SandboxesSnapshot = { sandboxes: SANDBOXES, watch: watch() };
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));

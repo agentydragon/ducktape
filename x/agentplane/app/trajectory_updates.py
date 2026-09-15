@@ -24,6 +24,10 @@ class TrajectoryUpdates:
         self._lost = asyncio.Event()
         self._task: asyncio.Task[None] | None = None
 
+    @property
+    def connected(self) -> bool:
+        return self._connection is not None and not self._connection.is_closed()
+
     async def start(self) -> None:
         if self._task is not None:
             raise RuntimeError("trajectory update listener already started")

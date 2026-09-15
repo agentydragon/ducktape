@@ -101,6 +101,11 @@ class SandboxesSnapshot(BaseModel):
     watch: WatchHealth
 
 
+class ThreadsSnapshot(SandboxesSnapshot):
+    threads: list[ThreadView]
+    updates_connected: bool = Field(description="Whether this replica is listening for PostgreSQL Thread changes.")
+
+
 class SandboxSnapshot(BaseModel):
     """A frame of one sandbox's stream: the sandbox itself, what may leave it, what the Action
     Service auto-decides for it, and its threads."""
@@ -368,6 +373,9 @@ router = APIRouter(prefix="/live", tags=["live"])
 _SANDBOXES_FRAMES: dict[int | str, dict[str, Any]] = {
     200: {"model": SandboxesSnapshot, "content": {"text/event-stream": {}}}
 }
+_THREADS_FRAMES: dict[int | str, dict[str, Any]] = {
+    200: {"model": ThreadsSnapshot, "content": {"text/event-stream": {}}}
+}
 _SANDBOX_FRAMES: dict[int | str, dict[str, Any]] = {
     200: {"model": SandboxSnapshot, "content": {"text/event-stream": {}}}
 }
@@ -391,6 +399,19 @@ async def live_sandboxes(index: Index, shutdown: Shutdown) -> StreamingResponse:
         return SandboxesSnapshot(sandboxes=index.sandbox_views(), watch=_health(index))
 
     return _stream(shutdown.until(frames(snapshot, lambda: _health(index), index.changes)))
+
+
+@router.get("/threads", responses=_THREADS_FRAMES)
+async def live_threads(index: Index, store: Store, shutdown: Shutdown) -> StreamingResponse:
+    async def snapshot() -> ThreadsSnapshot:
+        return ThreadsSnapshot(
+            sandboxes=index.sandbox_views(),
+            threads=await store.list_threads(include_archived=True),
+            updates_connected=store.updates_connected,
+            watch=_health(index),
+        )
+
+    return _stream(shutdown.until(frames(snapshot, lambda: _health(index), index.changes, store.changes)))
 
 
 @router.get("/sandboxes/{name}", responses=_SANDBOX_FRAMES)

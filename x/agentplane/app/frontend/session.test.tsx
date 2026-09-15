@@ -109,7 +109,7 @@ async function render(
   async function rerender(threadId: string): Promise<void> {
     await act(async () => {
       root.render(
-        <MantineProvider>
+        <MantineProvider env="test">
           <MemoryRouter>
             <SessionView threadId={threadId} onBack={() => {}} />
           </MemoryRouter>

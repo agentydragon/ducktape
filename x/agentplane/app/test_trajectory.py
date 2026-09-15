@@ -4,7 +4,6 @@ without a runner."""
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -44,16 +43,6 @@ async def lease(store: TrajectoryStore) -> IngestionLease:
     lease = await store.acquire_ingestion("sb-1", timedelta(minutes=1))
     assert lease is not None
     return lease
-
-
-@pytest.fixture
-async def replica(db_url: str) -> AsyncIterator[TrajectoryStore]:
-    replica = TrajectoryStore.connect(db_url)
-    await replica.start_updates()
-    try:
-        yield replica
-    finally:
-        await replica.close()
 
 
 def _event(cursor: int, **observation: object) -> event_log_pb2.EventEntry:
@@ -587,9 +576,11 @@ async def test_listener_reconnect_wakes_readers_for_writes_during_the_gap(
                 )
             # The termination callback wakes local consumers before the reconnect attempt.
             await asyncio.wait_for(changed.wait(), timeout=5)
+            assert not replica.updates_connected
             changed.clear()
             await store.record(thread, [_event(1, harness_lost=event_pb2.HarnessLost())], lease=lease)
             await asyncio.wait_for(changed.wait(), timeout=5)
+            assert replica.updates_connected
             assert [entry.cursor for entry in await replica.events(thread, limit=10)] == [1]
             # Establish another live write still wakes this replica after it reconnects.
             changed.clear()

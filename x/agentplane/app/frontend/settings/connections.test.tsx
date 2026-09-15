@@ -23,7 +23,7 @@ async function render(service: ConnectionService): Promise<HTMLDivElement> {
   mounted.push({ root, container });
   await act(async () =>
     root.render(
-      <MantineProvider>
+      <MantineProvider env="test">
         <Connections service={service} />
       </MantineProvider>
     )

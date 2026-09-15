@@ -31,6 +31,7 @@ export interface Scenario extends ScenarioOptions {
    * (UISHELL_MOBILE). */
   openMobileSidebar?: boolean;
   threadlessSandbox?: boolean;
+  sidebarSource?: "disconnected" | "database-disconnected";
   /** Stop replay early or omit one entry, exposing synchronization state without fabricating Events. */
   sessionReplay?: "catching-up" | "gap";
   /** Assistant output precedes coalesced queued input, then model/interrupt effects. */
@@ -157,6 +158,28 @@ export const SCENARIOS: Record<string, Scenario> = {
     threadlessSandbox: true,
     openMobileSidebar: true,
     readySelectors: ['a[href="#/sandboxes/test-provisioning"]', ".agentplane-sidebar-backdrop"],
+  },
+  threads_updates_disconnected: {
+    element: "#app",
+    route: "/",
+    viewport: { width: 1200, height: 900 },
+    sidebarSource: "database-disconnected",
+    readySelectors: ['[role="alert"]'],
+  },
+  threads_disconnected_phone: {
+    element: "#app",
+    route: "/",
+    viewport: PHONE,
+    sidebarSource: "disconnected",
+    openMobileSidebar: true,
+    readySelectors: [".agentplane-sidebar-backdrop", '[role="alert"]'],
+  },
+  threads_watch_stale: {
+    element: "#app",
+    route: "/",
+    viewport: { width: 1200, height: 900 },
+    wedgedWatch: true,
+    readySelectors: ['[role="alert"]'],
   },
 
   sandboxes: { element: "#app", route: "/sandboxes", viewport: { width: 1200, height: 900 } },

@@ -21,7 +21,7 @@ async function render(policy: ActionPolicyView | ActionPolicyUnavailable | null)
   root = createRoot(container);
   await act(async () =>
     root.render(
-      <MantineProvider>
+      <MantineProvider env="test">
         <ActionPolicySection policy={policy} />
       </MantineProvider>
     )

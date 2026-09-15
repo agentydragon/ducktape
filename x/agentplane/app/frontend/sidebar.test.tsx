@@ -3,9 +3,10 @@ import { MantineProvider } from "@mantine/core";
 import { type JSX, act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import type { SandboxView, ThreadView } from "./client";
+import type { ThreadsSnapshot } from "./live";
 import { Sidebar } from "./sidebar";
 
 const fetchMock = vi.hoisted(() => {
@@ -17,11 +18,13 @@ const fetchMock = vi.hoisted(() => {
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: ReturnType<typeof createRoot>;
 let container: HTMLDivElement;
+beforeEach(() => vi.stubGlobal("fetch", fetchMock));
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
   vi.clearAllMocks();
   window.localStorage.clear();
+  vi.unstubAllGlobals();
 });
 
 function sandbox(name: string, overrides: Partial<SandboxView> = {}): SandboxView {
@@ -55,15 +58,43 @@ function LocationProbe(): JSX.Element {
   return <div data-testid="location">{location.pathname}</div>;
 }
 
+function snapshot(threads: ThreadView[], sandboxes: Record<string, SandboxView>): ThreadsSnapshot {
+  return {
+    threads,
+    sandboxes: Object.values(sandboxes),
+    updates_connected: true,
+    watch: { fresh: true, stale_after_seconds: 90, refreshed_seconds_ago: { sandboxes: 0 } },
+  };
+}
+
+async function pushSnapshot(stream: EventTarget, value: ThreadsSnapshot): Promise<void> {
+  await act(async () => stream.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(value) })));
+}
+
 async function render(
   threads: ThreadView[],
   sandboxes: Record<string, SandboxView>,
   options: { initialPath?: string; settingsOpen?: boolean; mobileOpen?: boolean } = {}
-): Promise<{ onOpenSettings: ReturnType<typeof vi.fn>; onMobileClose: ReturnType<typeof vi.fn> }> {
+): Promise<{ onOpenSettings: ReturnType<typeof vi.fn>; onMobileClose: ReturnType<typeof vi.fn>; stream: EventTarget }> {
+  const streams: EventTarget[] = [];
+  vi.stubGlobal(
+    "EventSource",
+    class extends EventTarget {
+      constructor(url: string) {
+        super();
+        expect(url).toBe("/live/threads");
+        streams.push(this);
+        queueMicrotask(() =>
+          this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot(threads, sandboxes)) }))
+        );
+      }
+      close(): void {}
+    }
+  );
   fetchMock.mockImplementation((request: Request) => {
     const url = new URL(request.url);
-    if (url.pathname === "/threads/with-sandboxes") {
-      return Promise.resolve(Response.json({ threads, sandboxes }));
+    if (url.pathname === "/models") {
+      return Promise.resolve(Response.json({ HARNESS_CLAUDE: [], HARNESS_CODEX: [] }));
     }
     if (/^\/threads\/[^/]+\/(un)?archive$/.test(url.pathname)) {
       return Promise.resolve(new Response(null, { status: 204 }));
@@ -77,7 +108,7 @@ async function render(
   const onMobileClose = vi.fn();
   await act(async () =>
     root.render(
-      <MantineProvider>
+      <MantineProvider env="test">
         <MemoryRouter initialEntries={[options.initialPath ?? "/"]}>
           <Sidebar
             settingsOpen={options.settingsOpen ?? false}
@@ -92,7 +123,7 @@ async function render(
       </MantineProvider>
     )
   );
-  return { onOpenSettings, onMobileClose };
+  return { onOpenSettings, onMobileClose, stream: streams[0] };
 }
 
 function rows(): HTMLElement[] {
@@ -108,6 +139,75 @@ function row(name: string): HTMLElement {
 function location(): string | null | undefined {
   return container.querySelector('[data-testid="location"]')?.textContent;
 }
+
+it("applies pushed renames and Sandbox state without marking a suspended harness live", async () => {
+  const running = thread({
+    id: "t-1",
+    sandbox: "test-sandbox",
+    session_id: "s-1",
+    name: "Before rename",
+    harness_state: "HARNESS_STATE_RUNNING",
+  });
+  const sandboxes = { "test-sandbox": sandbox("test-sandbox") };
+  const { stream } = await render([running], sandboxes, { initialPath: "/threads/t-1" });
+  expect(container.querySelectorAll(".agentplane-sidebar-dot.ok")).toHaveLength(1);
+
+  const renamed = { ...running, name: "Renamed in another replica" };
+  await pushSnapshot(
+    stream,
+    snapshot([renamed], {
+      "test-sandbox": sandbox("test-sandbox", { state: "suspended", operating_mode: "Suspended" }),
+      "test-threadless": sandbox("test-threadless", { state: "waiting_for_pod" }),
+    })
+  );
+  expect(container.textContent).not.toContain("Before rename");
+  expect(row(renamed.name).className).toContain("current");
+  expect(container.querySelector(".agentplane-sidebar-state-icon.suspended")).not.toBeNull();
+  expect(container.querySelectorAll(".agentplane-sidebar-dot.ok")).toHaveLength(0);
+  expect(container.textContent).toContain("test-threadless");
+  expect(container.textContent).toContain("0 threads");
+  expect(fetchMock).not.toHaveBeenCalled();
+
+  await pushSnapshot(stream, snapshot([renamed], {}));
+  expect(container.querySelector('a[href="/sandboxes/test-sandbox"]')).toBeNull();
+  await act(async () => row(renamed.name).click());
+  expect(location()).toBe("/threads/t-1");
+});
+
+it("keeps retained rows but withdraws live indicators when any update source is unavailable", async () => {
+  const threads = [
+    thread({
+      id: "t-1",
+      sandbox: "test-sandbox",
+      session_id: "s-1",
+      name: "Retained thread",
+      harness_state: "HARNESS_STATE_RUNNING",
+    }),
+  ];
+  const sandboxes = { "test-sandbox": sandbox("test-sandbox") };
+  const { stream } = await render(threads, sandboxes);
+  await act(async () => stream.dispatchEvent(new Event("error")));
+  expect(container.textContent).toContain("Not connected to the live stream");
+  expect(container.textContent).toContain("Retained thread");
+  expect(container.querySelectorAll(".agentplane-sidebar-dot.ok")).toHaveLength(0);
+
+  await pushSnapshot(stream, { ...snapshot(threads, sandboxes), updates_connected: false });
+  expect(container.textContent).not.toContain("Not connected to the live stream");
+  expect(container.textContent).toContain("Thread updates disconnected");
+  expect(container.querySelectorAll(".agentplane-sidebar-dot.ok")).toHaveLength(0);
+
+  const stale = snapshot(threads, sandboxes);
+  stale.watch.fresh = false;
+  await pushSnapshot(stream, stale);
+  expect(container.textContent).toContain("watch has stopped moving");
+  expect(container.textContent).not.toContain("Thread updates disconnected");
+  expect(container.querySelectorAll(".agentplane-sidebar-dot.ok")).toHaveLength(0);
+
+  await pushSnapshot(stream, snapshot([{ ...threads[0], name: "Current thread" }], sandboxes));
+  expect(container.textContent).not.toContain("Retained thread");
+  expect(container.textContent).not.toContain("watch has stopped moving");
+  expect(container.querySelectorAll(".agentplane-sidebar-dot.ok")).toHaveLength(1);
+});
 
 it("groups threads by sandbox, showing each group's state, name and visible thread count", async () => {
   await render(
@@ -224,6 +324,19 @@ it("hides archived threads until the switch is toggled, and archives a thread fr
   );
   expect(archiveCall).toBeDefined();
   expect((archiveCall?.[0] as Request).method).toBe("POST");
+});
+
+it("keeps the last snapshot when archiving fails and reports the error", async () => {
+  await render([thread({ id: "t-1", sandbox: "demo", session_id: "s-1", name: "Keep this thread" })], {
+    demo: sandbox("demo"),
+  });
+  fetchMock.mockResolvedValueOnce(Response.json({ detail: "Archive unavailable" }, { status: 503 }));
+  const archiveButton = container.querySelector('button[aria-label="Archive Keep this thread"]');
+  if (!(archiveButton instanceof HTMLButtonElement)) throw new Error("missing archive button");
+  await act(async () => archiveButton.click());
+  expect(row("Keep this thread")).toBeDefined();
+  expect(container.textContent).toContain("Archive unavailable");
+  expect(container.textContent).not.toContain("Show archived (1)");
 });
 
 function footerButton(label: string): HTMLButtonElement {

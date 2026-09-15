@@ -32,7 +32,6 @@ export type SandboxView = components["schemas"]["SandboxView"];
 export type NewSandbox = components["schemas"]["NewSandbox"];
 export type Condition = components["schemas"]["Condition"];
 export type ThreadView = components["schemas"]["ThreadView"];
-export type ThreadsWithSandboxes = components["schemas"]["ThreadsWithSandboxes"];
 export type BindingView = components["schemas"]["BindingView"];
 export type PolicyView = components["schemas"]["PolicyView"];
 export type ActionPolicyView = components["schemas"]["ActionPolicyView"];
@@ -250,16 +249,6 @@ export async function renameThread(threadId: string, name: string | null): Promi
   const { data, error } = await api.PATCH("/threads/{thread_id}", {
     params: { path: { thread_id: threadId } },
     body: { name },
-  });
-  if (error) throw new Error(displayableError(error));
-  return data;
-}
-
-/** Visible Threads plus every existing Sandbox, including those without Threads; a
- * Thread whose `sandbox` name is absent from `sandboxes` has an already-deleted Sandbox. */
-export async function listThreadsWithSandboxes(includeArchived: boolean): Promise<ThreadsWithSandboxes> {
-  const { data, error } = await api.GET("/threads/with-sandboxes", {
-    params: { query: { include_archived: includeArchived } },
   });
   if (error) throw new Error(displayableError(error));
   return data;
