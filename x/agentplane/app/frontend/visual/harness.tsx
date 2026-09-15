@@ -1183,13 +1183,19 @@ if (scenario.openEvidence !== undefined) {
     const frame = document.getElementById(`agentplane-event-${scenario.openEvidence}`);
     if (!(frame instanceof HTMLDetailsElement)) return;
     openEvidence.disconnect();
-    // Initial bottom-following settles after layout. Then scrolling to the closed frame opts
-    // out before opening it, matching a reader navigating back to inspect earlier evidence.
+    // Let initial bottom-follow and the opened frame's layout settle, then navigate back.
+    // Visiting the top first opts out even if the closed frame was already at the bottom.
     requestAnimationFrame(() =>
       requestAnimationFrame(() => {
-        frame.scrollIntoView({ block: "center" });
+        frame.open = true;
         requestAnimationFrame(() => {
-          frame.open = true;
+          const history = frame.closest<HTMLElement>('[aria-label="Thread history"]');
+          if (!history) throw new Error("Raw evidence is outside Thread history");
+          history.scrollTo({ top: 0 });
+          requestAnimationFrame(() => {
+            frame.scrollIntoView({ block: "start" });
+            frame.dataset.evidenceReady = "";
+          });
         });
       })
     );

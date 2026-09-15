@@ -79,7 +79,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: PHONE,
     interleavedEvents: true,
     openEvidence: 13,
-    readySelectors: ["#agentplane-event-13[open]"],
+    readySelectors: ["#agentplane-event-13[open][data-evidence-ready]"],
     captureViewport: true,
   },
   session_interleaved_native_details: {
@@ -88,7 +88,7 @@ export const SCENARIOS: Record<string, Scenario> = {
     viewport: { width: 1200, height: 1100 },
     interleavedEvents: true,
     openEvidence: 9,
-    readySelectors: ["#agentplane-event-9[open]"],
+    readySelectors: ["#agentplane-event-9[open][data-evidence-ready]"],
     captureViewport: true,
   },
   // The sidebar's landing state (UISHELL_SIDEBAR): every group state icon (running, pending,
