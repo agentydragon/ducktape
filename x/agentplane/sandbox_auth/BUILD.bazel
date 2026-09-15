@@ -24,6 +24,7 @@ py_test(
         ":principal",
         "//:conftest",
         "@pypi//kubernetes_asyncio",
+        "@pypi//multidict",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

@@ -12,6 +12,7 @@ import pytest
 import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import AuthenticationV1Api, CoreV1Api
+from multidict import CIMultiDict, CIMultiDictProxy
 
 from x.agentplane.sandbox_auth.principal import (
     POD_NAME_CLAIM,
@@ -292,8 +293,10 @@ async def test_bearer_never_appears_in_principal_error_repr_or_logs(caplog: pyte
 
 def credential_bearing_api_error(status: int) -> k8s_client.ApiException:
     error = k8s_client.ApiException(status=status, reason=f"credential-bearing-reason: {TOKEN}")
-    error.body = f"credential-bearing-body: {TOKEN}"
-    error.headers = {"Authorization": f"Bearer {TOKEN}", "X-Private": "credential-bearing-header"}
+    error.body = f"credential-bearing-body: {TOKEN}".encode()
+    error.headers = CIMultiDictProxy(
+        CIMultiDict({"Authorization": f"Bearer {TOKEN}", "X-Private": "credential-bearing-header"})
+    )
     return error
 
 
