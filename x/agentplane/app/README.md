@@ -73,10 +73,16 @@ runner first, with stable `input_id` values: the runner serializes admission and
 There is no database command queue. A successful HTTP command response is not a promise that the
 trajectory copy is already committed; the runner's input settlement events describe its outcome.
 
-One app replica leases each sandbox's ingestion in PostgreSQL. It observes every runner session,
-copying events from the last committed sequence. Each write locks and validates the lease token
-against database time, so an expired owner cannot write after takeover. Disconnects retry from the
-committed cursor; event keys make replay idempotent. A graceful exit releases leases, while a crashed
+One app replica leases each sandbox's ingestion in PostgreSQL. Each write locks and validates
+the lease token against database time, so an expired owner cannot write after takeover. A batch
+must extend the contiguous copied prefix with the same runner source and original sequence;
+replayed entries must match their complete stored payload. Gaps and conflicts reject the whole
+batch. The maximum stored cursor is therefore the copied checkpoint, committed atomically with
+the Events and feed projection without a separate counter.
+
+Reconnect replays the last copied entry too, verifying its identity before extending the prefix.
+A conflict or a stream ending before its advertised cursor records a feed error, not a normal
+completion; the archived prefix stays readable. A graceful exit releases leases, while a crashed
 owner is replaced after its lease expires. This coordinates ownership, not balanced placement.
 
 Sandbox discovery and runner addresses use the existing Kubernetes list/watch cache, including

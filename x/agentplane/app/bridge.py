@@ -22,7 +22,14 @@ from x.agentplane.app.inventory import ProvisioningState, SandboxInventory, Sand
 from x.agentplane.app.live import LiveIndex
 from x.agentplane.app.presets import Harness, PresetCatalog
 from x.agentplane.app.shutdown import Shutdown
-from x.agentplane.app.trajectory import FeedEnd, FeedError, IngestionLease, IngestionLeaseLostError, TrajectoryStore
+from x.agentplane.app.trajectory import (
+    EventReplicationError,
+    FeedEnd,
+    FeedError,
+    IngestionLease,
+    IngestionLeaseLostError,
+    TrajectoryStore,
+)
 from x.agentplane.protocol import command_pb2
 from x.agentplane.runner import protocol_pb2
 from x.agentplane.runner.client import Attachment, RunnerClient, RunnerError, StreamClosedError
@@ -99,7 +106,9 @@ class Feed:
             if stored:
                 attachment.cancel()
                 async with asyncio.timeout(10):
-                    attachment = await self.client.attach(self.session_id, after_cursor=stored)
+                    # Replay the boundary entry too: the same cursor must still identify the
+                    # exact archived Event and source even if the runner has no new entries.
+                    attachment = await self.client.attach(self.session_id, after_cursor=stored - 1)
             await self.store.set_attached(thread_id, attachment.attached, lease=self.lease)
             try:
                 while True:
@@ -107,7 +116,19 @@ class Feed:
                     await self.store.record(thread_id, [entry], lease=self.lease)
                     attachment.seen.clear()
             except StreamClosedError:
-                await self.store.end_feed(thread_id, lease=self.lease, error=None)
+                copied = await self.store.last_cursor(thread_id)
+                await self.store.end_feed(
+                    thread_id,
+                    lease=self.lease,
+                    error=(
+                        f"runner replay ended at cursor {copied} before promised cursor {attachment.attached.last_cursor}"
+                        if copied < attachment.attached.last_cursor
+                        else None
+                    ),
+                )
+            except EventReplicationError as error:
+                logger.error("invalid runner history for %s/%s", self.lease.sandbox, self.session_id, exc_info=True)
+                await self.store.end_feed(thread_id, lease=self.lease, error=str(error))
         except IngestionLeaseLostError:
             logger.info("ingestion lease lost for %s/%s", self.lease.sandbox, self.session_id)
         except grpc.aio.AioRpcError, ConnectionError, SQLAlchemyError, RunnerError, TimeoutError:

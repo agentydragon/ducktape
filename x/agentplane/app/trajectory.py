@@ -113,6 +113,10 @@ class IngestionLeaseLostError(Exception):
     """The sandbox ingester no longer owns authority to commit observations."""
 
 
+class EventReplicationError(ValueError):
+    """The runner stream conflicts with the archived prefix or skips an entry."""
+
+
 @dataclass(frozen=True)
 class FeedEnd:
     pass
@@ -209,33 +213,65 @@ class TrajectoryStore:
     async def record(
         self, thread_id: UUID, entries: Sequence[event_log_pb2.EventEntry], *, lease: IngestionLease
     ) -> None:
-        """Store entries; one already stored under its cursor is left as it was, so a replay after
-        a reconnect is harmless."""
+        """Atomically extend the contiguous prefix, accepting only identical replayed entries."""
         if not entries:
             return
-        rows = [
-            {
-                "thread_id": thread_id,
-                "cursor": entry.cursor,
-                "at": entry.event.at.ToDatetime(tzinfo=UTC),
-                "kind": entry.event.WhichOneof("observation") or "",
-                "payload": MessageToDict(entry),
-            }
-            for entry in entries
-        ]
         async with self._sessions.begin() as session:
             await _fence(session, lease, thread_id)
-            inserted = await session.scalars(
-                insert(Event).values(rows).on_conflict_do_nothing().returning(Event.payload)
+            last = await session.scalar(
+                select(Event).where(Event.thread_id == thread_id).order_by(Event.cursor.desc()).limit(1)
             )
+            cursor = last.cursor if last is not None else 0
+            source_id = (
+                ParseDict(last.payload, event_log_pb2.EventEntry()).origin.source_id if last is not None else None
+            )
+            payloads = dict(
+                (
+                    await session.execute(
+                        select(Event.cursor, Event.payload).where(
+                            Event.thread_id == thread_id,
+                            Event.cursor.in_([entry.cursor for entry in entries if entry.cursor <= cursor]),
+                        )
+                    )
+                )
+                .tuples()
+                .all()
+            )
+            inserted: list[event_log_pb2.EventEntry] = []
+            for entry in entries:
+                if not entry.cursor or not entry.origin.source_id or entry.origin.sequence != entry.cursor:
+                    raise EventReplicationError(f"invalid runner origin at cursor {entry.cursor}")
+                if source_id is not None and entry.origin.source_id != source_id:
+                    raise EventReplicationError(f"runner source changed at cursor {entry.cursor}")
+                payload = MessageToDict(entry)
+                if entry.cursor in payloads:
+                    if payloads[entry.cursor] != payload:
+                        raise EventReplicationError(f"conflicting runner entry at cursor {entry.cursor}")
+                    continue
+                if entry.cursor != cursor + 1:
+                    raise EventReplicationError(f"expected runner cursor {cursor + 1}, received {entry.cursor}")
+                session.add(
+                    Event(
+                        thread_id=thread_id,
+                        cursor=entry.cursor,
+                        at=entry.event.at.ToDatetime(tzinfo=UTC),
+                        kind=entry.event.WhichOneof("observation") or "",
+                        payload=payload,
+                    )
+                )
+                payloads[entry.cursor] = payload
+                inserted.append(entry)
+                cursor = entry.cursor
+                source_id = entry.origin.source_id
+            if not inserted:
+                return
+            # The maximum stored cursor is the checkpoint: the fenced transaction admits
+            # only a contiguous suffix, so there is no separately mutable progress counter.
             state = await session.get(FeedState, thread_id)
             if state is not None:
                 attached = ParseDict(state.attached, protocol_pb2.Attached())
                 previous_model = attached.spec.model
-                for entry in sorted(
-                    (ParseDict(payload, event_log_pb2.EventEntry()) for payload in inserted),
-                    key=lambda entry: entry.cursor,
-                ):
+                for entry in inserted:
                     # An Attached snapshot describes the runner at its cursor. Replaying the
                     # earlier log fills history, but must not rewind that snapshot's state.
                     if entry.cursor <= attached.last_cursor:
