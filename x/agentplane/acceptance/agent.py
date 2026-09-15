@@ -98,7 +98,7 @@ class Turn:
 
 
 class Agent:
-    """One Thread. `run` sends a prompt and returns when the turn completes."""
+    """One Thread. `run` returns only a successfully completed turn."""
 
     def __init__(self, client: Client, *, thread_id: UUID, cursor: int) -> None:
         self._client = client
@@ -147,7 +147,13 @@ class Agent:
                 case "item_completed":
                     _completed(event.item_completed, turn)
                 case "turn_completed":
-                    turn.status = event.turn_completed.status
+                    completed = event.turn_completed
+                    turn.status = completed.status
+                    if turn.status != event_pb2.TURN_STATUS_COMPLETED:
+                        raise AssertionError(
+                            f"turn {completed.turn_id!r} ended with {event_pb2.TurnStatus.Name(turn.status)}: "
+                            f"diagnostic={completed.error!r}"
+                        )
                     return turn
                 case _:
                     continue

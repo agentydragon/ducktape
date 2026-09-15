@@ -6,9 +6,13 @@ cross-component behavior and durable system evidence. They are not unit tests wi
 they are the checks that the deployed system does what <../egress/SPEC.md> says it does and that a
 session's standing instructions reach the model that serves it.
 
-Fast offline driver tests cover login choreography (`test_operator_login`) and startup retry
-classification (`test_agent`). They create no Sandbox and do not prove that a deployed IdP,
+Fast offline driver tests cover login choreography (`test_operator_login`), startup retries and
+terminal-turn handling (`test_agent`). They create no Sandbox and do not prove that a deployed IdP,
 Agentplane, or harness is reachable. Deployed login remains setup for the MCP vertical scenario.
+
+`Agent.run` returns only for `TURN_STATUS_COMPLETED`. Any other terminal status fails immediately
+with the turn id, status and quoted runner diagnostic, before scenario assertions about tool effects.
+It does not dump prompts, tool output or native frames, or automatically resend the admitted input.
 
 The general egress and instruction scenarios run on **both harnesses**. The runner protocol is the
 same for Claude and Codex, so one parametrized harness case covers both; `model` asks the deployment

@@ -333,10 +333,6 @@ operator-authenticated cases or validate the command-relay candidate on its depl
 Use the [acceptance suite](../acceptance/README.md) as the runbook, retain sanitized
 test/runtime evidence, and verify fixture cleanup. Do not resend the operator's failed
 staging input as a test. This is API-level deployed proof, not browser click-through proof.
-Make the acceptance driver fail on a non-successful native turn with its actual terminal
-diagnostic, before checking downstream tool effects; it currently returns failed turns
-as if the scenario could proceed normally. Do not weaken the downstream assertions or
-automatically retry commands to obtain a green run.
 
 ### `EGRESS_IDENTITY_AVAILABILITY` — locate the observed model-path 502
 
