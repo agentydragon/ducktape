@@ -5,7 +5,7 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { api, type ActionPolicySetView, type SandboxPresetView } from "./client";
+import { api, type ActionPolicySetView, type SandboxPresetView, type SandboxView } from "./client";
 import { SandboxList } from "./sandboxes";
 
 vi.mock("./live", () => ({
@@ -24,7 +24,17 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-async function render(codexModels: string[] = ["test-codex-a", "test-codex-b"]): Promise<HTMLDivElement> {
+const CREATED: SandboxView = {
+  name: "test-created-sandbox",
+  uid: "00000000-0000-4000-8000-000000000001",
+  state: "waiting_for_pod",
+  created_at: "2026-01-01T00:00:00Z",
+  operating_mode: "Running",
+  conditions: [],
+};
+
+async function render(codexModels: string[] = ["test-codex-a", "test-codex-b"]) {
+  const onOpen = vi.fn();
   const preset: SandboxPresetView = {
     name: "test-preset",
     title: "Test preset",
@@ -64,13 +74,13 @@ async function render(codexModels: string[] = ["test-codex-a", "test-codex-b"]):
     root.render(
       <MantineProvider>
         <MemoryRouter>
-          <SandboxList onOpen={vi.fn()} />
+          <SandboxList onOpen={onOpen} />
         </MemoryRouter>
       </MantineProvider>
     )
   );
   await choose(container, "Preset", "Test preset");
-  return container;
+  return { container, onOpen };
 }
 
 function input(container: HTMLElement, label: string): HTMLInputElement {
@@ -105,7 +115,7 @@ function options(container: HTMLElement, label: string): HTMLElement[] {
 }
 
 it("inherits the preset model and replaces incompatible choices when the harness changes", async () => {
-  const container = await render();
+  const { container } = await render();
   expect(input(container, "Template").value).toBe("test-template");
   expect(input(container, "Model").value).toBe("test-codex-b");
   await choose(container, "Model", "test-codex-a");
@@ -117,7 +127,7 @@ it("inherits the preset model and replaces incompatible choices when the harness
 });
 
 it("pre-fills the preset's action policy sets, offers every set with its verdict, and sends the pick", async () => {
-  const container = await render();
+  const { container, onOpen } = await render();
   expect(input(container, "Action policy sets").value).toBe("");
   expect(container.textContent).toContain("test-reads");
   await act(async () => input(container, "Action policy sets").click());
@@ -126,7 +136,7 @@ it("pre-fills the preset's action policy sets, offers every set with its verdict
     "test-broken · invalid",
   ]);
   await act(async () => input(container, "Action policy sets").click());
-  const post = vi.spyOn(api, "POST").mockResolvedValue({ data: {}, response: new Response() } as never);
+  const post = vi.spyOn(api, "POST").mockResolvedValue({ data: CREATED, response: new Response() } as never);
   await type(input(container, "Name"), "picked");
   const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New sandbox");
   if (!button) throw new Error("Missing New sandbox button");
@@ -142,12 +152,13 @@ it("pre-fills the preset's action policy sets, offers every set with its verdict
       }),
     })
   );
+  expect(onOpen).toHaveBeenCalledExactlyOnceWith(CREATED.name);
 });
 
 it("lets an operator replace the preset template before creating the sandbox", async () => {
-  const container = await render();
+  const { container } = await render();
   await choose(container, "Template", "other-template");
-  const post = vi.spyOn(api, "POST").mockResolvedValue({ data: {}, response: new Response() } as never);
+  const post = vi.spyOn(api, "POST").mockResolvedValue({ data: CREATED, response: new Response() } as never);
   await type(input(container, "Name"), "picked");
   const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New sandbox");
   if (!button) throw new Error("Missing New sandbox button");
@@ -160,11 +171,26 @@ it("lets an operator replace the preset template before creating the sandbox", a
 });
 
 it("clears an unavailable preset model and disables a harness with no offered models", async () => {
-  const container = await render([]);
+  const { container } = await render([]);
   expect(input(container, "Model").value).toBe("");
   expect(input(container, "Model").disabled).toBe(true);
   expect(input(container, "Model").placeholder).toBe("No models available");
   await choose(container, "Harness", "Claude");
   expect(input(container, "Model").disabled).toBe(false);
   expect(input(container, "Model").value).toBe("test-claude");
+});
+
+it("keeps the creation form and reports rejection without navigating", async () => {
+  const { container, onOpen } = await render();
+  vi.spyOn(api, "POST").mockResolvedValue({
+    error: { detail: "Test creation refused" },
+    response: new Response(null, { status: 409 }),
+  } as never);
+  await type(input(container, "Name"), "test-not-created");
+  const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New sandbox");
+  if (!button) throw new Error("Missing New sandbox button");
+  await act(async () => button.click());
+  expect(onOpen).not.toHaveBeenCalled();
+  expect(input(container, "Name").value).toBe("test-not-created");
+  expect(container.textContent).toContain("Test creation refused");
 });

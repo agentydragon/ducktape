@@ -184,7 +184,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
       ...form,
       thread_defaults: hasThreadDefaults(thread) ? thread : undefined,
     };
-    const { error: failure } = await api.POST("/sandboxes", {
+    const { data, error: failure } = await api.POST("/sandboxes", {
       body,
     });
     if (failure) setError(displayableError(failure));
@@ -193,6 +193,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
       setSelectedPreset(null);
       setThread(EMPTY_THREAD);
       setError(null);
+      onOpen(data.name);
     }
   }
 
