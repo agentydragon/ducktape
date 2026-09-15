@@ -35,7 +35,6 @@ Removed: Coinbase (legacy API deprecated), FTX (exchange collapsed).
 _Converters_ provide exchange rates to convert everything into `common_currency`:
 
 - **Alpha Vantage** — stock prices and FX rates
-- **CurrencyLayer** — foreign exchange rates
 - **Fixer.io** — foreign exchange rates
 
 Removed: Coinbase converter.
@@ -63,9 +62,6 @@ sources:
     token: your_flex_web_service_token
 
 converters:
-  currency_layer:
-    type: currencylayer
-    api_key: currencylayer_api_key
   alpha_vantage:
     type: alphavantage
     api_key: alphavantage_api_key
