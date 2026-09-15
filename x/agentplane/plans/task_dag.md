@@ -722,6 +722,9 @@ are frontend projections of this log; an app delivery queue is not a dependency.
 
 App-process loss and HTTP/SSE handoff are covered by
 [replica-safe runner delivery](../app/README.md#replica-safe-runner-delivery).
+The built SPA also has a real-Chromium retained/live/reload acceptance test. Extend that
+surface for canonical admission, persisted same-id retry, pending controls, and replay
+integrity failures; mocked component streams alone do not cover those boundaries.
 Native crash-recovery research is not a prerequisite for the replay/projection implementation.
 
 Implement [reconnect and catch-up](../docs/thread_layering.md#reconnect-and-catch-up):

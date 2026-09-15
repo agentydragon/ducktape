@@ -827,3 +827,30 @@ py_test(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_test(
+    name = "test_thread_browser",
+    size = "medium",
+    srcs = ["test_thread_browser.py"],
+    data = [
+        "//x/agentplane/app/frontend:bundle",
+        "@playwright_browsers//:chromium-headless-shell",
+    ],
+    env = {"CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)"},
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":trajectory",
+        "//:conftest",
+        "//util/bazel:runfiles",
+        "//util/testing:frontend_visual",
+        "//util/testing:undeclared_outputs",
+        "//x/agentplane/app/testing:replication_process",
+        "//x/agentplane/app/testing:replication_source",
+        "//x/agentplane/protocol:event_pb2",
+        "@pypi//playwright",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
