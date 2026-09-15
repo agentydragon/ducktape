@@ -247,16 +247,16 @@ class RunnerBridge:
                         )
                         feed.task = asyncio.create_task(feed.run(), name=f"ingest-{sandbox}-{summary.session_id}")
                         self._feeds[key] = feed
-                    await self._deliver_pending_inputs(sandbox, client, summaries)
+                    await self._deliver_pending_commands(sandbox, client, summaries)
                 except grpc.aio.AioRpcError, SandboxNotReachableError, SandboxNotFoundError, RunnerError, TimeoutError:
                     logger.warning("sandbox %s ingestion discovery unavailable", sandbox, exc_info=True)
         except SQLAlchemyError, OSError, TimeoutError:
             logger.warning("sandbox %s ingestion reconciliation failed; will retry", sandbox, exc_info=True)
 
-    async def _deliver_pending_inputs(
+    async def _deliver_pending_commands(
         self, sandbox: str, client: RunnerClient, summaries: list[protocol_pb2.SessionSummary]
     ) -> None:
-        """Reconcile runner admission for existing-Thread input commands.
+        """Reconcile runner admission for existing-Thread product commands.
 
         The ingestion lease already held by this bridge instance makes it the one app replica
         allowed to attach and deliver for this Sandbox.  We intentionally retain an unadmitted
@@ -268,10 +268,13 @@ class RunnerBridge:
             summary = summaries_by_id.get(delivery.runner_session_id)
             if summary is None or summary.harness_state != protocol_pb2.HARNESS_STATE_RUNNING:
                 continue
-            if not delivery.command.command.HasField("submit_input"):
-                # The controls slice will add native behavior evidence and its own projection
-                # before it makes control commands app-side ingress.  Preserve the Thread order
-                # rather than letting a later input overtake this command.
+            if delivery.command.command.WhichOneof("operation") not in {
+                "submit_input",
+                "change_model",
+                "interrupt_turn",
+            }:
+                # Stop remains a direct manual lifecycle operation until its Thread-specific
+                # cutover. Preserve command order rather than letting later commands overtake it.
                 continue
             await self._send_command(client, sandbox, delivery.runner_session_id, delivery.command.command)
 

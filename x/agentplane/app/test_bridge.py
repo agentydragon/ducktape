@@ -7,7 +7,7 @@ from __future__ import annotations
 import asyncio
 import json
 import socket
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import aclosing
 from dataclasses import dataclass
 from typing import Any
@@ -31,7 +31,7 @@ from x.agentplane.app.inventory import SandboxInventory
 from x.agentplane.app.live import LiveIndex
 from x.agentplane.app.presets import Harness
 from x.agentplane.app.trajectory import TrajectoryStore
-from x.agentplane.protocol import command_pb2
+from x.agentplane.protocol import command_pb2, event_log_pb2
 from x.agentplane.runner import protocol_pb2
 from x.agentplane.runner.client import RunnerClient
 from x.agentplane.runner.conftest import RunnerHandle
@@ -335,8 +335,8 @@ async def test_durable_input_survives_the_accepting_app_replica_crash(
         conflicting = command_pb2.Command(
             command_id="durable-input", submit_input=command_pb2.SubmitInput(text="DIFFERENT_INPUT")
         )
-        control = command_pb2.Command(
-            command_id="change-model", change_model=command_pb2.ChangeModel(model="bridge-model")
+        unsupported = command_pb2.Command(
+            command_id="stop-session", stop_runner_session=command_pb2.StopRunnerSession()
         )
         accepting_app = create_app(
             inventory,
@@ -361,7 +361,7 @@ async def test_durable_input_survives_the_accepting_app_replica_crash(
                 await accepting_http.post(f"/threads/{thread.id}/commands", json=MessageToDict(conflicting))
             ).status_code == 409
             assert (
-                await accepting_http.post(f"/threads/{thread.id}/commands", json=MessageToDict(control))
+                await accepting_http.post(f"/threads/{thread.id}/commands", json=MessageToDict(unsupported))
             ).status_code == 422
             assert (
                 await accepting_http.post(f"/threads/{thread.id}/commands", json={"submitInput": {"text": "missing"}})
@@ -401,6 +401,135 @@ async def test_durable_input_survives_the_accepting_app_replica_crash(
         if not accepting_closed:
             await accepting.close()
             await accepting_bridge.close()
+        await bridge.close()
+        await client.close()
+
+
+async def test_durable_model_change_and_interrupt_reconcile_through_the_thread_outbox(
+    runner: RunnerHandle,
+    store: TrajectoryStore,
+    inventory: SandboxInventory,
+    egress: EgressInventory,
+    decisions: DecisionsClient,
+    live_index: LiveIndex,
+    action_policy: ActionPolicyInventory,
+    reviewer: TokenReviewer,
+    model: ScriptedModel,
+    harness: protocol_pb2.Harness,
+    spec: protocol_pb2.SessionSpec,
+) -> None:
+    """The app stores controls first; only runner Events settle their visible outcomes."""
+
+    async def address_of(name: str) -> str:
+        assert name == SANDBOX
+        return runner.target
+
+    selected = (
+        "agentplane-switched/claude-haiku-4-5-20251001"
+        if harness == protocol_pb2.HARNESS_CLAUDE
+        else "agentplane-switched-model"
+    )
+    catalog = {item: ["bridge-model", selected] for item in Harness}
+    bridge = RunnerBridge(address_of=address_of, store=store)
+    client = RunnerClient(runner.target)
+    try:
+        attachment = await client.attach(SESSION, spec=spec)
+        try:
+            await attachment.detach()
+            await attachment.drain_until_end()
+        finally:
+            attachment.cancel()
+        await bridge.start([SANDBOX])
+
+        waiter = asyncio.Event()
+        with store.changes.subscribe(waiter):
+            async with asyncio.timeout(10):
+                while True:
+                    waiter.clear()
+                    threads = await store.list_threads(sandbox=SANDBOX, session_id=SESSION)
+                    if len(threads) == 1:
+                        break
+                    await waiter.wait()
+        (thread,) = threads
+
+        async def until(predicate: Callable[[list[event_log_pb2.EventEntry]], bool]) -> list[event_log_pb2.EventEntry]:
+            waiter = asyncio.Event()
+            with store.changes.subscribe(waiter):
+                async with asyncio.timeout(10):
+                    while True:
+                        waiter.clear()
+                        seen = await store.events(thread.id, limit=100)
+                        if predicate(seen):
+                            return seen
+                        await waiter.wait()
+
+        app = create_app(
+            inventory, bridge, store, catalog, egress, decisions, live_index, action_policy, reviewer=reviewer
+        )
+        model_command = command_pb2.Command(
+            command_id="outbox-model", change_model=command_pb2.ChangeModel(model=selected)
+        )
+        input_command = command_pb2.Command(
+            command_id="outbox-input", submit_input=command_pb2.SubmitInput(text="Wait; do not answer early.")
+        )
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
+        ) as http:
+            assert (
+                await http.post(f"/threads/{thread.id}/commands", json=MessageToDict(model_command))
+            ).status_code == 202
+            assert (
+                await http.post(f"/threads/{thread.id}/commands", json=MessageToDict(input_command))
+            ).status_code == 202
+
+            request = await model.request()
+            assert request.model == selected
+            await model.hold(request)
+            seen = await until(
+                lambda entries: any(entry.event.HasField("harness_user_message_confirmed") for entry in entries)
+            )
+            confirmation = next(
+                entry.event.harness_user_message_confirmed
+                for entry in seen
+                if entry.event.HasField("harness_user_message_confirmed")
+            )
+            interrupt_command = command_pb2.Command(
+                command_id="outbox-interrupt", interrupt_turn=command_pb2.InterruptTurn(turn_id=confirmation.turn_id)
+            )
+            assert (
+                await http.post(f"/threads/{thread.id}/commands", json=MessageToDict(interrupt_command))
+            ).status_code == 202
+
+        settled = await until(
+            lambda entries: (
+                {
+                    entry.event.command_admitted.command.command_id
+                    for entry in entries
+                    if entry.event.HasField("command_admitted")
+                }
+                == {"outbox-model", "outbox-input", "outbox-interrupt"}
+                and any(
+                    entry.event.HasField("model_changed") and entry.event.model_changed.command_id == "outbox-model"
+                    for entry in entries
+                )
+                and any(
+                    entry.event.HasField("turn_completed")
+                    and entry.event.turn_completed.interrupted_by_command_id == "outbox-interrupt"
+                    for entry in entries
+                )
+            )
+        )
+        assert [
+            entry.event.command_admitted.command.command_id
+            for entry in settled
+            if entry.event.HasField("command_admitted")
+        ] == ["outbox-model", "outbox-input", "outbox-interrupt"]
+        assert any(
+            entry.event.HasField("harness_user_message_confirmed")
+            and list(entry.event.harness_user_message_confirmed.origin_command_ids) == ["outbox-input"]
+            for entry in settled
+        )
+    finally:
         await bridge.close()
         await client.close()
 
