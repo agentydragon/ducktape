@@ -162,7 +162,9 @@ async def test_competing_runner_cannot_take_state_or_dispatch_before_replacement
     client = RunnerClient(replacement_runner.target)
     replacement = await client.attach("writer-handoff-1", spec=spec, after_cursor=checkpoint.cursor)
     lost = await replacement.until(events.is_kind("harness_lost"))
-    assert lost.cursor == checkpoint.cursor + 1
+    # The checkpoint pauses command dispatch, not the independent native-output reader.
+    assert lost.cursor > checkpoint.cursor
+    assert lost.origin.source_id == checkpoint.origin.source_id
     request = await model.request()
     assert request.user_texts[-1] == "Reply with exactly: HANDOFF_REPLACEMENT_OK"
     assert model.request_count == 2
@@ -172,6 +174,7 @@ async def test_competing_runner_cannot_take_state_or_dispatch_before_replacement
     await replacement.until(events.turn_completed)
     await replacement.stop_runner_session("stop-after-writer-handoff")
     await replacement.drain_until_end()
+    events.assert_contiguous([*first.seen, *replacement.seen])
     await client.close()
 
 
