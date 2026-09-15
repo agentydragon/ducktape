@@ -175,6 +175,7 @@ py_library(
     testonly = True,
     srcs = ["operator_login.py"],
     deps = [
+        "//x/agentplane/app:action_federation",
         "//x/agentplane/app:oidc",
         "@pypi//beautifulsoup4",
         "@pypi//httpx",

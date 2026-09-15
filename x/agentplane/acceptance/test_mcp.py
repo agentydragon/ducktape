@@ -26,6 +26,7 @@ from x.agentplane.acceptance.operator_login import (
     follow_dex_authorization,
     login_operator,
     read_operator_credentials,
+    verify_action_federation,
 )
 from x.agentplane.action_service.mcp_linkage import McpLinkageStatus, McpLinkageView
 from x.agentplane.action_service.models import (
@@ -264,15 +265,7 @@ async def operator_bff(base_url: str, operator_credentials: OperatorCredentials)
             except httpx.HTTPError, httpx.InvalidURL, ValueError, KeyError, TypeError:
                 pytest.fail("BLOCKED: OIDC transport or response invalid; auth details withheld", pytrace=False)
             http.headers["Origin"] = origin
-            # An absent request exercises federation without listing other requests.
-            probe = await http.get(f"/actions/{uuid4()}")
-            if probe.status_code != HTTPStatus.NOT_FOUND or probe.json() != {
-                "detail": "Action Service rejected the request"
-            }:
-                pytest.fail(
-                    "BLOCKED: BFF Action federation preflight refused; verify dedicated operator target identity",
-                    pytrace=False,
-                )
+            await verify_action_federation(http)
             yield http
     except LoginBlockedError as exc:
         pytest.fail(str(exc), pytrace=False)

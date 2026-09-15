@@ -92,6 +92,11 @@ HTTP tracing, response dumps or credential artifacts. The existing suite URL/tok
 settings below still serve the separate workload client. The agent-pod runner
 restriction below still applies: remote choreography tests are not live acceptance.
 
+After login, a fresh absent-Action lookup checks federation without listing existing
+requests. Its `404` must carry the BFF's structured upstream error for that exact
+operator Action request path, not an arbitrary ingress, signing-key, or login error.
+Malformed or unexpected responses fail without exposing their contents.
+
 ## Running it
 
 Not in CI, and not on RBE: the target is `manual`, so `//...` never selects it, and it needs a
