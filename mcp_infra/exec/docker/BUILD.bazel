@@ -48,6 +48,7 @@ py_library(
         "@pypi//aiodocker",
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
+        "@pypi//mcp_types",
         "@pypi//pydantic",
     ],
 )
