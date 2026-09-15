@@ -18,10 +18,7 @@ py_library(
 py_library(
     name = "model_endpoint",
     srcs = ["model_endpoint.py"],
-    deps = [
-        "@pypi//aiohttp",
-        "@pypi//pydantic",
-    ],
+    deps = ["@pypi//aiohttp"],
 )
 
 py_test(
