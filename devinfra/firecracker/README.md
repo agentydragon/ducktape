@@ -27,7 +27,7 @@ Warm Firecracker microVMs on wyrm2 for Claude Code development. See
 The in-cluster deployment is archived (`deploy/` is no longer wired into
 `cluster/k8s/kustomization.yaml`) — nothing is deployed to `claude-sandbox`
 right now. To revive it, re-add a Flux Kustomization pointing at `./deploy`
-(see `cluster/k8s/props.yaml` for the shape).
+(see `props/deploy/flux-kustomization.yaml` for the shape).
 
 ```bash
 # Provision base rootfs on wyrm2 (requires Nix + LVM thin pool)
