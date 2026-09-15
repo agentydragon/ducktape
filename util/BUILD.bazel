@@ -161,6 +161,7 @@ py_test(
 
 py_library(
     name = "json_schema",
+    testonly = True,
     srcs = ["json_schema.py"],
     visibility = ["//visibility:public"],
 )
