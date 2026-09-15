@@ -35,9 +35,13 @@
   ],
   // The generated Bazel lockfiles are ignored below. Extend Renovate's pip
   // requirements matcher to the canonical .in inputs so those environments
-  // remain visible; the default matcher only covers .txt and .pip files.
+  // remain visible; retain the default .txt/.pip matcher as well because
+  // homeassistant/requirements.override.txt is a real source input.
   pip_requirements: {
-    managerFilePatterns: ["/(^|\\/)requirements\\.in$/"],
+    managerFilePatterns: [
+      "/(^|\\/)[\\w-]*requirements([-._]\\w+)?\\.(txt|pip)$/",
+      "/(^|\\/)requirements\\.in$/",
+    ],
   },
   ignorePaths: [
     "props/specimens/**",
