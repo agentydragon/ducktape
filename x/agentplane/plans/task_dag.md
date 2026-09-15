@@ -578,6 +578,9 @@ external-access policy behind `MCPAUTH` and the SSH MCP server, not a prerequisi
 The [external-access design](external_access.md) is the source of truth for these choices;
 its [Kubernetes decisions](external_access.md#kubernetes-sandbox-access-decisions) also
 cover `SANDBOX_RBAC`, separately from that task's Sandbox/preset UI and lifecycle wiring.
+Evaluate existing authorization engines/protocols and possible hybrids against the concrete
+[GitHub, Kubernetes, and HTTP compatibility probes](external_access.md#compatibility-evaluation-github-kubernetes-http)
+before selecting a shared decision service; protocol reuse does not settle grant or credential ownership.
 
 **Acceptance evidence:** a selected system proves the credential boundary, approval behavior, and
 revocation/expiry semantics without putting a reusable privileged credential in the harness.

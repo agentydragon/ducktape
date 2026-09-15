@@ -162,15 +162,80 @@ operations fall where.
 
 ## Per-system inventory
 
-| System                                       | Delegated identity                                                         | Broker needed for                                                       |
-| -------------------------------------------- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| Kubernetes                                   | Open: [Sandbox access decisions](#kubernetes-sandbox-access-decisions)     | operations outside delegated authority, subject to broker authorization |
-| GitHub                                       | fine-grained token or App installation per repo                            | public-repository policy across search; writes under review             |
-| Forgejo                                      | scoped tokens (controller-minted)                                          | nothing identified yet                                                  |
-| HTTP egress                                  | fence allowlist by origin; path-level allowlists are the natural extension | origins outside the allowlist                                           |
-| BuildBuddy local clients                     | proxy-held key in `x-buildbuddy-api-key` for HTTP and gRPC                 | `bb remote`: choose local-only body rewrite or stronger hosted boundary |
-| Gmail                                        | OAuth scopes only                                                          | label-namespace confinement; every mutation                             |
-| Others (Matrix, Home Assistant, Tana, Grocy) | unassessed                                                                 | unassessed; default to brokered until assessed                          |
+| System                                       | Delegated identity                                                     | Broker needed for                                                       |
+| -------------------------------------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Kubernetes                                   | Open: [Sandbox access decisions](#kubernetes-sandbox-access-decisions) | operations outside delegated authority, subject to broker authorization |
+| GitHub                                       | fine-grained token or App installation per repo                        | public-repository policy across search; writes under review             |
+| Forgejo                                      | scoped tokens (controller-minted)                                      | nothing identified yet                                                  |
+| HTTP egress                                  | fence allowlist by host, method, and path                              | requests outside the allowlist                                          |
+| BuildBuddy local clients                     | proxy-held key in `x-buildbuddy-api-key` for HTTP and gRPC             | `bb remote`: choose local-only body rewrite or stronger hosted boundary |
+| Gmail                                        | OAuth scopes only                                                      | label-namespace confinement; every mutation                             |
+| Others (Matrix, Home Assistant, Tana, Grocy) | unassessed                                                             | unassessed; default to brokered until assessed                          |
+
+## Compatibility evaluation: GitHub, Kubernetes, HTTP
+
+**Deferred evaluation, not an architecture selection:** test existing designs and protocols against
+these three systems before building a shared authorization service. A possible hybrid is a shared
+decision interface with system-specific enforcement, credential handling, and native grants. The
+evaluation must show what can be reused unchanged, what needs an adapter or custom workflow, and
+what cannot preserve the required semantics; a common allow/deny endpoint alone is not compatibility.
+
+Compare [OPA's decision engine](https://www.openpolicyagent.org/docs),
+[OpenFGA's relationship-based authorization](https://openfga.dev/docs/concepts), and authorization
+services bundled with identity platforms such as
+[Keycloak](https://www.keycloak.org/docs/latest/authorization_services/index.html).
+Authentication and authorization are distinct responsibilities even when one product implements
+both. Keep egress and Action policy contracts distinct; reuse must not collapse them into an
+undifferentiated policy type.
+
+Evaluate the decision protocol separately from the engine:
+[OpenID AuthZEN](https://openid.net/specs/authorization-api-1_0.html) standardizes subject, action,
+resource, and context queries, with a boolean decision and optional response context whose semantics
+are implementation-defined. It is a candidate interface, not a complete grant or execution protocol.
+In particular, it does not itself standardize our distinction between denied, awaiting human
+approval, and approved but not executed. Preserve the
+[Action Service's durable approval/execution contract](../action_service/SPEC.md) and identify any
+necessary protocol extension or separate workflow explicitly. Do not report a pending approval as
+an executable permission or treat a decision as proof that an operation ran.
+
+Initial system-specific probes:
+
+- **GitHub:** repository-scoped reads, public-only operations/search, and approved mutations.
+  [GitHub App installation tokens](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-an-installation-access-token-for-a-github-app)
+  can be narrowed by repository and permission within the installation's authority. Determine which
+  restrictions those native scopes can express and which need checks in our proxy/executor, including
+  operation arguments and facts fetched from GitHub. Do not assume GitHub consults our decision
+  service. Compare direct scoped credentials with proxy-held credentials and prove that broader
+  credential authority cannot bypass the additional checks.
+- **Kubernetes:** namespace-scoped reads, denied writes/cross-namespace requests, and temporary
+  elevation. Compare the [open Sandbox access choices](#kubernetes-sandbox-access-decisions) with
+  a native [authorization webhook](https://kubernetes.io/docs/reference/access-authn-authz/webhook/).
+  Test [authorizer composition and ordering](https://kubernetes.io/docs/reference/access-authn-authz/authorization/):
+  installing a webhook does not automatically make its approval mandatory on every request.
+  Separate request-attribute authorization from object-body constraints requiring admission or
+  another enforcement point. Native RBAC objects, an app grant ledger, and credential custody
+  remain separate choices.
+- **HTTP:** authenticated Sandbox identity plus canonical destination, method, and path checks,
+  with destination-bound credential substitution. Start from the existing
+  [egress contract](../egress/SPEC.md); this is not a proposal to add already-supported path matching.
+  Determine when URL-level checks suffice and when body/domain knowledge is needed. Test redirects,
+  alternate URL encodings, credential leakage to another destination, and direct paths around the
+  enforcing proxy. [OPA's HTTP integration](https://www.openpolicyagent.org/docs/http-api-authorization)
+  is one example of request-time decision integration, not a complete credential boundary.
+
+For each probe, distinguish request-time decisions from provisioning/revoking target-side grants.
+Identify a single desired-state owner for each grant and specify how multiple restrictions combine.
+Compare remote per-request evaluation with centrally administered, locally distributed policy.
+Evidence must cover trusted input provenance, stale caches, policy changes between decision and
+execution, expiry/revocation (including already-issued credentials and in-flight work), dependency
+outages, fail-closed behavior, bypass attempts, and audit evidence sufficient to explain the decision.
+Bind human approval to the reviewed operation and arguments. Do not silently invent new failure or
+retry semantics for existing egress or Action callers.
+
+The output is a per-system fit assessment with executable positive/negative cases, explicit gaps,
+and an authority/enforcement map. Adopt a hybrid only where it has a clear owner at each boundary,
+not two competing permission stores. No product, new service, or identity-platform migration is
+selected by this plan.
 
 ## Consequences for the policy engine
 
@@ -183,25 +248,6 @@ operations fall where.
 
 ## Open questions
 
-- Evaluate established externalized-authorization designs before inventing a shared decision
-  service: a policy decision point answers a structured principal/operation/resource/context
-  query, while each service or proxy enforces the answer. Compare
-  [OPA's general-purpose decision engine](https://www.openpolicyagent.org/docs) with
-  [OpenFGA's relationship-based authorization](https://openfga.dev/docs/concepts), and consider
-  the authorization services offered by identity platforms such as
-  [Keycloak](https://www.keycloak.org/docs/latest/authorization_services/index.html).
-  Identity authentication and authorization decisions are distinct responsibilities even when
-  one product implements both. Evaluate reuse against existing egress and Action policies;
-  do not assume those distinct contracts should become one undifferentiated policy type.
-- Separate centralized request-time decisions from managing grants in external systems.
-  Identify which enforcement points can consult a shared decision service and which need
-  native grants or a controlled proxy; a decision API alone neither provisions nor revokes
-  target-side authority. Decide whether central policy administration needs remote per-call
-  evaluation or can use locally distributed policy, and specify trusted inputs, cache
-  freshness, revocation latency, outage behavior, and audit evidence. This is an evaluation
-  question, not a commitment to another service or a replacement identity platform.
-- Path-level HTTP allowlists at the egress fence, so "GET on these routes" can be delegated
-  without a broker tool per route.
 - Whether raw direct traffic should be mirrored into the ledger from fence logs, or stay separate.
 - Per-agent identity provisioning per system: what it costs to mint, rotate, and revoke, and where
   the grants system already covers it.
