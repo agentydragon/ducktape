@@ -12,10 +12,13 @@ import pytest
 import pytest_bazel
 from google.protobuf.timestamp_pb2 import Timestamp
 from sqlalchemy import func, select, text, update
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.exc import DBAPIError
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
+from x.agentplane.app import trajectory
 from x.agentplane.app.presets import Harness
 from x.agentplane.app.trajectory import (
+    EventReplicationError,
     FeedEnd,
     FeedError,
     IngestionLease,
@@ -128,6 +131,139 @@ async def test_threads_list_with_their_progress(store: TrajectoryStore, lease: I
     assert [view.id for view in await store.list_threads(sandbox="sb-1")] == [thread]
     assert [view.id for view in await store.list_threads(sandbox="sb-2", session_id="s-9")] == [empty]
     assert await store.list_threads(sandbox="sb-1", session_id="s-9") == []
+
+
+@pytest.mark.parametrize("cursors", [pytest.param([2], id="initial-gap"), pytest.param([1, 3], id="batch-gap"), [2, 1]])
+async def test_gapped_batches_leave_no_archived_prefix(
+    store: TrajectoryStore, replica: TrajectoryStore, lease: IngestionLease, cursors: list[int]
+) -> None:
+    thread = await store.thread("sb-1", "s-1", SPEC)
+    with pytest.raises(EventReplicationError, match="expected runner cursor"):
+        await store.record(
+            thread, [_event(cursor, harness_lost=event_pb2.HarnessLost()) for cursor in cursors], lease=lease
+        )
+    assert await replica.events(thread, limit=10) == []
+    assert await replica.last_cursor(thread) == 0
+
+
+async def test_conflicting_replay_rolls_back_the_whole_batch(
+    store: TrajectoryStore, replica: TrajectoryStore, lease: IngestionLease
+) -> None:
+    thread = await store.thread("sb-1", "s-1", SPEC)
+    attached = protocol_pb2.Attached(session_id="s-1", spec=SPEC)
+    await store.set_attached(thread, attached, lease=lease)
+    first = _event(1, harness_started=event_pb2.HarnessStarted(pid=1))
+    await store.record(thread, [first], lease=lease)
+    before = await replica.feed_state(thread)
+    with pytest.raises(EventReplicationError, match="conflicting runner entry"):
+        await store.record(
+            thread,
+            [
+                _event(2, model_changed=event_pb2.ModelChanged(model="test-rejected-model")),
+                _event(1, harness_started=event_pb2.HarnessStarted(pid=2)),
+            ],
+            lease=lease,
+        )
+    assert await replica.events(thread, limit=10) == [first]
+    assert await replica.last_cursor(thread) == 1
+    assert await replica.feed_state(thread) == before
+    view = await replica.get_thread(thread)
+    assert view is not None
+    assert view.model == SPEC.model
+
+
+@pytest.mark.parametrize(
+    ("cursor", "source_id", "sequence"),
+    [(0, "test-runner", 0), (2, "", 2), (2, "test-runner", 1), (2, "test-replacement-source", 2)],
+)
+async def test_origin_must_match_the_original_runner_log(
+    store: TrajectoryStore, lease: IngestionLease, cursor: int, source_id: str, sequence: int
+) -> None:
+    thread = await store.thread("sb-1", "s-1", SPEC)
+    first = _event(1, harness_started=event_pb2.HarnessStarted())
+    await store.record(thread, [first], lease=lease)
+    wrong = _event(cursor, harness_lost=event_pb2.HarnessLost())
+    wrong.origin.source_id = source_id
+    wrong.origin.sequence = sequence
+    with pytest.raises(EventReplicationError):
+        await store.record(thread, [wrong], lease=lease)
+    assert await store.events(thread, limit=10) == [first]
+
+
+async def test_same_batch_duplicates_require_identical_payloads(store: TrajectoryStore, lease: IngestionLease) -> None:
+    thread = await store.thread("sb-1", "s-1", SPEC)
+    first = _event(1, harness_started=event_pb2.HarnessStarted(pid=1))
+    second = _event(2, harness_lost=event_pb2.HarnessLost())
+    with pytest.raises(EventReplicationError, match="conflicting runner entry"):
+        await store.record(thread, [first, _event(1, harness_started=event_pb2.HarnessStarted(pid=2))], lease=lease)
+    assert await store.events(thread, limit=10) == []
+    await store.record(thread, [first, first, second, second], lease=lease)
+    assert await store.events(thread, limit=10) == [first, second]
+
+
+async def test_competing_copies_cannot_replace_an_archived_entry(
+    store: TrajectoryStore, replica: TrajectoryStore, lease: IngestionLease
+) -> None:
+    thread = await store.thread("sb-1", "s-1", SPEC)
+    first = _event(1, harness_started=event_pb2.HarnessStarted())
+    await asyncio.gather(store.record(thread, [first], lease=lease), replica.record(thread, [first], lease=lease))
+    contenders = [
+        _event(2, native=event_pb2.Native(direction=event_pb2.DIRECTION_FROM_HARNESS, line=line))
+        for line in ["test-frame-A", "test-frame-B"]
+    ]
+    results = await asyncio.gather(
+        store.record(thread, [contenders[0]], lease=lease),
+        replica.record(thread, [contenders[1]], lease=lease),
+        return_exceptions=True,
+    )
+    assert sum(result is None for result in results) == 1
+    assert sum(isinstance(result, EventReplicationError) for result in results) == 1
+    winner = contenders[results.index(None)]
+    assert await replica.events(thread, limit=10) == [first, winner]
+    assert await replica.last_cursor(thread) == 2
+
+
+async def test_connection_loss_before_commit_keeps_events_projection_and_cursor_atomic(
+    store: TrajectoryStore,
+    replica: TrajectoryStore,
+    lease: IngestionLease,
+    db_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    thread = await store.thread("sb-1", "s-1", SPEC)
+    await store.set_attached(thread, protocol_pb2.Attached(session_id="s-1", spec=SPEC), lease=lease)
+    first = _event(1, harness_started=event_pb2.HarnessStarted())
+    await store.record(thread, [first], lease=lease)
+    before = await replica.feed_state(thread)
+    second = _event(2, model_changed=event_pb2.ModelChanged(model="test-committed-model"))
+    engine = create_async_engine(db_url)
+    notify = trajectory._notify
+
+    async def disconnect_before_commit(session: AsyncSession) -> None:
+        await notify(session)
+        assert await replica.events(thread, limit=10) == [first]
+        assert await replica.last_cursor(thread) == 1
+        assert await replica.feed_state(thread) == before
+        pid = await session.scalar(select(func.pg_backend_pid()))
+        async with engine.begin() as connection:
+            assert await connection.scalar(select(func.pg_terminate_backend(pid, 5000)))
+
+    try:
+        with monkeypatch.context() as patch:
+            patch.setattr(trajectory, "_notify", disconnect_before_commit)
+            with pytest.raises(DBAPIError):
+                await store.record(thread, [second], lease=lease)
+        assert await replica.events(thread, limit=10) == [first]
+        assert await replica.last_cursor(thread) == 1
+        assert await replica.feed_state(thread) == before
+        await replica.record(thread, [first, second], lease=lease)
+        assert await store.events(thread, limit=10) == [first, second]
+        assert await store.last_cursor(thread) == 2
+        view = await store.get_thread(thread)
+        assert view is not None
+        assert view.model == "test-committed-model"
+    finally:
+        await engine.dispose()
 
 
 async def test_threads_list_reflects_the_attached_feed_s_harness_state(
@@ -337,8 +473,8 @@ async def test_ingested_events_project_the_durable_attachment_without_replay_reg
     view = await replica.get_thread(thread)
     assert view is not None
     assert view.model == "test-next-model"
-    # Even a contradictory duplicate payload cannot update the committed projection.
-    await store.record(thread, [_event(7, harness_started=event_pb2.HarnessStarted())], lease=lease)
+    with pytest.raises(EventReplicationError, match="conflicting runner entry"):
+        await store.record(thread, [_event(7, harness_started=event_pb2.HarnessStarted())], lease=lease)
     assert await replica.feed_state(thread) == stopped
     with pytest.raises(ValueError, match="older"):
         await store.set_attached(thread, attached, lease=lease)

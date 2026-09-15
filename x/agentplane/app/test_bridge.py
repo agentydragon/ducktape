@@ -10,6 +10,7 @@ import socket
 from collections.abc import AsyncIterator
 from contextlib import aclosing
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Any
 
 import httpx
@@ -21,7 +22,7 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 
 from x.agentplane.app.action_policy import ActionPolicyInventory
 from x.agentplane.app.api import create_app
-from x.agentplane.app.bridge import RunnerBridge
+from x.agentplane.app.bridge import Feed, RunnerBridge
 from x.agentplane.app.changes import Changes
 from x.agentplane.app.conftest import AGENT_AUTH
 from x.agentplane.app.decisions import DecisionsClient
@@ -30,10 +31,10 @@ from x.agentplane.app.identity import TokenReviewer
 from x.agentplane.app.inventory import SandboxInventory
 from x.agentplane.app.live import LiveIndex
 from x.agentplane.app.presets import Harness
-from x.agentplane.app.trajectory import TrajectoryStore
-from x.agentplane.protocol import command_pb2
+from x.agentplane.app.trajectory import FeedError, TrajectoryStore
+from x.agentplane.protocol import command_pb2, event_log_pb2
 from x.agentplane.runner import protocol_pb2
-from x.agentplane.runner.client import RunnerClient
+from x.agentplane.runner.client import Attachment, RunnerClient, StreamClosedError
 from x.agentplane.runner.conftest import RunnerHandle
 from x.agentplane.runner.testing.scripted_model import ScriptedModel, Text
 
@@ -307,6 +308,67 @@ async def frame_lines(frames: AsyncIterator[bytes]) -> AsyncIterator[str]:
     async for frame in frames:
         for line in frame.decode().splitlines():
             yield line
+
+
+async def test_ingestion_reconnect_checks_the_archived_boundary_entry(
+    runner: RunnerHandle, store: TrajectoryStore, spec: protocol_pb2.SessionSpec
+) -> None:
+    client = RunnerClient(runner.target)
+    try:
+        attachment = await client.attach(SESSION, spec=spec)
+        try:
+            await attachment.detach()
+            await attachment.drain_until_end()
+            assert attachment.seen
+            # A different fact under the same final cursor must be detected even before
+            # the runner produces any further Events.
+            attachment.seen[-1].event.at.seconds += 1
+            thread = await store.thread(SANDBOX, SESSION, spec)
+            lease = await store.acquire_ingestion(SANDBOX, timedelta(minutes=1))
+            assert lease is not None
+            await store.record(thread, attachment.seen, lease=lease)
+            async with asyncio.timeout(10):
+                await Feed(session_id=SESSION, client=client, store=store, lease=lease).run()
+            snapshot = await store.feed_state(thread)
+            assert snapshot is not None
+            assert snapshot.end == FeedError(f"conflicting runner entry at cursor {attachment.seen[-1].cursor}")
+            assert await store.events(thread, limit=len(attachment.seen) + 1) == attachment.seen
+        finally:
+            attachment.cancel()
+    finally:
+        await client.close()
+
+
+async def test_ingestion_reports_truncated_replay_instead_of_normal_completion(
+    runner: RunnerHandle, store: TrajectoryStore, spec: protocol_pb2.SessionSpec, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = RunnerClient(runner.target)
+    try:
+        attachment = await client.attach(SESSION, spec=spec)
+        try:
+            await attachment.detach()
+            await attachment.drain_until_end()
+        finally:
+            attachment.cancel()
+        thread = await store.thread(SANDBOX, SESSION, spec)
+        lease = await store.acquire_ingestion(SANDBOX, timedelta(minutes=1))
+        assert lease is not None
+
+        async def truncated_stream(attachment: Attachment) -> event_log_pb2.EventEntry:
+            assert attachment.attached.last_cursor > 0
+            raise StreamClosedError
+
+        monkeypatch.setattr(Attachment, "next_entry", truncated_stream)
+        async with asyncio.timeout(10):
+            await Feed(session_id=SESSION, client=client, store=store, lease=lease).run()
+        snapshot = await store.feed_state(thread)
+        assert snapshot is not None
+        assert snapshot.end == FeedError(
+            f"runner replay ended at cursor 0 before promised cursor {snapshot.attached.last_cursor}"
+        )
+        assert await store.last_cursor(thread) == 0
+    finally:
+        await client.close()
 
 
 async def test_replica_commands_and_database_stream_survive_ingestion_owner_exit(

@@ -63,7 +63,7 @@ flowchart TB
     UISHELL_NEWTHREAD_SANDBOX["Deferred combined UI<br/>pre-scoped '+ New thread' on a Sandbox's page<br/>Sandbox selected, Thread fields editable"]:::future
     UISHELL_NEWTHREAD_LANDING["Deferred combined UI<br/>sidebar '+' unscoped new-thread composer<br/>Sandbox/preset/model pickers + prompt"]:::future
     COMMAND_QUEUE_DECISION["Deferred decision<br/>accept commands while runner unavailable?<br/>current slice uses runner admission first"]:::decision
-    APP_EVENT_REPLICATION["Required correctness<br/>contiguous, exact Event copying<br/>transactional checkpoint and fenced ingestion"]:::active
+    APP_EVENT_REPLICATION["Remaining acceptance<br/>app process loss around ingestion commit<br/>replica takeover and browser catch-up"]:::active
     CLAUDE_RECOVERY["Required evidence then implementation<br/>Claude execution before durable runner proof<br/>native correlation and safe recovery"]:::active
     CODEX_RECOVERY["Required evidence then implementation<br/>Codex execution before durable runner proof<br/>native correlation and safe recovery"]:::active
     RUNNER_COMMAND_SCHEDULING["Required correctness<br/>durable admission separate from native I/O<br/>responsive interrupts and model/input progress"]:::active
@@ -165,12 +165,13 @@ change. UI reducers and visual cases can proceed against established Events whil
 native recovery research runs. Automatic recovery is gated separately for each harness
 and operation by its evidence; do not claim it from a working ordinary command path.
 
-**Next dispatch wave:** separate Claude and Codex recovery-evidence agents, plus a runner
-Event-publication agent; the main agent handles app Event replication concurrently.
-The next available agent takes admission/scheduling, followed by command ingress and
-pending/Raw UI slices. Reuse existing agent worktrees. Each self-contained change gets
-its own PR against `devel`; stack only on required implementation content and remove
-completed tasks as their work lands.
+**Current dispatch wave:** admission/scheduling and app Event replication are independent
+implementation lanes; native recovery follows each harness's
+evidence. Then integrate command ingress, exact browser replay, and pending/Raw UI.
+Do not wait for every native recovery scenario before implementing ordinary controls.
+Reuse existing agent worktrees. Each self-contained change gets its own PR against
+`devel`; stack only on required implementation content and remove completed tasks as
+their work lands.
 
 The combined start composers require `NEWTHREAD_DURABLE` before promising “submit
 and walk away.” A browser-owned provisioning chain is not a correct intermediate
@@ -505,14 +506,14 @@ own journal in either option.
 
 ### `APP_EVENT_REPLICATION` — validate and commit the copied prefix
 
-**Required correctness:** reject gaps and conflicting duplicate payloads/provenance.
-Commit copied Events and the contiguous checkpoint atomically under the ingestion
-fence, then notify readers. See
-[the replication contract](../docs/thread_layering.md#runner-independence-and-event-durability).
-
-Acceptance exercises competing replicas, a stale lease owner, app crash/restart,
-identical retries, missing entries, conflicting cursors, lost notifications, and
-replay/live handoff. This is independent of native recovery and app queue placement.
+**Remaining process-level acceptance:** kill the app around an ingestion commit and
+prove a replacement replica resumes from the committed prefix, with the matching feed
+projection and exact browser replay/live handoff. Test both uncommitted loss and a
+committed batch whose notification/response was never observed. The store's integrity
+and lease rules are in [replica-safe runner delivery](../app/README.md#replica-safe-runner-delivery);
+the cross-layer acceptance contract is
+[Event replication](../docs/thread_layering.md#runner-independence-and-event-durability).
+This is independent of native recovery and app queue placement.
 
 ### `CLAUDE_RECOVERY` — native execution before durable runner evidence
 
