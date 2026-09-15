@@ -23,7 +23,8 @@ bbr test //x/agentplane/runner/...
   follower wakeup happen after commit; storage failure or cancelled commit stops the writer until
   recovery. `observation.py` maps harness-neutral observations to the generated Event vocabulary.
 - `harness_process.py`: one native harness child, its pipes, line framing, and exit; no protocol
-  knowledge.
+  knowledge. `harness_supervisor.rs` retains the state-owner descriptor across runner death,
+  forwards shutdown to the native process group, and reaps the native leader.
 - `config.py`: the runner-owned launch configuration, one `*Launch` per harness (binary, endpoint,
   credential) under `RunnerConfig`; none of it crosses the protocol.
 - `initialization.py`: the durable, replayable log of the one bootstrap initialization a sandbox

@@ -123,7 +123,8 @@ harness's outcome. Tool names and argument shapes are the harness's own.
   When the runner dies, its harness-input writer disappears and the supervisor receives
   parent-death notification. It sends `SIGTERM` to the native harness process group, gives the
   leader five seconds to preserve native resume state, and then force-stops the group. If the
-  leader exits first but a tool remains, it force-stops that remainder immediately. The supervisor
+  leader exits first but a tool remains, it force-stops that remainder immediately, including
+  when the harness exits independently while its runner stays alive. The supervisor
   and any child that still retains the inherited descriptor hold ownership until they exit, so a
   replacement cannot append Events or dispatch native work in that interval. This fences the
   native harness process group, including a normal tool child; a process that deliberately escapes

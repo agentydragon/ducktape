@@ -241,6 +241,32 @@ async def test_state_fence_survives_native_leader_exit_until_its_child_group_is_
                 os.killpg(process.native_pid, signal.SIGKILL)
 
 
+async def test_native_leader_exit_stops_background_tool(tmp_path: Path) -> None:
+    """Leader exit must fence tools even while the runner (this test process) stays alive."""
+    owner = StateOwner(tmp_path / "state")
+    process = HarnessProcess(
+        [str(get_required_path(own_repo_rlocation("x/agentplane/runner/harness_background_child_testonly")))],
+        cwd=tmp_path,
+        environment={},
+        state_owner_descriptor=owner.descriptor,
+    )
+    try:
+        await process.start()
+        try:
+            tool_pid = int(await anext(process.lines()))
+            # Only the leader dies: no stop/parent-death signal reaches its supervisor.
+            os.kill(process.native_pid, signal.SIGKILL)
+            async with asyncio.timeout(10):
+                await _exited(tool_pid)
+                assert await process.wait() == 128 + signal.SIGKILL
+        finally:
+            with suppress(ProcessLookupError):
+                os.killpg(process.native_pid, signal.SIGKILL)
+            await process.wait()
+    finally:
+        owner.close()
+
+
 async def test_runner_sigkill_fences_an_active_native_group_before_successor_dispatch(
     harness: protocol_pb2.Harness,
     endpoint: AnthropicMessages | OpenAIResponses,
