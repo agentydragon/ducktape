@@ -58,7 +58,8 @@ async def test_public_coder_preset_launches_an_initialized_editable_codex_thread
         INSTRUCTIONS,
     )
 
-    agent = Agent(client, sandbox=view.name, session_id=first_id, cursor=first.last_cursor)
+    thread = await client.thread(view.name, first.attached.session_id)
+    agent = Agent(client, thread_id=thread.id, cursor=first.last_cursor)
     turn = await agent.run(
         "Use a shell tool to read /state/workspaces/.agentplane-public-coder-ready, then briefly report its exact content."
     )
