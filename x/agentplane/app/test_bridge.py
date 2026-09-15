@@ -25,7 +25,7 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 from x.agentplane.app import trajectory
 from x.agentplane.app.action_policy import ActionPolicyInventory
 from x.agentplane.app.api import create_app
-from x.agentplane.app.bridge import Feed, RunnerBridge
+from x.agentplane.app.bridge import Feed, RunnerAdmissionTimeoutError, RunnerBridge
 from x.agentplane.app.changes import Changes
 from x.agentplane.app.conftest import AGENT_AUTH
 from x.agentplane.app.decisions import DecisionsClient
@@ -36,9 +36,10 @@ from x.agentplane.app.live import LiveIndex
 from x.agentplane.app.presets import Harness
 from x.agentplane.app.trajectory import FeedError, TrajectoryStore
 from x.agentplane.protocol import command_pb2, event_log_pb2, event_pb2
-from x.agentplane.runner import protocol_pb2
+from x.agentplane.runner import protocol_pb2, service
 from x.agentplane.runner.client import Attachment, RunnerClient, StreamClosedError
 from x.agentplane.runner.conftest import RunnerHandle
+from x.agentplane.runner.session import Session
 from x.agentplane.runner.testing.scripted_model import ScriptedModel, Text
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -386,6 +387,81 @@ async def test_stop_command_returns_after_admission_before_native_shutdown_effec
         finally:
             allow_shutdown.set()
             await asyncio.shield(response)
+
+
+async def test_command_relay_waits_for_runner_admission_before_closing(
+    app_url: str,
+    model: ScriptedModel,
+    runner: RunnerHandle,
+    spec: protocol_pb2.SessionSpec,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A relay cancellation before the runner reads its frames must not discard the Command."""
+    async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
+        opened = await http.post(SESSIONS, json={"session_id": SESSION, "spec": MessageToDict(spec)})
+        assert opened.status_code == 201, opened.text
+        thread_id = await _thread_id(http)
+        original_consume = service._consume
+        consumer_started = asyncio.Event()
+        release_consumer = asyncio.Event()
+
+        async def gated_consume(
+            session: Session,
+            requests: AsyncIterator[protocol_pb2.ClientMessage],
+            closing: asyncio.Event,
+            failure: list[str],
+        ) -> None:
+            consumer_started.set()
+            await release_consumer.wait()
+            await original_consume(session, requests, closing, failure)
+
+        monkeypatch.setattr(service, "_consume", gated_consume)
+        relay = asyncio.create_task(
+            http.post(
+                _commands(thread_id),
+                json={"commandId": "relay-admission", "submitInput": {"text": "Reply with exactly: RELAY_OK"}},
+            )
+        )
+        try:
+            async with asyncio.timeout(10):
+                await consumer_started.wait()
+            release_consumer.set()
+            async with asyncio.timeout(10):
+                accepted = await asyncio.shield(relay)
+            assert accepted.status_code == 200, accepted.text
+            assert accepted.json()["event"]["commandAdmitted"]["command"] == {
+                "commandId": "relay-admission",
+                "submitInput": {"text": "Reply with exactly: RELAY_OK"},
+            }
+            request = await model.request()
+            assert request.user_texts[-1] == "Reply with exactly: RELAY_OK"
+            await model.reply(request, Text("RELAY_OK"))
+        finally:
+            release_consumer.set()
+            if not relay.done():
+                relay.cancel()
+                await asyncio.gather(relay, return_exceptions=True)
+
+
+async def test_command_admission_timeout_is_not_an_internal_server_error(
+    app_url: str, spec: protocol_pb2.SessionSpec, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
+        opened = await http.post(SESSIONS, json={"session_id": SESSION, "spec": MessageToDict(spec)})
+        assert opened.status_code == 201, opened.text
+        thread_id = await _thread_id(http)
+
+        async def timed_out(
+            _bridge: RunnerBridge, _thread_id: UUID, _command: command_pb2.Command
+        ) -> event_log_pb2.EventEntry:
+            raise RunnerAdmissionTimeoutError("timed-out-command")
+
+        monkeypatch.setattr(RunnerBridge, "command", timed_out)
+        response = await http.post(
+            _commands(thread_id), json={"commandId": "timed-out-command", "submitInput": {"text": "not delivered"}}
+        )
+        assert response.status_code == 504, response.text
+        assert response.json()["detail"] == "runner did not admit command 'timed-out-command' within 15 seconds"
 
 
 async def test_command_admission_wait_rereads_the_durable_prefix_after_a_lost_notification(
