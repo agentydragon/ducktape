@@ -1,7 +1,22 @@
-/* The raw stream's own styling, bundled by esbuild through frame.tsx's import of this file: just
-   the sequence-number prefix colour. Shared JSON token/wrapping styles live in json_view.css's
-   `.agentplane-hljs`, which frame.tsx's <Code> carries alongside this class. */
+/* Administrative evidence stays visually distinct from conversation cards. Shared JSON
+   token/wrapping styles live in json_view.css. */
 
-.agentplane-frame-sequence {
+.agentplane-frame {
+  border-inline-start: 2px solid var(--mantine-color-default-border);
+  padding: 4px 8px;
+  font-size: var(--mantine-font-size-xs);
+  overflow-wrap: anywhere;
+}
+
+.agentplane-frame summary {
+  cursor: pointer;
+}
+
+.agentplane-frame-sequence,
+.agentplane-frame-origin {
   color: var(--mantine-color-dimmed);
+}
+
+.agentplane-frame-origin {
+  margin-block: 6px;
 }
