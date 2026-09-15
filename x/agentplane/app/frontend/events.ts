@@ -30,8 +30,6 @@ export interface Turn {
 
 export interface InputState {
   id: string;
-  state: "confirmed" | "failed";
-  detail: string;
   /** The exact native harness message, not an app-owned pending command. */
   text: string;
   /** The turn the harness took it into. */
@@ -137,10 +135,7 @@ function withInput(state: SessionState, id: string, firstCursor: bigint, update:
   const existing = state.inputs.find((input) => input.id === id);
   const inputs = existing
     ? state.inputs.map((input) => (input.id === id ? { ...input, ...update } : input))
-    : [
-        ...state.inputs,
-        { id, state: "confirmed" as const, detail: "", text: "", turnId: null, firstCursor, ...update },
-      ];
+    : [...state.inputs, { id, text: "", turnId: null, firstCursor, ...update }];
   return { ...state, inputs };
 }
 
@@ -163,15 +158,8 @@ export function reduce(previous: SessionState, entry: EventEntry): SessionState 
       return { ...state, stderr: [...state.stderr, observation.value.text] };
     case "harnessUserMessageConfirmed":
       return withInput(state, observation.value.harnessMessageId, entry.cursor, {
-        state: "confirmed",
         text: observation.value.text,
         turnId: observation.value.turnId,
-        detail: `from ${observation.value.originCommandIds.join(", ")}`,
-      });
-    case "commandFailed":
-      return withInput(state, observation.value.commandId, entry.cursor, {
-        state: "failed",
-        detail: observation.value.reason,
       });
     case "turnStarted":
       return {

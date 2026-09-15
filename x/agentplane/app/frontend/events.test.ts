@@ -79,12 +79,10 @@ describe("reduce", () => {
       succeeded: true,
       completed: true,
     });
-    expect(state.inputs).toMatchObject([
-      { id: "m-user-1", state: "confirmed", detail: "from i1", text: "hi", turnId: "t1" },
-    ]);
+    expect(state.inputs).toMatchObject([{ id: "m-user-1", text: "hi", turnId: "t1" }]);
   });
 
-  it("keeps an input command's failure reason and a lost harness", () => {
+  it("retains command failure evidence without inventing a native user message", () => {
     const state = [
       event(1, {
         case: "commandAdmitted",
@@ -93,7 +91,8 @@ describe("reduce", () => {
       event(2, { case: "commandFailed", value: { commandId: "i1", reason: "nope" } }),
       event(3, { case: "harnessLost", value: {} }),
     ].reduce(reduce, EMPTY);
-    expect(state.inputs).toMatchObject([{ id: "i1", state: "failed", detail: "nope", text: "", turnId: null }]);
+    expect(state.inputs).toEqual([]);
+    expect(eventOf(state.entries[1]).observation).toMatchObject({ case: "commandFailed", value: { reason: "nope" } });
     expect(state.harness).toBe("lost");
   });
 });
