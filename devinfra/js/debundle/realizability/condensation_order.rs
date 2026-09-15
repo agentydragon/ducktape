@@ -680,9 +680,7 @@ where
         if self.current_epoch == u32::MAX {
             // Wraparound: zero the buffer so stale "epoch 1" marks
             // from long-ago traversals cannot prune the next DFS.
-            for slot in &mut self.visited_epoch {
-                *slot = 0;
-            }
+            self.visited_epoch.fill(0);
             self.current_epoch = 1;
         } else {
             self.current_epoch += 1;
@@ -1462,7 +1460,7 @@ mod tests {
             let mut edges: Vec<(usize, usize)> = Vec::new();
             for a in 0..n {
                 for b in 0..n {
-                    if a != b && rng.next_u32() % 5 == 0 {
+                    if a != b && rng.next_u32().is_multiple_of(5) {
                         base.increment_edge(a, b);
                         edges.push((a, b));
                     }
@@ -1549,7 +1547,7 @@ mod tests {
                     if x == y {
                         continue;
                     }
-                    if base.edge_count(x, y) > 0 && rng.next_u32() % 2 == 0 {
+                    if base.edge_count(x, y) > 0 && rng.next_u32().is_multiple_of(2) {
                         overlay.insert((x, y), -(base.edge_count(x, y) as isize));
                     } else {
                         *overlay.entry((x, y)).or_insert(0) += 1;
@@ -1580,7 +1578,7 @@ mod tests {
             let mut base = RollbackDiGraph::new();
             for a in 0..n {
                 for b in (a + 1)..n {
-                    if rng.next_u32() % 3 == 0 {
+                    if rng.next_u32().is_multiple_of(3) {
                         base.increment_edge(a, b);
                     }
                 }

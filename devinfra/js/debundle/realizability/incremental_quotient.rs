@@ -434,20 +434,20 @@ impl<'a> OverlayGraphView<'a> {
                 if self.base.successors(node).any(check) {
                     return true;
                 }
-                if let Some(overlay) = self.added_out.get(&node) {
-                    if overlay.iter().any(|&n| check(n)) {
-                        return true;
-                    }
+                if let Some(overlay) = self.added_out.get(&node)
+                    && overlay.iter().any(|&n| check(n))
+                {
+                    return true;
                 }
             }
             WalkDirection::Reverse => {
                 if self.base.predecessors(node).any(check) {
                     return true;
                 }
-                if let Some(overlay) = self.added_in.get(&node) {
-                    if overlay.iter().any(|&n| check(n)) {
-                        return true;
-                    }
+                if let Some(overlay) = self.added_in.get(&node)
+                    && overlay.iter().any(|&n| check(n))
+                {
+                    return true;
                 }
             }
         }

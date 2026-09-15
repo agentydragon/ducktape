@@ -152,17 +152,17 @@ pub(crate) fn visit_eager_member_parts<V: Visit>(v: &mut V, member: &ClassMember
         ClassMember::PrivateMethod(_) | ClassMember::Constructor(_) => {}
         ClassMember::ClassProp(prop) => {
             visit_computed_prop_name(v, &prop.key);
-            if prop.is_static {
-                if let Some(value) = &prop.value {
-                    value.visit_with(v);
-                }
+            if prop.is_static
+                && let Some(value) = &prop.value
+            {
+                value.visit_with(v);
             }
         }
         ClassMember::PrivateProp(prop) => {
-            if prop.is_static {
-                if let Some(value) = &prop.value {
-                    value.visit_with(v);
-                }
+            if prop.is_static
+                && let Some(value) = &prop.value
+            {
+                value.visit_with(v);
             }
         }
         ClassMember::StaticBlock(block) => {
@@ -173,10 +173,10 @@ pub(crate) fn visit_eager_member_parts<V: Visit>(v: &mut V, member: &ClassMember
             if let Key::Public(name) = &accessor.key {
                 visit_computed_prop_name(v, name);
             }
-            if accessor.is_static {
-                if let Some(value) = &accessor.value {
-                    value.visit_with(v);
-                }
+            if accessor.is_static
+                && let Some(value) = &accessor.value
+            {
+                value.visit_with(v);
             }
         }
     }
