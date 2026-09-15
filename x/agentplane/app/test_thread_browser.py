@@ -152,6 +152,33 @@ async def test_browser_replays_streams_and_reloads_one_exact_conversation(thread
     assert await thread_browser.store.events(thread.id, limit=100) == source.entries
 
 
+async def test_browser_sends_a_command_and_renders_only_the_confirmed_input(thread_browser: ThreadBrowser) -> None:
+    page, source = thread_browser.page, thread_browser.source
+    thread_browser.opened.replay.set()
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
+    composer = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
+    await composer.fill("Test input from the real browser")
+    await composer.press("Enter")
+    async with asyncio.timeout(15):
+        command = await source.commands.get()
+    assert command.command_id
+    assert command.HasField("submit_input")
+    assert command.submit_input.text == "Test input from the real browser"
+    await expect(page.locator(".agentplane-user-bubble")).to_have_count(0)
+    source.append(
+        event_pb2.Event(
+            harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
+                harness_message_id="test-confirmed-message",
+                origin_command_ids=[command.command_id],
+                text=command.submit_input.text,
+                turn_id="test-browser-turn",
+            )
+        )
+    )
+    await expect(page.locator(".agentplane-user-bubble")).to_have_text(command.submit_input.text)
+    await expect(composer).to_have_value("")
+
+
 async def test_ahead_snapshot_is_not_a_conversation_or_effective_model(thread_browser: ThreadBrowser) -> None:
     page = thread_browser.page
     await expect(page.get_by_role("status")).to_have_text("Catching up: 0 / 4 events")
