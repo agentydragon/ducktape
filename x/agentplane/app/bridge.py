@@ -174,6 +174,11 @@ class RunnerBridge:
 
     async def _coordinate(self) -> None:
         with contextlib.ExitStack() as subscriptions:
+            # A committed Thread command is desired state, just like a Sandbox inventory update:
+            # wake promptly, while the periodic scan remains the recovery path after a missed
+            # notification or app restart.  This narrow invalidation deliberately excludes each
+            # streamed transcript event from another session-discovery pass.
+            subscriptions.enter_context(self._store.command_changes.subscribe(self._changed))
             if self._sandbox_changes is not None:
                 subscriptions.enter_context(self._sandbox_changes.subscribe(self._changed))
             await self._coordinate_subscribed()
@@ -242,10 +247,33 @@ class RunnerBridge:
                         )
                         feed.task = asyncio.create_task(feed.run(), name=f"ingest-{sandbox}-{summary.session_id}")
                         self._feeds[key] = feed
-                except grpc.aio.AioRpcError, SandboxNotReachableError, SandboxNotFoundError, TimeoutError:
+                    await self._deliver_pending_inputs(sandbox, client, summaries)
+                except grpc.aio.AioRpcError, SandboxNotReachableError, SandboxNotFoundError, RunnerError, TimeoutError:
                     logger.warning("sandbox %s ingestion discovery unavailable", sandbox, exc_info=True)
         except SQLAlchemyError, OSError, TimeoutError:
             logger.warning("sandbox %s ingestion reconciliation failed; will retry", sandbox, exc_info=True)
+
+    async def _deliver_pending_inputs(
+        self, sandbox: str, client: RunnerClient, summaries: list[protocol_pb2.SessionSummary]
+    ) -> None:
+        """Reconcile runner admission for existing-Thread input commands.
+
+        The ingestion lease already held by this bridge instance makes it the one app replica
+        allowed to attach and deliver for this Sandbox.  We intentionally retain an unadmitted
+        command in PostgreSQL after every transport attempt: the runner command id makes retry
+        safe, and its `CommandAdmitted` event is the authoritative hand-off observation.
+        """
+        summaries_by_id = {summary.session_id: summary for summary in summaries}
+        for delivery in await self._store.commands_awaiting_runner_admission(sandbox):
+            summary = summaries_by_id.get(delivery.runner_session_id)
+            if summary is None or summary.harness_state != protocol_pb2.HARNESS_STATE_RUNNING:
+                continue
+            if not delivery.command.command.HasField("submit_input"):
+                # The controls slice will add native behavior evidence and its own projection
+                # before it makes control commands app-side ingress.  Preserve the Thread order
+                # rather than letting a later input overtake this command.
+                continue
+            await self._send_command(client, sandbox, delivery.runner_session_id, delivery.command.command)
 
     async def _release(self, sandbox: str) -> None:
         for key in [key for key in self._feeds if key[0] == sandbox]:
@@ -308,7 +336,24 @@ class RunnerBridge:
         *,
         ends_stream: bool = False,
     ) -> None:
-        attachment = await (await self._client(sandbox)).attach(session_id)
+        client = await self._client(sandbox)
+        await self._send(client, sandbox, session_id, command, ends_stream=ends_stream)
+
+    async def _send_command(
+        self, client: RunnerClient, sandbox: str, session_id: str, command: command_pb2.Command
+    ) -> None:
+        await self._send(client, sandbox, session_id, lambda attachment: attachment.command(command))
+
+    async def _send(
+        self,
+        client: RunnerClient,
+        sandbox: str,
+        session_id: str,
+        command: Callable[[Attachment], Awaitable[None]],
+        *,
+        ends_stream: bool = False,
+    ) -> None:
+        attachment = await client.attach(session_id)
         try:
             if attachment.attached.harness_state != protocol_pb2.HARNESS_STATE_RUNNING:
                 raise RunnerError("session is stopped; explicitly open it before sending commands")

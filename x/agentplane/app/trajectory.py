@@ -40,7 +40,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from x.agentplane.app.changes import Changes
 from x.agentplane.app.operator_sessions import Base, OperatorSessionStore
 from x.agentplane.app.presets import Harness
-from x.agentplane.app.trajectory_updates import CHANNEL, TrajectoryUpdates
+from x.agentplane.app.trajectory_updates import CHANNEL, COMMANDS_PAYLOAD, TrajectoryUpdates
 from x.agentplane.protocol import command_pb2, event_log_pb2
 from x.agentplane.runner import protocol_pb2
 
@@ -175,6 +175,14 @@ class ThreadCommandSnapshot:
     accepted_at: datetime
 
 
+@dataclass(frozen=True)
+class ThreadCommandDelivery:
+    """The next desired command for a Thread's active runner session."""
+
+    command: ThreadCommandSnapshot
+    runner_session_id: str
+
+
 class ThreadView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -213,7 +221,8 @@ class TrajectoryStore:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
         self.operator_sessions = OperatorSessionStore(engine)
         self.changes = Changes()
-        self._updates = TrajectoryUpdates(engine.url, self.changes)
+        self.command_changes = Changes()
+        self._updates = TrajectoryUpdates(engine.url, self.changes, self.command_changes)
 
     @classmethod
     def connect(cls, database_url: str) -> TrajectoryStore:
@@ -276,7 +285,7 @@ class TrajectoryStore:
             if thread is None:
                 raise ThreadNotFoundError(thread_id)
             snapshot = await _append_thread_command(session, thread_id, command)
-            await _notify(session)
+            await _notify(session, commands=True)
             return snapshot
 
     async def thread_commands(self, thread_id: UUID) -> list[ThreadCommandSnapshot]:
@@ -288,6 +297,47 @@ class TrajectoryStore:
                 .order_by(ThreadCommand.ordinal, ThreadCommand.command_id)
             )
             return [_thread_command_snapshot(command) for command in commands]
+
+    async def commands_awaiting_runner_admission(self, sandbox: str) -> list[ThreadCommandDelivery]:
+        """The first non-admitted command for each Thread in one static Sandbox.
+
+        The copied runner `CommandAdmitted` Event is the durable hand-off from app intent to
+        runner admission. Later commands become eligible after admission, not after a native
+        effect: the runner owns its own queued-command semantics and causal outcomes.
+        """
+        commands = (
+            select(ThreadCommand, ThreadRunnerSession)
+            .join(Thread, Thread.id == ThreadCommand.thread_id)
+            .join(
+                ThreadRunnerSession, (ThreadRunnerSession.thread_id == Thread.id) & ThreadRunnerSession.active.is_(True)
+            )
+            .where(Thread.sandbox == sandbox)
+            .order_by(ThreadCommand.thread_id, ThreadCommand.ordinal, ThreadCommand.command_id)
+        )
+        admitted = (
+            select(Event.thread_id, Event.payload)
+            .join(Thread, Thread.id == Event.thread_id)
+            .where(Thread.sandbox == sandbox, Event.kind == "command_admitted")
+        )
+        async with self._sessions() as session:
+            admitted_ids = {
+                (thread_id, ParseDict(payload, event_log_pb2.EventEntry()).event.command_admitted.command.command_id)
+                for thread_id, payload in await session.execute(admitted)
+            }
+            deliveries: list[ThreadCommandDelivery] = []
+            considered: set[UUID] = set()
+            for command, runner_session in await session.execute(commands):
+                if command.thread_id in considered:
+                    continue
+                if (command.thread_id, command.command_id) in admitted_ids:
+                    continue
+                considered.add(command.thread_id)
+                deliveries.append(
+                    ThreadCommandDelivery(
+                        command=_thread_command_snapshot(command), runner_session_id=runner_session.runner_session_id
+                    )
+                )
+            return deliveries
 
     async def last_cursor(self, thread_id: UUID) -> int:
         async with self._sessions() as session:
@@ -317,8 +367,8 @@ class TrajectoryStore:
         ]
         async with self._sessions.begin() as session:
             await _fence(session, lease, thread_id)
-            inserted = await session.scalars(
-                insert(Event).values(rows).on_conflict_do_nothing().returning(Event.payload)
+            inserted = list(
+                await session.scalars(insert(Event).values(rows).on_conflict_do_nothing().returning(Event.payload))
             )
             state = await session.get(FeedState, thread_id)
             if state is not None:
@@ -341,7 +391,13 @@ class TrajectoryStore:
                         update(Thread).where(Thread.id == thread_id).values(model=attached.spec.model)
                     )
                 await session.flush()
-            await _notify(session)
+            await _notify(
+                session,
+                commands=any(
+                    ParseDict(payload, event_log_pb2.EventEntry()).event.HasField("command_admitted")
+                    for payload in inserted
+                ),
+            )
 
     async def acquire_ingestion(self, sandbox: str, duration: timedelta) -> IngestionLease | None:
         _positive_duration(duration)
@@ -575,9 +631,9 @@ async def _fence(session: AsyncSession, lease: IngestionLease, thread_id: UUID) 
         raise IngestionLeaseLostError("lease does not own this thread's sandbox")
 
 
-async def _notify(session: AsyncSession) -> None:
+async def _notify(session: AsyncSession, *, commands: bool = False) -> None:
     # PostgreSQL delivers NOTIFY only on commit; payloads carry no trajectory or identity data.
-    await session.execute(select(func.pg_notify(CHANNEL, "")))
+    await session.execute(select(func.pg_notify(CHANNEL, COMMANDS_PAYLOAD if commands else "")))
 
 
 def _project_attached(attached: protocol_pb2.Attached, entry: event_log_pb2.EventEntry) -> None:
