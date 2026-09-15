@@ -16,12 +16,14 @@ from dataclasses import dataclass
 from enum import StrEnum
 from multiprocessing.connection import Connection
 from multiprocessing.process import BaseProcess
+from pathlib import Path
 from types import TracebackType
 from typing import Any, cast
 from uuid import UUID
 
 import httpx
 import uvicorn
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.ext.asyncio import AsyncSession, AsyncSessionTransaction, async_sessionmaker, create_async_engine
 
 from x.agentplane.app.action_policy import ActionPolicyInventory
@@ -118,12 +120,24 @@ class ReadyServer(uvicorn.Server):
         self._connection.send(Ready(self._url))
 
 
-def _run(database_url: str, target: str, connection: Connection, boundary: CommitBoundary | None, cursor: int) -> None:
-    asyncio.run(_serve(database_url, target, connection, boundary, cursor))
+def _run(
+    database_url: str,
+    target: str,
+    connection: Connection,
+    boundary: CommitBoundary | None,
+    cursor: int,
+    frontend_directory: Path | None,
+) -> None:
+    asyncio.run(_serve(database_url, target, connection, boundary, cursor, frontend_directory))
 
 
 async def _serve(
-    database_url: str, target: str, connection: Connection, boundary: CommitBoundary | None, cursor: int
+    database_url: str,
+    target: str,
+    connection: Connection,
+    boundary: CommitBoundary | None,
+    cursor: int,
+    frontend_directory: Path | None,
 ) -> None:
     store = (
         TrajectoryStore.connect(database_url)
@@ -151,6 +165,8 @@ async def _serve(
         # Authentication is tested separately; the production routes, HTTP transport, ingestion,
         # PostgreSQL notifications, and SSE generator all run here unchanged.
         app.dependency_overrides[require_caller] = lambda: CallerIdentity(CallerKind.OPERATOR, "test-operator")
+        if frontend_directory is not None:
+            app.mount("/", StaticFiles(directory=frontend_directory, html=True), name="test-frontend")
         await store.start_updates()
         await bridge.start([SANDBOX])
         try:
@@ -193,11 +209,16 @@ class AppProcess:
 
 @asynccontextmanager
 async def app_process(
-    database_url: str, target: str, *, boundary: CommitBoundary | None = None, cursor: int = 0
+    database_url: str,
+    target: str,
+    *,
+    boundary: CommitBoundary | None = None,
+    cursor: int = 0,
+    frontend_directory: Path | None = None,
 ) -> AsyncIterator[AppProcess]:
     context = multiprocessing.get_context("spawn")
     parent, child = context.Pipe(duplex=False)
-    process = context.Process(target=_run, args=(database_url, target, child, boundary, cursor))
+    process = context.Process(target=_run, args=(database_url, target, child, boundary, cursor, frontend_directory))
     process.start()
     child.close()
     try:

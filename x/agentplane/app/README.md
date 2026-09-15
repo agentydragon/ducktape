@@ -108,6 +108,11 @@ handoff from the browser's last observed cursor. The test advances the dead owne
 expiry explicitly and uses a controlled protocol source; it does not test elapsed lease timing,
 native harness recovery, or PostgreSQL host/storage loss.
 
+`test_thread_browser.py` loads the built SPA in hermetic Chromium against that real app process,
+PostgreSQL archive, and controlled protocol source. It covers retained replay, live streaming,
+terminal turn state, and document reload without duplicated conversation text. Unlike the visual
+fixture, it does not replace browser fetch or EventSource. Playwright traces are test artifacts.
+
 Rollout prerequisite: existing sandbox runners must support independent attachments before the new
 app bridge is deployed; old runner processes are not upgraded merely by publishing the new image.
 Staging runs two app replicas on separate nodes with `RollingUpdate` (`maxUnavailable: 0`,

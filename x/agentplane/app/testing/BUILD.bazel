@@ -39,6 +39,7 @@ py_library(
         "//x/agentplane/app:trajectory",
         "//x/agentplane/protocol:event_log_pb2",
         "@pypi//asyncpg",
+        "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//sqlalchemy",
