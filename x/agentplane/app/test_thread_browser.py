@@ -255,6 +255,7 @@ async def test_conversation_follows_bottom_until_reader_scrolls_up(
     assert await history.evaluate("area => area.scrollTop") == reading_position
     # A late expansion above the reader can advance scrollTop through browser anchoring.
     # Passing the old bottom that way must not be mistaken for returning to it.
+    previous_bottom = await history.evaluate("area => area.scrollHeight - area.clientHeight")
     await page.get_by_text("Test retained prefix", exact=True).evaluate(
         """message => {
             const area = message.closest('[aria-label="Thread history"]');
@@ -262,6 +263,7 @@ async def test_conversation_follows_bottom_until_reader_scrolls_up(
         }"""
     )
     await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+    assert await history.evaluate("area => area.scrollTop") > previous_bottom
     assert await history.evaluate("area => area.scrollHeight - area.clientHeight - area.scrollTop") > 400
     await page.screenshot(path=undeclared_outputs_dir() / f"{request.node.name}-reading.png")
 
