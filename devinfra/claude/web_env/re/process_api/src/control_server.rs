@@ -759,7 +759,7 @@ async fn read_body(req: Request<Incoming>) -> Result<Bytes, Box<Response<Full<By
 fn base64_decode_key(s: &str) -> Result<Vec<u8>, String> {
     // Try standard base64 first, then URL-safe
     let result = {
-        let s_padded = if s.len() % 4 != 0 {
+        let s_padded = if !s.len().is_multiple_of(4) {
             let pad = 4 - (s.len() % 4);
             format!("{s}{}", "=".repeat(pad))
         } else {
