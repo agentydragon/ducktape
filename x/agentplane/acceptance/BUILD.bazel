@@ -229,3 +229,19 @@ py_library(
         "@pypi//pydantic",
     ],
 )
+
+py_test(
+    name = "test_agent",
+    srcs = ["test_agent.py"],
+    deps = [
+        ":agent",
+        ":conftest",
+        "//:conftest",
+        "//x/agentplane/app:client",
+        "//x/agentplane/runner:protocol_pb2",
+        "@pypi//httpx",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

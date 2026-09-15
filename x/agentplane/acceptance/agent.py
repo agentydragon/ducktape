@@ -46,6 +46,15 @@ def _runner_not_answering(error: BaseException) -> bool:
     return isinstance(error, httpx.HTTPStatusError) and error.response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
 
 
+def runner_startup_retries() -> AsyncRetrying:
+    return AsyncRetrying(
+        stop=stop_after_delay(RUNNER_ANSWERS_SECONDS),
+        wait=wait_fixed(2),
+        retry=retry_if_exception(_runner_not_answering),
+        reraise=True,
+    )
+
+
 Reported = TypeVar("Reported", bound=BaseModel)
 
 # The last brace-delimited object in the answer, fenced or not: a model that explains itself before
@@ -102,10 +111,8 @@ class Agent:
     ) -> Agent:
         """Open a session, waiting out a runner that is up but not yet listening.
 
-        A sandbox reports Running once its Pod has an address, and an address is not a listening
-        runner: the app answers `503` for exactly that gap. Nothing read-only reaches the runner, so
-        the open is the only thing that can be waited on -- which is still the condition and not a
-        delay, and any other status fails on the first attempt as it should.
+        A Running Sandbox's runner may not answer yet. Retry that `503` with the same
+        session id; other HTTP errors fail immediately.
 
         `instructions` are the session's standing orders, in front of the model on every turn; empty
         is the proto's own default and opens the session the runner would open without the field.
@@ -113,15 +120,9 @@ class Agent:
         spec = protocol_pb2.SessionSpec(
             harness=harness, cwd=WORKING_DIRECTORY, model=model, reasoning_effort="low", instructions=instructions
         )
-        # One id across attempts: a 503 is raised before the runner is reached, so no attempt can
-        # have left a session behind under a name the next one would not reuse.
+        # Retry the same desired session even if an earlier Open reached the runner.
         session_id = f"acceptance-{uuid4().hex[:8]}"
-        async for attempt in AsyncRetrying(
-            stop=stop_after_delay(RUNNER_ANSWERS_SECONDS),
-            wait=wait_fixed(2),
-            retry=retry_if_exception(_runner_not_answering),
-            reraise=True,
-        ):
+        async for attempt in runner_startup_retries():
             with attempt:
                 attachment = await client.open_session(sandbox, session_id, spec)
                 thread = await client.thread(sandbox, attachment.attached.session_id)

@@ -7,7 +7,7 @@ from uuid import uuid4
 
 import pytest_bazel
 
-from x.agentplane.acceptance.agent import Agent
+from x.agentplane.acceptance.agent import Agent, runner_startup_retries
 from x.agentplane.app.client import Client
 from x.agentplane.app.inventory import SandboxView
 from x.agentplane.app.presets import Harness, ThreadDefaults
@@ -45,7 +45,9 @@ async def test_public_coder_preset_launches_an_initialized_editable_codex_thread
     assert GITHUB_PUBLIC in {policy.name for binding in await client.bindings(view.name) for policy in binding.policies}
 
     first_id = f"preset-{uuid4().hex[:8]}"
-    first = await client.open_bound_session(view.name, first_id)
+    async for attempt in runner_startup_retries():
+        with attempt:
+            first = await client.open_bound_session(view.name, first_id)
     assert (
         first.attached.spec.harness,
         first.attached.spec.model,

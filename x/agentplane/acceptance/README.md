@@ -6,17 +6,16 @@ cross-component behavior and durable system evidence. They are not unit tests wi
 they are the checks that the deployed system does what <../egress/SPEC.md> says it does and that a
 session's standing instructions reach the model that serves it.
 
-There is one deliberate exception: `test_operator_login` is a fast, offline provider-adapter test.
-It uses mocked Authentik and Dex responses, creates no sandbox, and does not prove that deployed Dex
-or Agentplane is reachable. It stays in this package because login choreography is a high-churn
-prerequisite for the vertical scenarios, and keeping its regression loop beside them makes it useful
-when changing the real login path. The deployed login path remains covered as setup for the MCP
-vertical scenario.
+Fast offline driver tests cover login choreography (`test_operator_login`) and startup retry
+classification (`test_agent`). They create no Sandbox and do not prove that a deployed IdP,
+Agentplane, or harness is reachable. Deployed login remains setup for the MCP vertical scenario.
 
 The general egress and instruction scenarios run on **both harnesses**. The runner protocol is the
 same for Claude and Codex, so one parametrized harness case covers both; `model` asks the deployment
 which models it offers for that harness rather than hardcoding one. `test_launch_presets` instead exercises the configured `public-coder` preset's
 intentional Codex default, Sandbox binding, bootstrap marker, inherited fields, and local override.
+Initial session Open uses a 120-second retry budget for HTTP 503, retaining the same session id;
+refusals and other server failures are not startup readiness signals.
 
 ## MCP integration
 
@@ -88,7 +87,7 @@ Not in CI, and not on RBE: the target is `manual`, so `//...` never selects it, 
 kubeconfig and a route to the cluster.
 
 Bazel excludes `manual` targets from package patterns, so `:all` only runs the fast
-`test_operator_login` exception. It does not run any deployed vertical scenario. Name the live
+offline driver tests. It does not run any deployed vertical scenario. Name the live
 scenario explicitly. Start with the egress vertical slice:
 
 ```bash
