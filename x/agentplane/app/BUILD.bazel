@@ -302,6 +302,8 @@ py_test(
         "//x/agentplane/runner:client",
         "//x/agentplane/runner:conftest",
         "//x/agentplane/runner:protocol_pb2",
+        "//x/agentplane/runner:service",
+        "//x/agentplane/runner:session",
         "//x/agentplane/runner/testing:scripted_model",
         "@pypi//httpx",
         "@pypi//protobuf",

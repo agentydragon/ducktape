@@ -41,6 +41,7 @@ logger = logging.getLogger(__name__)
 REPLAY_PAGE = 1000
 KEEPALIVE_S = 15
 RECONCILE_S = 2
+COMMAND_ADMISSION_S = 15
 LEASE_DURATION = timedelta(seconds=30)
 AddressOf = Callable[[str], Awaitable[str]]
 DiscoverSandboxes = Callable[[], Awaitable[list[str]]]
@@ -54,6 +55,13 @@ class SandboxNotReachableError(Exception):
 
 class MalformedMessageError(Exception):
     """A request body is not the proto-JSON of the message the route takes."""
+
+
+class RunnerAdmissionTimeoutError(Exception):
+    """The runner did not durably admit a Command before the bounded relay deadline."""
+
+    def __init__(self, command_id: str) -> None:
+        super().__init__(f"runner did not admit command {command_id!r} within {COMMAND_ADMISSION_S} seconds")
 
 
 class NewSession(BaseModel):
@@ -297,21 +305,33 @@ class RunnerBridge:
         thread = await self._store.get_thread(thread_id)
         if thread is None:
             raise ThreadNotFoundError(thread_id)
-        await self._command(thread.sandbox, thread.session_id, command)
+        # A runner rejection can still have followed earlier events the archive has not copied.
+        # Start its feed before relaying so the rejection path cannot strand that prefix.
         await self.start([thread.sandbox])
-        return await self._wait_for_admission(thread_id, command)
+        try:
+            await self._command(
+                thread.sandbox, thread.session_id, command, after_cursor=await self._store.last_cursor(thread_id)
+            )
+            return await self._wait_for_admission(thread_id, command)
+        except TimeoutError as error:
+            raise RunnerAdmissionTimeoutError(command.command_id) from error
 
-    async def _command(self, sandbox: str, session_id: str, command: command_pb2.Command) -> None:
-        attachment = await (await self._client(sandbox)).attach(session_id)
+    async def _command(self, sandbox: str, session_id: str, command: command_pb2.Command, *, after_cursor: int) -> None:
+        attachment = await (await self._client(sandbox)).attach(session_id, after_cursor=after_cursor)
         try:
             if attachment.attached.harness_state != protocol_pb2.HARNESS_STATE_RUNNING:
                 raise RunnerError("session is stopped; explicitly open it before sending commands")
             await attachment.command(command)
-            # Detach is ordered after the Command on this bidi stream, but the command's native
-            # operation may continue long after runner admission. The feed, not this relay
-            # attachment, copies its resulting Events; do not wait for a Stop's process exit or
-            # another command's harness effect before returning the saved admission receipt.
             await attachment.detach()
+            # Writes only reach gRPC's outgoing buffer. Keep the attachment until this runner's
+            # event stream proves it committed this exact Command, then the separate feed copies
+            # that receipt into PostgreSQL. This is not a native-effect wait.
+            await attachment.until(
+                lambda entry: (
+                    entry.event.HasField("command_admitted") and entry.event.command_admitted.command == command
+                ),
+                timeout_s=COMMAND_ADMISSION_S,
+            )
         finally:
             attachment.cancel()
 
@@ -319,7 +339,7 @@ class RunnerBridge:
         """Wait for the ingester's committed prefix, never for a native command effect."""
         waiter = asyncio.Event()
         with self._store.changes.subscribe(waiter):
-            async with asyncio.timeout(15):
+            async with asyncio.timeout(COMMAND_ADMISSION_S):
                 while True:
                     if admitted := await self._store.admitted_command(thread_id, command):
                         return admitted

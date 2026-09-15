@@ -757,6 +757,10 @@ def create_app(
     async def _not_reachable(_request: Request, error: runner_bridge.SandboxNotReachableError) -> JSONResponse:
         return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": str(error)})
 
+    @app.exception_handler(runner_bridge.RunnerAdmissionTimeoutError)
+    async def _admission_timed_out(_request: Request, error: runner_bridge.RunnerAdmissionTimeoutError) -> JSONResponse:
+        return JSONResponse(status_code=status.HTTP_504_GATEWAY_TIMEOUT, content={"detail": str(error)})
+
     @app.exception_handler(grpc.aio.AioRpcError)
     async def _runner_unavailable(_request: Request, error: grpc.aio.AioRpcError) -> JSONResponse:
         # The Pod has an address but nothing answers on it yet: a runner still starting after a
