@@ -68,10 +68,9 @@ bbr test //x/agentplane/app/...
 
 ### Replica-safe runner delivery
 
-Every app replica can send commands through an independent runner attachment. Inputs go to the
-runner first, with stable `input_id` values: the runner serializes admission and deduplicates retries.
-There is no database command queue. A successful HTTP command response is not a promise that the
-trajectory copy is already committed; the runner's input settlement events describe its outcome.
+The durable Thread-command outbox and browser replay contract are specified only in
+[Thread, runner, and harness layering](../docs/thread_layering.md). This implementation README
+does not redefine their receipt or effect semantics.
 
 One app replica leases each sandbox's ingestion in PostgreSQL. It observes every runner session,
 copying events from the last committed sequence. Each write locks and validates the lease token

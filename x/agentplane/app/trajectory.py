@@ -21,9 +21,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     DateTime,
     Enum as SqlEnum,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Text,
     UniqueConstraint,
@@ -41,7 +43,7 @@ from x.agentplane.app.changes import Changes
 from x.agentplane.app.operator_sessions import Base, OperatorSessionStore
 from x.agentplane.app.presets import Harness
 from x.agentplane.app.trajectory_updates import CHANNEL, COMMANDS_PAYLOAD, TrajectoryUpdates
-from x.agentplane.protocol import command_pb2, event_log_pb2
+from x.agentplane.protocol import command_pb2, event_log_pb2, thread_record_pb2
 from x.agentplane.runner import protocol_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -139,6 +141,35 @@ class ThreadCommand(Base):
     ordinal: Mapped[int] = mapped_column(BigInteger)
     command: Mapped[dict[str, object]] = mapped_column(JSONB)
     accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+
+
+class ThreadRecord(Base):
+    """A lossless app replay envelope referencing one immutable command or copied runner event."""
+
+    __tablename__ = "thread_record"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["thread_id", "command_id"], ["thread_command.thread_id", "thread_command.command_id"], ondelete="CASCADE"
+        ),
+        ForeignKeyConstraint(["thread_id", "event_cursor"], ["event.thread_id", "event.cursor"], ondelete="CASCADE"),
+        CheckConstraint(
+            "(command_id IS NOT NULL AND event_cursor IS NULL AND runner_session_id IS NULL) OR "
+            "(command_id IS NULL AND event_cursor IS NOT NULL AND runner_session_id IS NOT NULL)",
+            name="thread_record_exactly_one_source",
+        ),
+    )
+
+    thread_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("thread.id", ondelete="CASCADE"), primary_key=True
+    )
+    # This cursor replays records through the app boundary. It is deliberately not a runner-log
+    # cursor and cannot order transcript items across runner sessions.
+    cursor: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    command_id: Mapped[str | None] = mapped_column(Text)
+    event_cursor: Mapped[int | None] = mapped_column(BigInteger)
+    runner_session_id: Mapped[str | None] = mapped_column(
+        Text, ForeignKey("thread_runner_session.runner_session_id", ondelete="CASCADE")
+    )
 
 
 @dataclass(frozen=True)
@@ -284,7 +315,9 @@ class TrajectoryStore:
             thread = await session.scalar(select(Thread).where(Thread.id == thread_id).with_for_update())
             if thread is None:
                 raise ThreadNotFoundError(thread_id)
-            snapshot = await _append_thread_command(session, thread_id, command)
+            snapshot, appended = await _append_thread_command(session, thread_id, command)
+            if appended:
+                await _append_thread_record(session, thread_id, command_id=command.command_id)
             await _notify(session, commands=True)
             return snapshot
 
@@ -349,7 +382,12 @@ class TrajectoryStore:
             )
 
     async def record(
-        self, thread_id: UUID, entries: Sequence[event_log_pb2.EventEntry], *, lease: IngestionLease
+        self,
+        thread_id: UUID,
+        runner_session_id: str,
+        entries: Sequence[event_log_pb2.EventEntry],
+        *,
+        lease: IngestionLease,
     ) -> None:
         """Store entries; one already stored under its cursor is left as it was, so a replay after
         a reconnect is harmless."""
@@ -367,15 +405,35 @@ class TrajectoryStore:
         ]
         async with self._sessions.begin() as session:
             await _fence(session, lease, thread_id)
+            if (
+                await session.scalar(
+                    select(ThreadRunnerSession.runner_session_id).where(
+                        ThreadRunnerSession.thread_id == thread_id,
+                        ThreadRunnerSession.runner_session_id == runner_session_id,
+                    )
+                )
+            ) is None:
+                raise ValueError("runner session is not associated with this Thread")
+            # This lock is shared with command admission so replay cursors are lossless even as
+            # distinct app replicas append app intent and copied runner evidence concurrently.
+            thread = await session.scalar(select(Thread).where(Thread.id == thread_id).with_for_update())
+            if thread is None:  # pragma: no cover - the lease fence just proved it exists.
+                raise ThreadNotFoundError(thread_id)
             inserted = list(
-                await session.scalars(insert(Event).values(rows).on_conflict_do_nothing().returning(Event.payload))
+                await session.execute(
+                    insert(Event).values(rows).on_conflict_do_nothing().returning(Event.cursor, Event.payload)
+                )
             )
+            for cursor, _payload in sorted(inserted):
+                await _append_thread_record(
+                    session, thread_id, event_cursor=cursor, runner_session_id=runner_session_id
+                )
             state = await session.get(FeedState, thread_id)
             if state is not None:
                 attached = ParseDict(state.attached, protocol_pb2.Attached())
                 previous_model = attached.spec.model
                 for entry in sorted(
-                    (ParseDict(payload, event_log_pb2.EventEntry()) for payload in inserted),
+                    (ParseDict(payload, event_log_pb2.EventEntry()) for _cursor, payload in inserted),
                     key=lambda entry: entry.cursor,
                 ):
                     # An Attached snapshot describes the runner at its cursor. Replaying the
@@ -395,7 +453,7 @@ class TrajectoryStore:
                 session,
                 commands=any(
                     ParseDict(payload, event_log_pb2.EventEntry()).event.HasField("command_admitted")
-                    for payload in inserted
+                    for _cursor, payload in inserted
                 ),
             )
 
@@ -541,6 +599,38 @@ class TrajectoryStore:
             )
             return [ParseDict(payload, event_log_pb2.EventEntry()) for payload in payloads]
 
+    async def thread_records(
+        self, thread_id: UUID, *, after_cursor: int = 0, limit: int
+    ) -> list[thread_record_pb2.ThreadRecord]:
+        """Replay durable app command records and copied runner events after one app cursor."""
+        async with self._sessions() as session:
+            rows = await session.execute(
+                select(ThreadRecord, ThreadCommand.ordinal, ThreadCommand.command, Event.payload)
+                .outerjoin(
+                    ThreadCommand,
+                    (ThreadCommand.thread_id == ThreadRecord.thread_id)
+                    & (ThreadCommand.command_id == ThreadRecord.command_id),
+                )
+                .outerjoin(
+                    Event, (Event.thread_id == ThreadRecord.thread_id) & (Event.cursor == ThreadRecord.event_cursor)
+                )
+                .where(ThreadRecord.thread_id == thread_id, ThreadRecord.cursor > after_cursor)
+                .order_by(ThreadRecord.cursor)
+                .limit(limit)
+            )
+            return [
+                _thread_record_from_row(record, ordinal, command, event) for record, ordinal, command, event in rows
+            ]
+
+    async def last_thread_record_cursor(self, thread_id: UUID) -> int:
+        async with self._sessions() as session:
+            return (
+                await session.scalar(
+                    select(func.coalesce(func.max(ThreadRecord.cursor), 0)).where(ThreadRecord.thread_id == thread_id)
+                )
+                or 0
+            )
+
 
 def _validate_command(command: command_pb2.Command) -> None:
     if not command.command_id or command.WhichOneof("operation") is None:
@@ -549,14 +639,14 @@ def _validate_command(command: command_pb2.Command) -> None:
 
 async def _append_thread_command(
     session: AsyncSession, thread_id: UUID, command: command_pb2.Command
-) -> ThreadCommandSnapshot:
+) -> tuple[ThreadCommandSnapshot, bool]:
     _validate_command(command)
     encoded = MessageToDict(command)
     existing = await session.get(ThreadCommand, (thread_id, command.command_id))
     if existing is not None:
         if existing.command != encoded:
             raise ThreadCommandConflictError("command id was already used for a different Thread command")
-        return _thread_command_snapshot(existing)
+        return _thread_command_snapshot(existing), False
     latest_ordinal = await session.scalar(
         select(func.coalesce(func.max(ThreadCommand.ordinal), 0)).where(ThreadCommand.thread_id == thread_id)
     )
@@ -570,7 +660,33 @@ async def _append_thread_command(
         accepted_at=datetime.now(UTC),
     )
     session.add(row)
-    return _thread_command_snapshot(row)
+    return _thread_command_snapshot(row), True
+
+
+async def _append_thread_record(
+    session: AsyncSession,
+    thread_id: UUID,
+    *,
+    command_id: str | None = None,
+    event_cursor: int | None = None,
+    runner_session_id: str | None = None,
+) -> None:
+    if (command_id is None) == (event_cursor is None):
+        raise ValueError("a Thread replay record needs exactly one source")
+    latest_cursor = await session.scalar(
+        select(func.coalesce(func.max(ThreadRecord.cursor), 0)).where(ThreadRecord.thread_id == thread_id)
+    )
+    if latest_cursor is None:  # pragma: no cover - SQL coalesce guarantees a row.
+        raise RuntimeError("Thread replay cursor aggregate returned no value")
+    session.add(
+        ThreadRecord(
+            thread_id=thread_id,
+            cursor=latest_cursor + 1,
+            command_id=command_id,
+            event_cursor=event_cursor,
+            runner_session_id=runner_session_id,
+        )
+    )
 
 
 def _thread_command_snapshot(command: ThreadCommand) -> ThreadCommandSnapshot:
@@ -580,6 +696,23 @@ def _thread_command_snapshot(command: ThreadCommand) -> ThreadCommandSnapshot:
         ordinal=command.ordinal,
         accepted_at=command.accepted_at,
     )
+
+
+def _thread_record_from_row(
+    record: ThreadRecord, ordinal: int | None, command: dict[str, object] | None, event: dict[str, object] | None
+) -> thread_record_pb2.ThreadRecord:
+    result = thread_record_pb2.ThreadRecord(thread_id=str(record.thread_id), replay_cursor=record.cursor)
+    if record.command_id is not None:
+        if ordinal is None or command is None:  # pragma: no cover - composite foreign key guarantees this.
+            raise RuntimeError("Thread command replay record lost its command")
+        result.command.ordinal = ordinal
+        result.command.command.CopyFrom(ParseDict(command, command_pb2.Command()))
+    else:
+        if record.runner_session_id is None or event is None:  # pragma: no cover - check and FK guarantee this.
+            raise RuntimeError("Thread runner-event replay record lost its source")
+        result.runner_event.runner_session_id = record.runner_session_id
+        result.runner_event.entry.CopyFrom(ParseDict(event, event_log_pb2.EventEntry()))
+    return result
 
 
 async def _activate_runner_session(session: AsyncSession, thread_id: UUID, runner_session_id: str) -> UUID:

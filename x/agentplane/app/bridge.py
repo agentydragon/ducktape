@@ -117,7 +117,7 @@ class Feed:
             try:
                 while True:
                     entry = await attachment.next_entry()
-                    await self.store.record(thread_id, [entry], lease=self.lease)
+                    await self.store.record(thread_id, self.session_id, [entry], lease=self.lease)
                     attachment.seen.clear()
             except StreamClosedError:
                 await self.store.end_feed(thread_id, lease=self.lease, error=None)

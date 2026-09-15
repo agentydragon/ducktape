@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package ducktape.agentplane.protocol.v1;
+
+import "x/agentplane/protocol/command.proto";
+import "x/agentplane/protocol/event_log.proto";
+
+// One replayable app-side fact about a product Thread. The cursor orders this app transport only:
+// it must not be used as a conversation order across runner sessions.
+message ThreadRecord {
+  string thread_id = 1;
+  uint64 replay_cursor = 2;
+
+  oneof record {
+    ThreadCommandRecord command = 3;
+    ThreadRunnerEventRecord runner_event = 4;
+  }
+}
+
+// The app durably admitted a desired Command. Its ordinal is the order the app reconciler must
+// consider, not a runner receipt or harness effect.
+message ThreadCommandRecord {
+  uint64 ordinal = 1;
+  Command command = 2;
+}
+
+// The app copied this exact runner EventEntry from one runner-session association.
+message ThreadRunnerEventRecord {
+  string runner_session_id = 1;
+  EventEntry entry = 2;
+}
