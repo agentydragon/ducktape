@@ -43,6 +43,7 @@ py_library(
         "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//sqlalchemy",
+        "@pypi//starlette",
         "@pypi//uvicorn",
     ],
 )

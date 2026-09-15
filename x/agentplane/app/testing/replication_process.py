@@ -1,8 +1,9 @@
-"""Real app processes with test-only gates around the ingestion transaction's commit.
+"""Real app processes with test-only gates at ingestion commit and browser SSE delivery.
 
 The store's production record/fencing/projection code is unchanged. A SQLAlchemy transaction
 subclass pauses only the selected record call, after its real writes or after its real commit.
 Process readiness and checkpoint observations travel through a pipe, never filesystem sentinels.
+The replay gate holds actual ASGI response bytes without changing their payload or cursor.
 """
 
 import asyncio
@@ -26,6 +27,7 @@ import httpx
 import uvicorn
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.ext.asyncio import AsyncSession, AsyncSessionTransaction, async_sessionmaker, create_async_engine
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from x.agentplane.app.action_policy import ActionPolicyInventory
 from x.agentplane.app.api import create_app
@@ -58,6 +60,53 @@ class Ready:
 @dataclass(frozen=True)
 class Checkpoint:
     boundary: CommitBoundary
+
+
+@dataclass(frozen=True)
+class ReplayHeld:
+    cursor: int
+
+
+@dataclass(frozen=True)
+class ReleaseReplay:
+    pass
+
+
+class ReplayGate:
+    def __init__(self, after_cursor: int, connection: Connection) -> None:
+        self.after_cursor = after_cursor
+        self._connection = connection
+        self._release: asyncio.Task[None] | None = None
+
+    async def hold(self, cursor: int) -> None:
+        if self._release is None:
+            self._release = asyncio.create_task(self._wait_for_release())
+        if not self._release.done():
+            self._connection.send(ReplayHeld(cursor))
+        # Closing the old browser document cancels its response, not the gate shared with the
+        # reloaded document's new SSE connection.
+        await asyncio.shield(self._release)
+
+    async def _wait_for_release(self) -> None:
+        command = await receive(self._connection)
+        assert isinstance(command, ReleaseReplay), command
+
+
+class GatedThreadReplay:
+    def __init__(self, app: ASGIApp, *, gate: ReplayGate) -> None:
+        self._app = app
+        self._gate = gate
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        async def gated_send(message: Message) -> None:
+            if message["type"] == "http.response.body":
+                for line in message.get("body", b"").splitlines():
+                    if line.startswith(b"id: ") and (cursor := int(line[4:])) > self._gate.after_cursor:
+                        await self._gate.hold(cursor)
+            await send(message)
+
+        thread_replay = scope["type"] == "http" and scope["path"].endswith("/events/stream")
+        await self._app(scope, receive, gated_send if thread_replay else send)
 
 
 @dataclass(frozen=True)
@@ -129,8 +178,11 @@ def _run(
     cursor: int,
     frontend_directory: Path | None,
     sandbox_state: ProvisioningState | None,
+    replay_after: int | None,
 ) -> None:
-    asyncio.run(_serve(database_url, target, connection, boundary, cursor, frontend_directory, sandbox_state))
+    asyncio.run(
+        _serve(database_url, target, connection, boundary, cursor, frontend_directory, sandbox_state, replay_after)
+    )
 
 
 async def _serve(
@@ -141,6 +193,7 @@ async def _serve(
     cursor: int,
     frontend_directory: Path | None,
     sandbox_state: ProvisioningState | None,
+    replay_after: int | None,
 ) -> None:
     store = (
         TrajectoryStore.connect(database_url)
@@ -183,6 +236,8 @@ async def _serve(
         # Authentication is tested separately; the production routes, HTTP transport, ingestion,
         # PostgreSQL notifications, and SSE generator all run here unchanged.
         app.dependency_overrides[require_caller] = lambda: CallerIdentity(CallerKind.OPERATOR, "test-operator")
+        if replay_after is not None:
+            app.add_middleware(GatedThreadReplay, gate=ReplayGate(replay_after, connection))
         if frontend_directory is not None:
             app.mount("/", StaticFiles(directory=frontend_directory, html=True), name="test-frontend")
         await store.start_updates()
@@ -219,6 +274,14 @@ class AppProcess:
         assert isinstance(observation, Checkpoint), observation
         return observation
 
+    async def replay_held(self) -> ReplayHeld:
+        observation = await receive(self.observations)
+        assert isinstance(observation, ReplayHeld), observation
+        return observation
+
+    def release_replay(self) -> None:
+        self.observations.send(ReleaseReplay())
+
     async def kill(self) -> None:
         self.process.kill()
         await asyncio.to_thread(self.process.join)
@@ -234,11 +297,13 @@ async def app_process(
     cursor: int = 0,
     frontend_directory: Path | None = None,
     sandbox_state: ProvisioningState | None = ProvisioningState.RUNNING,
+    replay_after: int | None = None,
 ) -> AsyncIterator[AppProcess]:
     context = multiprocessing.get_context("spawn")
-    parent, child = context.Pipe(duplex=False)
+    parent, child = context.Pipe()
     process = context.Process(
-        target=_run, args=(database_url, target, child, boundary, cursor, frontend_directory, sandbox_state)
+        target=_run,
+        args=(database_url, target, child, boundary, cursor, frontend_directory, sandbox_state, replay_after),
     )
     process.start()
     child.close()

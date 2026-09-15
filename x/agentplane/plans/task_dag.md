@@ -711,11 +711,15 @@ App-process loss and HTTP/SSE handoff are covered by
 [replica-safe runner delivery](../app/README.md#replica-safe-runner-delivery).
 The built SPA also has real-Chromium retained/live/reload, ahead-of-prefix snapshot,
 rejected runner gap/source-change, canonical admission, persisted same-id retry after
-a pre-forward abort, and streamed admission after post-commit response loss. Mocked
-component streams alone do not cover those boundaries.
-Keep a genuinely unobserved committed admission (both HTTP reply and SSE lost) separate
-from a request aborted before forwarding. Also exercise an HTTP admission arriving ahead
-of the browser's contiguous Event prefix without skipping preceding Events.
+a pre-forward abort, and streamed admission after post-commit response loss. It also
+covers genuinely unobserved committed admission (HTTP reply and SSE delivery both lost):
+the same local Command survives reload, then replay reconciles it exactly once without
+another send. Catch-up keeps Retry disabled; this is not a claimed clicked retry after
+reload. The pre-forward-loss browser case covers explicit same-id Retry, and API/runner
+idempotency tests separately cover retry of an already admitted Command.
+An HTTP admission ahead of the browser prefix updates only the pending receipt: earlier
+streaming deltas remain unseen until replay delivers the entire prefix in order, once.
+Mocked component streams alone do not cover those boundaries.
 Native crash-recovery research is not a prerequisite for the replay/projection implementation.
 
 The frontend `EventStream` now owns a verified, contiguous prefix: exact duplicates

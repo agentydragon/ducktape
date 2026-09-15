@@ -17,7 +17,7 @@ from playwright.async_api import APIResponse, Page, Request, Route, async_playwr
 from util.bazel.runfiles import get_required_path
 from util.testing.frontend_visual import CONTAINER_BASE_BROWSER_ARGS, chromium_executable
 from util.testing.undeclared_outputs import undeclared_outputs_dir
-from x.agentplane.app.testing.replication_process import app_process
+from x.agentplane.app.testing.replication_process import AppProcess, app_process
 from x.agentplane.app.testing.replication_source import SANDBOX, SESSION, Opened, ReplicationSource
 from x.agentplane.app.trajectory import TrajectoryStore
 from x.agentplane.protocol import command_pb2, event_log_pb2, event_pb2
@@ -52,6 +52,12 @@ class ThreadBrowser:
     source: ReplicationSource
     store: TrajectoryStore
     opened: Opened
+    app: AppProcess
+
+
+@pytest.fixture
+def replay_after() -> int | None:
+    return None
 
 
 @pytest.fixture
@@ -77,16 +83,19 @@ def thread_source() -> ReplicationSource:
 
 @pytest.fixture
 async def thread_browser(
-    page: Page, db_url: str, store: TrajectoryStore, thread_source: ReplicationSource
+    page: Page, db_url: str, store: TrajectoryStore, thread_source: ReplicationSource, replay_after: int | None
 ) -> AsyncIterator[ThreadBrowser]:
     source = thread_source
     thread_id = await store.thread(SANDBOX, SESSION, source.attached.spec)
     directory = get_required_path("_main/x/agentplane/app/frontend/dist/index.html").parent
-    async with source.serve() as target, app_process(db_url, target, frontend_directory=directory) as app:
+    async with (
+        source.serve() as target,
+        app_process(db_url, target, frontend_directory=directory, replay_after=replay_after) as app,
+    ):
         async with asyncio.timeout(30):
             opened = await source.opened.get()
             await page.goto(f"{app.url}/#/threads/{thread_id}")
-        yield ThreadBrowser(page, source, store, opened)
+        yield ThreadBrowser(page, source, store, opened, app)
 
 
 async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
@@ -268,6 +277,152 @@ async def test_streamed_admission_survives_a_lost_http_reply_and_reload(thread_b
     finally:
         drop_reply.set()
         await page.unroute_all(behavior="wait")
+
+
+async def show_raw(page: Page) -> None:
+    await page.get_by_role("button", name="More", exact=True).click()
+    await page.get_by_role("menuitem", name="Raw frames", exact=True).click()
+    await page.keyboard.press("Escape")
+
+
+async def expect_raw_prefix(page: Page, cursor: int) -> None:
+    await expect(page.locator(".agentplane-frame-sequence")).to_have_text(
+        [f"Event {sequence} ·" for sequence in range(1, cursor + 1)]
+    )
+
+
+@pytest.mark.parametrize("replay_after", [4])
+async def test_unobserved_committed_admission_reconciles_once_after_reload(thread_browser: ThreadBrowser) -> None:
+    page, source, app = thread_browser.page, thread_browser.source, thread_browser.app
+    thread_browser.opened.replay.set()
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
+    await show_raw(page)
+    replies: asyncio.Queue[APIResponse] = asyncio.Queue()
+    drop_reply = asyncio.Event()
+
+    async def lose_committed_reply(route: Route) -> None:
+        replies.put_nowait(await route.fetch())
+        await drop_reply.wait()
+        await route.abort()
+
+    await page.route("**/threads/*/commands", lose_committed_reply, times=1)
+    try:
+        composer = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
+        await composer.fill("Test input whose admission neither browser channel observed")
+        await composer.press("Enter")
+        async with asyncio.timeout(15):
+            response = await replies.get()
+            command = await source.commands.get()
+            assert (await app.replay_held()).cursor == 5
+        assert response.status == 200
+        admission = json_format.Parse(await response.text(), event_log_pb2.EventEntry())
+        assert admission.event.command_admitted.command == command
+        assert admission == source.entries[4]
+        (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
+        assert await thread_browser.store.events(thread.id, limit=100) == source.entries
+
+        async with page.expect_event("requestfailed", predicate=lambda request: request.url == response.url):
+            drop_reply.set()
+        pending = page.get_by_role("region", name="Pending commands")
+        await expect(pending.locator("[data-command-id]")).to_have_attribute("data-command-id", command.command_id)
+        await expect(pending.get_by_text("Awaiting saved confirmation", exact=True)).to_be_visible()
+        await expect(page.locator(".agentplane-user-bubble")).to_have_count(0)
+        await expect_raw_prefix(page, 4)
+
+        # Reload abandons the old, held SSE response. The new document must retain the same
+        # local Command while replay is still held, despite the app already archiving admission.
+        await page.reload()
+        async with asyncio.timeout(15):
+            assert (await app.replay_held()).cursor == 5
+        await expect(pending.locator("[data-command-id]")).to_have_attribute("data-command-id", command.command_id)
+        await expect(pending.get_by_text(command.submit_input.text, exact=True)).to_be_visible()
+        await expect(pending.get_by_text("Awaiting saved confirmation", exact=True)).to_be_visible()
+        await expect(page.get_by_text("Catching up: 4 / 5 events", exact=True)).to_be_visible()
+        await expect(page.get_by_role("button", name="Retry", exact=True)).to_be_disabled()
+        await expect_raw_prefix(page, 4)
+
+        app.release_replay()
+        await expect_raw_prefix(page, 5)
+        await expect(pending.get_by_text("Saved · awaiting effect", exact=True)).to_be_visible()
+        await expect(pending.get_by_text("Awaiting saved confirmation", exact=True)).to_have_count(0)
+        await expect(page.get_by_role("button", name="Retry", exact=True)).to_have_count(0)
+        source.append(
+            event_pb2.Event(
+                harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
+                    harness_message_id="test-input-recovered-from-unobserved-admission",
+                    origin_command_ids=[command.command_id],
+                    text=command.submit_input.text,
+                    turn_id="test-browser-turn",
+                )
+            )
+        )
+        await expect(page.locator(".agentplane-user-bubble")).to_have_text(command.submit_input.text)
+        await expect_raw_prefix(page, 6)
+        await expect(pending).to_have_count(0)
+        assert source.commands.empty(), "reload/replay must not automatically send the Command again"
+        archived = await thread_browser.store.events(thread.id, limit=100)
+        assert archived == source.entries
+        assert [entry for entry in archived if entry.event.HasField("command_admitted")] == [admission]
+    finally:
+        drop_reply.set()
+        await page.unroute_all(behavior="wait")
+
+
+@pytest.mark.parametrize("replay_after", [4])
+async def test_http_admission_ahead_of_replay_does_not_skip_earlier_events(thread_browser: ThreadBrowser) -> None:
+    page, source, app = thread_browser.page, thread_browser.source, thread_browser.app
+    thread_browser.opened.replay.set()
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
+    await show_raw(page)
+    for text in (" and preceding delta A", " and preceding delta B"):
+        source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-browser-item", text=text)))
+    async with asyncio.timeout(15):
+        assert (await app.replay_held()).cursor == 5
+
+    composer = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
+    await composer.fill("Test input admitted ahead of the browser prefix")
+    async with page.expect_response(lambda response: response.url.endswith("/commands")) as replied:
+        await composer.press("Enter")
+    response = await replied.value
+    async with asyncio.timeout(15):
+        command = await source.commands.get()
+    assert response.status == 200
+    admission = json_format.Parse(await response.text(), event_log_pb2.EventEntry())
+    assert admission.event.command_admitted.command == command
+    assert admission == source.entries[6]
+    (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
+    assert await thread_browser.store.events(thread.id, limit=100) == source.entries
+
+    pending = page.get_by_role("region", name="Pending commands")
+    await expect(pending.get_by_text("Saved · replay catching up", exact=True)).to_be_visible()
+    await expect(pending.locator("[data-command-id]")).to_have_attribute("data-command-id", command.command_id)
+    await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
+    await expect(page.locator(".agentplane-user-bubble")).to_have_count(0)
+    await expect_raw_prefix(page, 4)
+    await expect(page.get_by_text("Operational runner snapshot", exact=False)).to_contain_text("consumed event 4")
+
+    app.release_replay()
+    await expect_raw_prefix(page, 7)
+    await expect(
+        page.get_by_text("Test retained prefix and preceding delta A and preceding delta B", exact=True)
+    ).to_have_count(1)
+    await expect(pending.get_by_text("Saved · awaiting effect", exact=True)).to_be_visible()
+    await expect(pending.get_by_text("Saved · replay catching up", exact=True)).to_have_count(0)
+    source.append(
+        event_pb2.Event(
+            harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
+                harness_message_id="test-input-after-replay-catch-up",
+                origin_command_ids=[command.command_id],
+                text=command.submit_input.text,
+                turn_id="test-browser-turn",
+            )
+        )
+    )
+    await expect(page.locator(".agentplane-user-bubble")).to_have_text(command.submit_input.text)
+    await expect_raw_prefix(page, 8)
+    await expect(pending).to_have_count(0)
+    assert source.commands.empty()
+    assert await thread_browser.store.events(thread.id, limit=100) == source.entries
 
 
 async def test_ahead_snapshot_is_not_a_conversation_or_effective_model(thread_browser: ThreadBrowser) -> None:
