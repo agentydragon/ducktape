@@ -10,6 +10,7 @@ package(default_visibility = ["//x/agentplane:__subpackages__"])
 # gazelle:resolve py x.agentplane.protocol.command_pb2 //x/agentplane/protocol:command_pb2
 # gazelle:resolve py x.agentplane.protocol.event_pb2 //x/agentplane/protocol:event_pb2
 # gazelle:resolve py x.agentplane.protocol.event_log_pb2 //x/agentplane/protocol:event_log_pb2
+# gazelle:resolve py httpx_sse @pypi//httpx_sse
 
 # No test here is small, and none of that is about the tests being slow: on the CI executor image
 # they are killed at a small target's 60s with the budget spent fetching inputs rather than running
