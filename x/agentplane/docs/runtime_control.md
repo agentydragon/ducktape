@@ -4,8 +4,7 @@
 lifecycle and UI contract are authoritative in
 [Thread, runner, and harness layering](thread_layering.md). An app acceptance or
 runner admission is not a model change; only the causal `ModelChanged` Event says the
-change took effect. The task-DAG entry is
-[CONTROL_STATE](../plans/task_dag.md#control_state--dynamic-runtime-control-acceptance).
+change took effect.
 
 `CommandAdmitted` says only that the runner stored the command. There is no public
 timing selector or generic active-turn conditional: the runner waits for
@@ -23,9 +22,9 @@ harness-native evidence.
   native refusal ends both the selected model command and input command as
   `CommandFailed`.
 
-The admission/effect split is deliberately preferable to static **now** or **at
-boundary** options. It lets the runner report exactly when the harness says a
-requested change took effect, even when that is later than admission.
+The app must allow subsequent input to reach the runner while a model change is
+pending: Codex needs that input's `turn/start` to apply the selection. Admission and
+scheduling are separate; no app gate may wait for each command's terminal effect.
 
 The pinned native surface and mock-LLM tests are summarized in the
 [protocol roster](../native/docs/protocol_roster.md).
@@ -33,7 +32,7 @@ The pinned native surface and mock-LLM tests are summarized in the
 ## Open capability question
 
 A future capability snapshot can say, for one operation at one instant, whether the
-runner would promptly admit it or retain it while busy. This is advisory and races with
+runner could promptly apply it or would retain it while busy. This is advisory and races with
 a command. Before adding it, demonstrate for each harness:
 
 - which native exchange establishes admission, application, or future-turn selection;

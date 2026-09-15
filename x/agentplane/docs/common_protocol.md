@@ -1,20 +1,19 @@
 # Common runner protocol
 
-Status: **target hard-cut seam.** The current wire remains documented by the runner
-specification until that cutover lands; this page does not add a compatibility mapping
-between the old and target command shapes.
+The shared generated messages are `Command`, `Event`, `EventEntry`, and `Follow`.
+The runner and app reuse them for command delivery and retained Event replay.
 
 The runner is the shared seam over Claude Code and Codex. Exact wire fields, replay,
 and journal recovery are in [the runner specification](../runner/SPEC.md). The
 cross-layer identity, command, projection, and UI contract is
 [Thread, runner, and harness layering](thread_layering.md). That document is the
-authoritative definition of Thread command versus runner Command, app-versus-runner
-admission, replica ownership, and Raw-mode ordering.
+authoritative design for Thread identity, queue placement, durability boundaries,
+replica ownership, and Raw-mode ordering. An app queue is an open product choice.
 
 ## What the runner seam owns
 
-- One bidirectional Attach stream per runner session over Open, Command, and Detach,
-  plus replayable sequenced Events.
+- Bidirectional Attach streams over Open, Command, and Detach, plus replayable
+  sequenced Events. Multiple attachments can follow and command the same session.
 - Durable command-journal admission represented by `CommandAdmitted`, before causal effect/outcome
   Events afterwards. It does not call an unsupported native operation successful.
 - Native harness frames delivered verbatim as Native Events, with derived Events citing
@@ -24,11 +23,13 @@ admission, replica ownership, and Raw-mode ordering.
 
 The current commands are `SubmitInput`, `ChangeModel`, `InterruptTurn`, and
 `StopRunnerSession`. `SubmitInput` joins a running turn; it is not a common steer or
-queue abstraction. The runner reconciles uncompleted commands after restart and
-never emits an indeterminate outcome.
+queue abstraction. The runner reconciles uncompleted commands after restart. Native
+execution before durable outcome evidence needs its own recovery proof; journal
+deduplication alone does not guarantee exactly-once native execution.
 
-The runner is internal. It neither names product Threads nor owns the browser API,
-PostgreSQL outbox, Kubernetes Sandbox lifecycle, authorization, or presentation.
+The runner is internal. The Thread identity design gives it a stable journal key;
+it does not own the browser API, PostgreSQL, Kubernetes lifecycle, authorization,
+or presentation.
 
 ## Harness differences remain evidence
 
@@ -41,8 +42,8 @@ In particular, input coalescing/queueing, steering, interruption, resume, and ru
 model control remain adapter responsibilities. The native constraints and evidence are
 documented alongside the relevant adapter tests and captures, including
 [Claude input queue behavior](claude_input_queue.md). Any future common enqueue,
-withdraw, or capability surface must preserve the demonstrated asymmetry rather than
-make an app-side generic queue.
+withdraw, or capability surface must preserve the demonstrated asymmetry. Queue
+placement in the app does not change native execution semantics.
 
 ## Capture evidence contract
 
