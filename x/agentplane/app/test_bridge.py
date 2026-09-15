@@ -284,6 +284,12 @@ async def test_durable_input_survives_the_accepting_app_replica_crash(
     model: ScriptedModel,
     spec: protocol_pb2.SessionSpec,
     monkeypatch: pytest.MonkeyPatch,
+    inventory: SandboxInventory,
+    egress: EgressInventory,
+    decisions: DecisionsClient,
+    live_index: LiveIndex,
+    action_policy: ActionPolicyInventory,
+    reviewer: TokenReviewer,
 ) -> None:
     """A committed input does not depend on the replica that accepted it staying alive.
 
@@ -299,6 +305,7 @@ async def test_durable_input_survives_the_accepting_app_replica_crash(
 
     client = RunnerClient(runner.target)
     accepting = TrajectoryStore.connect(db_url)
+    accepting_bridge = RunnerBridge(address_of=address_of, store=accepting)
     accepting_closed = False
     bridge = RunnerBridge(address_of=address_of, store=store)
     try:
@@ -325,8 +332,44 @@ async def test_durable_input_survives_the_accepting_app_replica_crash(
         command = command_pb2.Command(
             command_id="durable-input", submit_input=command_pb2.SubmitInput(text="DURABLE_INPUT")
         )
-        accepted = await accepting.request_thread_command(thread.id, command)
+        conflicting = command_pb2.Command(
+            command_id="durable-input", submit_input=command_pb2.SubmitInput(text="DIFFERENT_INPUT")
+        )
+        control = command_pb2.Command(
+            command_id="change-model", change_model=command_pb2.ChangeModel(model="bridge-model")
+        )
+        accepting_app = create_app(
+            inventory,
+            accepting_bridge,
+            accepting,
+            {harness: ["bridge-model"] for harness in Harness},
+            egress,
+            decisions,
+            live_index,
+            action_policy,
+            reviewer=reviewer,
+        )
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=accepting_app), base_url="http://test", headers=AGENT_AUTH
+        ) as accepting_http:
+            stored_response = await accepting_http.post(f"/threads/{thread.id}/commands", json=MessageToDict(command))
+            assert (stored_response.status_code, stored_response.json()) == (202, MessageToDict(command))
+            assert (
+                await accepting_http.post(f"/threads/{thread.id}/commands", json=MessageToDict(command))
+            ).status_code == 202
+            assert (
+                await accepting_http.post(f"/threads/{thread.id}/commands", json=MessageToDict(conflicting))
+            ).status_code == 409
+            assert (
+                await accepting_http.post(f"/threads/{thread.id}/commands", json=MessageToDict(control))
+            ).status_code == 422
+            assert (
+                await accepting_http.post(f"/threads/{thread.id}/commands", json={"submitInput": {"text": "missing"}})
+            ).status_code == 422
+        [accepted] = await accepting.thread_commands(thread.id)
+        assert accepted.command == command
         await accepting.close()
+        await accepting_bridge.close()
         accepting_closed = True
 
         async with asyncio.timeout(10):
@@ -357,6 +400,7 @@ async def test_durable_input_survives_the_accepting_app_replica_crash(
     finally:
         if not accepting_closed:
             await accepting.close()
+            await accepting_bridge.close()
         await bridge.close()
         await client.close()
 

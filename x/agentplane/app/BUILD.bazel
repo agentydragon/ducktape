@@ -52,6 +52,7 @@ py_library(
         "//x/agentplane/action_service:enrollments",
         "//x/agentplane/action_service:mcp_linkage",
         "//x/agentplane/action_service:models",
+        "//x/agentplane/protocol:command_pb2",
         "//x/agentplane/runner:client",
         "@pypi//fastapi",
         "@pypi//grpcio",
