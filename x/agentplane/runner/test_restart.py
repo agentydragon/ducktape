@@ -119,13 +119,11 @@ async def test_a_restarted_runner_reports_the_loss_and_resumes_the_conversation(
 ) -> None:
     first_runner = await start_runner()
     client = RunnerClient(first_runner.target)
-    first = await client.attach("restart-1", spec=spec)
-    await first.send("input-1", "Reply with exactly: SEED_OK")
-    request = await model.request()
-    await model.reply(request, Text("SEED_OK"))
-    await first.until(events.turn_completed)
-    await first.detach()
-    await first.drain_until_end()
+    async with await client.attach("restart-1", spec=spec) as first:
+        await first.send("input-1", "Reply with exactly: SEED_OK")
+        request = await model.request()
+        await model.reply(request, Text("SEED_OK"))
+        await first.until(events.turn_completed)
     await client.close()
     harness_pids = [entry.event.harness_started.pid for entry in events.of_kind(first.seen, "harness_started")]
     await first_runner.crash(harness_pids)
@@ -266,18 +264,16 @@ async def test_sigterm_stops_the_harness_cleanly_and_the_next_runner_resumes(
 ) -> None:
     first_runner = await start_runner()
     client = RunnerClient(first_runner.target)
-    first = await client.attach("sigterm-1", spec=spec)
-    await first.send("input-1", "Reply with exactly: SEED_OK")
-    await model.reply(await model.request(), Text("SEED_OK"))
-    await first.until(events.turn_completed)
-    (running,) = await client.list_sessions()
-    assert running.session_id == "sigterm-1"
-    assert running.harness_state == protocol_pb2.HARNESS_STATE_RUNNING
-    assert running.spec == spec
-    # Native frames after the turn's result may still be arriving.
-    assert running.last_cursor >= first.cursor
-    await first.detach()
-    await first.drain_until_end()
+    async with await client.attach("sigterm-1", spec=spec) as first:
+        await first.send("input-1", "Reply with exactly: SEED_OK")
+        await model.reply(await model.request(), Text("SEED_OK"))
+        await first.until(events.turn_completed)
+        (running,) = await client.list_sessions()
+        assert running.session_id == "sigterm-1"
+        assert running.harness_state == protocol_pb2.HARNESS_STATE_RUNNING
+        assert running.spec == spec
+        # Native frames after the turn's result may still be arriving.
+        assert running.last_cursor >= first.cursor
     await client.close()
     # The runner exits only after the stop ladder has reaped every harness.
     await first_runner.stop()

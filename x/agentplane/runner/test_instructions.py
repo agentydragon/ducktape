@@ -28,15 +28,13 @@ def with_instructions(spec: protocol_pb2.SessionSpec, instructions: str) -> prot
 async def test_a_session_without_instructions_sends_none(
     client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
 ) -> None:
-    attachment = await client.attach("no-instructions-1", spec=spec)
-    assert attachment.attached.spec.instructions == ""
-    await attachment.send("input-1", "Reply with exactly: PLAIN_OK")
-    request = await model.request()
-    assert "Wren" not in request.system_text
-    await model.reply(request, Text("PLAIN_OK"))
-    await attachment.until(events.turn_completed)
-    await attachment.detach()
-    await attachment.drain_until_end()
+    async with await client.attach("no-instructions-1", spec=spec) as attachment:
+        assert attachment.attached.spec.instructions == ""
+        await attachment.send("input-1", "Reply with exactly: PLAIN_OK")
+        request = await model.request()
+        assert "Wren" not in request.system_text
+        await model.reply(request, Text("PLAIN_OK"))
+        await attachment.until(events.turn_completed)
 
 
 async def test_instructions_reach_the_model_on_every_turn_and_after_a_resume(
@@ -55,17 +53,15 @@ async def test_instructions_reach_the_model_on_every_turn_and_after_a_resume(
     # A resume starts a fresh harness process, and the two carry the instructions there by different
     # routes: Claude Code re-sends them in its handshake, Codex replays the developer message its
     # thread stored when it was created. The runner SPEC has what that difference costs.
-    second = await client.attach("instructions-1", spec=first.attached.spec, after_cursor=first.cursor)
-    assert second.attached.spec.instructions == INSTRUCTIONS
-    started = await second.until(events.is_kind("harness_started"))
-    assert started.event.harness_started.resumed
-    await second.send("input-2", "Reply with exactly: RESUMED_OK")
-    request = await model.request()
-    assert INSTRUCTIONS in request.system_text
-    await model.reply(request, Text("RESUMED_OK"))
-    await second.until(events.turn_completed)
-    await second.detach()
-    await second.drain_until_end()
+    async with await client.attach("instructions-1", spec=first.attached.spec, after_cursor=first.cursor) as second:
+        assert second.attached.spec.instructions == INSTRUCTIONS
+        started = await second.until(events.is_kind("harness_started"))
+        assert started.event.harness_started.resumed
+        await second.send("input-2", "Reply with exactly: RESUMED_OK")
+        request = await model.request()
+        assert INSTRUCTIONS in request.system_text
+        await model.reply(request, Text("RESUMED_OK"))
+        await second.until(events.turn_completed)
 
 
 if __name__ == "__main__":

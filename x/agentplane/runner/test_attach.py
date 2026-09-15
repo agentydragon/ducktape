@@ -30,40 +30,36 @@ async def test_reattach_resumes_from_the_cursor_without_gap_or_duplicate(
     # The connection drops mid-turn; the harness keeps running the tool.
     first.cancel()
 
-    second = await client.attach("reattach-1", after_cursor=first.cursor)
-    assert second.attached.harness_state == protocol_pb2.HARNESS_STATE_RUNNING
-    assert second.attached.active_turn_id == events.of_kind(first.seen, "turn_started")[-1].event.turn_started.turn_id
-    request = await model.request()
-    assert "wait_finished" in request.tool_outputs[0].text
-    await model.reply(request, Text("RECONNECTED_OK"))
-    done = await second.until(events.turn_completed)
-    assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
+    async with await client.attach("reattach-1", after_cursor=first.cursor) as second:
+        assert second.attached.harness_state == protocol_pb2.HARNESS_STATE_RUNNING
+        assert (
+            second.attached.active_turn_id == events.of_kind(first.seen, "turn_started")[-1].event.turn_started.turn_id
+        )
+        request = await model.request()
+        assert "wait_finished" in request.tool_outputs[0].text
+        await model.reply(request, Text("RECONNECTED_OK"))
+        done = await second.until(events.turn_completed)
+        assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
 
-    combined = [*first.seen, *second.seen]
-    events.assert_contiguous(combined)
-    assert len(events.of_kind(combined, "harness_started")) == 1
-    assert len(events.of_kind(combined, "turn_started")) == 1
-    await second.detach()
-    await second.drain_until_end()
+        combined = [*first.seen, *second.seen]
+        events.assert_contiguous(combined)
+        assert len(events.of_kind(combined, "harness_started")) == 1
+        assert len(events.of_kind(combined, "turn_started")) == 1
 
 
 async def test_replay_from_zero_returns_the_whole_log(
     client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
 ) -> None:
-    first = await client.attach("replay-1", spec=spec)
-    await first.send("input-1", "Reply with exactly: REPLAY_SEED_OK")
-    request = await model.request()
-    await model.reply(request, Text("REPLAY_SEED_OK"))
-    await first.until(events.turn_completed)
-    await first.detach()
-    await first.drain_until_end()
+    async with await client.attach("replay-1", spec=spec) as first:
+        await first.send("input-1", "Reply with exactly: REPLAY_SEED_OK")
+        request = await model.request()
+        await model.reply(request, Text("REPLAY_SEED_OK"))
+        await first.until(events.turn_completed)
 
-    second = await client.attach("replay-1")
-    assert second.attached.last_cursor == first.seen[-1].cursor
-    replayed = [await second.next_entry() for _ in first.seen]
-    assert [entry.SerializeToString() for entry in replayed] == [entry.SerializeToString() for entry in first.seen]
-    await second.detach()
-    await second.drain_until_end()
+    async with await client.attach("replay-1") as second:
+        assert second.attached.last_cursor == first.seen[-1].cursor
+        replayed = [await second.next_entry() for _ in first.seen]
+        assert [entry.SerializeToString() for entry in replayed] == [entry.SerializeToString() for entry in first.seen]
 
 
 async def test_resending_a_command_id_delivers_it_once(
@@ -79,41 +75,36 @@ async def test_resending_a_command_id_delivers_it_once(
     confirmed = await first.until(events.is_kind("harness_user_message_confirmed"))
     first.cancel()
 
-    second = await client.attach("retry-1", after_cursor=first.cursor)
-    await second.send("input-1", "Reply with exactly: ONCE_OK")
-    assert confirmed.event.harness_user_message_confirmed.origin_command_ids == ["input-1"]
-    assert request.user_texts.count("Reply with exactly: ONCE_OK") == 1
-    await second.until(events.turn_completed)
-    assert len(events.of_kind([*first.seen, *second.seen], "command_admitted")) == 1
-    await second.detach()
-    await second.drain_until_end()
+    async with await client.attach("retry-1", after_cursor=first.cursor) as second:
+        await second.send("input-1", "Reply with exactly: ONCE_OK")
+        assert confirmed.event.harness_user_message_confirmed.origin_command_ids == ["input-1"]
+        assert request.user_texts.count("Reply with exactly: ONCE_OK") == 1
+        await second.until(events.turn_completed)
+        assert len(events.of_kind([*first.seen, *second.seen], "command_admitted")) == 1
 
 
 async def test_attachments_share_events_and_detach_independently(
     client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
 ) -> None:
-    first = await client.attach("observers-1", spec=spec)
-    await first.until(events.is_kind("harness_started"))
-    replay_cursor = first.cursor
-    second = await client.attach("observers-1", after_cursor=replay_cursor)
-    await asyncio.gather(
-        first.send("input-1", "Reply with exactly: SECOND_OK"), second.send("input-1", "Reply with exactly: SECOND_OK")
-    )
-    request = await model.request()
-    await model.reply(request, Text("SECOND_OK"))
-    await second.until(events.turn_completed)
-    await first.until(events.turn_completed)
-    assert [entry for entry in first.seen if entry.cursor > replay_cursor] == second.seen
-    events.assert_contiguous(first.seen)
-    assert len(events.of_kind(first.seen, "command_admitted")) == 1
-    assert request.user_texts.count("Reply with exactly: SECOND_OK") == 1
-    await second.detach()
-    await second.drain_until_end()
-    await first.send("input-2", "Reply with exactly: FIRST_STILL_HERE")
-    await model.reply(await model.request(), Text("FIRST_STILL_HERE"))
-    await first.until(events.turn_completed)
-    await first.detach()
-    await first.drain_until_end()
+    async with await client.attach("observers-1", spec=spec) as first:
+        await first.until(events.is_kind("harness_started"))
+        replay_cursor = first.cursor
+        async with await client.attach("observers-1", after_cursor=replay_cursor) as second:
+            await asyncio.gather(
+                first.send("input-1", "Reply with exactly: SECOND_OK"),
+                second.send("input-1", "Reply with exactly: SECOND_OK"),
+            )
+            request = await model.request()
+            await model.reply(request, Text("SECOND_OK"))
+            await second.until(events.turn_completed)
+            await first.until(events.turn_completed)
+            assert [entry for entry in first.seen if entry.cursor > replay_cursor] == second.seen
+            events.assert_contiguous(first.seen)
+            assert len(events.of_kind(first.seen, "command_admitted")) == 1
+            assert request.user_texts.count("Reply with exactly: SECOND_OK") == 1
+        await first.send("input-2", "Reply with exactly: FIRST_STILL_HERE")
+        await model.reply(await model.request(), Text("FIRST_STILL_HERE"))
+        await first.until(events.turn_completed)
 
 
 async def test_shutdown_stops_the_harness_and_open_resumes_the_conversation(
@@ -139,25 +130,22 @@ async def test_shutdown_stops_the_harness_and_open_resumes_the_conversation(
     (summary,) = await client.list_sessions()
     assert summary.harness_state == protocol_pb2.HARNESS_STATE_STOPPED
 
-    second = await client.attach("shutdown-1", spec=spec, after_cursor=first.cursor)
-    started = await second.until(events.is_kind("harness_started"))
-    assert started.event.harness_started.resumed
-    assert second.attached.harness_state == protocol_pb2.HARNESS_STATE_RUNNING
-    await second.send("input-2", "Reply with exactly: RESUMED_OK")
-    request = await model.request()
-    assert request.user_texts == ["Reply with exactly: SEED_OK", "Reply with exactly: RESUMED_OK"]
-    assert request.assistant_texts == ["SEED_OK"]
-    await model.reply(request, Text("RESUMED_OK"))
-    done = await second.until(events.turn_completed)
-    assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
-    await second.detach()
-    await second.drain_until_end()
+    async with await client.attach("shutdown-1", spec=spec, after_cursor=first.cursor) as second:
+        started = await second.until(events.is_kind("harness_started"))
+        assert started.event.harness_started.resumed
+        assert second.attached.harness_state == protocol_pb2.HARNESS_STATE_RUNNING
+        await second.send("input-2", "Reply with exactly: RESUMED_OK")
+        request = await model.request()
+        assert request.user_texts == ["Reply with exactly: SEED_OK", "Reply with exactly: RESUMED_OK"]
+        assert request.assistant_texts == ["SEED_OK"]
+        await model.reply(request, Text("RESUMED_OK"))
+        done = await second.until(events.turn_completed)
+        assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
 
 
 async def test_open_rejects_a_mismatched_spec(client: RunnerClient, spec: protocol_pb2.SessionSpec) -> None:
-    first = await client.attach("spec-1", spec=spec)
-    await first.detach()
-    await first.drain_until_end()
+    async with await client.attach("spec-1", spec=spec):
+        pass
     other = protocol_pb2.SessionSpec(
         harness=spec.harness, cwd=spec.cwd, model="agentplane-test/other-model", reasoning_effort=spec.reasoning_effort
     )
