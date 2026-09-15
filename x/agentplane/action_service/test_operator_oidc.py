@@ -1,4 +1,4 @@
-"""Signed tokens hit the actual operator API; Authentik controls token issuance."""
+"""Signed Authentik and Dex tokens hit the actual operator API."""
 
 from __future__ import annotations
 
@@ -16,14 +16,21 @@ from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair, si
 from x.agentplane.action_service.api import create_app
 from x.agentplane.action_service.catalog import ActionCatalog
 from x.agentplane.action_service.db import ActionStore, make_sessionmaker
-from x.agentplane.action_service.operator_oidc import OidcOperatorAuthenticator, OperatorOidcSettings
+from x.agentplane.action_service.operator_oidc import (
+    OidcOperatorAuthenticator,
+    OperatorOidcSettings,
+    OperatorTokenProfile,
+)
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 
 
 @pytest.mark.parametrize("failure", [None, "issuer", "audience", "expired", "signature", "azp", "missing-sub"])
-async def test_signed_operator_admission(engine: AsyncEngine, failure: str | None) -> None:
+@pytest.mark.parametrize("token_profile", list(OperatorTokenProfile))
+async def test_signed_operator_admission(
+    engine: AsyncEngine, failure: str | None, token_profile: OperatorTokenProfile
+) -> None:
     private, public = generate_rsa_keypair()
     sock = bind_free_port()
     issuer = f"http://127.0.0.1:{sock.getsockname()[1]}"
@@ -33,7 +40,11 @@ async def test_signed_operator_admission(engine: AsyncEngine, failure: str | Non
     app = create_app(
         service,
         cast(SandboxPrincipalResolver, None),
-        OidcOperatorAuthenticator(OperatorOidcSettings(issuer=issuer, audience="actions", jwks_uri=f"{issuer}/jwks")),
+        OidcOperatorAuthenticator(
+            OperatorOidcSettings(
+                issuer=issuer, audience="actions", jwks_uri=f"{issuer}/jwks", token_profile=token_profile
+            )
+        ),
         catalog,
         updates=ActionUpdates("postgresql://unused-test-listener"),
     )
@@ -46,6 +57,8 @@ async def test_signed_operator_admission(engine: AsyncEngine, failure: str | Non
         "iat": now,
         "exp": now + 60,
     }
+    if token_profile is OperatorTokenProfile.DEX:
+        del claims["azp"]
     if failure == "issuer":
         claims["iss"] = "https://wrong-issuer.invalid"
     elif failure == "audience":

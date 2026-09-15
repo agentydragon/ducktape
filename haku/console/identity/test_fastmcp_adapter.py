@@ -43,7 +43,7 @@ from haku.console.identity.fastmcp_adapter import (
 )
 from haku.console.tool_call_actor import AgentActor, OperatorActor
 from mcp_infra.authentik_auth.fastmcp_proxy import RetryableRefreshOIDCProxy
-from mcp_infra.authentik_auth.oidc_principal import (
+from mcp_infra.oidc_principal import (
     AuthentikOidcPrincipalResolver,
     InvalidOidcPrincipalError,
     OidcPrincipalVerificationUnavailableError,

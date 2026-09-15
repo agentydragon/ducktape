@@ -69,7 +69,7 @@ from haku.console.identity.operator_identity import (
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.mcp.approval import PostgresToolCallLedger
 from haku.console.tool_call_actor import AgentActor
-from mcp_infra.authentik_auth.oidc_principal import VerifiedOidcPrincipal
+from mcp_infra.oidc_principal import VerifiedOidcPrincipal
 from third_party.containers import pgvector_pg18
 from util.testing.postgres import create_database_sync, force_drop_database_sync
 from util.testing.postgres_fixtures import start_postgres_container

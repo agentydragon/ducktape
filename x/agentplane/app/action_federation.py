@@ -18,13 +18,9 @@ from authlib.integrations.httpx_client import AsyncOAuth2Client
 from fastapi import Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from mcp_infra.authentik_auth.oidc_principal import (
-    AuthentikOidcPrincipalResolver,
-    InvalidOidcPrincipalError,
-    OidcPrincipalVerificationUnavailableError,
-)
+from mcp_infra.oidc_principal import InvalidOidcPrincipalError, OidcPrincipalVerificationUnavailableError
 from x.agentplane.action_service.client import OperatorActionServiceClient
-from x.agentplane.action_service.operator_oidc import OperatorOidcSettings
+from x.agentplane.action_service.operator_oidc import OperatorOidcSettings, OperatorTokenProfile
 from x.agentplane.app.identity import CallerIdentity, CallerKind
 from x.agentplane.app.oidc import OIDCSettings, OperatorSession, operator_session
 
@@ -74,6 +70,7 @@ class _ActionFederationSettings(BaseModel):
 
     service_url: str
     login_jwks_uri: str
+    login_token_profile: OperatorTokenProfile = OperatorTokenProfile.AUTHENTIK
     target: OperatorOidcSettings
     scope: str = Field(min_length=1)
 
@@ -126,13 +123,12 @@ class FederatedOperatorActions:
         self._config = config
         self._http = http
         self._login_issuer = oidc.issuer
-        self._upstream = AuthentikOidcPrincipalResolver(
-            expected_issuer=oidc.issuer,
-            discovered_issuer=oidc.issuer,
+        self._upstream = OperatorOidcSettings(
+            issuer=oidc.issuer,
+            audience=oidc.client_id,
             jwks_uri=config.login_jwks_uri,
-            signing_algorithms=["RS256"],
-            client_id=oidc.client_id,
-        )
+            token_profile=config.login_token_profile,
+        ).resolver()
         self._target = config.target.resolver()
 
     def for_session(self, session: OperatorSession) -> OperatorActionServiceClient:

@@ -342,6 +342,10 @@ operator-authenticated cases or validate the command-relay candidate on its depl
 Use the [acceptance suite](../acceptance/README.md) as the runbook, retain sanitized
 test/runtime evidence, and verify fixture cleanup. Do not resend the operator's failed
 staging input as a test. This is API-level deployed proof, not browser click-through proof.
+Testing operator federation has two identified seams: the direct token envelope
+and the Dex access-token claim profile. See the [sanitized investigation](../../../debug/agentplane_testing_operator_dex_20260915.md).
+After the code and both images land, activate the testing profile and rerun the
+operator cases; signed offline tests alone do not close this gate.
 
 ### `EGRESS_IDENTITY_AVAILABILITY` — locate the observed model-path 502
 

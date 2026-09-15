@@ -1,4 +1,4 @@
-"""Security contract for Authentik access-token principal verification."""
+"""Security contracts for Authentik and Dex access-token principal verification."""
 
 from __future__ import annotations
 
@@ -22,8 +22,9 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
-from mcp_infra.authentik_auth.oidc_principal import (
+from mcp_infra.oidc_principal import (
     AuthentikOidcPrincipalResolver,
+    DexOidcPrincipalResolver,
     InvalidOidcPrincipalError,
     OidcPrincipalVerificationUnavailableError,
     VerifiedOidcPrincipal,
@@ -136,6 +137,59 @@ async def test_resolves_only_issuer_and_subject_from_access_token(
 
     assert result == VerifiedOidcPrincipal(issuer=_ISSUER, subject=_SUBJECT)
     assert state.requests == 1
+
+
+@pytest.mark.parametrize("with_azp", [False, True])
+async def test_dex_single_audience_does_not_require_azp(
+    jwks_server, signing_keys: tuple[_SigningKey, _SigningKey, _SigningKey], with_azp: bool
+) -> None:
+    _state, jwks_uri = jwks_server
+    claims = _claims()
+    if not with_azp:
+        del claims["azp"]
+    resolver = DexOidcPrincipalResolver(
+        expected_issuer=_ISSUER,
+        discovered_issuer=_ISSUER,
+        jwks_uri=jwks_uri,
+        signing_algorithms=["RS256"],
+        client_id=_CLIENT_ID,
+    )
+    assert await resolver.resolve(_token_response(_token(signing_keys[0], claims=claims))) == VerifiedOidcPrincipal(
+        issuer=_ISSUER, subject=_SUBJECT
+    )
+
+
+@pytest.mark.parametrize(
+    ("claim", "value"),
+    [
+        ("iss", "https://other-issuer.example.test/"),
+        ("aud", "other-client"),
+        ("aud", [_CLIENT_ID, "other-client"]),
+        ("aud", [_CLIENT_ID]),
+        ("azp", "other-client"),
+        ("azp", None),
+        ("azp", [_CLIENT_ID]),
+        ("sub", ""),
+        ("iat", "1"),
+        ("exp", 0),
+    ],
+)
+async def test_dex_still_rejects_invalid_claims(
+    jwks_server, signing_keys: tuple[_SigningKey, _SigningKey, _SigningKey], claim: str, value: Any
+) -> None:
+    _state, jwks_uri = jwks_server
+    resolver = DexOidcPrincipalResolver(
+        expected_issuer=_ISSUER,
+        discovered_issuer=_ISSUER,
+        jwks_uri=jwks_uri,
+        signing_algorithms=["RS256"],
+        client_id=_CLIENT_ID,
+    )
+    claims = _claims()
+    del claims["azp"]
+    claims[claim] = value
+    with pytest.raises(InvalidOidcPrincipalError):
+        await resolver.resolve(_token_response(_token(signing_keys[0], claims=claims)))
 
 
 @pytest.mark.parametrize(
@@ -427,7 +481,7 @@ async def test_jwks_transport_failure_is_verification_unavailable(
     def fail(*_args: object, **_kwargs: object) -> httpx.Response:
         raise httpx.RemoteProtocolError("incomplete response")
 
-    monkeypatch.setattr("mcp_infra.authentik_auth.oidc_principal.httpx.get", fail)
+    monkeypatch.setattr("mcp_infra.oidc_principal.httpx.get", fail)
     with pytest.raises(OidcPrincipalVerificationUnavailableError):
         await _resolver("https://auth.example.test/jwks").resolve(_token_response(_token(signing_keys[0])))
 
@@ -440,7 +494,7 @@ async def test_jwks_key_conversion_overflow_is_verification_unavailable(
     def fail(_document: object) -> None:
         raise OverflowError
 
-    monkeypatch.setattr("mcp_infra.authentik_auth.oidc_principal.PyJWKSet.from_dict", fail)
+    monkeypatch.setattr("mcp_infra.oidc_principal.PyJWKSet.from_dict", fail)
     with pytest.raises(OidcPrincipalVerificationUnavailableError):
         await _resolver(jwks_uri).resolve(_token_response(_token(signing_keys[0])))
 
@@ -458,7 +512,7 @@ async def test_jwks_redirect_target_is_never_requested(
         assert follow_redirects is False
         return httpx.Response(302, headers={"Location": target}, request=httpx.Request("GET", url))
 
-    monkeypatch.setattr("mcp_infra.authentik_auth.oidc_principal.httpx.get", redirect)
+    monkeypatch.setattr("mcp_infra.oidc_principal.httpx.get", redirect)
     with pytest.raises(OidcPrincipalVerificationUnavailableError):
         await _resolver(source).resolve(_token_response(_token(signing_keys[0])))
 

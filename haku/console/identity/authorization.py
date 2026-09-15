@@ -83,7 +83,7 @@ from haku.console.identity.operator_identity import (
 )
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.tool_call_actor import AgentActor
-from mcp_infra.authentik_auth.oidc_principal import VerifiedOidcPrincipal
+from mcp_infra.oidc_principal import VerifiedOidcPrincipal
 
 _INTERACTION_LIFETIME = datetime.timedelta(minutes=10)
 _CORRELATION_RETENTION = datetime.timedelta(hours=2)

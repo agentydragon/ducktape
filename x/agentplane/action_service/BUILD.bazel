@@ -497,7 +497,7 @@ py_library(
     srcs = ["operator_oidc.py"],
     deps = [
         ":models",
-        "//mcp_infra/authentik_auth:oidc_principal",
+        "//mcp_infra:oidc_principal",
         "@pypi//pydantic",
     ],
 )
@@ -803,9 +803,9 @@ py_library(
         ":connections",
         ":enrollments",
         ":models",
+        "//mcp_infra:oidc_principal",
         "//mcp_infra:persistence",
         "//mcp_infra/authentik_auth:fastmcp_proxy",
-        "//mcp_infra/authentik_auth:oidc_principal",
         "@pypi//cryptography",
         "@pypi//fastapi",
         "@pypi//fastmcp_slim",

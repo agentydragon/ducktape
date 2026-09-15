@@ -42,7 +42,7 @@ from starlette.responses import Response
 from starlette.routing import Route
 
 from mcp_infra.authentik_auth.fastmcp_proxy import DownstreamClientIdentityOIDCProxy, RetryableJWTVerifier
-from mcp_infra.authentik_auth.oidc_principal import (
+from mcp_infra.oidc_principal import (
     AuthentikOidcPrincipalResolver,
     InvalidOidcPrincipalError,
     OidcPrincipalVerificationUnavailableError,

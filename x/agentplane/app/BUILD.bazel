@@ -660,7 +660,7 @@ py_library(
     deps = [
         ":identity",
         ":oidc",
-        "//mcp_infra/authentik_auth:oidc_principal",
+        "//mcp_infra:oidc_principal",
         "//x/agentplane/action_service:client",
         "//x/agentplane/action_service:operator_oidc",
         "@pypi//authlib",
