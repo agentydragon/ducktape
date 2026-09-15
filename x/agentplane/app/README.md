@@ -199,6 +199,20 @@ headers, so anyone with `services/proxy` on the Service could grant themselves e
 Owning the login also drops the outpost's 15-second stall on every SSE stream, whose response
 writer implements no `Flush()`.
 
+## Sidebar inventory updates
+
+The sidebar subscribes to `/live/threads`: whole operational snapshots of all Sandboxes and
+Threads, including archived Threads and threadless Sandboxes. Kubernetes watch invalidations and
+the existing PostgreSQL trajectory notifications both refresh that snapshot. A listener reconnect
+rereads PostgreSQL, including writes whose notifications were missed while disconnected. There
+is no sidebar polling loop or new notification service.
+
+The retained snapshot stays navigable during an outage, with separate warnings for the browser
+connection, stale Kubernetes watch, and disconnected database listener. A Thread's running dot
+requires fresh sources, a running Sandbox, and its last observed harness state; a stale persisted
+RUNNING state alone does not make a suspended or deleted Sandbox look live. These are operational
+snapshots, not replacements for a Thread's runner Event prefix.
+
 ## Shutdown
 
 SIGTERM begins a drain as Uvicorn's shutdown starts: `/readyz` answers 503 (`/healthz` stays a

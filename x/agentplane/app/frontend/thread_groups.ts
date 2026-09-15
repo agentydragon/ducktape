@@ -1,7 +1,6 @@
 /**
- * The sidebar's grouping: `GET /threads/with-sandboxes`'s flat, newest-first Thread list folded
- * into Sandbox groups, including Sandboxes without Threads. A Thread's `sandbox` name missing from the response's
- * `sandboxes` map means that Sandbox is gone; its group still renders, read-only.
+ * A flat newest-first Thread list folded into Sandbox groups, including Sandboxes without
+ * Threads. A missing Sandbox still has a group for its retained Thread history.
  */
 import type { SandboxView, ThreadView } from "./client";
 
@@ -42,10 +41,4 @@ export function groupThreads(
 
 export function archivedCount(threads: ThreadView[]): number {
   return threads.filter((thread) => thread.archived).length;
-}
-
-/** Green while the thread's own harness is attached and running; gray otherwise (idle, or its
- * Sandbox suspended/deleted, which leaves no attached feed behind either). */
-export function threadDotColor(thread: ThreadView): "ok" | "gray" {
-  return thread.harness_state === "HARNESS_STATE_RUNNING" ? "ok" : "gray";
 }

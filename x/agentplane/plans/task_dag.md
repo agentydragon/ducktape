@@ -25,8 +25,7 @@ Proposed execution order for the Thread correctness/UI track:
   command queue; no app outbox or combined-start expansion in this batch.
 - **P1:** end-to-end LLM error handling (`LLM_ERROR_SURFACE`), duplicate turn-status
   presentation (`THREAD_TURN_STATUS_UI`), compact activity mocks (`THREAD_ACTIVITY_MOCKS`),
-  continuation after Sandbox resume (`THREAD_SUSPEND_RESUME`), and sidebar freshness,
-  alongside retained-state writer fencing and
+  continuation after Sandbox resume (`THREAD_SUSPEND_RESUME`), retained-state writer fencing and
   evidence-gated native recovery. Start `THREAD_TAIL_FIRST` with a profiling/contract
   slice, then bounded reads and `THREAD_LAZY_HISTORY`; do not start with a frontend rewrite.
 - **P2:** browser-driven acceptance against the deployed cluster (`CLUSTER_BROWSER_ACCEPTANCE`)
@@ -104,7 +103,6 @@ flowchart TB
     THREAD_OUTBOX_CUTOVER["Deferred cutover<br/>all product commands via app outbox if chosen<br/>no competing relay path"]:::future
     THREAD_SUCCESSOR_DELIVERY["Deferred decision<br/>unsettled Thread command across<br/>successor runner session"]:::future
     CONTROL_STATE["Deferred decision<br/>dynamic runtime control state<br/>model/effort acceptance"]:::future
-    UISHELL_SIDEBAR_LIVE["Bug + planned fix<br/>sidebar Thread/Sandbox state goes stale<br/>rename, sandbox status icon never push-update"]:::future
     THREAD_BROWSE_PAGINATE["Deferred, way later<br/>paginated/searchable all-threads page<br/>find an old Thread once the sidebar list outgrows it"]:::future
     NO_MANUAL_REFRESH["Planned principle<br/>no page in the app needs a Refresh button<br/>push (WS or SSE) everywhere, not just Sandboxes/Actions"]:::future
     ACTION_JSON_POLISH["Planned UI polish<br/>parse MCP content blocks in Action results<br/>rest landed via #6303 (#6309 open)"]:::future
@@ -183,7 +181,7 @@ native recovery research runs. Automatic recovery is gated separately for each h
 and operation by its evidence; do not claim it from a working ordinary command path.
 
 **Proposed next dispatch wave:** finish deployed relay verification and operator-login
-acceptance, then use three independent lanes: conversation/sidebar UI fixes;
+acceptance, then use three independent lanes: conversation UI fixes;
 runner writer fencing; and one narrowly scoped native-evidence gap at a time. The
 coordinating agent owns deployed acceptance, landing/CI, and the tail-first profiling
 and contract probe. Native evidence does not block independent UI work or fencing.
@@ -204,7 +202,8 @@ build on that chrome. Threadless Sandboxes now appear in the sidebar
 ([#7041](https://github.com/agentydragon/ducktape/pull/7041)), and successful manual creation opens
 the new Sandbox's details page ([#7040](https://github.com/agentydragon/ducktape/pull/7040));
 normal and Raw conversation views follow growth only while the reader is at the bottom
-([#7039](https://github.com/agentydragon/ducktape/pull/7039)). `UISHELL_SIDEBAR_LIVE` remains.
+([#7039](https://github.com/agentydragon/ducktape/pull/7039)). Sidebar freshness and reconnect behavior
+are documented in the [app README](../app/README.md#sidebar-inventory-updates).
 `THREAD_BROWSE_PAGINATE` is explicitly deferred, not designed: finding one
 old Thread once the sidebar's working-set list outgrows it needs its own paginated/searchable page
 eventually, flagged now only so the with-sandboxes endpoint isn't assumed to stay one unpaginated
@@ -1017,26 +1016,6 @@ Thread command is recoverable only in its predecessor session or may be delivere
 The required native continuation proof, command-provenance guarantee, and no-duplicate-effect test
 gate are in [Thread, runner, and harness layering](../docs/thread_layering.md#deferred-commands-unsettled-across-successor-sessions).
 Until then there is no automatic cross-session replay.
-
-### `UISHELL_SIDEBAR_LIVE` — sidebar Thread/Sandbox state goes stale
-
-**Bug, reported on staging:** the sidebar's Thread list and per-Sandbox status icon
-(`GroupStateIcon` in `sidebar.tsx`) use `useThreadsWithSandboxes()` and
-`listThreadsWithSandboxes`. The current implementation refetches every eight seconds
-and on manual refresh, not on a live change stream. Thread renames and Sandbox
-operating-mode changes therefore lag until another fetch. Reported on staging: a Sandbox suspended on `agentplane-staging`
-(`s-mtwsuqj1`) still showed its harness as running in the sidebar. Checking the cluster afterward
-found no Pod for that Sandbox in `agent-workspaces` at all, consistent with the suspend contract
-documented in `cluster/k8s/agents/agent-sandbox/README.md` ("pause: pod goes away") — so the leading
-hypothesis is that this was the sidebar's own stale fetch, not a controller/harness bug, though the
-state at the moment it was actually observed wasn't captured, so that isn't fully confirmed.
-
-**Planned change:** `sandboxes.tsx`/`sandbox_page.tsx` already get live Sandbox state via `live.tsx`'s
-`useLive`/`/live/sandboxes`; the sidebar needs to consume the same stream instead of polling.
-`TrajectoryStore.rename` already emits PostgreSQL notifications, and the per-Sandbox
-stream already subscribes to `store.changes`. Add the missing global Thread/Sandbox
-snapshot subscription using those authorities; no new notification system is needed.
-Prove cross-replica rename/status updates, reconnect, and explicit stale-source state.
 
 ### `THREAD_BROWSE_PAGINATE` — paginated/searchable all-threads page
 

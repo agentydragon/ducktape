@@ -24,6 +24,7 @@ import { api } from "./client";
 export type WatchHealth = components["schemas"]["WatchHealth"];
 export type SandboxesSnapshot = components["schemas"]["SandboxesSnapshot"];
 export type SandboxSnapshot = components["schemas"]["SandboxSnapshot"];
+export type ThreadsSnapshot = components["schemas"]["ThreadsSnapshot"];
 
 /** Not yet opened, carrying frames, or failed -- the middle one is not a fault. */
 export type Connection = "connecting" | "connected" | "disconnected";
@@ -45,6 +46,10 @@ const OPENING_GRACE_MS = 10_000;
 
 export function liveSandboxesUrl(): string {
   return "/live/sandboxes";
+}
+
+export function liveThreadsUrl(): string {
+  return "/live/threads";
 }
 
 export function liveSandboxUrl(name: string, includeArchived: boolean): string {

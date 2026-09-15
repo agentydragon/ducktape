@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 
 import type { SandboxView, ThreadView } from "./client";
-import { archivedCount, groupThreads, threadDotColor } from "./thread_groups";
+import { archivedCount, groupThreads } from "./thread_groups";
 
 function sandboxView(name: string, overrides: Partial<SandboxView> = {}): SandboxView {
   return {
@@ -79,14 +79,4 @@ it("counts archived threads across every sandbox regardless of visibility", () =
   ];
 
   expect(archivedCount(threads)).toBe(2);
-});
-
-it("reads the status dot from the thread's own harness state, not its sandbox", () => {
-  const running = threadView({ id: "t-1", sandbox: "sb-a", session_id: "s-1", harness_state: "HARNESS_STATE_RUNNING" });
-  const stopped = threadView({ id: "t-2", sandbox: "sb-a", session_id: "s-2", harness_state: "HARNESS_STATE_STOPPED" });
-  const unspecified = threadView({ id: "t-3", sandbox: "sb-a", session_id: "s-3" });
-
-  expect(threadDotColor(running)).toBe("ok");
-  expect(threadDotColor(stopped)).toBe("gray");
-  expect(threadDotColor(unspecified)).toBe("gray");
 });

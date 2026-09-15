@@ -15,6 +15,8 @@ import pytest
 import pytest_bazel
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from util.net import pick_free_port
 from x.agentplane.action_service.operator_oidc import OperatorOidcSettings
@@ -31,12 +33,15 @@ from x.agentplane.app.live import (
     ActionPolicyFrames,
     LiveIndex,
     SandboxesSnapshot,
+    ThreadsSnapshot,
     WatchHealth,
     action_policy_frame,
     frames,
+    live_threads,
 )
 from x.agentplane.app.oidc import OIDCSettings
 from x.agentplane.app.presets import Harness
+from x.agentplane.app.shutdown import Drain
 from x.agentplane.app.testing.kubernetes import (
     FakeCoreV1Api,
     FakeCustomObjectsApi,
@@ -48,6 +53,9 @@ from x.agentplane.app.testing.kubernetes import (
     sandbox,
 )
 from x.agentplane.app.trajectory import TrajectoryStore
+from x.agentplane.runner import protocol_pb2
+
+# gazelle:include_dep @pypi//protobuf
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
 # gazelle:include_dep @pypi//httpx
@@ -266,6 +274,86 @@ def test_the_streams_need_a_caller(app: FastAPI) -> None:
     with TestClient(app) as unauthenticated:
         assert unauthenticated.get("/live/sandboxes").status_code == 401
         assert unauthenticated.get("/live/sandboxes/runner-1").status_code == 401
+        assert unauthenticated.get("/live/threads").status_code == 401
+
+
+async def _next_threads(stream: AsyncIterator[str | bytes | memoryview]) -> ThreadsSnapshot:
+    while True:
+        frame = await anext(stream)
+        assert isinstance(frame, bytes)
+        if frame.startswith(b"event: snapshot\n"):
+            return ThreadsSnapshot.model_validate_json(frame.partition(b"data: ")[2])
+
+
+async def test_global_thread_stream_combines_replica_commits_and_sandbox_watch_changes(
+    seeded: LiveIndex, store: TrajectoryStore, replica: TrajectoryStore
+) -> None:
+    drain = Drain()
+    response = await live_threads(index=seeded, store=replica, shutdown=drain)
+    stream = aiter(response.body_iterator)
+    try:
+        async with asyncio.timeout(10):
+            initial = await _next_threads(stream)
+            assert {sandbox.name for sandbox in initial.sandboxes} == {"runner-1", "shelved"}
+            assert initial.threads == []
+            assert initial.updates_connected
+
+            thread_id = await store.thread(
+                "runner-1", "test-global-thread", protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE)
+            )
+            assert [thread.id for thread in (await _next_threads(stream)).threads] == [thread_id]
+            await store.rename(thread_id, "Renamed in another app replica")
+            assert (await _next_threads(stream)).threads[0].name == "Renamed in another app replica"
+            await store.archive(thread_id)
+            assert (await _next_threads(stream)).threads[0].archived
+
+            seeded.sandboxes["runner-1"] = sandbox("runner-1", operating_mode="Suspended")
+            seeded.changes.notify()
+            suspended = await _next_threads(stream)
+            assert (
+                next(view for view in suspended.sandboxes if view.name == "runner-1").state
+                == ProvisioningState.SUSPENDED
+            )
+            del seeded.sandboxes["runner-1"]
+            seeded.changes.notify()
+            deleted = await _next_threads(stream)
+            assert [view.name for view in deleted.sandboxes] == ["shelved"]
+            assert [thread.id for thread in deleted.threads] == [thread_id]
+    finally:
+        drain.begin()
+        async for _ in stream:
+            pass
+
+
+async def test_global_thread_stream_reports_listener_loss_then_rereads_after_reconnect(
+    seeded: LiveIndex, store: TrajectoryStore, replica: TrajectoryStore, db_url: str
+) -> None:
+    drain = Drain()
+    response = await live_threads(index=seeded, store=replica, shutdown=drain)
+    stream = aiter(response.body_iterator)
+    engine = create_async_engine(db_url)
+    try:
+        async with asyncio.timeout(10):
+            assert (await _next_threads(stream)).updates_connected
+            async with engine.begin() as connection:
+                await connection.execute(
+                    text(
+                        "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                        "WHERE datname = current_database() AND application_name = 'agentplane-trajectory-updates'"
+                    )
+                )
+            assert not (await _next_threads(stream)).updates_connected
+            thread_id = await store.thread(
+                "runner-1", "test-during-listener-gap", protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE)
+            )
+            recovered = await _next_threads(stream)
+            assert recovered.updates_connected
+            assert [thread.id for thread in recovered.threads] == [thread_id]
+    finally:
+        drain.begin()
+        async for _ in stream:
+            pass
+        await engine.dispose()
 
 
 def test_the_frame_models_are_published_in_the_document(app: FastAPI) -> None:

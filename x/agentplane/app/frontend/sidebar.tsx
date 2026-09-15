@@ -1,9 +1,8 @@
 /**
- * The persistent left sidebar (`UISHELL_SIDEBAR`, `x/agentplane/plans/task_dag.md`): a single
- * Threads list grouped by the Sandbox that hosts them, replacing the old always-visible nav row.
- * See `x/agentplane/plans/mocks/app_shell.html` for the settled layout this follows.
+ * The persistent left sidebar: Threads grouped by their Sandbox, including threadless Sandboxes
+ * and retained Threads whose Sandbox no longer exists.
  */
-import { ActionIcon, Switch, Text, Tooltip } from "@mantine/core";
+import { ActionIcon, Alert, Switch, Text, Tooltip } from "@mantine/core";
 // Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
 import IconArchive from "@tabler/icons-react/dist/esm/icons/IconArchive.mjs";
 import IconArchiveOff from "@tabler/icons-react/dist/esm/icons/IconArchiveOff.mjs";
@@ -19,16 +18,11 @@ import IconSettings from "@tabler/icons-react/dist/esm/icons/IconSettings.mjs";
 import { type JSX, useEffect, useRef, useState, type PointerEvent } from "react";
 import { Link, useLocation, useMatch, useNavigate } from "react-router";
 
-import { archiveThread, displayableError, listThreadsWithSandboxes, type SandboxView, type ThreadView } from "./client";
+import { archiveThread, displayableError, type SandboxView, type ThreadView } from "./client";
+import { LiveStatus, liveThreadsUrl, useLive, type ThreadsSnapshot } from "./live";
 import { stateDetail } from "./sandboxes";
 import "./sidebar.css";
-import { archivedCount, groupThreads, threadDotColor, type ThreadGroup } from "./thread_groups";
-
-// A poll, not a push: no cross-sandbox live-update mechanism exists yet (`live.tsx`'s `useLive` is
-// scoped per-sandbox). Long enough that an operator sees a harness state change within a few
-// seconds, short enough it never reads as stale; see the PR description for the tradeoff this
-// accepts against building a new global SSE subscription for one sidebar.
-const POLL_INTERVAL_MS = 8_000;
+import { archivedCount, groupThreads, type ThreadGroup } from "./thread_groups";
 
 const SIDEBAR_WIDTH_STORAGE_KEY = "agentplane-sidebar-width";
 const SIDEBAR_DEFAULT_WIDTH = 240;
@@ -139,40 +133,6 @@ function SidebarResizeHandle({
   );
 }
 
-interface ThreadsData {
-  threads: ThreadView[];
-  sandboxes: Record<string, SandboxView>;
-}
-
-function useThreadsWithSandboxes(): { data: ThreadsData | null; error: string | null; refresh: () => void } {
-  const [data, setData] = useState<ThreadsData | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [generation, setGeneration] = useState(0);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function refresh(): Promise<void> {
-      try {
-        const result = await listThreadsWithSandboxes(true);
-        if (!cancelled) {
-          setData(result);
-          setError(null);
-        }
-      } catch (reason: unknown) {
-        if (!cancelled) setError(displayableError(reason));
-      }
-    }
-    void refresh();
-    const interval = window.setInterval(() => void refresh(), POLL_INTERVAL_MS);
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-    };
-  }, [generation]);
-
-  return { data, error, refresh: () => setGeneration((current) => current + 1) };
-}
-
 function GroupStateIcon({ sandbox }: { sandbox: SandboxView | null }): JSX.Element {
   if (sandbox === null) {
     return (
@@ -201,19 +161,22 @@ function GroupStateIcon({ sandbox }: { sandbox: SandboxView | null }): JSX.Eleme
 
 function ThreadRow({
   thread,
-  readonly,
+  sandbox,
+  fresh,
   current,
   onOpen,
   onToggleArchived,
 }: {
   thread: ThreadView;
-  readonly: boolean;
+  sandbox: SandboxView | null;
+  fresh: boolean;
   current: boolean;
   onOpen: (thread: ThreadView) => void;
   onToggleArchived: (thread: ThreadView) => void;
 }): JSX.Element {
   const label = thread.name ?? thread.session_id;
-  const dot = threadDotColor(thread);
+  const readonly = sandbox === null;
+  const dot = fresh && sandbox?.state === "running" && thread.harness_state === "HARNESS_STATE_RUNNING" ? "ok" : "gray";
   const className = [
     "agentplane-sidebar-row",
     current ? "current" : "",
@@ -236,7 +199,10 @@ function ThreadRow({
         }
       }}
     >
-      <span className={`agentplane-sidebar-dot ${dot}`} title={dot === "ok" ? "Harness running" : "Idle"} />
+      <span
+        className={`agentplane-sidebar-dot ${dot}`}
+        title={dot === "ok" ? "Last observed harness running" : "No live harness confirmed"}
+      />
       <span className="agentplane-sidebar-row-name">{label}</span>
       <Tooltip label={thread.archived ? "Unarchive" : "Archive"} withArrow>
         <ActionIcon
@@ -258,12 +224,14 @@ function ThreadRow({
 
 function ThreadGroupSection({
   group,
+  fresh,
   current,
   onNavigate,
   onOpen,
   onToggleArchived,
 }: {
   group: ThreadGroup;
+  fresh: boolean;
   current: string | null;
   onNavigate: () => void;
   onOpen: (thread: ThreadView) => void;
@@ -298,7 +266,8 @@ function ThreadGroupSection({
         <ThreadRow
           key={thread.id}
           thread={thread}
-          readonly={deleted}
+          sandbox={group.sandbox}
+          fresh={fresh}
           current={current === thread.id}
           onOpen={onOpen}
           onToggleArchived={onToggleArchived}
@@ -327,7 +296,10 @@ export function Sidebar({
   const threadRoute = useMatch("/threads/:threadId");
   const [includeArchived, setIncludeArchived] = useState(false);
   const { width, setWidth, resizeBy } = useSidebarWidth();
-  const { data, error, refresh } = useThreadsWithSandboxes();
+  const live = useLive<ThreadsSnapshot>(liveThreadsUrl());
+  const data = live.snapshot;
+  const fresh = live.connection === "connected" && live.health?.fresh === true && data?.updates_connected === true;
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!mobileOpen) return;
@@ -339,15 +311,20 @@ export function Sidebar({
   }, [mobileOpen, onMobileClose]);
 
   const threads = data?.threads ?? [];
-  const groups = groupThreads(threads, data?.sandboxes ?? {}, includeArchived);
+  const groups = groupThreads(
+    threads,
+    Object.fromEntries((data?.sandboxes ?? []).map((sandbox) => [sandbox.name, sandbox])),
+    includeArchived
+  );
   const archived = archivedCount(threads);
   const current = threadRoute?.params.threadId ?? null;
 
   async function toggleArchived(thread: ThreadView): Promise<void> {
+    setError(null);
     try {
       await archiveThread(thread.id, !thread.archived);
-    } finally {
-      refresh();
+    } catch (reason: unknown) {
+      setError(displayableError(reason));
     }
   }
 
@@ -385,6 +362,12 @@ export function Sidebar({
           </Tooltip>
         </div>
         <div className="agentplane-sidebar-body">
+          <LiveStatus live={live} />
+          {data?.updates_connected === false && (
+            <Alert color="orange" p="xs">
+              Thread updates disconnected; showing the last snapshot.
+            </Alert>
+          )}
           {error && (
             <Text c="red" size="xs" px={4}>
               {error}
@@ -404,6 +387,7 @@ export function Sidebar({
             <ThreadGroupSection
               key={group.sandboxName}
               group={group}
+              fresh={fresh}
               current={current}
               onNavigate={onMobileClose}
               onOpen={open}

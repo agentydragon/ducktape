@@ -181,6 +181,10 @@ class TrajectoryStore:
     async def start_updates(self) -> None:
         await self._updates.start()
 
+    @property
+    def updates_connected(self) -> bool:
+        return self._updates.connected
+
     async def thread(self, sandbox: str, session_id: str, spec: protocol_pb2.SessionSpec) -> UUID:
         """The thread for a session, created from its spec on first sight."""
         async with self._sessions.begin() as session:

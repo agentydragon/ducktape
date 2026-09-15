@@ -64,6 +64,16 @@ async def store(db_url: str) -> AsyncIterator[TrajectoryStore]:
 
 
 @pytest.fixture
+async def replica(db_url: str) -> AsyncIterator[TrajectoryStore]:
+    replica = TrajectoryStore.connect(db_url)
+    await replica.start_updates()
+    try:
+        yield replica
+    finally:
+        await replica.close()
+
+
+@pytest.fixture
 def custom_objects() -> FakeCustomObjectsApi:
     return FakeCustomObjectsApi()
 
