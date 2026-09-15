@@ -74,7 +74,10 @@ async def test_streamed_entries_publish_after_their_recoverable_prefix(
     log.close()
 
 
-async def test_failed_fence_does_not_publish_or_allow_cursor_reuse(storage: StorageImage, tmp_path: Path) -> None:
+@pytest.mark.parametrize("persist_before_error", [False, True])
+async def test_failed_fence_does_not_publish_or_allow_cursor_reuse(
+    storage: StorageImage, tmp_path: Path, persist_before_error: bool
+) -> None:
     path = storage.root / "events.jsonl"
     log = EventLog(path, "test-source")
     committed = log.append(event_pb2.Native(direction=event_pb2.DIRECTION_FROM_HARNESS, line="committed"))
@@ -87,6 +90,7 @@ async def test_failed_fence_does_not_publish_or_allow_cursor_reuse(storage: Stor
     follower = asyncio.create_task(follow())
     await waiting.wait()
     storage.fail_path = path
+    storage.persist_before_error = persist_before_error
 
     with pytest.raises(OSError, match="injected storage fence failure"):
         log.append(event_pb2.TextDelta(item_id="test-item", text="uncommitted"))
@@ -100,13 +104,20 @@ async def test_failed_fence_does_not_publish_or_allow_cursor_reuse(storage: Stor
     recovered_root = tmp_path / "recovered"
     storage.recover(recovered_root)
     recovered = EventLog(recovered_root / "events.jsonl", "test-source")
-    assert recovered.entries == [committed]
-    assert recovered.append(event_pb2.HarnessLost()).cursor == committed.cursor + 1
+    assert recovered.entries[0] == committed
+    assert recovered.last_cursor == committed.cursor + int(persist_before_error)
+    if persist_before_error:
+        assert recovered.entries[-1].event.text_delta == event_pb2.TextDelta(item_id="test-item", text="uncommitted")
+    next_cursor = recovered.last_cursor + 1
+    assert recovered.append(event_pb2.HarnessLost()).cursor == next_cursor
     recovered.close()
     log.close()
 
 
-def test_failed_command_fence_retains_previous_identity_and_outcome(storage: StorageImage, tmp_path: Path) -> None:
+@pytest.mark.parametrize("persist_before_error", [False, True])
+def test_failed_command_fence_retains_previous_identity_and_outcome(
+    storage: StorageImage, tmp_path: Path, persist_before_error: bool
+) -> None:
     path = storage.root / "commands.jsonl"
     journal = CommandJournal(path)
     command = command_pb2.Command(command_id="test-input", submit_input=command_pb2.SubmitInput(text="hello"))
@@ -118,6 +129,7 @@ def test_failed_command_fence_retains_previous_identity_and_outcome(storage: Sto
     journal.terminal(command.command_id, outcome=outcome)
     committed = list(journal.entries)
     storage.fail_path = path
+    storage.persist_before_error = persist_before_error
     later = command_pb2.Command(command_id="test-later", submit_input=command_pb2.SubmitInput(text="later"))
     with pytest.raises(OSError, match="injected storage fence failure"):
         journal.admit(later)
@@ -129,9 +141,9 @@ def test_failed_command_fence_retains_previous_identity_and_outcome(storage: Sto
     recovered_root = tmp_path / "recovered"
     storage.recover(recovered_root)
     recovered = CommandJournal(recovered_root / "commands.jsonl")
-    assert recovered.entries == committed
+    assert recovered.entries[: len(committed)] == committed
     assert not recovered.admit(command)
-    assert recovered.admit(later)
+    assert recovered.admit(later) is not persist_before_error
     with pytest.raises(CommandConflictError):
         recovered.admit(
             command_pb2.Command(command_id=command.command_id, change_model=command_pb2.ChangeModel(model="x"))

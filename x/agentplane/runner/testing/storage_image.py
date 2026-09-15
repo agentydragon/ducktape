@@ -21,6 +21,7 @@ class StorageImage:
     def __init__(self, root: Path) -> None:
         self.root = root
         self.fail_path: Path | None = None
+        self.persist_before_error = False
         self.before_sync: Callable[[Path], None] | None = None
         self._fsync = os.fsync
         self._root_inode = root.stat().st_ino
@@ -34,7 +35,7 @@ class StorageImage:
             return
         if self.before_sync is not None:
             self.before_sync(path)
-        if path == self.fail_path:
+        if path == self.fail_path and not self.persist_before_error:
             raise OSError("injected storage fence failure")
         self._fsync(descriptor)
         metadata = os.fstat(descriptor)
@@ -45,6 +46,8 @@ class StorageImage:
         else:
             assert stat.S_ISREG(metadata.st_mode)
             self._files[metadata.st_ino] = path.read_bytes()
+        if path == self.fail_path:
+            raise OSError("injected storage fence failure after persistence")
 
     def recover(self, destination: Path) -> None:
         """Materialize only fence-committed state under a fresh simulated mount point."""
