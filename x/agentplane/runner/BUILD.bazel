@@ -534,6 +534,7 @@ py_test(
         ":config",
         ":conftest",
         ":harness_process",
+        ":journal",
         ":session",
         ":store",
         "//:conftest",
