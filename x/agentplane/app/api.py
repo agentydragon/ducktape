@@ -14,7 +14,7 @@ import httpx
 import httpx2
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
-from google.protobuf.json_format import MessageToDict
+from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from x.agentplane.action_service.client import OperatorActionServiceClient
@@ -71,7 +71,8 @@ from x.agentplane.app.oidc import OIDCSettings, build_oauth, operator_session
 from x.agentplane.app.operator_sessions import OperatorSessionMiddleware
 from x.agentplane.app.presets import Harness, PresetCatalog, SandboxBinding, SandboxPresetView
 from x.agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown
-from x.agentplane.app.trajectory import ThreadNotFoundError, ThreadView, TrajectoryStore
+from x.agentplane.app.trajectory import ThreadCommandConflictError, ThreadNotFoundError, ThreadView, TrajectoryStore
+from x.agentplane.protocol import command_pb2
 from x.agentplane.runner.client import RunnerError
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -564,6 +565,40 @@ async def unarchive_thread(store: Store, thread_id: UUID) -> Response:
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@threads.post("/{thread_id}/commands", status_code=status.HTTP_202_ACCEPTED)
+async def submit_thread_command(
+    store: Store, catalog: Annotated[ModelCatalog, Depends(_models)], thread_id: UUID, body: dict[str, object]
+) -> JSONResponse:
+    """Durably store one existing-Thread command before runner delivery is attempted.
+
+    The body and response are the generated proto-JSON `Command`. The app-owned durable record is
+    desired state, not a fabricated runner Event; replaying command records for the frontend is a
+    separate follow protocol. The runner's eventual receipt, effect, no-op, or failure remains
+    authoritative.
+    """
+    try:
+        command = ParseDict(body, command_pb2.Command())
+    except ParseError as error:
+        raise runner_bridge.MalformedMessageError(f"not a Command: {error}") from error
+    operation = command.WhichOneof("operation")
+    if operation not in {"submit_input", "change_model", "interrupt_turn"}:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Thread command ingress accepts SubmitInput, ChangeModel, and InterruptTurn",
+        )
+    if operation == "change_model":
+        thread = await store.get_thread(thread_id)
+        if thread is None:
+            raise ThreadNotFoundError(thread_id)
+        if command.change_model.model not in catalog[thread.harness]:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="model is incompatible with this harness")
+    try:
+        stored = await store.request_thread_command(thread_id, command)
+    except ValueError as error:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)) from error
+    return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content=MessageToDict(stored.command))
+
+
 @threads.get("/{thread_id}/events")
 async def thread_events(
     store: Store,
@@ -648,6 +683,10 @@ def create_app(
     @app.exception_handler(ThreadNotFoundError)
     async def _thread_not_found(_request: Request, error: ThreadNotFoundError) -> JSONResponse:
         return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"detail": str(error)})
+
+    @app.exception_handler(ThreadCommandConflictError)
+    async def _thread_command_conflict(_request: Request, error: ThreadCommandConflictError) -> JSONResponse:
+        return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": str(error)})
 
     @app.get("/healthz", include_in_schema=False)
     async def healthz() -> Response:

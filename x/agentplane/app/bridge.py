@@ -9,6 +9,7 @@ import logging
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from datetime import timedelta
 from typing import Annotated
+from uuid import UUID
 
 import grpc
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response, status
@@ -37,6 +38,7 @@ RECONCILE_S = 2
 LEASE_DURATION = timedelta(seconds=30)
 AddressOf = Callable[[str], Awaitable[str]]
 DiscoverSandboxes = Callable[[], Awaitable[list[str]]]
+SandboxUidOf = Callable[[str], UUID | None]
 
 
 class SandboxNotReachableError(Exception):
@@ -72,11 +74,20 @@ def runner_address(index: LiveIndex, port: int) -> AddressOf:
 class Feed:
     """One lease owner's ingestion connection. Browsers never subscribe to this object."""
 
-    def __init__(self, *, session_id: str, client: RunnerClient, store: TrajectoryStore, lease: IngestionLease):
+    def __init__(
+        self,
+        *,
+        session_id: str,
+        client: RunnerClient,
+        store: TrajectoryStore,
+        lease: IngestionLease,
+        sandbox_uid: UUID | None,
+    ):
         self.session_id = session_id
         self.client = client
         self.store = store
         self.lease = lease
+        self.sandbox_uid = sandbox_uid
         self.task: asyncio.Task[None] | None = None
 
     async def run(self) -> None:
@@ -85,7 +96,9 @@ class Feed:
             async with asyncio.timeout(10):
                 attachment = await self.client.attach(self.session_id)
             attached = attachment.attached
-            thread_id = await self.store.thread(self.lease.sandbox, self.session_id, attached.spec)
+            thread_id = await self.store.thread(
+                self.lease.sandbox, self.session_id, attached.spec, sandbox_uid=self.sandbox_uid
+            )
             stored = await self.store.last_cursor(thread_id)
             if stored > attached.last_cursor:
                 if await self.store.feed_state(thread_id) is None:
@@ -132,11 +145,13 @@ class RunnerBridge:
         store: TrajectoryStore,
         discover_sandboxes: DiscoverSandboxes | None = None,
         sandbox_changes: Changes | None = None,
+        sandbox_uid_of: SandboxUidOf = lambda _sandbox: None,
     ) -> None:
         self._address_of = address_of
         self._store = store
         self._discover_sandboxes = discover_sandboxes
         self._sandbox_changes = sandbox_changes
+        self._sandbox_uid_of = sandbox_uid_of
         self._clients: dict[str, RunnerClient] = {}
         self._feeds: dict[tuple[str, str], Feed] = {}
         self._leases: dict[str, IngestionLease] = {}
@@ -159,6 +174,11 @@ class RunnerBridge:
 
     async def _coordinate(self) -> None:
         with contextlib.ExitStack() as subscriptions:
+            # A committed Thread command is desired state, just like a Sandbox inventory update:
+            # wake promptly, while the periodic scan remains the recovery path after a missed
+            # notification or app restart.  This narrow invalidation deliberately excludes each
+            # streamed transcript event from another session-discovery pass.
+            subscriptions.enter_context(self._store.command_changes.subscribe(self._changed))
             if self._sandbox_changes is not None:
                 subscriptions.enter_context(self._sandbox_changes.subscribe(self._changed))
             await self._coordinate_subscribed()
@@ -207,7 +227,9 @@ class RunnerBridge:
                             if feed.client is client:
                                 continue
                             await feed.close()
-                        thread_id = await self._store.thread(sandbox, summary.session_id, summary.spec)
+                        thread_id = await self._store.thread(
+                            sandbox, summary.session_id, summary.spec, sandbox_uid=self._sandbox_uid_of(sandbox)
+                        )
                         snapshot = await self._store.feed_state(thread_id)
                         if (
                             summary.harness_state == protocol_pb2.HARNESS_STATE_STOPPED
@@ -216,13 +238,45 @@ class RunnerBridge:
                             and await self._store.last_cursor(thread_id) == summary.last_cursor
                         ):
                             continue
-                        feed = Feed(session_id=summary.session_id, client=client, store=self._store, lease=lease)
+                        feed = Feed(
+                            session_id=summary.session_id,
+                            client=client,
+                            store=self._store,
+                            lease=lease,
+                            sandbox_uid=self._sandbox_uid_of(sandbox),
+                        )
                         feed.task = asyncio.create_task(feed.run(), name=f"ingest-{sandbox}-{summary.session_id}")
                         self._feeds[key] = feed
-                except grpc.aio.AioRpcError, SandboxNotReachableError, SandboxNotFoundError, TimeoutError:
+                    await self._deliver_pending_commands(sandbox, client, summaries)
+                except grpc.aio.AioRpcError, SandboxNotReachableError, SandboxNotFoundError, RunnerError, TimeoutError:
                     logger.warning("sandbox %s ingestion discovery unavailable", sandbox, exc_info=True)
         except SQLAlchemyError, OSError, TimeoutError:
             logger.warning("sandbox %s ingestion reconciliation failed; will retry", sandbox, exc_info=True)
+
+    async def _deliver_pending_commands(
+        self, sandbox: str, client: RunnerClient, summaries: list[protocol_pb2.SessionSummary]
+    ) -> None:
+        """Reconcile runner admission for existing-Thread product commands.
+
+        The ingestion lease already held by this bridge instance makes it the one app replica
+        allowed to attach and deliver for this Sandbox.  We intentionally retain an unadmitted
+        command in PostgreSQL after every transport attempt: the runner command id makes retry
+        safe, and its `CommandAdmitted` event is the authoritative hand-off observation.
+        """
+        summaries_by_id = {summary.session_id: summary for summary in summaries}
+        for delivery in await self._store.commands_awaiting_runner_admission(sandbox):
+            summary = summaries_by_id.get(delivery.runner_session_id)
+            if summary is None or summary.harness_state != protocol_pb2.HARNESS_STATE_RUNNING:
+                continue
+            if delivery.command.command.WhichOneof("operation") not in {
+                "submit_input",
+                "change_model",
+                "interrupt_turn",
+            }:
+                # Stop remains a direct manual lifecycle operation until its Thread-specific
+                # cutover. Preserve command order rather than letting later commands overtake it.
+                continue
+            await self._send_command(client, sandbox, delivery.runner_session_id, delivery.command.command)
 
     async def _release(self, sandbox: str) -> None:
         for key in [key for key in self._feeds if key[0] == sandbox]:
@@ -253,7 +307,9 @@ class RunnerBridge:
         try:
             await attachment.detach()
             await attachment.drain_until_end()
-            thread_id = await self._store.thread(sandbox, session_id, attachment.attached.spec)
+            thread_id = await self._store.thread(
+                sandbox, session_id, attachment.attached.spec, sandbox_uid=self._sandbox_uid_of(sandbox)
+            )
             await self.start([sandbox])
             # In particular, do not return a resumed session while the database still says its
             # previous harness ended. Commands remain runner-first; this only synchronizes Open.
@@ -283,7 +339,24 @@ class RunnerBridge:
         *,
         ends_stream: bool = False,
     ) -> None:
-        attachment = await (await self._client(sandbox)).attach(session_id)
+        client = await self._client(sandbox)
+        await self._send(client, sandbox, session_id, command, ends_stream=ends_stream)
+
+    async def _send_command(
+        self, client: RunnerClient, sandbox: str, session_id: str, command: command_pb2.Command
+    ) -> None:
+        await self._send(client, sandbox, session_id, lambda attachment: attachment.command(command))
+
+    async def _send(
+        self,
+        client: RunnerClient,
+        sandbox: str,
+        session_id: str,
+        command: Callable[[Attachment], Awaitable[None]],
+        *,
+        ends_stream: bool = False,
+    ) -> None:
+        attachment = await client.attach(session_id)
         try:
             if attachment.attached.harness_state != protocol_pb2.HARNESS_STATE_RUNNING:
                 raise RunnerError("session is stopped; explicitly open it before sending commands")
@@ -304,7 +377,9 @@ class RunnerBridge:
             summary = next((item for item in summaries if item.session_id == session_id), None)
             if summary is None:
                 raise RunnerError(f"session {session_id} does not exist")
-            thread_id = await self._store.thread(sandbox, session_id, summary.spec)
+            thread_id = await self._store.thread(
+                sandbox, session_id, summary.spec, sandbox_uid=self._sandbox_uid_of(sandbox)
+            )
         await self.start([sandbox])
         waiter = asyncio.Event()
         cursor = after_cursor

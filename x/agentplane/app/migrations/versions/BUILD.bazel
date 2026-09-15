@@ -6,6 +6,7 @@ exports_files(
         "0002_thread_archived.py",
         "0003_thread_harness.py",
         "0004_followable_event_entries.py",
+        "0005_thread_command_outbox.py",
     ],
     visibility = ["//x/agentplane/app/migrations:__pkg__"],
 )
@@ -41,4 +42,13 @@ py_library(
     name = "0004_followable_event_entries",
     srcs = ["0004_followable_event_entries.py"],
     deps = ["@pypi//alembic"],
+)
+
+py_library(
+    name = "0005_thread_command_outbox",
+    srcs = ["0005_thread_command_outbox.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
 )
