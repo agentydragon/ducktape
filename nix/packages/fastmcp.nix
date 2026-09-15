@@ -65,6 +65,10 @@ let
 
     pythonImportsCheck = [
       "fastmcp"
+      # fastmcp.server catches an inner ImportError and replaces it with an
+      # install hint, so import its implementation to exercise server-only
+      # dependencies directly.
+      "fastmcp.server.server"
       "fastmcp.server.auth.oidc_proxy"
       "fastmcp.server.auth.providers.jwt"
     ];

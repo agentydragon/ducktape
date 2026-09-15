@@ -104,6 +104,17 @@ let
         py-key-value-aio = pkgs.callPackage ./py-key-value-aio.nix {
           python314Packages = pyfinal;
         };
+        # FastMCP 4.0.3 imports CycleError, introduced by uncalled-for 0.4.0;
+        # the selected nixpkgs still provides 0.3.2. Keep this aligned with the
+        # Bazel-resolved FastMCP closure (requirements_bazel.txt).
+        uncalled-for = pyprev.uncalled-for.overridePythonAttrs (_: {
+          version = "0.4.0";
+          src = pyfinal.fetchPypi {
+            pname = "uncalled_for";
+            version = "0.4.0";
+            hash = "sha256-M1uVvSQiMy7CENUY8xShbkxkCSHDn8i/KtCVvTU49K8=";
+          };
+        });
         idna = pkgs.callPackage ./idna.nix {
           python3Packages = pyfinal;
         };
