@@ -30,7 +30,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: aiquota-api
-          image: git.allegedly.works/ducktape-ci/aiquota-api:devel-20260914221542-6de5b11 # {"$imagepolicy": "flux-system:aiquota-api"}
+          image: git.allegedly.works/ducktape-ci/aiquota-api:devel-20260915070938-fcba6a0 # {"$imagepolicy": "flux-system:aiquota-api"}
           imagePullPolicy: Always
           ports:
             - name: http
