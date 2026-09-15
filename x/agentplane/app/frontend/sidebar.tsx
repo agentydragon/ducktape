@@ -17,7 +17,7 @@ import IconPlayerPlay from "@tabler/icons-react/dist/esm/icons/IconPlayerPlay.mj
 import IconPlus from "@tabler/icons-react/dist/esm/icons/IconPlus.mjs";
 import IconSettings from "@tabler/icons-react/dist/esm/icons/IconSettings.mjs";
 import { type JSX, useEffect, useRef, useState, type PointerEvent } from "react";
-import { useLocation, useMatch, useNavigate } from "react-router";
+import { Link, useLocation, useMatch, useNavigate } from "react-router";
 
 import { archiveThread, displayableError, listThreadsWithSandboxes, type SandboxView, type ThreadView } from "./client";
 import { stateDetail } from "./sandboxes";
@@ -259,11 +259,13 @@ function ThreadRow({
 function ThreadGroupSection({
   group,
   current,
+  onNavigate,
   onOpen,
   onToggleArchived,
 }: {
   group: ThreadGroup;
   current: string | null;
+  onNavigate: () => void;
   onOpen: (thread: ThreadView) => void;
   onToggleArchived: (thread: ThreadView) => void;
 }): JSX.Element {
@@ -272,14 +274,22 @@ function ThreadGroupSection({
     <div>
       <div className="agentplane-sidebar-group-label">
         <GroupStateIcon sandbox={group.sandbox} />
-        <span
-          className="agentplane-sidebar-group-name"
-          style={
-            deleted ? { textDecoration: "line-through", textDecorationColor: "var(--mantine-color-dimmed)" } : undefined
-          }
-        >
-          {group.sandboxName}
-        </span>
+        {deleted ? (
+          <span
+            className="agentplane-sidebar-group-name"
+            style={{ textDecoration: "line-through", textDecorationColor: "var(--mantine-color-dimmed)" }}
+          >
+            {group.sandboxName}
+          </span>
+        ) : (
+          <Link
+            className="agentplane-sidebar-group-name agentplane-sidebar-group-link"
+            to={`/sandboxes/${encodeURIComponent(group.sandboxName)}`}
+            onClick={onNavigate}
+          >
+            {group.sandboxName}
+          </Link>
+        )}
         <span className="agentplane-sidebar-group-count">
           {group.threads.length} thread{group.threads.length === 1 ? "" : "s"}
         </span>
@@ -395,6 +405,7 @@ export function Sidebar({
               key={group.sandboxName}
               group={group}
               current={current}
+              onNavigate={onMobileClose}
               onOpen={open}
               onToggleArchived={(thread) => void toggleArchived(thread)}
             />

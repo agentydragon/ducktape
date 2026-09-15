@@ -79,7 +79,6 @@ flowchart TB
     CONTROL_STATE["Deferred decision<br/>dynamic runtime control state<br/>model/effort acceptance"]:::future
     UISHELL_SIDEBAR_LIVE["Bug + planned fix<br/>sidebar Thread/Sandbox state goes stale<br/>rename, sandbox status icon never push-update"]:::future
     UISHELL_SIDEBAR_ALL_SANDBOXES["Bug<br/>threadless Sandboxes missing from sidebar<br/>e.g. still waiting for a pod to land"]:::future
-    UISHELL_SIDEBAR_SANDBOX_LINK["Planned UI<br/>sidebar Sandbox name should link to its page<br/>currently plain text"]:::future
     UISHELL_NEWSANDBOX_NAV["Planned UI<br/>'New sandbox' should open the created Sandbox's page<br/>currently just resets the form"]:::future
     THREAD_BROWSE_PAGINATE["Deferred, way later<br/>paginated/searchable all-threads page<br/>find an old Thread once the sidebar list outgrows it"]:::future
     NO_MANUAL_REFRESH["Planned principle<br/>no page in the app needs a Refresh button<br/>push (WS or SSE) everywhere, not just Sandboxes/Actions"]:::future
@@ -174,8 +173,8 @@ available while combined start is deferred. The persistent left
 sidebar (`UISHELL_SIDEBAR`) and its phone-width collapse behind a hamburger (`UISHELL_MOBILE`) have
 both landed, replacing the top nav row entirely as one atomic cutover; `UISHELL_DRAWER` and
 `UISHELL_NEWTHREAD_LANDING` (the sidebar's own "+", currently a stub that opens the Sandbox list) now
-build on that chrome, as do four correctness/completeness gaps found in the landed sidebar itself:
-`UISHELL_SIDEBAR_LIVE`, `UISHELL_SIDEBAR_ALL_SANDBOXES`, `UISHELL_SIDEBAR_SANDBOX_LINK`, and
+build on that chrome, as do three correctness/completeness gaps found in the landed sidebar itself:
+`UISHELL_SIDEBAR_LIVE`, `UISHELL_SIDEBAR_ALL_SANDBOXES`, and
 `UISHELL_NEWSANDBOX_NAV`. `THREAD_BROWSE_PAGINATE` is explicitly deferred, not designed: finding one
 old Thread once the sidebar's working-set list outgrows it needs its own paginated/searchable page
 eventually, flagged now only so the with-sandboxes endpoint isn't assumed to stay one unpaginated
@@ -831,12 +830,6 @@ name.
 **No dependency** on `UISHELL_SIDEBAR_LIVE` above: this widens what `groupThreads`/the
 with-sandboxes response covers to Sandboxes with zero Threads, independent of whether the state shown
 for them is push-updated.
-
-### `UISHELL_SIDEBAR_SANDBOX_LINK` — Sandbox name in the sidebar should link to its page
-
-**Bug:** `ThreadGroupSection`'s `group.sandboxName` (`sidebar.tsx`) renders as plain text; clicking it
-does nothing. It should link to that Sandbox's own page (`/sandboxes/:name`), the same destination
-`sandboxes.tsx`'s own list already links to.
 
 ### `UISHELL_NEWSANDBOX_NAV` — "New sandbox" should open the created Sandbox's page
 

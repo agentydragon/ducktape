@@ -138,6 +138,8 @@ it("opens retained Thread history even when its Sandbox is gone", async () => {
   );
   expect(label).toBeDefined();
   expect((label as HTMLElement).style.textDecoration).toContain("line-through");
+  expect(label?.tagName).toBe("SPAN");
+  expect(container.querySelector('a[href="/sandboxes/old-debug-3f9c"]')).toBeNull();
 
   const readonlyRow = [...container.querySelectorAll(".agentplane-sidebar-row.readonly")].find((node) =>
     node.textContent?.includes("Why did the migration hang")
@@ -147,6 +149,27 @@ it("opens retained Thread history even when its Sandbox is gone", async () => {
   await act(async () => (readonlyRow as HTMLElement).click());
   expect(location()).toBe("/threads/t-1");
 });
+
+it.each([false, true])(
+  "links a Sandbox name to its details without changing Thread navigation (mobile=%s)",
+  async (mobileOpen) => {
+    const { onMobileClose } = await render(
+      [thread({ id: "t-1", sandbox: "demo-a1b2", session_id: "s-1", name: "First thread" })],
+      { "demo-a1b2": sandbox("demo-a1b2") },
+      { initialPath: "/threads/t-1", mobileOpen }
+    );
+    const link = container.querySelector('a[href="/sandboxes/demo-a1b2"]');
+    if (!(link instanceof HTMLAnchorElement)) throw new Error("missing Sandbox details link");
+    expect(link.textContent).toBe("demo-a1b2");
+
+    await act(async () => link.click());
+    expect(location()).toBe("/sandboxes/demo-a1b2");
+    expect(onMobileClose).toHaveBeenCalledOnce();
+
+    await act(async () => row("First thread").click());
+    expect(location()).toBe("/threads/t-1");
+  }
+);
 
 it("opens the stable Thread route and highlights that Thread", async () => {
   await render(

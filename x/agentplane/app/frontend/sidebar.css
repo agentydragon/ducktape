@@ -105,6 +105,15 @@
   white-space: nowrap;
 }
 
+.agentplane-sidebar-group-link {
+  color: var(--mantine-color-anchor);
+  text-decoration: none;
+}
+
+.agentplane-sidebar-group-link:hover {
+  text-decoration: underline;
+}
+
 .agentplane-sidebar-group-count {
   margin-left: auto;
   flex: 0 0 auto;
