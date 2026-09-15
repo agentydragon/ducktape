@@ -150,28 +150,28 @@ impl PostgresArchiveStore {
             .if_not_exists()
             .to_owned();
         self.db
-            .execute(&self.db.get_database_backend().build(&create_table))
+            .execute(&create_table)
             .await?;
         let create_table = schema
             .create_table_from_entity(metadata_record::Entity)
             .if_not_exists()
             .to_owned();
         self.db
-            .execute(&self.db.get_database_backend().build(&create_table))
+            .execute(&create_table)
             .await?;
         let create_table = schema
             .create_table_from_entity(fill_lease::Entity)
             .if_not_exists()
             .to_owned();
         self.db
-            .execute(&self.db.get_database_backend().build(&create_table))
+            .execute(&create_table)
             .await?;
         let create_table = schema
             .create_table_from_entity(fill_queue::Entity)
             .if_not_exists()
             .to_owned();
         self.db
-            .execute(&self.db.get_database_backend().build(&create_table))
+            .execute(&create_table)
             .await?;
         Ok(())
     }
@@ -215,7 +215,7 @@ impl PostgresArchiveStore {
 
     async fn notify_fill_changed(&self, key: &FillLeaseKey) -> Result<()> {
         self.db
-            .execute(&Statement::from_sql_and_values(
+            .execute_raw(Statement::from_sql_and_values(
                 DbBackend::Postgres,
                 "SELECT pg_notify($1, $2)",
                 [
@@ -434,7 +434,7 @@ impl ArchiveStore for PostgresArchiveStore {
         conflict.do_nothing();
         fill_queue::Entity::insert(active)
             .on_conflict(conflict.to_owned())
-            .do_nothing()
+            .try_insert()
             .exec(&self.db)
             .await?;
         self.notify_fill_changed(&key).await?;
@@ -598,7 +598,7 @@ impl ArchiveStore for PostgresArchiveStore {
         conflict.do_nothing();
         match fill_lease::Entity::insert(active)
             .on_conflict(conflict.to_owned())
-            .do_nothing()
+            .try_insert()
             .exec(&self.db)
             .await?
         {
