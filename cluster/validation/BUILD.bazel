@@ -851,6 +851,18 @@ py_test(
 )
 
 py_test(
+    name = "test_agentplane_dex_credentials",
+    srcs = ["test_agentplane_dex_credentials.py"],
+    data = ["//cluster/k8s:cluster_yaml_files"],
+    deps = [
+        ":conftest",
+        "@pypi//more_itertools",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
     name = "test_agentplane_inventory_rbac",
     srcs = ["test_agentplane_inventory_rbac.py"],
     data = ["//cluster/k8s:cluster_yaml_files"],
