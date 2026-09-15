@@ -23,7 +23,8 @@ Proposed execution order for the Thread correctness/UI track:
   deployed Claude/Codex acceptance (`THREAD_DEPLOYED_ACCEPTANCE`), including the current
   model-path availability failure (`EGRESS_IDENTITY_AVAILABILITY`). Keep one runner-owned
   command queue; no app outbox or combined-start expansion in this batch.
-- **P1:** end-to-end LLM error handling (`LLM_ERROR_SURFACE`) and sidebar freshness,
+- **P1:** end-to-end LLM error handling (`LLM_ERROR_SURFACE`), duplicate turn-status
+  presentation (`THREAD_TURN_STATUS_UI`), and sidebar freshness,
   alongside retained-state writer fencing and
   evidence-gated native recovery. Start `THREAD_TAIL_FIRST` with a profiling/contract
   slice, then bounded reads and `THREAD_LAZY_HISTORY`; do not start with a frontend rewrite.
@@ -63,7 +64,7 @@ flowchart TB
     LIVE_CLEAN["Deferred cleanup<br/>executor heartbeat identity/<br/>row retention"]:::future
 
     BB["Deferred decision<br/>BuildBuddy hosted-run credential boundary"]:::future
-    ING["Deferred support<br/>Event & Notification Hub<br/>external events -> Agent/Thread ingress"]:::future
+    ING["Deferred support<br/>Event & Notification Hub<br/>Action decisions and subscribed external events -> Thread ingress"]:::future
     DT["P2 deferred<br/>driver-provided declarations/background control"]:::future
     AG["Deferred<br/>hosted Thread lifecycle<br/>cross-Identity read policy"]:::future
     PROD["Milestone<br/>production-capable governed action execution"]:::milestone
@@ -81,6 +82,7 @@ flowchart TB
     CODEX_RECOVERY["Required evidence then implementation<br/>Codex execution before durable runner proof<br/>native correlation and safe recovery"]:::active
     RUNNER_WRITER_HANDOFF["Planned correctness<br/>exclusive runner ownership of retained state<br/>fence old writer and native dispatch"]:::future
     SANDBOX_LIFECYCLE_DURABILITY["Planned lifecycle correctness<br/>retained state through suspension<br/>archive before managed storage deletion"]:::future
+    SANDBOX_VM_ISOLATION["Deferred investigation<br/>selectable container or VM Sandbox implementation<br/>contain agent resource exhaustion"]:::future
     THREAD_EVENT_CONTINUITY["Planned identity cutover<br/>one Thread journal across incarnations<br/>exclusive runner writer and retained state"]:::future
     THREAD_COMMAND_DELIVERY["Deferred backend<br/>app outbox delivery to existing runner<br/>only if app-first acceptance is chosen later"]:::future
     THREAD_TAIL_FIRST["Future performance<br/>open recent conversation window first<br/>bounded catch-up for long-running Threads"]:::future
@@ -90,6 +92,7 @@ flowchart TB
     THREAD_DEPLOYED_ACCEPTANCE["P0 remaining acceptance<br/>deployed commands/events cutover<br/>real Claude and Codex via devbox"]:::active
     EGRESS_IDENTITY_AVAILABILITY["P0 observed availability failure<br/>egress authentication ApiException / 502<br/>trace Kubernetes, ingress, LiteLLM hops"]:::active
     LLM_ERROR_SURFACE["P1 correctness<br/>native LLM errors through protocol and UI<br/>partial output, retries, terminal failure"]:::future
+    THREAD_TURN_STATUS_UI["Reported UI duplication<br/>turn header and completion entry repeat status<br/>one clear outcome with Raw evidence preserved"]:::future
     CLUSTER_BROWSER_ACCEPTANCE["P2 deployed browser acceptance<br/>in-cluster frontend button clicks<br/>screenshots and behavioral assertions"]:::future
     NATIVE_SUBAGENT_THREADS["Low-priority exploration<br/>adopt native Claude/Codex subagents<br/>as linked Agentplane Threads"]:::future
     RUNNER_ATTACHMENT_SCOPE["Pending refactor<br/>scope ordinary runner attachments<br/>retain admission/drain/cancel semantics"]:::future
@@ -376,6 +379,21 @@ Finish native-backed verification of these failures through the app archive and 
 views, including reload and a later successful input; controlled-source browser coverage is
 not native harness evidence. Any future retry control must explicitly distinguish same-command
 delivery retry from requesting a new model turn; do not silently resend the original input.
+
+### `THREAD_TURN_STATUS_UI` — avoid redundant turn-completion presentation
+
+**Reported on staging:** the conversation shows both `Turn <id>: COMPLETED` and a
+`turn <id>` header with a `COMPLETED` badge. The supplied examples name different
+turns; do not infer duplicate source Events from the text alone. The current
+`session.tsx` renders status in both `TurnHeader` and the terminal control entry.
+Reproduce the affected view and correlate turn IDs and Event cursors before deciding
+whether this is redundant presentation, duplicate projection, or a source problem.
+
+Give each turn one clear terminal outcome in normal mode, retaining failures and
+interruptions at their actual timeline position. Raw mode must still expose the
+underlying Events without posing their debug details as another conversation outcome.
+Cover adjacent turns, empty turns, streaming completion, failure, interruption, and
+reload/reconnect in behavioral and visual tests; do not delete evidence to tidy the UI.
 
 ### `CLUSTER_BROWSER_ACCEPTANCE` — browser-driven acceptance in the cluster
 
@@ -667,6 +685,29 @@ and native evidence can proceed independently; full archive-preservation accepta
 requires Event durability and app replication. Gate lifecycle automation on its own
 evidence without blocking ordinary messaging and UI work.
 
+### `SANDBOX_VM_ISOLATION` — selectable VM-backed Sandbox isolation
+
+**Deferred investigation:** evaluate running harnesses and agent-controlled tools in
+VMs or microVMs to contain resource exhaustion, especially an agent workload OOM-killing
+its own runner/Pod. Revisit the [runtime isolation decision](../docs/adr_sandbox_proxy_gateway.md#not-firecrackerkatagvisor-immediately)
+for availability as well as container escape. Verify the suggested Claude Code Web
+comparison before using it as evidence; no runtime is selected by this task.
+
+If implemented, make the Sandbox implementation an explicit creation-time choice,
+retaining container-backed Sandboxes alongside VM-backed ones, not a global replacement
+or a harness-specific choice. Presets only prefill this individually editable field.
+Expose unsupported capabilities honestly; a creation-time selection does not promise
+live migration between implementations.
+
+Define where the runner, journal, proxy, and untrusted processes live and which memory
+budgets protect them. A VM label alone is not an OOM guarantee: account for guest,
+hypervisor/container, and host limits and reserve resources for the control plane.
+Compare failure containment, startup overhead, storage retention, suspend/resume,
+network/egress enforcement, debugging, and cluster support. Acceptance must force guest
+memory exhaustion and process loss, then prove the claimed control/journal survival,
+truthful failure reporting, and recovery without invented or duplicated command effects.
+This investigation does not block current container correctness work.
+
 ### `THREAD_EVENT_CONTINUITY` — one runner-owned Thread Event log through harness resume
 
 **Identity/storage cutover:** implement
@@ -736,6 +777,21 @@ subscription matching, deduplication, batching/debounce, rate limits, backpressu
 and Thread wake/queue semantics. It is not an executor or an Action decision authority. It consumes
 the canonical Action event sequence, preserving individual events and ordering, and adds no second
 Action outbox or event store; cross-Identity delivery requires an explicit read policy.
+
+Make Action approval and denial notifications an explicit first consumer: deliver the
+decision to the requesting Agent/Thread, correlated with the original Action request.
+Distinguish approval from execution success and preserve later execution results/errors.
+Use this same ingress for subscribed external notifications, with an agent-facing
+interface to create, inspect, update, and cancel subscriptions (initially including
+GitHub event filters), subject to source authorization and destination access checks.
+
+Define notification identity, provenance, ordering, retry/deduplication, and the point
+at which delivery is confirmed by the harness. Notifications are not fabricated human
+messages or runner observations. Specify busy, suspended, and unavailable Thread
+behavior before promising offline delivery; this deferred Hub must not silently add
+an app command queue to the current runner-only design. Test approval/denial while an
+agent is busy or disconnected, duplicate/replayed events, subscription cancellation,
+unauthorized sources/destinations, and truthful delivery state after reconnect.
 
 ### `UISHELL_DRAWER` — pending-approval badge and drawer
 
