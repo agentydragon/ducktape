@@ -4,7 +4,7 @@ py_library(
     name = "gen",
     srcs = ["gen.py"],
     deps = [
-        "@pypi//fonttools",
+        "@pypi//pillow",
         "@pypi//qrcode",
         "@pypi//svg_py",
     ],

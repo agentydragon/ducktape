@@ -6,7 +6,7 @@ from pathlib import Path
 
 import qrcode
 import svg
-from fontTools.ttLib import TTFont
+from PIL import ImageFont
 
 _FONT_FAMILY = "Bebas Neue"
 _BORDER = 4  # quiet-zone modules
@@ -18,16 +18,10 @@ _TARGET_QR_W = 672  # ~7in — fills most of the page width
 
 
 def _font_text_width_at_1em(text: str) -> float:
-    """Return the advance width of text in units of 1em, using fontconfig + fonttools."""
+    """Return the rendered width of text in units of 1em."""
     font_path = subprocess.check_output(["fc-match", _FONT_FAMILY, "--format=%{file}"], text=True).strip()
-    font = TTFont(font_path)
-    cmap = font.getBestCmap()
-    hmtx = font["hmtx"].metrics
-    units_per_em: int = font["head"].unitsPerEm
-    if cmap is None:
-        raise ValueError(f"Font {font_path} has no cmap table")
-    total: int = sum(hmtx.get(cmap.get(ord(c), ".notdef"), (0, 0))[0] for c in text)
-    return total / units_per_em
+    font = ImageFont.truetype(font_path, size=1000)
+    return font.getlength(text) / 1000
 
 
 def generate(text: str, output: Path, caption: str | None = None) -> None:

@@ -251,7 +251,6 @@ dependencies = [
     # qr_codes
     "qrcode>=7.4",
     "svg.py>=1.4",
-    "fonttools>=4.65.0",
 
     # Development and testing
     "hypothesis>=6.0",
