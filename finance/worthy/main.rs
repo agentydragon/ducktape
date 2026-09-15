@@ -39,7 +39,7 @@ async fn process_source(source: &SourceConfig) -> Result<Vec<Asset>, Box<dyn Err
     }
 }
 
-fn asset_to_money(x: &Asset) -> Money<iso::Currency> {
+fn asset_to_money(x: &Asset) -> Money<'_, iso::Currency> {
     match &x.denomination {
         Denomination::Currency { currency } => {
             Money::from_decimal(x.amount, iso::find(currency).unwrap())
@@ -215,8 +215,7 @@ async fn model_and_show(
     };
     info!("Total in common currency: {total:?}");
 
-    if config.cfiresim.is_some() {
-        let c = config.cfiresim.as_ref().unwrap();
+    if let Some(c) = config.cfiresim.as_ref() {
         // Post to cFIREsim.
 
         // Add up all sources that are in the portfolio.
