@@ -5,7 +5,7 @@ py_library(
     srcs = ["gen.py"],
     deps = [
         "@pypi//fonttools",  # keep: imported dynamically at runtime via importlib
-        "@pypi//qrcode",  # keep: imported dynamically at runtime via importlib
+        "@pypi//qrcode",
         "@pypi//svg_py",
     ],
 )
