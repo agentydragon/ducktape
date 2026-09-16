@@ -35,3 +35,7 @@ spec:
   dependsOn:
     - name: monitoring-namespace
       namespace: ducktape-flux
+    # The chart's Prometheus/Alertmanager CRs are rejected at admission until
+    # the CRDs exist, and the chart no longer installs them itself.
+    - name: monitoring-crds
+      namespace: ducktape-flux

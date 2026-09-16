@@ -148,6 +148,8 @@ resources:
   - monitoring/grafana-helmrepository/flux-kustomization.yaml
   - monitoring/grafana-operator/flux-kustomization.yaml
   - monitoring/namespace/flux-kustomization.yaml
+  - monitoring/crds/gitrepository.yaml
+  - monitoring/crds/flux-kustomization.yaml
   - monitoring/stack/flux-kustomization.yaml
   - monitoring/rules/flux-kustomization.yaml
   - monitoring/etcd/flux-kustomization.yaml
