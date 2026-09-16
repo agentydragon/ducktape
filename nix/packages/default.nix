@@ -230,14 +230,6 @@ let
     inherit artifacts lib python314Packages;
   };
 
-  # Chrome-free GTK/WebKit approvals application.
-  hakuApprovals = pkgs.callPackage ./haku-approvals.nix {
-    inherit
-      artifacts
-      lib
-      ;
-  };
-
   mkBinaryArtifact =
     {
       pname,
@@ -421,11 +413,6 @@ rec {
 
   aw-watcher-tmux = pkgs.callPackage ./aw-watcher-tmux.nix { };
 
-  inherit hakuApprovals;
-  # Kebab release-name attribute the CI nix-package gate builds (release key
-  # `haku-approvals` in devinfra/ci/artifact_targets.json); `hakuApprovals` is
-  # the home-manager-facing name. Keep both — deduping either breaks a consumer.
-  haku-approvals = hakuApprovals;
   gnome-shell-aiquota = aiquota;
   tana-outliner = pkgs.callPackage ./tana-outliner.nix { };
   gmail-mcp = pkgs.callPackage ./gmail-mcp.nix { };

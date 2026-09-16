@@ -17,7 +17,6 @@
     ../modules/talosconfig.nix
   ];
 
-  ducktape.hakuApprovals.enable = true;
   ducktape.codex.chatgptPackage = ducktapePackages.chatgpt;
 
   ducktape.forgejoSsh.sopsFile = ../../../ssh_keys/iguana-forgejo.sops.key;

@@ -39,7 +39,6 @@ in
   '';
 
   ducktape.aiquota.enable = true;
-  ducktape.hakuApprovals.enable = true;
   ducktape.aiquota.remoteApi.enable = true;
 
   # ActivityWatch capture + import into the central server. The importer folds this
