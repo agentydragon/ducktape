@@ -41,6 +41,7 @@ from x.agentplane.app.action_policy import (
     ActionPolicyView,
     UnknownPolicySetError,
 )
+from x.agentplane.app.connect import RPC_PREFIX, Guarded
 from x.agentplane.app.consent import (
     ConsentDecision,
     ConsentPreview,
@@ -71,6 +72,8 @@ from x.agentplane.app.oidc import OIDCSettings, build_oauth, operator_session
 from x.agentplane.app.operator_sessions import OperatorSessionMiddleware
 from x.agentplane.app.presets import Harness, PresetCatalog, SandboxBinding, SandboxPresetView
 from x.agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown
+from x.agentplane.app.thread_events import ThreadEventsService
+from x.agentplane.app.thread_events_connecpy import ThreadEventsASGIApplication
 from x.agentplane.app.trajectory import CommandIdConflictError, ThreadNotFoundError, ThreadView, TrajectoryStore
 from x.agentplane.runner.client import RunnerError
 
@@ -665,7 +668,11 @@ def create_app(
     app.state.oidc = oidc
     app.state.reviewer = reviewer
     app.state.operator_actions = operator_actions
-    app.state.drain = Drain()
+    drain = Drain()
+    app.state.drain = drain
+    # Mounted rather than routed, so `Guarded` applies `require_caller` instead of inheriting it
+    # from the router dependency below.
+    app.mount(RPC_PREFIX, Guarded(ThreadEventsASGIApplication(ThreadEventsService(store, drain))))
     # Every route needs a caller. There is no unauthenticated path into the API: /healthz is
     # declared below, outside these routers.
     for api_router in (

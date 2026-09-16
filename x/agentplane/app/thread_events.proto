@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+// Following a Thread's archived Events: the exact entries the app copied out of the runner journal,
+// in their original order, together with the ingestion state that says how much more is coming.
+//
+// This is the evidence layer, and it carries nothing derived -- no folded items, no command
+// summaries, no controls. Reading it never involves the projection, which is what makes it the
+// thing a derived view can be checked against.
+//
+// Contract: x/agentplane/docs/thread_view_sync.md.
+package ducktape.agentplane.app.v1;
+
+import "x/agentplane/protocol/event_log.proto";
+import "x/agentplane/runner/protocol.proto";
+
+message FollowEventsRequest {
+  string thread_id = 1;
+  // Exclusive: entries with a greater cursor are replayed, and live ones follow them in the same
+  // stream. A caller's own verified prefix is the only resume token it needs, because an Event
+  // cannot appear behind a cursor it already holds. A cursor beyond the archived prefix is an
+  // error rather than a silent wait: it names a prefix this Thread cannot prove.
+  uint64 after_cursor = 2;
+}
+
+// The app's ingestion of this Thread stopped. That is a state of the archive and not of this RPC:
+// a transport failure ends the stream without one, and the caller resumes from the cursor it
+// holds, where this says there is nothing further to resume to.
+message FeedEnded {
+  // Why ingestion could not continue -- a runner history the archive refused to merge, a replay
+  // that ended short of the prefix the runner promised. Absent is an ordinary end.
+  optional string error = 1;
+}
+
+// No information. It keeps an idle stream from being reaped by an intermediary, and it is the
+// first frame of every stream, so a caller learns it is connected without waiting for the Thread
+// to produce something.
+message Heartbeat {}
+
+message FollowEventsResponse {
+  oneof frame {
+    // What the runner promised this app's ingestion when it attached, sent before the entries it
+    // bounds: a caller compares `last_cursor` against the prefix it holds to tell replay from
+    // live, so the ordering is the point and a companion read would not do.
+    //
+    // CLEANUP(added 2026-09-16): Narrow to the promised cursor once ThreadViewService.Controls is
+    //   the frontend's model and harness authority -- once nothing reads `spec`, `harness_state`
+    //   or `active_turn_id` off this frame, what is left belongs in an ingestion message of this
+    //   package rather than in the runner's attach reply.
+    ducktape.agentplane.runner.v1.Attached attached = 1;
+    ducktape.agentplane.protocol.v1.EventEntry entry = 2;
+    FeedEnded ended = 3;
+    Heartbeat heartbeat = 4;
+  }
+}
+
+// Exact retained evidence, read straight from the archive.
+service ThreadEvents {
+  rpc FollowEvents(FollowEventsRequest) returns (stream FollowEventsResponse);
+}
