@@ -90,7 +90,13 @@ def test_a_binding_crd_states_the_subject_the_services_decide_against(crd_name: 
         "the CRD must admit exactly one key, which is what makes the union unambiguous"
     )
     assert set(schema["properties"]) == set(declared)
-    assert {key: _variant(schema, key) for key in schema["properties"]} == declared
+    for key, (fields, required) in declared.items():
+        crd_fields, crd_required = _variant(schema, key)
+        assert crd_fields == fields, f"{key} declares different fields in the CRD than in the model"
+        # A CRD may insist on a field the model tolerates absent -- ActionPolicyBinding requires the
+        # Sandbox UID because it matches on it -- but never the reverse, which would let the API
+        # server accept an object the model refuses.
+        assert crd_required >= required, f"{key} lets the CRD accept what the model requires"
 
 
 @pytest.mark.parametrize(

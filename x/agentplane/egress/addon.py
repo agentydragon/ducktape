@@ -202,7 +202,9 @@ class EgressAddon:
                     namespace=identity.namespace, service_account_name=identity.service_account_name
                 )
         self._authenticated[client_id] = _AuthenticatedConnection(token=token, identity=identity)
-        return caller, AuthenticatedWorkloadContext(bearer=token, caller=caller, pod_uid=identity.pod_uid)
+        return caller, AuthenticatedWorkloadContext(
+            bearer=token, caller=caller, namespace=identity.namespace, pod_uid=identity.pod_uid
+        )
 
     def _still_current(self, caller: Caller) -> bool:
         """Only a Sandbox caller can be revoked by the watch between admission and dial; a
@@ -222,6 +224,7 @@ class EgressAddon:
             headers={name.lower(): request.headers.get_all(name) for name in set(request.headers.keys())},
         )
         subject: SubjectView | None = None
+        namespace: str | None = None
         sandbox_uid: str | None = None
         authenticated_workload: AuthenticatedWorkloadContext | None = None
         pin: Pin | None = None
@@ -229,6 +232,7 @@ class EgressAddon:
         try:
             caller, authenticated_workload = await self._authenticate(flow)
             subject = caller.subject
+            namespace = authenticated_workload.namespace
             sandbox_uid = caller.sandbox.metadata.uid if isinstance(caller, SandboxCaller) else None
             if not self._index.available(self._clock(), stale_after_seconds=self._stale_after_seconds):
                 raise IdentityRejectedError(DenyReason.UNAVAILABLE, "enforcement index unavailable")
@@ -273,7 +277,7 @@ class EgressAddon:
             "producer_id": self._producer_id,
             "connection_id": flow.client_conn.id,
             "phase": Phase.CONNECT if egress.method == CONNECT else Phase.HTTP_REQUEST,
-            "subject_namespace": self._verifier.namespace if subject is not None else None,
+            "subject_namespace": namespace,
             "sandbox_uid": sandbox_uid,
             "source_pod_uid": authenticated_workload.pod_uid if authenticated_workload is not None else None,
         }

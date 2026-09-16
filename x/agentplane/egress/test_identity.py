@@ -38,7 +38,7 @@ def verifier(api_client: ApiClient) -> PodIdentityVerifier:
     return PodIdentityVerifier(
         authentication=AuthenticationV1Api(api_client),
         core_v1=CoreV1Api(api_client),
-        namespace=SANDBOX_NAMESPACE,
+        namespaces=frozenset({SANDBOX_NAMESPACE}),
         audience=AUDIENCE,
         cache_seconds=60,
     )
@@ -53,7 +53,12 @@ async def test_good_token_from_its_pod(fake: FakeApiServer, verifier: PodIdentit
     identity = await verifier.identify(TOKEN_A, POD_A_IP)
     sandbox_uid = fake.objects["sandboxes"][SANDBOX_A]["metadata"]["uid"]
     assert identity == SandboxPodIdentity(
-        pod_name=SANDBOX_A, pod_uid=POD_A_UID, pod_ip=POD_A_IP, sandbox_name=SANDBOX_A, sandbox_uid=sandbox_uid
+        namespace=SANDBOX_NAMESPACE,
+        pod_name=SANDBOX_A,
+        pod_uid=POD_A_UID,
+        pod_ip=POD_A_IP,
+        sandbox_name=SANDBOX_A,
+        sandbox_uid=sandbox_uid,
     )
 
 
@@ -143,10 +148,10 @@ async def test_pod_without_sandbox_owner_is_its_service_account(
     )
     identity = await verifier.identify(TOKEN_B, POD_B_IP)
     assert identity == ServiceAccountPodIdentity(
+        namespace=SANDBOX_NAMESPACE,
         pod_name=SANDBOX_B,
         pod_uid=POD_B_UID,
         pod_ip=POD_B_IP,
-        namespace=SANDBOX_NAMESPACE,
         service_account_name="public-coder",
     )
 

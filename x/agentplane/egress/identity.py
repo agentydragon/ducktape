@@ -36,6 +36,7 @@ _CACHE_SWEEP_SIZE = 256
 
 @dataclass(frozen=True)
 class _PodBinding:
+    namespace: str
     pod_name: str
     pod_uid: str
     pod_ip: str
@@ -53,7 +54,6 @@ class SandboxPodIdentity(_PodBinding):
 class ServiceAccountPodIdentity(_PodBinding):
     """A Pod no Sandbox controls; the ServiceAccount it runs as is the subject."""
 
-    namespace: str
     service_account_name: str
 
 
@@ -94,12 +94,11 @@ class PodIdentityVerifier:
         *,
         authentication: AuthenticationV1Api,
         core_v1: CoreV1Api,
-        namespace: str,
+        namespaces: frozenset[str],
         audience: str,
         cache_seconds: float,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
-        self.namespace = namespace
         self._cache_seconds = cache_seconds
         self._clock = clock
         self._cache: dict[str, _CachedIdentity] = {}
@@ -107,7 +106,7 @@ class PodIdentityVerifier:
             authentication=authentication,
             core_v1=core_v1,
             audience=audience,
-            allowed_service_account_namespaces=frozenset({namespace}),
+            allowed_service_account_namespaces=namespaces,
         )
 
     async def identify(self, token: str, source_ip: str) -> PodIdentity:
@@ -153,10 +152,13 @@ class PodIdentityVerifier:
         pod_ip = pod.status.pod_ip if pod.status is not None else None
         if not pod_ip:
             raise IdentityRejectedError(DenyReason.POD_MISMATCH, f"Pod {principal.pod_name} has no address yet")
-        binding = {"pod_name": principal.pod_name, "pod_uid": principal.pod_uid, "pod_ip": pod_ip}
+        binding = {
+            "namespace": principal.namespace,
+            "pod_name": principal.pod_name,
+            "pod_uid": principal.pod_uid,
+            "pod_ip": pod_ip,
+        }
         owner = sandbox_controller(pod)
         if owner is None:
-            return ServiceAccountPodIdentity(
-                **binding, namespace=principal.namespace, service_account_name=principal.service_account_name
-            )
+            return ServiceAccountPodIdentity(**binding, service_account_name=principal.service_account_name)
         return SandboxPodIdentity(**binding, sandbox_name=owner.name, sandbox_uid=owner.uid)

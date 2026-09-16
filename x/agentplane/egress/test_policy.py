@@ -448,7 +448,7 @@ def test_authenticated_workload_source_substitutes_only_the_validated_context_be
         request(authorization=f"Bearer {dynamic.placeholder}"),
         NOW,
         authenticated_workload=AuthenticatedWorkloadContext(
-            bearer=token, caller=SandboxCaller(SANDBOX), pod_uid="pod-a-uid"
+            bearer=token, caller=SandboxCaller(SANDBOX), namespace=NAMESPACE, pod_uid="pod-a-uid"
         ),
     )
     assert decision == Allowed("b", "workload", 0, (HeaderRewrite(header=AUTHORIZATION, values=(f"Bearer {token}",)),))
@@ -469,7 +469,7 @@ def test_authenticated_workload_source_fails_without_authenticated_context() -> 
         update={"metadata": SANDBOX.metadata.model_copy(update={"uid": "an-old-sandbox-uid"})}
     )
     stale = AuthenticatedWorkloadContext(
-        bearer="stale-token", caller=SandboxCaller(superseded), pod_uid="an-old-pod-uid"
+        bearer="stale-token", caller=SandboxCaller(superseded), namespace=NAMESPACE, pod_uid="an-old-pod-uid"
     )
     assert evaluate(scoped, SandboxCaller(SANDBOX), egress, NOW, authenticated_workload=stale) == Denied(
         DenyReason.CREDENTIAL_UNAVAILABLE

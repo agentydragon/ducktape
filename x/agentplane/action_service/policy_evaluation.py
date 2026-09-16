@@ -39,11 +39,15 @@ def _names(
     subject: SandboxSubject | ServiceAccountSubject, namespace: str, named: SandboxCaller | ServiceAccountRef
 ) -> bool:
     """Whether a binding in `namespace` with this subject names the caller. A Sandbox is matched by
-    namespace and UID; its name is for humans."""
+    namespace and UID; its name is for humans. `ActionPolicyBinding` requires the UID, so an
+    unpinned subject cannot reach here off the API server and never matches if one does."""
     match subject:
         case SandboxSubject(sandbox=sandbox):
             return (
-                isinstance(named, SandboxCaller) and named.namespace == namespace and named.sandbox_uid == sandbox.uid
+                isinstance(named, SandboxCaller)
+                and named.namespace == namespace
+                and sandbox.uid is not None
+                and named.sandbox_uid == sandbox.uid
             )
         case ServiceAccountSubject(service_account=account):
             return isinstance(named, ServiceAccountRef) and named == account

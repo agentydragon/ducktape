@@ -309,7 +309,7 @@ async def proxy(
     verifier = PodIdentityVerifier(
         authentication=AuthenticationV1Api(api_client),
         core_v1=CoreV1Api(api_client),
-        namespace=SANDBOX_NAMESPACE,
+        namespaces=frozenset({SANDBOX_NAMESPACE}),
         audience=AUDIENCE,
         cache_seconds=60,
     )

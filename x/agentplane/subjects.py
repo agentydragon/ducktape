@@ -10,9 +10,10 @@ The wire shape is the way Kubernetes spells "exactly one of": a one-key object, 
 discriminator -- each variant requires a field the other forbids, so the union resolves itself, and
 `extra="forbid"` is what refuses an object naming both.
 
-A Sandbox is named with its UID, so a grant is to that Sandbox and not to its name: a Sandbox
-deleted and recreated under the same name does not inherit what the old one was granted. Cascading
-deletion of the binding object is housekeeping on top of that, not the guarantee itself.
+A ServiceAccount is the identity that generalises: it is what a workload runs as whether or not
+anything here provisioned it, so an agent hosted elsewhere is an ordinary subject rather than a
+special case. A Sandbox subject only means anything for a workload whose lifecycle this cluster
+owns, and is expected to retire once every such workload carries a ServiceAccount of its own.
 """
 
 from __future__ import annotations
@@ -29,8 +30,19 @@ class _Spec(BaseModel):
 
 
 class SandboxRef(_Spec):
+    """A Sandbox, optionally pinned to one instance of it.
+
+    Absent `uid` is a defined state, not a missing value: the subject is that Sandbox by name,
+    whichever instance currently holds it. Which of the two a binding may express is the CRD's to
+    say -- `ActionPolicyBinding` requires the UID, because it matches on it and treats the name as
+    documentation; `EgressBinding` does not, because a grant there dies with its Sandbox through the
+    binding's owner reference.
+    """
+
     name: str = Field(min_length=1)
-    uid: str = Field(min_length=1, description="Pins the Sandbox instance; a binding whose Sandbox is gone is inert.")
+    uid: str | None = Field(
+        default=None, min_length=1, description="Pins one Sandbox instance; absent names the Sandbox whatever it is."
+    )
 
 
 class ServiceAccountRef(_Spec):

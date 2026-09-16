@@ -147,6 +147,7 @@ class AuthenticatedWorkloadContext:
 
     bearer: str = field(repr=False)
     caller: Caller
+    namespace: str
     pod_uid: str
 
     def is_bound_to(self, caller: Caller) -> bool:
@@ -212,14 +213,16 @@ def resolve_binding(index: Index, binding: EgressBinding, now: datetime) -> Bind
 
 
 def _names(subject: Subject, caller: Caller) -> bool:
-    """A Sandbox subject names one instance: matching the name alone would hand a recreated Sandbox
-    whatever its predecessor was granted, which is the guarantee the UID is in the subject for."""
+    """A Sandbox subject may pin an instance; unpinned it is that Sandbox whatever it is.
+
+    An unpinned subject is how every binding here is written today: the grant ends with its Sandbox
+    because the binding object is owned by it, not because the subject names an instance.
+    """
     match subject, caller:
         case SandboxSubject(), SandboxCaller():
-            return (subject.sandbox.name, subject.sandbox.uid) == (
-                caller.sandbox.metadata.name,
-                caller.sandbox.metadata.uid,
-            )
+            if subject.sandbox.name != caller.sandbox.metadata.name:
+                return False
+            return subject.sandbox.uid in (None, caller.sandbox.metadata.uid)
         case ServiceAccountSubject(), ServiceAccountCaller():
             return (subject.service_account.namespace, subject.service_account.name) == (
                 caller.namespace,

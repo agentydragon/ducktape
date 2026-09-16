@@ -48,10 +48,11 @@ spec:
                       sandbox:
                         description: >-
                           One Sandbox, resolved in the workload namespace the enforcing deployment
-                          serves (`--sandbox-namespace`). The UID pins the instance, so a Sandbox
-                          deleted and recreated under this name does not inherit the grant.
+                          serves (`--sandbox-namespace`). A grant to it ends with it because the
+                          binding is owned by it; `uid` additionally pins one instance, and is
+                          optional because that ownership is what ends the grant.
                         type: object
-                        required: [name, uid]
+                        required: [name]
                         properties:
                           name:
                             type: string
