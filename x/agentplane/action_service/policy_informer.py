@@ -18,7 +18,7 @@ from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import CoreV1Api
 
 from util.kubernetes import CustomObjectsClient
-from x.agentplane.action_service.models import NamespacedName, ServiceAccountRef
+from x.agentplane.action_service.models import NamespacedName, service_account_key
 from x.agentplane.action_service.policies.resources import (
     BINDINGS_PLURAL,
     CALLER_LABEL_SELECTOR,
@@ -36,6 +36,7 @@ from x.agentplane.action_service.policies.resources import (
     parse_policy_set,
 )
 from x.agentplane.kubernetes_watch import ListWatch, WatchedKind, apply_to
+from x.agentplane.subjects import ServiceAccountRef
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +56,7 @@ class PolicyIndex:
 
     def eligible(self, ref: ServiceAccountRef) -> bool:
         """Whether this ServiceAccount currently carries the caller label; nothing is eligible before sync."""
-        return self.synced and ref.namespaced_name in self.service_accounts
+        return self.synced and service_account_key(ref) in self.service_accounts
 
     def caller_service_accounts(self) -> list[ServiceAccountRef]:
         return [self.service_accounts[key] for key in sorted(self.service_accounts)]
@@ -140,7 +141,7 @@ class PolicyInformer:
                     args=(namespace,),
                     kwargs={"label_selector": CALLER_LABEL_SELECTOR},
                     parse=_service_account,
-                    key=lambda ref: ref.namespaced_name,
+                    key=service_account_key,
                     names=partial(_keys_in, index.service_accounts, namespace),
                     apply=lambda key, obj: apply_to(index.service_accounts, key, obj),
                 ),

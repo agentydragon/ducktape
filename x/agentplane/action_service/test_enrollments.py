@@ -43,11 +43,12 @@ from x.agentplane.action_service.enrollments import (
     EnrollmentPreviewInput,
     EnrollmentRejectedError,
 )
-from x.agentplane.action_service.models import Principal, PrincipalRole, ServiceAccountRef, Verdict
+from x.agentplane.action_service.models import Principal, PrincipalRole, Verdict
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, UNLABELED, eligible_callers
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
+from x.agentplane.subjects import ServiceAccountRef
 
 
 @dataclass

@@ -15,7 +15,7 @@ from x.agentplane.egress.policy import Index
 from x.agentplane.egress.resources import ObjectMeta, Sandbox
 from x.agentplane.egress.rules_api import HOST, PATH, URL, RulesProjection, create_rules_app
 from x.agentplane.egress.testing.fake_apiserver import SANDBOX_NAMESPACE, FakeApiServer
-from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
+from x.agentplane.sandbox_auth.http import WorkloadPrincipalAuthenticator
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 
 NOW = datetime(2026, 9, 5, 12, 0, tzinfo=UTC)
@@ -23,7 +23,7 @@ SANDBOX = Sandbox(metadata=ObjectMeta(name=SANDBOX_A, uid=f"uid-sandboxes-{SANDB
 
 
 def client(api_client: ApiClient, index: Index) -> httpx.AsyncClient:
-    authenticator = SandboxPrincipalAuthenticator(
+    authenticator = WorkloadPrincipalAuthenticator(
         SandboxPrincipalResolver(
             authentication=AuthenticationV1Api(api_client),
             core_v1=CoreV1Api(api_client),
@@ -46,7 +46,7 @@ async def test_api_independently_tokenreviews_authorization_and_returns_redacted
 
     assert f"http://{HOST}{PATH}" == URL
     assert response.status_code == 200
-    assert response.json() == {"sandbox": SANDBOX_A, "policies": []}
+    assert response.json() == {"subject": {"kind": "Sandbox", "name": SANDBOX_A}, "policies": []}
     assert (fake.token_reviews, fake.pod_reads) == (before[0] + 1, before[1] + 1)
     assert TOKEN_A not in response.text
 
@@ -84,7 +84,7 @@ async def test_headers_body_and_proxy_auth_cannot_select_another_sandbox(api_cli
         )
 
     assert response.status_code == 200
-    assert response.json()["sandbox"] == SANDBOX_A
+    assert response.json()["subject"] == {"kind": "Sandbox", "name": SANDBOX_A}
     assert all(value not in response.text for value in ("forged-hop", "forged-uid", SANDBOX_B))
 
 

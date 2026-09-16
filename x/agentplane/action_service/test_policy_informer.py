@@ -13,7 +13,7 @@ from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import ApiClient, CoreV1Api, CustomObjectsApi
 
 from util.kubernetes import CustomObjectsClient
-from x.agentplane.action_service.models import NamespacedName, ServiceAccountRef
+from x.agentplane.action_service.models import NamespacedName
 from x.agentplane.action_service.policies.resources import (
     BINDINGS_PLURAL,
     CALLER_LABEL,
@@ -27,6 +27,7 @@ from x.agentplane.action_service.policies.resources import (
 )
 from x.agentplane.action_service.policy_informer import PolicyIndex, PolicyInformer
 from x.agentplane.egress.testing.fake_apiserver import FakeApiServer, fake_apiserver
+from x.agentplane.subjects import ServiceAccountRef
 
 NAMESPACE = "agentplane-policy-test"
 VALID_SET = "reads"

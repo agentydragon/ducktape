@@ -53,13 +53,14 @@ from x.agentplane.action_service.models import (
     Executor,
     Principal,
     PrincipalRole,
-    ServiceAccountRef,
+    service_account_principal,
 )
 from x.agentplane.action_service.oauth import ActionsOAuthProxy, OAuthSettings, running_oauth
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, eligible_callers
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.principal import RejectionReason, SandboxPrincipalRejectedError, SandboxPrincipalResolver
+from x.agentplane.subjects import ServiceAccountRef
 
 CALLBACK = "https://client.example.test/callback"
 SCOPES = "openid email profile offline_access"
@@ -323,7 +324,7 @@ async def test_dcr_consent_pkce_refresh_and_revocation(oauth: OAuthFixture, db_u
     grant = await oauth.proxy.authenticate(tokens["access_token"])
     assert grant is not None
     assert (grant.caller, grant.client_id) == (PERSONAL, client_id)
-    assert grant.principal() == PERSONAL.principal()
+    assert grant.principal() == service_account_principal(PERSONAL)
     assert (await oauth.exchange(client_id, code, verifier)).status_code == 401
     async with make_sessionmaker(engine)() as db:
         stored_values = list(await db.scalars(text("SELECT value::text FROM agentplane_oauth_kv")))

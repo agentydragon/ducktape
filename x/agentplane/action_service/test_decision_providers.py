@@ -482,7 +482,12 @@ async def test_bound_sandbox_is_auto_approved_with_evidence_and_an_execution(
         pytest.param(
             lambda: _index(
                 sets={"bounded-echo": BOUNDED_ECHO},
-                bindings={"coder": {"subject": {"sandbox": {"name": "coder"}}, "policySets": ["bounded-echo"]}},
+                bindings={
+                    "coder": {
+                        "subject": {"sandbox": {"name": "coder", "uid": "coder-uid"}},
+                        "policySets": ["bounded-echo"],
+                    }
+                },
             ),
             id="invalid-binding",
         ),

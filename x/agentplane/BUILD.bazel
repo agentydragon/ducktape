@@ -12,3 +12,14 @@ py_library(
         "@pypi//tenacity",
     ],
 )
+
+py_library(
+    name = "subjects",
+    srcs = ["subjects.py"],
+    # Also the cluster validation that pins both binding CRDs to the key set this discriminates on.
+    visibility = [
+        "//cluster/validation:__pkg__",
+        "//x/agentplane:__subpackages__",
+    ],
+    deps = ["@pypi//pydantic"],
+)

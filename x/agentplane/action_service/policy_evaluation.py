@@ -20,19 +20,13 @@ from x.agentplane.action_service.models import (
     ProviderVerdict,
     SandboxCaller,
     ServiceAccountCaller,
-    ServiceAccountRef,
 )
 from x.agentplane.action_service.policies.kind import Matched, NotMatched
 from x.agentplane.action_service.policies.registry import evaluate
-from x.agentplane.action_service.policies.resources import (
-    ActionPolicyBinding,
-    ActionPolicySet,
-    InvalidResource,
-    SandboxSubject,
-    ServiceAccountSubject,
-)
+from x.agentplane.action_service.policies.resources import ActionPolicyBinding, ActionPolicySet, InvalidResource
 from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.providers import DecisionContext, ResolvedBinding
+from x.agentplane.subjects import SandboxSubject, ServiceAccountRef, ServiceAccountSubject
 
 PROVIDER_NAME = "action_policy_set"
 AUTO_APPROVE_REASON = "policy_set_auto_approve"
@@ -45,11 +39,15 @@ def _names(
     subject: SandboxSubject | ServiceAccountSubject, namespace: str, named: SandboxCaller | ServiceAccountRef
 ) -> bool:
     """Whether a binding in `namespace` with this subject names the caller. A Sandbox is matched by
-    namespace and UID; its name is for humans."""
+    namespace and UID; its name is for humans. `ActionPolicyBinding` requires the UID, so an
+    unpinned subject cannot reach here off the API server and never matches if one does."""
     match subject:
         case SandboxSubject(sandbox=sandbox):
             return (
-                isinstance(named, SandboxCaller) and named.namespace == namespace and named.sandbox_uid == sandbox.uid
+                isinstance(named, SandboxCaller)
+                and named.namespace == namespace
+                and sandbox.uid is not None
+                and named.sandbox_uid == sandbox.uid
             )
         case ServiceAccountSubject(service_account=account):
             return isinstance(named, ServiceAccountRef) and named == account

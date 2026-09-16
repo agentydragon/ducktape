@@ -22,7 +22,6 @@ from x.agentplane.action_service.models import (
     ProviderVerdict,
     SandboxCaller,
     ServiceAccountCaller,
-    ServiceAccountRef,
 )
 from x.agentplane.action_service.policies.resources import (
     ActionPolicyBinding,
@@ -48,6 +47,7 @@ from x.agentplane.action_service.policy_view import (
     subject_view,
 )
 from x.agentplane.action_service.providers import DecisionContext, ResolvedBinding
+from x.agentplane.subjects import ServiceAccountRef
 
 NAMESPACE = "agentplane-test"
 NOW = datetime(2026, 9, 12, 12, 0, tzinfo=UTC)

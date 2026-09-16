@@ -60,6 +60,7 @@ py_library(
     deps = [
         ":kind",
         ":registry",
+        "//x/agentplane:subjects",
         "//x/agentplane/action_service:models",
         "@pypi//pydantic",
     ],
@@ -124,6 +125,7 @@ py_test(
         ":github_repository",
         ":resources",
         "//:conftest",
+        "//x/agentplane:subjects",
         "//x/agentplane/action_service:conftest",
         "//x/agentplane/action_service:models",
         "@pypi//pytest",

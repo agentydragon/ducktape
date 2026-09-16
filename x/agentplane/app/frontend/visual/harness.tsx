@@ -173,7 +173,7 @@ const BINDINGS: BindingView[] = [
   {
     name: "demo-a1b2-7q4xk",
     from_git: false,
-    subjects: ["demo-a1b2"],
+    subjects: [{ kind: "Sandbox", name: "demo-a1b2" }],
     expires_at: ago(2 * HOUR),
     policies: [POLICIES[1]],
     missing_policies: [],
@@ -181,7 +181,7 @@ const BINDINGS: BindingView[] = [
   {
     name: "demo-a1b2-github-public",
     from_git: true,
-    subjects: ["demo-a1b2"],
+    subjects: [{ kind: "Sandbox", name: "demo-a1b2" }],
     expires_at: null,
     policies: [POLICIES[0]],
     missing_policies: [],

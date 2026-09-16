@@ -18,6 +18,9 @@ from x.agentplane.egress.decision_log import DecisionLog
 from x.agentplane.egress.decision_store import Base, DecisionRecordRow, DecisionStore, make_engine
 from x.agentplane.egress.decisions import DecisionRecord, Outcome, Phase
 from x.agentplane.egress.policy import WATCHED_KINDS, Index
+from x.agentplane.subjects import SubjectKind, SubjectView
+
+SUBJECT = SubjectView(kind=SubjectKind.SANDBOX, name="test-sandbox")
 
 
 def record(**values) -> DecisionRecord:
@@ -25,8 +28,8 @@ def record(**values) -> DecisionRecord:
         {
             "producer_id": uuid4(),
             "at": datetime.now(UTC),
-            "sandbox": "test-sandbox",
-            "sandbox_namespace": "test-namespace",
+            "subject": SUBJECT,
+            "subject_namespace": "test-namespace",
             "sandbox_uid": "test-sandbox-uid",
             "source_pod_uid": "test-pod-uid",
             "connection_id": "test-connection",
@@ -68,13 +71,16 @@ async def test_shared_history_survives_replacement_and_repeated_migration(histor
         async with (
             serve_admin(app, "127.0.0.1", 0) as port,
             aiohttp.ClientSession(f"http://127.0.0.1:{port}") as client,
-            client.get("/decisions", params={"sandbox": "test-sandbox"}) as response,
+            client.get("/decisions", params={"kind": SUBJECT.kind, "name": SUBJECT.name}) as response,
         ):
             assert response.status == 200
             rows = [DecisionRecord.model_validate(item) for item in await response.json()]
         assert rows == [a, b]
         assert a.producer_id != b.producer_id
-        assert await replacement.store.recent("absent") == []
+        assert await replacement.store.recent(SubjectView(kind=SubjectKind.SANDBOX, name="absent")) == []
+        assert await replacement.store.recent(SUBJECT.model_copy(update={"kind": SubjectKind.SERVICE_ACCOUNT})) == [], (
+            "the same name under the other kind is a different subject"
+        )
     finally:
         await replacement.close()
 
@@ -97,7 +103,7 @@ async def test_duplicate_acknowledgement_ambiguity(history_db_url: str, monkeypa
     log.record(event)
     try:
         await log.flush()
-        assert await log.store.recent(event.sandbox) == [event]
+        assert await log.store.recent(event.subject) == [event]
         assert calls == 2
         assert log.diagnostics.write_failures == 1
         assert log.diagnostics.acknowledged == 1
@@ -111,7 +117,7 @@ async def test_retention_and_recent_limit(history_db_url: str) -> None:
     current = [record() for _ in range(3)]
     try:
         await store.append([expired, *current])
-        assert await store.recent("test-sandbox") == current[-2:]
+        assert await store.recent(SUBJECT) == current[-2:]
         await store.cleanup()
         async with store.engine.connect() as connection:
             assert await connection.scalar(select(func.count()).select_from(DecisionRecordRow)) == 3

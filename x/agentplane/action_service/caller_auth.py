@@ -1,4 +1,9 @@
-"""Verify the MCP transport's bearer as a Sandbox workload or an external OAuth grant.
+"""Verify the MCP transport's bearer as a workload token or an external OAuth grant.
+
+A workload token proves a Pod; whether a live Sandbox controls that Pod decides which principal it
+is, not whether it is accepted. An agent running as a plain Deployment calls in as the
+ServiceAccount it runs as -- the same principal an OAuth grant acting as that ServiceAccount
+resolves to, so one `ActionPolicyBinding` covers both ways of arriving.
 
 FastMCP runs this verifier on every transport request (`RequireAuthMiddleware` around `/mcp`) and
 hands tools the resulting `CallerToken` through `CurrentAccessToken`; no identity rides on the
@@ -83,7 +88,7 @@ class CallerTokenVerifier(TokenVerifier):
             if self._oauth.targets_issuer(token):
                 return None
         try:
-            principal = workload_principal(await self._sandbox.resolve(token))
+            principal = workload_principal(await self._sandbox.resolve_caller(token))
         except SandboxPrincipalRejectedError:
             return None
         return CallerToken(

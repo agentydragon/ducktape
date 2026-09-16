@@ -52,7 +52,7 @@ from x.agentplane.egress.decision_log import DecisionLog
 from x.agentplane.egress.decisions import Phase
 from x.agentplane.egress.identity import IdentityRejectedError, PodIdentityVerifier
 from x.agentplane.egress.main import Settings
-from x.agentplane.egress.policy import DenyReason, Index
+from x.agentplane.egress.policy import DenyReason, Index, SandboxCaller
 from x.agentplane.egress.proxy import EgressProxyServer, write_interception_ca
 from x.agentplane.egress.resources import TargetMethod, placeholder_of
 from x.agentplane.egress.rules_api import (
@@ -81,6 +81,7 @@ from x.agentplane.egress.testing.fake_apiserver import (
     pod_for,
     policy,
     sandbox,
+    sandbox_uid,
     secret,
 )
 from x.agentplane.egress.testing.replica import kubeconfig, replica
@@ -93,8 +94,9 @@ from x.agentplane.egress.testing.tls import (
     write_ca,
 )
 from x.agentplane.egress.upstream import Address, Network, Pin, UpstreamResolver
-from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
+from x.agentplane.sandbox_auth.http import WorkloadPrincipalAuthenticator
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
+from x.agentplane.subjects import SubjectKind, SubjectView
 
 
 @dataclass
@@ -227,7 +229,12 @@ class ProxyUnderTest:
         policies = [*current["spec"]["policies"]]
         if BASIC_POLICY not in policies:
             policies.append(BASIC_POLICY)
-        self.fake.put(BINDINGS_PLURAL, binding(BINDING, subjects=[{"sandbox": {"name": SANDBOX_A}}], policies=policies))
+        self.fake.put(
+            BINDINGS_PLURAL,
+            binding(
+                BINDING, subjects=[{"sandbox": {"name": SANDBOX_A, "uid": sandbox_uid(SANDBOX_A)}}], policies=policies
+            ),
+        )
         await self.index.wait_for(
             lambda: (
                 WORKLOAD_CREDENTIAL in self.index.credentials
@@ -302,7 +309,7 @@ async def proxy(
     verifier = PodIdentityVerifier(
         authentication=AuthenticationV1Api(api_client),
         core_v1=CoreV1Api(api_client),
-        namespace=SANDBOX_NAMESPACE,
+        namespaces=frozenset({SANDBOX_NAMESPACE}),
         audience=AUDIENCE,
         cache_seconds=60,
     )
@@ -311,7 +318,7 @@ async def proxy(
         await index.wait_for(lambda: index.synced)
         agent_api_port = pick_free_port()
         agent_api = create_rules_app(
-            SandboxPrincipalAuthenticator(
+            WorkloadPrincipalAuthenticator(
                 SandboxPrincipalResolver(
                     authentication=AuthenticationV1Api(api_client),
                     core_v1=CoreV1Api(api_client),
@@ -386,28 +393,32 @@ async def test_rejected_replacement_clears_authenticated_connection_context(
 ) -> None:
     client = connection.Client(peername=(POD_A_IP, 12345), sockname=("127.0.0.1", 8080))
     admitted = authentication_flow(client, f"Bearer {TOKEN_A}")
-    assert (await proxy.addon._sandbox_of(admitted)).metadata.name == SANDBOX_A
+    admitted_caller = await proxy.addon._caller_of(admitted)
+    assert isinstance(admitted_caller, SandboxCaller)
+    assert admitted_caller.sandbox.metadata.name == SANDBOX_A
     assert "proxy-authorization" not in admitted.request.headers
 
     rejected = authentication_flow(client, replacement)
     with pytest.raises(IdentityRejectedError) as refusal:
-        await proxy.addon._sandbox_of(rejected)
+        await proxy.addon._caller_of(rejected)
     assert refusal.value.reason is reason
     assert "proxy-authorization" not in rejected.request.headers
 
     with pytest.raises(IdentityRejectedError) as after:
-        await proxy.addon._sandbox_of(authentication_flow(client, None))
+        await proxy.addon._caller_of(authentication_flow(client, None))
     assert after.value.reason is DenyReason.TOKEN_MISSING
 
 
 async def test_connection_end_clears_authenticated_context(proxy: ProxyUnderTest) -> None:
     client = connection.Client(peername=(POD_A_IP, 12345), sockname=("127.0.0.1", 8080))
-    assert (await proxy.addon._sandbox_of(authentication_flow(client, f"Bearer {TOKEN_A}"))).metadata.name == SANDBOX_A
+    caller = await proxy.addon._caller_of(authentication_flow(client, f"Bearer {TOKEN_A}"))
+    assert isinstance(caller, SandboxCaller)
+    assert caller.sandbox.metadata.name == SANDBOX_A
 
     proxy.addon.client_disconnected(client)
 
     with pytest.raises(IdentityRejectedError) as after:
-        await proxy.addon._sandbox_of(authentication_flow(client, None))
+        await proxy.addon._caller_of(authentication_flow(client, None))
     assert after.value.reason is DenyReason.TOKEN_MISSING
 
 
@@ -435,7 +446,11 @@ async def install_workload_credential(fake: FakeApiServer, proxy: ProxyUnderTest
     )
     fake.put(
         BINDINGS_PLURAL,
-        binding(BINDING, subjects=[{"sandbox": {"name": SANDBOX_A}}], policies=[GITHUB_POLICY, WORKLOAD_POLICY]),
+        binding(
+            BINDING,
+            subjects=[{"sandbox": {"name": SANDBOX_A, "uid": sandbox_uid(SANDBOX_A)}}],
+            policies=[GITHUB_POLICY, WORKLOAD_POLICY],
+        ),
     )
     if bind_b:
         # A faithful second Pod identity reaching the in-process listener from the same loopback
@@ -445,7 +460,7 @@ async def install_workload_credential(fake: FakeApiServer, proxy: ProxyUnderTest
             BINDINGS_PLURAL,
             binding(
                 f"{SANDBOX_B}-{WORKLOAD_POLICY}",
-                subjects=[{"sandbox": {"name": SANDBOX_B}}],
+                subjects=[{"sandbox": {"name": SANDBOX_B, "uid": sandbox_uid(SANDBOX_B)}}],
                 policies=[WORKLOAD_POLICY],
             ),
         )
@@ -655,7 +670,11 @@ async def test_buildbuddy_http_and_grpc_metadata_placeholder_is_substituted(
     )
     fake.put(
         BINDINGS_PLURAL,
-        binding(BINDING, subjects=[{"sandbox": {"name": SANDBOX_A}}], policies=[GITHUB_POLICY, policy_name]),
+        binding(
+            BINDING,
+            subjects=[{"sandbox": {"name": SANDBOX_A, "uid": sandbox_uid(SANDBOX_A)}}],
+            policies=[GITHUB_POLICY, policy_name],
+        ),
     )
     await proxy.index.wait_for(
         lambda: (
@@ -821,7 +840,7 @@ async def test_admin_serves_decisions_and_health(proxy: ProxyUnderTest, decision
     async with aiohttp.ClientSession(f"http://127.0.0.1:{proxy.admin_port}") as admin:
         async with admin.get("/healthz") as health:
             assert (health.status, (await health.json())["synced"]) == (200, True)
-        async with admin.get("/decisions", params={"sandbox": SANDBOX_A}) as listing:
+        async with admin.get("/decisions", params={"kind": "Sandbox", "name": SANDBOX_A}) as listing:
             decisions = await listing.json()
         async with admin.get("/decisions") as listing:
             unidentified = await listing.json()
@@ -846,7 +865,7 @@ async def test_a_sandbox_reads_the_rules_that_apply_to_it(proxy: ProxyUnderTest)
     assert proxy.upstream.requests == []
     assert (RULES_HOST, 80, True) in proxy.resolver.pin_calls
     view = json.loads(response.body)
-    assert view["sandbox"] == SANDBOX_A
+    assert view["subject"] == {"kind": "Sandbox", "name": SANDBOX_A}
     credentials = [rule["credential"] for policy in view["policies"] for rule in policy["rules"]]
     presented = one(c for c in credentials if c is not None and c["placeholder"] == PLACEHOLDER)
     assert presented["placeholder"] == PLACEHOLDER, view
@@ -867,7 +886,7 @@ async def test_a_sandbox_reads_rules_through_its_loopback_sidecar(proxy: ProxyUn
         response = await proxy.get_rules(RULES_PATH, token=None, proxy_port=sidecar.listen_port)
 
     assert response.status == 200, response.body
-    assert json.loads(response.body)["sandbox"] == SANDBOX_A
+    assert json.loads(response.body)["subject"] == {"kind": "Sandbox", "name": SANDBOX_A}
     assert proxy.fake.token_reviews == before + 2, "central and API each validate independently"
     assert proxy.resolver.pin_calls == [(RULES_HOST, 80, True)], "one forward, no recursion"
     assert all(value not in response.body.decode() for value in (TOKEN_A, SECRET_VALUE))
@@ -885,7 +904,7 @@ async def test_rules_identity_ignores_forged_request_headers_and_body(proxy: Pro
     )
 
     assert response.status == 200, response.body
-    assert json.loads(response.body)["sandbox"] == SANDBOX_A
+    assert json.loads(response.body)["subject"] == {"kind": "Sandbox", "name": SANDBOX_A}
 
 
 async def test_the_agent_view_needs_the_same_identity_every_request_does(proxy: ProxyUnderTest) -> None:
@@ -962,7 +981,7 @@ async def test_history_omits_secret_bearing_paths_queries_and_headers(
     )
     assert response.status == 200
     await decision_log.flush()
-    rows = await decision_log.store.recent(SANDBOX_A)
+    rows = await decision_log.store.recent(SubjectView(kind=SubjectKind.SANDBOX, name=SANDBOX_A))
     assert len(rows) == 2
     assert all(row.path is None for row in rows)
     assert rows[0].connection_id == rows[1].connection_id
@@ -1009,7 +1028,7 @@ async def test_existing_tls_connection_rechecks_every_admission(
         assert await get("/public/after") == (403 if state == "revoked" else 502)
         assert len(proxy.upstream.requests) == 1
         await decision_log.flush()
-        rows = await decision_log.store.recent(SANDBOX_A)
+        rows = await decision_log.store.recent(SubjectView(kind=SubjectKind.SANDBOX, name=SANDBOX_A))
         assert len({row.connection_id for row in rows}) == 1
         assert sum(row.phase is Phase.CONNECT for row in rows) == 1
 
@@ -1080,7 +1099,7 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
             await get(second.proxy_port, "recovered-revocation", 403)
             async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.05), reraise=True):
                 with attempt:
-                    rows = await decision_log.store.recent(SANDBOX_A)
+                    rows = await decision_log.store.recent(SubjectView(kind=SubjectKind.SANDBOX, name=SANDBOX_A))
                     assert len({row.producer_id for row in rows}) == 2
                     assert all(
                         len({row.connection_id for row in rows if row.producer_id == producer}) == 1

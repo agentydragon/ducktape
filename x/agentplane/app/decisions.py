@@ -1,6 +1,7 @@
-"""The proxy's recent decisions for a sandbox, read off its cluster-internal admin port.
+"""The proxy's recent decisions for one subject, read off its cluster-internal admin port.
 
-The proxy reads shared PostgreSQL history at `GET /decisions?sandbox=<name>`.
+The proxy reads shared PostgreSQL history at `GET /decisions?kind=<kind>&name=<name>`. A name alone
+would not say which subject: a Sandbox and a ServiceAccount can share one.
 Database read failures are explicit non-success responses, surfaced as DecisionsUnavailableError.
 """
 
@@ -12,6 +13,8 @@ from enum import StrEnum
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
+
+from x.agentplane.subjects import SubjectView
 
 logger = logging.getLogger(__name__)
 
@@ -51,11 +54,11 @@ class DecisionsClient:
     def __init__(self, http: httpx.AsyncClient):
         self._http = http
 
-    async def recent(self, sandbox: str) -> list[Decision]:
+    async def recent(self, subject: SubjectView) -> list[Decision]:
         try:
-            response = await self._http.get("/decisions", params={"sandbox": sandbox})
+            response = await self._http.get("/decisions", params={"kind": subject.kind, "name": subject.name})
             response.raise_for_status()
         except httpx.HTTPError as error:
-            logger.warning("egress proxy decisions unavailable for %s: %s", sandbox, error)
+            logger.warning("egress proxy decisions unavailable for %s %s: %s", subject.kind, subject.name, error)
             raise DecisionsUnavailableError(f"the egress proxy did not answer: {error}") from error
         return [Decision.model_validate(item) for item in response.json()]

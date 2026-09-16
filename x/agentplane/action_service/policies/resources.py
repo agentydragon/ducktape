@@ -12,13 +12,14 @@ service needs them.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Annotated, Any, Literal
+from typing import Any, Literal
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Discriminator, Field, Tag, ValidationError
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from x.agentplane.action_service.models import NamespacedName, ServiceAccountRef
+from x.agentplane.action_service.models import NamespacedName
 from x.agentplane.action_service.policies.kind import Spec
 from x.agentplane.action_service.policies.registry import Policy
+from x.agentplane.subjects import SandboxSubject, Subject
 
 GROUP = "agentplane.allegedly.works"
 VERSION = "v1alpha1"
@@ -98,40 +99,6 @@ class ActionPolicySet(_Namespaced):
     status: Status = Field(default_factory=Status)
 
 
-class SandboxRef(Spec):
-    name: str = Field(min_length=1)
-    uid: str = Field(min_length=1, description="Pins the live Sandbox; a binding whose Sandbox is gone is inert.")
-
-
-class ServiceAccountSubject(Spec):
-    service_account: ServiceAccountRef = Field(alias="serviceAccount")
-
-
-class SandboxSubject(Spec):
-    sandbox: SandboxRef
-
-
-def _subject_kind(value: Any) -> str | None:
-    """Which one-key form the subject takes; both keys at once fails as an extra field on the chosen one."""
-    if isinstance(value, ServiceAccountSubject):
-        return "serviceAccount"
-    if isinstance(value, SandboxSubject):
-        return "sandbox"
-    if isinstance(value, dict):
-        for key in ("serviceAccount", "service_account"):
-            if key in value:
-                return "serviceAccount"
-        if "sandbox" in value:
-            return "sandbox"
-    return None
-
-
-Subject = Annotated[
-    Annotated[ServiceAccountSubject, Tag("serviceAccount")] | Annotated[SandboxSubject, Tag("sandbox")],
-    Discriminator(_subject_kind),
-]
-
-
 class BindingSpec(Spec):
     subject: Subject
     policy_sets: list[str] = Field(
@@ -140,6 +107,17 @@ class BindingSpec(Spec):
     expires_at: AwareDatetime | None = Field(
         default=None, alias="expiresAt", description="After this instant the binding contributes nothing."
     )
+
+    @model_validator(mode="after")
+    def _sandbox_subject_is_pinned(self) -> BindingSpec:
+        """This service matches a Sandbox caller by UID, so an unpinned Sandbox subject could never
+        grant anything. The CRD requires the UID and the shared model tolerates its absence, because
+        `EgressBinding` does not need it; refusing it here is what keeps such a binding reported as
+        invalid rather than silently inert, which is what this whole parse is strict for.
+        """
+        if isinstance(self.subject, SandboxSubject) and self.subject.sandbox.uid is None:
+            raise ValueError("a Sandbox subject must name the UID it is bound to")
+        return self
 
 
 class ActionPolicyBinding(_Namespaced):

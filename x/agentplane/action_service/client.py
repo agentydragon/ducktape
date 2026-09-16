@@ -26,9 +26,9 @@ from x.agentplane.action_service.models import (
     ActionState,
     CancellationResult,
     DecisionInput,
-    ServiceAccountRef,
 )
 from x.agentplane.action_service.policy_view import CallerActionPolicyView, SubjectActionPolicyView
+from x.agentplane.subjects import ServiceAccountRef
 
 WORKLOAD_CREDENTIAL_PLACEHOLDER = "agentplane-credential-agentplane-workload"
 

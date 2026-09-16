@@ -113,10 +113,13 @@ def client(
     )
     custom_objects.objects[("egresspolicies", "pypi")] = egress_policy("pypi", [{"hosts": ["pypi.org"]}])
     custom_objects.objects[("egressbindings", "live-seeded")] = egress_binding(
-        "live-seeded", subjects=[{"sandbox": {"name": "live"}}], policies=["github"], active=("True", "Resolved", "")
+        "live-seeded",
+        subjects=[{"sandbox": {"name": "live", "uid": "live-uid"}}],
+        policies=["github"],
+        active=("True", "Resolved", ""),
     )
     custom_objects.objects[("egressbindings", "live-granted")] = egress_binding(
-        "live-granted", subjects=[{"sandbox": {"name": "live"}}], policies=["pypi"], from_git=False
+        "live-granted", subjects=[{"sandbox": {"name": "live", "uid": "live-uid"}}], policies=["pypi"], from_git=False
     )
     custom_objects.objects[("actionpolicysets", "github-reads")] = action_policy_set(
         "github-reads",
@@ -525,7 +528,7 @@ def test_granting_a_running_sandbox_adds_a_binding_and_leaves_the_others(
 
     assert granted.status_code == 201, granted.text
     binding = granted.json()
-    assert (binding["subjects"], binding["from_git"]) == (["live"], False)
+    assert (binding["subjects"], binding["from_git"]) == ([{"kind": "Sandbox", "name": "live"}], False)
     assert [policy["name"] for policy in binding["policies"]] == ["pypi", "github"]
     # Owned by the Sandbox, so deleting the sandbox takes the grant with it.
     (owner,) = custom_objects.objects[("egressbindings", binding["name"])]["metadata"]["ownerReferences"]
@@ -565,7 +568,7 @@ def test_a_grant_naming_a_policy_that_does_not_exist_is_refused(
 
 
 def test_egress_decisions_come_from_the_proxy(client: TestClient, egress_admin: FakeEgressAdmin) -> None:
-    egress_admin.decisions["live"] = [
+    egress_admin.decisions[("Sandbox", "live")] = [
         decision("2026-09-02T10:00:00Z", "CONNECT", "api.github.com", None, "allow"),
         decision("2026-09-02T10:00:01Z", "GET", "api.github.com", "/repos/x/y", "allow", address="140.82.116.5"),
         decision("2026-09-02T10:00:02Z", "POST", "pypi.org", "/simple/", "deny", reason="no-rule"),
@@ -581,9 +584,11 @@ def test_egress_decisions_come_from_the_proxy(client: TestClient, egress_admin: 
     ]
     # The proxy resolves and pins the host itself; the address it dialled reaches the page.
     assert [d["address"] for d in response.json()] == [None, "140.82.116.5", None]
-    assert egress_admin.queries == ["live"]
+    assert egress_admin.queries == [("Sandbox", "live")], (
+        "the route asks for the Sandbox of that name, not the name alone"
+    )
     assert client.get("/sandboxes/nope/egress/decisions").status_code == 404
-    assert egress_admin.queries == ["live"]
+    assert egress_admin.queries == [("Sandbox", "live")]
 
 
 def test_egress_decisions_are_502_when_the_proxy_is_unreachable(

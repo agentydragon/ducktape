@@ -2,8 +2,8 @@
 
 `EgressPolicy`, `EgressBinding` and `EgressCredential` are Agentplane's own kinds (group
 `agentplane.allegedly.works`, `v1alpha1`; the CRDs live in `cluster/k8s/agentplane-crds`).
-`Sandbox` is the subject kind the bindings name, and `Secret` holds the credentials the rules
-substitute, in the credentials namespace. Only the fields the proxy reads are modelled; everything
+A binding names its subjects as a `Sandbox` or as a ServiceAccount, and `Secret` holds the
+credentials the rules substitute, in the credentials namespace. Only the fields the proxy reads are modelled; everything
 else on the wire is ignored.
 """
 
@@ -15,6 +15,8 @@ from typing import Annotated, Literal
 
 from kubernetes_asyncio import client as k8s_client
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
+
+from x.agentplane.subjects import Subject
 
 GROUP = "agentplane.allegedly.works"
 VERSION = "v1alpha1"
@@ -185,14 +187,6 @@ class PolicySpec(_Wire):
 class EgressPolicy(_Wire):
     metadata: ObjectMeta
     spec: PolicySpec
-
-
-class SandboxRef(_Wire):
-    name: str
-
-
-class Subject(_Wire):
-    sandbox: SandboxRef
 
 
 class BindingSpec(_Wire):

@@ -26,7 +26,7 @@ from x.agentplane.egress.policy import STALE_AFTER_CYCLES, Index
 from x.agentplane.egress.proxy import EgressProxyServer, write_interception_ca
 from x.agentplane.egress.rules_api import RulesProjection, create_rules_app, serve_rules_api
 from x.agentplane.egress.upstream import UpstreamResolver
-from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
+from x.agentplane.sandbox_auth.http import WorkloadPrincipalAuthenticator
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 
 logger = logging.getLogger(__name__)
@@ -45,6 +45,12 @@ class Settings(BaseSettings):
     credentials_namespace: str = Field(
         default="agentplane-egress-credentials", description="Namespace the rules' Secrets are read from."
     )
+    workload_namespaces: frozenset[str] = Field(
+        default=frozenset(),
+        description="Further namespaces whose ServiceAccounts may authenticate, beyond the sandbox namespace, which "
+        "is always accepted. An agent this cluster does not host runs where it runs; naming its namespace here is "
+        "what lets it present a token at all, and grants it nothing on its own.",
+    )
     listen_host: str = Field(default="0.0.0.0", description="Proxy listener bind address.")
     listen_port: int = Field(default=8888, description="Proxy listener port the sidecars relay to.")
     admin_host: str = Field(default="0.0.0.0", description="Admin listener bind address.")
@@ -56,6 +62,13 @@ class Settings(BaseSettings):
     confdir: Path = Field(description="Writable directory mitmproxy keeps its CA and issued leaves in.")
     token_audience: str = Field(default="agentplane-egress", description="Audience of the sidecars' projected tokens.")
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
+
+    @property
+    def authenticating_namespaces(self) -> frozenset[str]:
+        """Every namespace a bearer may come from. The sandbox namespace is not optional: it is where
+        the Pods this proxy exists for run."""
+        return self.workload_namespaces | {self.sandbox_namespace}
+
     resync_seconds: int = Field(default=300, gt=0, description="Watch lifetime; every kind is relisted this often.")
     identity_cache_seconds: float = Field(default=60, description="Upper bound on how long a token verdict is kept.")
     database_url: str = Field(repr=False, description="Shared diagnostic PostgreSQL database; migrated separately.")
@@ -118,7 +131,7 @@ async def async_main(settings: Settings) -> None:
         verifier = PodIdentityVerifier(
             authentication=authentication,
             core_v1=core_v1,
-            namespace=settings.sandbox_namespace,
+            namespaces=settings.authenticating_namespaces,
             audience=settings.token_audience,
             cache_seconds=settings.identity_cache_seconds,
         )
@@ -131,12 +144,12 @@ async def async_main(settings: Settings) -> None:
             stale_after_seconds=settings.resync_seconds * STALE_AFTER_CYCLES,
         )
         rules_app = create_rules_app(
-            SandboxPrincipalAuthenticator(
+            WorkloadPrincipalAuthenticator(
                 SandboxPrincipalResolver(
                     authentication=authentication,
                     core_v1=core_v1,
                     audience=settings.token_audience,
-                    allowed_service_account_namespaces=frozenset({settings.sandbox_namespace}),
+                    allowed_service_account_namespaces=settings.authenticating_namespaces,
                 )
             ),
             RulesProjection(index),

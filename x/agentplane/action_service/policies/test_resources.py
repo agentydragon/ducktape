@@ -16,11 +16,10 @@ from x.agentplane.action_service.policies.resources import (
     ActionPolicyBinding,
     ActionPolicySet,
     InvalidResource,
-    SandboxSubject,
-    ServiceAccountSubject,
     parse_binding,
     parse_policy_set,
 )
+from x.agentplane.subjects import SandboxSubject, ServiceAccountSubject
 
 METADATA = {
     "name": "test-object",

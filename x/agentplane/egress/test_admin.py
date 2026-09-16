@@ -117,7 +117,7 @@ async def test_binding_observations_are_local_and_derived_at_read_time(
     index.bindings["test-binding"] = EgressBinding.model_validate(
         binding(
             "test-binding",
-            subjects=[{"sandbox": {"name": "test-sandbox"}}],
+            subjects=[{"sandbox": {"name": "test-sandbox", "uid": "test-sandbox-uid"}}],
             policies=["test-policy", "test-absent"],
             expires_at=(STARTED + timedelta(seconds=10)).isoformat(),
         )

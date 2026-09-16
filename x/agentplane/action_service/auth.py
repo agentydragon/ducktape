@@ -7,8 +7,9 @@ import hmac
 from pathlib import Path
 from typing import Protocol
 
-from x.agentplane.action_service.models import Principal, PrincipalRole, SandboxCaller
-from x.agentplane.sandbox_auth.principal import SandboxPrincipal
+from x.agentplane.action_service.models import Principal, PrincipalRole, SandboxCaller, service_account_principal
+from x.agentplane.sandbox_auth.principal import SandboxPrincipal, WorkloadPrincipal
+from x.agentplane.subjects import ServiceAccountRef
 
 
 class OperatorAuthenticator(Protocol):
@@ -54,6 +55,16 @@ class ConfiguredOperatorBearerAuthenticator:
         return Principal(issuer="configured-operator", subject=self._subject, role=PrincipalRole.OPERATOR)
 
 
-def workload_principal(principal: SandboxPrincipal) -> Principal:
-    """Derive durable ownership only from the destination-resolved live Sandbox identity."""
-    return SandboxCaller(namespace=principal.namespace, sandbox_uid=principal.sandbox_uid).principal()
+def workload_principal(principal: WorkloadPrincipal) -> Principal:
+    """Derive durable ownership from what the token actually proved.
+
+    A Pod a live Sandbox controls is owned by that Sandbox, keyed by its UID so a replacement
+    Sandbox of the same name is a different caller. A Pod no Sandbox controls -- an agent running
+    as a plain Deployment -- is owned by the ServiceAccount it runs as, which is the same principal
+    an external OAuth grant acting as that ServiceAccount resolves to.
+    """
+    if isinstance(principal, SandboxPrincipal):
+        return SandboxCaller(namespace=principal.namespace, sandbox_uid=principal.sandbox_uid).principal()
+    return service_account_principal(
+        ServiceAccountRef(namespace=principal.namespace, name=principal.service_account_name)
+    )
