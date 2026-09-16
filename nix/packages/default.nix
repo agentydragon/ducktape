@@ -104,6 +104,9 @@ let
         py-key-value-aio = pkgs.callPackage ./py-key-value-aio.nix {
           python314Packages = pyfinal;
         };
+        uncalled-for = pkgs.callPackage ./uncalled-for.nix {
+          python314Packages = pyfinal;
+        };
         idna = pkgs.callPackage ./idna.nix {
           python3Packages = pyfinal;
         };
