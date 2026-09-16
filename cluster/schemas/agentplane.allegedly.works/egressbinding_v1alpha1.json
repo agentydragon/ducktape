@@ -16,7 +16,7 @@
             "maxProperties": 1,
             "properties": {
               "sandbox": {
-                "description": "One Sandbox in the binding's namespace, by name.",
+                "description": "One Sandbox by name, resolved in the workload namespace the enforcing deployment serves (`--sandbox-namespace`), which need not be this binding's own namespace.",
                 "type": "object",
                 "required": ["name"],
                 "properties": {
@@ -27,7 +27,7 @@
                 }
               },
               "serviceAccount": {
-                "description": "One ServiceAccount in the proxy's namespace, by name: a workload no Sandbox owns, such as a Deployment. Not lifecycle-bound the way a Sandbox subject is -- every Pod running as it is this subject -- so bind only a ServiceAccount dedicated to one workload.",
+                "description": "One ServiceAccount by name, resolved in the same workload namespace (`--sandbox-namespace`) a Sandbox subject is: a workload no Sandbox owns, such as a Deployment. Not lifecycle-bound the way a Sandbox subject is -- every Pod running as it is this subject -- so bind only a ServiceAccount dedicated to one workload.",
                 "type": "object",
                 "required": ["name"],
                 "properties": {
