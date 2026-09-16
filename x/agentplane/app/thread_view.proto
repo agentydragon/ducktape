@@ -25,7 +25,6 @@ package ducktape.agentplane.app.v1;
 
 import "x/agentplane/protocol/command.proto";
 import "x/agentplane/protocol/event.proto";
-import "x/agentplane/protocol/event_log.proto";
 
 // How far a projection covers, in the original source's cursor space.
 message Position {
@@ -281,26 +280,6 @@ enum Availability {
   AVAILABILITY_RETAINED = 1;
   AVAILABILITY_NOT_YET_ARCHIVED = 2;
   AVAILABILITY_LOST = 3;
-}
-
-message EventsPage {
-  repeated ducktape.agentplane.protocol.v1.EventEntry entries = 1;
-  // The original range actually scanned, which bounds what an empty page proves and is where the
-  // caller resumes from.
-  uint64 scanned_after_cursor = 2;
-  uint64 scanned_through_cursor = 3;
-  bool exhausted = 4;
-  Availability availability = 5;
-}
-
-message EventLookupEntry {
-  ducktape.agentplane.protocol.v1.EventOrigin origin = 1;
-  ducktape.agentplane.protocol.v1.EventEntry entry = 2;
-  Availability availability = 3;
-}
-
-message EventsByOrigin {
-  repeated EventLookupEntry entries = 1;
 }
 
 // The whole value at an immutable reference. Reading one never advances the caller's Position.

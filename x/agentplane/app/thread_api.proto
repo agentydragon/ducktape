@@ -46,8 +46,9 @@ syntax = "proto3";
 // left. Only a gap past the retained journal forces a rebootstrap, and that returns whole values.
 //
 // Everything else is a demand read that never moves the caller's Position: ListSegments for older
-// history, ReadPayload for a tool output the reader expanded, ThreadEventsService for exact
-// evidence, and GetCommands to reconcile a Command whose Submit response was lost.
+// history, ReadPayload for a tool output the reader expanded, and GetCommands to reconcile a
+// Command whose Submit response was lost. Exact original Events are a separate service, in
+// x/agentplane/app/thread_events.proto.
 //
 // Every method is unary or server-streaming. Commands are independent unary calls and subscriptions
 // resume from an explicit cursor, so no client or bidirectional stream is needed and a dropped
@@ -161,32 +162,4 @@ service ThreadCommandService {
   rpc Submit(SubmitRequest) returns (ducktape.agentplane.protocol.v1.EventEntry);
   rpc ListPendingCommands(ListPendingCommandsRequest) returns (CommandsPage);
   rpc GetCommands(GetCommandsRequest) returns (CommandLookup);
-}
-
-message ListEventsRequest {
-  string thread_id = 1;
-  string source_id = 2;
-  // Exclusive original cursor. The page reports the range it scanned, which is where to resume.
-  uint64 after_cursor = 3;
-  optional uint64 through_cursor = 4;
-  uint32 max_entries = 5;
-}
-
-message GetEventsRequest {
-  string thread_id = 1;
-  repeated ducktape.agentplane.protocol.v1.EventOrigin origins = 2;
-}
-
-message FollowEventsRequest {
-  string thread_id = 1;
-  string source_id = 2;
-  ducktape.agentplane.protocol.v1.Follow follow = 3;
-}
-
-// Exact retained evidence. Reading it never moves the conversation checkpoint, and following it is
-// an explicit debugging choice rather than anything normal mode requires.
-service ThreadEventsService {
-  rpc ListEvents(ListEventsRequest) returns (EventsPage);
-  rpc GetEvents(GetEventsRequest) returns (EventsByOrigin);
-  rpc FollowEvents(FollowEventsRequest) returns (stream ducktape.agentplane.protocol.v1.EventEntry);
 }

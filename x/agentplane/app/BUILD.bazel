@@ -28,7 +28,6 @@ proto_library(
     visibility = ["//visibility:public"],
     deps = [
         "//x/agentplane/protocol:command_proto",
-        "//x/agentplane/protocol:event_log_proto",
         "//x/agentplane/protocol:event_proto",
     ],
 )
@@ -47,7 +46,6 @@ ts_proto_library(
     visibility = ["//visibility:public"],
     deps = [
         "//x/agentplane/protocol:command_pb",
-        "//x/agentplane/protocol:event_log_pb",
         "//x/agentplane/protocol:event_pb",
     ],
 )
