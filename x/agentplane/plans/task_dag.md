@@ -40,8 +40,8 @@ Proposed execution order for the Thread correctness/UI track:
 
 The independent Action Service track still has credentialed-provider acceptance (`MCPAUTH`),
 console policy parity (`CONSOLE_POLICIES`), and Haku MCP/tool-approval retirement (`MCPAGG`,
-`RETIRE_TOOLS`). Transcript search/lookup (`T3`) and Agent/conversation retirement (`RETIRE_AGENT`)
-remain deferred. Priority is not a dependency between these tracks.
+`RETIRE_TOOLS`). Transcript search/lookup (`T3`) remains deferred. Priority is not a dependency
+between these tracks.
 
 ## DAG
 
@@ -54,20 +54,14 @@ flowchart TB
 
     MCPAUTH["Remaining acceptance<br/>credentialed MCP account<br/>refresh, rotation, Kubernetes provider"]:::active
     ELEVATE["Planned behavior<br/>agent-requested temporary permission<br/>ServiceAccount and Sandbox callers, operator-approved"]:::future
-    FORK["Deferred design<br/>per-task identity fork<br/>sub-identity scoped by token possession"]:::future
     MCPAGG["Deferred migration<br/>replace Haku Console MCP aggregator<br/>inventory and migrate Haku workflows"]:::future
-    SSHDURABLE["Deferred support<br/>systemd-backed durable processes<br/>host daemon + signals/output"]:::future
-    RETIRE_AGENT["Deferred migration<br/>retire Haku Console Agent/<br/>conversation management"]:::future
     RETIRE_TOOLS["Deferred migration<br/>retire Haku Console tool-call/<br/>approval management"]:::future
     INPUT_DELIVERY["Remaining native evidence<br/>input/interrupt/recovery gaps<br/>exact upstream requests and queue fates"]:::active
     T3["Deferred product work<br/>trajectory search and lookup<br/>later prioritization"]:::future
     PC_EGRESS["Milestone<br/>public-coder-agent egress migration<br/>prod Agentplane proxy"]:::milestone
-    PROFILES["Deferred decision<br/>capability profiles<br/>Rai design confirmation required"]:::future
     ACCESS["Deferred design<br/>delegated vs brokered external access<br/>grants and revocation"]:::future
     EGRESS_CHANGE["Deferred design<br/>agent-requested egress<br/>policy expansion"]:::future
-    LIVE_CLEAN["Deferred cleanup<br/>executor heartbeat identity/<br/>row retention"]:::future
 
-    BB["Deferred decision<br/>BuildBuddy hosted-run credential boundary"]:::future
     ING["Deferred support<br/>Event & Notification Hub<br/>Action decisions and subscribed external events -> Thread ingress"]:::future
     DT["P2 deferred<br/>driver-provided declarations/background control"]:::future
     AG["Deferred<br/>hosted Thread lifecycle<br/>cross-Identity read policy"]:::future
@@ -76,7 +70,6 @@ flowchart TB
     CONNECTION_SA_REBIND["Planned mutation<br/>rebind a Connection's ServiceAccount in place<br/>no mutation exists; only a fresh OAuth consent does"]:::future
     SANDBOX_SA["Deferred design<br/>one ServiceAccount per Sandbox<br/>a native Kubernetes identity to separate and grant on"]:::future
     SANDBOX_RBAC["Planned Kubernetes access<br/>Sandbox permissions and lifecycle<br/>individually editable, optionally preset"]:::future
-    DENY_LISTS["Deferred behavior<br/>autoDenyIf / autoDenyUnless<br/>when an Action needs them"]:::future
     CONSOLE_POLICIES["Deferred migration<br/>console auto-approval policies not yet sets<br/>each needs an ActionGroup, a kind, or DENY_LISTS"]:::future
 
     UISHELL_DRAWER["Planned UI<br/>pending-approval badge + drawer<br/>global subscription, non-modal"]:::future
@@ -91,7 +84,6 @@ flowchart TB
     THREAD_EVENT_CONTINUITY["Planned identity cutover<br/>one Thread journal across incarnations<br/>exclusive runner writer and retained state"]:::future
     THREAD_COMMAND_DELIVERY["Deferred backend<br/>app outbox delivery to existing runner<br/>only if app-first acceptance is chosen later"]:::future
     THREAD_VIEW_SYNC["P1 design gate<br/>derived conversation snapshot + updates<br/>on-demand Raw and state ownership"]:::decision
-    THREAD_VIEW_TRANSPORT["P1 validation<br/>standard Bazel protobuf RPC generation<br/>browser-to-Python auth and streaming"]:::future
     THREAD_VIEW_PROJECTION["Planned backend<br/>pure projection and transactional read model<br/>bounded update journal and rebuild"]:::future
     THREAD_VIEW_RPC["Planned API<br/>snapshot, changes, history, payload and evidence<br/>cross-replica synchronization"]:::future
     THREAD_TAIL_FIRST["Planned performance<br/>recent reduced items, not old token replay<br/>bounded short and long Thread loads"]:::future
@@ -112,22 +104,16 @@ flowchart TB
     NEWTHREAD_DURABLE["Deferred combined workflow<br/>server-owned sandbox+thread provisioning<br/>survive browser close and app restart"]:::future
     THREAD_OUTBOX_CUTOVER["Deferred cutover<br/>all product commands via app outbox if chosen<br/>no competing relay path"]:::future
     THREAD_SUCCESSOR_DELIVERY["Deferred decision<br/>unsettled Thread command across<br/>successor runner session"]:::future
-    CONTROL_STATE["Deferred decision<br/>dynamic runtime control state<br/>model/effort acceptance"]:::future
-    THREAD_BROWSE_PAGINATE["Deferred, way later<br/>paginated/searchable all-threads page<br/>find an old Thread once the sidebar list outgrows it"]:::future
     NO_MANUAL_REFRESH["Planned principle<br/>no page in the app needs a Refresh button<br/>push (WS or SSE) everywhere, not just Sandboxes/Actions"]:::future
     ACTION_JSON_POLISH["Planned UI polish<br/>parse MCP content blocks in Action results<br/>rest landed via #6303 (#6309 open)"]:::future
 
     MCPAUTH --> PROD
     EGRESS_IDENTITY_AVAILABILITY --> THREAD_DEPLOYED_ACCEPTANCE
-    ELEVATE --> FORK
     MCPAGG -. replacement surface .-> RETIRE_TOOLS
     CONSOLE_POLICIES -. policy parity .-> RETIRE_TOOLS
-    AG -. hosted Thread lifecycle .-> RETIRE_AGENT
 
     INPUT_DELIVERY -. reliable Thread ingress .-> ING
-    THREAD_VIEW_SYNC --> THREAD_VIEW_TRANSPORT
     THREAD_VIEW_SYNC --> THREAD_VIEW_PROJECTION
-    THREAD_VIEW_TRANSPORT --> THREAD_VIEW_RPC
     THREAD_VIEW_PROJECTION --> THREAD_VIEW_RPC
     THREAD_VIEW_RPC --> THREAD_TAIL_FIRST
     THREAD_VIEW_RPC --> THREAD_PAYLOAD_LAZY
@@ -227,14 +213,6 @@ eventually, flagged now only so the with-sandboxes endpoint isn't assumed to sta
 call forever. Stable Thread pages already replay archived history after Sandbox deletion; their
 identity and operational-state boundary is specified in [Thread layering](../docs/thread_layering.md).
 
-### `BB` — BuildBuddy hosted-run credential boundary
-
-**Deferred decision:** accept the weaker hosted-runner boundary — a narrow `runner.RunRequest`
-rewrite that keeps the real key out of the local Sandbox but hands it to agent-controlled code on
-BuildBuddy's runner — or wait for a stronger seam (a per-run BuildBuddy credential or a run-scoped
-gateway). The boundary, wire shape and required evidence are in
-[`buildbuddy_remote_auth.md`](../docs/buildbuddy_remote_auth.md).
-
 ### `EGRESS_CHANGE` — agent-requested egress policy expansion
 
 **Deferred design:** define how an agent can request an expansion or change to its egress rules.
@@ -326,17 +304,6 @@ Cover independent grants for two Sandboxes, inspection of effective access, revo
 and reconciliation failure, suspend/resume, deletion/name reuse, and orphan-grant
 cleanup. Preset edits must not silently widen existing Sandboxes' grants. Verify the
 chosen credential boundary without exposing privileged credentials in evidence.
-
-### `DENY_LISTS` — `autoDenyIf` and `autoDenyUnless`
-
-**Deferred behavior:** an `ActionPolicySet` carries three lists and only `autoApproveIf` decides
-today; the CRD accepts `autoDenyIf` and `autoDenyUnless` and evaluation ignores them. Their
-semantics are settled in the [action policies design](../docs/action_policies.md): a request matching any
-`autoDenyIf` policy is auto-denied, one matching none of the `autoDenyUnless` policies is
-auto-denied, deny wins over approve, and a request matching nothing takes the human path.
-`autoDenyIf` first, when an Action needs it; `autoDenyUnless` later. Nothing waits on this; the
-console policies that need it (schema misses recorded as denied Decisions, the disabled kubectl
-passthrough redundancy check) are under `CONSOLE_POLICIES`.
 
 ### `CONSOLE_POLICIES` — console auto-approval policies without a set
 
@@ -555,33 +522,12 @@ evaluated like any other, once per subsequent Action at admission. Prove: a Sand
 the operator approves, the next matching Action auto-approves and the Decision names the new
 binding; the same request from a different subject grants nothing to the requester; expiry ends it.
 
-### `FORK` — per-task identity fork
-
-**Deferred design:** a wide ServiceAccount-bound identity such as "Claude Code web via OIDC" may
-serve several concurrent agent threads managed outside Agentplane. An agent forks its identity into
-a per-task sub-identity, requests permission for that sub-identity through `ELEVATE`, and uses the
-sub-identity's credential for the task. Scope then follows possession of that credential: a thread
-that never receives it never gains the permission. Open questions: how a sub-identity is
-represented (a derived ServiceAccount, or a child Connection under the parent's OAuth grant),
-whether the parent's permissions flow down, and how the sub-identity ends. Low priority; nothing
-else depends on it.
-
 ### `T3` — trajectory search and lookup
 
 **Deferred product work:** search and look up stored trajectories at a later product-planning point.
 This is technically independent of the MCP facade, but it is intentionally not in the current work
 sequence. Existing transcript persistence and unrelated lifecycle reliability work are not
 reclassified as search implementation by this deferral.
-
-### `PROFILES` — cross-cutting capability profiles
-
-**Deferred decision — Rai confirmation required:** define a durable authority for capabilities shared by egress, approvals, MCP
-reachability, and other tool permissions. Do not widen the landed launch-preset slice merely to
-reserve the concept; Kubernetes remains a storage candidate, and the profile owner, inheritance, and policy
-read/verification boundary remain open. Do not start implementation before the design is confirmed.
-
-**Acceptance evidence:** one profile can be resolved consistently by each participating authority,
-with explicit precedence and negative tests for stale, cross-Agent, or caller-supplied profile names.
 
 ### `ACCESS` — delegated versus brokered external access
 
@@ -632,38 +578,6 @@ credential requirements remain adapter-specific. The initial facade uses generic
 per-Action projection may never be needed and is not required for migration. Actual generic-client
 evidence determines whether to explore it. The migration order remains open.
 Tool-call/approval management retirement remains the separate `RETIRE_TOOLS` milestone.
-
-### `SSHDURABLE` — durable SSH-backed processes
-
-**Deferred support:** the `ssh-mcp` server behind the MCP Executor runs one-shot commands; for
-processes that must survive an SSH disconnect, add a small `agentplane-execd` host component for
-`rugged` and `wyrm2`. SSH still authenticates as the configured target user; an
-unprivileged stdio client forwards structured requests over a local Unix socket to a root-owned
-daemon. The daemon derives the execution user from kernel Unix-socket peer credentials and does not
-accept a requested-user field. It delegates process lifetime, cgroups, signals, and unit status to
-the host systemd system manager, so user lingering is not required.
-
-The daemon's durable handle is a systemd transient unit derived from the Agentplane Execution ID.
-Future code-owned Actions may start, inspect, read bounded output from, signal, and terminate that
-unit. Agentplane remains authoritative for Action schemas, approval, caller control rights, durable
-Execution state, leases, and unknown-outcome reconciliation; the daemon is only a constrained
-systemd adapter. See [the durable SSH process plan](ssh_durable_processes.md) for the protocol and
-acceptance boundaries. Do not add this daemon, PTYs, or stdin streaming to the first one-shot implementation.
-
-### `LIVE_CLEAN` — executor heartbeat retention cleanup
-
-**Deferred cleanup:** executor liveness currently creates one heartbeat identity row per coordinator
-process lifetime. Once deployment scale makes that accumulation meaningful, choose a stable executor
-identity or bounded expiry/compaction policy and add retention tests; do not change the exactly-one
-claim or unknown-outcome semantics while doing so.
-
-### `RETIRE_AGENT` — Haku Console Agent/conversation management migration
-
-**Deferred migration:** retire Haku Console's own Agent and conversation management only after
-Agentplane has the external Identity, durable Thread lifecycle, conversation read/control, and
-replacement runtime surfaces required by Haku. This is a migration and decommissioning milestone,
-not a prerequisite for Action execution; preserve explicit read/export and rollback evidence before
-removing the old owner.
 
 ### `RETIRE_TOOLS` — Haku Console tool-call and approval management migration
 
@@ -875,8 +789,7 @@ requires beyond the staging deployment is not defined.
 
 **Deferred:** the hosted Agent/Thread model beyond today's Sandbox-bound Threads: a durable Thread
 lifecycle that outlives a Sandbox, conversation read and control surfaces, and an explicit policy
-for reading across Identities, which `ING` needs for cross-Identity delivery. Nothing waits on it
-except `RETIRE_AGENT`, whose replacement runtime it is.
+for reading across Identities, which `ING` needs for cross-Identity delivery.
 
 ### `DT` — driver-provided declarations and background control
 
@@ -884,15 +797,6 @@ except `RETIRE_AGENT`, whose replacement runtime it is.
 background work, but any such runner surface reuses the Action Service contracts rather than a
 second tool-request lifecycle; the settled harness behavior and the seam are in
 [driver tools and background work](driver_tools_and_background.md).
-
-### `CONTROL_STATE` — dynamic runtime control acceptance
-
-**Deferred native-capability work:** the admission/effect contract, display of an
-admitted-but-not-effective model change, and any future time-local capability snapshot
-are specified in [Thread, runner, and harness layering](../docs/thread_layering.md#command-protocol-intent-admission-then-outcome).
-The harness-specific evidence still needed for model/effort capability reporting is in
-[runtime control acceptance](../docs/runtime_control.md). Do not introduce an app-side
-common active-turn gate or make the picker claim success before a causal effect.
 
 ### `ING` — Event & Notification Hub
 
@@ -1006,17 +910,6 @@ Keep the runner/app/UI production path unchanged. Report fit and gaps, then sele
 the integration; Redux Toolkit with RTK Query is the fallback, not a simultaneous
 second implementation. Library behavior alone is not deployed loading acceptance;
 React rendering, page-buffer reconciliation and transport remain separate tests.
-
-### `THREAD_VIEW_TRANSPORT` — validate protobuf RPC with standard build rules
-
-Build a minimal generated browser/Python unary and server-streaming path using the
-[transport decision and gates](../docs/thread_view_sync.md#rpc-transport-and-generation).
-Prefer Connect-Web plus Python ASGI; validate standard Bazel plugin integration with
-existing Protobuf-ES and `_pb2` message targets before adopting it. Recheck the old
-custom gRPC rule's dependency conflict instead of assuming it remains necessary.
-No bespoke service generator or framing. Test real Chromium, auth/CSRF, incremental
-streaming, cancellation, errors and 64-bit cursors; then prove actual ingress behavior.
-Keep transport validation independently reviewable from projection implementation.
 
 ### `THREAD_VIEW_PROJECTION` — materialize the derived read model
 
@@ -1139,16 +1032,6 @@ The required native continuation proof, command-provenance guarantee, and no-dup
 gate are in [Thread, runner, and harness layering](../docs/thread_layering.md#deferred-commands-unsettled-across-successor-sessions).
 Until then there is no automatic cross-session replay.
 
-### `THREAD_BROWSE_PAGINATE` — paginated/searchable all-threads page
-
-**Deferred, way later:** the sidebar's Threads list is fine for a working set, but finding one old
-Thread once it runs past the dozens needs its own answer — probably a full page, the same shape as
-the Action history page. Not designed here; flagged only so the with-sandboxes endpoint doesn't get
-assumed to stay one unpaginated call forever.
-
-**Depends on** the cross-sandbox Thread-listing endpoint (extends it with cursor pagination and,
-eventually, search). Nothing above waits on this.
-
 ### `NO_MANUAL_REFRESH` — no page in the app should ever need a Refresh button
 
 **Planned principle:** every page in the integration app should stay automatically up to date by
@@ -1181,7 +1064,133 @@ of one escaped-quote wall of text.
 
 **No dependency** on the UI-shell cluster; ships independently.
 
-## Deferred
+## Deferred work
+
+Real work items, parked. Most are here because they had no edge of any kind -- not a hard
+dependency, not a dotted soft one -- so the diagram carried their boxes without carrying any
+relationship. The rest are parked by decision even though they had one. Where that happens the
+edge leaves the diagram with the node and the relationship it carried is stated in the entry's
+own text instead, so bringing one back means restoring an edge rather than inventing one.
+
+- **`THREAD_VIEW_TRANSPORT`** — reconsider an RPC transport, gated on authorization
+- **`SSHDURABLE`** — durable SSH-backed processes
+- **`PROFILES`** — cross-cutting capability profiles
+- **`BB`** — BuildBuddy hosted-run credential boundary
+- **`DENY_LISTS`** — `autoDenyIf` and `autoDenyUnless`
+- **`THREAD_BROWSE_PAGINATE`** — paginated/searchable all-threads page
+- **`CONTROL_STATE`** — dynamic runtime control acceptance
+- **`LIVE_CLEAN`** — executor heartbeat retention cleanup
+- **`FORK`** — per-task identity fork (depends on `ELEVATE`, which stays on the board)
+
+### `THREAD_VIEW_TRANSPORT` — reconsider an RPC transport, gated on authorization
+
+Deferred, and no longer blocking: the read API's transport is settled as REST and SSE
+carrying proto-JSON, per the [transport decision](../docs/thread_view_sync.md#transport-rest-and-sse-with-protobuf-payloads).
+Both candidates were built and measured rather than estimated — gRPC-Web through an Envoy
+translation hop, then Connect — and both records, with the constraints that decided them,
+are in that document.
+
+**The gate is authorization, not transport ergonomics.** What made both attempts expensive
+was the surrounding work, and most of that was credential plumbing: an ASGI mount inherits
+no FastAPI route dependency, so the caller check had to be re-reached, and a separate
+server would have needed its own. The browser credential and what an RPC surface would
+need from it are settled in
+[operator federation](../docs/operator_federation.md#why-the-browser-holds-a-handle-and-not-a-token),
+including the short-lived RPC token that is available but unbuilt. Reopen this node
+against that model — not because generated service stubs are appealing again.
+
+Cheap to reopen, because the durable half already exists: the shapes are protobuf and the
+generated types land on both ends regardless, so what a transport adds is `service` blocks
+over messages that are already there. Also unresolved and worth settling first: connecpy's
+generated async client delivered nothing from an open stream, so a Python consumer of such
+an RPC currently has no working client.
+
+### `SSHDURABLE` — durable SSH-backed processes
+
+**Deferred support:** the `ssh-mcp` server behind the MCP Executor runs one-shot commands; for
+processes that must survive an SSH disconnect, add a small `agentplane-execd` host component for
+`rugged` and `wyrm2`. SSH still authenticates as the configured target user; an
+unprivileged stdio client forwards structured requests over a local Unix socket to a root-owned
+daemon. The daemon derives the execution user from kernel Unix-socket peer credentials and does not
+accept a requested-user field. It delegates process lifetime, cgroups, signals, and unit status to
+the host systemd system manager, so user lingering is not required.
+
+The daemon's durable handle is a systemd transient unit derived from the Agentplane Execution ID.
+Future code-owned Actions may start, inspect, read bounded output from, signal, and terminate that
+unit. Agentplane remains authoritative for Action schemas, approval, caller control rights, durable
+Execution state, leases, and unknown-outcome reconciliation; the daemon is only a constrained
+systemd adapter. See [the durable SSH process plan](ssh_durable_processes.md) for the protocol and
+acceptance boundaries. Do not add this daemon, PTYs, or stdin streaming to the first one-shot implementation.
+
+### `PROFILES` — cross-cutting capability profiles
+
+**Deferred decision — Rai confirmation required:** define a durable authority for capabilities shared by egress, approvals, MCP
+reachability, and other tool permissions. Do not widen the landed launch-preset slice merely to
+reserve the concept; Kubernetes remains a storage candidate, and the profile owner, inheritance, and policy
+read/verification boundary remain open. Do not start implementation before the design is confirmed.
+
+**Acceptance evidence:** one profile can be resolved consistently by each participating authority,
+with explicit precedence and negative tests for stale, cross-Agent, or caller-supplied profile names.
+
+### `BB` — BuildBuddy hosted-run credential boundary
+
+**Deferred decision:** accept the weaker hosted-runner boundary — a narrow `runner.RunRequest`
+rewrite that keeps the real key out of the local Sandbox but hands it to agent-controlled code on
+BuildBuddy's runner — or wait for a stronger seam (a per-run BuildBuddy credential or a run-scoped
+gateway). The boundary, wire shape and required evidence are in
+[`buildbuddy_remote_auth.md`](../docs/buildbuddy_remote_auth.md).
+
+### `DENY_LISTS` — `autoDenyIf` and `autoDenyUnless`
+
+**Deferred behavior:** an `ActionPolicySet` carries three lists and only `autoApproveIf` decides
+today; the CRD accepts `autoDenyIf` and `autoDenyUnless` and evaluation ignores them. Their
+semantics are settled in the [action policies design](../docs/action_policies.md): a request matching any
+`autoDenyIf` policy is auto-denied, one matching none of the `autoDenyUnless` policies is
+auto-denied, deny wins over approve, and a request matching nothing takes the human path.
+`autoDenyIf` first, when an Action needs it; `autoDenyUnless` later. Nothing waits on this; the
+console policies that need it (schema misses recorded as denied Decisions, the disabled kubectl
+passthrough redundancy check) are under `CONSOLE_POLICIES`.
+
+### `THREAD_BROWSE_PAGINATE` — paginated/searchable all-threads page
+
+**Deferred, way later:** the sidebar's Threads list is fine for a working set, but finding one old
+Thread once it runs past the dozens needs its own answer — probably a full page, the same shape as
+the Action history page. Not designed here; flagged only so the with-sandboxes endpoint doesn't get
+assumed to stay one unpaginated call forever.
+
+**Depends on** the cross-sandbox Thread-listing endpoint (extends it with cursor pagination and,
+eventually, search). Nothing above waits on this.
+
+### `CONTROL_STATE` — dynamic runtime control acceptance
+
+**Deferred native-capability work:** the admission/effect contract, display of an
+admitted-but-not-effective model change, and any future time-local capability snapshot
+are specified in [Thread, runner, and harness layering](../docs/thread_layering.md#command-protocol-intent-admission-then-outcome).
+The harness-specific evidence still needed for model/effort capability reporting is in
+[runtime control acceptance](../docs/runtime_control.md). Do not introduce an app-side
+common active-turn gate or make the picker claim success before a causal effect.
+
+### `LIVE_CLEAN` — executor heartbeat retention cleanup
+
+**Deferred cleanup:** executor liveness currently creates one heartbeat identity row per coordinator
+process lifetime. Once deployment scale makes that accumulation meaningful, choose a stable executor
+identity or bounded expiry/compaction policy and add retention tests; do not change the exactly-one
+claim or unknown-outcome semantics while doing so.
+
+### `FORK` — per-task identity fork
+
+**Deferred design:** a wide ServiceAccount-bound identity such as "Claude Code web via OIDC" may
+serve several concurrent agent threads managed outside Agentplane. An agent forks its identity into
+a per-task sub-identity, requests permission for that sub-identity through `ELEVATE`, and uses the
+sub-identity's credential for the task. Scope then follows possession of that credential: a thread
+that never receives it never gains the permission. Open questions: how a sub-identity is
+represented (a derived ServiceAccount, or a child Connection under the parent's OAuth grant),
+whether the parent's permissions flow down, and how the sub-identity ends. Low priority; nothing
+else depends on it.
+
+## Out of scope
+
+Not deferred work with a node below, but scope this project is not pursuing:
 
 - capability matrices or a broad Agent identity/privilege framework;
 - cross-cutting capability profiles — see [`profiles.md`](profiles.md);
