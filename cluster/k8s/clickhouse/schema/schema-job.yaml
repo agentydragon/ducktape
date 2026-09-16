@@ -1,14 +1,14 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: clickhouse-aiquota-schema-v8
+  name: clickhouse-aiquota-schema-v9
   namespace: clickhouse
   labels:
     app.kubernetes.io/name: clickhouse-schema
     app.kubernetes.io/instance: clickhouse
     app.kubernetes.io/component: schema
   annotations:
-    description: Applies the AIQuota schema, including the history projections, with ClickHouse distributed DDL.
+    description: Bootstraps the langfuse and aiquota databases with ClickHouse distributed DDL. Table/view schema inside each database is owned by its app.
 spec:
   activeDeadlineSeconds: 1200
   backoffLimit: 60

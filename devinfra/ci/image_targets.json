@@ -15,6 +15,11 @@
       "test": "//aiquota:all",
       "registry": "forgejo"
     },
+    "aiquota-migrate": {
+      "target": "//aiquota:migrate_image",
+      "test": "//aiquota:all",
+      "registry": "forgejo"
+    },
     "aw-server": {
       "target": "@ducktape_activitywatch//:image",
       "test": "@ducktape_activitywatch//:tests",

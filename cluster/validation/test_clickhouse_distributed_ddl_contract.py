@@ -47,12 +47,15 @@ def test_clickhouse_distributed_ddl_contract(
     assert clickhouse_installation["spec"]["defaults"]["replicasUseFQDN"] == "yes"
 
     grants = configuration["users"]["aiquota_ingest/grants/query"]
-    # This is a least-privilege boundary: the ingest identity must not gain
-    # access to columns outside those used by the materialized views.
+    # This is a least-privilege boundary: the identity must not gain access to
+    # columns outside those used by the materialized views, nor DDL outside its
+    # own database (aiquota's migrate init container owns aiquota.* schema).
     assert grants == [
         "GRANT INSERT ON aiquota.raw_http_observations",
         "GRANT SELECT(event_id, observed_at, source, quota_windows, token_activity, reset_credits) "
         "ON aiquota.raw_http_observations",
+        "GRANT CREATE, DROP TABLE, DROP VIEW ON aiquota.*",
+        "GRANT ALTER ADD COLUMN ON aiquota.*",
     ]
 
     schema_pod_spec = schema_job["spec"]["template"]["spec"]
