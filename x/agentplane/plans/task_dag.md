@@ -641,9 +641,25 @@ top of this milestone's requirement for a production instance rather than stagin
 That is what a static Agentplane identity for public-coder has to supply, and the system already
 knows the shape: the Action Service decides for both `SandboxCaller` and `ServiceAccountCaller`, "an
 external Connection acting as a labeled ServiceAccount" (`action_service/models.py`). `Subject` being
-a one-field wrapper means a second subject kind is additive rather than a redesign. Settle whether
-egress's subject becomes that same ServiceAccount-shaped caller before configuring anything: it
-decides what the binding names and what identity the proxy verifies.
+a one-field wrapper means a second subject kind is additive rather than a redesign.
+
+**Decided: a dedicated Kubernetes ServiceAccount is the identity.** The app Pod runs as `default`
+today -- only the sshpiper Deployment names one -- so this is an addition rather than a change, and
+most of the verification already exists. `sandbox_auth/principal.py` already TokenReviews a
+Pod-bound token, reads the `pod-name` and `pod-uid` claims, and checks the Pod against the
+connection's source address; the only Sandbox-specific step is the last one, where the Pod's
+controller owner must be a `Sandbox` the watch knows. A ServiceAccount subject keeps every earlier
+check and ends instead at the ServiceAccount the token names. Labelled
+`agentplane.allegedly.works/action-caller: "true"`, the same object is what the Action Service
+already watches and lists, so one SA serves both surfaces.
+
+**The trade to state rather than discover.** A Sandbox subject is lifecycle-bound: the identity
+exists only while a Sandbox the proxy watches owns that Pod, and deleting the Sandbox ends it. A
+ServiceAccount subject is not -- anything running as that ServiceAccount in that namespace is the
+subject, which is ordinary Kubernetes trust and is only as narrow as the ServiceAccount is
+dedicated. So give it to exactly one workload, never reuse it, and keep the Pod-binding and
+source-address checks, which are what stop a token copied out of the Pod from being replayed
+elsewhere.
 
 **Acceptance evidence:** public-coder can reach every currently supported destination, each existing
 substituted token is presented only at its intended destination, denied/unmatched traffic behaves as
