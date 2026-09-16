@@ -1041,13 +1041,6 @@ spec:
           to: "@artifact/cluster/k8s/atuin/db/"
           exclude:
             - flux-kustomization.yaml
-    - name: atuin-secrets
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/atuin/secrets/**"
-          to: "@artifact/cluster/k8s/atuin/secrets/"
-          exclude:
-            - flux-kustomization.yaml
     - name: atuin-user-provisioner
       originRevision: "@repo"
       copy:

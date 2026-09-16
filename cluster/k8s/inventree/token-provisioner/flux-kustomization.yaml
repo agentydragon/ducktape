@@ -29,6 +29,5 @@ spec:
     - name: forgejo-images
       namespace: ducktape-flux
     - name: inventree # InvenTree HelmRelease is fully deployed
-    - name: inventree-secrets # SOPS-managed sandbox-agent password
     - name: claude-rbac
       namespace: ducktape-flux # claude-sandbox namespace exists
