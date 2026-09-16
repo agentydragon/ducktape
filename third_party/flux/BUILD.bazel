@@ -1,0 +1,27 @@
+# Vendored Flux CRDs and the typed cdk8s Python constructs generated from them.
+# See cluster/docs/plans/cdk8s_adoption.md.
+
+load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
+load("//devinfra/python:defs.bzl", "py_test")
+
+exports_files(["crds/kustomize.toolkit.fluxcd.io_kustomizations.yaml"])
+
+cdk8s_import(
+    name = "kustomization",
+    crd = "crds/kustomize.toolkit.fluxcd.io_kustomizations.yaml",
+    module_name = "flux_kustomize",
+    module_path = "io/fluxcd/toolkit/kustomize",
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "test_kustomization_import",
+    srcs = ["test_kustomization_import.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":kustomization",
+        "@pypi//cdk8s",
+        "@pypi//pytest_bazel",
+    ],
+)

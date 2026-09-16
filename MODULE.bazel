@@ -590,6 +590,7 @@ npm.npm_translate_lock(
     name = "npm_ducktape",
     # Generate bin entries for dev tools from workspace root
     bins = {
+        "cdk8s-cli": ["cdk8s=./bin/cdk8s"],
         "eslint": ["eslint=./bin/eslint.js"],
         "json-schema-to-typescript": ["json2ts=./dist/src/cli.js"],
         "prettier": ["prettier=./bin/prettier.cjs"],
