@@ -108,6 +108,7 @@ flowchart TB
     ACTION_JSON_POLISH["Planned UI polish<br/>parse MCP content blocks in Action results<br/>rest landed via #6303 (#6309 open)"]:::future
 
     MCPAUTH --> PROD
+    ELEVATE --> CONSOLE_POLICIES
     EGRESS_IDENTITY_AVAILABILITY --> THREAD_DEPLOYED_ACCEPTANCE
     MCPAGG -. replacement surface .-> RETIRE_TOOLS
     CONSOLE_POLICIES -. policy parity .-> RETIRE_TOOLS
@@ -335,6 +336,17 @@ remains, each with what it needs; an entry leaves when its set can be written.
   `grants_self_introspection`): `list_grants(principal=self)` is argument-only, an
   `argument_schema` set over a `grants` ActionGroup; but the grant model itself is console-owned,
   so this waits on the Action Service having its own grant surface, not on a kind.
+
+  **Do not confuse this with policy introspection, which is already done.** An agent can read the
+  policy that applies to it today -- `get_action_policy(target=SELF)` on the MCP frontend, built
+  from the same `resolve_bindings` admission uses, so what it reports and what a Decision
+  auto-decides cannot drift. What the console's `grants` tools introspect is something else: grants,
+  meaning access that expires. `grants_whoami`, `grant_self_list`, `kubernetes_can_i`, `get_grant`
+  and `revoke_grants` are all that surface, and what they wait on is **temporary grants**, which is
+  `ELEVATE` -- a caller asking for a set plus an `expiresAt`, approval writing the
+  `ActionPolicyBinding` with that expiry. `BindingSpec.expires_at` already exists, so what is
+  missing is the request-and-approve flow, not the storage.
+
 - **Schema auto-denial** (`autoDenyIf` equivalent): the console records a call whose arguments
   fail the registered tool schema as born-denied. The Action Service refuses such a request at
   admission before persisting anything, so the audit row the console keeps does not exist here;
@@ -346,6 +358,26 @@ remains, each with what it needs; an entry leaves when its set can be written.
   keeps it disabled because direct access is not yet an equivalent substitute (its kubeconfig
   cannot execute the POST/SPDY transport the passthrough carries); the same condition gates it
   here.
+
+**The composition layer, which the list above omits.** Four of the console's twenty-four entries are
+`any_of` bundles rather than leaves, and they are what is actually bound to an agent:
+`public_coder_github_reads` (four public GitHub read policies), `public_coder_v1`, `haku_v1`
+(fourteen leaves), and `manual_review`, which is `type: never`.
+
+These need no kind. `ActionPolicyBinding.policySets` is a list and evaluation unions across every
+set of every binding a subject has, so an `any_of` bundle is one binding naming several sets, and
+`manual_review` is the absence of a binding. What the bundles do is turn the leaf list into
+per-agent progress:
+
+- **`public_coder_v1`** = `public_coder_github_reads` + `github_identity_reads` + `kubernetes_reads`
+  - `grants_self_introspection` + `grants_own_revoke`. The GitHub half is **fully ported** -- all
+    four leaves under `public_coder_github_reads` plus `github_identity_reads` are sets already. What
+    is left is the `grants` trio, which the list above puts behind the Action Service having its own
+    grant surface. That trio is the whole remaining distance for this agent, and it is the same
+    blocker `PC_EGRESS` meets from the other side.
+- **`haku_v1`** = fourteen leaves spanning Gmail, Calendar, Grocy, GitHub, Tana, PostScanMail, Home
+  Assistant, the console's `sandbox` server and the `grants` trio. Only its GitHub leaves are
+  ported, so it is the long pole and every unported item above is on it.
 
 Nothing waits on this except `RETIRE_TOOLS`, which needs policy parity for the affordances it
 retires.
@@ -558,13 +590,143 @@ public-coder destination rules and token substitutions in its reviewed configura
 the required ServiceAccount, network policy, routing, and secret wiring. Compare effective behavior
 against the existing path before cutover; do not infer equivalence from source configuration alone.
 
+**What already exists**, read from the repository rather than assumed, because this milestone is
+smaller than its description implies:
+
+- **The substitution mechanism is built.** An `EgressCredential` holds the real value and declares
+  every exact location it may be presented; its placeholder is `agentplane-credential-<name>` and
+  the `schemeToken` target parses `<scheme> <credential>`, which is the shape public-coder's GitHub
+  token already travels in. That is iron-proxy's `iron.yaml` expressed as resources
+  (<../egress/SPEC.md>), so the GitHub token substitution needs configuration, not code.
+- **Some GitHub auto-approval is ported**: `cluster/k8s/agentplane-staging/actions/` carries
+  `ActionPolicySet`s for `github-identity-reads`, `github-reads`, `public-github-reads`,
+  `public-ducktape-reads`, `public-ducktape-fork-reads` and `public-gaffer-private-reads`.
+  Whether that set covers what
+  public-coder is allowed to do today is not established here; the ported ones are a starting point
+  to diff against, not a finished policy.
+
+**The gap is the subject kind, not the proxy.** Egress authenticates a Pod-bound ServiceAccount
+token and then requires the Pod's controller owner to be a `Sandbox` the proxy's watch knows
+(`egress/identity.py` via `SandboxPrincipalResolver`), and `BindingSpec.subjects` is a list of
+`Subject`, which today has exactly one field, `sandbox: SandboxRef` (`egress/resources.py`).
+public-coder is a plain Deployment running OpenClaw, so it has no Sandbox to be, and no binding can
+name it.
+
+**The per-agent proxy can go before that is settled.** Egress already ships a sidecar: a loopback
+listener in the Pod that the workload speaks ordinary HTTP proxy to, forwarding every request and
+CONNECT to the central proxy with `Proxy-Authorization: Bearer <token>` added from the Pod's
+projected ServiceAccount token. It holds no credential and never looks inside a tunnel
+(`egress/sidecar.py`). Putting that in the OpenClaw Pod replaces `public-coder-agent-proxy`
+outright, and moves substitution from a per-agent iron-proxy config to the one central engine.
+What it does not do is decide identity: the sidecar supplies the token, and the central proxy still
+resolves that token to a live Pod and then to the `Sandbox` that owns it. So the sidecar is the
+mechanism and the subject kind is still the question.
+
+**The same gap blocks the tools half, so this is one prerequisite and not two.** Switching
+public-coder's MCP from Haku Console to the Action Service runs into the identical wall:
+`action_service/caller_auth.py` verifies the transport bearer "as a Sandbox workload or an external
+OAuth grant", and public-coder is neither -- a plain Deployment, and not an OAuth-enrolled external
+client, since that path is built around operator consent for something like the Claude.ai connector
+rather than an in-cluster workload. So a static identity is what unblocks the tool surface and the
+egress path at once, and neither can move first.
+
+Two further inputs when it is scheduled. The substitution set is larger than GitHub: the agent's
+iron-proxy swaps a GitHub PAT, the Haku Console bearer, an AIQuota bearer, a Brave Search key, a
+Matrix password and a kubeconfig token, each of which needs its own `EgressCredential` and targets
+or the agent silently loses that destination. And the staging Action Service offers `github`,
+`kubernetes` and `ssh` ActionGroups at `agentplane-actions-staging.allegedly.works`, so what
+public-coder would gain and lose against Console's tool set has to be diffed before the swap, on
+top of this milestone's requirement for a production instance rather than staging.
+
+That is what a static Agentplane identity for public-coder has to supply, and the system already
+knows the shape: the Action Service decides for both `SandboxCaller` and `ServiceAccountCaller`, "an
+external Connection acting as a labeled ServiceAccount" (`action_service/models.py`). `Subject` being
+a one-field wrapper means a second subject kind is additive rather than a redesign.
+
+**Action policy CRs already name ServiceAccounts; egress does not.** `ActionPolicyBinding.spec.subject`
+is already a discriminated union of `ServiceAccountSubject | SandboxSubject`, keyed on which one-key
+form is present (`action_service/policies/resources.py`). Egress's `Subject` is still the single
+field `sandbox`. So this is not a new concept in two places -- it is egress taking the shape actions
+already uses, with the same `serviceAccount` key, so an operator writing either CR sees one
+vocabulary. Two details to settle while doing it: the two packages define their own `SandboxRef`
+and actions' pins a `uid` ("a binding whose Sandbox is gone is inert") where egress's is name-only,
+and `ServiceAccountRef` would need a home egress can reach without depending on the Action Service.
+
+**Decided: a dedicated Kubernetes ServiceAccount is the identity.** The app Pod runs as `default`
+today -- only the sshpiper Deployment names one -- so this is an addition rather than a change, and
+most of the verification already exists. `sandbox_auth/principal.py` already TokenReviews a
+Pod-bound token, reads the `pod-name` and `pod-uid` claims, and checks the Pod against the
+connection's source address; the only Sandbox-specific step is the last one, where the Pod's
+controller owner must be a `Sandbox` the watch knows. A ServiceAccount subject keeps every earlier
+check and ends instead at the ServiceAccount the token names. Labelled
+`agentplane.allegedly.works/action-caller: "true"`, the same object is what the Action Service
+already watches and lists, so one SA serves both surfaces.
+
+**The trade to state rather than discover.** A Sandbox subject is lifecycle-bound: the identity
+exists only while a Sandbox the proxy watches owns that Pod, and deleting the Sandbox ends it. A
+ServiceAccount subject is not -- anything running as that ServiceAccount in that namespace is the
+subject, which is ordinary Kubernetes trust and is only as narrow as the ServiceAccount is
+dedicated. So give it to exactly one workload, never reuse it, and keep the Pod-binding and
+source-address checks, which are what stop a token copied out of the Pod from being replayed
+elsewhere.
+
 **Acceptance evidence:** public-coder can reach every currently supported destination, each existing
 substituted token is presented only at its intended destination, denied/unmatched traffic behaves as
 specified, and the Agentplane proxy survives rollout/restart without silently dropping the agent's
 in-flight work. Run the real devbox/agent acceptance through the new path, retain redacted effective
-rules and token-boundary evidence, then cut over with a reversible rollback window. Retire the old
-`haku-console` / `iron-proxy` resources only after the production path is proven and rollback is
-available; this milestone is an egress migration, not permission to widen the stable configuration.
+rules and token-boundary evidence, then cut over with a reversible rollback window. This milestone is
+an egress migration, not permission to widen the stable configuration.
+
+**What retirement covers.** "The old `haku-console` / `iron-proxy` path" names three separate things,
+and only the first is this milestone's to delete. Inventory taken from the repository, not from
+running cluster state, so re-check before deleting anything.
+
+_Retire, once the production path is proven and rollback is available:_
+
+- `cluster/k8s/agents/public-coder-agent/proxy/` — the dedicated iron-proxy for this agent, which is
+  an OpenClaw instance (`ghcr.io/agentydragon/openclaw`, configured by `app/openclaw.json5`); the
+  proxy is what lets it hold placeholders instead of real credentials. Files: `deployment.yaml`,
+  `service.yaml`, `iron.yaml` (the substitution rules), `certificate.yaml`
+  (`public-coder-agent-proxy-root-ca`), `trust-bundle.yaml`, `cnp-{ingress,egress}.yaml`,
+  `forgejo-images-creds-eso.yaml`, `flux-kustomization.yaml`, `kustomization.yaml`.
+- The placeholder contract in `cluster/k8s/agents/public-coder-agent/app/deployment.yaml`: the agent
+  is handed `proxy-github-placeholder` and `proxy-haku-console-placeholder` and told the contract,
+  because only the sibling proxy performs the swap. Whatever replaces the proxy inherits that
+  contract or the agent's configuration changes with it.
+- The Haku Console side of the credential: `HAKU_CONSOLE__STATIC_AGENTS__PUBLIC_CODER__TOKEN` in
+  `cluster/k8s/haku/console/deployment.yaml` and `Secret/haku-console-public-coder-agent`. This is
+  the whole "`haku-console`" half of the name — Console is the bearer's authority, not a proxy.
+
+_Shared, so not this milestone's to delete:_
+
+- The `iron-proxy` image build — `cluster/images/iron-proxy/`,
+  `.github/workflows/iron-proxy-image.yml`, `cluster/k8s/flux-image-automation-forgejo/iron-proxy-image.yaml`.
+  It carries a pinned upstream commit for HTTP/2 MITM support and is consumed by
+  `haku-claude-oauth-proxy` and `haku-openclaw-spike-proxy` as well. It was named for public-coder
+  only because this was its first consumer.
+
+_A second consumer set, on its own retirement clock:_
+
+The `haku-egress-proxy` namespace is the other half of the estate. It is not public-coder's path and
+this milestone does not retire it, but it is the same question asked of different workloads, so its
+consumers are listed here rather than discovered later:
+
+- **Haku's sandbox tools.** Pods the `haku-sandbox-mcp` tool creates in `haku-sandbox` reach the
+  network through `haku-egress-proxy`. **Gotcha:** nothing in `haku/sandbox/` says so. The wiring is
+  admission-time -- the Kyverno `inject-haku-egress-proxy` policy adds `HTTP_PROXY`, `HTTPS_PROXY`,
+  `NO_PROXY` and the CA trust variables to every Pod in that namespace -- so an audit that greps the
+  tool's source concludes it has no proxy dependency, and is wrong.
+- **`haku-ci`**, which wires it explicitly instead: `HTTP(S)_PROXY` env in
+  `cluster/k8s/haku-ci/{config,scaledjob}.yaml`, including for dockerd's image pulls.
+- **The sandbox image**, `cluster/k8s/haku/workspaces/image/haku-sandbox-setup.sh`.
+- **Two more iron-proxy listeners it hosts**: `haku-claude-oauth-proxy`, which alone holds the real
+  Claude subscription token for `haku` access-profile runners in `haku-runtime-sandbox`, and
+  `haku-openclaw-spike-proxy` for `haku-openclaw-spike` -- the second OpenClaw deployment, after
+  public-coder.
+
+`cluster/validation/test_egress_allowlists.py` and `cluster/validation/kyverno/test_proxy_injection.py`
+assert that wiring. Deleting this namespace because this entry says "retire the old proxy" would
+remove the fence in front of Haku's sandbox and CI.
 
 ### `MCPAGG` — Haku Console MCP aggregator replacement
 
@@ -585,9 +747,12 @@ Tool-call/approval management retirement remains the separate `RETIRE_TOOLS` mil
 queue, and related tool-call management only after the `MCPAGG` compatibility migration,
 integration-app approval UI, credential bindings, and canonical Action/Decision APIs cover the
 required workflows.
-This track may move independently of Agent/conversation management: Haku Console may continue to own
-conversations while Agentplane owns external tool calls, or the reverse during a staged migration.
-Preserve tool-call audit/export and rollback evidence before removing the old owner.
+The conversation half of that split is already settled: Haku Console has no conversation management
+left to keep, so this track is the remainder rather than one of two halves that could move either
+way. What it retires is the surface an agent calls — the role the Action Service now serves, per
+[its README](../action_service/README.md) — so parity is measured against that role, not against
+the aggregator's shape. Preserve tool-call audit/export and rollback evidence before removing the
+old owner.
 
 ### `INPUT_DELIVERY` — remaining native queue and recovery evidence
 
