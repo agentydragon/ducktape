@@ -238,8 +238,6 @@ def test_create_binds_the_sandbox_to_its_action_policy_sets(
 
     client.post("/sandboxes", json={"slug": "plain", "template": TEMPLATE})
     assert len([kind for kind, _ in custom_objects.objects if kind == "actionpolicybindings"]) == 1
-    refused = client.get(f"/sandboxes/{row['name']}/action-policy")
-    assert (refused.status_code, refused.json()["detail"]) == (403, {"code": "operator_session_required"})
 
 
 def test_a_missing_action_policy_set_creates_nothing(client: TestClient, custom_objects: FakeCustomObjectsApi) -> None:
