@@ -506,6 +506,82 @@ def test_an_extension_the_caller_cannot_apply_is_refused() -> None:
         apply_changes(without, changes)
 
 
+def test_a_reconnect_mid_stream_resumes_from_the_held_revision() -> None:
+    """The caller holds a partly streamed Item, misses several batches, and follows from where it
+    got to. Each replayed batch extends the revision the one before it left."""
+    started = entry(
+        1, event_pb2.Event(item_started=event_pb2.ItemStarted(item_id="i", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT))
+    )
+    words = ["Hello", " wor", "ld", "!"]
+    deltas = [
+        entry(cursor, event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="i", text=word)))
+        for cursor, word in enumerate(words, start=2)
+    ]
+
+    # Connected: the caller keeps up through the first delta.
+    server, first = advance(empty(SOURCE, EPOCH), [started, deltas[0]])
+    client = apply_changes(empty(SOURCE, EPOCH), first)
+    assert client.segments[0].item.text.value == "Hello"
+
+    # Disconnected: the projector keeps committing batches the caller never sees.
+    missed = []
+    for delta in deltas[1:]:
+        server, batch = advance(server, [delta])
+        missed.append(batch)
+
+    # Reconnected at the position it holds, replaying the journal from there.
+    assert client.position.through_cursor == 2
+    assert missed[0].after_cursor == 2
+    for batch in missed:
+        client = apply_changes(client, batch)
+
+    assert client == server
+    assert client.segments[0].item.text.value == "Hello world!"
+
+
+def test_an_authoritative_completion_that_differs_arrives_whole() -> None:
+    """A completion whose text is not an extension of what streamed cannot be sent as a suffix."""
+    projection, _ = advance(
+        empty(SOURCE, EPOCH),
+        [
+            entry(
+                1,
+                event_pb2.Event(
+                    item_started=event_pb2.ItemStarted(item_id="i", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
+                ),
+            ),
+            entry(2, event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="i", text="Hello wor"))),
+        ],
+    )
+    _, changes = advance(
+        projection, [entry(3, event_pb2.Event(item_completed=event_pb2.ItemCompleted(item_id="i", text="Hi there")))]
+    )
+    (segment,) = changes.segments
+    assert segment.item.text.WhichOneof("body") == "value"
+    assert segment.item.text.value == "Hi there"
+
+
+def test_a_completion_extending_what_streamed_arrives_as_a_suffix() -> None:
+    projection, _ = advance(
+        empty(SOURCE, EPOCH),
+        [
+            entry(
+                1,
+                event_pb2.Event(
+                    item_started=event_pb2.ItemStarted(item_id="i", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
+                ),
+            ),
+            entry(2, event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="i", text="Hello wor"))),
+        ],
+    )
+    _, changes = advance(
+        projection, [entry(3, event_pb2.Event(item_completed=event_pb2.ItemCompleted(item_id="i", text="Hello world")))]
+    )
+    (segment,) = changes.segments
+    assert segment.item.text.suffix == "ld"
+    assert segment.item.WhichOneof("completion") == "completed_text"
+
+
 def test_an_uninterpreted_observation_halts_the_fold() -> None:
     with pytest.raises(UninterpretedObservationError) as raised:
         project(
