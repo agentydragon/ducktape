@@ -1,8 +1,38 @@
 syntax = "proto3";
 
-// The browser-facing Thread services. Every method is unary or server-streaming: commands are
-// independent unary calls and subscriptions resume from an explicit cursor, so no client or
-// bidirectional stream is needed and a dropped connection never cancels admitted work.
+// The browser-facing Thread services.
+//
+// A caller opens a Thread with GetView, which returns a bounded window of Segments, the current
+// controls and pending Commands, and the Position all of it is consistent with. It then follows
+// from that Position and applies each Changes batch in order. Applying every batch through K
+// reaches exactly what GetView would have returned at K -- that equivalence is what makes a bounded
+// first load safe, and x/agentplane/app/test_projection.py checks it.
+//
+// Opening a Thread:
+//
+//   -> GetView    {thread: T, window: {max_older: 50}}
+//   <- Snapshot   {position: {S, E, through 900}, window: {50 Segments, covers 640..900},
+//                  controls: {applied_model: "m"}, pending: {unresolved 0}}
+//   -> FollowView {thread: T, position: {S, E, 900}}
+//   <- Changes    {after 900, through 940, segments: [...], controls: {...}}
+//   <- Changes    {after 940, through 970, ...}                  until the caller stops reading
+//
+// Queueing a model change while a turn is running. The runner owns the queue, so admission and
+// effect are separate Events and the picker moves only on the second:
+//
+//   -> Submit     {thread: T, command: {id: C, change_model: {model: "next"}}}
+//   <- EventEntry {cursor 941, command_admitted: {command: C}}    archived runner admission
+//   <- Changes    {after 940, through 941, commands: [{C, pending}]}
+//   <- Changes    {after 941, through 970, commands: [{C, effected at 970}],
+//                  controls: {applied_model: "next"}}
+//
+// Everything else is a demand read that never moves the caller's Position: ListSegments for older
+// history, ReadPayload for a tool output the reader expanded, ThreadEventsService for exact
+// evidence, and GetCommands to reconcile a Command whose Submit response was lost.
+//
+// Every method is unary or server-streaming. Commands are independent unary calls and subscriptions
+// resume from an explicit cursor, so no client or bidirectional stream is needed and a dropped
+// connection never cancels admitted work.
 //
 // Contract: x/agentplane/docs/thread_view_sync.md.
 package ducktape.agentplane.app.v1;
@@ -11,23 +41,11 @@ import "x/agentplane/app/thread_view.proto";
 import "x/agentplane/protocol/command.proto";
 import "x/agentplane/protocol/event_log.proto";
 
-// Server-enforced maxima apply to both; a request asking for more is clamped, not rejected.
-message Limits {
-  uint32 max_segments = 1;
-  uint64 max_bytes = 2;
-}
-
-// Where a read must have caught up to before answering. A server that cannot reach it before the
-// deadline reports projection lag rather than returning an older successful snapshot.
-message MinimumThrough {
-  uint64 through_cursor = 1;
-}
-
 // Exactly which Segments to read: the one at `from_anchor`, then up to `max_older` visible Segments
 // going back and up to `max_newer` going forward. Counts are of visible anchors, so a burst of
 // invisible receipt boundaries cannot crowd out the conversation. Fewer come back where the Thread
-// ends first or the byte budget runs out; the page reports the anchor range it actually covers, and
-// running out on one side never backfills the other.
+// ends first; running out on one side never backfills the other. There is no byte budget because
+// the server keeps a Segment small by leaving large values behind a reference.
 message SegmentWindow {
   // Absent reads from the newest Segment, which is what opening a Thread wants, and pairs with
   // `max_newer` zero. Set, it reads from the Segment anchored there -- where the reader's viewport
@@ -36,15 +54,11 @@ message SegmentWindow {
   optional uint64 from_anchor = 1;
   uint32 max_older = 2;
   uint32 max_newer = 3;
-  // Truncates the window rather than being exceeded. Large values stay behind payload references,
-  // so this bounds metadata and previews.
-  uint64 max_bytes = 4;
 }
 
 // Bootstrap a view of a Thread. The server reads its projection checkpoint, the requested Segment
 // window, the current controls and the first page of pending Commands in one transaction, and
-// returns them with the Position they are all consistent with. The caller then follows from that
-// Position.
+// returns them with the Position they are all consistent with.
 //
 // The caller holds nothing: this is a first open or an explicit rebootstrap. A caller that already
 // has a Position asks FollowView to carry it forward instead. One window is enough to follow from,
@@ -56,12 +70,12 @@ message GetViewRequest {
 
 message FollowViewRequest {
   string thread_id = 1;
-  // Where the client's installed view already reaches. Batches must start exactly here.
+  // Where the caller's installed view already reaches. Batches must start exactly here.
   Position position = 2;
 }
 
 // Keyset pagination over immutable anchors, never offsets: a new Segment cannot be inserted behind
-// an anchor the client already processed.
+// an anchor the caller already processed, so the anchor it holds is the only resume token it needs.
 message ListSegmentsRequest {
   string thread_id = 1;
   string source_id = 2;
@@ -72,11 +86,15 @@ message ListSegmentsRequest {
     // Exclusive: Segments anchored strictly after this one, oldest first.
     uint64 after_anchor = 5;
   }
-  string page_token = 6;
-  Limits limits = 7;
-  MinimumThrough minimum = 8;
+  uint32 max_segments = 6;
+  // Answer only once the projection has reached at least here, so the page orders against a
+  // snapshot the caller already holds. Zero imposes no minimum. A server that cannot reach it
+  // before the deadline reports projection lag rather than returning an older successful page.
+  uint64 minimum_through_cursor = 7;
 }
 
+// A payload is returned whole. Segments leave large values behind a reference rather than splitting
+// them, so there is no offset or chunk to reassemble.
 message ReadPayloadRequest {
   string thread_id = 1;
   oneof target {
@@ -85,9 +103,6 @@ message ReadPayloadRequest {
     // Exact original Event bytes, whose identity is epoch-independent.
     ducktape.agentplane.protocol.v1.EventOrigin origin = 3;
   }
-  // Within the payload, not a position in the journal. UTF-8 bytes, not JavaScript string indices.
-  uint64 byte_offset = 4;
-  uint64 max_bytes = 5;
 }
 
 // The derived read model: bounded snapshot, live changes, history and on-demand payloads.
@@ -95,7 +110,7 @@ service ThreadViewService {
   rpc GetView(GetViewRequest) returns (ViewSnapshot);
   rpc FollowView(FollowViewRequest) returns (stream ViewUpdate);
   rpc ListSegments(ListSegmentsRequest) returns (SegmentsPage);
-  rpc ReadPayload(ReadPayloadRequest) returns (PayloadChunk);
+  rpc ReadPayload(ReadPayloadRequest) returns (Payload);
 }
 
 message SubmitRequest {
@@ -109,15 +124,14 @@ message ListPendingCommandsRequest {
   string projection_epoch = 2;
   // Exclusive admission anchor, so paging cannot skip or repeat an admission.
   uint64 after_admission_cursor = 3;
-  string page_token = 4;
-  Limits limits = 5;
-  MinimumThrough minimum = 6;
+  uint32 max_commands = 4;
+  uint64 minimum_through_cursor = 5;
 }
 
 message GetCommandsRequest {
   string thread_id = 1;
   repeated string command_ids = 2;
-  MinimumThrough minimum = 3;
+  uint64 minimum_through_cursor = 3;
 }
 
 // Submission and reconciliation. The runner owns the only command queue; these reads share the
@@ -133,13 +147,10 @@ service ThreadCommandService {
 message ListEventsRequest {
   string thread_id = 1;
   string source_id = 2;
-  // Exclusive original cursor.
+  // Exclusive original cursor. The page reports the range it scanned, which is where to resume.
   uint64 after_cursor = 3;
   optional uint64 through_cursor = 4;
-  // Observation cases to include. A filtered page is not a contiguous Event prefix.
-  repeated string observation_kinds = 5;
-  string page_token = 6;
-  Limits limits = 7;
+  uint32 max_entries = 5;
 }
 
 message GetEventsRequest {

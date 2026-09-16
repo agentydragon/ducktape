@@ -11,9 +11,9 @@ The fold emits `thread_view.proto` messages rather than its own types: a Segment
 the wire or the read model, so a separate internal representation would only be a copy to keep in
 sync. Nothing here touches PostgreSQL, transports or time.
 
-Segments carry whole values. Bounding a response to a byte budget, and splitting large values into
-referenced payloads, belong to the layers that know those budgets, so a `BoundedText` from this
-module always holds the complete value in `preview` and sets no `reference`.
+Segments carry whole values inline. Deciding to omit one and leave a `PayloadRef` for an on-demand
+read belongs to the layer that serves a response, so every `Text` from this module carries its
+`value`.
 """
 
 from __future__ import annotations
@@ -81,8 +81,9 @@ def empty(source_id: str, projection_epoch: str) -> Projection:
     )
 
 
-def text_of(value: str) -> thread_view_pb2.BoundedText:
-    return thread_view_pb2.BoundedText(preview=value, byte_length=len(value.encode()))
+def text_of(value: str) -> thread_view_pb2.Text:
+    """A value carried inline. Deciding to omit one and leave a reference is the read layer's."""
+    return thread_view_pb2.Text(value=value)
 
 
 def operation_kind(command: command_pb2.Command) -> OperationKind:
@@ -313,12 +314,12 @@ def _fold(builder: _Builder, entry: event_log_pb2.EventEntry) -> None:
         case "text_delta":
             delta = event.text_delta
             anchor, current = builder.item(cursor, delta.item_id)
-            current.text.CopyFrom(text_of(current.text.preview + delta.text))
+            current.text.CopyFrom(text_of(current.text.value + delta.text))
             builder.put_item(anchor, cursor, current)
         case "tool_arguments_delta":
             arguments_delta = event.tool_arguments_delta
             anchor, current = builder.item(cursor, arguments_delta.item_id)
-            current.arguments_json.CopyFrom(text_of(current.arguments_json.preview + arguments_delta.partial_json))
+            current.arguments_json.CopyFrom(text_of(current.arguments_json.value + arguments_delta.partial_json))
             builder.put_item(anchor, cursor, current)
         case "tool_arguments":
             arguments = event.tool_arguments
@@ -328,7 +329,7 @@ def _fold(builder: _Builder, entry: event_log_pb2.EventEntry) -> None:
         case "tool_output_delta":
             output_delta = event.tool_output_delta
             anchor, current = builder.item(cursor, output_delta.item_id)
-            current.output.CopyFrom(text_of(current.output.preview + output_delta.text))
+            current.output.CopyFrom(text_of(current.output.value + output_delta.text))
             builder.put_item(anchor, cursor, current)
         case "item_completed":
             completed_item = event.item_completed
