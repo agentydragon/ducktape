@@ -571,7 +571,9 @@ running cluster state, so re-check before deleting anything.
 
 _Retire, once the production path is proven and rollback is available:_
 
-- `cluster/k8s/agents/public-coder-agent/proxy/` — this agent's own iron-proxy: `deployment.yaml`,
+- `cluster/k8s/agents/public-coder-agent/proxy/` — the dedicated iron-proxy for this agent, which is
+  an OpenClaw instance (`ghcr.io/agentydragon/openclaw`, configured by `app/openclaw.json5`); the
+  proxy is what lets it hold placeholders instead of real credentials. Files: `deployment.yaml`,
   `service.yaml`, `iron.yaml` (the substitution rules), `certificate.yaml`
   (`public-coder-agent-proxy-root-ca`), `trust-bundle.yaml`, `cnp-{ingress,egress}.yaml`,
   `forgejo-images-creds-eso.yaml`, `flux-kustomization.yaml`, `kustomization.yaml`.
@@ -591,15 +593,28 @@ _Shared, so not this milestone's to delete:_
   `haku-claude-oauth-proxy` and `haku-openclaw-spike-proxy` as well. It was named for public-coder
   only because this was its first consumer.
 
-_A different fence entirely, out of scope:_
+_A second consumer set, on its own retirement clock:_
 
-- The `haku-egress-proxy` namespace is Haku's egress fence for `haku-sandbox` and `haku-ci`, not
-  public-coder's path, and it has its own live consumers: the Kyverno `inject-haku-egress-proxy`
-  policy that injects `HTTP(S)_PROXY` and CA trust into every Pod in `haku-sandbox`;
-  `cluster/k8s/haku-ci/{config,scaledjob}.yaml`; `cluster/k8s/haku/workspaces/image/haku-sandbox-setup.sh`;
-  and the two iron-proxy listeners it hosts. `cluster/validation/test_egress_allowlists.py` and
-  `cluster/validation/kyverno/test_proxy_injection.py` assert that wiring. Deleting it because this
-  entry says "retire the old proxy" would remove the fence in front of Haku's sandbox and CI.
+The `haku-egress-proxy` namespace is the other half of the estate. It is not public-coder's path and
+this milestone does not retire it, but it is the same question asked of different workloads, so its
+consumers are listed here rather than discovered later:
+
+- **Haku's sandbox tools.** Pods the `haku-sandbox-mcp` tool creates in `haku-sandbox` reach the
+  network through `haku-egress-proxy`. **Gotcha:** nothing in `haku/sandbox/` says so. The wiring is
+  admission-time -- the Kyverno `inject-haku-egress-proxy` policy adds `HTTP_PROXY`, `HTTPS_PROXY`,
+  `NO_PROXY` and the CA trust variables to every Pod in that namespace -- so an audit that greps the
+  tool's source concludes it has no proxy dependency, and is wrong.
+- **`haku-ci`**, which wires it explicitly instead: `HTTP(S)_PROXY` env in
+  `cluster/k8s/haku-ci/{config,scaledjob}.yaml`, including for dockerd's image pulls.
+- **The sandbox image**, `cluster/k8s/haku/workspaces/image/haku-sandbox-setup.sh`.
+- **Two more iron-proxy listeners it hosts**: `haku-claude-oauth-proxy`, which alone holds the real
+  Claude subscription token for `haku` access-profile runners in `haku-runtime-sandbox`, and
+  `haku-openclaw-spike-proxy` for `haku-openclaw-spike` -- the second OpenClaw deployment, after
+  public-coder.
+
+`cluster/validation/test_egress_allowlists.py` and `cluster/validation/kyverno/test_proxy_injection.py`
+assert that wiring. Deleting this namespace because this entry says "retire the old proxy" would
+remove the fence in front of Haku's sandbox and CI.
 
 ### `MCPAGG` — Haku Console MCP aggregator replacement
 
