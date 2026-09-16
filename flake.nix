@@ -58,7 +58,7 @@
     };
 
     # Declarative Nix environment for Android (phone), via a Termux fork.
-    # aarch64-linux only; see nix/nix_on_droid/README.md.
+    # aarch64-linux only; see nix/droid/README.md.
     nix-on-droid = {
       url = "github:nix-community/nix-on-droid";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -843,11 +843,11 @@
 
       };
 
-      # Phone (Android via nix-on-droid). aarch64-linux; see nix/nix_on_droid/README.md.
+      # Phone (Android via nix-on-droid). aarch64-linux; see nix/droid/README.md.
       nixOnDroidConfigurations = {
         pixel6 = inputs.nix-on-droid.lib.nixOnDroidConfiguration {
           pkgs = pkgsAarch64;
-          modules = [ ./nix/nix_on_droid/hosts/pixel6.nix ];
+          modules = [ ./nix/droid/hosts/pixel6.nix ];
         };
       };
     };

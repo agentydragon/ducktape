@@ -47,5 +47,5 @@ hello
 
 ## Adding a device
 
-New `nix/nix_on_droid/hosts/<name>.nix` plus a matching `nixOnDroidConfigurations.<name>`
+New `nix/droid/hosts/<name>.nix` plus a matching `nixOnDroidConfigurations.<name>`
 entry in the root `flake.nix` (see `pixel6` for both).

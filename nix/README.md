@@ -15,7 +15,7 @@ nix/
 │   ├── modules/   # Shared Home Manager modules
 │   ├── programs/  # Reusable Home Manager program modules
 │   └── skills.nix # Shared AI-tool skill deployment helper
-├── nix_on_droid/  # Android (phone) configurations — see nix_on_droid/README.md
+├── droid/         # Android (phone) configurations — see droid/README.md
 ├── packages/      # Custom Nix packages
 ├── lib/           # Shared Nix helpers
 └── TODO.md        # Future improvements
@@ -52,7 +52,7 @@ from `$USER`/`$HOME` so the same profile works for whatever user the web contain
 ### Phone (pixel6)
 
 Different runtime (Android via nix-on-droid, not NixOS/home-manager) — see
-[nix_on_droid/README.md](nix_on_droid/README.md) for prerequisites and bring-up.
+[droid/README.md](droid/README.md) for prerequisites and bring-up.
 
 ## Available Hosts
 
@@ -77,9 +77,9 @@ Different runtime (Android via nix-on-droid, not NixOS/home-manager) — see
 
 ### Phone Configs (`nixOnDroidConfigurations`)
 
-| Host     | OS      | Description                                            |
-| -------- | ------- | ------------------------------------------------------ |
-| `pixel6` | Android | Phone, via nix-on-droid — see `nix_on_droid/README.md` |
+| Host     | OS      | Description                                     |
+| -------- | ------- | ----------------------------------------------- |
+| `pixel6` | Android | Phone, via nix-on-droid — see `droid/README.md` |
 
 ## Common Commands
 
