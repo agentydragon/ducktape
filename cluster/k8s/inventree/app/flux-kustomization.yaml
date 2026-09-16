@@ -28,7 +28,6 @@ spec:
     - name: inventree-namespace
       namespace: ducktape-flux
     - name: inventree-db
-    - name: inventree-secrets
     - name: sso-providers-tf # writes inventree-sso-providers into the authentik namespace
       namespace: ducktape-flux
     - name: reflector # mirrors inventree-sso-providers into the inventree namespace

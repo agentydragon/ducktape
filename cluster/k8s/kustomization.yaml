@@ -248,7 +248,6 @@ resources:
 
   # --- atuin ---
   - atuin/namespace/flux-kustomization.yaml
-  - atuin/secrets/flux-kustomization.yaml
   - atuin/db/flux-kustomization.yaml
   - atuin/app/flux-kustomization.yaml
   - atuin/user-provisioner/flux-kustomization.yaml
