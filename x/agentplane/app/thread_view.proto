@@ -52,30 +52,37 @@ message PayloadRef {
   uint64 byte_length = 6;
 }
 
-// Text that may exceed the response's byte budget. `preview` is always a valid bounded prefix;
-// `reference` is set only when it is a prefix rather than the whole value.
-message BoundedText {
-  string preview = 1;
-  // Of the whole value, so a reader can say how much it is not showing.
+// A value the response either carries or leaves for an on-demand read. Whole either way: a finished
+// payload is never split across responses, so a reader that has `value` has all of it.
+message Text {
+  oneof body {
+    string value = 1;
+    Omitted omitted = 2;
+  }
+}
+
+// Why the value is not here and how to get it. `byte_length` lets a collapsed card say how much it
+// is not showing without fetching it.
+message Omitted {
+  PayloadRef reference = 1;
   uint64 byte_length = 2;
-  PayloadRef reference = 3;
 }
 
 // Harness-confirmed input, anchored at confirmation rather than at submission.
 message ConfirmedInput {
   string harness_message_id = 1;
-  BoundedText text = 2;
+  Text text = 2;
   string turn_id = 3;
   // Every Command that produced this text: Claude coalesces several into one confirmation.
   repeated string origin_command_ids = 4;
 }
 
 message TextOutcome {
-  BoundedText text = 1;
+  Text text = 1;
 }
 
 message ToolOutcome {
-  BoundedText output = 1;
+  Text output = 1;
   bool succeeded = 2;
 }
 
@@ -84,9 +91,9 @@ message Item {
   ducktape.agentplane.protocol.v1.ItemKind kind = 2;
   string tool_name = 3;
   // What has streamed so far. A completion replaces it with the authoritative value.
-  BoundedText text = 4;
-  BoundedText arguments_json = 5;
-  BoundedText output = 6;
+  Text text = 4;
+  Text arguments_json = 5;
+  Text output = 6;
   // Absent while streaming, and after a crash that ended the stream: unknown output is never
   // converted into a successful completion.
   oneof completion {
@@ -185,7 +192,7 @@ message CommandSummary {
   string command_id = 1;
   // Which operation the Command carries, so a queue renders without opening it.
   string operation_kind = 2;
-  BoundedText preview = 3;
+  Text preview = 3;
   uint64 admission_cursor = 4;
   oneof outcome {
     Pending pending = 5;
@@ -230,20 +237,20 @@ message CommandLookup {
 message SegmentsPage {
   repeated Segment segments = 1;
   // The anchor range this page covers, so a caller knows exactly what it now holds even where the
-  // page is sparse -- most Events produce no Segment -- or empty.
+  // page is sparse -- most Events produce no Segment -- or empty. Paging further asks for the
+  // Segments before `covers_from_anchor`; keyset paging needs no separate page token.
   uint64 covers_from_anchor = 2;
   uint64 covers_through_anchor = 3;
-  // Opaque, bound to Thread, source, epoch, direction and filter. Not an authorization capability.
-  string next_page_token = 4;
-  bool exhausted = 5;
+  // No Segments remain beyond this page in the requested direction, as distinct from a page that
+  // simply hit its count.
+  bool exhausted = 4;
 }
 
 message CommandsPage {
   repeated CommandSummary commands = 1;
-  string next_page_token = 2;
-  bool exhausted = 3;
+  bool exhausted = 2;
   // Every unresolved Command, which the first page's length must not be mistaken for.
-  uint64 unresolved_count = 4;
+  uint64 unresolved_count = 3;
 }
 
 message ViewSnapshot {
@@ -300,12 +307,12 @@ enum Availability {
 
 message EventsPage {
   repeated ducktape.agentplane.protocol.v1.EventEntry entries = 1;
-  // The original range actually scanned: an empty filtered page is not proof no Events occurred.
+  // The original range actually scanned, which bounds what an empty page proves and is where the
+  // caller resumes from.
   uint64 scanned_after_cursor = 2;
   uint64 scanned_through_cursor = 3;
-  string next_page_token = 4;
-  bool exhausted = 5;
-  Availability availability = 6;
+  bool exhausted = 4;
+  Availability availability = 5;
 }
 
 message EventLookupEntry {
@@ -318,10 +325,8 @@ message EventsByOrigin {
   repeated EventLookupEntry entries = 1;
 }
 
-// Bounded bytes at an immutable reference. Reading one never advances the live cursor.
-message PayloadChunk {
+// The whole value at an immutable reference. Reading one never advances the caller's Position.
+message Payload {
   bytes data = 1;
-  uint64 next_byte_offset = 2;
-  bool complete = 3;
-  Availability availability = 4;
+  Availability availability = 2;
 }
