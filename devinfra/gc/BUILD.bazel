@@ -93,6 +93,7 @@ py_test(
     name = "test_bazel_output_base_gc",
     srcs = ["test_bazel_output_base_gc.py"],
     deps = [
+        ":conftest",
         ":output_base_gc",
         "//:conftest",
         "@pypi//pytest",
@@ -104,6 +105,7 @@ py_test(
     name = "test_worktree_gc",
     srcs = ["test_worktree_gc.py"],
     deps = [
+        ":conftest",
         ":git_repo",
         ":pull_request",
         ":worktree_gc",
@@ -118,6 +120,7 @@ py_test(
     srcs = ["test_branch_gc.py"],
     deps = [
         ":branch_gc",
+        ":conftest",
         ":git_repo",
         ":pull_request",
         ":worktree_gc",
@@ -133,11 +136,11 @@ py_test(
     srcs = ["test_workspace_scan.py"],
     deps = [
         ":branch_gc",
+        ":conftest",
         ":output_base_gc",
         ":workspace_scan",
         ":worktree_gc",
         "//:conftest",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -146,6 +149,7 @@ py_test(
     name = "test_workspace_gc",
     srcs = ["test_workspace_gc.py"],
     deps = [
+        ":conftest",
         ":workspace_gc",
         "//:conftest",
         "@pypi//httpx",
@@ -158,4 +162,14 @@ py_test(
 skill_package(
     name = "workspace-gc",
     srcs = ["SKILL.md"],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        "@pypi//pygit2",
+        "@pypi//pytest",
+    ],
 )
