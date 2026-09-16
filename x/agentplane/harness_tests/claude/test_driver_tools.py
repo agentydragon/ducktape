@@ -1,36 +1,32 @@
 """Driver-hosted MCP tools: a server declared at `initialize` reaches the model as
 `mcp__<server>__<tool>`, and a call round-trips entirely over `mcp_message` control requests, with
-no real MCP subprocess involved."""
+no real MCP subprocess involved — the tool registry itself is a real `fastmcp.FastMCP` server."""
 
 from __future__ import annotations
 
-from typing import Any
-
 import pytest_bazel
+from fastmcp import FastMCP
 
 from x.agentplane.harness_tests.claude import anthropic_sse as sse, frames
 from x.agentplane.harness_tests.claude.harness import MODEL, ClaudeHarness
 from x.agentplane.harness_tests.claude.messages import AnthropicMessages
-from x.agentplane.native.claude.mcp import DriverMcpServer, DriverTool
+from x.agentplane.native.claude.mcp import DriverMcpServer
 
 TOOL_NAME = "mcp__driver__echo"
 
 
-def _echo(arguments: dict[str, Any]) -> list[dict[str, Any]]:
-    return [{"type": "text", "text": f"ECHO: {arguments['message']}"}]
+def _build_server() -> FastMCP:
+    server = FastMCP("driver")
+
+    @server.tool
+    def echo(message: str) -> str:
+        """Echoes the given message back, prefixed."""
+        return f"ECHO: {message}"
+
+    return server
 
 
-DRIVER = DriverMcpServer(
-    "driver",
-    {
-        "echo": DriverTool(
-            name="echo",
-            description="Echoes the given message back, prefixed.",
-            input_schema={"type": "object", "properties": {"message": {"type": "string"}}, "required": ["message"]},
-            handler=_echo,
-        )
-    },
-)
+DRIVER = DriverMcpServer("driver", _build_server())
 
 
 async def test_driver_hosted_tool_is_declared_and_called(

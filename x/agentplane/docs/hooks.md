@@ -7,9 +7,14 @@ come from reading the pinned Claude Code (2.1.252) and Codex `main` at `31270925
 ([capture README](../capture/README.md)) run against LiteLLM on the cheap-experiments key
 (Haiku 4.5 through the Anthropic messages route, `gpt-5.6-luna` through the responses route):
 one shell tool call per turn, every registered hook answered by the probe as it arrived. The
-scripted tests run with hooks off ([roster § Deliberately unsupported](../native/docs/protocol_roster.md)),
-and the runner refuses the one callback it receives ([SPEC](../runner/SPEC.md) § What the
-harnesses do not promise).
+ordinary scripted tests run with hooks off ([roster § Deliberately unsupported](../native/docs/protocol_roster.md)),
+but `PreToolUse` allow/deny is now also pinned by scripted tests against a mocked model endpoint —
+`harness_tests/claude/test_hooks.py` and `harness_tests/codex/test_hooks.py` — reusing
+[`capture/codex_hook.py`](../capture/codex_hook.py) verbatim as Codex's spawned hook command. This
+confirms live capture's finding in CI: a `PreToolUse` decision, allow or deny, supersedes Claude's
+`can_use_tool` permission prompt entirely. The runner itself still refuses the one callback it
+receives ([SPEC](../runner/SPEC.md) § What the harnesses do not promise); these tests pin native
+harness behavior, not a runner capability.
 
 ## Claude Code: the driver is the hook
 

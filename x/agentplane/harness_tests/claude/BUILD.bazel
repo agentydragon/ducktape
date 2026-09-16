@@ -198,6 +198,7 @@ py_test(
         "//:conftest",
         "//x/agentplane/harness_tests:conftest",
         "//x/agentplane/native/claude:mcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pytest_bazel",
     ],
 )

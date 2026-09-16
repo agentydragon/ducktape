@@ -80,5 +80,8 @@ py_library(
     deps = [
         ":driver",
         ":wire",
+        "@pypi//fastmcp_slim",
+        "@pypi//mcp",
+        "@pypi//mcp_types",
     ],
 )
