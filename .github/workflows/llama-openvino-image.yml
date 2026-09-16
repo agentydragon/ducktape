@@ -1,0 +1,74 @@
+# llama.cpp built with OpenVINO support (Intel GPU + NPU backends), for rugged's
+# NPU-backed local LLM service (nix/nixos/hosts/rugged/local_llm_npu.nix). Builds
+# upstream's own .devops/openvino.Dockerfile against a pinned llama.cpp release —
+# there is no ducktape-authored Dockerfile here, the build context is upstream's
+# git tree at LLAMA_CPP_REF below.
+#
+# GHCR, not the Forgejo registry: this image is consumed by a Nix-managed host
+# service, not a Flux-tracked cluster workload, so it follows the bbr-runner /
+# freecad-test shape in container-images.yml rather than the Forgejo+ImagePolicy
+# shape used by cluster-deployed images (see that workflow's header comment for
+# the split). Unlike those two, the resolved digest isn't auto-pinned into
+# devinfra/image_pins.json — that file is for Bazel/bb-consumed pins, and nothing
+# else in this repo shares this image. Take the digest from the job summary and
+# paste it into local_llm_npu.nix's image reference by hand, matching how
+# local_llm_arc.nix already pins its own (third-party) image.
+#
+# LLAMA_CPP_REF is the only thing that needs to change to pick up a newer
+# llama.cpp/OpenVINO/NPU-driver build.
+name: llama.cpp OpenVINO Image
+
+on:
+  push:
+    branches: [devel]
+    paths:
+      - ".github/workflows/llama-openvino-image.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: llama-openvino-image-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/llama-openvino-server
+  LLAMA_CPP_REF: b11009
+
+jobs:
+  build-and-push:
+    name: Build and push
+    runs-on: ubuntu-latest
+    # Compiles llama.cpp from source plus a Node UI build and large Intel
+    # GPU/NPU driver downloads; comparable in weight to bbr-runner's cold build.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/ghcr-build-push
+        id: build
+        with:
+          image: ${{ env.IMAGE }}
+          context: https://github.com/ggml-org/llama.cpp.git#${{ env.LLAMA_CPP_REF }}
+          file: .devops/openvino.Dockerfile
+          cache_from: type=registry,ref=${{ env.IMAGE }}:buildcache
+          cache_to: type=registry,ref=${{ env.IMAGE }}:buildcache,mode=max
+
+      # Sanity check only: GHA runners have no Intel GPU/NPU, so this can't
+      # exercise OpenVINO device inference, only that the binary is present and
+      # its dynamic libs resolve. Real NPU behavior needs rugged's own hardware.
+      - name: Verify the server binary runs
+        run: docker run --rm "${{ env.IMAGE }}:${{ github.sha }}" --help
+
+      - name: Resolve pinned digest
+        run: |
+          DIGEST=$(docker manifest inspect "${{ env.IMAGE }}:${{ steps.build.outputs.pin_tag }}" --verbose | \
+            python3 -c "import json,sys; d=json.load(sys.stdin); d=d[0] if isinstance(d,list) else d; print(d['Descriptor']['digest'])")
+          {
+            echo "Pinned digest: \`${{ env.IMAGE }}@$DIGEST\`"
+            echo "Built from llama.cpp @ \`${{ env.LLAMA_CPP_REF }}\`"
+            echo ""
+            echo "Paste the digest into nix/nixos/hosts/rugged/local_llm_npu.nix's image reference."
+          } >> "$GITHUB_STEP_SUMMARY"
