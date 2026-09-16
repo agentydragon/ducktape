@@ -108,8 +108,8 @@ well" already established that Flux's dependency graph doesn't care who produced
   `prune: true`), parameterized for the fields that vary per service today
   (`interval`/`timeout`/`retryInterval`, `wait`, `healthChecks`, `decryption.provider:
 sops`, `dependsOn`, `annotations.description`). Centralizing the boilerplate is a real
-  win — right now every one of the ~150 `flux-kustomization.yaml` files repeats it by
-  hand.
+  win — right now every one of the fleet's 278 `flux-kustomization.yaml` files (`find
+cluster/k8s -name flux-kustomization.yaml | wc -l`) repeats it by hand.
 - `kustomization.yaml` — generated too; it's just `resources: [<name>.k8s.yaml]` plus
   whatever `namespace:` the directory sets, no reason to hand-maintain that either.
 - `<name>.k8s.yaml` — generated, committed, one file per cdk8s `Chart`. The spike's own
@@ -278,6 +278,41 @@ output, then verify with `bbr test //cluster:test_generate_manifests` — which 
 against Bazel's own hermetic toolchain both times, confirming the pip-generated files
 are exactly what Bazel would have produced. Try `bb run` first; fall back to this only if
 it hits the same class of fetch failure.
+
+## Where to convert next
+
+Not scheduled yet — litellm/app should run in production for a while first, per §
+Phase 1 above — but recorded so the next candidate is picked by criteria, not
+arbitrarily:
+
+- **No `dependsOn` rationale comments to lose is a green light, not a precondition.**
+  Check with `grep -c '#' <dir>/flux-kustomization.yaml` before converting; most of
+  the fleet's 278 Kustomizations have zero. litellm/app had exactly one
+  (`monitoring-crds`) and it was judged self-explanatory enough to drop (§ "The one
+  real catch"). A directory whose comments _aren't_ droppable this way still needs
+  the `reason`-kwarg mechanism from that section before it converts cleanly.
+- **Live image automation is no longer a reason to defer.** The `image-pins/`
+  Component pattern is verified end-to-end against real `kustomize build` (§ "The
+  other real catch"), and it's not a rare shape to plan around: 44 of the fleet's 278
+  Kustomization directories currently carry an `$imagepolicy` marker somewhere
+  (`grep -rl '\$imagepolicy' cluster/k8s --include='*.yaml'`). A second real instance
+  is still worth picking deliberately — to confirm the pattern holds for a directory
+  with more than one `$imagepolicy`-carrying resource, which litellm/app's
+  single-image case doesn't exercise — but it no longer blocks conversion.
+- **Prefer small, boilerplate-heavy directories over large, bespoke ones.** § "A
+  fully-converted directory generates all three files" already notes every
+  `flux-kustomization.yaml` hand-repeats the same constant fields; a directory with
+  one Deployment/Service, or a namespace-only Kustomization, converts with the least
+  risk and starts amortizing `flux_constructs.py`'s shared helpers immediately,
+  before a large bespoke directory would.
+- **A directory whose config already lives in Python is a natural fit.** litellm/app
+  had `ProxySpec` and the model rosters driving its ConfigMap by hand already; cdk8s
+  let the Deployment/Service render that same model directly instead of staying
+  hand-synced to it. Any other directory where the YAML is essentially a
+  hand-transcription of data that already has a Python representation gets the same
+  win.
+- **Still one Kustomization at a time (§ Phase 1).** These criteria pick which
+  directory goes next, not license to batch several conversions into one change.
 
 ## Explicitly deferred (not decided, not scheduled)
 
