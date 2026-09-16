@@ -2,8 +2,8 @@
 
 `EgressPolicy`, `EgressBinding` and `EgressCredential` are Agentplane's own kinds (group
 `agentplane.allegedly.works`, `v1alpha1`; the CRDs live in `cluster/k8s/agentplane-crds`).
-`Sandbox` is the subject kind the bindings name, and `Secret` holds the credentials the rules
-substitute, in the credentials namespace. Only the fields the proxy reads are modelled; everything
+A binding names its subjects as a `Sandbox` or as a ServiceAccount, and `Secret` holds the
+credentials the rules substitute, in the credentials namespace. Only the fields the proxy reads are modelled; everything
 else on the wire is ignored.
 """
 
@@ -11,10 +11,10 @@ from __future__ import annotations
 
 import base64
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from kubernetes_asyncio import client as k8s_client
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Discriminator, Field, Tag, model_validator
 
 GROUP = "agentplane.allegedly.works"
 VERSION = "v1alpha1"
@@ -191,8 +191,44 @@ class SandboxRef(_Wire):
     name: str
 
 
-class Subject(_Wire):
+class ServiceAccountRef(_Wire):
+    name: str = Field(min_length=1)
+
+
+class SandboxSubject(_Wire):
     sandbox: SandboxRef
+
+
+class ServiceAccountSubject(_Wire):
+    """A workload that is not a Sandbox, named by the ServiceAccount its Pod runs as.
+
+    Unlike a Sandbox subject this is not lifecycle-bound: every Pod running as that ServiceAccount
+    in the proxy's namespace is this subject, so a binding is only as narrow as the ServiceAccount
+    is dedicated to one workload.
+    """
+
+    service_account: ServiceAccountRef = Field(alias="serviceAccount")
+
+
+def _subject_kind(value: Any) -> str | None:
+    """Which one-key form the subject takes; both at once fails as an extra field on the chosen one."""
+    if isinstance(value, ServiceAccountSubject):
+        return "serviceAccount"
+    if isinstance(value, SandboxSubject):
+        return "sandbox"
+    if isinstance(value, dict):
+        for key in ("serviceAccount", "service_account"):
+            if key in value:
+                return "serviceAccount"
+        if "sandbox" in value:
+            return "sandbox"
+    return None
+
+
+Subject = Annotated[
+    Annotated[ServiceAccountSubject, Tag("serviceAccount")] | Annotated[SandboxSubject, Tag("sandbox")],
+    Discriminator(_subject_kind),
+]
 
 
 class BindingSpec(_Wire):

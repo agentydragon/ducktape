@@ -32,6 +32,7 @@ class DecisionRecordRow(Base):
     ingested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     producer_id: Mapped[UUID]
     sandbox: Mapped[str | None] = mapped_column(Text)
+    service_account: Mapped[str | None] = mapped_column(Text)
     sandbox_namespace: Mapped[str | None] = mapped_column(Text)
     sandbox_uid: Mapped[str | None] = mapped_column(Text)
     source_pod_uid: Mapped[str | None] = mapped_column(Text)
@@ -97,6 +98,7 @@ class DecisionStore:
                 producer_id=row.producer_id,
                 at=row.decided_at,
                 sandbox=row.sandbox,
+                service_account=row.service_account,
                 sandbox_namespace=row.sandbox_namespace,
                 sandbox_uid=row.sandbox_uid,
                 source_pod_uid=row.source_pod_uid,

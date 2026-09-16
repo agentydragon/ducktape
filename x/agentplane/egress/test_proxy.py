@@ -52,7 +52,7 @@ from x.agentplane.egress.decision_log import DecisionLog
 from x.agentplane.egress.decisions import Phase
 from x.agentplane.egress.identity import IdentityRejectedError, PodIdentityVerifier
 from x.agentplane.egress.main import Settings
-from x.agentplane.egress.policy import DenyReason, Index
+from x.agentplane.egress.policy import DenyReason, Index, SandboxCaller
 from x.agentplane.egress.proxy import EgressProxyServer, write_interception_ca
 from x.agentplane.egress.resources import TargetMethod, placeholder_of
 from x.agentplane.egress.rules_api import (
@@ -386,28 +386,32 @@ async def test_rejected_replacement_clears_authenticated_connection_context(
 ) -> None:
     client = connection.Client(peername=(POD_A_IP, 12345), sockname=("127.0.0.1", 8080))
     admitted = authentication_flow(client, f"Bearer {TOKEN_A}")
-    assert (await proxy.addon._sandbox_of(admitted)).metadata.name == SANDBOX_A
+    admitted_caller = await proxy.addon._caller_of(admitted)
+    assert isinstance(admitted_caller, SandboxCaller)
+    assert admitted_caller.sandbox.metadata.name == SANDBOX_A
     assert "proxy-authorization" not in admitted.request.headers
 
     rejected = authentication_flow(client, replacement)
     with pytest.raises(IdentityRejectedError) as refusal:
-        await proxy.addon._sandbox_of(rejected)
+        await proxy.addon._caller_of(rejected)
     assert refusal.value.reason is reason
     assert "proxy-authorization" not in rejected.request.headers
 
     with pytest.raises(IdentityRejectedError) as after:
-        await proxy.addon._sandbox_of(authentication_flow(client, None))
+        await proxy.addon._caller_of(authentication_flow(client, None))
     assert after.value.reason is DenyReason.TOKEN_MISSING
 
 
 async def test_connection_end_clears_authenticated_context(proxy: ProxyUnderTest) -> None:
     client = connection.Client(peername=(POD_A_IP, 12345), sockname=("127.0.0.1", 8080))
-    assert (await proxy.addon._sandbox_of(authentication_flow(client, f"Bearer {TOKEN_A}"))).metadata.name == SANDBOX_A
+    caller = await proxy.addon._caller_of(authentication_flow(client, f"Bearer {TOKEN_A}"))
+    assert isinstance(caller, SandboxCaller)
+    assert caller.sandbox.metadata.name == SANDBOX_A
 
     proxy.addon.client_disconnected(client)
 
     with pytest.raises(IdentityRejectedError) as after:
-        await proxy.addon._sandbox_of(authentication_flow(client, None))
+        await proxy.addon._caller_of(authentication_flow(client, None))
     assert after.value.reason is DenyReason.TOKEN_MISSING
 
 

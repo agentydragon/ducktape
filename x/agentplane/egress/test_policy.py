@@ -17,6 +17,8 @@ from x.agentplane.egress.policy import (
     DenyReason,
     EgressRequest,
     Index,
+    SandboxCaller,
+    ServiceAccountCaller,
     evaluate,
     host_matches,
     path_matches,
@@ -40,9 +42,12 @@ from x.agentplane.egress.resources import (
     Rule,
     Sandbox,
     SandboxRef,
+    SandboxSubject,
     SchemeTokenTarget,
     Secret,
     SecretKeyRef,
+    ServiceAccountRef,
+    ServiceAccountSubject,
     Subject,
     Target,
     TargetMethod,
@@ -110,7 +115,7 @@ def binding(
     return EgressBinding(
         metadata=ObjectMeta(name=name, generation=3),
         spec=BindingSpec(
-            subjects=subjects if subjects is not None else [Subject(sandbox=SandboxRef(name="sb"))],
+            subjects=subjects if subjects is not None else [SandboxSubject(sandbox=SandboxRef(name="sb"))],
             policies=policies,
             expires_at=expires_at,
         ),
@@ -247,7 +252,7 @@ CASES = [
         "binding for another sandbox",
         index(
             policies=[policy("github", GITHUB_RULE)],
-            bindings=[binding("b", policies=["github"], subjects=[Subject(sandbox=SandboxRef(name="other"))])],
+            bindings=[binding("b", policies=["github"], subjects=[SandboxSubject(sandbox=SandboxRef(name="other"))])],
         ),
         request(),
         Denied(DenyReason.NO_BINDING),
@@ -344,17 +349,67 @@ CASES = [
 ]
 
 
+def test_a_binding_names_a_service_account_subject() -> None:
+    """A workload no Sandbox owns is bound by the ServiceAccount its Pod runs as."""
+    scoped = index(
+        policies=[policy("github", GITHUB_RULE)],
+        bindings=[
+            binding(
+                "b",
+                policies=["github"],
+                subjects=[ServiceAccountSubject(service_account=ServiceAccountRef(name="public-coder"))],
+            )
+        ],
+    )
+    allowed = evaluate(scoped, ServiceAccountCaller("public-coder"), request(), NOW)
+    assert isinstance(allowed, Allowed)
+
+
+def test_a_service_account_binding_does_not_admit_another_service_account() -> None:
+    scoped = index(
+        policies=[policy("github", GITHUB_RULE)],
+        bindings=[
+            binding(
+                "b",
+                policies=["github"],
+                subjects=[ServiceAccountSubject(service_account=ServiceAccountRef(name="public-coder"))],
+            )
+        ],
+    )
+    assert evaluate(scoped, ServiceAccountCaller("someone-else"), request(), NOW) == Denied(DenyReason.NO_BINDING)
+
+
+def test_subject_kinds_do_not_admit_each_other() -> None:
+    """A name shared by a Sandbox and a ServiceAccount is two subjects, not one."""
+    by_sandbox = index(
+        policies=[policy("github", GITHUB_RULE)],
+        bindings=[binding("b", policies=["github"], subjects=[SandboxSubject(sandbox=SandboxRef(name="sb"))])],
+    )
+    assert evaluate(by_sandbox, ServiceAccountCaller("sb"), request(), NOW) == Denied(DenyReason.NO_BINDING)
+    by_service_account = index(
+        policies=[policy("github", GITHUB_RULE)],
+        bindings=[
+            binding(
+                "b", policies=["github"], subjects=[ServiceAccountSubject(service_account=ServiceAccountRef(name="sb"))]
+            )
+        ],
+    )
+    assert evaluate(by_service_account, SandboxCaller(SANDBOX), request(), NOW) == Denied(DenyReason.NO_BINDING)
+
+
 @pytest.mark.parametrize("case", CASES, ids=[case.name for case in CASES])
 def test_evaluate(case: Case) -> None:
-    assert evaluate(case.index, SANDBOX, case.request, NOW) == case.expected
+    assert evaluate(case.index, SandboxCaller(SANDBOX), case.request, NOW) == case.expected
 
 
 def test_one_credential_is_substituted_at_whichever_target_the_request_uses() -> None:
     """The GitHub PAT is a bearer token to the API and a `Basic` password to git. Both targets are
     declared on the one credential, and each fires only where the request actually presents it."""
-    bearer = evaluate(BASE_INDEX, SANDBOX, request(authorization=f"Bearer {PLACEHOLDER}"), NOW)
+    bearer = evaluate(BASE_INDEX, SandboxCaller(SANDBOX), request(authorization=f"Bearer {PLACEHOLDER}"), NOW)
     assert bearer == Allowed("b", "github", 0, SWAPPED)
-    git = evaluate(BASE_INDEX, SANDBOX, request(authorization=basic(f"x-access-token:{PLACEHOLDER}")), NOW)
+    git = evaluate(
+        BASE_INDEX, SandboxCaller(SANDBOX), request(authorization=basic(f"x-access-token:{PLACEHOLDER}")), NOW
+    )
     rewritten = (HeaderRewrite(header=AUTHORIZATION, values=(basic(f"x-access-token:{SECRET_VALUE}"),)),)
     assert git == Allowed("b", "github", 0, rewritten)
 
@@ -370,14 +425,11 @@ def test_authenticated_workload_source_substitutes_only_the_validated_context_be
     token = "pod-a-authenticated-workload-token"
     decision = evaluate(
         scoped,
-        SANDBOX,
+        SandboxCaller(SANDBOX),
         request(authorization=f"Bearer {dynamic.placeholder}"),
         NOW,
         authenticated_workload=AuthenticatedWorkloadContext(
-            bearer=token,
-            sandbox_name=SANDBOX.metadata.name,
-            sandbox_uid=SANDBOX.metadata.uid or "",
-            pod_uid="pod-a-uid",
+            bearer=token, caller=SandboxCaller(SANDBOX), pod_uid="pod-a-uid"
         ),
     )
     assert decision == Allowed("b", "workload", 0, (HeaderRewrite(header=AUTHORIZATION, values=(f"Bearer {token}",)),))
@@ -393,14 +445,14 @@ def test_authenticated_workload_source_fails_without_authenticated_context() -> 
         credentials=[dynamic],
     )
     egress = request(authorization=f"Bearer {dynamic.placeholder}")
-    assert evaluate(scoped, SANDBOX, egress, NOW) == Denied(DenyReason.CREDENTIAL_UNAVAILABLE)
-    stale = AuthenticatedWorkloadContext(
-        bearer="stale-token",
-        sandbox_name=SANDBOX.metadata.name,
-        sandbox_uid="an-old-sandbox-uid",
-        pod_uid="an-old-pod-uid",
+    assert evaluate(scoped, SandboxCaller(SANDBOX), egress, NOW) == Denied(DenyReason.CREDENTIAL_UNAVAILABLE)
+    superseded = SANDBOX.model_copy(
+        update={"metadata": SANDBOX.metadata.model_copy(update={"uid": "an-old-sandbox-uid"})}
     )
-    assert evaluate(scoped, SANDBOX, egress, NOW, authenticated_workload=stale) == Denied(
+    stale = AuthenticatedWorkloadContext(
+        bearer="stale-token", caller=SandboxCaller(superseded), pod_uid="an-old-pod-uid"
+    )
+    assert evaluate(scoped, SandboxCaller(SANDBOX), egress, NOW, authenticated_workload=stale) == Denied(
         DenyReason.CREDENTIAL_UNAVAILABLE
     )
 
@@ -426,7 +478,7 @@ def test_a_basic_username_target_takes_the_half_before_the_first_colon() -> None
     scoped = index(
         policies=[policy("github", GITHUB_RULE)], bindings=[binding("b", policies=["github"])], credentials=credentials
     )
-    decision = evaluate(scoped, SANDBOX, request(authorization=basic(f"{PLACEHOLDER}:")), NOW)
+    decision = evaluate(scoped, SandboxCaller(SANDBOX), request(authorization=basic(f"{PLACEHOLDER}:")), NOW)
     rewritten = (HeaderRewrite(header=AUTHORIZATION, values=(basic(f"{SECRET_VALUE}:"),)),)
     assert decision == Allowed("b", "github", 0, rewritten)
 
@@ -438,7 +490,7 @@ def test_a_whole_value_target_takes_the_header_entire() -> None:
     scoped = index(
         policies=[policy("github", GITHUB_RULE)], bindings=[binding("b", policies=["github"])], credentials=credentials
     )
-    decision = evaluate(scoped, SANDBOX, request(**{"x-api-key": PLACEHOLDER}), NOW)
+    decision = evaluate(scoped, SandboxCaller(SANDBOX), request(**{"x-api-key": PLACEHOLDER}), NOW)
     assert decision == Allowed("b", "github", 0, (HeaderRewrite(header=header, values=(SECRET_VALUE,)),))
 
 
@@ -450,7 +502,7 @@ def test_substitution_covers_every_value_of_the_header() -> None:
         path="/repos/x",
         headers={"authorization": [f"Bearer {PLACEHOLDER}", "Bearer other"]},
     )
-    decision = evaluate(BASE_INDEX, SANDBOX, egress, NOW)
+    decision = evaluate(BASE_INDEX, SandboxCaller(SANDBOX), egress, NOW)
     rewritten = (HeaderRewrite(header=AUTHORIZATION, values=(f"Bearer {SECRET_VALUE}", "Bearer other")),)
     assert decision == Allowed("b", "github", 0, rewritten)
 
@@ -461,7 +513,9 @@ def test_a_rule_naming_a_credential_the_namespace_does_not_hold_forwards_untouch
     scoped = index(
         policies=[policy("github", GITHUB_RULE)], bindings=[binding("b", policies=["github"])], credentials=[]
     )
-    assert evaluate(scoped, SANDBOX, request(authorization=f"Bearer {PLACEHOLDER}"), NOW) == Allowed("b", "github", 0)
+    assert evaluate(scoped, SandboxCaller(SANDBOX), request(authorization=f"Bearer {PLACEHOLDER}"), NOW) == Allowed(
+        "b", "github", 0
+    )
 
 
 @pytest.mark.parametrize(

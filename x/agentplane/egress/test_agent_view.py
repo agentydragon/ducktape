@@ -22,10 +22,10 @@ from x.agentplane.egress.resources import (
     Rule,
     Sandbox,
     SandboxRef,
+    SandboxSubject,
     SchemeTokenTarget,
     Secret,
     SecretKeyRef,
-    Subject,
     TargetMethod,
 )
 
@@ -61,7 +61,7 @@ def _index(*, expires_at: datetime | None = None, policies: list[str] | None = N
     bound = EgressBinding(
         metadata=ObjectMeta(name="b", generation=1),
         spec=BindingSpec(
-            subjects=[Subject(sandbox=SandboxRef(name="sb"))],
+            subjects=[SandboxSubject(sandbox=SandboxRef(name="sb"))],
             policies=policies if policies is not None else ["github"],
             expires_at=expires_at,
         ),

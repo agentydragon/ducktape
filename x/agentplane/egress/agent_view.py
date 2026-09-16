@@ -25,7 +25,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from x.agentplane.egress.policy import Index, subject_bindings
+from x.agentplane.egress.policy import Index, SandboxCaller, subject_bindings
 from x.agentplane.egress.resources import EgressCredential, Rule, Sandbox, SchemeTokenTarget, Target, TargetMethod
 
 
@@ -115,12 +115,15 @@ def agent_view(index: Index, sandbox: Sandbox, now: datetime) -> AgentEgressView
 
     Built from `subject_bindings`, so what it reports and what the proxy admits cannot drift: an
     expired binding, a missing policy, or a revoked grant drops out of both at once.
+
+    Sandboxes only: a ServiceAccount subject reaches the proxy but has no route to this view yet, so
+    widening `AgentEgressView` is left to whatever surface serves it one.
     """
     return AgentEgressView(
         sandbox=sandbox.metadata.name,
         policies=[
             PolicyView(name=policy.metadata.name, rules=[_rule_view(index, rule) for rule in policy.spec.rules])
-            for resolution in subject_bindings(index, sandbox, now)
+            for resolution in subject_bindings(index, SandboxCaller(sandbox), now)
             for policy in resolution.policies
         ],
     )

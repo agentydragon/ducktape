@@ -10,11 +10,24 @@
           "type": "array",
           "minItems": 1,
           "items": {
+            "description": "Exactly one subject kind, as ActionPolicyBinding's subject is written.",
             "type": "object",
-            "required": ["sandbox"],
+            "minProperties": 1,
+            "maxProperties": 1,
             "properties": {
               "sandbox": {
                 "description": "One Sandbox in the binding's namespace, by name.",
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              "serviceAccount": {
+                "description": "One ServiceAccount in the proxy's namespace, by name: a workload no Sandbox owns, such as a Deployment. Not lifecycle-bound the way a Sandbox subject is -- every Pod running as it is this subject -- so bind only a ServiceAccount dedicated to one workload.",
                 "type": "object",
                 "required": ["name"],
                 "properties": {

@@ -34,7 +34,10 @@ class DecisionRecord(BaseModel):
     connection_id: str
     phase: Phase
     at: datetime
-    sandbox: str | None = Field(description="The subject; absent when the token did not prove one.")
+    sandbox: str | None = Field(description="The Sandbox subject; absent unless a Sandbox owns the Pod.")
+    service_account: str | None = Field(
+        default=None, description="The ServiceAccount subject; absent unless the Pod is owned by no Sandbox."
+    )
     method: str
     host: str
     port: int

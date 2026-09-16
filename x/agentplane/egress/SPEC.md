@@ -12,17 +12,21 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
   retains its bearer only after successful verification; malformed or rejected replacement headers
   clear earlier connection context rather than falling back to it.
 - The token is proven by TokenReview against that audience. The Pod it is bound to is read live:
-  its UID must equal the token's, its address must equal the connection's source, and its
-  controller owner must be a Sandbox that the proxy's watch knows under the same UID. That
-  Sandbox is the subject.
+  its UID must equal the token's and its address must equal the connection's source. If its
+  controller owner is a Sandbox the proxy's watch knows under the same UID, that Sandbox is the
+  subject; if it is owned by no Sandbox, the ServiceAccount it runs as is the subject. Authenticating
+  a workload is not admitting it: a subject no binding names reaches no rule.
 - A verdict is cached for at most the token's remaining life, bounded by a configured limit; the
   source-address check runs on every request regardless.
 
 ## Decision
 
 - An `EgressBinding` grants by existing and unexpired: creating one is the whole act of allowing,
-  and deleting it the whole act of taking that back. A binding names its subjects as Sandboxes by
-  name and lists `EgressPolicy` names.
+  and deleting it the whole act of taking that back. A binding names its subjects by name, each as
+  exactly one kind -- a `sandbox` or a `serviceAccount` -- and lists `EgressPolicy` names. The two
+  kinds never admit each other: a name is a Sandbox or a ServiceAccount, never both. A Sandbox
+  subject is lifecycle-bound and ends with its Sandbox; a ServiceAccount subject is every Pod
+  running as it, so bind only a ServiceAccount dedicated to one workload.
 - A rule matches a request when its hosts, methods, and paths all admit it. One matching rule in
   any policy of any of the subject's bindings is enough to admit the request; nothing matching
   refuses with `no-rule`. A CONNECT is matched on host alone; each request inside the tunnel is

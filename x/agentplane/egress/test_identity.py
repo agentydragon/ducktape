@@ -5,13 +5,30 @@ from __future__ import annotations
 import base64
 import json
 import time
+from dataclasses import replace
 
 import pytest
 import pytest_bazel
 from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api
 
-from x.agentplane.egress.conftest import AUDIENCE, POD_A_IP, POD_A_UID, POD_B_IP, SANDBOX_A, SANDBOX_B, TOKEN_A, TOKEN_B
-from x.agentplane.egress.identity import IdentityRejectedError, PodIdentity, PodIdentityVerifier, token_expiry
+from x.agentplane.egress.conftest import (
+    AUDIENCE,
+    POD_A_IP,
+    POD_A_UID,
+    POD_B_IP,
+    POD_B_UID,
+    SANDBOX_A,
+    SANDBOX_B,
+    TOKEN_A,
+    TOKEN_B,
+)
+from x.agentplane.egress.identity import (
+    IdentityRejectedError,
+    PodIdentityVerifier,
+    SandboxPodIdentity,
+    ServiceAccountPodIdentity,
+    token_expiry,
+)
 from x.agentplane.egress.policy import DenyReason
 from x.agentplane.egress.testing.fake_apiserver import SANDBOX_NAMESPACE, FakeApiServer, TokenVerdict, pod_for
 
@@ -35,7 +52,7 @@ def jwt_with_expiry(expiry: float) -> str:
 async def test_good_token_from_its_pod(fake: FakeApiServer, verifier: PodIdentityVerifier) -> None:
     identity = await verifier.identify(TOKEN_A, POD_A_IP)
     sandbox_uid = fake.objects["sandboxes"][SANDBOX_A]["metadata"]["uid"]
-    assert identity == PodIdentity(
+    assert identity == SandboxPodIdentity(
         pod_name=SANDBOX_A, pod_uid=POD_A_UID, pod_ip=POD_A_IP, sandbox_name=SANDBOX_A, sandbox_uid=sandbox_uid
     )
 
@@ -114,11 +131,20 @@ async def test_gone_pod(fake: FakeApiServer, verifier: PodIdentityVerifier) -> N
     assert rejected.value.reason is DenyReason.POD_MISMATCH
 
 
-async def test_pod_without_sandbox_owner(fake: FakeApiServer, verifier: PodIdentityVerifier) -> None:
+async def test_pod_without_sandbox_owner_is_its_service_account(
+    fake: FakeApiServer, verifier: PodIdentityVerifier
+) -> None:
+    """A Pod no Sandbox controls authenticates as the ServiceAccount it runs as, rather than being
+    refused: a Deployment can be an egress subject, and whether it may reach anything is decided by
+    whether a binding names that ServiceAccount, not by this step."""
     fake.pods[SANDBOX_B]["metadata"]["ownerReferences"] = []
-    with pytest.raises(IdentityRejectedError) as rejected:
-        await verifier.identify(TOKEN_B, POD_B_IP)
-    assert rejected.value.reason is DenyReason.SANDBOX_UNKNOWN
+    fake.tokens[TOKEN_B] = replace(
+        fake.tokens[TOKEN_B], username=f"system:serviceaccount:{SANDBOX_NAMESPACE}:public-coder"
+    )
+    identity = await verifier.identify(TOKEN_B, POD_B_IP)
+    assert identity == ServiceAccountPodIdentity(
+        pod_name=SANDBOX_B, pod_uid=POD_B_UID, pod_ip=POD_B_IP, service_account_name="public-coder"
+    )
 
 
 if __name__ == "__main__":

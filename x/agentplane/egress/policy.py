@@ -30,7 +30,10 @@ from x.agentplane.egress.resources import (
     EgressPolicy,
     Rule,
     Sandbox,
+    SandboxSubject,
     Secret,
+    ServiceAccountSubject,
+    Subject,
 )
 
 CONNECT = "CONNECT"
@@ -107,16 +110,49 @@ class EgressRequest:
 
 
 @dataclass(frozen=True)
+class SandboxCaller:
+    """A request from a Pod a live managed Sandbox controls."""
+
+    sandbox: Sandbox
+
+    @property
+    def label(self) -> str:
+        return f"Sandbox {self.sandbox.metadata.name}"
+
+
+@dataclass(frozen=True)
+class ServiceAccountCaller:
+    """A request from a Pod running as this ServiceAccount, owned by no Sandbox."""
+
+    service_account_name: str
+
+    @property
+    def label(self) -> str:
+        return f"ServiceAccount {self.service_account_name}"
+
+
+type Caller = SandboxCaller | ServiceAccountCaller
+
+
+@dataclass(frozen=True)
 class AuthenticatedWorkloadContext:
     """Credential material retained only after central authenticated this request or tunnel."""
 
     bearer: str = field(repr=False)
-    sandbox_name: str
-    sandbox_uid: str
+    caller: Caller
     pod_uid: str
 
-    def is_bound_to(self, sandbox: Sandbox) -> bool:
-        return self.sandbox_name == sandbox.metadata.name and self.sandbox_uid == sandbox.metadata.uid
+    def is_bound_to(self, caller: Caller) -> bool:
+        match self.caller, caller:
+            case SandboxCaller(), SandboxCaller():
+                return (
+                    self.caller.sandbox.metadata.name == caller.sandbox.metadata.name
+                    and self.caller.sandbox.metadata.uid == caller.sandbox.metadata.uid
+                )
+            case ServiceAccountCaller(), ServiceAccountCaller():
+                return self.caller.service_account_name == caller.service_account_name
+            case _:
+                return False
 
 
 @dataclass(frozen=True)
@@ -165,13 +201,23 @@ def resolve_binding(index: Index, binding: EgressBinding, now: datetime) -> Bind
     return BindingResolution(binding=binding, policies=policies, missing=missing, reason=reason)
 
 
-def subject_bindings(index: Index, sandbox: Sandbox, now: datetime) -> list[BindingResolution]:
-    """The active bindings naming this Sandbox, in name order."""
+def _names(subject: Subject, caller: Caller) -> bool:
+    match subject, caller:
+        case SandboxSubject(), SandboxCaller():
+            return subject.sandbox.name == caller.sandbox.metadata.name
+        case ServiceAccountSubject(), ServiceAccountCaller():
+            return subject.service_account.name == caller.service_account_name
+        case _:
+            return False
+
+
+def subject_bindings(index: Index, caller: Caller, now: datetime) -> list[BindingResolution]:
+    """The active bindings naming this caller, in name order."""
     return [
         resolution
         for name in sorted(index.bindings)
         if (resolution := resolve_binding(index, index.bindings[name], now)).active
-        and any(subject.sandbox.name == sandbox.metadata.name for subject in resolution.binding.spec.subjects)
+        and any(_names(subject, caller) for subject in resolution.binding.spec.subjects)
     ]
 
 
@@ -247,7 +293,7 @@ def _resolves(rule: Rule, presented: Collection[str]) -> bool:
 
 def evaluate(
     index: Index,
-    sandbox: Sandbox,
+    caller: Caller,
     request: EgressRequest,
     now: datetime,
     authenticated_workload: AuthenticatedWorkloadContext | None = None,
@@ -259,7 +305,7 @@ def evaluate(
     came. So a placeholder is never forwarded, and widening what a subject may reach never takes a
     credential away from it.
     """
-    bindings = subject_bindings(index, sandbox, now)
+    bindings = subject_bindings(index, caller, now)
     if not bindings:
         return Denied(DenyReason.NO_BINDING)
     matches = _matching_rules(bindings, request)
@@ -286,7 +332,7 @@ def evaluate(
     else:
         value = (
             authenticated_workload.bearer
-            if authenticated_workload is not None and authenticated_workload.is_bound_to(sandbox)
+            if authenticated_workload is not None and authenticated_workload.is_bound_to(caller)
             else None
         )
     if value is None:

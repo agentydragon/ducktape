@@ -19,7 +19,6 @@ py_library(
         ":decisions",
         ":identity",
         ":policy",
-        ":resources",
         ":upstream",
         "@pypi//mitmproxy",
     ],

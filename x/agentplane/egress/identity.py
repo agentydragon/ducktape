@@ -22,7 +22,12 @@ from datetime import UTC, datetime
 from kubernetes_asyncio.client import AuthenticationV1Api, CoreV1Api
 
 from x.agentplane.egress.policy import DenyReason
-from x.agentplane.sandbox_auth.principal import RejectionReason, SandboxPrincipalRejectedError, SandboxPrincipalResolver
+from x.agentplane.sandbox_auth.principal import (
+    RejectionReason,
+    SandboxPrincipalRejectedError,
+    SandboxPrincipalResolver,
+    sandbox_controller,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -30,16 +35,32 @@ _CACHE_SWEEP_SIZE = 256
 
 
 @dataclass(frozen=True)
-class PodIdentity:
+class _PodBinding:
     pod_name: str
     pod_uid: str
     pod_ip: str
+
+
+@dataclass(frozen=True)
+class SandboxPodIdentity(_PodBinding):
+    """A Pod a live managed Sandbox controls; the Sandbox is the subject."""
+
     sandbox_name: str
     sandbox_uid: str
 
 
+@dataclass(frozen=True)
+class ServiceAccountPodIdentity(_PodBinding):
+    """A Pod no Sandbox controls; the ServiceAccount it runs as is the subject."""
+
+    service_account_name: str
+
+
+type PodIdentity = SandboxPodIdentity | ServiceAccountPodIdentity
+
+
 class IdentityRejectedError(Exception):
-    """The token does not prove a live Sandbox Pod at this address; `reason` is what the client sees."""
+    """The token does not prove a live Pod at this address; `reason` is what the client sees."""
 
     def __init__(self, reason: DenyReason, detail: str) -> None:
         super().__init__(detail)
@@ -114,8 +135,13 @@ class PodIdentityVerifier:
         self._cache[key] = _CachedIdentity(identity=identity, expires_at=now + ttl)
 
     async def _verify(self, token: str) -> PodIdentity:
+        """A Pod without a Sandbox owner is authenticated as its ServiceAccount, not refused.
+
+        Authorization is unchanged by that: a subject no binding names still reaches no rule, so
+        widening what authenticates never widens what is allowed.
+        """
         try:
-            principal, pod = await self._resolver.resolve_with_pod(token)
+            principal, pod = await self._resolver.resolve_workload_with_pod(token)
         except SandboxPrincipalRejectedError as error:
             reason = {
                 RejectionReason.TOKEN_REJECTED: DenyReason.TOKEN_REJECTED,
@@ -126,10 +152,8 @@ class PodIdentityVerifier:
         pod_ip = pod.status.pod_ip if pod.status is not None else None
         if not pod_ip:
             raise IdentityRejectedError(DenyReason.POD_MISMATCH, f"Pod {principal.pod_name} has no address yet")
-        return PodIdentity(
-            pod_name=principal.pod_name,
-            pod_uid=principal.pod_uid,
-            pod_ip=pod_ip,
-            sandbox_name=principal.sandbox_name,
-            sandbox_uid=principal.sandbox_uid,
-        )
+        binding = {"pod_name": principal.pod_name, "pod_uid": principal.pod_uid, "pod_ip": pod_ip}
+        owner = sandbox_controller(pod)
+        if owner is None:
+            return ServiceAccountPodIdentity(**binding, service_account_name=principal.service_account_name)
+        return SandboxPodIdentity(**binding, sandbox_name=owner.name, sandbox_uid=owner.uid)
