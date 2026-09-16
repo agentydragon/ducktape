@@ -5,8 +5,13 @@ The Flux `Kustomization` CR is built from //third_party/flux:kustomization's
 generated cdk8s constructs (see devinfra/js/cdk8s_import.bzl) rather than a plain
 dict, so a malformed dependsOn entry or sourceRef kind fails at synth time instead
 of silently emitting invalid YAML. The plain (non-CRD) kustomize.config.k8s.io
-Kustomization has no schema to import against and stays hand-built. See
-cluster/docs/plans/cdk8s_adoption.md.
+Kustomization has a real upstream JSON Schema (SchemaStore's kustomization.json),
+but `cdk8s import` only ingests Kubernetes CustomResourceDefinition-shaped input --
+tested directly against it, it fails trying to parse the schema itself as a CRD.
+Converting that schema by hand into a CRD envelope is real, undertaken work, not a
+`cdk8s import <url>` away, so this stays a hand-written Pydantic model instead: no
+generated schema validation, but at least real field types instead of a bare dict.
+See cluster/docs/plans/cdk8s_adoption.md.
 """
 
 from __future__ import annotations
@@ -22,6 +27,8 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
+from pydantic import BaseModel, ConfigDict, Field
+from pydantic.alias_generators import to_camel
 
 _NAMESPACE = "ducktape-flux"
 
@@ -70,6 +77,20 @@ def flux_kustomization(spec: FluxKustomizationSpec) -> dict[str, object]:
     return manifest
 
 
+class _KustomizeKustomization(BaseModel):
+    """The plain (non-CRD) `kustomize.config.k8s.io/v1beta1` `Kustomization`."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    api_version: str = "kustomize.config.k8s.io/v1beta1"
+    kind: str = "Kustomization"
+    namespace: str | None = None
+    resources: list[str]
+    components: list[str] | None = Field(
+        default=None, description="Directories the generator never writes, e.g. a hand-written image-pins/ Component."
+    )
+
+
 def kustomize_kustomization(
     *, resources: list[str], namespace: str | None = None, components: Sequence[str] = ()
 ) -> dict[str, object]:
@@ -79,10 +100,7 @@ def kustomize_kustomization(
     Kustomize `Component` carrying a Flux image-automation marker (see
     cluster/docs/plans/cdk8s_adoption.md).
     """
-    manifest: dict[str, object] = {"apiVersion": "kustomize.config.k8s.io/v1beta1", "kind": "Kustomization"}
-    if namespace is not None:
-        manifest["namespace"] = namespace
-    manifest["resources"] = resources
-    if components:
-        manifest["components"] = list(components)
-    return manifest
+    manifest = _KustomizeKustomization(
+        namespace=namespace, resources=resources, components=list(components) if components else None
+    )
+    return manifest.model_dump(by_alias=True, exclude_none=True)
