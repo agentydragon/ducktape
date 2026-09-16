@@ -2,6 +2,10 @@
 # MODULE.bazel's flux_kustomization_crd http_file, never vendored). See
 # cluster/docs/plans/cdk8s_adoption.md.
 
+# flux_kustomize is generated at build time by cdk8s_import below, not a pip package --
+# gazelle can't resolve it from the requirements manifest.
+# gazelle:resolve py flux_kustomize //third_party/flux:kustomization
+
 load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
 load("//devinfra/python:defs.bzl", "py_test")
 
@@ -19,7 +23,8 @@ py_test(
     data = ["@nodejs_linux_amd64//:bin/node"],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
-        ":kustomization",
+        "//:conftest",
+        "//third_party/flux:kustomization",
         "@pypi//cdk8s",
         "@pypi//pytest_bazel",
     ],
