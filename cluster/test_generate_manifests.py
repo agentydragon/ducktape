@@ -43,7 +43,7 @@ def test_generated_manifests_match_committed(tmp_path: Path) -> None:
         assert generated == committed, f"{relative} is stale"
         # cdk8s can't emit YAML comments, so this should be unreachable -- but if it
         # ever did, Flux's image-automation bot would silently fight the generator
-        # for ownership of this file (cluster/docs/plans/cdk8s_adoption.md).
+        # for ownership of this file (cluster/docs/cdk8s.md).
         assert "$imagepolicy" not in generated, f"{relative} must not carry a Flux image-automation marker"
 
 

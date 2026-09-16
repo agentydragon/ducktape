@@ -4,7 +4,7 @@
 The Deployment is fully generated, with a placeholder image tag --
 `image-pins/kustomization.yaml` (hand-written Kustomize Component, never
 written by this generator) carries Flux's `$imagepolicy` marker and overrides
-the real tag at `kustomize build` time. See cluster/docs/plans/cdk8s_adoption.md.
+the real tag at `kustomize build` time. See cluster/docs/cdk8s.md.
 """
 
 from pathlib import Path

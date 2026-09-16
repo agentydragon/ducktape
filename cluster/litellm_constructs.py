@@ -4,7 +4,7 @@ The Deployment's image tag is a deliberate placeholder ("unset") -- the
 image-pins/ Kustomize Component (hand-written, see
 cluster/k8s/litellm/app/image-pins/kustomization.yaml) overrides it at
 `kustomize build` time via Flux's image-automation marker. See
-cluster/docs/plans/cdk8s_adoption.md.
+cluster/docs/cdk8s.md.
 """
 
 from __future__ import annotations
