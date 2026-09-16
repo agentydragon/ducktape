@@ -26,29 +26,28 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    # Pinned to the 7.1 *series* — the intersection of three independent bounds.
-    # `linuxPackages_latest` is not a substitute: it is a moving alias, and on
-    # 2026-09-04 it floated across the upper bound and took this host's CNI down.
+    # Bumped ahead of the Cilium fix to the 7.2 *series*, deliberately crossing the
+    # Cilium compatibility ceiling `issues/6825` was tracking. `linuxPackages_latest`
+    # is still not a substitute: it is a moving alias, and on 2026-09-04 it floated
+    # across that same ceiling and took this host's CNI down.
     #
     #   >= 6.17   IPU7 camera driver mainlined in 6.17.
     #   >= 7.1.8  drm/xe TTM `beneficial_order` fix `ba7fd1634228`; without it this
     #             host hits a kswapd/Xe-shrinker swap storm. Confirmed present in
     #             7.1.8 by reverse-patch test (<../../../../debug/rugged/stalls/report.md>).
-    #   <  7.2    Kernel `b1f7f67b74c2` (first in 7.2-rc1) hardens the verifier, so
-    #             cilium/ebpf's FnSetRetval probe gets EINVAL and cilium-agent
-    #             fatals at startup — observed on 7.2.0 with Cilium 1.19.6
-    #             (<../../../../cluster/docs/lessons_learned/2026_07_16_cilium_set_retval_probe_kernel_7_2.md>).
     #
-    # A floor plus a ceiling is what a series attribute expresses and an alias
-    # cannot. 7.1 is not LTS: when it leaves nixpkgs, re-derive the intersection
-    # rather than reaching for `latest` again. 6.18 (LTS, and what the other nodes
-    # run) does not currently carry `ba7fd1634228`, so it would require an
-    # adapted Xe/TTM backport before it could replace this pin.
-    #
-    # Keep the < 7.2 ceiling until a released Cilium version contains the
-    # FnSetRetval probe fix and live Linux 7.2 validation succeeds. The bump is
-    # tracked in https://github.com/agentydragon/ducktape/issues/6825.
-    boot.kernelPackages = pkgs.linuxPackages_7_1;
+    # TODO(added 2026-09-16): kernel `b1f7f67b74c2` (first in 7.2-rc1) hardens the
+    #   verifier, so cilium/ebpf's FnSetRetval probe gets EINVAL and cilium-agent
+    #   fatals at startup — observed on 7.2.0 with Cilium 1.19.6
+    #   (<../../../../cluster/docs/lessons_learned/2026_07_16_cilium_set_retval_probe_kernel_7_2.md>).
+    #   `rugged` will not run cilium-agent, and so will not function as a k8s
+    #   cluster node, until a released Cilium version contains the FnSetRetval
+    #   probe fix (backport: cilium/cilium#48376) and live Linux 7.2 validation
+    #   succeeds. Accepted: `rugged` is a roaming, often-offline node (see
+    #   cluster/README.md § Node Types), not a stable cluster member. Remove this
+    #   TODO once that Cilium version is deployed and cilium-agent is confirmed
+    #   Ready on this host. Tracked: https://github.com/agentydragon/ducktape/issues/6825.
+    boot.kernelPackages = pkgs.linuxPackages_7_2;
 
     # Firmware for IPU and Intel Visual Sensing Controller
     hardware.firmware = with pkgs; [
