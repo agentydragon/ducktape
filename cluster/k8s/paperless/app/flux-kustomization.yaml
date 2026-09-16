@@ -14,10 +14,12 @@ spec:
     name: paperless-app
     namespace: ducktape-flux
   timeout: 10m
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
   dependsOn:
     - name: paperless-namespace
-      namespace: ducktape-flux
-    - name: paperless-secrets
       namespace: ducktape-flux
     - name: paperless-cache
       namespace: ducktape-flux

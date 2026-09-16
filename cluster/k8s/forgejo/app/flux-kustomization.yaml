@@ -28,6 +28,10 @@ spec:
       kind: HelmRelease
       name: forgejo
       namespace: forgejo
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
   dependsOn:
     - name: forgejo-namespace
       namespace: ducktape-flux
@@ -38,8 +42,6 @@ spec:
     - name: gateway
       namespace: ducktape-flux
     - name: cert-manager
-      namespace: ducktape-flux
-    - name: forgejo-secrets
       namespace: ducktape-flux
     - name: seaweedfs-cluster # SeaweedFS CRDs, operator, and backend
       namespace: ducktape-flux

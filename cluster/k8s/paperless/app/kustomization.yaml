@@ -7,3 +7,4 @@ resources:
   - service.yaml
   - httproute.yaml
   - bootstrap-job.yaml
+  - paperless-secrets.sops.yaml

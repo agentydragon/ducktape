@@ -6,6 +6,9 @@ resources:
   - httproute.yaml
   - networkpolicy.yaml
   - podmonitor.yaml
+  - admin-password.sops.yaml
+  - secret-key.sops.yaml
+  - bootstrap-token.sops.yaml
 generatorOptions:
   disableNameSuffixHash: true
 configMapGenerator:
