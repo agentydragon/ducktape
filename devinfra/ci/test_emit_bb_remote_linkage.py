@@ -66,5 +66,25 @@ def test_missing_ids_are_warnings() -> None:
     assert record["warnings"] == ["runner invocation id not found", "child Bazel invocation ids not found"]
 
 
+def test_known_ids_exclude_local_bazel_commands() -> None:
+    record = emit_bb_remote_linkage.build_record(
+        log_text="""
+INFO: Invocation ID: 11111111-1111-4111-8111-111111111111
+INFO: Invocation ID: 22222222-2222-4222-8222-222222222222
+INFO: Invocation ID: 33333333-3333-4333-8333-333333333333
+""",
+        log_path=Path("/tmp/bb-remote.log"),
+        roles=["test", "build"],
+        env={},
+        bb_remote_exit_code=0,
+        invocation_ids=["22222222-2222-4222-8222-222222222222", "33333333-3333-4333-8333-333333333333"],
+    )
+
+    assert [item["invocation_id"] for item in record["buildbuddy"]["bazel_invocations"]] == [
+        "22222222-2222-4222-8222-222222222222",
+        "33333333-3333-4333-8333-333333333333",
+    ]
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

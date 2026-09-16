@@ -106,6 +106,24 @@ def parse_log(text: str, roles: list[str]) -> ParsedLog:
     )
 
 
+def parse_log_with_ids(text: str, roles: list[str], invocation_ids: list[str]) -> ParsedLog:
+    """Parse runner metadata while using the caller's known Bazel IDs.
+
+    A ``bb remote --script`` log also contains invocation IDs for local Bazel
+    commands such as ``bazel shutdown`` and ``bazel query``. Those commands do
+    not necessarily publish a Build Event stream, so treating every ``Invocation
+    ID`` line as a planner input can make a valid CI run look like a missing
+    BuildBuddy invocation. Bazel CI derives its two IDs before launching the
+    script; use those exact IDs for the handoff.
+    """
+    parsed = parse_log(text, roles)
+    bazel_invocations = [
+        {"index": i, "role": role, "invocation_id": invocation_id, "build_tool_log_names": BUILD_TOOL_LOG_NAMES}
+        for i, (role, invocation_id) in enumerate(zip(roles, invocation_ids, strict=False))
+    ]
+    return dataclasses.replace(parsed, bazel_invocations=bazel_invocations)
+
+
 def github_linkage(env: Mapping[str, str]) -> dict[str, str]:
     result: dict[str, str] = {}
     for output_key, env_key in GITHUB_ENV_KEYS:
@@ -144,9 +162,19 @@ def write_step_output(record: Mapping[str, Any], github_output: str | None) -> N
 
 
 def build_record(
-    *, log_text: str, log_path: Path, roles: list[str], env: Mapping[str, str], bb_remote_exit_code: int | None
+    *,
+    log_text: str,
+    log_path: Path,
+    roles: list[str],
+    env: Mapping[str, str],
+    bb_remote_exit_code: int | None,
+    invocation_ids: list[str] | None = None,
 ) -> dict[str, Any]:
-    parsed = parse_log(log_text, roles)
+    parsed = (
+        parse_log_with_ids(log_text, roles, invocation_ids)
+        if invocation_ids is not None
+        else parse_log(log_text, roles)
+    )
     record: dict[str, Any] = {
         "schema": "ducktape.bb_remote_linkage.v1",
         "created_at": datetime.datetime.now(datetime.UTC).isoformat(),
@@ -165,6 +193,11 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--log", type=Path, required=True)
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--roles", default="", help="Comma-separated roles for child Bazel invocations")
+    p.add_argument(
+        "--invocation-ids",
+        default="",
+        help="Comma-separated known Bazel invocation ids; avoids parsing local runner commands",
+    )
     p.add_argument("--bb-remote-exit-code", type=int)
     return p
 
@@ -178,6 +211,7 @@ def main() -> None:
         roles=split_roles(args.roles),
         env=os.environ,
         bb_remote_exit_code=args.bb_remote_exit_code,
+        invocation_ids=[i for i in args.invocation_ids.split(",") if i] if args.invocation_ids else None,
     )
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")

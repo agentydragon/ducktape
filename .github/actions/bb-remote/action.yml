@@ -84,6 +84,13 @@ inputs:
       emitted linkage JSON, e.g. "test,build".
     required: false
     default: ""
+  invocation_ids:
+    description: >
+      Optional comma-separated known Bazel invocation ids for linkage. Use this
+      when the script runs multiple local Bazel commands, so shutdown/query ids
+      are not mistaken for BuildBuddy build streams.
+    required: false
+    default: ""
   run_from_commit:
     description: >
       If set, passes --run_from_commit=<sha>: the runner checks out that exact commit
@@ -123,6 +130,7 @@ runs:
         INPUT_COMPUTE_UNITS: ${{ inputs.compute_units }}
         INPUT_RUNNER_RECYCLING_KEY: ${{ inputs.runner_recycling_key }}
         INPUT_LINKAGE_ROLES: ${{ inputs.linkage_roles }}
+        INPUT_INVOCATION_IDS: ${{ inputs.invocation_ids }}
         INPUT_RUN_FROM_COMMIT: ${{ inputs.run_from_commit }}
       run: |
         set -euo pipefail
@@ -229,6 +237,7 @@ runs:
           --log "$LOG_PATH" \
           --out "$LINKAGE_JSON_PATH" \
           --roles "$INPUT_LINKAGE_ROLES" \
+          --invocation-ids "$INPUT_INVOCATION_IDS" \
           --bb-remote-exit-code "$BB_REMOTE_STATUS" || LINKAGE_STATUS=$?
 
         if [[ "$BB_REMOTE_STATUS" -eq 0 && "$LINKAGE_STATUS" -ne 0 ]]; then
