@@ -74,6 +74,7 @@ py_library(
         ":worktree_gc",
         "@pypi//httpx",
         "@pypi//humanize",
+        "@pypi//rich",
         "@pypi//tabulate",
         "@pypi//typer",
     ],

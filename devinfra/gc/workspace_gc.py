@@ -32,6 +32,8 @@ from typing import Annotated, Any
 import httpx
 import humanize
 import typer
+from rich.console import Console
+from rich.progress import BarColumn, MofNCompleteColumn, Progress, TaskID, TextColumn
 from tabulate import tabulate
 
 from devinfra.gc import branch_gc, git_repo, output_base_gc, workspace_scan, worktree_gc
@@ -236,7 +238,49 @@ def _gather_prs(repo: Path, *, no_prs: bool) -> dict[str, PrInfo]:
     return {} if no_prs else pr_states(repo, workspace_scan.pr_branch_candidates(repo))
 
 
-def _scan(repo: Path, *, prs: dict[str, PrInfo], output_user_root: Path | None) -> WorkspaceScan:
+class _ProgressReporter:
+    """A live progress bar per scan phase; a no-op off a TTY (`rich.progress.Progress` detects
+    this itself).
+
+    A scan over hundreds of worktrees and branches can take minutes with nothing else to show
+    for it in the meantime — this renders in place instead of the wall of `logger.info` lines
+    underneath (still there, for `--verbose`). `Progress.update` is thread-safe, which the
+    branch phase's worker pool (`workspace_scan._BRANCH_WORKERS`) relies on. `transient=True`
+    clears each bar on completion — the CLI's own report print, right after, is the record of
+    the outcome.
+
+    Used as a context manager around each scan call: `Progress` owns the terminal's bottom
+    region while live, so any other output must happen with it stopped, not interleaved.
+    """
+
+    def __init__(self) -> None:
+        self._progress = Progress(
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            MofNCompleteColumn(),
+            console=Console(stderr=True),
+            transient=True,
+        )
+        self._tasks: dict[str, TaskID] = {}
+
+    def __enter__(self) -> _ProgressReporter:
+        self._progress.start()
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        self._progress.stop()
+
+    def __call__(self, phase: str, done: int, total: int) -> None:
+        task = self._tasks.get(phase)
+        if task is None:
+            task = self._progress.add_task(phase, total=total)
+            self._tasks[phase] = task
+        self._progress.update(task, completed=done)
+
+
+def _scan(
+    repo: Path, *, prs: dict[str, PrInfo], output_user_root: Path | None, progress: workspace_scan.ProgressFn
+) -> WorkspaceScan:
     return workspace_scan.scan_workspace(
         repo,
         main=git_repo.main_ref(repo),
@@ -244,6 +288,7 @@ def _scan(repo: Path, *, prs: dict[str, PrInfo], output_user_root: Path | None) 
         pr_states=prs,
         active_path=_active_worktree(repo),
         output_user_root=output_user_root,
+        progress=progress,
     )
 
 
@@ -314,9 +359,11 @@ def _apply_base_deletions(output_user_root: Path) -> int:
 
 
 def run_worktrees(repo: Path, *, show_all: bool, no_prs: bool, prune: bool) -> int:
+    progress = _ProgressReporter()
     try:
         prs = _gather_prs(repo, no_prs=no_prs)
-        scan = _scan(repo, prs=prs, output_user_root=None)
+        with progress:
+            scan = _scan(repo, prs=prs, output_user_root=None, progress=progress)
     except GitError as error:
         print(error, file=sys.stderr)
         return 1
@@ -325,7 +372,9 @@ def run_worktrees(repo: Path, *, show_all: bool, no_prs: bool, prune: bool) -> i
         if any(isinstance(item, PrunableWorktree) for item in scan.worktrees):
             print("Dry run only; pass --prune to remove the prunable worktrees.")
         return 0
-    return _apply_worktree_removals(repo, _scan(repo, prs=prs, output_user_root=None).worktrees)
+    with progress:
+        rescanned = _scan(repo, prs=prs, output_user_root=None, progress=progress).worktrees
+    return _apply_worktree_removals(repo, rescanned)
 
 
 def run_bases(repo: Path, *, output_user_root: Path, show_all: bool, no_prs: bool, sizes: bool, delete: bool) -> int:
@@ -336,9 +385,15 @@ def run_bases(repo: Path, *, output_user_root: Path, show_all: bool, no_prs: boo
     try:
         bases = list(output_base_gc.scan_output_user_root(output_user_root))
         prs = {} if no_prs else pr_states(repo, workspace_scan.base_workspace_branches(repo, bases))
-        bases = workspace_scan.annotate_bases(
-            repo, bases, main=git_repo.main_ref(repo), pr_states=prs, active_path=_active_worktree(repo)
-        )
+        with _ProgressReporter() as progress:
+            bases = workspace_scan.annotate_bases(
+                repo,
+                bases,
+                main=git_repo.main_ref(repo),
+                pr_states=prs,
+                active_path=_active_worktree(repo),
+                progress=progress,
+            )
     except (GitError, OSError, RuntimeError) as error:
         print(error, file=sys.stderr)
         return 1
@@ -351,9 +406,11 @@ def run_bases(repo: Path, *, output_user_root: Path, show_all: bool, no_prs: boo
 
 
 def run_all(repo: Path, *, output_user_root: Path, show_all: bool, no_prs: bool, sizes: bool, prune: bool) -> int:
+    progress = _ProgressReporter()
     try:
         prs = _gather_prs(repo, no_prs=no_prs)
-        scan = _scan(repo, prs=prs, output_user_root=output_user_root)
+        with progress:
+            scan = _scan(repo, prs=prs, output_user_root=output_user_root, progress=progress)
     except (GitError, OSError, RuntimeError) as error:
         print(error, file=sys.stderr)
         return 1
@@ -377,9 +434,14 @@ def run_all(repo: Path, *, output_user_root: Path, show_all: bool, no_prs: bool,
 
     print()
     exit_code = 0
+
+    def rescan() -> WorkspaceScan:
+        with progress:
+            return _scan(repo, prs=prs, output_user_root=None, progress=progress)
+
     # Remove worktrees first so branches they hold are freed and their bases orphan.
-    exit_code |= _apply_worktree_removals(repo, _scan(repo, prs=prs, output_user_root=None).worktrees)
-    exit_code |= _apply_branch_deletions(repo, _scan(repo, prs=prs, output_user_root=None).branches)
+    exit_code |= _apply_worktree_removals(repo, rescan().worktrees)
+    exit_code |= _apply_branch_deletions(repo, rescan().branches)
     exit_code |= _apply_base_deletions(output_user_root)
     return exit_code
 
@@ -391,11 +453,14 @@ _RootOption = Annotated[Path, typer.Option("--output-user-root", help="Bazel out
 _AllOption = Annotated[bool, typer.Option("--all", help="also show kept items")]
 _NoPrsOption = Annotated[bool, typer.Option("--no-prs", help="skip the GitHub PR cross-check (git signals only)")]
 _SizesOption = Annotated[bool, typer.Option("--sizes", help="calculate base sizes with du (potentially slow)")]
+_VerboseOption = Annotated[bool, typer.Option("--verbose", "-v", help="log every worktree/branch as it's scanned")]
 
 
-@app.callback()
-def _configure() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
+def _configure_logging(*, verbose: bool) -> None:
+    # The compact live progress indicator (_ProgressReporter) is the default on-TTY signal for
+    # a scan in progress; --verbose additionally streams the per-item `logger.info` trace this
+    # module already emits, which would otherwise bury that indicator in scroll.
+    logging.basicConfig(level=logging.INFO if verbose else logging.WARNING, format="%(message)s")
 
 
 @app.command("all")
@@ -405,11 +470,13 @@ def _all_command(
     show_all: _AllOption = False,
     no_prs: _NoPrsOption = False,
     sizes: _SizesOption = False,
+    verbose: _VerboseOption = False,
     prune: Annotated[
         bool, typer.Option("--prune", help="remove all prunable worktrees, branches, and output bases")
     ] = False,
 ) -> None:
     """Classify worktrees, branches, and output bases together (the default command)."""
+    _configure_logging(verbose=verbose)
     raise typer.Exit(
         run_all(repo, output_user_root=output_user_root, show_all=show_all, no_prs=no_prs, sizes=sizes, prune=prune)
     )
@@ -420,9 +487,11 @@ def _worktrees_command(
     repo: _RepoOption = Path(),
     show_all: _AllOption = False,
     no_prs: _NoPrsOption = False,
+    verbose: _VerboseOption = False,
     prune: Annotated[bool, typer.Option("--prune", help="remove prunable worktrees (revalidated first)")] = False,
 ) -> None:
     """The worktree slice of the joint scan."""
+    _configure_logging(verbose=verbose)
     raise typer.Exit(run_worktrees(repo, show_all=show_all, no_prs=no_prs, prune=prune))
 
 
@@ -433,9 +502,11 @@ def _bases_command(
     show_all: _AllOption = False,
     no_prs: _NoPrsOption = False,
     sizes: _SizesOption = False,
+    verbose: _VerboseOption = False,
     delete: Annotated[bool, typer.Option("--delete", help="revalidate and remove prunable output bases")] = False,
 ) -> None:
     """The Bazel output-base slice of the joint scan."""
+    _configure_logging(verbose=verbose)
     raise typer.Exit(
         run_bases(repo, output_user_root=output_user_root, show_all=show_all, no_prs=no_prs, sizes=sizes, delete=delete)
     )

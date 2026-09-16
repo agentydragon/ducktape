@@ -20,6 +20,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 import os
+import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -36,6 +37,15 @@ from devinfra.gc.worktree_gc import Classification, PrunableWorktree
 logger = logging.getLogger(__name__)
 
 _BRANCH_WORKERS = 8  # content_in_main runs pygit2 merges (GIL released), so threads help
+
+# (phase, done, total) after each item finishes classifying — lets the CLI render live
+# progress over a scan that can take minutes on a large workspace, without this module (kept
+# network-free and unit-testable offline) knowing anything about consoles or TTYs.
+ProgressFn = Callable[[str, int, int], None]
+
+
+def _no_progress(phase: str, done: int, total: int) -> None:
+    pass
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,16 +95,22 @@ def _classify_branches(
     default_branch: str,
     pr_states: dict[str, PrInfo],
     holder_for: Callable[[str], Holder],
+    progress: ProgressFn,
 ) -> list[BranchClassification]:
     """Classify every local branch, parallelizing the pygit2 content-in-main merges.
 
     Each worker opens its own `pygit2.Repository` — handles aren't shareable across threads —
-    and classifies a contiguous slice, so the flattened result stays in `names` order.
+    and classifies a contiguous slice, so the flattened result stays in `names` order. `done`
+    below counts completions across all workers (unlike a slice's own `index`, it advances
+    monotonically for `progress`, regardless of which slice finishes an item first).
     """
 
     total = len(names)
+    lock = threading.Lock()
+    done = 0
 
     def classify_slice(args: tuple[int, list[str]]) -> list[BranchClassification]:
+        nonlocal done
         offset, slice_names = args
         pg = pygit2.Repository(os.fspath(main_path))
         results: list[BranchClassification] = []
@@ -105,6 +121,9 @@ def _classify_branches(
             )
             results.append(result)
             logger.info("Finished branch %d/%d %s", index, total, name)
+            with lock:
+                done += 1
+                progress("branches", done, total)
         return results
 
     workers = min(_BRANCH_WORKERS, len(names))
@@ -148,6 +167,7 @@ def annotate_bases(
     pr_states: dict[str, PrInfo],
     active_path: Path | None = None,
     proc_root: Path = Path("/proc"),
+    progress: ProgressFn = _no_progress,
 ) -> list[Inspection]:
     """Flag each retained base whose workspace is a prunable worktree.
 
@@ -172,6 +192,7 @@ def annotate_bases(
             live_pids=live.get(wt.path, []),
         )
         logger.info("Finished base workspace %d/%d %s", index, len(candidates), wt.path)
+        progress("workspaces", index, len(candidates))
         if isinstance(classification, PrunableWorktree):
             prunable_paths.add(wt.path)
     prunable = _resolved(prunable_paths)
@@ -188,6 +209,7 @@ def scan_workspace(
     output_user_root: Path | None = None,
     proc_root: Path = Path("/proc"),
     mountinfo_path: Path = Path("/proc/self/mountinfo"),
+    progress: ProgressFn = _no_progress,
 ) -> WorkspaceScan:
     main_path = git_repo.main_worktree(repo)
     pg = pygit2.Repository(os.fspath(main_path))
@@ -208,6 +230,7 @@ def scan_workspace(
         )
         worktrees.append(classification)
         logger.info("Finished worktree %d/%d %s", index, len(linked), wt.path)
+        progress("worktrees", index, len(linked))
     logger.info("Worktree scan complete: %d linked worktrees", len(linked))
 
     holders = branch_gc.branch_holders(repo)
@@ -224,7 +247,13 @@ def scan_workspace(
     names = branch_gc.local_branches(pg)
     logger.info("Scanning %d local branches", len(names))
     branches = _classify_branches(
-        main_path, names, main=main, default_branch=default_branch, pr_states=pr_states, holder_for=holder_for
+        main_path,
+        names,
+        main=main,
+        default_branch=default_branch,
+        pr_states=pr_states,
+        holder_for=holder_for,
+        progress=progress,
     )
     logger.info("Branch scan complete: %d local branches", len(branches))
 
