@@ -17,6 +17,7 @@ from connecpy.exceptions import ConnecpyException
 from connecpy.request import RequestContext
 
 from x.agentplane.app import thread_events_pb2
+from x.agentplane.app.connect import RPC_PREFIX
 from x.agentplane.app.shutdown import Drain
 from x.agentplane.app.trajectory import FeedEnd, FeedError, TrajectoryStore
 
@@ -27,6 +28,10 @@ logger = logging.getLogger(__name__)
 
 REPLAY_PAGE = 1000
 HEARTBEAT_S = 15
+# Where a browser posts to follow a Thread: the shared mount prefix, then the path connecpy routes
+# on, which is the service's fully qualified name and the method. Shared rather than spelled out
+# again, because a test matching on this path has to match the one the app actually serves.
+FOLLOW_EVENTS_PATH = f"{RPC_PREFIX}/ducktape.agentplane.app.v1.ThreadEvents/FollowEvents"
 
 
 class ThreadEventsService:

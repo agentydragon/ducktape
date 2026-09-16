@@ -58,7 +58,7 @@ from x.agentplane.app.egress import (
     PolicyView,
     UnknownPolicyError,
 )
-from x.agentplane.app.identity import CallerIdentity, TokenReviewer, require_caller
+from x.agentplane.app.identity import CallerCheck, CallerIdentity, TokenReviewer, require_caller
 from x.agentplane.app.inventory import (
     SANDBOX_BINDING_ANNOTATION,
     NewSandbox,
@@ -646,6 +646,7 @@ def create_app(
     reviewer: TokenReviewer | None = None,
     presets: PresetCatalog | None = None,
     operator_actions: FederatedOperatorActions | None = None,
+    caller: CallerCheck = require_caller,
 ) -> FastAPI:
     """The whole HTTP surface, guarded. Each of `oidc` and `reviewer` enables one way to authenticate,
     and an app given neither answers 401 to everything but /healthz."""
@@ -670,9 +671,9 @@ def create_app(
     app.state.operator_actions = operator_actions
     drain = Drain()
     app.state.drain = drain
-    # Mounted rather than routed, so `Guarded` applies `require_caller` instead of inheriting it
+    # Mounted rather than routed, so `Guarded` applies the caller check instead of inheriting it
     # from the router dependency below.
-    app.mount(RPC_PREFIX, Guarded(ThreadEventsASGIApplication(ThreadEventsService(store, drain))))
+    app.mount(RPC_PREFIX, Guarded(ThreadEventsASGIApplication(ThreadEventsService(store, drain)), caller=caller))
     # Every route needs a caller. There is no unauthenticated path into the API: /healthz is
     # declared below, outside these routers.
     for api_router in (
@@ -689,7 +690,7 @@ def create_app(
         action_policy_router,
         live_router,
     ):
-        app.include_router(api_router, dependencies=[Depends(require_caller)])
+        app.include_router(api_router, dependencies=[Depends(caller)])
     if oidc is not None:
         app.add_middleware(
             OperatorSessionMiddleware,

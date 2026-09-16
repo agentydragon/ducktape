@@ -26,7 +26,6 @@ from x.agentplane.app.action_policy import ActionPolicyInventory
 from x.agentplane.app.api import create_app
 from x.agentplane.app.bridge import RunnerBridge
 from x.agentplane.app.conftest import AGENT_AUTH
-from x.agentplane.app.connect import RPC_PREFIX
 from x.agentplane.app.decisions import DecisionsClient
 from x.agentplane.app.egress import EgressInventory
 from x.agentplane.app.identity import TokenReviewer
@@ -34,6 +33,7 @@ from x.agentplane.app.inventory import SandboxInventory
 from x.agentplane.app.live import LiveIndex
 from x.agentplane.app.presets import Harness
 from x.agentplane.app.shutdown import drain_of
+from x.agentplane.app.thread_events import FOLLOW_EVENTS_PATH
 from x.agentplane.app.thread_events_pb2 import FollowEventsRequest, FollowEventsResponse
 from x.agentplane.app.trajectory import IngestionLease, TrajectoryStore
 from x.agentplane.protocol import event_log_pb2, event_pb2
@@ -48,9 +48,6 @@ SOURCE = "events-test-runner"
 SPEC = protocol_pb2.SessionSpec(
     harness=protocol_pb2.HARNESS_CLAUDE, cwd="/state/work", model="events-model", reasoning_effort="low"
 )
-# The URL a browser posts to, which is the mount prefix plus the service name protoc emitted. It is
-# the wire contract a generated client is built against, so it is spelled out rather than derived.
-FOLLOW_PATH = f"{RPC_PREFIX}/ducktape.agentplane.app.v1.ThreadEvents/FollowEvents"
 CONNECT_PROTO = "application/connect+proto"
 # No frame any of these tests waits for depends on a clock, so one that has not arrived within this
 # is one the server is not going to send.
@@ -201,7 +198,7 @@ async def _following(
 ) -> AsyncIterator[AsyncIterator[FollowEventsResponse]]:
     request = FollowEventsRequest(thread_id=str(thread_id), after_cursor=after)
     async with client.stream(
-        "POST", FOLLOW_PATH, headers={"content-type": CONNECT_PROTO}, content=_enveloped(request)
+        "POST", FOLLOW_EVENTS_PATH, headers={"content-type": CONNECT_PROTO}, content=_enveloped(request)
     ) as response:
         assert response.status_code == 200, (await response.aread()).decode()
         yield _decode(response)
@@ -321,7 +318,9 @@ async def test_the_rpc_mount_refuses_a_caller_it_cannot_identify(app_url: str) -
     so this is what says the guard is installed at all; that a credentialed call reaches the archive
     is the rest of this file."""
     async with httpx.AsyncClient(timeout=FRAME_S) as anonymous:
-        refused = await anonymous.post(f"{app_url}{FOLLOW_PATH}", headers={"content-type": CONNECT_PROTO}, content=b"")
+        refused = await anonymous.post(
+            f"{app_url}{FOLLOW_EVENTS_PATH}", headers={"content-type": CONNECT_PROTO}, content=b""
+        )
     assert refused.status_code == 401, refused.text
 
 

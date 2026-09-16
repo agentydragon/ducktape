@@ -12,6 +12,7 @@ only way in, and the API server's service proxy forwards caller headers, so it w
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -33,6 +34,11 @@ class CallerKind(StrEnum):
 class CallerIdentity:
     kind: CallerKind
     principal: str
+
+
+# What every guarded surface runs, whether it reaches it as a route dependency or as a mounted
+# application's own call. A test substitutes the one the app is built with rather than each site.
+type CallerCheck = Callable[[Request], Awaitable[CallerIdentity]]
 
 
 class TokenReviewer:
