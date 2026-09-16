@@ -26,6 +26,19 @@ syntax = "proto3";
 //   <- Changes    {after 941, through 970, commands: [{C, effected at 970}],
 //                  controls: {applied_model: "next"}}
 //
+// An Item streaming in. A batch that extends a Segment the caller already holds carries only what
+// was added, because re-sending a growing value whole on every update costs the sum of its prefixes
+// -- quadratic in its final size, and worse than the raw deltas the view exists to replace:
+//
+//   <- Changes {after 970, through 984, segments: [{cursor 971, revision 984,
+//                from_revision 970, item: {output: {suffix: "...3KB..."}}}]}
+//   <- Changes {after 984, through 992, segments: [{cursor 971, revision 992,
+//                from_revision 984, item: {output: {suffix: "...3KB..."}}}]}
+//
+// A Segment this interval created has nothing to extend and arrives whole, as does a value replaced
+// rather than grown. A caller that cannot apply an extension -- it evicted the Segment or missed a
+// batch -- re-reads that Segment with ListSegments rather than inventing a base to append to.
+//
 // Everything else is a demand read that never moves the caller's Position: ListSegments for older
 // history, ReadPayload for a tool output the reader expanded, ThreadEventsService for exact
 // evidence, and GetCommands to reconcile a Command whose Submit response was lost.

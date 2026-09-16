@@ -400,6 +400,112 @@ def test_unresolved_count_tracks_the_whole_queue_not_the_batch(script: list[even
     assert changes.unresolved_count == 1
 
 
+def test_a_growing_value_streams_as_a_suffix() -> None:
+    """The caller already holds the Segment, so an update carries only what was added."""
+    started = entry(
+        1, event_pb2.Event(item_started=event_pb2.ItemStarted(item_id="i", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT))
+    )
+    projection, _ = advance(empty(SOURCE, EPOCH), [started])
+    _, changes = advance(
+        projection, [entry(2, event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="i", text="hello")))]
+    )
+
+    (segment,) = changes.segments
+    assert segment.from_revision_cursor == 1
+    assert segment.item.text.suffix == "hello"
+
+
+def test_a_segment_the_caller_cannot_hold_arrives_whole() -> None:
+    """Created inside the interval this batch covers, so there is nothing to extend."""
+    _, changes = advance(
+        empty(SOURCE, EPOCH),
+        [
+            entry(
+                1,
+                event_pb2.Event(
+                    item_started=event_pb2.ItemStarted(item_id="i", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
+                ),
+            ),
+            entry(2, event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="i", text="hello"))),
+        ],
+    )
+    (segment,) = changes.segments
+    assert not segment.HasField("from_revision_cursor")
+    assert segment.item.text.value == "hello"
+
+
+def test_a_replaced_value_is_sent_whole_not_appended() -> None:
+    """Authoritative arguments supersede streamed partial JSON, which is not a prefix of them."""
+    projection, _ = advance(
+        empty(SOURCE, EPOCH),
+        [
+            entry(
+                1, event_pb2.Event(item_started=event_pb2.ItemStarted(item_id="i", kind=event_pb2.ITEM_KIND_TOOL_CALL))
+            ),
+            entry(
+                2, event_pb2.Event(tool_arguments_delta=event_pb2.ToolArgumentsDelta(item_id="i", partial_json='{"pa'))
+            ),
+        ],
+    )
+    _, changes = advance(
+        projection,
+        [entry(3, event_pb2.Event(tool_arguments=event_pb2.ToolArguments(item_id="i", arguments_json='{"other": 1}')))],
+    )
+    (segment,) = changes.segments
+    assert segment.item.arguments_json.value == '{"other": 1}'
+    assert segment.item.arguments_json.WhichOneof("body") == "value"
+
+
+def test_streaming_costs_its_growth_rather_than_the_sum_of_its_prefixes() -> None:
+    """Re-sending a growing value whole on every update is quadratic in its final size, which is worse than
+    the raw deltas the view replaces. A tool output streaming in 3KB chunks is the case that matters:
+    the measured Thread had one of 77KB."""
+    chunk = "x" * 3000
+    projection, _ = advance(
+        empty(SOURCE, EPOCH),
+        [
+            entry(
+                1, event_pb2.Event(item_started=event_pb2.ItemStarted(item_id="i", kind=event_pb2.ITEM_KIND_TOOL_CALL))
+            )
+        ],
+    )
+    streamed = 0
+    for cursor in range(2, 28):
+        projection, changes = advance(
+            projection,
+            [entry(cursor, event_pb2.Event(tool_output_delta=event_pb2.ToolOutputDelta(item_id="i", text=chunk)))],
+        )
+        streamed += sum(len(segment.item.output.suffix) for segment in changes.segments)
+
+    final = len(projection.segments[0].item.output.value)
+    assert final == 26 * 3000
+    # Linear: what was sent is what was added, not the 1MB the prefixes would sum to.
+    assert streamed == final
+
+
+def test_an_extension_the_caller_cannot_apply_is_refused() -> None:
+    """Evicted the Segment or missed a batch: re-reading it is the recovery, not inventing a base."""
+    projection, _ = advance(
+        empty(SOURCE, EPOCH),
+        [
+            entry(
+                1,
+                event_pb2.Event(
+                    item_started=event_pb2.ItemStarted(item_id="i", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
+                ),
+            )
+        ],
+    )
+    _, changes = advance(
+        projection, [entry(2, event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="i", text="hi")))]
+    )
+
+    without = empty(SOURCE, EPOCH)
+    without.position.through_cursor = 1
+    with pytest.raises(ValueError, match="caller holds nothing"):
+        apply_changes(without, changes)
+
+
 def test_an_uninterpreted_observation_halts_the_fold() -> None:
     with pytest.raises(UninterpretedObservationError) as raised:
         project(

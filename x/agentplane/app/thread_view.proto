@@ -51,12 +51,21 @@ message PayloadRef {
   uint64 byte_length = 6;
 }
 
-// A value the response either carries or leaves for an on-demand read. Whole either way: a finished
-// payload is never split across responses, so a reader that has `value` has all of it.
+// A value a response carries whole, leaves for an on-demand read, or extends.
+//
+// A snapshot and a history page only ever carry `value` or `omitted`, so a caller that has just read
+// one holds complete values. `suffix` appears only in a live batch, where re-sending a growing value
+// on every update would cost the sum of its prefixes -- quadratic in its final size, and worse than
+// the raw deltas it replaces. An empty `suffix` means this field did not change.
+//
+// A replacement rather than an extension -- authoritative arguments superseding streamed partial
+// JSON, or a completion whose text differs from what streamed -- is sent as `value`, because the new
+// value is not an extension of the old one.
 message Text {
   oneof body {
     string value = 1;
     Omitted omitted = 2;
+    string suffix = 3;
   }
 }
 
@@ -114,6 +123,11 @@ message Segment {
   // When it last changed. Equal to `cursor` for a carried Event, which never revises; for an Item it
   // is the latest delta folded into it.
   uint64 revision_cursor = 2;
+  // Set only where this update extends a value the caller already holds: the revision its copy must
+  // be at. A caller holding a different revision -- it evicted the Segment, or missed a batch -- has
+  // nothing to extend, so it re-reads the Segment rather than guessing. Unset means every value here
+  // is whole, which is always so in a snapshot and a history page.
+  optional uint64 from_revision_cursor = 5;
   oneof content {
     Item item = 3;
     ducktape.agentplane.protocol.v1.Event event = 4;
