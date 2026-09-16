@@ -54,7 +54,6 @@ flowchart TB
 
     MCPAUTH["Remaining acceptance<br/>credentialed MCP account<br/>refresh, rotation, Kubernetes provider"]:::active
     ELEVATE["Planned behavior<br/>agent-requested temporary permission<br/>ServiceAccount and Sandbox callers, operator-approved"]:::future
-    FORK["Deferred design<br/>per-task identity fork<br/>sub-identity scoped by token possession"]:::future
     MCPAGG["Deferred migration<br/>replace Haku Console MCP aggregator<br/>inventory and migrate Haku workflows"]:::future
     RETIRE_TOOLS["Deferred migration<br/>retire Haku Console tool-call/<br/>approval management"]:::future
     INPUT_DELIVERY["Remaining native evidence<br/>input/interrupt/recovery gaps<br/>exact upstream requests and queue fates"]:::active
@@ -110,7 +109,6 @@ flowchart TB
 
     MCPAUTH --> PROD
     EGRESS_IDENTITY_AVAILABILITY --> THREAD_DEPLOYED_ACCEPTANCE
-    ELEVATE --> FORK
     MCPAGG -. replacement surface .-> RETIRE_TOOLS
     CONSOLE_POLICIES -. policy parity .-> RETIRE_TOOLS
 
@@ -523,17 +521,6 @@ so the request itself can be auto-approved by policy later, never by default. A 
 evaluated like any other, once per subsequent Action at admission. Prove: a Sandbox requests a set,
 the operator approves, the next matching Action auto-approves and the Decision names the new
 binding; the same request from a different subject grants nothing to the requester; expiry ends it.
-
-### `FORK` — per-task identity fork
-
-**Deferred design:** a wide ServiceAccount-bound identity such as "Claude Code web via OIDC" may
-serve several concurrent agent threads managed outside Agentplane. An agent forks its identity into
-a per-task sub-identity, requests permission for that sub-identity through `ELEVATE`, and uses the
-sub-identity's credential for the task. Scope then follows possession of that credential: a thread
-that never receives it never gains the permission. Open questions: how a sub-identity is
-represented (a derived ServiceAccount, or a child Connection under the parent's OAuth grant),
-whether the parent's permissions flow down, and how the sub-identity ends. Low priority; nothing
-else depends on it.
 
 ### `T3` — trajectory search and lookup
 
@@ -1079,9 +1066,11 @@ of one escaped-quote wall of text.
 
 ## Deferred work
 
-Real work items, parked. They are off the diagram above because they had no edge of any kind --
-not a hard dependency, not a dotted soft one -- so the diagram carried their boxes without
-carrying any relationship. A node comes back when it acquires an edge.
+Real work items, parked. Most are here because they had no edge of any kind -- not a hard
+dependency, not a dotted soft one -- so the diagram carried their boxes without carrying any
+relationship. The rest are parked by decision even though they had one. Where that happens the
+edge leaves the diagram with the node and the relationship it carried is stated in the entry's
+own text instead, so bringing one back means restoring an edge rather than inventing one.
 
 - **`THREAD_VIEW_TRANSPORT`** — reconsider an RPC transport, gated on authorization
 - **`SSHDURABLE`** — durable SSH-backed processes
@@ -1091,6 +1080,7 @@ carrying any relationship. A node comes back when it acquires an edge.
 - **`THREAD_BROWSE_PAGINATE`** — paginated/searchable all-threads page
 - **`CONTROL_STATE`** — dynamic runtime control acceptance
 - **`LIVE_CLEAN`** — executor heartbeat retention cleanup
+- **`FORK`** — per-task identity fork (depends on `ELEVATE`, which stays on the board)
 
 ### `THREAD_VIEW_TRANSPORT` — reconsider an RPC transport, gated on authorization
 
@@ -1186,6 +1176,17 @@ common active-turn gate or make the picker claim success before a causal effect.
 process lifetime. Once deployment scale makes that accumulation meaningful, choose a stable executor
 identity or bounded expiry/compaction policy and add retention tests; do not change the exactly-one
 claim or unknown-outcome semantics while doing so.
+
+### `FORK` — per-task identity fork
+
+**Deferred design:** a wide ServiceAccount-bound identity such as "Claude Code web via OIDC" may
+serve several concurrent agent threads managed outside Agentplane. An agent forks its identity into
+a per-task sub-identity, requests permission for that sub-identity through `ELEVATE`, and uses the
+sub-identity's credential for the task. Scope then follows possession of that credential: a thread
+that never receives it never gains the permission. Open questions: how a sub-identity is
+represented (a derived ServiceAccount, or a child Connection under the parent's OAuth grant),
+whether the parent's permissions flow down, and how the sub-identity ends. Low priority; nothing
+else depends on it.
 
 ## Out of scope
 
