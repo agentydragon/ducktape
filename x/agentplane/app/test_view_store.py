@@ -14,7 +14,7 @@ from google.protobuf.timestamp_pb2 import Timestamp
 
 from x.agentplane.app import thread_api_pb2, thread_view_pb2
 from x.agentplane.app.trajectory import IngestionLease, TrajectoryStore
-from x.agentplane.app.view_store import ProjectionNotReadyError, ViewStore
+from x.agentplane.app.view_store import ProjectionLagError, ProjectionNotReadyError, ViewStore
 from x.agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from x.agentplane.runner import protocol_pb2
 
@@ -277,6 +277,126 @@ async def test_a_window_around_a_cursor_restores_a_reader_who_was_scrolled_up(
 
     assert [segment.cursor for segment in around.window.segments] == [48, 49, 50, 51, 52]
     assert around.position.through_cursor == 100
+
+
+async def test_history_pages_backwards_without_moving_the_position(
+    store: TrajectoryStore, view: ViewStore, thread: UUID, lease: IngestionLease
+) -> None:
+    await archive(
+        store,
+        view,
+        thread,
+        lease,
+        [event(cursor, turn_started=event_pb2.TurnStarted(turn_id=f"t{cursor}", model="m")) for cursor in range(1, 31)],
+    )
+    snapshot = await view.snapshot(thread, tail(10))
+    assert snapshot.window.covers_from_cursor == 21
+
+    older = await view.segments(
+        thread,
+        thread_api_pb2.ListSegmentsRequest(
+            before_cursor=snapshot.window.covers_from_cursor,
+            max_segments=10,
+            minimum_through_cursor=snapshot.position.through_cursor,
+        ),
+    )
+
+    assert [segment.cursor for segment in older.segments] == list(range(11, 21))
+    assert not older.exhausted
+    # Reading history never advances what the caller is following from.
+    assert (await view.snapshot(thread, tail(1))).position.through_cursor == 30
+
+
+async def test_a_read_ordered_past_the_projection_reports_lag(
+    store: TrajectoryStore, view: ViewStore, thread: UUID, lease: IngestionLease
+) -> None:
+    """Rather than answer with an older page the caller would merge as current."""
+    await archive(store, view, thread, lease, [event(1, turn_started=event_pb2.TurnStarted(turn_id="t1", model="m"))])
+    with pytest.raises(ProjectionLagError):
+        await view.segments(
+            thread, thread_api_pb2.ListSegmentsRequest(before_cursor=99, max_segments=5, minimum_through_cursor=50)
+        )
+
+
+async def test_a_lost_submit_response_is_reconciled_by_id(
+    store: TrajectoryStore, view: ViewStore, thread: UUID, lease: IngestionLease
+) -> None:
+    """The caller kept the id, never saw the response, and asks what became of it."""
+    sent = command_pb2.Command(command_id="c1", submit_input=command_pb2.SubmitInput(text="inspect this"))
+    await archive(
+        store,
+        view,
+        thread,
+        lease,
+        [
+            event(1, command_admitted=event_pb2.CommandAdmitted(command=sent)),
+            event(
+                2,
+                harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
+                    harness_message_id="m1", text="inspect this", origin_command_ids=["c1"], turn_id="t1"
+                ),
+            ),
+        ],
+    )
+
+    lookup = await view.lookup(thread, thread_api_pb2.GetCommandsRequest(command_ids=["c1", "never-sent"]))
+
+    settled, unknown = lookup.entries
+    assert settled.admitted.command == sent
+    assert settled.admitted.effected.origin_cursor == 2
+    # Not a NACK: where the projection has looked, not proof the runner never admitted it.
+    assert unknown.not_observed.command_id == "never-sent"
+    assert unknown.not_observed.through_cursor == 2
+
+
+async def test_exact_evidence_reads_the_archive_rather_than_a_derived_copy(
+    store: TrajectoryStore, view: ViewStore, thread: UUID, lease: IngestionLease
+) -> None:
+    await archive(store, view, thread, lease, [event(1, native=event_pb2.Native(line='{"raw":true}'))])
+
+    payload = await view.payload(
+        thread, thread_api_pb2.ReadPayloadRequest(origin=event_log_pb2.EventOrigin(source_id=SOURCE, sequence=1))
+    )
+
+    assert payload.availability == thread_view_pb2.AVAILABILITY_RETAINED
+    entry = event_log_pb2.EventEntry()
+    entry.ParseFromString(payload.data)
+    assert entry.event.native.line == '{"raw":true}'
+
+
+async def test_an_expanded_tool_output_is_read_by_reference(
+    store: TrajectoryStore, view: ViewStore, thread: UUID, lease: IngestionLease
+) -> None:
+    await archive(
+        store,
+        view,
+        thread,
+        lease,
+        [
+            event(1, item_started=event_pb2.ItemStarted(item_id="i1", kind=event_pb2.ITEM_KIND_TOOL_CALL)),
+            event(
+                2,
+                item_completed=event_pb2.ItemCompleted(
+                    item_id="i1", tool=event_pb2.ToolResult(output="the whole output", succeeded=True)
+                ),
+            ),
+        ],
+    )
+    snapshot = await view.snapshot(thread, tail(10))
+
+    payload = await view.payload(
+        thread,
+        thread_api_pb2.ReadPayloadRequest(
+            payload=thread_view_pb2.PayloadRef(
+                source_id=snapshot.position.source_id,
+                projection_epoch=snapshot.position.projection_epoch,
+                owner_cursor=1,
+                field="output",
+            )
+        ),
+    )
+
+    assert payload.data == b"the whole output"
 
 
 if __name__ == "__main__":

@@ -116,6 +116,16 @@ class ViewCommand(Base):
     summary: Mapped[bytes] = mapped_column(LargeBinary)
 
 
+class ProjectionLagError(Exception):
+    """The projection has not reached a position a caller asked to be ordered against."""
+
+    def __init__(self, thread_id: UUID, through_cursor: int, minimum: int) -> None:
+        super().__init__(f"thread {thread_id} is projected through {through_cursor}, below {minimum}")
+        self.thread_id = thread_id
+        self.through_cursor = through_cursor
+        self.minimum = minimum
+
+
 class ProjectionNotReadyError(Exception):
     """No epoch has observed this Thread's source yet, which is not an empty view over an invented one."""
 
@@ -490,4 +500,140 @@ class ViewStore:
                     controls=controls,
                     unresolved_count=await self._unresolved(session, thread_id, row.epoch),
                 )
+            )
+
+    async def _at_least(self, session: AsyncSession, row: ProjectionEpoch, minimum: int) -> None:
+        """A read ordered against a snapshot the caller already holds.
+
+        Reporting lag is the honest answer where the projection has not reached it; returning an
+        older successful page would let the caller merge it as though it were current.
+        """
+        if minimum and row.through_cursor < minimum:
+            raise ProjectionLagError(row.thread_id, row.through_cursor, minimum)
+
+    async def segments(
+        self, thread_id: UUID, request: thread_api_pb2.ListSegmentsRequest
+    ) -> thread_view_pb2.SegmentsPage:
+        """One keyset page of history. Never moves the caller's Position."""
+        async with self._sessions.begin() as session:
+            row = await self._selected(session, thread_id)
+            await self._at_least(session, row, request.minimum_through_cursor)
+            scoped = (ViewSegment.thread_id == thread_id, ViewSegment.epoch == row.epoch)
+            limit = request.max_segments
+            if request.WhichOneof("direction") == "before_cursor":
+                found = await session.scalars(
+                    select(ViewSegment)
+                    .where(*scoped, ViewSegment.cursor < request.before_cursor)
+                    .order_by(ViewSegment.cursor.desc())
+                    .limit(limit + 1)
+                )
+            else:
+                found = await session.scalars(
+                    select(ViewSegment)
+                    .where(*scoped, ViewSegment.cursor > request.after_cursor)
+                    .order_by(ViewSegment.cursor)
+                    .limit(limit + 1)
+                )
+            rows = list(found)
+            page = sorted(rows[:limit], key=lambda found: found.cursor)
+            return self._page(await self._rebuild(session, thread_id, page), exhausted=len(rows) <= limit)
+
+    async def pending(
+        self, thread_id: UUID, request: thread_api_pb2.ListPendingCommandsRequest
+    ) -> thread_view_pb2.CommandsPage:
+        async with self._sessions.begin() as session:
+            row = await self._selected(session, thread_id)
+            await self._at_least(session, row, request.minimum_through_cursor)
+            return await self._pending(
+                session, row, after=request.after_admission_cursor, limit=request.max_commands or 50
+            )
+
+    async def lookup(
+        self, thread_id: UUID, request: thread_api_pb2.GetCommandsRequest
+    ) -> thread_view_pb2.CommandLookup:
+        """Reconcile locally retained ids, including ones settled outside any visible window.
+
+        An id the projection has not observed answers `NotObservedThrough`, which is where it has
+        looked and not a statement that the runner never admitted it.
+        """
+        async with self._sessions.begin() as session:
+            row = await self._selected(session, thread_id)
+            await self._at_least(session, row, request.minimum_through_cursor)
+            found = await session.scalars(
+                select(ViewCommand).where(
+                    ViewCommand.thread_id == thread_id,
+                    ViewCommand.epoch == row.epoch,
+                    ViewCommand.command_id.in_(list(request.command_ids)),
+                )
+            )
+            known = {command.command_id: command for command in found}
+            admissions = await self._archived(
+                session, thread_id, [command.admission_cursor for command in known.values()]
+            )
+            entries = []
+            for command_id in request.command_ids:
+                command = known.get(command_id)
+                if command is None:
+                    entries.append(
+                        thread_view_pb2.CommandLookupEntry(
+                            not_observed=thread_view_pb2.NotObservedThrough(
+                                command_id=command_id, through_cursor=row.through_cursor
+                            )
+                        )
+                    )
+                    continue
+                summary = thread_view_pb2.CommandSummary()
+                summary.ParseFromString(command.summary)
+                # The exact Command comes from the admission Event, which is where it is archived.
+                archived = ParseDict(admissions[command.admission_cursor], event_log_pb2.EventEntry())
+                admitted = thread_view_pb2.AdmittedCommand(
+                    command=archived.event.command_admitted.command, admission_cursor=command.admission_cursor
+                )
+                match summary.WhichOneof("outcome"):
+                    case "effected":
+                        admitted.effected.CopyFrom(summary.effected)
+                    case "failed":
+                        admitted.failed.CopyFrom(summary.failed)
+                    case "noop":
+                        admitted.noop.CopyFrom(summary.noop)
+                    case _:
+                        admitted.pending.SetInParent()
+                entries.append(thread_view_pb2.CommandLookupEntry(admitted=admitted))
+            return thread_view_pb2.CommandLookup(entries=entries)
+
+    async def payload(self, thread_id: UUID, request: thread_api_pb2.ReadPayloadRequest) -> thread_view_pb2.Payload:
+        """A value the view left for an on-demand read, returned whole.
+
+        An `EventOrigin` target reads the archive directly, so exact evidence needs no derived copy.
+        """
+        async with self._sessions.begin() as session:
+            if request.WhichOneof("target") == "origin":
+                archived = await self._archived(session, thread_id, [request.origin.sequence])
+                if request.origin.sequence not in archived:
+                    return thread_view_pb2.Payload(availability=thread_view_pb2.AVAILABILITY_NOT_YET_ARCHIVED)
+                entry = ParseDict(archived[request.origin.sequence], event_log_pb2.EventEntry())
+                return thread_view_pb2.Payload(
+                    data=entry.SerializeToString(), availability=thread_view_pb2.AVAILABILITY_RETAINED
+                )
+            reference = request.payload
+            row = await self._selected(session, thread_id)
+            if str(row.epoch) != reference.projection_epoch:
+                return thread_view_pb2.Payload(availability=thread_view_pb2.AVAILABILITY_LOST)
+            found = await session.scalar(
+                select(ViewSegment).where(
+                    ViewSegment.thread_id == thread_id,
+                    ViewSegment.epoch == row.epoch,
+                    ViewSegment.cursor == reference.owner_cursor,
+                )
+            )
+            if found is None or found.item is None:
+                return thread_view_pb2.Payload(availability=thread_view_pb2.AVAILABILITY_LOST)
+            item = thread_view_pb2.Item()
+            item.ParseFromString(found.item)
+            values = {"text": item.text, "arguments_json": item.arguments_json, "output": item.output}
+            value = values.get(reference.field)
+            if value is None:
+                raise ValueError(f"no such payload field: {reference.field!r}")
+            return thread_view_pb2.Payload(
+                data=value.value.encode(), availability=thread_view_pb2.AVAILABILITY_RETAINED
             )
