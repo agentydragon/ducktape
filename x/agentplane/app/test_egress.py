@@ -63,6 +63,30 @@ async def test_bindings_for_lists_the_bindings_naming_the_sandbox(
     assert [view.name for view in await egress.bindings_for("other")] == ["other-only"]
 
 
+async def test_a_service_account_subject_is_neither_matched_nor_rendered_as_a_sandbox(
+    egress: EgressInventory, custom_objects: FakeCustomObjectsApi
+) -> None:
+    """The two subject kinds share a name here without sharing an identity: a binding naming
+    ServiceAccount "live" is not a binding on Sandbox "live", and a view never shows one as the
+    other."""
+    _seed(custom_objects)
+    custom_objects.objects[("egressbindings", "service-account-only")] = egress_binding(
+        "service-account-only", subjects=[{"serviceAccount": {"name": "live"}}], policies=["pypi"]
+    )
+    custom_objects.objects[("egressbindings", "live-and-service-account")] = egress_binding(
+        "live-and-service-account",
+        subjects=[{"sandbox": {"name": "live"}}, {"serviceAccount": {"name": "public-coder"}}],
+        policies=["pypi"],
+    )
+
+    names = [view.name for view in await egress.bindings_for("live")]
+    assert "service-account-only" not in names
+    assert "live-and-service-account" in names
+
+    both = next(view for view in await egress.bindings_for("live") if view.name == "live-and-service-account")
+    assert both.subjects == ["live", "serviceaccount/public-coder"]
+
+
 async def test_a_binding_view_carries_provenance_expiry_policies_without_proxy_acknowledgement(
     egress: EgressInventory, custom_objects: FakeCustomObjectsApi
 ) -> None:

@@ -26,7 +26,10 @@ from x.agentplane.egress.resources import (
     EgressCredential,
     EgressPolicy,
     Rule,
+    SandboxSubject,
     SchemeTokenTarget,
+    ServiceAccountSubject,
+    Subject,
     Target,
     TargetMethod,
 )
@@ -135,7 +138,10 @@ class BindingView(BaseModel):
 
     name: str
     from_git: bool = Field(description="Flux applied it; removing it is git's.")
-    subjects: list[str] = Field(description="The Sandboxes this binding names.")
+    subjects: list[str] = Field(
+        description="The subjects this binding names: a Sandbox by name, a ServiceAccount as "
+        "`serviceaccount/<name>` so the two kinds cannot be read as one."
+    )
     expires_at: datetime | None = None
     policies: list[PolicyView] = Field(description="The named policies that exist, in the binding's order.")
     missing_policies: list[str] = Field(description="Names in the binding that no EgressPolicy answers to.")
@@ -265,7 +271,10 @@ def matching_bindings(
         (
             _binding_view(binding, resolved)
             for binding in map(EgressBinding.model_validate, bindings)
-            if any(subject.sandbox.name == sandbox for subject in binding.spec.subjects)
+            if any(
+                isinstance(subject, SandboxSubject) and subject.sandbox.name == sandbox
+                for subject in binding.spec.subjects
+            )
         ),
         key=lambda view: view.name,
     )
@@ -317,11 +326,20 @@ def _rule_view(rule: Rule, credentials: dict[str, CredentialView]) -> RuleView:
     )
 
 
+def _subject_name(subject: Subject) -> str:
+    """A Sandbox keeps its bare name; a ServiceAccount is qualified, so the two never read alike."""
+    match subject:
+        case SandboxSubject():
+            return subject.sandbox.name
+        case ServiceAccountSubject():
+            return f"serviceaccount/{subject.service_account.name}"
+
+
 def _binding_view(binding: EgressBinding, policies: dict[str, PolicyView]) -> BindingView:
     return BindingView(
         name=binding.metadata.name,
         from_git=FLUX_KUSTOMIZATION_LABEL in binding.metadata.labels,
-        subjects=[subject.sandbox.name for subject in binding.spec.subjects],
+        subjects=[_subject_name(subject) for subject in binding.spec.subjects],
         expires_at=binding.spec.expires_at,
         policies=[policies[name] for name in binding.spec.policies if name in policies],
         missing_policies=[name for name in binding.spec.policies if name not in policies],
