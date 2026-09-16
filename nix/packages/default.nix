@@ -425,6 +425,7 @@ rec {
   # see openvino-npu.nix for why nixpkgs' own openvino can't run NPU inference.
   npu-compiler-libs = pkgs.callPackage ./npu-compiler-libs.nix { };
   openvino-npu = pkgs.callPackage ./openvino-npu.nix { inherit npu-compiler-libs; };
+  llama-cpp-openvino = pkgs.callPackage ./llama-cpp-openvino.nix { inherit openvino-npu; };
   prettier = pkgs.callPackage ./prettier/prettier.nix { };
   bazel-diff = pkgs.callPackage ./bazel-diff.nix { };
   # Anthropic CLI (`ant`): Claude API / Managed Agents control plane. Not in
