@@ -74,12 +74,11 @@ name, the bound port and the browser's path with nothing checking that; and each
 service costs a `mypy.ini` `warn_unused_ignores` exemption for `mypy-protobuf`'s
 generated stub.
 
-**Authorization does not distinguish them.** Bearer-token-in-metadata versus this app's
-session cookie is a header decision either transport carries identically — `fetch`
-sends the cookie for Connect today — so no part of this rejection rests on it. Should a
-bearer token ever be wanted (Envoy's `jwt_authn` is in Cilium's build beside `grpc_web`),
-mint a short-lived RPC token from the cookie session in one cookie-authenticated REST
-call; the handle stays the root credential and the browser still holds no access token.
+**Authorization does not distinguish them**, and no part of this rejection rests on it:
+bearer-token-in-metadata versus this app's session cookie is a header decision either
+transport carries identically, and `fetch` sends the cookie for Connect today. What the
+browser credential is, and what a bearer token would cost, is decided in
+<operator_federation.md> § Why the browser holds a handle and not a token.
 
 What is genuinely transport-coupled is thinner than "swap the adapter" suggests: the fold
 raises `ConnecpyException`, Connect's vocabulary, so a second adapter either translates a
