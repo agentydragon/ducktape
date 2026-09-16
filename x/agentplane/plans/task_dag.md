@@ -61,7 +61,11 @@ flowchart TB
 
     MCPAUTH["Remaining acceptance<br/>credentialed MCP account<br/>refresh, rotation, Kubernetes provider"]:::active
     ELEVATE["Planned behavior<br/>agent-requested temporary permission<br/>ServiceAccount and Sandbox callers, operator-approved"]:::future
-    MCPAGG["Deferred migration<br/>replace Haku Console MCP aggregator<br/>inventory and migrate Haku workflows"]:::future
+    MCP_BEARER_GROUPS["Deferred migration<br/>ActionGroups for tana-rw and home-assistant<br/>static-bearer remotes, the shape ssh already uses"]:::future
+    MCP_OAUTH_GROUPS["Deferred migration<br/>ActionGroups for grocy-sf and postscanmail-mcp<br/>OAuth remotes; grocy registers dynamically"]:::future
+    MCP_GOOGLE_GROUPS["Deferred migration<br/>ActionGroups for gmail and google_calendar<br/>execute as the acting operator's Google account"]:::future
+    MCP_CONSOLE_INTERNAL["Deferred design<br/>counterparts for the sandbox and grants servers<br/>console-internal; no Action Service surface yet"]:::future
+    MCPAGG["Capstone<br/>every Console MCP server has an ActionGroup<br/>the aggregator can be retired"]:::milestone
     RETIRE_MCP_CATALOG["Deferred migration<br/>retire Haku Console's connected-MCP catalog<br/>once the Action catalog answers for it"]:::future
     RETIRE_APPROVAL_QUEUE["Deferred migration<br/>retire Haku Console's tool-call approval queue<br/>once Decisions and the approval UI cover it"]:::future
     RETIRE_TOOLS["Capstone<br/>Haku Console owns no tool call<br/>catalog and approval queue both gone"]:::milestone
@@ -75,7 +79,10 @@ flowchart TB
 
     ING["Deferred support<br/>Event & Notification Hub<br/>Action decisions and subscribed external events -> Thread ingress"]:::future
     DT["P2 deferred<br/>driver-provided declarations/background control"]:::future
-    AG["Deferred<br/>hosted Thread lifecycle<br/>cross-Identity read policy"]:::future
+    THREAD_OUTLIVES_SANDBOX["Deferred design<br/>a Thread lifecycle that outlives its Sandbox<br/>hosted rather than Sandbox-bound"]:::future
+    HOSTED_THREAD_SURFACES["Deferred design<br/>read and control surfaces for a hosted Thread<br/>beyond today's Sandbox-bound view"]:::future
+    CROSS_IDENTITY_READ_POLICY["Deferred decision<br/>explicit policy for reading across Identities<br/>what cross-Identity delivery waits on"]:::decision
+    AG["Capstone<br/>hosted Agent and Thread model<br/>lifecycle, surfaces and read policy together"]:::milestone
     PROD["Milestone<br/>production-capable governed action execution"]:::milestone
     ACTION_PROVENANCE_PRUNE["Deferred idea<br/>prune ActionRequestInput origin/correlation<br/>collapse to one client-authored identifier?"]:::future
     CONNECTION_SA_REBIND["Planned mutation<br/>rebind a Connection's ServiceAccount in place<br/>no mutation exists; only a fresh OAuth consent does"]:::future
@@ -120,6 +127,15 @@ flowchart TB
 
     MCPAUTH --> PROD
     ELEVATE --> CONSOLE_POLICIES
+    ELEVATE --> MCP_CONSOLE_INTERNAL
+    MCP_BEARER_GROUPS --> MCPAGG
+    MCP_OAUTH_GROUPS --> MCPAGG
+    MCP_GOOGLE_GROUPS --> MCPAGG
+    MCP_CONSOLE_INTERNAL --> MCPAGG
+    THREAD_OUTLIVES_SANDBOX --> AG
+    HOSTED_THREAD_SURFACES --> AG
+    CROSS_IDENTITY_READ_POLICY --> AG
+    CROSS_IDENTITY_READ_POLICY -. cross-Identity delivery .-> ING
     EGRESS_IDENTITY_AVAILABILITY --> THREAD_DEPLOYED_ACCEPTANCE
     MCPAGG -. replacement surface .-> RETIRE_MCP_CATALOG
     CONSOLE_POLICIES -. policy parity .-> RETIRE_APPROVAL_QUEUE
@@ -772,17 +788,49 @@ consumers are listed here rather than discovered later:
 assert that wiring. Deleting this namespace because this entry says "retire the old proxy" would
 remove the fence in front of Haku's sandbox and CI.
 
-### `MCPAGG` — Haku Console MCP aggregator replacement
+### `MCP_BEARER_GROUPS` — ActionGroups for the static-bearer remotes
 
-**Deferred migration:** use the implemented generic Action MCP frontend as the replacement surface for Haku
-Console's aggregator. Verify the required external harness/client workflows against it before
-retiring the old surface; do not build a second frontend, approval coordinator, or authority store.
-The real-client proof (§ Tested on staging) is the client-compatibility evidence for this
-migration, not just a protocol fixture; grant refresh and revocation are left to bug reports.
-Inventory and migrate the remaining Haku tools, policies, and client workflows separately; backend
-credential requirements remain adapter-specific. The initial facade uses generic Action tools;
-per-Action projection may never be needed and is not required for migration. Actual generic-client
-evidence determines whether to explore it. The migration order remains open.
+**Deferred migration:** `tana-rw` (`tana-mcp.tana-mcp.svc.cluster.local:8263`) and `home-assistant`
+(`ha-mcp.ha-mcp.svc.cluster.local:8765`), both `remote_mcp` with a `static_bearer`. That is exactly
+the shape the `ssh` ActionGroup already uses, so each needs an ActionGroup entry, its bearer Secret
+and network-policy egress, and nothing new in the executor. The cheapest clock of the four, and the
+one that proves the migration shape end to end on a real backend.
+
+### `MCP_OAUTH_GROUPS` — ActionGroups for the OAuth remotes
+
+**Deferred migration:** `grocy-sf` (`grocy-mcp-sf.allegedly.works`) and `postscanmail-mcp`
+(`postscanmail-mcp.allegedly.works`), both `remote_server_oauth`. The executor already does
+`auth: oauth` for `github` and `kubernetes`, so the mechanism exists; what differs is that
+`grocy-sf` registers its client **dynamically** where both ported groups are preregistered, so
+whether the Action Service's linkage supports dynamic registration is the open question here rather
+than the group definition.
+
+### `MCP_GOOGLE_GROUPS` — ActionGroups for the operator's Google surfaces
+
+**Deferred migration:** `gmail` and `google_calendar`, both `in_process` in Console and both
+executing as the **acting operator's own Google account** rather than a service credential. The
+Action Service has no counterpart for that: its executors hold a linkage credential, not the
+caller's personal account. So this needs the operator-linked Google credential path to exist before
+a group can name either, which is why it does not move on the same clock as a bearer remote.
+
+### `MCP_CONSOLE_INTERNAL` — counterparts for the console-internal servers
+
+**Deferred design:** `sandbox` and `grants` are `in_process` servers with no Action Service
+counterpart at all, so unlike the other three this is not configuration — the surface has to exist
+first. `grants` additionally waits on `ELEVATE`: its tools are about access that expires, and
+temporary grants are what the Action Service is missing, not the tool definitions.
+
+### `MCPAGG` — every Console MCP server has an ActionGroup
+
+**Capstone** over the four groups above. Three of Console's eleven servers are already answered:
+`github` and `ssh` by the groups of the same name, and `kubectl-passthrough-mcp` by `kubernetes` —
+same upstream URL in each case. The remaining eight are the four nodes above.
+
+Use the implemented generic Action MCP frontend as the replacement surface; do not build a second
+frontend, approval coordinator, or authority store. The real-client proof (§ Tested on staging) is
+the client-compatibility evidence, not just a protocol fixture. The initial facade uses generic
+Action tools; per-Action projection may never be needed and is not required for migration.
+
 The retirements themselves are separate nodes: `RETIRE_MCP_CATALOG` waits on this one,
 `RETIRE_APPROVAL_QUEUE` does not.
 
@@ -1012,11 +1060,30 @@ operator work; `PC_EGRESS` needs the same instance. Gated on `MCPAUTH`'s remaini
 acceptance; `T3` is product work that lands on it, not a prerequisite. What "production-capable"
 requires beyond the staging deployment is not defined.
 
+### `THREAD_OUTLIVES_SANDBOX` — a Thread lifecycle beyond its Sandbox
+
+**Deferred design:** today a Thread is bound to the Sandbox that runs it. A hosted Thread outlives
+one, which is a durability and ownership question about the Thread record itself, separable from
+what any surface shows of it.
+
+### `HOSTED_THREAD_SURFACES` — read and control for a hosted Thread
+
+**Deferred design:** the read and control surfaces a hosted Thread needs, beyond the Sandbox-bound
+view the derived read model serves. Separate from the lifecycle: a Thread can outlive its Sandbox
+before anything new reads it that way, and these surfaces can be designed against a Thread that
+does not yet.
+
+### `CROSS_IDENTITY_READ_POLICY` — an explicit policy for reading across Identities
+
+**Deferred decision:** what one Identity may read of another's Threads, stated explicitly rather
+than left to whatever a query happens to reach. This is the piece `ING` actually waits on — its
+cross-Identity delivery needs the policy, not the hosted lifecycle or the surfaces — which the
+merged node hid by making `ING` look blocked on all three.
+
 ### `AG` — hosted Agent and Thread model
 
-**Deferred:** the hosted Agent/Thread model beyond today's Sandbox-bound Threads: a durable Thread
-lifecycle that outlives a Sandbox, conversation read and control surfaces, and an explicit policy
-for reading across Identities, which `ING` needs for cross-Identity delivery.
+**Capstone** over the three above. It carries the claim that the hosted model exists, and nothing
+of its own.
 
 ### `DT` — driver-provided declarations and background control
 
@@ -1032,7 +1099,8 @@ user/Agent subscriptions, and deliver structured events into an Agent/Thread ing
 subscription matching, deduplication, batching/debounce, rate limits, backpressure, offline delivery,
 and Thread wake/queue semantics. It is not an executor or an Action decision authority. It consumes
 the canonical Action event sequence, preserving individual events and ordering, and adds no second
-Action outbox or event store; cross-Identity delivery requires an explicit read policy.
+Action outbox or event store; cross-Identity delivery requires an explicit read policy, which is
+`CROSS_IDENTITY_READ_POLICY`.
 
 Make Action approval and denial notifications an explicit first consumer: deliver the
 decision to the requesting Agent/Thread, correlated with the original Action request.
