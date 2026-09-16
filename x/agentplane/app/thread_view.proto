@@ -124,9 +124,14 @@ message Segment {
   // is the latest delta folded into it.
   uint64 revision_cursor = 2;
   // Set only where this update extends a value the caller already holds: the revision its copy must
-  // be at. A caller holding a different revision -- it evicted the Segment, or missed a batch -- has
-  // nothing to extend, so it re-reads the Segment rather than guessing. Unset means every value here
-  // is whole, which is always so in a snapshot and a history page.
+  // be at. Unset means every value here is whole, which is always so in a snapshot and a history
+  // page.
+  //
+  // A caller holding a different revision -- it evicted the Segment, or missed a batch -- has
+  // nothing to extend. It re-reads the Segment with a minimum at or beyond this batch's
+  // `through_cursor`, and what comes back already includes this extension, so the read replaces the
+  // extension rather than being appended to. Applying both would double the suffix; comparing
+  // revisions is what makes taking the read instead safe.
   optional uint64 from_revision_cursor = 5;
   oneof content {
     Item item = 3;

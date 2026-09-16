@@ -36,8 +36,14 @@ syntax = "proto3";
 //                from_revision 984, item: {output: {suffix: "...3KB..."}}}]}
 //
 // A Segment this interval created has nothing to extend and arrives whole, as does a value replaced
-// rather than grown. A caller that cannot apply an extension -- it evicted the Segment or missed a
-// batch -- re-reads that Segment with ListSegments rather than inventing a base to append to.
+// rather than grown -- an authoritative completion is a suffix only where it extends what streamed.
+// A caller that cannot apply an extension re-reads that Segment with ListSegments at a minimum at or
+// beyond the batch's `through_cursor`; what comes back already includes the extension and replaces
+// it, rather than being a base to append to.
+//
+// Reconnecting mid-stream needs none of that. The caller follows from the position it holds, which
+// is a committed batch boundary, and each replayed batch extends the revision the one before it
+// left. Only a gap past the retained journal forces a rebootstrap, and that returns whole values.
 //
 // Everything else is a demand read that never moves the caller's Position: ListSegments for older
 // history, ReadPayload for a tool output the reader expanded, ThreadEventsService for exact
