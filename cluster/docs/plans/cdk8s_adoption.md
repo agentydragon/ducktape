@@ -1,9 +1,12 @@
 # Plan: cdk8s adoption for cluster manifests
 
-**Status: phase 1 landed for its first Kustomization.** `cluster/k8s/litellm/app` (minus
-`deployment.yaml`, see § "The other real catch") is now fully cdk8s-generated and
-committed, pinned by `//cluster:test_generate_manifests`, which passes against Bazel's
-real hermetic `cdk8s`/`jsii` toolchain. Carried forward from the original spike
+**Status: phase 1 landed for its first Kustomization.** `cluster/k8s/litellm/app` is now
+fully cdk8s-generated and committed — including the Deployment, whose image tag is
+carved out at field granularity into a hand-written `image-pins/` Kustomize Component
+rather than keeping the whole file hand-written (see § "The other real catch") — pinned
+by `//cluster:test_generate_manifests`, which passes against Bazel's real hermetic
+`cdk8s`/`jsii` toolchain, with the image-automation override independently verified
+against a real `kustomize build`. Carried forward from the original spike
 (<https://github.com/agentydragon/ducktape/pull/6840>). `litellm/servicemonitor` no
 longer exists as a separate Kustomization — human PR #7103, landed independently on
 `devel` while this was in flight, folded it (and six other monitor-only Kustomizations
@@ -24,11 +27,12 @@ big-bang rewrite of the cluster tree.
   as it does today; a cdk8s-generated file is just another committed file under a
   Kustomization's directory.
 - **Convert one whole Flux Kustomization at a time.** A directory either is fully
-  hand-written or has its application manifests fully generated, with two named
-  exceptions that stay hand-written even in an otherwise-generated directory: SOPS
-  secrets (cdk8s has no key material) and any resource carrying Flux's `$imagepolicy`
-  marker (a YAML emitter can't reproduce the comment it depends on — see § "The other
-  real catch"). Not a general per-resource escape hatch — just these two.
+  hand-written or has its application manifests fully generated, with one named
+  exception that stays hand-written even in an otherwise-generated directory: SOPS
+  secrets (cdk8s has no key material). Live image automation is _not_ a second
+  exception at file granularity — it's carved out at field granularity into a small
+  `image-pins/` Kustomize Component the generator never touches, so the resource that
+  needs it (a Deployment, say) is still fully generated (see § "The other real catch").
 - **CI pins generated output to committed output**: a Bazel test regenerates the
   manifests in-memory and asserts the result equals the committed file, exactly the
   "generated-output snapshot" pattern STYLE.md already codifies for
@@ -192,43 +196,61 @@ still want `git` write-back here, which needs the identical carve-out. Not a rea
 pick Flux over Argo or vice versa — a reason this specific problem doesn't move that
 decision either way.
 
-**Resolution for this cutover: any resource carrying an `$imagepolicy` marker stays
-hand-written**, alongside SOPS secrets, as a named exception to "one directory, fully
-generated" (§ Phase 1). `litellm/app` is otherwise fully generated —
-`kustomization.yaml`'s `resources:` list is just `[deployment.yaml, litellm.k8s.yaml]`.
-`ProxySpec`/`LiteLLMProxy` in `cluster/litellm_constructs.py` no longer build a
-Deployment at all (dead fields deleted, not left dangling). A guardrail lives in
-`cluster/test_generate_manifests.py`: the pinning test asserts no committed
-cdk8s-generated file contains `$imagepolicy` — belt-and-suspenders rather than a
-defense against a realistic cdk8s bug, since cdk8s structurally cannot emit it, but
-cheap to have alongside a pinning test that already reads every generated file's text.
+**Resolution, landed: field-level carve-out via a Kustomize `Component`, not a
+whole-file exception.** `deployment.yaml` is gone — the Deployment is fully generated,
+in `litellm.k8s.yaml`, with a deliberate placeholder tag (`:unset`,
+`_PLACEHOLDER_TAG` in `cluster/litellm_constructs.py`). The marker lives in
+`cluster/k8s/litellm/app/image-pins/kustomization.yaml`, a hand-written Kustomize
+`Component` (`kind: Component`, referenced from the generated `kustomization.yaml` via
+`components: [./image-pins]`):
 
-**Where this could go next, not done now:** shrink the hand-written surface from the
-whole Deployment down to just the mutable field, via kustomize's `images:` transformer
-— cdk8s generates the Deployment with any placeholder tag, and a small file the
-generator excludes from its output set (a Kustomize `Component`, unused elsewhere in
-this repo today) carries just `images: [{name: ..., newTag: ... # {"$imagepolicy":
-...}}]`, which `kustomize build` applies over whatever tag is baked into the generated
-Deployment regardless. Same "generator must not own this" rule, just at field
-granularity instead of file granularity. Worth building once the whole-file carve-out
-is a real tax — a directory where the automated resource has enough
-otherwise-generatable content that losing the whole file stings — not from the one data
-point `litellm/app` provides. Answers issue #6831's Q5 ("How should cdk8s-generated
-resources coexist with... image-policy markers?") at the principle level; the
-field-granularity mechanism is the concrete follow-up once it's needed.
+```yaml
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+images:
+  - name: git.allegedly.works/ducktape-ci/tana-litellm-proxy
+    newTag: devel-20260914084437-6a8e3e2 # {"$imagepolicy": "flux-system:tana-litellm-proxy"}
+```
+
+**Gotcha found only by trying it**: a `components:` entry must be a _directory_
+reference (kustomize looks for a `kustomization.yaml` inside it), not a bare file —
+`components: [./image-pins.yaml]` fails with `must build at directory: ... file is not
+directory`. A first sketch of this design got that wrong; verified against a real
+`kustomize build` (v5.8.1, both a local scratch reproduction and the actual
+`litellm/app` directory) before committing to the shape, and separately through
+`//cluster/validation:test_flux_build`'s own hermetic `kustomize`/`flux` build. Both
+confirm `kustomize build cluster/k8s/litellm/app` renders the real tag, not the
+placeholder — the override genuinely takes effect, not just "doesn't error."
+
+**`ProxySpec`'s `image_name` field is untagged** (`"git.allegedly.works/ducktape-ci/tana-litellm-proxy"`,
+no `:tag`) — the tag is entirely `image-pins/`'s concern; the generator never
+constructs or reasons about a real tag value at all. Same guardrail as before
+(`cluster/test_generate_manifests.py` asserts no _generated_ file contains
+`$imagepolicy`) still applies and still passes — `image-pins/kustomization.yaml` isn't
+in the generated-file set, so nothing about this changes that check.
+
+This answers issue #6831's Q5 ("How should cdk8s-generated resources coexist with...
+image-policy markers?") at both the principle level (§ above) and now with a verified
+concrete mechanism, not just a sketch. The pattern generalizes directly: any future
+converted directory with live image automation gets its own `image-pins/` Component;
+directories without one simply omit `components:` entirely — the presence of the
+directory is the only signal, everything else about the generator's code path is
+identical either way.
 
 ## First cutover: `cluster/k8s/litellm/app` — done
 
-Landed: `litellm.k8s.yaml` (ConfigMap, Service, ServiceAccount, HTTPRoute, the
-forgejo-images ExternalSecret) and `litellm-servicemonitor.k8s.yaml` (ServiceMonitor) are
-generated and committed under `cluster/k8s/litellm/app`, replacing the prior hand-written
-per-resource files there and in the now-retired `litellm/servicemonitor/` directory.
-`flux-kustomization.yaml` and `kustomization.yaml` are generated too, via the shared
+Landed: `litellm.k8s.yaml` (ConfigMap, Deployment, Service, ServiceAccount, HTTPRoute,
+the forgejo-images ExternalSecret) and `litellm-servicemonitor.k8s.yaml`
+(ServiceMonitor) are generated and committed under `cluster/k8s/litellm/app`, replacing
+every prior hand-written per-resource file there and in the now-retired
+`litellm/servicemonitor/` directory — **including the Deployment**, once the image-tag
+marker moved to `image-pins/` (§ above). `flux-kustomization.yaml` and
+`kustomization.yaml` are generated too, via the shared
 `FluxKustomization`/`kustomize_kustomization` helpers in `cluster/flux_constructs.py`.
-`configMapGenerator` is gone from `kustomization.yaml`; `deployment.yaml` is the one
-exception (§ above). `cdk8s-manifests-experiment.yml` and its `cluster-manifests`
-publish-branch job are deleted — the pinning test is an ordinary `py_test`
-(`//cluster:test_generate_manifests`) that `bazel-ci` already covers.
+`configMapGenerator` is gone from `kustomization.yaml`. `litellm/app` has exactly one
+hand-written file left: `image-pins/kustomization.yaml`, 5 lines. `cdk8s-manifests-experiment.yml`
+and its `cluster-manifests` publish-branch job are deleted — the pinning test is an
+ordinary `py_test` (`//cluster:test_generate_manifests`) that `bazel-ci` already covers.
 
 **Landing this took two passes**, not one: the first cutover generated into a separate
 `litellm/servicemonitor/` directory (mirroring the pre-existing hand-written split).
@@ -277,19 +299,20 @@ phase 1's actual pattern has run for a while, not before.
   `litellm.k8s.yaml` and `litellm-servicemonitor.k8s.yaml` pass `prettier` and
   `kubeconform (cluster)` unmodified as committed. No exclusion needed, at least for this
   shape of output.
-- `//cluster:generate_manifests` now hardcodes its two output directories (no
+- `//cluster:generate_manifests` now hardcodes its one output directory (no
   `--output-dir` flag) — matches phase 1's "write directly to `cluster/k8s`", but isn't
-  yet a general per-directory regeneration entrypoint. Revisit when a third directory
+  yet a general per-directory regeneration entrypoint. Revisit when a second directory
   converts and the hardcoding actually needs generalizing, rather than guessing the
-  right shape from two data points.
+  right shape from one data point.
 - How to carry a `dependsOn` rationale comment through generation when one is genuinely
   needed _in the manifest itself_ — see § "A fully-converted directory generates all
   three files". The one real instance so far (`monitoring-crds`) was resolved by
   dropping it as self-explanatory, with the reason kept in the generator's Python source
   instead. Still open for a case where that's not good enough.
-- How to let a fully-generated directory still carry an `$imagepolicy`-marked (or
-  otherwise comment-load-bearing) resource without falling back to "the whole directory
-  stays hand-written" — see § "The other real catch: image automation, and the general
-  principle behind it". The shape of the fix (field-level carve-out via kustomize
-  `images:`) is known; not built, since one data point (`litellm/app`) doesn't justify
-  it yet.
+- ~~How to let a fully-generated directory still carry an `$imagepolicy`-marked
+  resource~~ — resolved: field-level carve-out via a hand-written `image-pins/`
+  Kustomize Component, verified against a real `kustomize build` (§ "The other real
+  catch"). Open sub-question: whether `image-pins/`'s content should itself get any
+  generator involvement (e.g. a test that the `name:` in `images:` matches
+  `ProxySpec.image_name`, so the two can't drift apart silently) — not built, low
+  urgency while there's only one instance to keep in sync by eye.

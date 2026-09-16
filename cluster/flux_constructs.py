@@ -51,10 +51,19 @@ def flux_kustomization(spec: FluxKustomizationSpec) -> dict[str, object]:
     }
 
 
-def kustomize_kustomization(*, resources: list[str], namespace: str | None = None) -> dict[str, object]:
-    """Return the plain `kustomize.config.k8s.io` `Kustomization` listing `resources`."""
+def kustomize_kustomization(
+    *, resources: list[str], namespace: str | None = None, components: list[str] = ()
+) -> dict[str, object]:
+    """Return the plain `kustomize.config.k8s.io` `Kustomization` listing `resources`.
+
+    `components` names directories the generator never writes -- e.g. a hand-written
+    Kustomize `Component` carrying a Flux image-automation marker (see
+    cluster/docs/plans/cdk8s_adoption.md).
+    """
     manifest: dict[str, object] = {"apiVersion": "kustomize.config.k8s.io/v1beta1", "kind": "Kustomization"}
     if namespace is not None:
         manifest["namespace"] = namespace
     manifest["resources"] = resources
+    if components:
+        manifest["components"] = list(components)
     return manifest

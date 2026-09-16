@@ -613,6 +613,163 @@ spec:
     - extract:
         key: forgejo-images-creds
 ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    reloader.stakater.com/auto: "true"
+  labels:
+    app.kubernetes.io/name: litellm
+  name: litellm
+  namespace: litellm
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: litellm
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: litellm
+    spec:
+      containers:
+        - name: litellm
+          image: git.allegedly.works/ducktape-ci/tana-litellm-proxy:unset
+          args:
+            - --config
+            - /etc/litellm/config.yaml
+          ports:
+            - name: http
+              containerPort: 4000
+              protocol: TCP
+          env:
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: "4000"
+            - name: LITELLM_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-master-key
+                  key: api-key
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-db-app
+                  key: uri
+            - name: LITELLM_SALT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-salt-key
+                  key: key
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-anthropic-key
+                  key: api-key
+            - name: GROQ_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-groq-key
+                  key: GROQ_API_KEY
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-gemini-key
+                  key: GEMINI_API_KEY
+            - name: MISTRAL_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-mistral-key
+                  key: MISTRAL_API_KEY
+            - name: CLIPROXY_CLIENT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-cliproxy-key
+                  key: CLIPROXY_CLIENT_KEY
+            - name: TANA_FIREBASE_REFRESH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: tana-firebase-refresh-token
+                  key: refresh_token
+            - name: LANGFUSE_OTEL_HOST
+              value: http://langfuse-web.langfuse.svc.cluster.local:3000
+            - name: LANGFUSE_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: langfuse-secrets
+                  key: LANGFUSE_INIT_PROJECT_PUBLIC_KEY
+            - name: LANGFUSE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: langfuse-secrets
+                  key: LANGFUSE_INIT_PROJECT_SECRET_KEY
+          livenessProbe:
+            httpGet:
+              path: /health/liveliness
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health/readiness
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /health/liveliness
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 36
+          volumeMounts:
+            - name: config
+              mountPath: /etc/litellm
+              readOnly: true
+          imagePullPolicy: Always
+          resources:
+            requests:
+              cpu: 100m
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+      volumes:
+        - name: config
+          configMap:
+            name: litellm-config
+            items:
+              - key: config.yaml
+                path: config.yaml
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      serviceAccountName: litellm
+      terminationGracePeriodSeconds: 90
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: litellm
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+---
 apiVersion: v1
 kind: Service
 metadata:
