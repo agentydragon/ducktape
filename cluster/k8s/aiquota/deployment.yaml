@@ -28,6 +28,40 @@ spec:
         runAsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
+      # Applies aiquota/schema.sql (idempotent CREATE/ALTER ... IF NOT EXISTS)
+      # before the API server starts. Kubernetes runs this to completion first
+      # and retries it on failure, so a schema change ships in the same image
+      # rollout as the code that needs it — no separate Job/version to bump.
+      initContainers:
+        - name: migrate
+          image: git.allegedly.works/ducktape-ci/aiquota-migrate:devel-20260915082842-a8b1ac6 # {"$imagepolicy": "flux-system:aiquota-migrate"}
+          imagePullPolicy: Always
+          env:
+            - name: AIQUOTA_CLICKHOUSE_URL
+              value: http://clickhouse.clickhouse.svc.cluster.local:8123
+            - name: AIQUOTA_CLICKHOUSE_DATABASE
+              value: aiquota
+            - name: AIQUOTA_CLICKHOUSE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: clickhouse-aiquota-credentials
+                  key: username
+            - name: AIQUOTA_CLICKHOUSE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: clickhouse-aiquota-credentials
+                  key: password
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
       containers:
         - name: aiquota-api
           image: git.allegedly.works/ducktape-ci/aiquota-api:devel-20260915082842-a8b1ac6 # {"$imagepolicy": "flux-system:aiquota-api"}

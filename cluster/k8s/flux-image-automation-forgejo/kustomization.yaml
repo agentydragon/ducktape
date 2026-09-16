@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - agentplane-index-image.yaml
   - aiquota-api-image.yaml
+  - aiquota-migrate-image.yaml
   - cli-proxy-api-image.yaml
   - airlock-image.yaml
   - aw-server-image.yaml

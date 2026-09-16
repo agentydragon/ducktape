@@ -124,6 +124,16 @@ creating MergeTree parts. Collection failures do not kill the API; `/readyz`
 becomes successful after the first persisted snapshot and Prometheus metrics
 report subsequent provider or ClickHouse failures.
 
+### Schema
+
+`schema.sql` defines every table, materialized view, and column aiquota owns
+inside the (admin-bootstrapped) `aiquota` database. `migrate.py` applies it
+statement-by-statement over the ClickHouse HTTP interface, run as the
+Deployment's `migrate` init container ahead of the API server. Every statement
+is `CREATE`/`ALTER ... IF NOT EXISTS`, so re-running it on every rollout is
+safe — a schema change ships in the same image/rollout as the code that needs
+it, with no separate Job or version number to bump.
+
 ## Credential ownership
 
 ### Managed Claude Code credential file (local default)
