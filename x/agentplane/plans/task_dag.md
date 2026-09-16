@@ -347,6 +347,26 @@ remains, each with what it needs; an entry leaves when its set can be written.
   cannot execute the POST/SPDY transport the passthrough carries); the same condition gates it
   here.
 
+**The composition layer, which the list above omits.** Four of the console's twenty-four entries are
+`any_of` bundles rather than leaves, and they are what is actually bound to an agent:
+`public_coder_github_reads` (four public GitHub read policies), `public_coder_v1`, `haku_v1`
+(fourteen leaves), and `manual_review`, which is `type: never`.
+
+These need no kind. `ActionPolicyBinding.policySets` is a list and evaluation unions across every
+set of every binding a subject has, so an `any_of` bundle is one binding naming several sets, and
+`manual_review` is the absence of a binding. What the bundles do is turn the leaf list into
+per-agent progress:
+
+- **`public_coder_v1`** = `public_coder_github_reads` + `github_identity_reads` + `kubernetes_reads`
+  - `grants_self_introspection` + `grants_own_revoke`. The GitHub half is **fully ported** -- all
+    four leaves under `public_coder_github_reads` plus `github_identity_reads` are sets already. What
+    is left is the `grants` trio, which the list above puts behind the Action Service having its own
+    grant surface. That trio is the whole remaining distance for this agent, and it is the same
+    blocker `PC_EGRESS` meets from the other side.
+- **`haku_v1`** = fourteen leaves spanning Gmail, Calendar, Grocy, GitHub, Tana, PostScanMail, Home
+  Assistant, the console's `sandbox` server and the `grants` trio. Only its GitHub leaves are
+  ported, so it is the long pole and every unported item above is on it.
+
 Nothing waits on this except `RETIRE_TOOLS`, which needs policy parity for the affordances it
 retires.
 
