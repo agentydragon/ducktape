@@ -128,7 +128,7 @@ async def test_create_gives_the_sandbox_a_service_account_of_its_own_that_it_run
     )
     # Owned by the Sandbox, so deleting the sandbox takes the identity with it.
     (owner,) = account.metadata.owner_references
-    assert (owner["kind"], owner["name"], owner["uid"]) == (
+    assert (owner.kind, owner.name, owner.uid) == (
         "Sandbox",
         view.name,
         custom_objects.objects[("sandboxes", view.name)]["metadata"]["uid"],

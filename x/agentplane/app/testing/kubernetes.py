@@ -29,6 +29,11 @@ VOLUME_CLAIM_TEMPLATES: list[dict[str, Any]] = [
 ]
 
 
+def _snake(camel: str) -> str:
+    """The API server takes camelCase; the Python client's models are snake_case."""
+    return "".join(f"_{char.lower()}" if char.isupper() else char for char in camel)
+
+
 def merge_patch(target: dict[str, Any], patch: dict[str, Any]) -> None:
     """RFC 7386 merge patch in place: nested objects recurse, `None` deletes."""
     for key, value in patch.items():
@@ -151,7 +156,10 @@ class FakeCoreV1Api:
     ) -> k8s_client.V1ServiceAccount:
         assert namespace == NAMESPACE
         account = self.service_accounts[name]
-        account.metadata.owner_references = body["metadata"]["ownerReferences"]
+        account.metadata.owner_references = [
+            k8s_client.V1OwnerReference(**{_snake(key): value for key, value in owner.items()})
+            for owner in body["metadata"]["ownerReferences"]
+        ]
         return account
 
     async def delete_namespaced_service_account(self, name: str, namespace: str) -> None:
