@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from x.agentplane.native.async_process import AsyncNativeProcess, FrameCursor
+from x.agentplane.native.async_process import AsyncNativeProcess, FrameCursor, FrameResponder
 from x.agentplane.native.codex import facade, wire
 
 
@@ -106,6 +106,8 @@ class CodexRun:
         resume_thread_id: str | None = None,
         resume_base_instructions: str = "",
         resume_instructions: str = "",
+        responder: FrameResponder | None = None,
+        dynamic_tools: list[dict[str, object]] | None = None,
     ):
         self._logs = logs
         self._command = command
@@ -120,12 +122,20 @@ class CodexRun:
         self._resume_thread_id = resume_thread_id
         self._resume_base_instructions = resume_base_instructions
         self._resume_instructions = resume_instructions
+        self._responder = responder
+        self._dynamic_tools = dynamic_tools
         self._process: AsyncNativeProcess | None = None
         self._harness: facade.CodexHarness | None = None
         self._thread_id_value: str | None = None
 
     async def __aenter__(self) -> CodexRun:
-        process = AsyncNativeProcess(self._logs, self._command, cwd=self._cwd, environment=dict(self._environment))
+        process = AsyncNativeProcess(
+            self._logs,
+            self._command,
+            cwd=self._cwd,
+            environment=dict(self._environment),
+            frame_responder=self._responder,
+        )
         self._process = await process.__aenter__()
         self._harness = facade.CodexHarness(process, request_prefix="capture")
         try:
@@ -138,6 +148,7 @@ class CodexRun:
                     persist=self._persist,
                     config=self._config,
                     instructions=self._instructions,
+                    dynamic_tools=self._dynamic_tools,
                 )
             else:
                 receipt = await self._codex().resume_thread(
@@ -200,7 +211,7 @@ class CodexRun:
         return await self._native().crash()
 
     async def _initialize(self) -> None:
-        _require(await self._codex().initialize())
+        _require(await self._codex().initialize(experimental_api=self._dynamic_tools is not None))
 
     def _assert_turn(self, turn: CodexTurn) -> None:
         if turn.thread_id != self.thread_id:

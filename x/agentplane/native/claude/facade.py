@@ -29,8 +29,20 @@ class ClaudeHarness:
     def __init__(self, transport: NativeTransport) -> None:
         self.transport = transport
 
-    async def initialize(self, *, hooks: dict[str, list[str]] | None = None, instructions: str = "") -> ClaudeReceipt:
-        request = driver.initialize(hooks=hooks, instructions=instructions)
+    async def initialize(
+        self,
+        *,
+        hooks: dict[str, list[str]] | None = None,
+        instructions: str = "",
+        sdk_mcp_servers: list[str] | None = None,
+        sdk_mcp_server_configs: dict[str, wire.SdkMcpServerConfig] | None = None,
+    ) -> ClaudeReceipt:
+        request = driver.initialize(
+            hooks=hooks,
+            instructions=instructions,
+            sdk_mcp_servers=sdk_mcp_servers,
+            sdk_mcp_server_configs=sdk_mcp_server_configs,
+        )
         receipt = await self.transport.request(
             request, matches=lambda frame: _is_initialize_response(frame, request.request_id)
         )

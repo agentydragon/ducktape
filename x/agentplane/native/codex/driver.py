@@ -11,10 +11,15 @@ from x.agentplane.native.codex import wire
 BASE_INSTRUCTIONS = "You are a concise test assistant. Follow user requests using the available tools."
 
 
-def initialize(request_id: str) -> wire.InitializeRequest:
+def initialize(request_id: str, *, experimental_api: bool = False) -> wire.InitializeRequest:
+    """`experimental_api` sets `capabilities.experimentalApi`, required before `thread/start` will
+    accept `dynamicTools`."""
     return wire.InitializeRequest(
         id=request_id,
-        params=wire.InitializeParams(client_info=wire.ClientInfo(name="agentplane-capture", version="0.1")),
+        params=wire.InitializeParams(
+            client_info=wire.ClientInfo(name="agentplane-capture", version="0.1"),
+            capabilities={"experimentalApi": True} if experimental_api else None,
+        ),
     )
 
 
@@ -31,11 +36,13 @@ def thread_start(
     persist: bool = False,
     config: dict[str, Any] | None = None,
     instructions: str = "",
+    dynamic_tools: list[dict[str, Any]] | None = None,
 ) -> wire.ThreadStartRequest:
     """`config` adds per-thread `config.toml` keys; app-server layers them over its own configuration.
 
     `instructions` becomes the thread's developer instructions, which the app-server keeps with the
-    thread, so a `thread/resume` does not restate them. Empty sends no key for them.
+    thread, so a `thread/resume` does not restate them. Empty sends no key for them. `dynamic_tools`
+    declares the driver's own tools; it requires `initialize(experimental_api=True)` first.
     """
     return wire.ThreadStartRequest(
         id=request_id,
@@ -50,6 +57,7 @@ def thread_start(
             base_instructions=BASE_INSTRUCTIONS,
             developer_instructions=instructions or None,
             config={"model_reasoning_effort": effort, **(config or {})},
+            dynamic_tools=dynamic_tools,
         ),
     )
 

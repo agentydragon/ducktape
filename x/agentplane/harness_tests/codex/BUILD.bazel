@@ -44,6 +44,7 @@ py_library(
     deps = [
         ":responses",
         "//x/agentplane/native/codex:async_run",
+        "//x/agentplane/native/codex:dynamic_tools",
         "//x/agentplane/native/codex:scenarios",
     ],
 )
@@ -167,6 +168,55 @@ py_test(
         ":responses_sse",
         "//:conftest",
         "//x/agentplane/harness_tests:conftest",
+        "//x/agentplane/native/codex:wire",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_hooks",
+    size = "medium",
+    srcs = ["test_hooks.py"],
+    data = ["@agentplane_codex_cli_linux_x64//:files"],  # keep: the pinned native harness the test drives
+    target_compatible_with = [
+        # keep: the pinned native harnesses are Linux/x86_64 only.
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":conftest",
+        ":frames",
+        ":harness",
+        ":responses",
+        ":responses_sse",
+        "//:conftest",
+        "//x/agentplane/capture:codex_hook",
+        "//x/agentplane/harness_tests:conftest",
+        "//x/agentplane/native/codex:scenarios",
+        "//x/agentplane/native/codex:wire",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_dynamic_tools",
+    size = "medium",
+    srcs = ["test_dynamic_tools.py"],
+    data = ["@agentplane_codex_cli_linux_x64//:files"],  # keep: the pinned native harness the test drives
+    target_compatible_with = [
+        # keep: the pinned native harnesses are Linux/x86_64 only.
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":conftest",
+        ":frames",
+        ":harness",
+        ":responses",
+        ":responses_sse",
+        "//:conftest",
+        "//x/agentplane/harness_tests:conftest",
+        "//x/agentplane/native/codex:dynamic_tools",
         "//x/agentplane/native/codex:wire",
         "@pypi//pytest_bazel",
     ],
