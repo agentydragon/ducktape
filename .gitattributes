@@ -37,7 +37,7 @@ gotk-sync.yaml linguist-generated=true
 
 # cdk8s-generated cluster manifests — `bbr run //cluster:generate_manifests` output,
 # pinned to committed content by //cluster:test_generate_manifests. See
-# cluster/docs/plans/cdk8s_adoption.md. The `.k8s.yaml` suffix is conventionally
+# cluster/docs/cdk8s.md. The `.k8s.yaml` suffix is conventionally
 # cdk8s-only; flux-kustomization.yaml/kustomization.yaml share their filename with
 # hand-written directories elsewhere, so those need a path-scoped line per converted
 # directory instead.

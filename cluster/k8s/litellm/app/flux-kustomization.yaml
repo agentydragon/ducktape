@@ -4,14 +4,6 @@ metadata:
   name: litellm
   namespace: ducktape-flux
 spec:
-  interval: 10m
-  path: ./cluster/k8s/litellm/app
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: litellm
-    namespace: ducktape-flux
-  timeout: 10m
   dependsOn:
     - name: external-secrets-config
       namespace: ducktape-flux
@@ -33,3 +25,11 @@ spec:
       namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/k8s/litellm/app
+  prune: true
+  sourceRef:
+    kind: ExternalArtifact
+    name: litellm
+    namespace: ducktape-flux
+  timeout: 10m

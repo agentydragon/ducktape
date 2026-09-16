@@ -1,15 +1,34 @@
 """Builds the Flux `Kustomization` custom resource each converted directory needs,
 plus the (kustomize) `kustomization.yaml` referencing its manifests.
 
-Only models the fields cluster/k8s/litellm/{app,servicemonitor} actually use --
-extend as more directories convert rather than pre-guessing the rest of the
-`kustomize.toolkit.fluxcd.io` CRD. See cluster/docs/plans/cdk8s_adoption.md.
+The Flux `Kustomization` CR is built from //third_party/flux:kustomization's
+generated cdk8s constructs (see devinfra/js/cdk8s_import.bzl) rather than a plain
+dict, so a malformed dependsOn entry or sourceRef kind fails at synth time instead
+of silently emitting invalid YAML. The plain (non-CRD) kustomize.config.k8s.io
+Kustomization has a real upstream JSON Schema (SchemaStore's kustomization.json),
+but `cdk8s import` only ingests Kubernetes CustomResourceDefinition-shaped input --
+tested directly against it, it fails trying to parse the schema itself as a CRD.
+Converting that schema by hand into a CRD envelope is real, undertaken work, not a
+`cdk8s import <url>` away, so this stays a hand-written Pydantic model instead: no
+generated schema validation, but at least real field types instead of a bare dict.
+See cluster/docs/cdk8s.md.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+
+from cdk8s import Testing
+from flux_kustomize.io.fluxcd.toolkit.kustomize import (
+    Kustomization,
+    KustomizationSpec,
+    KustomizationSpecDependsOn,
+    KustomizationSpecSourceRef,
+    KustomizationSpecSourceRefKind,
+)
+from pydantic import BaseModel, ConfigDict, Field
+from pydantic.alias_generators import to_camel
 
 _NAMESPACE = "ducktape-flux"
 
@@ -34,22 +53,42 @@ class FluxKustomizationSpec:
 
 def flux_kustomization(spec: FluxKustomizationSpec) -> dict[str, object]:
     """Return the Flux `Kustomization` custom resource as a plain manifest dict."""
-    inner: dict[str, object] = {
-        "interval": spec.interval,
-        "path": spec.path,
-        "prune": True,
-        "sourceRef": {"kind": "ExternalArtifact", "name": spec.source_name or spec.name, "namespace": _NAMESPACE},
-    }
-    if spec.timeout is not None:
-        inner["timeout"] = spec.timeout
-    if spec.depends_on:
-        inner["dependsOn"] = [{"name": dep.name, "namespace": dep.namespace} for dep in spec.depends_on]
-    return {
-        "apiVersion": "kustomize.toolkit.fluxcd.io/v1",
-        "kind": "Kustomization",
-        "metadata": {"name": spec.name, "namespace": _NAMESPACE},
-        "spec": inner,
-    }
+    chart = Testing.chart()
+    Kustomization(
+        chart,
+        spec.name,
+        metadata={"name": spec.name, "namespace": _NAMESPACE},
+        spec=KustomizationSpec(
+            interval=spec.interval,
+            path=spec.path,
+            prune=True,
+            source_ref=KustomizationSpecSourceRef(
+                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT,
+                name=spec.source_name or spec.name,
+                namespace=_NAMESPACE,
+            ),
+            timeout=spec.timeout,
+            depends_on=[KustomizationSpecDependsOn(name=dep.name, namespace=dep.namespace) for dep in spec.depends_on]
+            or None,
+        ),
+    )
+    (manifest,) = Testing.synth(chart)
+    assert isinstance(manifest, dict)
+    return manifest
+
+
+class _KustomizeKustomization(BaseModel):
+    """The plain (non-CRD) `kustomize.config.k8s.io/v1beta1` `Kustomization`."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    api_version: str = "kustomize.config.k8s.io/v1beta1"
+    kind: str = "Kustomization"
+    namespace: str | None = None
+    resources: list[str]
+    components: list[str] | None = Field(
+        default=None, description="Paths to Kustomize Component directories, per kustomize.config.k8s.io/v1beta1."
+    )
 
 
 def kustomize_kustomization(
@@ -57,14 +96,12 @@ def kustomize_kustomization(
 ) -> dict[str, object]:
     """Return the plain `kustomize.config.k8s.io` `Kustomization` listing `resources`.
 
-    `components` names directories the generator never writes -- e.g. a hand-written
-    Kustomize `Component` carrying a Flux image-automation marker (see
-    cluster/docs/plans/cdk8s_adoption.md).
+    `components` names ordinary Kustomize `Component` directories. Today's only
+    caller passes a hand-written one carrying a Flux image-automation marker (see
+    cluster/docs/cdk8s.md) -- that's specific to that use, not a property of this
+    field; a generated Component directory would work the same way.
     """
-    manifest: dict[str, object] = {"apiVersion": "kustomize.config.k8s.io/v1beta1", "kind": "Kustomization"}
-    if namespace is not None:
-        manifest["namespace"] = namespace
-    manifest["resources"] = resources
-    if components:
-        manifest["components"] = list(components)
-    return manifest
+    manifest = _KustomizeKustomization(
+        namespace=namespace, resources=resources, components=list(components) if components else None
+    )
+    return manifest.model_dump(by_alias=True, exclude_none=True)
