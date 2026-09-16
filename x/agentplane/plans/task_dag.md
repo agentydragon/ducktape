@@ -108,6 +108,7 @@ flowchart TB
     ACTION_JSON_POLISH["Planned UI polish<br/>parse MCP content blocks in Action results<br/>rest landed via #6303 (#6309 open)"]:::future
 
     MCPAUTH --> PROD
+    ELEVATE --> CONSOLE_POLICIES
     EGRESS_IDENTITY_AVAILABILITY --> THREAD_DEPLOYED_ACCEPTANCE
     MCPAGG -. replacement surface .-> RETIRE_TOOLS
     CONSOLE_POLICIES -. policy parity .-> RETIRE_TOOLS
@@ -335,6 +336,17 @@ remains, each with what it needs; an entry leaves when its set can be written.
   `grants_self_introspection`): `list_grants(principal=self)` is argument-only, an
   `argument_schema` set over a `grants` ActionGroup; but the grant model itself is console-owned,
   so this waits on the Action Service having its own grant surface, not on a kind.
+
+  **Do not confuse this with policy introspection, which is already done.** An agent can read the
+  policy that applies to it today -- `get_action_policy(target=SELF)` on the MCP frontend, built
+  from the same `resolve_bindings` admission uses, so what it reports and what a Decision
+  auto-decides cannot drift. What the console's `grants` tools introspect is something else: grants,
+  meaning access that expires. `grants_whoami`, `grant_self_list`, `kubernetes_can_i`, `get_grant`
+  and `revoke_grants` are all that surface, and what they wait on is **temporary grants**, which is
+  `ELEVATE` -- a caller asking for a set plus an `expiresAt`, approval writing the
+  `ActionPolicyBinding` with that expiry. `BindingSpec.expires_at` already exists, so what is
+  missing is the request-and-approve flow, not the storage.
+
 - **Schema auto-denial** (`autoDenyIf` equivalent): the console records a call whose arguments
   fail the registered tool schema as born-denied. The Action Service refuses such a request at
   admission before persisting anything, so the audit row the console keeps does not exist here;
@@ -599,6 +611,16 @@ token and then requires the Pod's controller owner to be a `Sandbox` the proxy's
 `Subject`, which today has exactly one field, `sandbox: SandboxRef` (`egress/resources.py`).
 public-coder is a plain Deployment running OpenClaw, so it has no Sandbox to be, and no binding can
 name it.
+
+**The per-agent proxy can go before that is settled.** Egress already ships a sidecar: a loopback
+listener in the Pod that the workload speaks ordinary HTTP proxy to, forwarding every request and
+CONNECT to the central proxy with `Proxy-Authorization: Bearer <token>` added from the Pod's
+projected ServiceAccount token. It holds no credential and never looks inside a tunnel
+(`egress/sidecar.py`). Putting that in the OpenClaw Pod replaces `public-coder-agent-proxy`
+outright, and moves substitution from a per-agent iron-proxy config to the one central engine.
+What it does not do is decide identity: the sidecar supplies the token, and the central proxy still
+resolves that token to a live Pod and then to the `Sandbox` that owns it. So the sidecar is the
+mechanism and the subject kind is still the question.
 
 That is what a static Agentplane identity for public-coder has to supply, and the system already
 knows the shape: the Action Service decides for both `SandboxCaller` and `ServiceAccountCaller`, "an
