@@ -1,8 +1,56 @@
 # gazelle:ignore
 
-load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 exports_files([".tflint.hcl"])
+
+py_library(
+    name = "generate_manifests_lib",
+    srcs = [
+        "flux_constructs.py",
+        "generate_manifests.py",
+        "litellm_config.py",
+        "litellm_constructs.py",
+    ],
+    visibility = ["//visibility:private"],
+    deps = [
+        "//cluster/k8s/litellm/app:model_rosters",
+        "//util/bazel:workspace",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_33",
+        "@pypi//constructs",
+    ],
+)
+
+py_binary(
+    name = "generate_manifests",
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    main_module = "cluster.generate_manifests",
+    visibility = ["//visibility:public"],
+    deps = [":generate_manifests_lib"],
+)
+
+py_test(
+    name = "test_generate_manifests",
+    srcs = ["test_generate_manifests.py"],
+    data = [
+        "//cluster/k8s/litellm/app:flux-kustomization.yaml",
+        "//cluster/k8s/litellm/app:kustomization.yaml",
+        "//cluster/k8s/litellm/app:litellm.k8s.yaml",
+        "//cluster/k8s/litellm/app:litellm-servicemonitor.k8s.yaml",
+        "//cluster/k8s/litellm/app:proxy-config.yaml",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":generate_manifests_lib",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
 
 py_library(
     name = "network_readiness",

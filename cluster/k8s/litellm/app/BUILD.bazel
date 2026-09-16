@@ -4,22 +4,32 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 exports_files(
     [
+        "deployment.yaml",
+        "flux-kustomization.yaml",
+        "kustomization.yaml",
+        "litellm-servicemonitor.k8s.yaml",
+        "litellm.k8s.yaml",
         "proxy-config.yaml",
     ],
-    visibility = ["//debug/litellm_probe:__pkg__"],
+    visibility = [
+        "//cluster:__pkg__",
+        "//debug/litellm_probe:__pkg__",
+    ],
 )
 
 py_library(
     name = "model_rosters",
     srcs = ["model_rosters.py"],
-    visibility = ["//haku/x/dispatch/deploy/litellm:__pkg__"],
+    visibility = [
+        "//cluster:__pkg__",
+        "//haku/x/dispatch/deploy/litellm:__pkg__",
+    ],
 )
 
 py_test(
     name = "test_litellm_config",
     srcs = ["test_litellm_config.py"],
     data = [
-        "kustomization.yaml",
         "proxy-config.yaml",
         "//tf/gitops/litellm-keys:main.tf",
     ],
