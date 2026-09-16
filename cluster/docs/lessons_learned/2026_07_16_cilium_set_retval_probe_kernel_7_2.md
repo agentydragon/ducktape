@@ -1,11 +1,16 @@
 # Cilium agent fatals on kernel ≥ 7.2-rc1: `bpf_set_retval` feature probe
 
-**Date**: 2026-07-16. **Status**: resolved for `rugged` 2026-09-05 by pinning the
-7.1 _series_ (`linuxPackages_7_1`) in
-<../../../nix/nixos/hosts/rugged/ipu7-camera.nix>, where the bounds that produce
-it are recorded. The upstream Cilium stable-branch fixes are merged but not yet
-in a released version as of 2026-09-13; the bump and subsequent Linux 7.2
-validation are tracked in
+**Date**: 2026-07-16. **Status**: reopened for `rugged` 2026-09-16 — the host moved
+to the 7.2 _series_ (`linuxPackages_7_2`) ahead of the Cilium fix, in
+<../../../nix/nixos/hosts/rugged/ipu7-camera.nix>, where the current bounds and the
+resulting known breakage are recorded. `rugged` will not run cilium-agent, and so
+will not function as a k8s cluster node, until a released Cilium version contains
+the FnSetRetval probe fix; accepted, since `rugged` is a roaming, often-offline
+node (see `cluster/README.md` § Node Types), not a stable cluster member.
+Previously resolved for `rugged` 2026-09-05 by pinning the 7.1 _series_
+(`linuxPackages_7_1`) instead, avoiding the ceiling entirely. The upstream Cilium
+stable-branch fixes are merged but not yet in a released version as of
+2026-09-13; the bump and subsequent Linux 7.2 validation are tracked in
 [ducktape#6825](https://github.com/agentydragon/ducktape/issues/6825).
 
 **A floating alias is not a pin.** The 2026-08-26 remediation set
