@@ -48,25 +48,25 @@ from x.agentplane.sandbox_auth.principal import (
 from x.agentplane.subjects import ServiceAccountRef
 
 NAMESPACE = "agentplane-staging"
-SERVICE_ACCOUNT_SUBJECT = f"system:serviceaccount:{NAMESPACE}:agentplane-runner"
-SANDBOX_A = SandboxPrincipal(
-    namespace=NAMESPACE,
-    service_account_name="agentplane-runner",
-    service_account_subject=SERVICE_ACCOUNT_SUBJECT,
-    pod_name="sandbox-a-pod",
-    pod_uid="pod-a-uid",
-    sandbox_name="sandbox-a",
-    sandbox_uid="sandbox-a-uid",
-)
-SANDBOX_B = SandboxPrincipal(
-    namespace=NAMESPACE,
-    service_account_name="agentplane-runner",
-    service_account_subject=SERVICE_ACCOUNT_SUBJECT,
-    pod_name="sandbox-b-pod",
-    pod_uid="pod-b-uid",
-    sandbox_name="sandbox-b",
-    sandbox_uid="sandbox-b-uid",
-)
+
+
+def _sandbox(label: str) -> SandboxPrincipal:
+    """One sandbox, running as the ServiceAccount of its own the app mints per Sandbox."""
+    return SandboxPrincipal(
+        namespace=NAMESPACE,
+        service_account_name=f"sandbox-{label}",
+        service_account_subject=f"system:serviceaccount:{NAMESPACE}:sandbox-{label}",
+        pod_name=f"sandbox-{label}-pod",
+        pod_uid=f"pod-{label}-uid",
+        sandbox_name=f"sandbox-{label}",
+        sandbox_uid=f"sandbox-{label}-uid",
+    )
+
+
+SANDBOX_A = _sandbox("a")
+SANDBOX_B = _sandbox("b")
+ACCOUNT_A = ServiceAccountRef(namespace=NAMESPACE, name=SANDBOX_A.service_account_name)
+ACCOUNT_B = ServiceAccountRef(namespace=NAMESPACE, name=SANDBOX_B.service_account_name)
 CALLER_A = workload_principal(SANDBOX_A)
 CALLER_B = workload_principal(SANDBOX_B)
 OPERATOR = Principal(issuer="test-bff", subject="operator", role=PrincipalRole.OPERATOR)
@@ -215,8 +215,8 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
         )
         assert filtered.json() == []
 
-        # Both Pods use the same ServiceAccount; live Sandbox identity, not subject, owns the row and its key.
-        assert SANDBOX_A.service_account_subject == SANDBOX_B.service_account_subject
+        # The ServiceAccount each Pod runs as owns the row and its key, and the two differ.
+        assert SANDBOX_A.service_account_subject != SANDBOX_B.service_account_subject
         for params in ({}, by_key):
             assert (
                 await client.get("/v1/action-requests", params=params, headers=_workload("workload-b"))
@@ -568,9 +568,9 @@ async def test_configured_catalog_is_discoverable_and_unknown_lookups_fail_clear
 async def test_operator_reads_a_named_subjects_effective_policy(
     engine: AsyncEngine, echo_catalog: ActionCatalog
 ) -> None:
-    """The operator asks about a subject by what a binding pins -- a Sandbox's namespace and UID, or
-    a ServiceAccount -- and gets the same resolution admission uses, with each named set's standing.
-    A workload bearer is not an operator on this surface either."""
+    """The operator asks about a subject by what a binding pins -- a namespaced ServiceAccount --
+    and gets the same resolution admission uses, with each named set's standing. A workload bearer
+    is not an operator on this surface either."""
     index = PolicyIndex(synced=True)
     metadata = {"namespace": NAMESPACE, "uid": "test-uid", "generation": 2, "resourceVersion": "9"}
     policy_set = parse_policy_set(
@@ -581,10 +581,7 @@ async def test_operator_reads_a_named_subjects_effective_policy(
     )
     index.policy_sets[policy_set.namespaced_name] = policy_set
     account = ServiceAccountRef(namespace=NAMESPACE, name="test-client")
-    for name, subject in (
-        ("sandbox-a-reads", {"sandbox": {"name": SANDBOX_A.sandbox_name, "uid": SANDBOX_A.sandbox_uid}}),
-        ("client-reads", {"serviceAccount": account.model_dump()}),
-    ):
+    for name, subject in (("sandbox-a-reads", ACCOUNT_A.model_dump()), ("client-reads", account.model_dump())):
         bound = parse_binding(
             {
                 "metadata": {"name": name, "labels": {"test.example/writer": name}, **metadata},
@@ -597,7 +594,7 @@ async def test_operator_reads_a_named_subjects_effective_policy(
     )
     client = await _client(service)
     try:
-        sandbox_path = f"/v1/operator/action-policy/sandboxes/{NAMESPACE}/{SANDBOX_A.sandbox_uid}"
+        sandbox_path = f"/v1/operator/action-policy/service-accounts/{ACCOUNT_A.namespace}/{ACCOUNT_A.name}"
         response = await client.get(sandbox_path, headers=_operator())
         assert response.status_code == 200, response.text
         view = SubjectActionPolicyView.model_validate(response.json())
@@ -610,7 +607,7 @@ async def test_operator_reads_a_named_subjects_effective_policy(
         assert [(policy_set.name, policy_set.generation) for policy_set in binding.policy_sets] == [("reads", 2)]
         assert [(p.binding, p.policy_set, p.index) for p in view.auto_approve_if] == [("sandbox-a-reads", "reads", 0)]
         other = await client.get(
-            f"/v1/operator/action-policy/sandboxes/{NAMESPACE}/{SANDBOX_B.sandbox_uid}", headers=_operator()
+            f"/v1/operator/action-policy/service-accounts/{ACCOUNT_B.namespace}/{ACCOUNT_B.name}", headers=_operator()
         )
         assert SubjectActionPolicyView.model_validate(other.json()).bindings == []
         by_account = await client.get(

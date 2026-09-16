@@ -18,9 +18,9 @@ from x.agentplane.egress.decision_log import DecisionLog
 from x.agentplane.egress.decision_store import Base, DecisionRecordRow, DecisionStore, make_engine
 from x.agentplane.egress.decisions import DecisionRecord, Outcome, Phase
 from x.agentplane.egress.policy import WATCHED_KINDS, Index
-from x.agentplane.subjects import SubjectKind, SubjectView
+from x.agentplane.subjects import ServiceAccountRef
 
-SUBJECT = SubjectView(kind=SubjectKind.SANDBOX, name="test-sandbox")
+SUBJECT = ServiceAccountRef(namespace="test-namespace", name="test-workload")
 
 
 def record(**values) -> DecisionRecord:
@@ -29,8 +29,6 @@ def record(**values) -> DecisionRecord:
             "producer_id": uuid4(),
             "at": datetime.now(UTC),
             "subject": SUBJECT,
-            "subject_namespace": "test-namespace",
-            "sandbox_uid": "test-sandbox-uid",
             "source_pod_uid": "test-pod-uid",
             "connection_id": "test-connection",
             "phase": Phase.HTTP_REQUEST,
@@ -71,15 +69,15 @@ async def test_shared_history_survives_replacement_and_repeated_migration(histor
         async with (
             serve_admin(app, "127.0.0.1", 0) as port,
             aiohttp.ClientSession(f"http://127.0.0.1:{port}") as client,
-            client.get("/decisions", params={"kind": SUBJECT.kind, "name": SUBJECT.name}) as response,
+            client.get("/decisions", params={"namespace": SUBJECT.namespace, "name": SUBJECT.name}) as response,
         ):
             assert response.status == 200
             rows = [DecisionRecord.model_validate(item) for item in await response.json()]
         assert rows == [a, b]
         assert a.producer_id != b.producer_id
-        assert await replacement.store.recent(SubjectView(kind=SubjectKind.SANDBOX, name="absent")) == []
-        assert await replacement.store.recent(SUBJECT.model_copy(update={"kind": SubjectKind.SERVICE_ACCOUNT})) == [], (
-            "the same name under the other kind is a different subject"
+        assert await replacement.store.recent(SUBJECT.model_copy(update={"name": "absent"})) == []
+        assert await replacement.store.recent(SUBJECT.model_copy(update={"namespace": "elsewhere"})) == [], (
+            "the same name in another namespace is a different subject"
         )
     finally:
         await replacement.close()

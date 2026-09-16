@@ -25,9 +25,9 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from x.agentplane.egress.policy import Caller, Index, subject_bindings
+from x.agentplane.egress.policy import Index, subject_bindings
 from x.agentplane.egress.resources import EgressCredential, Rule, SchemeTokenTarget, Target, TargetMethod
-from x.agentplane.subjects import SubjectView
+from x.agentplane.subjects import ServiceAccountRef
 
 
 class TargetView(BaseModel):
@@ -78,7 +78,7 @@ class AgentEgressView(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    subject: SubjectView = Field(description="Who this view is of: the caller's kind and name.")
+    subject: ServiceAccountRef = Field(description="The ServiceAccount this view is of.")
     policies: list[PolicyView] = Field(description="Granted by an active binding; empty means no egress.")
 
 
@@ -111,15 +111,15 @@ def _rule_view(index: Index, rule: Rule) -> RuleView:
     )
 
 
-def agent_view(index: Index, caller: Caller, now: datetime) -> AgentEgressView:
+def agent_view(index: Index, caller: ServiceAccountRef, now: datetime) -> AgentEgressView:
     """The caller's own view, from the same bindings the decision reads.
 
     Built from `subject_bindings`, so what it reports and what the proxy admits cannot drift: an
-    expired binding, a missing policy, or a revoked grant drops out of both at once. A caller of
-    either kind reads its own view, and each sees only bindings naming its own kind.
+    expired binding, a missing policy, or a revoked grant drops out of both at once, and a caller
+    sees only the bindings naming it.
     """
     return AgentEgressView(
-        subject=caller.subject,
+        subject=caller,
         policies=[
             PolicyView(name=policy.metadata.name, rules=[_rule_view(index, rule) for rule in policy.spec.rules])
             for resolution in subject_bindings(index, caller, now)

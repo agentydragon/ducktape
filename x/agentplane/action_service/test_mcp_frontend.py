@@ -37,8 +37,8 @@ from x.agentplane.action_service.models import (
     Executor,
     Principal,
     PrincipalRole,
-    SandboxCaller,
     Verdict,
+    service_account_ref,
 )
 from x.agentplane.action_service.policies.resources import parse_binding, parse_policy_set
 from x.agentplane.action_service.policy_informer import PolicyIndex
@@ -51,6 +51,7 @@ from x.agentplane.sandbox_auth.principal import (
     SandboxPrincipal,
     SandboxPrincipalResolver,
 )
+from x.agentplane.subjects import ServiceAccountRef
 
 AUDIENCE = "test-action-audience"
 NAMESPACE = "test-action-sandboxes"
@@ -58,10 +59,11 @@ OPERATOR = Principal(issuer="test", subject="operator", role=PrincipalRole.OPERA
 
 
 def sandbox(label: str) -> SandboxPrincipal:
+    """One sandbox, running as the ServiceAccount of its own that the app mints per Sandbox."""
     return SandboxPrincipal(
         namespace=NAMESPACE,
-        service_account_name="test-runner",
-        service_account_subject=f"system:serviceaccount:{NAMESPACE}:test-runner",
+        service_account_name=f"test-runner-{label}",
+        service_account_subject=f"system:serviceaccount:{NAMESPACE}:test-runner-{label}",
         pod_name=f"test-pod-{label}",
         pod_uid=f"test-pod-uid-{label}",
         sandbox_name=f"test-sandbox-{label}",
@@ -70,7 +72,7 @@ def sandbox(label: str) -> SandboxPrincipal:
 
 
 def _policy_index() -> PolicyIndex:
-    """Sandbox a bound to `test-reads`, sandbox b to nothing: what each may read of its own policy."""
+    """Workload a bound to `test-reads`, workload b to nothing: what each may read of its own policy."""
     index = PolicyIndex(synced=True)
     for name, spec in (
         ("test-reads", {"autoApproveIf": [{"type": "exact_actions", "actions": {"test-group": ["alpha"]}}]}),
@@ -89,9 +91,9 @@ def _policy_index() -> PolicyIndex:
             }
         )
         index.policy_sets[policy_set.namespaced_name] = policy_set
-    for name, uid, sets in (
-        ("test-a-reads", sandbox("a").sandbox_uid, ["test-reads", "test-vanished"]),
-        ("test-elsewhere", "test-sandbox-uid-elsewhere", ["test-other"]),
+    for name, account, sets in (
+        ("test-a-reads", sandbox("a").service_account_name, ["test-reads", "test-vanished"]),
+        ("test-elsewhere", "test-runner-elsewhere", ["test-other"]),
     ):
         binding = parse_binding(
             {
@@ -102,7 +104,7 @@ def _policy_index() -> PolicyIndex:
                     "generation": 1,
                     "resourceVersion": "1",
                 },
-                "spec": {"subject": {"sandbox": {"name": f"test-sandbox-{name}", "uid": uid}}, "policySets": sets},
+                "spec": {"subject": {"namespace": NAMESPACE, "name": account}, "policySets": sets},
             }
         )
         index.bindings[binding.namespaced_name] = binding
@@ -354,8 +356,8 @@ async def test_a_caller_reads_the_effective_policy_of_itself_or_a_named_target(f
     caller's own view. Nothing is submitted by reading."""
     async with frontend.client(egress=True) as caller, frontend.client("test-token-b") as other:
         own = CallerActionPolicyView.model_validate((await caller.call_tool("get_action_policy")).structured_content)
-        assert isinstance(own.subject, SandboxCaller)
-        assert own.subject == SandboxCaller.from_principal(workload_principal(frontend.tokens["test-token-a"]))
+        assert isinstance(own.subject, ServiceAccountRef)
+        assert own.subject == service_account_ref(workload_principal(frontend.tokens["test-token-a"]))
         assert own.synced is True
         assert [(binding.name, binding.policy_sets) for binding in own.bindings] == [("test-a-reads", ["test-reads"])]
         assert [(p.binding, p.policy_set, p.index, p.policy.actions) for p in own.auto_approve_if] == [
@@ -366,17 +368,14 @@ async def test_a_caller_reads_the_effective_policy_of_itself_or_a_named_target(f
         by_name = await caller.call_tool("get_action_policy", {"target": "self"})
         assert CallerActionPolicyView.model_validate(by_name.structured_content) == own
         nothing = CallerActionPolicyView.model_validate((await other.call_tool("get_action_policy")).structured_content)
-        assert nothing.subject == SandboxCaller.from_principal(workload_principal(frontend.tokens["test-token-b"]))
+        assert nothing.subject == service_account_ref(workload_principal(frontend.tokens["test-token-b"]))
         assert (nothing.synced, nothing.bindings, nothing.auto_approve_if) == (True, [], [])
         # A named target gets the same view its own caller would; one the service does not watch has nothing.
-        about_a = await other.call_tool(
-            "get_action_policy",
-            {"target": {"sandbox": {"namespace": own.subject.namespace, "sandbox_uid": own.subject.sandbox_uid}}},
-        )
+        about_a = await other.call_tool("get_action_policy", {"target": {"service_account": own.subject.model_dump()}})
         assert CallerActionPolicyView.model_validate(about_a.structured_content) == own
         elsewhere = await caller.call_tool(
             "get_action_policy",
-            {"target": {"sandbox": {"namespace": NAMESPACE, "sandbox_uid": "test-sandbox-uid-elsewhere"}}},
+            {"target": {"service_account": {"namespace": NAMESPACE, "name": "test-runner-elsewhere"}}},
         )
         assert [b.name for b in CallerActionPolicyView.model_validate(elsewhere.structured_content).bindings] == [
             "test-elsewhere"

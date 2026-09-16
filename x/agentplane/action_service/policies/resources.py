@@ -14,12 +14,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError
 
 from x.agentplane.action_service.models import NamespacedName
 from x.agentplane.action_service.policies.kind import Spec
 from x.agentplane.action_service.policies.registry import Policy
-from x.agentplane.subjects import SandboxSubject, Subject
+from x.agentplane.subjects import ServiceAccountRef
 
 GROUP = "agentplane.allegedly.works"
 VERSION = "v1alpha1"
@@ -100,24 +100,13 @@ class ActionPolicySet(_Namespaced):
 
 
 class BindingSpec(Spec):
-    subject: Subject
+    subject: ServiceAccountRef
     policy_sets: list[str] = Field(
         alias="policySets", min_length=1, description="ActionPolicySet names in the binding's namespace."
     )
     expires_at: AwareDatetime | None = Field(
         default=None, alias="expiresAt", description="After this instant the binding contributes nothing."
     )
-
-    @model_validator(mode="after")
-    def _sandbox_subject_is_pinned(self) -> BindingSpec:
-        """This service matches a Sandbox caller by UID, so an unpinned Sandbox subject could never
-        grant anything. The CRD requires the UID and the shared model tolerates its absence, because
-        `EgressBinding` does not need it; refusing it here is what keeps such a binding reported as
-        invalid rather than silently inert, which is what this whole parse is strict for.
-        """
-        if isinstance(self.subject, SandboxSubject) and self.subject.sandbox.uid is None:
-            raise ValueError("a Sandbox subject must name the UID it is bound to")
-        return self
 
 
 class ActionPolicyBinding(_Namespaced):

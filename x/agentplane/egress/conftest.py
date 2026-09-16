@@ -38,9 +38,9 @@ from x.agentplane.egress.testing.fake_apiserver import (
     pod_for,
     policy,
     sandbox,
-    sandbox_uid,
     secret,
 )
+from x.agentplane.subjects import ServiceAccountRef
 
 AUDIENCE = "agentplane-egress-test"
 UPSTREAM_HOST = "localhost"
@@ -51,6 +51,9 @@ SECRET_VALUE = "real-secret-v1"
 SECRET_NAME = "github-pat-secret"
 SANDBOX_A = "sb-a"
 SANDBOX_B = "sb-b"
+# Every sandbox runs as a ServiceAccount of its own, named after it: that account is the subject.
+SUBJECT_A = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name=SANDBOX_A)
+SUBJECT_B = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name=SANDBOX_B)
 POD_A_UID = "pod-a-uid-1"
 POD_B_UID = "pod-b-uid-1"
 POD_A_IP = "127.0.0.1"
@@ -61,14 +64,15 @@ GITHUB_POLICY = "github"
 
 
 def seed(fake: FakeApiServer) -> None:
-    """Two Sandboxes with Pods and tokens; A bound to a credentialed GitHub-shaped policy, B unbound."""
+    """Two workloads with Pods and tokens, each running as its own ServiceAccount; A bound to a
+    credentialed GitHub-shaped policy, B unbound."""
     fake.put(SANDBOXES_PLURAL, sandbox(SANDBOX_A))
     fake.put(SANDBOXES_PLURAL, sandbox(SANDBOX_B))
     fake.pods[SANDBOX_A] = pod_for(fake, SANDBOX_A, pod_uid=POD_A_UID, ip=POD_A_IP)
     fake.pods[SANDBOX_B] = pod_for(fake, SANDBOX_B, pod_uid=POD_B_UID, ip=POD_B_IP)
     for token, name, uid in ((TOKEN_A, SANDBOX_A, POD_A_UID), (TOKEN_B, SANDBOX_B, POD_B_UID)):
         fake.tokens[token] = TokenVerdict(
-            username=f"system:serviceaccount:{SANDBOX_NAMESPACE}:sandbox",
+            username=f"system:serviceaccount:{SANDBOX_NAMESPACE}:{name}",
             pod_name=name,
             pod_uid=uid,
             audiences=(AUDIENCE,),
@@ -103,11 +107,7 @@ def seed(fake: FakeApiServer) -> None:
     )
     fake.put(
         BINDINGS_PLURAL,
-        binding(
-            f"{SANDBOX_A}-{GITHUB_POLICY}",
-            subjects=[{"sandbox": {"name": SANDBOX_A, "uid": sandbox_uid(SANDBOX_A)}}],
-            policies=[GITHUB_POLICY],
-        ),
+        binding(f"{SANDBOX_A}-{GITHUB_POLICY}", subjects=[SUBJECT_A.model_dump()], policies=[GITHUB_POLICY]),
     )
 
 
@@ -125,7 +125,6 @@ def informer(index: Index, api_client: ApiClient, **overrides: Any) -> Informer:
             "custom_objects": cast(CustomObjectsClient, CustomObjectsApi(api_client)),
             "core_v1": CoreV1Api(api_client),
             "namespace": NAMESPACE,
-            "sandbox_namespace": SANDBOX_NAMESPACE,
             "credentials_namespace": CREDENTIALS_NAMESPACE,
             "resync_seconds": 60,
             **overrides,

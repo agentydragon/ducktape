@@ -86,9 +86,7 @@ def seed(fake: FakeApiServer) -> None:
         POLICY_SETS_PLURAL,
         policy_set(INVALID_SET, {"autoApproveIf": [{"type": "no_such_kind", "actions": {"g": ["a"]}}]}),
     )
-    fake.put(
-        BINDINGS_PLURAL, binding(BINDING, {"serviceAccount": {"namespace": NAMESPACE, "name": CALLER}}, [VALID_SET])
-    )
+    fake.put(BINDINGS_PLURAL, binding(BINDING, {"namespace": NAMESPACE, "name": CALLER}, [VALID_SET]))
     fake.put(SERVICE_ACCOUNTS_PLURAL, service_account(CALLER, labeled=True))
     fake.put(SERVICE_ACCOUNTS_PLURAL, service_account(UNLABELED, labeled=False))
 

@@ -19,7 +19,7 @@ from x.agentplane.action_service.policies.resources import (
     parse_binding,
     parse_policy_set,
 )
-from x.agentplane.subjects import SandboxSubject, ServiceAccountSubject
+from x.agentplane.subjects import ServiceAccountRef
 
 METADATA = {
     "name": "test-object",
@@ -114,48 +114,37 @@ def test_invalid_policy_set_is_kept_with_its_report(spec: dict[str, Any], locate
     assert located in parsed.message
 
 
-def test_binding_subject_is_one_of_service_account_or_sandbox() -> None:
-    by_account = parse_binding(
-        binding(
-            {"subject": {"serviceAccount": {"namespace": "agentplane-test", "name": "caller"}}, "policySets": ["a"]}
-        )
-    )
-    assert isinstance(by_account, ActionPolicyBinding)
-    assert isinstance(by_account.spec.subject, ServiceAccountSubject)
-    assert by_account.spec.subject.service_account.name == "caller"
-    assert by_account.spec.expires_at is None
-    by_sandbox = parse_binding(
+def test_binding_subject_is_a_namespaced_service_account() -> None:
+    parsed = parse_binding(
         binding(
             {
-                "subject": {"sandbox": {"name": "coder-1", "uid": "sandbox-uid-1"}},
+                "subject": {"namespace": "agentplane-test", "name": "caller"},
                 "policySets": ["a", "b"],
                 "expiresAt": "2026-09-12T20:00:00Z",
             }
         )
     )
-    assert isinstance(by_sandbox, ActionPolicyBinding)
-    assert isinstance(by_sandbox.spec.subject, SandboxSubject)
-    assert by_sandbox.spec.subject.sandbox.uid == "sandbox-uid-1"
-    assert by_sandbox.spec.expires_at is not None
-    assert by_sandbox.spec.expires_at.tzinfo is not None
+
+    assert isinstance(parsed, ActionPolicyBinding)
+    assert parsed.spec.subject == ServiceAccountRef(namespace="agentplane-test", name="caller")
+    assert parsed.spec.expires_at is not None
+    assert parsed.spec.expires_at.tzinfo is not None
 
 
 @pytest.mark.parametrize(
     "spec",
     [
         {"subject": {}, "policySets": ["a"]},
+        # A subject is a namespace and a name together; neither half stands alone.
+        {"subject": {"name": "caller"}, "policySets": ["a"]},
+        {"subject": {"namespace": "agentplane-test"}, "policySets": ["a"]},
+        # The kinds this subject replaced are no longer a shape the service accepts.
+        {"subject": {"serviceAccount": {"namespace": "agentplane-test", "name": "caller"}}, "policySets": ["a"]},
+        {"subject": {"sandbox": {"name": "coder-1", "uid": "u"}}, "policySets": ["a"]},
+        {"subject": {"namespace": "agentplane-test", "name": "caller"}, "policySets": []},
+        {"subject": {"namespace": "agentplane-test", "name": "caller"}, "policySets": ["a"], "expiresAt": "tomorrow"},
         {
-            "subject": {
-                "serviceAccount": {"namespace": "agentplane-test", "name": "caller"},
-                "sandbox": {"name": "coder-1", "uid": "u"},
-            },
-            "policySets": ["a"],
-        },
-        {"subject": {"sandbox": {"name": "coder-1"}}, "policySets": ["a"]},
-        {"subject": {"sandbox": {"name": "coder-1", "uid": "u"}}, "policySets": []},
-        {"subject": {"sandbox": {"name": "coder-1", "uid": "u"}}, "policySets": ["a"], "expiresAt": "tomorrow"},
-        {
-            "subject": {"sandbox": {"name": "coder-1", "uid": "u"}},
+            "subject": {"namespace": "agentplane-test", "name": "caller"},
             "policySets": ["a"],
             "expiresAt": "2026-09-12T20:00:00",
         },

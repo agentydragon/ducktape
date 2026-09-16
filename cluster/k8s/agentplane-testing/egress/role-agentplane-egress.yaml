@@ -1,7 +1,8 @@
-# What the proxy reads here to decide a request: the policies, bindings and credentials, the
-# Sandboxes they name, and the Pods whose tokens it verifies (a TokenReview proves the Pod; the
-# Pod's owner is the Sandbox). No Secrets: an EgressCredential names one, but the values live in
-# agentplane-egress-credentials, where the proxy holds a separate read grant.
+# What the proxy reads here to decide a request: the policies, bindings and credentials, and the
+# Pods whose tokens it verifies (a TokenReview proves the Pod, which is then read live to confirm
+# it and to learn the ServiceAccount it runs as -- the subject a binding names). No Secrets: an
+# EgressCredential names one, but the values live in agentplane-egress-credentials, where the proxy
+# holds a separate read grant.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -11,9 +12,7 @@ rules:
   - apiGroups: ["agentplane.allegedly.works"]
     resources: ["egresspolicies", "egressbindings", "egresscredentials"]
     verbs: ["get", "list", "watch"]
-  - apiGroups: ["agents.x-k8s.io"]
-    resources: ["sandboxes"]
-    verbs: ["get", "list", "watch"]
+  # One Pod at a time, by name: nothing here lists or watches them.
   - apiGroups: [""]
     resources: ["pods"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get"]

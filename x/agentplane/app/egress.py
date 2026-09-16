@@ -13,14 +13,13 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Iterable, Sequence
 from datetime import datetime
-from uuid import UUID
 
 from kubernetes_asyncio import client as k8s_client
 from more_itertools import unique_everseen
 from pydantic import BaseModel, ConfigDict, Field
 
 from util.kubernetes import CustomObjectsClient
-from x.agentplane.app.inventory import InventoryError
+from x.agentplane.app.inventory import InventoryError, SandboxView
 from x.agentplane.egress.resources import (
     EgressBinding,
     EgressCredential,
@@ -30,7 +29,7 @@ from x.agentplane.egress.resources import (
     Target,
     TargetMethod,
 )
-from x.agentplane.subjects import SandboxSubject, SubjectView, subject_view
+from x.agentplane.subjects import ServiceAccountRef
 
 # Flux stamps its inventory labels on everything it applies (cluster/k8s/agentplane-staging/egress);
 # nothing at runtime deletes such a binding, since the next reconcile would apply it again.
@@ -136,7 +135,7 @@ class BindingView(BaseModel):
 
     name: str
     from_git: bool = Field(description="Flux applied it; removing it is git's.")
-    subjects: list[SubjectView] = Field(description="The subjects this binding names, each with its kind.")
+    subjects: list[ServiceAccountRef] = Field(description="The ServiceAccounts this binding names.")
     expires_at: datetime | None = None
     policies: list[PolicyView] = Field(description="The named policies that exist, in the binding's order.")
     missing_policies: list[str] = Field(description="Names in the binding that no EgressPolicy answers to.")
@@ -165,8 +164,8 @@ class EgressInventory:
         """Every name must resolve to a policy the namespace holds, or nothing is written."""
         _require_known(names, await self._policies_by_name())
 
-    async def bindings_for(self, sandbox: str) -> list[BindingView]:
-        """Every binding with a subject naming the sandbox, in name order."""
+    async def bindings_for(self, subject: ServiceAccountRef) -> list[BindingView]:
+        """Every binding naming this subject, in name order."""
         policies, bindings, credentials = await asyncio.gather(
             self._list(POLICIES_PLURAL), self._list(BINDINGS_PLURAL), self._list(CREDENTIALS_PLURAL)
         )
@@ -174,7 +173,7 @@ class EgressInventory:
             _ResourceList.model_validate(bindings).items,
             _ResourceList.model_validate(policies).items,
             _ResourceList.model_validate(credentials).items,
-            sandbox=sandbox,
+            subject=subject,
         )
 
     async def revoke(self, name: str) -> None:
@@ -186,11 +185,11 @@ class EgressInventory:
             *EGRESS_API, self._namespace, BINDINGS_PLURAL, name, body=k8s_client.V1DeleteOptions()
         )
 
-    async def grant(self, *, sandbox: str, sandbox_uid: UUID, policies: list[str]) -> BindingView:
-        """One binding of the sandbox to the policies, owned by the Sandbox so its deletion
-        garbage-collects it. Creating it is the grant, at launch and afterwards alike: granting an
-        already-running sandbox adds another binding rather than editing one it has, so each grant's
-        `expiresAt` is its own.
+    async def grant(self, sandbox: SandboxView, policies: list[str]) -> BindingView:
+        """One binding of the ServiceAccount the sandbox runs as to the policies, owned by the
+        Sandbox so its deletion garbage-collects it. Creating it is the grant, at launch and
+        afterwards alike: granting an already-running sandbox adds another binding rather than
+        editing one it has, so each grant's `expiresAt` is its own.
         """
         known = await self._policies_by_name()
         _require_known(policies, known)
@@ -204,7 +203,7 @@ class EgressInventory:
                 "metadata": {
                     # The API server names it. A sandbox may be granted more than once, and a name
                     # derived from the sandbox alone would make every grant after the first a 409.
-                    "generateName": f"{sandbox}-",
+                    "generateName": f"{sandbox.name}-",
                     # Not the controller: the Sandbox controller owns the Pod and PVC, and this
                     # reference is for cascading deletion only. It cascades only while bindings and
                     # Sandboxes share a namespace — Kubernetes treats a namespaced owner in another
@@ -214,14 +213,14 @@ class EgressInventory:
                         {
                             "apiVersion": _SANDBOX_API_VERSION,
                             "kind": "Sandbox",
-                            "name": sandbox,
-                            "uid": str(sandbox_uid),
+                            "name": sandbox.name,
+                            "uid": str(sandbox.uid),
                             "controller": False,
                             "blockOwnerDeletion": False,
                         }
                     ],
                 },
-                "spec": {"subjects": [{"sandbox": {"name": sandbox, "uid": str(sandbox_uid)}}], "policies": policies},
+                "spec": {"subjects": [sandbox.service_account.model_dump()], "policies": policies},
             },
         )
         return _binding_view(EgressBinding.model_validate(created), known)
@@ -255,9 +254,9 @@ def _require_known(names: list[str], policies: dict[str, PolicyView]) -> None:
 
 
 def matching_bindings(
-    bindings: Iterable[object], policies: Iterable[object], credentials: Iterable[object], *, sandbox: str
+    bindings: Iterable[object], policies: Iterable[object], credentials: Iterable[object], *, subject: ServiceAccountRef
 ) -> list[BindingView]:
-    """Every binding with a subject naming the sandbox, in name order."""
+    """Every binding naming this subject, in name order."""
     known = _credentials_by_name(credentials)
     resolved = {
         policy.metadata.name: _policy_view(policy, known) for policy in map(EgressPolicy.model_validate, policies)
@@ -266,10 +265,7 @@ def matching_bindings(
         (
             _binding_view(binding, resolved)
             for binding in map(EgressBinding.model_validate, bindings)
-            if any(
-                isinstance(subject, SandboxSubject) and subject.sandbox.name == sandbox
-                for subject in binding.spec.subjects
-            )
+            if subject in binding.spec.subjects
         ),
         key=lambda view: view.name,
     )
@@ -325,7 +321,7 @@ def _binding_view(binding: EgressBinding, policies: dict[str, PolicyView]) -> Bi
     return BindingView(
         name=binding.metadata.name,
         from_git=FLUX_KUSTOMIZATION_LABEL in binding.metadata.labels,
-        subjects=[subject_view(subject) for subject in binding.spec.subjects],
+        subjects=list(binding.spec.subjects),
         expires_at=binding.spec.expires_at,
         policies=[policies[name] for name in binding.spec.policies if name in policies],
         missing_policies=[name for name in binding.spec.policies if name not in policies],

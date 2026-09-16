@@ -369,10 +369,11 @@ per-turn task remain the place for workload-specific constraints and the request
 
 ## Action policy
 
-The Sandbox page's "Action policy" tab, and `GET /sandboxes/{name}/action-policy` behind it, show
-the Action Service's own answer for the Sandbox's UID, read through the operator federation
-(`/v1/operator/action-policy/sandboxes/{namespace}/{uid}`, so an operator session is required as for
-the Actions page): the unexpired `ActionPolicyBinding`s whose subject pins the UID, each with expiry
+The Sandbox page's "Action policy" tab, carried in the live snapshot frame, shows the Action
+Service's own answer for the ServiceAccount the Sandbox runs as, read through the operator
+federation (`/v1/operator/action-policy/service-accounts/{namespace}/{name}`, so an operator session
+is required as for the Actions page): the unexpired `ActionPolicyBinding`s naming that account, each
+with expiry
 and the service's `Ready` verdict; every `ActionPolicySet` those name, as present, edited since the
 service judged it, refused with the validation report, or missing; the resulting `autoApproveIf`,
 `autoDenyIf` and `autoDenyUnless` lists in the order the service walks them, each entry naming the
@@ -386,8 +387,8 @@ a trigger: an event on either re-asks the service for the next frame, and a bind
 nothing changes leaves the page at the next frame. The two watches are independent, so a frame can
 briefly precede the service's informer seeing the same event and show the answer from just before
 it. Where the service cannot be asked -- no federation configured, a session to log in again, a
-failed exchange or request -- the frame says so in place of the policy; the route answers as the
-other operator routes do. Which lists the service enforces is its contract
+failed exchange or request -- the frame says so in place of the policy rather than showing an empty
+one. Which lists the service enforces is its contract
 ([SPEC § Action policies](../action_service/SPEC.md#action-policies)).
 
 ## Decisions

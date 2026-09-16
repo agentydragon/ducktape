@@ -40,8 +40,8 @@ from x.agentplane.action_service.models import (
     ExecutionState,
     Principal,
     PrincipalRole,
-    SandboxCaller,
     Verdict,
+    service_account_principal,
 )
 from x.agentplane.action_service.policies.resources import (
     BINDINGS_PLURAL,
@@ -58,8 +58,9 @@ from x.agentplane.action_service.test_fixtures.lifecycle import wait_available
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.egress.testing.fake_apiserver import fake_apiserver
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
+from x.agentplane.subjects import ServiceAccountRef
 
-CALLER = SandboxCaller(namespace="agentplane-test", sandbox_uid="sandbox-uid").principal()
+CALLER = service_account_principal(ServiceAccountRef(namespace="agentplane-test", name="fixture-caller"))
 OPERATOR = Principal(issuer="test", subject="operator", role=PrincipalRole.OPERATOR)
 
 
@@ -378,14 +379,15 @@ async def test_main_failure_disposes_engine_after_owned_resources(failure: str) 
     engine.dispose.assert_awaited_once()
 
 
-async def test_main_auto_approves_the_bound_sandbox_from_watched_policy_objects(
+async def test_main_auto_approves_the_bound_service_account_from_watched_policy_objects(
     db_url: str, everything_url: str
 ) -> None:
     """Real production composition + fixture HTTP + the fake API server the informer watches; only
     the in-cluster client configuration and the uvicorn loop are replaced."""
     namespace = "agentplane-runtime-test"
-    bound = SandboxCaller(namespace=namespace, sandbox_uid="fixture-uid")
-    unbound = SandboxCaller(namespace=namespace, sandbox_uid="other-uid")
+    bound = ServiceAccountRef(namespace=namespace, name="fixture-caller")
+    unbound = ServiceAccountRef(namespace=namespace, name="other-caller")
+    bound_caller = service_account_principal(bound)
     settings = Settings(
         database_url=db_url,
         action_groups={"fixture": _group({"transport": "streamable-http", "url": everything_url, "auth": "none"})},
@@ -407,7 +409,7 @@ async def test_main_auto_approves_the_bound_sandbox_from_watched_policy_objects(
             action=ActionIdentity(group="fixture", name="echo"),
             arguments={"message": "MCP0-ok"},
         )
-        view = await service.submit(body, bound.principal())
+        view = await service.submit(body, bound_caller)
         assert view.decision is not None
         assert view.decision.provider == PROVIDER_NAME
         assert view.decision.policy_evidence is not None
@@ -416,15 +418,15 @@ async def test_main_auto_approves_the_bound_sandbox_from_watched_policy_objects(
         async with asyncio.timeout(10):
             while view.state is not ActionState.SUCCEEDED:
                 await asyncio.sleep(0.01)
-                view = await service.get(view.id, bound.principal())
+                view = await service.get(view.id, bound_caller)
         assert view.execution is not None
         assert view.execution.result == {"content": ["Echo: MCP0-ok"]}
         with pytest.raises(ActionConflictError):
-            await service.submit(body, bound.principal())
-        recovered = one(await service.list_requests(bound.principal(), idempotency_key=body.idempotency_key))
+            await service.submit(body, bound_caller)
+        recovered = one(await service.list_requests(bound_caller, idempotency_key=body.idempotency_key))
         assert recovered.execution == view.execution
-        # An argument outside the schema, and a Sandbox nothing names, take the human path whatever
-        # the envelope claims.
+        # An argument outside the schema, and a ServiceAccount no binding names, take the human
+        # path whatever the envelope claims.
         for key, caller, message in [("too-long", bound, "x" * 201), ("unbound", unbound, "MCP0-ok")]:
             pending = await service.submit(
                 ActionRequestInput(
@@ -432,9 +434,9 @@ async def test_main_auto_approves_the_bound_sandbox_from_watched_policy_objects(
                     title=f"test title for {key}",
                     action=body.action,
                     arguments={"message": message},
-                    origin={"caller": bound.principal().key, "binding": "fixture-echo"},
+                    origin={"caller": bound_caller.key, "binding": "fixture-echo"},
                 ),
-                caller.principal(),
+                service_account_principal(caller),
             )
             assert pending.state is ActionState.DECISION_PENDING
             assert pending.execution is None
@@ -470,10 +472,7 @@ async def test_main_auto_approves_the_bound_sandbox_from_watched_policy_objects(
                 "apiVersion": f"{GROUP}/{VERSION}",
                 "kind": "ActionPolicyBinding",
                 "metadata": {"name": "fixture-echo", "namespace": namespace},
-                "spec": {
-                    "subject": {"sandbox": {"name": "fixture", "uid": bound.sandbox_uid}},
-                    "policySets": ["bounded-echo"],
-                },
+                "spec": {"subject": {"namespace": bound.namespace, "name": bound.name}, "policySets": ["bounded-echo"]},
             },
         )
 

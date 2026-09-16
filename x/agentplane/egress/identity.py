@@ -1,10 +1,10 @@
-"""Who is calling: the sidecar's Pod-bound token to the live Pod to the Sandbox that owns it.
+"""Who is calling: the sidecar's Pod-bound token to the live Pod to the ServiceAccount it runs as.
 
 The token is a projected ServiceAccount token with the proxy's audience. TokenReview proves it and
 names the Pod it is bound to; the Pod is then read live so a replaced Pod (same name, new UID) or a
-token presented from another address (copied out of its Pod) is refused; the Pod's controller owner
-is the Sandbox. The verdict is cached, keyed by a digest of the token, for the shorter of the token's
-remaining life and a bound, and the source-address check runs on every call regardless.
+token presented from another address (copied out of its Pod) is refused. The verdict is cached,
+keyed by a digest of the token, for the shorter of the token's remaining life and a bound, and the
+source-address check runs on every call regardless.
 """
 
 from __future__ import annotations
@@ -22,12 +22,8 @@ from datetime import UTC, datetime
 from kubernetes_asyncio.client import AuthenticationV1Api, CoreV1Api
 
 from x.agentplane.egress.policy import DenyReason
-from x.agentplane.sandbox_auth.principal import (
-    RejectionReason,
-    SandboxPrincipalRejectedError,
-    SandboxPrincipalResolver,
-    sandbox_controller,
-)
+from x.agentplane.sandbox_auth.principal import RejectionReason, SandboxPrincipalRejectedError, SandboxPrincipalResolver
+from x.agentplane.subjects import ServiceAccountRef
 
 logger = logging.getLogger(__name__)
 
@@ -35,29 +31,18 @@ _CACHE_SWEEP_SIZE = 256
 
 
 @dataclass(frozen=True)
-class _PodBinding:
+class PodIdentity:
+    """The Pod a bearer proves, and the ServiceAccount it runs as -- the subject policy binds to."""
+
     namespace: str
     pod_name: str
     pod_uid: str
     pod_ip: str
-
-
-@dataclass(frozen=True)
-class SandboxPodIdentity(_PodBinding):
-    """A Pod a live managed Sandbox controls; the Sandbox is the subject."""
-
-    sandbox_name: str
-    sandbox_uid: str
-
-
-@dataclass(frozen=True)
-class ServiceAccountPodIdentity(_PodBinding):
-    """A Pod no Sandbox controls; the ServiceAccount it runs as is the subject."""
-
     service_account_name: str
 
-
-type PodIdentity = SandboxPodIdentity | ServiceAccountPodIdentity
+    @property
+    def subject(self) -> ServiceAccountRef:
+        return ServiceAccountRef(namespace=self.namespace, name=self.service_account_name)
 
 
 class IdentityRejectedError(Exception):
@@ -135,10 +120,10 @@ class PodIdentityVerifier:
         self._cache[key] = _CachedIdentity(identity=identity, expires_at=now + ttl)
 
     async def _verify(self, token: str) -> PodIdentity:
-        """A Pod without a Sandbox owner is authenticated as its ServiceAccount, not refused.
+        """Every Pod is its ServiceAccount, whatever else owns it.
 
-        Authorization is unchanged by that: a subject no binding names still reaches no rule, so
-        widening what authenticates never widens what is allowed.
+        Authorization is unaffected by what authenticates: a subject no binding names reaches no
+        rule, so this is only ever the question of who is asking.
         """
         try:
             principal, pod = await self._resolver.resolve_workload_with_pod(token)
@@ -146,19 +131,16 @@ class PodIdentityVerifier:
             reason = {
                 RejectionReason.TOKEN_REJECTED: DenyReason.TOKEN_REJECTED,
                 RejectionReason.POD_MISMATCH: DenyReason.POD_MISMATCH,
-                RejectionReason.SANDBOX_UNKNOWN: DenyReason.SANDBOX_UNKNOWN,
+                RejectionReason.SANDBOX_UNKNOWN: DenyReason.TOKEN_REJECTED,
             }[error.reason]
             raise IdentityRejectedError(reason, str(error)) from error
         pod_ip = pod.status.pod_ip if pod.status is not None else None
         if not pod_ip:
             raise IdentityRejectedError(DenyReason.POD_MISMATCH, f"Pod {principal.pod_name} has no address yet")
-        binding = {
-            "namespace": principal.namespace,
-            "pod_name": principal.pod_name,
-            "pod_uid": principal.pod_uid,
-            "pod_ip": pod_ip,
-        }
-        owner = sandbox_controller(pod)
-        if owner is None:
-            return ServiceAccountPodIdentity(**binding, service_account_name=principal.service_account_name)
-        return SandboxPodIdentity(**binding, sandbox_name=owner.name, sandbox_uid=owner.uid)
+        return PodIdentity(
+            namespace=principal.namespace,
+            pod_name=principal.pod_name,
+            pod_uid=principal.pod_uid,
+            pod_ip=pod_ip,
+            service_account_name=principal.service_account_name,
+        )

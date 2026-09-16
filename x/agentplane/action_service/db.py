@@ -16,7 +16,6 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Mapper, mapped_column
 
 from x.agentplane.action_service.catalog import ActionIdentity
 from x.agentplane.action_service.models import (
-    SERVICE_ACCOUNT_ISSUER,
     ActionEventView,
     ActionRequestInput,
     ActionRequestView,
@@ -353,13 +352,20 @@ class ActionStore:
     async def submit(
         self, body: ActionRequestInput, principal: Principal, *, external_grant: ExternalGrantProvenance | None = None
     ) -> ActionRequestView:
-        """Persist an admitted request; ActionService resolves its group/action before calling here."""
+        """Persist an admitted request; ActionService resolves its group/action before calling here.
+
+        A grant, where one is presented, has to still authorize this exact caller. Whether a caller
+        needed a grant at all is settled before this: a Connection's bearer only ever resolves
+        through `ActionsOAuthProxy`, which attaches the grant it resolved, and a workload's only
+        through TokenReview, which is its own proof. A caller ServiceAccount names the identity, not
+        how it authenticated -- a Pod running as it and a Connection acting as it are the same
+        subject with the same policy -- so the principal cannot answer that question here.
+        """
         async with self._sessions.begin() as session:
-            if external_grant is not None:
-                if principal != external_grant.principal() or not await self._grant_authorized(session, external_grant):
-                    raise ExternalGrantNotAuthorizedError("external grant is not authorized")
-            elif principal.issuer == SERVICE_ACCOUNT_ISSUER:
-                raise ExternalGrantNotAuthorizedError("an external caller requires an authenticated grant")
+            if external_grant is not None and (
+                principal != external_grant.principal() or not await self._grant_authorized(session, external_grant)
+            ):
+                raise ExternalGrantNotAuthorizedError("external grant is not authorized")
             now = datetime.now(UTC)
             request_id = uuid4()
             inserted_id = await session.scalar(

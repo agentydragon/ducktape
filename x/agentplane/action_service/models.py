@@ -33,7 +33,6 @@ class Principal(BaseModel):
         return f"{self.issuer}:{self.subject}"
 
 
-SANDBOX_ISSUER = "kubernetes-sandbox"
 SERVICE_ACCOUNT_ISSUER = "service-account"
 
 
@@ -57,33 +56,12 @@ def service_account_principal(account: ServiceAccountRef) -> Principal:
     )
 
 
-class SandboxCaller(BaseModel):
-    """The live Sandbox proven by workload authentication, as an ActionPolicyBinding names it."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    namespace: str = Field(min_length=1)
-    sandbox_uid: str = Field(min_length=1)
-
-    def principal(self) -> Principal:
-        return Principal(
-            issuer=SANDBOX_ISSUER, subject=f"{self.namespace}:{self.sandbox_uid}", role=PrincipalRole.CALLER
-        )
-
-    @classmethod
-    def from_principal(cls, principal: Principal) -> SandboxCaller:
-        """The inverse of `principal()`; only a principal workload authentication minted decodes."""
-        namespace, separator, sandbox_uid = principal.subject.partition(":")
-        if (
-            principal.issuer != SANDBOX_ISSUER
-            or principal.role is not PrincipalRole.CALLER
-            or not separator
-            or not namespace
-            or not sandbox_uid
-            or ":" in sandbox_uid
-        ):
-            raise ValueError("principal was not minted by Sandbox workload authentication")
-        return cls(namespace=namespace, sandbox_uid=sandbox_uid)
+def service_account_ref(principal: Principal) -> ServiceAccountRef:
+    """The inverse of `service_account_principal`; only a principal this service minted decodes."""
+    namespace, separator, name = principal.subject.partition(":")
+    if principal.issuer != SERVICE_ACCOUNT_ISSUER or not separator or not namespace or not name or ":" in name:
+        raise ValueError(f"principal was not minted for a ServiceAccount: {principal.key}")
+    return ServiceAccountRef(namespace=namespace, name=name)
 
 
 class ServiceAccountCaller(BaseModel):

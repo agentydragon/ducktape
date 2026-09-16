@@ -9,13 +9,12 @@ import pytest
 import pytest_bazel
 from kubernetes_asyncio.client import ApiClient
 
-from x.agentplane.egress.conftest import GITHUB_POLICY, SANDBOX_A, SANDBOX_B, SECRET_NAME, informer
+from x.agentplane.egress.conftest import GITHUB_POLICY, SANDBOX_A, SECRET_NAME, informer
 from x.agentplane.egress.policy import Index
 from x.agentplane.egress.testing.fake_apiserver import (
     BINDINGS_PLURAL,
     CREDENTIALS_PLURAL,
     POLICIES_PLURAL,
-    SANDBOXES_PLURAL,
     SECRETS_PLURAL,
     FakeApiServer,
     policy,
@@ -40,7 +39,6 @@ async def index(api_client: ApiClient) -> AsyncIterator[Index]:
 async def test_initial_sync_loads_every_kind(index: Index) -> None:
     assert set(index.policies) == {GITHUB_POLICY}
     assert set(index.bindings) == {BINDING}
-    assert set(index.sandboxes) == {SANDBOX_A, SANDBOX_B}
     assert index.secrets[SECRET_NAME].data == {"token": "real-secret-v1"}
 
 
@@ -70,13 +68,7 @@ async def test_a_completed_cycle_is_what_advances_freshness(fake: FakeApiServer,
     /healthz reads these to tell a wedged informer from a quiet one; a timestamp set anywhere but
     the end of a cycle would keep advancing through exactly the failure it has to catch.
     """
-    assert set(index.refreshed) == {
-        POLICIES_PLURAL,
-        BINDINGS_PLURAL,
-        CREDENTIALS_PLURAL,
-        SANDBOXES_PLURAL,
-        SECRETS_PLURAL,
-    }
+    assert set(index.refreshed) == {POLICIES_PLURAL, BINDINGS_PLURAL, CREDENTIALS_PLURAL, SECRETS_PLURAL}
     seeded = index.refreshed[POLICIES_PLURAL]
 
     async def end_watches_until_the_policies_cycle_completes() -> None:

@@ -10,9 +10,8 @@ metadata:
     description: Auto-approves the reviewed GitHub reads for Connections acting as the claude-ai ServiceAccount.
 spec:
   subject:
-    serviceAccount:
-      namespace: agentplane-staging
-      name: claude-ai
+    namespace: agentplane-staging
+    name: claude-ai
   policySets:
     - github-reads
     - github-identity-reads

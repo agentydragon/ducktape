@@ -12,21 +12,20 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
   retains its bearer only after successful verification; malformed or rejected replacement headers
   clear earlier connection context rather than falling back to it.
 - The token is proven by TokenReview against that audience. The Pod it is bound to is read live:
-  its UID must equal the token's and its address must equal the connection's source. If its
-  controller owner is a Sandbox the proxy's watch knows under the same UID, that Sandbox is the
-  subject; if it is owned by no Sandbox, the ServiceAccount it runs as is the subject. Authenticating
-  a workload is not admitting it: a subject no binding names reaches no rule.
+  its UID must equal the token's and its address must equal the connection's source. The subject is
+  the ServiceAccount the Pod runs as, whatever else owns the Pod. Authenticating a workload is not
+  admitting it: a subject no binding names reaches no rule.
 - A verdict is cached for at most the token's remaining life, bounded by a configured limit; the
   source-address check runs on every request regardless.
 
 ## Decision
 
 - An `EgressBinding` grants by existing and unexpired: creating one is the whole act of allowing,
-  and deleting it the whole act of taking that back. A binding names its subjects by name, each as
-  exactly one kind -- a `sandbox` or a `serviceAccount` -- and lists `EgressPolicy` names. The two
-  kinds never admit each other: a name is a Sandbox or a ServiceAccount, never both. A Sandbox
-  subject is lifecycle-bound and ends with its Sandbox; a ServiceAccount subject is every Pod
-  running as it, so bind only a ServiceAccount dedicated to one workload.
+  and deleting it the whole act of taking that back. A binding names its subjects as namespaced
+  ServiceAccounts and lists `EgressPolicy` names. The same name in two namespaces is two subjects. A
+  subject is every Pod running as that account, so bind only an account dedicated to one workload;
+  the integration app gives each sandbox an account of its own, owned by it, so deleting the sandbox
+  collects the account and the bindings naming it alike.
 - A rule matches a request when its hosts, methods, and paths all admit it. One matching rule in
   any policy of any of the subject's bindings is enough to admit the request; nothing matching
   refuses with `no-rule`. A CONNECT is matched on host alone; each request inside the tunnel is
@@ -37,7 +36,7 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
   A rule names a credential; the credential names the targets. Its source is exactly one of
   `secretRef`, preserving the central-held Secret behavior, or `authenticatedWorkloadToken`, the
   bearer retained from successful authentication of this request or CONNECT tunnel. The latter is
-  resolved per request and must still be bound to the live Sandbox being decided; absent, stale, or
+  resolved per request and must still be bound to the caller being decided; absent, stale, or
   mismatched context refuses with `credential-unavailable`.
 - A **target** is a header and a parse of that header's value: `wholeValue` (the value entire),
   `schemeToken` (`<scheme> <credential>`, the scheme declared and compared case-insensitively),
@@ -70,10 +69,10 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
   `Proxy-Authorization` value and never appends `Authorization`; the declared target and exact
   placeholder presentation remain the only substitution authority.
 - Nothing else is forwarded: no binding, no rule, an unproven token, a Pod that does not match,
-  an unknown Sandbox, or any failure to reach the API server all refuse. A refusal is `403`
+  or any failure to reach the API server all refuse. A refusal is `403`
   (`502` when the proxy itself could not decide) with an empty body and
   `x-agentplane-egress: denied; reason=<reason>`, where reason is one of `token-missing`,
-  `token-rejected`, `pod-mismatch`, `sandbox-unknown`, `no-binding`, `no-rule`,
+  `token-rejected`, `pod-mismatch`, `no-binding`, `no-rule`,
   `placeholder-unresolved`, `credential-unavailable`, `address-forbidden`, `host-unresolved`,
   `unavailable`.
 
@@ -82,7 +81,7 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
 - **A sandbox can read the rules that apply to it**, at
   `http://agentplane-egress.agentplane-staging.svc.cluster.local/v1/rules` through the sidecar's
   existing HTTP(S) proxy, the same path it uses for every other destination. The answer names the
-  sandbox and the policies an active binding grants it: each rule's
+  subject it is of and the policies an active binding grants it: each rule's
   hosts, methods, paths, and where a credential is substituted, its placeholder, its operator-written
   `description`, and every target — which is what a client needs to build the value and to know whose
   credential it is spending, since a header name and a placeholder leave open both whether the value
@@ -95,9 +94,9 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
   `basic` policy/binding authorizes exact substitution using `agentplane-workload`.
   Missing or forged destination auth and unbound placeholders fail closed.
   The destination independently authenticates its Authorization bearer with TokenReview and live
-  Pod/Sandbox resolution, without relying on proxy-hop identity or the Sandbox's source address.
-  `RulesProjection` checks the authenticated name and UID against the answering replica’s current enforcement index. This informational snapshot
-  need not come from the replica that admitted the API request.
+  Pod resolution, without relying on proxy-hop identity or the caller's source address. The answer
+  is of the subject that bearer proves, projected from the answering replica's enforcement index;
+  this informational snapshot need not come from the replica that admitted the API request.
   Other request headers and bodies cannot select identity. Service port 80 reaches the distinct
   API listener, not proxy port 8888; there is no local proxy dispatch or recursive forwarding.
   Operator admin endpoints are not available through this route.
@@ -123,9 +122,9 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
 - The proxy depends on the API server and nothing else. The integration app is a viewer of the
   same resources, never a participant: no part of a decision passes through it, so an app that is
   down or broken changes nothing about what a sandbox may reach.
-- The proxy watches policies, bindings and credentials in its configured rule namespace,
-  Sandboxes and their Pods in the configured sandbox namespace, and Secrets in the credentials
-  namespace. The rule and sandbox namespaces may be one namespace, and in both deployments they
+- The proxy watches policies, bindings and credentials in its configured rule namespace, and
+  Secrets in the credentials namespace; a caller's Pod is read live rather than watched. The rule
+  and sandbox namespaces may be one namespace, and in both deployments they
   are; the credentials namespace is separate, so a sandbox is never in a namespace holding the
   Secrets the proxy substitutes. The proxy's picture is kept equal to the API server's, and a
   rotated Secret is substituted from the next request on without a restart. An authenticated
@@ -147,13 +146,11 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
 - A record carries names, never values. Paths are always null, for denied requests too: query
   stripping cannot protect secrets embedded in arbitrary paths. Bodies, headers, query strings,
   raw exceptions, and Kubernetes object payloads are not recorded. An unauthenticated attempt has
-  no claimed sandbox identity; a recorded Sandbox or Pod UID is a snapshot, not a reference to a
-  live object.
+  no claimed identity; a recorded Pod UID is a snapshot, not a reference to a live object.
 - Recent history is shared PostgreSQL state, not a per-replica ring. Replacing a proxy does not
-  remove committed history. `/decisions?sandbox=<name>` keeps the list response and existing
-  field names (`at` is decision time); omission of `sandbox` selects unidentified requests. A
-  lookup by name spans every Sandbox that has carried it; each row keeps the UID verified at the
-  time.
+  remove committed history. `/decisions?namespace=<ns>&name=<name>` selects one subject and keeps
+  the list response and existing field names (`at` is decision time); omitting both selects the
+  requests that never authenticated. A lookup spans every workload that has run as that account.
 - Responses contain at most 200 recent records by default, ordered by decision time then event
   ID, oldest first within that window. This is not a global causal or insertion order.
 - Logging is diagnostic and best effort, not a mandatory lossless audit. A bounded asynchronous

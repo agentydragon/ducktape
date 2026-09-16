@@ -20,7 +20,7 @@ class FakeEgressAdmin:
         if not self.reachable:
             raise httpx.ConnectError("connection refused", request=request)
         assert request.url.path == "/decisions"
-        subject = (request.url.params["kind"], request.url.params["name"])
+        subject = (request.url.params["namespace"], request.url.params["name"])
         self.queries.append(subject)
         return httpx.Response(200, json=self.decisions.get(subject, []))
 
@@ -38,7 +38,7 @@ def decision(
     """One decision as the proxy's `/decisions` serialises it."""
     return {
         "at": at,
-        "subject": {"kind": "Sandbox", "name": "live"},
+        "subject": {"namespace": "agentplane-test", "name": "live"},
         "method": method,
         "host": host,
         "port": 443,

@@ -118,7 +118,7 @@ class PolicyObjects:
             "ActionPolicyBinding",
             BINDINGS_PLURAL,
             name,
-            {"subject": {"sandbox": {"name": sandbox.name, "uid": str(sandbox.uid)}}, "policySets": policy_sets},
+            {"subject": {"namespace": self.namespace, "name": sandbox.name}, "policySets": policy_sets},
         )
 
     def expire_binding(self, name: str) -> None:

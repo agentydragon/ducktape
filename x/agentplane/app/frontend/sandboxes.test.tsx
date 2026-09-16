@@ -30,6 +30,7 @@ const CREATED: SandboxView = {
   state: "waiting_for_pod",
   created_at: "2026-01-01T00:00:00Z",
   operating_mode: "Running",
+  service_account: { namespace: "agentplane-test", name: "test-created-sandbox" },
   conditions: [],
 };
 

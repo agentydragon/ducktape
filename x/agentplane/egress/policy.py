@@ -23,19 +23,17 @@ from x.agentplane.egress.resources import (
     BINDINGS_PLURAL,
     CREDENTIALS_PLURAL,
     POLICIES_PLURAL,
-    SANDBOXES_PLURAL,
     ActiveReason,
     EgressBinding,
     EgressCredential,
     EgressPolicy,
     Rule,
-    Sandbox,
     Secret,
 )
-from x.agentplane.subjects import SandboxSubject, ServiceAccountSubject, Subject, SubjectKind, SubjectView
+from x.agentplane.subjects import ServiceAccountRef
 
 CONNECT = "CONNECT"
-WATCHED_KINDS = frozenset({POLICIES_PLURAL, BINDINGS_PLURAL, CREDENTIALS_PLURAL, SANDBOXES_PLURAL, "secrets"})
+WATCHED_KINDS = frozenset({POLICIES_PLURAL, BINDINGS_PLURAL, CREDENTIALS_PLURAL, "secrets"})
 STALE_AFTER_CYCLES = 3
 
 
@@ -45,7 +43,6 @@ class DenyReason(StrEnum):
     TOKEN_MISSING = "token-missing"
     TOKEN_REJECTED = "token-rejected"
     POD_MISMATCH = "pod-mismatch"
-    SANDBOX_UNKNOWN = "sandbox-unknown"
     NO_BINDING = "no-binding"
     NO_RULE = "no-rule"
     PLACEHOLDER_UNRESOLVED = "placeholder-unresolved"
@@ -63,7 +60,6 @@ class Index:
     policies: dict[str, EgressPolicy] = field(default_factory=dict)
     bindings: dict[str, EgressBinding] = field(default_factory=dict)
     credentials: dict[str, EgressCredential] = field(default_factory=dict)
-    sandboxes: dict[str, Sandbox] = field(default_factory=dict)
     secrets: dict[str, Secret] = field(default_factory=dict, repr=False)
     synced: bool = field(default=False)
     draining: bool = False
@@ -108,62 +104,15 @@ class EgressRequest:
 
 
 @dataclass(frozen=True)
-class SandboxCaller:
-    """A request from a Pod a live managed Sandbox controls."""
-
-    sandbox: Sandbox
-
-    @property
-    def subject(self) -> SubjectView:
-        return SubjectView(kind=SubjectKind.SANDBOX, name=self.sandbox.metadata.name)
-
-    @property
-    def label(self) -> str:
-        return f"Sandbox {self.sandbox.metadata.name}"
-
-
-@dataclass(frozen=True)
-class ServiceAccountCaller:
-    """A request from a Pod running as this ServiceAccount, owned by no Sandbox."""
-
-    namespace: str
-    service_account_name: str
-
-    @property
-    def subject(self) -> SubjectView:
-        return SubjectView(kind=SubjectKind.SERVICE_ACCOUNT, name=self.service_account_name)
-
-    @property
-    def label(self) -> str:
-        return f"ServiceAccount {self.namespace}/{self.service_account_name}"
-
-
-type Caller = SandboxCaller | ServiceAccountCaller
-
-
-@dataclass(frozen=True)
 class AuthenticatedWorkloadContext:
     """Credential material retained only after central authenticated this request or tunnel."""
 
     bearer: str = field(repr=False)
-    caller: Caller
-    namespace: str
+    caller: ServiceAccountRef
     pod_uid: str
 
-    def is_bound_to(self, caller: Caller) -> bool:
-        match self.caller, caller:
-            case SandboxCaller(), SandboxCaller():
-                return (
-                    self.caller.sandbox.metadata.name == caller.sandbox.metadata.name
-                    and self.caller.sandbox.metadata.uid == caller.sandbox.metadata.uid
-                )
-            case ServiceAccountCaller(), ServiceAccountCaller():
-                return (self.caller.namespace, self.caller.service_account_name) == (
-                    caller.namespace,
-                    caller.service_account_name,
-                )
-            case _:
-                return False
+    def is_bound_to(self, caller: ServiceAccountRef) -> bool:
+        return self.caller == caller
 
 
 @dataclass(frozen=True)
@@ -212,33 +161,13 @@ def resolve_binding(index: Index, binding: EgressBinding, now: datetime) -> Bind
     return BindingResolution(binding=binding, policies=policies, missing=missing, reason=reason)
 
 
-def _names(subject: Subject, caller: Caller) -> bool:
-    """A Sandbox subject may pin an instance; unpinned it is that Sandbox whatever it is.
-
-    An unpinned subject is how every binding here is written today: the grant ends with its Sandbox
-    because the binding object is owned by it, not because the subject names an instance.
-    """
-    match subject, caller:
-        case SandboxSubject(), SandboxCaller():
-            if subject.sandbox.name != caller.sandbox.metadata.name:
-                return False
-            return subject.sandbox.uid in (None, caller.sandbox.metadata.uid)
-        case ServiceAccountSubject(), ServiceAccountCaller():
-            return (subject.service_account.namespace, subject.service_account.name) == (
-                caller.namespace,
-                caller.service_account_name,
-            )
-        case _:
-            return False
-
-
-def subject_bindings(index: Index, caller: Caller, now: datetime) -> list[BindingResolution]:
+def subject_bindings(index: Index, caller: ServiceAccountRef, now: datetime) -> list[BindingResolution]:
     """The active bindings naming this caller, in name order."""
     return [
         resolution
         for name in sorted(index.bindings)
         if (resolution := resolve_binding(index, index.bindings[name], now)).active
-        and any(_names(subject, caller) for subject in resolution.binding.spec.subjects)
+        and caller in resolution.binding.spec.subjects
     ]
 
 
@@ -314,7 +243,7 @@ def _resolves(rule: Rule, presented: Collection[str]) -> bool:
 
 def evaluate(
     index: Index,
-    caller: Caller,
+    caller: ServiceAccountRef,
     request: EgressRequest,
     now: datetime,
     authenticated_workload: AuthenticatedWorkloadContext | None = None,

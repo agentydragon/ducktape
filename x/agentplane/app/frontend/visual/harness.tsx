@@ -68,6 +68,7 @@ const SANDBOXES: SandboxView[] = [
     state: "running",
     created_at: ago(3 * HOUR),
     operating_mode: "Running",
+    service_account: { namespace: "agentplane-visual", name: "demo-a1b2" },
     conditions: [{ type: "Ready", status: "True", reason: "PodReady", message: null }],
     node_name: "harness-node",
     pod: {
@@ -89,6 +90,7 @@ const SANDBOXES: SandboxView[] = [
     state: "waiting_for_pod_ready",
     created_at: ago(2 * 60_000),
     operating_mode: "Running",
+    service_account: { namespace: "agentplane-visual", name: "codex-c3d4" },
     conditions: [{ type: "Ready", status: "False", reason: "PodPending", message: null }],
     node_name: "harness-node",
     pod: {
@@ -116,6 +118,7 @@ const SANDBOXES: SandboxView[] = [
     state: "suspended",
     created_at: ago(48 * HOUR),
     operating_mode: "Suspended",
+    service_account: { namespace: "agentplane-visual", name: "old-e5f6" },
     conditions: [{ type: "Ready", status: "False", reason: "Suspended", message: null }],
     node_name: null,
     pod: null,
@@ -129,6 +132,7 @@ if (scenario.threadlessSandbox) {
     state: "waiting_for_pod",
     created_at: ago(30_000),
     operating_mode: "Running",
+    service_account: { namespace: "agentplane-visual", name: "test-provisioning" },
     conditions: [],
     pod: null,
   });
@@ -173,7 +177,7 @@ const BINDINGS: BindingView[] = [
   {
     name: "demo-a1b2-7q4xk",
     from_git: false,
-    subjects: [{ kind: "Sandbox", name: "demo-a1b2" }],
+    subjects: [{ namespace: "agentplane-visual", name: "demo-a1b2" }],
     expires_at: ago(2 * HOUR),
     policies: [POLICIES[1]],
     missing_policies: [],
@@ -181,7 +185,7 @@ const BINDINGS: BindingView[] = [
   {
     name: "demo-a1b2-github-public",
     from_git: true,
-    subjects: [{ kind: "Sandbox", name: "demo-a1b2" }],
+    subjects: [{ namespace: "agentplane-visual", name: "demo-a1b2" }],
     expires_at: null,
     policies: [POLICIES[0]],
     missing_policies: [],

@@ -183,16 +183,21 @@ def sandbox(
     *,
     labels: dict[str, str] | None = None,
     operating_mode: str = "Running",
+    service_account: str | None = None,
     status: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """A Sandbox as `SandboxInventory.create` leaves it: running as a ServiceAccount of its own,
+    named after it unless the caller says otherwise."""
+    pod_template = {**POD_TEMPLATE, "spec": {**POD_TEMPLATE["spec"], "serviceAccountName": service_account or name}}
     return {
         "metadata": {
             "name": name,
+            "namespace": NAMESPACE,
             "uid": str(uuid4()),
             "labels": {MANAGED_LABEL: "true", **(labels or {})},
             "creationTimestamp": "2026-09-01T12:00:00Z",
         },
-        "spec": {"podTemplate": POD_TEMPLATE, "operatingMode": operating_mode},
+        "spec": {"podTemplate": pod_template, "operatingMode": operating_mode},
         **({"status": status} if status is not None else {}),
     }
 

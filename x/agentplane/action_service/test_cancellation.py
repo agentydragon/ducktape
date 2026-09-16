@@ -24,14 +24,15 @@ from x.agentplane.action_service.models import (
     PrincipalRole,
     ProviderOutcome,
     ProviderVerdict,
-    SandboxCaller,
     Verdict,
+    service_account_principal,
 )
 from x.agentplane.action_service.providers import DecisionContext
 from x.agentplane.action_service.service import ActionService
+from x.agentplane.subjects import ServiceAccountRef
 
-CALLER = SandboxCaller(namespace="agentplane-test", sandbox_uid="sandbox-a").principal()
-OTHER_CALLER = SandboxCaller(namespace="agentplane-test", sandbox_uid="sandbox-b").principal()
+CALLER = service_account_principal(ServiceAccountRef(namespace="agentplane-test", name="sandbox-a"))
+OTHER_CALLER = service_account_principal(ServiceAccountRef(namespace="agentplane-test", name="sandbox-b"))
 OPERATOR = Principal(issuer="test-bff", subject="operator", role=PrincipalRole.OPERATOR)
 LEASE_DURATION = timedelta(seconds=30)
 

@@ -22,6 +22,7 @@ from x.agentplane.app.live import LiveIndex
 from x.agentplane.app.presets import Harness, PresetCatalog, SandboxPreset, ThreadPreset
 from x.agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
 from x.agentplane.app.testing.kubernetes import (
+    NAMESPACE,
     TEMPLATE,
     FakeCoreV1Api,
     FakeCustomObjectsApi,
@@ -114,12 +115,12 @@ def client(
     custom_objects.objects[("egresspolicies", "pypi")] = egress_policy("pypi", [{"hosts": ["pypi.org"]}])
     custom_objects.objects[("egressbindings", "live-seeded")] = egress_binding(
         "live-seeded",
-        subjects=[{"sandbox": {"name": "live", "uid": "live-uid"}}],
+        subjects=[{"namespace": NAMESPACE, "name": "live"}],
         policies=["github"],
         active=("True", "Resolved", ""),
     )
     custom_objects.objects[("egressbindings", "live-granted")] = egress_binding(
-        "live-granted", subjects=[{"sandbox": {"name": "live", "uid": "live-uid"}}], policies=["pypi"], from_git=False
+        "live-granted", subjects=[{"namespace": NAMESPACE, "name": "live"}], policies=["pypi"], from_git=False
     )
     custom_objects.objects[("actionpolicysets", "github-reads")] = action_policy_set(
         "github-reads",
@@ -222,8 +223,8 @@ def test_create_records_the_concrete_thread_defaults_and_bootstrap(
 def test_create_binds_the_sandbox_to_its_action_policy_sets(
     client: TestClient, custom_objects: FakeCustomObjectsApi
 ) -> None:
-    """One ActionPolicyBinding per launched Sandbox, owned by it and naming it by UID: what its
-    harness may do without the operator, as the Action Service reads it. Reading the policy back is the Action Service's answer through the operator
+    """One ActionPolicyBinding per launched Sandbox, owned by it and naming the ServiceAccount it
+    runs as: what its harness may do without the operator, as the Action Service reads it. Reading the policy back is the Action Service's answer through the operator
     federation (`test_action_api.py`), so a token caller is refused it."""
     row = client.post(
         "/sandboxes", json={"slug": "coder", "template": TEMPLATE, "action_policy_sets": ["github-reads"]}
@@ -234,10 +235,7 @@ def test_create_binds_the_sandbox_to_its_action_policy_sets(
     assert written["metadata"]["name"].startswith(f"{row['name']}-")
     assert written["metadata"]["labels"] == {"app.agentplane.allegedly.works/managed-by": "integration-app"}
     assert written["metadata"]["ownerReferences"][0]["uid"] == sandbox_uid
-    assert written["spec"] == {
-        "subject": {"sandbox": {"name": row["name"], "uid": sandbox_uid}},
-        "policySets": ["github-reads"],
-    }
+    assert written["spec"] == {"subject": {"namespace": NAMESPACE, "name": row["name"]}, "policySets": ["github-reads"]}
 
     client.post("/sandboxes", json={"slug": "plain", "template": TEMPLATE})
     assert len([kind for kind, _ in custom_objects.objects if kind == "actionpolicybindings"]) == 1
@@ -259,10 +257,10 @@ def test_a_missing_action_policy_set_creates_nothing(client: TestClient, custom_
 
 
 def _written_bindings(custom_objects: FakeCustomObjectsApi) -> list[tuple[str, list[str]]]:
-    """Each ActionPolicyBinding the app wrote, as (bound Sandbox, its sets): the launch's whole effect,
+    """Each ActionPolicyBinding the app wrote, as (bound account, its sets): the launch's whole effect,
     read where it landed, since the policy route answers only an operator session."""
     return [
-        (obj["spec"]["subject"]["sandbox"]["name"], obj["spec"]["policySets"])
+        (obj["spec"]["subject"]["name"], obj["spec"]["policySets"])
         for (kind, _), obj in custom_objects.objects.items()
         if kind == "actionpolicybindings"
     ]
@@ -526,7 +524,7 @@ def test_granting_a_running_sandbox_adds_a_binding_and_leaves_the_others(
 
     assert granted.status_code == 201, granted.text
     binding = granted.json()
-    assert (binding["subjects"], binding["from_git"]) == ([{"kind": "Sandbox", "name": "live"}], False)
+    assert (binding["subjects"], binding["from_git"]) == ([{"namespace": NAMESPACE, "name": "live"}], False)
     assert [policy["name"] for policy in binding["policies"]] == ["pypi", "github"]
     # Owned by the Sandbox, so deleting the sandbox takes the grant with it.
     (owner,) = custom_objects.objects[("egressbindings", binding["name"])]["metadata"]["ownerReferences"]
@@ -566,7 +564,7 @@ def test_a_grant_naming_a_policy_that_does_not_exist_is_refused(
 
 
 def test_egress_decisions_come_from_the_proxy(client: TestClient, egress_admin: FakeEgressAdmin) -> None:
-    egress_admin.decisions[("Sandbox", "live")] = [
+    egress_admin.decisions[(NAMESPACE, "live")] = [
         decision("2026-09-02T10:00:00Z", "CONNECT", "api.github.com", None, "allow"),
         decision("2026-09-02T10:00:01Z", "GET", "api.github.com", "/repos/x/y", "allow", address="140.82.116.5"),
         decision("2026-09-02T10:00:02Z", "POST", "pypi.org", "/simple/", "deny", reason="no-rule"),
@@ -582,11 +580,11 @@ def test_egress_decisions_come_from_the_proxy(client: TestClient, egress_admin: 
     ]
     # The proxy resolves and pins the host itself; the address it dialled reaches the page.
     assert [d["address"] for d in response.json()] == [None, "140.82.116.5", None]
-    assert egress_admin.queries == [("Sandbox", "live")], (
-        "the route asks for the Sandbox of that name, not the name alone"
+    assert egress_admin.queries == [(NAMESPACE, "live")], (
+        "the route asks for the account the sandbox runs as, namespace included"
     )
     assert client.get("/sandboxes/nope/egress/decisions").status_code == 404
-    assert egress_admin.queries == [("Sandbox", "live")]
+    assert egress_admin.queries == [(NAMESPACE, "live")]
 
 
 def test_egress_decisions_are_502_when_the_proxy_is_unreachable(

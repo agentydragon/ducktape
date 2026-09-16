@@ -52,6 +52,7 @@ py_library(
     srcs = ["identity.py"],
     deps = [
         ":policy",
+        "//x/agentplane:subjects",
         "//x/agentplane/sandbox_auth:principal",
         "@pypi//kubernetes_asyncio",
     ],
@@ -144,6 +145,7 @@ py_library(
         "//util:kubernetes",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
+        "//x/agentplane:subjects",
         "//x/agentplane/egress/testing:fake_apiserver",
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
@@ -220,7 +222,6 @@ py_test(
         ":upstream",
         "//:conftest",
         "//util:net",
-        "//x/agentplane:subjects",
         "//x/agentplane/egress/testing:fake_apiserver",
         "//x/agentplane/egress/testing:replica",
         "//x/agentplane/egress/testing:tls",
@@ -400,6 +401,7 @@ py_library(
     deps = [
         ":agent_view",
         ":policy",
+        "//x/agentplane:subjects",
         "//x/agentplane/sandbox_auth:http",
         "//x/agentplane/sandbox_auth:principal",
         "@pypi//fastapi",
@@ -413,7 +415,6 @@ py_test(
     deps = [
         ":conftest",
         ":policy",
-        ":resources",
         ":rules_api",
         "//:conftest",
         "//x/agentplane/egress/testing:fake_apiserver",

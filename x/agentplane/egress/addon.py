@@ -22,29 +22,20 @@ from mitmproxy.proxy import server_hooks
 
 from x.agentplane.egress.decision_log import DecisionLog
 from x.agentplane.egress.decisions import DecisionRecord, Outcome, Phase
-from x.agentplane.egress.identity import (
-    IdentityRejectedError,
-    PodIdentity,
-    PodIdentityVerifier,
-    SandboxPodIdentity,
-    ServiceAccountPodIdentity,
-)
+from x.agentplane.egress.identity import IdentityRejectedError, PodIdentity, PodIdentityVerifier
 from x.agentplane.egress.policy import (
     CONNECT,
     Allowed,
     AuthenticatedWorkloadContext,
-    Caller,
     Decision,
     Denied,
     DenyReason,
     EgressRequest,
     Index,
-    SandboxCaller,
-    ServiceAccountCaller,
     evaluate,
 )
 from x.agentplane.egress.upstream import Pin, UpstreamRefusedError, UpstreamResolver
-from x.agentplane.subjects import SubjectView
+from x.agentplane.subjects import ServiceAccountRef
 
 logger = logging.getLogger(__name__)
 
@@ -163,12 +154,12 @@ class EgressAddon:
             return None
         return token
 
-    async def _caller_of(self, flow: http.HTTPFlow) -> Caller:
+    async def _caller_of(self, flow: http.HTTPFlow) -> ServiceAccountRef:
         """The subject this connection's token proves, or IdentityRejectedError saying why not."""
         caller, _ = await self._authenticate(flow)
         return caller
 
-    async def _authenticate(self, flow: http.HTTPFlow) -> tuple[Caller, AuthenticatedWorkloadContext]:
+    async def _authenticate(self, flow: http.HTTPFlow) -> tuple[ServiceAccountRef, AuthenticatedWorkloadContext]:
         """Authenticate this hop or tunnel context and bind its bearer to the resulting caller."""
         client_id = flow.client_conn.id
         previous = (
@@ -185,33 +176,10 @@ class EgressAddon:
         if previous is not None and previous.identity != identity:
             self._authenticated.pop(client_id, None)
             raise IdentityRejectedError(DenyReason.POD_MISMATCH, "authenticated tunnel identity changed")
-        caller: Caller
-        match identity:
-            case SandboxPodIdentity():
-                # The Sandbox must still be in the index under the same UID: the token proves the
-                # owner reference, the watch proves the Sandbox is one this proxy enforces for.
-                sandbox = self._index.sandboxes.get(identity.sandbox_name)
-                if sandbox is None or sandbox.metadata.uid != identity.sandbox_uid:
-                    self._authenticated.pop(client_id, None)
-                    raise IdentityRejectedError(
-                        DenyReason.SANDBOX_UNKNOWN, f"Sandbox {identity.sandbox_name} is not in the index"
-                    )
-                caller = SandboxCaller(sandbox=sandbox)
-            case ServiceAccountPodIdentity():
-                caller = ServiceAccountCaller(
-                    namespace=identity.namespace, service_account_name=identity.service_account_name
-                )
         self._authenticated[client_id] = _AuthenticatedConnection(token=token, identity=identity)
-        return caller, AuthenticatedWorkloadContext(
-            bearer=token, caller=caller, namespace=identity.namespace, pod_uid=identity.pod_uid
+        return identity.subject, AuthenticatedWorkloadContext(
+            bearer=token, caller=identity.subject, pod_uid=identity.pod_uid
         )
-
-    def _still_current(self, caller: Caller) -> bool:
-        """Only a Sandbox caller can be revoked by the watch between admission and dial; a
-        ServiceAccount subject has no index object to disappear."""
-        if isinstance(caller, ServiceAccountCaller):
-            return True
-        return self._index.sandboxes.get(caller.sandbox.metadata.name) == caller.sandbox
 
     async def _gate(self, flow: http.HTTPFlow) -> None:
         flow.response = _refusal(DenyReason.UNAVAILABLE)
@@ -223,17 +191,13 @@ class EgressAddon:
             path=None if request.method == CONNECT else request.path,
             headers={name.lower(): request.headers.get_all(name) for name in set(request.headers.keys())},
         )
-        subject: SubjectView | None = None
-        namespace: str | None = None
-        sandbox_uid: str | None = None
+        subject: ServiceAccountRef | None = None
         authenticated_workload: AuthenticatedWorkloadContext | None = None
         pin: Pin | None = None
         decision: Decision
         try:
             caller, authenticated_workload = await self._authenticate(flow)
-            subject = caller.subject
-            namespace = authenticated_workload.namespace
-            sandbox_uid = caller.sandbox.metadata.uid if isinstance(caller, SandboxCaller) else None
+            subject = caller
             if not self._index.available(self._clock(), stale_after_seconds=self._stale_after_seconds):
                 raise IdentityRejectedError(DenyReason.UNAVAILABLE, "enforcement index unavailable")
             decision = evaluate(
@@ -250,7 +214,7 @@ class EgressAddon:
                     decision = evaluate(
                         self._index, caller, egress, self._clock(), authenticated_workload=authenticated_workload
                     )
-                    if decision != admitted or not self._still_current(caller):
+                    if decision != admitted:
                         decision = Denied(DenyReason.UNAVAILABLE)
         except IdentityRejectedError as error:
             logger.info("identity rejected for %s %s:%d: %s", egress.method, egress.host, egress.port, error.reason)
@@ -277,8 +241,6 @@ class EgressAddon:
             "producer_id": self._producer_id,
             "connection_id": flow.client_conn.id,
             "phase": Phase.CONNECT if egress.method == CONNECT else Phase.HTTP_REQUEST,
-            "subject_namespace": namespace,
-            "sandbox_uid": sandbox_uid,
             "source_pod_uid": authenticated_workload.pod_uid if authenticated_workload is not None else None,
         }
         match decision:

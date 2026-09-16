@@ -387,9 +387,9 @@ async def test_connection_management_preserves_federation_csrf_versions_and_hist
     assert review.calls == []
 
 
-def _bind_live_sandbox(policies: PolicyIndex, sandbox_uid: str) -> None:
-    """What the Action Service's informer would hold: a set and a binding pinning the Sandbox's UID,
-    plus a binding for another Sandbox of the same name that must not show."""
+def _bind_live_sandbox(policies: PolicyIndex) -> None:
+    """What the Action Service's informer would hold: a set and a binding naming the ServiceAccount
+    the sandbox runs as, plus one naming a like-named account elsewhere that must not show."""
     metadata = {"namespace": NAMESPACE, "uid": "test-uid", "generation": 1, "resourceVersion": "1"}
     policy_set = parse_policy_set(
         {
@@ -398,14 +398,14 @@ def _bind_live_sandbox(policies: PolicyIndex, sandbox_uid: str) -> None:
         }
     )
     policies.policy_sets[policy_set.namespaced_name] = policy_set
-    for name, uid, labels in (
-        ("live-launch", sandbox_uid, {MANAGED_BY_LABEL: MANAGED_BY_APP}),
-        ("live-previous", str(uuid4()), {}),
+    for name, namespace, labels in (
+        ("live-launch", NAMESPACE, {MANAGED_BY_LABEL: MANAGED_BY_APP}),
+        ("live-elsewhere", "agentplane-elsewhere", {}),
     ):
         binding = parse_binding(
             {
                 "metadata": {"name": name, "labels": labels, **metadata},
-                "spec": {"subject": {"sandbox": {"name": "live", "uid": uid}}, "policySets": ["test-reads", "gone"]},
+                "spec": {"subject": {"namespace": namespace, "name": "live"}, "policySets": ["test-reads", "gone"]},
             }
         )
         policies.bindings[binding.namespaced_name] = binding
@@ -440,15 +440,15 @@ async def _first_snapshot(client: httpx.AsyncClient, path: str, headers: dict[st
 
 
 @pytest.mark.parametrize("operator_connection", ["configured", "disabled"])
-async def test_the_sandbox_policy_frame_is_the_services_answer_for_its_uid_or_says_why_not(
+async def test_the_sandbox_policy_frame_is_the_services_answer_for_its_account_or_says_why_not(
     review: Review, custom_objects: FakeCustomObjectsApi, live_index: LiveIndex, operator_connection: str
 ) -> None:
-    """The live frame carries what the Action Service resolves for the Sandbox's UID through the
-    operator federation, with the app adding only who wrote each binding. Where the service cannot
+    """The live frame carries what the Action Service resolves for the ServiceAccount the sandbox
+    runs as, through the operator federation, with the app adding only who wrote each binding. Where the service cannot
     be asked, the frame says so in place of the policy rather than showing an empty one, and an
     agent watching the same stream is told why rather than shown an operator's answer."""
     custom_objects.objects[("sandboxes", "live")] = live_index.sandboxes["live"] = sandbox("live")
-    _bind_live_sandbox(review.policies, custom_objects.objects[("sandboxes", "live")]["metadata"]["uid"])
+    _bind_live_sandbox(review.policies)
     browser = review.browser
     await browser.get("/auth/login")
     session = {"Cookie": f"{INSECURE_COOKIE}={browser.cookies[INSECURE_COOKIE]}"}

@@ -24,6 +24,12 @@ Kubernetes API failures log only the fixed operation (`create_token_review` or
 The original API exception still propagates; a live Pod read returning 404 remains a Pod mismatch.
 These diagnostics distinguish the failed authentication hop, not the underlying outage's cause.
 
+`resolve_workload_with_pod` stops one step earlier, at the `WorkloadPrincipal` every caller has:
+the audience, the ServiceAccount, and the live Pod, without an ownership requirement. A destination
+that authorizes against the ServiceAccount a Pod runs as -- the egress proxy and the Action Service
+both do -- asks for that, so a workload this cluster does not own is an ordinary caller there. Only
+`llm_ingress`, which attributes model spend to a Sandbox, needs the owner.
+
 `SandboxPrincipalAuthenticator` is the small FastAPI dependency shared by first-party destination
 services. It accepts exactly one well-formed Bearer credential and returns 401 otherwise. The bearer
 is sent only to TokenReview: it is absent from the principal, exception text, and representations.

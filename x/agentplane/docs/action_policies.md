@@ -14,15 +14,15 @@ Two namespaced Kubernetes resources in `agentplane.allegedly.works/v1alpha1`
 (`cluster/k8s/agentplane-crds/`), watched by the Action Service, plus ordinary ServiceAccounts as
 the external-caller principal.
 
-| Kind                  | Spec                                                                                               |
-| --------------------- | -------------------------------------------------------------------------------------------------- |
-| `ActionPolicySet`     | `autoApproveIf`, `autoDenyIf`, `autoDenyUnless`: lists of typed policies                           |
-| `ActionPolicyBinding` | `subject` (`serviceAccount {namespace, name}` or `sandbox {name, uid}`), `policySets`, `expiresAt` |
+| Kind                  | Spec                                                                           |
+| --------------------- | ------------------------------------------------------------------------------ |
+| `ActionPolicySet`     | `autoApproveIf`, `autoDenyIf`, `autoDenyUnless`: lists of typed policies       |
+| `ActionPolicyBinding` | `subject` (`{namespace, name}` of a ServiceAccount), `policySets`, `expiresAt` |
 
-**An external caller is a Kubernetes ServiceAccount.** One principal then carries native
-permissions through ordinary RoleBindings and Action permissions through an `ActionPolicyBinding`,
-and Sandbox callers are already ServiceAccount-backed workload principals, so there is one identity
-vocabulary. The label `agentplane.allegedly.works/action-caller: "true"` makes a ServiceAccount
+**Every caller is a Kubernetes ServiceAccount.** One principal then carries native permissions
+through ordinary RoleBindings and Action permissions through an `ActionPolicyBinding`, and an
+in-cluster workload is the account its Pod runs as, so there is one identity vocabulary and one
+subject shape. The label `agentplane.allegedly.works/action-caller: "true"` makes a ServiceAccount
 eligible: MCP clients speak OAuth, so the app's consent UI lists the eligible ServiceAccounts and the
 operator picks one at consent. A missing or unlabeled ServiceAccount refuses resolution at admission
 and at the dispatch claim; removing the label or the object is the disable.
@@ -40,10 +40,10 @@ and a request matching nothing takes the human path. Only `autoApproveIf` decide
 
 **A binding joins one subject to sets, by reference only.** A subject may have many bindings; the
 effective policy is the union of the unexpired bindings' sets. `expiresAt` makes an expired binding
-equivalent to an absent one. Sandbox subjects pin the live UID, so a binding whose Sandbox is gone
-is inert. No caller-controlled field selects a binding: subjects resolve from the authenticated
-workload principal or the Connection's ServiceAccount, never from `origin`, `correlation`, a Thread
-ID, or a claimed type.
+equivalent to an absent one. A subject is every caller proving that account, so bind only an
+account dedicated to one workload. No caller-controlled field selects a binding: subjects resolve
+from the authenticated workload principal or the Connection's ServiceAccount, never from `origin`,
+`correlation`, a Thread ID, or a claimed type.
 
 ## Ownership
 
@@ -53,8 +53,9 @@ operator with `kubectl`); the split is per object, never per kind.
 - Policy sets and caller ServiceAccounts normally live in Git next to the environment's Action
   Service settings (`cluster/k8s/agentplane-staging/actions/`); one created at runtime is simply
   not Flux-owned.
-- The integration app writes one `ActionPolicyBinding` per Sandbox it launches, alongside the
-  `EgressBinding`, with an `ownerReference` to the Sandbox so both are garbage collected with it.
+- The integration app writes one `ActionPolicyBinding` per Sandbox it launches, naming the
+  ServiceAccount it gave that Sandbox to run as, alongside the `EgressBinding`, with an
+  `ownerReference` to the Sandbox so both are garbage collected with it.
   Which sets a preset selects is the app's knowledge, kept in its own labels and annotations; the
   Action Service reads `spec` only and never sees preset language.
 - Widening one Sandbox later is another binding for the same subject, written through the app or
@@ -91,7 +92,7 @@ metadata:
   ownerReferences:
     - { apiVersion: agents.x-k8s.io/v1beta1, kind: Sandbox, name: coder-7f3a, uid: 2c1d9e1a-… }
 spec:
-  subject: { sandbox: { name: coder-7f3a, uid: 2c1d9e1a-… } }
+  subject: { namespace: agentplane-staging, name: coder-7f3a }
   policySets: [github-reads]
 ---
 # The operator widens that one Sandbox for the afternoon.
@@ -102,12 +103,13 @@ metadata:
   namespace: agentplane-staging
   ownerReferences: [same owner]
 spec:
-  subject: { sandbox: { name: coder-7f3a, uid: 2c1d9e1a-… } }
+  subject: { namespace: agentplane-staging, name: coder-7f3a }
   policySets: [ducktape-push]
   expiresAt: "2026-09-12T20:00:00Z"
 ```
 
-A `search_code` auto-approves for the Sandbox and for a Connection acting as `claude-ai` alike;
+A `search_code` auto-approves for the sandbox's account and for a Connection acting as `claude-ai`
+alike;
 removing that action from `github-reads` makes the next one wait for the operator for both, with no
 binding edited; at 20:01 the push grant is gone and the Decisions it produced still name the
 binding revision they used.

@@ -1,6 +1,7 @@
 # Egress policy composition
 
-How `EgressPolicy`, `EgressBinding` and Sandboxes compose into one decision: the arity between
+How `EgressPolicy`, `EgressBinding` and the ServiceAccounts workloads run as compose into one
+decision: the arity between
 them, what that makes reusable, and what follows from a rule language with no way to express
 exclusion. The proxy that enforces the result is <../egress/SPEC.md>; the kinds are
 <../../../cluster/k8s/agentplane-crds/crd-egresspolicies.yaml> and
@@ -18,16 +19,18 @@ exclusion. The proxy that enforces the result is <../egress/SPEC.md>; the kinds 
 - **`EgressBinding.spec.policies`** is an array of policy names, `minItems: 1` and no upper bound,
   in precedence order. A binding may name many policies and a policy may be named by many
   bindings: n:m.
-- **`EgressBinding.spec.subjects`** is an array, `minItems: 1`, each item naming exactly one
-  Sandbox. A binding may name many sandboxes and a sandbox may be named by many bindings: n:m.
+- **`EgressBinding.spec.subjects`** is an array, `minItems: 1`, each item naming one ServiceAccount
+  by namespace and name. A binding may name many accounts and an account may be named by many
+  bindings: n:m. Every Pod running as an account is that subject, so the app gives each sandbox an
+  account of its own.
 
 A policy on its own grants nothing; a binding grants by existing and being unexpired.
 
 ### The app writes only 1×N
 
 `EgressInventory.grant()` (<../app/egress.py>) hardcodes a single subject: it writes one `subjects`
-entry and hangs an `ownerReference` on that one Sandbox so deleting the sandbox garbage-collects
-the grant. Every binding created at runtime is therefore one subject by N policies, and the
+entry, the account that Sandbox runs as, and hangs an `ownerReference` on the Sandbox so deleting
+the sandbox garbage-collects the grant. Every binding created at runtime is therefore one subject by N policies, and the
 schema's multi-subject side is reachable only by a hand-written or Flux-applied binding.
 Multi-subject is a seed-time shape, and nothing in the runtime path produces or exercises one.
 

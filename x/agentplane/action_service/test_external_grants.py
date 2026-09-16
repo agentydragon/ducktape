@@ -149,8 +149,6 @@ async def test_admission_fails_closed_on_missing_disabled_revoked_or_mismatched_
                 envelope, grant.principal(), external_grant=grant.provenance().model_copy(update=changes)
             )
     with pytest.raises(ExternalGrantNotAuthorizedError):
-        await store.submit(envelope, grant.principal())
-    with pytest.raises(ExternalGrantNotAuthorizedError):
         await store.submit(envelope, OPERATOR, external_grant=grant.provenance())
     for checker in [None, ConnectionAuthority(make_sessionmaker(engine), eligible_callers(OTHER))]:
         with pytest.raises(ExternalGrantNotAuthorizedError):
@@ -346,7 +344,7 @@ async def test_bound_service_account_is_auto_approved_by_its_binding_only(
                 "generation": 1,
                 "resourceVersion": "2",
             },
-            "spec": {"subject": {"serviceAccount": PERSONAL.model_dump()}, "policySets": ["echo"]},
+            "spec": {"subject": PERSONAL.model_dump(), "policySets": ["echo"]},
         }
     )
     index.bindings[binding.namespaced_name] = binding

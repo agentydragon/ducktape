@@ -32,18 +32,19 @@ from x.agentplane.action_service.models import (
     PrincipalRole,
     ProviderOutcome,
     ProviderVerdict,
-    SandboxCaller,
     Verdict,
+    service_account_principal,
 )
 from x.agentplane.action_service.policies.resources import parse_binding, parse_policy_set
 from x.agentplane.action_service.policy_evaluation import AUTO_APPROVE_REASON, PROVIDER_NAME, PolicySetDecisionProvider
 from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.providers import DecisionContext
 from x.agentplane.action_service.service import ActionService, InvalidActionArgumentsError
+from x.agentplane.subjects import ServiceAccountRef
 
 NAMESPACE = "agentplane-test"
-SANDBOX = SandboxCaller(namespace=NAMESPACE, sandbox_uid="sandbox-a-uid")
-CALLER = SANDBOX.principal()
+SUBJECT = ServiceAccountRef(namespace=NAMESPACE, name="workload-a")
+CALLER = service_account_principal(SUBJECT)
 OPERATOR = Principal(issuer="test-bff", subject="operator", role=PrincipalRole.OPERATOR)
 NOW = datetime(2026, 9, 12, 12, 0, tzinfo=UTC)
 ECHO = ActionIdentity(group="agentplane", name="echo")
@@ -307,7 +308,7 @@ async def test_decision_context_carries_only_the_authenticated_caller(
         )
         await service.submit(forged, CALLER)
         (context,) = provider.contexts
-        assert context.caller == SANDBOX
+        assert context.caller == SUBJECT
         assert context.bindings == ()
     finally:
         await service.close()
@@ -377,7 +378,7 @@ BOUNDED_ECHO: dict[str, Any] = {
         }
     ]
 }
-OWN_SANDBOX: dict[str, Any] = {"sandbox": {"name": "coder", "uid": SANDBOX.sandbox_uid}}
+OWN_SUBJECT: dict[str, Any] = SUBJECT.model_dump()
 
 
 def _service(
@@ -397,7 +398,7 @@ def _service(
     )
 
 
-async def test_bound_sandbox_is_auto_approved_with_evidence_and_an_execution(
+async def test_bound_subject_is_auto_approved_with_evidence_and_an_execution(
     mcp_executor: McpActionGroupExecutor,
     engine: AsyncEngine,
     echo_catalog: ActionCatalog,
@@ -406,8 +407,8 @@ async def test_bound_sandbox_is_auto_approved_with_evidence_and_an_execution(
     index = _index(
         sets={"bounded-echo": BOUNDED_ECHO, "unused": {"autoApproveIf": []}},
         bindings={
-            "coder-bounded": {"subject": OWN_SANDBOX, "policySets": ["bounded-echo", "missing"]},
-            "coder-unused": {"subject": OWN_SANDBOX, "policySets": ["unused"]},
+            "coder-bounded": {"subject": OWN_SUBJECT, "policySets": ["bounded-echo", "missing"]},
+            "coder-unused": {"subject": OWN_SUBJECT, "policySets": ["unused"]},
         },
     )
     service = _service(engine, echo_catalog, mcp_executor, index, github_visibility())
@@ -459,7 +460,7 @@ async def test_bound_sandbox_is_auto_approved_with_evidence_and_an_execution(
         pytest.param(
             lambda: _index(
                 sets={"bounded-echo": BOUNDED_ECHO},
-                bindings={"coder": {"subject": OWN_SANDBOX, "policySets": ["bounded-echo"]}},
+                bindings={"coder": {"subject": OWN_SUBJECT, "policySets": ["bounded-echo"]}},
                 synced=False,
             ),
             id="unsynced",
@@ -468,14 +469,14 @@ async def test_bound_sandbox_is_auto_approved_with_evidence_and_an_execution(
         pytest.param(
             lambda: _index(
                 sets={"bounded-echo": BOUNDED_ECHO},
-                bindings={"coder": {"subject": OWN_SANDBOX, "policySets": ["other"]}},
+                bindings={"coder": {"subject": OWN_SUBJECT, "policySets": ["other"]}},
             ),
             id="missing-set",
         ),
         pytest.param(
             lambda: _index(
                 sets={"broken": {"autoApproveIf": [{"type": "anything"}]}},
-                bindings={"coder": {"subject": OWN_SANDBOX, "policySets": ["broken"]}},
+                bindings={"coder": {"subject": OWN_SUBJECT, "policySets": ["broken"]}},
             ),
             id="invalid-set",
         ),
@@ -484,7 +485,8 @@ async def test_bound_sandbox_is_auto_approved_with_evidence_and_an_execution(
                 sets={"bounded-echo": BOUNDED_ECHO},
                 bindings={
                     "coder": {
-                        "subject": {"sandbox": {"name": "coder", "uid": "coder-uid"}},
+                        # A subject is a namespace and a name together; half of one parses as neither.
+                        "subject": {"name": "coder"},
                         "policySets": ["bounded-echo"],
                     }
                 },
@@ -496,7 +498,7 @@ async def test_bound_sandbox_is_auto_approved_with_evidence_and_an_execution(
                 sets={"bounded-echo": BOUNDED_ECHO},
                 bindings={
                     "coder": {
-                        "subject": OWN_SANDBOX,
+                        "subject": OWN_SUBJECT,
                         "policySets": ["bounded-echo"],
                         "expiresAt": (NOW - timedelta(minutes=1)).isoformat(),
                     }
@@ -508,30 +510,27 @@ async def test_bound_sandbox_is_auto_approved_with_evidence_and_an_execution(
             lambda: _index(
                 sets={"bounded-echo": BOUNDED_ECHO},
                 bindings={
-                    "other": {
-                        "subject": {"sandbox": {"name": "coder", "uid": "other-sandbox-uid"}},
-                        "policySets": ["bounded-echo"],
-                    }
+                    "other": {"subject": {"namespace": NAMESPACE, "name": "workload-b"}, "policySets": ["bounded-echo"]}
                 },
             ),
-            id="another-sandbox",
+            id="another-account",
         ),
         pytest.param(
             lambda: _index(
                 sets={"bounded-echo": BOUNDED_ECHO},
                 bindings={
                     "account": {
-                        "subject": {"serviceAccount": {"namespace": NAMESPACE, "name": "sandbox-a-uid"}},
+                        "subject": {"namespace": "agentplane-elsewhere", "name": SUBJECT.name},
                         "policySets": ["bounded-echo"],
                     }
                 },
             ),
-            id="service-account-not-sandbox",
+            id="same-name-other-namespace",
         ),
         pytest.param(
             lambda: _index(
                 sets={"deny-only": {"autoDenyIf": BOUNDED_ECHO["autoApproveIf"], "autoDenyUnless": []}},
-                bindings={"coder": {"subject": OWN_SANDBOX, "policySets": ["deny-only"]}},
+                bindings={"coder": {"subject": OWN_SUBJECT, "policySets": ["deny-only"]}},
             ),
             id="deny-lists-decide-nothing-yet",
         ),
@@ -552,7 +551,7 @@ async def test_nothing_grants_without_a_matching_valid_unexpired_binding(
                 title="test title for unbound",
                 action=ECHO,
                 arguments={"n": 1},
-                origin={"binding": "coder", "sandbox_uid": SANDBOX.sandbox_uid, "policy_set": "bounded-echo"},
+                origin={"binding": "coder", "caller": SUBJECT.name, "policy_set": "bounded-echo"},
             ),
             CALLER,
         )
@@ -571,7 +570,7 @@ async def test_binding_change_after_admission_leaves_the_decision_alone(
 ) -> None:
     index = _index(
         sets={"bounded-echo": BOUNDED_ECHO},
-        bindings={"coder": {"subject": OWN_SANDBOX, "policySets": ["bounded-echo"]}},
+        bindings={"coder": {"subject": OWN_SUBJECT, "policySets": ["bounded-echo"]}},
     )
     service = _service(engine, echo_catalog, mcp_executor, index, github_visibility())
     try:

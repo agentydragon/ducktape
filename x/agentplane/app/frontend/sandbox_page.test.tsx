@@ -25,6 +25,7 @@ const live = vi.hoisted(
           state: "running",
           created_at: "2026-01-01T00:00:00Z",
           operating_mode: "Running",
+          service_account: { namespace: "agentplane-test", name: "startup-test" },
           conditions: [],
         },
         threads: [] as ThreadView[],

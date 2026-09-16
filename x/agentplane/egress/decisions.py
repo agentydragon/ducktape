@@ -9,7 +9,7 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, ConfigDict, Field
 
 from x.agentplane.egress.policy import DenyReason
-from x.agentplane.subjects import SubjectView
+from x.agentplane.subjects import ServiceAccountRef
 
 
 class Outcome(StrEnum):
@@ -29,16 +29,12 @@ class DecisionRecord(BaseModel):
 
     event_id: UUID = Field(default_factory=uuid4)
     producer_id: UUID
-    subject_namespace: str | None = None
-    sandbox_uid: str | None = Field(
-        default=None, description="The Sandbox instance the token proved; a ServiceAccount subject has none."
-    )
     source_pod_uid: str | None = None
     connection_id: str
     phase: Phase
     at: datetime
-    subject: SubjectView | None = Field(
-        description="Who the token proved, kind and name together; absent on a refusal that never authenticated."
+    subject: ServiceAccountRef | None = Field(
+        description="The ServiceAccount the token proved; absent on a refusal that never authenticated."
     )
     method: str
     host: str

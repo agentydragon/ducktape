@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any, cast
-from uuid import UUID
 
 import httpx
 import pytest
@@ -28,9 +27,10 @@ from x.agentplane.app.action_policy import (
     UnknownPolicySetError,
 )
 from x.agentplane.app.egress import FLUX_KUSTOMIZATION_LABEL
-from x.agentplane.app.testing.kubernetes import NAMESPACE, FakeCustomObjectsApi, action_policy_set
+from x.agentplane.app.inventory import sandbox_view
+from x.agentplane.app.testing.kubernetes import NAMESPACE, FakeCustomObjectsApi, action_policy_set, sandbox
 
-LIVE_UID = UUID("11111111-0000-4000-8000-000000000001")
+LIVE = sandbox_view(sandbox("live"), None)
 READS = {"type": "exact_actions", "actions": {"github": ["search_code", "get_file_contents"]}}
 
 
@@ -59,7 +59,7 @@ async def test_bind_creates_a_labelled_binding_the_sandbox_owns(
     _seed(custom_objects)
     before = set(custom_objects.objects)
 
-    await inventory.bind(sandbox="live", sandbox_uid=LIVE_UID, policy_sets=["reads", "issues"])
+    await inventory.bind(LIVE, ["reads", "issues"])
 
     ((kind, name),) = set(custom_objects.objects) - before
     assert (kind, name.startswith("live-")) == ("actionpolicybindings", True)
@@ -70,14 +70,11 @@ async def test_bind_creates_a_labelled_binding_the_sandbox_owns(
         "apiVersion": "agents.x-k8s.io/v1beta1",
         "kind": "Sandbox",
         "name": "live",
-        "uid": str(LIVE_UID),
+        "uid": str(LIVE.uid),
         "controller": False,
         "blockOwnerDeletion": False,
     }
-    assert created["spec"] == {
-        "subject": {"sandbox": {"name": "live", "uid": str(LIVE_UID)}},
-        "policySets": ["reads", "issues"],
-    }
+    assert created["spec"] == {"subject": {"namespace": NAMESPACE, "name": "live"}, "policySets": ["reads", "issues"]}
 
 
 async def test_a_binding_naming_a_set_the_namespace_lacks_writes_nothing(
@@ -89,7 +86,7 @@ async def test_a_binding_naming_a_set_the_namespace_lacks_writes_nothing(
     before = set(custom_objects.objects)
 
     with pytest.raises(UnknownPolicySetError) as refused:
-        await inventory.bind(sandbox="live", sandbox_uid=LIVE_UID, policy_sets=["reads", "vanished"])
+        await inventory.bind(LIVE, ["reads", "vanished"])
 
     assert refused.value.names == ["vanished"]
     assert set(custom_objects.objects) == before
@@ -138,11 +135,11 @@ ANSWER = SubjectActionPolicyView(
 )
 
 
-async def test_for_sandbox_asks_the_service_for_the_uid_and_adds_only_who_wrote_each_binding(
+async def test_for_subject_asks_the_service_and_adds_only_who_wrote_each_binding(
     inventory: ActionPolicyInventory,
 ) -> None:
-    """The route and the live frame both go through here: the service's answer for the Sandbox's
-    UID in the sandbox namespace, with labels read into provenance and nothing else re-derived."""
+    """The live frame goes through here: the service's answer for the ServiceAccount the sandbox
+    runs as, with labels read into provenance and nothing else re-derived."""
     asked: list[str] = []
 
     def service(request: httpx.Request) -> httpx.Response:
@@ -154,9 +151,9 @@ async def test_for_sandbox_asks_the_service_for_the_uid_and_adds_only_who_wrote_
         CredentialPlaceholder("test-operator-token"),
     )
 
-    view = await inventory.for_sandbox(client, LIVE_UID)
+    view = await inventory.for_subject(client, LIVE.service_account)
 
-    assert asked == [f"/v1/operator/action-policy/sandboxes/{NAMESPACE}/{LIVE_UID}"]
+    assert asked == [f"/v1/operator/action-policy/service-accounts/{NAMESPACE}/live"]
     assert [(b.name, b.provenance) for b in view.bindings] == [
         ("live-afternoon", BindingProvenance.OPERATOR),
         ("live-k2m9x", BindingProvenance.APP),

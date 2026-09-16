@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 import pytest_bazel
 
 from x.agentplane.egress.agent_view import CredentialView, TargetView, agent_view
-from x.agentplane.egress.policy import Index, SandboxCaller, ServiceAccountCaller
+from x.agentplane.egress.policy import Index
 from x.agentplane.egress.resources import (
     BasicPasswordTarget,
     BindingSpec,
@@ -20,27 +20,18 @@ from x.agentplane.egress.resources import (
     ObjectMeta,
     PolicySpec,
     Rule,
-    Sandbox,
     SchemeTokenTarget,
     Secret,
     SecretKeyRef,
     TargetMethod,
 )
-from x.agentplane.subjects import (
-    SandboxRef,
-    SandboxSubject,
-    ServiceAccountRef,
-    ServiceAccountSubject,
-    SubjectKind,
-    SubjectView,
-)
+from x.agentplane.subjects import ServiceAccountRef
 
 NOW = datetime(2026, 9, 4, 12, 0, tzinfo=UTC)
 SECRET_VALUE = "the-real-credential"
 DESCRIPTION = "a token for the bot account, which can write to its own repositories"
-SANDBOX = Sandbox(metadata=ObjectMeta(name="sb", uid="sb-uid"))
 NAMESPACE = "agentplane-test"
-CALLER = SandboxCaller(SANDBOX)
+CALLER = ServiceAccountRef(namespace=NAMESPACE, name="sb")
 CREDENTIAL = EgressCredential(
     metadata=ObjectMeta(name="github-pat", generation=1),
     spec=CredentialSpec(
@@ -69,16 +60,13 @@ def _index(*, expires_at: datetime | None = None, policies: list[str] | None = N
     bound = EgressBinding(
         metadata=ObjectMeta(name="b", generation=1),
         spec=BindingSpec(
-            subjects=[SandboxSubject(sandbox=SandboxRef(name="sb", uid=SANDBOX.metadata.uid))],
-            policies=policies if policies is not None else ["github"],
-            expires_at=expires_at,
+            subjects=[CALLER], policies=policies if policies is not None else ["github"], expires_at=expires_at
         ),
     )
     return Index(
         policies={"github": policy},
         bindings={"b": bound},
         credentials={CREDENTIAL.metadata.name: CREDENTIAL},
-        sandboxes={"sb": SANDBOX},
         secrets={"vault-entry": Secret(name="vault-entry", data={"credential-key": SECRET_VALUE})},
     )
 
@@ -147,32 +135,25 @@ def test_a_binding_whose_every_policy_is_missing_grants_nothing() -> None:
     assert view.policies == []
 
 
-def test_a_sandbox_no_binding_names_sees_an_empty_view_rather_than_an_error() -> None:
+def test_a_subject_no_binding_names_sees_an_empty_view_rather_than_an_error() -> None:
     """No egress is a normal state, not a failure: the answer is an empty list."""
-    other = Sandbox(metadata=ObjectMeta(name="other", uid="other-uid"))
+    other = ServiceAccountRef(namespace=NAMESPACE, name="other")
 
-    view = agent_view(_index(), SandboxCaller(other), NOW)
+    view = agent_view(_index(), other, NOW)
 
-    assert view.subject == SubjectView(kind=SubjectKind.SANDBOX, name="other")
+    assert view.subject == other
     assert view.policies == []
 
 
-def test_a_service_account_reads_the_policies_bound_to_it_and_not_a_sandbox_of_the_same_name() -> None:
-    """The two kinds share a namespace of names, so a view keyed on the name alone would hand a
-    ServiceAccount whatever a like-named Sandbox was granted."""
-    index = _index()
-    index.bindings["sa"] = EgressBinding(
-        metadata=ObjectMeta(name="sa", generation=1),
-        spec=BindingSpec(
-            subjects=[ServiceAccountSubject(service_account=ServiceAccountRef(namespace=NAMESPACE, name="sb"))],
-            policies=["github"],
-        ),
-    )
+def test_the_same_name_in_another_namespace_is_a_different_subject() -> None:
+    """A subject is a namespace and a name together, so a binding cannot reach across namespaces
+    to a ServiceAccount that merely shares its name."""
+    elsewhere = ServiceAccountRef(namespace="somewhere-else", name=CALLER.name)
 
-    view = agent_view(index, ServiceAccountCaller(NAMESPACE, "sb"), NOW)
+    view = agent_view(_index(), elsewhere, NOW)
 
-    assert view.subject == SubjectView(kind=SubjectKind.SERVICE_ACCOUNT, name="sb")
-    assert [policy.name for policy in view.policies] == ["github"], "its own binding, once, not the Sandbox's too"
+    assert view.subject == elsewhere
+    assert view.policies == []
 
 
 if __name__ == "__main__":

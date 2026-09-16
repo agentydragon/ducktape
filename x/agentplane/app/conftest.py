@@ -127,7 +127,7 @@ def reviewer(authentication: FakeAuthenticationV1Api) -> TokenReviewer:
 @pytest.fixture
 def live_index() -> LiveIndex:
     """An index nothing is watching: the fixtures that need one drive it themselves."""
-    return LiveIndex(stale_after_seconds=90)
+    return LiveIndex(stale_after_seconds=90, namespace=NAMESPACE)
 
 
 @pytest.fixture

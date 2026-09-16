@@ -11,17 +11,17 @@ bbr test //x/agentplane/egress/...
 
 ## Layout
 
-- `resources.py`: the boundary models of the three kinds, Sandboxes, and Secrets as read off the
-  API server; the derivation of a credential's placeholder from its name.
+- `resources.py`: the boundary models of the three kinds and of Secrets as read off the API
+  server; the derivation of a credential's placeholder from its name.
 - `presentation.py`: one parse per declared target, shared by detection and substitution — where a
   credential's placeholder sits in a request, and how to put the real value there.
 - `policy.py`: the pure decision over an in-memory `Index` — subject bindings, the matching rule
   the request's placeholder directs it to, substitution, binding resolution. No I/O.
-- `identity.py`: the shared `sandbox_auth` TokenReview/live-owner resolver plus the egress-only
+- `identity.py`: the shared `sandbox_auth` TokenReview/live-Pod resolver plus the egress-only
   source-Pod address check and expiry-bounded verdict cache.
 - `upstream.py`: the admitted host resolved by the proxy, refused when it points anywhere not
   globally reachable, and pinned so the dial goes to the address checked.
-- `informer.py`: read-only list-and-watch of the five kinds into each replica’s `Index`.
+- `informer.py`: read-only list-and-watch of the four kinds into each replica’s `Index`.
 - `rules_api.py`: the agent-facing
   `agentplane-egress.agentplane-staging.svc.cluster.local/v1/rules` API and the narrow
   independently authenticated FastAPI listener and shared `RulesProjection`; `addon.py` is the
@@ -110,7 +110,7 @@ spec:
 
 The sidecar still presents the existing configured workload audience (`agentplane-egress` in the
 current deployment). Central strips `Proxy-Authorization`, validates and binds its bearer to the
-live Sandbox, and substitutes it only when the selected rule names this credential and the request
+authenticated caller, and substitutes it only when the selected rule names this credential and the request
 presents exactly `Authorization: Bearer agentplane-credential-agentplane-workload`. Missing, stale,
 or mismatched authenticated context fails closed. Audience migration is a separate deployment
 change, not part of this source.
@@ -138,12 +138,12 @@ context; no rules-specific proxy dispatch or credential injection mode is involv
 Service port `80` targets the separate HTTP API listener on `8082`; port `8888` remains the forward
 proxy. Central resolves and dials the API like any other cluster-internal policy destination.
 The FastAPI endpoint independently validates ordinary `Authorization` through
-`SandboxPrincipalAuthenticator` (TokenReview and live Pod/Sandbox resolution). The API sees central's
-source address, not the Sandbox Pod address; proxy-hop identity and caller metadata are not API
+`WorkloadPrincipalAuthenticator` (TokenReview and live Pod resolution). The API sees central's
+source address, not the caller's Pod address; proxy-hop identity and caller metadata are not API
 identity authorities. Missing or forged destination auth fails closed.
 
 The API shares the central process's current enforcement `Index` through `RulesProjection`, which
-checks the authenticated Sandbox UID and returns only the redacted field allowlist. Operator
+projects the subject the bearer proved and returns only the redacted field allowlist. Operator
 `/decisions` and `/healthz` remain on the separate admin listener, not the rules API. Network policy
 admits the agent API from central egress only. Service target-port separation prevents recursion.
 The Service may select a different replica from the one that admitted the request. The answer is
@@ -151,8 +151,8 @@ an informational snapshot of the answering replica, not a global acknowledgement
 
 ## ServiceAccount permissions
 
-In the sandbox namespace: `get`, `list`, `watch` on `egresspolicies`, `egressbindings`,
-`egresscredentials`, `sandboxes.agents.x-k8s.io` and `pods`. In the
+In the sandbox namespace: `get`, `list`, `watch` on `egresspolicies`, `egressbindings` and
+`egresscredentials`, and `get` on `pods` — one at a time, by the name a TokenReview named. In the
 credentials namespace (`--credentials-namespace`, `agentplane-egress-credentials` by default):
 `get`, `list`, `watch` on `secrets`, and nothing in the sandbox namespace. Cluster-wide: `create`
 on `tokenreviews.authentication.k8s.io`. There are no Kubernetes status writes or leader election.
@@ -204,7 +204,7 @@ initially synced and have cycle timestamps no older than three configured resync
 (default 900 seconds). Negative clock ages also fail closed. DB health does not participate.
 `/livez` only proves the admin event loop answers; a recoverable watch outage does not cause a
 restart loop. Every request on an existing TLS/HTTP2 connection is gated again. After DNS I/O,
-a changed policy decision or Sandbox snapshot denies that admission without forwarding or replay.
+a changed policy decision denies that admission without forwarding or replay.
 Revocation is eventually observed independently by each watch, not globally linearizable.
 
 SIGTERM/SIGINT closes admission immediately and uses mitmproxy `Proxyserver.servers.update([])`

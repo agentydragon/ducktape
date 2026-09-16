@@ -43,37 +43,19 @@ spec:
               required: [subject, policySets]
               properties:
                 subject:
-                  description: Exactly one caller; the Action Service matches it to authenticated callers only.
+                  description: >-
+                    The ServiceAccount this binding grants to: what the caller's Pod runs as, or
+                    what an external OAuth Connection acts as. Every caller proving that account is
+                    this subject, so bind only an account dedicated to one.
                   type: object
-                  minProperties: 1
-                  maxProperties: 1
+                  required: [namespace, name]
                   properties:
-                    serviceAccount:
-                      description: >-
-                        A ServiceAccount carrying the `agentplane.allegedly.works/action-caller`
-                        label, as an external OAuth Connection acts as it.
-                      type: object
-                      required: [namespace, name]
-                      properties:
-                        namespace:
-                          type: string
-                          minLength: 1
-                        name:
-                          type: string
-                          minLength: 1
-                    sandbox:
-                      description: >-
-                        One live Sandbox in the binding's namespace; the UID pins it, so a
-                        binding whose Sandbox is gone is inert.
-                      type: object
-                      required: [name, uid]
-                      properties:
-                        name:
-                          type: string
-                          minLength: 1
-                        uid:
-                          type: string
-                          minLength: 1
+                    namespace:
+                      type: string
+                      minLength: 1
+                    name:
+                      type: string
+                      minLength: 1
                 policySets:
                   description: ActionPolicySet names in the binding's namespace.
                   type: array

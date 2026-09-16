@@ -65,7 +65,6 @@ from x.agentplane.action_service.models import (
     DecisionInput,
     Principal,
     PrincipalRole,
-    SandboxCaller,
 )
 from x.agentplane.action_service.oauth import ActionsOAuthProxy
 from x.agentplane.action_service.policy_view import CallerActionPolicyView, SubjectActionPolicyView
@@ -374,18 +373,6 @@ def create_app(
     ) -> ActionRequestView:
         return await action_service.get(request_id, principal)
 
-    @app.get("/v1/operator/action-policy/sandboxes/{namespace}/{sandbox_uid}", response_model=SubjectActionPolicyView)
-    async def operator_sandbox_action_policy(
-        namespace: str,
-        sandbox_uid: str,
-        principal: Annotated[Principal, Depends(_operator)],
-        action_service: Annotated[ActionService, Depends(_service)],
-    ) -> SubjectActionPolicyView:
-        """A Sandbox's effective policy as the operator sees it: each binding with its labels and Ready
-        verdict, each named set as present, refused or missing, and the resolved entries."""
-        del principal
-        return action_service.subject_action_policy(SandboxCaller(namespace=namespace, sandbox_uid=sandbox_uid))
-
     @app.get("/v1/operator/action-policy/service-accounts/{namespace}/{name}", response_model=SubjectActionPolicyView)
     async def operator_service_account_action_policy(
         namespace: str,
@@ -393,7 +380,8 @@ def create_app(
         principal: Annotated[Principal, Depends(_operator)],
         action_service: Annotated[ActionService, Depends(_service)],
     ) -> SubjectActionPolicyView:
-        """A ServiceAccount caller's effective policy, in the same shape as the Sandbox read."""
+        """A subject's effective policy as the operator sees it: each binding with its labels and
+        Ready verdict, each named set as present, refused or missing, and the resolved entries."""
         del principal
         return action_service.subject_action_policy(ServiceAccountRef(namespace=namespace, name=name))
 

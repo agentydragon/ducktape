@@ -39,7 +39,7 @@ def openapi_document() -> dict[str, Any]:
         {harness: ["schema-model"] for harness in Harness},
         EgressInventory(namespace="schema", custom_objects=cast(Any, None)),
         DecisionsClient(httpx.AsyncClient(base_url="http://schema.invalid")),
-        LiveIndex(stale_after_seconds=900),
+        LiveIndex(stale_after_seconds=900, namespace="agentplane-schema"),
         ActionPolicyInventory(namespace="schema", custom_objects=cast(Any, None)),
     ).openapi()
     return document

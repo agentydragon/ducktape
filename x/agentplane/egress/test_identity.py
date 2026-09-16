@@ -1,4 +1,4 @@
-"""The identity path against the fake API server: TokenReview, live Pod, Sandbox owner, cache."""
+"""The identity path against the fake API server: TokenReview, live Pod, ServiceAccount, cache."""
 
 from __future__ import annotations
 
@@ -19,16 +19,11 @@ from x.agentplane.egress.conftest import (
     POD_B_UID,
     SANDBOX_A,
     SANDBOX_B,
+    SUBJECT_A,
     TOKEN_A,
     TOKEN_B,
 )
-from x.agentplane.egress.identity import (
-    IdentityRejectedError,
-    PodIdentityVerifier,
-    SandboxPodIdentity,
-    ServiceAccountPodIdentity,
-    token_expiry,
-)
+from x.agentplane.egress.identity import IdentityRejectedError, PodIdentity, PodIdentityVerifier, token_expiry
 from x.agentplane.egress.policy import DenyReason
 from x.agentplane.egress.testing.fake_apiserver import SANDBOX_NAMESPACE, FakeApiServer, TokenVerdict, pod_for
 
@@ -49,17 +44,16 @@ def jwt_with_expiry(expiry: float) -> str:
     return f"eyJhbGciOiJSUzI1NiJ9.{payload}.signature"
 
 
-async def test_good_token_from_its_pod(fake: FakeApiServer, verifier: PodIdentityVerifier) -> None:
+async def test_good_token_from_its_pod(verifier: PodIdentityVerifier) -> None:
     identity = await verifier.identify(TOKEN_A, POD_A_IP)
-    sandbox_uid = fake.objects["sandboxes"][SANDBOX_A]["metadata"]["uid"]
-    assert identity == SandboxPodIdentity(
+    assert identity == PodIdentity(
         namespace=SANDBOX_NAMESPACE,
         pod_name=SANDBOX_A,
         pod_uid=POD_A_UID,
         pod_ip=POD_A_IP,
-        sandbox_name=SANDBOX_A,
-        sandbox_uid=sandbox_uid,
+        service_account_name=SANDBOX_A,
     )
+    assert identity.subject == SUBJECT_A
 
 
 async def test_verdict_cached_but_source_checked_every_time(fake: FakeApiServer, verifier: PodIdentityVerifier) -> None:
@@ -136,18 +130,17 @@ async def test_gone_pod(fake: FakeApiServer, verifier: PodIdentityVerifier) -> N
     assert rejected.value.reason is DenyReason.POD_MISMATCH
 
 
-async def test_pod_without_sandbox_owner_is_its_service_account(
+async def test_pod_no_sandbox_owns_is_still_its_service_account(
     fake: FakeApiServer, verifier: PodIdentityVerifier
 ) -> None:
-    """A Pod no Sandbox controls authenticates as the ServiceAccount it runs as, rather than being
-    refused: a Deployment can be an egress subject, and whether it may reach anything is decided by
-    whether a binding names that ServiceAccount, not by this step."""
+    """Nothing here reads the Pod's owner: a Deployment's Pod authenticates exactly as a sandbox's
+    does, and whether it may reach anything is decided by whether a binding names that account."""
     fake.pods[SANDBOX_B]["metadata"]["ownerReferences"] = []
     fake.tokens[TOKEN_B] = replace(
         fake.tokens[TOKEN_B], username=f"system:serviceaccount:{SANDBOX_NAMESPACE}:public-coder"
     )
     identity = await verifier.identify(TOKEN_B, POD_B_IP)
-    assert identity == ServiceAccountPodIdentity(
+    assert identity == PodIdentity(
         namespace=SANDBOX_NAMESPACE,
         pod_name=SANDBOX_B,
         pod_uid=POD_B_UID,
