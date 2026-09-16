@@ -5,7 +5,6 @@ that its `KustomizationSpecSourceRefKind` enum accepts the "ExternalArtifact" va
 cluster/flux_constructs.py currently emits as a plain string.
 """
 
-import tempfile
 from pathlib import Path
 
 import pytest_bazel
@@ -18,25 +17,24 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 )
 
 
-def test_kustomization_synthesizes_with_external_artifact_source() -> None:
-    with tempfile.TemporaryDirectory() as tmpdir:
-        app = App(outdir=tmpdir)
-        chart = Chart(app, "test", disable_resource_name_hashes=True)
-        Kustomization(
-            chart,
-            "kustomization",
-            spec=KustomizationSpec(
-                source_ref=KustomizationSpecSourceRef(
-                    kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name="litellm"
-                ),
-                path="./cluster/k8s/litellm/app",
-                interval="10m",
-                prune=True,
+def test_kustomization_synthesizes_with_external_artifact_source(tmp_path: Path) -> None:
+    app = App(outdir=str(tmp_path))
+    chart = Chart(app, "test", disable_resource_name_hashes=True)
+    Kustomization(
+        chart,
+        "kustomization",
+        spec=KustomizationSpec(
+            source_ref=KustomizationSpecSourceRef(
+                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name="litellm"
             ),
-        )
-        app.synth()
-        (manifest_path,) = Path(tmpdir).glob("*.k8s.yaml")
-        manifest = manifest_path.read_text()
+            path="./cluster/k8s/litellm/app",
+            interval="10m",
+            prune=True,
+        ),
+    )
+    app.synth()
+    (manifest_path,) = tmp_path.glob("*.k8s.yaml")
+    manifest = manifest_path.read_text()
 
     assert "kind: Kustomization" in manifest
     assert "sourceRef" in manifest
