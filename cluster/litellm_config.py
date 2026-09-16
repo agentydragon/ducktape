@@ -1,0 +1,366 @@
+"""Build the LiteLLM configuration payloads from the shared model rosters."""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass
+
+from cluster.k8s.litellm.app.model_rosters import (
+    ANTHROPIC_MODELS,
+    ASTRA_CONTEXT_WINDOW,
+    ASTRA_MAX_TOKENS,
+    CLIPROXY_MODELS,
+    CODEX_CONTEXT_WINDOW,
+    CODEX_MAX_TOKENS,
+    CODEX_MEASURED_MODELS,
+    GEMINI_EMBEDDING_MODELS,
+    GEMINI_MODELS,
+    MISTRAL_MODELS,
+    TANA_MODELS,
+    ApiShape,
+    Provider,
+    exposed_name,
+)
+
+_OLLAMA_BASE = "http://ollama.ollama.svc.cluster.local:11434"
+_CLIPROXY_BASE = "http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317"
+
+
+@dataclass(frozen=True)
+class ConfigMapSpec:
+    """The generated files belonging to one LiteLLM proxy."""
+
+    name: str
+    namespace: str
+    data: dict[str, object]
+
+    @property
+    def config_map_name(self) -> str:
+        return f"{self.name}-config"
+
+
+def _model_entry(
+    model_name: str,
+    model: str,
+    mode: str,
+    *,
+    api_base: str | None = None,
+    api_key: str | None = None,
+    supports_function_calling: bool = False,
+    model_info: dict[str, int] | None = None,
+    extra_body: dict | None = None,
+    custom_llm_provider: str | None = None,
+) -> dict:
+    """Build one LiteLLM model entry while omitting unset optional fields."""
+    litellm_params: dict = {"model": model}
+    if api_base is not None:
+        litellm_params["api_base"] = api_base
+    if api_key is not None:
+        litellm_params["api_key"] = api_key
+    if extra_body is not None:
+        litellm_params["extra_body"] = extra_body
+    if custom_llm_provider is not None:
+        litellm_params["custom_llm_provider"] = custom_llm_provider
+
+    info: dict = {"mode": mode}
+    if supports_function_calling:
+        info["supports_function_calling"] = True
+    if model_info is not None:
+        info.update(model_info)
+    return {"model_name": model_name, "litellm_params": litellm_params, "model_info": info}
+
+
+def _entries(
+    models: Iterable[str],
+    *,
+    name: Callable[[str], str],
+    upstream: Callable[[str], str],
+    mode: str,
+    api_base: str | None = None,
+    api_key: str | None = None,
+    supports_function_calling: bool = False,
+    model_info: Callable[[str], dict[str, int]] | None = None,
+    extra_body: Callable[[str], dict | None] | None = None,
+) -> list[dict]:
+    """Apply the common LiteLLM-entry shape to a roster."""
+    return [
+        _model_entry(
+            name(model),
+            upstream(model),
+            mode,
+            api_base=api_base,
+            api_key=api_key,
+            supports_function_calling=supports_function_calling,
+            model_info=model_info(model) if model_info is not None else None,
+            extra_body=extra_body(model) if extra_body is not None else None,
+        )
+        for model in models
+    ]
+
+
+def _provider_entries(
+    models: Iterable[str],
+    *,
+    provider: Provider,
+    shape: ApiShape,
+    upstream_prefix: str,
+    mode: str = "chat",
+    api_base: str | None = None,
+    api_key: str | None = None,
+    supports_function_calling: bool = False,
+    model_info: Callable[[str], dict[str, int]] | None = None,
+) -> list[dict]:
+    return _entries(
+        models,
+        name=lambda model: exposed_name(provider, shape, model),
+        upstream=lambda model: f"{upstream_prefix}/{model}",
+        mode=mode,
+        api_base=api_base,
+        api_key=api_key,
+        supports_function_calling=supports_function_calling,
+        model_info=model_info,
+    )
+
+
+def _context_extra_body(context: int) -> dict | None:
+    return None if context == 128 * 1024 else {"options": {"num_ctx": context}}
+
+
+def _ollama_variant_entries(
+    model: str,
+    ollama_model: str,
+    suffixes: list[tuple[str, int]],
+    *,
+    shape: ApiShape,
+    upstream_prefix: str,
+    api_base: str,
+    api_key: str | None,
+) -> list[dict]:
+    return [
+        _model_entry(
+            exposed_name(Provider.OLLAMA, shape, f"{model}-{suffix}"),
+            f"{upstream_prefix}/{ollama_model}",
+            "chat",
+            api_base=api_base,
+            api_key=api_key,
+            supports_function_calling=True,
+            extra_body=_context_extra_body(context),
+        )
+        for suffix, context in suffixes
+    ]
+
+
+def _ollama_entries() -> list[dict]:
+    entries: list[dict] = []
+    for model, ollama_model, contexts in (
+        ("gpt-oss-20b", "gpt-oss:20b", (128 * 1024, 256 * 1024, 512 * 1024, 1024 * 1024)),
+        ("gpt-oss-120b", "gpt-oss:120b", (128 * 1024,)),
+        ("gemma4-31b-it-q8_0", "gemma4:31b-it-q8_0", (128 * 1024,)),
+    ):
+        suffixes = [(f"{context // 1024}k" if context < 1024 * 1024 else "1m", context) for context in contexts]
+        entries.extend(
+            _ollama_variant_entries(
+                model,
+                ollama_model,
+                suffixes,
+                shape=ApiShape.OAI_CHAT,
+                upstream_prefix="openai",
+                api_base=f"{_OLLAMA_BASE}/v1",
+                api_key="ollama",
+            )
+        )
+        entries.extend(
+            _ollama_variant_entries(
+                model,
+                ollama_model,
+                suffixes,
+                shape=ApiShape.OLM_CHAT,
+                upstream_prefix="ollama",
+                api_base=_OLLAMA_BASE,
+                api_key=None,
+            )
+        )
+
+    entries.append(
+        _model_entry(
+            exposed_name(Provider.OLLAMA, ApiShape.OLM_EMBED, "qwen3-embedding-4b"),
+            "ollama/qwen3-embedding:4b",
+            "embedding",
+            api_base=_OLLAMA_BASE,
+        )
+    )
+    return entries
+
+
+def _codex_model_info(model: str) -> dict[str, int]:
+    if model == "gpt-6-astra":
+        return {
+            "max_input_tokens": ASTRA_CONTEXT_WINDOW,
+            "max_output_tokens": ASTRA_MAX_TOKENS,
+            "max_tokens": ASTRA_MAX_TOKENS,
+        }
+    if model in CODEX_MEASURED_MODELS:
+        return {
+            "max_input_tokens": CODEX_CONTEXT_WINDOW,
+            "max_output_tokens": CODEX_MAX_TOKENS,
+            "max_tokens": CODEX_MAX_TOKENS,
+        }
+    return {}
+
+
+def _cliproxy_entries() -> list[dict]:
+    entries: list[dict] = []
+    for shape, upstream_prefix, api_base, mode in (
+        (ApiShape.ANT_MESSAGES, "anthropic", _CLIPROXY_BASE, "chat"),
+        (ApiShape.OAI_RESPONSES, "openai", f"{_CLIPROXY_BASE}/v1", "responses"),
+    ):
+        entries.extend(
+            _provider_entries(
+                CLIPROXY_MODELS,
+                provider=Provider.CHATGPT,
+                shape=shape,
+                upstream_prefix=upstream_prefix,
+                mode=mode,
+                api_base=api_base,
+                api_key="os.environ/CLIPROXY_CLIENT_KEY",
+                supports_function_calling=True,
+                model_info=_codex_model_info,
+            )
+        )
+    return entries
+
+
+def _tana_entries() -> list[dict]:
+    return [
+        _model_entry(
+            exposed_name(Provider.TANA, ApiShape.ANT_MESSAGES, exposed),
+            f"tana/tana/{downstream}",
+            "chat",
+            supports_function_calling=True,
+            custom_llm_provider="tana",
+        )
+        for exposed, downstream in TANA_MODELS
+    ]
+
+
+def _anthropic_entries() -> list[dict]:
+    return [
+        *_provider_entries(
+            ANTHROPIC_MODELS,
+            provider=Provider.ANTHROPIC_MAX20,
+            shape=ApiShape.ANT_MESSAGES,
+            upstream_prefix="anthropic",
+            api_base=_CLIPROXY_BASE,
+            api_key="os.environ/CLIPROXY_CLIENT_KEY",
+            supports_function_calling=True,
+        ),
+        *_provider_entries(
+            ANTHROPIC_MODELS,
+            provider=Provider.ANTHROPIC_API,
+            shape=ApiShape.ANT_MESSAGES,
+            upstream_prefix="anthropic",
+            api_key="os.environ/ANTHROPIC_API_KEY",
+            supports_function_calling=True,
+        ),
+    ]
+
+
+def _simple_provider_entries() -> list[dict]:
+    entries = _provider_entries(
+        ("llama-3.3-70b-versatile", "llama-3.1-8b-instant"),
+        provider=Provider.GROQ,
+        shape=ApiShape.OAI_CHAT,
+        upstream_prefix="groq",
+        api_key="os.environ/GROQ_API_KEY",
+        supports_function_calling=True,
+    )
+    entries.extend(
+        _entries(
+            ("whisper-large-v3", "whisper-large-v3-turbo"),
+            name=lambda model: model,
+            upstream=lambda model: f"groq/{model}",
+            mode="audio_transcription",
+            api_key="os.environ/GROQ_API_KEY",
+        )
+    )
+    entries.extend(
+        _provider_entries(
+            GEMINI_MODELS,
+            provider=Provider.GOOGLE,
+            shape=ApiShape.GOOG_GENERATE,
+            upstream_prefix="gemini",
+            api_key="os.environ/GEMINI_API_KEY",
+            supports_function_calling=True,
+        )
+    )
+    entries.extend(
+        _provider_entries(
+            (GEMINI_EMBEDDING_MODELS[0],),
+            provider=Provider.GOOGLE,
+            shape=ApiShape.GOOG_EMBED,
+            upstream_prefix="gemini",
+            mode="embedding",
+            api_key="os.environ/GEMINI_API_KEY",
+        )
+    )
+    # This unprefixed alias is part of the durable OpenClaw embedding index's
+    # identity. It is intentionally retained until that index is rebuilt.
+    entries.append(
+        _model_entry(
+            "gemini-embedding-2", "gemini/gemini-embedding-2", "embedding", api_key="os.environ/GEMINI_API_KEY"
+        )
+    )
+    entries.extend(
+        _provider_entries(
+            (GEMINI_EMBEDDING_MODELS[1],),
+            provider=Provider.GOOGLE,
+            shape=ApiShape.GOOG_EMBED,
+            upstream_prefix="gemini",
+            mode="embedding",
+            api_key="os.environ/GEMINI_API_KEY",
+        )
+    )
+    entries.extend(
+        _provider_entries(
+            MISTRAL_MODELS,
+            provider=Provider.MISTRAL,
+            shape=ApiShape.OAI_CHAT,
+            upstream_prefix="mistral",
+            api_key="os.environ/MISTRAL_API_KEY",
+            supports_function_calling=True,
+        )
+    )
+    return entries
+
+
+def main_proxy_config() -> dict:
+    """Return the complete main-proxy config from the shared Python roster."""
+    return {
+        "model_list": [
+            *_ollama_entries(),
+            *_tana_entries(),
+            *_cliproxy_entries(),
+            *_anthropic_entries(),
+            *_simple_provider_entries(),
+        ],
+        "litellm_settings": {
+            "drop_params": True,
+            "callbacks": ["langfuse_otel", "prometheus"],
+            "custom_provider_map": [
+                {"provider": "tana", "custom_handler": "tana.litellm_proxy.custom_handler.tana_handler"}
+            ],
+        },
+        "router_settings": {
+            "model_group_alias": {
+                "gpt-6-astra": {
+                    "model": exposed_name(Provider.CHATGPT, ApiShape.OAI_RESPONSES, "gpt-6-astra"),
+                    "hidden": True,
+                }
+            }
+        },
+        "general_settings": {"forward_client_headers_to_llm_api": True, "store_model_in_db": False},
+    }
+
+
+def proxy_configs() -> tuple[ConfigMapSpec, ...]:
+    return (ConfigMapSpec("litellm", "litellm", {"config.yaml": main_proxy_config()}),)

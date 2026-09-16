@@ -31,5 +31,5 @@ spec:
       namespace: ducktape-flux
     - name: tana-mcp
       namespace: ducktape-flux
-    - name: monitoring-crds # the ServiceMonitor/PodMonitor CRD
+    - name: monitoring-crds
       namespace: ducktape-flux
