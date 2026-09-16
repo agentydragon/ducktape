@@ -16,8 +16,9 @@ spec:
   interval: 30m
   timeout: 10m # Prometheus stack upgrades can be slow
   install:
-    # kube-prometheus-stack carries the Prometheus Operator CRDs in a subchart.
-    # Let Flux update existing CRDs without deleting removed definitions.
+    # The `crds` subchart is disabled below; monitoring-crds owns them instead.
+    # Kept as CreateReplace so any chart that does ship a crds/ directory is
+    # updated rather than skipped.
     crds: CreateReplace
     # TODO(roaming-nodes): Roaming nodes (iguana/rugged) are often offline,
     # so DaemonSets (node-exporter) have perpetually Pending pods. Helm waits
@@ -43,6 +44,14 @@ spec:
         namespace: flux-system
       interval: 12h
   values:
+    # Owned by the monitoring-crds Kustomization instead, so a ServiceMonitor
+    # depends on the CRD existing rather than on Prometheus being healthy.
+    # These come from the subchart's crds/ directory, which is outside the Helm
+    # release manifest — disabling it stops Helm applying them, it does not
+    # delete them.
+    crds:
+      enabled: false
+
     # Shorten resource names: "kube-prometheus-stack-*" → "monitoring-*"
     fullnameOverride: monitoring
     # Remove redundant "-prometheus"/"-alertmanager" suffix from CR names
