@@ -33,6 +33,28 @@ routes to it. Kubernetes retries all of these on its own. Writing them as
 `dependsOn` trades a self-healing transient for a permanent wedge that
 propagates, and turns one fault into one alert per downstream node.
 
+### What an edge actually buys here
+
+kustomize-controller compares a dependency's `status.lastAppliedRevision`
+against the current source revision **only** when the dependency's `sourceRef`
+has the same kind, name and namespace as the dependent's
+([`checkDependencies`](https://github.com/fluxcd/kustomize-controller/blob/main/internal/controller/kustomization_controller.go)).
+Since the ArtifactGenerator migration each component reconciles from its own
+`ExternalArtifact`, so 712 of our 713 edges name a different source, skip that
+check, and gate on `Ready` alone.
+
+An edge therefore orders **bootstrap**, and propagates failure. It does not
+order updates: after a commit, a layer-3 app can apply its new revision while
+layer 2 is still on the old one. Upstream has known this since
+[flux2#293](https://github.com/fluxcd/flux2/discussions/293) and has not fixed
+the general case. Weigh the layering against what it buys in steady state, which
+is nothing.
+
+Bootstrap is not nothing — it is this cluster's Primary Directive — which is
+what rule 2's `never-converges` category is for. Ordering that only matters at
+bootstrap is worth an edge exactly when the alternative is a bootstrap that
+never finishes, not when it is a bootstrap that retries a few times.
+
 ## Rules
 
 ### 1. Depend on what makes the API accept the object
@@ -94,10 +116,15 @@ Everything else in the component — the Namespace, the ExternalSecrets, the
 HelmRelease, the ServiceMonitor, the HTTPRoute, the NetworkPolicies, the
 RoleBindings — goes in the one Kustomization.
 
-Within a single Kustomization, kustomize-controller applies Namespaces and CRDs
-in a first stage and waits for them, so a Namespace and the Deployment inside it
-apply cleanly together; everything after that stage applies at once, and pods
-wait for their Secrets. That is the design, not a race.
+Within a single Kustomization this is safe by construction, not by luck:
+[`ssa.ApplyAllStaged`](https://pkg.go.dev/github.com/fluxcd/pkg/ssa) "extracts
+the cluster and class definitions, applies them with ApplyAll, waits for them to
+become ready, then it applies all the other objects" — precisely "when the given
+objects have a mix of custom resource definition and custom resources, or a mix
+of namespace definitions with namespaced objects". `CustomResourceDefinition`,
+`Namespace`, `ClusterRole`, `RuntimeClass` and `PriorityClass` go in that first
+stage; webhook configurations go last. Everything between applies at once, and
+pods wait for their Secrets.
 
 ### 4. `wait` and `healthChecks` gate, or they are absent
 
@@ -131,6 +158,12 @@ applied.
 - `wait: true` or `healthChecks`: 212, of which **66** unsuspended have no
   dependent.
 - Not-ready, unsuspended: 30 — 17 own faults, **13 `DependencyNotReady`**.
+- Edges whose dependency shares the dependent's `sourceRef`, and so are
+  revision-checked rather than `Ready`-checked: **1** of 713.
+- `--requeue-dependency=30s`, so each level costs up to 30s after its dependency
+  goes Ready — around 6 minutes across today's 14-deep chain, before any of the
+  work itself. Reported in the field as ~50s per level
+  ([flux2#5403](https://github.com/fluxcd/flux2/discussions/5403)).
 
 The depth-3 figure is computed with class-1 edges pointing at _operators_, so it
 does not depend on rule 1's CRD split landing. It is a floor — registered rule-2
@@ -150,11 +183,15 @@ Two live examples of the pathology, both from that snapshot:
 ## Rejected alternatives
 
 **Layer the component: CRDs → secrets → app, each its own Kustomization with
-`dependsOn` on the last.** The repo's law until this document. It buys an
-ordering Kubernetes already provides by retrying, and charges a control object,
-a generated artifact, a root-kustomization entry and a graph node per layer —
-then propagates every layer's failure downstream. The measurements above are
-what it costs.
+`dependsOn` on the last.** The repo's law until this document, and the layout
+[Flux's own guidance](https://fluxcd.io/flux/guides/repository-structure/) and
+its maintainers recommend — that recommendation is about infrastructure-vs-apps
+at cluster granularity, and it is applied here per component, which is where it
+stops paying. It buys a bootstrap ordering that Kubernetes mostly provides by
+retrying and no update ordering at all (above), and charges a control object, a
+generated artifact, a root-kustomization entry and a graph node per layer — then
+propagates every layer's failure downstream. The measurements above are what it
+costs.
 
 **Keep the split, drop the `dependsOn`.** Halves the damage and keeps all the
 bookkeeping: a component still costs four files in three places to extend, and
