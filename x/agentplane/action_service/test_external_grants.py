@@ -43,7 +43,6 @@ from x.agentplane.action_service.models import (
     ProviderOutcome,
     ProviderVerdict,
     ServiceAccountCaller,
-    ServiceAccountRef,
     Verdict,
 )
 from x.agentplane.action_service.policies.resources import parse_binding, parse_policy_set
@@ -52,6 +51,7 @@ from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.providers import DecisionContext
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, eligible_callers
+from x.agentplane.subjects import ServiceAccountRef
 
 ISSUER = "https://actions.example.test"
 OPERATOR = Principal(issuer="operator", subject="single", role=PrincipalRole.OPERATOR)

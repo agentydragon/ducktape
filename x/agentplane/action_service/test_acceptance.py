@@ -32,7 +32,6 @@ from x.agentplane.action_service.models import (
     ExecutionState,
     Principal,
     PrincipalRole,
-    ServiceAccountRef,
     Verdict,
 )
 from x.agentplane.action_service.policies.resources import parse_binding, parse_policy_set
@@ -46,6 +45,7 @@ from x.agentplane.sandbox_auth.principal import (
     SandboxPrincipalRejectedError,
     SandboxPrincipalResolver,
 )
+from x.agentplane.subjects import ServiceAccountRef
 
 NAMESPACE = "agentplane-staging"
 SERVICE_ACCOUNT_SUBJECT = f"system:serviceaccount:{NAMESPACE}:agentplane-runner"

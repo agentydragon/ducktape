@@ -90,6 +90,7 @@ py_library(
     name = "callers",
     srcs = ["callers.py"],
     deps = [
+        "//x/agentplane:subjects",
         "//x/agentplane/action_service:models",
         "//x/agentplane/action_service:policy_informer",
     ],

@@ -12,14 +12,14 @@ service needs them.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Annotated, Any, Literal
+from typing import Any, Literal
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Discriminator, Field, Tag, ValidationError
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError
 
-from x.agentplane.action_service.models import NamespacedName, ServiceAccountRef
+from x.agentplane.action_service.models import NamespacedName
 from x.agentplane.action_service.policies.kind import Spec
 from x.agentplane.action_service.policies.registry import Policy
-from x.agentplane.subjects import subject_kind
+from x.agentplane.subjects import Subject
 
 GROUP = "agentplane.allegedly.works"
 VERSION = "v1alpha1"
@@ -97,25 +97,6 @@ class PolicySetSpec(Spec):
 class ActionPolicySet(_Namespaced):
     spec: PolicySetSpec
     status: Status = Field(default_factory=Status)
-
-
-class SandboxRef(Spec):
-    name: str = Field(min_length=1)
-    uid: str = Field(min_length=1, description="Pins the live Sandbox; a binding whose Sandbox is gone is inert.")
-
-
-class ServiceAccountSubject(Spec):
-    service_account: ServiceAccountRef = Field(alias="serviceAccount")
-
-
-class SandboxSubject(Spec):
-    sandbox: SandboxRef
-
-
-Subject = Annotated[
-    Annotated[ServiceAccountSubject, Tag("serviceAccount")] | Annotated[SandboxSubject, Tag("sandbox")],
-    Discriminator(subject_kind),
-]
 
 
 class BindingSpec(Spec):

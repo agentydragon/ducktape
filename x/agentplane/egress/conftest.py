@@ -38,6 +38,7 @@ from x.agentplane.egress.testing.fake_apiserver import (
     pod_for,
     policy,
     sandbox,
+    sandbox_uid,
     secret,
 )
 
@@ -102,7 +103,11 @@ def seed(fake: FakeApiServer) -> None:
     )
     fake.put(
         BINDINGS_PLURAL,
-        binding(f"{SANDBOX_A}-{GITHUB_POLICY}", subjects=[{"sandbox": {"name": SANDBOX_A}}], policies=[GITHUB_POLICY]),
+        binding(
+            f"{SANDBOX_A}-{GITHUB_POLICY}",
+            subjects=[{"sandbox": {"name": SANDBOX_A, "uid": sandbox_uid(SANDBOX_A)}}],
+            policies=[GITHUB_POLICY],
+        ),
     )
 
 

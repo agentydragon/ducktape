@@ -7,8 +7,9 @@ import hmac
 from pathlib import Path
 from typing import Protocol
 
-from x.agentplane.action_service.models import Principal, PrincipalRole, SandboxCaller, ServiceAccountRef
+from x.agentplane.action_service.models import Principal, PrincipalRole, SandboxCaller, service_account_principal
 from x.agentplane.sandbox_auth.principal import SandboxPrincipal, WorkloadPrincipal
+from x.agentplane.subjects import ServiceAccountRef
 
 
 class OperatorAuthenticator(Protocol):
@@ -64,4 +65,6 @@ def workload_principal(principal: WorkloadPrincipal) -> Principal:
     """
     if isinstance(principal, SandboxPrincipal):
         return SandboxCaller(namespace=principal.namespace, sandbox_uid=principal.sandbox_uid).principal()
-    return ServiceAccountRef(namespace=principal.namespace, name=principal.service_account_name).principal()
+    return service_account_principal(
+        ServiceAccountRef(namespace=principal.namespace, name=principal.service_account_name)
+    )

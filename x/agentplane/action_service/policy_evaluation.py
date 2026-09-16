@@ -20,19 +20,13 @@ from x.agentplane.action_service.models import (
     ProviderVerdict,
     SandboxCaller,
     ServiceAccountCaller,
-    ServiceAccountRef,
 )
 from x.agentplane.action_service.policies.kind import Matched, NotMatched
 from x.agentplane.action_service.policies.registry import evaluate
-from x.agentplane.action_service.policies.resources import (
-    ActionPolicyBinding,
-    ActionPolicySet,
-    InvalidResource,
-    SandboxSubject,
-    ServiceAccountSubject,
-)
+from x.agentplane.action_service.policies.resources import ActionPolicyBinding, ActionPolicySet, InvalidResource
 from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.providers import DecisionContext, ResolvedBinding
+from x.agentplane.subjects import SandboxSubject, ServiceAccountRef, ServiceAccountSubject
 
 PROVIDER_NAME = "action_policy_set"
 AUTO_APPROVE_REASON = "policy_set_auto_approve"

@@ -14,9 +14,9 @@ from enum import StrEnum
 from typing import Annotated, Literal
 
 from kubernetes_asyncio import client as k8s_client
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Discriminator, Field, Tag, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
-from x.agentplane.subjects import subject_kind
+from x.agentplane.subjects import Subject
 
 GROUP = "agentplane.allegedly.works"
 VERSION = "v1alpha1"
@@ -187,35 +187,6 @@ class PolicySpec(_Wire):
 class EgressPolicy(_Wire):
     metadata: ObjectMeta
     spec: PolicySpec
-
-
-class SandboxRef(_Wire):
-    name: str
-
-
-class ServiceAccountRef(_Wire):
-    name: str = Field(min_length=1)
-
-
-class SandboxSubject(_Wire):
-    sandbox: SandboxRef
-
-
-class ServiceAccountSubject(_Wire):
-    """A workload that is not a Sandbox, named by the ServiceAccount its Pod runs as.
-
-    Unlike a Sandbox subject this is not lifecycle-bound: every Pod running as that ServiceAccount
-    in the proxy's namespace is this subject, so a binding is only as narrow as the ServiceAccount
-    is dedicated to one workload.
-    """
-
-    service_account: ServiceAccountRef = Field(alias="serviceAccount")
-
-
-Subject = Annotated[
-    Annotated[ServiceAccountSubject, Tag("serviceAccount")] | Annotated[SandboxSubject, Tag("sandbox")],
-    Discriminator(subject_kind),
-]
 
 
 class BindingSpec(_Wire):

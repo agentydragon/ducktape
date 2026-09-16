@@ -53,6 +53,7 @@ class SandboxPodIdentity(_PodBinding):
 class ServiceAccountPodIdentity(_PodBinding):
     """A Pod no Sandbox controls; the ServiceAccount it runs as is the subject."""
 
+    namespace: str
     service_account_name: str
 
 
@@ -155,5 +156,7 @@ class PodIdentityVerifier:
         binding = {"pod_name": principal.pod_name, "pod_uid": principal.pod_uid, "pod_ip": pod_ip}
         owner = sandbox_controller(pod)
         if owner is None:
-            return ServiceAccountPodIdentity(**binding, service_account_name=principal.service_account_name)
+            return ServiceAccountPodIdentity(
+                **binding, namespace=principal.namespace, service_account_name=principal.service_account_name
+            )
         return SandboxPodIdentity(**binding, sandbox_name=owner.name, sandbox_uid=owner.uid)

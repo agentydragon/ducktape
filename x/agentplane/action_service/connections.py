@@ -19,8 +19,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from x.agentplane.action_service.db import ConnectionGrantRow, ConnectionRow, SessionMaker
-from x.agentplane.action_service.models import ExternalGrantProvenance, Principal, ServiceAccountRef
+from x.agentplane.action_service.models import ExternalGrantProvenance, Principal
 from x.agentplane.action_service.policy_informer import PolicyIndex
+from x.agentplane.subjects import ServiceAccountRef
 
 ConnectionName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
 

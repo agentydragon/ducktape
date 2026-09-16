@@ -19,13 +19,7 @@ from typing import Annotated, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-from x.agentplane.action_service.models import (
-    NamespacedName,
-    PolicyKind,
-    SandboxCaller,
-    ServiceAccountCaller,
-    ServiceAccountRef,
-)
+from x.agentplane.action_service.models import NamespacedName, PolicyKind, SandboxCaller, ServiceAccountCaller
 from x.agentplane.action_service.policies.argument_schema import ArgumentSchema
 from x.agentplane.action_service.policies.exact_actions import ExactActions
 from x.agentplane.action_service.policies.github_public_repository import GitHubPublicRepository
@@ -40,6 +34,7 @@ from x.agentplane.action_service.policies.resources import (
 from x.agentplane.action_service.policy_evaluation import resolve_bindings
 from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.providers import ResolvedBinding
+from x.agentplane.subjects import ServiceAccountRef
 
 # What a binding's subject names, as the operator asks about it: a live Sandbox by namespace and
 # UID, or a ServiceAccount. A caller is one of these behind its authentication.

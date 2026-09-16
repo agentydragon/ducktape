@@ -66,7 +66,6 @@ from x.agentplane.action_service.models import (
     Principal,
     PrincipalRole,
     SandboxCaller,
-    ServiceAccountRef,
 )
 from x.agentplane.action_service.oauth import ActionsOAuthProxy
 from x.agentplane.action_service.policy_view import CallerActionPolicyView, SubjectActionPolicyView
@@ -80,6 +79,7 @@ from x.agentplane.action_service.service import (
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
+from x.agentplane.subjects import ServiceAccountRef
 
 
 class PushSubscriptionInput(BaseModel):

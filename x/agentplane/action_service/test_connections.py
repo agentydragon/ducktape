@@ -37,12 +37,13 @@ from x.agentplane.action_service.db import (
     ConnectionGrantRow,
     make_sessionmaker,
 )
-from x.agentplane.action_service.models import ActionRequestInput, Principal, PrincipalRole, ServiceAccountRef
+from x.agentplane.action_service.models import ActionRequestInput, Principal, PrincipalRole, service_account_key
 from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, UNLABELED, eligible_callers
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
+from x.agentplane.subjects import ServiceAccountRef
 
 ISSUER = "https://actions.example.test"
 
@@ -202,7 +203,7 @@ async def test_unlabeled_removed_unsynced_and_expired_grants_do_not_authorize(en
     with pytest.raises(GrantRejectedError):
         await service.bind(expired)
     unsynced = PolicyIndex()
-    unsynced.service_accounts[PERSONAL.namespaced_name] = PERSONAL
+    unsynced.service_accounts[service_account_key(PERSONAL)] = PERSONAL
     for callers in [eligible_callers(), eligible_callers(OTHER, UNLABELED), unsynced]:
         changed = ConnectionAuthority(make_sessionmaker(engine), callers)
         with pytest.raises(GrantRejectedError):

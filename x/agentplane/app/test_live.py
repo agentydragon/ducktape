@@ -74,10 +74,10 @@ def seeded(custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api, live_in
         "github", [{"hosts": ["api.github.com"], "methods": ["GET"]}]
     )
     custom_objects.objects[("egressbindings", "runner-1-picked")] = egress_binding(
-        "runner-1-picked", subjects=[{"sandbox": {"name": "runner-1"}}], policies=["github"]
+        "runner-1-picked", subjects=[{"sandbox": {"name": "runner-1", "uid": "runner-1-uid"}}], policies=["github"]
     )
     custom_objects.objects[("egressbindings", "elsewhere")] = egress_binding(
-        "elsewhere", subjects=[{"sandbox": {"name": "shelved"}}], policies=["github"]
+        "elsewhere", subjects=[{"sandbox": {"name": "shelved", "uid": "shelved-uid"}}], policies=["github"]
     )
     custom_objects.objects[("actionpolicysets", "reads")] = action_policy_set(
         "reads",

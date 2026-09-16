@@ -249,6 +249,11 @@ def sandbox(name: str) -> dict[str, Any]:
     }
 
 
+def sandbox_uid(name: str) -> str:
+    """The UID this server stamps on a stored Sandbox, which a binding's subject has to name."""
+    return f"uid-{SANDBOXES_PLURAL}-{name}"
+
+
 def pod_for(fake: FakeApiServer, sandbox_name: str, *, pod_uid: str, ip: str) -> dict[str, Any]:
     """The Sandbox's Pod, controlled by the stored Sandbox and carrying `pod_uid` and `ip`."""
     owner = fake.objects[SANDBOXES_PLURAL][sandbox_name]["metadata"]

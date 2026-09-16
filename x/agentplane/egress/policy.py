@@ -30,12 +30,9 @@ from x.agentplane.egress.resources import (
     EgressPolicy,
     Rule,
     Sandbox,
-    SandboxSubject,
     Secret,
-    ServiceAccountSubject,
-    Subject,
 )
-from x.agentplane.subjects import SubjectKind, SubjectView
+from x.agentplane.subjects import SandboxSubject, ServiceAccountSubject, Subject, SubjectKind, SubjectView
 
 CONNECT = "CONNECT"
 WATCHED_KINDS = frozenset({POLICIES_PLURAL, BINDINGS_PLURAL, CREDENTIALS_PLURAL, SANDBOXES_PLURAL, "secrets"})
@@ -129,6 +126,7 @@ class SandboxCaller:
 class ServiceAccountCaller:
     """A request from a Pod running as this ServiceAccount, owned by no Sandbox."""
 
+    namespace: str
     service_account_name: str
 
     @property
@@ -137,7 +135,7 @@ class ServiceAccountCaller:
 
     @property
     def label(self) -> str:
-        return f"ServiceAccount {self.service_account_name}"
+        return f"ServiceAccount {self.namespace}/{self.service_account_name}"
 
 
 type Caller = SandboxCaller | ServiceAccountCaller
@@ -159,7 +157,10 @@ class AuthenticatedWorkloadContext:
                     and self.caller.sandbox.metadata.uid == caller.sandbox.metadata.uid
                 )
             case ServiceAccountCaller(), ServiceAccountCaller():
-                return self.caller.service_account_name == caller.service_account_name
+                return (self.caller.namespace, self.caller.service_account_name) == (
+                    caller.namespace,
+                    caller.service_account_name,
+                )
             case _:
                 return False
 
@@ -211,11 +212,19 @@ def resolve_binding(index: Index, binding: EgressBinding, now: datetime) -> Bind
 
 
 def _names(subject: Subject, caller: Caller) -> bool:
+    """A Sandbox subject names one instance: matching the name alone would hand a recreated Sandbox
+    whatever its predecessor was granted, which is the guarantee the UID is in the subject for."""
     match subject, caller:
         case SandboxSubject(), SandboxCaller():
-            return subject.sandbox.name == caller.sandbox.metadata.name
+            return (subject.sandbox.name, subject.sandbox.uid) == (
+                caller.sandbox.metadata.name,
+                caller.sandbox.metadata.uid,
+            )
         case ServiceAccountSubject(), ServiceAccountCaller():
-            return subject.service_account.name == caller.service_account_name
+            return (subject.service_account.namespace, subject.service_account.name) == (
+                caller.namespace,
+                caller.service_account_name,
+            )
         case _:
             return False
 

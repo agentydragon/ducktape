@@ -113,10 +113,13 @@ def client(
     )
     custom_objects.objects[("egresspolicies", "pypi")] = egress_policy("pypi", [{"hosts": ["pypi.org"]}])
     custom_objects.objects[("egressbindings", "live-seeded")] = egress_binding(
-        "live-seeded", subjects=[{"sandbox": {"name": "live"}}], policies=["github"], active=("True", "Resolved", "")
+        "live-seeded",
+        subjects=[{"sandbox": {"name": "live", "uid": "live-uid"}}],
+        policies=["github"],
+        active=("True", "Resolved", ""),
     )
     custom_objects.objects[("egressbindings", "live-granted")] = egress_binding(
-        "live-granted", subjects=[{"sandbox": {"name": "live"}}], policies=["pypi"], from_git=False
+        "live-granted", subjects=[{"sandbox": {"name": "live", "uid": "live-uid"}}], policies=["pypi"], from_git=False
     )
     custom_objects.objects[("actionpolicysets", "github-reads")] = action_policy_set(
         "github-reads",

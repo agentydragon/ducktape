@@ -20,7 +20,7 @@ from x.agentplane.action_service.enrollments import (
     EnrollmentPreview,
     EnrollmentPreviewInput,
 )
-from x.agentplane.action_service.models import ServiceAccountRef
+from x.agentplane.subjects import ServiceAccountRef
 
 EnrollmentHandle = Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{43}$")]
 _SESSION_KEY = "connection_enrollments_v2"

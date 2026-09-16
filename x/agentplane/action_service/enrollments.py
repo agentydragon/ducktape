@@ -21,7 +21,8 @@ from x.agentplane.action_service.connections import (
     ReconnectConnection,
 )
 from x.agentplane.action_service.db import EnrollmentRow, SessionMaker
-from x.agentplane.action_service.models import Principal, PrincipalRole, ServiceAccountRef, Verdict
+from x.agentplane.action_service.models import Principal, PrincipalRole, Verdict
+from x.agentplane.subjects import ServiceAccountRef
 
 
 class EnrollmentInput(BaseModel):

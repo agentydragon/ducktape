@@ -81,6 +81,7 @@ from x.agentplane.egress.testing.fake_apiserver import (
     pod_for,
     policy,
     sandbox,
+    sandbox_uid,
     secret,
 )
 from x.agentplane.egress.testing.replica import kubeconfig, replica
@@ -228,7 +229,12 @@ class ProxyUnderTest:
         policies = [*current["spec"]["policies"]]
         if BASIC_POLICY not in policies:
             policies.append(BASIC_POLICY)
-        self.fake.put(BINDINGS_PLURAL, binding(BINDING, subjects=[{"sandbox": {"name": SANDBOX_A}}], policies=policies))
+        self.fake.put(
+            BINDINGS_PLURAL,
+            binding(
+                BINDING, subjects=[{"sandbox": {"name": SANDBOX_A, "uid": sandbox_uid(SANDBOX_A)}}], policies=policies
+            ),
+        )
         await self.index.wait_for(
             lambda: (
                 WORKLOAD_CREDENTIAL in self.index.credentials
@@ -440,7 +446,11 @@ async def install_workload_credential(fake: FakeApiServer, proxy: ProxyUnderTest
     )
     fake.put(
         BINDINGS_PLURAL,
-        binding(BINDING, subjects=[{"sandbox": {"name": SANDBOX_A}}], policies=[GITHUB_POLICY, WORKLOAD_POLICY]),
+        binding(
+            BINDING,
+            subjects=[{"sandbox": {"name": SANDBOX_A, "uid": sandbox_uid(SANDBOX_A)}}],
+            policies=[GITHUB_POLICY, WORKLOAD_POLICY],
+        ),
     )
     if bind_b:
         # A faithful second Pod identity reaching the in-process listener from the same loopback
@@ -450,7 +460,7 @@ async def install_workload_credential(fake: FakeApiServer, proxy: ProxyUnderTest
             BINDINGS_PLURAL,
             binding(
                 f"{SANDBOX_B}-{WORKLOAD_POLICY}",
-                subjects=[{"sandbox": {"name": SANDBOX_B}}],
+                subjects=[{"sandbox": {"name": SANDBOX_B, "uid": sandbox_uid(SANDBOX_B)}}],
                 policies=[WORKLOAD_POLICY],
             ),
         )
@@ -660,7 +670,11 @@ async def test_buildbuddy_http_and_grpc_metadata_placeholder_is_substituted(
     )
     fake.put(
         BINDINGS_PLURAL,
-        binding(BINDING, subjects=[{"sandbox": {"name": SANDBOX_A}}], policies=[GITHUB_POLICY, policy_name]),
+        binding(
+            BINDING,
+            subjects=[{"sandbox": {"name": SANDBOX_A, "uid": sandbox_uid(SANDBOX_A)}}],
+            policies=[GITHUB_POLICY, policy_name],
+        ),
     )
     await proxy.index.wait_for(
         lambda: (

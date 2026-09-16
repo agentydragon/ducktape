@@ -42,7 +42,11 @@ class RulesProjection:
         """
         if not isinstance(principal, SandboxPrincipal):
             return agent_view(
-                self._index, ServiceAccountCaller(service_account_name=principal.service_account_name), self._clock()
+                self._index,
+                ServiceAccountCaller(
+                    namespace=principal.namespace, service_account_name=principal.service_account_name
+                ),
+                self._clock(),
             )
         sandbox = self._index.sandboxes.get(principal.sandbox_name)
         if sandbox is None or sandbox.metadata.uid != principal.sandbox_uid:

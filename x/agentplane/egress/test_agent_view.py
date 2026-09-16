@@ -21,21 +21,25 @@ from x.agentplane.egress.resources import (
     PolicySpec,
     Rule,
     Sandbox,
-    SandboxRef,
-    SandboxSubject,
     SchemeTokenTarget,
     Secret,
     SecretKeyRef,
-    ServiceAccountRef,
-    ServiceAccountSubject,
     TargetMethod,
 )
-from x.agentplane.subjects import SubjectKind, SubjectView
+from x.agentplane.subjects import (
+    SandboxRef,
+    SandboxSubject,
+    ServiceAccountRef,
+    ServiceAccountSubject,
+    SubjectKind,
+    SubjectView,
+)
 
 NOW = datetime(2026, 9, 4, 12, 0, tzinfo=UTC)
 SECRET_VALUE = "the-real-credential"
 DESCRIPTION = "a token for the bot account, which can write to its own repositories"
 SANDBOX = Sandbox(metadata=ObjectMeta(name="sb", uid="sb-uid"))
+NAMESPACE = "agentplane-test"
 CALLER = SandboxCaller(SANDBOX)
 CREDENTIAL = EgressCredential(
     metadata=ObjectMeta(name="github-pat", generation=1),
@@ -65,7 +69,7 @@ def _index(*, expires_at: datetime | None = None, policies: list[str] | None = N
     bound = EgressBinding(
         metadata=ObjectMeta(name="b", generation=1),
         spec=BindingSpec(
-            subjects=[SandboxSubject(sandbox=SandboxRef(name="sb"))],
+            subjects=[SandboxSubject(sandbox=SandboxRef(name="sb", uid=SANDBOX.metadata.uid))],
             policies=policies if policies is not None else ["github"],
             expires_at=expires_at,
         ),
@@ -160,11 +164,12 @@ def test_a_service_account_reads_the_policies_bound_to_it_and_not_a_sandbox_of_t
     index.bindings["sa"] = EgressBinding(
         metadata=ObjectMeta(name="sa", generation=1),
         spec=BindingSpec(
-            subjects=[ServiceAccountSubject(service_account=ServiceAccountRef(name="sb"))], policies=["github"]
+            subjects=[ServiceAccountSubject(service_account=ServiceAccountRef(namespace=NAMESPACE, name="sb"))],
+            policies=["github"],
         ),
     )
 
-    view = agent_view(index, ServiceAccountCaller("sb"), NOW)
+    view = agent_view(index, ServiceAccountCaller(NAMESPACE, "sb"), NOW)
 
     assert view.subject == SubjectView(kind=SubjectKind.SERVICE_ACCOUNT, name="sb")
     assert [policy.name for policy in view.policies] == ["github"], "its own binding, once, not the Sandbox's too"

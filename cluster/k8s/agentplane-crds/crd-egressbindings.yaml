@@ -47,25 +47,30 @@ spec:
                     properties:
                       sandbox:
                         description: >-
-                          One Sandbox by name, resolved in the workload namespace the enforcing
-                          deployment serves (`--sandbox-namespace`), which need not be this
-                          binding's own namespace.
+                          One Sandbox, resolved in the workload namespace the enforcing deployment
+                          serves (`--sandbox-namespace`). The UID pins the instance, so a Sandbox
+                          deleted and recreated under this name does not inherit the grant.
                         type: object
-                        required: [name]
+                        required: [name, uid]
                         properties:
                           name:
                             type: string
                             minLength: 1
+                          uid:
+                            type: string
+                            minLength: 1
                       serviceAccount:
                         description: >-
-                          One ServiceAccount by name, resolved in the same workload namespace
-                          (`--sandbox-namespace`) a Sandbox subject is: a workload no Sandbox owns,
-                          such as a Deployment. Not lifecycle-bound the way a Sandbox subject is --
-                          every Pod running as it is this subject -- so bind only a ServiceAccount
-                          dedicated to one workload.
+                          A workload no Sandbox owns, such as a Deployment, named by the
+                          ServiceAccount its Pod runs as. Every Pod running as it is this subject
+                          and nothing ends the subject with a workload, so bind only a
+                          ServiceAccount dedicated to one.
                         type: object
-                        required: [name]
+                        required: [namespace, name]
                         properties:
+                          namespace:
+                            type: string
+                            minLength: 1
                           name:
                             type: string
                             minLength: 1

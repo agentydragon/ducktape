@@ -1,5 +1,5 @@
-"""The kubeconform schemas under cluster/schemas/ are the Agentplane CRDs' openAPIV3Schema, and the
-two binding kinds spell a subject the same way.
+"""The kubeconform schemas under cluster/schemas/ are the Agentplane CRDs' openAPIV3Schema, and each
+binding CRD's subject is the `x.agentplane.subjects.Subject` both services decide against.
 
 The pre-commit kubeconform hook validates EgressPolicy, EgressBinding, EgressCredential, ActionPolicySet and
 ActionPolicyBinding manifests against `cluster/schemas/<group>/<kind>_<version>.json`; each file is generated from its CRD here and
@@ -16,9 +16,11 @@ from typing import Any
 import pytest
 import pytest_bazel
 import yaml
+from more_itertools import one
+from pydantic import TypeAdapter
 
 from util.bazel.runfiles import get_required_path
-from x.agentplane.subjects import SANDBOX_KEY, SERVICE_ACCOUNT_KEY
+from x.agentplane.subjects import Subject
 
 _CRD_FILES = [
     get_required_path("_main/cluster/k8s/agentplane-crds/crd-egresspolicies.yaml"),
@@ -48,37 +50,47 @@ def _subject_schema(crd_name: str, field: str) -> dict[str, Any]:
     return schema
 
 
-_EGRESS_SUBJECT = _subject_schema("crd-egressbindings.yaml", "subjects")
-_ACTION_SUBJECT = _subject_schema("crd-actionpolicybindings.yaml", "subject")
+def _variant(schema: dict[str, Any], key: str) -> tuple[set[str], set[str]]:
+    """One variant of a subject as a schema states it: the fields it declares and those it requires."""
+    variant = schema["properties"][key]
+    return set(variant["properties"]), set(variant["required"])
 
 
-def test_both_binding_kinds_spell_a_subject_as_the_same_one_key_union() -> None:
-    """`x.agentplane.subjects` discriminates on the key alone, for both services. That only decides
-    correctly while both CRDs offer that same key set under the same one-of mechanism: a CRD that
-    renamed a key, or dropped `maxProperties`, would hand the discriminator an object it reads as
-    the wrong variant or as neither.
-    """
-    for subject in (_EGRESS_SUBJECT, _ACTION_SUBJECT):
-        assert (subject["type"], subject["minProperties"], subject["maxProperties"]) == ("object", 1, 1)
-        assert set(subject["properties"]) == {SANDBOX_KEY, SERVICE_ACCOUNT_KEY}
-
-
-@pytest.mark.parametrize("key", [SANDBOX_KEY, SERVICE_ACCOUNT_KEY])
-def test_a_field_both_binding_kinds_name_in_a_subject_means_the_same_thing(key: str) -> None:
-    """What a reference carries legitimately differs -- the Action Service is multi-namespace and pins
-    a Sandbox by UID, where the proxy serves one namespace and re-checks the UID when it
-    authenticates -- so this pins the overlap rather than the roster: a field both declare has one
-    schema, and `name` is always declared and always required.
-    """
-    egress, action = _EGRESS_SUBJECT["properties"][key], _ACTION_SUBJECT["properties"][key]
-    shared = set(egress["properties"]) & set(action["properties"])
-
-    assert "name" in shared
-    assert "name" in egress["required"]
-    assert "name" in action["required"]
-    assert {field: egress["properties"][field] for field in shared} == {
-        field: action["properties"][field] for field in shared
+def _model_subject() -> dict[str, tuple[set[str], set[str]]]:
+    """`Subject` as a schema, by variant key. Pydantic emits `anyOf` over `$defs`, one indirection
+    per model, so each branch is followed to the reference whose fields the CRD has to state."""
+    schema = TypeAdapter(Subject).json_schema()
+    defs = schema["$defs"]
+    resolve = lambda node: defs[node["$ref"].rsplit("/", maxsplit=1)[-1]]  # noqa: E731
+    variants = [resolve(branch) for branch in schema["anyOf"]]
+    return {
+        key: (
+            set(resolve(variant["properties"][key])["properties"]),
+            set(resolve(variant["properties"][key])["required"]),
+        )
+        for variant in variants
+        for key in [one(variant["properties"])]
     }
+
+
+@pytest.mark.parametrize(
+    ("crd_name", "field"), [("crd-egressbindings.yaml", "subjects"), ("crd-actionpolicybindings.yaml", "subject")]
+)
+def test_a_binding_crd_states_the_subject_the_services_decide_against(crd_name: str, field: str) -> None:
+    """Both services bind to one `Subject`, so neither CRD may drift from it: a key the model does
+    not know decodes to no variant, and a field a CRD stops requiring reaches the model absent.
+
+    Checked against the model's own schema rather than against the other CRD -- two mirrors of one
+    source, not two sources compared to each other.
+    """
+    declared = _model_subject()
+    schema = _subject_schema(crd_name, field)
+
+    assert (schema["type"], schema["minProperties"], schema["maxProperties"]) == ("object", 1, 1), (
+        "the CRD must admit exactly one key, which is what makes the union unambiguous"
+    )
+    assert set(schema["properties"]) == set(declared)
+    assert {key: _variant(schema, key) for key in schema["properties"]} == declared
 
 
 @pytest.mark.parametrize(

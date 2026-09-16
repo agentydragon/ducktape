@@ -143,7 +143,11 @@ async def test_pod_without_sandbox_owner_is_its_service_account(
     )
     identity = await verifier.identify(TOKEN_B, POD_B_IP)
     assert identity == ServiceAccountPodIdentity(
-        pod_name=SANDBOX_B, pod_uid=POD_B_UID, pod_ip=POD_B_IP, service_account_name="public-coder"
+        pod_name=SANDBOX_B,
+        pod_uid=POD_B_UID,
+        pod_ip=POD_B_IP,
+        namespace=SANDBOX_NAMESPACE,
+        service_account_name="public-coder",
     )
 
 

@@ -198,7 +198,9 @@ class EgressAddon:
                     )
                 caller = SandboxCaller(sandbox=sandbox)
             case ServiceAccountPodIdentity():
-                caller = ServiceAccountCaller(service_account_name=identity.service_account_name)
+                caller = ServiceAccountCaller(
+                    namespace=identity.namespace, service_account_name=identity.service_account_name
+                )
         self._authenticated[client_id] = _AuthenticatedConnection(token=token, identity=identity)
         return caller, AuthenticatedWorkloadContext(bearer=token, caller=caller, pod_uid=identity.pod_uid)
 

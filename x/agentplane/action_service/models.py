@@ -11,6 +11,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from x.agentplane.action_service.catalog import ActionIdentity
+from x.agentplane.subjects import ServiceAccountRef
 
 
 class PrincipalRole(StrEnum):
@@ -44,23 +45,16 @@ class NamespacedName:
     name: str
 
 
-class ServiceAccountRef(BaseModel):
-    """A Kubernetes ServiceAccount by namespace and name; as an Action caller it is eligible only while
-    labeled, which the Connection authority checks on every resolution."""
+def service_account_key(account: ServiceAccountRef) -> NamespacedName:
+    """The policy index's key for a caller ServiceAccount. As an Action caller it is eligible only
+    while labeled, which the Connection authority checks on every resolution."""
+    return NamespacedName(account.namespace, account.name)
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
 
-    namespace: str = Field(min_length=1)
-    name: str = Field(min_length=1)
-
-    @property
-    def namespaced_name(self) -> NamespacedName:
-        return NamespacedName(self.namespace, self.name)
-
-    def principal(self) -> Principal:
-        return Principal(
-            issuer=SERVICE_ACCOUNT_ISSUER, subject=f"{self.namespace}:{self.name}", role=PrincipalRole.CALLER
-        )
+def service_account_principal(account: ServiceAccountRef) -> Principal:
+    return Principal(
+        issuer=SERVICE_ACCOUNT_ISSUER, subject=f"{account.namespace}:{account.name}", role=PrincipalRole.CALLER
+    )
 
 
 class SandboxCaller(BaseModel):
@@ -101,7 +95,7 @@ class ServiceAccountCaller(BaseModel):
     grant_revision: int = Field(ge=1)
 
     def principal(self) -> Principal:
-        return self.service_account.principal()
+        return service_account_principal(self.service_account)
 
 
 class PolicyKind(StrEnum):
@@ -182,7 +176,7 @@ class ExternalGrantProvenance(BaseModel):
     revision: int = Field(ge=1)
 
     def principal(self) -> Principal:
-        return self.caller.principal()
+        return service_account_principal(self.caller)
 
 
 class ActionState(StrEnum):

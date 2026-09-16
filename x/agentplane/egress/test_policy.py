@@ -41,23 +41,20 @@ from x.agentplane.egress.resources import (
     PolicySpec,
     Rule,
     Sandbox,
-    SandboxRef,
-    SandboxSubject,
     SchemeTokenTarget,
     Secret,
     SecretKeyRef,
-    ServiceAccountRef,
-    ServiceAccountSubject,
-    Subject,
     Target,
     TargetMethod,
     WholeValueTarget,
 )
+from x.agentplane.subjects import SandboxRef, SandboxSubject, ServiceAccountRef, ServiceAccountSubject, Subject
 
 NOW = datetime(2026, 9, 3, 12, 0, tzinfo=UTC)
 SECRET_VALUE = "real-value"
 APP_SECRET_VALUE = "real-app-value"
 SANDBOX = Sandbox(metadata=ObjectMeta(name="sb", uid="sb-uid"))
+NAMESPACE = "agentplane-test"
 AUTHORIZATION = "Authorization"
 BEARER = SchemeTokenTarget(header=AUTHORIZATION, method=TargetMethod.SCHEME_TOKEN, scheme="Bearer")
 BASIC_PASSWORD = BasicPasswordTarget(header=AUTHORIZATION, method=TargetMethod.BASIC_PASSWORD)
@@ -115,7 +112,9 @@ def binding(
     return EgressBinding(
         metadata=ObjectMeta(name=name, generation=3),
         spec=BindingSpec(
-            subjects=subjects if subjects is not None else [SandboxSubject(sandbox=SandboxRef(name="sb"))],
+            subjects=subjects
+            if subjects is not None
+            else [SandboxSubject(sandbox=SandboxRef(name="sb", uid=SANDBOX.metadata.uid))],
             policies=policies,
             expires_at=expires_at,
         ),
@@ -252,7 +251,13 @@ CASES = [
         "binding for another sandbox",
         index(
             policies=[policy("github", GITHUB_RULE)],
-            bindings=[binding("b", policies=["github"], subjects=[SandboxSubject(sandbox=SandboxRef(name="other"))])],
+            bindings=[
+                binding(
+                    "b",
+                    policies=["github"],
+                    subjects=[SandboxSubject(sandbox=SandboxRef(name="other", uid="other-uid"))],
+                )
+            ],
         ),
         request(),
         Denied(DenyReason.NO_BINDING),
@@ -357,11 +362,13 @@ def test_a_binding_names_a_service_account_subject() -> None:
             binding(
                 "b",
                 policies=["github"],
-                subjects=[ServiceAccountSubject(service_account=ServiceAccountRef(name="public-coder"))],
+                subjects=[
+                    ServiceAccountSubject(service_account=ServiceAccountRef(namespace=NAMESPACE, name="public-coder"))
+                ],
             )
         ],
     )
-    allowed = evaluate(scoped, ServiceAccountCaller("public-coder"), request(), NOW)
+    allowed = evaluate(scoped, ServiceAccountCaller(NAMESPACE, "public-coder"), request(), NOW)
     assert isinstance(allowed, Allowed)
 
 
@@ -372,25 +379,37 @@ def test_a_service_account_binding_does_not_admit_another_service_account() -> N
             binding(
                 "b",
                 policies=["github"],
-                subjects=[ServiceAccountSubject(service_account=ServiceAccountRef(name="public-coder"))],
+                subjects=[
+                    ServiceAccountSubject(service_account=ServiceAccountRef(namespace=NAMESPACE, name="public-coder"))
+                ],
             )
         ],
     )
-    assert evaluate(scoped, ServiceAccountCaller("someone-else"), request(), NOW) == Denied(DenyReason.NO_BINDING)
+    assert evaluate(scoped, ServiceAccountCaller(NAMESPACE, "someone-else"), request(), NOW) == Denied(
+        DenyReason.NO_BINDING
+    )
 
 
 def test_subject_kinds_do_not_admit_each_other() -> None:
     """A name shared by a Sandbox and a ServiceAccount is two subjects, not one."""
     by_sandbox = index(
         policies=[policy("github", GITHUB_RULE)],
-        bindings=[binding("b", policies=["github"], subjects=[SandboxSubject(sandbox=SandboxRef(name="sb"))])],
+        bindings=[
+            binding(
+                "b",
+                policies=["github"],
+                subjects=[SandboxSubject(sandbox=SandboxRef(name="sb", uid=SANDBOX.metadata.uid))],
+            )
+        ],
     )
-    assert evaluate(by_sandbox, ServiceAccountCaller("sb"), request(), NOW) == Denied(DenyReason.NO_BINDING)
+    assert evaluate(by_sandbox, ServiceAccountCaller(NAMESPACE, "sb"), request(), NOW) == Denied(DenyReason.NO_BINDING)
     by_service_account = index(
         policies=[policy("github", GITHUB_RULE)],
         bindings=[
             binding(
-                "b", policies=["github"], subjects=[ServiceAccountSubject(service_account=ServiceAccountRef(name="sb"))]
+                "b",
+                policies=["github"],
+                subjects=[ServiceAccountSubject(service_account=ServiceAccountRef(namespace=NAMESPACE, name="sb"))],
             )
         ],
     )

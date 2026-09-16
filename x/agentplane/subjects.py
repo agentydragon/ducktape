@@ -1,24 +1,58 @@
-"""The subject vocabulary the egress proxy and the Action Service both decide against.
+"""The subject an Agentplane policy binds to, defined once for every service that binds one.
 
-Both bind policy to the same two kinds -- a managed Sandbox, or the ServiceAccount a workload's Pod
-runs as -- and both spell that on the wire the way Kubernetes spells "exactly one of": a one-key
-object, `{sandbox: ...}` or `{serviceAccount: ...}`, which a CRD constrains with `maxProperties: 1`.
+The egress proxy and the Action Service authorize the same two kinds of caller -- a managed Sandbox,
+or the ServiceAccount a workload's Pod runs as -- so they bind to one subject type rather than two
+that have to be kept in agreement. `EgressBinding` and `ActionPolicyBinding` mirror this model's
+JSON schema; `cluster/validation` pins each of them to it.
 
-What each side's *reference* carries differs and should: the Action Service is multi-namespace and
-pins a Sandbox by UID, where the egress proxy serves one namespace and re-checks the UID when it
-authenticates. What must not differ is the vocabulary -- the kind names, how an API reports a
-subject, and which key decides the union -- so those live here and neither service redefines them.
+The wire shape is the way Kubernetes spells "exactly one of": a one-key object, `{sandbox: ...}` or
+`{serviceAccount: ...}`, which a CRD constrains with `maxProperties: 1`. In Python that needs no
+discriminator -- each variant requires a field the other forbids, so the union resolves itself, and
+`extra="forbid"` is what refuses an object naming both.
+
+A Sandbox is named with its UID, so a grant is to that Sandbox and not to its name: a Sandbox
+deleted and recreated under the same name does not inherit what the old one was granted. Cascading
+deletion of the binding object is housekeeping on top of that, not the guarantee itself.
 """
 
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
-SANDBOX_KEY = "sandbox"
-SERVICE_ACCOUNT_KEY = "serviceAccount"
+
+class _Spec(BaseModel):
+    """Operator-authored, so an unknown key is a mistake; constructed by field name in tests."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
+
+
+class SandboxRef(_Spec):
+    name: str = Field(min_length=1)
+    uid: str = Field(min_length=1, description="Pins the Sandbox instance; a binding whose Sandbox is gone is inert.")
+
+
+class ServiceAccountRef(_Spec):
+    namespace: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+
+
+class SandboxSubject(_Spec):
+    sandbox: SandboxRef
+
+
+class ServiceAccountSubject(_Spec):
+    """A workload no Sandbox owns, named by the ServiceAccount its Pod runs as.
+
+    Unlike a Sandbox subject this is not lifecycle-bound: every Pod running as that ServiceAccount is
+    this subject, so a binding is only as narrow as the ServiceAccount is dedicated to one workload.
+    """
+
+    service_account: ServiceAccountRef = Field(alias="serviceAccount")
+
+
+type Subject = SandboxSubject | ServiceAccountSubject
 
 
 class SubjectKind(StrEnum):
@@ -41,23 +75,7 @@ class SubjectView(BaseModel):
     name: str
 
 
-def subject_kind(value: Any) -> str | None:
-    """Which one-key form a subject takes, for Pydantic's `Discriminator`.
-
-    Discrimination runs before validation, so this sees whatever the caller passed: a raw object off
-    the API server, keyed by alias; the same object keyed by field name, as tests construct it; or an
-    already-constructed variant. All three answer the same question -- which of the two keys is
-    present -- so this reads the key rather than a list of variant classes that each service would
-    have to keep in step with this function.
-    """
-    if isinstance(value, BaseModel):
-        present = type(value).model_fields
-    elif isinstance(value, dict):
-        present = value
-    else:
-        return None
-    if SERVICE_ACCOUNT_KEY in present or "service_account" in present:
-        return SERVICE_ACCOUNT_KEY
-    if SANDBOX_KEY in present:
-        return SANDBOX_KEY
-    return None
+def subject_view(subject: Subject) -> SubjectView:
+    if isinstance(subject, SandboxSubject):
+        return SubjectView(kind=SubjectKind.SANDBOX, name=subject.sandbox.name)
+    return SubjectView(kind=SubjectKind.SERVICE_ACCOUNT, name=subject.service_account.name)
