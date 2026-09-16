@@ -62,7 +62,10 @@ async def test_idle_resume_replays_the_transcript_from_disk(
         prompt = await second.send("Reply with exactly: IDLE_RESUME_OK")
         async with await anthropic_messages.await_next_request() as exchange:
             request = exchange.request
-            assert request.texts("user") == [
+            conversation_user_texts = [
+                text for text in request.texts("user") if not text.startswith("<system-reminder>")
+            ]
+            assert conversation_user_texts == [
                 "Reply with exactly: IDLE_RESUME_SEED_OK",
                 "Reply with exactly: IDLE_RESUME_OK",
             ]
