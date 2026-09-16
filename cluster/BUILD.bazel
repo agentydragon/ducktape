@@ -5,20 +5,36 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 exports_files([".tflint.hcl"])
 
 py_library(
-    name = "generate_manifests_lib",
-    srcs = [
-        "flux_constructs.py",
-        "generate_manifests.py",
-        "litellm_config.py",
-        "litellm_constructs.py",
-    ],
-    visibility = ["//visibility:private"],
+    name = "flux_constructs",
+    srcs = ["flux_constructs.py"],
+)
+
+py_library(
+    name = "litellm_config",
+    srcs = ["litellm_config.py"],
+    deps = ["//cluster/k8s/litellm/app:model_rosters"],
+)
+
+py_library(
+    name = "litellm_constructs",
+    srcs = ["litellm_constructs.py"],
     deps = [
-        "//cluster/k8s/litellm/app:model_rosters",
-        "//util/bazel:workspace",
+        ":litellm_config",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_33",
         "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "generate_manifests_lib",
+    srcs = ["generate_manifests.py"],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":flux_constructs",
+        ":litellm_constructs",
+        "//util/bazel:workspace",
+        "@pypi//cdk8s",
     ],
 )
 
@@ -45,6 +61,7 @@ py_test(
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":generate_manifests_lib",
+        ":litellm_config",
         "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

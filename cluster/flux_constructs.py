@@ -8,6 +8,7 @@ extend as more directories convert rather than pre-guessing the rest of the
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 _NAMESPACE = "ducktape-flux"
@@ -52,7 +53,7 @@ def flux_kustomization(spec: FluxKustomizationSpec) -> dict[str, object]:
 
 
 def kustomize_kustomization(
-    *, resources: list[str], namespace: str | None = None, components: list[str] = ()
+    *, resources: list[str], namespace: str | None = None, components: Sequence[str] = ()
 ) -> dict[str, object]:
     """Return the plain `kustomize.config.k8s.io` `Kustomization` listing `resources`.
 
