@@ -42,29 +42,27 @@ untrue.
 own port — so its own `Service` port, `NetworkPolicy` rule and readiness. The Connect mount is a
 `app.mount()` on the ASGI app that already exists.
 
-**3. Authorization costs a refactor, not a duplicate — `auth.py` overstates this.** The 98 lines
-there reimplement the cookie unsign, row lookup, expiry check and Origin compare, against the 38
-of `connect.py` which calls `require_caller` directly. That is a shortcut in the spike, not a
-property of gRPC-Web, and the comparison should not be read as a cost of the transport.
+**3. Authorization is not a differentiator — retired.** `auth.py` reimplements what
+`require_caller` already decides, and this finding first reported those 98 lines as a cost of
+gRPC-Web. They are a cost of how the spike was written, and the finding does not survive at all.
 
-The reason it is tempting: `require_caller` takes a Starlette `Request` and reads
-`request.scope["session"]`, which `OperatorSessionMiddleware` populates, so the cookie work lives
-inside a middleware rather than in a function anything can call. Two ways to have one
-implementation, neither built here:
+The spike sends the browser's session cookie because that is what this app's browser credential
+is: `oidc.py` and `operator_sessions.py` both say only a signed random handle crosses into the
+browser, with the operator's access token kept in a Postgres row, and `fetch` ships that cookie
+automatically. That is an XSS-exfiltration and revocation decision, deliberately made.
 
-- **Extract the core.** Lift the cookie→session read out of `OperatorSessionMiddleware` into a
-  function taking a cookie string, called by both the middleware and an interceptor.
-  `TokenReviewer.review(token)` already takes a bare string and needs nothing; the Origin check is
-  three lines.
-- **Envoy `ext_authz`.** Envoy asks the app over its real HTTP surface, which runs the real
-  `require_caller` on a real `Request`. No new authorization code at all, at the cost of a round
-  trip at stream open and an endpoint.
+The conventional shape for authorized gRPC is a bearer token in call metadata, validated by
+Envoy's `jwt_authn` filter -- which is in Cilium's build alongside `grpc_web`. It is reachable
+without undoing the decision above: mint a short-lived RPC token from the cookie session in one
+cookie-authenticated REST call and send that in metadata. The handle stays the root credential,
+exposure is bounded to a short-lived token, the interceptor becomes JWT validation rather than a
+second session reader, and RPC calls stop touching the session row -- which also removes the
+refresh divergence this finding used to claim.
 
-What survives either way but the second: `OperatorSessionMiddleware` also _writes_ — it rotates
-handles, refreshes expiry and clears dead cookies on the response — and an interceptor has no
-response to do that on. **A session refreshed by the browser's REST calls would not be refreshed
-by its RPC calls, so the two surfaces age one session differently.** `ext_authz` avoids even that,
-since the sub-request goes through the real middleware. No test here covers the divergence.
+**None of that is transport-specific.** Connect over `fetch` sends the same cookie today, for the
+same reason; bearer-versus-cookie is a header decision either transport carries identically. So
+authorization does not distinguish the two, and nothing in this document should be read as saying
+it does. `auth.py` is kept only as the evidence for this correction.
 
 **4. Each gRPC service costs a `mypy.ini` exemption.** `mypy-protobuf`'s generated stub carries an
 upstream unused ignore, so a consumer of it fails `warn_unused_ignores`. `mypy.ini` already
@@ -99,15 +97,15 @@ the source, and it is the part the test would stop covering.
 
 ## Measured
 
-|                                      | Connect (in-process)             | gRPC-Web (Envoy)                                   |
-| ------------------------------------ | -------------------------------- | -------------------------------------------------- |
-| Service + adapter                    | 104 lines                        | 62 lines + a second server                         |
-| Authorization                        | 38 lines, calls `require_caller` | 38 + a refactor of the cookie read, or `ext_authz` |
-| Proxy config                         | none                             | 71 lines, unverified                               |
-| `mypy.ini` entries                   | 0                                | 1 per service                                      |
-| New pinned images                    | 0                                | Envoy                                              |
-| Browser test covers production wire  | yes                              | no, without an Envoy container                     |
-| Python client for the browser's wire | none (hand-decoded)              | none (hand-decoded)                                |
+|                                      | Connect (in-process)      | gRPC-Web (Envoy)               |
+| ------------------------------------ | ------------------------- | ------------------------------ |
+| Service + adapter                    | 104 lines                 | 62 lines + a second server     |
+| Authorization                        | no difference (finding 3) | no difference (finding 3)      |
+| Proxy config                         | none                      | 71 lines, unverified           |
+| `mypy.ini` entries                   | 0                         | 1 per service                  |
+| New pinned images                    | 0                         | Envoy                          |
+| Browser test covers production wire  | yes                       | no, without an Envoy container |
+| Python client for the browser's wire | none (hand-decoded)       | none (hand-decoded)            |
 
 ## Reproducing
 

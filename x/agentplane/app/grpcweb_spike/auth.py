@@ -1,17 +1,15 @@
-"""The caller check a gRPC server runs for itself -- written the wrong way on purpose to show it.
+"""The caller check a gRPC server runs for itself -- written the wrong way, and kept to show it.
 
-This reimplements what `require_caller` already decides, because `require_caller` takes a Starlette
-`Request` and reads `request.scope["session"]`, which `OperatorSessionMiddleware` populates: the
-cookie work lives inside a middleware rather than in a function an interceptor could call. Taking
-the shortcut was a mistake, and README.md finding 3 says what should happen instead -- lift that
-read into a shared function, or let Envoy `ext_authz` ask the app itself. Do not take the line
-count here as a cost of gRPC-Web.
+README.md finding 3 retires this as a cost of gRPC-Web entirely. Two things are wrong here. It
+reimplements what `require_caller` already decides, because that function reads a Starlette
+`Request` and the cookie work lives inside `OperatorSessionMiddleware` rather than in anything an
+interceptor could call. And reading a cookie at all is not how authorized gRPC is normally done:
+the conventional shape is a bearer token in call metadata, which Envoy's `jwt_authn` filter
+validates at the edge.
 
-What no refactor fixes: `OperatorSessionMiddleware` also *writes*, rotating handles and refreshing
-expiry on the response, and an interceptor has no response to do that on. So a session the
-browser's REST calls refresh is not refreshed by its RPC calls. `ext_authz` avoids that too.
-
-Spike. Findings are in README.md.
+Neither is a property of the transport. Connect over `fetch` sends the same cookie today, so
+whatever credential the RPC surface should carry, both transports carry it the same way. Do not
+read the line count here as a cost of anything.
 """
 
 from __future__ import annotations
