@@ -558,6 +558,34 @@ public-coder destination rules and token substitutions in its reviewed configura
 the required ServiceAccount, network policy, routing, and secret wiring. Compare effective behavior
 against the existing path before cutover; do not infer equivalence from source configuration alone.
 
+**What already exists**, read from the repository rather than assumed, because this milestone is
+smaller than its description implies:
+
+- **The substitution mechanism is built.** An `EgressCredential` holds the real value and declares
+  every exact location it may be presented; its placeholder is `agentplane-credential-<name>` and
+  the `schemeToken` target parses `<scheme> <credential>`, which is the shape public-coder's GitHub
+  token already travels in. That is iron-proxy's `iron.yaml` expressed as resources
+  (<../egress/SPEC.md>), so the GitHub token substitution needs configuration, not code.
+- **Some GitHub auto-approval is ported**: `cluster/k8s/agentplane-staging/actions/` carries
+  `ActionPolicySet`s for `github-identity-reads`, `public-github-reads`, `public-ducktape-reads`,
+  `public-ducktape-fork-reads` and `public-gaffer-private-reads`. Whether that set covers what
+  public-coder is allowed to do today is not established here; the ported ones are a starting point
+  to diff against, not a finished policy.
+
+**The gap is the subject kind, not the proxy.** Egress authenticates a Pod-bound ServiceAccount
+token and then requires the Pod's controller owner to be a `Sandbox` the proxy's watch knows
+(`egress/identity.py` via `SandboxPrincipalResolver`), and `BindingSpec.subjects` is a list of
+`Subject`, which today has exactly one field, `sandbox: SandboxRef` (`egress/resources.py`).
+public-coder is a plain Deployment running OpenClaw, so it has no Sandbox to be, and no binding can
+name it.
+
+That is what a static Agentplane identity for public-coder has to supply, and the system already
+knows the shape: the Action Service decides for both `SandboxCaller` and `ServiceAccountCaller`, "an
+external Connection acting as a labeled ServiceAccount" (`action_service/models.py`). `Subject` being
+a one-field wrapper means a second subject kind is additive rather than a redesign. Settle whether
+egress's subject becomes that same ServiceAccount-shaped caller before configuring anything: it
+decides what the binding names and what identity the proxy verifies.
+
 **Acceptance evidence:** public-coder can reach every currently supported destination, each existing
 substituted token is presented only at its intended destination, denied/unmatched traffic behaves as
 specified, and the Agentplane proxy survives rollout/restart without silently dropping the agent's
