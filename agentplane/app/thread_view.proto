@@ -232,8 +232,10 @@ message ViewSnapshot {
   SegmentsPage tail = 2;
   SegmentsPage reading_window = 3;
   Controls controls = 4;
+  // Command summaries are view state, not a query answer: `Changes` carries them too, so a snapshot
+  // without them would break snapshot-plus-changes parity. Reconciling specific locally retained
+  // ids is `ThreadCommandService.GetCommands`, which orders against a snapshot through `minimum`.
   CommandsPage pending = 5;
-  CommandLookup requested_commands = 6;
 }
 
 // Everything that changed over an interval. Segments and commands carry complete values, so
