@@ -562,9 +562,44 @@ against the existing path before cutover; do not infer equivalence from source c
 substituted token is presented only at its intended destination, denied/unmatched traffic behaves as
 specified, and the Agentplane proxy survives rollout/restart without silently dropping the agent's
 in-flight work. Run the real devbox/agent acceptance through the new path, retain redacted effective
-rules and token-boundary evidence, then cut over with a reversible rollback window. Retire the old
-`haku-console` / `iron-proxy` resources only after the production path is proven and rollback is
-available; this milestone is an egress migration, not permission to widen the stable configuration.
+rules and token-boundary evidence, then cut over with a reversible rollback window. This milestone is
+an egress migration, not permission to widen the stable configuration.
+
+**What retirement covers.** "The old `haku-console` / `iron-proxy` path" names three separate things,
+and only the first is this milestone's to delete. Inventory taken from the repository, not from
+running cluster state, so re-check before deleting anything.
+
+_Retire, once the production path is proven and rollback is available:_
+
+- `cluster/k8s/agents/public-coder-agent/proxy/` — this agent's own iron-proxy: `deployment.yaml`,
+  `service.yaml`, `iron.yaml` (the substitution rules), `certificate.yaml`
+  (`public-coder-agent-proxy-root-ca`), `trust-bundle.yaml`, `cnp-{ingress,egress}.yaml`,
+  `forgejo-images-creds-eso.yaml`, `flux-kustomization.yaml`, `kustomization.yaml`.
+- The placeholder contract in `cluster/k8s/agents/public-coder-agent/app/deployment.yaml`: the agent
+  is handed `proxy-github-placeholder` and `proxy-haku-console-placeholder` and told the contract,
+  because only the sibling proxy performs the swap. Whatever replaces the proxy inherits that
+  contract or the agent's configuration changes with it.
+- The Haku Console side of the credential: `HAKU_CONSOLE__STATIC_AGENTS__PUBLIC_CODER__TOKEN` in
+  `cluster/k8s/haku/console/deployment.yaml` and `Secret/haku-console-public-coder-agent`. This is
+  the whole "`haku-console`" half of the name — Console is the bearer's authority, not a proxy.
+
+_Shared, so not this milestone's to delete:_
+
+- The `iron-proxy` image build — `cluster/images/iron-proxy/`,
+  `.github/workflows/iron-proxy-image.yml`, `cluster/k8s/flux-image-automation-forgejo/iron-proxy-image.yaml`.
+  It carries a pinned upstream commit for HTTP/2 MITM support and is consumed by
+  `haku-claude-oauth-proxy` and `haku-openclaw-spike-proxy` as well. It was named for public-coder
+  only because this was its first consumer.
+
+_A different fence entirely, out of scope:_
+
+- The `haku-egress-proxy` namespace is Haku's egress fence for `haku-sandbox` and `haku-ci`, not
+  public-coder's path, and it has its own live consumers: the Kyverno `inject-haku-egress-proxy`
+  policy that injects `HTTP(S)_PROXY` and CA trust into every Pod in `haku-sandbox`;
+  `cluster/k8s/haku-ci/{config,scaledjob}.yaml`; `cluster/k8s/haku/workspaces/image/haku-sandbox-setup.sh`;
+  and the two iron-proxy listeners it hosts. `cluster/validation/test_egress_allowlists.py` and
+  `cluster/validation/kyverno/test_proxy_injection.py` assert that wiring. Deleting it because this
+  entry says "retire the old proxy" would remove the fence in front of Haku's sandbox and CI.
 
 ### `MCPAGG` — Haku Console MCP aggregator replacement
 
