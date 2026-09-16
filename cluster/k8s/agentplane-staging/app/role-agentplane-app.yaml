@@ -20,6 +20,13 @@ rules:
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["get", "list", "watch"]
+  # One ServiceAccount per Sandbox, which its Pod runs as: that is what the egress proxy and the
+  # Action Service authenticate it by, so an account of its own is what lets one sandbox be
+  # granted what its neighbours are not. Created with the Sandbox and owned by it; no patching
+  # beyond stamping that owner reference, and no reading of the tokens minted for it.
+  - apiGroups: [""]
+    resources: ["serviceaccounts"]
+    verbs: ["create", "patch", "delete"]
   - apiGroups: ["agentplane.allegedly.works"]
     resources: ["egresspolicies", "egressbindings", "egresscredentials"]
     verbs: ["get", "list", "watch"]

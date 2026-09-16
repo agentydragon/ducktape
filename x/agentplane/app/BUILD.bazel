@@ -243,6 +243,7 @@ py_test(
         ":inventory",
         "//:conftest",
         "//x/agentplane/app/testing:kubernetes",
+        "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
