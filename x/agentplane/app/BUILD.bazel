@@ -895,6 +895,7 @@ py_test(
     requires_docker = True,
     deps = [
         ":conftest",
+        ":thread_events",
         ":trajectory",
         "//:conftest",
         "//util/bazel:runfiles",

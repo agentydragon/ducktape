@@ -1,7 +1,9 @@
-import { equals, fromJson, type JsonValue } from "@bufbuild/protobuf";
+import { equals } from "@bufbuild/protobuf";
+import type { Client } from "@connectrpc/connect";
 
 import { EventEntrySchema, type EventEntry } from "../../protocol/event_log_pb";
-import { AttachedSchema, type Attached } from "../../runner/protocol_pb";
+import type { Attached } from "../../runner/protocol_pb";
+import type { FollowEventsResponse, ThreadEvents } from "../thread_events_pb";
 import { EMPTY, reduce, type SessionState } from "./events";
 
 export type Connection =
@@ -13,6 +15,12 @@ export interface StreamSnapshot {
   attached: Attached | null;
   connection: Connection;
 }
+
+/** How long before reopening a stream the transport dropped, doubling to `RECONNECT_MAX_MS` while
+ * it keeps dropping. The cursor a reader holds is verified, so reopening from it is always safe --
+ * the delay is only there to keep a server that is down from being hammered. */
+const RECONNECT_MS = 500;
+const RECONNECT_MAX_MS = 8_000;
 
 export function catchingUp(snapshot: StreamSnapshot): boolean {
   return snapshot.attached !== null && BigInt(snapshot.conversation.lastCursor) < snapshot.attached.lastCursor;
@@ -30,6 +38,19 @@ export function appliedModel(snapshot: StreamSnapshot): string | null {
   return snapshot.attached?.spec?.model || null;
 }
 
+function sleep(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    let timer = 0;
+    const done = (): void => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", done);
+      resolve();
+    };
+    timer = window.setTimeout(done, ms);
+    signal.addEventListener("abort", done);
+  });
+}
+
 /** One subscribed target owns one verified prefix. A fresh instance replays from zero; a cursor
  * without its corresponding Events is never a valid starting state. Construction has no effects. */
 export class EventStream {
@@ -39,9 +60,12 @@ export class EventStream {
     connection: { kind: "connecting" },
   };
   private readonly listeners = new Set<() => void>();
-  private source: EventSource | null = null;
+  private following: AbortController | null = null;
 
-  constructor(private readonly url: string) {}
+  constructor(
+    private readonly client: Client<typeof ThreadEvents>,
+    private readonly threadId: string
+  ) {}
 
   getSnapshot = (): StreamSnapshot => this.snapshot;
 
@@ -60,8 +84,8 @@ export class EventStream {
   }
 
   private disconnect(): void {
-    this.source?.close();
-    this.source = null;
+    this.following?.abort();
+    this.following = null;
   }
 
   private fail(reason: unknown): void {
@@ -72,7 +96,50 @@ export class EventStream {
     });
   }
 
-  private accept(entry: EventEntry): void {
+  /** False once the stream must not be reopened: it completed, or something in it broke the
+   * prefix. A transport failure is neither, and does not reach here. */
+  private accept(response: FollowEventsResponse): boolean {
+    try {
+      switch (response.frame.case) {
+        case "heartbeat":
+          this.publish({ ...this.snapshot, connection: { kind: "following" } });
+          return true;
+        case "attached":
+          this.attach(response.frame.value);
+          return true;
+        case "entry":
+          this.entry(response.frame.value);
+          return true;
+        case "ended":
+          if (catchingUp(this.snapshot)) {
+            throw new Error("Event stream ended before its advertised prefix was replayed");
+          }
+          // Ingestion that could not continue is the archive's failure, not the transport's: there
+          // is nothing further to reconnect to, and the reason is what the reader needs.
+          if (response.frame.value.error !== undefined) throw new Error(response.frame.value.error);
+          this.disconnect();
+          this.publish({ ...this.snapshot, connection: { kind: "ended" } });
+          return false;
+        case undefined:
+          throw new Error("Stream frame carries nothing");
+      }
+    } catch (error) {
+      this.fail(error);
+      return false;
+    }
+  }
+
+  private attach(attached: Attached): void {
+    if (attached.lastCursor < BigInt(this.snapshot.conversation.lastCursor)) {
+      throw new Error("Attachment snapshot is behind the consumed Event prefix");
+    }
+    if (this.snapshot.attached && attached.lastCursor < this.snapshot.attached.lastCursor) {
+      throw new Error("Attachment snapshot moved its advertised Event prefix backwards");
+    }
+    this.publish({ ...this.snapshot, attached, connection: { kind: "following" } });
+  }
+
+  private entry(entry: EventEntry): void {
     const previous = this.snapshot.conversation;
     if (entry.cursor < 1n || !entry.origin?.sourceId || entry.origin.sequence !== entry.cursor || !entry.event) {
       throw new Error(`Invalid Event provenance or payload at cursor ${entry.cursor}`);
@@ -94,64 +161,45 @@ export class EventStream {
 
   private connect(): void {
     if (this.snapshot.connection.kind === "ended" || this.snapshot.connection.kind === "failed") return;
-    const url = new URL(this.url, window.location.href);
-    url.searchParams.set("after", this.snapshot.conversation.lastCursor);
-    const source = new EventSource(url.href);
-    this.source = source;
+    const controller = new AbortController();
+    this.following = controller;
+    void this.follow(controller);
+  }
+
+  /** Reopens for as long as this target is subscribed, always from the prefix it has verified.
+   * Only `accept` ends the loop for good; anything the transport does is a reconnect, which is
+   * what the browser's own EventSource did before this and what a page left open overnight needs.
+   */
+  private async follow(controller: AbortController): Promise<void> {
+    let backoff = RECONNECT_MS;
     this.publish({
       ...this.snapshot,
       connection: { kind: this.snapshot.conversation.lastCursor === "0" ? "connecting" : "reconnecting" },
     });
-    source.addEventListener("open", () => {
-      if (this.source === source) this.publish({ ...this.snapshot, connection: { kind: "following" } });
-    });
-    source.addEventListener("attached", (message: MessageEvent<string>) => {
-      if (this.source !== source) return;
+    while (!controller.signal.aborted) {
       try {
-        const attached = fromJson(AttachedSchema, JSON.parse(message.data) as JsonValue);
-        if (attached.lastCursor < BigInt(this.snapshot.conversation.lastCursor)) {
-          throw new Error("Attachment snapshot is behind the consumed Event prefix");
+        const responses = this.client.followEvents(
+          { threadId: this.threadId, afterCursor: BigInt(this.snapshot.conversation.lastCursor) },
+          { signal: controller.signal }
+        );
+        for await (const response of responses) {
+          // A transport that has not noticed the abort yet must not deliver into a reader that has
+          // let go: this target's prefix belongs to whoever is subscribed now.
+          if (controller.signal.aborted) return;
+          backoff = RECONNECT_MS;
+          if (!this.accept(response)) return;
         }
-        if (this.snapshot.attached && attached.lastCursor < this.snapshot.attached.lastCursor) {
-          throw new Error("Attachment snapshot moved its advertised Event prefix backwards");
-        }
-        this.publish({ ...this.snapshot, attached, connection: { kind: "following" } });
       } catch (error) {
-        this.fail(error);
+        // The stream broke rather than ending. What was accepted from it stays accepted, and the
+        // reconnect below is silent to the reader, so this is the only place it is visible at all.
+        if (!controller.signal.aborted) console.warn(`thread ${this.threadId}: event stream broke`, error);
       }
-    });
-    source.addEventListener("event", (message: MessageEvent<string>) => {
-      if (this.source !== source) return;
-      try {
-        const entry = fromJson(EventEntrySchema, JSON.parse(message.data) as JsonValue);
-        if (message.lastEventId && message.lastEventId !== String(entry.cursor)) {
-          throw new Error(`SSE id does not match Event cursor ${entry.cursor}`);
-        }
-        this.accept(entry);
-      } catch (error) {
-        // EventSource has already consumed the wire id. Do not let it reconnect past a rejected
-        // entry: preserve the verified prefix and make the broken stream visible instead.
-        this.fail(error);
-      }
-    });
-    source.addEventListener("end", () => {
-      if (this.source !== source) return;
-      if (catchingUp(this.snapshot)) {
-        this.fail("Event stream ended before its advertised prefix was replayed");
-        return;
-      }
-      this.disconnect();
-      this.publish({ ...this.snapshot, connection: { kind: "ended" } });
-    });
-    source.addEventListener("error", (message: globalThis.Event) => {
-      if (this.source !== source) return;
-      if ("data" in message) {
-        this.fail((message as MessageEvent<string>).data);
-      } else {
-        // Native EventSource reconnects with Last-Event-ID. Only successfully verified entries
-        // can reach this path; integrity failures close it above.
-        this.publish({ ...this.snapshot, connection: { kind: "reconnecting" } });
-      }
-    });
+      if (controller.signal.aborted) return;
+      // Said the moment the connection goes, not when the next attempt starts: the reader is
+      // already not being told anything, and the backoff below is most of the gap.
+      this.publish({ ...this.snapshot, connection: { kind: "reconnecting" } });
+      await sleep(backoff, controller.signal);
+      backoff = Math.min(backoff * 2, RECONNECT_MAX_MS);
+    }
   }
 }

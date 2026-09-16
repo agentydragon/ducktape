@@ -8,7 +8,7 @@
 import "./network";
 import "@mantine/core/styles.css";
 
-import { create, toJson, toJsonString, type MessageInitShape } from "@bufbuild/protobuf";
+import { create, fromBinary, toBinary, toJson, type MessageInitShape } from "@bufbuild/protobuf";
 import { MantineProvider } from "@mantine/core";
 import { createRoot } from "react-dom/client";
 
@@ -37,6 +37,11 @@ import {
   type SessionSpec,
   type SessionSummary,
 } from "../../../runner/protocol_pb";
+import {
+  FollowEventsRequestSchema,
+  FollowEventsResponseSchema,
+  type FollowEventsResponse,
+} from "../../thread_events_pb";
 import { routes } from "./network";
 import { SCENARIOS, type Scenario } from "./scenarios";
 import { LocalCommands } from "../local_commands";
@@ -1012,6 +1017,15 @@ if (scenario.pendingCommands === "mixed") {
 // live streams above.
 routes.push(
   [
+    "POST",
+    /^\/rpc\/ducktape\.agentplane\.app\.v1\.ThreadEvents\/FollowEvents$/,
+    (_match, _query, body) => {
+      if (!(body instanceof Uint8Array)) throw new Error("FollowEvents was not sent as an envelope");
+      const request = fromBinary(FollowEventsRequestSchema, body.subarray(5));
+      return followEvents(request.threadId, request.afterCursor);
+    },
+  ],
+  [
     "GET",
     /^\/models$/,
     () => ({ HARNESS_CLAUDE: ["harness-claude-model", "next-model"], HARNESS_CODEX: ["harness-codex-model"] }),
@@ -1139,9 +1153,8 @@ function watch(): WatchHealth {
 }
 
 /**
- * The app's two stream shapes: a live view, which is one snapshot and then whatever changes (here,
- * nothing), and a session, which is the canned turn and then silence, the way a session mid-turn
- * looks.
+ * The live views, which are one snapshot and then whatever changes -- here, nothing. A Thread's
+ * own stream is Connect RPC, served from the same `fetch` stub as everything else.
  */
 class HarnessEventSource extends EventTarget {
   readonly url: string;
@@ -1187,42 +1200,7 @@ class HarnessEventSource extends EventTarget {
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
       return;
     }
-    const isStatesSession = url.pathname === `/threads/${THREADS[2].id}/events/stream`;
-    const thread = THREADS_WITH_SANDBOXES.find(
-      (candidate) => url.pathname === `/threads/${candidate.id}/events/stream`
-    );
-    if (!thread) throw new Error(`Unknown Thread stream: ${url.pathname}`);
-    let entries = isStatesSession ? EVENTS_STATES : EVENTS;
-    const attached = create(AttachedSchema, {
-      ...(isStatesSession ? ATTACHED_STATES : ATTACHED),
-      sessionId: thread.session_id,
-    });
-    if (thread.sandbox !== "demo-a1b2") {
-      entries = entries.slice(0, thread.last_cursor);
-      attached.lastCursor = BigInt(entries.length);
-    }
-    if (scenario.pendingCommands) entries = [...entries, ...PENDING_EVENTS];
-    if (scenario.pendingCommands === "outcomes") entries = [...entries, ...COMMAND_OUTCOMES];
-    if (scenario.interleavedEvents) {
-      entries = INTERLEAVED_EVENTS;
-      attached.lastCursor = BigInt(entries.length);
-      attached.activeTurnId = "";
-      attached.spec = create(SessionSpecSchema, { ...SPEC, model: "next-model" });
-    }
-    if (scenario.failedTurn) {
-      entries = failedTurnEvents(scenario.failedTurn === "after-content");
-      attached.lastCursor = BigInt(entries.length);
-      attached.activeTurnId = "";
-    }
-    if (scenario.sessionReplay === "catching-up") entries = entries.slice(0, 8);
-    if (scenario.sessionReplay === "gap") entries = entries.filter((entry) => entry.cursor !== 9n);
-    entries = entries.filter((entry) => entry.cursor > BigInt(url.searchParams.get("after") ?? "0"));
-    this.dispatchEvent(new MessageEvent("attached", { data: toJsonString(AttachedSchema, attached) }));
-    for (const entry of entries) {
-      this.dispatchEvent(
-        new MessageEvent("event", { data: toJsonString(EventEntrySchema, entry), lastEventId: String(entry.cursor) })
-      );
-    }
+    throw new Error(`Unknown stream: ${url.pathname}`);
   }
 
   close(): void {
@@ -1231,6 +1209,61 @@ class HarnessEventSource extends EventTarget {
 }
 
 window.EventSource = HarnessEventSource as unknown as typeof EventSource;
+
+/** The Connect streaming envelope: a flag byte, a big-endian length, the encoded message. */
+function envelope(response: FollowEventsResponse): Uint8Array {
+  const payload = toBinary(FollowEventsResponseSchema, response);
+  const framed = new Uint8Array(5 + payload.length);
+  new DataView(framed.buffer).setUint32(1, payload.length);
+  framed.set(payload, 5);
+  return framed;
+}
+
+/** One Thread's canned turn and then silence, the way a session mid-turn looks. The body is never
+ * closed, so the page stays connected rather than reconnecting under the camera. */
+function followEvents(threadId: string, afterCursor: bigint): Response {
+  const isStatesSession = threadId === THREADS[2].id;
+  const thread = THREADS_WITH_SANDBOXES.find((candidate) => candidate.id === threadId);
+  if (!thread) throw new Error(`Unknown Thread stream: ${threadId}`);
+  let entries = isStatesSession ? EVENTS_STATES : EVENTS;
+  const attached = create(AttachedSchema, {
+    ...(isStatesSession ? ATTACHED_STATES : ATTACHED),
+    sessionId: thread.session_id,
+  });
+  if (thread.sandbox !== "demo-a1b2") {
+    entries = entries.slice(0, thread.last_cursor);
+    attached.lastCursor = BigInt(entries.length);
+  }
+  if (scenario.pendingCommands) entries = [...entries, ...PENDING_EVENTS];
+  if (scenario.pendingCommands === "outcomes") entries = [...entries, ...COMMAND_OUTCOMES];
+  if (scenario.interleavedEvents) {
+    entries = INTERLEAVED_EVENTS;
+    attached.lastCursor = BigInt(entries.length);
+    attached.activeTurnId = "";
+    attached.spec = create(SessionSpecSchema, { ...SPEC, model: "next-model" });
+  }
+  if (scenario.failedTurn) {
+    entries = failedTurnEvents(scenario.failedTurn === "after-content");
+    attached.lastCursor = BigInt(entries.length);
+    attached.activeTurnId = "";
+  }
+  if (scenario.sessionReplay === "catching-up") entries = entries.slice(0, 8);
+  if (scenario.sessionReplay === "gap") entries = entries.filter((entry) => entry.cursor !== 9n);
+  const frames: FollowEventsResponse[] = [
+    create(FollowEventsResponseSchema, { frame: { case: "attached", value: attached } }),
+    ...entries
+      .filter((entry) => entry.cursor > afterCursor)
+      .map((entry) => create(FollowEventsResponseSchema, { frame: { case: "entry", value: entry } })),
+  ];
+  return new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const frame of frames) controller.enqueue(envelope(frame));
+      },
+    }),
+    { headers: { "content-type": "application/connect+proto" } }
+  );
+}
 
 if (scenario.openEvidence !== undefined) {
   const openEvidence = new MutationObserver(() => {

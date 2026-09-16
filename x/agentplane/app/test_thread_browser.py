@@ -1,7 +1,7 @@
-"""The built SPA consumes actual PostgreSQL-backed HTTP/SSE in a real Chromium page.
+"""The built SPA consumes an actual PostgreSQL-backed HTTP and Connect stream in a real Chromium page.
 
 Only the upstream runner protocol source and Kubernetes/auth boundaries are controlled. Browser
-fetch, EventSource, rendering, and page reload are not replaced by the visual harness's mocks.
+fetch, streaming, rendering, and page reload are not replaced by the visual harness's mocks.
 """
 
 import asyncio
@@ -18,12 +18,21 @@ from playwright.async_api import APIResponse, Page, Request, Route, async_playwr
 from util.bazel.runfiles import get_required_path
 from util.testing.frontend_visual import CONTAINER_BASE_BROWSER_ARGS, chromium_executable
 from util.testing.undeclared_outputs import undeclared_outputs_dir
+from x.agentplane.app import thread_events_pb2
 from x.agentplane.app.testing.replication_process import AppProcess, app_process
 from x.agentplane.app.testing.replication_source import SANDBOX, SESSION, Opened, ReplicationSource
+from x.agentplane.app.thread_events import FOLLOW_EVENTS_PATH
 from x.agentplane.app.trajectory import TrajectoryStore
 from x.agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 
 # gazelle:include_dep @pypi//protobuf
+
+
+def _follow_from(body: bytes) -> int:
+    """The cursor a reopened stream asks to resume after, out of its Connect request envelope."""
+    request = thread_events_pb2.FollowEventsRequest()
+    request.ParseFromString(body[5 : 5 + int.from_bytes(body[1:5], "big")])
+    return request.after_cursor
 
 
 @pytest.fixture
@@ -153,7 +162,7 @@ async def test_browser_replays_streams_and_reloads_one_exact_conversation(thread
     await expect(page.get_by_role("img", name="Streaming", exact=True)).to_have_count(0)
     await expect(page.get_by_role("button", name="Interrupt", exact=True)).to_be_disabled()
 
-    # Reload replaces the JS document, including component memory and its EventSource. Durable
+    # Reload replaces the JS document, including component memory and its open stream. Durable
     # replay must rebuild the same text once, not append the prefix to the live card a second time.
     await page.reload()
     await expect(page.get_by_text(complete_text, exact=True)).to_have_count(1)
@@ -710,7 +719,7 @@ async def test_http_admission_ahead_of_replay_does_not_skip_earlier_events(threa
 
 
 @pytest.mark.parametrize("replay_after", [4])
-async def test_eventsource_reconnects_unconfirmed_command_without_reloading(thread_browser: ThreadBrowser) -> None:
+async def test_a_dropped_stream_reopens_an_unconfirmed_command_without_reloading(thread_browser: ThreadBrowser) -> None:
     page, source, app = thread_browser.page, thread_browser.source, thread_browser.app
     thread_browser.opened.replay.set()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
@@ -734,7 +743,7 @@ async def test_eventsource_reconnects_unconfirmed_command_without_reloading(thre
     await page.route("**/threads/*/commands", lose_committed_reply, times=1)
     try:
         composer = page.get_by_placeholder("Enter sends, Ctrl+Enter for a new line")
-        await composer.fill("Test input pending across EventSource reconnect")
+        await composer.fill("Test input pending across a reconnect")
         await composer.press("Enter")
         async with asyncio.timeout(15):
             response = await replies.get()
@@ -750,15 +759,15 @@ async def test_eventsource_reconnects_unconfirmed_command_without_reloading(thre
         await expect(pending.get_by_text("Awaiting saved confirmation", exact=True)).to_be_visible()
         await expect_raw_prefix(page, 4)
 
-        # Only the response transport ends. Chromium's existing EventSource must initiate this
-        # next request itself, preserving its last observed id rather than the original after=0.
-        async with page.expect_request(lambda request: "/events/stream?" in request.url) as reconnecting:
+        # Only the response transport ends. The document is not replaced, so the page itself has
+        # to reopen the stream, and from the prefix it verified rather than from the start.
+        async with page.expect_request(lambda request: request.url.endswith(FOLLOW_EVENTS_PATH)) as reconnecting:
             app.disconnect_replay()
             for text in (" and disconnected delta A", " and disconnected delta B"):
                 source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-browser-item", text=text)))
-        reconnect = await reconnecting.value
-        assert (await reconnect.all_headers())["last-event-id"] == "4"
-        assert reconnect.url.endswith("/events/stream?after=0")
+        reopened = (await reconnecting.value).post_data_buffer
+        assert reopened is not None
+        assert _follow_from(reopened) == 4
         async with asyncio.timeout(15):
             assert (await app.replay_held()).cursor == 5
         assert await document.evaluate("original => original === document")

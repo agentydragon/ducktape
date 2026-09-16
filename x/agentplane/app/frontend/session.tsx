@@ -34,7 +34,7 @@ import { useSearchParams } from "react-router";
 
 import { create, toJsonString } from "@bufbuild/protobuf";
 
-import { displayableError, eventsUrl, getThread, renameThread, models, type ThreadView } from "./client";
+import { displayableError, getThread, renameThread, models, threadEvents, type ThreadView } from "./client";
 import "./session.css";
 
 import {
@@ -415,7 +415,7 @@ export function SessionView(props: SessionViewProps): JSX.Element {
 }
 
 function SessionContents({ threadId, onBack }: SessionViewProps): JSX.Element {
-  const [stream] = useState(() => new EventStream(eventsUrl(threadId)));
+  const [stream] = useState(() => new EventStream(threadEvents(), threadId));
   const snapshot = useSyncExternalStore(stream.subscribe, stream.getSnapshot);
   const { conversation: state, attached, connection } = snapshot;
   const replaying = catchingUp(snapshot);

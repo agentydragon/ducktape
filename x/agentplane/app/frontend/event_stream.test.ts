@@ -1,47 +1,100 @@
 // @vitest-environment happy-dom
 
-import { create, toJsonString, type MessageInitShape } from "@bufbuild/protobuf";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { create, type MessageInitShape } from "@bufbuild/protobuf";
+import type { CallOptions, Client } from "@connectrpc/connect";
+import { expect, it, vi } from "vitest";
 
 import { EventEntrySchema, type EventEntry } from "../../protocol/event_log_pb";
 import { AttachedSchema, HarnessState } from "../../runner/protocol_pb";
+import {
+  FollowEventsResponseSchema,
+  type FollowEventsRequestSchema,
+  type FollowEventsResponse,
+  type ThreadEvents,
+} from "../thread_events_pb";
 import { appliedModel, catchingUp, EventStream } from "./event_stream";
 
-class Source extends EventTarget {
-  static instances: Source[] = [];
-  closed = false;
+const THREAD = "thread-1";
 
-  constructor(readonly url: string) {
-    super();
-    Source.instances.push(this);
+/** One server stream the test writes frames into, standing in for a connection. */
+class Stream {
+  private readonly queued: FollowEventsResponse[] = [];
+  private waiting: (() => void) | null = null;
+  private done = false;
+  private broke = false;
+
+  constructor(
+    readonly afterCursor: bigint,
+    private readonly signal: AbortSignal | undefined
+  ) {}
+
+  push(frame: MessageInitShape<typeof FollowEventsResponseSchema>): void {
+    this.queued.push(create(FollowEventsResponseSchema, frame));
+    this.waiting?.();
   }
 
-  close(): void {
-    this.closed = true;
+  entry(entry: EventEntry): void {
+    this.push({ frame: { case: "entry", value: entry } });
   }
 
-  entry(entry: EventEntry, lastEventId = String(entry.cursor)): void {
-    this.dispatchEvent(new MessageEvent("event", { data: toJsonString(EventEntrySchema, entry), lastEventId }));
+  attached(lastCursor: bigint, model = "current-model"): void {
+    this.push({
+      frame: {
+        case: "attached",
+        value: create(AttachedSchema, { lastCursor, spec: { model }, harnessState: HarnessState.RUNNING }),
+      },
+    });
   }
 
-  attached(cursor: bigint, model = "current-model"): void {
-    this.dispatchEvent(
-      new MessageEvent("attached", {
-        data: toJsonString(
-          AttachedSchema,
-          create(AttachedSchema, { lastCursor: cursor, spec: { model }, harnessState: HarnessState.RUNNING })
-        ),
-      })
-    );
+  /** The transport dropping the connection, which is not the Thread ending. */
+  break(): void {
+    this.broke = true;
+    this.done = true;
+    this.waiting?.();
+  }
+
+  async *frames(): AsyncIterable<FollowEventsResponse> {
+    for (;;) {
+      // As a real transport does once its call is cancelled, rather than delivering into a reader
+      // that has let go.
+      if (this.signal?.aborted) throw new Error("aborted");
+      while (this.queued.length) yield this.queued.shift() as FollowEventsResponse;
+      if (this.done) {
+        if (this.broke) throw new Error("connection reset");
+        return;
+      }
+      await new Promise<void>((resolve) => {
+        this.waiting = (): void => resolve();
+        this.signal?.addEventListener("abort", this.waiting, { once: true });
+      });
+    }
   }
 }
 
-beforeEach(() => {
-  Source.instances = [];
-  vi.stubGlobal("EventSource", Source);
-});
+class Follows {
+  readonly streams: Stream[] = [];
 
-afterEach(() => vi.unstubAllGlobals());
+  get last(): Stream {
+    return this.streams[this.streams.length - 1];
+  }
+
+  readonly client: Client<typeof ThreadEvents> = {
+    followEvents: (
+      request: MessageInitShape<typeof FollowEventsRequestSchema>,
+      options?: CallOptions
+    ): AsyncIterable<FollowEventsResponse> => {
+      expect(request.threadId).toBe(THREAD);
+      const stream = new Stream(BigInt(request.afterCursor ?? 0n), options?.signal);
+      this.streams.push(stream);
+      return stream.frames();
+    },
+  };
+}
+
+/** Runs every microtask the pushed frames produce. The store consumes one frame per microtask turn
+ * and a macrotask lands after all of them, so this waits on the queue draining rather than on any
+ * duration. */
+const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
 function entry(cursor: bigint, fields: Omit<MessageInitShape<typeof EventEntrySchema>, "$typeName"> = {}): EventEntry {
   return create(EventEntrySchema, {
@@ -52,51 +105,54 @@ function entry(cursor: bigint, fields: Omit<MessageInitShape<typeof EventEntrySc
   });
 }
 
-function open(): { store: EventStream; source: Source; unsubscribe: () => void } {
-  const store = new EventStream("/events");
-  const unsubscribe = store.subscribe(() => {});
-  return { store, source: Source.instances[Source.instances.length - 1], unsubscribe };
+function open(): { store: EventStream; follows: Follows; unsubscribe: () => void } {
+  const follows = new Follows();
+  const store = new EventStream(follows.client, THREAD);
+  return { store, follows, unsubscribe: store.subscribe(() => {}) };
 }
 
-it("shares one subscription, closes on detach, and resumes only with its retained prefix", () => {
-  const store = new EventStream("/events?limit=100");
-  expect(Source.instances).toHaveLength(0);
+it("shares one subscription, drops it on detach, and resumes only with its retained prefix", async () => {
+  const follows = new Follows();
+  const store = new EventStream(follows.client, THREAD);
+  expect(follows.streams).toHaveLength(0);
   const first = store.subscribe(() => {});
   const second = store.subscribe(() => {});
-  expect(Source.instances).toHaveLength(1);
-  const source = Source.instances[0];
-  expect(new URL(source.url).searchParams.get("after")).toBe("0");
-  source.entry(entry(1n));
+  expect(follows.streams).toHaveLength(1);
+  expect(follows.last.afterCursor).toBe(0n);
+
+  const abandoned = follows.last;
+  abandoned.entry(entry(1n));
+  await settle();
   first();
-  expect(source.closed).toBe(false);
+  expect(follows.streams).toHaveLength(1);
   second();
-  expect(source.closed).toBe(true);
-  const unsubscribe = store.subscribe(() => {});
-  expect(new URL(Source.instances[1].url).searchParams.get("after")).toBe("1");
+
+  store.subscribe(() => {});
+  expect(follows.streams).toHaveLength(2);
+  expect(follows.last.afterCursor).toBe(1n);
   expect(store.getSnapshot().connection.kind).toBe("reconnecting");
-  expect(new URL(Source.instances[1].url).searchParams.get("limit")).toBe("100");
-  source.entry(entry(2n)); // An event queued by a detached transport must not leak into its successor.
+  // An entry queued on a detached stream must not leak into its successor.
+  abandoned.entry(entry(2n));
+  await settle();
   expect(store.getSnapshot().conversation.lastCursor).toBe("1");
-  unsubscribe();
-  const fresh = new EventStream("/events");
-  fresh.subscribe(() => {})();
-  expect(new URL(Source.instances[2].url).searchParams.get("after")).toBe("0");
 });
 
-it("does not apply overlapping streaming deltas twice or replace unchanged snapshots", () => {
-  const { store, source, unsubscribe } = open();
+it("does not apply overlapping replayed entries twice or replace unchanged snapshots", async () => {
+  const { store, follows } = open();
   const delta = entry(1n, {
     event: { observation: { case: "textDelta", value: { itemId: "reply", text: "hello" } } },
   });
-  source.entry(delta);
+  follows.last.entry(delta);
+  await settle();
   const prefix = store.getSnapshot();
-  source.entry(delta);
+  follows.last.entry(delta);
+  await settle();
   expect(store.getSnapshot()).toBe(prefix);
   expect(prefix.conversation.items.reply.text).toBe("hello");
-  source.entry(entry(2n));
+  follows.last.entry(entry(2n));
+  await settle();
   expect(prefix.conversation.entries).toHaveLength(1);
   expect(store.getSnapshot().conversation.entries).toHaveLength(2);
-  unsubscribe();
 });
 
 it.each([
@@ -106,103 +162,122 @@ it.each([
   ["a reassigned cursor", entry(2n, { origin: { sourceId: "runner", sequence: 1n } })],
   ["missing provenance", entry(2n, { origin: undefined })],
   ["a missing Event", entry(2n, { event: undefined })],
-] as const)("stops at the verified prefix on %s", (_description, invalid) => {
-  const { store, source, unsubscribe } = open();
-  source.entry(entry(1n));
+] as const)("stops at the verified prefix on %s", async (_description, invalid) => {
+  const { store, follows, unsubscribe } = open();
+  follows.last.entry(entry(1n));
+  await settle();
   const prefix = store.getSnapshot().conversation;
-  source.entry(invalid);
+  follows.last.entry(invalid);
+  await settle();
   expect(store.getSnapshot().connection.kind).toBe("failed");
   expect(store.getSnapshot().conversation).toBe(prefix);
-  expect(source.closed).toBe(true);
-  source.entry(entry(2n));
+  follows.last.entry(entry(2n));
+  await settle();
   expect(store.getSnapshot().conversation).toBe(prefix);
+  expect(follows.streams).toHaveLength(1);
   unsubscribe();
   store.subscribe(() => {})();
-  expect(Source.instances).toHaveLength(1);
+  expect(follows.streams).toHaveLength(1);
 });
 
-it.each(["{bad json", '{"cursor":"1","unknownField":true}'])("makes a decoding failure visible: %s", (data) => {
-  const { store, source } = open();
-  source.dispatchEvent(new MessageEvent("event", { data }));
-  expect(store.getSnapshot().connection.kind).toBe("failed");
-  expect(store.getSnapshot().conversation.lastCursor).toBe("0");
-  expect(source.closed).toBe(true);
-});
-
-it("rejects an SSE resume id that does not identify its Event", () => {
-  const { store, source } = open();
-  source.entry(entry(1n), "9");
+it("treats a frame that carries nothing as a broken prefix", async () => {
+  const { store, follows } = open();
+  follows.last.push({});
+  await settle();
   expect(store.getSnapshot().connection.kind).toBe("failed");
   expect(store.getSnapshot().conversation.lastCursor).toBe("0");
 });
 
-it("keeps snapshot@N separate from prefix@K and applies only later model changes over it", () => {
-  const { store, source } = open();
-  source.attached(3n);
+it("keeps snapshot@N separate from prefix@K and applies only later model changes over it", async () => {
+  const { store, follows } = open();
+  follows.last.attached(3n);
+  await settle();
   expect(store.getSnapshot().conversation.harness).toBeNull();
   expect(store.getSnapshot().conversation.lastCursor).toBe("0");
   expect(catchingUp(store.getSnapshot())).toBe(true);
   expect(appliedModel(store.getSnapshot())).toBeNull();
-  source.entry(entry(1n));
-  source.entry(entry(2n, { event: { observation: { case: "modelChanged", value: { model: "old-model" } } } }));
+  follows.last.entry(entry(1n));
+  follows.last.entry(entry(2n, { event: { observation: { case: "modelChanged", value: { model: "old-model" } } } }));
+  await settle();
   expect(appliedModel(store.getSnapshot())).toBeNull();
-  source.entry(entry(3n));
+  follows.last.entry(entry(3n));
+  await settle();
   expect(catchingUp(store.getSnapshot())).toBe(false);
   expect(appliedModel(store.getSnapshot())).toBe("current-model");
-  source.entry(entry(4n, { event: { observation: { case: "modelChanged", value: { model: "next-model" } } } }));
+  follows.last.entry(entry(4n, { event: { observation: { case: "modelChanged", value: { model: "next-model" } } } }));
+  await settle();
   expect(appliedModel(store.getSnapshot())).toBe("next-model");
 });
 
-it("keeps native reconnect active and converges after overlapping catch-up", () => {
-  const { store, source } = open();
-  source.entry(entry(1n));
-  source.dispatchEvent(new Event("error"));
+it("reopens a dropped stream from its verified prefix and converges with a cold reader", async () => {
+  const { store, follows } = open();
+  follows.last.entry(entry(1n));
+  await settle();
+  follows.last.break();
+  await settle();
   expect(store.getSnapshot().connection.kind).toBe("reconnecting");
-  expect(source.closed).toBe(false);
-  source.attached(2n);
-  source.entry(entry(1n));
-  source.entry(entry(2n));
+
+  await vi.waitUntil(() => follows.streams.length === 2, { timeout: 5_000 });
+  expect(follows.last.afterCursor).toBe(1n);
+  follows.last.attached(2n);
+  follows.last.entry(entry(2n));
+  await settle();
+
   const cold = open();
-  cold.source.attached(2n);
-  cold.source.entry(entry(1n));
-  cold.source.entry(entry(2n));
+  cold.follows.last.attached(2n);
+  cold.follows.last.entry(entry(1n));
+  cold.follows.last.entry(entry(2n));
+  await settle();
   expect(store.getSnapshot()).toEqual(cold.store.getSnapshot());
 });
 
-it("does not reopen a completed stream", () => {
-  const { store, source, unsubscribe } = open();
-  source.attached(1n);
-  source.entry(entry(1n));
-  source.dispatchEvent(new Event("end"));
+it("does not reopen a completed stream", async () => {
+  const { store, follows, unsubscribe } = open();
+  follows.last.attached(1n);
+  follows.last.entry(entry(1n));
+  follows.last.push({ frame: { case: "ended", value: {} } });
+  await settle();
   expect(store.getSnapshot().connection.kind).toBe("ended");
-  expect(source.closed).toBe(true);
   unsubscribe();
   store.subscribe(() => {})();
-  expect(Source.instances).toHaveLength(1);
+  expect(follows.streams).toHaveLength(1);
 });
 
-it("rejects an end before the advertised prefix arrives", () => {
-  const { store, source } = open();
-  source.attached(2n);
-  source.entry(entry(1n));
-  source.dispatchEvent(new Event("end"));
+it("surfaces ingestion that could not continue instead of reconnecting past it", async () => {
+  const { store, follows } = open();
+  follows.last.attached(1n);
+  follows.last.entry(entry(1n));
+  follows.last.push({ frame: { case: "ended", value: { error: "runner log cursor regressed" } } });
+  await settle();
+  expect(store.getSnapshot().connection).toEqual({ kind: "failed", reason: "runner log cursor regressed" });
+  expect(follows.streams).toHaveLength(1);
+});
+
+it("rejects an end before the advertised prefix arrives", async () => {
+  const { store, follows } = open();
+  follows.last.attached(2n);
+  follows.last.entry(entry(1n));
+  follows.last.push({ frame: { case: "ended", value: {} } });
+  await settle();
   expect(store.getSnapshot().connection.kind).toBe("failed");
   expect(store.getSnapshot().conversation.lastCursor).toBe("1");
 });
 
-it("rejects an attachment that rolls history backwards", () => {
-  const { store, source } = open();
-  source.entry(entry(1n));
-  source.attached(0n);
+it("rejects an attachment that rolls history backwards", async () => {
+  const { store, follows } = open();
+  follows.last.entry(entry(1n));
+  follows.last.attached(0n);
+  await settle();
   expect(store.getSnapshot().connection.kind).toBe("failed");
   expect(store.getSnapshot().conversation.lastCursor).toBe("1");
 });
 
-it("does not lower the advertised catch-up boundary on reconnect", () => {
-  const { store, source } = open();
-  source.attached(3n);
-  source.entry(entry(1n));
-  source.attached(2n);
+it("does not lower the advertised catch-up boundary on reconnect", async () => {
+  const { store, follows } = open();
+  follows.last.attached(3n);
+  follows.last.entry(entry(1n));
+  follows.last.attached(2n);
+  await settle();
   expect(store.getSnapshot().connection.kind).toBe("failed");
   expect(store.getSnapshot().attached?.lastCursor).toBe(3n);
 });

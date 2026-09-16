@@ -1,4 +1,4 @@
-"""Real app processes with test-only gates at ingestion commit and browser SSE delivery.
+"""Real app processes with test-only gates at ingestion commit and browser stream delivery.
 
 The store's production record/fencing/projection code is unchanged. A SQLAlchemy transaction
 subclass pauses only the selected record call, after its real writes or after its real commit.
@@ -10,7 +10,7 @@ import asyncio
 import multiprocessing
 import signal
 import socket
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 from contextlib import asynccontextmanager, suppress
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -25,10 +25,12 @@ from uuid import UUID
 
 import httpx
 import uvicorn
+from fastapi import Request
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.ext.asyncio import AsyncSession, AsyncSessionTransaction, async_sessionmaker, create_async_engine
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from x.agentplane.app import thread_events_pb2
 from x.agentplane.app.action_policy import ActionPolicyInventory
 from x.agentplane.app.api import create_app
 from x.agentplane.app.bridge import RunnerBridge, SandboxNotReachableError
@@ -40,6 +42,7 @@ from x.agentplane.app.live import LiveIndex
 from x.agentplane.app.presets import Harness
 from x.agentplane.app.testing.kubernetes import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi, pod, sandbox
 from x.agentplane.app.testing.replication_source import SANDBOX
+from x.agentplane.app.thread_events import FOLLOW_EVENTS_PATH
 from x.agentplane.app.trajectory import IngestionLease, TrajectoryStore
 from x.agentplane.protocol import event_log_pb2
 
@@ -55,6 +58,12 @@ class CommitBoundary(StrEnum):
 @dataclass(frozen=True)
 class Ready:
     url: str
+
+
+async def _test_operator(_request: Request) -> CallerIdentity:
+    """Stands in for both the route dependency and the mounted RPC's own check, so neither surface
+    is guarded by something the other is not."""
+    return CallerIdentity(CallerKind.OPERATOR, "test-operator")
 
 
 @dataclass(frozen=True)
@@ -88,7 +97,7 @@ class ReplayGate:
         if not self._release.done():
             self._connection.send(ReplayHeld(cursor))
         # Closing the old browser document cancels its response, not the gate shared with the
-        # reloaded document's new SSE connection.
+        # reloaded document's new connection.
         pending = self._release
         action = await asyncio.shield(pending)
         if action is ReplayAction.DISCONNECT and self._release is pending:
@@ -101,27 +110,57 @@ class ReplayGate:
         return command
 
 
+def _connect_cursors(body: bytes) -> Iterator[int]:
+    """The Event cursors in one Connect streaming envelope: a flag byte, a big-endian length, the
+    encoded message. The server writes one envelope per ASGI body message."""
+    if len(body) < 5 or body[0] & 0b10:
+        return
+    response = thread_events_pb2.FollowEventsResponse()
+    response.ParseFromString(body[5 : 5 + int.from_bytes(body[1:5], "big")])
+    if response.WhichOneof("frame") == "entry":
+        yield response.entry.cursor
+
+
+def _sse_cursors(body: bytes) -> Iterator[int]:
+    for line in body.splitlines():
+        if line.startswith(b"id: "):
+            yield int(line[4:])
+
+
+def _replayed(scope: Scope) -> Callable[[bytes], Iterator[int]] | None:
+    """How to read cursors out of this response, or None where it is not a Thread's stream."""
+    if scope["type"] != "http":
+        return None
+    if scope["path"] == FOLLOW_EVENTS_PATH:
+        return _connect_cursors
+    # CLEANUP(added 2026-09-16): Drop with the SSE endpoint itself, whose last reader is
+    #   x/agentplane/app/test_replication_process.py.
+    if scope["path"].endswith("/events/stream"):
+        return _sse_cursors
+    return None
+
+
 class GatedThreadReplay:
     def __init__(self, app: ASGIApp, *, gate: ReplayGate) -> None:
         self._app = app
         self._gate = gate
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        cursors = _replayed(scope)
+        if cursors is None:
+            await self._app(scope, receive, send)
+            return
+
         async def gated_send(message: Message) -> None:
             if message["type"] == "http.response.body":
-                for line in message.get("body", b"").splitlines():
-                    if (
-                        line.startswith(b"id: ")
-                        and (cursor := int(line[4:])) > self._gate.after_cursor
-                        and await self._gate.hold(cursor) is ReplayAction.DISCONNECT
-                    ):
+                for cursor in cursors(message.get("body", b"")):
+                    if cursor > self._gate.after_cursor and await self._gate.hold(cursor) is ReplayAction.DISCONNECT:
                         await send({"type": "http.response.body", "body": b"", "more_body": False})
                         raise ReplayDisconnectError
             await send(message)
 
-        thread_replay = scope["type"] == "http" and scope["path"].endswith("/events/stream")
         with suppress(ReplayDisconnectError):
-            await self._app(scope, receive, gated_send if thread_replay else send)
+            await self._app(scope, receive, gated_send)
 
 
 @dataclass(frozen=True)
@@ -247,10 +286,12 @@ async def _serve(
             DecisionsClient(decisions_http),
             index,
             ActionPolicyInventory(namespace=NAMESPACE, custom_objects=custom),
+            caller=_test_operator,
         )
         # Authentication is tested separately; the production routes, HTTP transport, ingestion,
-        # PostgreSQL notifications, and SSE generator all run here unchanged.
-        app.dependency_overrides[require_caller] = lambda: CallerIdentity(CallerKind.OPERATOR, "test-operator")
+        # PostgreSQL notifications, and stream generators all run here unchanged. The mounted RPC
+        # surface takes its check from `create_app`, which a dependency override cannot reach.
+        app.dependency_overrides[require_caller] = _test_operator
         if replay_after is not None:
             app.add_middleware(GatedThreadReplay, gate=ReplayGate(replay_after, connection))
         if frontend_directory is not None:

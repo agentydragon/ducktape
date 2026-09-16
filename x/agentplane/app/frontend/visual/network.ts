@@ -6,11 +6,13 @@
  * visual-test-lib's `assertNetworkSettled` reads.
  */
 
-/** An answer is a JSON body, `undefined` for 404, or a ready `Response` for any other status. */
+/** An answer is a JSON body, `undefined` for 404, or a ready `Response` for any other status or
+ * for a body the route streams itself. `body` is what the request carried, which an RPC route
+ * needs and a REST one ignores. */
 export type Route = [
   method: string,
   pattern: RegExp,
-  answer: (match: RegExpMatchArray, query: URLSearchParams) => unknown,
+  answer: (match: RegExpMatchArray, query: URLSearchParams, body: BodyInit | null) => unknown,
 ];
 
 export const routes: Route[] = [];
@@ -35,7 +37,7 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
     for (const [routeMethod, pattern, answer] of routes) {
       const match = url.pathname.match(pattern);
       if (routeMethod !== method || !match) continue;
-      const body = answer(match, url.searchParams);
+      const body = answer(match, url.searchParams, init?.body ?? null);
       if (body instanceof Response) return body;
       if (body === undefined) return Response.json({ detail: `no such sandbox ${match[1]}` }, { status: 404 });
       return Response.json(body);

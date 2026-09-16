@@ -36,6 +36,8 @@ py_library(
         "//x/agentplane/app:inventory",
         "//x/agentplane/app:live",
         "//x/agentplane/app:presets",
+        "//x/agentplane/app:thread_events",
+        "//x/agentplane/app:thread_events_pb2",
         "//x/agentplane/app:trajectory",
         "//x/agentplane/protocol:event_log_pb2",
         "@pypi//asyncpg",
