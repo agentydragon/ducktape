@@ -34,7 +34,7 @@ spec:
       # rollout as the code that needs it — no separate Job/version to bump.
       initContainers:
         - name: migrate
-          image: git.allegedly.works/ducktape-ci/aiquota-migrate:devel-20260915082842-a8b1ac6 # {"$imagepolicy": "flux-system:aiquota-migrate"}
+          image: git.allegedly.works/ducktape-ci/aiquota-migrate:devel-20260916181142-b26a9b6 # {"$imagepolicy": "flux-system:aiquota-migrate"}
           imagePullPolicy: Always
           env:
             - name: AIQUOTA_CLICKHOUSE_URL
