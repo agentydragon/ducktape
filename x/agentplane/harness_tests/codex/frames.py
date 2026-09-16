@@ -30,6 +30,10 @@ def errors(frames: list[Frame]) -> list[wire.ErrorParams]:
     return [frame.params for frame in parse(frames) if isinstance(frame, wire.ErrorNotification)]
 
 
+def hook_completions(frames: list[Frame]) -> list[dict[str, Any]]:
+    return [frame.params for frame in parse(frames) if isinstance(frame, wire.HookCompleted)]
+
+
 def assert_success(frames: list[Frame], expected: str) -> list[wire.Turn]:
     turns = completed_turns(frames)
     assert turns

@@ -230,6 +230,20 @@ class ErrorNotification(Wire):
     params: ErrorParams
 
 
+class HookStarted(Wire):
+    """A registered hook's command was spawned; `params` is loosely typed since the hook input
+    shape (Claude-shaped, per event) is pinned by reading the hook's own stdin log, not this
+    notification."""
+
+    method: Literal["hook/started"]
+    params: dict[str, Any]
+
+
+class HookCompleted(Wire):
+    method: Literal["hook/completed"]
+    params: dict[str, Any]
+
+
 class UnknownNotification(Wire):
     method: str
     params: Any = None
@@ -244,6 +258,8 @@ Notification = Annotated[
     | Annotated[ReasoningSummaryTextDelta, Tag("item/reasoning/summaryTextDelta")]
     | Annotated[CommandExecutionOutputDelta, Tag("item/commandExecution/outputDelta")]
     | Annotated[ErrorNotification, Tag("error")]
+    | Annotated[HookStarted, Tag("hook/started")]
+    | Annotated[HookCompleted, Tag("hook/completed")]
     | Annotated[UnknownNotification, Tag(UNKNOWN)],
     Discriminator(
         tag_or_unknown(
@@ -258,6 +274,8 @@ Notification = Annotated[
                     "item/reasoning/summaryTextDelta",
                     "item/commandExecution/outputDelta",
                     "error",
+                    "hook/started",
+                    "hook/completed",
                 }
             ),
         )
@@ -291,7 +309,9 @@ class ClientInfo(Wire):
 
 class InitializeParams(Wire):
     client_info: ClientInfo
-    capabilities: None = None
+    # `{"experimentalApi": True}` gates `thread/start.dynamicTools`; `thread/start` otherwise fails
+    # with `dynamicTools requires experimentalApi capability`.
+    capabilities: dict[str, Any] | None = None
 
 
 class InitializeRequest(Wire):
@@ -306,7 +326,9 @@ class InitializedNotification(Wire):
 
 class ThreadStartParams(Wire, OmitNone):
     """`base_instructions` replaces the app-server's coding-agent policy; `developer_instructions`
-    is carried beside it, and the thread keeps it for every turn the thread ever runs."""
+    is carried beside it, and the thread keeps it for every turn the thread ever runs.
+    `dynamic_tools` is the driver's client-supplied tool catalog; each call to one of these tools
+    reaches the driver as an `item/tool/call` server request rather than a built-in tool."""
 
     cwd: str
     approval_policy: str
@@ -316,6 +338,7 @@ class ThreadStartParams(Wire, OmitNone):
     base_instructions: str
     developer_instructions: str | None = None
     config: dict[str, Any]
+    dynamic_tools: list[dict[str, Any]] | None = None
 
 
 class ThreadStartRequest(Wire):

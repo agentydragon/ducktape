@@ -73,3 +73,15 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "mcp",
+    srcs = ["mcp.py"],
+    deps = [
+        ":driver",
+        ":wire",
+        "@pypi//fastmcp_slim",
+        "@pypi//mcp",
+        "@pypi//mcp_types",
+    ],
+)

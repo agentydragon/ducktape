@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+// Minimal schema for validating the browser-facing RPC transport: one unary call and one server
+// stream, carrying uint64 cursors because the Thread view's positions exceed JavaScript's safe
+// integer range and must survive the wire as exact values.
+package ducktape.agentplane.transport_probe.v1;
+
+message EchoRequest {
+  string text = 1;
+  uint64 cursor = 2;
+}
+
+message EchoResponse {
+  string text = 1;
+  uint64 cursor = 2;
+}
+
+message CountRequest {
+  // How many ticks to emit before completing.
+  uint32 count = 1;
+  uint64 after_cursor = 2;
+}
+
+message Tick {
+  uint64 cursor = 1;
+}
+
+service Probe {
+  rpc Echo(EchoRequest) returns (EchoResponse);
+  rpc Count(CountRequest) returns (stream Tick);
+}

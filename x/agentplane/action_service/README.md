@@ -4,6 +4,13 @@ This package is the standalone canonical coordinator for ActionRequests. It owns
 schema and `/v1/action-requests` lifecycle; the Agentplane integration app, Haku Console, BFFs, and
 external harnesses remain clients rather than state owners.
 
+**For an agent, this is where a call to the outside world goes**, mediated rather than direct: an
+`ActionGroup` mounts one MCP server, mirrors its `tools/list` into the catalog, and this service
+initiates `tools/call` itself, so the harness never holds an MCP client of its own. Each call is
+then either auto-approved by a reviewed policy or held for the operator to decide. That is the same
+role Haku Console's MCP endpoint serves for its agents — one function with two implementations,
+Console's being the one to retire, not two systems that happen to resemble each other.
+
 ## External Connections
 
 An external caller is a ServiceAccount labeled `agentplane.allegedly.works/action-caller: "true"`

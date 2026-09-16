@@ -152,7 +152,11 @@ class ClaudeAdapter(HarnessAdapter):
                 # TODO: the runner's permission configuration is meant to keep these prompts from
                 # arriving at all; answering allow is a stopgap to revisit if one is ever observed.
                 response = driver.allow_tool(frame.request_id, tool_input)
-            case wire.HookCallback(subtype=subtype) | wire.UnknownControlRequest(subtype=subtype):
+            case (
+                wire.HookCallback(subtype=subtype)
+                | wire.McpMessage(subtype=subtype)
+                | wire.UnknownControlRequest(subtype=subtype)
+            ):
                 # Dialogs, hooks, and MCP callbacks have no answer path here; a refusal keeps the turn moving.
                 response = wire.ControlResponse(
                     response=wire.ControlResponseBody(

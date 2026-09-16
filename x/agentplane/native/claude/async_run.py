@@ -83,6 +83,7 @@ class ClaudeRun:
         environment: Mapping[str, str],
         responder: FrameResponder | None = None,
         hooks: bool = False,
+        sdk_mcp_servers: list[str] | None = None,
         initialize: bool = True,
     ):
         self._logs = logs
@@ -91,6 +92,7 @@ class ClaudeRun:
         self._environment = environment
         self._responder = responder
         self._hooks = hooks
+        self._sdk_mcp_servers = sdk_mcp_servers
         self._initialize = initialize
         self._process: AsyncNativeProcess | None = None
         self._harness: facade.ClaudeHarness | None = None
@@ -141,7 +143,8 @@ class ClaudeRun:
 
     async def initialize(self) -> wire.ControlResponseFrame | wire.ResultFrame:
         receipt = await self._claude().initialize(
-            hooks={event: [f"capture-{event}"] for event in HOOK_EVENTS} if self._hooks else None
+            hooks={event: [f"capture-{event}"] for event in HOOK_EVENTS} if self._hooks else None,
+            sdk_mcp_servers=self._sdk_mcp_servers,
         )
         return receipt.response
 

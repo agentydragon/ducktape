@@ -104,6 +104,9 @@ let
         py-key-value-aio = pkgs.callPackage ./py-key-value-aio.nix {
           python314Packages = pyfinal;
         };
+        uncalled-for = pkgs.callPackage ./uncalled-for.nix {
+          python314Packages = pyfinal;
+        };
         idna = pkgs.callPackage ./idna.nix {
           python3Packages = pyfinal;
         };
@@ -228,14 +231,6 @@ let
   # is exactly the kind of ripple a packageOverrides addition can cause).
   aiquota = pkgs.callPackage ./gnome-shell-aiquota.nix {
     inherit artifacts lib python314Packages;
-  };
-
-  # Chrome-free GTK/WebKit approvals application.
-  hakuApprovals = pkgs.callPackage ./haku-approvals.nix {
-    inherit
-      artifacts
-      lib
-      ;
   };
 
   mkBinaryArtifact =
@@ -421,11 +416,6 @@ rec {
 
   aw-watcher-tmux = pkgs.callPackage ./aw-watcher-tmux.nix { };
 
-  inherit hakuApprovals;
-  # Kebab release-name attribute the CI nix-package gate builds (release key
-  # `haku-approvals` in devinfra/ci/artifact_targets.json); `hakuApprovals` is
-  # the home-manager-facing name. Keep both — deduping either breaks a consumer.
-  haku-approvals = hakuApprovals;
   gnome-shell-aiquota = aiquota;
   tana-outliner = pkgs.callPackage ./tana-outliner.nix { };
   gmail-mcp = pkgs.callPackage ./gmail-mcp.nix { };

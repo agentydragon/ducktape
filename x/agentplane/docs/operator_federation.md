@@ -43,6 +43,46 @@ Already-admitted requests/streams are not retrospectively cancelled by logout; r
 next request. Upstream account disablement is not polled; without a fresh login, the absolute expiry
 is the browser identity lifetime. Token exchange may reject an upstream-revoked access token sooner.
 
+## Why the browser holds a handle and not a token
+
+The boundary above is a choice against two alternatives a future author would reasonably
+reach for, so the constraints that decided it are recorded here rather than re-derived.
+
+**What is implemented** is a token-mediating backend: the browser gets an opaque signed
+handle, the operator's access token stays in `operator_browser_session`. It costs a session
+row read on every request, and it makes the credential ambient, so CSRF has to be answered
+explicitly — which is what the exact same-origin `Origin` requirement on unsafe requests is
+for. It buys two things no self-contained token offers. Nothing a script can read is a
+credential, so an XSS cannot exfiltrate something that outlives the page; and revocation is
+immediate, because deleting the row ends the session on every replica at the next request.
+
+**Rejected: the browser holds its own JWT.** There is a standard mechanism for this that
+needs no token-minting code from us — Authorization Code with PKCE against a _public_
+client, the SPA talking to Authentik directly — and in an app starting from scratch it is
+the obvious shape. It loses here because it undoes the paragraph above rather than
+extending it: the token becomes exfiltrable by any XSS, and revocation degrades from
+immediate to lifetime-bounded. It is also not a configuration tweak.
+`tf/gitops/sso-providers/provider_agentplane_staging.tf` provisions a `confidential` client
+whose only redirect URI is this app's `/auth/callback`, so a browser-held token means a
+different client type and a second identity path beside the one that exists.
+
+**Available, if a bearer is ever wanted: mint a short-lived RPC token from the session.**
+One cookie-authenticated call trades the handle for a short-lived token the browser then
+sends in RPC metadata. The handle stays the root credential, exposure is bounded to that
+token's lifetime rather than the session's, RPC calls stop reading the session row, and
+validation can move to the edge — Envoy's `jwt_authn` filter is in `cilium/proxy`'s build.
+What it costs is a second credential lifetime to reason about, and a token in a header is
+readable by script for as long as it lives, where a `__Host-` HttpOnly cookie never is.
+This would be a third credential shape, not a reuse of either existing one: it is neither
+the browser session handle nor the client-credentials-with-JWT-assertion exchange the
+Action federation path uses below.
+
+**None of this is a property of the transport.** Connect over `fetch` sends the session
+cookie today for the same reason a REST call does, and bearer-versus-cookie is a header
+decision Connect, gRPC-Web and REST carry identically — so an RPC transport choice neither
+constrains nor is constrained by this. The transport decision is recorded separately in
+<thread_view_sync.md> § RPC transport and generation.
+
 ## Explicit configuration required before deployment
 
 **Staging GitOps wiring:** `tf/gitops/sso-providers/provider_agentplane_actions.tf` provisions the

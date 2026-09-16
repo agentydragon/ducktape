@@ -3,27 +3,37 @@
 # evaluates these in parallel (nix-eval-jobs) and `--skip-cached` builds/pushes
 # only paths missing from the cache. See devinfra/ci/nix_attic_build_and_push.sh.
 #
-#   main   — every target: all NixOS toplevels + home activationPackages +
-#            bootstrap packages. Pushed to the broadly readable `main` cache.
+#   main   — every target: all ducktape packages (every `nix build .#<pkg>`
+#            output, including the full shared Python lockfile closure any of
+#            them pulls in — see #3298/#7078) + all NixOS toplevels + home
+#            activationPackages + bootstrap packages. Pushed to the broadly
+#            readable `main` cache.
 #   public — the bootstrap subset only, also pushed to the anonymous `public`
 #            cache (a fresh Claude Code web session substitutes these before any
 #            credential exists).
+#
+# ducktapePkgs only, never gafferPkgs: the caller passes exactly the public
+# `./nix/packages` attrset, not the private `./nix/packages/gaffer.nix` one, so
+# gaffer-private's own packages never enter the broadly readable `main` cache —
+# same boundary the drivefs isolation below enforces for the one leak vector
+# through a NixOS/home closure. See cluster/docs/nix_cache.md
+# "Private-binary isolation (drivefs)".
 #
 # drivefs isolation: force services.google-drive off for any home-manager user
 # that enables it (currently wyrm2, rugged), so the private gaffer drivefs
 # closure never enters the broadly readable `main` cache. Those hosts pull
 # drivefs straight from the restricted `gaffer` cache at `nixos-rebuild switch`.
-# See cluster/docs/nix_cache.md "Private-binary isolation (drivefs)". Reading the
-# enable bool from OUTSIDE the module (via config) avoids the infinite recursion
-# an in-module options-existence guard would cause. attrByPath returns the
-# default when any path segment is absent — covering hosts/users where the option
-# (or home-manager itself) isn't declared, where a direct read would throw (and
-# tryEval would NOT catch it: it only traps `throw`/`assert`, not
-# attribute-missing errors).
+# Reading the enable bool from OUTSIDE the module (via config) avoids the
+# infinite recursion an in-module options-existence guard would cause.
+# attrByPath returns the default when any path segment is absent — covering
+# hosts/users where the option (or home-manager itself) isn't declared, where a
+# direct read would throw (and tryEval would NOT catch it: it only traps
+# `throw`/`assert`, not attribute-missing errors).
 {
   self,
   lib,
   system,
+  ducktapePkgs,
 }:
 let
   gdriveEnabled = cfg: lib.attrByPath [ "services" "google-drive" "enable" ] false cfg;
@@ -73,7 +83,8 @@ let
 in
 {
   main =
-    prefix "nixos" (lib.genAttrs (builtins.attrNames self.nixosConfigurations) nixosToplevel)
+    prefix "pkg" ducktapePkgs
+    // prefix "nixos" (lib.genAttrs (builtins.attrNames self.nixosConfigurations) nixosToplevel)
     // prefix "home" (lib.genAttrs (builtins.attrNames self.homeConfigurations) homeActivation)
     // prefix "bootstrap" bootstrap;
 
