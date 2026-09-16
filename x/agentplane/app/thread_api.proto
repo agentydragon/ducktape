@@ -1,0 +1,144 @@
+syntax = "proto3";
+
+// The browser-facing Thread services. Every method is unary or server-streaming: commands are
+// independent unary calls and subscriptions resume from an explicit cursor, so no client or
+// bidirectional stream is needed and a dropped connection never cancels admitted work.
+//
+// Contract: x/agentplane/docs/thread_view_sync.md.
+package ducktape.agentplane.app.v1;
+
+import "x/agentplane/app/thread_view.proto";
+import "x/agentplane/protocol/command.proto";
+import "x/agentplane/protocol/event_log.proto";
+
+// Server-enforced maxima apply to both; a request asking for more is clamped, not rejected.
+message Limits {
+  uint32 max_segments = 1;
+  uint64 max_bytes = 2;
+}
+
+// Where a read must have caught up to before answering. A server that cannot reach it before the
+// deadline reports projection lag rather than returning an older successful snapshot.
+message MinimumThrough {
+  uint64 through_cursor = 1;
+}
+
+message GetViewRequest {
+  string thread_id = 1;
+  Limits tail = 2;
+  // Where the reader is parked. When set, the snapshot also carries a bounded window around it, so
+  // a long-gap rebootstrap does not force a jump to the tail.
+  optional uint64 reading_anchor = 3;
+  Limits reading_window = 4;
+  // Locally retained Command ids to reconcile, including ones settled outside any visible window.
+  repeated string local_command_ids = 5;
+}
+
+message FollowViewRequest {
+  string thread_id = 1;
+  // Where the client's installed view already reaches. Batches must start exactly here.
+  Position position = 2;
+}
+
+// Keyset pagination over immutable anchors, never offsets: a new Segment cannot be inserted behind
+// an anchor the client already processed.
+message ListSegmentsRequest {
+  string thread_id = 1;
+  string source_id = 2;
+  string projection_epoch = 3;
+  oneof anchor {
+    // Exclusive: Segments anchored strictly before this cursor, newest first.
+    uint64 before = 4;
+    // Exclusive: Segments anchored strictly after this cursor, oldest first.
+    uint64 after = 5;
+    // A bounded window centred on this cursor, for opening a reference into old history.
+    uint64 around = 6;
+  }
+  string page_token = 7;
+  Limits limits = 8;
+  MinimumThrough minimum = 9;
+}
+
+message ReadPayloadRequest {
+  string thread_id = 1;
+  oneof target {
+    // A derived payload, scoped to its source and epoch.
+    PayloadRef payload = 2;
+    // Exact original Event bytes, whose identity is epoch-independent.
+    ducktape.agentplane.protocol.v1.EventOrigin origin = 3;
+  }
+  // UTF-8 byte offset, which is not a JavaScript string index.
+  uint64 offset = 4;
+  uint64 max_bytes = 5;
+}
+
+// The derived read model: bounded snapshot, live changes, history and on-demand payloads.
+service ThreadViewService {
+  rpc GetView(GetViewRequest) returns (ViewSnapshot);
+  rpc FollowView(FollowViewRequest) returns (stream ViewUpdate);
+  rpc ListSegments(ListSegmentsRequest) returns (SegmentsPage);
+  rpc ReadPayload(ReadPayloadRequest) returns (PayloadChunk);
+}
+
+message SubmitRequest {
+  string thread_id = 1;
+  // The exact Command the caller generated, with the id it will reconcile against.
+  ducktape.agentplane.protocol.v1.Command command = 2;
+}
+
+message ListPendingCommandsRequest {
+  string thread_id = 1;
+  string projection_epoch = 2;
+  // Exclusive admission anchor, so paging cannot skip or repeat an admission.
+  uint64 after_admission_cursor = 3;
+  string page_token = 4;
+  Limits limits = 5;
+  MinimumThrough minimum = 6;
+}
+
+message GetCommandsRequest {
+  string thread_id = 1;
+  repeated string command_ids = 2;
+  MinimumThrough minimum = 3;
+}
+
+// Submission and reconciliation. The runner owns the only command queue; these reads share the
+// view's materialized checkpoint and introduce no second ordering.
+service ThreadCommandService {
+  // Returns the runner's exact CommandAdmitted entry, only after the app has archived it. A normal
+  // return proves archived admission and nothing about native effect; a timeout proves neither.
+  rpc Submit(SubmitRequest) returns (ducktape.agentplane.protocol.v1.EventEntry);
+  rpc ListPendingCommands(ListPendingCommandsRequest) returns (CommandsPage);
+  rpc GetCommands(GetCommandsRequest) returns (CommandLookup);
+}
+
+message ListEventsRequest {
+  string thread_id = 1;
+  string source_id = 2;
+  // Exclusive original cursor.
+  uint64 after_cursor = 3;
+  optional uint64 through_cursor = 4;
+  // Observation cases to include. A filtered page is not a contiguous Event prefix.
+  repeated string observation_kinds = 5;
+  string page_token = 6;
+  Limits limits = 7;
+}
+
+message GetEventsRequest {
+  string thread_id = 1;
+  repeated ducktape.agentplane.protocol.v1.EventOrigin origins = 2;
+}
+
+message FollowEventsRequest {
+  string thread_id = 1;
+  string source_id = 2;
+  ducktape.agentplane.protocol.v1.Follow follow = 3;
+}
+
+// Exact retained evidence. Reading it never moves the conversation checkpoint, and following it is
+// an explicit debugging choice rather than anything normal mode requires.
+service ThreadEventsService {
+  rpc ListEvents(ListEventsRequest) returns (EventsPage);
+  rpc GetEvents(GetEventsRequest) returns (EventsByOrigin);
+  rpc FollowEvents(FollowEventsRequest) returns (stream ducktape.agentplane.protocol.v1.EventEntry);
+}
