@@ -1,16 +1,15 @@
-"""The caller check a gRPC server has to run for itself.
+"""The caller check a gRPC server runs for itself -- written the wrong way on purpose to show it.
 
-Finding 3, and the substantive one. `require_caller` takes a Starlette `Request`: it reads
-`request.scope["session"]`, which `OperatorSessionMiddleware` populates by unsigning a cookie and
-loading the row it names, and `request.app.state.oidc` for the Origin it compares against. A gRPC
-interceptor has metadata and nothing else, so none of that is reachable and the steps are repeated
-here against the same signer, the same table and the same settings.
+This reimplements what `require_caller` already decides, because `require_caller` takes a Starlette
+`Request` and reads `request.scope["session"]`, which `OperatorSessionMiddleware` populates: the
+cookie work lives inside a middleware rather than in a function an interceptor could call. Taking
+the shortcut was a mistake, and README.md finding 3 says what should happen instead -- lift that
+read into a shared function, or let Envoy `ext_authz` ask the app itself. Do not take the line
+count here as a cost of gRPC-Web.
 
-This is not a second trust model -- same secret, same rows, same expiry -- but it is a second
-implementation of the same decision, in a different framework, that has to stay in step with the
-first. `OperatorSessionMiddleware` also *writes*: it rotates handles, refreshes expiry and clears
-dead cookies. This reads only, so a session the browser would have had refreshed on its REST calls
-is not refreshed by its RPC calls, and the two surfaces age a session differently.
+What no refactor fixes: `OperatorSessionMiddleware` also *writes*, rotating handles and refreshing
+expiry on the response, and an interceptor has no response to do that on. So a session the
+browser's REST calls refresh is not refreshed by its RPC calls. `ext_authz` avoids that too.
 
 Spike. Findings are in README.md.
 """

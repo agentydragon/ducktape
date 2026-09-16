@@ -27,7 +27,8 @@ Named so nobody reads the pass as more than it is:
   `cilium/proxy`'s `extensions_build_config.bzl` on the v1.35 branch, so the filter exists; that
   this is the build Cilium 1.19.6 ships was not confirmed against the running DaemonSet.
 - **The interceptor is not wired into the app**, and no test drives a real session cookie through
-  it end to end.
+  it end to end. It also takes the wrong shape — see finding 3 — and is kept only as the evidence
+  for that finding.
 
 ## Findings
 
@@ -41,16 +42,29 @@ untrue.
 own port — so its own `Service` port, `NetworkPolicy` rule and readiness. The Connect mount is a
 `app.mount()` on the ASGI app that already exists.
 
-**3. Authorization is a second implementation of one decision.** This is the substantive one.
-`require_caller` takes a Starlette `Request` and reads `request.scope["session"]`, populated by
-`OperatorSessionMiddleware`, plus `request.app.state.oidc` for the Origin. An interceptor has
-metadata and nothing else, so `auth.py` repeats the unsign, the row lookup, the expiry check and
-the Origin compare — 98 lines against the 38 of `connect.py`, which calls the real function.
+**3. Authorization costs a refactor, not a duplicate — `auth.py` overstates this.** The 98 lines
+there reimplement the cookie unsign, row lookup, expiry check and Origin compare, against the 38
+of `connect.py` which calls `require_caller` directly. That is a shortcut in the spike, not a
+property of gRPC-Web, and the comparison should not be read as a cost of the transport.
 
-Not a second trust model: same secret, same salt, same table. But `OperatorSessionMiddleware` also
-_writes_ — it rotates handles, refreshes expiry, clears dead cookies — and the interceptor only
-reads. **A session refreshed by the browser's REST calls is not refreshed by its RPC calls, so the
-two surfaces age one session differently.** That divergence is not visible in any test here.
+The reason it is tempting: `require_caller` takes a Starlette `Request` and reads
+`request.scope["session"]`, which `OperatorSessionMiddleware` populates, so the cookie work lives
+inside a middleware rather than in a function anything can call. Two ways to have one
+implementation, neither built here:
+
+- **Extract the core.** Lift the cookie→session read out of `OperatorSessionMiddleware` into a
+  function taking a cookie string, called by both the middleware and an interceptor.
+  `TokenReviewer.review(token)` already takes a bare string and needs nothing; the Origin check is
+  three lines.
+- **Envoy `ext_authz`.** Envoy asks the app over its real HTTP surface, which runs the real
+  `require_caller` on a real `Request`. No new authorization code at all, at the cost of a round
+  trip at stream open and an endpoint.
+
+What survives either way but the second: `OperatorSessionMiddleware` also _writes_ — it rotates
+handles, refreshes expiry and clears dead cookies on the response — and an interceptor has no
+response to do that on. **A session refreshed by the browser's REST calls would not be refreshed
+by its RPC calls, so the two surfaces age one session differently.** `ext_authz` avoids even that,
+since the sub-request goes through the real middleware. No test here covers the divergence.
 
 **4. Each gRPC service costs a `mypy.ini` exemption.** `mypy-protobuf`'s generated stub carries an
 upstream unused ignore, so a consumer of it fails `warn_unused_ignores`. `mypy.ini` already
@@ -85,15 +99,15 @@ the source, and it is the part the test would stop covering.
 
 ## Measured
 
-|                                      | Connect (in-process)             | gRPC-Web (Envoy)               |
-| ------------------------------------ | -------------------------------- | ------------------------------ |
-| Service + adapter                    | 104 lines                        | 62 lines + a second server     |
-| Authorization                        | 38 lines, calls `require_caller` | 98 lines, reimplements it      |
-| Proxy config                         | none                             | 71 lines, unverified           |
-| `mypy.ini` entries                   | 0                                | 1 per service                  |
-| New pinned images                    | 0                                | Envoy                          |
-| Browser test covers production wire  | yes                              | no, without an Envoy container |
-| Python client for the browser's wire | none (hand-decoded)              | none (hand-decoded)            |
+|                                      | Connect (in-process)             | gRPC-Web (Envoy)                                   |
+| ------------------------------------ | -------------------------------- | -------------------------------------------------- |
+| Service + adapter                    | 104 lines                        | 62 lines + a second server                         |
+| Authorization                        | 38 lines, calls `require_caller` | 38 + a refactor of the cookie read, or `ext_authz` |
+| Proxy config                         | none                             | 71 lines, unverified                               |
+| `mypy.ini` entries                   | 0                                | 1 per service                                      |
+| New pinned images                    | 0                                | Envoy                                              |
+| Browser test covers production wire  | yes                              | no, without an Envoy container                     |
+| Python client for the browser's wire | none (hand-decoded)              | none (hand-decoded)                                |
 
 ## Reproducing
 
