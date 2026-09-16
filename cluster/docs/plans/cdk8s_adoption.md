@@ -114,9 +114,16 @@ cluster/k8s -name flux-kustomization.yaml | wc -l`) repeats it by hand.
   whatever `namespace:` the directory sets, no reason to hand-maintain that either.
 - `<name>.k8s.yaml` — generated, committed, one file per cdk8s `Chart`. The spike's own
   CI workflow already used this suffix (`litellm.k8s.yaml`,
-  `litellm-servicemonitor.k8s.yaml`); phase 1 keeps it. Needs a `.gitattributes` /
-  `ruff.toml` exclusion note if prettier would otherwise reformat cdk8s's own YAML
-  emission and fight the pinning test — not yet checked against a real prettier run.
+  `litellm-servicemonitor.k8s.yaml`); phase 1 keeps it. Prettier reformatting it and
+  fighting the pinning test was a real risk but didn't materialize — see § Open
+  questions. All four generated files (the two `.k8s.yaml` charts plus
+  `flux-kustomization.yaml`/`kustomization.yaml`) are marked
+  `linguist-generated=true` in the root `.gitattributes`, so GitHub collapses them in
+  diffs the same way it already does for `gazelle_python.yaml` and the lockfiles.
+  `*.k8s.yaml` is matched fleet-wide by suffix; `flux-kustomization.yaml` and
+  `kustomization.yaml` share their filename with hand-written directories elsewhere,
+  so each converted directory needs its own path-scoped `.gitattributes` line for
+  those two — add one when converting the next directory.
 
 **The one real catch: `dependsOn` rationale comments.** Live examples
 (`inventree/app`, `docker-ci`, `aiquota`) carry per-entry `#` comments explaining _why_
