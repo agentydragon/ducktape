@@ -14,9 +14,10 @@ they are not checked-in executable protobuf definitions yet.
 - Normal mode reads recent assembled segments, current controls, and pending-command
   summaries, then follows compact changes. Raw Events and large payloads are demand
   reads. Neither initial loading nor idle background work downloads full history.
-- Use protobuf-defined unary RPCs and server streaming. No client or bidirectional
-  stream is needed: commands are independent unary calls; subscriptions resume with
-  an explicit cursor. A dropped connection does not cancel admitted work.
+- Carry it over REST and SSE with Pydantic models, keeping protobuf for the messages
+  the runner journal already defines. No client or bidirectional stream is needed:
+  commands are independent unary calls; subscriptions resume with an explicit cursor.
+  A dropped connection does not cancel admitted work.
 - Use one original runner cursor space. A projection checkpoint is a position in
   that space, not a new app Event number. Derived changes are explicitly not Events.
 - Evaluate TanStack DB as the read-only normalized frontend store. The actual
@@ -27,23 +28,72 @@ The [measured short Thread](../debug/thread_load_20260915.md) had eight turns bu
 3,091 Events and approximately 1.79 MB of SSE. Completed text/reasoning contained
 6,278 bytes. This motivates materialization, not just compression or virtualization.
 
-## RPC transport and generation
+## Transport: REST and SSE, with protobuf payloads
 
-Browsers need a browser-compatible transport, not a direct `grpc.aio` connection.
-Preferred integration to validate: `@connectrpc/connect-web` with binary protobuf
-and a Python Connect ASGI service mounted alongside FastAPI on the existing origin.
-The same client supports [Connect and gRPC-Web](https://connectrpc.com/docs/web/choosing-a-protocol/).
-Choose Connect wire transport for the ASGI integration; call it Connect, not native
-gRPC. Unary and server-streaming service definitions remain ordinary protobuf RPCs.
+The derived read API is carried by the transport the app already has: FastAPI routes
+with Pydantic models for unary reads and commands, and SSE for the followed streams.
+The view's own types -- `Segment`, `Changes`, `ViewSnapshot`, `Controls` and the rest of
+§ Positions, segments, and payloads -- are Pydantic models, and their `oneof`
+alternatives are discriminated unions, so a reader dispatches with `isinstance` and mypy
+narrows (<../../../STYLE.md> § General).
 
-[Connect Python](https://github.com/connectrpc/connect-py) supports ASGI and Google's
-protobuf runtime with its `protobuf=google` plugin option. Reuse existing `_pb2`
-types and Protobuf-ES messages; do not introduce another Python message runtime.
-Connect passed that gate and is the transport: `ThreadEvents.FollowEvents` is served
-from an ASGI mount beside FastAPI on the existing origin, followed in the browser by
-`@connectrpc/connect-web`. Do not write a framing protocol.
+**Runner-produced messages stay protobuf and cross as proto-JSON.** `EventEntry`,
+`Attached` and `Command` are protobuf because the runner journal is; they are carried
+inside SSE frames as proto-JSON and parsed in the browser with Protobuf-ES `fromJson`,
+which is what `frontend/client.ts` already does on REST responses today. Do not mirror
+them as Pydantic models: `Event`'s observation union alone has nineteen variants, and a
+second representation of one concept is exactly what <../../../STYLE.md> § General
+forbids. So Pydantic owns the frame vocabulary and the derived types; protobuf owns the
+payloads that were already protobuf.
+
+`uint64` cursors survive this. Proto-JSON encodes 64-bit integers as **strings**, which
+`fromJson` reads back into `bigint`, so a cursor above `2^53` round-trips exactly
+through a protobuf payload. A cursor in a Pydantic-owned field does not get that for
+free: serialize it as a string deliberately, because a JSON number loses precision above
+`2^53` in the browser with nothing reporting it.
+
+**A stream's frame union is declared, not implied.** Give each SSE route a
+`responses={200: {"model": FrameUnion, "content": {"text/event-stream": {}}}}` so the
+frame shape reaches OpenAPI and the frontend's generated types, the way `live.py`
+already does for the live index. An SSE route without this is untyped on both ends --
+which is what today's `/threads/{id}/events/stream` is, and why its frame names live in
+a hand-rolled parser in `client.py` and a matching `switch` in TypeScript that nothing
+checks against each other.
+
+### Backed out: protobuf RPC over Connect
+
+An earlier revision of this document chose Connect -- `@connectrpc/connect-web` against
+a `connecpy` ASGI mount -- and it was built as far as a served `ThreadEvents.FollowEvents`
+with the browser following it. It is backed out, not because it failed, but because the
+generated typed stubs did not pay for what surrounded them:
+
+- **Its main benefit was already available.** Typed protobuf in the browser comes from
+  `ts_proto_library` on the `.proto`, not from the transport: `client.ts` gets
+  `EventEntry` through `fromJson` over plain REST today. Connect's remaining benefit over
+  proto-JSON on SSE is a generated _frame union_ and binary framing -- and the frame union
+  is obtainable from a declared Pydantic union, while binary framing mattered most for the
+  raw-event firehose this design exists to stop sending.
+- **No Python client follows an open stream.** connecpy's generated async client yielded
+  zero frames in 20 s from a stream whose first frame is immediate. `acceptance/agent.py`
+  consumes this stream, so the RPC could not replace the SSE without hand-decoding
+  envelopes in the one place a library was supposed to help.
+- **The surrounding work was the cost.** An ASGI mount inherits no FastAPI route
+  dependency, so authorization needed re-plumbing to reach it; each generated service
+  needed a `mypy.ini` `warn_unused_ignores` exemption; and the binary/JSON default differs
+  between the two ends.
+- Protobuf `oneof` in Python is `WhichOneof(...)` string comparison, which
+  <../../../STYLE.md> § General discourages in favour of `isinstance` narrowing. The
+  derived types are ours to define, so they get the better form.
+
+This is a decision about the **derived view**, which is new surface. It does not argue
+against protobuf, against the runner journal being protobuf, or against proto-JSON on the
+wire -- all three stay. The Bazel rule in <../../../devinfra/python/connect.bzl> and
+`app/transport_probe/` remain; removing them is separable and not required by this.
 
 ### Rejected: gRPC-Web through an Envoy translation hop
+
+Rejected before Connect was, and still rejected: the transport that replaced Connect is
+in-process too, so both constraints below bind at least as hard now.
 
 gRPC-Web — `grpc.aio` plus a standard translator — was built and measured, and lost.
 It is not infeasible: a spike put a
@@ -88,72 +138,54 @@ Spike code and its measurements: commit `7e1a36d8` (branch
 `claude/exciting-turing-83lyjb-grpcweb-spike`, never merged, so this record rather than
 the code is the durable part).
 
-Generation must use standard Bazel rules and pinned local plugins:
+Generation must use standard Bazel rules and pinned local plugins: keep `@protobuf`
+message targets and Aspect `ts_proto_library` for the protobuf payloads, and the existing
+OpenAPI-to-TypeScript path for everything Pydantic. No second TypeScript generator, no
+shell-driven codegen, no checked-in stubs.
 
-- Keep `@protobuf` message targets and Aspect `ts_proto_library`.
-  [Protobuf-ES service descriptors](https://connectrpc.com/docs/web/generating-code/)
-  are sufficient for Connect clients; no second TypeScript service generator.
-- Evaluate [standard Python gRPC rules](https://rules-proto-grpc.com/en/latest/lang/python.html)
-  or their [plugin extension mechanism](https://rules-proto-grpc.com/en/latest/custom_plugins.html)
-  for the chosen service generator. A Connect server requires its Connect plugin;
-  `grpc_python_plugin` alone generates a different server interface.
-- The repository currently has a narrow service-codegen rule in
-  <../../../devinfra/python/grpc.bzl>. Its historical `rules_python` conflict is not
-  sufficient justification: current `MODULE.bazel` already uses `rules_python` 2
-  and patches `rules_conda` for it. Recheck the selected standard rules in a build;
-  record a concrete remaining blocker before proposing an exception. No new
-  shell-driven codegen, remote Buf plugin service, checked-in stubs, or duplicate
-  import-closure wiring. Retiring the existing workaround can be a separate PR.
+Transport acceptance is what the browser test already covers, extended: incremental
+server frames before EOF, cancellation, terminal errors mid-stream, cookies, auth expiry,
+and cursors above `2^53`. Then exercise the deployed ingress -- buffering, idle timeout,
+reconnect, replica replacement. Extend `//x/agentplane/app:test_thread_browser`, which
+runs a real browser, app and PostgreSQL, and retain app draining behaviour for open
+streams.
 
-Transport acceptance requires an actual Bazel-built browser client and Python
-server: unary, incremental server messages before EOF, cancellation, terminal RPC
-errors, cookies, auth expiry, and cursors above `2^53`. Then exercise the deployed
-ingress: buffering, idle timeout, reconnect, and replica replacement. HTTP/2 support
-at an ingress does not by itself prove gRPC-Web translation or native gRPC support.
-Extend `//x/agentplane/app:test_thread_browser`, which already exercises a real
-browser, app and PostgreSQL. Mount RPCs before the SPA fallback, and retain app
-draining behavior for open streams.
-
-Mounting an ASGI service does **not** inherit FastAPI route dependencies. Every RPC
-must use the existing caller/session authorization boundary, including resource
-access checks; middleware alone is not proof. Require same-origin requests, explicit
-cookie/CSRF protection for mutations, no wildcard credentialed CORS, and structured
-unauthenticated errors instead of HTML login redirects inside a stream. Bound stream
-lifetime and recheck authorization so an expired/revoked login cannot read forever.
-Cancellation releases listeners/transactions; it never issues an interrupt command.
+Every route uses the existing caller/session authorization boundary, including resource
+access checks. Require same-origin requests, explicit cookie/CSRF protection for
+mutations, no wildcard credentialed CORS, and structured unauthenticated errors instead of
+HTML login redirects inside a stream. Bound stream lifetime and recheck authorization so
+an expired or revoked login cannot read forever. Cancellation releases
+listeners/transactions; it never issues an interrupt command.
 
 ## Schema ownership and service surface
 
 Keep `protocol/{command,event,event_log}.proto` harness-neutral and unchanged by view
-requirements. Add `app/thread_view.proto` for the derived segment/change types and
-`app/thread_api.proto` for services and app request envelopes. Reuse generated
-`Command`, `EventEntry`, `EventOrigin`, item/turn enums, and timestamps. The runner
-must not import either app file. There is no product identity named Conversation.
+requirements: the runner journal's types are protobuf and stay that way, and the runner
+imports nothing the app defines. The derived types are **not** protobuf -- they are
+Pydantic models in the app, and they reuse the generated `Command`, `EventEntry`,
+`EventOrigin`, item/turn enums and timestamps by _carrying_ them as proto-JSON, not by
+redeclaring them. There is no product identity named Conversation.
 
-```proto
-service ThreadViewService {
-  rpc GetView(GetViewRequest) returns (ViewSnapshot);
-  rpc FollowView(FollowViewRequest) returns (stream ViewUpdate);
-  rpc ListSegments(ListSegmentsRequest) returns (SegmentsPage);
-  rpc ReadPayload(ReadPayloadRequest) returns (PayloadChunk);
-}
+Three route groups under `/threads/{thread_id}`, named for what they own rather than by
+a service suffix:
 
-service ThreadCommandService {
-  rpc Submit(SubmitRequest) returns (EventEntry);
-  rpc ListPendingCommands(ListPendingCommandsRequest) returns (CommandsPage);
-  rpc GetCommands(GetCommandsRequest) returns (CommandLookup);
-}
-
-service ThreadEventsService {
-  rpc ListEvents(ListEventsRequest) returns (EventsPage);
-  rpc GetEvents(GetEventsRequest) returns (EventsByOrigin);
-  rpc FollowEvents(FollowEventsRequest) returns (stream EventEntry);
-}
+```text
+view      GET  /view                 one consistent ViewSnapshot
+          GET  /view/follow          SSE: ViewUpdate = Changes | RebootstrapRequired
+          GET  /segments             bounded SegmentsPage around an anchor
+          GET  /payloads/{ref}       bounded bytes; HTTP range, not an envelope
+commands  POST /commands             the archived runner CommandAdmitted EventEntry
+          GET  /commands/pending     CommandsPage of pending summaries
+          GET  /commands             CommandLookup for bounded command IDs
+events    GET  /events               EventsPage of exact entries
+          GET  /events/by-origin     EventsByOrigin for bounded EventOrigin references
+          GET  /events/stream        SSE: the unfiltered original Event log
 ```
 
-`ThreadCommandService` covers submission and queries of both pending and settled
-commands. Its reads share the view's materialized checkpoint; the service boundary
-does not introduce an app-owned queue or another ordering.
+The commands group covers submission and queries of both pending and settled commands.
+Its reads share the view's materialized checkpoint; the route boundary does not introduce
+an app-owned queue or another ordering. The table below names each operation by its row
+in this list.
 
 | Method                | Request shape                                                                                                              | Response/contract                                                                                                                |
 | --------------------- | -------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
@@ -174,12 +206,11 @@ useful because responses can be partial. Empty pages distinguish exhaustion from
 scan/byte limit and an unavailable source. Paged reads represent values larger than
 their byte budget by references. For oversized raw entries, chunk the serialized
 `EventEntry` and decode it with the same generated schema after reassembly.
-`FollowEvents` remains an exact-entry stream: if an entry exceeds its message limit,
-terminate with typed `RESOURCE_EXHAUSTED` details identifying the original entry and
-its chunk reference. Resume after that entry only once retrieved and verified; never
+The Event stream remains exact-entry: if an entry exceeds its frame limit, terminate the
+stream with a typed error frame identifying the original entry and its chunk reference. Resume after that entry only once retrieved and verified; never
 skip its cursor or turn the reference into a fabricated Event. Similarly, an
-oversized `Submit` admission response reports the archived receipt reference; it is
-not a rejection of the already admitted command. Validate this boundary in transport
+oversized admission response reports the archived receipt reference; it is not a
+rejection of the already admitted command. Validate this boundary in transport
 tests, and choose normal unary limits to fit accepted Command sizes.
 
 Operational inventory/runner status remains a separate authority. Existing live
