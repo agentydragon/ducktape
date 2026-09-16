@@ -1,7 +1,10 @@
 """Reusable cdk8s constructs for the LiteLLM proxy deployments.
 
-deployment.yaml itself stays hand-written (see cluster/generate_manifests.py) --
-this module only builds the rest of the app manifests.
+The Deployment's image tag is a deliberate placeholder ("unset") -- the
+image-pins/ Kustomize Component (hand-written, see
+cluster/k8s/litellm/app/image-pins/kustomization.yaml) overrides it at
+`kustomize build` time via Flux's image-automation marker. See
+cluster/docs/plans/cdk8s_adoption.md.
 """
 
 from __future__ import annotations
@@ -13,6 +16,8 @@ from cdk8s_plus_33 import ConfigMap
 from constructs import Construct
 
 from cluster.litellm_config import ConfigMapSpec, proxy_configs
+
+_PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 
 
 @dataclass(frozen=True)
@@ -30,7 +35,19 @@ class ProxySpec:
     """Configuration for one instance of the reusable LiteLLM construct."""
 
     config: ConfigMapSpec
+    image_name: str  # untagged -- e.g. "git.allegedly.works/ducktape-ci/tana-litellm-proxy"
+    replicas: int
+    env: tuple[dict[str, object], ...]
+    startup_failure_threshold: int
+    resources: dict[str, object] | None = None
+    image_pull_policy: str | None = None
+    image_pull_secrets: tuple[dict[str, str], ...] = ()
     service_account_name: str | None = None
+    termination_grace_period_seconds: int | None = None
+    node_selector: dict[str, str] | None = None
+    tolerations: tuple[dict[str, object], ...] = ()
+    topology_spread_constraints: tuple[dict[str, object], ...] = ()
+    strategy: dict[str, object] | None = None
     service: ServiceSpec = field(default_factory=ServiceSpec)
     hostname: str | None = None
     forgejo_image_credentials: bool = False
@@ -44,13 +61,65 @@ class ProxySpec:
         return self.config.namespace
 
 
+def _literal_env(name: str, value: str) -> dict[str, object]:
+    return {"name": name, "value": value}
+
+
+def _secret_env(name: str, secret_name: str, key: str) -> dict[str, object]:
+    return {"name": name, "valueFrom": {"secretKeyRef": {"name": secret_name, "key": key}}}
+
+
+def _base_env(*entries: dict[str, object]) -> tuple[dict[str, object], ...]:
+    return (_literal_env("HOST", "0.0.0.0"), _literal_env("PORT", "4000"), *entries)
+
+
+def _langfuse_env(*entries: dict[str, object]) -> tuple[dict[str, object], ...]:
+    return (
+        *_base_env(*entries),
+        _literal_env("LANGFUSE_OTEL_HOST", "http://langfuse-web.langfuse.svc.cluster.local:3000"),
+        _secret_env("LANGFUSE_PUBLIC_KEY", "langfuse-secrets", "LANGFUSE_INIT_PROJECT_PUBLIC_KEY"),
+        _secret_env("LANGFUSE_SECRET_KEY", "langfuse-secrets", "LANGFUSE_INIT_PROJECT_SECRET_KEY"),
+    )
+
+
 def proxy_specs() -> tuple[ProxySpec, ...]:
     """Return the proxy-specific values consumed by :class:`LiteLLMProxy`."""
     configs = {config.name: config for config in proxy_configs()}
     return (
         ProxySpec(
             config=configs["litellm"],
+            image_name="git.allegedly.works/ducktape-ci/tana-litellm-proxy",
+            replicas=2,
+            env=_langfuse_env(
+                _secret_env("LITELLM_MASTER_KEY", "litellm-master-key", "api-key"),
+                _secret_env("DATABASE_URL", "litellm-db-app", "uri"),
+                _secret_env("LITELLM_SALT_KEY", "litellm-salt-key", "key"),
+                _secret_env("ANTHROPIC_API_KEY", "litellm-anthropic-key", "api-key"),
+                _secret_env("GROQ_API_KEY", "litellm-groq-key", "GROQ_API_KEY"),
+                _secret_env("GEMINI_API_KEY", "litellm-gemini-key", "GEMINI_API_KEY"),
+                _secret_env("MISTRAL_API_KEY", "litellm-mistral-key", "MISTRAL_API_KEY"),
+                _secret_env("CLIPROXY_CLIENT_KEY", "litellm-cliproxy-key", "CLIPROXY_CLIENT_KEY"),
+                _secret_env("TANA_FIREBASE_REFRESH_TOKEN", "tana-firebase-refresh-token", "refresh_token"),
+            ),
+            startup_failure_threshold=36,
+            resources={"requests": {"cpu": "100m", "memory": "1Gi"}, "limits": {"cpu": "2", "memory": "4Gi"}},
+            image_pull_policy="Always",
+            image_pull_secrets=({"name": "forgejo-images-creds"},),
             service_account_name="litellm",
+            termination_grace_period_seconds=90,
+            node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
+            tolerations=(
+                {"key": "node-role.kubernetes.io/control-plane", "operator": "Exists", "effect": "NoSchedule"},
+            ),
+            topology_spread_constraints=(
+                {
+                    "maxSkew": 1,
+                    "topologyKey": "kubernetes.io/hostname",
+                    "whenUnsatisfiable": "ScheduleAnyway",
+                    "labelSelector": {"matchLabels": {"app.kubernetes.io/name": "litellm"}},
+                },
+            ),
+            strategy={"type": "RollingUpdate", "rollingUpdate": {"maxSurge": 1, "maxUnavailable": 0}},
             service=ServiceSpec(labels={"app.kubernetes.io/name": "litellm"}),
             hostname="litellm.allegedly.works",
             forgejo_image_credentials=True,
@@ -93,8 +162,18 @@ def _metadata(
     return result
 
 
+def _health_probe(path: str, initial_delay_seconds: int, failure_threshold: int) -> dict[str, object]:
+    return {
+        "httpGet": {"path": path, "port": "http"},
+        "initialDelaySeconds": initial_delay_seconds,
+        "periodSeconds": 10,
+        "timeoutSeconds": 5,
+        "failureThreshold": failure_threshold,
+    }
+
+
 class LiteLLMProxy(Construct):
-    """Compose one LiteLLM ConfigMap, Service, and optional extras."""
+    """Compose one LiteLLM ConfigMap, Deployment, Service, and optional extras."""
 
     def __init__(self, scope: Construct, id: str, spec: ProxySpec) -> None:
         super().__init__(scope, id)
@@ -103,6 +182,7 @@ class LiteLLMProxy(Construct):
         self._add_config_map()
         if spec.forgejo_image_credentials:
             self._add_forgejo_image_credentials()
+        self._add_deployment()
         self._add_service()
         if spec.service_account_name is not None:
             self._add_service_account()
@@ -127,6 +207,60 @@ class LiteLLMProxy(Construct):
                 },
             },
             data=_formatted_config_map_data(self.spec.config.data),
+        )
+
+    def _add_deployment(self) -> None:
+        labels = {"app.kubernetes.io/name": self.spec.name}
+        container: dict[str, object] = {
+            "name": "litellm",
+            "image": f"{self.spec.image_name}:{_PLACEHOLDER_TAG}",
+            "args": ["--config", "/etc/litellm/config.yaml"],
+            "ports": [{"name": "http", "containerPort": 4000, "protocol": "TCP"}],
+            "env": list(self.spec.env),
+            "livenessProbe": _health_probe("/health/liveliness", 30, 3),
+            "readinessProbe": _health_probe("/health/readiness", 10, 3),
+            "startupProbe": _health_probe("/health/liveliness", 5, self.spec.startup_failure_threshold),
+            "volumeMounts": [{"name": "config", "mountPath": "/etc/litellm", "readOnly": True}],
+        }
+        pod_spec: dict[str, object] = {
+            "containers": [container],
+            "volumes": [
+                {"name": "config", "configMap": {"name": self.spec.config.config_map_name, "items": self._config_items}}
+            ],
+        }
+        if self.spec.image_pull_policy is not None:
+            container["imagePullPolicy"] = self.spec.image_pull_policy
+        if self.spec.resources is not None:
+            container["resources"] = self.spec.resources
+        if self.spec.image_pull_secrets:
+            pod_spec["imagePullSecrets"] = list(self.spec.image_pull_secrets)
+        if self.spec.service_account_name is not None:
+            pod_spec["serviceAccountName"] = self.spec.service_account_name
+        if self.spec.termination_grace_period_seconds is not None:
+            pod_spec["terminationGracePeriodSeconds"] = self.spec.termination_grace_period_seconds
+        if self.spec.node_selector is not None:
+            pod_spec["nodeSelector"] = self.spec.node_selector
+        if self.spec.tolerations:
+            pod_spec["tolerations"] = list(self.spec.tolerations)
+        if self.spec.topology_spread_constraints:
+            pod_spec["topologySpreadConstraints"] = list(self.spec.topology_spread_constraints)
+
+        deployment_spec: dict[str, object] = {
+            "replicas": self.spec.replicas,
+            "selector": {"matchLabels": labels},
+            "template": {"metadata": {"labels": labels}, "spec": pod_spec},
+        }
+        if self.spec.strategy is not None:
+            deployment_spec["strategy"] = self.spec.strategy
+        _api_resource(
+            self,
+            "deployment",
+            api_version="apps/v1",
+            kind="Deployment",
+            metadata=_metadata(
+                self.spec.name, self.spec.namespace, labels=labels, annotations={"reloader.stakater.com/auto": "true"}
+            ),
+            fields={"spec": deployment_spec},
         )
 
     def _add_service(self) -> None:

@@ -1,9 +1,10 @@
 """Synthesize the LiteLLM manifests with Python cdk8s, writing them directly into
 `cluster/k8s/litellm/app`.
 
-`deployment.yaml` itself stays hand-written: it carries Flux's `$imagepolicy`
-image-automation marker comment plus rationale comments cdk8s's YAML emission
-can't reproduce (see cluster/docs/plans/cdk8s_adoption.md).
+The Deployment is fully generated, with a placeholder image tag --
+`image-pins/kustomization.yaml` (hand-written Kustomize Component, never
+written by this generator) carries Flux's `$imagepolicy` marker and overrides
+the real tag at `kustomize build` time. See cluster/docs/plans/cdk8s_adoption.md.
 """
 
 from pathlib import Path
@@ -61,7 +62,8 @@ def generate_manifests(root: Path) -> None:
         app_dir / "kustomization.yaml",
         kustomize_kustomization(
             namespace="litellm",
-            resources=["deployment.yaml", f"{spec.name}.k8s.yaml", "litellm-servicemonitor.k8s.yaml"],
+            resources=[f"{spec.name}.k8s.yaml", "litellm-servicemonitor.k8s.yaml"],
+            components=["./image-pins"],
         ),
     )
 
