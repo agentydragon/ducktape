@@ -8,4 +8,6 @@ resources:
   - poddisruptionbudget.yaml
   - seaweed.yaml
   - servicemonitor.yaml
+  - forgejo-admin-password.sops.yaml
+  - forgejo-metrics-token-eso.yaml
 # OAuth OIDC credentials provisioned by tf/gitops/sso-providers/ as a k8s Secret.

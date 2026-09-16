@@ -18,9 +18,12 @@ spec:
   path: ./cluster/k8s/x/openhands/app
   prune: true
   wait: true
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
   dependsOn:
     - name: openhands-namespace
-    - name: openhands-secrets
     - name: openhands-sandboxes
     - name: gateway
       namespace: ducktape-flux

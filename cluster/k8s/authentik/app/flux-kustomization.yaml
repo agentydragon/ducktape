@@ -28,12 +28,14 @@ spec:
       kind: Deployment
       name: authentik-worker
       namespace: authentik
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
   dependsOn:
     - name: authentik-namespace
       namespace: ducktape-flux
     - name: authentik-db # Wait for CNPG cluster ready and authentik-db-app secret to exist
-      namespace: ducktape-flux
-    - name: authentik-secrets # Admin password, secret key, bootstrap token (SOPS)
       namespace: ducktape-flux
     - name: authentik-sso-secrets # Supporting identity and Google OAuth inputs
       namespace: ducktape-flux

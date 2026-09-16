@@ -1045,13 +1045,6 @@ spec:
           to: "@artifact/cluster/k8s/authentik/proxy-routes/"
           exclude:
             - flux-kustomization.yaml
-    - name: authentik-secrets
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/authentik/secrets/**"
-          to: "@artifact/cluster/k8s/authentik/secrets/"
-          exclude:
-            - flux-kustomization.yaml
     - name: budget-app
       originRevision: "@repo"
       copy:
@@ -1225,13 +1218,6 @@ spec:
       copy:
         - from: "@repo/cluster/k8s/forgejo/db/**"
           to: "@artifact/cluster/k8s/forgejo/db/"
-          exclude:
-            - flux-kustomization.yaml
-    - name: forgejo-secrets
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/forgejo/secrets/**"
-          to: "@artifact/cluster/k8s/forgejo/secrets/"
           exclude:
             - flux-kustomization.yaml
     - name: gatus
@@ -1727,13 +1713,6 @@ spec:
       copy:
         - from: "@repo/cluster/k8s/paperless/db/**"
           to: "@artifact/cluster/k8s/paperless/db/"
-          exclude:
-            - flux-kustomization.yaml
-    - name: paperless-secrets
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/paperless/secrets/**"
-          to: "@artifact/cluster/k8s/paperless/secrets/"
           exclude:
             - flux-kustomization.yaml
     - name: proxmox-proxy

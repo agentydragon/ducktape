@@ -174,7 +174,6 @@ resources:
   - authentik/db/flux-kustomization.yaml
   - authentik/db-backups/flux-kustomization.yaml
   - authentik/app/flux-kustomization.yaml
-  - authentik/secrets/flux-kustomization.yaml
   - authentik/sso-secrets/flux-kustomization.yaml
   - authentik/proxy-routes/flux-kustomization.yaml
   - authentik/sso-providers-tf/flux-kustomization.yaml
@@ -189,7 +188,6 @@ resources:
   - forgejo/db/flux-kustomization.yaml
   - forgejo/cache/flux-kustomization.yaml
   - forgejo/app/flux-kustomization.yaml
-  - forgejo/secrets/flux-kustomization.yaml
 
   - forgejo-images/flux-kustomization.yaml
   - forgejo/budget-ledger/flux-kustomization.yaml
@@ -289,7 +287,6 @@ resources:
 
   # --- paperless ---
   - paperless/namespace/flux-kustomization.yaml
-  - paperless/secrets/flux-kustomization.yaml
   - paperless/db/flux-kustomization.yaml
   - paperless/cache/flux-kustomization.yaml
   - paperless/app/flux-kustomization.yaml
