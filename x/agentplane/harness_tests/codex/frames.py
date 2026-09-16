@@ -8,6 +8,14 @@ from x.agentplane.native.codex import wire
 
 Frame = dict[str, Any]
 
+# The user message Codex itself injects to mark a turn it aborted on request.
+INTERRUPTED_TURN_MARKER = (
+    "<turn_aborted>\n"
+    "The user interrupted the previous turn on purpose. Any running unified exec processes may still be running "
+    "in the background. If any tools/commands were aborted, they may have partially executed.\n"
+    "</turn_aborted>"
+)
+
 
 def parse(frames: list[Frame]) -> list[wire.CodexFrame]:
     return [wire.parse_frame(frame) for frame in frames]

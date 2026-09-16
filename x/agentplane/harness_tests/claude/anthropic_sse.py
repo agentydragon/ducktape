@@ -7,7 +7,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from x.agentplane.harness_tests.model_endpoint import JsonResponse, SseEvent
+from x.agentplane.harness_tests.model_endpoint import EventStream, JsonResponse, SseEvent
 
 
 @dataclass(frozen=True)
@@ -72,16 +72,7 @@ def _stop_reason(blocks: list[Block]) -> StopReason:
     return "tool_use" if any(isinstance(block, ToolUse) for block in blocks) else "end_turn"
 
 
-@dataclass(frozen=True)
-class MessageStream:
-    events: tuple[SseEvent, ...]
-
-    def through(self, kind: str) -> MessageStream:
-        index = next(index for index, event in enumerate(self.events) if event.kind == kind)
-        return MessageStream(self.events[: index + 1])
-
-
-def message_stream(blocks: list[Block], *, model: str) -> MessageStream:
+def message_stream(blocks: list[Block], *, model: str) -> EventStream:
     message: dict[str, Any] = {
         "id": next(_message_ids),
         "type": "message",
@@ -106,7 +97,7 @@ def message_stream(blocks: list[Block], *, model: str) -> MessageStream:
         )
     )
     packets.append(_packet("message_stop", {"type": "message_stop"}))
-    return MessageStream(tuple(packets))
+    return EventStream(tuple(packets))
 
 
 def message_body(blocks: list[Block], *, model: str) -> JsonResponse:

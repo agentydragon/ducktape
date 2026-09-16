@@ -7,7 +7,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-from x.agentplane.harness_tests.model_endpoint import SseEvent
+from x.agentplane.harness_tests.model_endpoint import EventStream, SseEvent
 
 
 @dataclass(frozen=True)
@@ -197,16 +197,7 @@ def _item_packets(emitter: _Emitter, index: int, item: Item) -> dict[str, Any]:
     return done
 
 
-@dataclass(frozen=True)
-class ResponseStream:
-    events: tuple[SseEvent, ...]
-
-    def through(self, kind: str) -> ResponseStream:
-        index = next(index for index, event in enumerate(self.events) if event.kind == kind)
-        return ResponseStream(self.events[: index + 1])
-
-
-def response_stream(items: list[Item], *, model: str) -> ResponseStream:
+def response_stream(items: list[Item], *, model: str) -> EventStream:
     envelope = {"id": f"resp_test_{next(_ids)}", "object": "response", "created_at": 0, "model": model, "output": []}
     emitter = _Emitter()
     emitter.emit({"type": "response.created", "response": {**envelope, "status": "in_progress"}})
@@ -220,4 +211,4 @@ def response_stream(items: list[Item], *, model: str) -> ResponseStream:
     )
     # Responses SSE terminates at response.completed.  Unlike Chat Completions, its wire
     # protocol has no trailing [DONE] sentinel; the HTTP response may close immediately.
-    return ResponseStream(tuple(emitter.events))
+    return EventStream(tuple(emitter.events))

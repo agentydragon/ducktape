@@ -14,6 +14,15 @@ def parse(frames: list[Frame]) -> list[wire.ClaudeFrame]:
     return [wire.parse_frame(frame) for frame in frames]
 
 
+def command_uuids(frames: list[Frame], state: wire.CommandState) -> list[str]:
+    """The origin UUIDs of every native command lifecycle frame in the given state, in order."""
+    return [
+        frame.command_uuid
+        for frame in parse(frames)
+        if isinstance(frame, wire.CommandLifecycleFrame) and frame.state is state
+    ]
+
+
 def tool_uses(frames: list[Frame]) -> list[ToolUseBlock]:
     return [
         block
@@ -30,6 +39,10 @@ def hook_callbacks(frames: list[Frame]) -> list[wire.HookCallback]:
         for frame in parse(frames)
         if isinstance(frame, wire.ControlRequestFrame) and isinstance(frame.request, wire.HookCallback)
     ]
+
+
+def pretooluse_callbacks(frames: list[Frame]) -> list[wire.HookCallback]:
+    return [callback for callback in hook_callbacks(frames) if callback.input.get("hook_event_name") == "PreToolUse"]
 
 
 def permission_prompts(frames: list[Frame]) -> list[wire.CanUseTool]:

@@ -69,13 +69,9 @@ async def test_queued_inputs_coalesce_into_one_native_user_message(
             await exchange.close()
             assert (await events.result()).result == "COALESCED_OK"
 
-    parsed = [wire.parse_frame(frame) for frame in run.native_frames()]
-    queued = [
-        frame.command_uuid
-        for frame in parsed
-        if isinstance(frame, wire.CommandLifecycleFrame) and frame.state is wire.CommandState.QUEUED
-    ]
-    assert queued[-3:] == [first.uuid, second.uuid, third.uuid]
+    captured = run.native_frames()
+    parsed = frames.parse(captured)
+    assert frames.command_uuids(captured, wire.CommandState.QUEUED)[-3:] == [first.uuid, second.uuid, third.uuid]
     follower_and_merged = [
         (frame.uuid, frame.message.content)
         for frame in parsed
@@ -146,11 +142,7 @@ async def test_interrupt_cancels_each_queued_input_before_native_message(
             await recovery_exchange.close()
             assert (await recovery.result()).result == "INTERRUPT_QUEUE_RECOVERY_OK"
 
-    cancelled = [
-        frame.command_uuid
-        for frame in (wire.parse_frame(raw) for raw in run.native_frames())
-        if isinstance(frame, wire.CommandLifecycleFrame) and frame.state is wire.CommandState.CANCELLED
-    ]
+    cancelled = frames.command_uuids(run.native_frames(), wire.CommandState.CANCELLED)
     assert cancelled.count(first.uuid) == 1
     assert cancelled.count(second.uuid) == 1
 
@@ -193,12 +185,7 @@ async def test_plain_interrupt_preserves_queued_inputs_for_the_next_native_reque
             await queued_exchange.close()
             assert (await events.result()).result == PLAIN_INTERRUPT_RESULT
 
-    parsed = [wire.parse_frame(frame) for frame in run.native_frames()]
-    started = [
-        frame.command_uuid
-        for frame in parsed
-        if isinstance(frame, wire.CommandLifecycleFrame) and frame.state is wire.CommandState.STARTED
-    ]
+    started = frames.command_uuids(run.native_frames(), wire.CommandState.STARTED)
     assert started[-2:] == [first.uuid, second.uuid]
 
 
@@ -261,8 +248,9 @@ async def test_inputs_during_a_tool_coalesce_into_the_tool_result(
 
         assert (await first.result()).result == "SECOND_INPUT_OBSERVED"
         assert run.running
-    frames.assert_success(run.native_frames(), "SECOND_INPUT_OBSERVED")
-    parsed = [wire.parse_frame(frame) for frame in run.native_frames()]
+    captured = run.native_frames()
+    frames.assert_success(captured, "SECOND_INPUT_OBSERVED")
+    parsed = frames.parse(captured)
     starts = [
         frame
         for frame in parsed
@@ -272,12 +260,7 @@ async def test_inputs_during_a_tool_coalesce_into_the_tool_result(
     # deliberately omits it, leaving only the following lifecycle started cohort to identify the
     # queued inputs that were folded into its tool result.
     assert [frame.user_message_uuid for frame in starts] == [first.uuid, None]
-    started = [
-        frame.command_uuid
-        for frame in parsed
-        if isinstance(frame, wire.CommandLifecycleFrame) and frame.state is wire.CommandState.STARTED
-    ]
-    assert started == [first.uuid, second.uuid, third.uuid]
+    assert frames.command_uuids(captured, wire.CommandState.STARTED) == [first.uuid, second.uuid, third.uuid]
     # Replay preserves only the follower's original text. It is bookkeeping before both lifecycle
     # starts, not a second native user message or an echo of the text Claude put into the model
     # continuation.

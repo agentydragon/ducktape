@@ -16,12 +16,6 @@ INTERRUPTED_QUEUE_FIRST = "Reply only after seeing CODEX_INTERRUPTED_QUEUE_FIRST
 INTERRUPTED_QUEUE_SECOND = "Reply only after seeing CODEX_INTERRUPTED_QUEUE_SECOND."
 INTERRUPT_RECOVERY = "Reply with exactly: CODEX_INTERRUPT_QUEUE_RECOVERY_OK"
 INTERRUPTED_INITIAL = "Wait; do not answer early."
-INTERRUPTED_TURN_MARKER = (
-    "<turn_aborted>\n"
-    "The user interrupted the previous turn on purpose. Any running unified exec processes may still be running "
-    "in the background. If any tools/commands were aborted, they may have partially executed.\n"
-    "</turn_aborted>"
-)
 
 
 def _wait_call() -> sse.FunctionCall:
@@ -125,7 +119,7 @@ async def test_interrupt_drops_joined_inputs_before_the_next_model_request(
             assert recovery_exchange.request.item_kinds == ["message:user"] * 3
             assert [message.text for message in recovery_exchange.request.messages("user")] == [
                 INTERRUPTED_INITIAL,
-                INTERRUPTED_TURN_MARKER,
+                frames.INTERRUPTED_TURN_MARKER,
                 INTERRUPT_RECOVERY,
             ]
             stream = sse.response_stream([sse.Message("CODEX_INTERRUPT_QUEUE_RECOVERY_OK")], model=MODEL)

@@ -34,6 +34,10 @@ def _hook_log_events(log_path: Path) -> list[dict[str, Any]]:
     return [json.loads(json.loads(line)["text"]) for line in log_path.read_text().splitlines()]
 
 
+def _pretooluse_events(log_path: Path) -> list[dict[str, Any]]:
+    return [event for event in _hook_log_events(log_path) if event.get("hook_event_name") == "PreToolUse"]
+
+
 async def test_pretooluse_allow_lets_the_tool_run(
     codex: CodexHarness, openai_responses: OpenAIResponses, tmp_path: Path
 ) -> None:
@@ -57,9 +61,7 @@ async def test_pretooluse_allow_lets_the_tool_run(
     captured = run.native_frames()
     frames.assert_success(captured, "PROBE_DONE")
 
-    events = _hook_log_events(log_path)
-    pretooluse = [event for event in events if event.get("hook_event_name") == "PreToolUse"]
-    assert len(pretooluse) == 1
+    assert len(_pretooluse_events(log_path)) == 1
 
 
 async def test_pretooluse_deny_blocks_the_tool_and_the_model_sees_why(
@@ -85,9 +87,7 @@ async def test_pretooluse_deny_blocks_the_tool_and_the_model_sees_why(
     captured = run.native_frames()
     frames.assert_success(captured, "HOOK_DENIED_OBSERVED")
 
-    events = _hook_log_events(log_path)
-    pretooluse = [event for event in events if event.get("hook_event_name") == "PreToolUse"]
-    assert len(pretooluse) == 1
+    assert len(_pretooluse_events(log_path)) == 1
 
 
 if __name__ == "__main__":
