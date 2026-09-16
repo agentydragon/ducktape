@@ -53,5 +53,5 @@ is still needed to quantify that additional work; multi-second HTTP completion a
 already rules out a browser-state-library-only fix.
 
 The design consequence is tracked in the
-[layering doc](../docs/thread_layering.md#planned-conversation-view-synchronization),
+[Thread view synchronization design](../docs/thread_view_sync.md),
 not specified independently here.

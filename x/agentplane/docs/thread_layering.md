@@ -255,7 +255,7 @@ sequenceDiagram
     R-->>A: ServerMessage {event_entry:E(41, command_admitted{command:M})}
     A->>A: Commit E41
     A-->>F: HTTP 200, E41<br/>SSE id:41, data:E41
-    Note over F,H: Picker still shows applied old model; M is pending
+    Note over F,H: Picker still shows applied old model. M is pending
     F->>A: POST /threads/T/commands<br/>I = Command {command_id:I, submit_input:{text:Continue the task}}
     A->>R: ClientMessage {command:I}
     R->>R: Persist I
@@ -310,10 +310,10 @@ sequenceDiagram
     A->>R: ClientMessage {command:C}
     R->>R: Persist C
     R-->>A: E(n, command_admitted{command:C})
-    A->>A: Copy Event; derive delivery satisfied
+    A->>A: Copy Event and derive delivery satisfied
     R-->>A: E(m, harness_user_message_confirmed{<br/>origin_command_ids:[C], text:Inspect this workspace, ...})
     A->>A: Copy Events
-    F->>A: GET Thread T; Follow {after_cursor:0}; refresh pending and Sandbox state
+    F->>A: GET Thread T, Follow {after_cursor:0}, refresh pending and Sandbox state
     A-->>F: C in app intent, exact E1..Em,<br/>separate operational snapshot
 ```
 
@@ -488,188 +488,17 @@ presentation, not server delivery orchestration.
 
 ## Planned conversation-view synchronization
 
-**Design gate, not implemented:** normal mode should synchronize a bounded view of
-reduced conversation state, not reconstruct completed messages by replaying their
-generation history. This is an explicitly derived app API alongside the exact Event
-API, not the same stream with silently omitted entries. It does not introduce a
-product identity named Conversation, another command queue, or another authoritative
-Event sequence. The preceding HTTP/SSE diagrams describe the existing raw-replay path.
+The [Thread view synchronization design](thread_view_sync.md) owns the proposed
+app-to-browser RPC contract, materialization, snapshot/live handoff, long-gap
+catch-up, history/payload hydration, on-demand Raw, frontend ownership and validation.
+It is an explicitly derived read API, not a filtered version of the runner Event
+stream. The HTTP/SSE sequence diagrams above describe the current implementation.
 
-The [staging inspection](../debug/thread_load_20260915.md) found multi-second HTTP
-downloads for eight turns, with thousands of native frames and text deltas. Recent
-Event pagination alone does not solve this: a single recent message can require
-many generation Events. Client library selection follows the read contract rather
-than substituting for it.
-
-### Required contract and design questions
-
-- **Server projection:** incrementally maintain addressable conversation rows, command outcomes,
-  and control state from the committed archive, with a projection cursor committed
-  atomically with its changes. The projection may lag the archive but never claim
-  unprocessed Events. Define rebuild and projector replacement; opening a page must
-  not replay full history on the server either. It is a rebuildable read model, not
-  an independent authority. Initial configuration/operational seeds need explicit
-  provenance rather than being attributed to Events that do not contain them.
-- **Consistent bootstrap:** return recent item aggregates and current command/control
-  state through original source cursor H. Completed text arrives assembled; an active
-  item arrives accumulated through H, followed only by newer changes. Include context
-  for items begun before the window, without letting one enormous active turn force
-  unbounded payload loading. The runner's operational `Attached` is not this snapshot.
-- **Live following:** specify a snapshot-to-update handoff and reconnect protocol.
-  Proposed update envelopes identify the source and original cursor interval covered,
-  including intervals with no visible change. Applying changes and advancing coverage
-  is atomic. These are projection changes, not fabricated `EventEntry` payloads.
-  Decide replay storage/recomputation, stale-cursor rebootstrap, and how a changed
-  projection implementation invalidates caches; no old-protocol compatibility is needed.
-- **Normalized view:** preserve confirmed inputs, assistant/tool/reasoning items,
-  historical turn outcomes/diagnostics and control effects, and the receipt/lifecycle
-  boundaries used for grouping. A failed turn with no items must still be visible;
-  current model state cannot replace historical model-change cards. Stable IDs,
-  causal ordering anchors, and source-cursor revisions permit per-row updates rather
-  than replacing a monolithic object. Define
-  window membership, eviction, and off-window updates. Older pages and detail responses
-  cannot overwrite newer state, advance live progress, or expose future state as if it
-  belonged to an earlier checkpoint. Define which reads share a snapshot and how
-  responses racing live following are buffered or merged.
-- **Command recovery:** current unresolved admissions are independent of the visible
-  history window. Resolve browser-retained command IDs even if admission and completion
-  are both older than that window. Preserve exact command/receipt comparison; an absent
-  lookup while the archive lags is not evidence that the runner never admitted it.
-  The applied model still waits for effect, not admission. Submission keeps the existing
-  generated Command and archived-admission response.
-- **Frontend ownership:** decide one owner of normalized live entities, separate from
-  immutable fetched pages/details and local drafts. Retire full-history refolding and
-  per-Event whole-view subscriptions. Evaluate TanStack DB first through a typed,
-  read-only custom sync adapter; Redux Toolkit with RTK Query is the fallback candidate.
-  A test-only library spike is approved, not a production migration. TanStack Query
-  plus Zustand remains possible but leaves more collection/synchronization machinery
-  to the app. No option should maintain independently mutable duplicate copies of the
-  same live server state or optimistically manufacture command effects.
-
-The design follows snapshot-plus-change-feed synchronization of a materialized read
-model. [Kubernetes list/watch](https://kubernetes.io/docs/reference/using-api/api-concepts/#efficient-detection-of-changes)
-is a reference for snapshot/watch handoff and expired-cursor resynchronization, not
-a dependency or a reason to treat projection changes as runner Events.
-[TanStack DB custom collections](https://tanstack.com/db/latest/docs/guides/collection-options-creator)
-can host the app's own sync protocol; adopting a separate database sync service is
-not required. Use on-demand loading, not progressive full-history synchronization.
-
-Library evaluation must observe the subscriber boundary: rows, command/control state,
-and coverage become visible together. Per-collection transactions do not by themselves
-prove cross-collection atomicity. Exercise protobuf cursors beyond JavaScript's safe
-integer range, overlapping history/live updates, long-gap snapshot replacement with
-late requests, and on-demand evidence that cannot advance live coverage. Verify
-selective subscriptions and loaded-state bounds with the actual library; do not infer
-network or rendering performance from a store-only test. Keep the prototype isolated
-from production callers, and record unsupported cases before selecting the integration.
-
-Conceptual messages below are design sketches, not selected endpoint/protobuf names:
-
-```mermaid
-sequenceDiagram
-    participant F as Frontend
-    participant A as App projection and archive
-    F->>A: ReadView {thread:T, recent_limit:L, local_command_ids:[C]}
-    A-->>F: Snapshot {source:S, through:H, rows, current_controls, commands, older_boundary}
-    F->>F: Install snapshot and H atomically
-    F->>A: FollowView {source:S, after:H}
-    A-->>F: Changes {source:S, after:H, through:K, row_updates, control_updates, command_updates}
-    Note over F,A: Same runner cursor space; no visible changes still covers the interval
-    F->>A: ReadEvidence {source:S, original_cursors:[P,Q]}
-    A-->>F: Exact EventEntries and explicit availability
-    Note over F: Evidence/history hydration does not advance live coverage K
-```
-
-Before implementation, extend these sketches with lost submit response and an item
-spanning the window; the reconnect and historical navigation requirements follow below.
-Tests must compare snapshot-plus-changes with the relevant full Event projection;
-cover old pending and old completed local commands, model effects, failures/interrupts,
-reordered reads, duplicates/conflicts, projector restart, and app replica handoff.
-With Raw unloaded, preserve an empty failed turn's diagnostics, historical model
-changes, and grouping boundaries from interleaved receipts/lifecycle observations.
-Measure transfer and processing bounds for both short high-delta conversations and
-long histories. Do not hide a full-history download behind fast first paint.
-
-### Long-gap catch-up and upward history loading
-
-These are separate operations: catching up restores current state; fetching history
-extends what the user can inspect. Neither should implicitly download all intervening
-generation Events.
-
-- **Short disconnect:** resume view updates after the last atomically installed
-  coverage cursor. Overlap is harmless only when source/revision/payload agree.
-- **Long disconnect or expired update history:** provide an explicit rebootstrap path
-  to a fresh bounded snapshot, rather than an unbounded backlog of deltas. Define how
-  the server chooses/reports that path using payload/work bounds, not an unexplained
-  cursor jump. Reconcile retained command IDs, refresh controls, and install snapshot
-  and cursor together. Old in-flight responses must not overwrite the replacement.
-  Preserve drafts/disclosures and a scrolled-up reading anchor; catch-up does not
-  necessarily navigate the user to the tail. Source change or history loss remains
-  an explicit integrity/availability condition, not a routine reset to an empty Thread.
-- **Scroll upward:** request a bounded page before a stable item-order boundary, not
-  an offset shifted by new arrivals. Preserve the visible item and its viewport offset
-  when prepending. Keep current command/control state and live following independent
-  of the historical page; revision rules handle items updated after their first page
-  load. Define snapshot consistency for adjacent pages and fetching around an off-window
-  reference. Report loading, fetch failure/retry, and history exhaustion explicitly.
-- **Bounded browser state:** specify page eviction/refetch without moving the reading
-  anchor or evicting required current control/command state. A scroll fetch or Raw
-  expansion never advances the live coverage cursor or launches a full-history sync.
-
-```mermaid
-sequenceDiagram
-    participant F as Frontend, applied through H
-    participant A as App projection and archive
-    Note over F,A: Long offline gap; app is now through K
-    F->>A: FollowView {source:S, after:H}
-    A-->>F: RebootstrapRequired {reason:bounded-catch-up}
-    F->>A: ReadView {thread:T, recent_limit:L, reading_anchor:I, local_command_ids:[C]}
-    A-->>F: Snapshot {source:S, through:K, bounded rows, current_controls, commands, boundaries}
-    F->>F: Atomic install; preserve reading anchor and local drafts
-    F->>A: FollowView {source:S, after:K}
-    par User scrolls upward
-        F->>A: ReadHistory {before:B, limit:L, consistency:agreed snapshot contract}
-        A-->>F: OlderPage {rows with revisions, older_boundary, exhausted}
-        F->>F: Prepend without moving visible anchor or live cursor
-    and New output arrives
-        A-->>F: Changes {source:S, after:K, through:M, updates}
-        F->>F: Apply current state through M
-    end
-```
-
-Acceptance includes a long gap containing completed messages, settled commands, model
-changes, and a previously active item's completion; reconnect while scrolled up; live
-arrivals during repeated upward paging; overlapping pages and late responses; history
-exhaustion; and errors/retry without losing the viewport. Prove bounded catch-up work
-independent of missed token count and no gaps/duplicates in requested history.
-
-### On-demand Raw and payload retention
-
-Normal-view filtering is a delivery choice. **The first implementation retains the
-complete original Event archive, including native frames and historical deltas.**
-Raw remains an additive frontend surface: fetch exact frames/Events and causal context
-on demand, including outside the visible window, without changing conversation order
-or losing current streaming state. Paginate evidence separately; viewing a retained
-frame must not require downloading every frame. Detailed tool arguments/results can
-use the same explicit hydration approach. Unloaded, loading, empty, streaming, fetch
-failure, and unavailable evidence are distinguishable states.
-
-**Deferred retention design:** consider an app-wide default and per-Thread overrides
-for retaining underlying native frames, so operators can trade storage for debugging
-evidence/confidence. Decide default/override precedence, runner versus app storage
-scope, capture-disabled versus later expiry/deletion, and whether changes affect only
-future capture or existing data. Disabling retention is not a side effect of hiding
-Raw, and re-enabling it cannot recover past evidence. The UI must report the effective
-policy and unavailable evidence ranges/reasons rather than implying there were no
-frames. No retention is disabled by this plan.
-
-Native-frame retention and compaction of normalized streaming deltas are separate
-decisions. A final text value does not preserve intermediate ordering or every partial
-item after a crash/interrupt. Neither policy may silently remove command outcomes,
-recovery-critical native state, or evidence required to rebuild the promised projection.
-Before dropping data, explicitly revise exact-replay/rebuild guarantees and test causal
-references to unavailable payloads. Until then the lossless durability contract above
-remains unchanged.
+The normal view will load bounded assembled state and follow projection changes.
+Commands keep their runner-first admission semantics. Operational snapshots keep
+their own provenance. No second command queue or authoritative Event sequence is
+introduced. The initial implementation retains the complete exact runner archive;
+optional retention changes require a separate, explicit contract.
 
 ## Required harness-loss and Sandbox lifecycle cross-check
 
