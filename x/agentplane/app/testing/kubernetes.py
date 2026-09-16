@@ -29,6 +29,11 @@ VOLUME_CLAIM_TEMPLATES: list[dict[str, Any]] = [
 ]
 
 
+def _snake(camel: str) -> str:
+    """The API server takes camelCase; the Python client's models are snake_case."""
+    return "".join(f"_{char.lower()}" if char.isupper() else char for char in camel)
+
+
 def merge_patch(target: dict[str, Any], patch: dict[str, Any]) -> None:
     """RFC 7386 merge patch in place: nested objects recurse, `None` deletes."""
     for key, value in patch.items():
@@ -42,6 +47,7 @@ def merge_patch(target: dict[str, Any], patch: dict[str, Any]) -> None:
 
 class FakeCustomObjectsApi:
     def __init__(self) -> None:
+        self.create_fails = False
         self.objects: dict[tuple[str, str], dict[str, Any]] = {
             ("sandboxtemplates", TEMPLATE): {
                 "metadata": {"name": TEMPLATE, "creationTimestamp": "2026-09-01T11:00:00Z"},
@@ -73,6 +79,8 @@ class FakeCustomObjectsApi:
     ) -> dict[str, Any]:
         del group, version
         assert namespace == NAMESPACE
+        if self.create_fails:
+            raise k8s_client.ApiException(status=500)
         metadata = body["metadata"]
         # As the API server does: a `generateName` base is the server's to complete, so only a body
         # that named itself can collide.
@@ -131,6 +139,32 @@ class FakeCustomObjectsApi:
 class FakeCoreV1Api:
     def __init__(self) -> None:
         self.pods: dict[str, k8s_client.V1Pod] = {}
+        self.service_accounts: dict[str, k8s_client.V1ServiceAccount] = {}
+
+    async def create_namespaced_service_account(
+        self, namespace: str, body: k8s_client.V1ServiceAccount
+    ) -> k8s_client.V1ServiceAccount:
+        assert namespace == NAMESPACE
+        name = body.metadata.name
+        if name in self.service_accounts:
+            raise k8s_client.ApiException(status=409)
+        self.service_accounts[name] = body
+        return body
+
+    async def patch_namespaced_service_account(
+        self, name: str, namespace: str, body: dict[str, Any]
+    ) -> k8s_client.V1ServiceAccount:
+        assert namespace == NAMESPACE
+        account = self.service_accounts[name]
+        account.metadata.owner_references = [
+            k8s_client.V1OwnerReference(**{_snake(key): value for key, value in owner.items()})
+            for owner in body["metadata"]["ownerReferences"]
+        ]
+        return account
+
+    async def delete_namespaced_service_account(self, name: str, namespace: str) -> None:
+        assert namespace == NAMESPACE
+        self.service_accounts.pop(name, None)
 
     async def list_namespaced_pod(self, namespace: str) -> k8s_client.V1PodList:
         assert namespace == NAMESPACE

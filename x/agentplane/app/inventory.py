@@ -15,7 +15,7 @@ import string
 from collections.abc import Iterable
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, cast
 from uuid import UUID
 
 from kubernetes_asyncio import client as k8s_client
@@ -250,25 +250,58 @@ class SandboxInventory:
             )
         )
         suffix = "".join(secrets.choice(_SUFFIX_ALPHABET) for _ in range(_SUFFIX_LENGTH))
+        name = f"{spec.slug}-{suffix}"
+        # Before the Sandbox, because its Pod names this ServiceAccount: a Pod whose ServiceAccount
+        # does not exist is refused admission, and the token projected for the proxy's audience is
+        # minted for it. The owner reference cannot be set yet -- the Sandbox has no UID until it is
+        # created -- so it is patched on directly afterwards and the account is deleted if the
+        # Sandbox never appears, rather than being left for nothing to collect.
+        await self._core_v1.create_namespaced_service_account(
+            self._namespace,
+            k8s_client.V1ServiceAccount(metadata=k8s_client.V1ObjectMeta(name=name, labels={MANAGED_LABEL: "true"})),
+        )
         body = {
             "apiVersion": f"{SANDBOX_API[0]}/{SANDBOX_API[1]}",
             "kind": "Sandbox",
             "metadata": {
-                "name": f"{spec.slug}-{suffix}",
+                "name": name,
                 "labels": {MANAGED_LABEL: "true"},
                 **({"annotations": annotations} if annotations else {}),
             },
             # No shutdownTime and Retain: the app owns deletion, nothing expires a sandbox behind it.
             "spec": {
-                "podTemplate": template.spec.pod_template,
+                "podTemplate": _running_as(template.spec.pod_template, name),
                 "volumeClaimTemplates": template.spec.volume_claim_templates,
                 "shutdownPolicy": "Retain",
             },
         }
-        created = await self._custom_objects.create_namespaced_custom_object(
-            *SANDBOX_API, self._namespace, SANDBOXES_PLURAL, body
+        try:
+            created = await self._custom_objects.create_namespaced_custom_object(
+                *SANDBOX_API, self._namespace, SANDBOXES_PLURAL, body
+            )
+        except Exception:
+            await self._core_v1.delete_namespaced_service_account(name, self._namespace)
+            raise
+        sandbox = _Sandbox.model_validate(created)
+        await self._core_v1.patch_namespaced_service_account(
+            name,
+            self._namespace,
+            {
+                "metadata": {
+                    "ownerReferences": [
+                        {
+                            "apiVersion": f"{SANDBOX_API[0]}/{SANDBOX_API[1]}",
+                            "kind": "Sandbox",
+                            "name": name,
+                            "uid": str(sandbox.metadata.uid),
+                            "controller": False,
+                            "blockOwnerDeletion": False,
+                        }
+                    ]
+                }
+            },
         )
-        return _view(_Sandbox.model_validate(created), None)
+        return _view(sandbox, None)
 
     async def binding(self, name: str) -> SandboxBinding | None:
         raw = (await self._sandbox(name)).metadata.annotations.get(SANDBOX_BINDING_ANNOTATION)
@@ -348,6 +381,17 @@ def sandbox_views(sandboxes: Iterable[object], pods: Iterable[k8s_client.V1Pod])
 
 def sandbox_view(sandbox: object, pod: k8s_client.V1Pod | None) -> SandboxView:
     return _view(_Sandbox.model_validate(sandbox), pod)
+
+
+def _running_as(pod_template: dict[str, object], service_account: str) -> dict[str, object]:
+    """The template's Pod, running as this sandbox's own ServiceAccount rather than the shared one.
+
+    What a Pod runs as is what the egress proxy and the Action Service authenticate it by, so an
+    account of its own is what lets a sandbox be granted something its neighbours are not. The
+    template still owns every other field, including whether a token is automounted.
+    """
+    spec = {**cast(dict[str, object], pod_template.get("spec", {})), "serviceAccountName": service_account}
+    return {**pod_template, "spec": spec}
 
 
 def _view(sandbox: _Sandbox, pod: k8s_client.V1Pod | None) -> SandboxView:

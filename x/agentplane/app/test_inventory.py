@@ -7,6 +7,7 @@ from uuid import uuid4
 
 import pytest
 import pytest_bazel
+from kubernetes_asyncio import client as k8s_client
 
 from x.agentplane.app.inventory import (
     MANAGED_LABEL,
@@ -103,11 +104,48 @@ async def test_create_stamps_a_labelled_sandbox_from_the_template(
     stored = custom_objects.objects[("sandboxes", view.name)]
     assert stored["kind"] == "Sandbox"
     assert stored["metadata"]["labels"] == {MANAGED_LABEL: "true"}
-    assert stored["spec"] == {
-        "podTemplate": POD_TEMPLATE,
-        "volumeClaimTemplates": VOLUME_CLAIM_TEMPLATES,
-        "shutdownPolicy": "Retain",
+    assert stored["spec"]["volumeClaimTemplates"] == VOLUME_CLAIM_TEMPLATES
+    assert stored["spec"]["shutdownPolicy"] == "Retain"
+    # Every other field of the Pod is the template's; only what it runs as is this sandbox's.
+    assert stored["spec"]["podTemplate"] == {
+        **POD_TEMPLATE,
+        "spec": {**POD_TEMPLATE.get("spec", {}), "serviceAccountName": view.name},
     }
+
+
+async def test_create_gives_the_sandbox_a_service_account_of_its_own_that_it_runs_as(
+    inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api
+) -> None:
+    """What the Pod runs as is what egress and the Action Service authenticate it by, so a sandbox
+    sharing the template's account could only ever be granted what every other sandbox is."""
+    view = await inventory.create(NewSandbox(slug="my-task", template="agentplane-test-runner"))
+
+    account = core_v1.service_accounts[view.name]
+    assert account.metadata.labels == {MANAGED_LABEL: "true"}
+    assert (
+        custom_objects.objects[("sandboxes", view.name)]["spec"]["podTemplate"]["spec"]["serviceAccountName"]
+        == view.name
+    )
+    # Owned by the Sandbox, so deleting the sandbox takes the identity with it.
+    (owner,) = account.metadata.owner_references
+    assert (owner.kind, owner.name, owner.uid) == (
+        "Sandbox",
+        view.name,
+        custom_objects.objects[("sandboxes", view.name)]["metadata"]["uid"],
+    )
+
+
+async def test_create_leaves_no_service_account_behind_when_the_sandbox_is_refused(
+    inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api
+) -> None:
+    """The account is written first, because a Pod naming one that does not exist is refused. If the
+    Sandbox never appears, nothing owns the account and nothing would ever collect it."""
+    custom_objects.create_fails = True
+
+    with pytest.raises(k8s_client.ApiException):
+        await inventory.create(NewSandbox(slug="my-task", template="agentplane-test-runner"))
+
+    assert core_v1.service_accounts == {}
 
 
 async def test_create_names_each_sandbox_uniquely(inventory: SandboxInventory) -> None:
