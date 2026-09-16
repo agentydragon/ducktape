@@ -38,6 +38,7 @@
 # itself, so a test names it once. Generated, so there is no source file for Gazelle to
 # map the import onto -- same reason skills/BUILD.bazel pins its generated spec modules.
 # gazelle:resolve py third_party.containers.debian_slim //third_party/containers:debian_slim
+# gazelle:resolve py third_party.containers.envoy_1_35 //third_party/containers:envoy_1_35
 # gazelle:resolve py third_party.containers.grocy //third_party/containers:grocy
 # gazelle:resolve py third_party.containers.pgvector_pg18 //third_party/containers:pgvector_pg18
 # gazelle:resolve py third_party.containers.postgres_18 //third_party/containers:postgres_18

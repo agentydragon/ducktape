@@ -4,6 +4,7 @@ load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("//devinfra/python:connect.bzl", "py_connect_service_library")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
 load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
@@ -13,6 +14,7 @@ package(default_visibility = ["//x/agentplane:__subpackages__"])
 # gazelle:resolve py x.agentplane.runner.protocol_pb2_grpc //x/agentplane/runner:protocol_pb2_grpc
 # gazelle:resolve py x.agentplane.app.thread_events_pb2 //x/agentplane/app:thread_events_pb2
 # gazelle:resolve py x.agentplane.app.thread_events_connecpy //x/agentplane/app:thread_events_connecpy
+# gazelle:resolve py x.agentplane.app.thread_events_pb2_grpc //x/agentplane/app:thread_events_pb2_grpc
 # gazelle:resolve py x.agentplane.protocol.command_pb2 //x/agentplane/protocol:command_pb2
 # gazelle:resolve py x.agentplane.protocol.event_pb2 //x/agentplane/protocol:event_pb2
 # gazelle:resolve py x.agentplane.protocol.event_log_pb2 //x/agentplane/protocol:event_log_pb2
@@ -37,6 +39,13 @@ py_proto_library_with_mypy_stubs(
     name = "thread_events_pb2",
     visibility = ["//visibility:public"],
     deps = [":thread_events_proto"],
+)
+
+py_grpc_service_library(
+    name = "thread_events_pb2_grpc",
+    proto = ":thread_events_proto",
+    py_proto = ":thread_events_pb2",
+    visibility = ["//visibility:public"],
 )
 
 py_connect_service_library(

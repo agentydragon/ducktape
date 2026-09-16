@@ -49,9 +49,9 @@ class ThreadEventsService:
     def follow_events(
         self, request: thread_events_pb2.FollowEventsRequest, ctx: RequestContext
     ) -> AsyncIterator[thread_events_pb2.FollowEventsResponse]:
-        return self._drain.until(self._frames(request))
+        return self._drain.until(self.frames(request))
 
-    async def _frames(
+    async def frames(
         self, request: thread_events_pb2.FollowEventsRequest
     ) -> AsyncIterator[thread_events_pb2.FollowEventsResponse]:
         thread_id = _thread_id(request.thread_id)

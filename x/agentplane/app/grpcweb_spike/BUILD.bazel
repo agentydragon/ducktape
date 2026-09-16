@@ -1,0 +1,59 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "auth",
+    srcs = ["auth.py"],
+    deps = [
+        "//x/agentplane/app:identity",
+        "//x/agentplane/app:oidc",
+        "//x/agentplane/app:operator_sessions",
+        "@pypi//grpcio",
+        "@pypi//itsdangerous",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "server",
+    srcs = ["server.py"],
+    deps = [
+        "//x/agentplane/app:shutdown",
+        "//x/agentplane/app:thread_events",
+        "//x/agentplane/app:thread_events_pb2",
+        "//x/agentplane/app:thread_events_pb2_grpc",
+        "//x/agentplane/app:trajectory",
+        "@pypi//connecpy",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+    ],
+)
+
+py_test(
+    name = "test_grpcweb",
+    size = "large",
+    srcs = ["test_grpcweb.py"],
+    data = ["envoy.yaml"],
+    requires_docker = True,
+    deps = [
+        ":server",
+        "//:conftest",
+        "//third_party/containers:envoy_1_35",
+        "//util:oci",
+        "//util/bazel:runfiles",
+        "//x/agentplane/app:conftest",
+        "//x/agentplane/app:shutdown",
+        "//x/agentplane/app:thread_events_pb2",
+        "//x/agentplane/app:thread_events_pb2_grpc",
+        "//x/agentplane/app:trajectory",
+        "//x/agentplane/protocol:event_log_pb2",
+        "//x/agentplane/protocol:event_pb2",
+        "//x/agentplane/runner:protocol_pb2",
+        "@pypi//grpcio",
+        "@pypi//httpx",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//tenacity",
+        "@pypi//testcontainers",
+    ],
+)

@@ -1,0 +1,71 @@
+# The translation hop, in the smallest form that carries a browser's gRPC-Web to a gRPC server.
+#
+# This is the body a `CiliumEnvoyConfig` would carry, minus the Cilium wrapper (nodeSelector,
+# backendServices, and the `@type` envelopes around each resource). `GRPC_PORT` is substituted by
+# the test, because Envoy resolves no environment variables in a static bootstrap and the gRPC
+# server binds an ephemeral port.
+#
+# Finding 5: nothing in this file is checked by anything. It is YAML that must agree with the
+# service name in the proto, the port the server binds, and the path prefix the browser posts to,
+# and the first thing that tells you it does not is a browser failing against the deployed cluster.
+static_resources:
+  listeners:
+    - name: grpc_web
+      address:
+        socket_address: { address: 127.0.0.1, port_value: 0 }
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: grpc_web
+                codec_type: AUTO
+                route_config:
+                  name: local
+                  virtual_hosts:
+                    - name: local
+                      domains: ["*"]
+                      routes:
+                        - match: { prefix: "/" }
+                          route:
+                            cluster: thread_events
+                            # A followed Thread stays open for as long as the tab is. The gateway's
+                            # HTTPRoute already carries a 3600s timeout for the SSE path; this is
+                            # the same decision restated in a second place.
+                            timeout: 0s
+                      cors:
+                        allow_origin_string_match: [{ prefix: "*" }]
+                        allow_methods: POST
+                        allow_headers: "content-type,x-grpc-web,x-user-agent,connect-protocol-version,cookie,origin"
+                        expose_headers: "grpc-status,grpc-message"
+                http_filters:
+                  - name: envoy.filters.http.grpc_web
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.grpc_web.v3.GrpcWeb
+                  - name: envoy.filters.http.cors
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.cors.v3.Cors
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+  clusters:
+    - name: thread_events
+      type: STATIC
+      connect_timeout: 5s
+      # The app's gRPC server speaks h2c; the browser's hop into Envoy is HTTP/1.1. That change of
+      # protocol is the reason this hop has to exist at all.
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          explicit_http_config:
+            http2_protocol_options: {}
+      load_assignment:
+        cluster_name: thread_events
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address: { address: 127.0.0.1, port_value: GRPC_PORT }
+admin:
+  address:
+    socket_address: { address: 127.0.0.1, port_value: 0 }

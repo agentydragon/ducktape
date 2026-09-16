@@ -33,6 +33,14 @@ oci_image_py(
 )
 
 oci_image_py(
+    name = "envoy_1_35",
+    testonly = True,
+    image = "@envoy_1_35_linux_amd64",
+    tag = "envoyproxy/envoy:v1.35-latest",
+    visibility = ["//visibility:public"],
+)
+
+oci_image_py(
     name = "pgvector_pg18",
     testonly = True,
     image = "@pgvector_pg18_linux_amd64",
