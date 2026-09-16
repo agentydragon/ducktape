@@ -73,9 +73,7 @@ resources:
   - agents/tana-mcp-facade/monitoring/flux-kustomization.yaml
   - agents/coinbase-read/flux-kustomization.yaml
   - grocy/sf/mcp/flux-kustomization.yaml
-  - grocy/sf/mcp-servicemonitor/flux-kustomization.yaml
   - grocy/vallejo/mcp/flux-kustomization.yaml
-  - grocy/vallejo/mcp-servicemonitor/flux-kustomization.yaml
   - agents/kubectl-passthrough-mcp/namespace/flux-kustomization.yaml
   - agents/kubectl-passthrough-mcp/app/flux-kustomization.yaml
   - agents/kubectl-machine-mcp/namespace/flux-kustomization.yaml
@@ -134,7 +132,6 @@ resources:
   # --- cert-manager ---
   - cert-manager/issuer-config/flux-kustomization.yaml
   - cert-manager/app/flux-kustomization.yaml
-  - cert-manager/servicemonitor/flux-kustomization.yaml
   - cert-manager/trust/flux-kustomization.yaml
   - cert-manager/environment/flux-kustomization.yaml
 
@@ -177,7 +174,6 @@ resources:
   - authentik/db/flux-kustomization.yaml
   - authentik/db-backups/flux-kustomization.yaml
   - authentik/app/flux-kustomization.yaml
-  - authentik/servicemonitor/flux-kustomization.yaml
   - authentik/secrets/flux-kustomization.yaml
   - authentik/sso-secrets/flux-kustomization.yaml
   - authentik/proxy-routes/flux-kustomization.yaml
@@ -193,7 +189,6 @@ resources:
   - forgejo/db/flux-kustomization.yaml
   - forgejo/cache/flux-kustomization.yaml
   - forgejo/app/flux-kustomization.yaml
-  - forgejo/servicemonitor/flux-kustomization.yaml
   - forgejo/secrets/flux-kustomization.yaml
 
   - forgejo-images/flux-kustomization.yaml
@@ -267,7 +262,6 @@ resources:
   - gatus/sso-tf/flux-kustomization.yaml
   - gatus/db/flux-kustomization.yaml
   - gatus/app/flux-kustomization.yaml
-  - gatus/servicemonitor/flux-kustomization.yaml
 
   # --- ollama ---
   - ollama/namespace/flux-kustomization.yaml
@@ -283,7 +277,6 @@ resources:
   - litellm/db/flux-kustomization.yaml
   - litellm/app/flux-kustomization.yaml
   - litellm/keys-tf/flux-kustomization.yaml # zone/dispatcher virtual keys; downstream of the app (needs a serving LiteLLM)
-  - litellm/servicemonitor/flux-kustomization.yaml
 
   # --- cli-proxy-api (Claude Code on ChatGPT/Codex via CLIProxyAPI) ---
   - cli-proxy-api/flux-kustomization.yaml

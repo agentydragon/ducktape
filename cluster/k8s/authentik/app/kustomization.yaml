@@ -5,6 +5,7 @@ resources:
   - authentik-host-configmap.yaml
   - httproute.yaml
   - networkpolicy.yaml
+  - podmonitor.yaml
 generatorOptions:
   disableNameSuffixHash: true
 configMapGenerator:

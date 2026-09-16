@@ -4,6 +4,7 @@ namespace: grocy-vallejo
 resources:
   - forgejo-images-creds-eso.yaml
   - ../../mcp-base
+  - ../../mcp-servicemonitor-base
   - valkey-ovh-instance.yaml
   - server-httproute.yaml
 configMapGenerator:

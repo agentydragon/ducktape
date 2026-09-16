@@ -41,3 +41,5 @@ spec:
       namespace: ducktape-flux
     - name: gateway # Wait for Gateway API for external access
       namespace: ducktape-flux
+    - name: monitoring-crds # the ServiceMonitor/PodMonitor CRD
+      namespace: ducktape-flux
