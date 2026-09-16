@@ -978,6 +978,7 @@ py_test(
         "//x/agentplane/protocol:event_log_pb2",
         "//x/agentplane/protocol:event_pb2",
         "//x/agentplane/runner:protocol_pb2",
+        "@pypi//connecpy",
         "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//pytest",
