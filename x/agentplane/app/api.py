@@ -29,12 +29,7 @@ from x.agentplane.app.action_federation import (
     operator_actions,
     upstream_failure_detail,
 )
-from x.agentplane.app.action_policy import (
-    ActionPolicyInventory,
-    ActionPolicySetView,
-    ActionPolicyView,
-    UnknownPolicySetError,
-)
+from x.agentplane.app.action_policy import ActionPolicyInventory, ActionPolicySetView, UnknownPolicySetError
 from x.agentplane.app.consent import (
     ConsentDecision,
     ConsentPreview,
@@ -244,16 +239,6 @@ async def sandbox_egress_decisions(inventory: Inventory, decisions: Decisions, n
     """What recently left or was refused, from the proxy; 502 when the proxy cannot be asked."""
     await inventory.require_known(name)
     return await decisions.recent(SubjectView(kind=SubjectKind.SANDBOX, name=name))
-
-
-@router.get("/{name}/action-policy")
-async def sandbox_action_policy(
-    inventory: Inventory, action_policy: ActionPolicy, client: OperatorActions, name: str
-) -> ActionPolicyView:
-    """What the Action Service auto-decides for the sandbox, as the service resolves it now for the
-    UID its bindings pin: its unexpired bindings, the sets they name, and the lists that result.
-    Read-only, and an operator's read; kubectl edits the objects."""
-    return await action_policy.for_sandbox(client, (await inventory.get(name)).uid)
 
 
 egress_router = APIRouter(prefix="/egress", tags=["egress"])
