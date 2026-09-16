@@ -23,14 +23,22 @@ message MinimumThrough {
   uint64 through_cursor = 1;
 }
 
-// Which Segments to read, named the way a reader asks for them rather than as an offset. Counts are
-// of visible anchors, so a burst of invisible receipt boundaries cannot crowd out the conversation.
+// Exactly which Segments to read: the one at `from_anchor`, then up to `max_older` visible Segments
+// going back and up to `max_newer` going forward. Counts are of visible anchors, so a burst of
+// invisible receipt boundaries cannot crowd out the conversation. Fewer come back where the Thread
+// ends first or the byte budget runs out; the page reports the anchor range it actually covers, and
+// running out on one side never backfills the other.
 message SegmentWindow {
-  // Absent asks for the newest Segments, which is what opening a Thread wants. Set, it asks for the
-  // Segments around that anchor cursor -- where the reader is parked -- so a rebootstrap restores
-  // someone scrolled up instead of jumping them to the tail. It is a viewport, not a sync position.
-  optional uint64 around_anchor = 1;
-  Limits limits = 2;
+  // Absent reads from the newest Segment, which is what opening a Thread wants, and pairs with
+  // `max_newer` zero. Set, it reads from the Segment anchored there -- where the reader's viewport
+  // is parked, not a position they are synchronized to -- so a rebootstrap restores someone
+  // scrolled up rather than jumping them to the tail.
+  optional uint64 from_anchor = 1;
+  uint32 max_older = 2;
+  uint32 max_newer = 3;
+  // Truncates the window rather than being exceeded. Large values stay behind payload references,
+  // so this bounds metadata and previews.
+  uint64 max_bytes = 4;
 }
 
 // Bootstrap a view of a Thread. The server reads its projection checkpoint, the requested Segment
@@ -63,12 +71,10 @@ message ListSegmentsRequest {
     uint64 before = 4;
     // Exclusive: Segments anchored strictly after this cursor, oldest first.
     uint64 after = 5;
-    // A bounded window centred on this cursor, for opening a reference into old history.
-    uint64 around = 6;
   }
-  string page_token = 7;
-  Limits limits = 8;
-  MinimumThrough minimum = 9;
+  string page_token = 6;
+  Limits limits = 7;
+  MinimumThrough minimum = 8;
 }
 
 message ReadPayloadRequest {
