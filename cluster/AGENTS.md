@@ -192,19 +192,24 @@ settings and the existing stateful resource, then reconcile the replacement and 
 uses the same resource and PVC identities before cleaning up the old owner. `suspend` alone
 does not make deletion safe.
 
-**Do not mix HelmReleases with CRD instances in the same Kustomization unless the
-path is an explicitly documented consolidation exception.**
-Layer 1 (CRD operators) → Layer 2 (secrets with ESO) → Layer 3 (app with HelmRelease),
-each layer's `flux-kustomization.yaml` with `dependsOn` on the previous. Violations are
-caught by `//cluster/validation:test_crd_layering`.
+### How many Kustomizations a component gets
 
-The paths listed in `MIXED_CRD_LAYERING_EXCEPTIONS` are intentional exceptions while
-Flux Kustomizations are being consolidated to reduce needless artifacts and long
-reconcile chains. They still require an explicit transitive dependency on the operator
-that serves the CRDs.
+**One**, unless it ships CRDs others need, owns persistent state a prune would
+destroy, reconciles from another source or age key, must be suspendable alone
+mid-incident, or needs a different interval. Namespace, ExternalSecrets,
+HelmRelease, ServiceMonitor, HTTPRoute and RoleBindings all belong in that one.
 
-- Flat example: `k8s/aiquota/` — single flux-kustomization, all manifests at root
-- Grouped example: `k8s/langfuse/{namespace,secrets,db,app}/` — multi-layer with dependsOn
+**`dependsOn` is only for what admission rejects** — an unestablished CRD, or an
+unanswered `failurePolicy: Fail` webhook where the operator registers one (ESO,
+CNPG, cert-manager, Kyverno, KubeVirt, CDI do; check, don't assume). Absent a
+webhook the edge points at `<operator>-crds`, not at its HelmRelease. Anything Kubernetes
+retries its way out of (a Secret, a StorageClass, a pull credential, a database,
+a Gateway) is not a dependency; an edge for one needs a registered reason in
+<validation/dependencies.py>. `wait: true` and `healthChecks` go only where
+something gates on this Kustomization.
+
+Rationale, the measurements behind it, and the rejected alternatives:
+<docs/flux_kustomization_policy.md>. Flat example: `k8s/aiquota/`.
 
 ## Kustomize configuration inputs
 
