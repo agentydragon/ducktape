@@ -41,6 +41,10 @@ def test_generated_manifests_match_committed(tmp_path: Path) -> None:
         generated = (tmp_path / relative).read_text()
         committed = get_required_path(f"ducktape/{relative}").read_text()
         assert generated == committed, f"{relative} is stale"
+        # cdk8s can't emit YAML comments, so this should be unreachable -- but if it
+        # ever did, Flux's image-automation bot would silently fight the generator
+        # for ownership of this file (cluster/docs/plans/cdk8s_adoption.md).
+        assert "$imagepolicy" not in generated, f"{relative} must not carry a Flux image-automation marker"
 
 
 if __name__ == "__main__":
