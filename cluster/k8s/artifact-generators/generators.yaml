@@ -758,14 +758,6 @@ spec:
           exclude:
             - flux-kustomization.yaml
 
-    - name: ha-mcp-servicemonitor
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/ha-mcp/servicemonitor/**"
-          to: "@artifact/cluster/k8s/agents/ha-mcp/servicemonitor/"
-          exclude:
-            - flux-kustomization.yaml
-
     - name: haku-openclaw-spike-app
       originRevision: "@repo"
       copy:
@@ -838,14 +830,6 @@ spec:
           exclude:
             - flux-kustomization.yaml
 
-    - name: manifold-mcp-servicemonitor
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/manifold-mcp/servicemonitor/**"
-          to: "@artifact/cluster/k8s/agents/manifold-mcp/servicemonitor/"
-          exclude:
-            - flux-kustomization.yaml
-
     - name: agents-mitmproxy-namespace
       originRevision: "@repo"
       copy:
@@ -883,14 +867,6 @@ spec:
       copy:
         - from: "@repo/cluster/k8s/agents/postscanmail-mcp/namespace/**"
           to: "@artifact/cluster/k8s/agents/postscanmail-mcp/namespace/"
-          exclude:
-            - flux-kustomization.yaml
-
-    - name: postscanmail-mcp-servicemonitor
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/postscanmail-mcp/servicemonitor/**"
-          to: "@artifact/cluster/k8s/agents/postscanmail-mcp/servicemonitor/"
           exclude:
             - flux-kustomization.yaml
 
@@ -1450,13 +1426,6 @@ spec:
       copy:
         - from: "@repo/cluster/k8s/haku/console/migration/**"
           to: "@artifact/cluster/k8s/haku/console/migration/"
-          exclude:
-            - flux-kustomization.yaml
-    - name: haku-console-servicemonitor
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/haku/console/servicemonitor/**"
-          to: "@artifact/cluster/k8s/haku/console/servicemonitor/"
           exclude:
             - flux-kustomization.yaml
     - name: haku-mailbox-app
