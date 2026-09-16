@@ -684,9 +684,12 @@ Tool-call/approval management retirement remains the separate `RETIRE_TOOLS` mil
 queue, and related tool-call management only after the `MCPAGG` compatibility migration,
 integration-app approval UI, credential bindings, and canonical Action/Decision APIs cover the
 required workflows.
-This track may move independently of Agent/conversation management: Haku Console may continue to own
-conversations while Agentplane owns external tool calls, or the reverse during a staged migration.
-Preserve tool-call audit/export and rollback evidence before removing the old owner.
+The conversation half of that split is already settled: Haku Console has no conversation management
+left to keep, so this track is the remainder rather than one of two halves that could move either
+way. What it retires is the surface an agent calls — the role the Action Service now serves, per
+[its README](../action_service/README.md) — so parity is measured against that role, not against
+the aggregator's shape. Preserve tool-call audit/export and rollback evidence before removing the
+old owner.
 
 ### `INPUT_DELIVERY` — remaining native queue and recovery evidence
 
