@@ -32,7 +32,7 @@ Inside the nix-on-droid app's terminal, after its own first-run bootstrap — no
 checkout needed, applies straight from GitHub:
 
 ```bash
-nix-on-droid switch --flake github:agentydragon/ducktape?ref=devel#pixel6 --impure
+nix-on-droid switch --flake github:agentydragon/ducktape?ref=devel#pixel6
 ```
 
 Iterating on the config itself instead (edit locally, apply, push when it works):
@@ -40,11 +40,12 @@ Iterating on the config itself instead (edit locally, apply, push when it works)
 ```bash
 git clone https://github.com/agentydragon/ducktape ~/ducktape
 cd ~/ducktape
-nix-on-droid switch --flake .#pixel6 --impure
+nix-on-droid switch --flake .#pixel6
 ```
 
-`--impure` is required by nix-on-droid itself (hardcoded proot store paths), not specific
-to this config.
+Don't pass `--impure` yourself: the `nix-on-droid` CLI wrapper injects it into the
+underlying build automatically whenever `--flake` is given, and rejects it as an
+unrecognized option if you also pass it explicitly.
 
 ## Verify
 
