@@ -39,9 +39,55 @@ gRPC. Unary and server-streaming service definitions remain ordinary protobuf RP
 [Connect Python](https://github.com/connectrpc/connect-py) supports ASGI and Google's
 protobuf runtime with its `protobuf=google` plugin option. Reuse existing `_pb2`
 types and Protobuf-ES messages; do not introduce another Python message runtime.
-This is a candidate backed by upstream support, **not an executed Agentplane
-transport validation**. If it fails the build/auth/streaming gate, evaluate
-`grpc.aio` plus a standard gRPC-Web translator. Do not write a framing protocol.
+Connect passed that gate and is the transport: `ThreadEvents.FollowEvents` is served
+from an ASGI mount beside FastAPI on the existing origin, followed in the browser by
+`@connectrpc/connect-web`. Do not write a framing protocol.
+
+### Rejected: gRPC-Web through an Envoy translation hop
+
+gRPC-Web — `grpc.aio` plus a standard translator — was built and measured, and lost.
+It is not infeasible: a spike put a
+browser-shaped gRPC-Web request through Envoy into a `grpc.aio` servicer running the
+same fold, and `envoy.filters.http.grpc_web` is in `cilium/proxy`'s build, so the
+gateway could carry it. Two constraints killed it anyway.
+
+**It costs the test that covers the production wire.** `//x/agentplane/app:test_thread_browser`
+drives real Chromium against the real app over the _exact_ wire production uses,
+because the RPC is in-process. Put Envoy in front in production and that stops being
+true: the test either grows an Envoy container — in a test already running PostgreSQL,
+the app and a browser — or it exercises a path production does not have. The
+translation hop is precisely the part that cannot be reasoned about from the source,
+and it is the part the test would stop covering.
+
+**It does not buy a Python client for the browser's wire**, which was the argument for
+moving. `grpcio` is mature, but it speaks _native gRPC_ straight to the server and skips
+the translation hop, so a test using it covers the servicer and nothing about what the
+browser reads. Covering that wire means decoding gRPC-Web's 5-byte envelope by hand —
+the same envelope, for the same reason, as Connect's. Neither transport has a Python
+client that follows a browser's stream. (This is moot for our own tests, which drive the
+service's fold and leave framing to the library, but it was the reason to switch.)
+
+Smaller, and not decisive on their own: a second listener needs its own `Service` port,
+`NetworkPolicy` and readiness, where the Connect mount is an `app.mount()` on the ASGI
+app that already exists; the 71 lines of Envoy config must agree with the proto's service
+name, the bound port and the browser's path with nothing checking that; and each gRPC
+service costs a `mypy.ini` `warn_unused_ignores` exemption for `mypy-protobuf`'s
+generated stub.
+
+**Authorization does not distinguish them.** Bearer-token-in-metadata versus this app's
+session cookie is a header decision either transport carries identically — `fetch`
+sends the cookie for Connect today — so no part of this rejection rests on it. Should a
+bearer token ever be wanted (Envoy's `jwt_authn` is in Cilium's build beside `grpc_web`),
+mint a short-lived RPC token from the cookie session in one cookie-authenticated REST
+call; the handle stays the root credential and the browser still holds no access token.
+
+What is genuinely transport-coupled is thinner than "swap the adapter" suggests: the fold
+raises `ConnecpyException`, Connect's vocabulary, so a second adapter either translates a
+Connect exception type or the fold mints a third error type both adapters translate.
+
+Spike code and its measurements: commit `7e1a36d8` (branch
+`claude/exciting-turing-83lyjb-grpcweb-spike`, never merged, so this record rather than
+the code is the durable part).
 
 Generation must use standard Bazel rules and pinned local plugins:
 
