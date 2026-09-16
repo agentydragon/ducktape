@@ -45,6 +45,13 @@ between these tracks.
 
 ## DAG
 
+**A node is one atomic piece of work.** A migration that replaces three services running on
+three clocks is three nodes, not one, even when a single sentence describes all of them: one
+node cannot be half done, and a node nothing can finish hides which third is blocked. Where
+the pieces only mean something together, they feed a **capstone** node that depends on all of
+them and carries the "it is all migrated" claim -- the capstone is what other work waits on,
+and the pieces are what gets dispatched.
+
 ```mermaid
 flowchart TB
     classDef active fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a,stroke-width:3px
@@ -55,10 +62,14 @@ flowchart TB
     MCPAUTH["Remaining acceptance<br/>credentialed MCP account<br/>refresh, rotation, Kubernetes provider"]:::active
     ELEVATE["Planned behavior<br/>agent-requested temporary permission<br/>ServiceAccount and Sandbox callers, operator-approved"]:::future
     MCPAGG["Deferred migration<br/>replace Haku Console MCP aggregator<br/>inventory and migrate Haku workflows"]:::future
-    RETIRE_TOOLS["Deferred migration<br/>retire Haku Console tool-call/<br/>approval management"]:::future
+    RETIRE_MCP_CATALOG["Deferred migration<br/>retire Haku Console's connected-MCP catalog<br/>once the Action catalog answers for it"]:::future
+    RETIRE_APPROVAL_QUEUE["Deferred migration<br/>retire Haku Console's tool-call approval queue<br/>once Decisions and the approval UI cover it"]:::future
+    RETIRE_TOOLS["Capstone<br/>Haku Console owns no tool call<br/>catalog and approval queue both gone"]:::milestone
     INPUT_DELIVERY["Remaining native evidence<br/>input/interrupt/recovery gaps<br/>exact upstream requests and queue fates"]:::active
     T3["Deferred product work<br/>trajectory search and lookup<br/>later prioritization"]:::future
-    PC_EGRESS["Milestone<br/>public-coder-agent egress migration<br/>prod Agentplane proxy"]:::milestone
+    ACTIONS_SA_CALLER["Planned identity<br/>Action Service accepts a labelled workload ServiceAccount<br/>today: only a Sandbox workload or an OAuth grant"]:::future
+    PC_EGRESS_CREDENTIALS["Planned configuration<br/>public-coder's six substitutions as EgressCredentials<br/>plus its dedicated ServiceAccount"]:::future
+    PC_EGRESS["Capstone<br/>public-coder-agent egress migration<br/>proven equivalent, cut over, old proxy retired"]:::milestone
     ACCESS["Deferred design<br/>delegated vs brokered external access<br/>grants and revocation"]:::future
     EGRESS_CHANGE["Deferred design<br/>agent-requested egress<br/>policy expansion"]:::future
 
@@ -110,8 +121,12 @@ flowchart TB
     MCPAUTH --> PROD
     ELEVATE --> CONSOLE_POLICIES
     EGRESS_IDENTITY_AVAILABILITY --> THREAD_DEPLOYED_ACCEPTANCE
-    MCPAGG -. replacement surface .-> RETIRE_TOOLS
-    CONSOLE_POLICIES -. policy parity .-> RETIRE_TOOLS
+    MCPAGG -. replacement surface .-> RETIRE_MCP_CATALOG
+    CONSOLE_POLICIES -. policy parity .-> RETIRE_APPROVAL_QUEUE
+    RETIRE_MCP_CATALOG --> RETIRE_TOOLS
+    ACTIONS_SA_CALLER --> PC_EGRESS
+    PC_EGRESS_CREDENTIALS --> PC_EGRESS
+    RETIRE_APPROVAL_QUEUE --> RETIRE_TOOLS
 
     INPUT_DELIVERY -. reliable Thread ingress .-> ING
     THREAD_VIEW_SYNC --> THREAD_VIEW_PROJECTION
@@ -379,8 +394,8 @@ per-agent progress:
   Assistant, the console's `sandbox` server and the `grants` trio. Only its GitHub leaves are
   ported, so it is the long pole and every unported item above is on it.
 
-Nothing waits on this except `RETIRE_TOOLS`, which needs policy parity for the affordances it
-retires.
+Nothing waits on this except `RETIRE_APPROVAL_QUEUE`, which needs policy parity for the
+affordances it retires.
 
 ## Named gates and acceptance evidence
 
@@ -577,7 +592,36 @@ before selecting a shared decision service; protocol reuse does not settle grant
 **Acceptance evidence:** a selected system proves the credential boundary, approval behavior, and
 revocation/expiry semantics without putting a reusable privileged credential in the harness.
 
+### `ACTIONS_SA_CALLER` — the Action Service accepts a labelled workload ServiceAccount
+
+**Planned identity:** `caller_auth.py` verifies the MCP transport bearer "as a Sandbox workload
+or an external OAuth grant". A plain Deployment is neither, and the OAuth path is built around
+operator consent for an external connector rather than an in-cluster workload, so a workload
+ServiceAccount is a third caller class beside those two.
+
+Egress has taken the matching step already: its `Subject` names a `serviceAccount` alongside a
+`sandbox`, and `sandbox_auth.resolve_workload_with_pod` stops at the proofs common to both, so
+this is the same shape applied to the other service. Its own clock — nothing about the egress
+path waits on it, and it is what a tool-surface switch waits on rather than an egress cutover.
+
+### `PC_EGRESS_CREDENTIALS` — public-coder's substitutions as EgressCredentials
+
+**Planned configuration:** give the app Pod a dedicated ServiceAccount, labelled
+`agentplane.allegedly.works/action-caller` so one object serves both surfaces, and express every
+substitution its own iron-proxy performs today as an `EgressCredential` with its exact targets:
+a GitHub PAT, the Haku Console bearer, an AIQuota bearer, a Brave Search key, a Matrix password
+and a kubeconfig token. Six, not one — the entry used to read as though GitHub were the whole
+of it, and an unsubstituted placeholder reaches the upstream inert, so a missed credential loses
+that destination silently rather than failing loudly.
+
+Its own clock: configuration against a mechanism that already exists, needing no Action Service
+change. Adopting the egress sidecar in the OpenClaw Pod belongs here too, since it replaces the
+dedicated proxy with the central engine.
+
 ### `PC_EGRESS` — public-coder-agent egress migration
+
+**Capstone,** over `ACTIONS_SA_CALLER` and `PC_EGRESS_CREDENTIALS`: what remains once both land is
+proving equivalence and cutting over.
 
 **Milestone:** replace the existing `haku-console` / `iron-proxy` proxy path in front of
 `public-coder-agent` with the Agentplane egress proxy, using a dedicated production (non-staging)
@@ -739,20 +783,38 @@ Inventory and migrate the remaining Haku tools, policies, and client workflows s
 credential requirements remain adapter-specific. The initial facade uses generic Action tools;
 per-Action projection may never be needed and is not required for migration. Actual generic-client
 evidence determines whether to explore it. The migration order remains open.
-Tool-call/approval management retirement remains the separate `RETIRE_TOOLS` milestone.
+The retirements themselves are separate nodes: `RETIRE_MCP_CATALOG` waits on this one,
+`RETIRE_APPROVAL_QUEUE` does not.
 
-### `RETIRE_TOOLS` — Haku Console tool-call and approval management migration
+### `RETIRE_MCP_CATALOG` — retire Haku Console's connected-MCP catalog
 
-**Deferred migration:** retire Haku Console's connected-MCP catalog, tool-call application/approval
-queue, and related tool-call management only after the `MCPAGG` compatibility migration,
-integration-app approval UI, credential bindings, and canonical Action/Decision APIs cover the
-required workflows.
-The conversation half of that split is already settled: Haku Console has no conversation management
-left to keep, so this track is the remainder rather than one of two halves that could move either
-way. What it retires is the surface an agent calls — the role the Action Service now serves, per
+**Deferred migration:** Console's own catalog of connected MCP servers goes once the Action
+catalog answers for the same servers, which is what `MCPAGG` establishes. Its own clock: a
+catalog can be retired while the approval queue still runs, because a tool an agent can no
+longer discover through Console is not a tool Console still approves.
+
+Preserve the catalog's export and a rollback path before removing it.
+
+### `RETIRE_APPROVAL_QUEUE` — retire Haku Console's tool-call approval queue
+
+**Deferred migration:** Console's tool-call application and approval queue goes once Decisions
+and the integration app's approval UI cover the same workflows, and once policy parity exists —
+`CONSOLE_POLICIES`, since an auto-approval policy is exactly what decides whether a call reaches
+this queue at all. Its own clock, and the slower of the two: it waits on a UI and on policy
+coverage, where the catalog waits only on the Action catalog.
+
+Preserve tool-call audit and export evidence before removing it.
+
+### `RETIRE_TOOLS` — Haku Console owns no tool call
+
+**Capstone.** True when both retirements above have landed. It carries no work of its own; it
+is what other tracks wait on when they need "Console is out of the tool-call business" rather
+than one half of it.
+
+What is retired is the surface an agent calls — the role the Action Service now serves, per
 [its README](../action_service/README.md) — so parity is measured against that role, not against
-the aggregator's shape. Preserve tool-call audit/export and rollback evidence before removing the
-old owner.
+the aggregator's shape. The conversation half of the old split is already settled: Console has
+no conversation management left to keep.
 
 ### `INPUT_DELIVERY` — remaining native queue and recovery evidence
 
