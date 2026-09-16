@@ -4,7 +4,11 @@
 # llama.cpp with OpenVINO backend in a Docker container (see debug/rugged/hw/llm_npu.md).
 #
 # TODO: Nixify the llama-openvino:server container as a podman service
-# (like local_llm_arc does for Arc GPU).
+# (like local_llm_arc does for Arc GPU). Pass llama-server --sleep-idle-seconds 300
+# so an idle model/KV-cache gets unloaded after 5 minutes instead of holding RAM on
+# this battery-powered roaming device indefinitely (default is -1, disabled) --
+# long enough to survive normal think-time between prompts in one session, short
+# enough to free RAM soon after rugged is actually idle.
 #
 # Hardware: Intel Lunar Lake NPU (PCI 8086:643e), /dev/accel/accel0.
 {
