@@ -15,7 +15,8 @@ def cdk8s_import(name, crd, module_name, module_path, visibility = None):
 
     Args:
         name:        Name of the output py_library target.
-        crd:         Label of the vendored CRD YAML (apiextensions.k8s.io CustomResourceDefinition).
+        crd:         Label of the CRD YAML (apiextensions.k8s.io CustomResourceDefinition) --
+                      an http_file target (MODULE.bazel), never a vendored in-tree copy.
         module_name: A unique top-level Python package name for this import (the `NAME` half of
                       `cdk8s import NAME:=SPEC`). Required -- cdk8s's default naming reverse-DNSes
                       the CRD's `spec.group` into a bare top-level path (e.g. `io/fluxcd/...` for
@@ -53,18 +54,23 @@ def cdk8s_import(name, crd, module_name, module_path, visibility = None):
     js_run_binary(
         name = "_" + name + "_generate",
         srcs = [crd],
+        # crd is an http_file (MODULE.bazel) in an external repo -- copy_to_bin can't
+        # (and doesn't need to) copy it into the output tree first.
+        copy_srcs_to_bin = False,
         outs = py_srcs + data_files,
         args = [
             "import",
-            module_name + ":=" + crd,
+            # js_binary tools default to running with cwd = bazel-out/<config>/bin (the
+            # output tree root); $(location) expands to an exec-root-relative path, so
+            # climb back out of bindir (3 levels) before descending into external/.
+            "{}:=../../../$(location {})".format(module_name, crd),
             "--language",
             "python",
             "--no-check-upgrade",
             "--no-save",
             "-o",
-            out_dir,
+            native.package_name() + "/" + out_dir,
         ],
-        chdir = native.package_name(),
         tool = ":_" + name + "_cdk8s_bin",
     )
 
