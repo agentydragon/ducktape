@@ -567,8 +567,9 @@ smaller than its description implies:
   token already travels in. That is iron-proxy's `iron.yaml` expressed as resources
   (<../egress/SPEC.md>), so the GitHub token substitution needs configuration, not code.
 - **Some GitHub auto-approval is ported**: `cluster/k8s/agentplane-staging/actions/` carries
-  `ActionPolicySet`s for `github-identity-reads`, `public-github-reads`, `public-ducktape-reads`,
-  `public-ducktape-fork-reads` and `public-gaffer-private-reads`. Whether that set covers what
+  `ActionPolicySet`s for `github-identity-reads`, `github-reads`, `public-github-reads`,
+  `public-ducktape-reads`, `public-ducktape-fork-reads` and `public-gaffer-private-reads`.
+  Whether that set covers what
   public-coder is allowed to do today is not established here; the ported ones are a starting point
   to diff against, not a finished policy.
 
