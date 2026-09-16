@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: clickhouse-aiquota-schema-v7
+  name: clickhouse-aiquota-schema-v8
   namespace: clickhouse
   labels:
     app.kubernetes.io/name: clickhouse-schema
