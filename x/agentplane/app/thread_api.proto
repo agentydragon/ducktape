@@ -41,17 +41,17 @@ import "x/agentplane/app/thread_view.proto";
 import "x/agentplane/protocol/command.proto";
 import "x/agentplane/protocol/event_log.proto";
 
-// Exactly which Segments to read: the one at `from_anchor`, then up to `max_older` visible Segments
-// going back and up to `max_newer` going forward. Counts are of visible anchors, so a burst of
-// invisible receipt boundaries cannot crowd out the conversation. Fewer come back where the Thread
+// Exactly which Segments to read: the one at `from_cursor`, then up to `max_older` visible Segments
+// going back and up to `max_newer` going forward. Counts are of visible Segments, so a burst of
+// Events that produce none cannot crowd out the conversation. Fewer come back where the Thread
 // ends first; running out on one side never backfills the other. There is no byte budget because
 // the server keeps a Segment small by leaving large values behind a reference.
 message SegmentWindow {
   // Absent reads from the newest Segment, which is what opening a Thread wants, and pairs with
-  // `max_newer` zero. Set, it reads from the Segment anchored there -- where the reader's viewport
+  // `max_newer` zero. Set, it reads from the Segment at that cursor -- where the reader's viewport
   // is parked, not a position they are synchronized to -- so a rebootstrap restores someone
   // scrolled up rather than jumping them to the tail.
-  optional uint64 from_anchor = 1;
+  optional uint64 from_cursor = 1;
   uint32 max_older = 2;
   uint32 max_newer = 3;
 }
@@ -74,17 +74,17 @@ message FollowViewRequest {
   Position position = 2;
 }
 
-// Keyset pagination over immutable anchors, never offsets: a new Segment cannot be inserted behind
-// an anchor the caller already processed, so the anchor it holds is the only resume token it needs.
+// Keyset pagination over immutable cursors, never offsets: a new Segment cannot appear behind a
+// cursor the caller already processed, so the cursor it holds is the only resume token it needs.
 message ListSegmentsRequest {
   string thread_id = 1;
   string source_id = 2;
   string projection_epoch = 3;
-  oneof anchor {
-    // Exclusive: Segments anchored strictly before this one, newest first.
-    uint64 before_anchor = 4;
-    // Exclusive: Segments anchored strictly after this one, oldest first.
-    uint64 after_anchor = 5;
+  oneof direction {
+    // Exclusive: Segments whose cursor is strictly lower, newest first.
+    uint64 before_cursor = 4;
+    // Exclusive: Segments whose cursor is strictly higher, oldest first.
+    uint64 after_cursor = 5;
   }
   uint32 max_segments = 6;
   // Answer only once the projection has reached at least here, so the page orders against a
@@ -122,7 +122,7 @@ message SubmitRequest {
 message ListPendingCommandsRequest {
   string thread_id = 1;
   string projection_epoch = 2;
-  // Exclusive admission anchor, so paging cannot skip or repeat an admission.
+  // Exclusive: Commands admitted strictly later, so paging cannot skip or repeat an admission.
   uint64 after_admission_cursor = 3;
   uint32 max_commands = 4;
   uint64 minimum_through_cursor = 5;
