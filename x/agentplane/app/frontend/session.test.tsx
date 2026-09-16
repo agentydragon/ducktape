@@ -7,11 +7,14 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import { command, getThread, models, type ThreadView } from "./client";
+import type { Client } from "@connectrpc/connect";
+
+import { command, getThread, models, threadEvents, type ThreadView } from "./client";
 import { CommandSchema, type Command } from "../../protocol/command_pb";
 import { EventSchema, ItemKind, TurnStatus } from "../../protocol/event_pb";
-import { EventEntrySchema } from "../../protocol/event_log_pb";
+import { EventEntrySchema, type EventEntry } from "../../protocol/event_log_pb";
 import { AttachedSchema, Harness } from "../../runner/protocol_pb";
+import { FollowEventsResponseSchema, type FollowEventsResponse, type ThreadEvents } from "../thread_events_pb";
 import { SessionView } from "./session";
 
 vi.mock("./client", async (importOriginal) => ({
@@ -19,7 +22,42 @@ vi.mock("./client", async (importOriginal) => ({
   command: vi.fn(),
   getThread: vi.fn(),
   models: vi.fn(),
+  threadEvents: vi.fn(),
 }));
+
+/** One followed Thread, which a test drives frame by frame. Frames are delivered as microtasks, so
+ * an `act` scope that pushes them has consumed them by the time it resolves. */
+class Stream {
+  private readonly queued: FollowEventsResponse[] = [];
+  private waiting: (() => void) | null = null;
+
+  private push(frame: MessageInitShape<typeof FollowEventsResponseSchema>): void {
+    this.queued.push(create(FollowEventsResponseSchema, frame));
+    this.waiting?.();
+  }
+
+  entry(entry: EventEntry): void {
+    this.push({ frame: { case: "entry", value: entry } });
+  }
+
+  attached(attached: MessageInitShape<typeof AttachedSchema>): void {
+    this.push({ frame: { case: "attached", value: create(AttachedSchema, attached) } });
+  }
+
+  /** Ingestion stopping, which the reader shows rather than reconnecting past. */
+  ended(error: string): void {
+    this.push({ frame: { case: "ended", value: { error } } });
+  }
+
+  async *frames(): AsyncIterable<FollowEventsResponse> {
+    for (;;) {
+      while (this.queued.length) yield this.queued.shift() as FollowEventsResponse;
+      await new Promise<void>((resolve) => {
+        this.waiting = (): void => resolve();
+      });
+    }
+  }
+}
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const mounted: Array<{ root: ReturnType<typeof createRoot>; container: HTMLDivElement }> = [];
@@ -50,17 +88,12 @@ afterEach(async () => {
   vi.resetAllMocks();
 });
 
-function event(cursor: number, observation: MessageInitShape<typeof EventSchema>["observation"]): string {
-  return JSON.stringify(
-    toJson(
-      EventEntrySchema,
-      create(EventEntrySchema, {
-        cursor: BigInt(cursor),
-        origin: { sourceId: "test-runner", sequence: BigInt(cursor) },
-        event: create(EventSchema, { observation }),
-      })
-    )
-  );
+function event(cursor: number, observation: MessageInitShape<typeof EventSchema>["observation"]): EventEntry {
+  return create(EventEntrySchema, {
+    cursor: BigInt(cursor),
+    origin: { sourceId: "test-runner", sequence: BigInt(cursor) },
+    event: create(EventSchema, { observation }),
+  });
 }
 
 async function render(
@@ -72,32 +105,36 @@ async function render(
 ): Promise<{
   container: HTMLDivElement;
   composer: HTMLTextAreaElement;
-  stream: EventTarget;
-  streams: EventTarget[];
+  stream: Stream;
+  streams: Stream[];
   rerender: (threadId: string) => Promise<void>;
 }> {
-  const streams: EventTarget[] = [];
+  const streams: Stream[] = [];
   vi.mocked(getThread).mockImplementation(async (id) => ({ ...thread, id }));
   vi.mocked(models).mockResolvedValue(catalog as never);
+  vi.mocked(threadEvents).mockImplementation((): Client<typeof ThreadEvents> => ({
+    followEvents: (): AsyncIterable<FollowEventsResponse> => {
+      const stream = new Stream();
+      streams.push(stream);
+      return stream.frames();
+    },
+  }));
+  // The live sandbox inventory is a separate stream, and still server-sent.
   vi.stubGlobal(
     "EventSource",
     class extends EventTarget {
-      constructor(url: string) {
+      constructor() {
         super();
-        if (url === "/live/sandboxes") {
-          queueMicrotask(() =>
-            this.dispatchEvent(
-              new MessageEvent("snapshot", {
-                data: JSON.stringify({
-                  sandboxes: [{ name: "composer-test", state: "running" }],
-                  watch: { fresh: true, stale_after_seconds: 90, refreshed_seconds_ago: { sandboxes: 0 } },
-                }),
-              })
-            )
-          );
-        } else {
-          streams.push(this);
-        }
+        queueMicrotask(() =>
+          this.dispatchEvent(
+            new MessageEvent("snapshot", {
+              data: JSON.stringify({
+                sandboxes: [{ name: "composer-test", state: "running" }],
+                watch: { fresh: true, stale_after_seconds: 90, refreshed_seconds_ago: { sandboxes: 0 } },
+              }),
+            })
+          )
+        );
       }
       close(): void {}
     }
@@ -120,19 +157,10 @@ async function render(
   await rerender(THREAD.id);
   const stream = streams[0];
   await act(async () => {
-    stream.dispatchEvent(
-      new MessageEvent("attached", {
-        data: JSON.stringify({
-          sessionId: "session-test",
-          spec: { harness: "HARNESS_CLAUDE", model: "test-model" },
-        }),
-      })
-    );
+    stream.attached({ sessionId: "session-test", spec: { harness: Harness.CLAUDE, model: "test-model" } });
     await Promise.resolve();
   });
-  await act(async () => {
-    stream.dispatchEvent(new MessageEvent("event", { data: event(1, { case: "harnessStarted", value: {} }) }));
-  });
+  await act(async () => stream.entry(event(1, { case: "harnessStarted", value: {} })));
   const composer = container.querySelector("textarea");
   if (!composer) throw new Error("Missing composer");
   return { container, composer, stream, streams, rerender };
@@ -262,9 +290,7 @@ it("does not regress streamed admission when the HTTP reply is lost", async () =
   await act(async () => enter(composer));
   const value = vi.mocked(command).mock.calls[0][1];
   await act(async () => {
-    stream.dispatchEvent(
-      new MessageEvent("event", { data: event(2, { case: "commandAdmitted", value: { command: value } }) })
-    );
+    stream.entry(event(2, { case: "commandAdmitted", value: { command: value } }));
   });
   expect(container.textContent).toContain("Saved · awaiting effect");
   await act(async () => fail(new Error("lost reply")));
@@ -273,20 +299,16 @@ it("does not regress streamed admission when the HTTP reply is lost", async () =
   expect(localStorage.length).toBe(0);
   expect(container.querySelector(".agentplane-user-bubble")).toBeNull();
   await act(async () => {
-    stream.dispatchEvent(
-      new MessageEvent("event", { data: event(3, { case: "turnStarted", value: { turnId: "turn" } }) })
-    );
-    stream.dispatchEvent(
-      new MessageEvent("event", {
-        data: event(4, {
-          case: "harnessUserMessageConfirmed",
-          value: {
-            harnessMessageId: "native",
-            turnId: "turn",
-            text: "saved input",
-            originCommandIds: [value.commandId],
-          },
-        }),
+    stream.entry(event(3, { case: "turnStarted", value: { turnId: "turn" } }));
+    stream.entry(
+      event(4, {
+        case: "harnessUserMessageConfirmed",
+        value: {
+          harnessMessageId: "native",
+          turnId: "turn",
+          text: "saved input",
+          originCommandIds: [value.commandId],
+        },
       })
     );
   });
@@ -304,9 +326,7 @@ it("keeps replayed admission authoritative when local cleanup fails and storage 
     throw new Error("local cleanup failed");
   });
   await act(async () => {
-    stream.dispatchEvent(
-      new MessageEvent("event", { data: event(2, { case: "commandAdmitted", value: { command: value } }) })
-    );
+    stream.entry(event(2, { case: "commandAdmitted", value: { command: value } }));
   });
   await act(async () => window.dispatchEvent(new StorageEvent("storage", { key: null })));
   expect(localStorage.length).toBe(1);
@@ -325,22 +345,10 @@ it("does not advance replay from a later HTTP admission or skip intervening assi
   const value = vi.mocked(command).mock.calls[0][1];
   expect(container.textContent).toContain("Saved · replay catching up");
   await act(async () => {
-    stream.dispatchEvent(
-      new MessageEvent("event", { data: event(2, { case: "turnStarted", value: { turnId: "turn" } }) })
-    );
-    stream.dispatchEvent(
-      new MessageEvent("event", {
-        data: event(3, { case: "itemStarted", value: { itemId: "answer", kind: ItemKind.ASSISTANT_TEXT } }),
-      })
-    );
-    stream.dispatchEvent(
-      new MessageEvent("event", {
-        data: event(4, { case: "textDelta", value: { itemId: "answer", text: "intervening output" } }),
-      })
-    );
-    stream.dispatchEvent(
-      new MessageEvent("event", { data: JSON.stringify(toJson(EventEntrySchema, admission(value, 5n))) })
-    );
+    stream.entry(event(2, { case: "turnStarted", value: { turnId: "turn" } }));
+    stream.entry(event(3, { case: "itemStarted", value: { itemId: "answer", kind: ItemKind.ASSISTANT_TEXT } }));
+    stream.entry(event(4, { case: "textDelta", value: { itemId: "answer", text: "intervening output" } }));
+    stream.entry(admission(value, 5n));
   });
   expect(container.textContent).toContain("intervening output");
   expect(container.textContent).toContain("Saved · awaiting effect");
@@ -351,9 +359,7 @@ it("keeps targeted interrupt pending after admission and removes it only on the 
   vi.mocked(command).mockImplementation(async (_thread, value) => admission(value, 3n));
   const { container, composer, stream } = await render();
   await act(async () => {
-    stream.dispatchEvent(
-      new MessageEvent("event", { data: event(2, { case: "turnStarted", value: { turnId: "clicked-turn" } }) })
-    );
+    stream.entry(event(2, { case: "turnStarted", value: { turnId: "clicked-turn" } }));
   });
   const interrupt = container.querySelector<HTMLButtonElement>('button[aria-label="Interrupt"]');
   if (!interrupt) throw new Error("Missing Interrupt");
@@ -361,20 +367,16 @@ it("keeps targeted interrupt pending after admission and removes it only on the 
   const value = vi.mocked(command).mock.calls[0][1];
   expect(value.operation).toMatchObject({ case: "interruptTurn", value: { turnId: "clicked-turn" } });
   await act(async () => {
-    stream.dispatchEvent(
-      new MessageEvent("event", { data: JSON.stringify(toJson(EventEntrySchema, admission(value, 3n))) })
-    );
+    stream.entry(admission(value, 3n));
   });
   expect(container.textContent).toContain("Interrupt turn clicked-turn");
   expect(container.textContent).toContain("Saved · awaiting effect");
   expect(composer.disabled).toBe(false);
   await act(async () => {
-    stream.dispatchEvent(
-      new MessageEvent("event", {
-        data: event(4, {
-          case: "turnCompleted",
-          value: { turnId: "clicked-turn", status: TurnStatus.INTERRUPTED, interruptedByCommandId: value.commandId },
-        }),
+    stream.entry(
+      event(4, {
+        case: "turnCompleted",
+        value: { turnId: "clicked-turn", status: TurnStatus.INTERRUPTED, interruptedByCommandId: value.commandId },
       })
     );
   });
@@ -400,11 +402,7 @@ it("keeps the applied model until its causal effect while allowing the next inpu
   await act(async () => option.click());
   const model = vi.mocked(command).mock.calls[0][1];
   expect(model.operation).toMatchObject({ case: "changeModel", value: { model: "next" } });
-  await act(async () =>
-    stream.dispatchEvent(
-      new MessageEvent("event", { data: JSON.stringify(toJson(EventEntrySchema, admission(model))) })
-    )
-  );
+  await act(async () => stream.entry(admission(model)));
   expect(picker.value).toBe("test-model");
   expect(container.textContent).toContain("Change model to next");
   expect(container.textContent).toContain("Saved · awaiting effect");
@@ -413,14 +411,8 @@ it("keeps the applied model until its causal effect while allowing the next inpu
   expect(command).toHaveBeenCalledTimes(2);
   const input = vi.mocked(command).mock.calls[1][1];
   await act(async () => {
-    stream.dispatchEvent(
-      new MessageEvent("event", { data: JSON.stringify(toJson(EventEntrySchema, admission(input, 3n))) })
-    );
-    stream.dispatchEvent(
-      new MessageEvent("event", {
-        data: event(4, { case: "modelChanged", value: { model: "next", commandId: model.commandId } }),
-      })
-    );
+    stream.entry(admission(input, 3n));
+    stream.entry(event(4, { case: "modelChanged", value: { model: "next", commandId: model.commandId } }));
   });
   expect(picker.value).toBe("next");
   expect(container.textContent).not.toContain("Change model to next");
@@ -434,14 +426,8 @@ it("shows a failed model command as a command outcome, not a user message", asyn
     operation: { case: "changeModel", value: { model: "unsupported" } },
   });
   await act(async () => {
-    stream.dispatchEvent(
-      new MessageEvent("event", { data: JSON.stringify(toJson(EventEntrySchema, admission(model))) })
-    );
-    stream.dispatchEvent(
-      new MessageEvent("event", {
-        data: event(3, { case: "commandFailed", value: { commandId: "model", reason: "model unavailable" } }),
-      })
-    );
+    stream.entry(admission(model));
+    stream.entry(event(3, { case: "commandFailed", value: { commandId: "model", reason: "model unavailable" } }));
   });
   expect(container.querySelector('[aria-label="Command outcomes"]')?.textContent).toContain(
     "Change model to unsupported"
@@ -462,7 +448,7 @@ it.each(['Test API failure\n<img src="x" onerror="throw new Error()">', ""])(
         { case: "turnCompleted", value: { turnId: "test-failed-turn", status: TurnStatus.FAILED, error: diagnostic } },
       ];
       observations.forEach((observation, index) => {
-        stream.dispatchEvent(new MessageEvent("event", { data: event(index + 2, observation) }));
+        stream.entry(event(index + 2, observation));
       });
     });
     const failure = container.querySelector('[data-conversation-anchor="5"] [role="alert"]');
@@ -480,23 +466,17 @@ it.each(['Test API failure\n<img src="x" onerror="throw new Error()">', ""])(
 it("collapses a lone tool call behind its run disclosure", async () => {
   const { container, stream } = await render();
   await act(async () => {
-    stream.dispatchEvent(
-      new MessageEvent("event", { data: event(2, { case: "turnStarted", value: { turnId: "t1" } }) })
-    );
-    stream.dispatchEvent(
-      new MessageEvent("event", {
-        data: event(3, {
-          case: "itemStarted",
-          value: { itemId: "tool#0", kind: ItemKind.TOOL_CALL, toolName: "Bash" },
-        }),
+    stream.entry(event(2, { case: "turnStarted", value: { turnId: "t1" } }));
+    stream.entry(
+      event(3, {
+        case: "itemStarted",
+        value: { itemId: "tool#0", kind: ItemKind.TOOL_CALL, toolName: "Bash" },
       })
     );
-    stream.dispatchEvent(
-      new MessageEvent("event", {
-        data: event(4, {
-          case: "itemCompleted",
-          value: { itemId: "tool#0", outcome: { case: "tool", value: { output: "ok", succeeded: true } } },
-        }),
+    stream.entry(
+      event(4, {
+        case: "itemCompleted",
+        value: { itemId: "tool#0", outcome: { case: "tool", value: { output: "ok", succeeded: true } } },
       })
     );
   });
@@ -510,7 +490,7 @@ it("does not animate unfinished historical items after their turn or harness end
   const { container, stream } = await render();
   async function emit(cursor: number, observation: MessageInitShape<typeof EventSchema>["observation"]) {
     await act(async () => {
-      stream.dispatchEvent(new MessageEvent("event", { data: event(cursor, observation) }));
+      stream.entry(event(cursor, observation));
     });
   }
   await emit(2, { case: "turnStarted", value: { turnId: "old-turn" } });
@@ -548,7 +528,7 @@ it("adds Raw evidence without reordering conversation anchors or resetting an ex
   ];
   await act(async () => {
     observations.forEach((observation, index) => {
-      stream.dispatchEvent(new MessageEvent("event", { data: event(index + 2, observation) }));
+      stream.entry(event(index + 2, observation));
     });
   });
   const run = [...container.querySelectorAll("button")].find((button) => button.textContent?.includes("2 tool calls"));
@@ -585,9 +565,7 @@ it("isolates transcript, draft, and late transport callbacks when the target cha
   const { container, composer, stream, streams, rerender } = await render();
   await type(composer, "draft for the old target");
   await act(async () => {
-    stream.dispatchEvent(
-      new MessageEvent("event", { data: event(2, { case: "turnStarted", value: { turnId: "old-turn" } }) })
-    );
+    stream.entry(event(2, { case: "turnStarted", value: { turnId: "old-turn" } }));
   });
   await rerender("next-thread");
   const nextComposer = container.querySelector("textarea");
@@ -595,16 +573,9 @@ it("isolates transcript, draft, and late transport callbacks when the target cha
   expect(nextComposer?.disabled).toBe(true);
   expect(container.textContent).not.toContain("old-turn");
   await act(async () => {
-    stream.dispatchEvent(new MessageEvent("error", { data: "old target failure" }));
-    streams[1].dispatchEvent(
-      new MessageEvent("attached", {
-        data: JSON.stringify({
-          sessionId: "next-session",
-          spec: { harness: "HARNESS_CLAUDE", model: "test-model" },
-        }),
-      })
-    );
-    streams[1].dispatchEvent(new MessageEvent("event", { data: event(1, { case: "harnessStarted", value: {} }) }));
+    stream.ended("old target failure");
+    streams[1].attached({ sessionId: "next-session", spec: { harness: Harness.CLAUDE, model: "test-model" } });
+    streams[1].entry(event(1, { case: "harnessStarted", value: {} }));
     await Promise.resolve();
   });
   expect(container.textContent).not.toContain("old target failure");
@@ -615,7 +586,7 @@ it("isolates transcript, draft, and late transport callbacks when the target cha
 it("shows a replay integrity failure and stops controls at the verified prefix", async () => {
   const { container, composer, stream } = await render();
   await act(async () => {
-    stream.dispatchEvent(new MessageEvent("event", { data: event(3, { case: "harnessStarted", value: {} }) }));
+    stream.entry(event(3, { case: "harnessStarted", value: {} }));
   });
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("Event gap: expected 2, received 3");
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("through event 1");
@@ -629,33 +600,20 @@ it("keeps the model unknown during catch-up instead of showing an older replayed
     HARNESS_CODEX: [],
   });
   await act(async () => {
-    stream.dispatchEvent(
-      new MessageEvent("attached", {
-        data: JSON.stringify(
-          toJson(
-            AttachedSchema,
-            create(AttachedSchema, { lastCursor: 3n, spec: { harness: Harness.CLAUDE, model: "current" } })
-          )
-        ),
-      })
-    );
-    stream.dispatchEvent(
-      new MessageEvent("event", { data: event(2, { case: "modelChanged", value: { model: "old" } }) })
-    );
+    stream.attached({ lastCursor: 3n, spec: { harness: Harness.CLAUDE, model: "current" } });
+    stream.entry(event(2, { case: "modelChanged", value: { model: "old" } }));
   });
   const picker = container.querySelector<HTMLInputElement>('input[aria-label="Model"]');
   expect(picker?.value).toBe("");
   expect(composer.disabled).toBe(true);
   expect(container.querySelector('[role="status"]')?.textContent).toBe("Catching up: 2 / 3 events");
   await act(async () => {
-    stream.dispatchEvent(new MessageEvent("event", { data: event(3, { case: "harnessStarted", value: {} }) }));
+    stream.entry(event(3, { case: "harnessStarted", value: {} }));
   });
   expect(picker?.value).toBe("current");
   expect(composer.disabled).toBe(false);
   await act(async () => {
-    stream.dispatchEvent(
-      new MessageEvent("event", { data: event(4, { case: "modelChanged", value: { model: "next" } }) })
-    );
+    stream.entry(event(4, { case: "modelChanged", value: { model: "next" } }));
   });
   expect(picker?.value).toBe("next");
 });

@@ -895,11 +895,13 @@ py_test(
     requires_docker = True,
     deps = [
         ":conftest",
+        ":thread_events",
         ":trajectory",
         "//:conftest",
         "//util/bazel:runfiles",
         "//util/testing:frontend_visual",
         "//util/testing:undeclared_outputs",
+        "//x/agentplane/app:thread_events_pb2",
         "//x/agentplane/app/testing:replication_process",
         "//x/agentplane/app/testing:replication_source",
         "//x/agentplane/protocol:command_pb2",

@@ -1,5 +1,9 @@
 import { fromJson, toJson, type JsonObject, type JsonValue } from "@bufbuild/protobuf";
+import { createClient as createRpcClient, type Client } from "@connectrpc/connect";
+import { createConnectTransport } from "@connectrpc/connect-web";
 import createClient from "openapi-fetch";
+
+import { ThreadEvents } from "../thread_events_pb";
 
 import type { components, paths } from "./api/schema";
 import { redirectToLogin } from "./operator_login";
@@ -225,8 +229,15 @@ export async function command(threadId: string, message: Command): Promise<Event
   return fromJson(EventEntrySchema, data as JsonValue);
 }
 
-export function eventsUrl(threadId: string): string {
-  return `/threads/${encodeURIComponent(threadId)}/events/stream`;
+/** Every Connect service the app serves is under this one prefix, named by its own package path.
+ *
+ * Binary rather than the default proto-JSON: a followed Thread is a long stream of Events, and
+ * every frame of it would otherwise be encoded, parsed and re-validated as JSON for no gain --
+ * nothing reads this wire but the generated client. */
+const rpc = createConnectTransport({ baseUrl: "/rpc", useBinaryFormat: true });
+
+export function threadEvents(): Client<typeof ThreadEvents> {
+  return createRpcClient(ThreadEvents, rpc);
 }
 
 export async function getThread(threadId: string): Promise<ThreadView> {

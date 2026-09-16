@@ -31,7 +31,10 @@ ts_library(
         ":operator_login",
         ":schema",
         "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@connectrpc/connect",
+        "//:node_modules/@connectrpc/connect-web",
         "//:node_modules/openapi-fetch",
+        "//x/agentplane/app:thread_events_pb",
         "//x/agentplane/protocol:command_pb",
         "//x/agentplane/protocol:event_log_pb",
         "//x/agentplane/runner:protocol_pb",
@@ -324,6 +327,9 @@ ts_library(
     deps = [
         ":events",
         "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@connectrpc/connect",
+        "//x/agentplane/app:thread_events_pb",
+        "//x/agentplane/protocol:event_log_pb",
         "//x/agentplane/runner:protocol_pb",
     ],
 )
@@ -336,7 +342,10 @@ ts_library(
     deps = [
         ":event_stream",
         "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@connectrpc/connect",
         "//:node_modules/vitest",
+        "//x/agentplane/app:thread_events_pb",
+        "//x/agentplane/protocol:event_log_pb",
         "//x/agentplane/runner:protocol_pb",
     ],
 )
@@ -921,7 +930,8 @@ vitest_bin.vitest_test(
 )
 
 # Visual render-health tests: the app mounted by visual/harness.tsx on canned inventory and runner
-# events (fetch and EventSource stubbed, nothing on the network), one scenario per row of
+# events (fetch and EventSource stubbed, nothing on the network -- a Thread's own stream is Connect
+# RPC, answered by the fetch stub with the envelopes it would read), one scenario per row of
 # visual/scenarios.ts, the PNGs published for PR visual review on the shared
 # //util/testing/frontend_visual machinery.
 ts_library(
@@ -953,6 +963,7 @@ ts_library(
         "//:node_modules/@types/react-dom",
         "//:node_modules/react",
         "//:node_modules/react-dom",
+        "//x/agentplane/app:thread_events_pb",
         "//x/agentplane/runner:protocol_pb",
     ],
 )
