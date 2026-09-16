@@ -622,6 +622,22 @@ What it does not do is decide identity: the sidecar supplies the token, and the 
 resolves that token to a live Pod and then to the `Sandbox` that owns it. So the sidecar is the
 mechanism and the subject kind is still the question.
 
+**The same gap blocks the tools half, so this is one prerequisite and not two.** Switching
+public-coder's MCP from Haku Console to the Action Service runs into the identical wall:
+`action_service/caller_auth.py` verifies the transport bearer "as a Sandbox workload or an external
+OAuth grant", and public-coder is neither -- a plain Deployment, and not an OAuth-enrolled external
+client, since that path is built around operator consent for something like the Claude.ai connector
+rather than an in-cluster workload. So a static identity is what unblocks the tool surface and the
+egress path at once, and neither can move first.
+
+Two further inputs when it is scheduled. The substitution set is larger than GitHub: the agent's
+iron-proxy swaps a GitHub PAT, the Haku Console bearer, an AIQuota bearer, a Brave Search key, a
+Matrix password and a kubeconfig token, each of which needs its own `EgressCredential` and targets
+or the agent silently loses that destination. And the staging Action Service offers `github`,
+`kubernetes` and `ssh` ActionGroups at `agentplane-actions-staging.allegedly.works`, so what
+public-coder would gain and lose against Console's tool set has to be diffed before the swap, on
+top of this milestone's requirement for a production instance rather than staging.
+
 That is what a static Agentplane identity for public-coder has to supply, and the system already
 knows the shape: the Action Service decides for both `SandboxCaller` and `ServiceAccountCaller`, "an
 external Connection acting as a labeled ServiceAccount" (`action_service/models.py`). `Subject` being
