@@ -140,7 +140,7 @@ independent `Chart`s — `litellm/app` emits two, `litellm.k8s.yaml` and
 `litellm-servicemonitor.k8s.yaml`, both into the same directory now that PR #7103 folded
 the ServiceMonitor's own Kustomization away (§ First cutover).
 
-## The other real catch: Flux's `$imagepolicy` marker
+## The other real catch: image automation, and the general principle behind it
 
 `litellm/app/deployment.yaml`'s image line carries
 `# {"$imagepolicy": "flux-system:tana-litellm-proxy"}` — the inline comment Flux's
@@ -154,14 +154,68 @@ updating. `deployment.yaml` also carries ~15 lines of rationale comments (why
 2026-08-09 outage; why `LITELLM_SALT_KEY` must never rotate; per-secret purpose notes)
 that are individually less severe to lose but add up.
 
+**The general principle, stated once, applies to every case in this doc so far:** cdk8s
+generation and a GitOps controller's own write-back must never be two independent
+writers to the same committed bytes. Whatever file (or line) a bot rewrites on `devel`
+outside of review, the generator must never also claim to own — one of the two writers
+silently loses on the next regen or the next automated commit, and it's usually the
+running state that loses, quietly. The `dependsOn`-comment case above is the same
+principle at lower stakes (loses documentation, not function).
+
+**Why this is structural for cdk8s, not a bug to file upstream:** cdk8s's internal
+model is plain JSON-shaped data (dicts/lists/scalars) that gets serialized to YAML as a
+final step. There's no AST node for "a comment attached to this key" anywhere in that
+model, so nothing upstream of emission can carry one. Contrast with `kyaml` — the
+library kustomize and Flux are built on — which deliberately preserves the full YAML
+AST, comments included, specifically so marker-based setters can exist at all. cdk8s and
+Flux's image automation are built on incompatible representations of "what a manifest
+is." And it's not a partial gap: Flux ships exactly one update strategy ("Setters") —
+there's no structured, non-comment-based API to target a field for automation. If it's
+not a comment in git, `image-automation-controller` cannot see it, full stop.
+
+**This isn't Flux-specific, and switching GitOps tools doesn't dissolve it either** —
+checked against Argo CD Image Updater, the leading alternative, since we're not
+wedded to Flux. It has two write-back modes: `git` (persistent) writes into a small
+separate file (`.argocd-source-<appName>.yaml` by default, or `kustomization.yaml`'s
+`images:` block if configured) — structurally the _same_ carve-out this doc already
+needs, just with a nicer native "second file" convention than Flux offers out of the
+box. `argocd` (the default) instead stores the override on the live `Application`
+object via the K8s API, with no git commit at all — which would dissolve the
+generator/automation conflict entirely, since there's nothing in git for the generator
+to clobber. But it's explicitly documented as "pseudo-persistent": delete and recreate
+the `Application` and the override is gone, reverting to whatever tag is baked into the
+committed manifest. That's a direct conflict with `cluster/AGENTS.md`'s own "Primary
+Directive: Declarative Turnkey Bootstrap" — `bazel run //cluster:bootstrap` from
+committed repo state must produce a working cluster, which a mode that stores the real
+running image tag _outside_ git violates by design. So even a full Argo migration would
+still want `git` write-back here, which needs the identical carve-out. Not a reason to
+pick Flux over Argo or vice versa — a reason this specific problem doesn't move that
+decision either way.
+
 **Resolution for this cutover: any resource carrying an `$imagepolicy` marker stays
 hand-written**, alongside SOPS secrets, as a named exception to "one directory, fully
 generated" (§ Phase 1). `litellm/app` is otherwise fully generated —
 `kustomization.yaml`'s `resources:` list is just `[deployment.yaml, litellm.k8s.yaml]`.
 `ProxySpec`/`LiteLLMProxy` in `cluster/litellm_constructs.py` no longer build a
-Deployment at all (dead fields deleted, not left dangling) — extending the generator to
-also own `deployment.yaml` needs a real answer to the marker-comment problem first, not
-before.
+Deployment at all (dead fields deleted, not left dangling). A guardrail lives in
+`cluster/test_generate_manifests.py`: the pinning test asserts no committed
+cdk8s-generated file contains `$imagepolicy` — belt-and-suspenders rather than a
+defense against a realistic cdk8s bug, since cdk8s structurally cannot emit it, but
+cheap to have alongside a pinning test that already reads every generated file's text.
+
+**Where this could go next, not done now:** shrink the hand-written surface from the
+whole Deployment down to just the mutable field, via kustomize's `images:` transformer
+— cdk8s generates the Deployment with any placeholder tag, and a small file the
+generator excludes from its output set (a Kustomize `Component`, unused elsewhere in
+this repo today) carries just `images: [{name: ..., newTag: ... # {"$imagepolicy":
+...}}]`, which `kustomize build` applies over whatever tag is baked into the generated
+Deployment regardless. Same "generator must not own this" rule, just at field
+granularity instead of file granularity. Worth building once the whole-file carve-out
+is a real tax — a directory where the automated resource has enough
+otherwise-generatable content that losing the whole file stings — not from the one data
+point `litellm/app` provides. Answers issue #6831's Q5 ("How should cdk8s-generated
+resources coexist with... image-policy markers?") at the principle level; the
+field-granularity mechanism is the concrete follow-up once it's needed.
 
 ## First cutover: `cluster/k8s/litellm/app` — done
 
@@ -235,6 +289,7 @@ phase 1's actual pattern has run for a while, not before.
   instead. Still open for a case where that's not good enough.
 - How to let a fully-generated directory still carry an `$imagepolicy`-marked (or
   otherwise comment-load-bearing) resource without falling back to "the whole directory
-  stays hand-written" — see § "The other real catch". Only matters once a converted
-  directory's Deployment needs image automation; `litellm/app`'s stays hand-written for
-  now.
+  stays hand-written" — see § "The other real catch: image automation, and the general
+  principle behind it". The shape of the fix (field-level carve-out via kustomize
+  `images:`) is known; not built, since one data point (`litellm/app`) doesn't justify
+  it yet.
