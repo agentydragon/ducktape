@@ -24,7 +24,23 @@ def tool_uses(frames: list[Frame]) -> list[ToolUseBlock]:
     ]
 
 
-def tool_results(frames: list[Frame]) -> list[dict[str, Any] | str]:
+def hook_callbacks(frames: list[Frame]) -> list[wire.HookCallback]:
+    return [
+        frame.request
+        for frame in parse(frames)
+        if isinstance(frame, wire.ControlRequestFrame) and isinstance(frame.request, wire.HookCallback)
+    ]
+
+
+def permission_prompts(frames: list[Frame]) -> list[wire.CanUseTool]:
+    return [
+        frame.request
+        for frame in parse(frames)
+        if isinstance(frame, wire.ControlRequestFrame) and isinstance(frame.request, wire.CanUseTool)
+    ]
+
+
+def tool_results(frames: list[Frame]) -> list[dict[str, Any] | str | list[dict[str, Any]]]:
     """The harness's `tool_use_result` of each tool round trip: structured on success, a message on
     failure."""
     return [
@@ -56,7 +72,9 @@ def retry_notices(frames: list[Frame]) -> list[wire.SystemFrame]:
     ]
 
 
-def assert_tool_lifecycles(frames: list[Frame], expected_names: list[str]) -> list[dict[str, Any] | str]:
+def assert_tool_lifecycles(
+    frames: list[Frame], expected_names: list[str]
+) -> list[dict[str, Any] | str | list[dict[str, Any]]]:
     assert [block.name for block in tool_uses(frames)] == expected_names
     events = [frame.event for frame in parse(frames) if isinstance(frame, wire.StreamEventFrame)]
     assert sum(isinstance(event, wire.ContentBlockStart) for event in events) >= len(expected_names)

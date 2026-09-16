@@ -48,6 +48,16 @@ class HookCallback(BaseModel):
     tool_use_id: str | None = None
 
 
+class McpMessage(BaseModel):
+    """One JSON-RPC 2.0 message for a driver-hosted (`sdkMcpServers`) MCP server; `message` is a
+    request, notification, or the CLI's own reply to a driver-initiated one. The driver answers a
+    request with `mcp_response`, and a notification needs one too, or the CLI's handshake hangs."""
+
+    subtype: Literal["mcp_message"]
+    server_name: str
+    message: dict[str, Any]
+
+
 class UnknownControlRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -57,8 +67,9 @@ class UnknownControlRequest(BaseModel):
 ControlRequestBody = Annotated[
     Annotated[CanUseTool, Tag("can_use_tool")]
     | Annotated[HookCallback, Tag("hook_callback")]
+    | Annotated[McpMessage, Tag("mcp_message")]
     | Annotated[UnknownControlRequest, Tag(UNKNOWN)],
-    Discriminator(tag_or_unknown("subtype", frozenset({"can_use_tool", "hook_callback"}))),
+    Discriminator(tag_or_unknown("subtype", frozenset({"can_use_tool", "hook_callback", "mcp_message"}))),
 ]
 
 
@@ -231,8 +242,9 @@ class UserFrame(BaseModel):
     uuid: str
     session_id: str | None = None
     is_replay: bool = Field(default=False, alias="isReplay")
-    # Structured for a successful tool, a plain message for a failed one.
-    tool_use_result: dict[str, Any] | str | None = None
+    # Structured for a built-in tool, a plain message for a failed one, and the MCP `content` array
+    # verbatim for a driver-hosted or configured MCP tool's result.
+    tool_use_result: dict[str, Any] | str | list[dict[str, Any]] | None = None
 
 
 class ResultFrame(BaseModel):
@@ -303,12 +315,24 @@ class HookMatcher(BaseModel):
     hook_callback_ids: list[str] = Field(alias="hookCallbackIds")
 
 
+class SdkMcpServerConfig(BaseModel):
+    """Per-server tuning for a driver-hosted MCP server; `timeout` is a tool-call wall clock in
+    milliseconds, and a value under 1000 falls through to the CLI's own (effectively unbounded)
+    default."""
+
+    model_config = ConfigDict(validate_by_name=True, serialize_by_alias=True)
+
+    timeout: int | None = None
+
+
 class InitializeBody(OmitNone):
     """The options an `initialize` carries, none of them settable anywhere else in a session.
 
     `hooks` registers the callbacks answering each hook event. `append_system_prompt` is added to
     the harness's own system prompt for every turn, leaving its coding-agent policy in place, unlike
-    the `systemPrompt` slot beside it, which replaces the prompt outright.
+    the `systemPrompt` slot beside it, which replaces the prompt outright. `sdk_mcp_servers` names
+    the driver-hosted MCP servers the CLI should connect to over this same stdio stream, each
+    exchange arriving as a correlated `mcp_message` control request.
     """
 
     model_config = ConfigDict(validate_by_name=True, serialize_by_alias=True)
@@ -316,6 +340,8 @@ class InitializeBody(OmitNone):
     subtype: Literal["initialize"] = "initialize"
     hooks: dict[str, list[HookMatcher]] | None = None
     append_system_prompt: str | None = Field(default=None, alias="appendSystemPrompt")
+    sdk_mcp_servers: list[str] | None = Field(default=None, alias="sdkMcpServers")
+    sdk_mcp_server_configs: dict[str, SdkMcpServerConfig] | None = Field(default=None, alias="sdkMcpServerConfigs")
 
 
 class InitializeRequest(BaseModel):

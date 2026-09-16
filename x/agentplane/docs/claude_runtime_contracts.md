@@ -9,14 +9,14 @@ becomes an Agentplane guarantee. No proprietary source is reproduced here.
 
 ## Priority for Agentplane
 
-| Priority | Boundary                       | Current gap                                                                                                                                                                                           |
-| -------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P0       | Command delivery and recovery  | Stable retry identity, a defined saved-response boundary, and native execution recovery need proof. Queue placement is decided in [the layering design](thread_layering.md#queue-placement-decision). |
-| P2       | Driver-hosted MCP              | The wire is documented in [driver_tools.md](driver_tools.md), but the runner neither declares SDK MCP servers during initialization nor routes `mcp_message`.                                         |
-| P1       | Permission and dialog recovery | The runner deliberately auto-allows tool permission requests and rejects other controls. A future interactive host must use `tool_use_id`, not a transient request id, as its recovery key.           |
-| P1       | Background task state          | Claude exposes a replace-set snapshot plus detail edges; the current adapter retains these only as native frames.                                                                                     |
-| P1       | Remote delivery ambiguity      | Claude's managed remote transport distinguishes never-uploaded calls from calls that may have landed. Agentplane's app-to-runner stream has no equivalent classification.                             |
-| P2       | Limits and refusal fallback    | Rate-limit and fallback events remain native-only, and a fallback that needs a user dialog cannot complete through the current runner.                                                                |
+| Priority | Boundary                       | Current gap                                                                                                                                                                                                       |
+| -------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P0       | Command delivery and recovery  | Stable retry identity, a defined saved-response boundary, and native execution recovery need proof. Queue placement is decided in [the layering design](thread_layering.md#queue-placement-decision).             |
+| P2       | Driver-hosted MCP              | The wire is documented in [driver_tools.md](driver_tools.md) and scripted-test-pinned at the native driver layer, but the runner neither declares SDK MCP servers during initialization nor routes `mcp_message`. |
+| P1       | Permission and dialog recovery | The runner deliberately auto-allows tool permission requests and rejects other controls. A future interactive host must use `tool_use_id`, not a transient request id, as its recovery key.                       |
+| P1       | Background task state          | Claude exposes a replace-set snapshot plus detail edges; the current adapter retains these only as native frames.                                                                                                 |
+| P1       | Remote delivery ambiguity      | Claude's managed remote transport distinguishes never-uploaded calls from calls that may have landed. Agentplane's app-to-runner stream has no equivalent classification.                                         |
+| P2       | Limits and refusal fallback    | Rate-limit and fallback events remain native-only, and a fallback that needs a user dialog cannot complete through the current runner.                                                                            |
 
 ## Known Agentplane bugs and recommended work
 
@@ -33,17 +33,24 @@ user text: after the tool-result frame, its exact `started` cohort proves the in
 continuation, so the runner records both sources on `HarnessUserMessageConfirmed`. A cancelled
 queue entry becomes `CommandNoop`. The exact native lifecycle remains visible as `Native` evidence.
 
-### C2: the documented SDK MCP host role is not implemented
+### C2: the documented SDK MCP host role is not implemented in the runner
 
-**Bug.** [`native/claude/wire.py`](../native/claude/wire.py) cannot declare SDK MCP servers/configs
-or parse typed `mcp_message` requests, and [`runner/claude.py`](../runner/claude.py) rejects them
-through `UnknownControlRequest`. The runner therefore cannot provide the tools described in
-[driver_tools.md](driver_tools.md).
+**Bug.** [`runner/claude.py`](../runner/claude.py) still cannot provide the tools described in
+[driver_tools.md](driver_tools.md): its `initialize` never declares `sdkMcpServers`/configs, and it
+rejects an incoming `mcp_message` through its own typed `McpMessage` case of the same "no answer
+path here" branch hook callbacks and dialogs share. [`native/claude/wire.py`](../native/claude/wire.py)
+and [`native/claude/mcp.py`](../native/claude/mcp.py) now declare SDK MCP servers/configs and parse
+typed `mcp_message` requests, and the full initialize/notification/list/call sequence — including
+the required reply to notification-shaped messages — is scripted-test-pinned in
+`harness_tests/claude/test_driver_tools.py`. That is native-driver evidence, not a runner
+capability; the gap below is now purely a runner-adapter integration gap, not a wire-modeling one.
 
-**Recommendation.** Extend initialization with typed server declarations, add bidirectional
-`mcp_message` correlation, and preserve per-server timeouts plus normalized error replies. Test the
-full initialize/notification/list/call sequence, including the required reply to notification-shaped
-messages. Keep MCP task support disabled until an active `tools/call` path is observed using it.
+**Recommendation.** Wire the runner adapter to the now-pinned native shape: declare the runner's own
+servers at `initialize`, add bidirectional `mcp_message` correlation reusing the Action Service
+contracts rather than a second tool-request lifecycle (per
+[driver_tools_and_background.md](../plans/driver_tools_and_background.md)), and preserve per-server
+timeouts plus normalized error replies. Keep MCP task support disabled until an active `tools/call`
+path is observed using it.
 
 ### C3: app-to-runner delivery is ambiguous after connection loss
 

@@ -59,10 +59,17 @@ as `mcp__<server>__<tool>` with the declared `inputSchema` passed through verbat
 The timeout fired 3.1 s after the call for `timeout: 3000`.
 
 The current Agentplane runner does not yet implement this host role: its initialize payload cannot
-declare `sdkMcpServers`/configs and its adapter rejects `mcp_message` as an unknown control request.
-The active v2 `tools/call` path in 2.1.252 also does not wire the task/input-request helper
-scaffolding present elsewhere in the MCP runtime, so driver-hosted MCP task semantics must remain
-unsupported. See [claude_runtime_contracts.md](claude_runtime_contracts.md).
+declare `sdkMcpServers`/configs and its adapter rejects `mcp_message` as its own typed control
+request kind that gets no answer path here, the same as a hook callback or a dialog. The full round
+trip above is now scripted-test-pinned against the pinned binary and a mocked model endpoint —
+`native/claude/mcp.py`'s `DriverMcpServer` (a real `fastmcp.FastMCP` server reached over an
+in-memory `fastmcp` client, not a hand-rolled tool dispatch) and
+`harness_tests/claude/test_driver_tools.py` — including the `tool_use_result` shape a driver-hosted
+tool call actually produces: a list of MCP content blocks, distinct from a built-in tool's
+dict/string. This is native-driver evidence, not a runner capability; the active v2 `tools/call`
+path in 2.1.252 also does not wire the task/input-request helper scaffolding present elsewhere in
+the MCP runtime, so driver-hosted MCP task semantics must remain unsupported. See
+[claude_runtime_contracts.md](claude_runtime_contracts.md).
 
 ### Changing the tool set mid-session
 
@@ -135,6 +142,11 @@ none of this is reachable — while leaving driver-hosted servers working. The s
 `--safe-mode`, so an MCP scenario has to drop it and rely on `--setting-sources=` alone. Confirmed.
 
 ## Codex: `dynamicTools` on `thread/start`
+
+The declare/call round trip below is scripted-test-pinned against the pinned binary and a mocked
+model endpoint: `native/codex/dynamic_tools.py`'s `DynamicToolServer` and
+`harness_tests/codex/test_dynamic_tools.py`. This is native-driver evidence, not a runner
+capability — nothing in `runner/codex.py` declares `dynamicTools` or answers `item/tool/call` today.
 
 "Dynamic" here means **client-supplied**: definitions the driver hands the app-server at
 `thread/start`, as against the built-in tools compiled into Codex. It does not mean the set mutates.

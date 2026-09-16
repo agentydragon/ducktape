@@ -30,8 +30,8 @@ class CodexHarness:
         self.transport = transport
         self._request_ids = (f"{request_prefix}-{n}" for n in itertools.count(1))
 
-    async def initialize(self) -> CodexReceipt:
-        response = await self._request(driver.initialize(self._request_id()))
+    async def initialize(self, *, experimental_api: bool = False) -> CodexReceipt:
+        response = await self._request(driver.initialize(self._request_id(), experimental_api=experimental_api))
         await self.transport.send(driver.initialized())
         return response
 
@@ -44,6 +44,7 @@ class CodexHarness:
         persist: bool = False,
         config: dict[str, Any] | None = None,
         instructions: str = "",
+        dynamic_tools: list[dict[str, Any]] | None = None,
     ) -> CodexReceipt:
         return await self._request(
             driver.thread_start(
@@ -54,6 +55,7 @@ class CodexHarness:
                 persist=persist,
                 config=config,
                 instructions=instructions,
+                dynamic_tools=dynamic_tools,
             )
         )
 

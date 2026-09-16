@@ -48,6 +48,7 @@ py_library(
         ":messages",
         "//x/agentplane/native/claude:async_run",
         "//x/agentplane/native/claude:driver",
+        "//x/agentplane/native/claude:mcp",
         "//x/agentplane/native/claude:scenarios",
         "//x/agentplane/native/claude:wire",
     ],
@@ -151,6 +152,53 @@ py_test(
         "//x/agentplane/native/claude:blocks",
         "//x/agentplane/native/claude:scenarios",
         "//x/agentplane/native/claude:wire",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_hooks",
+    size = "medium",
+    srcs = ["test_hooks.py"],
+    data = ["@claude_code_cli_linux_x64//:claude"],  # keep: the pinned native harness the test drives
+    target_compatible_with = [
+        # keep: the pinned native harnesses are Linux/x86_64 only.
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":anthropic_sse",
+        ":conftest",
+        ":frames",
+        ":harness",
+        ":messages",
+        "//:conftest",
+        "//x/agentplane/harness_tests:conftest",
+        "//x/agentplane/native/claude:scenarios",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_driver_tools",
+    size = "medium",
+    srcs = ["test_driver_tools.py"],
+    data = ["@claude_code_cli_linux_x64//:claude"],  # keep: the pinned native harness the test drives
+    target_compatible_with = [
+        # keep: the pinned native harnesses are Linux/x86_64 only.
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":anthropic_sse",
+        ":conftest",
+        ":frames",
+        ":harness",
+        ":messages",
+        "//:conftest",
+        "//x/agentplane/harness_tests:conftest",
+        "//x/agentplane/native/claude:mcp",
+        "@pypi//fastmcp_slim",
         "@pypi//pytest_bazel",
     ],
 )
