@@ -11,7 +11,7 @@ tested directly against it, it fails trying to parse the schema itself as a CRD.
 Converting that schema by hand into a CRD envelope is real, undertaken work, not a
 `cdk8s import <url>` away, so this stays a hand-written Pydantic model instead: no
 generated schema validation, but at least real field types instead of a bare dict.
-See cluster/docs/plans/cdk8s_adoption.md.
+See cluster/docs/cdk8s.md.
 """
 
 from __future__ import annotations
@@ -98,7 +98,7 @@ def kustomize_kustomization(
 
     `components` names directories the generator never writes -- e.g. a hand-written
     Kustomize `Component` carrying a Flux image-automation marker (see
-    cluster/docs/plans/cdk8s_adoption.md).
+    cluster/docs/cdk8s.md).
     """
     manifest = _KustomizeKustomization(
         namespace=namespace, resources=resources, components=list(components) if components else None

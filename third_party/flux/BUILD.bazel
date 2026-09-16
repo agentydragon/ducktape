@@ -1,6 +1,6 @@
 # Typed cdk8s Python constructs generated from Flux's upstream CRDs (fetched via
 # MODULE.bazel's flux_kustomization_crd http_file, never vendored). See
-# cluster/docs/plans/cdk8s_adoption.md.
+# cluster/docs/cdk8s.md.
 
 # flux_kustomize is generated at build time by cdk8s_import below, not a pip package --
 # gazelle can't resolve it from the requirements manifest.
