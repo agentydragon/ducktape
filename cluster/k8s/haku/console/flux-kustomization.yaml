@@ -47,3 +47,5 @@ spec:
       namespace: ducktape-flux
     - name: ssh-mcp-secrets
       namespace: ducktape-flux
+    - name: monitoring-crds # the ServiceMonitor CRD
+      namespace: ducktape-flux

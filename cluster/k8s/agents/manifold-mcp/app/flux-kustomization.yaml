@@ -38,3 +38,5 @@ spec:
       namespace: ducktape-flux
     - name: reflector
       namespace: ducktape-flux
+    - name: monitoring-crds # the ServiceMonitor CRD
+      namespace: ducktape-flux

@@ -15,6 +15,7 @@ resources:
   - kubernetes-authorization-rbac.yaml
   - routine-launch-token.sops.yaml
   - service.yaml
+  - servicemonitor.yaml
   - static-deployment.yaml
   - static-metadata.yaml
   - static-service.yaml

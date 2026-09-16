@@ -25,7 +25,12 @@ OPERATOR_CRDS: dict[str, set[str]] = {
     "kyverno": {"ClusterPolicy", "Policy"},
     "kyverno-policies": set(),
     "tofu-controller": {"Terraform"},
-    "monitoring-stack": {"ServiceMonitor", "PodMonitor"},
+    # The CRDs, not the HelmRelease: prometheus-operator gates these kinds with no
+    # failurePolicy: Fail webhook, so a ServiceMonitor's prerequisite is the CRD
+    # existing and not Prometheus running. Existing consumers still satisfy this
+    # through monitoring-stack, which depends on monitoring-crds.
+    "monitoring-crds": {"ServiceMonitor", "PodMonitor"},
+    "monitoring-stack": set(),
     "cnpg": {
         "Cluster",
         "Backup",

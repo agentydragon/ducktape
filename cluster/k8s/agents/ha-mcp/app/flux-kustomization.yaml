@@ -40,3 +40,5 @@ spec:
       namespace: ducktape-flux
     - name: ha-mcp-credentials
       namespace: ducktape-flux
+    - name: monitoring-crds # the ServiceMonitor CRD
+      namespace: ducktape-flux
