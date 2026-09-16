@@ -287,6 +287,12 @@ dependencies = [
     "grpcio-tools>=1.84.0",
     "mypy-protobuf>=3.6",
 
+    # Connect RPC for the Agentplane app's browser-facing services: an ASGI server mounted on the
+    # existing origin, and its protoc plugin. Connecpy generates against Google's protobuf runtime,
+    # so the app keeps one message runtime for both its `_pb2` types and its RPCs.
+    "connecpy>=2.3.0",
+    "protoc-gen-connecpy>=2.3.0",
+
     # Type stubs for mypy
     "types-PyYAML",
     "types-requests",

@@ -1,0 +1,29 @@
+load("@aspect_rules_ts//ts:proto.bzl", "ts_proto_library")
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
+load("//devinfra/python:connect.bzl", "py_connect_service_library")
+load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
+
+package(default_visibility = ["//visibility:public"])
+
+proto_library(
+    name = "probe_proto",
+    srcs = ["probe.proto"],
+)
+
+py_proto_library_with_mypy_stubs(
+    name = "probe_pb2",
+    deps = [":probe_proto"],
+)
+
+py_connect_service_library(
+    name = "probe_connecpy",
+    proto = ":probe_proto",
+    py_proto = ":probe_pb2",
+)
+
+ts_proto_library(
+    name = "probe_pb",
+    copy_files = False,
+    node_modules = "//:node_modules",
+    proto = ":probe_proto",
+)

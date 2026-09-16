@@ -1173,6 +1173,10 @@ compact-json==1.8.2 \
     --hash=sha256:b894ab1519e6fe7813351fa96962449f821051b8b5178c609bdda2eabd07abb0 \
     --hash=sha256:dc200148695be04b91ac45cd3cda531aa017fb25609b66b9961a008db25eae77
     # via ducktape (pyproject.toml)
+connecpy==2.3.0 \
+    --hash=sha256:2bd8e91f2b1bcb9afbdc8dc3727b0cfce54fd94da58046d0f219661d3dd208c1 \
+    --hash=sha256:f20c6a8a631dec60fb4cb01d103201f13395a2e7331347bace6ffdc62dbb77d9
+    # via ducktape (pyproject.toml)
 contourpy==1.4.0 \
     --hash=sha256:018227e134b73090b06f911e773a526c77c9af426be29065500ce096a5accd4c \
     --hash=sha256:072a702e2e178f4fcf96f04775d0c059e4c917925abf0d3208ebb6865df3c23d \
@@ -2349,6 +2353,7 @@ httpx==0.28.1 \
     # via
     #   ducktape (pyproject.toml)
     #   anthropic
+    #   connecpy
     #   huggingface-hub
     #   inspect-ai
     #   jupyterlab
@@ -4910,6 +4915,7 @@ protobuf==7.36.1 \
     --hash=sha256:97198b77e369a0abd8e262b8f6c7266c55ddb796a3a12c76d7b8881188ed83aa \
     --hash=sha256:d0f6470f0ce2b84e3feaea2d4b816378b37ba4d4aa08a274305373de93e2d524
     # via
+    #   connecpy
     #   google-api-core
     #   googleapis-common-protos
     #   grpcio-tools
@@ -4917,6 +4923,14 @@ protobuf==7.36.1 \
     #   opentelemetry-proto
     #   proto-plus
     #   valkey-glide
+protoc-gen-connecpy==2.3.0 \
+    --hash=sha256:133f40b3c99ef4e1cbe084897be82c1077a2ac06c64b5c382eb326c4d13643ef \
+    --hash=sha256:5080a71e5dbe13471b6ffcc04ad7133ba4038b58dc30627bc49ea5daf5675eea \
+    --hash=sha256:5470f45c72c8db2adf61e56acd533f6958bf17993dbf38f60f6e7f77bffba412 \
+    --hash=sha256:a6e3f49797cfc572bee03cbd1a6202f1b938e7b70da451b812b85786711228ce \
+    --hash=sha256:c8f0a479a3507a8ae33fb594ed9fa636e3a035fe4d5fa26a6cbaf389b9b3c611 \
+    --hash=sha256:dcd3309e48634eadda91f14592b75663a7079b8b1d85baa7b108b9ff761ef7b7
+    # via ducktape (pyproject.toml)
 psutil==7.2.2 \
     --hash=sha256:0746f5f8d406af344fd547f1c8daa5f5c33dbc293bb8d6a16d80b4bb88f59372 \
     --hash=sha256:076a2d2f923fd4821644f5ba89f059523da90dc9014e85f8e45a5774ca5bc6f9 \
