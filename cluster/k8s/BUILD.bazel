@@ -65,6 +65,8 @@ exports_files(
         "agents/public-coder-agent/proxy/cnp-egress.yaml",
         "agents/public-coder-agent/proxy/deployment.yaml",
         "agents/public-coder-agent/proxy/iron.yaml",
+        "aiquota/deployment.yaml",
+        "aiquota/kustomization.yaml",
         "clickhouse/cluster/clickhouse.yaml",
         "clickhouse/cluster/networkpolicy.yaml",
         "clickhouse/cluster/public-coder-credentials.sops.yaml",

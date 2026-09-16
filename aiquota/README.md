@@ -126,13 +126,14 @@ report subsequent provider or ClickHouse failures.
 
 ### Schema
 
-`schema.sql` defines every table, materialized view, and column aiquota owns
-inside the (admin-bootstrapped) `aiquota` database. `migrate.py` applies it
-statement-by-statement over the ClickHouse HTTP interface, run as the
-Deployment's `migrate` init container ahead of the API server. Every statement
-is `CREATE`/`ALTER ... IF NOT EXISTS`, so re-running it on every rollout is
-safe — a schema change ships in the same image/rollout as the code that needs
-it, with no separate Job or version number to bump.
+`cluster/k8s/aiquota/schema.sql` defines every table, materialized view, and
+column aiquota owns inside the (admin-bootstrapped) `aiquota` database. The
+Deployment's `migrate` init container applies it with
+`clickhouse-client --multiquery` ahead of the API server, same as it would in
+a standalone migration Job — but an init container's pod template is mutable
+across rollouts, so a schema change ships in the same PR as the code that
+needs it, with no separate Job or version number to bump. Every statement is
+`CREATE`/`ALTER ... IF NOT EXISTS`, so re-running it on every rollout is safe.
 
 ## Credential ownership
 

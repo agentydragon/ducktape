@@ -122,28 +122,6 @@ py_library(
     ],
 )
 
-py_library(
-    name = "migrate",
-    srcs = ["migrate.py"],
-    # keep: migrate.py reads this from runfiles; no module imports it.
-    data = ["schema.sql"],
-    imports = [".."],
-    deps = [
-        "//util/bazel:runfiles",
-        "@pypi//httpx",
-        "@pypi//pydantic",
-        "@pypi//pydantic_settings",
-    ],
-)
-
-py_binary(
-    name = "migrate_bin",
-    imports = [".."],
-    main_module = "aiquota.migrate",
-    visibility = ["//aiquota:__subpackages__"],
-    deps = [":migrate"],
-)
-
 py_binary(
     name = "aiquota",
     imports = [".."],
@@ -203,33 +181,6 @@ oci_load(
     name = "api_load",
     image = ":api_image",
     repo_tags = ["aiquota-api:latest"],
-    visibility = ["//visibility:public"],
-)
-
-# The schema runner, published as aiquota-migrate (devinfra/ci/image_targets.json) and run
-# as the `migrate` init container ahead of the API server.
-aspect_py_binary(
-    name = "migrate_image_bin",
-    data = ["schema.sql"],
-    main = "migrate.py",
-    deps = [":migrate"],
-)
-
-py_image_layer(
-    name = "migrate_layers",
-    binary = ":migrate_image_bin",
-    group = "1000",
-    owner = "1000",
-)
-
-oci_image(
-    name = "migrate_image",
-    base = "@debian_trixie_slim_linux_amd64",
-    entrypoint = py_image_entrypoint("migrate_image_bin"),
-    env = py_image_env(binary_name = "migrate_image_bin"),
-    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
-    tars = [":migrate_layers"],
-    user = "1000:1000",
     visibility = ["//visibility:public"],
 )
 
@@ -332,19 +283,6 @@ py_test(
         ":api",
         ":clickhouse",
         ":models",
-        "//:conftest",
-        "@pypi//httpx",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_migrate",
-    srcs = ["test_migrate.py"],
-    imports = [".."],
-    deps = [
-        ":migrate",
         "//:conftest",
         "@pypi//httpx",
         "@pypi//pytest",
