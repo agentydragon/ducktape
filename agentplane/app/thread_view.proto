@@ -1,0 +1,305 @@
+syntax = "proto3";
+
+// The derived Thread view: what the app materializes from its archived Event prefix so that opening
+// a page does not replay the Thread. These types are app-owned and derived. The runner must not
+// import this file, and nothing here is an Event -- a Segment's cursors are positions in the
+// original runner cursor space, never a new app sequence.
+//
+// Contract: x/agentplane/docs/thread_view_sync.md. Fold: x/agentplane/app/projection.py.
+package ducktape.agentplane.app.v1;
+
+import "x/agentplane/protocol/command.proto";
+import "x/agentplane/protocol/event.proto";
+import "x/agentplane/protocol/event_log.proto";
+
+// How far a projection covers, in the original source's cursor space.
+message Position {
+  // The original runner journal identity. A changed source is an integrity condition, not a cache
+  // reset.
+  string source_id = 1;
+  // One coherent materialization generation. Not an Event counter and not a compatibility version:
+  // a rebuild publishes a new epoch atomically and clients rebootstrap rather than combine two.
+  string projection_epoch = 2;
+  // Covers every original Event through this cursor, including Events that produced no Segment.
+  uint64 through_cursor = 3;
+}
+
+// An immutable byte range the client reads on demand, scoped to one source and epoch so a corrected
+// rebuild cannot reuse a stale derived payload's cache identity.
+message PayloadRef {
+  string source_id = 1;
+  string projection_epoch = 2;
+  uint64 owner_anchor = 3;
+  // Which field of the owning Segment this payload holds.
+  string field = 4;
+  uint64 revision_cursor = 5;
+  uint64 byte_length = 6;
+}
+
+// Text that may exceed the response's byte budget. `preview` is always a valid bounded prefix;
+// `reference` is set only when it is a prefix rather than the whole value.
+message BoundedText {
+  string preview = 1;
+  // Of the whole value, so a reader can say how much it is not showing.
+  uint64 byte_length = 2;
+  PayloadRef reference = 3;
+}
+
+// Harness-confirmed input, anchored at confirmation rather than at submission.
+message ConfirmedInput {
+  string harness_message_id = 1;
+  BoundedText text = 2;
+  string turn_id = 3;
+  // Every Command that produced this text: Claude coalesces several into one confirmation.
+  repeated string origin_command_ids = 4;
+}
+
+message TextOutcome {
+  BoundedText text = 1;
+}
+
+message ToolOutcome {
+  BoundedText output = 1;
+  bool succeeded = 2;
+}
+
+message Item {
+  string item_id = 1;
+  ducktape.agentplane.protocol.v1.ItemKind kind = 2;
+  string tool_name = 3;
+  // What has streamed so far. A completion replaces it with the authoritative value.
+  BoundedText text = 4;
+  BoundedText arguments_json = 5;
+  BoundedText output = 6;
+  // Absent while streaming, and after a crash that ended the stream: unknown output is never
+  // converted into a successful completion.
+  oneof completion {
+    TextOutcome completed_text = 7;
+    ToolOutcome completed_tool = 8;
+  }
+}
+
+message Turn {
+  string turn_id = 1;
+  string model = 2;
+  // Absent until the turn reaches a terminal Event.
+  optional ducktape.agentplane.protocol.v1.TurnStatus status = 3;
+}
+
+message ModelEffect {
+  string command_id = 1;
+  string previous_model = 2;
+  string model = 3;
+}
+
+// A turn's terminal result, anchored at the terminal Event so it renders after any partial output
+// rather than again at the turn header.
+message TurnOutcome {
+  string turn_id = 1;
+  ducktape.agentplane.protocol.v1.TurnStatus status = 2;
+  string error = 3;
+  string interrupted_by_command_id = 4;
+}
+
+enum HarnessState {
+  HARNESS_STATE_UNSPECIFIED = 0;
+  HARNESS_STATE_RUNNING = 1;
+  HARNESS_STATE_STOPPED = 2;
+  HARNESS_STATE_LOST = 3;
+}
+
+message Lifecycle {
+  HarnessState state = 1;
+  int32 exit_code = 2;
+  string stopped_by_command_id = 3;
+}
+
+// An admission or terminal non-effect boundary. It has no normal-mode card, but it is still a
+// Segment so grouping stays deterministic across page edges.
+message CommandReceipt {
+  string command_id = 1;
+}
+
+// One unit of the derived conversation, beginning at the Event that created it and revised in place
+// by later Events.
+message Segment {
+  // The immutable original cursor this Segment began at. History pages key on it.
+  uint64 anchor_cursor = 1;
+  // When this Segment last changed. Not a statement about what the browser has consumed.
+  uint64 revision_cursor = 2;
+  oneof content {
+    ConfirmedInput confirmed_input = 3;
+    Item item = 4;
+    Turn turn = 5;
+    ModelEffect model_effect = 6;
+    TurnOutcome turn_outcome = 7;
+    Lifecycle lifecycle = 8;
+    CommandReceipt command_receipt = 9;
+  }
+}
+
+// Current state as the Events evidence it, never as a request or a local expectation.
+message Controls {
+  optional string applied_model = 1;
+  optional string active_turn_id = 2;
+  optional HarnessState harness_state = 3;
+  // Where an Event prefix carries no initial seed, the configured value, identified as
+  // configuration rather than as evidence.
+  optional string configured_model = 4;
+}
+
+message Pending {}
+
+// The specifically evidenced operation took effect, at this Event.
+message Effected {
+  uint64 origin_cursor = 1;
+}
+
+message CommandFailure {
+  uint64 origin_cursor = 1;
+  string reason = 2;
+}
+
+message CommandNoop {
+  uint64 origin_cursor = 1;
+  string reason = 2;
+}
+
+message CommandSummary {
+  string command_id = 1;
+  // Which operation the Command carries, so a queue renders without opening it.
+  string operation_kind = 2;
+  BoundedText preview = 3;
+  uint64 admission_cursor = 4;
+  oneof outcome {
+    Pending pending = 5;
+    Effected effected = 6;
+    CommandFailure failed = 7;
+    CommandNoop noop = 8;
+  }
+}
+
+// An exact admitted Command with whatever terminal evidence exists for it.
+message AdmittedCommand {
+  ducktape.agentplane.protocol.v1.Command command = 1;
+  uint64 admission_cursor = 2;
+  oneof outcome {
+    Pending pending = 3;
+    Effected effected = 4;
+    CommandFailure failed = 5;
+    CommandNoop noop = 6;
+  }
+}
+
+// Explicitly not a negative acknowledgement: the projection has not observed this id through that
+// cursor, which is not proof the runner never admitted it.
+message NotObservedThrough {
+  string command_id = 1;
+  uint64 through_cursor = 2;
+}
+
+message CommandLookupEntry {
+  oneof result {
+    AdmittedCommand admitted = 1;
+    NotObservedThrough not_observed = 2;
+  }
+}
+
+message CommandLookup {
+  repeated CommandLookupEntry entries = 1;
+}
+
+// A bounded page. Empty distinguishes exhaustion from a byte or scan limit, so `exhausted` is not
+// derivable from the segment count.
+message SegmentsPage {
+  repeated Segment segments = 1;
+  // Opaque, bound to Thread, source, epoch, direction and filter. Not an authorization capability.
+  string next_page_token = 2;
+  bool exhausted = 3;
+}
+
+message CommandsPage {
+  repeated CommandSummary commands = 1;
+  string next_page_token = 2;
+  bool exhausted = 3;
+  // Every unresolved Command, which the first page's length must not be mistaken for.
+  uint64 unresolved_count = 4;
+}
+
+message ViewSnapshot {
+  Position position = 1;
+  // The recent tail, and an older window when a reading anchor was requested.
+  SegmentsPage tail = 2;
+  SegmentsPage reading_window = 3;
+  Controls controls = 4;
+  CommandsPage pending = 5;
+  CommandLookup requested_commands = 6;
+}
+
+// Everything that changed over an interval. Segments and commands carry complete values, so
+// applying a batch never depends on holding the previous revision.
+message Changes {
+  string source_id = 1;
+  string projection_epoch = 2;
+  uint64 after_cursor = 3;
+  uint64 through_cursor = 4;
+  repeated Segment segments = 5;
+  repeated CommandSummary commands = 6;
+  Controls controls = 7;
+  uint64 unresolved_count = 8;
+}
+
+message RebootstrapRequired {
+  enum Reason {
+    REASON_UNSPECIFIED = 0;
+    // The bounded journal of derived updates no longer reaches the client's position.
+    REASON_UPDATE_CACHE_EXPIRED = 1;
+    REASON_CATCHUP_BUDGET_EXCEEDED = 2;
+    REASON_PROJECTION_REBUILT = 3;
+  }
+  Reason reason = 1;
+}
+
+// A typed synchronization transition, not a transport error.
+message ViewUpdate {
+  oneof update {
+    Changes changes = 1;
+    RebootstrapRequired rebootstrap_required = 2;
+  }
+}
+
+// How available a piece of exact evidence is. Transport failure is not empty evidence.
+enum Availability {
+  AVAILABILITY_UNSPECIFIED = 0;
+  AVAILABILITY_RETAINED = 1;
+  AVAILABILITY_NOT_YET_ARCHIVED = 2;
+  AVAILABILITY_LOST = 3;
+}
+
+message EventsPage {
+  repeated ducktape.agentplane.protocol.v1.EventEntry entries = 1;
+  // The original range actually scanned: an empty filtered page is not proof no Events occurred.
+  uint64 scanned_after_cursor = 2;
+  uint64 scanned_through_cursor = 3;
+  string next_page_token = 4;
+  bool exhausted = 5;
+  Availability availability = 6;
+}
+
+message EventLookupEntry {
+  ducktape.agentplane.protocol.v1.EventOrigin origin = 1;
+  ducktape.agentplane.protocol.v1.EventEntry entry = 2;
+  Availability availability = 3;
+}
+
+message EventsByOrigin {
+  repeated EventLookupEntry entries = 1;
+}
+
+// Bounded bytes at an immutable reference. Reading one never advances the live cursor.
+message PayloadChunk {
+  bytes data = 1;
+  uint64 next_offset = 2;
+  bool complete = 3;
+  Availability availability = 4;
+}
