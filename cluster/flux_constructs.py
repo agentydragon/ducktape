@@ -87,7 +87,7 @@ class _KustomizeKustomization(BaseModel):
     namespace: str | None = None
     resources: list[str]
     components: list[str] | None = Field(
-        default=None, description="Directories the generator never writes, e.g. a hand-written image-pins/ Component."
+        default=None, description="Paths to Kustomize Component directories, per kustomize.config.k8s.io/v1beta1."
     )
 
 
@@ -96,9 +96,10 @@ def kustomize_kustomization(
 ) -> dict[str, object]:
     """Return the plain `kustomize.config.k8s.io` `Kustomization` listing `resources`.
 
-    `components` names directories the generator never writes -- e.g. a hand-written
-    Kustomize `Component` carrying a Flux image-automation marker (see
-    cluster/docs/cdk8s.md).
+    `components` names ordinary Kustomize `Component` directories. Today's only
+    caller passes a hand-written one carrying a Flux image-automation marker (see
+    cluster/docs/cdk8s.md) -- that's specific to that use, not a property of this
+    field; a generated Component directory would work the same way.
     """
     manifest = _KustomizeKustomization(
         namespace=namespace, resources=resources, components=list(components) if components else None
