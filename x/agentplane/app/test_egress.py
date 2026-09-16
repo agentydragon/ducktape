@@ -8,7 +8,14 @@ from uuid import uuid4
 import pytest
 import pytest_bazel
 
-from x.agentplane.app.egress import BindingNotFoundError, EgressInventory, FluxOwnedBindingError, UnknownPolicyError
+from x.agentplane.app.egress import (
+    BindingNotFoundError,
+    EgressInventory,
+    FluxOwnedBindingError,
+    SubjectKind,
+    SubjectView,
+    UnknownPolicyError,
+)
 from x.agentplane.app.testing.kubernetes import FakeCustomObjectsApi, egress_binding, egress_credential, egress_policy
 
 GITHUB_RULE = {
@@ -84,7 +91,10 @@ async def test_a_service_account_subject_is_neither_matched_nor_rendered_as_a_sa
     assert "live-and-service-account" in names
 
     both = next(view for view in await egress.bindings_for("live") if view.name == "live-and-service-account")
-    assert both.subjects == ["live", "serviceaccount/public-coder"]
+    assert both.subjects == [
+        SubjectView(kind=SubjectKind.SANDBOX, name="live"),
+        SubjectView(kind=SubjectKind.SERVICE_ACCOUNT, name="public-coder"),
+    ]
 
 
 async def test_a_binding_view_carries_provenance_expiry_policies_without_proxy_acknowledgement(
@@ -97,7 +107,7 @@ async def test_a_binding_view_carries_provenance_expiry_policies_without_proxy_a
     seed = by_name["live-seeded"]
     assert seed.from_git
     assert "active" not in seed.model_dump()
-    assert seed.subjects == ["live"]
+    assert seed.subjects == [SubjectView(kind=SubjectKind.SANDBOX, name="live")]
     (policy,) = seed.policies
     (rule,) = policy.rules
     assert (policy.name, rule.hosts, rule.methods, rule.paths) == (
@@ -119,7 +129,7 @@ async def test_a_binding_view_carries_provenance_expiry_policies_without_proxy_a
     assert ([policy.name for policy in expiring.policies], expiring.missing_policies) == (["pypi"], ["vanished"])
 
     granted = by_name["live-granted"]
-    assert granted.subjects == ["live"]
+    assert granted.subjects == [SubjectView(kind=SubjectKind.SANDBOX, name="live")]
 
 
 async def test_revoke_deletes_a_runtime_binding_and_refuses_one_from_git(

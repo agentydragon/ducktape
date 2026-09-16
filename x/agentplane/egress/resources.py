@@ -11,10 +11,12 @@ from __future__ import annotations
 
 import base64
 from enum import StrEnum
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
 from kubernetes_asyncio import client as k8s_client
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Discriminator, Field, Tag, model_validator
+
+from x.agentplane.subjects import subject_kind
 
 GROUP = "agentplane.allegedly.works"
 VERSION = "v1alpha1"
@@ -210,24 +212,9 @@ class ServiceAccountSubject(_Wire):
     service_account: ServiceAccountRef = Field(alias="serviceAccount")
 
 
-def _subject_kind(value: Any) -> str | None:
-    """Which one-key form the subject takes; both at once fails as an extra field on the chosen one."""
-    if isinstance(value, ServiceAccountSubject):
-        return "serviceAccount"
-    if isinstance(value, SandboxSubject):
-        return "sandbox"
-    if isinstance(value, dict):
-        for key in ("serviceAccount", "service_account"):
-            if key in value:
-                return "serviceAccount"
-        if "sandbox" in value:
-            return "sandbox"
-    return None
-
-
 Subject = Annotated[
     Annotated[ServiceAccountSubject, Tag("serviceAccount")] | Annotated[SandboxSubject, Tag("sandbox")],
-    Discriminator(_subject_kind),
+    Discriminator(subject_kind),
 ]
 
 

@@ -73,6 +73,7 @@ from x.agentplane.app.presets import Harness, PresetCatalog, SandboxBinding, San
 from x.agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown
 from x.agentplane.app.trajectory import CommandIdConflictError, ThreadNotFoundError, ThreadView, TrajectoryStore
 from x.agentplane.runner.client import RunnerError
+from x.agentplane.subjects import SubjectKind, SubjectView
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -248,7 +249,7 @@ async def grant_sandbox_egress(inventory: Inventory, egress: Egress, name: str, 
 async def sandbox_egress_decisions(inventory: Inventory, decisions: Decisions, name: str) -> list[Decision]:
     """What recently left or was refused, from the proxy; 502 when the proxy cannot be asked."""
     await inventory.require_known(name)
-    return await decisions.recent(name)
+    return await decisions.recent(SubjectView(kind=SubjectKind.SANDBOX, name=name))
 
 
 @router.get("/{name}/action-policy")

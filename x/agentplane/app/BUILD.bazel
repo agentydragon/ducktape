@@ -48,6 +48,7 @@ py_library(
         ":presets",
         ":shutdown",
         ":trajectory",
+        "//x/agentplane:subjects",
         "//x/agentplane/action_service:client",
         "//x/agentplane/action_service:connections",
         "//x/agentplane/action_service:enrollments",
@@ -480,6 +481,7 @@ py_library(
     name = "decisions",
     srcs = ["decisions.py"],
     deps = [
+        "//x/agentplane:subjects",
         "@pypi//httpx",
         "@pypi//pydantic",
     ],
@@ -491,6 +493,7 @@ py_library(
     deps = [
         ":inventory",
         "//util:kubernetes",
+        "//x/agentplane:subjects",
         "//x/agentplane/egress:resources",
         "@pypi//kubernetes_asyncio",
         "@pypi//more_itertools",

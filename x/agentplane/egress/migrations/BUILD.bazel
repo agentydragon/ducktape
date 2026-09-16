@@ -6,7 +6,7 @@ filegroup(
         "env.py",
         "script.py.mako",
         "//x/agentplane/egress/migrations/versions:0001_decisions.py",
-        "//x/agentplane/egress/migrations/versions:0002_service_account_subject.py",
+        "//x/agentplane/egress/migrations/versions:0002_subject_kind.py",
     ],
     visibility = ["//x/agentplane/egress:__pkg__"],
 )

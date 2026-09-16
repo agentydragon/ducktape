@@ -26,7 +26,7 @@ from x.agentplane.egress.policy import STALE_AFTER_CYCLES, Index
 from x.agentplane.egress.proxy import EgressProxyServer, write_interception_ca
 from x.agentplane.egress.rules_api import RulesProjection, create_rules_app, serve_rules_api
 from x.agentplane.egress.upstream import UpstreamResolver
-from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
+from x.agentplane.sandbox_auth.http import WorkloadPrincipalAuthenticator
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 
 logger = logging.getLogger(__name__)
@@ -131,7 +131,7 @@ async def async_main(settings: Settings) -> None:
             stale_after_seconds=settings.resync_seconds * STALE_AFTER_CYCLES,
         )
         rules_app = create_rules_app(
-            SandboxPrincipalAuthenticator(
+            WorkloadPrincipalAuthenticator(
                 SandboxPrincipalResolver(
                     authentication=authentication,
                     core_v1=core_v1,

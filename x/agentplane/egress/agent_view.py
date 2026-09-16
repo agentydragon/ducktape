@@ -25,8 +25,9 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from x.agentplane.egress.policy import Index, SandboxCaller, subject_bindings
-from x.agentplane.egress.resources import EgressCredential, Rule, Sandbox, SchemeTokenTarget, Target, TargetMethod
+from x.agentplane.egress.policy import Caller, Index, subject_bindings
+from x.agentplane.egress.resources import EgressCredential, Rule, SchemeTokenTarget, Target, TargetMethod
+from x.agentplane.subjects import SubjectView
 
 
 class TargetView(BaseModel):
@@ -77,7 +78,7 @@ class AgentEgressView(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    sandbox: str
+    subject: SubjectView = Field(description="Who this view is of: the caller's kind and name.")
     policies: list[PolicyView] = Field(description="Granted by an active binding; empty means no egress.")
 
 
@@ -110,20 +111,18 @@ def _rule_view(index: Index, rule: Rule) -> RuleView:
     )
 
 
-def agent_view(index: Index, sandbox: Sandbox, now: datetime) -> AgentEgressView:
-    """The sandbox's own view, from the same bindings the decision reads.
+def agent_view(index: Index, caller: Caller, now: datetime) -> AgentEgressView:
+    """The caller's own view, from the same bindings the decision reads.
 
     Built from `subject_bindings`, so what it reports and what the proxy admits cannot drift: an
-    expired binding, a missing policy, or a revoked grant drops out of both at once.
-
-    Sandboxes only: a ServiceAccount subject reaches the proxy but has no route to this view yet, so
-    widening `AgentEgressView` is left to whatever surface serves it one.
+    expired binding, a missing policy, or a revoked grant drops out of both at once. A caller of
+    either kind reads its own view, and each sees only bindings naming its own kind.
     """
     return AgentEgressView(
-        sandbox=sandbox.metadata.name,
+        subject=caller.subject,
         policies=[
             PolicyView(name=policy.metadata.name, rules=[_rule_view(index, rule) for rule in policy.spec.rules])
-            for resolution in subject_bindings(index, SandboxCaller(sandbox), now)
+            for resolution in subject_bindings(index, caller, now)
             for policy in resolution.policies
         ],
     )

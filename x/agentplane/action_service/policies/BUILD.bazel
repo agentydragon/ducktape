@@ -60,6 +60,7 @@ py_library(
     deps = [
         ":kind",
         ":registry",
+        "//x/agentplane:subjects",
         "//x/agentplane/action_service:models",
         "@pypi//pydantic",
     ],

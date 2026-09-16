@@ -3,7 +3,7 @@
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import Boolean, DateTime, Index, Integer, Text, delete, func, select
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Index, Integer, Text, delete, func, select
 from sqlalchemy.dialects.postgresql import INET, insert
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
@@ -11,6 +11,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from x.agentplane.egress.decisions import DecisionRecord, Outcome, Phase
 from x.agentplane.egress.policy import DenyReason
+from x.agentplane.subjects import SubjectKind, SubjectView
 
 # gazelle:include_dep @pypi//asyncpg
 
@@ -22,7 +23,10 @@ class Base(DeclarativeBase):
 class DecisionRecordRow(Base):
     __tablename__ = "egress_decision"
     __table_args__ = (
-        Index("egress_decision_subject_recent", "sandbox", "decided_at", "event_id"),
+        # A name alone does not identify a subject -- a Sandbox and a ServiceAccount can share one --
+        # so both halves are stored, and the constraint keeps the pair from being half-written.
+        CheckConstraint("(subject_kind IS NULL) = (subject_name IS NULL)", name="egress_decision_subject_whole"),
+        Index("egress_decision_subject_recent", "subject_kind", "subject_name", "decided_at", "event_id"),
         Index("egress_decision_denials_recent", "outcome", "decided_at", "event_id"),
         Index("egress_decision_retention", "decided_at", "event_id"),
     )
@@ -31,9 +35,9 @@ class DecisionRecordRow(Base):
     decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     ingested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     producer_id: Mapped[UUID]
-    sandbox: Mapped[str | None] = mapped_column(Text)
-    service_account: Mapped[str | None] = mapped_column(Text)
-    sandbox_namespace: Mapped[str | None] = mapped_column(Text)
+    subject_kind: Mapped[str | None] = mapped_column(Text)
+    subject_name: Mapped[str | None] = mapped_column(Text)
+    subject_namespace: Mapped[str | None] = mapped_column(Text)
     sandbox_uid: Mapped[str | None] = mapped_column(Text)
     source_pod_uid: Mapped[str | None] = mapped_column(Text)
     connection_id: Mapped[str] = mapped_column(Text)
@@ -73,19 +77,24 @@ class DecisionStore:
     async def append(self, records: list[DecisionRecord]) -> None:
         values = []
         for record in records:
-            value = record.model_dump(exclude={"path", "at"})
+            value = record.model_dump(exclude={"path", "at", "subject"})
             value["decided_at"] = record.at
+            value["subject_kind"] = None if record.subject is None else record.subject.kind
+            value["subject_name"] = None if record.subject is None else record.subject.name
             values.append(value)
         async with self.engine.begin() as connection:
             await connection.execute(
                 insert(DecisionRecordRow).values(values).on_conflict_do_nothing(index_elements=["event_id"])
             )
 
-    async def recent(self, sandbox: str | None) -> list[DecisionRecord]:
+    async def recent(self, subject: SubjectView | None) -> list[DecisionRecord]:
+        """One subject's recent decisions, or -- for `None` -- the refusals that never authenticated."""
         query = (
             select(DecisionRecordRow)
             .where(
-                DecisionRecordRow.sandbox == sandbox, DecisionRecordRow.decided_at >= datetime.now(UTC) - self.retention
+                DecisionRecordRow.subject_kind == (None if subject is None else subject.kind),
+                DecisionRecordRow.subject_name == (None if subject is None else subject.name),
+                DecisionRecordRow.decided_at >= datetime.now(UTC) - self.retention,
             )
             .order_by(DecisionRecordRow.decided_at.desc(), DecisionRecordRow.event_id.desc())
             .limit(self.capacity)
@@ -97,9 +106,12 @@ class DecisionStore:
                 event_id=row.event_id,
                 producer_id=row.producer_id,
                 at=row.decided_at,
-                sandbox=row.sandbox,
-                service_account=row.service_account,
-                sandbox_namespace=row.sandbox_namespace,
+                subject=(
+                    None
+                    if row.subject_kind is None or row.subject_name is None
+                    else SubjectView(kind=SubjectKind(row.subject_kind), name=row.subject_name)
+                ),
+                subject_namespace=row.subject_namespace,
                 sandbox_uid=row.sandbox_uid,
                 source_pod_uid=row.source_pod_uid,
                 connection_id=row.connection_id,

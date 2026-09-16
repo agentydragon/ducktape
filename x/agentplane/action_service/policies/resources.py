@@ -19,6 +19,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Discriminator, Field,
 from x.agentplane.action_service.models import NamespacedName, ServiceAccountRef
 from x.agentplane.action_service.policies.kind import Spec
 from x.agentplane.action_service.policies.registry import Policy
+from x.agentplane.subjects import subject_kind
 
 GROUP = "agentplane.allegedly.works"
 VERSION = "v1alpha1"
@@ -111,24 +112,9 @@ class SandboxSubject(Spec):
     sandbox: SandboxRef
 
 
-def _subject_kind(value: Any) -> str | None:
-    """Which one-key form the subject takes; both keys at once fails as an extra field on the chosen one."""
-    if isinstance(value, ServiceAccountSubject):
-        return "serviceAccount"
-    if isinstance(value, SandboxSubject):
-        return "sandbox"
-    if isinstance(value, dict):
-        for key in ("serviceAccount", "service_account"):
-            if key in value:
-                return "serviceAccount"
-        if "sandbox" in value:
-            return "sandbox"
-    return None
-
-
 Subject = Annotated[
     Annotated[ServiceAccountSubject, Tag("serviceAccount")] | Annotated[SandboxSubject, Tag("sandbox")],
-    Discriminator(_subject_kind),
+    Discriminator(subject_kind),
 ]
 
 

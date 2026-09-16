@@ -11,8 +11,9 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Request, status
 
 from x.agentplane.egress.agent_view import AgentEgressView, agent_view
-from x.agentplane.egress.policy import Index
-from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
+from x.agentplane.egress.policy import Index, SandboxCaller, ServiceAccountCaller
+from x.agentplane.sandbox_auth.http import WorkloadPrincipalAuthenticator
+from x.agentplane.sandbox_auth.principal import SandboxPrincipal, WorkloadPrincipal
 
 HOST = "agentplane-egress.agentplane-staging.svc.cluster.local"
 PATH = "/v1/rules"
@@ -20,24 +21,36 @@ URL = f"http://{HOST}{PATH}"
 
 
 class SandboxNotCurrentError(Exception):
-    """The authenticated Sandbox no longer exists under the same UID in the policy index."""
+    """The authenticated Sandbox no longer exists under the same UID in the policy index.
+
+    Only a Sandbox caller can hit this: a ServiceAccount subject has no index object to go stale.
+    """
 
 
 class RulesProjection:
-    """Project one current Sandbox's effective rules without exposing source resources."""
+    """Project one caller's effective rules without exposing source resources."""
 
     def __init__(self, index: Index, clock: Callable[[], datetime] = lambda: datetime.now(UTC)) -> None:
         self._index = index
         self._clock = clock
 
-    def for_sandbox(self, sandbox_name: str, sandbox_uid: str) -> AgentEgressView:
-        sandbox = self._index.sandboxes.get(sandbox_name)
-        if sandbox is None or sandbox.metadata.uid != sandbox_uid:
-            raise SandboxNotCurrentError(sandbox_name)
-        return agent_view(self._index, sandbox, self._clock())
+    def for_caller(self, principal: WorkloadPrincipal) -> AgentEgressView:
+        """The view of whichever subject the bearer proved.
+
+        A Sandbox principal must still be in the index under the same UID, as the decision path
+        requires; a workload principal is its ServiceAccount, and there is nothing to re-check.
+        """
+        if not isinstance(principal, SandboxPrincipal):
+            return agent_view(
+                self._index, ServiceAccountCaller(service_account_name=principal.service_account_name), self._clock()
+            )
+        sandbox = self._index.sandboxes.get(principal.sandbox_name)
+        if sandbox is None or sandbox.metadata.uid != principal.sandbox_uid:
+            raise SandboxNotCurrentError(principal.sandbox_name)
+        return agent_view(self._index, SandboxCaller(sandbox), self._clock())
 
 
-def create_rules_app(authenticate: SandboxPrincipalAuthenticator, projection: RulesProjection) -> FastAPI:
+def create_rules_app(authenticate: WorkloadPrincipalAuthenticator, projection: RulesProjection) -> FastAPI:
     """Create the ordinary destination API; request metadata is never an identity authority."""
     app = FastAPI(title="agentplane-egress-rules")
 
@@ -45,7 +58,7 @@ def create_rules_app(authenticate: SandboxPrincipalAuthenticator, projection: Ru
     async def rules(request: Request) -> AgentEgressView:
         verified = await authenticate(request)
         try:
-            return projection.for_sandbox(verified.sandbox_name, verified.sandbox_uid)
+            return projection.for_caller(verified)
         except SandboxNotCurrentError as error:
             # Match the authenticator's deliberately generic response. The object name and UID may
             # have changed after TokenReview/live Pod resolution; neither belongs in the response.

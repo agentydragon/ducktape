@@ -1,4 +1,4 @@
-"""The cluster-internal read side: recent decisions per sandbox, and health."""
+"""The cluster-internal read side: recent decisions per subject, and health."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from more_itertools import one
 
 from x.agentplane.egress.decision_log import DB_ERRORS, DecisionLog
 from x.agentplane.egress.policy import STALE_AFTER_CYCLES, Index, resolve_binding
+from x.agentplane.subjects import SubjectKind, SubjectView
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +23,13 @@ _CLOCK: web.AppKey[Callable[[], datetime]] = web.AppKey("clock")
 
 
 async def _decisions(request: web.Request) -> web.Response:
+    """`?kind=&name=` selects one subject; neither selects the refusals that never authenticated."""
+    kind, name = request.query.get("kind"), request.query.get("name")
+    if (kind is None) != (name is None):
+        raise web.HTTPBadRequest(reason="kind and name are given together or not at all")
+    subject = None if kind is None or name is None else SubjectView(kind=SubjectKind(kind), name=name)
     try:
-        decisions = await request.app[_DECISION_LOG].store.recent(request.query.get("sandbox"))
+        decisions = await request.app[_DECISION_LOG].store.recent(subject)
     except DB_ERRORS as error:
         logger.warning("decision history read failed (%s)", type(error).__name__)
         return web.json_response({"error": "decision-history-unavailable"}, status=503)

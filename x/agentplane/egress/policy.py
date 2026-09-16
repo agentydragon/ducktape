@@ -35,6 +35,7 @@ from x.agentplane.egress.resources import (
     ServiceAccountSubject,
     Subject,
 )
+from x.agentplane.subjects import SubjectKind, SubjectView
 
 CONNECT = "CONNECT"
 WATCHED_KINDS = frozenset({POLICIES_PLURAL, BINDINGS_PLURAL, CREDENTIALS_PLURAL, SANDBOXES_PLURAL, "secrets"})
@@ -116,6 +117,10 @@ class SandboxCaller:
     sandbox: Sandbox
 
     @property
+    def subject(self) -> SubjectView:
+        return SubjectView(kind=SubjectKind.SANDBOX, name=self.sandbox.metadata.name)
+
+    @property
     def label(self) -> str:
         return f"Sandbox {self.sandbox.metadata.name}"
 
@@ -125,6 +130,10 @@ class ServiceAccountCaller:
     """A request from a Pod running as this ServiceAccount, owned by no Sandbox."""
 
     service_account_name: str
+
+    @property
+    def subject(self) -> SubjectView:
+        return SubjectView(kind=SubjectKind.SERVICE_ACCOUNT, name=self.service_account_name)
 
     @property
     def label(self) -> str:

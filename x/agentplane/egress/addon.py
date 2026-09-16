@@ -44,6 +44,7 @@ from x.agentplane.egress.policy import (
     evaluate,
 )
 from x.agentplane.egress.upstream import Pin, UpstreamRefusedError, UpstreamResolver
+from x.agentplane.subjects import SubjectView
 
 logger = logging.getLogger(__name__)
 
@@ -218,18 +219,15 @@ class EgressAddon:
             path=None if request.method == CONNECT else request.path,
             headers={name.lower(): request.headers.get_all(name) for name in set(request.headers.keys())},
         )
-        sandbox_name: str | None = None
+        subject: SubjectView | None = None
         sandbox_uid: str | None = None
-        service_account_name: str | None = None
         authenticated_workload: AuthenticatedWorkloadContext | None = None
         pin: Pin | None = None
         decision: Decision
         try:
             caller, authenticated_workload = await self._authenticate(flow)
-            if isinstance(caller, SandboxCaller):
-                sandbox_name, sandbox_uid = caller.sandbox.metadata.name, caller.sandbox.metadata.uid
-            else:
-                service_account_name = caller.service_account_name
+            subject = caller.subject
+            sandbox_uid = caller.sandbox.metadata.uid if isinstance(caller, SandboxCaller) else None
             if not self._index.available(self._clock(), stale_after_seconds=self._stale_after_seconds):
                 raise IdentityRejectedError(DenyReason.UNAVAILABLE, "enforcement index unavailable")
             decision = evaluate(
@@ -266,15 +264,14 @@ class EgressAddon:
             decision = Denied(DenyReason.UNAVAILABLE)
         common = {
             "at": self._clock(),
-            "sandbox": sandbox_name,
-            "service_account": service_account_name,
+            "subject": subject,
             "method": egress.method[:32],
             "host": egress.host.lower()[:253],
             "port": egress.port,
             "producer_id": self._producer_id,
             "connection_id": flow.client_conn.id,
             "phase": Phase.CONNECT if egress.method == CONNECT else Phase.HTTP_REQUEST,
-            "sandbox_namespace": self._verifier.namespace if sandbox_name is not None else None,
+            "subject_namespace": self._verifier.namespace if subject is not None else None,
             "sandbox_uid": sandbox_uid,
             "source_pod_uid": authenticated_workload.pod_uid if authenticated_workload is not None else None,
         }

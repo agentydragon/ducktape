@@ -33,6 +33,7 @@ from x.agentplane.egress.resources import (
     Target,
     TargetMethod,
 )
+from x.agentplane.subjects import SubjectKind, SubjectView
 
 # Flux stamps its inventory labels on everything it applies (cluster/k8s/agentplane-staging/egress);
 # nothing at runtime deletes such a binding, since the next reconcile would apply it again.
@@ -138,10 +139,7 @@ class BindingView(BaseModel):
 
     name: str
     from_git: bool = Field(description="Flux applied it; removing it is git's.")
-    subjects: list[str] = Field(
-        description="The subjects this binding names: a Sandbox by name, a ServiceAccount as "
-        "`serviceaccount/<name>` so the two kinds cannot be read as one."
-    )
+    subjects: list[SubjectView] = Field(description="The subjects this binding names, each with its kind.")
     expires_at: datetime | None = None
     policies: list[PolicyView] = Field(description="The named policies that exist, in the binding's order.")
     missing_policies: list[str] = Field(description="Names in the binding that no EgressPolicy answers to.")
@@ -326,20 +324,19 @@ def _rule_view(rule: Rule, credentials: dict[str, CredentialView]) -> RuleView:
     )
 
 
-def _subject_name(subject: Subject) -> str:
-    """A Sandbox keeps its bare name; a ServiceAccount is qualified, so the two never read alike."""
+def _subject_view(subject: Subject) -> SubjectView:
     match subject:
         case SandboxSubject():
-            return subject.sandbox.name
+            return SubjectView(kind=SubjectKind.SANDBOX, name=subject.sandbox.name)
         case ServiceAccountSubject():
-            return f"serviceaccount/{subject.service_account.name}"
+            return SubjectView(kind=SubjectKind.SERVICE_ACCOUNT, name=subject.service_account.name)
 
 
 def _binding_view(binding: EgressBinding, policies: dict[str, PolicyView]) -> BindingView:
     return BindingView(
         name=binding.metadata.name,
         from_git=FLUX_KUSTOMIZATION_LABEL in binding.metadata.labels,
-        subjects=[_subject_name(subject) for subject in binding.spec.subjects],
+        subjects=[_subject_view(subject) for subject in binding.spec.subjects],
         expires_at=binding.spec.expires_at,
         policies=[policies[name] for name in binding.spec.policies if name in policies],
         missing_policies=[name for name in binding.spec.policies if name not in policies],

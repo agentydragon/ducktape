@@ -101,6 +101,23 @@ class SandboxPrincipalResolver:
         principal, _ = await self.resolve_with_pod(token)
         return principal
 
+    async def resolve_caller(self, token: str) -> WorkloadPrincipal:
+        """The strongest identity this bearer proves, for a caller that accepts either.
+
+        A `SandboxPrincipal` where a live Sandbox controls the Pod, a plain `WorkloadPrincipal`
+        otherwise -- so a caller distinguishes the two with `isinstance` rather than by asking twice.
+        """
+        principal, _ = await self.resolve_caller_with_pod(token)
+        return principal
+
+    async def resolve_caller_with_pod(self, token: str) -> tuple[WorkloadPrincipal, k8s_client.V1Pod]:
+        """`resolve_caller`, also returning the Pod for source-address correlation."""
+        workload, pod = await self.resolve_workload_with_pod(token)
+        owner = sandbox_controller(pod)
+        if owner is None:
+            return workload, pod
+        return self._owned_by(workload, owner), pod
+
     async def resolve_with_pod(self, token: str) -> tuple[SandboxPrincipal, k8s_client.V1Pod]:
         """Also return the authoritative live Pod for egress-only source-address correlation."""
         workload, pod = await self.resolve_workload_with_pod(token)
@@ -109,17 +126,18 @@ class SandboxPrincipalResolver:
             raise SandboxPrincipalRejectedError(
                 RejectionReason.SANDBOX_UNKNOWN, f"Pod {workload.pod_name} is not controlled by exactly one Sandbox"
             )
-        return (
-            SandboxPrincipal(
-                namespace=workload.namespace,
-                service_account_name=workload.service_account_name,
-                service_account_subject=workload.service_account_subject,
-                pod_name=workload.pod_name,
-                pod_uid=workload.pod_uid,
-                sandbox_name=owner.name,
-                sandbox_uid=owner.uid,
-            ),
-            pod,
+        return self._owned_by(workload, owner), pod
+
+    @staticmethod
+    def _owned_by(workload: WorkloadPrincipal, owner: k8s_client.V1OwnerReference) -> SandboxPrincipal:
+        return SandboxPrincipal(
+            namespace=workload.namespace,
+            service_account_name=workload.service_account_name,
+            service_account_subject=workload.service_account_subject,
+            pod_name=workload.pod_name,
+            pod_uid=workload.pod_uid,
+            sandbox_name=owner.name,
+            sandbox_uid=owner.uid,
         )
 
     async def resolve_workload_with_pod(self, token: str) -> tuple[WorkloadPrincipal, k8s_client.V1Pod]:
