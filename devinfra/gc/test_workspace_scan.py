@@ -1,6 +1,7 @@
 import hashlib
 import os
 import subprocess
+import threading
 from pathlib import Path
 
 import pytest
@@ -86,6 +87,40 @@ def test_branch_follows_its_holding_worktree(repo: Path, proc: Path, mountinfo: 
     # The default branch, checked out on the main worktree, is always kept.
     assert isinstance(branches["main"], RetainedBranch)
     assert branches["main"].reason == "default branch"
+
+
+def test_scan_workspace_reports_progress(repo: Path, proc: Path, mountinfo: Path) -> None:
+    """The `progress` callback drives the CLI's live indicator (workspace_gc._ProgressReporter).
+
+    Branches classify from a thread pool, so this pins the guarantee that matters for a
+    concurrent reporter: every completion still reports a distinct `done` count that reaches
+    `total`, whichever worker reports it.
+    """
+    _add(repo, "wt_a", "branch_a")
+    _add(repo, "wt_b", "branch_b")
+
+    lock = threading.Lock()
+    calls: list[tuple[str, int, int]] = []
+
+    def progress(phase: str, done: int, total: int) -> None:
+        with lock:
+            calls.append((phase, done, total))
+
+    workspace_scan.scan_workspace(
+        repo,
+        main="main",
+        default_branch="main",
+        pr_states={},
+        proc_root=proc,
+        mountinfo_path=mountinfo,
+        progress=progress,
+    )
+
+    worktree_calls = [(done, total) for phase, done, total in calls if phase == "worktrees"]
+    branch_calls = [(done, total) for phase, done, total in calls if phase == "branches"]
+    assert worktree_calls[-1] == (2, 2)  # wt_a, wt_b
+    assert branch_calls[-1] == (3, 3)  # main, branch_a, branch_b
+    assert sorted(done for done, _ in branch_calls) == [1, 2, 3]
 
 
 def _make_base(root: Path, workspace: Path) -> Path:
