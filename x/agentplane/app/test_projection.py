@@ -61,6 +61,7 @@ MODEL = command_pb2.Command(command_id="c-model", change_model=command_pb2.Chang
 INTERRUPT = command_pb2.Command(command_id="c-stop", interrupt_turn=command_pb2.InterruptTurn(turn_id="turn-1"))
 
 
+@pytest.fixture
 def script() -> list[event_log_pb2.EventEntry]:
     """One turn's worth of every observation the fold models, in a plausible order."""
     return [
@@ -143,26 +144,24 @@ def replay(entries: list[event_log_pb2.EventEntry], boundaries: list[int]) -> Pr
     return client
 
 
-def test_batches_reach_the_same_state_as_a_whole_fold() -> None:
-    entries = script()
-    whole = project(entries)
-    for split in range(len(entries) + 1):
-        assert replay(entries, [split, len(entries) - split]) == whole, f"{split=}"
+def test_batches_reach_the_same_state_as_a_whole_fold(script: list[event_log_pb2.EventEntry]) -> None:
+    whole = project(script)
+    for split in range(len(script) + 1):
+        assert replay(script, [split, len(script) - split]) == whole, f"{split=}"
 
     generator = random.Random(20260916)
     for _ in range(200):
-        boundaries, remaining = [], len(entries)
+        boundaries, remaining = [], len(script)
         while remaining:
             size = generator.randint(1, remaining)
             boundaries.append(size)
             remaining -= size
-        assert replay(entries, boundaries) == whole, f"{boundaries=}"
+        assert replay(script, boundaries) == whole, f"{boundaries=}"
 
 
-def test_a_batch_carries_only_what_changed_in_its_interval() -> None:
-    entries = script()
-    before, _ = advance(EMPTY, entries[:10])
-    _, batch = advance(before, entries[10:14])
+def test_a_batch_carries_only_what_changed_in_its_interval(script: list[event_log_pb2.EventEntry]) -> None:
+    before, _ = advance(EMPTY, script[:10])
+    _, batch = advance(before, script[10:14])
 
     assert batch.after_cursor == 10
     assert batch.through_cursor == 14
@@ -171,8 +170,10 @@ def test_a_batch_carries_only_what_changed_in_its_interval() -> None:
     assert batch.segments[0].revision_cursor == 14
 
 
-def test_a_native_only_interval_advances_coverage_without_inventing_segments() -> None:
-    before, _ = advance(EMPTY, script()[:4])
+def test_a_native_only_interval_advances_coverage_without_inventing_segments(
+    script: list[event_log_pb2.EventEntry],
+) -> None:
+    before, _ = advance(EMPTY, script[:4])
     after, batch = advance(
         before, [entry(cursor, event_pb2.Event(native=event_pb2.Native(line="{}"))) for cursor in (5, 6, 7)]
     )
@@ -182,24 +183,24 @@ def test_a_native_only_interval_advances_coverage_without_inventing_segments() -
     assert after.segments == before.segments
 
 
-def test_streaming_text_is_replaced_by_the_authoritative_completion() -> None:
-    item = by_anchor(project(script()))[6]
+def test_streaming_text_is_replaced_by_the_authoritative_completion(script: list[event_log_pb2.EventEntry]) -> None:
+    item = by_anchor(project(script))[6]
     assert isinstance(item, Item)
     assert item.item_id == "i-1"
     assert item.text == "thinking"
     assert item.completion == TextOutcome(text="thinking")
 
 
-def test_an_incomplete_item_carries_no_completion() -> None:
-    streaming = project(script()[:13]).segments
+def test_an_incomplete_item_carries_no_completion(script: list[event_log_pb2.EventEntry]) -> None:
+    streaming = project(script[:13]).segments
     tool = streaming[-1].content
     assert isinstance(tool, Item)
     assert tool.output == "partial"
     assert tool.completion is None
 
 
-def test_a_completed_tool_keeps_its_result() -> None:
-    tool = by_anchor(project(script()))[10]
+def test_a_completed_tool_keeps_its_result(script: list[event_log_pb2.EventEntry]) -> None:
+    tool = by_anchor(project(script))[10]
     assert isinstance(tool, Item)
     assert tool.item_id == "i-2"
     assert tool.completion == ToolOutcome(output="whole output", succeeded=True)
@@ -233,8 +234,10 @@ def test_an_item_anchors_at_its_first_mention_not_its_start_event() -> None:
     )
 
 
-def test_a_turn_outcome_anchors_at_the_terminal_event_after_partial_output() -> None:
-    projected = project(script())
+def test_a_turn_outcome_anchors_at_the_terminal_event_after_partial_output(
+    script: list[event_log_pb2.EventEntry],
+) -> None:
+    projected = project(script)
     anchors = by_anchor(projected)
     turn = anchors[4]
     assert isinstance(turn, Turn)
@@ -294,14 +297,13 @@ def test_coalesced_input_keeps_every_origin_command() -> None:
     assert [summary.outcome for summary in projected.commands] == [Effected(3), Effected(3)]
 
 
-def test_a_queued_model_change_stays_pending_until_its_effect() -> None:
-    entries = script()
-    queued = project(entries[:16])
+def test_a_queued_model_change_stays_pending_until_its_effect(script: list[event_log_pb2.EventEntry]) -> None:
+    queued = project(script[:16])
     assert [(s.command_id, s.outcome) for s in queued.commands if s.command_id == "c-model"] == [("c-model", Pending())]
     # The picker must not move on admission alone.
     assert queued.controls.applied_model == "first-model"
 
-    effected = project(entries[:17])
+    effected = project(script[:17])
     assert [s.outcome for s in effected.commands if s.command_id == "c-model"] == [Effected(17)]
     assert effected.controls.applied_model == "next-model"
 
@@ -359,8 +361,8 @@ def test_an_outcome_without_its_admission_is_dropped_rather_than_fabricated() ->
     assert contents(projected) == [CommandReceipt(command_id="c-gone")]
 
 
-def test_harness_lifecycle_drives_the_controls() -> None:
-    running = project(script()[:1])
+def test_harness_lifecycle_drives_the_controls(script: list[event_log_pb2.EventEntry]) -> None:
+    running = project(script[:1])
     assert running.controls.harness_state == HarnessState.RUNNING
     assert contents(running) == [Lifecycle(state=HarnessState.RUNNING, exit_code=0, stopped_by_command_id="")]
 
@@ -383,9 +385,9 @@ def test_a_command_caused_exit_settles_its_command() -> None:
     assert summary.outcome == Effected(2)
 
 
-def test_model_effects_keep_their_own_segments() -> None:
+def test_model_effects_keep_their_own_segments(script: list[event_log_pb2.EventEntry]) -> None:
     """Current model state cannot stand in for the historical changes that produced it."""
-    projected = project(script())
+    projected = project(script)
     effects = [segment.content for segment in projected.segments if isinstance(segment.content, ModelEffect)]
     assert effects == [ModelEffect(command_id="c-model", previous_model="first-model", model="next-model")]
 
@@ -401,15 +403,14 @@ def test_an_uninterpreted_observation_halts_the_fold() -> None:
     assert raised.value.cursor == 2
 
 
-def test_entries_must_continue_the_projection() -> None:
-    projected = project(script()[:5])
+def test_entries_must_continue_the_projection(script: list[event_log_pb2.EventEntry]) -> None:
+    projected = project(script[:5])
     with pytest.raises(ValueError, match="not after the projected"):
         advance(projected, [entry(3, event_pb2.Event(native=event_pb2.Native(line="{}")))])
 
 
-def test_a_batch_must_continue_the_client() -> None:
-    entries = script()
-    _, batch = advance(project(entries[:5]), entries[5:10])
+def test_a_batch_must_continue_the_client(script: list[event_log_pb2.EventEntry]) -> None:
+    _, batch = advance(project(script[:5]), script[5:10])
     with pytest.raises(ValueError, match="does not continue"):
         apply_batch(EMPTY, batch)
 
