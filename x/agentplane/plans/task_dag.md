@@ -643,6 +643,15 @@ knows the shape: the Action Service decides for both `SandboxCaller` and `Servic
 external Connection acting as a labeled ServiceAccount" (`action_service/models.py`). `Subject` being
 a one-field wrapper means a second subject kind is additive rather than a redesign.
 
+**Action policy CRs already name ServiceAccounts; egress does not.** `ActionPolicyBinding.spec.subject`
+is already a discriminated union of `ServiceAccountSubject | SandboxSubject`, keyed on which one-key
+form is present (`action_service/policies/resources.py`). Egress's `Subject` is still the single
+field `sandbox`. So this is not a new concept in two places -- it is egress taking the shape actions
+already uses, with the same `serviceAccount` key, so an operator writing either CR sees one
+vocabulary. Two details to settle while doing it: the two packages define their own `SandboxRef`
+and actions' pins a `uid` ("a binding whose Sandbox is gone is inert") where egress's is name-only,
+and `ServiceAccountRef` would need a home egress can reach without depending on the Action Service.
+
 **Decided: a dedicated Kubernetes ServiceAccount is the identity.** The app Pod runs as `default`
 today -- only the sshpiper Deployment names one -- so this is an addition rather than a change, and
 most of the verification already exists. `sandbox_auth/principal.py` already TokenReviews a
