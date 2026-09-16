@@ -6,6 +6,35 @@ runner durability, command semantics, and the distinction between conversation,
 pending commands, and operational state. The schemas below select API shapes;
 they are not checked-in executable protobuf definitions yet.
 
+## Requirements
+
+What the protocol must do, independent of how. Each is falsifiable, and the
+[acceptance matrix](#failure-and-acceptance-matrix) says how each is observed. The
+decisions below are answers to these; where a decision stops serving one, the decision
+is what changes.
+
+1. **Opening is bounded.** What opening a Thread transfers and processes does not grow
+   with the Thread's length. A month-old Thread opens like a new one.
+2. **A screenful is enough to work.** What arrives first is the part of the conversation
+   the reader is looking at, the current controls, and the pending queue — enough to read
+   it and to submit a command. Older history and exact evidence load on demand, and never
+   load in the background merely because a tab stayed open.
+3. **Values stream as they grow.** An assistant message, a reasoning step, and a tool
+   call's arguments and output appear while they are being produced, not only once they
+   complete. Following a growing value costs what was added to it, not its size on every
+   update — otherwise the view costs more than the raw Events it replaces.
+4. **Following never reloads.** A reader holding a view receives what changed and never
+   re-reads the Thread to stay current. After a gap it resumes from the position it
+   holds, or is told explicitly that it must bootstrap again.
+5. **A command's fate is observable.** A command can be submitted and what became of it —
+   admitted, taken effect, failed, or not yet observed — read afterwards, including across
+   a lost response or a reload, without downloading history to find it.
+6. **Every step is consistent.** A bootstrap plus every update that follows equals what a
+   rebuild at the same position produces. No update leaves a reader holding a state the
+   log never passed through.
+7. **Nothing is lost underneath.** Everything the view omits stays exactly retrievable.
+   The derived view is a convenience over the archive, never a replacement for it.
+
 ## Decisions
 
 - Keep the runner's sole command queue and the app's lossless copy of its Events.
