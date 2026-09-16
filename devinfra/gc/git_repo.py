@@ -10,12 +10,15 @@ only linked-worktree names, not the main one or branches). Content queries use p
 
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
 import pygit2
+
+logger = logging.getLogger(__name__)
 
 
 class GitError(RuntimeError):
@@ -113,7 +116,16 @@ def content_in_main(pg: pygit2.Repository, head: pygit2.Oid, main: str) -> bool:
         return False
     if base == head:
         return True
-    index = pg.merge_commits(main_oid, head)
+    try:
+        index = pg.merge_commits(main_oid, head)
+    except KeyError:
+        # A partial clone (`blob:none`) may not have fetched every blob this three-way tree
+        # merge touches, and libgit2 has no lazy-fetch fallback for that — unlike the `git`
+        # CLI (which `patches_landed_in_main` shells out to), it never fetches missing objects
+        # from the promisor remote on demand. Treat as "can't prove it's already in main"
+        # rather than crash; `patches_landed_in_main` can still recognize the squash-merge.
+        logger.warning("content_in_main: missing objects to merge %s into %s; treating as unmerged", head, main)
+        return False
     if index.conflicts is not None:  # real divergence
         return False
     return index.write_tree(pg) == main_commit.tree.id

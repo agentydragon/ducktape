@@ -70,6 +70,24 @@ def test_squash_merged_branch_is_prunable(repo: Path) -> None:
     assert isinstance(_classify(repo, "feature"), bg.PrunableBranch)
 
 
+def test_squash_merged_branch_survives_missing_blob(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # A partial clone (`blob:none`) may not have fetched every blob the pygit2 three-way merge
+    # in content_in_main touches, and libgit2 has no lazy-fetch fallback for that (unlike the
+    # `git` CLI `patches_landed_in_main` shells out to). Simulate the missing-object error and
+    # check classification still lands on the git-CLI fallback instead of crashing.
+    wt = _worktree(repo, "wt", "feature")
+    _commit(wt, "shared", "same\n", "add on branch")
+    _commit(repo, "shared", "same\n", "same change squashed onto main")
+
+    def _raise_missing_object(*_args: object, **_kwargs: object) -> pygit2.Index:
+        raise KeyError("object not found - no match for id deadbeef")
+
+    monkeypatch.setattr(pygit2.Repository, "merge_commits", _raise_missing_object)
+    result = _classify(repo, "feature")
+    assert isinstance(result, bg.PrunableBranch)
+    assert "equivalent already on main" in result.reason
+
+
 def test_unique_branch_no_pr_is_review(repo: Path) -> None:
     wt = _worktree(repo, "wt", "feature")
     _commit(wt, "novel", "unique\n", "unmerged work")
