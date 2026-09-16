@@ -24,6 +24,18 @@ RETAINED_QUEUE_SECOND = "Reply only after seeing RETAINED_QUEUE_CRASH_SECOND."
 RETAINED_QUEUE_RECOVERY = "Reply with exactly: RETAINED_QUEUE_CRASH_RECOVERY_OK"
 
 
+async def _seed_crashed_session(claude: ClaudeHarness, anthropic_messages: AnthropicMessages) -> wire.ResultFrame:
+    """Complete one turn under CRASHED_SESSION for the crash/resume tests below to build on."""
+    async with claude.start(anthropic_messages, session_id=CRASHED_SESSION) as seeded:
+        seed_prompt = await seeded.send(SEED_INPUT)
+        async with await anthropic_messages.await_next_request() as exchange:
+            await exchange.send(*sse.message_stream([sse.Text("CRASH_RESUME_SEED_OK")], model=MODEL).events)
+        seed = await seed_prompt.result()
+    assert seed.result == "CRASH_RESUME_SEED_OK"
+    assert seed.session_id == CRASHED_SESSION
+    return seed
+
+
 async def test_baseline_turn(claude: ClaudeHarness, anthropic_messages: AnthropicMessages) -> None:
     async with claude.start(anthropic_messages) as run:
         prompt = await run.send("Reply with exactly: CAPTURE_BASELINE_OK")
@@ -81,12 +93,7 @@ async def test_resume_after_an_interrupted_partial_turn_replays_only_completed_m
     request is the native boundary the runner can rely on, so assert its typed Anthropic context
     rather than inferring durability from the stream-json terminal frame.
     """
-    async with claude.start(anthropic_messages, session_id=CRASHED_SESSION) as seeded:
-        seed_prompt = await seeded.send(SEED_INPUT)
-        async with await anthropic_messages.await_next_request() as exchange:
-            await exchange.send(*sse.message_stream([sse.Text("CRASH_RESUME_SEED_OK")], model=MODEL).events)
-        seed = await seed_prompt.result()
-        assert seed.session_id == CRASHED_SESSION
+    await _seed_crashed_session(claude, anthropic_messages)
 
     async with claude.start(anthropic_messages, resume_id=CRASHED_SESSION) as interrupted:
         prompt = await interrupted.send(INTERRUPTED_RESUME_INPUT)
@@ -133,11 +140,7 @@ async def test_resume_after_interrupt_then_crash_drops_retained_queued_inputs(
     interruption (where survivors later coalesce) and from a raw crash (where no interrupt named
     the still-queued UUIDs).
     """
-    async with claude.start(anthropic_messages, session_id=CRASHED_SESSION) as seeded:
-        seed_prompt = await seeded.send(SEED_INPUT)
-        async with await anthropic_messages.await_next_request() as exchange:
-            await exchange.send(*sse.message_stream([sse.Text("CRASH_RESUME_SEED_OK")], model=MODEL).events)
-        assert (await seed_prompt.result()).session_id == CRASHED_SESSION
+    await _seed_crashed_session(claude, anthropic_messages)
 
     async with claude.start(anthropic_messages, resume_id=CRASHED_SESSION, replay_user_messages=True) as interrupted:
         active = await interrupted.send("Keep this turn active until the process is killed.")
@@ -194,14 +197,7 @@ async def test_resume_after_crash_replays_completed_history_but_drops_active_and
     claude: ClaudeHarness, anthropic_messages: AnthropicMessages
 ) -> None:
     """A killed resumed process retains prior durable history, not its active turn or queue."""
-    async with claude.start(anthropic_messages, session_id=CRASHED_SESSION) as seeded:
-        prompt = await seeded.send(SEED_INPUT)
-        async with await anthropic_messages.await_next_request() as exchange:
-            stream = sse.message_stream([sse.Text("CRASH_RESUME_SEED_OK")], model=MODEL)
-            await exchange.send(*stream.events)
-        seed = await prompt.result()
-        assert seed.result == "CRASH_RESUME_SEED_OK"
-        assert seed.session_id == CRASHED_SESSION
+    await _seed_crashed_session(claude, anthropic_messages)
 
     async with claude.start(anthropic_messages, resume_id=CRASHED_SESSION, replay_user_messages=True) as first:
         await first.send(IN_FLIGHT_INPUT)

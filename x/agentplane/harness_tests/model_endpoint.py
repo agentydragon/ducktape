@@ -39,6 +39,17 @@ class SseEvent:
 
 
 @dataclass(frozen=True)
+class EventStream:
+    """A complete scripted SSE response, truncatable to simulate a stream lost mid-flight."""
+
+    events: tuple[SseEvent, ...]
+
+    def through(self, kind: str) -> EventStream:
+        index = next(index for index, event in enumerate(self.events) if event.kind == kind)
+        return EventStream(self.events[: index + 1])
+
+
+@dataclass(frozen=True)
 class _Send:
     event: SseEvent
     complete: asyncio.Future[None]

@@ -17,12 +17,6 @@ REDISPATCH_INPUT = "Reply with exactly: CODEX_CRASH_WINDOW_REDISTPATCH"
 INTERRUPTED_RESUME_INPUT = "Reply with exactly: CODEX_INTERRUPTED_RESUME_INPUT"
 INTERRUPTED_RESUME_PARTIAL = "CODEX_INTERRUPTED_RESUME_PARTIAL"
 INTERRUPTED_RESUME_RECOVERY = "Reply with exactly: CODEX_INTERRUPTED_RESUME_RECOVERY_OK"
-INTERRUPTED_TURN_MARKER = (
-    "<turn_aborted>\n"
-    "The user interrupted the previous turn on purpose. Any running unified exec processes may still be running "
-    "in the background. If any tools/commands were aborted, they may have partially executed.\n"
-    "</turn_aborted>"
-)
 
 
 async def test_baseline_turn(codex: CodexHarness, openai_responses: OpenAIResponses) -> None:
@@ -141,7 +135,7 @@ async def test_resume_after_an_interrupted_partial_turn_keeps_the_user_item_not_
             assert [message.text for message in replay.messages("user")] == [
                 "Reply with exactly: CODEX_INTERRUPTED_RESUME_SEED_OK",
                 INTERRUPTED_RESUME_INPUT,
-                INTERRUPTED_TURN_MARKER,
+                frames.INTERRUPTED_TURN_MARKER,
                 INTERRUPTED_RESUME_RECOVERY,
             ]
             assert [message.text for message in replay.messages("assistant")] == ["CODEX_INTERRUPTED_RESUME_SEED_OK"]

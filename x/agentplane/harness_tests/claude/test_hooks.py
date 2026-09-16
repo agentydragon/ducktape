@@ -36,7 +36,7 @@ async def test_pretooluse_allow_lets_the_tool_run(claude: ClaudeHarness, anthrop
     captured = run.native_frames()
     frames.assert_success(captured, "PROBE_DONE")
 
-    pretooluse = [cb for cb in frames.hook_callbacks(captured) if cb.input.get("hook_event_name") == "PreToolUse"]
+    pretooluse = frames.pretooluse_callbacks(captured)
     assert len(pretooluse) == 1
     assert pretooluse[0].input.get("tool_name") == "Bash"
     # A PreToolUse hook's explicit decision (allow or deny) supersedes the permission prompt
@@ -66,7 +66,7 @@ async def test_pretooluse_deny_blocks_the_tool_and_the_model_sees_why(
     captured = run.native_frames()
     frames.assert_success(captured, "HOOK_DENIED_OBSERVED")
 
-    pretooluse = [cb for cb in frames.hook_callbacks(captured) if cb.input.get("hook_event_name") == "PreToolUse"]
+    pretooluse = frames.pretooluse_callbacks(captured)
     assert len(pretooluse) == 1
     assert pretooluse[0].input.get("tool_name") == "Bash"
     assert frames.permission_prompts(captured) == []
