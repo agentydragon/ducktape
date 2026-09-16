@@ -67,6 +67,7 @@ flowchart TB
     DT["P2 deferred<br/>driver-provided declarations/background control"]:::future
     AG["Deferred<br/>hosted Thread lifecycle<br/>cross-Identity read policy"]:::future
     PROD["Milestone<br/>production-capable governed action execution"]:::milestone
+    ACTION_PROVENANCE_PRUNE["Deferred idea<br/>prune ActionRequestInput origin/correlation<br/>collapse to one client-authored identifier?"]:::future
     CONNECTION_SA_REBIND["Planned mutation<br/>rebind a Connection's ServiceAccount in place<br/>no mutation exists; only a fresh OAuth consent does"]:::future
     SANDBOX_SA["Deferred design<br/>one ServiceAccount per Sandbox<br/>a native Kubernetes identity to separate and grant on"]:::future
     SANDBOX_RBAC["Planned Kubernetes access<br/>Sandbox permissions and lifecycle<br/>individually editable, optionally preset"]:::future
@@ -80,6 +81,7 @@ flowchart TB
     CODEX_RECOVERY["Required evidence then implementation<br/>Codex execution before durable runner proof<br/>native correlation and safe recovery"]:::active
     SANDBOX_LIFECYCLE_DURABILITY["Planned lifecycle correctness<br/>retained state through suspension<br/>archive before managed storage deletion"]:::future
     THREAD_SUSPEND_RESUME["Reported continuation failure<br/>Thread stays finalized after Sandbox resume<br/>resume native conversation and allow new input"]:::active
+    SANDBOX_VM_ISOLATION["Deferred investigation<br/>selectable container or VM Sandbox implementation<br/>contain agent resource exhaustion"]:::future
     THREAD_EVENT_CONTINUITY["Planned identity cutover<br/>one Thread journal across incarnations<br/>exclusive runner writer and retained state"]:::future
     THREAD_COMMAND_DELIVERY["Deferred backend<br/>app outbox delivery to existing runner<br/>only if app-first acceptance is chosen later"]:::future
     THREAD_VIEW_SYNC["P1 design gate<br/>derived conversation snapshot + updates<br/>on-demand Raw and state ownership"]:::decision
@@ -220,6 +222,19 @@ The request may become a policy-gated Action with operator approval, or use anot
 configuration path. Keep the authority, approval, persistence, and rollback model open until a
 concrete caller and policy owner are chosen. This does not grant agents a direct policy mutation
 path and does not block current credential-placeholder egress.
+
+### `ACTION_PROVENANCE_PRUNE` — prune `ActionRequestInput.origin`/`correlation`
+
+**Deferred idea:** `origin` and `correlation` on `ActionRequestInput` are two open-ended
+`dict[str, JsonValue]` bags with no consumer: nothing in the Action Service parses or acts on
+their contents; they are stored, returned in `ActionRequestView` (redacted for non-operators),
+and otherwise inert. Consider collapsing both down to one client-authored identifier field, or
+confirm no simplification is warranted.
+
+This is a breaking schema change to already-shipped, in-production surface — a real Pydantic
+model, real DB columns, real tests, and documented invariants (`action_service/SPEC.md`,
+`action_service/README.md`) — not something to fold into a separate, unrelated addition of new
+caller-facing fields to the same model. No dependency on anything else; nothing waits on this.
 
 ### `CONNECTION_SA_REBIND` — rebind a Connection's ServiceAccount in place
 
@@ -723,6 +738,29 @@ from the ended attachment and can send successfully. Cover in-flight suspension
 separately with explicit pending-command outcomes. Use owned test fixtures, not the
 operator's affected Thread. Archive-before-deletion work does not gate this regression.
 
+### `SANDBOX_VM_ISOLATION` — selectable VM-backed Sandbox isolation
+
+**Deferred investigation:** evaluate running harnesses and agent-controlled tools in
+VMs or microVMs to contain resource exhaustion, especially an agent workload OOM-killing
+its own runner/Pod. Revisit the [runtime isolation decision](../docs/adr_sandbox_proxy_gateway.md#not-firecrackerkatagvisor-immediately)
+for availability as well as container escape. Verify the suggested Claude Code Web
+comparison before using it as evidence; no runtime is selected by this task.
+
+If implemented, make the Sandbox implementation an explicit creation-time choice,
+retaining container-backed Sandboxes alongside VM-backed ones, not a global replacement
+or a harness-specific choice. Presets only prefill this individually editable field.
+Expose unsupported capabilities honestly; a creation-time selection does not promise
+live migration between implementations.
+
+Define where the runner, journal, proxy, and untrusted processes live and which memory
+budgets protect them. A VM label alone is not an OOM guarantee: account for guest,
+hypervisor/container, and host limits and reserve resources for the control plane.
+Compare failure containment, startup overhead, storage retention, suspend/resume,
+network/egress enforcement, debugging, and cluster support. Acceptance must force guest
+memory exhaustion and process loss, then prove the claimed control/journal survival,
+truthful failure reporting, and recovery without invented or duplicated command effects.
+This investigation does not block current container correctness work.
+
 ### `THREAD_EVENT_CONTINUITY` — one runner-owned Thread Event log through harness resume
 
 **Identity/storage cutover:** implement
@@ -1049,8 +1087,6 @@ carrying any relationship. A node comes back when it acquires an edge.
 - **`SSHDURABLE`** — durable SSH-backed processes
 - **`PROFILES`** — cross-cutting capability profiles
 - **`BB`** — BuildBuddy hosted-run credential boundary
-- **`ACTION_PROVENANCE_PRUNE`** — prune `ActionRequestInput.origin`/`correlation`
-- **`SANDBOX_VM_ISOLATION`** — selectable VM-backed Sandbox isolation
 - **`DENY_LISTS`** — `autoDenyIf` and `autoDenyUnless`
 - **`THREAD_BROWSE_PAGINATE`** — paginated/searchable all-threads page
 - **`CONTROL_STATE`** — dynamic runtime control acceptance
@@ -1113,42 +1149,6 @@ rewrite that keeps the real key out of the local Sandbox but hands it to agent-c
 BuildBuddy's runner — or wait for a stronger seam (a per-run BuildBuddy credential or a run-scoped
 gateway). The boundary, wire shape and required evidence are in
 [`buildbuddy_remote_auth.md`](../docs/buildbuddy_remote_auth.md).
-
-### `ACTION_PROVENANCE_PRUNE` — prune `ActionRequestInput.origin`/`correlation`
-
-**Deferred idea:** `origin` and `correlation` on `ActionRequestInput` are two open-ended
-`dict[str, JsonValue]` bags with no consumer: nothing in the Action Service parses or acts on
-their contents; they are stored, returned in `ActionRequestView` (redacted for non-operators),
-and otherwise inert. Consider collapsing both down to one client-authored identifier field, or
-confirm no simplification is warranted.
-
-This is a breaking schema change to already-shipped, in-production surface — a real Pydantic
-model, real DB columns, real tests, and documented invariants (`action_service/SPEC.md`,
-`action_service/README.md`) — not something to fold into a separate, unrelated addition of new
-caller-facing fields to the same model. No dependency on anything else; nothing waits on this.
-
-### `SANDBOX_VM_ISOLATION` — selectable VM-backed Sandbox isolation
-
-**Deferred investigation:** evaluate running harnesses and agent-controlled tools in
-VMs or microVMs to contain resource exhaustion, especially an agent workload OOM-killing
-its own runner/Pod. Revisit the [runtime isolation decision](../docs/adr_sandbox_proxy_gateway.md#not-firecrackerkatagvisor-immediately)
-for availability as well as container escape. Verify the suggested Claude Code Web
-comparison before using it as evidence; no runtime is selected by this task.
-
-If implemented, make the Sandbox implementation an explicit creation-time choice,
-retaining container-backed Sandboxes alongside VM-backed ones, not a global replacement
-or a harness-specific choice. Presets only prefill this individually editable field.
-Expose unsupported capabilities honestly; a creation-time selection does not promise
-live migration between implementations.
-
-Define where the runner, journal, proxy, and untrusted processes live and which memory
-budgets protect them. A VM label alone is not an OOM guarantee: account for guest,
-hypervisor/container, and host limits and reserve resources for the control plane.
-Compare failure containment, startup overhead, storage retention, suspend/resume,
-network/egress enforcement, debugging, and cluster support. Acceptance must force guest
-memory exhaustion and process loss, then prove the claimed control/journal survival,
-truthful failure reporting, and recovery without invented or duplicated command effects.
-This investigation does not block current container correctness work.
 
 ### `DENY_LISTS` — `autoDenyIf` and `autoDenyUnless`
 
