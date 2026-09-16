@@ -133,6 +133,9 @@ class _Builder:
         self.controls.CopyFrom(projection.controls)
         # Lets a later delta find the Segment its Item already started at.
         self.items = {s.item.item_id: c for c, s in self.segments.items() if s.WhichOneof("content") == "item"}
+        # The Segments as they stood when this batch began. `_put` and `put_item` replace rather
+        # than mutate, so these stay intact and give an extending update its base.
+        self.prior = dict(self.segments)
         self.touched: dict[int, thread_view_pb2.Segment] = {}
         self.settled: dict[str, thread_view_pb2.CommandSummary] = {}
 
@@ -222,6 +225,37 @@ class _Builder:
             ),
             controls=self.controls,
         )
+
+
+def _extend_text(prior: thread_view_pb2.Text, current: thread_view_pb2.Text) -> thread_view_pb2.Text:
+    """A suffix where the value grew, the whole value where it was replaced instead.
+
+    An empty suffix says the field did not change, which is the common case: one Event touches one
+    of an Item's three values.
+    """
+    if current.value.startswith(prior.value):
+        return thread_view_pb2.Text(suffix=current.value[len(prior.value) :])
+    return thread_view_pb2.Text(value=current.value)
+
+
+def _extending(prior: thread_view_pb2.Segment, current: thread_view_pb2.Segment) -> thread_view_pb2.Segment:
+    """`current` expressed as what to add to `prior`, which the caller is known to hold.
+
+    Only an Item is ever extended; a carried Event never revises, so it is never in `prior`.
+    """
+    extending = thread_view_pb2.Segment(
+        cursor=current.cursor, revision_cursor=current.revision_cursor, from_revision_cursor=prior.revision_cursor
+    )
+    extending.item.CopyFrom(current.item)
+    # An untouched value stays absent rather than becoming an empty suffix, which would apply to an
+    # empty value and differ from the absence a whole fold produces.
+    if current.item.HasField("text"):
+        extending.item.text.CopyFrom(_extend_text(prior.item.text, current.item.text))
+    if current.item.HasField("arguments_json"):
+        extending.item.arguments_json.CopyFrom(_extend_text(prior.item.arguments_json, current.item.arguments_json))
+    if current.item.HasField("output"):
+        extending.item.output.CopyFrom(_extend_text(prior.item.output, current.item.output))
+    return extending
 
 
 def _fold_item(builder: _Builder, cursor: int, case: str, event: event_pb2.Event) -> None:
@@ -343,7 +377,15 @@ def advance(
         projection_epoch=advanced.position.projection_epoch,
         after_cursor=after_cursor,
         through_cursor=advanced.position.through_cursor,
-        segments=[builder.touched[cursor] for cursor in sorted(builder.touched)],
+        # A Segment the caller cannot already hold -- one this interval created -- goes whole. One
+        # that existed before it goes as an extension, so a growing value costs its growth rather
+        # than the sum of its prefixes.
+        segments=[
+            _extending(builder.prior[cursor], builder.touched[cursor])
+            if cursor in builder.prior
+            else builder.touched[cursor]
+            for cursor in sorted(builder.touched)
+        ],
         commands=[
             builder.settled[key] for key in sorted(builder.settled, key=lambda k: builder.settled[k].admission_cursor)
         ],
@@ -356,6 +398,34 @@ def project(source_id: str, projection_epoch: str, entries: Iterable[event_log_p
     """The whole fold from empty, for rebuilds and for parity checks against incremental batches."""
     projected, _ = advance(empty(source_id, projection_epoch), entries)
     return projected
+
+
+def _apply_text(held: thread_view_pb2.Text, incoming: thread_view_pb2.Text) -> thread_view_pb2.Text:
+    if incoming.WhichOneof("body") == "suffix":
+        return text_of(held.value + incoming.suffix)
+    return incoming
+
+
+def _applied(held: thread_view_pb2.Segment | None, incoming: thread_view_pb2.Segment) -> thread_view_pb2.Segment:
+    """An extending update merged onto what the caller holds.
+
+    Refuses rather than guesses where the caller does not hold the revision the update extends: it
+    evicted the Segment or missed a batch, and re-reading it is the recovery, not inventing a base.
+    """
+    if held is None or held.revision_cursor != incoming.from_revision_cursor:
+        at = "nothing" if held is None else f"revision {held.revision_cursor}"
+        raise ValueError(
+            f"segment {incoming.cursor} extends revision {incoming.from_revision_cursor}, caller holds {at}"
+        )
+    applied = thread_view_pb2.Segment(cursor=incoming.cursor, revision_cursor=incoming.revision_cursor)
+    applied.item.CopyFrom(incoming.item)
+    if incoming.item.HasField("text"):
+        applied.item.text.CopyFrom(_apply_text(held.item.text, incoming.item.text))
+    if incoming.item.HasField("arguments_json"):
+        applied.item.arguments_json.CopyFrom(_apply_text(held.item.arguments_json, incoming.item.arguments_json))
+    if incoming.item.HasField("output"):
+        applied.item.output.CopyFrom(_apply_text(held.item.output, incoming.item.output))
+    return applied
 
 
 def apply_changes(projection: Projection, changes: thread_view_pb2.Changes) -> Projection:
@@ -373,7 +443,10 @@ def apply_changes(projection: Projection, changes: thread_view_pb2.Changes) -> P
             f"view is {position.source_id}/{position.projection_epoch}"
         )
     segments = {segment.cursor: segment for segment in projection.segments}
-    segments.update({segment.cursor: segment for segment in changes.segments})
+    for incoming in changes.segments:
+        segments[incoming.cursor] = (
+            _applied(segments.get(incoming.cursor), incoming) if incoming.HasField("from_revision_cursor") else incoming
+        )
     commands = {summary.command_id: summary for summary in projection.commands}
     commands.update({summary.command_id: summary for summary in changes.commands})
     return Projection(
