@@ -28,29 +28,37 @@ spec:
         runAsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
-      # Applies aiquota/schema.sql (idempotent CREATE/ALTER ... IF NOT EXISTS)
-      # before the API server starts. Kubernetes runs this to completion first
-      # and retries it on failure, so a schema change ships in the same image
-      # rollout as the code that needs it — no separate Job/version to bump.
+      # Applies schema.sql (idempotent CREATE/ALTER ... IF NOT EXISTS) before
+      # the API server starts, the same clickhouse-client invocation the
+      # cluster's own database-bootstrap Job uses. An init container's pod
+      # template is mutable across rollouts (unlike a bare Job's), so a schema
+      # change ships in the same PR as the code that needs it — no separate
+      # Job/version to bump. Kubernetes retries a failing init container.
       initContainers:
         - name: migrate
-          image: git.allegedly.works/ducktape-ci/aiquota-migrate:devel-20260916181142-b26a9b6 # {"$imagepolicy": "flux-system:aiquota-migrate"}
-          imagePullPolicy: Always
+          image: clickhouse/clickhouse-server:26.8.3.105@sha256:d73903d1b61dfe825fc3810542f252966f33d3fd8efb3b3edcbbafb46b524b04
+          imagePullPolicy: IfNotPresent
+          command: [clickhouse-client]
+          args:
+            - --host=clickhouse.clickhouse.svc.cluster.local
+            - --port=9000
+            - --connect_timeout=10
+            - --receive_timeout=60
+            - --multiquery
+            - --queries-file=/schema/schema.sql
           env:
-            - name: AIQUOTA_CLICKHOUSE_URL
-              value: http://clickhouse.clickhouse.svc.cluster.local:8123
-            - name: AIQUOTA_CLICKHOUSE_DATABASE
-              value: aiquota
-            - name: AIQUOTA_CLICKHOUSE_USERNAME
+            - name: CLICKHOUSE_USER
               valueFrom:
                 secretKeyRef:
                   name: clickhouse-aiquota-credentials
                   key: username
-            - name: AIQUOTA_CLICKHOUSE_PASSWORD
+            - name: CLICKHOUSE_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: clickhouse-aiquota-credentials
                   key: password
+            - name: HOME
+              value: /tmp
           resources:
             requests:
               cpu: 10m
@@ -62,6 +70,13 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: schema
+              mountPath: /schema
+              readOnly: true
+            - name: migrate-tmp
+              mountPath: /tmp
       containers:
         - name: aiquota-api
           image: git.allegedly.works/ducktape-ci/aiquota-api:devel-20260915082842-a8b1ac6 # {"$imagepolicy": "flux-system:aiquota-api"}
@@ -152,3 +167,8 @@ spec:
         - name: config
           configMap:
             name: aiquota-api-config
+        - name: schema
+          configMap:
+            name: aiquota-schema
+        - name: migrate-tmp
+          emptyDir: {}

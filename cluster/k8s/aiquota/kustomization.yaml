@@ -16,3 +16,7 @@ configMapGenerator:
     namespace: cli-proxy-api
     files:
       - config.toml=config.toml
+  - name: aiquota-schema
+    namespace: cli-proxy-api
+    files:
+      - schema.sql

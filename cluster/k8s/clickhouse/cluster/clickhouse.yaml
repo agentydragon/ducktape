@@ -70,11 +70,21 @@ spec:
         # The materialized views execute under the inserting identity, so they
         # need only these source columns to normalize a raw observation.
         - GRANT SELECT(event_id, observed_at, source, quota_windows, token_activity, reset_credits) ON aiquota.raw_http_observations
+        # Read/write on the materialized views' own target tables: creating a
+        # view is validated against the creator's grants on its target, not
+        # just its source.
+        - GRANT SELECT, INSERT ON aiquota.aiquota_windows
+        - GRANT SELECT, INSERT ON aiquota.token_activity_daily
+        - GRANT SELECT, INSERT ON aiquota.reset_credits
         # Scoped DDL so aiquota's own migrate init container can own its schema
-        # (aiquota/schema.sql), the same pattern as the langfuse user below. The
-        # aiquota database itself stays admin-created (cluster/k8s/clickhouse/schema).
+        # (cluster/k8s/aiquota/schema.sql), the same pattern as the langfuse
+        # user below. The aiquota database itself stays admin-created
+        # (cluster/k8s/clickhouse/schema).
         - GRANT CREATE, DROP TABLE, DROP VIEW ON aiquota.*
         - GRANT ALTER ADD COLUMN ON aiquota.*
+        # Required to execute `ON CLUSTER default` DDL, same as the langfuse
+        # user below.
+        - GRANT CLUSTER ON *.*
       grafana/password:
         valueFrom:
           secretKeyRef:
