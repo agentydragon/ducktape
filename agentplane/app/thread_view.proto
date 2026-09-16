@@ -213,9 +213,13 @@ message CommandLookup {
 // derivable from the segment count.
 message SegmentsPage {
   repeated Segment segments = 1;
+  // The anchor range this page covers, so a caller knows exactly what it now holds even where the
+  // page is sparse -- most Events produce no Segment -- or empty.
+  uint64 covers_from_anchor = 2;
+  uint64 covers_through_anchor = 3;
   // Opaque, bound to Thread, source, epoch, direction and filter. Not an authorization capability.
-  string next_page_token = 2;
-  bool exhausted = 3;
+  string next_page_token = 4;
+  bool exhausted = 5;
 }
 
 message CommandsPage {
@@ -227,15 +231,15 @@ message CommandsPage {
 }
 
 message ViewSnapshot {
+  // What the whole snapshot is consistent with, and what the caller follows from.
   Position position = 1;
-  // The recent tail, and an older window when a reading anchor was requested.
-  SegmentsPage tail = 2;
-  SegmentsPage reading_window = 3;
-  Controls controls = 4;
+  // The requested window. Further history is ListSegments, which orders against this Position.
+  SegmentsPage window = 2;
+  Controls controls = 3;
   // Command summaries are view state, not a query answer: `Changes` carries them too, so a snapshot
   // without them would break snapshot-plus-changes parity. Reconciling specific locally retained
   // ids is `ThreadCommandService.GetCommands`, which orders against a snapshot through `minimum`.
-  CommandsPage pending = 5;
+  CommandsPage pending = 4;
 }
 
 // Everything that changed over an interval. Segments and commands carry complete values, so

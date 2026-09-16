@@ -23,13 +23,27 @@ message MinimumThrough {
   uint64 through_cursor = 1;
 }
 
+// Which Segments to read, named the way a reader asks for them rather than as an offset. Counts are
+// of visible anchors, so a burst of invisible receipt boundaries cannot crowd out the conversation.
+message SegmentWindow {
+  // Absent asks for the newest Segments, which is what opening a Thread wants. Set, it asks for the
+  // Segments around that anchor cursor -- where the reader is parked -- so a rebootstrap restores
+  // someone scrolled up instead of jumping them to the tail. It is a viewport, not a sync position.
+  optional uint64 around_anchor = 1;
+  Limits limits = 2;
+}
+
+// Bootstrap a view of a Thread. The server reads its projection checkpoint, the requested Segment
+// window, the current controls and the first page of pending Commands in one transaction, and
+// returns them with the Position they are all consistent with. The caller then follows from that
+// Position.
+//
+// The caller holds nothing: this is a first open or an explicit rebootstrap. A caller that already
+// has a Position asks FollowView to carry it forward instead. One window is enough to follow from,
+// because a Changes batch carries complete Segments -- Segments outside the window arrive whole.
 message GetViewRequest {
   string thread_id = 1;
-  Limits tail = 2;
-  // Where the reader is parked. When set, the snapshot also carries a bounded window around it, so
-  // a long-gap rebootstrap does not force a jump to the tail.
-  optional uint64 reading_anchor = 3;
-  Limits reading_window = 4;
+  SegmentWindow window = 2;
 }
 
 message FollowViewRequest {
