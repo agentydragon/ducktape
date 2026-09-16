@@ -40,8 +40,8 @@ Proposed execution order for the Thread correctness/UI track:
 
 The independent Action Service track still has credentialed-provider acceptance (`MCPAUTH`),
 console policy parity (`CONSOLE_POLICIES`), and Haku MCP/tool-approval retirement (`MCPAGG`,
-`RETIRE_TOOLS`). Transcript search/lookup (`T3`) and Agent/conversation retirement (`RETIRE_AGENT`)
-are parked under § Deferred work with the rest. Priority is not a dependency between these tracks.
+`RETIRE_TOOLS`). Transcript search/lookup (`T3`) remains deferred. Priority is not a dependency
+between these tracks.
 
 ## DAG
 
@@ -58,11 +58,17 @@ flowchart TB
     MCPAGG["Deferred migration<br/>replace Haku Console MCP aggregator<br/>inventory and migrate Haku workflows"]:::future
     RETIRE_TOOLS["Deferred migration<br/>retire Haku Console tool-call/<br/>approval management"]:::future
     INPUT_DELIVERY["Remaining native evidence<br/>input/interrupt/recovery gaps<br/>exact upstream requests and queue fates"]:::active
+    T3["Deferred product work<br/>trajectory search and lookup<br/>later prioritization"]:::future
     PC_EGRESS["Milestone<br/>public-coder-agent egress migration<br/>prod Agentplane proxy"]:::milestone
+    ACCESS["Deferred design<br/>delegated vs brokered external access<br/>grants and revocation"]:::future
+    EGRESS_CHANGE["Deferred design<br/>agent-requested egress<br/>policy expansion"]:::future
 
+    ING["Deferred support<br/>Event & Notification Hub<br/>Action decisions and subscribed external events -> Thread ingress"]:::future
     DT["P2 deferred<br/>driver-provided declarations/background control"]:::future
+    AG["Deferred<br/>hosted Thread lifecycle<br/>cross-Identity read policy"]:::future
     PROD["Milestone<br/>production-capable governed action execution"]:::milestone
     CONNECTION_SA_REBIND["Planned mutation<br/>rebind a Connection's ServiceAccount in place<br/>no mutation exists; only a fresh OAuth consent does"]:::future
+    SANDBOX_SA["Deferred design<br/>one ServiceAccount per Sandbox<br/>a native Kubernetes identity to separate and grant on"]:::future
     SANDBOX_RBAC["Planned Kubernetes access<br/>Sandbox permissions and lifecycle<br/>individually editable, optionally preset"]:::future
     CONSOLE_POLICIES["Deferred migration<br/>console auto-approval policies not yet sets<br/>each needs an ActionGroup, a kind, or DENY_LISTS"]:::future
 
@@ -105,7 +111,6 @@ flowchart TB
     ELEVATE --> FORK
     MCPAGG -. replacement surface .-> RETIRE_TOOLS
     CONSOLE_POLICIES -. policy parity .-> RETIRE_TOOLS
-    AG -. hosted Thread lifecycle .-> RETIRE_AGENT
 
     INPUT_DELIVERY -. reliable Thread ingress .-> ING
     THREAD_VIEW_SYNC --> THREAD_VIEW_PROJECTION
@@ -208,6 +213,14 @@ eventually, flagged now only so the with-sandboxes endpoint isn't assumed to sta
 call forever. Stable Thread pages already replay archived history after Sandbox deletion; their
 identity and operational-state boundary is specified in [Thread layering](../docs/thread_layering.md).
 
+### `EGRESS_CHANGE` — agent-requested egress policy expansion
+
+**Deferred design:** define how an agent can request an expansion or change to its egress rules.
+The request may become a policy-gated Action with operator approval, or use another reviewed
+configuration path. Keep the authority, approval, persistence, and rollback model open until a
+concrete caller and policy owner are chosen. This does not grant agents a direct policy mutation
+path and does not block current credential-placeholder egress.
+
 ### `CONNECTION_SA_REBIND` — rebind a Connection's ServiceAccount in place
 
 **Planned mutation:** no mutation exists today, frontend or backend, to change which ServiceAccount
@@ -224,6 +237,24 @@ reconnect; and does it require re-running eligibility checks (the ServiceAccount
 `agentplane.allegedly.works/action-caller: "true"`) at rebind time, not just at original consent.
 No dependency on anything else; nothing waits on this. Once it exists, the settings table's
 ServiceAccount column becomes a real dropdown instead of static text.
+
+### `SANDBOX_SA` — one ServiceAccount per Sandbox
+
+**Deferred design:** every Sandbox Pod runs as the shared `agentplane-runner` ServiceAccount
+(`sandboxtemplate-agentplane-runner.yaml`), so a Sandbox has no Kubernetes identity of its own: the
+Action Service tells Sandboxes apart by namespace and UID from workload authentication, and an
+`ActionPolicyBinding` names one with the `sandbox {name, uid}` subject rather than a ServiceAccount.
+Running each Sandbox under its own ServiceAccount would give it a native identity to separate
+permissions on, and letting an agent act in Kubernetes directly would become a Kubernetes-native
+RoleBinding on its Sandbox's ServiceAccount rather than a governed Action or a policy exception.
+
+**Questions, not yet settled:** who creates and garbage-collects the per-Sandbox ServiceAccount (the
+integration app at launch, with an `ownerReference` like the bindings it writes, or the Sandbox
+controller); whether the ServiceAccount then becomes the one policy subject for both caller classes,
+collapsing the `sandbox` and `serviceAccount` subject forms and the two operator policy-read routes
+into one; and how the workload token's pinning of the live Sandbox (name and UID from TokenReview
+and the Pod) carries over. `SANDBOX_RBAC` consumes this principal lifecycle if per-Sandbox
+ServiceAccounts are chosen; it does not require unifying the Action policy subject forms.
 
 ### `SANDBOX_RBAC` — manage Sandbox Kubernetes access, optionally through presets
 
@@ -489,6 +520,29 @@ represented (a derived ServiceAccount, or a child Connection under the parent's 
 whether the parent's permissions flow down, and how the sub-identity ends. Low priority; nothing
 else depends on it.
 
+### `T3` — trajectory search and lookup
+
+**Deferred product work:** search and look up stored trajectories at a later product-planning point.
+This is technically independent of the MCP facade, but it is intentionally not in the current work
+sequence. Existing transcript persistence and unrelated lifecycle reliability work are not
+reclassified as search implementation by this deferral.
+
+### `ACCESS` — delegated versus brokered external access
+
+**Deferred design:** choose per-system whether an Action uses the Agent's delegated identity, a
+brokered operator credential, or a hybrid. Keep target-side RBAC and egress enforcement authoritative;
+use grants/revocation reconciliation where a broker mints delegated authority. This is the broader
+external-access policy behind `MCPAUTH` and the SSH MCP server, not a prerequisite for the completed credentialless MCP vertical.
+The [external-access design](external_access.md) is the source of truth for these choices;
+its [Kubernetes decisions](external_access.md#kubernetes-sandbox-access-decisions) also
+cover `SANDBOX_RBAC`, separately from that task's Sandbox/preset UI and lifecycle wiring.
+Evaluate existing authorization engines/protocols and possible hybrids against the concrete
+[GitHub, Kubernetes, and HTTP compatibility probes](external_access.md#compatibility-evaluation-github-kubernetes-http)
+before selecting a shared decision service; protocol reuse does not settle grant or credential ownership.
+
+**Acceptance evidence:** a selected system proves the credential boundary, approval behavior, and
+revocation/expiry semantics without putting a reusable privileged credential in the harness.
+
 ### `PC_EGRESS` — public-coder-agent egress migration
 
 **Milestone:** replace the existing `haku-console` / `iron-proxy` proxy path in front of
@@ -706,12 +760,42 @@ operator work; `PC_EGRESS` needs the same instance. Gated on `MCPAUTH`'s remaini
 acceptance; `T3` is product work that lands on it, not a prerequisite. What "production-capable"
 requires beyond the staging deployment is not defined.
 
+### `AG` — hosted Agent and Thread model
+
+**Deferred:** the hosted Agent/Thread model beyond today's Sandbox-bound Threads: a durable Thread
+lifecycle that outlives a Sandbox, conversation read and control surfaces, and an explicit policy
+for reading across Identities, which `ING` needs for cross-Identity delivery.
+
 ### `DT` — driver-provided declarations and background control
 
 **P2, deferred pending a real consumer:** a driver may declare model-visible tools and control
 background work, but any such runner surface reuses the Action Service contracts rather than a
 second tool-request lifecycle; the settled harness behavior and the seam are in
 [driver tools and background work](driver_tools_and_background.md).
+
+### `ING` — Event & Notification Hub
+
+**Deferred support:** consume Action events and external sources such as GitHub/Calendar, match
+user/Agent subscriptions, and deliver structured events into an Agent/Thread ingress. The Hub owns
+subscription matching, deduplication, batching/debounce, rate limits, backpressure, offline delivery,
+and Thread wake/queue semantics. It is not an executor or an Action decision authority. It consumes
+the canonical Action event sequence, preserving individual events and ordering, and adds no second
+Action outbox or event store; cross-Identity delivery requires an explicit read policy.
+
+Make Action approval and denial notifications an explicit first consumer: deliver the
+decision to the requesting Agent/Thread, correlated with the original Action request.
+Distinguish approval from execution success and preserve later execution results/errors.
+Use this same ingress for subscribed external notifications, with an agent-facing
+interface to create, inspect, update, and cancel subscriptions (initially including
+GitHub event filters), subject to source authorization and destination access checks.
+
+Define notification identity, provenance, ordering, retry/deduplication, and the point
+at which delivery is confirmed by the harness. Notifications are not fabricated human
+messages or runner observations. Specify busy, suspended, and unavailable Thread
+behavior before promising offline delivery; this deferred Hub must not silently add
+an app command queue to the current runner-only design. Test approval/denial while an
+agent is busy or disconnected, duplicate/replayed events, subscription cancellation,
+unauthorized sources/destinations, and truthful delivery state after reconnect.
 
 ### `UISHELL_DRAWER` — pending-approval badge and drawer
 
@@ -957,23 +1041,16 @@ of one escaped-quote wall of text.
 
 ## Deferred work
 
-Real work items, parked. They are off the diagram above because nothing in the active graph
-depends on them and they depend on nothing -- every one had zero edges, so the diagram carried
-their boxes without carrying any dependency. Moving one back means giving it edges again.
+Real work items, parked. They are off the diagram above because they had no edge of any kind --
+not a hard dependency, not a dotted soft one -- so the diagram carried their boxes without
+carrying any relationship. A node comes back when it acquires an edge.
 
 - **`THREAD_VIEW_TRANSPORT`** — reconsider an RPC transport, gated on authorization
 - **`SSHDURABLE`** — durable SSH-backed processes
-- **`T3`** — trajectory search and lookup
-- **`RETIRE_AGENT`** — Haku Console Agent/conversation management migration
 - **`PROFILES`** — cross-cutting capability profiles
-- **`ACCESS`** — delegated versus brokered external access
-- **`EGRESS_CHANGE`** — agent-requested egress policy expansion
-- **`AG`** — hosted Agent and Thread model
-- **`ING`** — Event & Notification Hub
 - **`BB`** — BuildBuddy hosted-run credential boundary
 - **`ACTION_PROVENANCE_PRUNE`** — prune `ActionRequestInput.origin`/`correlation`
 - **`SANDBOX_VM_ISOLATION`** — selectable VM-backed Sandbox isolation
-- **`SANDBOX_SA`** — one ServiceAccount per Sandbox
 - **`DENY_LISTS`** — `autoDenyIf` and `autoDenyUnless`
 - **`THREAD_BROWSE_PAGINATE`** — paginated/searchable all-threads page
 - **`CONTROL_STATE`** — dynamic runtime control acceptance
@@ -1019,21 +1096,6 @@ Execution state, leases, and unknown-outcome reconciliation; the daemon is only 
 systemd adapter. See [the durable SSH process plan](ssh_durable_processes.md) for the protocol and
 acceptance boundaries. Do not add this daemon, PTYs, or stdin streaming to the first one-shot implementation.
 
-### `T3` — trajectory search and lookup
-
-**Deferred product work:** search and look up stored trajectories at a later product-planning point.
-This is technically independent of the MCP facade, but it is intentionally not in the current work
-sequence. Existing transcript persistence and unrelated lifecycle reliability work are not
-reclassified as search implementation by this deferral.
-
-### `RETIRE_AGENT` — Haku Console Agent/conversation management migration
-
-**Deferred migration:** retire Haku Console's own Agent and conversation management only after
-Agentplane has the external Identity, durable Thread lifecycle, conversation read/control, and
-replacement runtime surfaces required by Haku. This is a migration and decommissioning milestone,
-not a prerequisite for Action execution; preserve explicit read/export and rollback evidence before
-removing the old owner.
-
 ### `PROFILES` — cross-cutting capability profiles
 
 **Deferred decision — Rai confirmation required:** define a durable authority for capabilities shared by egress, approvals, MCP
@@ -1043,61 +1105,6 @@ read/verification boundary remain open. Do not start implementation before the d
 
 **Acceptance evidence:** one profile can be resolved consistently by each participating authority,
 with explicit precedence and negative tests for stale, cross-Agent, or caller-supplied profile names.
-
-### `ACCESS` — delegated versus brokered external access
-
-**Deferred design:** choose per-system whether an Action uses the Agent's delegated identity, a
-brokered operator credential, or a hybrid. Keep target-side RBAC and egress enforcement authoritative;
-use grants/revocation reconciliation where a broker mints delegated authority. This is the broader
-external-access policy behind `MCPAUTH` and the SSH MCP server, not a prerequisite for the completed credentialless MCP vertical.
-The [external-access design](external_access.md) is the source of truth for these choices;
-its [Kubernetes decisions](external_access.md#kubernetes-sandbox-access-decisions) also
-cover `SANDBOX_RBAC`, separately from that task's Sandbox/preset UI and lifecycle wiring.
-Evaluate existing authorization engines/protocols and possible hybrids against the concrete
-[GitHub, Kubernetes, and HTTP compatibility probes](external_access.md#compatibility-evaluation-github-kubernetes-http)
-before selecting a shared decision service; protocol reuse does not settle grant or credential ownership.
-
-**Acceptance evidence:** a selected system proves the credential boundary, approval behavior, and
-revocation/expiry semantics without putting a reusable privileged credential in the harness.
-
-### `EGRESS_CHANGE` — agent-requested egress policy expansion
-
-**Deferred design:** define how an agent can request an expansion or change to its egress rules.
-The request may become a policy-gated Action with operator approval, or use another reviewed
-configuration path. Keep the authority, approval, persistence, and rollback model open until a
-concrete caller and policy owner are chosen. This does not grant agents a direct policy mutation
-path and does not block current credential-placeholder egress.
-
-### `AG` — hosted Agent and Thread model
-
-**Deferred:** the hosted Agent/Thread model beyond today's Sandbox-bound Threads: a durable Thread
-lifecycle that outlives a Sandbox, conversation read and control surfaces, and an explicit policy
-for reading across Identities, which `ING` needs for cross-Identity delivery. Nothing waits on it
-except `RETIRE_AGENT`, whose replacement runtime it is.
-
-### `ING` — Event & Notification Hub
-
-**Deferred support:** consume Action events and external sources such as GitHub/Calendar, match
-user/Agent subscriptions, and deliver structured events into an Agent/Thread ingress. The Hub owns
-subscription matching, deduplication, batching/debounce, rate limits, backpressure, offline delivery,
-and Thread wake/queue semantics. It is not an executor or an Action decision authority. It consumes
-the canonical Action event sequence, preserving individual events and ordering, and adds no second
-Action outbox or event store; cross-Identity delivery requires an explicit read policy.
-
-Make Action approval and denial notifications an explicit first consumer: deliver the
-decision to the requesting Agent/Thread, correlated with the original Action request.
-Distinguish approval from execution success and preserve later execution results/errors.
-Use this same ingress for subscribed external notifications, with an agent-facing
-interface to create, inspect, update, and cancel subscriptions (initially including
-GitHub event filters), subject to source authorization and destination access checks.
-
-Define notification identity, provenance, ordering, retry/deduplication, and the point
-at which delivery is confirmed by the harness. Notifications are not fabricated human
-messages or runner observations. Specify busy, suspended, and unavailable Thread
-behavior before promising offline delivery; this deferred Hub must not silently add
-an app command queue to the current runner-only design. Test approval/denial while an
-agent is busy or disconnected, duplicate/replayed events, subscription cancellation,
-unauthorized sources/destinations, and truthful delivery state after reconnect.
 
 ### `BB` — BuildBuddy hosted-run credential boundary
 
@@ -1142,24 +1149,6 @@ network/egress enforcement, debugging, and cluster support. Acceptance must forc
 memory exhaustion and process loss, then prove the claimed control/journal survival,
 truthful failure reporting, and recovery without invented or duplicated command effects.
 This investigation does not block current container correctness work.
-
-### `SANDBOX_SA` — one ServiceAccount per Sandbox
-
-**Deferred design:** every Sandbox Pod runs as the shared `agentplane-runner` ServiceAccount
-(`sandboxtemplate-agentplane-runner.yaml`), so a Sandbox has no Kubernetes identity of its own: the
-Action Service tells Sandboxes apart by namespace and UID from workload authentication, and an
-`ActionPolicyBinding` names one with the `sandbox {name, uid}` subject rather than a ServiceAccount.
-Running each Sandbox under its own ServiceAccount would give it a native identity to separate
-permissions on, and letting an agent act in Kubernetes directly would become a Kubernetes-native
-RoleBinding on its Sandbox's ServiceAccount rather than a governed Action or a policy exception.
-
-**Questions, not yet settled:** who creates and garbage-collects the per-Sandbox ServiceAccount (the
-integration app at launch, with an `ownerReference` like the bindings it writes, or the Sandbox
-controller); whether the ServiceAccount then becomes the one policy subject for both caller classes,
-collapsing the `sandbox` and `serviceAccount` subject forms and the two operator policy-read routes
-into one; and how the workload token's pinning of the live Sandbox (name and UID from TokenReview
-and the Pod) carries over. `SANDBOX_RBAC` consumes this principal lifecycle if per-Sandbox
-ServiceAccounts are chosen; it does not require unifying the Action policy subject forms.
 
 ### `DENY_LISTS` — `autoDenyIf` and `autoDenyUnless`
 
