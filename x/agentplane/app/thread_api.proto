@@ -30,8 +30,6 @@ message GetViewRequest {
   // a long-gap rebootstrap does not force a jump to the tail.
   optional uint64 reading_anchor = 3;
   Limits reading_window = 4;
-  // Locally retained Command ids to reconcile, including ones settled outside any visible window.
-  repeated string local_command_ids = 5;
 }
 
 message FollowViewRequest {
