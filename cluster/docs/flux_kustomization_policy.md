@@ -171,22 +171,25 @@ retries at `retryInterval`, which converges at bootstrap without an edge.
 
 ### 6. Real ordering needs a shared artifact, not an edge
 
-`dependsOn` across two different `ExternalArtifact`s gates on `Ready` and
-nothing else, so it cannot express "apply A's new manifests before B's new
-manifests" (above). Where that ordering genuinely is the requirement — a schema
-migration before the writer that reads the new columns — put **both paths in one
-artifact** and point both Kustomizations' `sourceRef` at it. The `sourceRef`
-then matches, `checkDependencies` engages the revision comparison, and the
-dependent waits for the prerequisite to have applied _that_ revision.
+Three constructions, and only one of them orders updates:
+
+| Shape                                       | What you get                                                                                                                                                                                                                                         |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| One Kustomization                           | Applied together in one reconcile. **No ordering** — Flux has no resource-level ordering past the `ApplyAllStaged` stages, so a migration Job and the Deployment that reads the new schema go out together and the app must tolerate the old schema. |
+| Two Kustomizations, separate artifacts      | `Ready`-gated only. Orders bootstrap; **does not order updates**, since `Ready` does not distinguish the prerequisite's old revision from its new one.                                                                                               |
+| Two Kustomizations, **one shared artifact** | `sourceRef`s match, so `checkDependencies` engages the revision comparison and the dependent waits for the prerequisite to have applied _that_ revision. Ordered updates.                                                                            |
+
+So the default is the first — one Kustomization, app tolerates — and the third
+is what you reach for when tolerating is genuinely not an option. The second is
+the trap: it looks like ordering and costs like ordering without being ordering.
 
 Nine artifacts already copy more than one path, and
 `check_cross_namespace_references` already validates that a consumer's
-`spec.path` lies inside what its artifact carries, so the shape needs no new
-machinery.
+`spec.path` lies inside what its artifact carries, so the third shape needs no
+new machinery.
 
-This is the only construction here that delivers ordered updates. A
-`destructive-if-out-of-order` entry in rule 2 that is not built this way is
-documenting an intent the cluster does not implement.
+A `destructive-if-out-of-order` entry in rule 2 that is not built the third way
+documents an intent the cluster does not implement.
 
 ## Measurements
 

@@ -44,13 +44,16 @@ Keep, as registered rule-2 exceptions, the CNI/SOPS/source edges without which
 `bazel run //cluster:bootstrap` does not finish. Register them in
 `_ORDERING_EXCEPTIONS` in the same PR that adds the check (batch 6).
 
-`clickhouse-schema` before `aiquota` is the one genuine
-destructive-if-out-of-order pair here, and the edge alone does not deliver it:
-different artifacts means `Ready`-gating, so on a commit that changes both,
-`aiquota` can apply against the old schema. Rebuild it as a rule-6 shared
-artifact carrying both paths. Until that lands the edge stays, but as a
-registered exception documenting an intent that is not yet implemented — which
-is also a live correctness bug, not only a cleanup.
+`clickhouse-schema` before `aiquota` was the one genuine
+destructive-if-out-of-order pair, and it is being resolved out from under this
+plan: schema ownership is moving into `aiquota`, which deletes the Kustomization
+and the edge rather than making the edge honest. That is rule 6's first shape —
+one Kustomization, applied together, **no ordering between the migration Job and
+the Deployment**. It is the right answer if `aiquota` tolerates starting against
+the un-migrated schema, and the wrong one if it does not; that question is the
+one thing the move has to settle, and rule 6's third shape is the fallback if
+the answer is no. Same trap as <../../k8s/paperless/TODO.md> § "Make bootstrap
+ordering explicit".
 
 ## 4. Split CRDs out of the webhookless operators
 
