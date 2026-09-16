@@ -409,7 +409,14 @@
       # host closures). drivefs isolation for `main` lives in the imported file.
       legacyPackages.${system} =
         let
-          atticTargets = import ./devinfra/ci/nix_attic_targets.nix { inherit self lib system; };
+          atticTargets = import ./devinfra/ci/nix_attic_targets.nix {
+            inherit
+              self
+              lib
+              system
+              ducktapePkgs
+              ;
+          };
         in
         {
           ci-attic-main = atticTargets.main;
