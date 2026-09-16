@@ -37,13 +37,18 @@ def admitted(cursor: int, command: command_pb2.Command) -> event_log_pb2.EventEn
     return entry(cursor, event_pb2.Event(command_admitted=event_pb2.CommandAdmitted(command=command)))
 
 
-def by_anchor(projection: Projection) -> dict[int, thread_view_pb2.Segment]:
+def by_cursor(projection: Projection) -> dict[int, thread_view_pb2.Segment]:
     """Segments keyed the way the contract keys them, rather than by position in the tuple."""
-    return {segment.anchor_cursor: segment for segment in projection.segments}
+    return {segment.cursor: segment for segment in projection.segments}
 
 
-def kinds(projection: Projection) -> list[str]:
-    return [segment.WhichOneof("content") for segment in projection.segments]
+def carried(projection: Projection) -> dict[int, str]:
+    """Which observation each carried Event Segment holds, by cursor."""
+    return {
+        segment.cursor: segment.event.WhichOneof("observation")
+        for segment in projection.segments
+        if segment.WhichOneof("content") == "event"
+    }
 
 
 def outcomes(projection: Projection) -> list[tuple[str, int]]:
@@ -167,7 +172,7 @@ def test_a_batch_carries_only_what_changed_in_its_interval(script: list[event_lo
     assert (changes.source_id, changes.projection_epoch) == (SOURCE, EPOCH)
     assert (changes.after_cursor, changes.through_cursor) == (10, 14)
     # Only the tool item, revised four times in this interval, and nothing from the completed turn.
-    assert [segment.anchor_cursor for segment in changes.segments] == [10]
+    assert [segment.cursor for segment in changes.segments] == [10]
     assert changes.segments[0].revision_cursor == 14
 
 
@@ -185,10 +190,10 @@ def test_a_native_only_interval_advances_coverage_without_inventing_segments(
 
 
 def test_streaming_text_is_replaced_by_the_authoritative_completion(script: list[event_log_pb2.EventEntry]) -> None:
-    item = by_anchor(project(SOURCE, EPOCH, script))[6].item
+    item = by_cursor(project(SOURCE, EPOCH, script))[6].item
     assert item.item_id == "i-1"
     assert item.text == text_of("thinking")
-    assert item.completed_text.text == text_of("thinking")
+    assert item.WhichOneof("completion") == "completed_text"
 
 
 def test_an_incomplete_item_carries_no_completion(script: list[event_log_pb2.EventEntry]) -> None:
@@ -198,9 +203,9 @@ def test_an_incomplete_item_carries_no_completion(script: list[event_log_pb2.Eve
 
 
 def test_a_completed_tool_keeps_its_result(script: list[event_log_pb2.EventEntry]) -> None:
-    tool = by_anchor(project(SOURCE, EPOCH, script))[10].item
+    tool = by_cursor(project(SOURCE, EPOCH, script))[10].item
     assert tool.item_id == "i-2"
-    assert tool.completed_tool.output == text_of("whole output")
+    assert tool.output == text_of("whole output")
     assert tool.completed_tool.succeeded
     assert tool.arguments_json == text_of('{"path": "a"}')
 
@@ -221,21 +226,18 @@ def test_an_item_anchors_at_its_first_mention_not_its_start_event() -> None:
         ],
     )
     (segment,) = projected.segments
-    assert (segment.anchor_cursor, segment.revision_cursor) == (1, 2)
+    assert (segment.cursor, segment.revision_cursor) == (1, 2)
     assert segment.item == thread_view_pb2.Item(
         item_id="i-1", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT, text=text_of("early")
     )
 
 
-def test_a_turn_outcome_anchors_at_the_terminal_event_after_partial_output(
-    script: list[event_log_pb2.EventEntry],
-) -> None:
-    anchors = by_anchor(project(SOURCE, EPOCH, script))
-    # The turn Segment records its status, and the outcome still gets its own Segment at the end.
-    assert anchors[4].turn.status == event_pb2.TURN_STATUS_COMPLETED
-    assert anchors[21].turn_outcome == thread_view_pb2.TurnOutcome(
-        turn_id="turn-1", status=event_pb2.TURN_STATUS_COMPLETED
-    )
+def test_a_turn_starting_and_ending_stay_separate_segments(script: list[event_log_pb2.EventEntry]) -> None:
+    """Each is already its own final state, so neither is folded into a revisable turn whose status
+    would restate the terminal Event."""
+    segments = by_cursor(project(SOURCE, EPOCH, script))
+    assert segments[4].event.turn_started.turn_id == "turn-1"
+    assert segments[21].event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
 
 
 def test_a_failed_turn_without_output_stays_visible() -> None:
@@ -254,7 +256,7 @@ def test_a_failed_turn_without_output_stays_visible() -> None:
             ),
         ],
     )
-    assert projected.segments[-1].turn_outcome == thread_view_pb2.TurnOutcome(
+    assert projected.segments[-1].event.turn_completed == event_pb2.TurnCompleted(
         turn_id="turn-9", status=event_pb2.TURN_STATUS_FAILED, error="upstream 502"
     )
     assert not projected.controls.HasField("active_turn_id")
@@ -282,12 +284,9 @@ def test_coalesced_input_keeps_every_origin_command() -> None:
             ),
         ],
     )
-    assert projected.segments[-1].anchor_cursor == 3
-    assert projected.segments[-1].confirmed_input == thread_view_pb2.ConfirmedInput(
-        harness_message_id="m-1",
-        text=text_of("inspect this\nand this"),
-        turn_id="turn-1",
-        origin_command_ids=["c-input", "c-2"],
+    assert projected.segments[-1].cursor == 3
+    assert projected.segments[-1].event.harness_user_message_confirmed == event_pb2.HarnessUserMessageConfirmed(
+        harness_message_id="m-1", text="inspect this\nand this", turn_id="turn-1", origin_command_ids=["c-input", "c-2"]
     )
     assert outcomes(projected) == [("effected", 3), ("effected", 3)]
 
@@ -325,7 +324,7 @@ def test_an_interrupt_settles_against_the_turn_it_named() -> None:
     (summary,) = projected.commands
     assert summary.operation_kind == OperationKind.INTERRUPT_TURN
     assert summary.effected.origin_cursor == 3
-    assert projected.segments[-1].turn_outcome.interrupted_by_command_id == "c-stop"
+    assert projected.segments[-1].event.turn_completed.interrupted_by_command_id == "c-stop"
 
 
 def test_command_failure_and_noop_are_terminal_non_effects() -> None:
@@ -356,15 +355,15 @@ def test_an_outcome_without_its_admission_is_dropped_rather_than_fabricated() ->
         [entry(9, event_pb2.Event(command_failed=event_pb2.CommandFailed(command_id="c-gone", reason="late")))],
     )
     assert list(projected.commands) == []
-    # The receipt boundary still exists, so grouping does not silently lose a position.
-    assert kinds(projected) == ["command_receipt"]
-    assert projected.segments[0].command_receipt.command_id == "c-gone"
+    # Command Events drive the queue, not the conversation, so nothing appears in the view either.
+    assert list(projected.segments) == []
+    assert projected.position.through_cursor == 9
 
 
 def test_harness_lifecycle_drives_the_controls(script: list[event_log_pb2.EventEntry]) -> None:
     running = project(SOURCE, EPOCH, script[:1])
     assert running.controls.harness_state == thread_view_pb2.HARNESS_STATE_RUNNING
-    assert running.segments[0].lifecycle.state == thread_view_pb2.HARNESS_STATE_RUNNING
+    assert carried(running) == {1: "harness_started"}
 
     lost = project(SOURCE, EPOCH, [entry(1, event_pb2.Event(harness_lost=event_pb2.HarnessLost()))])
     assert lost.controls.harness_state == thread_view_pb2.HARNESS_STATE_LOST
@@ -390,10 +389,9 @@ def test_a_command_caused_exit_settles_its_command() -> None:
 def test_model_effects_keep_their_own_segments(script: list[event_log_pb2.EventEntry]) -> None:
     """Current model state cannot stand in for the historical changes that produced it."""
     projected = project(SOURCE, EPOCH, script)
-    effects = [s.model_effect for s in projected.segments if s.WhichOneof("content") == "model_effect"]
-    assert effects == [
-        thread_view_pb2.ModelEffect(command_id="c-model", previous_model="first-model", model="next-model")
-    ]
+    changes = [c for c, case in carried(projected).items() if case == "model_changed"]
+    assert changes == [17]
+    assert by_cursor(projected)[17].event.model_changed.previous_model == "first-model"
 
 
 def test_unresolved_count_tracks_the_whole_queue_not_the_batch(script: list[event_log_pb2.EventEntry]) -> None:

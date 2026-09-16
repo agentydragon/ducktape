@@ -987,6 +987,7 @@ py_library(
         "//x/agentplane/app:thread_view_pb2",
         "//x/agentplane/protocol:command_pb2",
         "//x/agentplane/protocol:event_log_pb2",
+        "//x/agentplane/protocol:event_pb2",
         "@pypi//protobuf",
     ],
 )

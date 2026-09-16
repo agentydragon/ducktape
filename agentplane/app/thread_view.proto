@@ -15,9 +15,8 @@ package ducktape.agentplane.app.v1;
 // whose `origin.sequence` differs from its `cursor` -- so a Segment's position, a Command's
 // admission and a payload's revision are all positions in one order, directly comparable.
 //
-// A field holding such a position ends in `_cursor`, or in `_anchor` where the position is
-// specifically the one a Segment is keyed by and history pages on. Every other integer is a size, a
-// count, or a byte offset within a single payload, and is never comparable with a cursor.
+// Every field holding such a position ends in `_cursor`, or is named `cursor`. Every other integer
+// is a size, a count, or a byte offset within a single payload, and is never comparable with one.
 //
 // Identifiers are strings and are never positions: `thread_id` names the app's Thread, `source_id`
 // the runner journal those cursors belong to, `projection_epoch` one materialization generation of
@@ -45,7 +44,7 @@ message Position {
 message PayloadRef {
   string source_id = 1;
   string projection_epoch = 2;
-  uint64 owner_anchor = 3;
+  uint64 owner_cursor = 3;
   // Which field of the owning Segment this payload holds.
   string field = 4;
   uint64 revision_cursor = 5;
@@ -68,60 +67,29 @@ message Omitted {
   uint64 byte_length = 2;
 }
 
-// Harness-confirmed input, anchored at confirmation rather than at submission.
-message ConfirmedInput {
-  string harness_message_id = 1;
-  Text text = 2;
-  string turn_id = 3;
-  // Every Command that produced this text: Claude coalesces several into one confirmation.
-  repeated string origin_command_ids = 4;
-}
-
-message TextOutcome {
-  Text text = 1;
-}
-
-message ToolOutcome {
-  Text output = 1;
-  bool succeeded = 2;
-}
-
+// An item of the conversation: an assistant message, a reasoning step, or a tool call. This is the
+// one entity the projection actually folds -- it accumulates the deltas that arrive as separate
+// Events into the value a reader sees, which is most of why a derived view exists at all.
 message Item {
   string item_id = 1;
   ducktape.agentplane.protocol.v1.ItemKind kind = 2;
   string tool_name = 3;
-  // What has streamed so far. A completion replaces it with the authoritative value.
+  // What has streamed so far, replaced by the authoritative value when the item completes.
   Text text = 4;
   Text arguments_json = 5;
   Text output = 6;
   // Absent while streaming, and after a crash that ended the stream: unknown output is never
   // converted into a successful completion.
   oneof completion {
-    TextOutcome completed_text = 7;
-    ToolOutcome completed_tool = 8;
+    TextCompleted completed_text = 7;
+    ToolCompleted completed_tool = 8;
   }
 }
 
-message Turn {
-  string turn_id = 1;
-  string model = 2;
-  // Absent until the turn reaches a terminal Event.
-  optional ducktape.agentplane.protocol.v1.TurnStatus status = 3;
-}
+message TextCompleted {}
 
-message ModelEffect {
-  string command_id = 1;
-  string previous_model = 2;
-  string model = 3;
-}
-
-// A turn's terminal result, anchored at the terminal Event so it renders after any partial output
-// rather than again at the turn header.
-message TurnOutcome {
-  string turn_id = 1;
-  ducktape.agentplane.protocol.v1.TurnStatus status = 2;
-  string error = 3;
-  string interrupted_by_command_id = 4;
+message ToolCompleted {
+  bool succeeded = 1;
 }
 
 enum HarnessState {
@@ -131,33 +99,24 @@ enum HarnessState {
   HARNESS_STATE_LOST = 3;
 }
 
-message Lifecycle {
-  HarnessState state = 1;
-  int32 exit_code = 2;
-  string stopped_by_command_id = 3;
-}
-
-// An admission or terminal non-effect boundary. It has no normal-mode card, but it is still a
-// Segment so grouping stays deterministic across page edges.
-message CommandReceipt {
-  string command_id = 1;
-}
-
-// One unit of the derived conversation, beginning at the Event that created it and revised in place
-// by later Events.
+// One unit of the derived conversation, keyed by the Event that created it.
+//
+// An Event whose meaning is already its final state -- a confirmed input, a turn starting or
+// ending, a model change, a harness lifecycle transition -- is carried verbatim rather than
+// transcribed into a parallel vocabulary, so a reader learns one language instead of two. Only an
+// Item is folded, because only an Item accumulates across Events. Native frames, harness stderr and
+// debug checkpoints produce no Segment at all, and Command Events appear as CommandSummary rather
+// than in the conversation.
 message Segment {
-  // The immutable original cursor this Segment began at. History pages key on it.
-  uint64 anchor_cursor = 1;
-  // When this Segment last changed. Not a statement about what the browser has consumed.
+  // The cursor of the Event that created this Segment: its identity, which does not move when later
+  // Events revise it, so history pages key on it safely.
+  uint64 cursor = 1;
+  // When it last changed. Equal to `cursor` for a carried Event, which never revises; for an Item it
+  // is the latest delta folded into it.
   uint64 revision_cursor = 2;
   oneof content {
-    ConfirmedInput confirmed_input = 3;
-    Item item = 4;
-    Turn turn = 5;
-    ModelEffect model_effect = 6;
-    TurnOutcome turn_outcome = 7;
-    Lifecycle lifecycle = 8;
-    CommandReceipt command_receipt = 9;
+    Item item = 3;
+    ducktape.agentplane.protocol.v1.Event event = 4;
   }
 }
 
@@ -236,11 +195,11 @@ message CommandLookup {
 // derivable from the segment count.
 message SegmentsPage {
   repeated Segment segments = 1;
-  // The anchor range this page covers, so a caller knows exactly what it now holds even where the
+  // The cursor range this page covers, so a caller knows exactly what it now holds even where the
   // page is sparse -- most Events produce no Segment -- or empty. Paging further asks for the
-  // Segments before `covers_from_anchor`; keyset paging needs no separate page token.
-  uint64 covers_from_anchor = 2;
-  uint64 covers_through_anchor = 3;
+  // Segments before `covers_from_cursor`; keyset paging needs no separate page token.
+  uint64 covers_from_cursor = 2;
+  uint64 covers_through_cursor = 3;
   // No Segments remain beyond this page in the requested direction, as distinct from a page that
   // simply hit its count.
   bool exhausted = 4;
