@@ -376,3 +376,58 @@ Desired behavior:
   domains and keeps the serialized request small.
 - Measure performance with optimized binaries; retain RSS and domain cardinality
   as separate guardrails.
+
+## An `if`'s `else` Cannot Be Matched Once Nested Under a Statement-List Split
+
+Observed failure mode, isolated to a minimal repro:
+
+```js
+function processRequest(context) {
+  let queue = [],
+    DECLARATORS_AFTER = null;
+  STMT_LIST_BEFORE;
+  if (EXPR) STMT;
+  else STMT;
+  STMT_LIST_AFTER;
+}
+```
+
+This alone regresses the whole containing chunk to dozens of unresolved selectors
+(`cascaded_from_known_unsat`), even though each individual piece already has a working,
+committed precedent elsewhere in the same spec tree: an `if` with no `else` nested under
+the same kind of split matches fine, and a long `if`/`else if` chain with `STMT`/`EXPR`
+filler arms matches fine as an _entire, unwrapped_ function body — just never as content
+nested inside a `STMT_LIST_BEFORE`/`STMT_LIST_AFTER` (or equivalently-shaped, differently
+named) pair.
+
+Narrowed further: the failure is specifically "an `if`'s alternate branch, of any
+content, positioned inside an outer split's pinned content" —
+
+- independent of the alternate's content (`STMT`, `ANYTHING`, or a real statement all
+  fail identically)
+- independent of whether the `if`'s consequent has braces
+- independent of hole naming (renaming the inner split pair does not help)
+- independent of literal vs. wildcard anchoring on the `if`'s test
+- reproduces the same way whether the split wraps a `for`/`for await`/`try` body or a
+  plain nested `if` with no loop or `try` involved at all
+
+A related, narrower finding on the same axis: a `for`/`for await`/`for...of` loop body
+also cannot be matched via an explicit `{ … }` block at all once nested under an outer
+split — only a bare `STMT` covering the loop's entire body works. This blocks descending
+into a loop even before reaching any `if`/`else` inside it.
+
+This matters in practice whenever the real target is an `if`/`else if` dispatch ladder
+(or any `else`-bearing conditional) that sits deep inside a large function — reaching it
+at all requires an outer split to skip the unrelated setup before it, but the ladder
+itself needs `else`, so no selector shape (spelling every filler arm with real vs.
+wildcard tests, combining vs. separating nested holes, flat individually-holed statement
+sequences instead of list holes, moving which level absorbs the split) can expose any of
+it under current behavior.
+
+Desired behavior:
+
+- Support matching an `if`'s alternate branch, and a loop's `{ … }` body, when nested
+  inside content bounded by a statement-list split.
+- Until fixed, report this as a specific "alternate/loop-body not matchable under a
+  split" diagnostic rather than a generic no-match or `cascaded_from_known_unsat`, so a
+  selector author doesn't have to rediscover it by bisection.
