@@ -440,28 +440,29 @@ async def _first_snapshot(client: httpx.AsyncClient, path: str, headers: dict[st
 
 
 @pytest.mark.parametrize("operator_connection", ["configured", "disabled"])
-async def test_the_sandbox_policy_is_the_services_answer_for_its_uid_or_says_why_not(
+async def test_the_sandbox_policy_frame_is_the_services_answer_for_its_uid_or_says_why_not(
     review: Review, custom_objects: FakeCustomObjectsApi, live_index: LiveIndex, operator_connection: str
 ) -> None:
-    """The route and the live frame both carry what the Action Service resolves for the Sandbox's
-    UID through the operator federation, with the app adding only who wrote each binding. Where
-    the service cannot be asked, the route fails as the other operator routes do and the frame
-    says so in place of the policy rather than showing an empty one."""
+    """The live frame carries what the Action Service resolves for the Sandbox's UID through the
+    operator federation, with the app adding only who wrote each binding. Where the service cannot
+    be asked, the frame says so in place of the policy rather than showing an empty one, and an
+    agent watching the same stream is told why rather than shown an operator's answer."""
     custom_objects.objects[("sandboxes", "live")] = live_index.sandboxes["live"] = sandbox("live")
     _bind_live_sandbox(review.policies, custom_objects.objects[("sandboxes", "live")]["metadata"]["uid"])
     browser = review.browser
-    assert (await browser.get("/sandboxes/live/action-policy", headers=AGENT_AUTH)).status_code == 403
     await browser.get("/auth/login")
+    session = {"Cookie": f"{INSECURE_COOKIE}={browser.cookies[INSECURE_COOKIE]}"}
 
-    response = await browser.get("/sandboxes/live/action-policy")
+    async with _served(review.app) as url, httpx.AsyncClient(base_url=url) as client:
+        frame = await _first_snapshot(client, "/live/sandboxes/live", session)
+        as_agent = await _first_snapshot(client, "/live/sandboxes/live", AGENT_AUTH)
+
+    assert frame.sandbox is not None
     if operator_connection == "disabled":
-        assert (response.status_code, response.json()["detail"]) == (
-            503,
-            {"code": "operator_federation_not_configured"},
-        )
+        assert frame.action_policy == ActionPolicyUnavailable(code="operator_federation_not_configured")
     else:
-        assert response.status_code == 200, response.text
-        view = ActionPolicyView.model_validate(response.json())
+        view = frame.action_policy
+        assert isinstance(view, ActionPolicyView)
         assert view.synced is True
         (binding,) = view.bindings
         assert (binding.name, binding.provenance, binding.missing_policy_sets) == (
@@ -470,18 +471,7 @@ async def test_the_sandbox_policy_is_the_services_answer_for_its_uid_or_says_why
             ["gone"],
         )
         assert [(p.binding, p.policy_set, p.index) for p in view.auto_approve_if] == [("live-launch", "test-reads", 0)]
-        assert (await browser.get("/sandboxes/nope/action-policy")).status_code == 404
-
-    session = {"Cookie": f"{INSECURE_COOKIE}={browser.cookies[INSECURE_COOKIE]}"}
-    async with _served(review.app) as url, httpx.AsyncClient(base_url=url) as client:
-        frame = await _first_snapshot(client, "/live/sandboxes/live", session)
-        assert frame.sandbox is not None
-        if operator_connection == "disabled":
-            assert frame.action_policy == ActionPolicyUnavailable(code="operator_federation_not_configured")
-        else:
-            assert frame.action_policy == ActionPolicyView.model_validate(response.json())
-        as_agent = await _first_snapshot(client, "/live/sandboxes/live", AGENT_AUTH)
-        assert as_agent.action_policy == ActionPolicyUnavailable(code="operator_session_required")
+    assert as_agent.action_policy == ActionPolicyUnavailable(code="operator_session_required")
 
 
 @pytest.mark.parametrize("operator_connection", ["disabled", "target-subject-mismatch", "wrong-audience"])
