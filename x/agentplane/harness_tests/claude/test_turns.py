@@ -24,6 +24,11 @@ RETAINED_QUEUE_SECOND = "Reply only after seeing RETAINED_QUEUE_CRASH_SECOND."
 RETAINED_QUEUE_RECOVERY = "Reply with exactly: RETAINED_QUEUE_CRASH_RECOVERY_OK"
 
 
+def conversation_user_texts(texts: list[str]) -> list[str]:
+    """Exclude Claude's generated system reminders from the conversation transcript."""
+    return [text for text in texts if not text.startswith("<system-reminder>")]
+
+
 async def test_baseline_turn(claude: ClaudeHarness, anthropic_messages: AnthropicMessages) -> None:
     async with claude.start(anthropic_messages) as run:
         prompt = await run.send("Reply with exactly: CAPTURE_BASELINE_OK")
@@ -62,13 +67,13 @@ async def test_idle_resume_replays_the_transcript_from_disk(
         prompt = await second.send("Reply with exactly: IDLE_RESUME_OK")
         async with await anthropic_messages.await_next_request() as exchange:
             request = exchange.request
-            assert request.texts("user") == [
+            assert conversation_user_texts(request.texts("user")) == [
                 "Reply with exactly: IDLE_RESUME_SEED_OK",
                 "Reply with exactly: IDLE_RESUME_OK",
             ]
             assert request.texts("assistant") == ["IDLE_RESUME_SEED_OK"]
-            assert request.stream is False
-            await exchange.respond(sse.message_body([sse.Text("IDLE_RESUME_OK")], model=MODEL))
+            assert request.stream is True
+            await exchange.send(*sse.message_stream([sse.Text("IDLE_RESUME_OK")], model=MODEL).events)
         assert (await prompt.result()).result == "IDLE_RESUME_OK"
     frames.assert_success(second.native_frames(), "IDLE_RESUME_OK")
 
@@ -92,7 +97,7 @@ async def test_resume_after_an_interrupted_partial_turn_replays_only_completed_m
 
         prompt = await interrupted.send(INTERRUPTED_RESUME_INPUT)
         async with await anthropic_messages.await_next_request() as exchange:
-            assert exchange.request.texts("user") == [SEED_INPUT, INTERRUPTED_RESUME_INPUT]
+            assert conversation_user_texts(exchange.request.texts("user")) == [SEED_INPUT, INTERRUPTED_RESUME_INPUT]
             assert exchange.request.texts("assistant") == ["CRASH_RESUME_SEED_OK"]
             assert exchange.request.stream is True
             await exchange.send(
@@ -117,13 +122,10 @@ async def test_resume_after_an_interrupted_partial_turn_replays_only_completed_m
         recovery = await resumed.send(INTERRUPTED_RESUME_RECOVERY)
         async with await anthropic_messages.await_next_request() as exchange:
             replay = exchange.request
-            conversation_user_texts = [
-                text for text in replay.texts("user") if not text.startswith("<system-reminder>")
-            ]
-            assert conversation_user_texts == [SEED_INPUT, INTERRUPTED_RESUME_RECOVERY]
+            assert conversation_user_texts(replay.texts("user")) == [SEED_INPUT, INTERRUPTED_RESUME_RECOVERY]
             assert replay.texts("assistant") == ["CRASH_RESUME_SEED_OK"]
-            assert replay.stream is False
-            await exchange.respond(sse.message_body([sse.Text("INTERRUPTED_RESUME_RECOVERY_OK")], model=MODEL))
+            assert replay.stream is True
+            await exchange.send(*sse.message_stream([sse.Text("INTERRUPTED_RESUME_RECOVERY_OK")], model=MODEL).events)
         assert (await recovery.result()).result == "INTERRUPTED_RESUME_RECOVERY_OK"
 
 
@@ -146,7 +148,10 @@ async def test_resume_after_interrupt_then_crash_drops_retained_queued_inputs(
 
         active = await interrupted.send("Keep this turn active until the process is killed.")
         async with await anthropic_messages.await_next_request() as exchange:
-            assert exchange.request.texts("user") == [SEED_INPUT, "Keep this turn active until the process is killed."]
+            assert conversation_user_texts(exchange.request.texts("user")) == [
+                SEED_INPUT,
+                "Keep this turn active until the process is killed.",
+            ]
             assert exchange.request.texts("assistant") == ["CRASH_RESUME_SEED_OK"]
             assert exchange.request.stream is True
             await exchange.send(
@@ -169,15 +174,12 @@ async def test_resume_after_interrupt_then_crash_drops_retained_queued_inputs(
         recovery = await resumed.send(RETAINED_QUEUE_RECOVERY)
         async with await anthropic_messages.await_next_request() as exchange:
             replay = exchange.request
-            conversation_user_texts = [
-                text for text in replay.texts("user") if not text.startswith("<system-reminder>")
-            ]
-            assert conversation_user_texts == [SEED_INPUT, RETAINED_QUEUE_RECOVERY]
+            assert conversation_user_texts(replay.texts("user")) == [SEED_INPUT, RETAINED_QUEUE_RECOVERY]
             assert replay.texts("assistant") == ["CRASH_RESUME_SEED_OK"]
             assert RETAINED_QUEUE_FIRST not in replay.texts("user")
             assert RETAINED_QUEUE_SECOND not in replay.texts("user")
-            assert replay.stream is False
-            await exchange.respond(sse.message_body([sse.Text("RETAINED_QUEUE_CRASH_RECOVERY_OK")], model=MODEL))
+            assert replay.stream is True
+            await exchange.send(*sse.message_stream([sse.Text("RETAINED_QUEUE_CRASH_RECOVERY_OK")], model=MODEL).events)
         assert (await recovery.result()).result == "RETAINED_QUEUE_CRASH_RECOVERY_OK"
 
 
@@ -213,7 +215,7 @@ async def test_resume_after_crash_replays_completed_history_but_drops_active_and
 
         await first.send(IN_FLIGHT_INPUT)
         async with await anthropic_messages.await_next_request() as exchange:
-            assert exchange.request.texts("user") == [SEED_INPUT, IN_FLIGHT_INPUT]
+            assert conversation_user_texts(exchange.request.texts("user")) == [SEED_INPUT, IN_FLIGHT_INPUT]
             assert exchange.request.texts("assistant") == ["CRASH_RESUME_SEED_OK"]
             assert exchange.request.stream is True
             (queued,) = await first.send_many([QUEUED_INPUT])
@@ -225,10 +227,10 @@ async def test_resume_after_crash_replays_completed_history_but_drops_active_and
         prompt = await resumed.send(RECOVERY_INPUT)
         async with await anthropic_messages.await_next_request() as exchange:
             replay = exchange.request
-            assert replay.texts("user") == [SEED_INPUT, RECOVERY_INPUT]
+            assert conversation_user_texts(replay.texts("user")) == [SEED_INPUT, RECOVERY_INPUT]
             assert replay.texts("assistant") == ["CRASH_RESUME_SEED_OK"]
-            assert replay.stream is False
-            await exchange.respond(sse.message_body([sse.Text("CRASH_RESUME_OK")], model=MODEL))
+            assert replay.stream is True
+            await exchange.send(*sse.message_stream([sse.Text("CRASH_RESUME_OK")], model=MODEL).events)
         assert (await prompt.result()).result == "CRASH_RESUME_OK"
 
 
