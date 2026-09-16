@@ -51,3 +51,5 @@ spec:
       namespace: ducktape-flux
     # Forgejo validates OIDC at init time (the configure init container fetches the discovery URL).
     # Other SSO apps (Matrix, Grafana) validate lazily at first login, so they don't need this.
+    - name: monitoring-crds # the ServiceMonitor/PodMonitor CRD
+      namespace: ducktape-flux

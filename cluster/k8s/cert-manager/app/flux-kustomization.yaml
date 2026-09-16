@@ -39,3 +39,5 @@ spec:
     # Produces the namespace-local ConfigMap that postBuild reads.
     - name: reflector
       namespace: ducktape-flux
+    - name: monitoring-crds # the ServiceMonitor/PodMonitor CRD
+      namespace: ducktape-flux

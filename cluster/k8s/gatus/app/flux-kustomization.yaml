@@ -31,3 +31,5 @@ spec:
       namespace: ducktape-flux
     - name: gateway
       namespace: ducktape-flux
+    - name: monitoring-crds # the ServiceMonitor/PodMonitor CRD
+      namespace: ducktape-flux

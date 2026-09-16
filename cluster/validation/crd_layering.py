@@ -83,12 +83,29 @@ OPERATOR_CRDS: dict[str, set[str]] = {
 # Derived: CRD kind -> operator name (for error messages)
 CRD_TO_OPERATOR: dict[str, str] = {kind: operator for operator, kinds in OPERATOR_CRDS.items() for kind in kinds}
 
-# These components are currently consolidating unnecessarily split Flux
-# Kustomizations. Keeping their resources together removes artifacts and
-# shortens the long reconcile chains created by the splits. The operator
-# dependency check still requires each Kustomization to come after SeaweedFS.
-# Remove entries as the consolidation lands; this is not a general exemption.
-MIXED_CRD_LAYERING_EXCEPTIONS = {"forgejo/app", "monitoring/loki", "monitoring/mimir", "monitoring/tempo"}
+# Suppressions for an over-broad check, not a record of real exceptions.
+#
+# TODO: narrow check_crd_layering to the hazard it is named for, then delete this
+# set. It fires on any HelmRelease beside any CR, as though every chart could
+# install every CRD. The hazard is narrower: a chart that installs a CRD, with
+# instances of *that* CRD in the same Kustomization, which would apply before the
+# chart had created it. Every path below is the benign shape instead — an
+# unrelated chart next to a CR whose CRD comes from another component entirely
+# (checked 2026-09-16: forgejo/loki/mimir/tempo carry SeaweedFS Bucket and
+# S3Identity, authentik/gatus/forgejo carry prometheus-operator monitors, and no
+# chart here installs any of them). Doing it properly needs a HelmRelease → the
+# CRDs its chart installs mapping, which nothing in the repo has yet.
+#
+# validate_operator_dependencies is unaffected and still requires each of these to
+# reach the operator that serves its CRDs.
+MIXED_CRD_LAYERING_EXCEPTIONS = {
+    "authentik/app",
+    "forgejo/app",
+    "gatus/app",
+    "monitoring/loki",
+    "monitoring/mimir",
+    "monitoring/tempo",
+}
 
 
 class CrdLayeringViolationError(Exception):

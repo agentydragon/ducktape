@@ -1052,25 +1052,11 @@ spec:
           to: "@artifact/cluster/k8s/authentik/secrets/"
           exclude:
             - flux-kustomization.yaml
-    - name: authentik-servicemonitor
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/authentik/servicemonitor/**"
-          to: "@artifact/cluster/k8s/authentik/servicemonitor/"
-          exclude:
-            - flux-kustomization.yaml
     - name: budget-app
       originRevision: "@repo"
       copy:
         - from: "@repo/cluster/k8s/budget/app/**"
           to: "@artifact/cluster/k8s/budget/app/"
-          exclude:
-            - flux-kustomization.yaml
-    - name: cert-manager-servicemonitor
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/cert-manager/servicemonitor/**"
-          to: "@artifact/cluster/k8s/cert-manager/servicemonitor/"
           exclude:
             - flux-kustomization.yaml
     - name: cli-proxy-api
@@ -1248,13 +1234,6 @@ spec:
           to: "@artifact/cluster/k8s/forgejo/secrets/"
           exclude:
             - flux-kustomization.yaml
-    - name: forgejo-servicemonitor
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/forgejo/servicemonitor/**"
-          to: "@artifact/cluster/k8s/forgejo/servicemonitor/"
-          exclude:
-            - flux-kustomization.yaml
     - name: gatus
       originRevision: "@repo"
       copy:
@@ -1267,13 +1246,6 @@ spec:
       copy:
         - from: "@repo/cluster/k8s/gatus/db/**"
           to: "@artifact/cluster/k8s/gatus/db/"
-          exclude:
-            - flux-kustomization.yaml
-    - name: gatus-servicemonitor
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/gatus/servicemonitor/**"
-          to: "@artifact/cluster/k8s/gatus/servicemonitor/"
           exclude:
             - flux-kustomization.yaml
     - name: gatus-sso-tf
@@ -1355,13 +1327,6 @@ spec:
             - flux-kustomization.yaml
         - from: "@repo/cluster/k8s/grocy/mcp-base/**"
           to: "@artifact/cluster/k8s/grocy/mcp-base/"
-    - name: grocy-mcp-sf-servicemonitor
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/grocy/sf/mcp-servicemonitor/**"
-          to: "@artifact/cluster/k8s/grocy/sf/mcp-servicemonitor/"
-          exclude:
-            - flux-kustomization.yaml
         - from: "@repo/cluster/k8s/grocy/mcp-servicemonitor-base/**"
           to: "@artifact/cluster/k8s/grocy/mcp-servicemonitor-base/"
     - name: grocy-sf-user-perms
@@ -1382,13 +1347,6 @@ spec:
             - flux-kustomization.yaml
         - from: "@repo/cluster/k8s/grocy/mcp-base/**"
           to: "@artifact/cluster/k8s/grocy/mcp-base/"
-    - name: grocy-mcp-vallejo-servicemonitor
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/grocy/vallejo/mcp-servicemonitor/**"
-          to: "@artifact/cluster/k8s/grocy/vallejo/mcp-servicemonitor/"
-          exclude:
-            - flux-kustomization.yaml
         - from: "@repo/cluster/k8s/grocy/mcp-servicemonitor-base/**"
           to: "@artifact/cluster/k8s/grocy/mcp-servicemonitor-base/"
     - name: grocy-vallejo-user-perms
@@ -1573,13 +1531,6 @@ spec:
       copy:
         - from: "@repo/cluster/k8s/litellm/db/**"
           to: "@artifact/cluster/k8s/litellm/db/"
-          exclude:
-            - flux-kustomization.yaml
-    - name: litellm-servicemonitor
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/litellm/servicemonitor/**"
-          to: "@artifact/cluster/k8s/litellm/servicemonitor/"
           exclude:
             - flux-kustomization.yaml
     - name: litellm-cheap-experiments-namespace
