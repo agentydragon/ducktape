@@ -8,6 +8,22 @@ syntax = "proto3";
 // Contract: x/agentplane/docs/thread_view_sync.md. Fold: x/agentplane/app/projection.py.
 package ducktape.agentplane.app.v1;
 
+// Identifiers and positions
+//
+// There is one integer timeline: the runner journal's dense sequence. The app archives each Event
+// under that same number rather than assigning its own -- `TrajectoryStore.record` rejects an entry
+// whose `origin.sequence` differs from its `cursor` -- so a Segment's position, a Command's
+// admission and a payload's revision are all positions in one order, directly comparable.
+//
+// A field holding such a position ends in `_cursor`, or in `_anchor` where the position is
+// specifically the one a Segment is keyed by and history pages on. Every other integer is a size, a
+// count, or a byte offset within a single payload, and is never comparable with a cursor.
+//
+// Identifiers are strings and are never positions: `thread_id` names the app's Thread, `source_id`
+// the runner journal those cursors belong to, `projection_epoch` one materialization generation of
+// it, and `command_id`, `turn_id`, `item_id` and `harness_message_id` are names minted inside the
+// conversation. Page tokens are opaque and bound to a Thread, source, epoch and direction.
+
 import "x/agentplane/protocol/command.proto";
 import "x/agentplane/protocol/event.proto";
 import "x/agentplane/protocol/event_log.proto";
@@ -305,7 +321,7 @@ message EventsByOrigin {
 // Bounded bytes at an immutable reference. Reading one never advances the live cursor.
 message PayloadChunk {
   bytes data = 1;
-  uint64 next_offset = 2;
+  uint64 next_byte_offset = 2;
   bool complete = 3;
   Availability availability = 4;
 }

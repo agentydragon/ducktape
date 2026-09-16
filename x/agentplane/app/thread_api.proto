@@ -67,10 +67,10 @@ message ListSegmentsRequest {
   string source_id = 2;
   string projection_epoch = 3;
   oneof anchor {
-    // Exclusive: Segments anchored strictly before this cursor, newest first.
-    uint64 before = 4;
-    // Exclusive: Segments anchored strictly after this cursor, oldest first.
-    uint64 after = 5;
+    // Exclusive: Segments anchored strictly before this one, newest first.
+    uint64 before_anchor = 4;
+    // Exclusive: Segments anchored strictly after this one, oldest first.
+    uint64 after_anchor = 5;
   }
   string page_token = 6;
   Limits limits = 7;
@@ -85,8 +85,8 @@ message ReadPayloadRequest {
     // Exact original Event bytes, whose identity is epoch-independent.
     ducktape.agentplane.protocol.v1.EventOrigin origin = 3;
   }
-  // UTF-8 byte offset, which is not a JavaScript string index.
-  uint64 offset = 4;
+  // Within the payload, not a position in the journal. UTF-8 bytes, not JavaScript string indices.
+  uint64 byte_offset = 4;
   uint64 max_bytes = 5;
 }
 
