@@ -7,6 +7,10 @@ exports_files([".tflint.hcl"])
 py_library(
     name = "flux_constructs",
     srcs = ["flux_constructs.py"],
+    deps = [
+        "//third_party/flux:kustomization",
+        "@pypi//cdk8s",
+    ],
 )
 
 py_library(

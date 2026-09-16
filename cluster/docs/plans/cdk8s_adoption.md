@@ -360,18 +360,23 @@ phase 1's actual pattern has run for a while, not before.
   urgency while there's only one instance to keep in sync by eye.
 - **Hand-rolled dicts vs. typed cdk8s constructs — two separate spots, raised in PR
   #7109 review:**
-  - `flux_constructs.py` builds the Flux `Kustomization` CR as a plain dict via string
-    keys, not a typed construct. cdk8s's `cdk8s import <crd.yaml>` CLI generates typed
-    L1 constructs from a CRD definition (the same mechanism that produced
-    `cdk8s_plus_33` for core Kubernetes types) — pointed at
-    `kustomize.toolkit.fluxcd.io_kustomizations.yaml` from
-    [fluxcd/kustomize-controller](https://github.com/fluxcd/kustomize-controller/blob/main/config/crd/bases/kustomize.toolkit.fluxcd.io_kustomizations.yaml),
-    it would give real field validation instead of stringly-typed dict keys. No
-    published `cdk8s-flux` package with this pre-built was found (only
-    `cdk8s-operator`, a different tool for authoring new operators, not for consuming
-    Flux's own CRDs). Worth doing deliberately — vendoring the generated bindings under
-    Bazel, regenerating `flux_constructs.py`'s two functions against them — but it's a
-    real lift, not a drive-by fix; not scheduled.
+  - ~~`flux_constructs.py` builds the Flux `Kustomization` CR as a plain dict via
+    string keys, not a typed construct~~ — resolved. `devinfra/js/cdk8s_import.bzl`
+    (PR #7111) generates typed L1 constructs from a CRD YAML via `cdk8s import`, the
+    same mechanism that produced `cdk8s_plus_33` for core Kubernetes types — fetched
+    through a `flux_kustomization_crd` `http_file()` in `MODULE.bazel`, never
+    vendored, and the generated bindings themselves are pure build output, never
+    committed either. `flux_constructs.py`'s `flux_kustomization()` now builds a
+    throwaway `cdk8s.Testing` chart from the generated `Kustomization`/
+    `KustomizationSpec`/`KustomizationSpecSourceRef`/`KustomizationSpecDependsOn`
+    classes and extracts the resolved dict via `Testing.synth()`, instead of a
+    hand-built dict — real schema validation (a bad `sourceRef.kind` or malformed
+    `dependsOn` entry now fails at synth time) for the same external contract
+    (`flux_kustomization()` still returns a plain dict; callers unchanged). Landed
+    output is byte-identical except the top-level `spec` keys sorting alphabetically
+    (cdk8s's own resolve step does this everywhere else already) — re-verified with
+    `bbr test //cluster:test_generate_manifests`, `//third_party/flux:...`, and
+    `//cluster/k8s/litellm/app:test_litellm_config`.
   - `litellm_constructs.py`'s `_add_deployment`/`_add_service`/`_add_service_account`/
     `_add_http_route` go through the same raw `ApiObject`/`JsonPatch` escape hatch as
     `flux_constructs.py`, even though `cdk8s_plus_33` (already a dependency, used for

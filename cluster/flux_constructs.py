@@ -1,15 +1,27 @@
 """Builds the Flux `Kustomization` custom resource each converted directory needs,
 plus the (kustomize) `kustomization.yaml` referencing its manifests.
 
-Only models the fields cluster/k8s/litellm/{app,servicemonitor} actually use --
-extend as more directories convert rather than pre-guessing the rest of the
-`kustomize.toolkit.fluxcd.io` CRD. See cluster/docs/plans/cdk8s_adoption.md.
+The Flux `Kustomization` CR is built from //third_party/flux:kustomization's
+generated cdk8s constructs (see devinfra/js/cdk8s_import.bzl) rather than a plain
+dict, so a malformed dependsOn entry or sourceRef kind fails at synth time instead
+of silently emitting invalid YAML. The plain (non-CRD) kustomize.config.k8s.io
+Kustomization has no schema to import against and stays hand-built. See
+cluster/docs/plans/cdk8s_adoption.md.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+
+from cdk8s import Testing
+from flux_kustomize.io.fluxcd.toolkit.kustomize import (
+    Kustomization,
+    KustomizationSpec,
+    KustomizationSpecDependsOn,
+    KustomizationSpecSourceRef,
+    KustomizationSpecSourceRefKind,
+)
 
 _NAMESPACE = "ducktape-flux"
 
@@ -34,22 +46,28 @@ class FluxKustomizationSpec:
 
 def flux_kustomization(spec: FluxKustomizationSpec) -> dict[str, object]:
     """Return the Flux `Kustomization` custom resource as a plain manifest dict."""
-    inner: dict[str, object] = {
-        "interval": spec.interval,
-        "path": spec.path,
-        "prune": True,
-        "sourceRef": {"kind": "ExternalArtifact", "name": spec.source_name or spec.name, "namespace": _NAMESPACE},
-    }
-    if spec.timeout is not None:
-        inner["timeout"] = spec.timeout
-    if spec.depends_on:
-        inner["dependsOn"] = [{"name": dep.name, "namespace": dep.namespace} for dep in spec.depends_on]
-    return {
-        "apiVersion": "kustomize.toolkit.fluxcd.io/v1",
-        "kind": "Kustomization",
-        "metadata": {"name": spec.name, "namespace": _NAMESPACE},
-        "spec": inner,
-    }
+    chart = Testing.chart()
+    Kustomization(
+        chart,
+        spec.name,
+        metadata={"name": spec.name, "namespace": _NAMESPACE},
+        spec=KustomizationSpec(
+            interval=spec.interval,
+            path=spec.path,
+            prune=True,
+            source_ref=KustomizationSpecSourceRef(
+                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT,
+                name=spec.source_name or spec.name,
+                namespace=_NAMESPACE,
+            ),
+            timeout=spec.timeout,
+            depends_on=[KustomizationSpecDependsOn(name=dep.name, namespace=dep.namespace) for dep in spec.depends_on]
+            or None,
+        ),
+    )
+    (manifest,) = Testing.synth(chart)
+    assert isinstance(manifest, dict)
+    return manifest
 
 
 def kustomize_kustomization(
