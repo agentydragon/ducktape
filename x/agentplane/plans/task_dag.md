@@ -91,7 +91,7 @@ flowchart TB
     THREAD_EVENT_CONTINUITY["Planned identity cutover<br/>one Thread journal across incarnations<br/>exclusive runner writer and retained state"]:::future
     THREAD_COMMAND_DELIVERY["Deferred backend<br/>app outbox delivery to existing runner<br/>only if app-first acceptance is chosen later"]:::future
     THREAD_VIEW_SYNC["P1 design gate<br/>derived conversation snapshot + updates<br/>on-demand Raw and state ownership"]:::decision
-    THREAD_VIEW_TRANSPORT["P1 validation<br/>standard Bazel protobuf RPC generation<br/>browser-to-Python auth and streaming"]:::future
+    THREAD_VIEW_TRANSPORT["Deferred decision<br/>reconsider an RPC transport for the browser<br/>gated on the operator authorization model"]:::future
     THREAD_VIEW_PROJECTION["Planned backend<br/>pure projection and transactional read model<br/>bounded update journal and rebuild"]:::future
     THREAD_VIEW_RPC["Planned API<br/>snapshot, changes, history, payload and evidence<br/>cross-replica synchronization"]:::future
     THREAD_TAIL_FIRST["Planned performance<br/>recent reduced items, not old token replay<br/>bounded short and long Thread loads"]:::future
@@ -125,9 +125,7 @@ flowchart TB
     AG -. hosted Thread lifecycle .-> RETIRE_AGENT
 
     INPUT_DELIVERY -. reliable Thread ingress .-> ING
-    THREAD_VIEW_SYNC --> THREAD_VIEW_TRANSPORT
     THREAD_VIEW_SYNC --> THREAD_VIEW_PROJECTION
-    THREAD_VIEW_TRANSPORT --> THREAD_VIEW_RPC
     THREAD_VIEW_PROJECTION --> THREAD_VIEW_RPC
     THREAD_VIEW_RPC --> THREAD_TAIL_FIRST
     THREAD_VIEW_RPC --> THREAD_PAYLOAD_LAZY
@@ -1007,16 +1005,28 @@ the integration; Redux Toolkit with RTK Query is the fallback, not a simultaneou
 second implementation. Library behavior alone is not deployed loading acceptance;
 React rendering, page-buffer reconciliation and transport remain separate tests.
 
-### `THREAD_VIEW_TRANSPORT` — validate protobuf RPC with standard build rules
+### `THREAD_VIEW_TRANSPORT` — reconsider an RPC transport, gated on authorization
 
-Build a minimal generated browser/Python unary and server-streaming path using the
-[transport decision and gates](../docs/thread_view_sync.md#rpc-transport-and-generation).
-Prefer Connect-Web plus Python ASGI; validate standard Bazel plugin integration with
-existing Protobuf-ES and `_pb2` message targets before adopting it. Recheck the old
-custom gRPC rule's dependency conflict instead of assuming it remains necessary.
-No bespoke service generator or framing. Test real Chromium, auth/CSRF, incremental
-streaming, cancellation, errors and 64-bit cursors; then prove actual ingress behavior.
-Keep transport validation independently reviewable from projection implementation.
+Deferred, and no longer blocking: the read API's transport is settled as REST and SSE
+carrying proto-JSON, per the [transport decision](../docs/thread_view_sync.md#transport-rest-and-sse-with-protobuf-payloads).
+Both candidates were built and measured rather than estimated — gRPC-Web through an Envoy
+translation hop, then Connect — and both records, with the constraints that decided them,
+are in that document.
+
+**The gate is authorization, not transport ergonomics.** What made both attempts expensive
+was the surrounding work, and most of that was credential plumbing: an ASGI mount inherits
+no FastAPI route dependency, so the caller check had to be re-reached, and a separate
+server would have needed its own. The browser credential and what an RPC surface would
+need from it are settled in
+[operator federation](../docs/operator_federation.md#why-the-browser-holds-a-handle-and-not-a-token),
+including the short-lived RPC token that is available but unbuilt. Reopen this node
+against that model — not because generated service stubs are appealing again.
+
+Cheap to reopen, because the durable half already exists: the shapes are protobuf and the
+generated types land on both ends regardless, so what a transport adds is `service` blocks
+over messages that are already there. Also unresolved and worth settling first: connecpy's
+generated async client delivered nothing from an open stream, so a Python consumer of such
+an RPC currently has no working client.
 
 ### `THREAD_VIEW_PROJECTION` — materialize the derived read model
 

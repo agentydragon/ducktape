@@ -30,35 +30,46 @@ The [measured short Thread](../debug/thread_load_20260915.md) had eight turns bu
 
 ## Transport: REST and SSE, with protobuf payloads
 
-The derived read API is carried by the transport the app already has: FastAPI routes
-with Pydantic models for unary reads and commands, and SSE for the followed streams.
-The view's own types -- `Segment`, `Changes`, `ViewSnapshot`, `Controls` and the rest of
-§ Positions, segments, and payloads -- are Pydantic models, and their `oneof`
-alternatives are discriminated unions, so a reader dispatches with `isinstance` and mypy
-narrows (<../../../STYLE.md> § General).
+**Protobuf defines the shapes; REST and SSE carry them.** These are separate decisions and
+this document had them fused. The derived types -- `Segment`, `Changes`, `ViewSnapshot`,
+`Controls` and the rest of § Positions, segments, and payloads -- are defined in `.proto`
+alongside the runner journal's own messages, generated to `_pb2` for Python and
+Protobuf-ES for TypeScript, and carried as **proto-JSON** over ordinary FastAPI routes and
+SSE. No service definitions, no RPC stubs, no Connect: protobuf here is the schema
+language, not the transport.
 
-**Runner-produced messages stay protobuf and cross as proto-JSON.** `EventEntry`,
-`Attached` and `Command` are protobuf because the runner journal is; they are carried
-inside SSE frames as proto-JSON and parsed in the browser with Protobuf-ES `fromJson`,
-which is what `frontend/client.ts` already does on REST responses today. Do not mirror
-them as Pydantic models: `Event`'s observation union alone has nineteen variants, and a
-second representation of one concept is exactly what <../../../STYLE.md> § General
-forbids. So Pydantic owns the frame vocabulary and the derived types; protobuf owns the
-payloads that were already protobuf.
+One schema is the point. TypeScript and Python read the same field names, the same
+`oneof` alternatives and the same enum values because they are generated from one file,
+so the two ends cannot drift. Defining these types a second time as Pydantic models is
+what that buys out of: `Event`'s observation union alone has nineteen variants, and a
+second representation of one concept is what <../../../STYLE.md> § General forbids.
+`frontend/client.ts` already reads `EventEntry` through Protobuf-ES `fromJson` on a plain
+REST response, so this is the existing path applied to more of the surface.
 
-`uint64` cursors survive this. Proto-JSON encodes 64-bit integers as **strings**, which
-`fromJson` reads back into `bigint`, so a cursor above `2^53` round-trips exactly
-through a protobuf payload. A cursor in a Pydantic-owned field does not get that for
-free: serialize it as a string deliberately, because a JSON number loses precision above
-`2^53` in the browser with nothing reporting it.
+`uint64` cursors are the concrete payoff. Proto-JSON encodes 64-bit integers as
+**strings**, which `fromJson` reads back into `bigint`, so a cursor above `2^53`
+round-trips exactly with nothing to remember. A hand-declared JSON model does not get
+that: a JSON number silently loses precision in the browser above `2^53`, and nothing
+reports it.
 
-**A stream's frame union is declared, not implied.** Give each SSE route a
-`responses={200: {"model": FrameUnion, "content": {"text/event-stream": {}}}}` so the
-frame shape reaches OpenAPI and the frontend's generated types, the way `live.py`
-already does for the live index. An SSE route without this is untyped on both ends --
-which is what today's `/threads/{id}/events/stream` is, and why its frame names live in
-a hand-rolled parser in `client.py` and a matching `switch` in TypeScript that nothing
-checks against each other.
+Pydantic keeps what protobuf is not for: request validation, query and path parameters,
+and envelopes that are not domain types. FastAPI needs it there regardless.
+
+**Two costs, so nobody rediscovers them as bugs.** First, a protobuf message is not a
+Pydantic model, so it cannot be a FastAPI `response_model` and its shape does not reach
+OpenAPI -- those payloads are opaque in `schema.d.ts`, and the browser's types for them
+come from `ts_proto_library` instead. That is a real loss for the `responses=` pattern
+`live.py` uses to type its SSE frames, and it is accepted here because generated types
+from one schema beat generated types from two. An SSE route whose frames are protobuf
+declares its frame union as a proto `oneof`; one whose frames are not still declares a
+Pydantic model in `responses=`. What is not acceptable either way is today's
+`/threads/{id}/events/stream`, whose frame names live in a hand-rolled parser in
+`client.py` and a matching `switch` in TypeScript with nothing checking them against each
+other.
+
+Second, protobuf `oneof` in Python is `WhichOneof(...)` string comparison, which
+<../../../STYLE.md> § General discourages in favour of `isinstance` narrowing. Dispatch
+stays close to the boundary rather than spreading string compares through the app.
 
 ### Backed out: protobuf RPC over Connect
 
@@ -85,10 +96,18 @@ generated typed stubs did not pay for what surrounded them:
   <../../../STYLE.md> § General discourages in favour of `isinstance` narrowing. The
   derived types are ours to define, so they get the better form.
 
-This is a decision about the **derived view**, which is new surface. It does not argue
-against protobuf, against the runner journal being protobuf, or against proto-JSON on the
-wire -- all three stay. The Bazel rule in <../../../devinfra/python/connect.bzl> and
-`app/transport_probe/` remain; removing them is separable and not required by this.
+What is backed out is the **RPC layer**, not protobuf: the schemas, the generated types on
+both ends and proto-JSON on the wire all stay, and the derived types join them. The Bazel
+rule in <../../../devinfra/python/connect.bzl> and `app/transport_probe/` remain; removing
+them is separable and not required by this.
+
+Reconsidering an RPC transport is deferred rather than closed, tracked as
+`THREAD_VIEW_TRANSPORT` in <../plans/task_dag.md>. Its gate is authorization: the browser
+credential and what an RPC surface would need from it are settled in
+<operator_federation.md> § Why the browser holds a handle and not a token, and an RPC
+transport should be revisited only against that, not on transport ergonomics alone. The
+message definitions are the durable part; a `service` block on top of them is the cheap
+part to add later.
 
 ### Rejected: gRPC-Web through an Envoy translation hop
 
@@ -160,11 +179,11 @@ listeners/transactions; it never issues an interrupt command.
 ## Schema ownership and service surface
 
 Keep `protocol/{command,event,event_log}.proto` harness-neutral and unchanged by view
-requirements: the runner journal's types are protobuf and stay that way, and the runner
-imports nothing the app defines. The derived types are **not** protobuf -- they are
-Pydantic models in the app, and they reuse the generated `Command`, `EventEntry`,
-`EventOrigin`, item/turn enums and timestamps by _carrying_ them as proto-JSON, not by
-redeclaring them. There is no product identity named Conversation.
+requirements. Add `app/thread_view.proto` for the derived segment/change types, which
+reuses the generated `Command`, `EventEntry`, `EventOrigin`, item/turn enums and
+timestamps by importing them rather than redeclaring them. The runner must not import the
+app file. These are message definitions only -- **no `service` blocks**, since nothing
+generates RPC stubs from them. There is no product identity named Conversation.
 
 Three route groups under `/threads/{thread_id}`, named for what they own rather than by
 a service suffix:
