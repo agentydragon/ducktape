@@ -432,6 +432,7 @@ py_library(
     data = ["//x/agentplane/app/migrations:files"],
     deps = [
         ":trajectory",
+        ":view_store",
         "@pypi//alembic",
         "@pypi//psycopg",
         "@pypi//pydantic_settings",
@@ -977,5 +978,17 @@ py_test(
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "view_store",
+    srcs = ["view_store.py"],
+    deps = [
+        ":operator_sessions",
+        "//x/agentplane/app:thread_view_pb2",
+        "//x/agentplane/protocol:event_log_pb2",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
     ],
 )

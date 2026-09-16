@@ -11,6 +11,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import create_engine, select, text
 from sqlalchemy.engine import make_url
 
+from x.agentplane.app import view_store
 from x.agentplane.app.trajectory import Base
 
 # SQLAlchemy loads psycopg from the URL scheme; Gazelle cannot infer the runtime dependency.
@@ -20,8 +21,13 @@ _MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 _MIGRATION_LOCK_KEY = 0x5452_414A  # "TRAJ"
 # Base is declared in operator_sessions.py; trajectory.py's own Thread/Event tables and
 # operator_sessions.py's BrowserSession all share it, and importing it here (via trajectory.py,
-# which already imports operator_sessions.py) registers every table onto one metadata.
+# which already imports operator_sessions.py) registers those tables onto one metadata.
+# view_store.py's derived tables share the same Base but nothing else imports it, so it is imported
+# here for its side effect: a model absent from this metadata reaches no migration check.
 _METADATA = Base.metadata
+# Names a derived table so the side-effect import above cannot read as unused and be removed, which
+# would silently drop those tables from every migration check.
+_DERIVED_TABLES = (view_store.ProjectionEpoch.__table__, view_store.ViewSegment.__table__)
 
 # This history's own stamp. The Action Service owns a second Alembic history, and the app's
 # integration tests point both runners at one database; the default `alembic_version` would have
