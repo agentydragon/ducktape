@@ -44,10 +44,6 @@
       "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-321f5552ffc8/aiquota-0.1.0-py3-none-any.whl",
       "sha256": "Yc8JdlUxCAyb6yYx2WwE1546TPRhp0Oq/7HjoCcakzA="
     },
-    "haku-approvals": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/haku-approvals-3b4a69f4c16d/haku-approvals.zip",
-      "sha256": "O0pp9MFtXy2UA3qwLlyq+PlcHweMrOfwNwp5X+brK9E="
-    },
     "debundle": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-5f48fc496252/debundle",
       "sha256": "X0j8SWJSNsSKAGYLgzmBYMSsp1GERfuU7xi9htH5v3w="
