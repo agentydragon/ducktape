@@ -106,6 +106,7 @@ py_library(
     name = "collect_bazel_ci_profiles",
     srcs = ["collect_bazel_ci_profiles.py"],
     visibility = ["//:__subpackages__"],
+    deps = [":invocation_ids"],
 )
 
 py_library(

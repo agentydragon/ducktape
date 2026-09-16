@@ -30,11 +30,13 @@ CI_VM_PROBE_CAS digest=
             "GITHUB_BASE_REF": "devel",
         },
         bb_remote_exit_code=0,
+        invocation_ids=["34f127a3-16a7-43f7-a590-937326e19fe4", "dab41d17-9528-48f9-8e93-d94cfab847ba"],
     )
 
     assert record["schema"] == "ducktape.bb_remote_linkage.v1"
     assert record["github"]["run_id"] == "27313474860"
-    assert record["buildbuddy"]["runner_invocation_id"] == "cab7b556-8bc9-46fc-8f9d-54b880ef4153"
+    assert "runner_invocation_id" not in record["buildbuddy"]
+    assert "runner_invocation_url" not in record["buildbuddy"]
     assert record["buildbuddy"]["bazel_invocations"] == [
         {
             "index": 0,
@@ -58,12 +60,18 @@ CI_VM_PROBE_CAS digest=
 
 def test_missing_ids_are_warnings() -> None:
     record = emit_bb_remote_linkage.build_record(
-        log_text="no useful lines", log_path=Path("/tmp/bb-remote.log"), roles=[], env={}, bb_remote_exit_code=1
+        log_text="""
+Streaming remote runner logs to: https://app.buildbuddy.io/invocation/cab7b556-8bc9-46fc-8f9d-54b880ef4153
+INFO: Invocation ID: 11111111-1111-4111-8111-111111111111
+""",
+        log_path=Path("/tmp/bb-remote.log"),
+        roles=["test"],
+        env={},
+        bb_remote_exit_code=1,
     )
 
-    assert record["buildbuddy"].get("runner_invocation_id") is None
     assert record["buildbuddy"]["bazel_invocations"] == []
-    assert record["warnings"] == ["runner invocation id not found", "child Bazel invocation ids not found"]
+    assert record["warnings"] == ["child Bazel invocation ids not supplied"]
 
 
 def test_known_ids_exclude_local_bazel_commands() -> None:

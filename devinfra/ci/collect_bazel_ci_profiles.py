@@ -24,9 +24,11 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, cast
 
+from devinfra.ci.invocation_ids import invocation_id
+
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 CARET_ANSI_RE = re.compile(r"\^\[\[[0-9;]*m")
-INVOCATION_RE = re.compile(r"Invocation ID: (?P<id>[0-9a-f-]{36})")
+COMMAND_RE = re.compile(r"CI_BAZEL_COMMAND role=(?P<role>[a-z0-9_-]+)")
 ANALYZING_RE = re.compile(
     r"Analyzing:\s*(?P<targets>\d+) targets "
     r"\((?P<packages>\d+) packages loaded, (?P<configured>\d+) targets configured\)?"
@@ -94,8 +96,9 @@ def parse_kv(text: str) -> dict[str, str]:
     return result
 
 
-def parse_log(text: str) -> dict[str, Any]:
-    invocations: list[dict[str, Any]] = []
+def parse_log(text: str, known_invocations: list[dict[str, str]]) -> dict[str, Any]:
+    invocations: list[dict[str, Any]] = [{**invocation, "analyzing": []} for invocation in known_invocations]
+    invocations_by_role = {invocation["role"]: invocation for invocation in invocations}
     current: dict[str, Any] | None = None
     probe_summaries = []
     probe_servers = []
@@ -126,10 +129,8 @@ def parse_log(text: str) -> dict[str, Any]:
             else:
                 probe_cas.append({"raw": rest})
             continue
-        if match := INVOCATION_RE.search(line):
-            role = "test" if not invocations else "build" if len(invocations) == 1 else f"command-{len(invocations)}"
-            current = {"id": match.group("id"), "role": role, "analyzing": []}
-            invocations.append(current)
+        if match := COMMAND_RE.search(line):
+            current = invocations_by_role.get(match.group("role"))
             continue
         if current is None:
             continue
@@ -344,7 +345,7 @@ def bes_summary(events: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def gh_run_metadata(repo: str, run_id: str) -> dict[str, Any]:
-    fields = "databaseId,workflowName,event,headBranch,headSha,displayTitle,status,conclusion,createdAt,updatedAt,jobs"
+    fields = "databaseId,attempt,workflowName,event,headBranch,headSha,displayTitle,status,conclusion,createdAt,updatedAt,jobs"
     data = json.loads(run(["gh", "run", "view", run_id, "--repo", repo, "--json", fields]).stdout)
     if not isinstance(data, dict):
         raise RuntimeError(f"GitHub run metadata for {run_id} was not a JSON object")
@@ -395,7 +396,12 @@ def collect_run(repo: str, run_id: str, out_root: Path, bbapi: Path) -> dict[str
     meta = gh_run_metadata(repo, run_id)
     job_id = bazel_job_id(meta)
     log_text = download_job_log(repo, run_id, job_id, run_dir / "github-job.log")
-    parsed = parse_log(log_text)
+    attempt = str(meta["attempt"])
+    known_invocations = [
+        {"id": str(invocation_id(run_id=run_id, attempt=attempt, role=role)), "role": role}
+        for role in ["test", "build"]
+    ]
+    parsed = parse_log(log_text, known_invocations)
 
     for invocation in parsed["invocations"]:
         try:
