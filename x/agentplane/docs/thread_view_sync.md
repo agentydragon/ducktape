@@ -90,31 +90,35 @@ service ThreadViewService {
   rpc GetView(GetViewRequest) returns (ViewSnapshot);
   rpc FollowView(FollowViewRequest) returns (stream ViewUpdate);
   rpc ListRows(ListRowsRequest) returns (RowsPage);
-  rpc ListPendingCommands(ListPendingCommandsRequest) returns (CommandsPage);
-  rpc GetCommands(GetCommandsRequest) returns (CommandLookup);
   rpc ReadPayload(ReadPayloadRequest) returns (PayloadChunk);
 }
 
 service ThreadCommandService {
   rpc Submit(SubmitRequest) returns (EventEntry);
+  rpc ListPendingCommands(ListPendingCommandsRequest) returns (CommandsPage);
+  rpc GetCommands(GetCommandsRequest) returns (CommandLookup);
 }
 
-service ThreadEvidenceService {
+service ThreadEventsService {
   rpc ListEvents(ListEventsRequest) returns (EventsPage);
   rpc GetEvents(GetEventsRequest) returns (EventsByOrigin);
   rpc FollowEvents(FollowEventsRequest) returns (stream EventEntry);
 }
 ```
 
+`ThreadCommandService` covers submission and queries of both pending and settled
+commands. Its reads share the view's materialized checkpoint; the service boundary
+does not introduce an app-owned queue or another ordering.
+
 | Method                | Request shape                                                                                                          | Response/contract                                                                                                                |
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | `GetView`             | `thread_id`, recent row/byte limits, optional reading anchor and bounded surrounding window, bounded local command IDs | One consistent `ViewSnapshot`; both a tail and an old reading window when needed                                                 |
 | `FollowView`          | `thread_id`, projection position                                                                                       | Contiguous committed change batches, or explicit rebootstrap requirement                                                         |
 | `ListRows`            | `thread_id`, epoch/source, exclusive before/after anchor or around anchor, limits, minimum processed cursor            | Bounded current rows, sampled position, stable next/previous boundaries; not offset pagination                                   |
-| `ListPendingCommands` | Thread/epoch, exclusive admission anchor, limits, minimum processed cursor                                             | Pending summaries sampled at a position; explicit continuation and total unresolved count                                        |
-| `GetCommands`         | Thread, bounded IDs, minimum processed cursor                                                                          | Exact admitted Commands and outcome references, or `not_observed_through`; includes settled commands outside all visible windows |
 | `ReadPayload`         | Thread, immutable payload reference, byte offset/limit                                                                 | Exact bounded bytes, next offset, completeness/availability; no live checkpoint advancement                                      |
 | `Submit`              | `thread_id`, exact generated `Command`                                                                                 | Exact runner `CommandAdmitted` EventEntry, only after app archival; not effect completion                                        |
+| `ListPendingCommands` | Thread/epoch, exclusive admission anchor, limits, minimum processed cursor                                             | Pending summaries sampled at a position; explicit continuation and total unresolved count                                        |
+| `GetCommands`         | Thread, bounded IDs, minimum processed cursor                                                                          | Exact admitted Commands and outcome references, or `not_observed_through`; includes settled commands outside all visible windows |
 | `ListEvents`          | Thread/source, exclusive original cursor, optional end/filter, count/byte limits                                       | Exact entries, scanned range, next page token and availability; filtered output is not a contiguous Event prefix                 |
 | `GetEvents`           | Thread and bounded original `EventOrigin` references                                                                   | Exact evidence or per-reference availability, including outside loaded history                                                   |
 | `FollowEvents`        | Thread/source plus shared `Follow`                                                                                     | Explicit opt-in, unfiltered original Event log; independent raw checkpoint                                                       |
