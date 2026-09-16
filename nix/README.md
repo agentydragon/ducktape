@@ -98,6 +98,9 @@ sudo nixos-rebuild switch --flake github:agentydragon/ducktape?ref=devel#<hostna
 home-manager switch --flake github:agentydragon/ducktape?ref=devel#nixos-vm
 home-manager switch --impure --flake github:agentydragon/ducktape?ref=devel#atlas
 
+# Apply the phone config directly from GitHub (nix-on-droid)
+nix-on-droid switch --flake github:agentydragon/ducktape?ref=devel#pixel6 --impure
+
 # List standalone home-manager generations
 home-manager generations
 

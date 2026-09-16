@@ -28,8 +28,16 @@ why this setup doesn't use it.
 
 ## Bring-up
 
+Inside the nix-on-droid app's terminal, after its own first-run bootstrap — no local
+checkout needed, applies straight from GitHub:
+
 ```bash
-# Inside the nix-on-droid app's terminal, after its own first-run bootstrap:
+nix-on-droid switch --flake github:agentydragon/ducktape?ref=devel#pixel6 --impure
+```
+
+Iterating on the config itself instead (edit locally, apply, push when it works):
+
+```bash
 git clone https://github.com/agentydragon/ducktape ~/ducktape
 cd ~/ducktape
 nix-on-droid switch --flake .#pixel6 --impure
