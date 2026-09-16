@@ -255,7 +255,7 @@ sequenceDiagram
     R-->>A: ServerMessage {event_entry:E(41, command_admitted{command:M})}
     A->>A: Commit E41
     A-->>F: HTTP 200, E41<br/>SSE id:41, data:E41
-    Note over F,H: Picker still shows applied old model; M is pending
+    Note over F,H: Picker still shows applied old model. M is pending
     F->>A: POST /threads/T/commands<br/>I = Command {command_id:I, submit_input:{text:Continue the task}}
     A->>R: ClientMessage {command:I}
     R->>R: Persist I
@@ -310,10 +310,10 @@ sequenceDiagram
     A->>R: ClientMessage {command:C}
     R->>R: Persist C
     R-->>A: E(n, command_admitted{command:C})
-    A->>A: Copy Event; derive delivery satisfied
+    A->>A: Copy Event and derive delivery satisfied
     R-->>A: E(m, harness_user_message_confirmed{<br/>origin_command_ids:[C], text:Inspect this workspace, ...})
     A->>A: Copy Events
-    F->>A: GET Thread T; Follow {after_cursor:0}; refresh pending and Sandbox state
+    F->>A: GET Thread T, Follow {after_cursor:0}, refresh pending and Sandbox state
     A-->>F: C in app intent, exact E1..Em,<br/>separate operational snapshot
 ```
 

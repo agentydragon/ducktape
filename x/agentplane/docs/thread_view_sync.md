@@ -308,7 +308,7 @@ sequenceDiagram
     A->>A: Archive admission
     A--xF: Admission response lost
     A-->>F: Changes {after:940, through:941, C admitted, applied_model unchanged}
-    Note over R: Current turn continues; another command can be submitted
+    Note over R: Current turn continues. Another command can be submitted
     R-->>A: Event 970 ModelChanged(C, M)
     A-->>F: Changes {after:941, through:970, C effected, applied_model:M}
 ```
@@ -353,10 +353,10 @@ sequenceDiagram
     participant A as App through 500000
     F->>A: FollowView {T, S, E, after:970}
     A-->>F: RebootstrapRequired {UpdateCacheExpired}
-    F->>F: Cancel old generation; retain draft and reading anchor 400
+    F->>F: Cancel old generation. Retain draft and reading anchor 400
     F->>A: GetView {T, recent:50, around:400, local_ids:[C]}
     A-->>F: Snapshot {through:500000, tail, reading window, C settled, controls}
-    F->>F: Atomic replacement; no missed-token replay or jump to bottom
+    F->>F: Atomic replacement without missed-token replay or jump to bottom
     F->>A: FollowView {T, S, E, after:500000}
     A-->>F: Changes {500000..500020}
 ```
@@ -407,9 +407,9 @@ sequenceDiagram
     A-->>F: Changes {1010..1030, update old item I}
     A-->>F: Delayed RowsPage {through:1010, I, before:350}
     F->>F: Merge page + buffered 1010..1030 for its rows
-    Note over F: Still through 1030; preserve visible row and pixel offset
+    Note over F: Still through 1030. Preserve visible row and pixel offset
     F->>A: ReadPayload {I.output, revision:1020, offset:0, limit:65536}
-    A-->>F: Exact chunk at that reference; no live cursor change
+    A-->>F: Exact chunk at that reference without changing live cursor
 ```
 
 Pending-page and command-lookup hydration obey the same position/generation rules.
