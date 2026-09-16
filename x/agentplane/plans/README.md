@@ -30,7 +30,8 @@ generic MCP, configured Identities, Connection grants, and OAuth/consent. The
 [launch presets](../docs/launch_presets.md), and [action policies](../docs/action_policies.md) own
 the other implemented contracts.
 [Thread, runner, and harness layering](../docs/thread_layering.md) owns the command/Event
-architecture and distinguishes the implemented runner-admission/app-archive path from
-planned reduced conversation-view sync with on-demand Raw, pending Thread identity
-continuity, native recovery, and optional app-first acceptance.
+architecture, pending Thread identity continuity, native recovery, and optional
+app-first acceptance. [Thread view synchronization](../docs/thread_view_sync.md)
+owns the proposed reduced read/RPC contract, on-demand Raw, history/catch-up and
+frontend state; it is distinct from the implemented raw-replay API.
 Deployed acceptance is tracked in the DAG; code or CI evidence alone does not satisfy it.
