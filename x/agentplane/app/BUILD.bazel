@@ -957,9 +957,9 @@ py_library(
     name = "projection",
     srcs = ["projection.py"],
     deps = [
+        "//x/agentplane/app:thread_view_pb2",
         "//x/agentplane/protocol:command_pb2",
         "//x/agentplane/protocol:event_log_pb2",
-        "//x/agentplane/protocol:event_pb2",
         "@pypi//protobuf",
     ],
 )
@@ -971,6 +971,7 @@ py_test(
         ":conftest",
         ":projection",
         "//:conftest",
+        "//x/agentplane/app:thread_view_pb2",
         "//x/agentplane/protocol:command_pb2",
         "//x/agentplane/protocol:event_log_pb2",
         "//x/agentplane/protocol:event_pb2",

@@ -1,35 +1,32 @@
 """The pure fold from archived Events to the derived Thread view.
 
 One Segment begins at each conversation-bearing Event, keyed by that Event's immutable cursor, and
-later Events revise it in place. `advance` returns both the new Projection and the change batch that
-carries it there, so a client holding a snapshot at `H` and applying the batches through `K` reaches
-exactly `project(entries through K)`. That equivalence is the contract
+later Events revise it in place. `advance` returns the new Projection and the `Changes` batch that
+carries a client there, so a client holding a snapshot at `H` and applying the batches through `K`
+reaches exactly what a rebuild produces. That equivalence is the contract
 <../docs/thread_view_sync.md> calls parity, and `test_projection.py` checks it over randomized batch
 boundaries.
 
-Nothing here touches PostgreSQL, transports or time: the projector transaction and the RPC layer own
-those. The design's `Control` and `GroupBoundary` alternatives are refined into the variants Events
-actually produce -- `ModelEffect`/`TurnOutcome` and `Lifecycle`/`CommandReceipt` -- rather than
-carrying a discriminator an implementation would have to re-derive. Its `Diagnostic` is not minted:
-no observation produces one that `TurnOutcome.error` and `Lifecycle` do not already carry.
+The fold emits `thread_view.proto` messages rather than its own types: a Segment's next hop is always
+the wire or the read model, so a separate internal representation would only be a copy to keep in
+sync. Nothing here touches PostgreSQL, transports or time.
+
+Segments carry whole values. Bounding a response to a byte budget, and splitting large values into
+referenced payloads, belong to the layers that know those budgets, so a `BoundedText` from this
+module always holds the complete value in `preview` and sets no `reference`.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from enum import StrEnum
 
-from x.agentplane.protocol import command_pb2, event_log_pb2, event_pb2
+from x.agentplane.app import thread_view_pb2
+from x.agentplane.protocol import command_pb2, event_log_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
-
-
-class HarnessState(StrEnum):
-    RUNNING = "running"
-    STOPPED = "stopped"
-    LOST = "lost"
 
 
 class OperationKind(StrEnum):
@@ -44,8 +41,8 @@ class OperationKind(StrEnum):
 class UninterpretedObservationError(Exception):
     """An observation this generation of the fold does not model.
 
-    Raised rather than skipped: a projection that silently ignores a newer runner's Event would
-    serve a conversation missing whatever that Event said, while reporting full coverage.
+    Raised rather than skipped: a projection that silently ignores a newer runner's Event would serve
+    a conversation missing whatever that Event said, while reporting full coverage.
     """
 
     def __init__(self, cursor: int, case: str) -> None:
@@ -54,162 +51,38 @@ class UninterpretedObservationError(Exception):
         self.case = case
 
 
-@dataclass(frozen=True)
-class ConfirmedInput:
-    """Harness-confirmed text, anchored at confirmation rather than at submission."""
-
-    harness_message_id: str
-    text: str
-    turn_id: str | None
-    # Every Command that produced this text: Claude coalesces several into one confirmation.
-    origin_command_ids: tuple[str, ...]
-
-
-@dataclass(frozen=True)
-class TextOutcome:
-    text: str
-
-
-@dataclass(frozen=True)
-class ToolOutcome:
-    output: str
-    succeeded: bool
-
-
-@dataclass(frozen=True)
-class Item:
-    item_id: str
-    kind: event_pb2.ItemKind
-    tool_name: str
-    # What streamed so far. `completion` replaces it with the authoritative value when it arrives.
-    text: str
-    arguments_json: str
-    output: str
-    # Absent while streaming, and after a crash that ended the stream: unknown output never becomes
-    # a successful completion.
-    completion: TextOutcome | ToolOutcome | None
-
-
-@dataclass(frozen=True)
-class Turn:
-    turn_id: str
-    model: str
-    status: event_pb2.TurnStatus | None
-
-
-@dataclass(frozen=True)
-class ModelEffect:
-    command_id: str
-    previous_model: str
-    model: str
-
-
-@dataclass(frozen=True)
-class TurnOutcome:
-    """A turn's terminal result, anchored at the terminal Event so it renders after partial output
-    rather than again at the turn header."""
-
-    turn_id: str
-    status: event_pb2.TurnStatus
-    error: str
-    interrupted_by_command_id: str
-
-
-@dataclass(frozen=True)
-class Lifecycle:
-    state: HarnessState
-    exit_code: int
-    stopped_by_command_id: str
-
-
-@dataclass(frozen=True)
-class CommandReceipt:
-    """An admission or terminal non-effect boundary. It has no normal-mode card, but it is still a
-    Segment so that grouping stays deterministic across page edges."""
-
-    command_id: str
-
-
-SegmentContent = ConfirmedInput | Item | Turn | ModelEffect | TurnOutcome | Lifecycle | CommandReceipt
-
-
-@dataclass(frozen=True)
-class Segment:
-    anchor_cursor: int
-    revision_cursor: int
-    content: SegmentContent
-
-
-@dataclass(frozen=True)
-class Pending:
-    pass
-
-
-@dataclass(frozen=True)
-class Effected:
-    """The specifically evidenced operation took effect, at this Event."""
-
-    origin_cursor: int
-
-
-@dataclass(frozen=True)
-class Failed:
-    origin_cursor: int
-    reason: str
-
-
-@dataclass(frozen=True)
-class Noop:
-    origin_cursor: int
-    reason: str
-
-
-@dataclass(frozen=True)
-class CommandSummary:
-    command_id: str
-    operation_kind: OperationKind
-    admission_cursor: int
-    outcome: Pending | Effected | Failed | Noop
-
-
-@dataclass(frozen=True)
-class Controls:
-    """Current state as the Events evidence it, never as a request or a local expectation."""
-
-    applied_model: str | None
-    active_turn_id: str | None
-    harness_state: HarnessState | None
-
-
-EMPTY_CONTROLS = Controls(applied_model=None, active_turn_id=None, harness_state=None)
-
-
-@dataclass(frozen=True)
+@dataclass
 class Projection:
-    through_cursor: int
-    # Ordered by anchor cursor: the order the conversation is read in.
-    segments: tuple[Segment, ...]
-    commands: tuple[CommandSummary, ...]
-    controls: Controls
+    """The complete materialized state of one source at one epoch.
 
-
-EMPTY = Projection(through_cursor=0, segments=(), commands=(), controls=EMPTY_CONTROLS)
-
-
-@dataclass(frozen=True)
-class Batch:
-    """Everything that changed over `(after_cursor, through_cursor]`.
-
-    `segments` and `commands` carry complete values rather than patches, so applying a batch never
-    depends on the recipient already holding the previous revision. An interval whose Events were all
-    native still publishes an empty batch: coverage advanced.
+    Unbounded, and never sent whole: `ViewSnapshot` is the bounded, paged view of it.
     """
 
-    after_cursor: int
-    through_cursor: int
-    segments: tuple[Segment, ...]
-    commands: tuple[CommandSummary, ...]
-    controls: Controls
+    position: thread_view_pb2.Position
+    # Ordered by anchor cursor: the order the conversation is read in.
+    segments: tuple[thread_view_pb2.Segment, ...]
+    commands: tuple[thread_view_pb2.CommandSummary, ...]
+    controls: thread_view_pb2.Controls
+
+
+def empty(source_id: str, projection_epoch: str) -> Projection:
+    """An empty projection of a known source.
+
+    Both identities are required: a view with no observed source is a projection-not-ready error, not
+    an empty view over an invented one.
+    """
+    if not source_id or not projection_epoch:
+        raise ValueError(f"a projection needs both identities: {source_id=} {projection_epoch=}")
+    return Projection(
+        position=thread_view_pb2.Position(source_id=source_id, projection_epoch=projection_epoch),
+        segments=(),
+        commands=(),
+        controls=thread_view_pb2.Controls(),
+    )
+
+
+def text_of(value: str) -> thread_view_pb2.BoundedText:
+    return thread_view_pb2.BoundedText(preview=value, byte_length=len(value.encode()))
 
 
 def operation_kind(command: command_pb2.Command) -> OperationKind:
@@ -219,29 +92,54 @@ def operation_kind(command: command_pb2.Command) -> OperationKind:
     return OperationKind(case)
 
 
+def _copy_item(message: thread_view_pb2.Item) -> thread_view_pb2.Item:
+    clone = thread_view_pb2.Item()
+    clone.CopyFrom(message)
+    return clone
+
+
 class _Builder:
-    """Mutable working state for one fold. Rebuilt from a Projection so `advance` stays pure."""
+    """Mutable working state for one fold, rebuilt from a Projection so `advance` stays a function."""
 
     def __init__(self, projection: Projection) -> None:
-        self.through_cursor = projection.through_cursor
+        self.position = thread_view_pb2.Position()
+        self.position.CopyFrom(projection.position)
         self.segments = {segment.anchor_cursor: segment for segment in projection.segments}
         self.commands = {summary.command_id: summary for summary in projection.commands}
-        self.controls = projection.controls
+        self.controls = thread_view_pb2.Controls()
+        self.controls.CopyFrom(projection.controls)
         # Anchors let a later Event find the Segment its subject already started.
-        self.items = {s.content.item_id: c for c, s in self.segments.items() if isinstance(s.content, Item)}
-        self.turns = {s.content.turn_id: c for c, s in self.segments.items() if isinstance(s.content, Turn)}
-        self.touched: dict[int, Segment] = {}
-        self.settled: dict[str, CommandSummary] = {}
+        self.items = {s.item.item_id: c for c, s in self.segments.items() if s.WhichOneof("content") == "item"}
+        self.turns = {s.turn.turn_id: c for c, s in self.segments.items() if s.WhichOneof("content") == "turn"}
+        self.touched: dict[int, thread_view_pb2.Segment] = {}
+        self.settled: dict[str, thread_view_pb2.CommandSummary] = {}
 
-    def put(self, cursor: int, content: SegmentContent, *, anchor: int | None = None) -> None:
-        """Start a Segment at `cursor`, or revise the one already anchored at `anchor`."""
-        at = cursor if anchor is None else anchor
-        segment = Segment(anchor_cursor=at, revision_cursor=cursor, content=content)
-        self.segments[at] = segment
-        self.touched[at] = segment
+    def _put(self, anchor: int, cursor: int) -> thread_view_pb2.Segment:
+        segment = thread_view_pb2.Segment(anchor_cursor=anchor, revision_cursor=cursor)
+        self.segments[anchor] = segment
+        self.touched[anchor] = segment
+        return segment
 
-    def item(self, cursor: int, item_id: str) -> tuple[int, Item]:
-        """The Segment for an item, started here if this Event is the log's first mention of it.
+    def confirmed_input(self, cursor: int, value: thread_view_pb2.ConfirmedInput) -> None:
+        self._put(cursor, cursor).confirmed_input.CopyFrom(value)
+
+    def turn(self, anchor: int, cursor: int, value: thread_view_pb2.Turn) -> None:
+        self._put(anchor, cursor).turn.CopyFrom(value)
+
+    def model_effect(self, cursor: int, value: thread_view_pb2.ModelEffect) -> None:
+        self._put(cursor, cursor).model_effect.CopyFrom(value)
+
+    def turn_outcome(self, cursor: int, value: thread_view_pb2.TurnOutcome) -> None:
+        self._put(cursor, cursor).turn_outcome.CopyFrom(value)
+
+    def lifecycle(self, cursor: int, value: thread_view_pb2.Lifecycle) -> None:
+        self._put(cursor, cursor).lifecycle.CopyFrom(value)
+
+    def receipt(self, cursor: int, command_id: str) -> None:
+        self._put(cursor, cursor).command_receipt.command_id = command_id
+
+    def item(self, cursor: int, item_id: str) -> tuple[int, thread_view_pb2.Item]:
+        """The Item for an id, started here if this Event is the log's first mention of it.
 
         A delta can precede its `ItemStarted`, so first mention -- not the start Event -- owns the
         anchor; the kind stays unspecified until the start Event names it.
@@ -249,44 +147,72 @@ class _Builder:
         anchor = self.items.get(item_id)
         if anchor is None:
             self.items[item_id] = cursor
-            blank = Item(
-                item_id=item_id,
-                kind=event_pb2.ITEM_KIND_UNSPECIFIED,
-                tool_name="",
-                text="",
-                arguments_json="",
-                output="",
-                completion=None,
-            )
-            return cursor, blank
-        existing = self.segments[anchor].content
-        assert isinstance(existing, Item)
-        return anchor, existing
+            return cursor, thread_view_pb2.Item(item_id=item_id)
+        return anchor, _copy_item(self.segments[anchor].item)
 
-    def settle(self, command_id: str, outcome: Effected | Failed | Noop) -> None:
-        """Record a terminal outcome against an admitted Command.
+    def put_item(self, anchor: int, cursor: int, value: thread_view_pb2.Item) -> None:
+        self._put(anchor, cursor).item.CopyFrom(value)
 
-        An outcome can name a Command whose admission is not in this Projection -- an app replica
+    def admit(self, cursor: int, command: command_pb2.Command) -> None:
+        summary = thread_view_pb2.CommandSummary(
+            command_id=command.command_id,
+            operation_kind=operation_kind(command),
+            admission_cursor=cursor,
+            pending=thread_view_pb2.Pending(),
+        )
+        self.commands[command.command_id] = summary
+        self.settled[command.command_id] = summary
+
+    def _settled_copy(self, command_id: str) -> thread_view_pb2.CommandSummary | None:
+        """A copy to write a terminal outcome onto, or None when the admission is out of range.
+
+        An outcome can name a Command whose admission precedes this Projection -- an app replica
         replaying from a later checkpoint -- and is then dropped rather than invented: the admission
         Event carries the exact payload, so a summary without it would be a fabrication.
         """
         summary = self.commands.get(command_id)
         if summary is None:
+            return None
+        settled = thread_view_pb2.CommandSummary()
+        settled.CopyFrom(summary)
+        return settled
+
+    def _record(self, settled: thread_view_pb2.CommandSummary) -> None:
+        self.commands[settled.command_id] = settled
+        self.settled[settled.command_id] = settled
+
+    def effected(self, command_id: str, cursor: int) -> None:
+        settled = self._settled_copy(command_id)
+        if settled is None:
             return
-        settled = replace(summary, outcome=outcome)
-        self.commands[command_id] = settled
-        self.settled[command_id] = settled
+        settled.effected.origin_cursor = cursor
+        self._record(settled)
+
+    def failed(self, command_id: str, cursor: int, reason: str) -> None:
+        settled = self._settled_copy(command_id)
+        if settled is None:
+            return
+        settled.failed.origin_cursor = cursor
+        settled.failed.reason = reason
+        self._record(settled)
+
+    def noop(self, command_id: str, cursor: int, reason: str) -> None:
+        settled = self._settled_copy(command_id)
+        if settled is None:
+            return
+        settled.noop.origin_cursor = cursor
+        settled.noop.reason = reason
+        self._record(settled)
 
     def finish(self) -> Projection:
         return Projection(
-            through_cursor=self.through_cursor,
+            position=self.position,
             segments=tuple(self.segments[cursor] for cursor in sorted(self.segments)),
-            commands=tuple(self.commands[key] for key in sorted(self.commands, key=self._admission)),
+            commands=tuple(
+                self.commands[key] for key in sorted(self.commands, key=lambda k: self.commands[k].admission_cursor)
+            ),
             controls=self.controls,
         )
-
-    def _admission(self, command_id: str) -> int:
-        return self.commands[command_id].admission_cursor
 
 
 def _fold(builder: _Builder, entry: event_log_pb2.EventEntry) -> None:
@@ -295,73 +221,68 @@ def _fold(builder: _Builder, entry: event_log_pb2.EventEntry) -> None:
     case = event.WhichOneof("observation")
     match case:
         case "harness_started":
-            builder.controls = replace(builder.controls, harness_state=HarnessState.RUNNING)
-            builder.put(cursor, Lifecycle(state=HarnessState.RUNNING, exit_code=0, stopped_by_command_id=""))
+            builder.controls.harness_state = thread_view_pb2.HARNESS_STATE_RUNNING
+            builder.lifecycle(cursor, thread_view_pb2.Lifecycle(state=thread_view_pb2.HARNESS_STATE_RUNNING))
         case "harness_exited":
             exited = event.harness_exited
-            builder.controls = replace(builder.controls, harness_state=HarnessState.STOPPED)
-            builder.put(
+            builder.controls.harness_state = thread_view_pb2.HARNESS_STATE_STOPPED
+            builder.lifecycle(
                 cursor,
-                Lifecycle(
-                    state=HarnessState.STOPPED,
+                thread_view_pb2.Lifecycle(
+                    state=thread_view_pb2.HARNESS_STATE_STOPPED,
                     exit_code=exited.exit_code,
                     stopped_by_command_id=exited.stopped_by_command_id,
                 ),
             )
             if exited.stopped_by_command_id:
-                builder.settle(exited.stopped_by_command_id, Effected(origin_cursor=cursor))
+                builder.effected(exited.stopped_by_command_id, cursor)
         case "harness_lost":
-            builder.controls = replace(builder.controls, harness_state=HarnessState.LOST)
-            builder.put(cursor, Lifecycle(state=HarnessState.LOST, exit_code=0, stopped_by_command_id=""))
+            builder.controls.harness_state = thread_view_pb2.HARNESS_STATE_LOST
+            builder.lifecycle(cursor, thread_view_pb2.Lifecycle(state=thread_view_pb2.HARNESS_STATE_LOST))
         case "command_admitted":
             command = event.command_admitted.command
-            builder.commands[command.command_id] = CommandSummary(
-                command_id=command.command_id,
-                operation_kind=operation_kind(command),
-                admission_cursor=cursor,
-                outcome=Pending(),
-            )
-            builder.settled[command.command_id] = builder.commands[command.command_id]
-            builder.put(cursor, CommandReceipt(command_id=command.command_id))
+            builder.admit(cursor, command)
+            builder.receipt(cursor, command.command_id)
         case "command_failed":
             failed = event.command_failed
-            builder.settle(failed.command_id, Failed(origin_cursor=cursor, reason=failed.reason))
-            builder.put(cursor, CommandReceipt(command_id=failed.command_id))
+            builder.failed(failed.command_id, cursor, failed.reason)
+            builder.receipt(cursor, failed.command_id)
         case "command_noop":
             noop = event.command_noop
-            builder.settle(noop.command_id, Noop(origin_cursor=cursor, reason=noop.reason))
-            builder.put(cursor, CommandReceipt(command_id=noop.command_id))
+            builder.noop(noop.command_id, cursor, noop.reason)
+            builder.receipt(cursor, noop.command_id)
         case "harness_user_message_confirmed":
             confirmed = event.harness_user_message_confirmed
-            builder.put(
+            builder.confirmed_input(
                 cursor,
-                ConfirmedInput(
+                thread_view_pb2.ConfirmedInput(
                     harness_message_id=confirmed.harness_message_id,
-                    text=confirmed.text,
-                    turn_id=confirmed.turn_id or None,
-                    origin_command_ids=tuple(confirmed.origin_command_ids),
+                    text=text_of(confirmed.text),
+                    turn_id=confirmed.turn_id,
+                    origin_command_ids=confirmed.origin_command_ids,
                 ),
             )
             for command_id in confirmed.origin_command_ids:
-                builder.settle(command_id, Effected(origin_cursor=cursor))
+                builder.effected(command_id, cursor)
         case "turn_started":
             started = event.turn_started
             builder.turns[started.turn_id] = cursor
-            builder.put(cursor, Turn(turn_id=started.turn_id, model=started.model, status=None))
-            builder.controls = replace(builder.controls, active_turn_id=started.turn_id)
+            builder.turn(cursor, cursor, thread_view_pb2.Turn(turn_id=started.turn_id, model=started.model))
+            builder.controls.active_turn_id = started.turn_id
             if started.model:
-                builder.controls = replace(builder.controls, applied_model=started.model)
+                builder.controls.applied_model = started.model
         case "turn_completed":
             completed = event.turn_completed
             anchor = builder.turns.get(completed.turn_id)
             if anchor is not None:
-                turn = builder.segments[anchor].content
-                assert isinstance(turn, Turn)
-                builder.put(cursor, replace(turn, status=completed.status), anchor=anchor)
+                turn = thread_view_pb2.Turn()
+                turn.CopyFrom(builder.segments[anchor].turn)
+                turn.status = completed.status
+                builder.turn(anchor, cursor, turn)
             # The outcome gets its own Segment at the terminal Event, after any partial output.
-            builder.put(
+            builder.turn_outcome(
                 cursor,
-                TurnOutcome(
+                thread_view_pb2.TurnOutcome(
                     turn_id=completed.turn_id,
                     status=completed.status,
                     error=completed.error,
@@ -369,63 +290,62 @@ def _fold(builder: _Builder, entry: event_log_pb2.EventEntry) -> None:
                 ),
             )
             if builder.controls.active_turn_id == completed.turn_id:
-                builder.controls = replace(builder.controls, active_turn_id=None)
+                builder.controls.ClearField("active_turn_id")
             if completed.interrupted_by_command_id:
-                builder.settle(completed.interrupted_by_command_id, Effected(origin_cursor=cursor))
+                builder.effected(completed.interrupted_by_command_id, cursor)
         case "model_changed":
             changed = event.model_changed
-            builder.put(
+            builder.model_effect(
                 cursor,
-                ModelEffect(command_id=changed.command_id, previous_model=changed.previous_model, model=changed.model),
+                thread_view_pb2.ModelEffect(
+                    command_id=changed.command_id, previous_model=changed.previous_model, model=changed.model
+                ),
             )
-            builder.controls = replace(builder.controls, applied_model=changed.model)
+            builder.controls.applied_model = changed.model
             if changed.command_id:
-                builder.settle(changed.command_id, Effected(origin_cursor=cursor))
+                builder.effected(changed.command_id, cursor)
         case "item_started":
             started_item = event.item_started
             anchor, current = builder.item(cursor, started_item.item_id)
-            builder.put(
-                cursor, replace(current, kind=started_item.kind, tool_name=started_item.tool_name), anchor=anchor
-            )
+            current.kind = started_item.kind
+            current.tool_name = started_item.tool_name
+            builder.put_item(anchor, cursor, current)
         case "text_delta":
             delta = event.text_delta
             anchor, current = builder.item(cursor, delta.item_id)
-            builder.put(cursor, replace(current, text=current.text + delta.text), anchor=anchor)
+            current.text.CopyFrom(text_of(current.text.preview + delta.text))
+            builder.put_item(anchor, cursor, current)
         case "tool_arguments_delta":
             arguments_delta = event.tool_arguments_delta
             anchor, current = builder.item(cursor, arguments_delta.item_id)
-            builder.put(
-                cursor,
-                replace(current, arguments_json=current.arguments_json + arguments_delta.partial_json),
-                anchor=anchor,
-            )
+            current.arguments_json.CopyFrom(text_of(current.arguments_json.preview + arguments_delta.partial_json))
+            builder.put_item(anchor, cursor, current)
         case "tool_arguments":
             arguments = event.tool_arguments
             anchor, current = builder.item(cursor, arguments.item_id)
-            builder.put(cursor, replace(current, arguments_json=arguments.arguments_json), anchor=anchor)
+            current.arguments_json.CopyFrom(text_of(arguments.arguments_json))
+            builder.put_item(anchor, cursor, current)
         case "tool_output_delta":
             output_delta = event.tool_output_delta
             anchor, current = builder.item(cursor, output_delta.item_id)
-            builder.put(cursor, replace(current, output=current.output + output_delta.text), anchor=anchor)
+            current.output.CopyFrom(text_of(current.output.preview + output_delta.text))
+            builder.put_item(anchor, cursor, current)
         case "item_completed":
             completed_item = event.item_completed
             anchor, current = builder.item(cursor, completed_item.item_id)
             outcome = completed_item.WhichOneof("outcome")
             match outcome:
                 case "text":
-                    finished = replace(
-                        current, text=completed_item.text, completion=TextOutcome(text=completed_item.text)
-                    )
+                    current.text.CopyFrom(text_of(completed_item.text))
+                    current.completed_text.text.CopyFrom(text_of(completed_item.text))
                 case "tool":
                     tool = completed_item.tool
-                    finished = replace(
-                        current,
-                        output=tool.output,
-                        completion=ToolOutcome(output=tool.output, succeeded=tool.succeeded),
-                    )
+                    current.output.CopyFrom(text_of(tool.output))
+                    current.completed_tool.output.CopyFrom(text_of(tool.output))
+                    current.completed_tool.succeeded = tool.succeeded
                 case _:
                     raise UninterpretedObservationError(cursor, f"item_completed.{outcome}")
-            builder.put(cursor, finished, anchor=anchor)
+            builder.put_item(anchor, cursor, current)
         case "harness_stderr" | "native" | "debug_checkpoint":
             # Carried losslessly in the archive and read on demand. Coverage still advances: an
             # interval of only these Events is a real, fully observed interval.
@@ -434,52 +354,66 @@ def _fold(builder: _Builder, entry: event_log_pb2.EventEntry) -> None:
             raise UninterpretedObservationError(cursor, str(case))
 
 
-def advance(projection: Projection, entries: Iterable[event_log_pb2.EventEntry]) -> tuple[Projection, Batch]:
+def advance(
+    projection: Projection, entries: Iterable[event_log_pb2.EventEntry]
+) -> tuple[Projection, thread_view_pb2.Changes]:
     """Fold `entries` onto `projection`, returning it and the batch that carries a client there.
 
-    Entries must be the contiguous archived continuation of `projection.through_cursor`.
+    Entries must be the contiguous archived continuation of the projection's position.
     """
     builder = _Builder(projection)
-    after_cursor = projection.through_cursor
+    after_cursor = projection.position.through_cursor
     for entry in entries:
-        if entry.cursor <= builder.through_cursor:
-            raise ValueError(f"entry {entry.cursor} is not after the projected {builder.through_cursor}")
+        if entry.cursor <= builder.position.through_cursor:
+            raise ValueError(f"entry {entry.cursor} is not after the projected {builder.position.through_cursor}")
         _fold(builder, entry)
-        builder.through_cursor = entry.cursor
+        builder.position.through_cursor = entry.cursor
     advanced = builder.finish()
-    batch = Batch(
+    return advanced, thread_view_pb2.Changes(
+        source_id=advanced.position.source_id,
+        projection_epoch=advanced.position.projection_epoch,
         after_cursor=after_cursor,
-        through_cursor=advanced.through_cursor,
-        segments=tuple(builder.touched[cursor] for cursor in sorted(builder.touched)),
-        commands=tuple(
+        through_cursor=advanced.position.through_cursor,
+        segments=[builder.touched[cursor] for cursor in sorted(builder.touched)],
+        commands=[
             builder.settled[key] for key in sorted(builder.settled, key=lambda k: builder.settled[k].admission_cursor)
-        ),
+        ],
         controls=advanced.controls,
+        unresolved_count=sum(1 for summary in advanced.commands if summary.WhichOneof("outcome") == "pending"),
     )
-    return advanced, batch
 
 
-def project(entries: Iterable[event_log_pb2.EventEntry]) -> Projection:
+def project(source_id: str, projection_epoch: str, entries: Iterable[event_log_pb2.EventEntry]) -> Projection:
     """The whole fold from empty, for rebuilds and for parity checks against incremental batches."""
-    projected, _ = advance(EMPTY, entries)
+    projected, _ = advance(empty(source_id, projection_epoch), entries)
     return projected
 
 
-def apply_batch(projection: Projection, batch: Batch) -> Projection:
+def apply_changes(projection: Projection, changes: thread_view_pb2.Changes) -> Projection:
     """What a client does with a change batch: the same result as folding the batch's Events.
 
-    Rejects a batch that does not continue exactly where the client is, rather than guessing across
-    a gap or re-applying an overlap.
+    Rejects a batch that does not continue exactly where the client is, or that belongs to another
+    source or epoch, rather than guessing across a gap or combining generations.
     """
-    if batch.after_cursor != projection.through_cursor:
-        raise ValueError(f"batch after {batch.after_cursor} does not continue {projection.through_cursor}")
+    position = projection.position
+    if changes.after_cursor != position.through_cursor:
+        raise ValueError(f"batch after {changes.after_cursor} does not continue {position.through_cursor}")
+    if (changes.source_id, changes.projection_epoch) != (position.source_id, position.projection_epoch):
+        raise ValueError(
+            f"batch is {changes.source_id}/{changes.projection_epoch}, "
+            f"view is {position.source_id}/{position.projection_epoch}"
+        )
     segments = {segment.anchor_cursor: segment for segment in projection.segments}
-    segments.update({segment.anchor_cursor: segment for segment in batch.segments})
+    segments.update({segment.anchor_cursor: segment for segment in changes.segments})
     commands = {summary.command_id: summary for summary in projection.commands}
-    commands.update({summary.command_id: summary for summary in batch.commands})
+    commands.update({summary.command_id: summary for summary in changes.commands})
     return Projection(
-        through_cursor=batch.through_cursor,
+        position=thread_view_pb2.Position(
+            source_id=position.source_id,
+            projection_epoch=position.projection_epoch,
+            through_cursor=changes.through_cursor,
+        ),
         segments=tuple(segments[cursor] for cursor in sorted(segments)),
         commands=tuple(sorted(commands.values(), key=lambda summary: summary.admission_cursor)),
-        controls=batch.controls,
+        controls=changes.controls,
     )
