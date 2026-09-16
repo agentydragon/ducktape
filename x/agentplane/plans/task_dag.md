@@ -1021,7 +1021,7 @@ Keep transport validation independently reviewable from projection implementatio
 ### `THREAD_VIEW_PROJECTION` — materialize the derived read model
 
 After contract review, implement pure projection/parity tests and then transactional
-rows, command indexes, controls, original-cursor checkpoints and a bounded derived
+segments, command indexes, controls, original-cursor checkpoints and a bounded derived
 update journal. Separate PRs are appropriate for the pure fold and PostgreSQL worker.
 Test receipt/lifecycle grouping, empty failed turns, authoritative completed text,
 batch atomicity, replica fencing, lost notifications and epoch rebuild. Retain raw

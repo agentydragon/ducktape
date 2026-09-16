@@ -11,7 +11,7 @@ they are not checked-in executable protobuf definitions yet.
 - Keep the runner's sole command queue and the app's lossless copy of its Events.
   Materialize a rebuildable conversation read model in PostgreSQL. Opening a page
   must not replay the entire Thread on either server or browser.
-- Normal mode reads recent assembled rows, current controls, and pending-command
+- Normal mode reads recent assembled segments, current controls, and pending-command
   summaries, then follows compact changes. Raw Events and large payloads are demand
   reads. Neither initial loading nor idle background work downloads full history.
 - Use protobuf-defined unary RPCs and server streaming. No client or bidirectional
@@ -80,7 +80,7 @@ Cancellation releases listeners/transactions; it never issues an interrupt comma
 ## Schema ownership and service surface
 
 Keep `protocol/{command,event,event_log}.proto` harness-neutral and unchanged by view
-requirements. Add `app/thread_view.proto` for the derived row/change types and
+requirements. Add `app/thread_view.proto` for the derived segment/change types and
 `app/thread_api.proto` for services and app request envelopes. Reuse generated
 `Command`, `EventEntry`, `EventOrigin`, item/turn enums, and timestamps. The runner
 must not import either app file. There is no product identity named Conversation.
@@ -89,7 +89,7 @@ must not import either app file. There is no product identity named Conversation
 service ThreadViewService {
   rpc GetView(GetViewRequest) returns (ViewSnapshot);
   rpc FollowView(FollowViewRequest) returns (stream ViewUpdate);
-  rpc ListRows(ListRowsRequest) returns (RowsPage);
+  rpc ListSegments(ListSegmentsRequest) returns (SegmentsPage);
   rpc ReadPayload(ReadPayloadRequest) returns (PayloadChunk);
 }
 
@@ -110,18 +110,18 @@ service ThreadEventsService {
 commands. Its reads share the view's materialized checkpoint; the service boundary
 does not introduce an app-owned queue or another ordering.
 
-| Method                | Request shape                                                                                                          | Response/contract                                                                                                                |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `GetView`             | `thread_id`, recent row/byte limits, optional reading anchor and bounded surrounding window, bounded local command IDs | One consistent `ViewSnapshot`; both a tail and an old reading window when needed                                                 |
-| `FollowView`          | `thread_id`, projection position                                                                                       | Contiguous committed change batches, or explicit rebootstrap requirement                                                         |
-| `ListRows`            | `thread_id`, epoch/source, exclusive before/after anchor or around anchor, limits, minimum processed cursor            | Bounded current rows, sampled position, stable next/previous boundaries; not offset pagination                                   |
-| `ReadPayload`         | Thread, immutable payload reference, byte offset/limit                                                                 | Exact bounded bytes, next offset, completeness/availability; no live checkpoint advancement                                      |
-| `Submit`              | `thread_id`, exact generated `Command`                                                                                 | Exact runner `CommandAdmitted` EventEntry, only after app archival; not effect completion                                        |
-| `ListPendingCommands` | Thread/epoch, exclusive admission anchor, limits, minimum processed cursor                                             | Pending summaries sampled at a position; explicit continuation and total unresolved count                                        |
-| `GetCommands`         | Thread, bounded IDs, minimum processed cursor                                                                          | Exact admitted Commands and outcome references, or `not_observed_through`; includes settled commands outside all visible windows |
-| `ListEvents`          | Thread/source, exclusive original cursor, optional end/filter, count/byte limits                                       | Exact entries, scanned range, next page token and availability; filtered output is not a contiguous Event prefix                 |
-| `GetEvents`           | Thread and bounded original `EventOrigin` references                                                                   | Exact evidence or per-reference availability, including outside loaded history                                                   |
-| `FollowEvents`        | Thread/source plus shared `Follow`                                                                                     | Explicit opt-in, unfiltered original Event log; independent raw checkpoint                                                       |
+| Method                | Request shape                                                                                                              | Response/contract                                                                                                                |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `GetView`             | `thread_id`, recent segment/byte limits, optional reading anchor and bounded surrounding window, bounded local command IDs | One consistent `ViewSnapshot`; both a tail and an old reading window when needed                                                 |
+| `FollowView`          | `thread_id`, projection position                                                                                           | Contiguous committed change batches, or explicit rebootstrap requirement                                                         |
+| `ListSegments`        | `thread_id`, epoch/source, exclusive before/after anchor or around anchor, limits, minimum processed cursor                | Bounded current segments, sampled position, stable next/previous boundaries; not offset pagination                               |
+| `ReadPayload`         | Thread, immutable payload reference, byte offset/limit                                                                     | Exact bounded bytes, next offset, completeness/availability; no live checkpoint advancement                                      |
+| `Submit`              | `thread_id`, exact generated `Command`                                                                                     | Exact runner `CommandAdmitted` EventEntry, only after app archival; not effect completion                                        |
+| `ListPendingCommands` | Thread/epoch, exclusive admission anchor, limits, minimum processed cursor                                                 | Pending summaries sampled at a position; explicit continuation and total unresolved count                                        |
+| `GetCommands`         | Thread, bounded IDs, minimum processed cursor                                                                              | Exact admitted Commands and outcome references, or `not_observed_through`; includes settled commands outside all visible windows |
+| `ListEvents`          | Thread/source, exclusive original cursor, optional end/filter, count/byte limits                                           | Exact entries, scanned range, next page token and availability; filtered output is not a contiguous Event prefix                 |
+| `GetEvents`           | Thread and bounded original `EventOrigin` references                                                                       | Exact evidence or per-reference availability, including outside loaded history                                                   |
+| `FollowEvents`        | Thread/source plus shared `Follow`                                                                                         | Explicit opt-in, unfiltered original Event log; independent raw checkpoint                                                       |
 
 All limits have server-enforced maxima. Page tokens are opaque, bound to Thread,
 source/epoch, direction and filter; not authorization capabilities. Counts are
@@ -143,24 +143,24 @@ unary reads and server-streaming snapshots, with its own version/staleness metad
 it cannot borrow a Thread projection cursor. Sandbox CRUD, egress/action policies, Actions,
 connections, consent, and settings are not converted in this design PR.
 
-## Positions, rows, and payloads
+## Positions, segments, and payloads
 
 The following notation describes typed messages and `oneof` alternatives, not a
 parallel JSON protocol. `uint64` remains `bigint` in TypeScript.
 
 ```text
 Position = { source_id, projection_epoch, through_cursor: uint64 }
-Row = {
+Segment = {
   anchor_cursor: uint64, revision_cursor: uint64,
   content: oneof(ConfirmedInput, Item, Turn, Control, GroupBoundary, Diagnostic)
 }
 ViewSnapshot = {
-  position, rows: RowsPage[], controls, pending: CommandsPage,
+  position, segments: SegmentsPage[], controls, pending: CommandsPage,
   requested_commands: CommandLookup
 }
 Changes = {
   source_id, projection_epoch, after_cursor, through_cursor,
-  rows: RowChange[], commands: CommandChange[], controls,
+  segments: SegmentChange[], commands: CommandChange[], controls,
   unresolved_count
 }
 ViewUpdate = oneof(Changes, RebootstrapRequired)
@@ -190,23 +190,23 @@ RebootstrapRequired = {
   epoch atomically; clients rebootstrap rather than combine generations.
 - `through_cursor` covers every original Event through that position, including
   omitted native traffic. Only successful atomic snapshot/change installation
-  advances it. A row revision says when that row last changed, not which Events
+  advances it. A segment revision says when that segment last changed, not which Events
   the browser has consumed.
-- One row begins at each conversation-bearing Event, keyed by its immutable
+- One segment begins at each conversation-bearing Event, keyed by its immutable
   original cursor within the Thread/source. Item/harness-message/turn IDs remain
-  fields, not substitutes for source scope. Later item/turn changes update the
-  same row. Receipt/lifecycle boundaries get lightweight rows even when they have
-  no normal-mode card; grouping across pages therefore remains deterministic.
+  fields, not substitutes for source scope. Later item/turn changes update the same
+  segment. Receipt/lifecycle boundaries get lightweight segments even when they
+  have no normal-mode card; grouping across pages therefore remains deterministic.
 - `ConfirmedInput` preserves the harness-confirmed text reference and **all**
   originating command IDs. It is anchored at confirmation, not submission.
-  Item rows preserve kind, native ID, tool name, observed completion/result,
+  Item segments preserve kind, native ID, tool name, observed completion/result,
   bounded text preview, and exact argument/output/text references. Unknown or
   incomplete output is not converted into successful completion after a crash.
-- Turn-start rows provide context; terminal outcome/diagnostics have a control row
-  anchored at the terminal Event, after any partial output. Render the outcome once,
-  not again at the start header. An empty failed turn therefore remains visible.
-  Historical model effects have their own control rows; current model state cannot
-  replace them.
+- Turn-start segments provide context; terminal outcome/diagnostics have a control
+  segment anchored at the terminal Event, after any partial output. Render the
+  outcome once, not again at the start header. An empty failed turn therefore remains
+  visible. Historical model effects have their own control segments; current model
+  state cannot replace them.
 - Controls carry evidenced applied model, active-turn identity and observed harness
   state. Initial configuration is separately identified as configuration provenance.
   `Attached` may be ahead of the archive and must not seed these Event-derived values.
@@ -215,12 +215,12 @@ An outcome origin points to the existing shared Event, not a new independent
 execution-status vocabulary: confirmed input, model effect, interrupted turn, or
 command-caused harness exit. Command summaries are materialized from those facts.
 
-Bound both row count **and bytes**, including IDs, previews, command summaries and
+Bound both segment count **and bytes**, including IDs, previews, command summaries and
 diagnostics. Large user/assistant text is explicitly partial with a payload reference;
 ordinary short completed text arrives assembled. Tool arguments/results are omitted
 from collapsed initial cards. A pre-window active item need not pull its entire turn
-into the snapshot; controls identify it and navigation can fetch its row/context.
-The requested recent-row count counts visible anchors; bounded grouping context must
+into the snapshot; controls identify it and navigation can fetch its segment/context.
+The requested recent-segment count counts visible anchors; bounded grouping context must
 not let a burst of invisible admission boundaries crowd the conversation out entirely.
 
 Payloads are immutable at a reference, scoped to the source and projection epoch.
@@ -240,18 +240,18 @@ stream its body to the browser. No per-token full-message replacements.
 
 Unloaded, loading, loaded-empty, partial/streaming, failed fetch, and unavailable
 payloads are distinct UI states. Loaded payload caches are immutable and separate
-from mutable row metadata; they never become another authority for item completion.
+from mutable segment metadata; they never become another authority for item completion.
 
 ## Server materialization and replay
 
 The projection is a deterministic fold of a **committed contiguous** archive prefix,
 plus explicit immutable configuration provenance where Events lack an initial seed.
 It preserves the existing normal/Raw grouping semantics without retaining native
-payloads in each row. Test parity with the current reducer's meaningful output;
+payloads in each segment. Test parity with the current reducer's meaningful output;
 do not preserve accidental duplicate completion presentation.
 
 For each bounded batch `(H, K]`, a projector transaction locks the Thread projection
-checkpoint, reads its next archived Events, updates rows/command indexes/controls,
+checkpoint, reads its next archived Events, updates segments/command indexes/controls,
 records the derived change batch, and advances the checkpoint to `K`. Commit before
 notification. Multiple app replicas can serve reads and submissions; a row lock or
 fenced worker lease serializes projection writes. This is independent of the existing
@@ -261,7 +261,7 @@ separately in debug/operational status.
 Retain a bounded journal of **derived updates** for short reconnects. It is a
 rebuildable cache, not another durable command queue or independent Event history.
 Each batch records original interval endpoints, not an app sequence number. Read
-transactions observe rows, controls and the checkpoint consistently. `LISTEN/NOTIFY`
+transactions observe segments, controls and the checkpoint consistently. `LISTEN/NOTIFY`
 only wakes durable rereads; notifications lost between replicas or over reconnect
 cannot create gaps. Follow registers for wakeups before its last empty reread and
 checks again after listener reconnection. Do not hold a DB transaction open for the
@@ -273,7 +273,7 @@ command/control effect, even when its final state supersedes an earlier intermed
 state. Exact intermediate streaming chronology remains in Raw.
 
 Keep the committed batch boundaries on replay; every snapshot position is one of
-those boundaries. A single source Event can affect many rows: if its update exceeds
+those boundaries. A single source Event can affect many segments: if its update exceeds
 the transport budget, require bounded rebootstrap rather than publish half an effect
 or invent intermediate runner cursors. Large bodies remain referenced payloads.
 
@@ -298,10 +298,10 @@ sequenceDiagram
     participant A as App projection/archive
     participant R as Runner
     F->>A: GetView {thread:T, recent:50, local_ids:[C]}
-    A-->>F: Snapshot {source:S, epoch:E, through:900, rows, pending, controls}
+    A-->>F: Snapshot {source:S, epoch:E, through:900, segments, pending, controls}
     F->>F: Atomically install snapshot and cursor 900
     F->>A: FollowView {T, S, E, after:900}
-    A-->>F: Changes {after:900, through:940, rows, commands, controls}
+    A-->>F: Changes {after:900, through:940, segments, commands, controls}
     F->>A: Submit {T, Command C: ChangeModel(M)}
     A->>R: Same Command C
     R-->>A: Event 941 CommandAdmitted(C)
@@ -327,7 +327,7 @@ resolve an ambiguous response. Payload conflict remains a conflict. After a tab
 reload, local records that were reconciled can be removed without downloading all
 history. A queued model change remains pending until `ModelChanged`, failed or noop.
 
-Pending summaries have their own bounded page independent of conversation rows.
+Pending summaries have their own bounded page independent of conversation segments.
 Keep unresolved count and controls always present, locally submitted IDs pinned,
 and fetch further pending entries on demand. Live command summaries/outcomes update
 loaded entries and counts even when their admission is outside the history window.
@@ -342,7 +342,7 @@ content as an integrity error. Connection loss leaves visible data marked stale.
 
 On a long gap or epoch change, cancel the old subscription, increment the frontend
 request generation, and get a new bounded snapshot, including the reading anchor
-and local command IDs. Install its rows/controls/commands/position atomically, then
+and local command IDs. Install its segments/controls/commands/position atomically, then
 follow. Preserve drafts/disclosures/viewport position, not stale server truth. Old
 generation callbacks cannot write into the new store. Unavailable anchors are
 reported with a reason; the client does not silently jump to the tail.
@@ -364,18 +364,18 @@ sequenceDiagram
 ## History and live-data races
 
 History is keyset-paginated by immutable first-observed anchor, not timestamp or
-offset. A new row cannot be inserted behind an already processed anchor. Updated
+offset. A new segment cannot be inserted behind an already processed anchor. Updated
 old items keep their original anchor. Page edges include lightweight group/turn
 context, not every item in a potentially enormous turn.
 
 **Chosen consistency:** each page is a current short DB snapshot at `P`, at least
 the request's `minimum_through`. Adjacent pages need not share a long-lived historic
-DB snapshot; stable anchors prevent insert-induced holes. A page's row revisions
+DB snapshot; stable anchors prevent insert-induced holes. A page's segment revisions
 are at most `P`. It does not advance the browser's live cursor.
 
-The view stream includes compact changes for every affected row, including those
-outside loaded windows. The browser keeps a **bounded** recent change buffer, not
-all those rows. This permits race-free hydration without a bidirectional subscription
+The view stream includes compact changes for every affected segment, including those
+outside loaded windows. The browser keeps a **bounded** recent change buffer, not all
+those segments. This permits race-free hydration without a bidirectional subscription
 or per-browser server-side window registry:
 
 1. At installed cursor `H`, request the page with `minimum_through:H`; retain change
@@ -383,31 +383,31 @@ or per-browser server-side window registry:
 2. A response at `P > current_cursor` waits until the live stream reaches `P`.
    It must not inject future state into an earlier snapshot.
 3. If the browser is already at `K >= P`, merge the page plus buffered changes
-   `(P, K]` for those rows in one transaction. Ignoring a late lower-revision row is
-   sufficient only if a newer complete row is already loaded; an evicted row may
-   need patches based on the page, which is why the buffer exists.
+   `(P, K]` for those segments in one transaction. Ignoring a late lower-revision
+   segment is sufficient only if a newer complete segment is already loaded; an
+   evicted segment may need patches based on the page, which is why the buffer exists.
 4. If the needed buffer was evicted, a patch precondition fails, or the epoch/source
    changed, discard/retry hydration or rebootstrap bounded windows. Never declare a
    stale page current. Requests and buffered bytes have explicit limits.
 
-New-row changes contain a complete bounded row. Patches for unloaded old rows are
-buffered for pending hydration, not applied to fabricated empty items. Page windows
-become observable only after suffix reconciliation; displaying an unreconciled page
-as current would violate the checkpoint contract. If a minimum cursor cannot be
-served before the request deadline, report projection lag rather than return an
-older successful snapshot.
+New-segment changes contain a complete bounded segment. Patches for unloaded old
+segments are buffered for pending hydration, not applied to fabricated empty items.
+Page windows become observable only after suffix reconciliation; displaying an
+unreconciled page as current would violate the checkpoint contract. If a minimum
+cursor cannot be served before the request deadline, report projection lag rather
+than return an older successful snapshot.
 
 ```mermaid
 sequenceDiagram
     participant F as Browser at 1000
     participant A as App
-    F->>A: ListRows {before:400, min_through:1000, limit:50}
-    A->>A: Read rows and checkpoint P=1010 consistently
+    F->>A: ListSegments {before:400, min_through:1000, limit:50}
+    A->>A: Read segments and checkpoint P=1010 consistently
     A-->>F: Changes {1000..1010}
     A-->>F: Changes {1010..1030, update old item I}
-    A-->>F: Delayed RowsPage {through:1010, I, before:350}
-    F->>F: Merge page + buffered 1010..1030 for its rows
-    Note over F: Still through 1030. Preserve visible row and pixel offset
+    A-->>F: Delayed SegmentsPage {through:1010, I, before:350}
+    F->>F: Merge page + buffered 1010..1030 for its segments
+    Note over F: Still through 1030. Preserve visible segment and pixel offset
     F->>A: ReadPayload {I.output, revision:1020, offset:0, limit:65536}
     A-->>F: Exact chunk at that reference without changing live cursor
 ```
@@ -415,20 +415,20 @@ sequenceDiagram
 Pending-page and command-lookup hydration obey the same position/generation rules.
 For pending membership, live settlement removes an entry even if it raced the page;
 new admissions have higher anchors and are found through live updates. Immutable
-payload chunks need no row overwrite: cache by reference and show them only while
+payload chunks need no segment overwrite: cache by reference and show them only while
 that reference is selected, or explicitly label a historical revision.
 
 Keep a bounded tail window and, while reading far back, a bounded window around the
-viewport. Evict/refetch intervening history; do not accumulate a month of rows just
+viewport. Evict/refetch intervening history; do not accumulate a month of segments just
 because the tab stayed open. Pin controls, pending-page metadata and local commands,
-not the entire turn. Prepending preserves the visible row plus pixel offset. New
+not the entire turn. Prepending preserves the visible segment plus pixel offset. New
 output sticks to the bottom only if the user was already there. Virtualization
 bounds mounted DOM independently of network/cache bounds.
 
 ## Raw and debug surface
 
 Raw remains additive to the same conversation order and disclosures. Show source,
-row anchor/revision, installed projection cursor, applied command evidence and
+segment anchor/revision, installed projection cursor, applied command evidence and
 separately reported archive/runner positions. Fetch exact frames and causal
 `source_sequences` only when requested. Raw chronological entries retain original
 cursor order even when an aggregate card spans interleaved streaming Events.
@@ -454,11 +454,11 @@ a lossless replacement for partial output, crash boundaries or streaming chronol
 
 ## Frontend ownership
 
-One TanStack DB collection per open Thread owns a tagged union of row, command,
+One TanStack DB collection per open Thread owns a tagged union of segment, command,
 control and coverage records. Commit each snapshot/change envelope with a single
 collection transaction, so direct subscribers cannot see a new cursor with old
 controls. Read-only custom synchronization owns writes; optimistic user mutations
-cannot manufacture harness effects. Use selective queries per row/queue/control.
+cannot manufacture harness effects. Use selective queries per segment/queue/control.
 Separate immutable payload/raw collections do not participate in live coverage.
 Request generations and cancellation protect route changes and rebootstrap.
 
@@ -496,14 +496,14 @@ NACK. Retriable read errors preserve stale visible state and an actionable retry
 | --------------------------------------------------- | ------------------------------------------------------------------------------------------ |
 | Short high-delta or month-long Thread               | Bounded first payload/work; assembled past text; no eventual full-history fetch            |
 | Empty/new Thread; projector behind archive          | Valid empty snapshot or explicit projection-not-ready; never fake successful catch-up      |
-| Native-only interval                                | Coverage advances without fabricated conversation rows                                     |
-| Active pre-window item, huge turn/output            | Current controls intact; bounded rows/previews; exact demand-loaded content                |
+| Native-only interval                                | Coverage advances without fabricated conversation segments                                 |
+| Active pre-window item, huge turn/output            | Current controls intact; bounded segments/previews; exact demand-loaded content            |
 | Model queued during Codex turn                      | Admission visible as pending; picker changes only on evidenced effect                      |
 | Interrupt or command failure                        | Original target/cause and error shown; no fabricated interrupted/completed state           |
 | Claude-coalesced input                              | Exact confirmed text and all origin command IDs, at native confirmation position           |
 | Failed turn without output                          | Visible diagnostic without Raw and without duplicate completion card                       |
 | Lost submit response; old settled local command     | Exact ID/payload reconciliation outside visible history; no duplicate send under a new ID  |
-| App/projector/replica restart, missed notification  | Replay resumes from durable committed checkpoint; rows and coverage agree                  |
+| App/projector/replica restart, missed notification  | Replay resumes from durable committed checkpoint; segments and coverage agree              |
 | Crash between projection writes/checkpoint          | Transaction rollback or complete batch, never partial progress                             |
 | Long gap, expired update cache, slow client         | Explicit bounded rebootstrap preserving draft/reading anchor/local IDs                     |
 | Late page/lookup/detail, eviction, stream race      | No regression/future contamination; replay buffered suffix or retry explicitly             |
@@ -519,7 +519,7 @@ Reducer tests compare `snapshot(H) + changes(H,K]` to direct projection at `K`,
 including randomized batch boundaries and all command outcome types. Database tests
 exercise transactions, indexed bounded reads and cross-replica wakeup races. Frontend
 tests exercise subscriber and render boundaries, the full hydration algorithm, and
-visual states. Browser acceptance measures transfer, decoded bytes, mounted rows,
+visual states. Browser acceptance measures transfer, decoded bytes, mounted segments,
 first usable view and reconnect work against the measured staging shape and synthetic
 long history. Report browser measurements separately from host HTTP/store benchmarks.
 
