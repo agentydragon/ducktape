@@ -986,9 +986,32 @@ py_library(
     srcs = ["view_store.py"],
     deps = [
         ":operator_sessions",
+        ":projection",
+        ":trajectory",
+        "//x/agentplane/app:thread_api_pb2",
         "//x/agentplane/app:thread_view_pb2",
         "//x/agentplane/protocol:event_log_pb2",
         "@pypi//protobuf",
         "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_view_store",
+    srcs = ["test_view_store.py"],
+    deps = [
+        ":conftest",
+        ":trajectory",
+        ":view_store",
+        "//:conftest",
+        "//x/agentplane/app:thread_api_pb2",
+        "//x/agentplane/app:thread_view_pb2",
+        "//x/agentplane/protocol:command_pb2",
+        "//x/agentplane/protocol:event_log_pb2",
+        "//x/agentplane/protocol:event_pb2",
+        "//x/agentplane/runner:protocol_pb2",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
