@@ -10,6 +10,8 @@ package(default_visibility = ["//x/agentplane:__subpackages__"])
 
 # gazelle:resolve py x.agentplane.runner.protocol_pb2 //x/agentplane/runner:protocol_pb2
 # gazelle:resolve py x.agentplane.runner.protocol_pb2_grpc //x/agentplane/runner:protocol_pb2_grpc
+# gazelle:resolve py x.agentplane.app.thread_api_pb2 //x/agentplane/app:thread_api_pb2
+# gazelle:resolve py x.agentplane.app.thread_view_pb2 //x/agentplane/app:thread_view_pb2
 # gazelle:resolve py x.agentplane.protocol.command_pb2 //x/agentplane/protocol:command_pb2
 # gazelle:resolve py x.agentplane.protocol.event_pb2 //x/agentplane/protocol:event_pb2
 # gazelle:resolve py x.agentplane.protocol.event_log_pb2 //x/agentplane/protocol:event_log_pb2
