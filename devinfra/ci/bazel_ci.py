@@ -102,6 +102,11 @@ def _finalize_probe() -> None:
     _run(["python3", "devinfra/ci/bb_runner_probe.py", "finalize", "--upload"], check=False)
 
 
+def _announce_bazel_command(role: str) -> None:
+    """Mark a Bazel command for profile analysis without exposing its invocation ID."""
+    print(f"CI_BAZEL_COMMAND role={role}", flush=True)
+
+
 def _rbe_flags() -> list[str]:
     flags = ["--config=rbe", "--config=ci"]
     if os.environ.get("GITHUB_EVENT_NAME") == "push":
@@ -207,6 +212,7 @@ def main() -> int:
             _run(["bazel", "shutdown"], check=False)
             if test_target_count == 0:
                 print("No test targets in scope -- skipping bazel test.")
+                _announce_bazel_command("build")
                 _run(
                     [
                         "bazel",
@@ -220,6 +226,7 @@ def main() -> int:
                 _probe("after-build")
                 return 0
 
+            _announce_bazel_command("test")
             test_result = _run(
                 [
                     "bazel",
@@ -239,6 +246,7 @@ def main() -> int:
                 return test_rc
 
             _probe("after-test")
+            _announce_bazel_command("build")
             _run(
                 [
                     "bazel",

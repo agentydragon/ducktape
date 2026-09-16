@@ -1,6 +1,10 @@
+import urllib.error
+from email.message import Message
+
 import pytest
 import pytest_bazel
 
+from devinfra.ci import bes
 from devinfra.ci.bes import BuildBuddyError, merge, parse
 
 # Shaped exactly as BuildBuddy serves it. "outer" nests "inner" because Bazel
@@ -119,6 +123,52 @@ def test_merging_the_test_and_build_invocations_collapses_what_both_report() -> 
     assert both is not None
     assert both.outputs == one.outputs
     assert both.test_status == one.test_status
+
+
+def test_get_retries_transient_http_failures_with_exponential_backoff(monkeypatch, capsys) -> None:
+    attempts = 0
+    delays: list[float] = []
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self) -> bytes:
+            return b"ok"
+
+    def urlopen(_request, *, timeout):
+        nonlocal attempts
+        assert timeout == 7
+        attempts += 1
+        if attempts < 3:
+            raise urllib.error.HTTPError("https://example.test", 500, "server error", Message(), None)
+        return Response()
+
+    monkeypatch.setattr(bes.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(bes.time, "sleep", delays.append)
+
+    assert bes._get("https://example.test/file/download?invocation_id=abc", "key", 7) == b"ok"
+    assert attempts == 3
+    assert delays == [1.0, 2.0]
+    assert "retrying in 1s" in capsys.readouterr().err
+
+
+def test_get_does_not_retry_permanent_http_failures(monkeypatch) -> None:
+    attempts = 0
+
+    def urlopen(_request, *, timeout):
+        nonlocal attempts
+        attempts += 1
+        raise urllib.error.HTTPError("https://example.test", 404, "not found", Message(), None)
+
+    monkeypatch.setattr(bes.urllib.request, "urlopen", urlopen)
+
+    with pytest.raises(BuildBuddyError, match="HTTP Error 404"):
+        bes._get("https://example.test/file/download", "key", 7)
+    assert attempts == 1
 
 
 if __name__ == "__main__":

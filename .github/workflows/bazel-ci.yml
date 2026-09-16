@@ -162,6 +162,7 @@ jobs:
           runner_recycling_key: ducktape-bazel-ci-v3
           run_from_commit: ${{ steps.source.outputs.sha }}
           linkage_roles: test,build
+          bazel_invocation_ids: ${{ steps.invocation-ids.outputs.test }},${{ steps.invocation-ids.outputs.build }}
           # The build itself lives in devinfra/ci/bazel_ci.py — see that file's header for
           # why it runs on the BuildBuddy runner VM rather than the GitHub Actions runner.
           # The VM has the repo checked

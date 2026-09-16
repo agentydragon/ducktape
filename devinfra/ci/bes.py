@@ -37,6 +37,8 @@ import dataclasses
 import http.client
 import json
 import os
+import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -46,6 +48,12 @@ DEFAULT_BASE_URL = "https://app.buildbuddy.io"
 
 # BuildBuddy serves a big stream; a full `//...` sweep is tens of megabytes.
 DEFAULT_TIMEOUT_SECONDS = 120
+# A transient BuildBuddy API failure must not make the release/image planners
+# immediately fall back to publishing everything. Keep this bounded: the
+# planners run in a 30-minute GitHub Actions job and already fail open after
+# this reader gives up.
+DEFAULT_RETRIES = 3
+INITIAL_RETRY_BACKOFF_SECONDS = 1.0
 
 
 class BuildBuddyError(Exception):
@@ -96,15 +104,40 @@ def _api_key(explicit: str | None = None) -> str:
     return key
 
 
-def _get(url: str, api_key: str, timeout: float) -> bytes:
+def _retryable(error: BaseException) -> bool:
+    """Whether retrying this BuildBuddy read can plausibly succeed."""
+    if isinstance(error, urllib.error.HTTPError):
+        return error.code in {408, 425, 429} or error.code >= 500
+    return isinstance(error, (urllib.error.URLError, OSError, TimeoutError, http.client.HTTPException))
+
+
+def _get(
+    url: str,
+    api_key: str,
+    timeout: float,
+    *,
+    retries: int = DEFAULT_RETRIES,
+    backoff_seconds: float = INITIAL_RETRY_BACKOFF_SECONDS,
+) -> bytes:
     request = urllib.request.Request(url, headers={"x-buildbuddy-api-key": api_key})
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            # urlopen is typed as returning Any, so narrow it here rather than
-            # letting an unchecked value reach the parser.
-            return bytes(response.read())
-    except (urllib.error.URLError, OSError, TimeoutError, http.client.HTTPException) as e:
-        raise BuildBuddyError(f"GET {url.split('?', maxsplit=1)[0]} failed: {e}") from e
+    endpoint = url.split("?", maxsplit=1)[0]
+    for attempt in range(retries + 1):
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                # urlopen is typed as returning Any, so narrow it here rather than
+                # letting an unchecked value reach the parser.
+                return bytes(response.read())
+        except (urllib.error.URLError, OSError, TimeoutError, http.client.HTTPException) as e:
+            if attempt >= retries or not _retryable(e):
+                raise BuildBuddyError(f"GET {endpoint} failed: {e}") from e
+            delay = backoff_seconds * (2**attempt)
+            print(
+                f"::warning::BuildBuddy GET {endpoint} failed ({e}); "
+                f"retrying in {delay:g}s (attempt {attempt + 2}/{retries + 1})",
+                file=sys.stderr,
+            )
+            time.sleep(delay)
+    raise BuildBuddyError(f"GET {endpoint} failed: retry loop exhausted")
 
 
 def fetch_stream(
