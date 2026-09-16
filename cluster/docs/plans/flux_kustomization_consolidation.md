@@ -40,10 +40,17 @@ Largest first; each target is one PR.
 | 14    | `authentik`              | OIDC clients retry the discovery endpoint.                             |
 | 12    | `external-creds`         | Credential distribution.                                               |
 
-Keep, as registered rule-2 exceptions: `clickhouse-schema` before `aiquota`
-(migration before writer), and the CNI/SOPS/source edges that never converge
-without ordering. Register them in `_ORDERING_EXCEPTIONS` in the same PR that
-adds the check (batch 6).
+Keep, as registered rule-2 exceptions, the CNI/SOPS/source edges without which
+`bazel run //cluster:bootstrap` does not finish. Register them in
+`_ORDERING_EXCEPTIONS` in the same PR that adds the check (batch 6).
+
+`clickhouse-schema` before `aiquota` is the one genuine
+destructive-if-out-of-order pair here, and the edge alone does not deliver it:
+different artifacts means `Ready`-gating, so on a commit that changes both,
+`aiquota` can apply against the old schema. Rebuild it as a rule-6 shared
+artifact carrying both paths. Until that lands the edge stays, but as a
+registered exception documenting an intent that is not yet implemented — which
+is also a live correctness bug, not only a cleanup.
 
 ## 4. Split CRDs out of the webhookless operators
 
@@ -92,6 +99,10 @@ In <../../validation/>:
   edges alone, so the floor is around 4–5 once exceptions are registered.
 - A Kustomization managing fewer than two objects must claim a rule-3 exception.
 - `wait` / `healthChecks` require at least one dependent.
+- A `destructive-if-out-of-order` exception must name a dependency whose
+  `sourceRef` matches the dependent's — rule 6. Any other spelling documents an
+  ordering the cluster does not enforce, and the check is what keeps that from
+  being written down and believed.
 
 The deletion lands first — it blocks batches 3 and 5. The new checks land with
 or after the batch that makes them pass.

@@ -205,8 +205,16 @@ CNPG, cert-manager, Kyverno, KubeVirt, CDI do; check, don't assume). Absent a
 webhook the edge points at `<operator>-crds`, not at its HelmRelease. Anything Kubernetes
 retries its way out of (a Secret, a StorageClass, a pull credential, a database,
 a Gateway) is not a dependency; an edge for one needs a registered reason in
-<validation/dependencies.py>. `wait: true` and `healthChecks` go only where
-something gates on this Kustomization.
+<validation/dependencies.py>, and the test is whether
+`bazel run //cluster:bootstrap` still converges without it. `wait: true` and
+`healthChecks` go only where something gates on this Kustomization.
+
+**An edge across two `ExternalArtifact`s gates on `Ready`, not on the
+prerequisite having applied the new revision** — so it orders bootstrap and
+propagates failure, and does not order updates. Where ordered updates are the
+actual requirement (a migration before its writer), carry both paths in **one**
+artifact and point both `sourceRef`s at it; the revision check only engages when
+the `sourceRef`s match.
 
 Rationale, the measurements behind it, and the rejected alternatives:
 <docs/flux_kustomization_policy.md>. Flat example: `k8s/aiquota/`.

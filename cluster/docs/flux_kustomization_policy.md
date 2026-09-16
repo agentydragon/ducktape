@@ -43,17 +43,31 @@ Since the ArtifactGenerator migration each component reconciles from its own
 `ExternalArtifact`, so 712 of our 713 edges name a different source, skip that
 check, and gate on `Ready` alone.
 
-An edge therefore orders **bootstrap**, and propagates failure. It does not
-order updates: after a commit, a layer-3 app can apply its new revision while
-layer 2 is still on the old one. Upstream has known this since
-[flux2#293](https://github.com/fluxcd/flux2/discussions/293) and has not fixed
-the general case. Weigh the layering against what it buys in steady state, which
-is nothing.
+Artifacts are content-addressed and source-watcher skips a rebuild when the
+copied subtree is unchanged (`ExternalArtifact/… is up to date`), so a commit
+wakes only the components it touched. That is the point of the generators, and
+it is what the rest of this follows from:
 
-Bootstrap is not nothing — it is this cluster's Primary Directive — which is
-what rule 2's `never-converges` category is for. Ordering that only matters at
-bootstrap is worth an edge exactly when the alternative is a bootstrap that
-never finishes, not when it is a bootstrap that retries a few times.
+- **A commit touching one component.** Its dependencies are Ready and unchanged,
+  so every edge passes immediately. Nothing is ordered because nothing else
+  moved.
+- **A commit touching two Kustomizations of the same component.** Both artifacts
+  change. The dependent sees the prerequisite `Ready` — at its _old_ revision,
+  which `Ready` does not distinguish — and applies. The two race. This is
+  precisely the case the layering exists to order, and the case it does not
+  order. Upstream has known since
+  [flux2#293](https://github.com/fluxcd/flux2/discussions/293) and has not fixed
+  the general case; rule 6 is how to buy the ordering for real when it matters.
+- **Bootstrap and disaster recovery.** Nothing is Ready, so every edge gates and
+  the graph serializes for real. This is the only state in which the depth is
+  paid, and it is the state this cluster's Primary Directive is about.
+- **Any state, whenever something is broken.** The edge propagates the failure
+  and multiplies the alerts.
+
+So an edge buys bootstrap ordering and costs failure propagation. In steady
+state it is a no-op except when it is a block. Delete accordingly: the question
+for any candidate edge is **"does `bazel run //cluster:bootstrap` still
+converge without it"**, not "is it tidier with it".
 
 ## Rules
 
@@ -83,11 +97,12 @@ blocked when Prometheus is down.
 A class-2 edge is allowed only when it is listed in `_ORDERING_EXCEPTIONS`
 (<../validation/dependencies.py>) with a one-line reason of one of these kinds:
 
+- **bootstrap-never-converges** — without it `bazel run //cluster:bootstrap`
+  does not finish, as opposed to finishing after some retries: the CNI, the SOPS
+  age key, the Flux source itself.
 - **destructive-if-out-of-order** — applying B before A is not merely late but
   corrupting: a schema migration that must precede the writer, a PVC or bucket
-  ownership handoff.
-- **never-converges** — without it nothing ever comes up, not even slowly: the
-  CNI, the SOPS age key, the Flux source itself.
+  ownership handoff. An edge alone does not deliver this — see rule 6.
 
 "It needs the secret", "it needs the namespace", "it needs the database", "it
 should come after the app" are not reasons. Those converge on their own.
@@ -126,6 +141,13 @@ of namespace definitions with namespaced objects". `CustomResourceDefinition`,
 stage; webhook configurations go last. Everything between applies at once, and
 pods wait for their Secrets.
 
+Merging does coarsen the artifact: one component, one artifact, so editing its
+ServiceMonitor now re-reconciles the whole component instead of one row of it.
+That is affordable exactly because of rule 4 — a re-apply of unchanged manifests
+is a few server-side applies and no health-check wait. Rules 3 and 4 are one
+decision; taking rule 3 without rule 4 makes every small edit wait on the
+component's slowest pod.
+
 ### 4. `wait` and `healthChecks` gate, or they are absent
 
 Set `wait: true` or `healthChecks` only where another Kustomization depends on
@@ -146,6 +168,25 @@ a component's Kustomizations need has no natural owner among them.
 
 Consumers do not `dependsOn` it. An apply into a missing namespace fails and
 retries at `retryInterval`, which converges at bootstrap without an edge.
+
+### 6. Real ordering needs a shared artifact, not an edge
+
+`dependsOn` across two different `ExternalArtifact`s gates on `Ready` and
+nothing else, so it cannot express "apply A's new manifests before B's new
+manifests" (above). Where that ordering genuinely is the requirement — a schema
+migration before the writer that reads the new columns — put **both paths in one
+artifact** and point both Kustomizations' `sourceRef` at it. The `sourceRef`
+then matches, `checkDependencies` engages the revision comparison, and the
+dependent waits for the prerequisite to have applied _that_ revision.
+
+Nine artifacts already copy more than one path, and
+`check_cross_namespace_references` already validates that a consumer's
+`spec.path` lies inside what its artifact carries, so the shape needs no new
+machinery.
+
+This is the only construction here that delivers ordered updates. A
+`destructive-if-out-of-order` entry in rule 2 that is not built this way is
+documenting an intent the cluster does not implement.
 
 ## Measurements
 
