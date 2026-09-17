@@ -3,7 +3,7 @@ import yaml
 
 from cluster.cdk8s import haku_openclaw_spike_config, public_coder_agent_config
 from cluster.cdk8s.litellm_config import main_proxy_config
-from cluster.k8s.litellm.app.model_rosters import (
+from cluster.cdk8s.model_rosters import (
     ANTHROPIC_MODELS,
     CLIPROXY_MODELS,
     CODEX_CONTEXT_WINDOW,

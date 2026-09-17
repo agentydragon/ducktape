@@ -1,10 +1,8 @@
-"""Generates haku-openclaw-spike/app/openclaw.json's content -- see
-cluster/k8s/litellm/app/model_rosters.py for ANTHROPIC_MODELS.
-"""
+"""Generates haku-openclaw-spike/app/openclaw.json's content -- see model_rosters.py for ANTHROPIC_MODELS."""
 
 from __future__ import annotations
 
-from cluster.k8s.litellm.app.model_rosters import ANTHROPIC_MODELS
+from cluster.cdk8s.model_rosters import ANTHROPIC_MODELS
 
 # OpenClaw's own native `anthropic/<model>` id, not the `{provider}/{shape}/{model}`
 # LiteLLM scheme -- this agent's `anthropic` plugin calls the Anthropic API directly,

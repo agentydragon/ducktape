@@ -1,4 +1,4 @@
-"""Shared model rosters and exposed-name derivations referenced by LiteLLM cross-configuration tests.
+"""Shared model rosters and exposed-name derivations for cdk8s-generated LiteLLM and agent configs.
 
 Naming scheme (#4823): an exposed `model_name` is `{provider}/{shape}/{model}` — the
 upstream account/provider, the wire LiteLLM speaks to that provider, then the upstream

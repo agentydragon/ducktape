@@ -1,11 +1,10 @@
-"""Generates public-coder-agent/app/openclaw.json5's content -- see
-cluster/k8s/litellm/app/model_rosters.py for the model-name scheme and the Codex/Gemini
-rosters this pulls from.
+"""Generates public-coder-agent/app/openclaw.json5's content -- see model_rosters.py for
+the model-name scheme and the Codex/Gemini rosters this pulls from.
 """
 
 from __future__ import annotations
 
-from cluster.k8s.litellm.app.model_rosters import (
+from cluster.cdk8s.model_rosters import (
     GEMINI_CONTEXT_WINDOW,
     GEMINI_MAX_OUTPUT_TOKENS,
     GEMINI_MODELS,

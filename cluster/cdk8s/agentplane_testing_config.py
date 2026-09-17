@@ -1,11 +1,10 @@
 """Generates agentplane-testing/app/config.yaml's content -- x/agentplane/app/main.py's
-`Settings`, mounted by the Deployment. See cluster/k8s/litellm/app/model_rosters.py for
-the model-name scheme.
+`Settings`, mounted by the Deployment. See model_rosters.py for the model-name scheme.
 """
 
 from __future__ import annotations
 
-from cluster.k8s.litellm.app.model_rosters import ApiShape, Provider, exposed_name
+from cluster.cdk8s.model_rosters import ApiShape, Provider, exposed_name
 
 _NAMESPACE = "agentplane-testing"
 
