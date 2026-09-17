@@ -3,6 +3,5 @@ kind: Kustomization
 namespace: litellm
 resources:
   - litellm.k8s.yaml
-  - litellm-servicemonitor.k8s.yaml
 components:
   - ./image-pins
