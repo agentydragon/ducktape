@@ -20,8 +20,8 @@ from x.agentplane.egress.conftest import (
 )
 from x.agentplane.egress.identity import IdentityRejectedError, WorkloadIdentityVerifier
 from x.agentplane.egress.policy import DenyReason
-from x.agentplane.egress.testing.fake_apiserver import SANDBOX_NAMESPACE, FakeApiServer, TokenVerdict
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver, WorkloadPrincipal
+from x.agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, FakeApiServer, TokenVerdict
 
 
 @pytest.fixture

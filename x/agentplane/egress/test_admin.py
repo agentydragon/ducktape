@@ -20,7 +20,7 @@ from x.agentplane.egress.decision_log import DecisionLog
 from x.agentplane.egress.decision_store import DecisionStore, make_engine
 from x.agentplane.egress.policy import Index
 from x.agentplane.egress.resources import EgressBinding, EgressPolicy
-from x.agentplane.egress.testing.fake_apiserver import binding, policy
+from x.agentplane.testing.fake_apiserver import binding, policy
 
 RESYNC_SECONDS = 300
 STARTED = datetime(2026, 9, 3, 12, 0, tzinfo=UTC)

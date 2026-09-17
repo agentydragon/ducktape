@@ -22,7 +22,8 @@ from x.agentplane.egress.decision_store import DecisionStore, make_engine
 from x.agentplane.egress.informer import Informer
 from x.agentplane.egress.policy import Index
 from x.agentplane.egress.resources import CREDENTIALS_PLURAL, TargetMethod, placeholder_of
-from x.agentplane.egress.testing.fake_apiserver import (
+from x.agentplane.subjects import ServiceAccountRef
+from x.agentplane.testing.fake_apiserver import (
     BINDINGS_PLURAL,
     CREDENTIALS_NAMESPACE,
     NAMESPACE,
@@ -40,7 +41,6 @@ from x.agentplane.egress.testing.fake_apiserver import (
     sandbox,
     secret,
 )
-from x.agentplane.subjects import ServiceAccountRef
 
 AUDIENCE = "agentplane-egress-test"
 UPSTREAM_HOST = "localhost"

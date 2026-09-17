@@ -6,23 +6,6 @@ package(
 )
 
 py_library(
-    name = "fake_apiserver",
-    srcs = ["fake_apiserver.py"],
-    visibility = [
-        "//x/agentplane/action_service:__pkg__",
-        "//x/agentplane/egress:__pkg__",
-        "//x/agentplane/llm_ingress:__pkg__",
-    ],
-    deps = [
-        "//x/agentplane:crds",
-        "//x/agentplane/egress:resources",
-        "//x/agentplane/sandbox_auth:principal",
-        "@pypi//aiohttp",
-        "@pypi//more_itertools",
-    ],
-)
-
-py_library(
     name = "tls",
     srcs = ["tls.py"],
     deps = ["@pypi//cryptography"],
