@@ -25,5 +25,3 @@ spec:
       namespace: ducktape-flux
     - name: authentik
       namespace: ducktape-flux
-    - name: authentik-sso-secrets
-      namespace: ducktape-flux
