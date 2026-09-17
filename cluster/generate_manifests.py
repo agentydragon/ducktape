@@ -18,7 +18,6 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 )
 
 from cluster.flux_constructs import NAMESPACE, flux_kustomization, kustomize_kustomization
-from cluster.litellm_config import main_proxy_config
 from cluster.litellm_constructs import LiteLLMProxy, LiteLLMServiceMonitor, proxy_specs
 from util.bazel.workspace import get_build_workspace_directory
 
@@ -77,7 +76,6 @@ def generate_manifests(root: Path) -> None:
         app_dir / "kustomization.yaml",
         kustomize_kustomization(namespace="litellm", resources=[f"{spec.name}.k8s.yaml"], components=["./image-pins"]),
     )
-    _write_yaml(app_dir / "proxy-config.yaml", main_proxy_config())
 
 
 def main() -> None:

@@ -17,6 +17,10 @@ py_library(
 py_library(
     name = "litellm_config",
     srcs = ["litellm_config.py"],
+    visibility = [
+        "//cluster/k8s/litellm/app:__pkg__",
+        "//debug/litellm_probe:__pkg__",
+    ],
     deps = ["//cluster/k8s/litellm/app:model_rosters"],
 )
 
@@ -40,7 +44,6 @@ py_library(
     visibility = ["//visibility:private"],
     deps = [
         ":flux_constructs",
-        ":litellm_config",
         ":litellm_constructs",
         "//util/bazel:workspace",
         "@pypi//cdk8s",
@@ -63,7 +66,6 @@ py_test(
         "//cluster/k8s/litellm/app:flux-kustomization.yaml",
         "//cluster/k8s/litellm/app:kustomization.yaml",
         "//cluster/k8s/litellm/app:litellm.k8s.yaml",
-        "//cluster/k8s/litellm/app:proxy-config.yaml",
         "@nodejs_linux_amd64//:bin/node",
     ],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},

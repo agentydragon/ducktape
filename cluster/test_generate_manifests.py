@@ -18,7 +18,6 @@ _GENERATED_FILES = (
     "cluster/k8s/litellm/app/litellm.k8s.yaml",
     "cluster/k8s/litellm/app/flux-kustomization.yaml",
     "cluster/k8s/litellm/app/kustomization.yaml",
-    "cluster/k8s/litellm/app/proxy-config.yaml",
 )
 
 
