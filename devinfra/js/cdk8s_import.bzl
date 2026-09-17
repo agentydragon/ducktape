@@ -1,7 +1,7 @@
 """Macro: cdk8s_import — generate typed Python cdk8s constructs from a CRD YAML.
 
 Wraps `cdk8s import` (cdk8s-cli), which generates jsii-backed constructs the same way
-upstream cdk8s_plus_33 was generated for core Kubernetes types. Unlike the manifest
+upstream cdk8s_plus_34 was generated for core Kubernetes types. Unlike the manifest
 files under cluster/k8s (committed because Flux reads them from git), this is a
 compile-time codegen dependency -- outputs are pure build artifacts, never committed.
 

@@ -189,13 +189,13 @@ versa, a reason this specific problem doesn't move that decision either way.
 `cdk8s.ApiObject` + `JsonPatch` can express any manifest with zero schema validation,
 which makes it tempting to reach for whenever a typed builder is missing or
 incomplete. **Don't build a whole resource this way just because a typed builder
-doesn't cover it.** Check first: a core type may already have a `cdk8s_plus_33`
+doesn't cover it.** Check first: a core type may already have a `cdk8s_plus_34`
 builder you haven't tried, and a CRD type gets real typed bindings via `cdk8s_import`
 (below) — normal, expected effort, not a fallback. See <AGENTS.md> for the full rule.
 
 The one legitimate use is patching a single field a typed builder is missing, on an
 object that's otherwise built with its typed constructor:
-`ApiObject.of(construct).add_json_patch(...)` reaches a non-`ApiObject` cdk8s_plus_33
+`ApiObject.of(construct).add_json_patch(...)` reaches a non-`ApiObject` cdk8s_plus_34
 construct's (e.g. `Deployment`, `Role`) internally-managed `ApiObject`; a
 CRD-generated class (already an `ApiObject` subclass) takes `.add_json_patch(...)`
 directly. Two examples below: `Deployment`'s `topologySpreadConstraints` and `Role`'s
@@ -203,7 +203,7 @@ directly. Two examples below: `Deployment`'s `topologySpreadConstraints` and `Ro
 
 - **Flux's `Kustomization` CR** is built from real typed constructs.
   `devinfra/js/cdk8s_import.bzl` wraps `cdk8s import`, generating jsii-backed Python
-  bindings from a CRD YAML the same way upstream `cdk8s_plus_33` was generated for
+  bindings from a CRD YAML the same way upstream `cdk8s_plus_34` was generated for
   core Kubernetes types. The CRD is fetched via an `http_file()` in `MODULE.bazel`
   (pinned by sha256), never vendored; the generated bindings are pure build-time
   output, never committed either — `//third_party/flux:kustomization` is the first
@@ -253,10 +253,10 @@ directly. Two examples below: `Deployment`'s `topologySpreadConstraints` and `Ro
   an npm package name), while the Python package directory next to it underscores
   it (a dash isn't valid there), so the two can't be derived from one string.
 - **Deployment/Service/ServiceAccount** are core Kubernetes types, not CRDs, so
-  `cdk8s_import` doesn't apply — they're built from `cdk8s_plus_33`'s own
+  `cdk8s_import` doesn't apply — they're built from `cdk8s_plus_34`'s own
   already-vendored typed builders (already a dependency, used for `ConfigMap`)
   instead of the raw `ApiObject`/`JsonPatch` escape hatch. Unlike the CRD
-  conversions above, this wasn't a same-shape swap: `cdk8s_plus_33` is a fluent,
+  conversions above, this wasn't a same-shape swap: `cdk8s_plus_34` is a fluent,
   opinionated builder, not a typed mirror of the raw manifest fields, so a few
   fields translate rather than map 1:1:
   - `nodeSelector` becomes a required `nodeAffinity` match (`Deployment.scheduling.attract(Node.labeled(...))`)
@@ -268,12 +268,12 @@ directly. Two examples below: `Deployment`'s `topologySpreadConstraints` and `Ro
     `spread: bool` auto-toggle) — `cdk8s.ApiObject.of(deployment)` reaches the
     `Deployment`'s internally-managed `ApiObject` for a `JsonPatch` escape hatch,
     since `Deployment` doesn't extend `ApiObject` directly.
-  - **`cdk8s_plus_33` defaults containers and pods to a hardened
+  - **`cdk8s_plus_34` defaults containers and pods to a hardened
     `securityContext`** (`readOnlyRootFilesystem: true`, `runAsNonRoot: true`).
     Both are explicitly overridden back to `false` to preserve today's actual
     (unrestricted) behavior — the real container's filesystem-write/root needs
     were never audited, so silently hardening it as a side effect of switching
-    builders could have broken the running proxy. `cdk8s_plus_33` also
+    builders could have broken the running proxy. `cdk8s_plus_34` also
     unconditionally emits `allowPrivilegeEscalation: false` and
     `privileged: false` on every container, with no opt-out — the hand-written
     manifest left both unset (server default: escalation allowed). Kept as-is
@@ -282,15 +282,15 @@ directly. Two examples below: `Deployment`'s `topologySpreadConstraints` and `Ro
   - The Deployment's own `matchLabels` selector uses cdk8s's own
     `cdk8s.io/metadata.addr` construct-address label instead of
     `app.kubernetes.io/name` (`app.kubernetes.io/name` still remains on the pod
-    template's own labels) — `cdk8s_plus_33`'s own selector-uniqueness
+    template's own labels) — `cdk8s_plus_34`'s own selector-uniqueness
     convention, adopted rather than fought.
 
 - **Job/CronJob/Role/RoleBinding/ServiceAccount**
   (`cluster/cdk8s/ha_mcp_constructs.py`'s `HaMcpCredentialsProvisioner`) are core/RBAC
   types, so like
-  Deployment/Service/ServiceAccount above they come from `cdk8s_plus_33`'s fluent
+  Deployment/Service/ServiceAccount above they come from `cdk8s_plus_34`'s fluent
   builders, with two more wrinkles:
-  - `cdk8s_plus_33`'s `RolePolicyRule` has no `resourceNames` field, so a `Role`
+  - `cdk8s_plus_34`'s `RolePolicyRule` has no `resourceNames` field, so a `Role`
     scoped to one specific resource name (rather than an entire resource type) keeps
     the typed `Role` constructor (for `apiVersion`/`kind`/`metadata`) and patches only
     the missing field: `ApiObject.of(role).add_json_patch(JsonPatch.add("/rules",
@@ -299,7 +299,7 @@ directly. Two examples below: `Deployment`'s `topologySpreadConstraints` and `Ro
     typed builder throughout, via the `Role.from_role_name(scope, id, name)` static
     factory (a name-only reference, since the fluent `Role` construct's own `rules`
     param goes unused here).
-  - **`cdk8s_plus_33` defaults every pod to no mounted ServiceAccount token**
+  - **`cdk8s_plus_34` defaults every pod to no mounted ServiceAccount token**
     (`automountServiceAccountToken: false`), unlike the Deployment default covered
     above. A workload whose entire purpose is calling the K8s API under its RBAC
     grant (as here) needs `automount_service_account_token=True` explicitly passed
@@ -312,7 +312,7 @@ directly. Two examples below: `Deployment`'s `topologySpreadConstraints` and `Ro
 - **`ha-mcp/app`** (`cluster/cdk8s/ha_mcp_constructs.py`'s `HaMcpApp`) is a
   multi-container Deployment plus a CiliumNetworkPolicy and a hand-written SOPS secret
   in the same directory — three more wrinkles:
-  - **`add_container`'s `env_from` takes `cdk8s_plus_33.EnvFrom` wrapper objects, not
+  - **`add_container`'s `env_from` takes `cdk8s_plus_34.EnvFrom` wrapper objects, not
     the `IConfigMap`/`ISecret` directly** — `env_from=[EnvFrom(config_map=config_map)]`,
     not `env_from=[config_map]`. The type error is clear (`typeguard` rejects the plain
     object at call time) but easy to reach for a source, since every other place a

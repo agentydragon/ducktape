@@ -3,7 +3,7 @@ every generated directory that pulls a `git.allegedly.works`-hosted image.
 """
 
 from cdk8s import ApiObjectMetadata
-from cdk8s_plus_33 import ISecret, Secret
+from cdk8s_plus_34 import ISecret, Secret
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
     ExternalSecret,

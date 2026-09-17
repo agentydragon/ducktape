@@ -3,7 +3,7 @@
 Full design and worked examples: <../docs/cdk8s.md>.
 
 **Rule**: never build a resource with raw `cdk8s.ApiObject` + `JsonPatch` when a typed
-`cdk8s_plus_33` builder exists, and never leave a CRD as a raw `ApiObject` instead of
+`cdk8s_plus_34` builder exists, and never leave a CRD as a raw `ApiObject` instead of
 generating real bindings via `cdk8s_import` (`devinfra/js/cdk8s_import.bzl`;
 `//third_party/{flux,prometheus_operator,gateway_api,external_secrets,cilium}` are the
 examples). Typed builders give synth-time validation; raw dicts fail only at
@@ -17,7 +17,7 @@ an object that's otherwise fully typed — never the whole resource:
 constructs like `Deployment`) or `.add_json_patch(...)` directly (`cdk8s.ApiObject`
 subclasses, e.g. CRD-generated classes).
 
-## Typed affordances (`cdk8s_plus_33`) — use these
+## Typed affordances (`cdk8s_plus_34`) — use these
 
 | Kind                                                 | Builder                                                                         | Reference existing by name                                                                                                                                                                                            |
 | ---------------------------------------------------- | ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -43,12 +43,12 @@ subclasses, e.g. CRD-generated classes).
 `resources`/`endpoints` a list of real `IApiResource`/`IApiEndpoint` — not dicts. Fully
 typed, including `resourceNames`:
 
-- **Resource type, no name scoping**: `ApiResource.<CONSTANT>` (60+ constants — `dir(cdk8s_plus_33.ApiResource)`) or `ApiResource.custom(api_group=..., resource_type=...)` for anything else, subresources included (`"pods/exec"`, `"serviceaccounts/token"`).
+- **Resource type, no name scoping**: `ApiResource.<CONSTANT>` (60+ constants — `dir(cdk8s_plus_34.ApiResource)`) or `ApiResource.custom(api_group=..., resource_type=...)` for anything else, subresources included (`"pods/exec"`, `"serviceaccounts/token"`).
 - **Scoped to one named object**: pass that kind's own `from_*_name` reference (`Secret.from_secret_name(...)`, `Role.from_role_name(...)`, ...) as the `IApiResource` — its `resource_name` is already wired.
-- **Scoped to a name with no typed kind covering it** (e.g. `serviceaccounts/token`): `ApiResource.custom()` never sets `resource_name`. Implement `IApiResource` directly — `@jsii.implements(cdk8s_plus_33.IApiResource)` on a small class with `api_group`/`resource_type`/`resource_name` properties, same as `Secret.from_secret_name` does internally. Needs `@pypi//jsii` as an explicit `BUILD.bazel` dep. Example: `agentplane_constructs.py`'s `_NamedApiResource`.
+- **Scoped to a name with no typed kind covering it** (e.g. `serviceaccounts/token`): `ApiResource.custom()` never sets `resource_name`. Implement `IApiResource` directly — `@jsii.implements(cdk8s_plus_34.IApiResource)` on a small class with `api_group`/`resource_type`/`resource_name` properties, same as `Secret.from_secret_name` does internally. Needs `@pypi//jsii` as an explicit `BUILD.bazel` dep. Example: `agentplane_constructs.py`'s `_NamedApiResource`.
 - **Caveat, not an excuse to go raw**: synthesis emits **one output rule per `IApiResource` entry**, always — `RolePolicyRule(resources=[a, b], ...)` becomes two rules, never one rule listing two resource types (`role.ts`'s `synthesizeRules()`; no typed way around it). RBAC-equivalent (Kubernetes unions all rules), so a hand-written file's rule _grouping_ won't survive conversion unchanged — only its permissions. Expect that diff.
 
-Anything not in the table above: check `dir(cdk8s_plus_33.<Thing>)` first; if
+Anything not in the table above: check `dir(cdk8s_plus_34.<Thing>)` first; if
 inconclusive, clone `https://github.com/cdk8s-team/cdk8s-plus` and grep `src/*.ts` for
 the kind's `export class` before reaching for `ApiObject`. Add the result to the table.
 

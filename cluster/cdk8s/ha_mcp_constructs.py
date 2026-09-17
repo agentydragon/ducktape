@@ -19,7 +19,7 @@ cluster/docs/cdk8s.md § SOPS secrets in a converted directory.
 from __future__ import annotations
 
 from cdk8s import ApiObject, ApiObjectMetadata, Cron, Duration, JsonPatch, Size
-from cdk8s_plus_33 import (
+from cdk8s_plus_34 import (
     Capability,
     ConcurrencyPolicy,
     ConfigMap,
@@ -105,7 +105,7 @@ class HaMcpCredentialsProvisioner(Construct):
         self._add_cronjob(service_account, break_glass_secret, pull_secret)
 
     def _add_rbac(self, service_account: ServiceAccount) -> None:
-        # cdk8s_plus_33's RolePolicyRule has no resourceNames field, so this Role's
+        # cdk8s_plus_34's RolePolicyRule has no resourceNames field, so this Role's
         # /rules (which needs one) is patched in directly -- same escape hatch as
         # Deployment's topologySpreadConstraints in litellm_constructs.py: the typed
         # Role construct stays authoritative for apiVersion/kind/metadata, and
@@ -150,7 +150,7 @@ class HaMcpCredentialsProvisioner(Construct):
             security_context=ContainerSecurityContextProps(
                 capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
                 # Unlike litellm_constructs.py's Deployment, no override needed here:
-                # cdk8s_plus_33's hardened ensure_non_root default (true) already
+                # cdk8s_plus_34's hardened ensure_non_root default (true) already
                 # matches this container's real requirement (runAsNonRoot: true).
                 #
                 # readOnlyRootFilesystem stays permissive (false) to preserve the
@@ -193,7 +193,7 @@ class HaMcpCredentialsProvisioner(Construct):
             restart_policy=RestartPolicy.ON_FAILURE,
             service_account=service_account,
             docker_registry_auth=pull_secret,
-            # cdk8s_plus_33 defaults pods to no mounted SA token. This container calls the
+            # cdk8s_plus_34 defaults pods to no mounted SA token. This container calls the
             # K8s API (via the RBAC role above) to patch its own Secret, so it needs one.
             automount_service_account_token=True,
         )
@@ -347,7 +347,7 @@ class HaMcpApp(Construct):
             ),
             readiness=http_probe("/healthz", port=_APP_FACADE_PORT, initial_delay_seconds=5),
             liveness=http_probe("/healthz", port=_APP_FACADE_PORT, initial_delay_seconds=20, period_seconds=20),
-            # cdk8s_plus_33 defaults containers to a hardened SecurityContext
+            # cdk8s_plus_34 defaults containers to a hardened SecurityContext
             # (readOnlyRootFilesystem/runAsNonRoot: true). Opt out explicitly to preserve
             # today's actual (unrestricted) behavior -- the real container's
             # filesystem-write/root needs were never audited, so silently hardening it here

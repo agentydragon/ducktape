@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch, Size, Yaml
-from cdk8s_plus_33 import (
+from cdk8s_plus_34 import (
     ConfigMap,
     ContainerPort,
     ContainerResources,
@@ -111,7 +111,7 @@ class ProxySpec:
     termination_grace_period_seconds: int | None = None
     node_affinity: LabeledNode | None = None
     tolerations: tuple[TaintedNode, ...] = ()
-    # cdk8s_plus_33 has no typed builder for custom topologySpreadConstraints
+    # cdk8s_plus_34 has no typed builder for custom topologySpreadConstraints
     # (only an all-or-nothing `spread: bool` auto-toggle) -- stays a raw dict,
     # applied via the ApiObject escape hatch in _add_deployment.
     topology_spread_constraints: tuple[dict[str, object], ...] = ()
@@ -299,7 +299,7 @@ class LiteLLMProxy(Construct):
                 if self.spec.image_pull_secret_name is not None
                 else None
             ),
-            # cdk8s_plus_33 defaults pods to a hardened SecurityContext
+            # cdk8s_plus_34 defaults pods to a hardened SecurityContext
             # (runAsNonRoot). Opt out explicitly to preserve today's actual behavior
             # -- the real container's root needs haven't been audited, so silently
             # hardening it here could break the running proxy.
@@ -330,7 +330,7 @@ class LiteLLMProxy(Construct):
         for toleration in self.spec.tolerations:
             deployment.scheduling.tolerate(toleration)
         if self.spec.topology_spread_constraints:
-            # cdk8s_plus_33's Deployment (a Workload, not an ApiObject subclass) has
+            # cdk8s_plus_34's Deployment (a Workload, not an ApiObject subclass) has
             # no direct escape hatch; ApiObject.of() reaches the ApiObject it
             # manages internally.
             ApiObject.of(deployment).add_json_patch(
