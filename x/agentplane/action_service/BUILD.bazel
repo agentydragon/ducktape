@@ -551,12 +551,9 @@ py_test(
     srcs = ["test_database_migrate.py"],
     requires_docker = True,
     deps = [
-        ":catalog",
         ":conftest",
         ":db",
-        ":models",
         "//:conftest",
-        "//x/agentplane:subjects",
         "@pypi//alembic",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
