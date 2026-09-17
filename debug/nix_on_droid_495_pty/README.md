@@ -196,7 +196,7 @@ above; as a stand-in for a Pixel it is weak on two counts — five Android relea
 SELinux hardening, and the wrong architecture — and its results do not substitute for
 the Android 14 arm64 run.
 
-`scripts/` is the whole harness, in dependency order:
+`scripts/` (the x86_64 harness; the arm64 one is `scripts/arm64/`):
 
 | Script                                   | Role                                                      |
 | ---------------------------------------- | --------------------------------------------------------- |
@@ -248,9 +248,12 @@ The runs below are therefore **permissive**. That still answers the question, be
 permissive logs every denial it would have enforced (`permissive=1`) — so an absent AVC
 means the access was genuinely allowed, not merely un-blocked.
 
-## What was run, and what happened
+### Android 9 x86_64 results
 
-All four variants run the identical sequence from `ptytest.c`.
+These are a probe of the syscall sequence and a synthetic local build, on the wrong
+Android version and the wrong architecture. They are evidence about the policy, not
+about the phone, and they are **not** a run of `nix-on-droid switch`. All four variants
+run the identical sequence from `ptytest.c`.
 
 | Variant                                                      | Result          |
 | ------------------------------------------------------------ | --------------- |
@@ -310,15 +313,15 @@ carries its `fakeProcStat` bind.
 
 - **The `ls /dev/pts` denial is not evidence.** It is `allow domain devpts:dir search`
   without `read`, true for every app on every Android release.
-- **SELinux does not deny Nix's pty sequence to an app**, by policy text (Android 9 and
-  AOSP `main`) and by execution.
+- **SELinux does not deny Nix's pty sequence to an app**, by policy text — Android 9's
+  binary policy and AOSP `main` agree — and, on Android 9 x86_64, by execution.
 - **nix-on-droid's proot does not break the pty sequence**, at either uid.
-- A local Nix build inside that proot is not inherently broken on Android.
 
-The caveat that keeps this from closing the issue: the guest is **Android 9 on kernel
-4.19**, and the Pixel 6 is Android 15/16 on kernel 5.10/6.1. The most likely places for a
-real difference — newer policy, newer devpts/ioctl behaviour — are exactly what differs.
-This is a strong negative, not a proof.
+What it does **not** rule out, and what the Android 14 arm64 work exists to settle: the
+executed half of that is Android 9 on kernel 4.19, while the Pixel 6 is Android 14 on
+kernel 6.1. Newer policy and newer devpts/ioctl behaviour are exactly what differs, and
+the ordering in the reported error (`open` succeeds, `TCGETS` returns `EACCES`) is not
+explained by any rule read so far.
 
 ## Next steps, cheapest first
 
@@ -338,19 +341,19 @@ avc` around a failing `nix-on-droid switch`. If nothing appears, SELinux is excl
 
 ## Not done
 
-- **The real APK was never installed.** `pm install` of `com.termux.nix` 188037 (it does
-  ship `lib/x86_64`) repeatedly killed `system_server` with `Failure calling service
-package: Broken pipe` — load average was above 20 on a 4-core TCG host. The bootstrap
-  was installed by hand instead, which is what the app itself does: unzip
-  `bootstrap-x86_64.zip`, replay `SYMLINKS.txt` and `EXECUTABLES.txt` (an Android-written
-  zip carries neither symlinks nor the exec bit), then run `bin/login`.
-- **`nix-on-droid switch` against `pixel6.nix` was never run.** It needs network from
-  inside the guest, and the guest's route out is QEMU usermode NAT, which is not this
-  container's HTTPS proxy; `cache.nixos.org` is unreachable from the guest and the
-  proxy's CA is not in Android's trust store. Not worked around — the bootstrap zip was
-  staged from the host over a virtual disk instead, which was enough to get a local build.
+- **`nix-on-droid switch --flake github:agentydragon/ducktape?ref=devel#pixel6` has not
+  completed here**, and cannot: its flake inputs are GitHub tarballs this session's
+  egress policy refuses (§ The session's GitHub egress scope). That is an environment
+  limit, not a property of the phone or of the guest.
+- On Android 9 x86_64, `pm install` of the APK repeatedly killed `system_server`
+  (`Failure calling service package: Broken pipe`) under TCG load, so the bootstrap was
+  unpacked by hand instead — the same steps the app performs (unzip, replay
+  `SYMLINKS.txt` and `EXECUTABLES.txt`, since an Android-written zip carries neither
+  symlinks nor the exec bit).
 - The bootstrap used is `bootstrap-release-24.05` (Nix 2.20.5), the app's default, not
   one built from the pinned `df611d53…`. It still carries the `nix/var/var` bug that
   pinned commit fixes (`db.sqlite` lands at `nix/var/var/nix`, so Nix cannot create
   `/nix/var/nix/temproots`); `install-nod.sh` does not repair it, so a resumed run must
   merge those directories and `chmod u+w` the 0555 state dirs by hand.
+- Boot time is the binding practical cost: Android 14 arm64 under TCG needs tens of
+  minutes to reach `sys.boot_completed`, with one host core saturated throughout.
