@@ -85,7 +85,7 @@ async def test_a_like_named_account_in_another_namespace_is_a_different_subject(
     )
     custom_objects.objects[("egressbindings", "live-and-another")] = egress_binding(
         "live-and-another",
-        subjects=[LIVE.model_dump(), {"namespace": NAMESPACE, "name": "public-coder"}],
+        subjects=[LIVE.model_dump(), {"namespace": NAMESPACE, "name": "test-workload-sa"}],
         policies=["pypi"],
     )
 
@@ -94,7 +94,7 @@ async def test_a_like_named_account_in_another_namespace_is_a_different_subject(
     assert "live-and-another" in names
 
     both = next(view for view in await egress.bindings_for(LIVE) if view.name == "live-and-another")
-    assert both.subjects == [LIVE, ServiceAccountRef(namespace=NAMESPACE, name="public-coder")]
+    assert both.subjects == [LIVE, ServiceAccountRef(namespace=NAMESPACE, name="test-workload-sa")]
 
 
 async def test_a_binding_view_carries_provenance_expiry_policies_without_proxy_acknowledgement(

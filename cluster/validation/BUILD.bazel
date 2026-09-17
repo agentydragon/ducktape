@@ -683,7 +683,7 @@ py_test(
     ],
     deps = [
         "//util/bazel:runfiles",
-        "//x/agentplane:subjects",  # keep: gazelle does not resolve x/ imports from this tree
+        "//x/agentplane:subjects",
         "@pypi//more_itertools",
         "@pypi//pydantic",
         "@pypi//pytest",
@@ -698,7 +698,7 @@ py_test(
     data = ["//cluster/k8s:cluster_yaml_files"],
     deps = [
         "//util/bazel:runfiles",
-        "//x/agentplane/egress:main",  # keep: gazelle does not resolve x/ imports from this tree
+        "//x/agentplane/egress:main",
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

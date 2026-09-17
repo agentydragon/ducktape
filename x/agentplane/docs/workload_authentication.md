@@ -43,10 +43,12 @@ fails closed. Existing `secretRef` behavior remains unchanged.
 
 PR #5696 added the shared destination-side `SandboxPrincipalAuthenticator` and
 `SandboxPrincipalResolver`. They require one well-formed Bearer, TokenReview for the configured
-audience, an allowed ServiceAccount subject, one Pod name/UID claim pair, the same live Pod UID, and
-one controller Sandbox owner. The immutable principal contains namespace, ServiceAccount, Pod, and
-Sandbox identity only. It contains no Thread, Agent, operator role, permissions, token, or caller
-body/header identity.
+audience, an allowed ServiceAccount subject, one Pod name/UID claim pair, and the same live Pod UID.
+`SandboxPrincipalAuthenticator` additionally requires one controller Sandbox owner;
+`WorkloadPrincipalAuthenticator` does not, and resolves a Pod no Sandbox controls as the
+ServiceAccount it runs as. The immutable principal contains namespace, ServiceAccount, Pod, and --
+where one was required -- Sandbox identity only. It contains no Thread, Agent, operator role,
+permissions, token, or caller body/header identity.
 
 The compatibility audience remains `agentplane-egress`. A future coordinated rename to
 `agentplane-workload` does not change the contract and is not required for the landed P0 behavior.
@@ -65,8 +67,8 @@ metadata is stamped through LiteLLM's documented metadata header. See
 ### Standalone Action Service
 
 PR #5700 uses the same destination-side principal for workload submission and caller-own reads.
-Ownership is derived from namespace plus live Sandbox UID, so two Pods sharing a ServiceAccount are
-still different callers. The integration app/BFF operator surface uses separate authentication. See
+The caller is the ServiceAccount the Pod runs as, so two Pods sharing one are the same caller and
+one `ActionPolicyBinding` covers both. The integration app/BFF operator surface uses separate authentication. See
 [`../action_service/README.md`](../action_service/README.md).
 
 ## Observed acceptance evidence
@@ -76,8 +78,8 @@ The landed tests prove:
 - two Pod-bound workload tokens substitute per request rather than becoming one static value;
 - same-ServiceAccount Pods resolve to distinct live Sandboxes;
 - harnesses see only the inert placeholder;
-- malformed, wrong-audience, stale/deleted/replaced, and unowned workload identities fail before a
-  destination/backend call;
+- malformed, wrong-audience and stale/deleted/replaced workload identities fail before a
+  destination/backend call, as do unowned ones where a Sandbox owner is required;
 - direct placeholder bypass and forged identity headers/body fields do not establish ownership;
 - exact target/host/method/path selection remains the substitution authority;
 - provider-native LLM streaming and error bodies pass through unchanged;

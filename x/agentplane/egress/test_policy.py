@@ -351,10 +351,12 @@ def test_a_binding_names_a_service_account_subject() -> None:
     scoped = index(
         policies=[policy("github", GITHUB_RULE)],
         bindings=[
-            binding("b", policies=["github"], subjects=[ServiceAccountRef(namespace=NAMESPACE, name="public-coder")])
+            binding(
+                "b", policies=["github"], subjects=[ServiceAccountRef(namespace=NAMESPACE, name="test-workload-sa")]
+            )
         ],
     )
-    allowed = evaluate(scoped, ServiceAccountRef(namespace=NAMESPACE, name="public-coder"), request(), NOW)
+    allowed = evaluate(scoped, ServiceAccountRef(namespace=NAMESPACE, name="test-workload-sa"), request(), NOW)
     assert isinstance(allowed, Allowed)
 
 
@@ -362,7 +364,9 @@ def test_a_service_account_binding_does_not_admit_another_service_account() -> N
     scoped = index(
         policies=[policy("github", GITHUB_RULE)],
         bindings=[
-            binding("b", policies=["github"], subjects=[ServiceAccountRef(namespace=NAMESPACE, name="public-coder")])
+            binding(
+                "b", policies=["github"], subjects=[ServiceAccountRef(namespace=NAMESPACE, name="test-workload-sa")]
+            )
         ],
     )
     assert evaluate(scoped, ServiceAccountRef(namespace=NAMESPACE, name="someone-else"), request(), NOW) == Denied(

@@ -137,7 +137,7 @@ async def test_pod_no_sandbox_owns_is_still_its_service_account(
     does, and whether it may reach anything is decided by whether a binding names that account."""
     fake.pods[SANDBOX_B]["metadata"]["ownerReferences"] = []
     fake.tokens[TOKEN_B] = replace(
-        fake.tokens[TOKEN_B], username=f"system:serviceaccount:{SANDBOX_NAMESPACE}:public-coder"
+        fake.tokens[TOKEN_B], username=f"system:serviceaccount:{SANDBOX_NAMESPACE}:test-workload-sa"
     )
     identity = await verifier.identify(TOKEN_B, POD_B_IP)
     assert identity == PodIdentity(
@@ -145,7 +145,7 @@ async def test_pod_no_sandbox_owns_is_still_its_service_account(
         pod_name=SANDBOX_B,
         pod_uid=POD_B_UID,
         pod_ip=POD_B_IP,
-        service_account_name="public-coder",
+        service_account_name="test-workload-sa",
     )
 
 
