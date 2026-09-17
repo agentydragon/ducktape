@@ -11,7 +11,7 @@ from kubernetes_asyncio.client import ApiClient
 
 from x.agentplane.egress.conftest import GITHUB_POLICY, SANDBOX_A, SECRET_NAME, informer
 from x.agentplane.egress.policy import Index
-from x.agentplane.egress.testing.fake_apiserver import (
+from x.agentplane.testing.fake_apiserver import (
     BINDINGS_PLURAL,
     CREDENTIALS_PLURAL,
     POLICIES_PLURAL,

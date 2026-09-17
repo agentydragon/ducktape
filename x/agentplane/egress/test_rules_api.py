@@ -13,9 +13,9 @@ from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api
 from x.agentplane.egress.conftest import AUDIENCE, SANDBOX_A, SANDBOX_B, TOKEN_A
 from x.agentplane.egress.policy import Index
 from x.agentplane.egress.rules_api import HOST, PATH, URL, RulesProjection, create_rules_app
-from x.agentplane.egress.testing.fake_apiserver import SANDBOX_NAMESPACE, FakeApiServer
 from x.agentplane.sandbox_auth.http import WorkloadPrincipalAuthenticator
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
+from x.agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, FakeApiServer
 
 NOW = datetime(2026, 9, 5, 12, 0, tzinfo=UTC)
 SUBJECT_A = {"namespace": SANDBOX_NAMESPACE, "name": SANDBOX_A}

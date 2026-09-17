@@ -18,7 +18,10 @@ from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api
 from more_itertools import one
 
 from x.agentplane.egress.resources import SANDBOXES_PLURAL
-from x.agentplane.egress.testing.fake_apiserver import (
+from x.agentplane.llm_ingress.app import IngressResources, create_app
+from x.agentplane.sandbox_auth.http import WorkloadPrincipalAuthenticator
+from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
+from x.agentplane.testing.fake_apiserver import (
     SANDBOX_NAMESPACE,
     FakeApiServer,
     TokenVerdict,
@@ -26,9 +29,6 @@ from x.agentplane.egress.testing.fake_apiserver import (
     pod_for,
     sandbox,
 )
-from x.agentplane.llm_ingress.app import IngressResources, create_app
-from x.agentplane.sandbox_auth.http import WorkloadPrincipalAuthenticator
-from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 
 AUDIENCE = "agentplane-egress"
 SUBJECT = f"system:serviceaccount:{SANDBOX_NAMESPACE}:agentplane-runner"

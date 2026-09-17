@@ -65,7 +65,19 @@ from x.agentplane.egress.rules_api import (
     serve_rules_api,
 )
 from x.agentplane.egress.sidecar import SidecarRelay
-from x.agentplane.egress.testing.fake_apiserver import (
+from x.agentplane.egress.testing.replica import kubeconfig, replica
+from x.agentplane.egress.testing.tls import (
+    CertificateAuthority,
+    client_tls_context,
+    issue_leaf,
+    make_ca,
+    server_tls_context,
+    write_ca,
+)
+from x.agentplane.egress.upstream import Address, Network, Pin, UpstreamResolver
+from x.agentplane.sandbox_auth.http import WorkloadPrincipalAuthenticator
+from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
+from x.agentplane.testing.fake_apiserver import (
     BINDINGS_PLURAL,
     CREDENTIALS_NAMESPACE,
     CREDENTIALS_PLURAL,
@@ -85,18 +97,6 @@ from x.agentplane.egress.testing.fake_apiserver import (
     sandbox,
     secret,
 )
-from x.agentplane.egress.testing.replica import kubeconfig, replica
-from x.agentplane.egress.testing.tls import (
-    CertificateAuthority,
-    client_tls_context,
-    issue_leaf,
-    make_ca,
-    server_tls_context,
-    write_ca,
-)
-from x.agentplane.egress.upstream import Address, Network, Pin, UpstreamResolver
-from x.agentplane.sandbox_auth.http import WorkloadPrincipalAuthenticator
-from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 
 
 @dataclass
