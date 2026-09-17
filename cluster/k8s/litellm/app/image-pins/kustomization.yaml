@@ -1,24 +1,11 @@
 apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
-# Setters always rewrites the whole marked field to the full "repository:tag"
-# reference -- there's no bare-tag setter variant. A kustomize images: entry
-# splits that into separate name/newTag fields, so marking newTag: here made
-# Setters write the repository name into the tag on its very next write-back
-# (newTag became "git.allegedly.works/...:git.allegedly.works/...:tag").
-# Patch the container's own image: field instead -- that field already holds
-# a full reference, matching what Setters actually writes.
-patches:
-  - target:
-      kind: Deployment
-      name: litellm
-    patch: |-
-      apiVersion: apps/v1
-      kind: Deployment
-      metadata:
-        name: litellm
-      spec:
-        template:
-          spec:
-            containers:
-              - name: litellm
-                image: git.allegedly.works/ducktape-ci/tana-litellm-proxy:devel-20260914084437-6a8e3e2 # {"$imagepolicy": "flux-system:tana-litellm-proxy"}
+images:
+  - name: git.allegedly.works/ducktape-ci/tana-litellm-proxy
+    # The `:tag` suffix tells Setters to write back only the bare tag value --
+    # without it, Setters always rewrites the whole marked field to the full
+    # "repository:tag" reference, which corrupted this newTag:-only field into
+    # "repository:repository:tag" on its very first write-back and took
+    # litellm down (InvalidImageName). See fluxcd.io/flux/components/image/
+    # imageupdateautomations/ "Field-specific update markers".
+    newTag: devel-20260914084437-6a8e3e2 # {"$imagepolicy": "flux-system:tana-litellm-proxy:tag"}
