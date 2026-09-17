@@ -44,6 +44,8 @@ gotk-sync.yaml linguist-generated=true
 cluster/k8s/**/*.k8s.yaml linguist-generated=true
 cluster/k8s/litellm/app/flux-kustomization.yaml linguist-generated=true
 cluster/k8s/litellm/app/kustomization.yaml linguist-generated=true
+cluster/k8s/agents/ha-mcp/app/flux-kustomization.yaml linguist-generated=true
+cluster/k8s/agents/ha-mcp/app/kustomization.yaml linguist-generated=true
 
 # Artifacts captured from live Claude Code containers — not our source code
 devinfra/claude/web_env/rootfs/** rules-lint-ignored=true

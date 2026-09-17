@@ -1,9 +1,9 @@
 # Plan: cdk8s adoption for cluster manifests
 
-**Status**: phase 1 landed. `cluster/k8s/litellm/app` is fully cdk8s-generated and
-committed. How the current system works (conventions, mechanisms, constraints) is
-documented in <../cdk8s.md>, not here — this file holds only what's still undecided
-or unbuilt.
+**Status**: phase 1 landed. `cluster/k8s/litellm/app` and `cluster/k8s/agents/ha-mcp/app`
+are fully cdk8s-generated and committed. How the current system works (conventions,
+mechanisms, constraints) is documented in <../cdk8s.md>, not here — this file holds
+only what's still undecided or unbuilt.
 
 ## Where to convert next
 
@@ -55,11 +55,6 @@ phase 1's actual pattern has run for a while, not before.
   <../cdk8s.md>). No case has needed this yet; when one does, a `reason` kwarg the
   shared construct renders as something else is the likely shape, since `dependsOn`
   list items have no comment-equivalent field.
-- `//cluster/cdk8s:generate_manifests` hardcodes its one output directory (no
-  `--output-dir` flag) — matches phase 1's "write directly to `cluster/k8s`", but isn't
-  yet a general per-directory regeneration entrypoint. Revisit when a second directory
-  converts and the hardcoding actually needs generalizing, rather than guessing the
-  right shape from one data point.
 - Whether `image-pins/`'s content should itself get any generator involvement (e.g.
   a test that the `name:` in `images:` matches `ProxySpec.image_name`, so the two
   can't drift apart silently) — not built, low urgency while there's only one

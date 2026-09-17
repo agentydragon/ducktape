@@ -1,0 +1,448 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    app.kubernetes.io/name: ha-mcp
+    goldilocks.fairwinds.com/enabled: "false"
+  name: ha-mcp
+spec: {}
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: forgejo-images-creds
+  namespace: home-assistant
+spec:
+  dataFrom:
+    - extract:
+        key: forgejo-images-creds
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-forgejo-images-secret-store
+  target:
+    name: forgejo-images-creds
+    template:
+      mergePolicy: Merge
+      type: kubernetes.io/dockerconfigjson
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ha-mcp-token-provisioner
+  namespace: home-assistant
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ha-mcp-token-provisioner
+  namespace: ha-mcp
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - ha-mcp-home-assistant-token
+    resources:
+      - secrets
+    verbs:
+      - get
+      - update
+      - patch
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ha-mcp-token-provisioner
+  namespace: ha-mcp
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ha-mcp-token-provisioner
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: ha-mcp-token-provisioner
+    namespace: home-assistant
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  annotations:
+    description: Validates and repairs the dedicated Home Assistant long-lived token consumed by HA-MCP.
+    kustomize.toolkit.fluxcd.io/force: enabled
+  name: ha-mcp-token-provisioner
+  namespace: home-assistant
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ha-mcp-token-provisioner
+        cdk8s.io/metadata.addr: ha-mcp-provisioner-job-c8d54df7
+    spec:
+      automountServiceAccountToken: true
+      containers:
+        - env:
+            - name: HOME_ASSISTANT_LOCAL_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: password
+                  name: home-assistant-break-glass
+          image: git.allegedly.works/ducktape-ci/ha-mcp-token-provisioner:unset
+          imagePullPolicy: Always
+          name: provision-token
+          resources:
+            limits:
+              memory: 256Mi
+            requests:
+              cpu: 20m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+      dnsPolicy: ClusterFirst
+      hostNetwork: false
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      restartPolicy: OnFailure
+      securityContext:
+        fsGroupChangePolicy: Always
+        runAsNonRoot: true
+      serviceAccountName: ha-mcp-token-provisioner
+      setHostnameAsFQDN: false
+      shareProcessNamespace: false
+      terminationGracePeriodSeconds: 30
+  ttlSecondsAfterFinished: 3600
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ha-mcp-token-provisioner
+  namespace: home-assistant
+spec:
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 3
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: ha-mcp-token-provisioner
+            cdk8s.io/metadata.addr: ha-mcp-provisioner-cronjob-c8c082f5
+        spec:
+          automountServiceAccountToken: true
+          containers:
+            - env:
+                - name: HOME_ASSISTANT_LOCAL_ADMIN_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      key: password
+                      name: home-assistant-break-glass
+              image: git.allegedly.works/ducktape-ci/ha-mcp-token-provisioner:unset
+              imagePullPolicy: Always
+              name: provision-token
+              resources:
+                limits:
+                  memory: 256Mi
+                requests:
+                  cpu: 20m
+                  memory: 64Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                privileged: false
+                readOnlyRootFilesystem: false
+                runAsNonRoot: true
+          dnsPolicy: ClusterFirst
+          hostNetwork: false
+          imagePullSecrets:
+            - name: forgejo-images-creds
+          restartPolicy: OnFailure
+          securityContext:
+            fsGroupChangePolicy: Always
+            runAsNonRoot: true
+          serviceAccountName: ha-mcp-token-provisioner
+          setHostnameAsFQDN: false
+          shareProcessNamespace: false
+          terminationGracePeriodSeconds: 30
+  schedule: 0 4 * * 0
+  startingDeadlineSeconds: 10
+  successfulJobsHistoryLimit: 3
+  suspend: false
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: forgejo-images-creds
+  namespace: ha-mcp
+spec:
+  dataFrom:
+    - extract:
+        key: forgejo-images-creds
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-forgejo-images-secret-store
+  target:
+    name: forgejo-images-creds
+    template:
+      mergePolicy: Merge
+      type: kubernetes.io/dockerconfigjson
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ha-mcp-config
+  namespace: ha-mcp
+data:
+  BACKUP_HINT: normal
+  ENABLE_BETA_FEATURES: "false"
+  ENABLE_CODE_MODE: "false"
+  ENABLE_TOOL_SEARCH: "false"
+  ENABLE_TOOL_SECURITY_POLICIES: "false"
+  ENABLE_YAML_CONFIG_EDITING: "false"
+  ENVIRONMENT: production
+  HAMCP_BACKUP_DIR: /data/backups
+  HAMCP_ENABLE_DEV_MODE: "false"
+  HAMCP_ENABLE_FILESYSTEM_TOOLS: "false"
+  HA_MCP_CONFIG_DIR: /data
+  HOMEASSISTANT_URL: http://home-assistant.home-assistant.svc.cluster.local:8123
+  LOG_LEVEL: INFO
+  MCP_FACADE_FACADE_NAME: Home Assistant MCP Facade
+  MCP_FACADE_UPSTREAM__KIND: http
+  MCP_FACADE_UPSTREAM__URL: http://localhost:8086/mcp
+  MCP_HEALTHZ: "true"
+  MCP_HOST: 0.0.0.0
+  MCP_PORT: "8086"
+  MCP_SECRET_PATH: /mcp
+  MCP_SERVER_NAME: Home Assistant
+  READ_ONLY_MODE: "false"
+immutable: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    description: Writable Home Assistant MCP server behind the shared MCP facade, cluster-internal and gated by a static bearer that only haku-console holds. The upstream HA token remains server-side, and Haku applies its own per-call approval policy.
+    reloader.stakater.com/auto: "true"
+  labels:
+    app.kubernetes.io/name: ha-mcp
+  name: ha-mcp
+  namespace: ha-mcp
+spec:
+  minReadySeconds: 0
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      cdk8s.io/metadata.addr: ha-mcp-app-deployment-c8d47138
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ha-mcp
+        cdk8s.io/metadata.addr: ha-mcp-app-deployment-c8d47138
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - args:
+            - ha-mcp-web
+          env:
+            - name: HOMEASSISTANT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: token
+                  name: ha-mcp-home-assistant-token
+          envFrom:
+            - configMapRef:
+                name: ha-mcp-config
+          image: ghcr.io/homeassistant-ai/ha-mcp:8.4.3@sha256:d5cea47a0115e5d161c2b319ee637b1b0a5bcfafe1597cb490299bbbc6329456
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /healthz
+              port: 8086
+              scheme: HTTP
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          name: ha-mcp
+          ports:
+            - containerPort: 8086
+              name: upstream
+              protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /healthz
+              port: 8086
+              scheme: HTTP
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            limits:
+              cpu: 500m
+              memory: 1024Mi
+            requests:
+              cpu: 50m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsGroup: 999
+            runAsNonRoot: true
+            runAsUser: 999
+          volumeMounts:
+            - mountPath: /tmp
+              name: tmp
+            - mountPath: /data
+              name: data
+        - env:
+            - name: MCP_FACADE_CLIENT_AUTH__STATIC_BEARER
+              valueFrom:
+                secretKeyRef:
+                  key: bearer-token
+                  name: ha-mcp-bearer
+          envFrom:
+            - configMapRef:
+                name: ha-mcp-config
+          image: git.allegedly.works/ducktape-ci/mcp-oauth-facade:unset
+          imagePullPolicy: Always
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /healthz
+              port: 8765
+              scheme: HTTP
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          name: facade
+          ports:
+            - containerPort: 8765
+              name: http
+              protocol: TCP
+            - containerPort: 9090
+              name: metrics
+              protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /healthz
+              port: 8765
+              scheme: HTTP
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            limits:
+              cpu: 200m
+              memory: 256Mi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: false
+      dnsPolicy: ClusterFirst
+      hostNetwork: false
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      restartPolicy: Always
+      securityContext:
+        fsGroupChangePolicy: Always
+        runAsNonRoot: true
+      setHostnameAsFQDN: false
+      shareProcessNamespace: false
+      terminationGracePeriodSeconds: 30
+      volumes:
+        - emptyDir: {}
+          name: tmp
+        - emptyDir: {}
+          name: data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: ha-mcp
+  name: ha-mcp
+  namespace: ha-mcp
+spec:
+  externalIPs: []
+  ports:
+    - name: http
+      port: 8765
+      protocol: TCP
+      targetPort: 8765
+    - name: metrics
+      port: 9090
+      protocol: TCP
+      targetPort: 9090
+  selector:
+    cdk8s.io/metadata.addr: ha-mcp-app-deployment-c8d47138
+  type: ClusterIP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  annotations:
+    description: Default-deny ingress for HA-MCP. Only haku-console reaches the facade port; the upstream server port is reachable only over pod-local loopback. No Gateway ingress -- this MCP is cluster-internal since the move to a static bearer.
+  name: ha-mcp-ingress
+  namespace: ha-mcp
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: ha-mcp
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: haku-console
+      toPorts:
+        - ports:
+            - port: "8765"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: monitoring
+      toPorts:
+        - ports:
+            - port: "9090"
+              protocol: TCP
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: ha-mcp
+  namespace: ha-mcp
+spec:
+  endpoints:
+    - interval: 30s
+      port: metrics
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ha-mcp

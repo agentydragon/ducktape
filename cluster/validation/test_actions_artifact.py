@@ -127,8 +127,6 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         ("grocy-vallejo", "grocy/vallejo/app"),
         ("grocy-vallejo-user-perms", "grocy/vallejo/user-perms"),
         ("ha-mcp", "agents/ha-mcp/app"),
-        ("ha-mcp-credentials", "agents/ha-mcp/credentials"),
-        ("ha-mcp-namespace", "agents/ha-mcp/namespace"),
         ("haku-ci", "haku-ci"),
         ("haku-cloud-agent", "haku/cloud-agent-tf"),
         ("haku-console", "haku/console"),
