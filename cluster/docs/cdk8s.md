@@ -247,10 +247,31 @@ versa, a reason this specific problem doesn't move that decision either way.
     template's own labels) — `cdk8s_plus_33`'s own selector-uniqueness
     convention, adopted rather than fought.
 
+- **Job/CronJob/Role/RoleBinding/ServiceAccount**
+  (`cluster/cdk8s/ha_mcp_credentials_constructs.py`) are core/RBAC types, so like
+  Deployment/Service/ServiceAccount above they come from `cdk8s_plus_33`'s fluent
+  builders, with two more wrinkles:
+  - `cdk8s_plus_33`'s `RolePolicyRule` has no `resourceNames` field, so a `Role`
+    scoped to one specific resource name (rather than an entire resource type) falls
+    back to a raw `cdk8s.ApiObject` + `JsonPatch.add("/rules", [...])`; the
+    `RoleBinding` referencing it still uses the typed builder, via the
+    `Role.from_role_name(scope, id, name)` static factory (a name-only reference,
+    since the fluent `Role` construct was never built).
+  - **`cdk8s_plus_33` defaults every pod to no mounted ServiceAccount token**
+    (`automountServiceAccountToken: false`), unlike the Deployment default covered
+    above. A workload whose entire purpose is calling the K8s API under its RBAC
+    grant (as here) needs `automount_service_account_token=True` explicitly passed
+    to `Job`/`CronJob` — silently dropping it would still synthesize cleanly and
+    pass `kubeconform`, just fail at runtime with no token to authenticate with.
+  - Image-pull credentials are wired the same way as `LiteLLMProxy`'s Deployment:
+    `docker_registry_auth=Secret.from_secret_name(...)` on the `Job`/`CronJob`
+    itself, not `imagePullSecrets` on the `ServiceAccount`.
+
 ## Reference example
 
-`cluster/k8s/litellm/app` is the first converted directory: every file there is
-generated except `image-pins/kustomization.yaml`.
+`cluster/k8s/litellm/app` and `cluster/k8s/agents/ha-mcp/credentials` are the
+converted directories so far: every file in each is generated except
+`image-pins/kustomization.yaml`.
 
 ## Regenerating locally
 

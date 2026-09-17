@@ -1,10 +1,10 @@
-"""Pinning tests for the cdk8s LiteLLM manifest generator.
+"""Pinning tests for the cdk8s manifest generators.
 
 `test_generated_manifests_match_committed` is the "LiteLLM config pattern"
 generated-output snapshot (STYLE.md § Testing), generalized from the ConfigMap
-payload to the whole generated file set: the committed files under
-cluster/k8s/litellm/app are the source of truth, and this test proves
-regeneration reproduces them exactly.
+payload to every converted directory's whole generated file set: the committed
+files are the source of truth, and this test proves regeneration reproduces
+them exactly.
 """
 
 from pathlib import Path
@@ -18,6 +18,9 @@ _GENERATED_FILES = (
     "cluster/k8s/litellm/app/litellm.k8s.yaml",
     "cluster/k8s/litellm/app/flux-kustomization.yaml",
     "cluster/k8s/litellm/app/kustomization.yaml",
+    "cluster/k8s/agents/ha-mcp/credentials/ha-mcp-credentials.k8s.yaml",
+    "cluster/k8s/agents/ha-mcp/credentials/flux-kustomization.yaml",
+    "cluster/k8s/agents/ha-mcp/credentials/kustomization.yaml",
 )
 
 
