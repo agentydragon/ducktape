@@ -11,7 +11,7 @@
 //!
 //! # Background
 //!
-//! `classify_expr_purity` (in `purity.rs`) decides
+//! `classify_expr_purity` (in `purity/`) decides
 //! per-expression whether a top-level statement contributes a
 //! `SideEffect` row to the dep graph. It's currently very
 //! conservative: any `Call`, `New`, `MemberExpression`,

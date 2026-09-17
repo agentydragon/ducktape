@@ -247,7 +247,7 @@ fn opt_chain_base_id(opt_chain: &OptChainExpr) -> Option<Id> {
 /// Unwrap nested `Expr::Paren` layers and return the innermost
 /// expression. swc's pinned `swc_ecma_utils` (29.1.1) doesn't ship
 /// a stable equivalent, so this stays a thin local helper — used
-/// by `facts.rs` and `purity.rs` to peel parens before pattern
+/// by `facts/` and `purity/` to peel parens before pattern
 /// matching against `Expr::Ident` / `Expr::Member` / etc.
 pub fn strip_parens(expr: &Expr) -> &Expr {
     let mut cur = expr;

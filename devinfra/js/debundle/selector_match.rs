@@ -20,9 +20,9 @@
 //!
 //! This per-`(needle, subject)` homomorphism is the **kernel match relation**,
 //! not a rival "N separate solves" design: the one global evaluation (the plan's
-//! P4) composes it, and for today's cross-ref-free corpus the global solve
-//! decomposes by connected components into exactly these independent matches
-//! (see `plans/selector_constraint_model.md`). The run-hole placement is
+//! P4) composes it, and for a cross-ref-free selector set the global solve
+//! decomposes by connected components into exactly these independent matches.
+//! The run-hole placement is
 //! realized here as a direct (greedy + backtracking) search; the equivalent
 //! relational chain-join — the form that folds into the global fixpoint, with
 //! cross-gap alpha-binding coupling fail-closed — is the P3/P4 native-lowering

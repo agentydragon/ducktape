@@ -103,7 +103,7 @@ fresh `Globals` before deserializing any `Id`. The required SWC
 internals are all public (`Mark::parent()`, `SyntaxContext::outer()`,
 `SyntaxContext::remove_mark()`) — no fork required — but it's a
 substantial implementation, and the cache value it delivers
-(~5–10s saved on gaffer-scale spec edits, dominated by parse)
+(~5–10s saved on the downstream corpus-scale spec edits, dominated by parse)
 doesn't justify it.
 
 ## What we kept

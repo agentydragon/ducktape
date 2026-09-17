@@ -14,9 +14,9 @@
 //! - `binding_resolution` — canonical source-match claim expansion and
 //!   declared-binding extraction.
 //! - `declared_bindings` — declared-binding extraction from AST items.
-//! - `datalog_resolver` — the legacy fact-based resolver retained as an oracle.
+//! - `chunk_resolver` — the shape matcher's per-chunk candidate resolver.
 //! - `fact_near_miss` — fact-based `source_match` debt / near-miss diagnostics.
-//! - `resolver` — the legacy resolver seam trait.
+//! - `resolver` — the candidate-resolution seam trait.
 //! - `anonymous_statement` — anonymous source-match statement validation.
 //! - `holes` — local hole-keyword dispatch over AST nodes.
 
@@ -41,7 +41,7 @@ pub(crate) use source_match_holes::{
 
 /// The fact matcher's identifier mode for a selector — the single
 /// `SourceMatchIdentifierMode` → `selector_match::Mode` mapping shared by the
-/// resolver (`datalog_resolver`) and the near-miss diagnostics (`fact_near_miss`).
+/// resolver (`chunk_resolver`) and the near-miss diagnostics (`fact_near_miss`).
 /// The two enums mirror each other 1:1 but stay distinct so `selector_match`
 /// (the matcher) needs no dependency on the `spec` authoring schema.
 pub(crate) fn selector_mode(selector: &AnonymousStatementSelector) -> selector_match::Mode {
@@ -53,7 +53,7 @@ pub(crate) fn selector_mode(selector: &AnonymousStatementSelector) -> selector_m
 
 mod anonymous_statement;
 mod binding_resolution;
-mod datalog_resolver;
+pub mod chunk_resolver;
 mod declared_bindings;
 mod fact_near_miss;
 mod holes;
@@ -67,15 +67,14 @@ mod types;
 pub(crate) use anonymous_statement::*;
 pub(crate) use declared_bindings::*;
 pub(crate) use holes::*;
-pub(crate) use resolver::SelectorResolver;
-
-/// Legacy procedural resolver API retained for parity tests and migration
-/// oracles while production resolution moves through `selector_runtime`.
-#[doc(hidden)]
-pub mod legacy_resolver {
-    pub use crate::datalog_resolver::ChunkResolver;
-    pub use crate::resolver::SelectorResolver;
-}
+/// The seam every `source_match` candidate resolver implements.
+///
+/// `ChunkResolver` is the production candidate generator for shape
+/// (`source_match`) selectors: it enumerates every top-level statement a
+/// JS-template-with-holes matches. Materialization projects those candidates
+/// into the selector IR, where the global solve assigns targets; see
+/// <docs/selector_resolution.md>.
+pub use resolver::SelectorResolver;
 
 // Public API for selector parsing, normalization, and diagnostics.
 pub use binding_resolution::{

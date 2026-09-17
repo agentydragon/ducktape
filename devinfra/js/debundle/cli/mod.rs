@@ -1027,7 +1027,7 @@ fn run_show_source(args: ShowSourceArgs) -> Result<()> {
 /// Shadow runner: resolve an owner-graph EDB with the in-process Datalog solver
 /// and print name-pin categoricity + the derived `aliases` count. With `--check`
 /// it is the bootstrap-precondition gate (errors out if name-pin resolution is
-/// not total + categorical). See `plans/selector_constraint_model.md`.
+/// not total + categorical).
 fn run_selector_solve(args: SelectorSolveArgs) -> Result<()> {
     let json = std::fs::read_to_string(&args.owner_graph)
         .with_context(|| format!("reading {}", args.owner_graph.display()))?;

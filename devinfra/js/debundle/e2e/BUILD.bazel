@@ -932,8 +932,7 @@ rust_test(
 # (`:selector_solve`) must reproduce the production binding-name resolver
 # (`peel::resolve_binding_owners`) on the minified-name surface, over an
 # `owner_graph.json` the real pipeline emits. The equivalence check the
-# relational-selector bootstrap rests on; see
-# plans/selector_constraint_model.md.
+# relational-selector prototype's EDB rests on.
 rust_test(
     name = "selector_solve_shadow_test",
     srcs = ["selector_solve_shadow_test.rs"],
@@ -955,8 +954,7 @@ rust_test(
 # The @Name cross-reference primitive (selector_solve's referencer_for /
 # alias_owner_for) must resolve the metaNode debt shapes -- a shapeless
 # delegator pinned by what it calls, a re-export pinned by what it aliases --
-# on an owner_graph.json the real pipeline emits, not a synthetic EDB. See
-# plans/selector_constraint_model.md.
+# on an owner_graph.json the real pipeline emits, not a synthetic EDB.
 rust_test(
     name = "selector_solve_cross_reference_test",
     srcs = ["selector_solve_cross_reference_test.rs"],

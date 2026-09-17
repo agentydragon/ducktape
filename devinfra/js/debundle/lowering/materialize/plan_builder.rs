@@ -1734,10 +1734,18 @@ impl ChunkPlanBuilder {
                         .source_match
                         .is_some()
                 });
+        // Shape (`source_match`) selectors resolve in two stages: `ChunkResolver`
+        // enumerates the top-level statements each JS-template-with-holes matches,
+        // and those candidates are projected into the selector IR as a small
+        // `ProjectedAllowedTuples` domain per target. The global solve then picks
+        // one target per selector under `all_different`. Native AST lowering is
+        // the fallback for selectors the matcher cannot enumerate; it constrains
+        // over the chunk's full node domain and is correspondingly expensive, so
+        // the matcher is asked first. See <docs/selector_resolution.md>.
         let source_match_projection =
             (has_pending_source_match || has_anonymous_statements).then(|| {
                 (
-                    source_match::legacy_resolver::ChunkResolver::new(module),
+                    source_match::chunk_resolver::ChunkResolver::new(module),
                     owner_by_body_index_and_binding(structural, module),
                     anonymous_owner_by_body_index(structural, module),
                 )
@@ -1793,8 +1801,8 @@ impl ChunkPlanBuilder {
                                 }
                                 Ok(_) => {
                                     projected_row_count = Some(0);
-                                    reason_category = "legacy_resolver_no_candidates";
-                                    reason = "legacy source_match resolver returned no anonymous candidates"
+                                    reason_category = "shape_matcher_no_candidates";
+                                    reason = "shape matcher returned no anonymous candidates"
                                         .to_string();
                                 }
                                 Err(error) => {
@@ -1807,7 +1815,7 @@ impl ChunkPlanBuilder {
                             }
                         }
                         Err(error) => {
-                            reason_category = "legacy_resolver_error";
+                            reason_category = "shape_matcher_error";
                             reason = source_match_projection_error_reason(reason_category, &error);
                         }
                     }
@@ -1909,7 +1917,7 @@ impl ChunkPlanBuilder {
                                         SelectorSourceMatchProjectionOutcome::Projected,
                                         "projected_candidates",
                                         format!(
-                                            "projected {} legacy candidate group(s) to {} \
+                                            "projected {} shape-matcher candidate group(s) to {} \
                                              owner/binding row(s)",
                                             candidate_len,
                                             rows.len()
@@ -1925,9 +1933,8 @@ impl ChunkPlanBuilder {
                                 );
                                 continue;
                             }
-                            reason_category = "legacy_resolver_no_candidates";
-                            reason = "legacy source_match resolver returned no candidate groups"
-                                .to_string();
+                            reason_category = "shape_matcher_no_candidates";
+                            reason = "shape matcher returned no candidate groups".to_string();
                         }
                         Err(error) => {
                             reason_category = "projection_owner_mapping_error";
@@ -1936,7 +1943,7 @@ impl ChunkPlanBuilder {
                     }
                 }
                 Err(error) => {
-                    reason_category = "legacy_resolver_error";
+                    reason_category = "shape_matcher_error";
                     reason = source_match_projection_error_reason(reason_category, &error);
                 }
             }
@@ -2052,7 +2059,7 @@ impl ChunkPlanBuilder {
                                             SelectorSourceMatchProjectionOutcome::Projected,
                                             "projected_candidates",
                                             format!(
-                                                "projected {} legacy candidate(s) to {} \
+                                                "projected {} shape-matcher candidate(s) to {} \
                                                  owner/binding row(s)",
                                                 candidate_len,
                                                 rows.len()
@@ -2069,9 +2076,8 @@ impl ChunkPlanBuilder {
                                     continue;
                                 }
                                 projection_event = Some((
-                                    "legacy_resolver_no_candidates",
-                                    "legacy source_match resolver returned no candidates"
-                                        .to_string(),
+                                    "shape_matcher_no_candidates",
+                                    "shape matcher returned no candidates".to_string(),
                                     candidate_count,
                                     projected_row_count,
                                 ));
@@ -2091,8 +2097,8 @@ impl ChunkPlanBuilder {
                     }
                     Err(error) => {
                         projection_event = Some((
-                            "legacy_resolver_error",
-                            source_match_projection_error_reason("legacy_resolver_error", &error),
+                            "shape_matcher_error",
+                            source_match_projection_error_reason("shape_matcher_error", &error),
                             None,
                             None,
                         ));

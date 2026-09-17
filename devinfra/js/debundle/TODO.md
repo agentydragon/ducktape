@@ -3,44 +3,49 @@
 Forward-looking gaps in the Rust debundler. Items are written to be removed
 once closed; this file is not a changelog.
 
-## Current AI-worker priority queue (2026-07-07)
+## Current AI-worker priority queue (2026-09-17)
 
 This file is the dispatch queue, not a design record or changelog. Detailed
 plans and evidence live here:
 
-- <plans/selector_constraint_model.md> — P0 selector solver design, gates, and
-  real-spec evidence queue.
+- <docs/selector_resolution.md> — how selectors resolve, and the measured reason
+  the architecture is shaped that way.
+- <plans/relational_selectors.md> — the remaining selector-language work (R1–R7).
 - <plans/automated_spec_workflows.md> — automation-first CLI/workflow design.
 - <SELECTOR_BUGS.md> — matcher/diagnostic bugs with anonymized examples.
 - <ARCHITECTURE_BACKLOG.md> — deeper refactors, urgent only when they block this
   queue.
-- `perf/` — measured performance notes. Update from real profiles before major
-  matcher/index rewrites.
+- `perf/` and `debug/perf/` — measured performance notes. Update from real
+  profiles before major matcher/index rewrites.
 
 Planning hygiene: keep active dispatch order here. When a plan's core work is
 complete, summarize only its remaining tail here instead of leaving the plan as
 a second priority queue.
 
-### P0 — single constraint-program resolver cutover
+### P0 — selector language and engine cost
 
-Detailed design and gates live in <plans/selector_constraint_model.md>. Current
-dispatch summary:
+The resolution architecture is settled and shipped: one IR, one joint CP-SAT
+solve, with `ChunkResolver` generating candidates for shape selectors. Do not
+reopen it without a measurement that beats
+<debug/perf/2026_09_17_matcher_vs_native_lowering.md>. What is open is the
+selector _language_ and the joint solve's cost:
 
-1. Lower `identifiers: alpha_all` and retained hole/predicate forms into native
-   selector constraints.
-2. Keep exact target assignment owned by `CompiledSelectorProblem` +
-   OR-Tools CP-SAT or a measured SAT fallback with semantic `all_different`.
-3. Make production `source_match` materialization native-first, retire the
-   legacy projection path that still constructs `ChunkResolver`, and move
-   codemods, synthesis, and repair/prove gates onto one solver-backed selector
-   semantics path. `match-selector` already uses `selector_runtime` for its
-   baseline solve.
-4. Fold staged relational vocabulary (`cross_ref`, `reads_member`,
-   `member_of_module`, `passed_to_call`, `makes_decorate_call`,
-   `intrinsic_alias`) into IR atoms or derived predicates over owner/reference
-   plus AST facts.
-5. Keep unsupported selector forms fail-closed after the projection fallback is
-   retired; do not add a permanent procedural fallback.
+1. Extend the relational selector language — negation, counting/uniqueness,
+   transitive closure, shape-and-relation conjunction, and `@Name` inside a
+   shape. The language burn-down and its downstream acceptance cases live in
+   <plans/relational_selectors.md>.
+2. Cut the joint solve's per-chunk floor: `FactDomains` still builds eager
+   `BTreeSet<String>` domains and every derived relation regardless of demand
+   (<debug/perf/2026_06_27_large_bundle_selector_csp_profile.md>).
+3. Prune unreferenced full-domain AST variables out of native `source_match`
+   lowering before backend serialization
+   (<debug/perf/2026_07_13_match_selector_full_domain_profile.md>).
+4. Wire `e2e/testdata/global_selector_assignment_stress/broad_specific_injective/`
+   to a test. `all_different` propagation is covered at model and backend level
+   but has no end-to-end case.
+5. Measure the complete downstream `run` wall with an execution-config
+   debundler. Selector resolution is the largest single component on a
+   `source_match`-heavy spec, but the end-to-end number is unmeasured.
 
 Interactive agent-facing commands should target under 10 seconds on warmed
 inputs for the largest known downstream specs. Anything over 60 seconds is a
@@ -128,12 +133,12 @@ progress output and a resumable or cacheable plan.
 The read-off minimizer's completed design and research notes were pruned from
 `plans/` on 2026-06-22. The live maintenance tail is:
 
-1. **Dogfood-apply on gaffer-private.** Run `synthesize-selectors --apply` on
+1. **Dogfood-apply on the private downstream repo.** Run `synthesize-selectors --apply` on
    the real spec to convert the large set of fragile name-pins into robust
    `source_match` selectors, review for over-pin, and PR the beneficial ones.
    Revert any converted selector whose `match` block is >40 lines and has <=2
    holes back to a name pin. Keep pin-compatible with the released debundler
-   expected by the gaffer validation flow, regenerate goldens, and re-measure
+   expected by the the downstream corpus validation flow, regenerate goldens, and re-measure
    selector debt after each batch.
 2. **Retire the keep-shallow group cover.** Multi-target var binding-group
    read-off landed, but `minimize_var_group_selector` still falls back to
@@ -234,10 +239,11 @@ SWC-reuse evaluations (what to adopt, what was rejected and why):
    fixtures can drift from real config shapes without a compile error
    (e.g. a renamed vendor-mark field stays green in tests while breaking real
    specs). Points: <e2e/vendor_swap_test.rs> (~lines 1680, 1821 and the
-   `report_out_dir` literals), builder surface in `vendor.rs`.
-4. Consolidate the three `*BindingProjection` enums
-   (`selector_constraint_backend.rs`, `selector_ir_solver.rs`,
-   `selector_constraint_model_builder.rs`) into one shared projection type.
+   `report_out_dir` literals), builder surface in `vendor/mod.rs`.
+4. Consolidate the two `*BindingProjection` enums
+   (`TargetBindingProjection` in `selector_constraint_backend.rs`,
+   `SourceBindingProjection` in `selector_constraint_model_builder.rs`) into one
+   shared projection type.
    They are structurally identical views of the same binding-namespace
    partition, duplicated per solver stage; the copies drift silently when a
    new binding kind is added. Unify behind one enum (plus any stage-specific
@@ -496,9 +502,9 @@ Open usability and scripting-safety findings from exercising the documented
 workflows against a real spec; resolved items are deleted. Corpus-specific
 paths and owner ids belong in the consuming repo.
 
-- **`tana/re/web/AGENTS.md` BIN path stale** (gaffer-private): says
+- **`<downstream-spec>/AGENTS.md` BIN path stale** (the private downstream repo): says
   `BIN=bazel-bin/external/ducktape_debundle_bin/file/debundle`; the actual
-  path now carries a `+_repo_rules+` prefix. Fix in gaffer-private.
+  path now carries a `+_repo_rules+` prefix. Fix in the private downstream repo.
 
 ### Planner CLI follow-ups
 

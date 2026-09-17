@@ -146,9 +146,10 @@ These files document the same project from multiple perspectives. Skimming them,
   reference lives in the clap doc-comments / `--help`); docs/selectors.md
   and docs/spec_editing.md are the worked workflow documents.
 - docs/wire_format.md is the JSON sidecar reference.
-- CODE_REVIEW.md is the active code-quality backlog.
-- CLI_DOGFOOD.md is the open CLI usability/scripting-safety backlog.
-- README.md is a marketing-shaped pitch with usage.
+- docs/selector_resolution.md is how selectors resolve, and the measured
+  reason the architecture is shaped that way.
+- SELECTOR_BUGS.md is the status-tracked selector bug list.
+- README.md is the component overview and CLI cheat sheet.
 - TODO.md is the broad active work backlog.
 - perf/proposer.md is the performance work log.
 - plans/ holds future-work design notes (including

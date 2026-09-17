@@ -9,8 +9,8 @@
 //! branch of `resolve_binding_owners`.
 //!
 //! Proving the two agree over an `owner_graph.json` the real pipeline
-//! emits is the equivalence check the bootstrap rests on (see
-//! `plans/selector_constraint_model.md`): it guards against EDB/parse
+//! emits is the equivalence check the prototype's EDB rests on: it
+//! guards against EDB/parse
 //! drift between the lean solver EDB and the canonical report schema,
 //! and pins the bootstrap precondition (minified names are categorical)
 //! on output the binary actually produces — not a hand-built fixture.

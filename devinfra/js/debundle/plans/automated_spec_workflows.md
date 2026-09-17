@@ -314,13 +314,13 @@ Use these symbols when designing and reviewing algorithms:
 - `L`: average selector AST size;
 - `K`: candidate statements after indexed filtering.
 
-The Tana-scale target is thousands of YAML modules and thousands of selectors;
+The downstream-scale target is thousands of YAML modules and thousands of selectors;
 the current migration has roughly 8.5k fragile selector bindings before broad
 peels. Agent-facing workflows should be designed for warmed runs under 10s and
 must treat sustained runs over 60s as blocking performance bugs unless the mode
 is explicitly offline/profile-oriented.
 
-Expected warmed runtime budgets on Tana-scale inputs:
+Expected warmed runtime budgets on downstream-scale inputs:
 
 | Operation                                                   |       Target |  Hard concern |
 | ----------------------------------------------------------- | -----------: | ------------: |
@@ -348,7 +348,7 @@ Build one dense per-chunk inventory:
 - `HashMap<Atom, AnchorId>` or an intern table for stable anchors. Anchor atoms
   should use compact owned forms such as `Wtf8Atom`/interned strings for string
   literals and property names; avoid allocating normalized strings per query.
-- Inverted postings from `AnchorId` to dense candidate sets. For Tana-scale
+- Inverted postings from `AnchorId` to dense candidate sets. For downstream-scale
   chunks, a sorted `Vec<StatementId>` is usually compact; for high-frequency
   anchors, promote to a dense `Vec<u64>` bitset. The query interface should hide
   the representation and expose cheap intersection/count/iterate operations.

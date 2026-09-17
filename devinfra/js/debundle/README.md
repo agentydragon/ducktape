@@ -10,6 +10,7 @@ drive later module extraction and naming work.
 covers the cross-command semantics (env vars, output formats, batch
 atomicity, gate queries). Workflow docs: `docs/selectors.md` (portable
 selector authoring), `docs/spec_editing.md` (module/binding editing).
+How selectors actually resolve: `docs/selector_resolution.md`.
 
 Cheat sheet of the most-used commands:
 
@@ -245,7 +246,7 @@ the statements it would fire on and falls back to a strictly-conservative
 path when the check fails — see <docs/design.md> → "Conditionally-correct
 optimizations" for the soundness rule.
 
-The first such pass is the dataflow-aware S-chain in `graph.rs`, opted
+The first such pass is the dataflow-aware S-chain in `graph/`, opted
 into per chunk via
 `chunk_analysis_options.<chunk_id>.dataflow_aware_s_chain` in the spec.
 Each impure top-level statement carries a `dataflow_summarizable` bit

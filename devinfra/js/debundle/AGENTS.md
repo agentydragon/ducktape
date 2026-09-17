@@ -100,6 +100,19 @@ resolution decision is fed from the manifest. If a new pipeline question can't b
 answered by the existing manifest schema, extend the shallow analysis once instead
 of re-deriving the fact in another stage.
 
+## Selector resolution
+
+How a spec's selectors become a claim map — one IR, one joint CP-SAT solve, with
+`ChunkResolver` generating candidates for shape (`source_match`) selectors — is
+<docs/selector_resolution.md>. Read it before touching `source_match/`,
+`selector_ir_lowering`, or `selector_constraint_model_builder`.
+
+That doc records a measured rejection: encoding tree-shape matching as
+finite-domain constraints over AST nodes, so `source_match` lowers natively
+instead of through the matcher. Do not reopen it without a measurement that
+beats <debug/perf/2026_09_17_matcher_vs_native_lowering.md>. Remaining selector
+work is language, not architecture: <plans/relational_selectors.md>.
+
 ## Soundness over completeness
 
 Any spec the validator accepts must emit a bundle that runs correctly.

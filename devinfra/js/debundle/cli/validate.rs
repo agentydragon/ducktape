@@ -30,7 +30,7 @@ use selector_ir_lowering::{
     lower_member_selector,
 };
 use serde::Serialize;
-use source_match::legacy_resolver::{ChunkResolver, SelectorResolver};
+use source_match::{SelectorResolver, chunk_resolver::ChunkResolver};
 use source_match::{selector_body_key, selector_key, source_match_claim_member_selectors};
 use spec::{MemberSelectorSpec, SourceMatchClaim};
 

@@ -148,7 +148,7 @@ impl CommentMode {
 
 /// Public entry point for the inner `comment` verb under either the
 /// `bindings` or `modules` namespace. Composed by the top-level
-/// `cli.rs` so the new `modules` clap node can sit alongside `merge`
+/// `cli/` so the new `modules` clap node can sit alongside `merge`
 /// / `propose` without duplicating the comment YAML logic.
 pub fn run_binding_comment_cmd(args: BindingCommentArgs) -> Result<()> {
     run_binding_comment(args)

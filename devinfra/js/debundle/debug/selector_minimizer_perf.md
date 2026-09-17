@@ -10,8 +10,8 @@ cheap (#2280) and the whole chunk minimizes in ~13s (see
 `perf` is unavailable in the container (not installed; `perf_event_paranoid=2`),
 so this uses **callgrind** (`valgrind --tool=callgrind`), which needs no kernel
 perf events and gives deterministic instruction-count (Ir) self-cost attribution.
-Profiled the **`-c opt`** `debundle` binary against the real tana/re chunk
-(`static/index-DI2GynTv.js`) with `--rewrite name-binding-to-source-match`, on the
+Profiled the **`-c opt`** `debundle` binary against the real <downstream-spec> chunk
+(`static/<primary-chunk>.js`) with `--rewrite name-binding-to-source-match`, on the
 unmodified (name-pinned) spec. Two scopes: `integrations` (106 members —
 floor-dominated) and `app` (940 members — floor + per-member work). Ir share is a
 good proxy for wall-clock here (compute-bound, flat ~242 MB RSS).
@@ -160,7 +160,7 @@ prove-gate MATCHER.** Inclusive cost:
 
 `snapshot` + `restore` + `with_alpha_scope` ≈ **17% of the whole run is pure
 backtracking bookkeeping**, and it is the **same `BTreeMap` pattern #2291 fixed
-one layer up**: `AlphaMatchScope` (`source_match/matcher.rs`) holds two
+one layer up**: `AlphaMatchScope` (`selector_match.rs`) holds two
 `BTreeMap<Atom, Atom>` (forward/backward alpha-binding maps), and the matcher keeps
 a `Vec<AlphaMatchScope>` stack that it `clone()`s on `snapshot` and drops/swaps on
 `restore` for every backtrack. Top self-cost confirms it — allocator churn ~30%

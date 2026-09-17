@@ -168,8 +168,8 @@ impl OwnerGraph {
     /// only meaningful within a single SWC `Globals` scope, so
     /// reconstructed `Id`s round-trip *within one process* but
     /// **must not** be compared against re-parsed AST identifiers
-    /// from a different `Globals` (see `stage_one_sidecars.rs` →
-    /// "`facts.json` is debug-only").
+    /// from a different `Globals` — `facts.json` is debug-only, see
+    /// <../docs/lessons_learned/cross_process_stage_b.md>.
     ///
     /// `OwnerEdgeId`s in the reconstructed graph are assigned in the
     /// order edges appear in `report.edges`; they don't necessarily

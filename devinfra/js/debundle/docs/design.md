@@ -71,7 +71,7 @@ satisfies a checkable precondition — provided the implementation:
 2. Falls back to the strictly-conservative path (the one already known
    sound) when the precondition fails.
 
-Example: dataflow-aware S-chain emission (`graph.rs`). Per-statement
+Example: dataflow-aware S-chain emission (`graph/`). Per-statement
 write/read summaries assume the statement contains no `with`, no direct
 `eval`, no computed-key `globalThis` access, no `Function` constructor —
 constructs that would invalidate static reasoning about which cells the
@@ -80,7 +80,7 @@ statement touches. Each impure statement carries a
 the unconditional adjacent-impure S-edge.
 
 This is deliberate. The real input (the real-corpus bundle in
-`gaffer-private`, `props/frontend`, and similar) is well-behaved and
+`the private downstream repo`, `props/frontend`, and similar) is well-behaved and
 admits precise reasoning even though generic JS does not. Document each
 such optimization with the precondition it requires, where the check
 lives, and the fallback path.
@@ -152,7 +152,7 @@ That pair is the conceptual _binding key_ at repo/tool boundaries.
 Inside a single chunk analysis, the chunk is already contextual, so
 the in-memory representation keys bindings by SWC's
 `Id = (Atom, SyntaxContext)` — the hygiene-aware identity the
-resolver pass mints (`graph.rs`, `facts/`). Reports and specs spell
+resolver pass mints (`graph/`, `facts/`). Reports and specs spell
 bindings by name (`Atom`-only on the wire; see
 `docs/wire_format.md`); internal owner graph edges, owner
 declarations, and per-chunk indexes clone `Id`s into `BTreeMap` /
@@ -565,7 +565,7 @@ OwnerReportIndex)` reconstructs the typed IR from the JSON wire
 
 A from-scratch `check_realizability` call is `O(|V| + |E|)`. The
 kernel's merge-candidate greedy queries it `O(|V|)` times per round,
-so a naive seeding pass would be `O(|V|² · |E|)`. For gaffer-scale
+so a naive seeding pass would be `O(|V|² · |E|)`. For the downstream corpus-scale
 inputs (`|V| ≤ ~10³`, `|E| = O(|V|)`) that's `~10⁹` ops — measurable
 but within budget.
 
@@ -1513,7 +1513,7 @@ acyclic.
 
 In practice vendor chunks are leaves — they don't import from
 us, so they emit no edges into user-chunks. User-chunk to
-user-chunk cycles can occur (an `index-DI2GynTv` ↔
+user-chunk cycles can occur (an `<primary-chunk>` ↔
 `StoryIndex-DrlmoZTE` cycle is conceivable in any
 code-split bundle) and the multi-chunk validator detects them.
 A user→vendor edge that ends up being a user→user→vendor cycle
@@ -1665,7 +1665,7 @@ showing which graph edges made the split unverifiable.
 
 Five layers, bottom-up:
 
-1. **Owner graph** — fine-grained program facts (`graph.rs`).
+1. **Owner graph** — fine-grained program facts (`graph/`).
    One vertex per top-level owner; edges record `EagerUse`,
    `LazyUse`, `EagerRebind`, `LazyRebind`, `DeferredRebind`,
    `Sequenced`, and the local-effect edges that target-local
@@ -2988,7 +2988,7 @@ or compatibility-only JSON fields.
 
 The `OwnerRecord.id` system in <../program_analysis.rs> mints a
 stringified sequential index per top-level decl, exposes it in
-the chunk analysis output, and the gaffer spec references it.
+the chunk analysis output, and the the downstream corpus spec references it.
 Replacing it:
 
 - Spec entries identify bindings by `binding.name` and can use

@@ -78,7 +78,7 @@ Plus one mapping and one heuristic:
 ## Output Schema (JSON field renames)
 
 These are external API — consumers parse these JSON files. The rename
-will be an atomic cutover: update `ducktape` and `gaffer-private`
+will be an atomic cutover: update `ducktape` and `the private downstream repo`
 together in one commit span, no compatibility shims.
 
 `owner_graph.json` (from `OwnerGraphReport`):

@@ -1,5 +1,5 @@
-//! P1 of the Datalog selector resolver (`plans/selector_constraint_model.md`):
-//! a faithful, **fail-closed** projection of a parsed chunk into AST facts.
+//! The AST fact store (EDB) the selector solver runs over: a faithful,
+//! **fail-closed** projection of a parsed chunk into AST facts.
 //!
 //! Fail-closed by construction: the walk's only catch-all is a loud
 //! [`Unsupported`] error, so a node type it has not modeled **crashes** rather
