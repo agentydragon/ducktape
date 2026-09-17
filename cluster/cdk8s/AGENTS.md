@@ -35,3 +35,50 @@ other field and patches only that one in.
 
 A raw `ApiObject` replacing an entire resource is a shortcut that throws away real
 validation for the whole object to avoid the CRD-import setup cost. Do the setup.
+
+## Restructuring which Kustomization owns an object: land it in two steps
+
+Converting a directory to cdk8s often merges or splits which Flux `Kustomization`
+renders a given object (e.g. folding a directory's separate `namespace`/`credentials`
+Kustomizations into one `app` Kustomization, matching the fleet-wide "fold X into app"
+pattern). **Never do this in one step.** Deleting the old Kustomization and having the
+new one claim the same objects in the same PR is a race, not a handoff: Flux's default
+`deletionPolicy: MirrorPrune` means deleting a Kustomization CR (because it's no longer
+in the rendered `cluster/k8s/kustomization.yaml` tree) prunes every object it manages,
+and nothing guarantees the new Kustomization re-applies and re-claims those objects
+(updating their `kustomize.toolkit.fluxcd.io/name` ownership label) before that prune
+fires. **Confirmed, not theoretical**: exactly this race deleted `ha-mcp`'s entire
+namespace (Deployment, Service, ConfigMap, RBAC, CiliumNetworkPolicy, ServiceMonitor —
+zero PVCs involved) when `cluster/k8s/agents/ha-mcp`'s `namespace`/`credentials`
+Kustomizations were folded into `app` (#7150). For a stateless object this is a
+self-healing blip once the new Kustomization's `dependsOn` is satisfied again; for a
+`PersistentVolumeClaim` the same race can be permanent — deleting a PVC can delete the
+underlying volume depending on the StorageClass's `reclaimPolicy`, and a freshly
+recreated PVC does not automatically rebind to an orphaned `PersistentVolume`.
+
+The fix is a typed field already on `//third_party/flux:kustomization`'s
+`KustomizationSpec`, unused anywhere in this repo before this note:
+`deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN`. Land the restructuring as two
+separate changes:
+
+1. **First**, a small change that sets `deletionPolicy: Orphan` on the _old_
+   Kustomization(s) being folded away — nothing else changes. Merge it and let it
+   reconcile before proceeding; this is the step that makes the handoff safe, since
+   Orphan means Flux leaves the managed objects alone when that CR is deleted, instead
+   of racing to prune them.
+2. **Only then**, land the actual restructuring: delete the old Kustomization(s), have
+   the new one render and claim the same objects. Flux's SSA apply adopts them
+   (updates the ownership label) with no race left to lose, because the old
+   Kustomization's deletion no longer touches them at all.
+
+This is a live-cluster ownership concern, not a manifest-content one — `kustomize
+build` and `flux build --dry-run` render output correctly either way and cannot catch
+it, since neither has any visibility into what a real cluster currently owns. Verifying
+a restructuring landed safely means checking the live cluster (e.g. `kubectl get <kind>
+-n <namespace> -o jsonpath='{.metadata.uid}'` unchanged across the change confirms an
+object was adopted, not deleted and recreated), not just diffing rendered YAML.
+
+The complementary, resource-level tool is the `kustomize.toolkit.fluxcd.io/prune:
+"disabled"` annotation, for the different failure mode of a single object dropped from
+a still-live Kustomization's rendered output (no CR deletion involved) — it exempts
+that one resource from pruning regardless of ownership-label timing.
