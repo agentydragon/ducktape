@@ -908,13 +908,6 @@ spec:
           to: "@artifact/cluster/k8s/agents/public-coder-agent/devbox/"
           exclude:
             - flux-kustomization.yaml
-    - name: public-coder-agent-k8s-reader
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/public-coder-agent/k8s-reader/**"
-          to: "@artifact/cluster/k8s/agents/public-coder-agent/k8s-reader/"
-          exclude:
-            - flux-kustomization.yaml
     - name: public-coder-agent-proxy
       originRevision: "@repo"
       copy:

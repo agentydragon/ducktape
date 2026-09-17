@@ -224,7 +224,6 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         ("public-coder-agent-app", "agents/public-coder-agent/app"),
         ("public-coder-agent-backup", "agents/public-coder-agent/backup"),
         ("public-coder-agent-devbox", "agents/public-coder-agent/devbox"),
-        ("public-coder-agent-k8s-reader", "agents/public-coder-agent/k8s-reader"),
         ("public-coder-agent-namespace", "agents/public-coder-agent/namespace"),
         ("public-coder-agent-proxy", "agents/public-coder-agent/proxy"),
         ("public-coder-agent-sshpiper", "agents/public-coder-agent/sshpiper"),

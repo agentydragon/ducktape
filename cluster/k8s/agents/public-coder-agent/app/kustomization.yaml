@@ -11,6 +11,12 @@ resources:
   - service.yaml
   - networkpolicy-egress.yaml
   - networkpolicy-ingress.yaml
+  - role.yaml
+  - agentplane-acceptance-operator.yaml
+  - node-reader.yaml
+  - cluster-metadata-reader.yaml
+  - extended-diagnostics-reader.yaml
+  - cluster-admin-ceiling.yaml
 
 # STYLE.md: config blobs live in their native file, not embedded in YAML.
 generatorOptions:

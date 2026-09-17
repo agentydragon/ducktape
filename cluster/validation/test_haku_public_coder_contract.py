@@ -105,20 +105,20 @@ def test_public_coder_and_haku_configured_diagnostics_are_secret_free(k8s_dir: P
             "monitoring.coreos.com": {"podmonitors", "servicemonitors"},
         },
         "haku/console/agent-diagnostics-rbac.yaml": {"": {"pods", "events", "configmaps"}, "apps": {"deployments"}},
-        "agents/public-coder-agent/k8s-reader/extended-diagnostics-reader.yaml": {
+        "agents/public-coder-agent/app/extended-diagnostics-reader.yaml": {
             "volsync.backube": {"replicationsources", "replicationdestinations"}
         },
     }
     expected_kustomization_resources = {
         "clickhouse/cluster/kustomization.yaml": "agent-diagnostics-rbac.yaml",
         "haku/console/kustomization.yaml": "agent-diagnostics-rbac.yaml",
-        "agents/public-coder-agent/k8s-reader/kustomization.yaml": "extended-diagnostics-reader.yaml",
+        "agents/public-coder-agent/app/kustomization.yaml": "extended-diagnostics-reader.yaml",
     }
     for relative_path, resource in expected_kustomization_resources.items():
         kustomization = yaml.safe_load((k8s_dir / relative_path).read_text())
         assert resource in kustomization["resources"], relative_path
     public_coder_kustomization = yaml.safe_load(
-        (k8s_dir / "agents/public-coder-agent/k8s-reader/kustomization.yaml").read_text()
+        (k8s_dir / "agents/public-coder-agent/app/kustomization.yaml").read_text()
     )
     assert "cluster-metadata-reader.yaml" in public_coder_kustomization["resources"]
 
@@ -139,7 +139,7 @@ def test_public_coder_and_haku_configured_diagnostics_are_secret_free(k8s_dir: P
         assert not {"secrets", "pods/log", "pods/exec"} & set().union(*actual_rules.values())
 
     cluster_objects = list(
-        yaml.safe_load_all((k8s_dir / "agents/public-coder-agent/k8s-reader/cluster-metadata-reader.yaml").read_text())
+        yaml.safe_load_all((k8s_dir / "agents/public-coder-agent/app/cluster-metadata-reader.yaml").read_text())
     )
     cluster_role = one(obj for obj in cluster_objects if obj["kind"] == "ClusterRole")
     cluster_binding = one(obj for obj in cluster_objects if obj["kind"] == "ClusterRoleBinding")
@@ -177,7 +177,7 @@ def test_public_coder_and_haku_configured_diagnostics_are_secret_free(k8s_dir: P
 
 def test_acceptance_secret_is_named_get_for_existing_profile_not_a_pod_credential(k8s_dir: Path) -> None:
     agent_dir = k8s_dir / "agents/public-coder-agent"
-    manifest = agent_dir / "k8s-reader/agentplane-acceptance-operator.yaml"
+    manifest = agent_dir / "app/agentplane-acceptance-operator.yaml"
     objects = list(yaml.safe_load_all(manifest.read_text()))
     role = one(obj for obj in objects if obj["kind"] == "Role")
     binding = one(obj for obj in objects if obj["kind"] == "RoleBinding")
@@ -205,7 +205,7 @@ def test_acceptance_secret_is_named_get_for_existing_profile_not_a_pod_credentia
         (k8s_dir / "agentplane-staging/agent-rbac/rolebinding-agentplane-operator.yaml").read_text()
     )
     assert subject in staging["subjects"]
-    kustomization = yaml.safe_load((agent_dir / "k8s-reader/kustomization.yaml").read_text())
+    kustomization = yaml.safe_load((agent_dir / "app/kustomization.yaml").read_text())
     assert manifest.name in kustomization["resources"]
 
     secret_names = set(one(role["rules"])["resourceNames"])
@@ -348,7 +348,7 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
     route = one(obj for obj in proxy_objects if obj["kind"] == "HTTPRoute")
     assert route["spec"]["hostnames"] == ["haku-kubeapi.allegedly.works"]
 
-    ceiling = yaml.safe_load((agent_dir / "k8s-reader" / "cluster-admin-ceiling.yaml").read_text())
+    ceiling = yaml.safe_load((agent_dir / "app" / "cluster-admin-ceiling.yaml").read_text())
     assert ceiling["kind"] == "ClusterRoleBinding"
     assert ceiling["metadata"]["name"] == "haku-kube-api-proxy-cluster-admin-ceiling"
     assert ceiling["roleRef"] == {
@@ -371,10 +371,10 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
         ("ServiceAccount", "haku", "haku-sandbox"),
     }
     configured_binding_files = (
-        agent_dir / "k8s-reader" / "role.yaml",
-        agent_dir / "k8s-reader" / "node-reader.yaml",
-        agent_dir / "k8s-reader" / "cluster-metadata-reader.yaml",
-        agent_dir / "k8s-reader" / "extended-diagnostics-reader.yaml",
+        agent_dir / "app" / "role.yaml",
+        agent_dir / "app" / "node-reader.yaml",
+        agent_dir / "app" / "cluster-metadata-reader.yaml",
+        agent_dir / "app" / "extended-diagnostics-reader.yaml",
         k8s_dir / "clickhouse" / "cluster" / "agent-diagnostics-rbac.yaml",
         k8s_dir / "ducktape-flux" / "ducktape-flux-reader.yaml",
         console_dir / "agent-diagnostics-rbac.yaml",
@@ -407,19 +407,25 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
     for role_ref in configured_role_refs:
         assert haku_configured_subjects <= subjects_by_role_ref[role_ref], role_ref
 
-    reader_kustomization = yaml.safe_load((agent_dir / "k8s-reader" / "kustomization.yaml").read_text())
-    assert "serviceaccount.yaml" not in reader_kustomization["resources"]
-    assert "cluster-admin-ceiling.yaml" in reader_kustomization["resources"]
-    assert "proxy-ceiling.yaml" not in reader_kustomization["resources"]
-    assert "all-pods-read-ceiling.yaml" not in reader_kustomization["resources"]
+    app_kustomization = yaml.safe_load((agent_dir / "app" / "kustomization.yaml").read_text())
+    assert "serviceaccount.yaml" not in app_kustomization["resources"]
+    assert "cluster-admin-ceiling.yaml" in app_kustomization["resources"]
+    assert "proxy-ceiling.yaml" not in app_kustomization["resources"]
+    assert "all-pods-read-ceiling.yaml" not in app_kustomization["resources"]
 
     proxy_flux = yaml.safe_load((agent_dir / "proxy" / "flux-kustomization.yaml").read_text())
     dependency_by_name = {entry["name"]: entry for entry in proxy_flux["spec"]["dependsOn"]}
-    for dependency_name in ("public-coder-agent-k8s-reader", "aiquota", "litellm-keys-tf"):
+    for dependency_name in ("aiquota", "litellm-keys-tf"):
         assert "readyExpr" not in dependency_by_name[dependency_name]
     assert dependency_by_name["aiquota"]["namespace"] == "ducktape-flux"
     assert dependency_by_name["litellm-keys-tf"]["namespace"] == "ducktape-flux"
     assert "haku-console" not in dependency_by_name
+    # The RBAC/ceiling that used to live in a separate public-coder-agent-k8s-reader
+    # Kustomization is now part of public-coder-agent-app, which itself depends on
+    # this proxy -- depending on it here would cycle. Guard against either edge
+    # being reintroduced by accident.
+    assert "public-coder-agent-k8s-reader" not in dependency_by_name
+    assert "public-coder-agent-app" not in dependency_by_name
     assert proxy_flux["spec"]["wait"] is True
     assert proxy_flux["spec"]["retryInterval"] == "1m"
     assert proxy_flux["spec"]["healthChecks"] == [
