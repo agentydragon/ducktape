@@ -11,6 +11,7 @@ cluster/docs/cdk8s.md.
 from pathlib import Path
 
 from cdk8s import App, Chart, Yaml
+from cdk8s_plus_33 import ConfigMap
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
     KustomizationSpecDecryption,
@@ -22,13 +23,25 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
+from cluster.cdk8s import (
+    agentplane_staging_config,
+    agentplane_testing_config,
+    haku_openclaw_spike_config,
+    public_coder_agent_config,
+)
+from cluster.cdk8s.config_format import json5_config, yaml_config
 from cluster.cdk8s.flux_constructs import NAMESPACE, flux_kustomization, kustomize_kustomization
 from cluster.cdk8s.ha_mcp_constructs import HaMcp
 from cluster.cdk8s.litellm_constructs import LiteLLMProxy, LiteLLMServiceMonitor, proxy_specs
+from cluster.cdk8s.metadata import metadata
 from util.bazel.workspace import get_build_workspace_directory
 
 _LITELLM_APP_DIR = "cluster/k8s/litellm/app"
 _HA_MCP_DIR = "cluster/k8s/agents/ha-mcp/app"
+_AGENTPLANE_TESTING_APP_DIR = "cluster/k8s/agentplane-testing/app"
+_AGENTPLANE_STAGING_APP_DIR = "cluster/k8s/agentplane-staging/app"
+_HAKU_OPENCLAW_SPIKE_APP_DIR = "cluster/k8s/agents/haku-openclaw-spike/app"
+_PUBLIC_CODER_AGENT_APP_DIR = "cluster/k8s/agents/public-coder-agent/app"
 
 
 def _write_yaml(path: Path, manifest: dict[str, object]) -> None:
@@ -140,10 +153,79 @@ def _generate_ha_mcp(root: Path) -> None:
     )
 
 
+def _write_config_map_chart(
+    root: Path, app_dir: str, *, chart_name: str, configmap_name: str, namespace: str, data: dict[str, str]
+) -> None:
+    """Synthesize a single-ConfigMap chart into `app_dir`'s existing, otherwise
+    hand-written Kustomization -- see cluster/docs/cdk8s.md's "SOPS secrets in a
+    converted directory" for the general pattern of a directory mixing generated and
+    hand-written files. `flux-kustomization.yaml`/`kustomization.yaml` stay hand-written;
+    only this one ConfigMap's content is generated, replacing what used to be a Kustomize
+    `configMapGenerator` entry.
+    """
+    out_dir = root / app_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+    app = App(outdir=str(out_dir))
+    chart = Chart(app, chart_name, disable_resource_name_hashes=True)
+    ConfigMap(chart, "config", metadata=metadata(configmap_name, namespace), data=data)
+    app.synth()
+
+
+def _generate_agentplane_testing_config(root: Path) -> None:
+    _write_config_map_chart(
+        root,
+        _AGENTPLANE_TESTING_APP_DIR,
+        chart_name="agentplane-app-config",
+        configmap_name="agentplane-app-config",
+        namespace="agentplane-testing",
+        data={"config.yaml": yaml_config(agentplane_testing_config.config())},
+    )
+
+
+def _generate_agentplane_staging_config(root: Path) -> None:
+    _write_config_map_chart(
+        root,
+        _AGENTPLANE_STAGING_APP_DIR,
+        chart_name="agentplane-app-config",
+        configmap_name="agentplane-app-config",
+        namespace="agentplane-staging",
+        data={"config.yaml": yaml_config(agentplane_staging_config.config())},
+    )
+
+
+def _generate_haku_openclaw_spike_config(root: Path) -> None:
+    _write_config_map_chart(
+        root,
+        _HAKU_OPENCLAW_SPIKE_APP_DIR,
+        chart_name="haku-openclaw-spike-config",
+        configmap_name="haku-openclaw-spike-config",
+        namespace="haku-openclaw-spike",
+        data={
+            "openclaw.json": json5_config(haku_openclaw_spike_config.config()),
+            "claude.json": json5_config(haku_openclaw_spike_config.claude_config()),
+        },
+    )
+
+
+def _generate_public_coder_agent_config(root: Path) -> None:
+    _write_config_map_chart(
+        root,
+        _PUBLIC_CODER_AGENT_APP_DIR,
+        chart_name="public-coder-agent-config",
+        configmap_name="public-coder-agent-config",
+        namespace="public-coder-agent",
+        data={"openclaw.json5": json5_config(public_coder_agent_config.config())},
+    )
+
+
 def generate_manifests(root: Path) -> None:
     """Write every converted directory's generated manifests under `root`."""
     _generate_litellm_app(root)
     _generate_ha_mcp(root)
+    _generate_agentplane_testing_config(root)
+    _generate_agentplane_staging_config(root)
+    _generate_haku_openclaw_spike_config(root)
+    _generate_public_coder_agent_config(root)
 
 
 def main() -> None:

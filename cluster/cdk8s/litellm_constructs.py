@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch, Size, Yaml
+from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch, Size
 from cdk8s_plus_33 import (
     ConfigMap,
     ContainerPort,
@@ -61,6 +61,7 @@ from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecSelector,
 )
 
+from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret
 from cluster.cdk8s.litellm_config import ConfigMapSpec, proxy_configs
 from cluster.cdk8s.metadata import metadata
@@ -202,15 +203,11 @@ def proxy_specs() -> tuple[ProxySpec, ...]:
     )
 
 
-def _yaml_config(config: dict) -> str:
-    return Yaml.format_objects([config])
-
-
 def _formatted_config_map_data(data: dict[str, object]) -> dict[str, str]:
     formatted: dict[str, str] = {}
     for filename, value in data.items():
         if isinstance(value, dict):
-            formatted[filename] = _yaml_config(value)
+            formatted[filename] = yaml_config(value)
         else:
             assert isinstance(value, str)
             formatted[filename] = value

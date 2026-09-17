@@ -1,7 +1,7 @@
-import json5
 import pytest_bazel
 import yaml
 
+from cluster.cdk8s import haku_openclaw_spike_config, public_coder_agent_config
 from cluster.cdk8s.litellm_config import main_proxy_config
 from cluster.k8s.litellm.app.model_rosters import (
     ANTHROPIC_MODELS,
@@ -20,19 +20,16 @@ from cluster.k8s.litellm.app.model_rosters import (
 )
 from util.bazel.runfiles import get_required_path
 
-_PUBLIC_CODER_AGENT_CONFIG = "ducktape/cluster/k8s/agents/public-coder-agent/app/openclaw.json5"
-_HAKU_OPENCLAW_CONFIG = "ducktape/cluster/k8s/agents/haku-openclaw-spike/app/openclaw.json"
 _HAKU_OPENCLAW_DEPLOYMENT = "ducktape/cluster/k8s/agents/haku-openclaw-spike/app/deployment.yaml"
 
 
 def _public_coder_agent_models() -> list[dict]:
-    config = json5.loads(get_required_path(_PUBLIC_CODER_AGENT_CONFIG).read_text())
-    providers = config["models"]["providers"]
+    providers = public_coder_agent_config.config()["models"]["providers"]
     return [model for provider in providers.values() for model in provider["models"]]
 
 
 def _haku_claude_models() -> tuple[dict, dict]:
-    config = json5.loads(get_required_path(_HAKU_OPENCLAW_CONFIG).read_text())
+    config = haku_openclaw_spike_config.config()
     return config, config["agents"]["defaults"]["models"]
 
 
@@ -109,7 +106,7 @@ def test_public_coder_agent_models_match_litellm_codex_routes() -> None:
     """The agent's catalog is pinned to exactly the working routes it should offer."""
     assert [model["id"] for model in _public_coder_agent_models()] == [*OPENCLAW_CODEX_MODELS, *_OPENCLAW_GEMINI_IDS]
 
-    config = json5.loads(get_required_path(_PUBLIC_CODER_AGENT_CONFIG).read_text())
+    config = public_coder_agent_config.config()
     providers = config["models"]["providers"]
     assert providers["litellm"]["api"] == "openai-responses"
     assert set(providers) == {"litellm"}
@@ -121,7 +118,7 @@ def test_public_coder_agent_models_match_litellm_codex_routes() -> None:
 
 def test_public_coder_memory_model_uses_ollama_embedding_route() -> None:
     """The OpenClaw model identity must match the Ollama embedding route."""
-    config = json5.loads(get_required_path(_PUBLIC_CODER_AGENT_CONFIG).read_text())
+    config = public_coder_agent_config.config()
     model = config["memory"]["search"]["model"]
 
     assert model == "ollama/olm-embed/qwen3-embedding-4b"

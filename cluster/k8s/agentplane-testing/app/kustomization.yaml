@@ -14,8 +14,5 @@ resources:
   - service-agentplane-app.yaml
   - httproute.yaml
   - networkpolicy.yaml
-
-configMapGenerator:
-  - name: agentplane-app-config
-    files:
-      - config.yaml
+  # cdk8s-generated (cluster/cdk8s/agentplane_testing_config.py) -- see cluster/docs/cdk8s.md.
+  - agentplane-app-config.k8s.yaml

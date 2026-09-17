@@ -28,19 +28,24 @@ filegroup(
     visibility = ["//cluster:__subpackages__"],
 )
 
-filegroup(
-    name = "agentplane_staging_model_config",
-    srcs = ["agentplane-staging/app/config.yaml"],
-    visibility = ["//cluster/k8s/litellm/app:__pkg__"],
+# cdk8s-generated (cluster/cdk8s/{agentplane_testing,agentplane_staging,
+# haku_openclaw_spike,public_coder_agent}_config.py) -- the test_generate_manifests
+# pinning test reads the committed files directly, and cluster/k8s/litellm/app's tests
+# import the underlying config() functions directly rather than reading these rendered
+# manifests.
+exports_files(
+    [
+        "agentplane-staging/app/agentplane-app-config.k8s.yaml",
+        "agentplane-testing/app/agentplane-app-config.k8s.yaml",
+        "agents/haku-openclaw-spike/app/haku-openclaw-spike-config.k8s.yaml",
+        "agents/public-coder-agent/app/public-coder-agent-config.k8s.yaml",
+    ],
+    visibility = ["//cluster/cdk8s:__pkg__"],
 )
 
 filegroup(
     name = "openclaw_model_config",
-    srcs = [
-        "agents/haku-openclaw-spike/app/deployment.yaml",
-        "agents/haku-openclaw-spike/app/openclaw.json",
-        "agents/public-coder-agent/app/openclaw.json5",
-    ],
+    srcs = ["agents/haku-openclaw-spike/app/deployment.yaml"],
     visibility = ["//cluster/k8s/litellm/app:__pkg__"],
 )
 
