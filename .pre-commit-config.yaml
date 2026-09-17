@@ -286,6 +286,10 @@ repos:
             cluster/k8s/agentplane-staging/actions/settings\.yaml|
             cluster/k8s/agentplane-testing/app/config\.yaml|
             cluster/k8s/agentplane-testing/actions/settings\.yaml|
+            cluster/k8s/agentplane-staging/egress/settings\.yaml|
+            cluster/k8s/agentplane-staging/llm-ingress/settings\.yaml|
+            cluster/k8s/agentplane-testing/egress/settings\.yaml|
+            cluster/k8s/agentplane-testing/llm-ingress/settings\.yaml|
             # SSH MCP settings are mounted via configMapGenerator, not a K8s manifest
             cluster/k8s/ssh-mcp/settings\.yaml|
             # OpenShell policy mounted via configMapGenerator, not a K8s manifest

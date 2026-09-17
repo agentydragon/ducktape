@@ -28,12 +28,12 @@ py_library(
     deps = [
         ":app",
         "//x/agentplane/workload_auth:http",
-        "//x/agentplane/workload_auth:namespaces",
         "//x/agentplane/workload_auth:principal",
         "@pypi//httpx",
         "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
+        "@pypi//pyyaml",
         "@pypi//uvicorn",
     ],
 )

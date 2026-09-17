@@ -16,3 +16,8 @@ resources:
   - egresspolicy-github-public.yaml
   - egresscredential-agentplane-workload.yaml
   - egresspolicy-basic.yaml
+configMapGenerator:
+  - name: agentplane-egress-settings
+    namespace: agentplane-staging
+    files:
+      - settings.yaml

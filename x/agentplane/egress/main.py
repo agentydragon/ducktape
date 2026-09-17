@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import signal
 from datetime import timedelta
 from ipaddress import IPv4Network, IPv6Network
@@ -13,7 +14,7 @@ from typing import Any, cast
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api, CustomObjectsApi
 from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 
 from util.kubernetes import CustomObjectsClient
 from x.agentplane.egress.addon import EgressAddon
@@ -28,8 +29,10 @@ from x.agentplane.egress.rules_api import RulesProjection, create_rules_app, ser
 from x.agentplane.egress.upstream import UpstreamResolver
 from x.agentplane.kubernetes_watch import STALE_AFTER_CYCLES
 from x.agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
-from x.agentplane.workload_auth.namespaces import AllowedServiceAccountNamespaces
 from x.agentplane.workload_auth.principal import WorkloadPrincipalResolver
+
+# YamlConfigSettingsSource loads yaml lazily inside pydantic-settings; gazelle cannot see the dependency.
+# gazelle:include_dep @pypi//pyyaml
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +49,7 @@ class Settings(BaseSettings):
     credentials_namespace: str = Field(
         default="agentplane-egress-credentials", description="Namespace the rules' Secrets are read from."
     )
-    allowed_service_account_namespaces: AllowedServiceAccountNamespaces = Field(
+    allowed_service_account_namespaces: frozenset[str] = Field(
         min_length=1,
         description="Every namespace whose ServiceAccounts may authenticate here, the sandbox namespace included. "
         "An agent this cluster does not host runs where it runs, so naming its namespace is what lets it present a "
@@ -75,6 +78,25 @@ class Settings(BaseSettings):
         default_factory=list,
         description="Networks an admitted host may resolve into although they are not globally reachable.",
     )
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        sources: list[PydanticBaseSettingsSource] = [init_settings, env_settings, dotenv_settings]
+        if config_file := os.environ.get("AGENTPLANE_EGRESS_CONFIG_FILE"):
+            # pydantic-settings silently ignores absent YAML files. An explicit deployment binding
+            # must never turn into a healthy service running on defaults.
+            if not Path(config_file).is_file():
+                raise ValueError("configured egress proxy settings file is not a regular file")
+            sources.append(YamlConfigSettingsSource(settings_cls, yaml_file=config_file))
+        sources.append(file_secret_settings)
+        return tuple(sources)
 
     def __init__(self, **values: Any) -> None:
         # BaseSettings fills required fields from its sources; spell that out because the mypy plugin

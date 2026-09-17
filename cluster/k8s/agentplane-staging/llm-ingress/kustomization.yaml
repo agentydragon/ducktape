@@ -6,3 +6,8 @@ resources:
   - deployment.yaml
   - service.yaml
   - networkpolicy.yaml
+configMapGenerator:
+  - name: agentplane-llm-ingress-settings
+    namespace: agentplane-staging
+    files:
+      - settings.yaml

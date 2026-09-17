@@ -52,12 +52,3 @@ py_library(
     name = "bearer",
     srcs = ["bearer.py"],
 )
-
-py_library(
-    name = "namespaces",
-    srcs = ["namespaces.py"],
-    deps = [
-        "@pypi//pydantic",
-        "@pypi//pydantic_settings",
-    ],
-)

@@ -153,7 +153,7 @@ an informational snapshot of the answering replica, not a global acknowledgement
 ## ServiceAccount permissions
 
 In the rules namespace (`--rules-namespace`): `get`, `list`, `watch` on `egresspolicies`,
-`egressbindings` and `egresscredentials`. **Nothing at all in a `--allowed-service-account-namespaces` entry**: the
+`egressbindings` and `egresscredentials`. **Nothing at all in an `allowed_service_account_namespaces` entry**: the
 TokenReview names the ServiceAccount a bearer's Pod runs as, and that is the subject, so naming a
 second workload namespace needs no Role there. In the credentials namespace
 (`--credentials-namespace`, `agentplane-egress-credentials` by default): `get`, `list`, `watch` on

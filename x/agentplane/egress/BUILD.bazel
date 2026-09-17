@@ -94,11 +94,11 @@ py_library(
         "//util:kubernetes",
         "//x/agentplane:kubernetes_watch",
         "//x/agentplane/workload_auth:http",
-        "//x/agentplane/workload_auth:namespaces",
         "//x/agentplane/workload_auth:principal",
         "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
+        "@pypi//pyyaml",
     ],
 )
 

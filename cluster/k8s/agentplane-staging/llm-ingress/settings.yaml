@@ -1,0 +1,7 @@
+# The LLM ingress's settings, mounted via configMapGenerator -- not a K8s manifest.
+# Read as YAML so a list is a list; scalars stay flags on the Deployment.
+#
+# Every namespace whose ServiceAccounts may authenticate here. The central proxy is the only client
+# and authenticates the same bearer first, so this must list at least what its settings do.
+allowed_service_account_namespaces:
+  - agentplane-staging
