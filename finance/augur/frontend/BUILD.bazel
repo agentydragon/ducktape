@@ -511,7 +511,7 @@ filegroup(
 #
 # Static-assets sidecar: `nginx_unprivileged` serving the React bundle from
 # `/usr/share/nginx/html`. The nginx config itself is mounted into the pod
-# at runtime via a ConfigMap (see gaffer-private's k8s/augur/nginx.conf).
+# at runtime via a ConfigMap (see gaffer-private's k8s/parked/augur/nginx.conf).
 
 copy_to_directory(
     name = "frontend_files",

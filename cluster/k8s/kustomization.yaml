@@ -167,7 +167,6 @@ resources:
 
   - forgejo-images/flux-kustomization.yaml
   - forgejo/budget-ledger/flux-kustomization.yaml
-  - forgejo/augur-evidence/flux-kustomization.yaml
   - forgejo/cpap-data/flux-kustomization.yaml
   - forgejo/claude/flux-kustomization.yaml
   - forgejo/agentydragon-repos/flux-kustomization.yaml
