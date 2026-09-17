@@ -67,7 +67,6 @@ locals {
     approving_operator = {
       issuer  = local.agentplane_actions_issuer
       subject = data.authentik_user.agentplane_operator.uid
-      role    = "operator"
     }
   }
 }
