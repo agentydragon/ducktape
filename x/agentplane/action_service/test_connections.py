@@ -43,8 +43,8 @@ from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, UNLABELED, admitted_callers
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.kubernetes_watch import Freshness
-from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 from x.agentplane.subjects import ServiceAccountRef
+from x.agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 ISSUER = "https://actions.example.test"
 
@@ -228,7 +228,7 @@ async def test_operator_routes_do_not_expose_binding_or_accept_workload_credenti
     actions = ActionService(ActionStore(make_sessionmaker(engine)), catalog, {})
     app = create_app(
         actions,
-        Mock(spec=SandboxPrincipalResolver),
+        Mock(spec=WorkloadPrincipalResolver),
         ConfiguredOperatorBearerAuthenticator(token_digest=hashlib.sha256(token.encode()).digest(), subject="operator"),
         catalog,
         connections=service,

@@ -75,8 +75,6 @@ from x.agentplane.egress.testing.tls import (
     write_ca,
 )
 from x.agentplane.egress.upstream import Address, Network, Pin, UpstreamResolver
-from x.agentplane.sandbox_auth.http import WorkloadPrincipalAuthenticator
-from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 from x.agentplane.testing.fake_apiserver import (
     BINDINGS_PLURAL,
     CREDENTIALS_NAMESPACE,
@@ -97,6 +95,8 @@ from x.agentplane.testing.fake_apiserver import (
     sandbox,
     secret,
 )
+from x.agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
+from x.agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 
 @dataclass
@@ -301,7 +301,7 @@ async def proxy(
     upstream_ca = make_ca("agentplane-egress-test-upstream")
     upstream_ca_cert, _ = write_ca(upstream_ca, tmp_path, "upstream")
     index = Index()
-    workload_resolver = SandboxPrincipalResolver(
+    workload_resolver = WorkloadPrincipalResolver(
         authentication=AuthenticationV1Api(api_client),
         audience=AUDIENCE,
         allowed_service_account_namespaces=frozenset({SANDBOX_NAMESPACE}),

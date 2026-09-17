@@ -15,8 +15,8 @@ from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from x.agentplane.llm_ingress.app import IngressResources, create_app
-from x.agentplane.sandbox_auth.http import WorkloadPrincipalAuthenticator
-from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
+from x.agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
+from x.agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +57,7 @@ async def async_main(settings: Settings) -> None:
         ApiClient(configuration=configuration) as api,
         httpx.AsyncClient(base_url=settings.litellm_url, timeout=timeout) as backend,
     ):
-        resolver = SandboxPrincipalResolver(
+        resolver = WorkloadPrincipalResolver(
             authentication=AuthenticationV1Api(api),
             audience=settings.token_audience,
             allowed_service_account_namespaces=frozenset({settings.namespace}),

@@ -1,5 +1,5 @@
 # Authenticated byte-streaming ingress between Agentplane central egress and the existing LiteLLM
-# deployment. It resolves only SandboxPrincipal, replaces the workload bearer with the single
+# deployment. It resolves only WorkloadPrincipal, replaces the workload bearer with the single
 # staging subscription virtual key, and stamps verified Sandbox metadata for LiteLLM spend logs.
 apiVersion: apps/v1
 kind: Deployment

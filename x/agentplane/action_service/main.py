@@ -44,7 +44,7 @@ from x.agentplane.action_service.runtime import running_executor
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.kubernetes_watch import STALE_AFTER_CYCLES, Freshness
-from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
+from x.agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 # YamlConfigSettingsSource loads yaml lazily inside pydantic-settings; gazelle cannot see the dependency.
 # gazelle:include_dep @pypi//pyyaml
@@ -233,7 +233,7 @@ async def async_main(settings: Settings) -> None:
         )
         app = create_app(
             service,
-            SandboxPrincipalResolver(
+            WorkloadPrincipalResolver(
                 authentication=AuthenticationV1Api(api),
                 audience=settings.token_audience,
                 allowed_service_account_namespaces=settings.allowed_service_account_namespaces,

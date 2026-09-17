@@ -20,14 +20,14 @@ from x.agentplane.egress.conftest import (
 )
 from x.agentplane.egress.identity import IdentityRejectedError, WorkloadIdentityVerifier
 from x.agentplane.egress.policy import DenyReason
-from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver, WorkloadPrincipal
 from x.agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, FakeApiServer, TokenVerdict
+from x.agentplane.workload_auth.principal import WorkloadPrincipal, WorkloadPrincipalResolver
 
 
 @pytest.fixture
 def verifier(api_client: ApiClient) -> WorkloadIdentityVerifier:
     return WorkloadIdentityVerifier(
-        SandboxPrincipalResolver(
+        WorkloadPrincipalResolver(
             authentication=AuthenticationV1Api(api_client),
             audience=AUDIENCE,
             allowed_service_account_namespaces=frozenset({SANDBOX_NAMESPACE}),

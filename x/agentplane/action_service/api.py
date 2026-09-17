@@ -78,9 +78,9 @@ from x.agentplane.action_service.service import (
     UnsupportedActionError,
 )
 from x.agentplane.action_service.updates import ActionUpdates
-from x.agentplane.sandbox_auth.http import WorkloadPrincipalAuthenticator
-from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 from x.agentplane.subjects import ServiceAccountRef
+from x.agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
+from x.agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 logger = logging.getLogger(__name__)
 
@@ -166,7 +166,7 @@ async def _operator(
 
 def create_app(
     service: ActionService,
-    workload_resolver: SandboxPrincipalResolver,
+    workload_resolver: WorkloadPrincipalResolver,
     operator_authenticator: OperatorAuthenticator,
     catalog: ActionCatalog,
     *,

@@ -15,7 +15,7 @@ py_library(
     deps = [
         "//x/agentplane:crds",
         "//x/agentplane/egress:resources",
-        "//x/agentplane/sandbox_auth:principal",
+        "//x/agentplane/workload_auth:principal",
         "@pypi//aiohttp",
         "@pypi//more_itertools",
     ],

@@ -30,8 +30,8 @@ from starlette.responses import JSONResponse, Response
 from x.agentplane.action_service.models import CallerPrincipal, ExternalGrantProvenance
 from x.agentplane.action_service.oauth import ActionsOAuthProxy
 from x.agentplane.action_service.policy_informer import PolicyIndex
-from x.agentplane.sandbox_auth.bearer import sole_header
-from x.agentplane.sandbox_auth.principal import SandboxPrincipalRejectedError, SandboxPrincipalResolver
+from x.agentplane.workload_auth.bearer import sole_header
+from x.agentplane.workload_auth.principal import WorkloadPrincipalRejectedError, WorkloadPrincipalResolver
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +75,7 @@ def _authority_unavailable(conn: HTTPConnection, error: AuthenticationError) -> 
 
 class CallerTokenVerifier(TokenVerifier):
     def __init__(
-        self, sandbox: SandboxPrincipalResolver, *, callers: PolicyIndex, oauth: ActionsOAuthProxy | None
+        self, sandbox: WorkloadPrincipalResolver, *, callers: PolicyIndex, oauth: ActionsOAuthProxy | None
     ) -> None:
         # The challenge's resource_metadata URL lives under the OAuth proxy's public base URL,
         # where `ActionsOAuthProxy.get_routes` serves that metadata.
@@ -100,7 +100,7 @@ class CallerTokenVerifier(TokenVerifier):
                 return None
         try:
             account = (await self._sandbox.resolve_workload(token)).account
-        except SandboxPrincipalRejectedError:
+        except WorkloadPrincipalRejectedError:
             return None
         # As opaque to the caller as an unknown bearer: it already knows which account it holds, and
         # an attacker should not learn from the difference that the account exists.

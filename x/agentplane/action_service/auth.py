@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Protocol
 
 from x.agentplane.action_service.models import CallerPrincipal, OperatorPrincipal
-from x.agentplane.sandbox_auth.principal import WorkloadPrincipal
+from x.agentplane.workload_auth.principal import WorkloadPrincipal
 
 
 class OperatorAuthenticator(Protocol):

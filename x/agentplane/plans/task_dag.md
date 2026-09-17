@@ -616,7 +616,7 @@ operator consent for an external connector rather than an in-cluster workload, s
 ServiceAccount is a third caller class beside those two.
 
 Egress has taken the matching step already: its `Subject` is a `ServiceAccountRef`, and
-`sandbox_auth.resolve_workload` stops at the proofs a bearer carries by itself, so this is the same
+`workload_auth.resolve_workload` stops at the proofs a bearer carries by itself, so this is the same
 shape applied to the other service. Its own clock — nothing about the egress
 path waits on it, and it is what a tool-surface switch waits on rather than an egress cutover.
 
@@ -699,7 +699,7 @@ smaller than its description implies:
   to diff against, not a finished policy.
 
 **The gap is the policy, not the proxy.** Egress authenticates a Pod-bound ServiceAccount token
-and stops there (`egress/identity.py` via `SandboxPrincipalResolver`), and `BindingSpec.subjects`
+and stops there (`egress/identity.py` via `WorkloadPrincipalResolver`), and `BindingSpec.subjects`
 is a list of `ServiceAccountRef` (`egress/resources.py`), so public-coder being a plain Deployment
 running OpenClaw is no longer what stands in its way -- what it lacks is a dedicated ServiceAccount
 and the bindings naming it.
@@ -746,7 +746,7 @@ and `ServiceAccountRef` would need a home egress can reach without depending on 
 
 **Decided: a dedicated Kubernetes ServiceAccount is the identity.** The app Pod runs as `default`
 today -- only the sshpiper Deployment names one -- so this is an addition rather than a change, and
-most of the verification already exists: `sandbox_auth/principal.py` TokenReviews a Pod-bound
+most of the verification already exists: `workload_auth/principal.py` TokenReviews a Pod-bound
 token, reads the `pod-name` and `pod-uid` claims, and ends at the ServiceAccount the token names,
 with no Sandbox-specific step left anywhere. Labelled
 `agentplane.allegedly.works/use-action-service: "true"`, the same object is what the Action Service
