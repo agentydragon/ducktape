@@ -66,6 +66,46 @@ let
       };
     };
 
+    # === Rugged: Qwen3-4B / Llama-3.2-1B on the NPU via Nix-native llama-server ===
+    # Router service from nix/nixos/hosts/rugged/local_llm_npu.nix
+    # (ducktape.localLlm.npu). This hits the service's own loopback port
+    # directly (127.0.0.1:8090, no auth needed on-box) -- the bearer-proxied
+    # :18080 is for the cluster/litellm to reach rugged remotely, not for a
+    # local CLI on the same machine.
+    #
+    # UNVERIFIED (2026-09-17): first real-hardware test pending (see #7128).
+    # The NPU backend's documented constraints (debug/rugged/hw/llm_npu.md --
+    # small context, no --context-shift, single session) may make it
+    # impractical for OpenCode's much larger system-prompt size. The context
+    # limits below are placeholders pending that test, not a measured value.
+    rugged-npu = {
+      npm = "@ai-sdk/openai-compatible";
+      name = "Rugged local NPU (OpenVINO)";
+      options = {
+        baseURL = ruggedLocalLlm.npuBaseURL;
+      };
+      models = {
+        "qwen3-4b" = {
+          name = "Qwen3 4B Instruct (rugged NPU)";
+          reasoning = false; # -2507 is Qwen's non-thinking instruct release
+          tool_call = false; # unverified on this path, like the litellm roster entry
+          limit = {
+            context = 4096; # placeholder -- confirm against the service's real n_ctx
+            output = 2048;
+          };
+        };
+        "llama-3.2-1b" = {
+          name = "Llama 3.2 1B Instruct (rugged NPU)";
+          reasoning = false;
+          tool_call = false;
+          limit = {
+            context = 4096; # placeholder -- confirm against the service's real n_ctx
+            output = 2048;
+          };
+        };
+      };
+    };
+
     # === Rugged: Gemma 4 on local Intel iGPU via Google LiteRT-LM ===
     # Start this separately:
     #   litert-lm serve --host 127.0.0.1 --port 9379 --enable-speculative-decoding=true
@@ -403,6 +443,12 @@ in
       type = lib.types.str;
       default = "http://127.0.0.1:9379/v1";
       description = "OpenAI-compatible base URL for rugged's LiteRT-LM service.";
+    };
+
+    npuBaseURL = lib.mkOption {
+      type = lib.types.str;
+      default = "http://127.0.0.1:8090/v1";
+      description = "OpenAI-compatible base URL for rugged's NPU-backed llama-server.";
     };
 
   };
