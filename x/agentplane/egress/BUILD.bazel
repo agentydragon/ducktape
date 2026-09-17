@@ -98,6 +98,7 @@ py_library(
         "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
+        "@pypi//pyyaml",
     ],
 )
 

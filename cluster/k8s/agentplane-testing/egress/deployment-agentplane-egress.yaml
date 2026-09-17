@@ -76,9 +76,6 @@ spec:
           imagePullPolicy: IfNotPresent
           args:
             - --rules-namespace=agentplane-testing
-            # Every namespace whose ServiceAccounts may present a token here. One for now: the
-            # sandboxes run beside the rules. An agent hosted elsewhere gets another line.
-            - --workload-namespaces=agentplane-testing
             - --credentials-namespace=agentplane-egress-credentials
             - --listen-port=8888
             - --admin-port=8081
@@ -95,6 +92,9 @@ spec:
                 secretKeyRef:
                   name: postgres-egress
                   key: uri
+            # Settings this deployment supplies as YAML rather than flags, so a list is a list.
+            - name: AGENTPLANE_EGRESS_CONFIG_FILE
+              value: /etc/agentplane-egress/settings.yaml
           ports:
             - name: proxy
               containerPort: 8888
@@ -134,7 +134,14 @@ spec:
               readOnly: true
             - name: confdir
               mountPath: /var/lib/agentplane-egress
+            - name: settings
+              mountPath: /etc/agentplane-egress/settings.yaml
+              subPath: settings.yaml
+              readOnly: true
       volumes:
+        - name: settings
+          configMap:
+            name: agentplane-egress-settings
         - name: ca
           secret:
             secretName: agentplane-testing-egress-ca

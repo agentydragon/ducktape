@@ -708,6 +708,21 @@ py_test(
 )
 
 py_test(
+    name = "test_agentplane_workload_namespaces",
+    srcs = ["test_agentplane_workload_namespaces.py"],
+    data = ["//cluster/k8s:cluster_yaml_files"],
+    deps = [
+        "//util/bazel:runfiles",
+        "//x/agentplane/egress:main",
+        "//x/agentplane/llm_ingress:main",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
     name = "test_agentplane_action_policies",
     srcs = ["test_agentplane_action_policies.py"],
     data = ["//cluster/k8s:cluster_yaml_files"],

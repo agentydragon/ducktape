@@ -681,7 +681,7 @@ Its own clock, and cheaper before something starts using it than after.
 refuse any request whose connection source did not match -- on every request, including cache hits.
 That check was the only thing the Pod read bought once the subject became the ServiceAccount, and it
 cost a `pods` grant in every namespace the proxy accepts bearers from, which is what made
-`--workload-namespaces` unusable without widening RBAC.
+`allowed_service_account_namespaces` unusable without widening RBAC.
 
 What it defended: a token copied out of its Pod and replayed from elsewhere in the cluster. The
 bearer is already audience-scoped, short-lived and bound by the API server to a Pod that must still
@@ -691,7 +691,7 @@ one in-cluster workload borrowing another's egress rules, not an escalation past
 Add it back if that borrowing becomes a real concern -- a compromised sidecar reading another Pod's
 projected token, or a namespace whose Pod specs are not ours. Doing so means a `pod_ip` on the
 principal, the check in `WorkloadIdentityVerifier.identify`, the peer-address read in the addon, and
-the `pods` read in every namespace named by `--workload-namespaces`.
+the `pods` read in every namespace named by `allowed_service_account_namespaces`.
 
 ### `PC_EGRESS_CREDENTIALS` — public-coder's substitutions as EgressCredentials
 

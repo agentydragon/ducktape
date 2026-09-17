@@ -7,3 +7,8 @@ resources:
   - deployment.yaml
   - service.yaml
   - networkpolicy.yaml
+configMapGenerator:
+  - name: agentplane-llm-ingress-settings
+    namespace: agentplane-testing
+    files:
+      - settings.yaml

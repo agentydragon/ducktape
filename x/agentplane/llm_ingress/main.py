@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
@@ -12,11 +13,14 @@ import uvicorn
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api
 from pydantic import Field, SecretStr
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 
 from x.agentplane.llm_ingress.app import IngressResources, create_app
 from x.agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
 from x.agentplane.workload_auth.principal import WorkloadPrincipalResolver
+
+# YamlConfigSettingsSource loads yaml lazily inside pydantic-settings; gazelle cannot see the dependency.
+# gazelle:include_dep @pypi//pyyaml
 
 logger = logging.getLogger(__name__)
 
@@ -26,13 +30,37 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="AGENTPLANE_LLM_INGRESS_", cli_parse_args=True, cli_kebab_case=True)
 
-    namespace: str = Field(description="The only namespace whose Sandbox workload tokens are accepted.")
+    allowed_service_account_namespaces: frozenset[str] = Field(
+        min_length=1,
+        description="Every namespace whose ServiceAccounts may authenticate here. The central proxy is the "
+        "only client, so this must admit at least what the proxy's own allowlist does: a workload it "
+        "authenticated and sent on is refused here if its namespace is missing.",
+    )
     token_audience: str = Field(default="agentplane-egress", description="Accepted projected-token audience.")
     litellm_url: str = Field(description="Internal LiteLLM base URL.")
     litellm_key: SecretStr = Field(description="The one server-held LiteLLM virtual key.")
     host: str = Field(default="0.0.0.0", description="Listener bind address.")
     port: int = Field(default=8080, description="Listener port.")
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        sources: list[PydanticBaseSettingsSource] = [init_settings, env_settings, dotenv_settings]
+        if config_file := os.environ.get("AGENTPLANE_LLM_INGRESS_CONFIG_FILE"):
+            # pydantic-settings silently ignores absent YAML files. An explicit deployment binding
+            # must never turn into a healthy service running on defaults.
+            if not Path(config_file).is_file():
+                raise ValueError("configured LLM ingress settings file is not a regular file")
+            sources.append(YamlConfigSettingsSource(settings_cls, yaml_file=config_file))
+        sources.append(file_secret_settings)
+        return tuple(sources)
 
     def __init__(self, **values: Any) -> None:
         super().__init__(**values)
@@ -60,7 +88,7 @@ async def async_main(settings: Settings) -> None:
         resolver = WorkloadPrincipalResolver(
             authentication=AuthenticationV1Api(api),
             audience=settings.token_audience,
-            allowed_service_account_namespaces=frozenset({settings.namespace}),
+            allowed_service_account_namespaces=settings.allowed_service_account_namespaces,
         )
         app = create_app(
             IngressResources(

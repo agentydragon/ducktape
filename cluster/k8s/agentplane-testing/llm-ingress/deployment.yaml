@@ -44,7 +44,6 @@ spec:
           image: git.allegedly.works/ducktape-ci/agentplane-llm-ingress:devel-20260917225239-a80e285 # {"$imagepolicy": "flux-system:agentplane-llm-ingress"}
           imagePullPolicy: IfNotPresent
           args:
-            - --namespace=agentplane-testing
             - --token-audience=agentplane-egress
             - --litellm-url=http://litellm.litellm.svc.cluster.local:4000
             - --host=0.0.0.0
@@ -57,6 +56,9 @@ spec:
                 secretKeyRef:
                   name: litellm-key-cheap-experiments
                   key: api-key
+            # Settings this deployment supplies as YAML rather than flags, so a list is a list.
+            - name: AGENTPLANE_LLM_INGRESS_CONFIG_FILE
+              value: /etc/agentplane-llm-ingress/settings.yaml
           ports:
             - name: http
               containerPort: 8080
@@ -83,3 +85,12 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
+          volumeMounts:
+            - name: settings
+              mountPath: /etc/agentplane-llm-ingress/settings.yaml
+              subPath: settings.yaml
+              readOnly: true
+      volumes:
+        - name: settings
+          configMap:
+            name: agentplane-llm-ingress-settings

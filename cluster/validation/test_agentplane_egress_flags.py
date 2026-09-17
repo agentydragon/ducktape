@@ -1,9 +1,9 @@
-"""The flags the egress Deployments pass are flags the egress binary accepts.
+"""The configuration the egress Deployment supplies is configuration the egress binary accepts.
 
-A renamed or dropped setting is otherwise found by a CrashLoopBackOff. `workload_namespaces` is a
-set, and how pydantic-settings takes a set on the command line is not obvious from the field, so the
-manifests and the parser are checked against each other rather than each against a remembered
-spelling.
+A renamed or dropped setting is otherwise found by a CrashLoopBackOff. The flags and the mounted
+settings file are checked against the parser together, because neither half is the whole
+configuration: scalars arrive as `args`, and `allowed_service_account_namespaces` arrives as a YAML
+list from the ConfigMap, where a list needs no encoding to survive a Deployment's `args`.
 """
 
 from __future__ import annotations
@@ -21,7 +21,8 @@ from util.bazel.runfiles import get_required_path
 from x.agentplane.egress.main import Settings
 
 NAMESPACES = ["agentplane-staging", "agentplane-testing"]
-# The one setting the manifests supply as an environment variable rather than a flag.
+CONFIG_FILE_ENV = "AGENTPLANE_EGRESS_CONFIG_FILE"
+# The one setting the manifests supply as an environment variable rather than a flag or the file.
 DATABASE_URL = "--database-url=postgresql://validation-test/validation-test"
 
 
@@ -31,34 +32,54 @@ def _proxy_args(namespace: str) -> list[str]:
     return list(one(container for container in pod["containers"] if container["name"] == "proxy")["args"])
 
 
+def _settings_file(namespace: str) -> Path:
+    return Path(get_required_path(f"_main/cluster/k8s/{namespace}/egress/settings.yaml"))
+
+
 @pytest.mark.parametrize("namespace", NAMESPACES)
-def test_the_deployed_flags_parse_into_settings(namespace: str) -> None:
+def test_the_deployed_configuration_parses_into_settings(namespace: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(CONFIG_FILE_ENV, str(_settings_file(namespace)))
+
     settings = Settings(_cli_parse_args=[*_proxy_args(namespace), DATABASE_URL])
 
     assert settings.rules_namespace == namespace
-    assert namespace in settings.workload_namespaces, (
+    assert namespace in settings.allowed_service_account_namespaces, (
         "the sandboxes run beside the rules, so their namespace has to be one a bearer may come from"
     )
 
 
-def test_a_second_workload_namespace_is_another_comma() -> None:
-    """What hosting an agent elsewhere costs: one more name on the flag, not a JSON array."""
-    without = [arg for arg in _proxy_args("agentplane-staging") if not arg.startswith("--workload-namespaces=")]
-    settings = Settings(
-        _cli_parse_args=[*without, "--workload-namespaces=agentplane-staging,public-coder", DATABASE_URL]
-    )
+def test_a_second_workload_namespace_is_another_list_entry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """What hosting an agent elsewhere costs: one more entry in the settings file."""
+    config = tmp_path / "settings.yaml"
+    config.write_text("allowed_service_account_namespaces:\n  - agentplane-staging\n  - public-coder\n")
+    monkeypatch.setenv(CONFIG_FILE_ENV, str(config))
 
-    assert settings.workload_namespaces == frozenset({"agentplane-staging", "public-coder"})
+    settings = Settings(_cli_parse_args=[*_proxy_args("agentplane-staging"), DATABASE_URL])
+
+    assert settings.allowed_service_account_namespaces == frozenset({"agentplane-staging", "public-coder"})
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)
-def test_a_deployment_naming_no_workload_namespace_is_refused(namespace: str) -> None:
+def test_a_deployment_naming_no_workload_namespace_is_refused(
+    namespace: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The allowlist is what lets a bearer be presented at all, so an empty one accepts nothing and
     is a misconfiguration to fail on at startup rather than serve."""
-    without = [arg for arg in _proxy_args(namespace) if not arg.startswith("--workload-namespaces=")]
+    config = tmp_path / "settings.yaml"
+    config.write_text("{}\n")
+    monkeypatch.setenv(CONFIG_FILE_ENV, str(config))
 
-    with pytest.raises(ValidationError, match="workload_namespaces"):
-        Settings(_cli_parse_args=[*without, DATABASE_URL])
+    with pytest.raises(ValidationError, match="allowed_service_account_namespaces"):
+        Settings(_cli_parse_args=[*_proxy_args(namespace), DATABASE_URL])
+
+
+def test_a_settings_file_that_is_not_there_is_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """pydantic-settings ignores an absent YAML file, which would leave a bound deployment running on
+    defaults. A path the deployment names and the cluster does not mount has to be fatal instead."""
+    monkeypatch.setenv(CONFIG_FILE_ENV, str(tmp_path / "never-written.yaml"))
+
+    with pytest.raises(ValueError, match="not a regular file"):
+        Settings(_cli_parse_args=[*_proxy_args("agentplane-staging"), DATABASE_URL])
 
 
 if __name__ == "__main__":
