@@ -89,7 +89,7 @@ spec:
             - --rules-namespace=agentplane-staging
             # Every namespace whose ServiceAccounts may present a token here. One for now: the
             # sandboxes run beside the rules. An agent hosted elsewhere gets another line.
-            - --workload-namespaces=agentplane-staging
+            - --allowed-service-account-namespaces=agentplane-staging
             - --credentials-namespace=agentplane-egress-credentials
             - --listen-port=8888
             - --admin-port=8081

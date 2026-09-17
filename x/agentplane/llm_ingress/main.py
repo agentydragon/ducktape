@@ -16,6 +16,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from x.agentplane.llm_ingress.app import IngressResources, create_app
 from x.agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
+from x.agentplane.workload_auth.namespaces import AllowedServiceAccountNamespaces
 from x.agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 logger = logging.getLogger(__name__)
@@ -26,7 +27,12 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="AGENTPLANE_LLM_INGRESS_", cli_parse_args=True, cli_kebab_case=True)
 
-    namespace: str = Field(description="The only namespace whose Sandbox workload tokens are accepted.")
+    allowed_service_account_namespaces: AllowedServiceAccountNamespaces = Field(
+        min_length=1,
+        description="Every namespace whose ServiceAccounts may authenticate here. The central proxy is the "
+        "only client, so this must admit at least what the proxy's own allowlist does: a workload it "
+        "authenticated and sent on is refused here if its namespace is missing.",
+    )
     token_audience: str = Field(default="agentplane-egress", description="Accepted projected-token audience.")
     litellm_url: str = Field(description="Internal LiteLLM base URL.")
     litellm_key: SecretStr = Field(description="The one server-held LiteLLM virtual key.")
@@ -60,7 +66,7 @@ async def async_main(settings: Settings) -> None:
         resolver = WorkloadPrincipalResolver(
             authentication=AuthenticationV1Api(api),
             audience=settings.token_audience,
-            allowed_service_account_namespaces=frozenset({settings.namespace}),
+            allowed_service_account_namespaces=settings.allowed_service_account_namespaces,
         )
         app = create_app(
             IngressResources(

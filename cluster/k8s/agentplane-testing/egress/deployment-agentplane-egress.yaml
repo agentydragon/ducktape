@@ -78,7 +78,7 @@ spec:
             - --rules-namespace=agentplane-testing
             # Every namespace whose ServiceAccounts may present a token here. One for now: the
             # sandboxes run beside the rules. An agent hosted elsewhere gets another line.
-            - --workload-namespaces=agentplane-testing
+            - --allowed-service-account-namespaces=agentplane-testing
             - --credentials-namespace=agentplane-egress-credentials
             - --listen-port=8888
             - --admin-port=8081

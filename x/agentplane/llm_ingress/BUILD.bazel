@@ -20,9 +20,15 @@ py_library(
 py_library(
     name = "main",
     srcs = ["main.py"],
+    # `cluster/validation` parses the deployed flags through this Settings, as it does the proxy's.
+    visibility = [
+        "//cluster/validation:__pkg__",
+        "//x/agentplane:__subpackages__",
+    ],
     deps = [
         ":app",
         "//x/agentplane/workload_auth:http",
+        "//x/agentplane/workload_auth:namespaces",
         "//x/agentplane/workload_auth:principal",
         "@pypi//httpx",
         "@pypi//kubernetes_asyncio",

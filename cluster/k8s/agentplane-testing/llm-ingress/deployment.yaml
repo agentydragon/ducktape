@@ -44,7 +44,7 @@ spec:
           image: git.allegedly.works/ducktape-ci/agentplane-llm-ingress:devel-20260917092052-c42b848 # {"$imagepolicy": "flux-system:agentplane-llm-ingress"}
           imagePullPolicy: IfNotPresent
           args:
-            - --namespace=agentplane-testing
+            - --allowed-service-account-namespaces=agentplane-testing
             - --token-audience=agentplane-egress
             - --litellm-url=http://litellm.litellm.svc.cluster.local:4000
             - --host=0.0.0.0

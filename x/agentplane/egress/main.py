@@ -8,12 +8,12 @@ import signal
 from datetime import timedelta
 from ipaddress import IPv4Network, IPv6Network
 from pathlib import Path
-from typing import Annotated, Any, cast
+from typing import Any, cast
 
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api, CustomObjectsApi
-from pydantic import BeforeValidator, Field
-from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from util.kubernetes import CustomObjectsClient
 from x.agentplane.egress.addon import EgressAddon
@@ -28,17 +28,10 @@ from x.agentplane.egress.rules_api import RulesProjection, create_rules_app, ser
 from x.agentplane.egress.upstream import UpstreamResolver
 from x.agentplane.kubernetes_watch import STALE_AFTER_CYCLES
 from x.agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
+from x.agentplane.workload_auth.namespaces import AllowedServiceAccountNamespaces
 from x.agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 logger = logging.getLogger(__name__)
-
-
-def _comma_separated(value: object) -> object:
-    """A set spelled for a Deployment's `args`, which writes one string per flag. `NoDecode` on the
-    field is what stops pydantic-settings JSON-decoding the flag before this ever sees it."""
-    if not isinstance(value, str):
-        return value
-    return frozenset(filter(None, (part.strip() for part in value.split(","))))
 
 
 class Settings(BaseSettings):
@@ -53,7 +46,7 @@ class Settings(BaseSettings):
     credentials_namespace: str = Field(
         default="agentplane-egress-credentials", description="Namespace the rules' Secrets are read from."
     )
-    workload_namespaces: Annotated[frozenset[str], NoDecode, BeforeValidator(_comma_separated)] = Field(
+    allowed_service_account_namespaces: AllowedServiceAccountNamespaces = Field(
         min_length=1,
         description="Every namespace whose ServiceAccounts may authenticate here, the sandbox namespace included. "
         "An agent this cluster does not host runs where it runs, so naming its namespace is what lets it present a "
@@ -129,7 +122,7 @@ async def async_main(settings: Settings) -> None:
         workload_resolver = WorkloadPrincipalResolver(
             authentication=AuthenticationV1Api(api),
             audience=settings.token_audience,
-            allowed_service_account_namespaces=settings.workload_namespaces,
+            allowed_service_account_namespaces=settings.allowed_service_account_namespaces,
         )
         resolver = UpstreamResolver(exempt=frozenset(settings.exempt_networks))
         addon = EgressAddon(
