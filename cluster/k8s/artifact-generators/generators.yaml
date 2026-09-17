@@ -822,14 +822,6 @@ spec:
           exclude:
             - flux-kustomization.yaml
 
-    - name: postscanmail-mcp-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/postscanmail-mcp/namespace/**"
-          to: "@artifact/cluster/k8s/agents/postscanmail-mcp/namespace/"
-          exclude:
-            - flux-kustomization.yaml
-
     - name: public-coder-agent-app
       originRevision: "@repo"
       copy:

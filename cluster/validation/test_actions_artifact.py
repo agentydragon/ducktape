@@ -215,7 +215,6 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         ("paperless-namespace", "paperless/namespace"),
         ("plaid-mcp", "agents/plaid-mcp"),
         ("postscanmail-mcp", "agents/postscanmail-mcp/app"),
-        ("postscanmail-mcp-namespace", "agents/postscanmail-mcp/namespace"),
         ("proxmox-proxy", "proxmox-proxy"),
         ("public-coder-agent-app", "agents/public-coder-agent/app"),
         ("public-coder-agent-backup", "agents/public-coder-agent/backup"),

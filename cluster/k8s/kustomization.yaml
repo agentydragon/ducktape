@@ -78,7 +78,6 @@ resources:
   - agents/manifold-mcp/app/flux-kustomization.yaml
   - agents/osm-mcp/flux-kustomization.yaml
   - agents/plaid-mcp/flux-kustomization.yaml
-  - agents/postscanmail-mcp/namespace/flux-kustomization.yaml
   - agents/postscanmail-mcp/app/flux-kustomization.yaml
   - agents/ha-mcp/namespace/flux-kustomization.yaml
   - agents/ha-mcp/credentials/flux-kustomization.yaml
