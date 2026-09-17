@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest_bazel
 
-from cluster.generate_manifests import generate_manifests
+from cluster.cdk8s.generate_manifests import generate_manifests
 from util.bazel.runfiles import get_required_path
 
 _GENERATED_FILES = (
@@ -22,7 +22,7 @@ _GENERATED_FILES = (
 
 
 def test_generated_manifests_match_committed(tmp_path: Path) -> None:
-    """Regenerate with `bb run //cluster:generate_manifests` and commit the result if this fails."""
+    """Regenerate with `bb run //cluster/cdk8s:generate_manifests` and commit the result if this fails."""
     generate_manifests(tmp_path)
     for relative in _GENERATED_FILES:
         generated = (tmp_path / relative).read_text()

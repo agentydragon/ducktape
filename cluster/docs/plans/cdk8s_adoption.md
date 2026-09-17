@@ -55,7 +55,7 @@ phase 1's actual pattern has run for a while, not before.
   <../cdk8s.md>). No case has needed this yet; when one does, a `reason` kwarg the
   shared construct renders as something else is the likely shape, since `dependsOn`
   list items have no comment-equivalent field.
-- `//cluster:generate_manifests` hardcodes its one output directory (no
+- `//cluster/cdk8s:generate_manifests` hardcodes its one output directory (no
   `--output-dir` flag) — matches phase 1's "write directly to `cluster/k8s`", but isn't
   yet a general per-directory regeneration entrypoint. Revisit when a second directory
   converts and the hardcoding actually needs generalizing, rather than guessing the

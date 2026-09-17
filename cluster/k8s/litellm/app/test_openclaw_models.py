@@ -2,6 +2,7 @@ import json5
 import pytest_bazel
 import yaml
 
+from cluster.cdk8s.litellm_config import main_proxy_config
 from cluster.k8s.litellm.app.model_rosters import (
     ANTHROPIC_MODELS,
     CLIPROXY_MODELS,
@@ -17,7 +18,6 @@ from cluster.k8s.litellm.app.model_rosters import (
     Provider,
     exposed_name,
 )
-from cluster.litellm_config import main_proxy_config
 from util.bazel.runfiles import get_required_path
 
 _PUBLIC_CODER_AGENT_CONFIG = "ducktape/cluster/k8s/agents/public-coder-agent/app/openclaw.json5"

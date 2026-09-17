@@ -20,7 +20,7 @@ A fully-converted directory generates all three files:
 - `flux-kustomization.yaml` — the Flux `Kustomization` CR. Built from
   `//third_party/flux:kustomization`'s generated typed cdk8s constructs (see
   §Typed constructs below), via the shared `flux_kustomization()` helper in
-  `cluster/flux_constructs.py`.
+  `cluster/cdk8s/flux_constructs.py`.
 - `kustomization.yaml` — the plain (non-CRD) `kustomize.config.k8s.io`
   `Kustomization` listing `resources`, via `kustomize_kustomization()` in the same
   file.
@@ -40,7 +40,7 @@ no ciphertext, only a pointer at a `SecretStore` key.
 manifests in-memory and asserts the result equals the committed file — the
 "generated-output snapshot" pattern STYLE.md already codifies for
 `cluster/k8s/litellm/app/proxy-config.yaml` (STYLE.md § Testing, "the LiteLLM config
-pattern"). It's an ordinary `py_test` (e.g. `//cluster:test_generate_manifests`), so
+pattern"). It's an ordinary `py_test` (e.g. `//cluster/cdk8s:test_generate_manifests`), so
 it runs for free inside the existing `bazel-ci` job — no bespoke GitHub Actions
 workflow needed.
 
@@ -93,7 +93,7 @@ Flux's `ImageUpdateAutomation` rewrites an inline `# {"$imagepolicy": "ns:name"}
 comment on a Deployment's image line on every new build. Carved out at **field**
 granularity, not file granularity, so the resource needing it is still fully
 generated: the Deployment gets a deliberate placeholder image tag (see
-`_PLACEHOLDER_TAG` in `cluster/litellm_constructs.py`), and a hand-written
+`_PLACEHOLDER_TAG` in `cluster/cdk8s/litellm_constructs.py`), and a hand-written
 `image-pins/kustomization.yaml` — a Kustomize `Component` the generated
 `kustomization.yaml` references via `components: [./image-pins]` — carries the
 marker and overrides the real tag at `kustomize build` time:
@@ -237,8 +237,8 @@ generated except `image-pins/kustomization.yaml`.
 `bb run`/`bazel build` can't fetch some external Bazel archive (a network-access
 limitation of the environment, not the code) and generated output needs to be
 regenerated and committed locally: a throwaway venv (`pip install` the exact
-versions pinned in `requirements_bazel.txt`, run `python3 -m cluster.generate_manifests`
+versions pinned in `requirements_bazel.txt`, run `python3 -m cluster.cdk8s.generate_manifests`
 directly with `JSII_NODE=/usr/local/bin/node` and
 `JSII_SILENCE_WARNING_DEPRECATED_NODE_VERSION=1`) works — verify the result against
-`bbr test //cluster:test_generate_manifests`'s hermetic toolchain afterward to
+`bbr test //cluster/cdk8s:test_generate_manifests`'s hermetic toolchain afterward to
 confirm the pip-generated files are exactly what Bazel would have produced.

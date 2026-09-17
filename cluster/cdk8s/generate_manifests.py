@@ -17,8 +17,8 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.flux_constructs import NAMESPACE, flux_kustomization, kustomize_kustomization
-from cluster.litellm_constructs import LiteLLMProxy, LiteLLMServiceMonitor, proxy_specs
+from cluster.cdk8s.flux_constructs import NAMESPACE, flux_kustomization, kustomize_kustomization
+from cluster.cdk8s.litellm_constructs import LiteLLMProxy, LiteLLMServiceMonitor, proxy_specs
 from util.bazel.workspace import get_build_workspace_directory
 
 _APP_DIR = "cluster/k8s/litellm/app"

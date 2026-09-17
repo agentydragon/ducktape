@@ -72,7 +72,7 @@ from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecSelector,
 )
 
-from cluster.litellm_config import ConfigMapSpec, proxy_configs
+from cluster.cdk8s.litellm_config import ConfigMapSpec, proxy_configs
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _CONTAINER_PORT = 4000

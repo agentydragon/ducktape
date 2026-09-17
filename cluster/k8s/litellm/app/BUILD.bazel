@@ -8,14 +8,14 @@ exports_files(
         "kustomization.yaml",
         "litellm.k8s.yaml",
     ],
-    visibility = ["//cluster:__pkg__"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
 )
 
 py_library(
     name = "model_rosters",
     srcs = ["model_rosters.py"],
     visibility = [
-        "//cluster:__pkg__",
+        "//cluster/cdk8s:__pkg__",
         "//haku/x/dispatch/deploy/litellm:__pkg__",
     ],
 )
@@ -26,7 +26,7 @@ py_test(
     data = ["//tf/gitops/litellm-keys:main.tf"],
     deps = [
         ":model_rosters",
-        "//cluster:litellm_config",
+        "//cluster/cdk8s:litellm_config",
         "//cluster/validation:terraform_hcl",
         "//util/bazel:runfiles",
         "@pypi//more_itertools",
@@ -57,7 +57,7 @@ py_test(
     data = ["//cluster/k8s:openclaw_model_config"],
     deps = [
         ":model_rosters",
-        "//cluster:litellm_config",
+        "//cluster/cdk8s:litellm_config",
         "//util/bazel:runfiles",
         "@pypi//json5",
         "@pypi//pytest_bazel",
