@@ -200,6 +200,10 @@ def _codex_model_info(model: str) -> dict[str, int]:
             "max_tokens": ASTRA_MAX_TOKENS,
         }
     if model in CODEX_MEASURED_MODELS:
+        # litellm's own model_cost DB is wrong for these slugs: no entry at all for the
+        # anthropic/-prefixed one (advertises null), and the openai/-prefixed twin matches
+        # litellm's raw-API entry for gpt-5.6-sol (922k) -- far larger than this
+        # subscription path actually serves. Pin the measured CLIProxyAPI window instead.
         return {
             "max_input_tokens": CODEX_CONTEXT_WINDOW,
             "max_output_tokens": CODEX_MAX_TOKENS,
@@ -303,8 +307,8 @@ def _simple_provider_entries() -> list[dict]:
             api_key="os.environ/GEMINI_API_KEY",
         )
     )
-    # This unprefixed alias is part of the durable OpenClaw embedding index's
-    # identity. It is intentionally retained until that index is rebuilt.
+    # Compatibility alias for public-coder-agent's durable OpenClaw index. Keep until
+    # that index is deliberately rebuilt under the prefixed name.
     entries.append(
         _model_entry(
             "gemini-embedding-2", "gemini/gemini-embedding-2", "embedding", api_key="os.environ/GEMINI_API_KEY"
@@ -351,6 +355,9 @@ def main_proxy_config() -> dict:
             ],
         },
         "router_settings": {
+            # Codex 0.153+ bundles metadata for this exact slug (272k base / 872k
+            # configurable maximum). Keep the alias hidden so Codex can select the
+            # recognized slug while requests still use the Responses-only route above.
             "model_group_alias": {
                 "gpt-6-astra": {
                     "model": exposed_name(Provider.CHATGPT, ApiShape.OAI_RESPONSES, "gpt-6-astra"),
@@ -358,7 +365,16 @@ def main_proxy_config() -> dict:
                 }
             }
         },
-        "general_settings": {"forward_client_headers_to_llm_api": True, "store_model_in_db": False},
+        "general_settings": {
+            # Forward the client's `anthropic-beta` and `x-*` headers upstream -- never
+            # User-Agent, which LiteLLM has no setting for, so CLIProxyAPI cannot confirm a
+            # native Claude Code caller and rebuilds the beta set from the request body
+            # instead. A few betas are request-only and reach it no other way, above all
+            # context-1m-2025-08-07, which nothing in the body implies. Applies to every
+            # client and every upstream, not only the Claude lanes.
+            "forward_client_headers_to_llm_api": True,
+            "store_model_in_db": False,
+        },
     }
 
 

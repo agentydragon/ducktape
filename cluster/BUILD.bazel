@@ -40,6 +40,7 @@ py_library(
     visibility = ["//visibility:private"],
     deps = [
         ":flux_constructs",
+        ":litellm_config",
         ":litellm_constructs",
         "//util/bazel:workspace",
         "@pypi//cdk8s",
@@ -68,11 +69,9 @@ py_test(
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":generate_manifests_lib",
-        ":litellm_config",
         "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 

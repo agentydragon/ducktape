@@ -10,27 +10,16 @@ regeneration reproduces them exactly.
 from pathlib import Path
 
 import pytest_bazel
-import yaml
 
 from cluster.generate_manifests import generate_manifests
-from cluster.litellm_config import main_proxy_config
 from util.bazel.runfiles import get_required_path
 
 _GENERATED_FILES = (
     "cluster/k8s/litellm/app/litellm.k8s.yaml",
     "cluster/k8s/litellm/app/flux-kustomization.yaml",
     "cluster/k8s/litellm/app/kustomization.yaml",
+    "cluster/k8s/litellm/app/proxy-config.yaml",
 )
-
-
-def _committed_config(path: str) -> dict:
-    config = yaml.safe_load(get_required_path(path).read_text())
-    assert isinstance(config, dict)
-    return config
-
-
-def test_main_proxy_config_is_generated_from_the_roster() -> None:
-    assert main_proxy_config() == _committed_config("ducktape/cluster/k8s/litellm/app/proxy-config.yaml")
 
 
 def test_generated_manifests_match_committed(tmp_path: Path) -> None:
