@@ -36,7 +36,7 @@ spec:
           type: RuntimeDefault
       initContainers:
         - name: migrate
-          image: git.allegedly.works/ducktape-ci/agentplane-action-service-migrate:devel-20260915083452-a8b1ac6 # {"$imagepolicy": "flux-system:agentplane-action-service-migrate"}
+          image: git.allegedly.works/ducktape-ci/agentplane-action-service-migrate:devel-20260917092139-c42b848 # {"$imagepolicy": "flux-system:agentplane-action-service-migrate"}
           imagePullPolicy: Always
           env: &database-env
             - name: AGENTPLANE_ACTIONS_OPERATOR_OIDC
