@@ -122,6 +122,41 @@ not supported by the QEMU2 emulator on x86_64 host`. The package nonetheless shi
    `VirtioWifi` leaves the radio `-netdev user` interface, so neither costs
    connectivity.
 
+## Guest networking and proxy trust
+
+This container's egress goes through an agent proxy on `127.0.0.1:39587` that
+re-terminates TLS, so the guest needs both a route to it and its CA. Neither is
+bypassed or stubbed anywhere below.
+
+**Route.** The emulator's user-mode network maps `10.0.2.2` to the host's loopback, so
+`10.0.2.2:39587` reaches the proxy directly — no forwarder, no `hostfwd`/`guestfwd`
+rule. Verified from the host first, with a client told about the proxy only explicitly
+and with no inherited CA environment (`scripts/arm64/proxytest.sh`), because a failure
+there would be a host problem rather than a guest one:
+
+```text
+cache.nixos.org status=200
+nix-on-droid.unboiled.info status=200
+```
+
+**Trust, two stores.** Two different stacks make the requests and they do not share a
+trust store:
+
+- The `com.termux.nix` APK downloads the bootstrap zip with a Java HTTP client, which
+  uses Android's own store and Android's global proxy setting. On Android 14 the live
+  store is the conscrypt APEX (`/apex/com.android.conscrypt/cacerts`) rather than
+  `/system/etc/security/cacerts`, and the APEX copy has to be a tmpfs overlay
+  propagated into zygote's mount namespace or already-running apps keep the old store.
+  `scripts/arm64/provision.sh` writes both, hashed as `<subject_hash_old>.0`
+  (`683e3c55.0` here), and sets `settings put global http_proxy 10.0.2.2:39587`.
+- Nix and curl inside the proot use their **own** bundle, not Android's, so
+  `scripts/arm64/run_nod.sh` points `NIX_SSL_CERT_FILE`/`SSL_CERT_FILE`/`CURL_CA_BUNDLE`
+  at the proxy bundle and sets `http_proxy`/`https_proxy`. `bin/login` execs
+  `/usr/bin/env "$@"` when given arguments, so that environment reaches Nix.
+
+`api.github.com`, `codeload.github.com`, `cache.nixos.org` and `channels.nixos.org` are
+all reachable through the proxy, so `--flake github:…` can resolve its ref and fetch.
+
 ## Earlier, weaker environment: Android 9 x86_64
 
 The first round used Android-x86 9.0-r2 (Android 9, kernel 4.19.110) under
