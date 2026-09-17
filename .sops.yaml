@@ -297,7 +297,7 @@ creation_rules:
 
   # Private SSH keys the ssh-mcp backend uses to reach wyrm2/rugged as agentydragon/root.
   # Only the ssh-mcp Pod ever reads them; the public halves are committed under ssh_keys/.
-  - path_regex: cluster/k8s/ssh-mcp/secrets/keys\.sops\.yaml$
+  - path_regex: cluster/k8s/ssh-mcp/keys\.sops\.yaml$
     encrypted_regex: ^(data|stringData)$
     key_groups:
       - age:

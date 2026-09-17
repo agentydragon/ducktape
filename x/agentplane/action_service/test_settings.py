@@ -91,11 +91,7 @@ def staging_settings(
 def ssh_resources() -> list[dict[str, Any]]:
     kustomize = get_required_path("multitool/tools/kustomize/kustomize")
     root = get_required_path("_main/cluster/k8s/ssh-mcp/kustomization.yaml").parent
-    return [
-        resource
-        for directory in (root, root / "secrets")
-        for resource in yaml.safe_load_all(subprocess.check_output([str(kustomize), "build", str(directory)]))
-    ]
+    return list(yaml.safe_load_all(subprocess.check_output([str(kustomize), "build", str(root)])))
 
 
 def test_rendered_ssh_binding_uses_shared_bearer_file(

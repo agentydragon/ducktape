@@ -114,7 +114,6 @@ resources:
   - agentplane-egress-credentials/secrets/flux-kustomization.yaml
   - agentplane-staging/flux-kustomization.yaml
   - ssh-mcp/namespace-flux-kustomization.yaml
-  - ssh-mcp/secrets/flux-kustomization.yaml
   - ssh-mcp/flux-kustomization.yaml
   - agentplane-testing/flux-kustomization.yaml
 
