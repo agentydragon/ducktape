@@ -15,13 +15,17 @@ also returns `Permission denied` although the DAC bits (`/dev/pts` 0755, `/dev/p
 Android kernel with Android's policy loaded, which a generic Linux container cannot
 provide.
 
-**Result: the hypothesis is not supported.** Android's SELinux policy explicitly permits
-every operation Nix performs on a pty, and the whole sequence — up to and including a
-real local Nix build inside nix-on-droid's own proot, as an app uid, in the
-`untrusted_app` domain — ran clean on a real Android kernel with zero devpts AVC
-denials. The `ls /dev/pts` denial is normal Android behaviour, not a clue. See
-[What this rules out](#what-this-rules-out) for the caveat that keeps this from being
-conclusive for the phone itself.
+Two findings are already settled and hold regardless of what the guest does. **The
+`ls /dev/pts` denial is not evidence**: `allow domain devpts:dir search` without `read`
+means every Android app gets `EACCES` listing that directory, on every release, so it
+cannot explain a regression. And **the policy permits the whole sequence Nix runs**,
+including `open` on the app's own pty type and the `TCGETS` ioctl, in AOSP `main` as
+well as Android 9.
+
+The open question is whether that is what the phone actually does, which only running
+the real command answers. The environment for that is Android 14 arm64 — the phone's own
+version and architecture — described under
+[Harness](#harness-android-14-arm64-scriptsarm64).
 
 ## Where the error comes from
 
@@ -79,16 +83,52 @@ allowxperm untrusted_app_all untrusted_app_all_devpts:chr_file ioctl
 
 Policy therefore predicts the sequence succeeds, which is what the guest did.
 
-## Harness
+## Harness: Android 14 arm64 (`scripts/arm64/`)
 
-No `/dev/kvm` and no `vmx`/`svm` in `/proc/cpuinfo`: this container is itself a
-Firecracker microVM (`6.18.44-fc-v33`), so nested virtualisation is unavailable and
-everything below is QEMU **TCG** software emulation. Android-x86 9.0-r2 x86_64 was
-picked over the Google emulator images because the official `emulator` binary wants KVM,
-and over aarch64 images because x86_64 avoids emulating a second architecture.
+The device is a Pixel 6: **Android 14, aarch64**, kernel
+`6.1.157-android14-11-gbd23337e42e7-ab14791245`. The matching test environment is
+Google's own `system-images;android-34;google_apis;arm64-v8a` (Android 14, API 34,
+`userdebug`, SELinux **enforcing** by default), run under QEMU TCG — there is no
+`/dev/kvm` and no `vmx`/`svm` here (the container is itself a Firecracker microVM), and
+the guest is aarch64 on an x86_64 host, so acceleration is impossible in both
+directions.
 
-Guest: Android 9, kernel 4.19.110, `qemu-system-x86_64 -machine pc,accel=tcg -cpu max
--smp 4 -m 6144`. Boot to `sys.boot_completed=1` takes ~12 minutes.
+Google blocks this combination, and getting past the block took four separate fixes.
+Each is a real defect in the linux-x86_64 emulator package, not a policy gate:
+
+1. **The launcher refuses arm64 on an x86_64 host** — `Avd's CPU Architecture 'arm64' is
+not supported by the QEMU2 emulator on x86_64 host`. The package nonetheless ships
+   `qemu/linux-x86_64/qemu-system-aarch64[-headless]`, which is itself a full launcher
+   accepting `-avd`. Calling it directly skips the check. It needs the package's own
+   `lib64` on `LD_LIBRARY_PATH` (`libtcmalloc_minimal.so.4`).
+2. **It blocks on a Qt crash-consent dialog** with the guest CPU at 0%, which looks
+   exactly like a very slow boot. `-crash-report-mode disabled -no-metrics -no-qt` (and
+   the `-headless` binary) avoid it.
+3. **`-soundhw` is emitted unconditionally**, even with audio disabled in the AVD and
+   `-no-audio`/`-audio none` passed, and the only two cards (`hda`, `virtio-snd-pci`)
+   are both PCI. QEMU's legacy `soundhw_init()` resolves its bus with
+   `pci_find_primary_bus()` and aborts: `PCI bus not available for hda`. There is no
+   `none` card, so the launcher's own literal is patched instead —
+   `scripts/arm64/patch_soundhw.py` rewrites `-soundhw` to `-D` (QEMU's log-file
+   option, which harmlessly swallows the card spec that follows).
+4. **arm64 `ranchu` has no PCI bus at all**: with audio gone the next failure is
+   `-device virtio-serial-pci: No 'PCI' bus found`. Every PCI device on the generated
+   command line comes from an advanced feature, so turning those off
+   (`scripts/arm64/advancedFeatures.diff`: `VirtioSndCard`, `VirtioWifi`,
+   `VirtioVsockPipe`, `VirtconsoleLogcat`, `VirtioInput`, `BluetoothEmulation`,
+   `Mac80211hwsimUserspaceManaged`, `ModemSimulator`) leaves only virtio-mmio devices
+   and the guest boots. Block, net and rng were already `virtio-*-device` (mmio).
+   Disabling `VirtioVsockPipe` puts adb back on goldfish_pipe, and disabling
+   `VirtioWifi` leaves the radio `-netdev user` interface, so neither costs
+   connectivity.
+
+## Earlier, weaker environment: Android 9 x86_64
+
+The first round used Android-x86 9.0-r2 (Android 9, kernel 4.19.110) under
+`qemu-system-x86_64`. It is kept here only because its policy dump is still quoted
+above; as a stand-in for a Pixel it is weak on two counts — five Android releases of
+SELinux hardening, and the wrong architecture — and its results do not substitute for
+the Android 14 arm64 run.
 
 `scripts/` is the whole harness, in dependency order:
 
@@ -113,7 +153,7 @@ Three host-side constraints worth knowing before resuming:
   `chroot`. `initrd-5-custom` restores printk instead; without it a failing boot is
   completely silent.
 
-Guest shell: `ro.debuggable=1` is already in android-x86's `default.prop`, so init's own
+Guest shell (Android 9 x86_64 only): `ro.debuggable=1` is already in android-x86's `default.prop`, so init's own
 `console` service (`seclabel u:r:shell:s0`) starts a shell on `/dev/console`, which
 `console=ttyS0,115200` puts on the serial port. No adb needed.
 
