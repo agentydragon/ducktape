@@ -160,7 +160,6 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         ("kube-api-proxy", "kube-api-proxy"),
         ("kube-system", "kube-system"),
         ("kubectl-machine-mcp", "agents/kubectl-machine-mcp/app"),
-        ("kubectl-machine-mcp-namespace", "agents/kubectl-machine-mcp/namespace"),
         ("kubectl-passthrough-mcp", "agents/kubectl-passthrough-mcp/app"),
         ("kubectl-passthrough-mcp-namespace", "agents/kubectl-passthrough-mcp/namespace"),
         ("kubevirt", "kubevirt/app"),

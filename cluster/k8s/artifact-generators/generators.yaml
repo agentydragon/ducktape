@@ -750,14 +750,6 @@ spec:
           exclude:
             - flux-kustomization.yaml
 
-    - name: kubectl-machine-mcp-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/kubectl-machine-mcp/namespace/**"
-          to: "@artifact/cluster/k8s/agents/kubectl-machine-mcp/namespace/"
-          exclude:
-            - flux-kustomization.yaml
-
     - name: kubectl-passthrough-mcp
       originRevision: "@repo"
       copy:
