@@ -11,6 +11,10 @@ spec:
   timeout: 10m
   path: ./cluster/k8s/agents/haku-openclaw-spike/app
   prune: true
+  # Safety net for a planned cdk8s conversion of this directory that may move which
+  # Kustomization owns an object: see cluster/cdk8s/AGENTS.md's two-step deletionPolicy
+  # landing. This directory holds real PVCs (pvc.yaml, pvc-v2.yaml).
+  deletionPolicy: Orphan
   wait: true
   sourceRef:
     kind: ExternalArtifact
