@@ -78,7 +78,6 @@ in
   ducktape.cowork.enable = true;
 
   # Local LLM inference (Arc GPU + NPU)
-  ducktape.localLlm.arc.enable = true;
   ducktape.localLlm.ollamaUpstream.enable = true;
 
   # NPU service disabled 2026-09-17: real-hardware test found the NPU driver

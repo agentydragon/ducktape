@@ -29,7 +29,7 @@
 - <bluetooth.md> — Intel BE201 PCIe probe failure (ETIME)
 - <modem.md> — Foxconn 5G modem, FCC unlock, Google Fi
 - <npu.md> — Intel NPU setup and inference frameworks
-- <llm_arc_gpu.md> — LLM inference on Arc GPU (SYCL, IPEX-LLM container)
+- <llm_arc_gpu.md> — LLM inference on Arc GPU (SYCL/IPEX-LLM, retired; see file for live alternatives)
 - <llm_npu.md> — LLM inference on NPU (OpenVINO)
 - <gemma4.md> — Gemma 4 E2B on LiteRT-LM, Ollama, and OpenVINO/NPU
 - <esim.md> — 5G modem eSIM provisioning, FCC unlock research, lpac commands
@@ -57,5 +57,5 @@
 
 - <nix/nixos/hosts/rugged/default.nix> — NixOS system configuration
 - <nix/nixos/hosts/rugged/ipu7-camera.nix> — IPU7 webcam NixOS module
-- <nix/nixos/hosts/rugged/local_llm_arc.nix> — Arc GPU LLM inference (IPEX-LLM container)
+- <nix/nixos/hosts/rugged/local_llm_arc.nix> — Arc GPU LLM inference (upstream Ollama/Vulkan)
 - <nix/nixos/hosts/rugged/local_llm_npu.nix> — NPU LLM inference (OpenVINO)

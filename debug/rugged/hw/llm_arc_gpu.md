@@ -5,37 +5,30 @@ completions, summarization). Separate from cluster ollama at `ollama.allegedly.w
 
 **Hardware**: Arc 130V/140V iGPU (SYCL). 30GB RAM.
 
-## Current setup — running
+## Retired (2026-09-17)
 
-IPEX-LLM Docker container (`intelanalytics/ipex-llm-inference-cpp-xpu`) runs as
-`podman-ipex-ollama.service` via `virtualisation.oci-containers`. NixOS module:
-<nix/nixos/hosts/rugged/local_llm_arc.nix>.
+The IPEX-LLM Docker container (`intelanalytics/ipex-llm-inference-cpp-xpu`,
+`podman-ipex-ollama.service`) that used to run here is gone. Intel archived
+`intel/ipex-llm` on 2026-01-28 ("known security issues," no more patches
+accepted); its bundled Ollama was permanently frozen at `0.9.3`, too old to
+ever pull Gemma 4. Measured before retirement, for comparison: Qwen3 4B
+(Q4_K_M), all 37/37 layers offloaded to SYCL, **~23 tok/s** (2026-04-18).
 
-- API at `http://localhost:11434` (OpenAI-compatible)
-- Model storage: `/var/lib/local-llm/ollama`
-- Qwen3 4B (Q4_K_M) installed, **~23 tok/s on Arc GPU** (2026-04-18)
-- The bundled Ollama is currently `0.9.3`; Gemma 4 requires a newer Ollama.
-  See <gemma4.md> for the 2026-06-05 Gemma 4 experiments.
-- All 37/37 layers offloaded to SYCL GPU
-- Note: `ollama ps` misreports `100% CPU` — this is an IPEX-LLM display bug.
-  Confirmed GPU via `journalctl -u podman-ipex-ollama.service` (`loaded SYCL backend`,
-  `offloaded 37/37 layers to GPU`).
+Live alternatives on rugged's Arc iGPU: upstream `ollama-vulkan`
+(`ducktape.localLlm.ollamaUpstream` in
+<nix/nixos/hosts/rugged/local_llm_arc.nix>) and Google's LiteRT-LM
+(`.#litert-lm`, Vulkan backend) — see <gemma4.md>.
 
-```bash
-# Pull models:
-sudo podman exec ipex-ollama /llm/ollama/ollama pull qwen3:4b
-# Interactive chat:
-sudo podman exec -it ipex-ollama /llm/ollama/ollama run qwen3:4b
-# API test:
-curl http://localhost:11434/api/generate -d '{"model":"qwen3:4b","prompt":"Hello","stream":false}'
-```
+**Nix-native SYCL status** (this used to be why a container was needed at all):
 
-**NixOS native ollama blockers** (why container is needed):
-
-- `services.ollama.acceleration` only supports `"cuda"` and `"rocm"` — no `"intel"`
-  option ([nixpkgs#327999](https://github.com/NixOS/nixpkgs/issues/327999))
-- Intel DPC++/SYCL compiler not in nixpkgs
-  ([nixpkgs#367722](https://github.com/NixOS/nixpkgs/issues/367722))
+- `services.ollama.acceleration` still only supports `"cuda"` and `"rocm"` — no
+  `"intel"` option ([nixpkgs#327999](https://github.com/NixOS/nixpkgs/issues/327999), still open)
+- The Intel DPC++/SYCL compiler (`intel-llvm`) **is now packaged** in nixpkgs
+  ([nixpkgs#367722](https://github.com/NixOS/nixpkgs/issues/367722), closed
+  via PR #470035, April 2026). A native `llama-cpp` SYCL build may now be
+  possible, but nixpkgs' `llama-cpp` has no `syclSupport` flag yet — this is
+  unstarted packaging work, and SYCL-vs-Vulkan performance on _integrated_
+  (not discrete) Arc GPUs is unproven either way.
 
 **Good model candidates** for 30GB RAM + Arc 130V:
 
