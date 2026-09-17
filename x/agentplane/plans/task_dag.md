@@ -620,6 +620,21 @@ Egress has taken the matching step already: its `Subject` names a `serviceAccoun
 this is the same shape applied to the other service. Its own clock — nothing about the egress
 path waits on it, and it is what a tool-surface switch waits on rather than an egress cutover.
 
+### `BINDING_SUBJECT_ARITY` — one subject shape across both binding kinds
+
+**Planned schema:** `EgressBinding.spec.subjects` is an array (`minItems: 1`); `ActionPolicyBinding`
+names one `subject`. Everything inside them is now the same `ServiceAccountRef`, so arity is the
+only difference left, and `cluster/validation:test_agentplane_crd_schemas` has to special-case
+array-versus-object to compare them.
+
+Nothing writes the plural side. No `EgressBinding` manifest is checked in anywhere under
+`cluster/`, and `EgressInventory.grant` writes exactly one entry, so the multi-subject shape is an
+untested degree of freedom in the authorization path. Collapsing it to a singular `subject` makes
+the two CRDs identical rather than merely compatible; the cost is that a seed granting several
+accounts one policy becomes several objects, which is already what per-binding `expiresAt` wants.
+
+Its own clock, and cheaper before something starts using it than after.
+
 ### `PC_EGRESS_CREDENTIALS` — public-coder's substitutions as EgressCredentials
 
 **Planned configuration:** give the app Pod a dedicated ServiceAccount, labelled
