@@ -800,18 +800,18 @@ metadata:
   name: litellm
   namespace: litellm
 spec:
+  hostnames:
+    - litellm.allegedly.works
   parentRefs:
     - name: cluster-gateway
       namespace: gateway-system
-  hostnames:
-    - litellm.allegedly.works
   rules:
-    - timeouts:
-        request: 600s
-        backendRequest: 600s
-      backendRefs:
+    - backendRefs:
         - name: litellm
           port: 4000
+      timeouts:
+        backendRequest: 600s
+        request: 600s
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor

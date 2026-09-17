@@ -177,10 +177,18 @@ versa, a reason this specific problem doesn't move that decision either way.
   generated `ServiceMonitor` class is built directly into the real `App`/`Chart`
   (not a throwaway `Testing` chart) since it's synthesized as part of the normal
   `generate_manifests.py` run, not extracted as an intermediate dict.
-- **`litellm_constructs.py`'s Deployment/Service/ServiceAccount/HTTPRoute** still go
+- **The `HTTPRoute` CR** (`LiteLLMProxy._add_http_route`) is built from typed
+  constructs the same way — `//third_party/gateway_api:httproute` generates
+  bindings from the Gateway API's own CRD, pinned to the same `v1.5.1`
+  experimental-channel tag `cluster/terraform/main/cilium.tf` installs directly
+  (experimental rather than standard, because Cilium 1.19 needs the `v1alpha2`
+  `TLSRoute` variant the standard channel dropped).
+- **`litellm_constructs.py`'s Deployment/Service/ServiceAccount** still go
   through the raw `ApiObject`/`JsonPatch` escape hatch rather than `cdk8s_plus_33`'s
   typed builders (already a dependency, used for `ConfigMap`) — not yet attempted;
-  open question, see the plan.
+  open question, see the plan. These are core Kubernetes types, not CRDs, so
+  `cdk8s_import` doesn't apply to them; the fix there is switching to
+  `cdk8s_plus_33`'s own already-vendored typed builders instead.
 
 ## Reference example
 

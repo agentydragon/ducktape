@@ -921,6 +921,18 @@ http_file(
     urls = ["https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/v0.94.0/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml"],
 )
 
+# Gateway API's HTTPRoute CRD — fetched verbatim so //third_party/gateway_api:httproute
+# (devinfra/js/cdk8s_import.bzl) can generate typed cdk8s Python constructs from it without
+# vendoring the CRD in-tree. Pinned to the same v1.5.1 experimental channel this cluster
+# installs directly (cluster/terraform/main/cilium.tf's gateway_api_version -- experimental,
+# not standard, because Cilium 1.19 needs the v1alpha2 TLSRoute the standard channel dropped).
+http_file(
+    name = "gateway_api_httproute_crd",
+    downloaded_file_path = "gateway.networking.k8s.io_httproutes.yaml",
+    sha256 = "9012253cf248583189ff74426140556fafa38b66dc57553fd79f9ae34b2eee9f",
+    urls = ["https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.5.1/config/crd/experimental/gateway.networking.k8s.io_httproutes.yaml"],
+)
+
 # Grocy OpenAPI 3.1 spec — fetched verbatim from the upstream repo so
 # `//grocy_mcp:server` can drive `FastMCP.from_openapi` without
 # vendoring the 100 KB JSON in-tree. Refresh by bumping the tag and
