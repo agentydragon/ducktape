@@ -1,8 +1,9 @@
 # Public Coder TODO
 
-Open items left over from the OpenClaw 2026.8.1 bump (#5369). The four failures
-that took the agent down are resolved; these are the recurring errors and loose
-ends it left behind. Diagnosis and the recovery runbook:
+Remaining follow-ups from the OpenClaw 2026.8.1 bump (#5369). The four failures
+that took the agent down are resolved; the items below are the recurring errors
+and recovery loose ends that still need an explicit decision. Diagnosis and the
+recovery runbook:
 <../../../../openclaw/debug/2026_8_1_recovery/README.md>.
 
 ## No system agent, so two subsystems fail every minute
@@ -54,7 +55,3 @@ it — this looks like an artifact of restoring by hand.
       `assertConfigWriteAllowedInCurrentMode` refusing `doctor --fix` whenever
       `OPENCLAW_NIX_MODE=1`, a Nix install carrying pre-2026.8.1 agent state
       cannot start and cannot repair itself.
-- [ ] nix-openclaw: `stage_dist_runtime` copies `dist/extensions` into
-      `dist-runtime/` without the sibling chunks those modules import, and
-      OpenClaw prefers `dist-runtime/extensions` when present. Fixed downstream in
-      `openclaw/gateway.nix`; upstream still ships the partial tree.

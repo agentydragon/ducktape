@@ -7,7 +7,7 @@ When the upstream Agent Sandbox `SandboxClaim.spec.env` API supports Secret-back
 spec as a literal. Bind it from a claim-scoped Secret or equivalent, then re-audit every
 `SandboxClaim` reader and its RBAC before enabling the new path. Until that upstream capability
 exists, the literal `spec.env` handoff is intentional and the claim-read boundary documented in
-<../console/session/README.md> is load-bearing.
+<README.md> and <docs/agent_interaction_design.md> is load-bearing.
 
 ## Say what the bootstrap actually did
 

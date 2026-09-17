@@ -39,4 +39,4 @@ Defer until there's a real need.
   `ledger_events` (`source="legacy_client_sync"`) stay readable forever; the
   Literal unions in `events.py` keep both source values so old rows
   deserialize. Do not write a migration that rewrites them.
-- Database backup/restore work is tracked in <../../cluster/k8s/TODO.md>.
+- Database backup/restore work is tracked in <../cluster/k8s/TODO.md>.

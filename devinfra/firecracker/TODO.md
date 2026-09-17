@@ -1,5 +1,10 @@
 # Firecracker Dev VMs — TODO
 
+> **Status: parked.** The Kubernetes deployment is archived and unwired from Flux.
+> The steps below are a revival plan, not current deployment instructions. The
+> provisioner currently points at a missing `#fc-dev-rootfs` flake target, so restore
+> or replace that guest-rootfs build before attempting the boot test.
+
 ## Architecture
 
 The pod is infrastructure-only: Firecracker process + networking + port
@@ -15,11 +20,12 @@ cloning is CoW via LVM thin snapshots. No PVC sharing between VMs.
 See <DESIGN.md> for full architecture, <vm_alternatives.md> for decision
 rationale.
 
-## Next Steps (in priority order)
+## Revival plan (in priority order)
 
-1. **Base rootfs LV**: Create the base thin LV, then run
-   `./devinfra/firecracker/provision-rootfs.sh` on wyrm2 to build
-   the NixOS rootfs via Nix and `dd` it into the LV.
+1. **Restore the guest rootfs build**: Reintroduce or replace the missing
+   `#fc-dev-rootfs` flake target referenced by `provision-rootfs.sh`. Then create
+   the base thin LV and use the provisioner on wyrm2 to build the NixOS rootfs
+   and `dd` it into the LV.
 
 2. **Rootfs boot test on wyrm2**: Boot kernel + initramfs + rootfs with
    raw Firecracker CLI on wyrm2 (has `/dev/kvm`). Verify process_api
