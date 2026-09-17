@@ -40,11 +40,10 @@ class OperatorPrincipal(BaseModel):
 type Principal = CallerPrincipal | OperatorPrincipal
 
 
-def operator_key(principal: OperatorPrincipal) -> str:
-    """The one place a principal is flattened, for the one column that needs it: `action_decision`
-    shares `issuer` between a deciding operator and a deciding provider's name, and that column is
-    part of the decision's uniqueness key. Everything else stores a principal's own fields."""
-    return f"{principal.issuer}:{principal.subject}"
+def operator_or_none(issuer: str | None, subject: str | None) -> OperatorPrincipal | None:
+    """Read back the two columns an operator is stored as. They are written together and a check
+    constraint keeps them that way, so either one being absent means nobody is recorded."""
+    return None if issuer is None or subject is None else OperatorPrincipal(issuer=issuer, subject=subject)
 
 
 @dataclass(frozen=True, slots=True, order=True)
@@ -248,7 +247,9 @@ class DecisionView(BaseModel):
     id: UUID
     verdict: Verdict
     provider: str
-    issuer: str
+    operator: OperatorPrincipal | None = Field(
+        description="The human who decided; absent when a DecisionProvider decided, which `provider` names."
+    )
     decision_note: str | None = Field(
         max_length=2000,
         description="Human-authored note shared unchanged with caller and operator; absent for provider decisions.",

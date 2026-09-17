@@ -33,7 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from x.agentplane.action_service.catalog import Key
 from x.agentplane.action_service.db import McpLinkageFlowRow, McpOAuthTokenStateRow, McpServerLinkageRow, SessionMaker
-from x.agentplane.action_service.models import OperatorPrincipal
+from x.agentplane.action_service.models import OperatorPrincipal, operator_or_none
 
 logger = logging.getLogger(__name__)
 _REFRESH_SKEW = timedelta(minutes=1)
@@ -654,7 +654,7 @@ def _view(
             row.scopes,
             state.expires_at,
             row.linked_at,
-            _linked_by(row),
+            operator_or_none(row.linked_by_issuer, row.linked_by_subject),
         )
         failure = McpRefreshFailure(
             action=state.refresh_failure_action, attempts=state.refresh_failure_count, retry_at=state.refresh_retry_at
@@ -666,7 +666,7 @@ def _view(
             row.scopes,
             state.expires_at,
             row.linked_at,
-            _linked_by(row),
+            operator_or_none(row.linked_by_issuer, row.linked_by_subject),
         )
         failure = None
     else:
@@ -676,7 +676,7 @@ def _view(
             row.scopes,
             state.expires_at,
             row.linked_at,
-            _linked_by(row),
+            operator_or_none(row.linked_by_issuer, row.linked_by_subject),
         )
         failure = None
     return McpLinkageView(
@@ -691,13 +691,6 @@ def _view(
         linked_by=linked_by,
         refresh_failure=failure,
     )
-
-
-def _linked_by(row: McpServerLinkageRow) -> OperatorPrincipal | None:
-    """Both columns are written together and a check constraint keeps them that way, so either one
-    being absent means nobody is recorded."""
-    issuer, subject = row.linked_by_issuer, row.linked_by_subject
-    return None if issuer is None or subject is None else OperatorPrincipal(issuer=issuer, subject=subject)
 
 
 def _digest(value: str) -> str:

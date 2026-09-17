@@ -283,7 +283,7 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
             "id",
             "verdict",
             "provider",
-            "issuer",
+            "operator",
             "decision_note",
             "reason_code",
             "reason_description",

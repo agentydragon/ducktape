@@ -528,7 +528,7 @@ async def test_operator_decision_reaches_canonical_service_and_mcp_once(
     assert review.calls == []
     allowed = await browser.post(path, json=decision)
     assert allowed.status_code == 200, allowed.text
-    assert allowed.json()["decision"]["issuer"] == f"{review.issuer}:{SUBJECT_A}"
+    assert allowed.json()["decision"]["operator"] == {"issuer": review.issuer, "subject": SUBJECT_A}
     assert (await browser.post(path, json={**decision, "decision_note": "ignored replay"})).json()[
         "decision"
     ] == allowed.json()["decision"]
@@ -697,7 +697,7 @@ async def test_two_replicas_share_login_callback_and_logout_and_keep_two_operato
             json={"verdict": "deny", "expected_version": pending.version, "idempotency_key": f"deny-{pending.id}"},
         )
         assert denied.status_code == 200
-        assert denied.json()["decision"]["issuer"] == f"{review.issuer}:{identity}"
+        assert denied.json()["decision"]["operator"] == {"issuer": review.issuer, "subject": identity}
     assert review.exchanged_subjects == [SUBJECT_A, SUBJECT_B, SUBJECT_A]
     assert review.calls == []
     b.cookies.clear()

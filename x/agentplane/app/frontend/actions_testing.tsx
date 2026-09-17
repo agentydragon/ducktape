@@ -34,7 +34,7 @@ export function request(state: ActionState, index: number): ActionRequestView {
           id: `20000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
           verdict: state === "denied" ? "deny" : "allow",
           provider: "human_operator",
-          issuer: "operator",
+          operator: { issuer: "https://test-operator.example/oidc", subject: "test-operator" },
           decision_note: "Reviewed scope — allowed for this request.",
           idempotency_key: `decision-${index}`,
           decided_at: "2026-09-05T12:00:00Z",

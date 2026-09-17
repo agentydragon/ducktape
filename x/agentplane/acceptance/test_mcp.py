@@ -36,6 +36,7 @@ from x.agentplane.action_service.models import (
     DecisionInput,
     ExecutionState,
     MatchedPolicy,
+    OperatorPrincipal,
     PolicyKind,
     Verdict,
 )
@@ -345,8 +346,8 @@ wait for an operator decision in this turn.
     assert decided.decision is not None
     assert decided.decision.verdict is verdict
     assert decided.decision.provider == "human_operator"
-    if decided.decision.issuer != (
-        f"{operator_credentials.issuer.get_secret_value()}:{operator_credentials.subject.get_secret_value()}"
+    if decided.decision.operator != OperatorPrincipal(
+        issuer=operator_credentials.issuer.get_secret_value(), subject=operator_credentials.subject.get_secret_value()
     ):
         pytest.fail("Decision operator identity differs from the dedicated Secret", pytrace=False)
     assert decided.decision.idempotency_key == decision.idempotency_key

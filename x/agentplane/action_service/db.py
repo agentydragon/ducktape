@@ -37,7 +37,7 @@ from x.agentplane.action_service.models import (
     ReconciliationSource,
     UnknownOutcomeReason,
     Verdict,
-    operator_key,
+    operator_or_none,
 )
 from x.agentplane.action_service.updates import CHANNEL
 from x.agentplane.subjects import ServiceAccountRef
@@ -151,13 +151,30 @@ def _notify_event(_mapper: Mapper[ActionEventRow], connection: Connection, row: 
 
 class DecisionRow(Base):
     __tablename__ = "action_decision"
-    __table_args__ = (UniqueConstraint("request_id"), UniqueConstraint("provider", "issuer", "idempotency_key"))
+    __table_args__ = (
+        UniqueConstraint("request_id"),
+        # A DecisionProvider decided when both operator columns are NULL, and Postgres counts NULLs
+        # as distinct by default -- which would exempt exactly those rows from the replay backstop.
+        UniqueConstraint(
+            "provider",
+            "operator_issuer",
+            "operator_subject",
+            "idempotency_key",
+            name="action_decision_provider_operator_idempotency_key",
+            postgresql_nulls_not_distinct=True,
+        ),
+        CheckConstraint(
+            "(operator_issuer IS NULL) = (operator_subject IS NULL)", name="action_decision_operator_whole"
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     request_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("action_request.id", ondelete="CASCADE"))
     verdict: Mapped[str] = mapped_column(Text)
     provider: Mapped[str] = mapped_column(Text)
-    issuer: Mapped[str] = mapped_column(Text)
+    # Set together for a human Decision, both NULL for a DecisionProvider's.
+    operator_issuer: Mapped[str | None] = mapped_column(Text)
+    operator_subject: Mapped[str | None] = mapped_column(Text)
     decision_note: Mapped[str | None] = mapped_column(Text)
     reason_code: Mapped[str | None] = mapped_column(Text)
     reason_description: Mapped[str | None] = mapped_column(Text)
@@ -509,7 +526,7 @@ class ActionStore:
             principal,
             verdict=body.verdict,
             provider=provider,
-            issuer=operator_key(principal),
+            operator=principal,
             idempotency_key=body.idempotency_key,
             expected_version=body.expected_version,
             decision_note=body.decision_note,
@@ -530,15 +547,15 @@ class ActionStore:
     ) -> tuple[ActionRequestView, bool]:
         """Synchronous non-human DecisionProvider route: no operator identity, no human decision note.
 
-        `caller_principal` only scopes the returned view (caller-own vs. operator-all projection);
-        the provider itself, not a human, is the decision's issuer.
+        `caller_principal` only scopes the returned view (caller-own vs. operator-all projection). It
+        is never the decider: the Decision records no operator, and `provider` names what decided.
         """
         return await self._commit_decision(
             request_id,
             caller_principal,
             verdict=verdict,
             provider=provider,
-            issuer=provider,
+            operator=None,
             idempotency_key=idempotency_key,
             expected_version=expected_version,
             reason_code=reason_code,
@@ -553,7 +570,7 @@ class ActionStore:
         *,
         verdict: Verdict,
         provider: str,
-        issuer: str,
+        operator: OperatorPrincipal | None,
         idempotency_key: str,
         expected_version: int,
         decision_note: str | None = None,
@@ -567,10 +584,13 @@ class ActionStore:
             )
             if row is None:
                 raise ActionNotFoundError(str(request_id))
+            operator_issuer = None if operator is None else operator.issuer
+            operator_subject = None if operator is None else operator.subject
             prior_key = await session.scalar(
                 select(DecisionRow).where(
                     DecisionRow.provider == provider,
-                    DecisionRow.issuer == issuer,
+                    DecisionRow.operator_issuer == operator_issuer,
+                    DecisionRow.operator_subject == operator_subject,
                     DecisionRow.idempotency_key == idempotency_key,
                 )
             )
@@ -590,7 +610,8 @@ class ActionStore:
                     request_id=row.id,
                     verdict=verdict.value,
                     provider=provider,
-                    issuer=issuer,
+                    operator_issuer=operator_issuer,
+                    operator_subject=operator_subject,
                     decision_note=decision_note,
                     reason_code=reason_code,
                     reason_description=reason_description,
@@ -907,7 +928,7 @@ def _decision_view(row: DecisionRow | None) -> DecisionView | None:
         id=row.id,
         verdict=Verdict(row.verdict),
         provider=row.provider,
-        issuer=row.issuer,
+        operator=operator_or_none(row.operator_issuer, row.operator_subject),
         decision_note=row.decision_note,
         reason_code=row.reason_code,
         reason_description=row.reason_description,
