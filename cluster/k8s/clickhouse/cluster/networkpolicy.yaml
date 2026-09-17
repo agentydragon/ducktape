@@ -31,6 +31,11 @@ spec:
       ports:
         - port: 8123
           protocol: TCP
+        # The `migrate` init container runs clickhouse-client (native
+        # protocol) to apply schema.sql; the main container only ever uses
+        # the HTTP port above.
+        - port: 9000
+          protocol: TCP
     # The agent app itself cannot reach ClickHouse. Its credential-bearing
     # egress proxy is the only cross-namespace client admitted for the native
     # read-only public_coder_analytics account.
