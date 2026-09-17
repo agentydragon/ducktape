@@ -1,11 +1,17 @@
 # configMapGenerator input; not a standalone Kubernetes manifest (kubeconform-excluded).
+# wyrm2/rugged lines below are hand-transcribed from a point-in-time ssh-keyscan, not
+# derived from a committed source file the way public-coder-devbox's is -- they can
+# silently drift from the host's actual current key. Tracked in #6831 (fold into a
+# generated-from-source-of-truth known_hosts, like public-coder-devbox-host.pub).
 # wyrm2: captured via ssh-keyscan over Nebula and cross-checked against the operator's
 # own ~/.ssh/known_hosts entry for wyrm2.nebula.allegedly.works (SHA256:4pleXe119Nlx
 # Dgg+Avgv7DRMokIe4jbQjJ3KKHarYzo) -- fingerprints match, not blind first-contact TOFU.
 wyrm2.nebula.allegedly.works ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICAwoT0hzkNNzOUjFqb1g7jKQ3phR5XmPU5R52hfFCJZ
-# rugged: not yet captured -- the host is a roaming laptop and was unreachable over
-# Nebula at provisioning time. Run `ssh-keyscan -t ed25519 rugged.nebula.allegedly.works`
-# once it's online and add its line here before relying on the rugged targets below.
+# rugged: captured via ssh-keyscan over Nebula and cross-checked against the operator's
+# own ~/.ssh/known_hosts entries for `rugged` and rugged.tailnet.allegedly.works
+# (SHA256:nh/8a1v7SFWm9UQVbTl6BfYXIjQ/RB5Y8yh+lg5nZjA) -- fingerprints match, not blind
+# first-contact TOFU.
+rugged.nebula.allegedly.works ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA5khWiTDnTSkz83F+0JwYIOOT+QpV0/u3cc02L5LLFm
 # public-coder-devbox: ssh_keys/public-coder-devbox-host.pub, the same persisted host key
 # sshpiper pins (cluster/k8s/agents/public-coder-agent/sshpiper) -- not blind first-contact TOFU.
 public-coder-devbox-ssh.public-coder-agent.svc.cluster.local ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIARgvl0zwplvewSpQLX6v8ayfrwo4bsuLBIOwNstBzQB

@@ -25,11 +25,13 @@ non-pruning Flux owner.
 {agentydragon,root}`, SOPS-encrypted in `secrets/keys.sops.yaml`, with the public halves
 in each host's NixOS `authorizedKeys`.
 
-Both `wyrm2` targets execute end to end. The `rugged` targets do not, and will not until
-that host rejoins the cluster: its SSH host key was never captured and its Nebula address
-does not answer. They stay listed and fail closed — the designed behaviour for a target
-whose key or host trust is absent. Host verification stays strict, so capturing that key
-is a prerequisite for those two targets, not a formality.
+Both `wyrm2` and `rugged` targets execute end to end: `rugged` rejoined the cluster,
+its Nebula address (`10.42.0.30`) answers, and its SSH host key is captured in
+`known_hosts` (cross-checked against the operator's own `~/.ssh/known_hosts` entries for
+`rugged`/`rugged.tailnet.allegedly.works`). Being a roaming laptop, `rugged` can still go
+offline; when it does, its targets fail closed the same way an absent key or host trust
+would — the designed behaviour for a target that currently can't be reached, not a
+wiring gap.
 
 `public-coder-devbox × {root,coder}` is a second pair of targets, keyed in a **separate**
 Secret, `ssh-mcp-keys-public-coder-devbox` (`secrets/keys-public-coder-devbox.sops.yaml`),
