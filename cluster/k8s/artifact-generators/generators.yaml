@@ -686,14 +686,6 @@ spec:
           exclude:
             - flux-kustomization.yaml
 
-    - name: ollama-secrets
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/ollama/secrets/**"
-          to: "@artifact/cluster/k8s/ollama/secrets/"
-          exclude:
-            - flux-kustomization.yaml
-
     - name: attic-jwt-rotation
       originRevision: "@repo"
       copy:
@@ -1641,13 +1633,6 @@ spec:
       copy:
         - from: "@repo/cluster/k8s/oci-cache/namespace/**"
           to: "@artifact/cluster/k8s/oci-cache/namespace/"
-          exclude:
-            - flux-kustomization.yaml
-    - name: ollama-agent-rbac
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/ollama/agent-rbac/**"
-          to: "@artifact/cluster/k8s/ollama/agent-rbac/"
           exclude:
             - flux-kustomization.yaml
     - name: ollama-app
