@@ -6,7 +6,7 @@ metadata:
 spec:
   interval: 10m
   path: ./cluster/k8s/ollama/namespace
-  prune: true
+  prune: false # Preserve the namespace during the ownership handoff to ollama.
   sourceRef:
     kind: ExternalArtifact
     name: ollama-namespace
