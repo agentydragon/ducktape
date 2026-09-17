@@ -248,7 +248,9 @@ def test_parked_manifests_location(k8s_dir: Path) -> None:
         specs = parse_flux_kustomizations(flux_file)
         is_parked = bool(specs) and all(spec.parked for spec in specs.values())
         if is_parked != under_parked:
-            errors.append(f"{relative}: ducktape.org/parked annotation={is_parked}, under cluster/k8s/parked/={under_parked}")
+            errors.append(
+                f"{relative}: ducktape.org/parked annotation={is_parked}, under cluster/k8s/parked/={under_parked}"
+            )
     assert not errors, "\n".join(errors)
 
 
