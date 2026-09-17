@@ -328,7 +328,6 @@ resources:
 
   # --- study-casino ---
   - study-casino/namespace/flux-kustomization.yaml
-  - study-casino/agent-rbac/flux-kustomization.yaml
   - study-casino/db/flux-kustomization.yaml
   - study-casino/app/flux-kustomization.yaml
 

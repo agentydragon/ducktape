@@ -258,7 +258,6 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         ("ssh-mcp-secrets", "ssh-mcp/secrets"),
         ("sshpiper-crds", "sshpiper-crds"),
         ("sso-providers-tf", "authentik/sso-providers-tf"),
-        ("study-casino-agent-rbac", "study-casino/agent-rbac"),
         ("study-casino-app", "study-casino/app"),
         ("study-casino-db", "study-casino/db"),
         ("study-casino-namespace", "study-casino/namespace"),

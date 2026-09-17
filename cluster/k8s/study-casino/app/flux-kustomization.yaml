@@ -31,3 +31,5 @@ spec:
       namespace: ducktape-flux
     - name: study-casino-db
       namespace: ducktape-flux
+    - name: claude-rbac
+      namespace: ducktape-flux

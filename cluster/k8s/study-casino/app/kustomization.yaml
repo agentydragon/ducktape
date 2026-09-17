@@ -9,3 +9,4 @@ resources:
   - deployment.yaml
   - service.yaml
   - httproute.yaml
+  - rolebinding-secrets-reader.yaml
