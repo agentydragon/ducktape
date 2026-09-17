@@ -79,7 +79,7 @@ spec:
               mountPath: /tmp
       containers:
         - name: aiquota-api
-          image: git.allegedly.works/ducktape-ci/aiquota-api:devel-20260915082842-a8b1ac6 # {"$imagepolicy": "flux-system:aiquota-api"}
+          image: git.allegedly.works/ducktape-ci/aiquota-api:devel-20260917204955-0a3482f # {"$imagepolicy": "flux-system:aiquota-api"}
           imagePullPolicy: Always
           ports:
             - name: http
