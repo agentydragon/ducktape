@@ -65,7 +65,7 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         ("claude-sandbox-secrets", "agents/claude-sandbox-secrets"),
         ("cli-proxy-api", "cli-proxy-api"),
         ("clickhouse", "clickhouse/cluster"),
-        ("clickhouse-grafana", "analytics/grafana"),
+        ("clickhouse-grafana", "grafana"),
         ("clickhouse-namespace", "clickhouse/namespace"),
         ("clickhouse-operator", "clickhouse/operator"),
         ("clickhouse-schema", "clickhouse/schema"),

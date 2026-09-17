@@ -146,7 +146,7 @@ resources:
   - clickhouse/operator/flux-kustomization.yaml
   - clickhouse/cluster/flux-kustomization.yaml
   - clickhouse/schema/flux-kustomization.yaml
-  - analytics/grafana/flux-kustomization.yaml
+  - grafana/flux-kustomization.yaml
 
   # --- authentik ---
   - authentik/namespace/flux-kustomization.yaml

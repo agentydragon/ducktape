@@ -6,7 +6,7 @@ metadata:
 spec:
   retryInterval: 1m
   interval: 10m
-  path: ./cluster/k8s/analytics/grafana
+  path: ./cluster/k8s/grafana
   prune: true
   sourceRef:
     kind: ExternalArtifact
