@@ -2,9 +2,10 @@
 #
 # Enables the NPU kernel driver and userspace stack, and runs a Nix-native
 # llama-server (see nix/packages/{openvino-npu,llama-cpp-openvino}.nix) as a
-# router serving both models over the NPU, behind a bearer-token nginx proxy
-# on the port litellm's Service/EndpointSlice already targets
-# (cluster/k8s/litellm/app/rugged-npu-llm-endpoints.yaml).
+# router serving both models over the NPU, behind a bearer-token nginx proxy.
+# Port 18080 deliberately matches the Service/EndpointSlice already defined on
+# the (currently separate, on-hold) litellm-wiring PR, so that piece needs no
+# changes once it's proven out and reattached.
 #
 # Hardware: Intel Lunar Lake NPU (PCI 8086:643e), /dev/accel/accel0.
 {
@@ -88,12 +89,14 @@ in
     };
 
     # Bearer-checking proxy, mirroring cluster/k8s/activitywatch/bearer-proxy.conf.template's
-    # pattern: the token lives in the same SOPS file litellm reads
-    # (cluster/k8s/litellm/secrets/rugged-npu-llm-bearer-token.sops.yaml), so
-    # cluster and host authenticate with one shared value.
+    # pattern. The secret file (secrets/hosts/rugged-npu-llm-bearer-token.sops.yaml)
+    # is deliberately "one value, both sides": rugged decrypts it here, and
+    # cluster-secrets is already an included recipient so litellm can read the
+    # same value once that wiring is proven out on real hardware and reattached
+    # (see the comment in the file itself).
     sops.secrets.rugged_npu_llm_bearer_token = {
-      sopsFile = ../../../../cluster/k8s/litellm/secrets/rugged-npu-llm-bearer-token.sops.yaml;
-      key = "stringData.token";
+      sopsFile = ../../../../secrets/hosts/rugged-npu-llm-bearer-token.sops.yaml;
+      key = "token";
     };
 
     sops.templates."rugged-npu-llm-nginx.conf".content = ''

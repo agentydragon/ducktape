@@ -418,6 +418,16 @@ creation_rules:
           - *admin
           - *rugged-host
           - *rugged-agentydragon
+  # Rugged NPU LLM bearer token: one value, both sides. rugged-host decrypts it
+  # for the host's own bearer-proxy now; cluster-secrets is included so litellm
+  # can read the same file once that wiring is proven out and lands (see the
+  # comment in the file itself).
+  - path_regex: secrets/hosts/rugged-npu-llm-bearer-token\.sops\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *cluster-secrets
+          - *rugged-host
   - path_regex: secrets/hosts/atlas-attic\.yaml$
     key_groups:
       - age:
