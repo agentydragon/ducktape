@@ -26,7 +26,10 @@ class TrajectoryUpdates:
 
     @property
     def connected(self) -> bool:
-        return self._connection is not None and not self._connection.is_closed()
+        # `_lost` and not the connection alone: `_terminated` wakes consumers and only then does
+        # `_recover` clear `_connection`, so between those a reader woken *by* the loss would
+        # otherwise be told the listener is live whenever asyncpg has yet to flip `is_closed()`.
+        return not self._lost.is_set() and self._connection is not None and not self._connection.is_closed()
 
     async def start(self) -> None:
         if self._task is not None:
