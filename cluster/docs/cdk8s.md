@@ -219,7 +219,12 @@ versa, a reason this specific problem doesn't move that decision either way.
     Both are explicitly overridden back to `false` to preserve today's actual
     (unrestricted) behavior — the real container's filesystem-write/root needs
     were never audited, so silently hardening it as a side effect of switching
-    builders could have broken the running proxy.
+    builders could have broken the running proxy. `cdk8s_plus_33` also
+    unconditionally emits `allowPrivilegeEscalation: false` and
+    `privileged: false` on every container, with no opt-out — the hand-written
+    manifest left both unset (server default: escalation allowed). Kept as-is
+    rather than overridden: this workload has no privilege-escalation need, so
+    the tightening is a one-way hardening, not a functional change.
   - The Deployment's own `matchLabels` selector uses cdk8s's own
     `cdk8s.io/metadata.addr` construct-address label instead of
     `app.kubernetes.io/name` (`app.kubernetes.io/name` still remains on the pod
