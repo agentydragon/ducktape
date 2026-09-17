@@ -826,8 +826,8 @@ spec:
     - name: clickhouse-grafana
       originRevision: "@repo"
       copy:
-        - from: "@repo/cluster/k8s/analytics/grafana/**"
-          to: "@artifact/cluster/k8s/analytics/grafana/"
+        - from: "@repo/cluster/k8s/grafana/**"
+          to: "@artifact/cluster/k8s/grafana/"
           exclude:
             - flux-kustomization.yaml
     - name: atuin
