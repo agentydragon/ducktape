@@ -13,14 +13,14 @@ credentials (its ServiceAccount has no RBAC bindings).
 
 ## Layout
 
-| Path         | Role                                                                              |
-| ------------ | --------------------------------------------------------------------------------- |
-| `namespace/` | `kubectl-machine-mcp` Namespace (own Flux kustomization, applied first)           |
-| `app/`       | Deployment, Service, HTTPRoute, ServiceAccount, and the public config `ConfigMap` |
+| Path                                                                                         | Role                                                                              |
+| -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `namespace.yaml`                                                                             | `kubectl-machine-mcp` Namespace                                                   |
+| `deployment.yaml`, `service.yaml`, `httproute.yaml`, `serviceaccount.yaml`, `configmap.yaml` | Deployment, Service, HTTPRoute, ServiceAccount, and the public config `ConfigMap` |
 
 ## How it works
 
-- **Token validation**: `app/configmap.yaml` (`00-public.toml`) points the
+- **Token validation**: `configmap.yaml` (`00-public.toml`) points the
   server at the `kubectl-sandbox-client-credentials` Authentik provider's
   OIDC discovery/JWKS (`authorization_url`, `oauth_audience`). Tokens minted
   by the `authentik-jwt-rotation` CronJob against that provider validate
@@ -29,17 +29,17 @@ credentials (its ServiceAccount has no RBAC bindings).
 - **Passthrough, no token exchange**: `cluster_auth_mode = "passthrough"` —
   the caller's JWT is forwarded as-is to kube-apiserver. This is the machine
   client-credentials path; there is no interactive scoped-MCP endpoint.
-- **Public ingress**: `app/httproute.yaml` is **not** behind the Authentik
+- **Public ingress**: `httproute.yaml` is **not** behind the Authentik
   forward-auth outpost — the MCP server validates bearer tokens itself via
   `kubernetes-mcp-server`'s built-in OAuth2/OIDC support, since its callers
   (Anthropic-hosted agents) can't participate in an interactive SSO flow.
-- **Unprivileged pod**: `app/serviceaccount.yaml` grants no RBAC — all
+- **Unprivileged pod**: `serviceaccount.yaml` grants no RBAC — all
   authorization happens via the forwarded caller token, not this
   ServiceAccount.
 
 ## Dependencies
 
-`app/flux-kustomization.yaml` depends on `gateway` (HTTPRoute needs
+`flux-kustomization.yaml` depends on `gateway` (HTTPRoute needs
 `cluster-gateway`) and `agent-machine-access-tf` (creates the
 `kubectl-sandbox-client-credentials` Authentik provider this server
 validates tokens against).

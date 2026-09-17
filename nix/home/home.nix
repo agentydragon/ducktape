@@ -300,7 +300,7 @@ in
     settings = {
       # agent-box VM: `ssh agent-box.allegedly.works` lands as the codex user.
       # Distinct port because gecko owns :22 on the hil nodes (see
-      # cluster/k8s/parked/agent-box/app/ciliumenvoyconfig.yaml).
+      # cluster/k8s/parked/agent-box/ciliumenvoyconfig.yaml).
       "agent-box.allegedly.works" = {
         HostName = "agent-box.allegedly.works";
         User = "codex";
