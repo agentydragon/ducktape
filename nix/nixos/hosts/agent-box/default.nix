@@ -1,6 +1,6 @@
 # agent-box - headless CLI-only NixOS VM (KubeVirt) hosting agent users, each under
 # its own dedicated, scoped identity. `codex` runs OpenAI Codex. See
-# cluster/k8s/agent-box/README.md.
+# cluster/k8s/parked/agent-box/README.md.
 #
 # Multi-user: the host config is generated from `agentUsers` below. Add a future
 # agent user (e.g. `claude`) by appending an entry here + its HM module under

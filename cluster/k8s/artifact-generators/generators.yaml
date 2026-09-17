@@ -806,22 +806,6 @@ spec:
           exclude:
             - flux-kustomization.yaml
 
-    - name: agent-box
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agent-box/app/**"
-          to: "@artifact/cluster/k8s/agent-box/app/"
-          exclude:
-            - flux-kustomization.yaml
-
-    - name: agent-box-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agent-box/namespace/**"
-          to: "@artifact/cluster/k8s/agent-box/namespace/"
-          exclude:
-            - flux-kustomization.yaml
-
     - name: agent-workspaces-app
       originRevision: "@repo"
       copy:
@@ -1130,20 +1114,6 @@ spec:
       copy:
         - from: "@repo/cluster/k8s/gatus/sso-tf/**"
           to: "@artifact/cluster/k8s/gatus/sso-tf/"
-          exclude:
-            - flux-kustomization.yaml
-    - name: gecko
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/gecko/app/**"
-          to: "@artifact/cluster/k8s/gecko/app/"
-          exclude:
-            - flux-kustomization.yaml
-    - name: gecko-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/gecko/namespace/**"
-          to: "@artifact/cluster/k8s/gecko/namespace/"
           exclude:
             - flux-kustomization.yaml
     - name: github-api-proxy
@@ -1501,13 +1471,6 @@ spec:
           to: "@artifact/cluster/k8s/node-feature-discovery/"
           exclude:
             - flux-kustomization.yaml
-    - name: authelia-app
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/x/authelia/app/**"
-          to: "@artifact/cluster/k8s/x/authelia/app/"
-          exclude:
-            - flux-kustomization.yaml
     - name: oci-cache-app
       originRevision: "@repo"
       copy:
@@ -1569,13 +1532,6 @@ spec:
       copy:
         - from: "@repo/cluster/k8s/reloader/**"
           to: "@artifact/cluster/k8s/reloader/"
-          exclude:
-            - flux-kustomization.yaml
-    - name: sdr
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/sdr/**"
-          to: "@artifact/cluster/k8s/sdr/"
           exclude:
             - flux-kustomization.yaml
     - name: seaweedfs-drivefs-artifacts-bucket

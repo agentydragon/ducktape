@@ -34,6 +34,7 @@ from cluster.validation.checks import (
 from cluster.validation.cluster import ParsedCluster, parse_cluster
 from cluster.validation.crd_layering import CrdLayeringViolationError, check_crd_layering
 from cluster.validation.dependencies import validate_dependencies
+from cluster.validation.flux import parse_flux_kustomizations
 from cluster.validation.flux_bootstrap_auth import check_flux_bootstrap_auth
 from cluster.validation.health_checks import check_controller_health_checks, check_retry_policy
 from cluster.validation.image_automation import (
@@ -234,6 +235,23 @@ def test_no_unwired_flux_kustomizations(cluster: ParsedCluster, k8s_dir: Path) -
     assert not unwired, "flux-kustomization.yaml files not listed in root kustomization.yaml:\n" + "\n".join(
         f"  {f}" for f in unwired
     )
+
+
+def test_parked_manifests_location(k8s_dir: Path) -> None:
+    """A flux-kustomization.yaml carries ducktape.org/parked iff it lives under cluster/k8s/parked/."""
+    errors = []
+    for flux_file in k8s_dir.rglob("flux-kustomization.yaml"):
+        if "flux-system" in flux_file.parts:
+            continue
+        relative = flux_file.relative_to(k8s_dir)
+        under_parked = relative.parts[0] == "parked"
+        specs = parse_flux_kustomizations(flux_file)
+        is_parked = bool(specs) and all(spec.parked for spec in specs.values())
+        if is_parked != under_parked:
+            errors.append(
+                f"{relative}: ducktape.org/parked annotation={is_parked}, under cluster/k8s/parked/={under_parked}"
+            )
+    assert not errors, "\n".join(errors)
 
 
 def test_goldilocks_namespace_labels(cluster: ParsedCluster) -> None:

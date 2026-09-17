@@ -29,8 +29,6 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
     cases = (
         # keep-sorted start
         ("activitywatch", "activitywatch"),
-        ("agent-box", "agent-box/app"),
-        ("agent-box-namespace", "agent-box/namespace"),
         ("agent-machine-access-tf", "agents/machine-access-tf"),
         ("agent-sandbox-controller", "agents/agent-sandbox/controller"),
         ("agent-shared-rbac", "agents/shared-rbac"),
@@ -51,7 +49,6 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         ("atuin-namespace", "atuin/namespace"),
         ("atuin-user-provisioner", "atuin/user-provisioner"),
         ("augur-evidence", "forgejo/augur-evidence"),
-        ("authelia-app", "x/authelia/app"),
         ("authentik", "authentik/app"),
         ("authentik-db", "authentik/db"),
         ("authentik-db-backups", "authentik/db-backups"),
@@ -108,8 +105,6 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         ("gatus-db", "gatus/db"),
         ("gatus-namespace", "gatus/namespace"),
         ("gatus-sso-tf", "gatus/sso-tf"),
-        ("gecko", "gecko/app"),
-        ("gecko-namespace", "gecko/namespace"),
         ("github-api-proxy", "github-api-proxy/app"),
         ("github-api-proxy-identity", "github-api-proxy/identity"),
         ("github-branch-protection", "github-branch-protection"),
@@ -218,7 +213,6 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         ("public-coder-agent-sshpiper", "agents/public-coder-agent/sshpiper"),
         ("reflector", "reflector"),
         ("reloader", "reloader"),
-        ("sdr", "sdr"),
         ("seaweedfs-cluster", "seaweedfs/cluster"),
         ("seaweedfs-csi", "seaweedfs-csi"),
         ("seaweedfs-drivefs-artifacts-bucket", "seaweedfs/drivefs-artifacts-bucket"),
