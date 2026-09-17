@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Annotated, cast
@@ -17,7 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.middleware.base import RequestResponseEndpoint
 from starlette.routing import Route
 
-from x.agentplane.action_service.auth import OperatorAuthenticator, workload_principal
+from x.agentplane.action_service.auth import OperatorAuthenticator, workload_account
 from x.agentplane.action_service.caller_auth import CallerTokenVerifier
 from x.agentplane.action_service.catalog import (
     ActionCatalog,
@@ -65,8 +66,11 @@ from x.agentplane.action_service.models import (
     DecisionInput,
     Principal,
     PrincipalRole,
+    service_account_principal,
 )
 from x.agentplane.action_service.oauth import ActionsOAuthProxy
+from x.agentplane.action_service.policies.resources import CALLER_LABEL
+from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.policy_view import CallerActionPolicyView, SubjectActionPolicyView
 from x.agentplane.action_service.push import PushIdentity, PushSubscriptionStore
 from x.agentplane.action_service.service import (
@@ -79,6 +83,8 @@ from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 from x.agentplane.subjects import ServiceAccountRef
+
+logger = logging.getLogger(__name__)
 
 
 class PushSubscriptionInput(BaseModel):
@@ -120,10 +126,31 @@ def _operator_authenticator(request: Request) -> OperatorAuthenticator:
     return cast(OperatorAuthenticator, request.app.state.operator_authenticator)
 
 
+def _callers(request: Request) -> PolicyIndex:
+    return cast(PolicyIndex, request.app.state.callers)
+
+
 async def _workload(
-    request: Request, authenticator: Annotated[SandboxPrincipalAuthenticator, Depends(_workload_authenticator)]
+    request: Request,
+    authenticator: Annotated[SandboxPrincipalAuthenticator, Depends(_workload_authenticator)],
+    callers: Annotated[PolicyIndex, Depends(_callers)],
 ) -> Principal:
-    return workload_principal(await authenticator(request))
+    """The ServiceAccount the bearer proves, once the index says that account may call here.
+
+    Authenticating is not being admitted: without the label an account reaches no route, so a
+    workload the operator has not named cannot queue Actions for them either.
+    """
+    account = workload_account(await authenticator(request))
+    if not callers.admits(account):
+        # Deliberately the authenticator's own generic refusal: which account was presented is not
+        # the caller's to learn from the difference.
+        logger.warning(
+            "workload bearer refused: %s/%s does not carry %s", account.namespace, account.name, CALLER_LABEL
+        )
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED, "invalid workload bearer", headers={"WWW-Authenticate": "Bearer"}
+        )
+    return service_account_principal(account)
 
 
 async def _operator(
@@ -148,6 +175,7 @@ def create_app(
     operator_authenticator: OperatorAuthenticator,
     catalog: ActionCatalog,
     *,
+    callers: PolicyIndex,
     updates: ActionUpdates,
     connections: ConnectionAuthority | None = None,
     enrollments: EnrollmentAuthority | None = None,
@@ -156,7 +184,8 @@ def create_app(
     push_subscriptions: PushSubscriptionStore | None = None,
     mcp_linkage: McpLinkageAuthority | None = None,
 ) -> FastAPI:
-    mcp_app = create_server(service, catalog, updates, CallerTokenVerifier(workload_resolver, oauth=oauth)).http_app(
+    verifier = CallerTokenVerifier(workload_resolver, callers=callers, oauth=oauth)
+    mcp_app = create_server(service, catalog, updates, verifier).http_app(
         path="/mcp", stateless_http=True, json_response=False, host_origin_protection="auto"
     )
 
@@ -175,6 +204,7 @@ def create_app(
     app = FastAPI(title="Agentplane Action Service", version="v1", lifespan=lifespan)
     app.state.action_service = service
     app.state.workload_authenticator = SandboxPrincipalAuthenticator(workload_resolver)
+    app.state.callers = callers
     app.state.operator_authenticator = operator_authenticator
     app.state.action_catalog = catalog
     app.state.action_updates = updates

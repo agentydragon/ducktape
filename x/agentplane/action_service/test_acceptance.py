@@ -38,6 +38,7 @@ from x.agentplane.action_service.policies.resources import parse_binding, parse_
 from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.policy_view import SubjectActionPolicyView
 from x.agentplane.action_service.service import ActionService
+from x.agentplane.action_service.test_fixtures.callers import admitted_callers
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.principal import (
     RejectionReason,
@@ -109,6 +110,7 @@ async def _client(service: ActionService, *, catalog: ActionCatalog | None = Non
         cast(SandboxPrincipalResolver, FakeSandboxResolver()),
         cast(OperatorAuthenticator, FakeOperatorAuthenticator()),
         catalog or ActionCatalog(),
+        callers=admitted_callers(ACCOUNT_A, ACCOUNT_B),
         updates=ActionUpdates("postgresql://unused-test-listener"),
     )
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://actions.test")

@@ -13,8 +13,10 @@ Console's being the one to retire, not two systems that happen to resemble each 
 
 ## External Connections
 
-An external caller is a ServiceAccount labeled `agentplane.allegedly.works/action-caller: "true"`
-in one of `allowed_service_account_namespaces`; staging commits `claude-ai`, the principal for
+Any caller is a ServiceAccount labeled `agentplane.allegedly.works/use-action-service: "true"` in
+one of `allowed_service_account_namespaces` — a Pod-bound workload token and a Connection are two
+ways to prove one account, and the label admits either. The integration app labels the account it
+mints per Sandbox; staging commits `claude-ai`, the principal for
 Connections enrolled from the Claude.ai MCP connector, next to its settings
 (`cluster/k8s/agentplane-staging/actions/serviceaccount-claude-ai.yaml`). Testing commits none:
 nothing there enrolls an external Connection, and the acceptance suite creates the objects it

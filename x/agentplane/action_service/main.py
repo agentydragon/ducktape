@@ -238,6 +238,7 @@ async def async_main(settings: Settings) -> None:
             ),
             operator_authenticator,
             catalog,
+            callers=policy_index,
             connections=connections,
             updates=ActionUpdates(settings.database_url),
             enrollments=enrollments if oauth is not None else None,

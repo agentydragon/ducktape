@@ -38,6 +38,7 @@ from x.agentplane.action_service.models import (
     Principal,
     PrincipalRole,
     Verdict,
+    service_account_key,
     service_account_ref,
 )
 from x.agentplane.action_service.policies.resources import parse_binding, parse_policy_set
@@ -108,7 +109,18 @@ def _policy_index() -> PolicyIndex:
             }
         )
         index.bindings[binding.namespaced_name] = binding
+    for admitted in (workload("a"), workload("b")):
+        index.service_accounts[service_account_key(admitted)] = admitted
     return index
+
+
+def _bearer(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}", "Accept": "application/json, text/event-stream"}
+
+
+def workload(label: str) -> ServiceAccountRef:
+    """The account one sandbox runs as, which is also what admits it here."""
+    return ServiceAccountRef(namespace=NAMESPACE, name=sandbox(label).service_account_name)
 
 
 class EgressSubstitution(httpx2.AsyncBaseTransport):
@@ -165,7 +177,7 @@ class Frontend:
 
 @pytest.fixture
 async def frontend(engine: AsyncEngine, db_url: str, echo_executor: Executor) -> AsyncIterator[Frontend]:
-    tokens = {f"test-token-{label}": sandbox(label) for label in ("a", "b")}
+    tokens = {f"test-token-{label}": sandbox(label) for label in ("a", "b", "elsewhere")}
     authentication = AsyncMock(spec=AuthenticationV1Api)
     core = AsyncMock(spec=CoreV1Api)
 
@@ -230,7 +242,8 @@ async def frontend(engine: AsyncEngine, db_url: str, echo_executor: Executor) ->
         }
     )
     store = ActionStore(make_sessionmaker(engine))
-    service = ActionService(store, catalog, {"test-group": echo_executor}, policies=_policy_index())
+    policies = _policy_index()
+    service = ActionService(store, catalog, {"test-group": echo_executor}, policies=policies)
     updates = ActionUpdates(db_url)
     app = create_app(
         service,
@@ -242,6 +255,7 @@ async def frontend(engine: AsyncEngine, db_url: str, echo_executor: Executor) ->
         ),
         DisabledOperatorAuthenticator(),
         catalog,
+        callers=policies,
         updates=updates,
     )
     # pytest-asyncio resumes yield-fixture teardown in another task. The MCP lifespan's
@@ -347,6 +361,19 @@ async def test_submission_wait_receipts_events_and_owner_scope(frontend: Fronten
         assert (
             await frontend.store.get(receipt.id, workload_principal(frontend.tokens["test-token-a"]))
         ).id == receipt.id
+
+
+async def test_an_unlabelled_account_is_refused_at_the_transport_despite_a_binding(frontend: Frontend) -> None:
+    """A binding is what a subject may do; the caller label is whether it may ask at all. The
+    `test-elsewhere` account has the former and not the latter, so its token proves a Pod and still
+    opens no MCP session -- the same refusal an unknown bearer gets."""
+    async with httpx2.AsyncClient(transport=httpx2.ASGITransport(frontend.app), base_url="http://actions.test") as http:
+        initialize = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
+        refused = await http.post("/mcp", headers=_bearer("test-token-elsewhere"), json=initialize)
+        admitted = await http.post("/mcp", headers=_bearer("test-token-b"), json=initialize)
+
+    assert refused.status_code == 401
+    assert admitted.status_code != 401, "the labelled account with no binding still opens a session"
 
 
 async def test_a_caller_reads_the_effective_policy_of_itself_or_a_named_target(frontend: Frontend) -> None:

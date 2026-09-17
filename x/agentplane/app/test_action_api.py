@@ -45,7 +45,7 @@ from x.agentplane.action_service.operator_oidc import OidcOperatorAuthenticator,
 from x.agentplane.action_service.policies.resources import parse_binding, parse_policy_set
 from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.service import ActionService
-from x.agentplane.action_service.test_fixtures.callers import PERSONAL, eligible_callers
+from x.agentplane.action_service.test_fixtures.callers import PERSONAL, admitted_callers
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.app.action_federation import (
     DirectFederationSettings,
@@ -148,7 +148,7 @@ async def review(
             audience="test-app" if direct_federation and operator_connection != "wrong-audience" else "test-actions",
             jwks_uri=f"{idp_url}jwks/",
         )
-        policies = eligible_callers(PERSONAL)
+        policies = admitted_callers(PERSONAL)
         service = ActionService(
             ActionStore(make_sessionmaker(engine)), catalog, {"test_review": executor}, policies=policies
         )
@@ -161,6 +161,7 @@ async def review(
             cast(SandboxPrincipalResolver, None),
             OidcOperatorAuthenticator(target),
             catalog,
+            callers=policies,
             connections=connections,
             enrollments=enrollments,
             updates=ActionUpdates(db_url),

@@ -279,7 +279,7 @@ ServiceAccount as read-only text for exactly this reason.
 **Design questions, not yet settled:** should rebinding revoke the prior grant's revision the same
 way a fresh consent does, or coexist with it; does it need its own audit trail distinct from a
 reconnect; and does it require re-running eligibility checks (the ServiceAccount must still carry
-`agentplane.allegedly.works/action-caller: "true"`) at rebind time, not just at original consent.
+`agentplane.allegedly.works/use-action-service: "true"`) at rebind time, not just at original consent.
 No dependency on anything else; nothing waits on this. Once it exists, the settings table's
 ServiceAccount column becomes a real dropdown instead of static text.
 
@@ -638,7 +638,7 @@ Its own clock, and cheaper before something starts using it than after.
 ### `PC_EGRESS_CREDENTIALS` — public-coder's substitutions as EgressCredentials
 
 **Planned configuration:** give the app Pod a dedicated ServiceAccount, labelled
-`agentplane.allegedly.works/action-caller` so one object serves both surfaces, and express every
+`agentplane.allegedly.works/use-action-service` so one object serves both surfaces, and express every
 substitution its own iron-proxy performs today as an `EgressCredential` with its exact targets:
 a GitHub PAT, the Haku Console bearer, an AIQuota bearer, a Brave Search key, a Matrix password
 and a kubeconfig token. Six, not one — the entry used to read as though GitHub were the whole
@@ -734,7 +734,7 @@ Pod-bound token, reads the `pod-name` and `pod-uid` claims, and checks the Pod a
 connection's source address; the only Sandbox-specific step is the last one, where the Pod's
 controller owner must be a `Sandbox` the watch knows. A ServiceAccount subject keeps every earlier
 check and ends instead at the ServiceAccount the token names. Labelled
-`agentplane.allegedly.works/action-caller: "true"`, the same object is what the Action Service
+`agentplane.allegedly.works/use-action-service: "true"`, the same object is what the Action Service
 already watches and lists, so one SA serves both surfaces.
 
 **The trade to state rather than discover.** A Sandbox subject is lifecycle-bound: the identity

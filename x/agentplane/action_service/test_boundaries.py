@@ -27,7 +27,9 @@ from x.agentplane.action_service.client import (
     CredentialPlaceholder,
 )
 from x.agentplane.action_service.models import ActionRequestInput, ActionRequestView, ActionState, Principal
+from x.agentplane.action_service.policies.resources import CALLER_LABEL
 from x.agentplane.action_service.service import ActionService
+from x.agentplane.action_service.test_fixtures.callers import admitted_callers
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.principal import (
     POD_NAME_CLAIM,
@@ -35,6 +37,7 @@ from x.agentplane.sandbox_auth.principal import (
     SandboxPrincipal,
     SandboxPrincipalResolver,
 )
+from x.agentplane.subjects import ServiceAccountRef
 
 AUDIENCE = "agentplane-egress"
 NAMESPACE = "agentplane-staging"
@@ -196,6 +199,7 @@ async def test_central_placeholder_replay_is_required_before_action_service_auth
         resolver,
         cast(OperatorAuthenticator, DisabledOperatorAuthenticator()),
         ActionCatalog(),
+        callers=admitted_callers(ServiceAccountRef(namespace=NAMESPACE, name=PRINCIPAL_A.service_account_name)),
         updates=ActionUpdates("postgresql://unused-test-listener"),
     )
     body = ActionRequestInput(
@@ -242,6 +246,45 @@ async def test_central_placeholder_replay_is_required_before_action_service_auth
     assert TOKEN_A not in response.model_dump_json()
     assert TOKEN_A not in str(service.bodies)
     assert TOKEN_A not in str(service.principals)
+
+
+async def test_an_unlabelled_account_authenticates_and_reaches_no_route(caplog: pytest.LogCaptureFixture) -> None:
+    """The label is admission, separate from proving who you are: a bearer TokenReview accepts still
+    reaches nothing while the index does not list its account, so a workload the operator has not
+    named cannot even queue an Action for them to decide."""
+    caplog.set_level("WARNING", logger="x.agentplane.action_service.api")
+    resolver, authentication = workload_resolver()
+    service = RecordingActionService()
+    app = create_app(
+        cast(ActionService, service),
+        resolver,
+        cast(OperatorAuthenticator, DisabledOperatorAuthenticator()),
+        ActionCatalog(),
+        callers=admitted_callers(),
+        updates=ActionUpdates("postgresql://unused-test-listener"),
+    )
+    body = ActionRequestInput(
+        idempotency_key="unlabelled",
+        title="test title for unlabelled",
+        action=ActionIdentity(group="agentplane", name="echo"),
+        arguments={"text": "hello"},
+    )
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://agentplane-actions") as http:
+        refused = await http.post(
+            "/v1/action-requests", headers={"Authorization": f"Bearer {TOKEN_A}"}, json=body.model_dump(mode="json")
+        )
+
+    assert refused.status_code == 401
+    assert authentication.seen_tokens == [TOKEN_A], "the bearer was proven; what failed is admission"
+    assert service.principals == []
+    assert service.bodies == []
+    # Opaque to the caller, explicit in the log: the operator needs to know which account to label.
+    assert "invalid workload bearer" in refused.text
+    assert CALLER_LABEL not in refused.text
+    rendered = "\n".join(record.getMessage() for record in caplog.records)
+    assert PRINCIPAL_A.service_account_name in rendered
+    assert CALLER_LABEL in rendered
 
 
 async def test_operator_adapter_is_distinct_digest_only_and_file_configured(tmp_path: Path) -> None:

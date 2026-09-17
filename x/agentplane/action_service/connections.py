@@ -140,7 +140,7 @@ class ConnectionAuthority:
 
     def require_caller(self, caller: ServiceAccountRef) -> ServiceAccountRef:
         """Refuse unless the informer currently lists the ServiceAccount as labeled."""
-        if self._callers.eligible(caller):
+        if self._callers.admits(caller):
             return caller
         raise GrantRejectedError("caller ServiceAccount is missing or not labeled as an Action caller")
 

@@ -495,6 +495,7 @@ async def test_sigterm_fences_readiness_and_traffic_before_http_shutdown(engine:
         MagicMock(spec=SandboxPrincipalResolver),
         DisabledOperatorAuthenticator(),
         catalog,
+        callers=PolicyIndex(),
         updates=ActionUpdates(db_url),
     )
     server = ActionServer(uvicorn.Config(app, timeout_graceful_shutdown=5), service)

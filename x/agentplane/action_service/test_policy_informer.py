@@ -139,9 +139,9 @@ async def test_initial_sync_keeps_invalid_objects_and_only_labeled_callers(index
     assert "autoApproveIf.0" in broken.message
     assert isinstance(index.bindings[key(BINDING)], ActionPolicyBinding)
     assert index.caller_service_accounts() == [ServiceAccountRef(namespace=NAMESPACE, name=CALLER)]
-    assert index.eligible(ServiceAccountRef(namespace=NAMESPACE, name=CALLER))
-    assert not index.eligible(ServiceAccountRef(namespace=NAMESPACE, name=UNLABELED))
-    assert not index.eligible(ServiceAccountRef(namespace="agentplane-other", name=CALLER))
+    assert index.admits(ServiceAccountRef(namespace=NAMESPACE, name=CALLER))
+    assert not index.admits(ServiceAccountRef(namespace=NAMESPACE, name=UNLABELED))
+    assert not index.admits(ServiceAccountRef(namespace="agentplane-other", name=CALLER))
 
 
 async def test_ready_is_written_once_per_generation_and_names_the_fault(
@@ -177,7 +177,7 @@ async def test_ready_is_written_once_per_generation_and_names_the_fault(
 async def test_label_removal_and_deletion_reach_the_index(fake: FakeApiServer, index: PolicyIndex) -> None:
     fake.put(SERVICE_ACCOUNTS_PLURAL, service_account(CALLER, labeled=False))
     await index.wait_for(lambda: key(CALLER) not in index.service_accounts)
-    assert not index.eligible(ServiceAccountRef(namespace=NAMESPACE, name=CALLER))
+    assert not index.admits(ServiceAccountRef(namespace=NAMESPACE, name=CALLER))
     fake.put(SERVICE_ACCOUNTS_PLURAL, service_account(UNLABELED, labeled=True))
     await index.wait_for(lambda: key(UNLABELED) in index.service_accounts)
     fake.delete(BINDINGS_PLURAL, BINDING)

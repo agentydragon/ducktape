@@ -56,8 +56,9 @@ from x.agentplane.action_service.models import (
     service_account_principal,
 )
 from x.agentplane.action_service.oauth import ActionsOAuthProxy, OAuthSettings, running_oauth
+from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.service import ActionService
-from x.agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, eligible_callers
+from x.agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, admitted_callers
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.principal import RejectionReason, SandboxPrincipalRejectedError, SandboxPrincipalResolver
 from x.agentplane.subjects import ServiceAccountRef
@@ -70,6 +71,7 @@ OPERATOR = Principal(issuer="https://operator.example.test/", subject="operator"
 @dataclass
 class OAuthFixture:
     proxy: ActionsOAuthProxy
+    callers: PolicyIndex
     connections: ConnectionAuthority
     enrollments: EnrollmentAuthority
     browser: httpx.AsyncClient
@@ -184,7 +186,8 @@ async def oauth(engine: AsyncEngine, db_url: str, tmp_path: Path) -> AsyncIterat
         upstream_subject="test-user",
         approving_operator=OPERATOR,
     )
-    connections = ConnectionAuthority(make_sessionmaker(engine), eligible_callers(PERSONAL, OTHER))
+    callers = admitted_callers(PERSONAL, OTHER)
+    connections = ConnectionAuthority(make_sessionmaker(engine), callers)
     enrollments = EnrollmentAuthority(make_sessionmaker(engine), connections)
     idp = build_mock_oidc_app(
         issuer_url=issuer, private_key=private_key, public_key=public_key, authentik_compatible=True
@@ -196,7 +199,7 @@ async def oauth(engine: AsyncEngine, db_url: str, tmp_path: Path) -> AsyncIterat
         ) as browser:
             response = await browser.get(f"{base_url}/.well-known/oauth-authorization-server")
             response.raise_for_status()
-            yield OAuthFixture(proxy, connections, enrollments, browser, base_url, response.json(), settings)
+            yield OAuthFixture(proxy, callers, connections, enrollments, browser, base_url, response.json(), settings)
 
 
 async def test_cimd_reaches_canonical_consent_and_grants(oauth: OAuthFixture, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -269,6 +272,7 @@ async def test_real_sdk_dcr_over_http_persists_client_metadata(
         _no_workload(),
         DisabledOperatorAuthenticator(),
         echo_catalog,
+        callers=oauth.callers,
         updates=ActionUpdates(db_url),
         connections=oauth.connections,
         enrollments=oauth.enrollments,
@@ -604,6 +608,7 @@ async def test_external_grant_reaches_canonical_mcp_admission_and_cancel(
         sandbox,
         DisabledOperatorAuthenticator(),
         echo_catalog,
+        callers=oauth.callers,
         updates=ActionUpdates(db_url),
         connections=oauth.connections,
         enrollments=oauth.enrollments,

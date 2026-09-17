@@ -22,10 +22,12 @@ the external-caller principal.
 **Every caller is a Kubernetes ServiceAccount.** One principal then carries native permissions
 through ordinary RoleBindings and Action permissions through an `ActionPolicyBinding`, and an
 in-cluster workload is the account its Pod runs as, so there is one identity vocabulary and one
-subject shape. The label `agentplane.allegedly.works/action-caller: "true"` makes a ServiceAccount
-eligible: MCP clients speak OAuth, so the app's consent UI lists the eligible ServiceAccounts and the
-operator picks one at consent. A missing or unlabeled ServiceAccount refuses resolution at admission
-and at the dispatch claim; removing the label or the object is the disable.
+subject shape. The label `agentplane.allegedly.works/use-action-service: "true"` is what admits an
+account at all, however it arrives: the app labels the ServiceAccount it mints for each Sandbox, and
+the consent UI lists the labeled accounts for the operator to pick one for a Connection. An
+unlabeled account is refused at the transport; a Connection's grant is refused again at admission
+and at the dispatch claim. Removing the label or the object is the disable, and it takes effect on
+the next call rather than at the next consent.
 
 **A policy is one typed evaluator.** YAML carries `type` and parameters, Python owns the semantics
 (one module per kind under `action_service/policies/`). A constraint the YAML cannot express is a

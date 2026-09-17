@@ -23,6 +23,7 @@ from kubernetes_asyncio.client import CoreV1Api
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from util.kubernetes import CustomObjectsClient
+from x.agentplane.action_service.policies.resources import CALLER_LABEL
 from x.agentplane.app.presets import SandboxBinding, ThreadDefaults
 from x.agentplane.subjects import ServiceAccountRef
 
@@ -278,7 +279,14 @@ class SandboxInventory:
         # Sandbox never appears, rather than being left for nothing to collect.
         await self._core_v1.create_namespaced_service_account(
             self._namespace,
-            k8s_client.V1ServiceAccount(metadata=k8s_client.V1ObjectMeta(name=name, labels={MANAGED_LABEL: "true"})),
+            k8s_client.V1ServiceAccount(
+                metadata=k8s_client.V1ObjectMeta(
+                    # The Action Service admits an account only while it carries its caller label,
+                    # so a sandbox without this one authenticates and reaches no route.
+                    name=name,
+                    labels={MANAGED_LABEL: "true", CALLER_LABEL: "true"},
+                )
+            ),
         )
         body = {
             "apiVersion": f"{SANDBOX_API[0]}/{SANDBOX_API[1]}",

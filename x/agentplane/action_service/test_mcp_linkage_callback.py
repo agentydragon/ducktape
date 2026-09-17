@@ -25,6 +25,7 @@ from x.agentplane.action_service.mcp_linkage import (
 )
 from x.agentplane.action_service.models import Principal, PrincipalRole
 from x.agentplane.action_service.service import ActionService
+from x.agentplane.action_service.test_fixtures.callers import admitted_callers
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 
@@ -65,6 +66,7 @@ async def callback_client(
         Mock(spec=SandboxPrincipalResolver),
         DisabledOperatorAuthenticator(),
         catalog,
+        callers=admitted_callers(),
         updates=ActionUpdates(db_url),
         mcp_linkage=linkage,
     )

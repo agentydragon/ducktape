@@ -2,7 +2,8 @@
 
 `ActionPolicySet` and `ActionPolicyBinding` are Agentplane's own kinds (group
 `agentplane.allegedly.works`, `v1alpha1`; the CRDs live in `cluster/k8s/agentplane-crds`). A
-caller ServiceAccount is an ordinary ServiceAccount carrying `CALLER_LABEL`. The operator-authored
+caller ServiceAccount is an ordinary ServiceAccount carrying `CALLER_LABEL`, which is what admits
+it here at all -- a Pod running as it and a Connection acting as it alike. The operator-authored
 `spec` is parsed strictly, so a typo or an unknown policy kind is refused here rather than
 silently granting nothing; such an object is kept as `InvalidResource`, which the informer reports
 in the object's `Ready` condition. Server-stamped metadata and status are read only as far as the
@@ -26,7 +27,7 @@ VERSION = "v1alpha1"
 POLICY_SETS_PLURAL = "actionpolicysets"
 BINDINGS_PLURAL = "actionpolicybindings"
 SERVICE_ACCOUNTS_PLURAL = "serviceaccounts"
-CALLER_LABEL = "agentplane.allegedly.works/action-caller"
+CALLER_LABEL = "agentplane.allegedly.works/use-action-service"
 CALLER_LABEL_SELECTOR = f"{CALLER_LABEL}=true"
 READY_CONDITION = "Ready"
 # metav1.Condition.message is capped by the CRD schema; a pydantic report for a large object can be longer.

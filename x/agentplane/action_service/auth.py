@@ -55,13 +55,15 @@ class ConfiguredOperatorBearerAuthenticator:
         return Principal(issuer="configured-operator", subject=self._subject, role=PrincipalRole.OPERATOR)
 
 
-def workload_principal(principal: WorkloadPrincipal) -> Principal:
-    """The caller a workload token proves: the ServiceAccount its Pod runs as.
+def workload_account(principal: WorkloadPrincipal) -> ServiceAccountRef:
+    """The ServiceAccount a workload token proves: the one its Pod runs as.
 
     Whatever else owns that Pod -- a Sandbox, a Deployment, nothing -- is not the caller. An agent
     this cluster does not host has no owner to follow, and every sandbox now runs as an account of
     its own, so following one would only ever have named a subset of callers.
     """
-    return service_account_principal(
-        ServiceAccountRef(namespace=principal.namespace, name=principal.service_account_name)
-    )
+    return ServiceAccountRef(namespace=principal.namespace, name=principal.service_account_name)
+
+
+def workload_principal(principal: WorkloadPrincipal) -> Principal:
+    return service_account_principal(workload_account(principal))

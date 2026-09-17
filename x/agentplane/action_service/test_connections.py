@@ -40,7 +40,7 @@ from x.agentplane.action_service.db import (
 from x.agentplane.action_service.models import ActionRequestInput, Principal, PrincipalRole, service_account_key
 from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.service import ActionService
-from x.agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, UNLABELED, eligible_callers
+from x.agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, UNLABELED, admitted_callers
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 from x.agentplane.subjects import ServiceAccountRef
@@ -60,7 +60,7 @@ def binding(*, service_account: ServiceAccountRef = PERSONAL, client: str = "cli
 
 
 def authority(engine: AsyncEngine) -> ConnectionAuthority:
-    return ConnectionAuthority(make_sessionmaker(engine), eligible_callers(PERSONAL, OTHER))
+    return ConnectionAuthority(make_sessionmaker(engine), admitted_callers(PERSONAL, OTHER))
 
 
 async def test_binding_retries_are_atomic_and_survive_authority_replacement(engine: AsyncEngine) -> None:
@@ -204,7 +204,7 @@ async def test_unlabeled_removed_unsynced_and_expired_grants_do_not_authorize(en
         await service.bind(expired)
     unsynced = PolicyIndex()
     unsynced.service_accounts[service_account_key(PERSONAL)] = PERSONAL
-    for callers in [eligible_callers(), eligible_callers(OTHER, UNLABELED), unsynced]:
+    for callers in [admitted_callers(), admitted_callers(OTHER, UNLABELED), unsynced]:
         changed = ConnectionAuthority(make_sessionmaker(engine), callers)
         with pytest.raises(GrantRejectedError):
             await changed.bind(binding())
@@ -212,7 +212,7 @@ async def test_unlabeled_removed_unsynced_and_expired_grants_do_not_authorize(en
             await changed.activate(grant.id)
     live = await service.bind(binding(client="still-issued"))
     await service.activate(live.id)
-    unlabeled = ConnectionAuthority(make_sessionmaker(engine), eligible_callers(OTHER))
+    unlabeled = ConnectionAuthority(make_sessionmaker(engine), admitted_callers(OTHER))
     with pytest.raises(GrantRejectedError):
         await unlabeled.resolve(live.id, issuer=ISSUER, client_id=live.client_id)
 
@@ -231,6 +231,7 @@ async def test_operator_routes_do_not_expose_binding_or_accept_workload_credenti
         ConfiguredOperatorBearerAuthenticator(token_digest=hashlib.sha256(token.encode()).digest(), subject="operator"),
         catalog,
         connections=service,
+        callers=admitted_callers(),
         updates=ActionUpdates(db_url),
     )
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://service") as http:

@@ -54,8 +54,12 @@ class PolicyIndex:
     synced: bool = False
     changed: asyncio.Condition = field(default_factory=asyncio.Condition, repr=False)
 
-    def eligible(self, ref: ServiceAccountRef) -> bool:
-        """Whether this ServiceAccount currently carries the caller label; nothing is eligible before sync."""
+    def admits(self, ref: ServiceAccountRef) -> bool:
+        """Whether this ServiceAccount may call the service at all: it carries the caller label now.
+
+        Nothing is admitted before the watch has synced, so an informer that cannot reach the API
+        server refuses every caller rather than serving a picture it cannot vouch for.
+        """
         return self.synced and service_account_key(ref) in self.service_accounts
 
     def caller_service_accounts(self) -> list[ServiceAccountRef]:

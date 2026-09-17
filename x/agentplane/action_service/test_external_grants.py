@@ -50,7 +50,7 @@ from x.agentplane.action_service.policy_evaluation import PROVIDER_NAME, PolicyS
 from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.providers import DecisionContext
 from x.agentplane.action_service.service import ActionService
-from x.agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, eligible_callers
+from x.agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, admitted_callers
 from x.agentplane.subjects import ServiceAccountRef
 
 ISSUER = "https://actions.example.test"
@@ -60,7 +60,7 @@ LEASE_DURATION = timedelta(seconds=30)
 
 @pytest.fixture
 def authority(engine: AsyncEngine) -> ConnectionAuthority:
-    return ConnectionAuthority(make_sessionmaker(engine), eligible_callers(PERSONAL, OTHER))
+    return ConnectionAuthority(make_sessionmaker(engine), admitted_callers(PERSONAL, OTHER))
 
 
 @pytest.fixture
@@ -150,7 +150,7 @@ async def test_admission_fails_closed_on_missing_disabled_revoked_or_mismatched_
             )
     with pytest.raises(ExternalGrantNotAuthorizedError):
         await store.submit(envelope, OPERATOR, external_grant=grant.provenance())
-    for checker in [None, ConnectionAuthority(make_sessionmaker(engine), eligible_callers(OTHER))]:
+    for checker in [None, ConnectionAuthority(make_sessionmaker(engine), admitted_callers(OTHER))]:
         with pytest.raises(ExternalGrantNotAuthorizedError):
             await ActionStore(make_sessionmaker(engine), external_grants=checker).submit(
                 envelope, grant.principal(), external_grant=grant.provenance()
@@ -182,9 +182,9 @@ async def test_original_authority_is_rechecked_before_dispatch_without_rewriting
         await authority.revoke(grant.id)
         await activated(authority, "new-authority-does-not-replace-original")
     elif invalidate == "unlabel":
-        authority = ConnectionAuthority(make_sessionmaker(engine), eligible_callers(OTHER))
+        authority = ConnectionAuthority(make_sessionmaker(engine), admitted_callers(OTHER))
     elif invalidate == "remove":
-        authority = ConnectionAuthority(make_sessionmaker(engine), eligible_callers())
+        authority = ConnectionAuthority(make_sessionmaker(engine), admitted_callers())
     elif invalidate in {"reconnect_same", "reconnect_other"}:
         connection = await authority.get(grant.connection_id)
         replacement = await authority.bind(

@@ -1,4 +1,5 @@
-"""A synced policy index listing the given ServiceAccounts as eligible callers, for authority tests."""
+"""A synced policy index admitting the given ServiceAccounts, as the informer holds them once it
+has seen the caller label. An empty one admits nobody, which is what an operator-only surface needs."""
 
 from __future__ import annotations
 
@@ -12,7 +13,7 @@ OTHER = ServiceAccountRef(namespace=TEST_NAMESPACE, name="test-other")
 UNLABELED = ServiceAccountRef(namespace=TEST_NAMESPACE, name="test-unlabeled")
 
 
-def eligible_callers(*refs: ServiceAccountRef) -> PolicyIndex:
+def admitted_callers(*refs: ServiceAccountRef) -> PolicyIndex:
     index = PolicyIndex(synced=True)
     for ref in refs:
         index.service_accounts[service_account_key(ref)] = ref

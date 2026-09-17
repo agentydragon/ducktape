@@ -45,7 +45,7 @@ from x.agentplane.action_service.enrollments import (
 )
 from x.agentplane.action_service.models import Principal, PrincipalRole, Verdict
 from x.agentplane.action_service.service import ActionService
-from x.agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, UNLABELED, eligible_callers
+from x.agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, UNLABELED, admitted_callers
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 from x.agentplane.subjects import ServiceAccountRef
@@ -64,7 +64,7 @@ class Consent:
 
 @pytest.fixture
 async def consent(engine: AsyncEngine) -> Consent:
-    connections = ConnectionAuthority(make_sessionmaker(engine), eligible_callers(PERSONAL, OTHER))
+    connections = ConnectionAuthority(make_sessionmaker(engine), admitted_callers(PERSONAL, OTHER))
     authority = EnrollmentAuthority(make_sessionmaker(engine), connections)
     request = EnrollmentInput(
         issuer="https://test-actions.example",
@@ -176,7 +176,7 @@ async def test_picker_rejects_unlabeled_and_missing_service_accounts(consent: Co
             )
     await consent.authority.decide(consent.handle, consent.allow, consent.operator)
     unlabeled = EnrollmentAuthority(
-        make_sessionmaker(engine), ConnectionAuthority(make_sessionmaker(engine), eligible_callers(OTHER))
+        make_sessionmaker(engine), ConnectionAuthority(make_sessionmaker(engine), admitted_callers(OTHER))
     )
     with pytest.raises(EnrollmentRejectedError):
         await unlabeled.approved(
@@ -253,6 +253,7 @@ async def test_operator_routes_require_auth_and_reject_redirect_injection(
             token_digest=hashlib.sha256(token.encode()).digest(), subject="test-operator"
         ),
         catalog,
+        callers=admitted_callers(),
         updates=ActionUpdates(db_url),
         connections=consent.connections,
         enrollments=consent.authority,
