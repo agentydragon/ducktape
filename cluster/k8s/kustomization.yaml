@@ -68,8 +68,6 @@ resources:
   - agents/alloy-otlp-bearer/flux-kustomization.yaml
   - agents/airlock/flux-kustomization.yaml
   - agents/tana-mcp/flux-kustomization.yaml
-  - agents/tana-mcp-facade/flux-kustomization.yaml
-  - agents/tana-mcp-facade/monitoring/flux-kustomization.yaml
   - agents/coinbase-read/flux-kustomization.yaml
   - grocy/sf/mcp/flux-kustomization.yaml
   - grocy/vallejo/mcp/flux-kustomization.yaml

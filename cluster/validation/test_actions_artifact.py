@@ -257,8 +257,6 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         ("study-casino-namespace", "study-casino/namespace"),
         ("talos-cloud-controller-manager", "talos-cloud-controller-manager"),
         ("tana-mcp", "agents/tana-mcp"),
-        ("tana-mcp-facade", "agents/tana-mcp-facade"),
-        ("tana-mcp-facade-monitoring", "agents/tana-mcp-facade/monitoring"),
         ("tofu-controller", "tofu-controller"),
         ("tofu-state-db", "tofu-state/db"),
         ("tofu-state-namespace", "tofu-state/namespace"),
