@@ -570,14 +570,6 @@ spec:
           exclude:
             - flux-kustomization.yaml
 
-    - name: authentik-sso-secrets
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/authentik/sso-secrets/**"
-          to: "@artifact/cluster/k8s/authentik/sso-secrets/"
-          exclude:
-            - flux-kustomization.yaml
-
     - name: cdi
       originRevision: "@repo"
       copy:

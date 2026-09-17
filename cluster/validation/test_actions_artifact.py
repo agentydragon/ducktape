@@ -60,7 +60,6 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         ("authentik-jwt-rotation", "agents/authentik-jwt-rotation"),
         ("authentik-namespace", "authentik/namespace"),
         ("authentik-proxy-routes", "authentik/proxy-routes"),
-        ("authentik-sso-secrets", "authentik/sso-secrets"),
         ("budget-app", "budget/app"),
         ("budget-ledger", "forgejo/budget-ledger"),
         ("budget-namespace", "budget/namespace"),
