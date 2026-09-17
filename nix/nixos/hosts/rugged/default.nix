@@ -79,8 +79,14 @@ in
 
   # Local LLM inference (Arc GPU + NPU)
   ducktape.localLlm.arc.enable = true;
-  ducktape.localLlm.npu.enable = true;
   ducktape.localLlm.ollamaUpstream.enable = true;
+
+  # NPU service disabled 2026-09-17: real-hardware test found the NPU driver
+  # fails to initialize (silent CPU fallback) and the service has no
+  # --ctx-size cap, which combined to swap-thrash the whole machine into a
+  # ~4min apparent hang. See debug/rugged/hw/llm_npu.md "Real-hardware status"
+  # before re-enabling.
+  ducktape.localLlm.npu.enable = false;
 
   # Separate btrfs subvolumes for containerd and local-path-provisioner storage.
   # Create them before first boot with:
