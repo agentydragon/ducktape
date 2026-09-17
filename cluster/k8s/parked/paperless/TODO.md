@@ -1,5 +1,10 @@
 # Paperless TODO
 
+> **Status: parked.** The manifests are suspended under `cluster/k8s/parked/` and the
+> former `paperless-app` artifact generator was removed when Paperless was parked.
+> Re-establish and verify the source, artifact, and Flux wiring before implementing
+> this revival backlog.
+
 ## Make first-user bootstrap declarative (remove the manual SSO claim)
 
 **Problem.** On a fresh install (zero real users + zero docs), Paperless's adapter
@@ -9,7 +14,7 @@ the first account via SSO is to hit allauth's endpoint directly
 (`/accounts/oidc/authentik/login/?process=login`). This is a manual, out-of-band step —
 it violates the cluster's "declarative turnkey bootstrap" directive — and it leaves a
 window where local signup is open to anyone who reaches the URL. Background:
-<../../docs/lessons_learned/2026_06_22_paperless_servicelinks_and_fresh_install_sso.md>.
+<../../../docs/lessons_learned/2026_06_22_paperless_servicelinks_and_fresh_install_sso.md>.
 
 **Goal.** Bring up Paperless with no manual claim step and no open-signup window: after
 Flux reconciles, agentydragon's SSO-linked account already exists.
@@ -31,19 +36,19 @@ fresh-install branch is off, so signup closes and the SSO login page behaves nor
   without pre-seeding the user.
 - Decide superuser vs. regular for the pre-seeded account (currently regular by design).
 
-## Make bootstrap ordering explicit
+## Re-establish deployment and bootstrap ordering on revival
 
-**Problem.** `paperless-app` is consumed from a generated `ExternalArtifact`: the
-artifact generator copies the whole `cluster/k8s/paperless/app/**` tree, and one Flux
-Kustomization applies the Deployment and `paperless-bootstrap-group` Job together.
-Flux does not provide resource-level ordering within that Kustomization. The Job must
-therefore tolerate starting before Paperless has completed its image-managed database
-migrations; an init container would run even earlier and could block the Deployment on
-the very migrations that Paperless performs during startup.
+The parked Flux declaration still names `paperless-app`, but its former artifact-generator
+entry and active source tree were removed when the app was parked. Re-establish and verify
+that source and artifact path before restoring the Flux registration.
+
+Once the app is wired again, decide how to sequence the Deployment and
+`paperless-bootstrap-group` Job. If they remain in one Flux Kustomization, the Job must
+tolerate starting before Paperless has completed its image-managed database migrations;
+an init container would run even earlier and could block the Deployment on the migrations
+that Paperless performs during startup.
 
 **Future options.** Keep the Job idempotent and retrying in the current artifact, or,
-if strict ordering becomes necessary, create a separate generated bootstrap artifact
-and Flux Kustomization that depends on `paperless`. The latter also requires updating
-the artifact generator and the root Flux consumer declarations; it is not just a
-directory split. Do not convert this to an init container without also taking ownership
-of the migration ordering.
+if strict ordering becomes necessary, create a separate bootstrap artifact and Flux
+Kustomization that depends on `paperless`. Do not convert this to an init container
+without also taking ownership of the migration ordering.

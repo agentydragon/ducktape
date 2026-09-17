@@ -4,10 +4,10 @@ Each item is phrased as "what we'd learn." Higher items deliver more
 signal toward the goal in <README.md#goal> per unit of effort. Re-rank
 freely as we run things and learn what surprises us.
 
-> **Note:** this is the older Ollama-era signal-ranked backlog. The active
-> sequence is now E1–E5 in <PLAN.md> § "First five experiments", which makes
-> k8s vLLM the starting point (folding in P2 #5 below). Items here that a PLAN
-> experiment subsumes get checked off against the corresponding run.
+> **Note:** this is the older signal-ranked backlog. The initial E1–E5
+> resident-runtime screen is complete; the remaining work here is model/task
+> benchmarking plus follow-on runtime investigations. Keep result details in
+> <PLAN.md> and <results.md>, and check items off against immutable runs.
 
 ## P0 — high signal, low cost, hits the main use case
 
@@ -93,21 +93,22 @@ Mostly diagnostic — sharpens our trust in strict scores on other evals.
 
 ## P2 — structural / longer horizon
 
-### 5. vLLM in-cluster PoC
+### 5. Model quality and workload benchmark matrix
 
-Bigger lift (image, k8s manifest, model PVC, auth, …). Doesn't produce
-a finding directly but unlocks:
+The initial vLLM resident-runtime screen is complete. The remaining question is
+which models and runtime configurations are good enough for the actual workloads,
+not whether another vLLM proof of concept can start.
 
-- Tensor parallel for `gpt-oss:120b` and 70B-class models — currently
-  CPU-offload-bound on Ollama (see
-  <runs/2026-04-28_initial/README.md#followup-cpu-offload-confirmed-for-gpt-oss120b>).
-- Native Blackwell FP4/MXFP4 kernels — Ollama dequantizes to bf16/fp16.
-- Real `reasoning_effort` semantics for models that respect it.
-- Real concurrent decode (Ollama defaults to `NUM_PARALLEL=1`).
+- Finish a coding benchmark beyond HumanEval, starting with HumanEval+ and then
+  expanding to MBPP+, LiveCodeBench, or BigCodeBench as useful.
+- Resume SWE-bench Verified after fixing the recorded context-size mismatch.
+- Run the same task at matched settings on one or two alternative models.
+- Record quality, latency/throughput, context, effort, runtime, and failure mode
+  together in <results.md>.
 
-Worth doing once P0–P1 evidence either confirms `gpt-oss:20b on Ollama`
-is enough (low priority for vLLM) or shows a bigger model would be
-materially better at our jobs (high priority).
+What we'd learn: which model/runtime combination should be the default for
+AI-powered coding, and which larger-model or runtime experiments are justified
+by a measured quality improvement rather than capacity alone.
 
 ### 6. Quant variants
 

@@ -57,7 +57,6 @@ wyrm2 is the only desktop host missing `ducktape.githubSsh`. All others
 2. Upload the public key to GitHub → Settings → SSH keys
 3. `sops -e -i ssh_keys/wyrm2-github.sops.key` (binary encrypt the private key)
 4. Add `ducktape.githubSsh.sopsFile = ../../../ssh_keys/wyrm2-github.sops.key;` to `nix/home/hosts/wyrm2.nix`
-5. Import `../modules/github-ssh.nix` in wyrm2.nix (already done via the module option)
 
 ## Deduplicate wyrm2/rugged/iguana host configs
 

@@ -1,10 +1,9 @@
 # Nix RBE Image TODOs
 
-## CI & Publishing
-
-- Build CI workflow to auto-build and push `nix-rbe-image` to GHCR
-- Pin digest in `devinfra/image_pins.json` like the Ubuntu image
-- Figure out rebuild/repin flow
+> This directory contains experimental image definitions. The published RBE
+> execution image is built from `devinfra/rbe_image/`; its workflow and digest
+> pin live in `.github/workflows/rbe-worker-image.yml` and
+> `devinfra/image_pins.json`. Do not add a second publishing path here.
 
 ## Image Size
 
@@ -50,10 +49,3 @@ Infrastructure tools not needed for CI builds are currently included:
 Could save ~350M+ by splitting these into a separate `rbe-ci-tools` image or
 Nix profile. Current image is ~3.6G (1.5G Ubuntu base + 2.2G Nix store); target
 could be ~3G with infra tools removed.
-
-## CI build workflow
-
-Need a GitHub Actions workflow to auto-build and push the image on
-Dockerfile/flake changes. Similar to existing `.github/workflows/rbe-image.yml`
-but needs to handle Nix installation during Docker build. Should pin the
-resulting digest in `devinfra/image_pins.json`.
