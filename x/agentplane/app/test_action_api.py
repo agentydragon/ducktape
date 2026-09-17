@@ -30,7 +30,7 @@ from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair, si
 from x.agentplane.action_service import api as service_api
 from x.agentplane.action_service.catalog import ActionCatalog, ActionGroup, ActionIdentity, McpExecutorBinding
 from x.agentplane.action_service.connections import ConnectionAuthority, GrantBinding, GrantStatus, NewConnection
-from x.agentplane.action_service.database_migrate import apply_migrations
+from x.agentplane.action_service.database_migrate import RUNNER as ACTIONS_RUNNER
 from x.agentplane.action_service.db import ActionStore, make_engine, make_sessionmaker
 from x.agentplane.action_service.enrollments import ConfirmedReconnectConnection, EnrollmentAuthority, EnrollmentInput
 from x.agentplane.action_service.mcp_executor import McpActionGroupExecutor
@@ -120,7 +120,7 @@ async def review(
     operator_connection: str,
     direct_federation: bool,
 ) -> AsyncIterator[Review]:
-    apply_migrations(db_url)
+    ACTIONS_RUNNER.apply(db_url)
     server = FastMCP("test-review")
     calls: list[str] = []
 

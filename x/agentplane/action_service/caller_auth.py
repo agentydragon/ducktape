@@ -29,8 +29,8 @@ from starlette.responses import JSONResponse, Response
 
 from x.agentplane.action_service.models import CallerPrincipal, ExternalGrantProvenance
 from x.agentplane.action_service.oauth import ActionsOAuthProxy
-from x.agentplane.action_service.policies.resources import CALLER_LABEL
 from x.agentplane.action_service.policy_informer import PolicyIndex
+from x.agentplane.sandbox_auth.bearer import sole_header
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalRejectedError, SandboxPrincipalResolver
 
 logger = logging.getLogger(__name__)
@@ -53,7 +53,9 @@ class CallerAuthorityUnavailableError(AuthenticationError):
 
 class _SoleBearerBackend(BearerAuthBackend):
     async def authenticate(self, conn: HTTPConnection) -> tuple[AuthCredentials, AuthenticatedUser] | None:
-        if len(conn.headers.getlist("authorization")) != 1:
+        # The count rule is shared; the parse is not. This door also admits OAuth access tokens,
+        # whose spelling belongs to whoever issued them, so FastMCP reads the value.
+        if sole_header(conn.headers.getlist("authorization")) is None:
             return None
         try:
             authenticated: tuple[AuthCredentials, AuthenticatedUser] | None = await super().authenticate(conn)
@@ -100,12 +102,10 @@ class CallerTokenVerifier(TokenVerifier):
             account = (await self._sandbox.resolve_workload(token)).account
         except SandboxPrincipalRejectedError:
             return None
-        if not self._callers.admits(account):
-            # As opaque to the caller as an unknown bearer: it already knows which account it holds,
-            # and an attacker should not learn from the difference that the account exists.
-            logger.warning(
-                "workload bearer refused: %s/%s does not carry %s", account.namespace, account.name, CALLER_LABEL
-            )
+        # As opaque to the caller as an unknown bearer: it already knows which account it holds, and
+        # an attacker should not learn from the difference that the account exists.
+        caller = self._callers.admit(account)
+        if caller is None:
             return None
         return CallerToken(
             token=token,
@@ -113,7 +113,7 @@ class CallerTokenVerifier(TokenVerifier):
             # what a person reading a FastMCP log needs; the authoritative one is `provenance`.
             client_id=f"{account.namespace}/{account.name}",
             scopes=[],
-            principal=CallerPrincipal(account=account),
+            principal=caller,
             external_grant=None,
         )
 

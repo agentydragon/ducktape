@@ -21,7 +21,7 @@ from util.bazel.runfiles import get_required_path
 from util.testing.postgres import create_database_sync, force_drop_database_sync
 from util.testing.postgres_fixtures import postgres_container
 from x.agentplane.action_service.catalog import ActionCatalog, ActionDefinition, ActionGroup, McpExecutorBinding
-from x.agentplane.action_service.database_migrate import apply_migrations
+from x.agentplane.action_service.database_migrate import RUNNER
 from x.agentplane.action_service.db import make_engine
 from x.agentplane.action_service.mcp_executor import McpActionGroupExecutor
 from x.agentplane.action_service.models import ExecutionLease, ExecutionRequest, ExecutionResult, ExecutionState
@@ -41,7 +41,7 @@ def db_url(postgres_container: PostgresContainer, request: pytest.FixtureRequest
     db_name = re.sub(r"[^a-z0-9_]", "_", request.node.name.lower())[:45].rstrip("_")
     url = create_database_sync(admin_url, db_name)
     async_url = make_url(url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
-    apply_migrations(async_url)
+    RUNNER.apply(async_url)
     yield async_url
     force_drop_database_sync(admin_url, db_name)
 

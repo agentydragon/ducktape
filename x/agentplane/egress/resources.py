@@ -18,8 +18,6 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validato
 
 from x.agentplane.subjects import ServiceAccountRef
 
-GROUP = "agentplane.allegedly.works"
-VERSION = "v1alpha1"
 POLICIES_PLURAL = "egresspolicies"
 BINDINGS_PLURAL = "egressbindings"
 CREDENTIALS_PLURAL = "egresscredentials"

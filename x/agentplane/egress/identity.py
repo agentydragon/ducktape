@@ -107,8 +107,6 @@ class PodIdentityVerifier:
         try:
             return await self._resolver.resolve_workload(token)
         except SandboxPrincipalRejectedError as error:
-            # `resolve_workload` reads nothing beyond the TokenReview, so `SANDBOX_UNKNOWN` cannot
-            # arrive and has no entry: a KeyError here would mean that stopping point moved.
             reason = {
                 RejectionReason.TOKEN_REJECTED: DenyReason.TOKEN_REJECTED,
                 RejectionReason.POD_MISMATCH: DenyReason.POD_MISMATCH,

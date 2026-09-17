@@ -22,8 +22,6 @@ from x.agentplane.action_service.policies.kind import Spec
 from x.agentplane.action_service.policies.registry import Policy
 from x.agentplane.subjects import ServiceAccountRef
 
-GROUP = "agentplane.allegedly.works"
-VERSION = "v1alpha1"
 POLICY_SETS_PLURAL = "actionpolicysets"
 BINDINGS_PLURAL = "actionpolicybindings"
 SERVICE_ACCOUNTS_PLURAL = "serviceaccounts"

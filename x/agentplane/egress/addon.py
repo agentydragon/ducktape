@@ -34,6 +34,7 @@ from x.agentplane.egress.policy import (
     evaluate,
 )
 from x.agentplane.egress.upstream import Pin, UpstreamRefusedError, UpstreamResolver
+from x.agentplane.sandbox_auth.bearer import parse_bearer
 from x.agentplane.sandbox_auth.principal import WorkloadPrincipal
 from x.agentplane.subjects import ServiceAccountRef
 
@@ -140,11 +141,7 @@ class EgressAddon:
         # A new hop credential must stand on its own. It can never fall back to an earlier tunnel's
         # authenticated state when malformed or rejected.
         self._authenticated.pop(client_id, None)
-        scheme, _, token = header.partition(" ")
-        token = token.strip()
-        if scheme.lower() != "bearer" or not token:
-            return None
-        return token
+        return parse_bearer(header)
 
     async def _caller_of(self, flow: http.HTTPFlow) -> ServiceAccountRef:
         """The subject this connection's token proves, or IdentityRejectedError saying why not."""

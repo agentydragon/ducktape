@@ -16,7 +16,7 @@ from testcontainers.postgres import PostgresContainer
 from util.kubernetes import CustomObjectsClient
 from util.testing.postgres import create_database_sync, force_drop_database_sync
 from util.testing.postgres_fixtures import postgres_container
-from x.agentplane.egress.database_migrate import apply_migrations
+from x.agentplane.egress.database_migrate import RUNNER
 from x.agentplane.egress.decision_log import DecisionLog
 from x.agentplane.egress.decision_store import DecisionStore, make_engine
 from x.agentplane.egress.informer import Informer
@@ -147,7 +147,7 @@ def history_db_url(postgres_container: PostgresContainer) -> Iterator[str]:
     )
     name = f"history_{uuid4().hex}"
     url = create_database_sync(admin_url, name)
-    apply_migrations(url)
+    RUNNER.apply(url)
     yield make_url(url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
     force_drop_database_sync(admin_url, name)
 

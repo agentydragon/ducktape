@@ -375,10 +375,8 @@ py_library(
     data = ["//x/agentplane/app/migrations:files"],
     deps = [
         ":trajectory",
-        "@pypi//alembic",
-        "@pypi//psycopg",
+        "//util:db_migrations",
         "@pypi//pydantic_settings",
-        "@pypi//sqlalchemy",
     ],
 )
 
@@ -498,6 +496,7 @@ py_library(
     deps = [
         ":inventory",
         "//util:kubernetes",
+        "//x/agentplane:crds",
         "//x/agentplane:subjects",
         "//x/agentplane/egress:resources",
         "@pypi//kubernetes_asyncio",
@@ -802,6 +801,7 @@ py_library(
         ":egress",
         ":inventory",
         "//util:kubernetes",
+        "//x/agentplane:crds",
         "//x/agentplane:subjects",
         "//x/agentplane/action_service:client",
         "//x/agentplane/action_service:policy_view",

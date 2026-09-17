@@ -131,7 +131,6 @@ py_library(
         ":service",
         ":updates",
         "//x/agentplane:subjects",
-        "//x/agentplane/action_service/policies:resources",
         "//x/agentplane/sandbox_auth:http",
         "//x/agentplane/sandbox_auth:principal",
         "@pypi//fastapi",
@@ -162,10 +161,8 @@ py_library(
     data = ["//x/agentplane/action_service/migrations:files"],
     deps = [
         ":db",
-        "@pypi//alembic",
-        "@pypi//psycopg",
+        "//util:db_migrations",
         "@pypi//pydantic_settings",
-        "@pypi//sqlalchemy",
     ],
 )
 
@@ -467,6 +464,7 @@ py_test(
         ":updates",
         "//:conftest",
         "//util/bazel:runfiles",
+        "//x/agentplane:crds",
         "//x/agentplane:subjects",
         "//x/agentplane/action_service/policies:resources",
         "//x/agentplane/action_service/test_fixtures:lifecycle",
@@ -822,7 +820,7 @@ py_library(
         ":models",
         ":oauth",
         ":policy_informer",
-        "//x/agentplane/action_service/policies:resources",
+        "//x/agentplane/sandbox_auth:bearer",
         "//x/agentplane/sandbox_auth:principal",
         "@pypi//fastapi",
         "@pypi//fastmcp_slim",
@@ -966,6 +964,7 @@ py_library(
     deps = [
         ":models",
         "//util:kubernetes",
+        "//x/agentplane:crds",
         "//x/agentplane:kubernetes_watch",
         "//x/agentplane:subjects",
         "//x/agentplane/action_service/policies:resources",
@@ -982,6 +981,7 @@ py_test(
         ":policy_informer",
         "//:conftest",
         "//util:kubernetes",
+        "//x/agentplane:crds",
         "//x/agentplane:subjects",
         "//x/agentplane/action_service/policies:resources",
         "//x/agentplane/egress/testing:fake_apiserver",

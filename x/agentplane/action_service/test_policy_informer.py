@@ -17,15 +17,14 @@ from x.agentplane.action_service.models import NamespacedName
 from x.agentplane.action_service.policies.resources import (
     BINDINGS_PLURAL,
     CALLER_LABEL,
-    GROUP,
     POLICY_SETS_PLURAL,
     SERVICE_ACCOUNTS_PLURAL,
-    VERSION,
     ActionPolicyBinding,
     ActionPolicySet,
     InvalidResource,
 )
 from x.agentplane.action_service.policy_informer import PolicyIndex, PolicyInformer
+from x.agentplane.crds import GROUP, VERSION
 from x.agentplane.egress.testing.fake_apiserver import FakeApiServer, fake_apiserver
 from x.agentplane.subjects import ServiceAccountRef
 

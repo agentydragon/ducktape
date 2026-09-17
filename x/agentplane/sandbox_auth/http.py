@@ -2,19 +2,17 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from typing import Never
 
 from fastapi import HTTPException, Request, status
 
+from x.agentplane.sandbox_auth.bearer import parse_bearer, sole_header
 from x.agentplane.sandbox_auth.principal import (
     SandboxPrincipalRejectedError,
     SandboxPrincipalResolver,
     WorkloadPrincipal,
 )
-
-_BEARER = re.compile(r"Bearer +([A-Za-z0-9._~+/=-]+)", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -32,11 +30,11 @@ class WorkloadPrincipalAuthenticator:
 
 
 def _sole_bearer(request: Request) -> str:
-    values = request.headers.getlist("authorization")
-    match = _BEARER.fullmatch(values[0]) if len(values) == 1 else None
-    if match is None:
+    value = sole_header(request.headers.getlist("authorization"))
+    token = parse_bearer(value) if value is not None else None
+    if token is None:
         _reject()
-    return match.group(1)
+    return token
 
 
 def _reject() -> Never:

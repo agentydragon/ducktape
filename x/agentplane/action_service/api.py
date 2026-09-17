@@ -68,7 +68,6 @@ from x.agentplane.action_service.models import (
     OperatorPrincipal,
 )
 from x.agentplane.action_service.oauth import ActionsOAuthProxy
-from x.agentplane.action_service.policies.resources import CALLER_LABEL
 from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.policy_view import CallerActionPolicyView, SubjectActionPolicyView
 from x.agentplane.action_service.push import PushIdentity, PushSubscriptionStore
@@ -139,17 +138,14 @@ async def _workload(
     Authenticating is not being admitted: without the label an account reaches no route, so a
     workload the operator has not named cannot queue Actions for them either.
     """
-    account = (await authenticator(request)).account
-    if not callers.admits(account):
+    caller = callers.admit((await authenticator(request)).account)
+    if caller is None:
         # Deliberately the authenticator's own generic refusal: which account was presented is not
         # the caller's to learn from the difference.
-        logger.warning(
-            "workload bearer refused: %s/%s does not carry %s", account.namespace, account.name, CALLER_LABEL
-        )
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED, "invalid workload bearer", headers={"WWW-Authenticate": "Bearer"}
         )
-    return CallerPrincipal(account=account)
+    return caller
 
 
 async def _operator(

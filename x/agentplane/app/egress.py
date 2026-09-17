@@ -20,6 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from util.kubernetes import CustomObjectsClient
 from x.agentplane.app.inventory import InventoryError, SandboxView
+from x.agentplane.crds import GROUP, VERSION
 from x.agentplane.egress.resources import (
     EgressBinding,
     EgressCredential,
@@ -35,7 +36,7 @@ from x.agentplane.subjects import ServiceAccountRef
 # nothing at runtime deletes such a binding, since the next reconcile would apply it again.
 FLUX_KUSTOMIZATION_LABEL = "kustomize.toolkit.fluxcd.io/name"
 
-EGRESS_API = ("agentplane.allegedly.works", "v1alpha1")
+EGRESS_API = (GROUP, VERSION)
 POLICIES_PLURAL = "egresspolicies"
 BINDINGS_PLURAL = "egressbindings"
 CREDENTIALS_PLURAL = "egresscredentials"

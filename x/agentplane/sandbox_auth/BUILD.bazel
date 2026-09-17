@@ -15,6 +15,7 @@ py_library(
     name = "http",
     srcs = ["http.py"],
     deps = [
+        ":bearer",
         ":principal",
         "@pypi//fastapi",
     ],
@@ -45,4 +46,9 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
+)
+
+py_library(
+    name = "bearer",
+    srcs = ["bearer.py"],
 )

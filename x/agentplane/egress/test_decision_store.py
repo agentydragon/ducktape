@@ -13,7 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy.engine import Connection
 
 from x.agentplane.egress.admin import create_admin_app, serve_admin
-from x.agentplane.egress.database_migrate import run_migrations_for_connection
+from x.agentplane.egress.database_migrate import RUNNER
 from x.agentplane.egress.decision_log import DecisionLog
 from x.agentplane.egress.decision_store import Base, DecisionRecordRow, DecisionStore, make_engine
 from x.agentplane.egress.decisions import DecisionRecord, Outcome, Phase
@@ -42,7 +42,7 @@ def record(**values) -> DecisionRecord:
 
 
 def check_migration(connection: Connection) -> None:
-    run_migrations_for_connection(connection)
+    RUNNER.run_for_connection(connection)
     assert (
         compare_metadata(
             MigrationContext.configure(connection, opts={"version_table": "egress_alembic_version"}), Base.metadata

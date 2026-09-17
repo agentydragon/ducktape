@@ -21,6 +21,7 @@ py_library(
         ":policy",
         ":upstream",
         "//x/agentplane:subjects",
+        "//x/agentplane/sandbox_auth:bearer",
         "//x/agentplane/sandbox_auth:principal",
         "@pypi//mitmproxy",
     ],
@@ -65,6 +66,7 @@ py_library(
         ":policy",
         ":resources",
         "//util:kubernetes",
+        "//x/agentplane:crds",
         "//x/agentplane:kubernetes_watch",
         "@pypi//kubernetes_asyncio",
     ],
@@ -458,10 +460,8 @@ py_library(
     data = ["//x/agentplane/egress/migrations:files"],
     deps = [
         ":decision_store",
-        "@pypi//alembic",
-        "@pypi//psycopg",
+        "//util:db_migrations",
         "@pypi//pydantic_settings",
-        "@pypi//sqlalchemy",
     ],
 )
 

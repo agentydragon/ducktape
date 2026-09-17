@@ -42,19 +42,14 @@ from x.agentplane.action_service.models import (
     OperatorPrincipal,
     Verdict,
 )
-from x.agentplane.action_service.policies.resources import (
-    BINDINGS_PLURAL,
-    GROUP,
-    POLICY_SETS_PLURAL,
-    SERVICE_ACCOUNTS_PLURAL,
-    VERSION,
-)
+from x.agentplane.action_service.policies.resources import BINDINGS_PLURAL, POLICY_SETS_PLURAL, SERVICE_ACCOUNTS_PLURAL
 from x.agentplane.action_service.policy_evaluation import PROVIDER_NAME
 from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.runtime import running_executor
 from x.agentplane.action_service.service import ActionService, UnsupportedActionError
 from x.agentplane.action_service.test_fixtures.lifecycle import wait_available
 from x.agentplane.action_service.updates import ActionUpdates
+from x.agentplane.crds import GROUP, VERSION
 from x.agentplane.egress.testing.fake_apiserver import fake_apiserver
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 from x.agentplane.subjects import ServiceAccountRef

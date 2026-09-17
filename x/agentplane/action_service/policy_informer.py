@@ -18,15 +18,14 @@ from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import CoreV1Api
 
 from util.kubernetes import CustomObjectsClient
-from x.agentplane.action_service.models import NamespacedName, service_account_key
+from x.agentplane.action_service.models import CallerPrincipal, NamespacedName, service_account_key
 from x.agentplane.action_service.policies.resources import (
     BINDINGS_PLURAL,
+    CALLER_LABEL,
     CALLER_LABEL_SELECTOR,
-    GROUP,
     POLICY_SETS_PLURAL,
     READY_CONDITION,
     SERVICE_ACCOUNTS_PLURAL,
-    VERSION,
     ActionPolicyBinding,
     ActionPolicySet,
     Condition,
@@ -35,6 +34,7 @@ from x.agentplane.action_service.policies.resources import (
     parse_binding,
     parse_policy_set,
 )
+from x.agentplane.crds import GROUP, VERSION
 from x.agentplane.kubernetes_watch import ListWatch, WatchedKind, apply_to
 from x.agentplane.subjects import ServiceAccountRef
 
@@ -61,6 +61,19 @@ class PolicyIndex:
         server refuses every caller rather than serving a picture it cannot vouch for.
         """
         return self.synced and service_account_key(ref) in self.service_accounts
+
+    def admit(self, ref: ServiceAccountRef) -> CallerPrincipal | None:
+        """The caller this account is, or None where the label does not admit it.
+
+        Both transports decide admission here so the rule cannot be tightened on one door and not
+        the other, and so the refusal is logged once, in the same words, wherever it happens. What
+        the caller is told is each surface's own business: which account was presented is not
+        something an attacker should learn from the difference between two refusals.
+        """
+        if not self.admits(ref):
+            logger.warning("workload bearer refused: %s/%s does not carry %s", ref.namespace, ref.name, CALLER_LABEL)
+            return None
+        return CallerPrincipal(account=ref)
 
     def caller_service_accounts(self) -> list[ServiceAccountRef]:
         return [self.service_accounts[key] for key in sorted(self.service_accounts)]
