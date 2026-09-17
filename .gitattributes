@@ -35,6 +35,16 @@ gazelle_python.yaml linguist-generated=true
 gotk-components.yaml linguist-generated=true
 gotk-sync.yaml linguist-generated=true
 
+# cdk8s-generated cluster manifests — `bbr run //cluster/cdk8s:generate_manifests` output,
+# pinned to committed content by //cluster/cdk8s:test_generate_manifests. See
+# cluster/docs/cdk8s.md. The `.k8s.yaml` suffix is conventionally
+# cdk8s-only; flux-kustomization.yaml/kustomization.yaml share their filename with
+# hand-written directories elsewhere, so those need a path-scoped line per converted
+# directory instead.
+cluster/k8s/**/*.k8s.yaml linguist-generated=true
+cluster/k8s/litellm/app/flux-kustomization.yaml linguist-generated=true
+cluster/k8s/litellm/app/kustomization.yaml linguist-generated=true
+
 # Artifacts captured from live Claude Code containers — not our source code
 devinfra/claude/web_env/rootfs/** rules-lint-ignored=true
 devinfra/claude/web_env/reference/** rules-lint-ignored=true

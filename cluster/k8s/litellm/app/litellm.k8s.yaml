@@ -1,0 +1,861 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  annotations:
+    ducktape.dev/delivery: Flux can consume this ordinary Kubernetes YAML
+    ducktape.dev/generated: by cdk8s under Bazel
+  labels:
+    app.kubernetes.io/managed-by: cdk8s
+    app.kubernetes.io/part-of: litellm
+  name: litellm-config
+  namespace: litellm
+data:
+  config.yaml: |
+    model_list:
+      - model_name: ollama/oai-chat/gpt-oss-20b-128k
+        litellm_params:
+          model: openai/gpt-oss:20b
+          api_base: http://ollama.ollama.svc.cluster.local:11434/v1
+          api_key: ollama
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: ollama/oai-chat/gpt-oss-20b-256k
+        litellm_params:
+          model: openai/gpt-oss:20b
+          api_base: http://ollama.ollama.svc.cluster.local:11434/v1
+          api_key: ollama
+          extra_body:
+            options:
+              num_ctx: 262144
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: ollama/oai-chat/gpt-oss-20b-512k
+        litellm_params:
+          model: openai/gpt-oss:20b
+          api_base: http://ollama.ollama.svc.cluster.local:11434/v1
+          api_key: ollama
+          extra_body:
+            options:
+              num_ctx: 524288
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: ollama/oai-chat/gpt-oss-20b-1m
+        litellm_params:
+          model: openai/gpt-oss:20b
+          api_base: http://ollama.ollama.svc.cluster.local:11434/v1
+          api_key: ollama
+          extra_body:
+            options:
+              num_ctx: 1048576
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: ollama/olm-chat/gpt-oss-20b-128k
+        litellm_params:
+          model: ollama/gpt-oss:20b
+          api_base: http://ollama.ollama.svc.cluster.local:11434
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: ollama/olm-chat/gpt-oss-20b-256k
+        litellm_params:
+          model: ollama/gpt-oss:20b
+          api_base: http://ollama.ollama.svc.cluster.local:11434
+          extra_body:
+            options:
+              num_ctx: 262144
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: ollama/olm-chat/gpt-oss-20b-512k
+        litellm_params:
+          model: ollama/gpt-oss:20b
+          api_base: http://ollama.ollama.svc.cluster.local:11434
+          extra_body:
+            options:
+              num_ctx: 524288
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: ollama/olm-chat/gpt-oss-20b-1m
+        litellm_params:
+          model: ollama/gpt-oss:20b
+          api_base: http://ollama.ollama.svc.cluster.local:11434
+          extra_body:
+            options:
+              num_ctx: 1048576
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: ollama/oai-chat/gpt-oss-120b-128k
+        litellm_params:
+          model: openai/gpt-oss:120b
+          api_base: http://ollama.ollama.svc.cluster.local:11434/v1
+          api_key: ollama
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: ollama/olm-chat/gpt-oss-120b-128k
+        litellm_params:
+          model: ollama/gpt-oss:120b
+          api_base: http://ollama.ollama.svc.cluster.local:11434
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: ollama/oai-chat/gemma4-31b-it-q8_0-128k
+        litellm_params:
+          model: openai/gemma4:31b-it-q8_0
+          api_base: http://ollama.ollama.svc.cluster.local:11434/v1
+          api_key: ollama
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: ollama/olm-chat/gemma4-31b-it-q8_0-128k
+        litellm_params:
+          model: ollama/gemma4:31b-it-q8_0
+          api_base: http://ollama.ollama.svc.cluster.local:11434
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: ollama/olm-embed/qwen3-embedding-4b
+        litellm_params:
+          model: ollama/qwen3-embedding:4b
+          api_base: http://ollama.ollama.svc.cluster.local:11434
+        model_info:
+          mode: embedding
+      - model_name: tana/ant-messages/claude-sonnet-4-6
+        litellm_params:
+          model: tana/tana/claude-sonnet-4-6/medium
+          custom_llm_provider: tana
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: tana/ant-messages/claude-opus-4-6
+        litellm_params:
+          model: tana/tana/claude-opus-4-6/high
+          custom_llm_provider: tana
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: tana/ant-messages/claude-haiku-4-5
+        litellm_params:
+          model: tana/tana/claude-haiku-4-5-20251001
+          custom_llm_provider: tana
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: chatgpt/ant-messages/gpt-6-astra
+        litellm_params:
+          model: anthropic/gpt-6-astra
+          api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
+          api_key: os.environ/CLIPROXY_CLIENT_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+          max_input_tokens: 872000
+          max_output_tokens: 128000
+          max_tokens: 128000
+      - model_name: chatgpt/ant-messages/gpt-5.4
+        litellm_params:
+          model: anthropic/gpt-5.4
+          api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
+          api_key: os.environ/CLIPROXY_CLIENT_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: chatgpt/ant-messages/gpt-5.5
+        litellm_params:
+          model: anthropic/gpt-5.5
+          api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
+          api_key: os.environ/CLIPROXY_CLIENT_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: chatgpt/ant-messages/gpt-5.6-sol
+        litellm_params:
+          model: anthropic/gpt-5.6-sol
+          api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
+          api_key: os.environ/CLIPROXY_CLIENT_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+          max_input_tokens: 372000
+          max_output_tokens: 128000
+          max_tokens: 128000
+      - model_name: chatgpt/ant-messages/gpt-5.6-terra
+        litellm_params:
+          model: anthropic/gpt-5.6-terra
+          api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
+          api_key: os.environ/CLIPROXY_CLIENT_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+          max_input_tokens: 372000
+          max_output_tokens: 128000
+          max_tokens: 128000
+      - model_name: chatgpt/ant-messages/gpt-5.6-luna
+        litellm_params:
+          model: anthropic/gpt-5.6-luna
+          api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
+          api_key: os.environ/CLIPROXY_CLIENT_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+          max_input_tokens: 372000
+          max_output_tokens: 128000
+          max_tokens: 128000
+      - model_name: chatgpt/ant-messages/gpt-5.3-codex-spark
+        litellm_params:
+          model: anthropic/gpt-5.3-codex-spark
+          api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
+          api_key: os.environ/CLIPROXY_CLIENT_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: chatgpt/oai-responses/gpt-6-astra
+        litellm_params:
+          model: openai/gpt-6-astra
+          api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317/v1
+          api_key: os.environ/CLIPROXY_CLIENT_KEY
+        model_info:
+          mode: responses
+          supports_function_calling: true
+          max_input_tokens: 872000
+          max_output_tokens: 128000
+          max_tokens: 128000
+      - model_name: chatgpt/oai-responses/gpt-5.4
+        litellm_params:
+          model: openai/gpt-5.4
+          api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317/v1
+          api_key: os.environ/CLIPROXY_CLIENT_KEY
+        model_info:
+          mode: responses
+          supports_function_calling: true
+      - model_name: chatgpt/oai-responses/gpt-5.5
+        litellm_params:
+          model: openai/gpt-5.5
+          api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317/v1
+          api_key: os.environ/CLIPROXY_CLIENT_KEY
+        model_info:
+          mode: responses
+          supports_function_calling: true
+      - model_name: chatgpt/oai-responses/gpt-5.6-sol
+        litellm_params:
+          model: openai/gpt-5.6-sol
+          api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317/v1
+          api_key: os.environ/CLIPROXY_CLIENT_KEY
+        model_info:
+          mode: responses
+          supports_function_calling: true
+          max_input_tokens: 372000
+          max_output_tokens: 128000
+          max_tokens: 128000
+      - model_name: chatgpt/oai-responses/gpt-5.6-terra
+        litellm_params:
+          model: openai/gpt-5.6-terra
+          api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317/v1
+          api_key: os.environ/CLIPROXY_CLIENT_KEY
+        model_info:
+          mode: responses
+          supports_function_calling: true
+          max_input_tokens: 372000
+          max_output_tokens: 128000
+          max_tokens: 128000
+      - model_name: chatgpt/oai-responses/gpt-5.6-luna
+        litellm_params:
+          model: openai/gpt-5.6-luna
+          api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317/v1
+          api_key: os.environ/CLIPROXY_CLIENT_KEY
+        model_info:
+          mode: responses
+          supports_function_calling: true
+          max_input_tokens: 372000
+          max_output_tokens: 128000
+          max_tokens: 128000
+      - model_name: chatgpt/oai-responses/gpt-5.3-codex-spark
+        litellm_params:
+          model: openai/gpt-5.3-codex-spark
+          api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317/v1
+          api_key: os.environ/CLIPROXY_CLIENT_KEY
+        model_info:
+          mode: responses
+          supports_function_calling: true
+      - model_name: anthropic-max20/ant-messages/claude-opus-5
+        litellm_params:
+          model: anthropic/claude-opus-5
+          api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
+          api_key: os.environ/CLIPROXY_CLIENT_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: anthropic-max20/ant-messages/claude-sonnet-5
+        litellm_params:
+          model: anthropic/claude-sonnet-5
+          api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
+          api_key: os.environ/CLIPROXY_CLIENT_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: anthropic-max20/ant-messages/claude-fable-5
+        litellm_params:
+          model: anthropic/claude-fable-5
+          api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
+          api_key: os.environ/CLIPROXY_CLIENT_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: anthropic-max20/ant-messages/claude-haiku-4-5-20251001
+        litellm_params:
+          model: anthropic/claude-haiku-4-5-20251001
+          api_base: http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317
+          api_key: os.environ/CLIPROXY_CLIENT_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: anthropic-api/ant-messages/claude-opus-5
+        litellm_params:
+          model: anthropic/claude-opus-5
+          api_key: os.environ/ANTHROPIC_API_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: anthropic-api/ant-messages/claude-sonnet-5
+        litellm_params:
+          model: anthropic/claude-sonnet-5
+          api_key: os.environ/ANTHROPIC_API_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: anthropic-api/ant-messages/claude-fable-5
+        litellm_params:
+          model: anthropic/claude-fable-5
+          api_key: os.environ/ANTHROPIC_API_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: anthropic-api/ant-messages/claude-haiku-4-5-20251001
+        litellm_params:
+          model: anthropic/claude-haiku-4-5-20251001
+          api_key: os.environ/ANTHROPIC_API_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: groq/oai-chat/llama-3.3-70b-versatile
+        litellm_params:
+          model: groq/llama-3.3-70b-versatile
+          api_key: os.environ/GROQ_API_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: groq/oai-chat/llama-3.1-8b-instant
+        litellm_params:
+          model: groq/llama-3.1-8b-instant
+          api_key: os.environ/GROQ_API_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: whisper-large-v3
+        litellm_params:
+          model: groq/whisper-large-v3
+          api_key: os.environ/GROQ_API_KEY
+        model_info:
+          mode: audio_transcription
+      - model_name: whisper-large-v3-turbo
+        litellm_params:
+          model: groq/whisper-large-v3-turbo
+          api_key: os.environ/GROQ_API_KEY
+        model_info:
+          mode: audio_transcription
+      - model_name: google/goog-generate/gemini-3.7-flash
+        litellm_params:
+          model: gemini/gemini-3.7-flash
+          api_key: os.environ/GEMINI_API_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: google/goog-generate/gemini-3.5-flash-lite
+        litellm_params:
+          model: gemini/gemini-3.5-flash-lite
+          api_key: os.environ/GEMINI_API_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: google/goog-embed/gemini-embedding-2
+        litellm_params:
+          model: gemini/gemini-embedding-2
+          api_key: os.environ/GEMINI_API_KEY
+        model_info:
+          mode: embedding
+      - model_name: gemini-embedding-2
+        litellm_params:
+          model: gemini/gemini-embedding-2
+          api_key: os.environ/GEMINI_API_KEY
+        model_info:
+          mode: embedding
+      - model_name: google/goog-embed/gemini-embedding-001
+        litellm_params:
+          model: gemini/gemini-embedding-001
+          api_key: os.environ/GEMINI_API_KEY
+        model_info:
+          mode: embedding
+      - model_name: mistral/oai-chat/codestral-2508
+        litellm_params:
+          model: mistral/codestral-2508
+          api_key: os.environ/MISTRAL_API_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: mistral/oai-chat/codestral-latest
+        litellm_params:
+          model: mistral/codestral-latest
+          api_key: os.environ/MISTRAL_API_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: mistral/oai-chat/magistral-medium-latest
+        litellm_params:
+          model: mistral/magistral-medium-latest
+          api_key: os.environ/MISTRAL_API_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: mistral/oai-chat/magistral-small-latest
+        litellm_params:
+          model: mistral/magistral-small-latest
+          api_key: os.environ/MISTRAL_API_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: mistral/oai-chat/ministral-14b-latest
+        litellm_params:
+          model: mistral/ministral-14b-latest
+          api_key: os.environ/MISTRAL_API_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: mistral/oai-chat/ministral-14b-2512
+        litellm_params:
+          model: mistral/ministral-14b-2512
+          api_key: os.environ/MISTRAL_API_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: mistral/oai-chat/ministral-8b-latest
+        litellm_params:
+          model: mistral/ministral-8b-latest
+          api_key: os.environ/MISTRAL_API_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: mistral/oai-chat/ministral-8b-2512
+        litellm_params:
+          model: mistral/ministral-8b-2512
+          api_key: os.environ/MISTRAL_API_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: mistral/oai-chat/ministral-3b-latest
+        litellm_params:
+          model: mistral/ministral-3b-latest
+          api_key: os.environ/MISTRAL_API_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: mistral/oai-chat/ministral-3b-2512
+        litellm_params:
+          model: mistral/ministral-3b-2512
+          api_key: os.environ/MISTRAL_API_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: mistral/oai-chat/mistral-code-fim-latest
+        litellm_params:
+          model: mistral/mistral-code-fim-latest
+          api_key: os.environ/MISTRAL_API_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: mistral/oai-chat/mistral-code-latest
+        litellm_params:
+          model: mistral/mistral-code-latest
+          api_key: os.environ/MISTRAL_API_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: mistral/oai-chat/mistral-medium
+        litellm_params:
+          model: mistral/mistral-medium
+          api_key: os.environ/MISTRAL_API_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: mistral/oai-chat/mistral-medium-2604
+        litellm_params:
+          model: mistral/mistral-medium-2604
+          api_key: os.environ/MISTRAL_API_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: mistral/oai-chat/mistral-medium-3
+        litellm_params:
+          model: mistral/mistral-medium-3
+          api_key: os.environ/MISTRAL_API_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: mistral/oai-chat/mistral-medium-3-5
+        litellm_params:
+          model: mistral/mistral-medium-3-5
+          api_key: os.environ/MISTRAL_API_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: mistral/oai-chat/mistral-medium-3.5
+        litellm_params:
+          model: mistral/mistral-medium-3.5
+          api_key: os.environ/MISTRAL_API_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: mistral/oai-chat/mistral-medium-latest
+        litellm_params:
+          model: mistral/mistral-medium-latest
+          api_key: os.environ/MISTRAL_API_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: mistral/oai-chat/mistral-small-2603
+        litellm_params:
+          model: mistral/mistral-small-2603
+          api_key: os.environ/MISTRAL_API_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: mistral/oai-chat/mistral-small-latest
+        litellm_params:
+          model: mistral/mistral-small-latest
+          api_key: os.environ/MISTRAL_API_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: mistral/oai-chat/mistral-vibe-cli-fast
+        litellm_params:
+          model: mistral/mistral-vibe-cli-fast
+          api_key: os.environ/MISTRAL_API_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: mistral/oai-chat/mistral-vibe-cli-latest
+        litellm_params:
+          model: mistral/mistral-vibe-cli-latest
+          api_key: os.environ/MISTRAL_API_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: mistral/oai-chat/mistral-vibe-cli-with-tools
+        litellm_params:
+          model: mistral/mistral-vibe-cli-with-tools
+          api_key: os.environ/MISTRAL_API_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: mistral/oai-chat/voxtral-small-2507
+        litellm_params:
+          model: mistral/voxtral-small-2507
+          api_key: os.environ/MISTRAL_API_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+      - model_name: mistral/oai-chat/voxtral-small-latest
+        litellm_params:
+          model: mistral/voxtral-small-latest
+          api_key: os.environ/MISTRAL_API_KEY
+        model_info:
+          mode: chat
+          supports_function_calling: true
+    litellm_settings:
+      drop_params: true
+      callbacks:
+        - langfuse_otel
+        - prometheus
+      custom_provider_map:
+        - provider: tana
+          custom_handler: tana.litellm_proxy.custom_handler.tana_handler
+    router_settings:
+      model_group_alias:
+        gpt-6-astra:
+          model: chatgpt/oai-responses/gpt-6-astra
+          hidden: true
+    general_settings:
+      forward_client_headers_to_llm_api: true
+      store_model_in_db: false
+immutable: false
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: forgejo-images-creds
+  namespace: litellm
+spec:
+  dataFrom:
+    - extract:
+        key: forgejo-images-creds
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-forgejo-images-secret-store
+  target:
+    name: forgejo-images-creds
+    template:
+      mergePolicy: Merge
+      type: kubernetes.io/dockerconfigjson
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: litellm
+  namespace: litellm
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    reloader.stakater.com/auto: "true"
+  labels:
+    app.kubernetes.io/name: litellm
+  name: litellm
+  namespace: litellm
+spec:
+  minReadySeconds: 0
+  progressDeadlineSeconds: 600
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      cdk8s.io/metadata.addr: litellm-proxy-deployment-c87123b0
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: litellm
+        cdk8s.io/metadata.addr: litellm-proxy-deployment-c87123b0
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: topology.kubernetes.io/zone
+                    operator: In
+                    values:
+                      - hil-ovh
+      automountServiceAccountToken: false
+      containers:
+        - args:
+            - --config
+            - /etc/litellm/config.yaml
+          env:
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: "4000"
+            - name: LITELLM_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: api-key
+                  name: litellm-master-key
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  key: uri
+                  name: litellm-db-app
+            - name: LITELLM_SALT_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: key
+                  name: litellm-salt-key
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: api-key
+                  name: litellm-anthropic-key
+            - name: GROQ_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: GROQ_API_KEY
+                  name: litellm-groq-key
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: GEMINI_API_KEY
+                  name: litellm-gemini-key
+            - name: MISTRAL_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: MISTRAL_API_KEY
+                  name: litellm-mistral-key
+            - name: CLIPROXY_CLIENT_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: CLIPROXY_CLIENT_KEY
+                  name: litellm-cliproxy-key
+            - name: TANA_FIREBASE_REFRESH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: refresh_token
+                  name: tana-firebase-refresh-token
+            - name: LANGFUSE_OTEL_HOST
+              value: http://langfuse-web.langfuse.svc.cluster.local:3000
+            - name: LANGFUSE_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: LANGFUSE_INIT_PROJECT_PUBLIC_KEY
+                  name: langfuse-secrets
+            - name: LANGFUSE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: LANGFUSE_INIT_PROJECT_SECRET_KEY
+                  name: langfuse-secrets
+          image: git.allegedly.works/ducktape-ci/tana-litellm-proxy:unset
+          imagePullPolicy: Always
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /health/liveliness
+              port: 4000
+              scheme: HTTP
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+          name: litellm
+          ports:
+            - containerPort: 4000
+              name: http
+              protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /health/readiness
+              port: 4000
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            limits:
+              cpu: "2"
+              memory: 4096Mi
+            requests:
+              cpu: 100m
+              memory: 1024Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: false
+          startupProbe:
+            failureThreshold: 36
+            httpGet:
+              path: /health/liveliness
+              port: 4000
+              scheme: HTTP
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+          volumeMounts:
+            - mountPath: /etc/litellm
+              name: configmap-litellm-config
+              readOnly: true
+      dnsPolicy: ClusterFirst
+      hostNetwork: false
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      restartPolicy: Always
+      securityContext:
+        fsGroupChangePolicy: Always
+        runAsNonRoot: false
+      serviceAccountName: litellm
+      setHostnameAsFQDN: false
+      shareProcessNamespace: false
+      terminationGracePeriodSeconds: 90
+      tolerations:
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/control-plane
+          operator: Exists
+      topologySpreadConstraints:
+        - labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: litellm
+          maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+      volumes:
+        - configMap:
+            items:
+              - key: config.yaml
+                path: config.yaml
+            name: litellm-config
+          name: configmap-litellm-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: litellm
+  name: litellm
+  namespace: litellm
+spec:
+  externalIPs: []
+  ports:
+    - name: http
+      port: 4000
+      protocol: TCP
+      targetPort: 4000
+  selector:
+    cdk8s.io/metadata.addr: litellm-proxy-deployment-c87123b0
+  type: ClusterIP
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: litellm
+  namespace: litellm
+spec:
+  hostnames:
+    - litellm.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: litellm
+          port: 4000
+      timeouts:
+        backendRequest: 600s
+        request: 600s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: litellm
+  namespace: litellm
+spec:
+  endpoints:
+    - bearerTokenSecret:
+        key: api-key
+        name: litellm-master-key
+      interval: 15s
+      path: /metrics
+      port: http
+      scrapeTimeout: 10s
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: litellm

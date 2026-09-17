@@ -2,6 +2,7 @@ import json5
 import pytest_bazel
 import yaml
 
+from cluster.cdk8s.litellm_config import main_proxy_config
 from cluster.k8s.litellm.app.model_rosters import (
     ANTHROPIC_MODELS,
     CLIPROXY_MODELS,
@@ -22,7 +23,6 @@ from util.bazel.runfiles import get_required_path
 _PUBLIC_CODER_AGENT_CONFIG = "ducktape/cluster/k8s/agents/public-coder-agent/app/openclaw.json5"
 _HAKU_OPENCLAW_CONFIG = "ducktape/cluster/k8s/agents/haku-openclaw-spike/app/openclaw.json"
 _HAKU_OPENCLAW_DEPLOYMENT = "ducktape/cluster/k8s/agents/haku-openclaw-spike/app/deployment.yaml"
-_LITELLM_CONFIG = "ducktape/cluster/k8s/litellm/app/proxy-config.yaml"
 
 
 def _public_coder_agent_models() -> list[dict]:
@@ -45,8 +45,7 @@ def _haku_openclaw_env() -> dict[str, str]:
 
 
 def _litellm_models() -> dict[str, dict]:
-    config = yaml.safe_load(get_required_path(_LITELLM_CONFIG).read_text())
-    return {entry["model_name"]: entry for entry in config["model_list"]}
+    return {entry["model_name"]: entry for entry in main_proxy_config()["model_list"]}
 
 
 _OPENCLAW_GEMINI_IDS = [exposed_name(Provider.GOOGLE, ApiShape.GOOG_GENERATE, model) for model in GEMINI_MODELS]

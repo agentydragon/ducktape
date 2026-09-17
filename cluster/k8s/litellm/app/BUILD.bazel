@@ -4,32 +4,33 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 exports_files(
     [
-        "proxy-config.yaml",
+        "flux-kustomization.yaml",
+        "kustomization.yaml",
+        "litellm.k8s.yaml",
     ],
-    visibility = ["//debug/litellm_probe:__pkg__"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
 )
 
 py_library(
     name = "model_rosters",
     srcs = ["model_rosters.py"],
-    visibility = ["//haku/x/dispatch/deploy/litellm:__pkg__"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//haku/x/dispatch/deploy/litellm:__pkg__",
+    ],
 )
 
 py_test(
     name = "test_litellm_config",
     srcs = ["test_litellm_config.py"],
-    data = [
-        "kustomization.yaml",
-        "proxy-config.yaml",
-        "//tf/gitops/litellm-keys:main.tf",
-    ],
+    data = ["//tf/gitops/litellm-keys:main.tf"],
     deps = [
         ":model_rosters",
+        "//cluster/cdk8s:litellm_config",
         "//cluster/validation:terraform_hcl",
         "//util/bazel:runfiles",
         "@pypi//more_itertools",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 
@@ -53,12 +54,10 @@ py_test(
 py_test(
     name = "test_openclaw_models",
     srcs = ["test_openclaw_models.py"],
-    data = [
-        "proxy-config.yaml",
-        "//cluster/k8s:openclaw_model_config",
-    ],
+    data = ["//cluster/k8s:openclaw_model_config"],
     deps = [
         ":model_rosters",
+        "//cluster/cdk8s:litellm_config",
         "//util/bazel:runfiles",
         "@pypi//json5",
         "@pypi//pytest_bazel",

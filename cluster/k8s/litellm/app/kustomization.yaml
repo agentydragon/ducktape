@@ -2,16 +2,6 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: litellm
 resources:
-  - forgejo-images-creds-eso.yaml
-  - deployment.yaml
-  - service.yaml
-  - serviceaccount.yaml
-  - httproute.yaml
-  - servicemonitor.yaml
-
-configMapGenerator:
-  - name: litellm-config
-    options:
-      disableNameSuffixHash: true
-    files:
-      - config.yaml=proxy-config.yaml
+  - litellm.k8s.yaml
+components:
+  - ./image-pins

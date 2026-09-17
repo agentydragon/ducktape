@@ -143,6 +143,7 @@ Design and remaining transport hardening: <docs/activitywatch/README.md> and
 cluster/
 ├── .envrc                  # direnv (KUBECONFIG, TALOSCONFIG; CLI tools from root devShell)
 ├── docs/                   # bootstrap, plan, troubleshooting, operations, secrets
+├── cdk8s/                  # cdk8s Python generators for converted Kustomization directories
 ├── terraform/
 │   └── main/               # Single TF root (PG backend, all resources)
 ├── k8s/                    # Flux-managed manifests (config only — source lives in rotators/, provisioners/, proxies/)

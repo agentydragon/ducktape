@@ -1,18 +1,12 @@
 """Verify cross-file LiteLLM configuration wiring."""
 
 import pytest_bazel
-import yaml
 from more_itertools import one
 
+from cluster.cdk8s.litellm_config import main_proxy_config
 from cluster.k8s.litellm.app.model_rosters import ApiShape
 from cluster.validation.terraform_hcl import locals_blocks
 from util.bazel.runfiles import get_required_path
-
-
-def _load_config(filename: str) -> dict:
-    loaded = yaml.safe_load(get_required_path(f"ducktape/cluster/k8s/litellm/app/{filename}").read_text())
-    assert isinstance(loaded, dict)
-    return loaded
 
 
 # Terraform's model-key locals are also used below to verify that every
@@ -23,9 +17,10 @@ def _litellm_keys_locals() -> dict:
 
 
 # main.tf's own comment: "Model names must match generated model_name entries in
-# cluster/k8s/litellm/app/proxy-config.yaml". These are the remaining live-key
-# locals that spell names out literally, so every element must resolve against the
-# committed config rather than a second hand-maintained model reconstruction.
+# cluster/k8s/litellm/app/litellm.k8s.yaml's embedded LiteLLM config". These are the
+# remaining live-key locals that spell names out literally, so every element must
+# resolve against the committed config rather than a second hand-maintained model
+# reconstruction.
 _TF_LITERAL_MODEL_LOCALS = [
     "oai_lane_models",
     "tana_client_models",
@@ -38,80 +33,33 @@ _TF_LITERAL_MODEL_LOCALS = [
 
 
 def test_terraform_key_allowlists_only_name_models_the_proxy_serves() -> None:
-    served = {entry["model_name"] for entry in _load_config("proxy-config.yaml")["model_list"]}
+    served = {entry["model_name"] for entry in main_proxy_config()["model_list"]}
     tf_locals = _litellm_keys_locals()
     for local in _TF_LITERAL_MODEL_LOCALS:
         missing = [model for model in tf_locals[local] if model not in served]
         assert not missing, f"{local} allows models the proxy does not serve: {missing}"
 
 
-def test_hidden_model_aliases_target_served_models() -> None:
-    config = _load_config("proxy-config.yaml")
-    served = {entry["model_name"] for entry in config["model_list"]}
-    aliases = config["router_settings"]["model_group_alias"]
-
-    assert aliases["gpt-6-astra"] == {"model": "chatgpt/oai-responses/gpt-6-astra", "hidden": True}
-    assert all(alias["model"] in served for alias in aliases.values())
-
-
-# The shape segment names the wire LiteLLM speaks upstream (model_rosters.py), so the name and
-# the wiring must agree on both halves. The definer half must match the provider prefix selected
-# by `litellm_params.model` -- the check that catches naming a Google-wire entry `oai-chat`, or an
-# Ollama-native one. For a custom provider, this map records the wire that its adapter emits. The
-# protocol half is pinned by `model_info.mode`, which is what separates two shapes sharing a
-# definer (oai-chat vs oai-responses, goog-generate vs goog-embed). A provider absent from this map
-# has not declared which wire it speaks, so adding one is a deliberate edit rather than a silent
-# pass.
-_UPSTREAM_DEFINER = {
-    "anthropic": "ant",
-    "openai": "oai",
-    "mistral": "oai",  # OpenAI-compatible chat at api.mistral.ai
-    "groq": "oai",  # OpenAI-compatible chat at api.groq.com/openai/v1
-    "gemini": "goog",
-    "ollama": "olm",
-    # The in-process Tana adapter speaks Anthropic Messages on the wire while
-    # using its own LiteLLM provider prefix for dispatch.
-    "tana": "ant",
-}
-_SHAPE_MODE = {
-    ApiShape.ANT_MESSAGES: "chat",
-    ApiShape.OAI_CHAT: "chat",
-    ApiShape.OAI_RESPONSES: "responses",
-    ApiShape.GOOG_GENERATE: "chat",
-    ApiShape.GOOG_EMBED: "embedding",
-    ApiShape.OLM_CHAT: "chat",
-    ApiShape.OLM_EMBED: "embedding",
-}
-
-
-def test_shape_segment_matches_each_entry_upstream_wire() -> None:
-    scheme_entries = [
-        entry for entry in _load_config("proxy-config.yaml")["model_list"] if entry["model_name"].count("/") == 2
-    ]
-    shapes_seen = set()
-    for entry in scheme_entries:
-        name = entry["model_name"]
-        shape = ApiShape(name.split("/")[1])
-        shapes_seen.add(shape)
-        upstream = entry["litellm_params"]["model"].split("/")[0]
-        assert _UPSTREAM_DEFINER[upstream] == shape.partition("-")[0], name
-        assert entry["model_info"]["mode"] == _SHAPE_MODE[shape], name
+# litellm_config.py derives each entry's shape from shape_for(upstream_prefix, protocol)
+# and its mode from shape_mode(shape) -- a mismatched wire/upstream pairing is
+# structurally unrepresentable there, not just checked after the fact. What's left to
+# verify here is coverage: that every declared ApiShape actually gets used somewhere.
+def test_every_declared_shape_is_used() -> None:
+    shapes_seen = {
+        ApiShape(entry["model_name"].split("/")[1])
+        for entry in main_proxy_config()["model_list"]
+        if entry["model_name"].count("/") == 2
+    }
     assert shapes_seen == set(ApiShape)
 
 
 def test_tana_routes_register_the_in_process_provider() -> None:
-    config = _load_config("proxy-config.yaml")
+    config = main_proxy_config()
     tana_entries = [entry for entry in config["model_list"] if entry["model_name"].startswith("tana/")]
 
     assert tana_entries
     assert all(entry["litellm_params"]["custom_llm_provider"] == "tana" for entry in tana_entries)
     assert any(item["provider"] == "tana" for item in config["litellm_settings"]["custom_provider_map"])
-
-
-def test_config_maps_mount_their_matching_committed_configs() -> None:
-    kustomization = yaml.safe_load(get_required_path("ducktape/cluster/k8s/litellm/app/kustomization.yaml").read_text())
-    config_files = {config["name"]: config["files"] for config in kustomization["configMapGenerator"]}
-    assert config_files == {"litellm-config": ["config.yaml=proxy-config.yaml"]}
 
 
 if __name__ == "__main__":

@@ -18,10 +18,10 @@ import yaml
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from pydantic import BaseModel, ConfigDict
 
+from cluster.cdk8s.litellm_config import main_proxy_config
 from util.bazel.runfiles import get_required_path
 
 DEFAULT_BASE_URL = "https://litellm.allegedly.works"
-DEFAULT_CONFIG_RUNFILE = "ducktape/cluster/k8s/litellm/app/proxy-config.yaml"
 REPORT_TEMPLATE_RUNFILE = "ducktape/debug/litellm_probe/report.html.j2"
 RESULTS_JSONL = "results.jsonl"
 EXPECTED_TEXT = "OK"
@@ -274,7 +274,7 @@ def _parse_args() -> argparse.Namespace:
         "--api-key-env", default="LITELLM_API_KEY", help="Environment variable containing the LiteLLM API key."
     )
     parser.add_argument(
-        "--config", type=Path, default=None, help="LiteLLM proxy config YAML. Defaults to the Bazel runfile."
+        "--config", type=Path, default=None, help="LiteLLM proxy config YAML. Defaults to the committed roster."
     )
     parser.add_argument(
         "--backend",
@@ -345,9 +345,7 @@ def _parse_args() -> argparse.Namespace:
 
 
 def _load_model_probes(config_path: Path | None) -> list[ModelProbe]:
-    if config_path is None:
-        config_path = get_required_path(DEFAULT_CONFIG_RUNFILE)
-    config = yaml.safe_load(config_path.read_text())
+    config = yaml.safe_load(config_path.read_text()) if config_path is not None else main_proxy_config()
     probes: list[ModelProbe] = []
     for entry in config["model_list"]:
         model_info = entry.get("model_info") or {}

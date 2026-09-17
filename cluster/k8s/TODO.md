@@ -162,14 +162,13 @@ will recommend limits.
 
 - `nix-cache/app/deployment.yaml` — attic container missing `resources:`
 - `ollama/app/deployment.yaml` — auth-proxy sidecar missing `resources:`
-- `litellm/app/deployment.yaml` — litellm container missing `resources:`
 
 ## SecurityContext
 
 Talos enforces `baseline` Pod Security Standards by default via PSA.
 Explicit `securityContext` on Deployments is defense-in-depth. Low urgency.
 
-Missing securityContext: litellm, ollama, devbot, grocy-sf, grocy-vallejo, proxmox-proxy,
+Missing securityContext: ollama, devbot, grocy-sf, grocy-vallejo, proxmox-proxy,
 tana-mcp, mitmproxy, props, atuin.
 
 ## Grocy MCP startup probe

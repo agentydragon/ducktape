@@ -18,6 +18,13 @@ py_binary(
     deps = [":kubeconfig"],
 )
 
+py_binary(
+    name = "extract_crd_bin",
+    main_module = "devinfra.k8s.extract_crd",
+    visibility = ["//visibility:public"],
+    deps = [":extract_crd"],
+)
+
 py_test(
     name = "test_kubeconfig",
     srcs = ["test_kubeconfig.py"],
@@ -28,4 +35,10 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
+)
+
+py_library(
+    name = "extract_crd",
+    srcs = ["extract_crd.py"],
+    deps = ["@pypi//pyyaml"],
 )

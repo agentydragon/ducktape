@@ -590,6 +590,7 @@ npm.npm_translate_lock(
     name = "npm_ducktape",
     # Generate bin entries for dev tools from workspace root
     bins = {
+        "cdk8s-cli": ["cdk8s=./bin/cdk8s"],
         "eslint": ["eslint=./bin/eslint.js"],
         "json-schema-to-typescript": ["json2ts=./dist/src/cli.js"],
         "prettier": ["prettier=./bin/prettier.cjs"],
@@ -895,6 +896,55 @@ filegroup(
     sha256 = "9e4c4a25b88d9c93ce0ee4f64fba23fc55949f66d9ecb79e419c541b64b80997",
     strip_prefix = "package/vendor/x86_64-unknown-linux-musl",
     urls = ["https://registry.npmjs.org/@openai/codex/-/codex-0.152.0-linux-x64.tgz"],
+)
+
+# Flux's Kustomization CRD — fetched verbatim from the upstream repo so
+# //third_party/flux:kustomization (devinfra/js/cdk8s_import.bzl) can generate typed
+# cdk8s Python constructs from it without vendoring the CRD in-tree. Refresh by
+# bumping the tag and updating the sha256.
+http_file(
+    name = "flux_kustomization_crd",
+    downloaded_file_path = "kustomize.toolkit.fluxcd.io_kustomizations.yaml",
+    sha256 = "da23ca0e6b4c80d3d26a91583137491e147ef4ef1e2208aece0d0af4ef851974",
+    urls = ["https://raw.githubusercontent.com/fluxcd/kustomize-controller/v1.9.5/config/crd/bases/kustomize.toolkit.fluxcd.io_kustomizations.yaml"],
+)
+
+# prometheus-operator's ServiceMonitor CRD — fetched verbatim so
+# //third_party/prometheus_operator:servicemonitor (devinfra/js/cdk8s_import.bzl) can generate
+# typed cdk8s Python constructs from it without vendoring the CRD in-tree. Pinned to the same
+# v0.94.0 tag as cluster/k8s/monitoring/crds/gitrepository.yaml (which tracks
+# kube-prometheus-stack's appVersion) -- bump both together.
+http_file(
+    name = "prometheus_operator_servicemonitor_crd",
+    downloaded_file_path = "monitoring.coreos.com_servicemonitors.yaml",
+    sha256 = "10a5f90038608d9a2758d5a8700e1be5adbaff5d6355a52fa7b6e8488b71156d",
+    urls = ["https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/v0.94.0/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml"],
+)
+
+# Gateway API's HTTPRoute CRD — fetched verbatim so //third_party/gateway_api:httproute
+# (devinfra/js/cdk8s_import.bzl) can generate typed cdk8s Python constructs from it without
+# vendoring the CRD in-tree. Pinned to the same v1.5.1 experimental channel this cluster
+# installs directly (cluster/terraform/main/cilium.tf's gateway_api_version -- experimental,
+# not standard, because Cilium 1.19 needs the v1alpha2 TLSRoute the standard channel dropped).
+http_file(
+    name = "gateway_api_httproute_crd",
+    downloaded_file_path = "gateway.networking.k8s.io_httproutes.yaml",
+    sha256 = "9012253cf248583189ff74426140556fafa38b66dc57553fd79f9ae34b2eee9f",
+    urls = ["https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.5.1/config/crd/experimental/gateway.networking.k8s.io_httproutes.yaml"],
+)
+
+# external-secrets' CRD bundle (all its CRDs in one multi-document file -- it doesn't
+# publish per-kind files) -- fetched verbatim so //third_party/external_secrets:externalsecret
+# can extract just the ExternalSecret CRD (devinfra/k8s/extract_crd.py; `cdk8s import` only
+# ingests one CRD per invocation, and importing the whole bundle fails on unrelated CRDs'
+# jsii-incompatible field names) and generate typed cdk8s Python constructs from it, without
+# vendoring the CRD in-tree. Pinned to the same v2.10.0 tag as
+# cluster/k8s/external-secrets/crds/gitrepository.yaml.
+http_file(
+    name = "external_secrets_crds_bundle",
+    downloaded_file_path = "external-secrets-crds-bundle.yaml",
+    sha256 = "948a27467c69d01db0c4d1975a1409cfeb6716aa5a3278b3de91aeb7569ec151",
+    urls = ["https://raw.githubusercontent.com/external-secrets/external-secrets/v2.10.0/deploy/crds/bundle.yaml"],
 )
 
 # Grocy OpenAPI 3.1 spec — fetched verbatim from the upstream repo so
