@@ -128,10 +128,11 @@ class PodIdentityVerifier:
         try:
             principal, pod = await self._resolver.resolve_workload_with_pod(token)
         except SandboxPrincipalRejectedError as error:
+            # `resolve_workload_with_pod` stops before ownership, so `SANDBOX_UNKNOWN` cannot arrive
+            # and has no entry: a KeyError here would mean that stopping point moved.
             reason = {
                 RejectionReason.TOKEN_REJECTED: DenyReason.TOKEN_REJECTED,
                 RejectionReason.POD_MISMATCH: DenyReason.POD_MISMATCH,
-                RejectionReason.SANDBOX_UNKNOWN: DenyReason.TOKEN_REJECTED,
             }[error.reason]
             raise IdentityRejectedError(reason, str(error)) from error
         pod_ip = pod.status.pod_ip if pod.status is not None else None
