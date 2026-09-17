@@ -56,6 +56,13 @@
       url = "github:Mic92/sops-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    # Declarative Nix environment for Android (phone), via a Termux fork.
+    # aarch64-linux only; see nix/droid/README.md.
+    nix-on-droid = {
+      url = "github:nix-community/nix-on-droid";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -153,6 +160,13 @@
 
       pkgsMaster = import nixpkgs-master {
         inherit system;
+        config.allowUnfree = true;
+      };
+
+      # aarch64 nixpkgs instance for nix-on-droid (the phone). Everything else in
+      # this flake is pinned to `system` (x86_64-linux) above.
+      pkgsAarch64 = import nixpkgs {
+        system = "aarch64-linux";
         config.allowUnfree = true;
       };
 
@@ -266,7 +280,7 @@
               ;
             # These project packages are passed only to hosts that opt into them.
             # Lazy: hosts that do not consume a package never force its build/fetch.
-            inherit (ducktapePkgs) bb bbr;
+            inherit (ducktapePkgs) bb bbr llama-cpp-openvino;
           };
           modules = [
             ./nix/nixos/modules/base.nix
@@ -827,6 +841,14 @@
           ];
         };
 
+      };
+
+      # Phone (Android via nix-on-droid). aarch64-linux; see nix/droid/README.md.
+      nixOnDroidConfigurations = {
+        pixel6 = inputs.nix-on-droid.lib.nixOnDroidConfiguration {
+          pkgs = pkgsAarch64;
+          modules = [ ./nix/droid/hosts/pixel6.nix ];
+        };
       };
     };
 }

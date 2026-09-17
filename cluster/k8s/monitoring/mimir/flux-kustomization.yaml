@@ -24,8 +24,7 @@ spec:
       namespace: monitoring
   timeout: 10m
   dependsOn:
-    # monitoring-stack installs the ServiceMonitor CRD via kube-prometheus-stack
-    - name: monitoring-stack
+    - name: monitoring-crds # the chart's metaMonitoring.serviceMonitor
       namespace: ducktape-flux
     - name: grafana-helmrepository
       namespace: ducktape-flux

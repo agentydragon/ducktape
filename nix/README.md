@@ -15,6 +15,7 @@ nix/
 │   ├── modules/   # Shared Home Manager modules
 │   ├── programs/  # Reusable Home Manager program modules
 │   └── skills.nix # Shared AI-tool skill deployment helper
+├── droid/         # Android (phone) configurations — see droid/README.md
 ├── packages/      # Custom Nix packages
 ├── lib/           # Shared Nix helpers
 └── TODO.md        # Future improvements
@@ -48,6 +49,11 @@ Note: `atlas` needs `--impure` because it uses nixGL on a non-NixOS system.
 `claude-web` needs `--impure` because it reads `home.username`/`home.homeDirectory`
 from `$USER`/`$HOME` so the same profile works for whatever user the web container runs as.
 
+### Phone (pixel6)
+
+Different runtime (Android via nix-on-droid, not NixOS/home-manager) — see
+[droid/README.md](droid/README.md) for prerequisites and bring-up.
+
 ## Available Hosts
 
 ### NixOS System Configs (`nixosConfigurations`)
@@ -68,6 +74,12 @@ from `$USER`/`$HOME` so the same profile works for whatever user the web contain
 | `atlas`      | Proxmox   | Proxmox VE host home config                                                                                                          |
 | `nixos-vm`   | NixOS VM  | Simplified standalone HM config                                                                                                      |
 | `claude-web` | Web (any) | Headless Claude Code web-session profile; installed by `web_setup.sh` (home-manager mode). Reads `$USER`/`$HOME` → needs `--impure`. |
+
+### Phone Configs (`nixOnDroidConfigurations`)
+
+| Host     | OS      | Description                                     |
+| -------- | ------- | ----------------------------------------------- |
+| `pixel6` | Android | Phone, via nix-on-droid — see `droid/README.md` |
 
 ## Common Commands
 

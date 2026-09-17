@@ -25,11 +25,6 @@ terraform {
       version = "~> 3.6"
     }
   }
-
-  backend "kubernetes" {
-    secret_suffix = "sso-providers"
-    namespace     = "flux-system"
-  }
 }
 
 data "kubernetes_secret" "authentik_bootstrap" {

@@ -11,9 +11,4 @@ terraform {
       version = "~> 3.0"
     }
   }
-
-  backend "kubernetes" {
-    secret_suffix = "github-secrets-sync"
-    namespace     = "flux-system"
-  }
 }

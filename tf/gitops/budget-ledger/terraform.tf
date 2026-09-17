@@ -15,11 +15,4 @@ terraform {
       version = "~> 3.7"
     }
   }
-
-  # Placeholder; the actual backend (pg, tofu-state) is injected by the Terraform
-  # CR's backendConfig.customConfiguration (see cluster/k8s/forgejo/budget-ledger).
-  backend "kubernetes" {
-    secret_suffix = "budget-ledger"
-    namespace     = "flux-system"
-  }
 }

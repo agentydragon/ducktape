@@ -20,11 +20,4 @@ terraform {
       version = "~> 2.38"
     }
   }
-
-  # Placeholder; the actual backend (pg, tofu-state) is injected by the Terraform
-  # CR's backendConfig.customConfiguration (see cluster/k8s/haku/cloud-agent-tf).
-  backend "kubernetes" {
-    secret_suffix = "haku-cloud-agent"
-    namespace     = "flux-system"
-  }
 }

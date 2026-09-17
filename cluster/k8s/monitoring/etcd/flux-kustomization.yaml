@@ -17,7 +17,7 @@ spec:
     namespace: ducktape-flux
   dependsOn:
     # monitoring-stack installs the ServiceMonitor CRD via kube-prometheus-stack.
-    - name: monitoring-stack
+    - name: monitoring-crds # ServiceMonitor
       namespace: ducktape-flux
   wait: true
   healthChecks:

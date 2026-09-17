@@ -12,6 +12,26 @@ spec:
       isolationCheck:
         enabled: false
 
+  postgresql:
+    # A tf-runner holds a session-scoped advisory lock for the length of a plan
+    # or apply. When its node drops off the network the session survives — no
+    # RST from a vanished peer — and every later run on that state fails with
+    # "error acquiring the state lock" until the kernel reaps the socket. On the
+    # defaults (tcp_keepalive_time 7200 + 9 probes x 75s) that is 2h11m, and
+    # tofu-controller retries into the lock the whole time: a single node loss
+    # wedged sso-providers, dns-records, agent-machine-access and
+    # alloy-otlp-bearer-token on 2026-09-16, and through sso-providers-tf ->
+    # forgejo -> forgejo-images, 55 Kustomizations behind them.
+    #
+    # Probing an idle connection detects a dead peer in ~2min instead. A live
+    # runner answers the probes, so a long plan is never cut off; only a peer
+    # that is actually gone is. idle_session_timeout is the wrong knob here — it
+    # would kill a healthy runner that is idle between statements mid-apply.
+    parameters:
+      tcp_keepalives_idle: "60"
+      tcp_keepalives_interval: "10"
+      tcp_keepalives_count: "6"
+
   affinity:
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh

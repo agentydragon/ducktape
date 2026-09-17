@@ -24,7 +24,7 @@ spec:
       namespace: monitoring
   timeout: 5m
   dependsOn:
-    - name: monitoring-stack
+    - name: monitoring-crds # the chart's serviceMonitor.enabled
       namespace: ducktape-flux
     - name: grafana-helmrepository
       namespace: ducktape-flux

@@ -13,5 +13,5 @@ spec:
 
     namespace: ducktape-flux
   dependsOn:
-    - name: monitoring-stack
+    - name: monitoring-crds # PrometheusRule
       namespace: ducktape-flux

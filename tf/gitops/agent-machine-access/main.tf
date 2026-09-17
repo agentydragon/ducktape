@@ -15,11 +15,6 @@ terraform {
       version = "~> 3.9.0"
     }
   }
-
-  backend "kubernetes" {
-    secret_suffix = "agent-machine-access"
-    namespace     = "flux-system"
-  }
 }
 
 # Read the Authentik bootstrap token from the K8s Secret (populated by ESO from Vault).

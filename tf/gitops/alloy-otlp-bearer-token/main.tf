@@ -11,11 +11,6 @@ terraform {
       version = "~> 3.0"
     }
   }
-
-  backend "kubernetes" {
-    secret_suffix = "alloy-otlp-bearer-token"
-    namespace     = "flux-system"
-  }
 }
 
 # Read the Authentik bootstrap token from the K8s Secret (populated by ESO from Vault).

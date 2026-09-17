@@ -16,5 +16,5 @@ spec:
   dependsOn:
     - name: seaweedfs-cluster
       namespace: ducktape-flux
-    - name: monitoring-stack
+    - name: monitoring-crds # PrometheusRule
       namespace: ducktape-flux
