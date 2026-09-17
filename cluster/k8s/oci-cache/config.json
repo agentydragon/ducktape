@@ -47,6 +47,12 @@
     "level": "info"
   },
   "extensions": {
+    "metrics": {
+      "enable": true,
+      "prometheus": {
+        "path": "/metrics"
+      }
+    },
     "sync": {
       "downloadDir": "/var/lib/zot/.sync",
       "registries": [

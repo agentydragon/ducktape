@@ -1386,18 +1386,11 @@ spec:
           to: "@artifact/cluster/k8s/node-feature-discovery/"
           exclude:
             - flux-kustomization.yaml
-    - name: oci-cache-app
+    - name: oci-cache
       originRevision: "@repo"
       copy:
-        - from: "@repo/cluster/k8s/oci-cache/app/**"
-          to: "@artifact/cluster/k8s/oci-cache/app/"
-          exclude:
-            - flux-kustomization.yaml
-    - name: oci-cache-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/oci-cache/namespace/**"
-          to: "@artifact/cluster/k8s/oci-cache/namespace/"
+        - from: "@repo/cluster/k8s/oci-cache/**"
+          to: "@artifact/cluster/k8s/oci-cache/"
           exclude:
             - flux-kustomization.yaml
     - name: ollama-app
