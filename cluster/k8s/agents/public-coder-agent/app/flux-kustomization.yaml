@@ -9,6 +9,10 @@ spec:
   interval: 10m
   path: ./cluster/k8s/agents/public-coder-agent/app
   prune: true
+  # Safety net for a planned cdk8s conversion of this directory that may move which
+  # Kustomization owns an object: see cluster/cdk8s/AGENTS.md's two-step deletionPolicy
+  # landing. This directory holds real PVCs (pvc-v2.yaml, pvc-diagnostics.yaml).
+  deletionPolicy: Orphan
   sourceRef:
     kind: ExternalArtifact
     name: public-coder-agent-app
