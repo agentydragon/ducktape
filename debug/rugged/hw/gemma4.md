@@ -615,9 +615,6 @@ Durable Nix followups:
 - Nixify or otherwise package the upstream LiteRT-LM Intel NPU path: fetch the
   LunarLake-specific `.litertlm`, build/include the Intel OpenVINO dispatch
   library, and test `Backend.NPU()` independently from the generic PyPI CLI path.
-- Check whether a newer IPEX/Ollama image contains Ollama 0.30.x or newer. The
-  service is now pinned by image digest instead of the mutable `latest` tag, so
-  refreshing it requires updating <nix/nixos/hosts/rugged/local_llm_arc.nix>.
 - Nixify the working `llama-openvino:server` path once the target model set is
   clear. If the goal is an exact NPU-capable replacement, also package the Intel
   OpenVINO bundle's NPU compiler library or use a pinned OCI image.
