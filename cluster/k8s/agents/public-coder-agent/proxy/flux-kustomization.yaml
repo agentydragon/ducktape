@@ -38,7 +38,7 @@ spec:
     # at Console: the proxy can become Ready before its clients, while a cycle would prevent a
     # fresh cluster from ever reaching the claim-creation boundary.
     # The proxy reads the reflected Matrix bot password from its namespace.
-    - name: matrix-secrets
+    - name: matrix
       namespace: ducktape-flux
     # aiquota creates the sole bearer, then reflects its constrained mirror to
     # this namespace for the proxy-only substitution rule.

@@ -498,14 +498,6 @@ spec:
           exclude:
             - flux-kustomization.yaml
 
-    - name: matrix-secrets
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/matrix/secrets/**"
-          to: "@artifact/cluster/k8s/matrix/secrets/"
-          exclude:
-            - flux-kustomization.yaml
-
     - name: ollama-namespace
       originRevision: "@repo"
       copy:

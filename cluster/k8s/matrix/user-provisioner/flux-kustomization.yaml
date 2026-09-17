@@ -27,5 +27,4 @@ spec:
       namespace: ducktape-flux
     - name: forgejo-images
       namespace: ducktape-flux
-    - name: matrix # Synapse is deployed and healthy
-    - name: matrix-secrets # registration shared secret, admin and bot passwords
+    - name: matrix # Synapse is deployed and healthy; also carries the registration shared secret, admin and bot passwords

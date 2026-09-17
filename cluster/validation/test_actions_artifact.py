@@ -189,7 +189,6 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         ("matrix-app", "matrix/app"),
         ("matrix-db", "matrix/db"),
         ("matrix-namespace", "matrix/namespace"),
-        ("matrix-secrets", "matrix/secrets"),
         ("matrix-user-provisioner", "matrix/user-provisioner"),
         ("metrics-server", "metrics-server"),
         ("monitoring-alloy", "monitoring/alloy"),
