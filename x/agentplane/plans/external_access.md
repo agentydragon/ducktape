@@ -73,7 +73,8 @@ the Sandbox's own principal while the apiserver remains the per-request authoriz
 Conversely, using Kubernetes RBAC objects does not decide whether desired grants live only in
 Kubernetes or are reconciled from an app ledger.
 
-Resolve the principal lifecycle with `SANDBOX_SA` if choosing per-Sandbox ServiceAccounts. Keep
+The principal is settled: each Sandbox runs as a ServiceAccount the app creates at launch and
+owns by `ownerReference`, so what remains here is the credential path, not the identity. Keep
 the existing [workload authentication](../docs/workload_authentication.md) boundary distinct from
 credentials authorizing Kubernetes API calls; authenticating a Sandbox to Agentplane does not
 itself grant Kubernetes access. Any design must explain effective-access inspection, who can

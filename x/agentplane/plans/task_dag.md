@@ -86,7 +86,6 @@ flowchart TB
     PROD["Milestone<br/>production-capable governed action execution"]:::milestone
     ACTION_PROVENANCE_PRUNE["Deferred idea<br/>prune ActionRequestInput origin/correlation<br/>collapse to one client-authored identifier?"]:::future
     CONNECTION_SA_REBIND["Planned mutation<br/>rebind a Connection's ServiceAccount in place<br/>no mutation exists; only a fresh OAuth consent does"]:::future
-    SANDBOX_SA["Deferred design<br/>one ServiceAccount per Sandbox<br/>a native Kubernetes identity to separate and grant on"]:::future
     SANDBOX_RBAC["Planned Kubernetes access<br/>Sandbox permissions and lifecycle<br/>individually editable, optionally preset"]:::future
     CALLER_GRANT_VIEW["Planned UI<br/>one grant view for Sandboxes and unmanaged agents<br/>an unmanaged agent's policy is invisible today"]:::future
     MANAGED_SA_RBAC["Planned Kubernetes access<br/>RoleBindings as a managed grant kind<br/>any managed ServiceAccount, Sandbox-backed or not"]:::future
@@ -165,7 +164,6 @@ flowchart TB
     T3 -. product work .-> PROD
 
     ACCESS -. authority choice .-> EGRESS_CHANGE
-    SANDBOX_SA -. if per-Sandbox ServiceAccounts chosen .-> SANDBOX_RBAC
     ACCESS -. Kubernetes authority and credential choices .-> SANDBOX_RBAC
     SANDBOX_RBAC -. subject generalization .-> MANAGED_SA_RBAC
     MANAGED_SA_RBAC -. third grant kind to render .-> CALLER_GRANT_VIEW
@@ -287,24 +285,6 @@ reconnect; and does it require re-running eligibility checks (the ServiceAccount
 No dependency on anything else; nothing waits on this. Once it exists, the settings table's
 ServiceAccount column becomes a real dropdown instead of static text.
 
-### `SANDBOX_SA` — one ServiceAccount per Sandbox
-
-**Deferred design:** every Sandbox Pod runs as the shared `agentplane-runner` ServiceAccount
-(`sandboxtemplate-agentplane-runner.yaml`), so a Sandbox has no Kubernetes identity of its own: the
-Action Service tells Sandboxes apart by namespace and UID from workload authentication, and an
-`ActionPolicyBinding` names one with the `sandbox {name, uid}` subject rather than a ServiceAccount.
-Running each Sandbox under its own ServiceAccount would give it a native identity to separate
-permissions on, and letting an agent act in Kubernetes directly would become a Kubernetes-native
-RoleBinding on its Sandbox's ServiceAccount rather than a governed Action or a policy exception.
-
-**Questions, not yet settled:** who creates and garbage-collects the per-Sandbox ServiceAccount (the
-integration app at launch, with an `ownerReference` like the bindings it writes, or the Sandbox
-controller); whether the ServiceAccount then becomes the one policy subject for both caller classes,
-collapsing the `sandbox` and `serviceAccount` subject forms and the two operator policy-read routes
-into one; and how the workload token's pinning of the live Sandbox (name and UID from TokenReview
-and the Pod) carries over. `SANDBOX_RBAC` consumes this principal lifecycle if per-Sandbox
-ServiceAccounts are chosen; it does not require unifying the Action policy subject forms.
-
 ### `SANDBOX_RBAC` — manage Sandbox Kubernetes access, optionally through presets
 
 **Planned, not in the current Thread correctness batch:** support explicit Kubernetes
@@ -314,8 +294,9 @@ to Sandbox creation and optional preset defaults. Presets only prefill values; n
 the apiserver nor credential handling interprets preset names as authority. This does
 not require the broad `PROFILES` design.
 
-Resolve independently attributable Sandbox principals and their lifecycle with `ACCESS`
-and, if using per-Sandbox ServiceAccounts, `SANDBOX_SA`. Separate ServiceAccounts can
+Resolve the credential path for those principals with `ACCESS`. The principal itself
+already exists: each Sandbox runs as a ServiceAccount of its own, created and owned by the
+app at launch. Separate ServiceAccounts can
 share role definitions without sharing identity;
 Threads inside one Sandbox share its workload authority. Preserve live Sandbox UID/Pod
 attribution in workload authentication. Distinct ServiceAccounts in accepted namespaces
