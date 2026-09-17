@@ -26,7 +26,7 @@
     remote = {
       host = "github-proxy.allegedly.works";
       port = 8443;
-      credentialsSopsFile = ../../../cluster/k8s/github-api-proxy/secrets/rugged-credentials.sops.yaml;
+      credentialsSopsFile = ../../../cluster/k8s/github-api-proxy/app/rugged-credentials.sops.yaml;
       caCertificate = ../modules/github-api-proxy-ca.pem;
     };
   };

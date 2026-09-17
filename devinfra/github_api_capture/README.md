@@ -140,7 +140,7 @@ Desktop and opt-in `claude-proxied` sessions share this relay and credential.
 The host opt-ins are <../../nix/home/hosts/wyrm2.nix> and
 <../../nix/home/hosts/rugged.nix>: `github-proxy.allegedly.works:8443` is their
 single parent. Each selects its own
-`cluster/k8s/github-api-proxy/secrets/<host>-credentials.sops.yaml`. Home
+`cluster/k8s/github-api-proxy/app/<host>-credentials.sops.yaml`. Home
 Manager's `sops-nix.service` reads its `stringData/username` and
 `stringData/password` fields and renders the owner-only Squid configuration
 template. The relay is ordered after and requires that service. On credential
