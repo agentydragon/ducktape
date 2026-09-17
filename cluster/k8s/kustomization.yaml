@@ -245,7 +245,6 @@ resources:
 
   # --- langfuse ---
   - langfuse/namespace/flux-kustomization.yaml
-  - langfuse/agent-rbac/flux-kustomization.yaml
   - langfuse/secrets/flux-kustomization.yaml
   - langfuse/cache/flux-kustomization.yaml
   - langfuse/db/flux-kustomization.yaml

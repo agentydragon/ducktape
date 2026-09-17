@@ -1484,13 +1484,6 @@ spec:
           to: "@artifact/cluster/k8s/kvm-device-plugin/"
           exclude:
             - flux-kustomization.yaml
-    - name: langfuse-agent-rbac
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/langfuse/agent-rbac/**"
-          to: "@artifact/cluster/k8s/langfuse/agent-rbac/"
-          exclude:
-            - flux-kustomization.yaml
     - name: langfuse-app
       originRevision: "@repo"
       copy:

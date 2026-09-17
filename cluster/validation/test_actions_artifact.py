@@ -171,7 +171,6 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         ("kvm-device-plugin", "kvm-device-plugin"),
         ("kyverno", "kyverno/app"),
         ("kyverno-policies", "kyverno/policies"),
-        ("langfuse-agent-rbac", "langfuse/agent-rbac"),
         ("langfuse-app", "langfuse/app"),
         ("langfuse-cache", "langfuse/cache"),
         ("langfuse-db", "langfuse/db"),
