@@ -27,8 +27,8 @@ from x.agentplane.egress.proxy import EgressProxyServer, write_interception_ca
 from x.agentplane.egress.rules_api import RulesProjection, create_rules_app, serve_rules_api
 from x.agentplane.egress.upstream import UpstreamResolver
 from x.agentplane.kubernetes_watch import STALE_AFTER_CYCLES
-from x.agentplane.sandbox_auth.http import WorkloadPrincipalAuthenticator
-from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
+from x.agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
+from x.agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +126,7 @@ async def async_main(settings: Settings) -> None:
             credentials_namespace=settings.credentials_namespace,
             resync_seconds=settings.resync_seconds,
         )
-        workload_resolver = SandboxPrincipalResolver(
+        workload_resolver = WorkloadPrincipalResolver(
             authentication=AuthenticationV1Api(api),
             audience=settings.token_audience,
             allowed_service_account_namespaces=settings.workload_namespaces,

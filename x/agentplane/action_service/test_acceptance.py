@@ -39,12 +39,12 @@ from x.agentplane.action_service.policy_view import SubjectActionPolicyView
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.test_fixtures.callers import admitted_callers, in_sync_index
 from x.agentplane.action_service.updates import ActionUpdates
-from x.agentplane.sandbox_auth.principal import (
-    SandboxPrincipalRejectedError,
-    SandboxPrincipalResolver,
-    WorkloadPrincipal,
-)
 from x.agentplane.subjects import ServiceAccountRef
+from x.agentplane.workload_auth.principal import (
+    WorkloadPrincipal,
+    WorkloadPrincipalRejectedError,
+    WorkloadPrincipalResolver,
+)
 
 NAMESPACE = "agentplane-staging"
 
@@ -73,7 +73,7 @@ WORKLOAD_TOKENS = {"workload-a": SANDBOX_A, "workload-b": SANDBOX_B}
 class FakeSandboxResolver:
     async def resolve_workload(self, token: str) -> WorkloadPrincipal:
         if token not in WORKLOAD_TOKENS:
-            raise SandboxPrincipalRejectedError("test: unknown workload bearer")
+            raise WorkloadPrincipalRejectedError("test: unknown workload bearer")
         return WORKLOAD_TOKENS[token]
 
 
@@ -103,7 +103,7 @@ class LeakyFailingExecutor(CountingExecutor):
 async def _client(service: ActionService, *, catalog: ActionCatalog | None = None) -> httpx.AsyncClient:
     app = create_app(
         service,
-        cast(SandboxPrincipalResolver, FakeSandboxResolver()),
+        cast(WorkloadPrincipalResolver, FakeSandboxResolver()),
         cast(OperatorAuthenticator, FakeOperatorAuthenticator()),
         catalog or ActionCatalog(),
         callers=admitted_callers(ACCOUNT_A, ACCOUNT_B),

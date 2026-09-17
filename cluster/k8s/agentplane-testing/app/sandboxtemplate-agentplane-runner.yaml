@@ -109,7 +109,7 @@ spec:
             # Neither a workload token nor a LiteLLM key: the placeholder the agentplane-workload
             # EgressCredential derives from its name. Both harnesses send it as Authorization:
             # Bearer; central substitutes the sidecar-only projected token, and the ingress replaces
-            # that with its server-held LiteLLM virtual key after live SandboxPrincipal resolution.
+            # that with its server-held LiteLLM virtual key after live WorkloadPrincipal resolution.
             - name: ANTHROPIC_AUTH_TOKEN
               value: agentplane-credential-agentplane-workload
             - name: OPENAI_API_KEY

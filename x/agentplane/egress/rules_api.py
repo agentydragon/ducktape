@@ -12,9 +12,9 @@ from fastapi import FastAPI, Request
 
 from x.agentplane.egress.agent_view import AgentEgressView, agent_view
 from x.agentplane.egress.policy import Index
-from x.agentplane.sandbox_auth.http import WorkloadPrincipalAuthenticator
-from x.agentplane.sandbox_auth.principal import WorkloadPrincipal
 from x.agentplane.subjects import ServiceAccountRef
+from x.agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
+from x.agentplane.workload_auth.principal import WorkloadPrincipal
 
 HOST = "agentplane-egress.agentplane-staging.svc.cluster.local"
 PATH = "/v1/rules"

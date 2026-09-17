@@ -52,9 +52,9 @@ from x.agentplane.action_service.test_fixtures.lifecycle import wait_available
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.crds import GROUP, VERSION
 from x.agentplane.kubernetes_watch import Freshness
-from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 from x.agentplane.subjects import ServiceAccountRef
 from x.agentplane.testing.fake_apiserver import fake_apiserver
+from x.agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 CALLER = CallerPrincipal(account=ServiceAccountRef(namespace="agentplane-test", name="fixture-caller"))
 OPERATOR = OperatorPrincipal(issuer="test", subject="operator")
@@ -488,7 +488,7 @@ async def test_sigterm_fences_readiness_and_traffic_before_http_shutdown(engine:
     service = ActionService(ActionStore(make_sessionmaker(engine)), catalog, {})
     app = create_app(
         service,
-        MagicMock(spec=SandboxPrincipalResolver),
+        MagicMock(spec=WorkloadPrincipalResolver),
         DisabledOperatorAuthenticator(),
         catalog,
         callers=in_sync_index(),

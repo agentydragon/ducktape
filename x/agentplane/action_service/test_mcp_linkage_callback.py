@@ -27,7 +27,7 @@ from x.agentplane.action_service.models import OperatorPrincipal
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.test_fixtures.callers import admitted_callers
 from x.agentplane.action_service.updates import ActionUpdates
-from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
+from x.agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 
 @pytest.fixture
@@ -63,7 +63,7 @@ async def callback_client(
     actions = ActionService(ActionStore(make_sessionmaker(engine)), catalog, {})
     app = create_app(
         actions,
-        Mock(spec=SandboxPrincipalResolver),
+        Mock(spec=WorkloadPrincipalResolver),
         DisabledOperatorAuthenticator(),
         catalog,
         callers=admitted_callers(),

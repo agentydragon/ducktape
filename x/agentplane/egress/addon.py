@@ -34,9 +34,9 @@ from x.agentplane.egress.policy import (
     evaluate,
 )
 from x.agentplane.egress.upstream import Pin, UpstreamRefusedError, UpstreamResolver
-from x.agentplane.sandbox_auth.bearer import parse_bearer
-from x.agentplane.sandbox_auth.principal import WorkloadPrincipal
 from x.agentplane.subjects import ServiceAccountRef
+from x.agentplane.workload_auth.bearer import parse_bearer
+from x.agentplane.workload_auth.principal import WorkloadPrincipal
 
 logger = logging.getLogger(__name__)
 

@@ -9,10 +9,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from x.agentplane.egress.policy import DenyReason
-from x.agentplane.sandbox_auth.principal import (
-    SandboxPrincipalRejectedError,
-    SandboxPrincipalResolver,
+from x.agentplane.workload_auth.principal import (
     WorkloadPrincipal,
+    WorkloadPrincipalRejectedError,
+    WorkloadPrincipalResolver,
 )
 
 
@@ -26,10 +26,10 @@ class IdentityRejectedError(Exception):
 
 @dataclass(frozen=True)
 class WorkloadIdentityVerifier:
-    resolver: SandboxPrincipalResolver
+    resolver: WorkloadPrincipalResolver
 
     async def identify(self, token: str) -> WorkloadPrincipal:
         try:
             return await self.resolver.resolve_workload(token)
-        except SandboxPrincipalRejectedError as error:
+        except WorkloadPrincipalRejectedError as error:
             raise IdentityRejectedError(DenyReason.TOKEN_REJECTED, str(error)) from error

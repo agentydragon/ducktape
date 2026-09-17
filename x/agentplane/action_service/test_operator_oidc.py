@@ -24,7 +24,7 @@ from x.agentplane.action_service.operator_oidc import (
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.test_fixtures.callers import admitted_callers
 from x.agentplane.action_service.updates import ActionUpdates
-from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
+from x.agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 
 @pytest.mark.parametrize("failure", [None, "issuer", "audience", "expired", "signature", "azp", "missing-sub"])
@@ -40,7 +40,7 @@ async def test_signed_operator_admission(
     service = ActionService(ActionStore(make_sessionmaker(engine)), catalog, {})
     app = create_app(
         service,
-        cast(SandboxPrincipalResolver, None),
+        cast(WorkloadPrincipalResolver, None),
         OidcOperatorAuthenticator(
             OperatorOidcSettings(
                 issuer=issuer, audience="actions", jwks_uri=f"{issuer}/jwks", token_profile=token_profile

@@ -1,6 +1,6 @@
 # Workload authentication
 
-`SandboxPrincipalResolver` authenticates an ordinary destination-side
+`WorkloadPrincipalResolver` authenticates an ordinary destination-side
 `Authorization: Bearer <token>` with Kubernetes TokenReview. The result is the immutable
 `WorkloadPrincipal`:
 

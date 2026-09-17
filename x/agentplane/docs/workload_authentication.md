@@ -42,7 +42,7 @@ new token, or introduces an LLM/Action service branch. Missing, stale, mismatche
 fails closed. Existing `secretRef` behavior remains unchanged.
 
 PR #5696 added the shared destination-side `WorkloadPrincipalAuthenticator` and
-`SandboxPrincipalResolver`. They require one well-formed Bearer, TokenReview for the configured
+`WorkloadPrincipalResolver`. They require one well-formed Bearer, TokenReview for the configured
 audience, an allowed ServiceAccount subject, and one Pod name/UID claim pair. Nothing else is read:
 the API server validates the object the token is bound to, so a deleted or replaced Pod fails the
 TokenReview, and a Pod no Sandbox controls is its ServiceAccount like any other. Every service uses

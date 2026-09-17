@@ -45,13 +45,13 @@ from x.agentplane.action_service.policy_view import CallerActionPolicyView
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.test_fixtures.callers import in_sync_index
 from x.agentplane.action_service.updates import ActionUpdates
-from x.agentplane.sandbox_auth.principal import (
+from x.agentplane.subjects import ServiceAccountRef
+from x.agentplane.workload_auth.principal import (
     POD_NAME_CLAIM,
     POD_UID_CLAIM,
-    SandboxPrincipalResolver,
     WorkloadPrincipal,
+    WorkloadPrincipalResolver,
 )
-from x.agentplane.subjects import ServiceAccountRef
 
 AUDIENCE = "test-action-audience"
 NAMESPACE = "test-action-sandboxes"
@@ -224,7 +224,7 @@ async def frontend(engine: AsyncEngine, db_url: str, echo_executor: Executor) ->
     updates = ActionUpdates(db_url)
     app = create_app(
         service,
-        SandboxPrincipalResolver(
+        WorkloadPrincipalResolver(
             authentication=authentication, audience=AUDIENCE, allowed_service_account_namespaces=frozenset({NAMESPACE})
         ),
         DisabledOperatorAuthenticator(),

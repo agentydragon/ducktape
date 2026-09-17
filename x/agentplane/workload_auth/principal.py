@@ -35,7 +35,7 @@ class WorkloadPrincipal:
         return ServiceAccountRef(namespace=self.namespace, name=self.service_account_name)
 
 
-class SandboxPrincipalRejectedError(Exception):
+class WorkloadPrincipalRejectedError(Exception):
     """The bearer does not prove a workload identity; no bearer value is retained.
 
     There is one way to fail: the TokenReview did not accept the bearer as a workload this
@@ -44,7 +44,7 @@ class SandboxPrincipalRejectedError(Exception):
     """
 
 
-class SandboxPrincipalResolver:
+class WorkloadPrincipalResolver:
     """Resolve Pod-bound workload tokens only from ServiceAccounts in the allowed namespaces.
 
     Every call reviews the bearer. A TokenReview writes nothing -- it is a signature check plus an
@@ -83,9 +83,9 @@ class SandboxPrincipalResolver:
             raise
         status = review.status
         if status is None or not status.authenticated:
-            raise SandboxPrincipalRejectedError("TokenReview rejected the bearer")
+            raise WorkloadPrincipalRejectedError("TokenReview rejected the bearer")
         if self._audience not in (status.audiences or []):
-            raise SandboxPrincipalRejectedError("bearer has the wrong audience")
+            raise WorkloadPrincipalRejectedError("bearer has the wrong audience")
         subject = status.user.username if status.user is not None else None
         namespace, service_account = self._service_account(subject)
         extra = status.user.extra or {}
@@ -101,18 +101,18 @@ class SandboxPrincipalResolver:
 
     def _service_account(self, subject: str | None) -> tuple[str, str]:
         if not isinstance(subject, str) or not subject.startswith(_SERVICE_ACCOUNT_PREFIX):
-            raise SandboxPrincipalRejectedError("bearer subject is not a ServiceAccount")
+            raise WorkloadPrincipalRejectedError("bearer subject is not a ServiceAccount")
         remainder = subject.removeprefix(_SERVICE_ACCOUNT_PREFIX)
         parts = remainder.split(":")
         if len(parts) != 2 or not all(parts):
-            raise SandboxPrincipalRejectedError("bearer has an invalid ServiceAccount subject")
+            raise WorkloadPrincipalRejectedError("bearer has an invalid ServiceAccount subject")
         namespace, service_account = parts
         if namespace not in self._allowed_service_account_namespaces:
-            raise SandboxPrincipalRejectedError("bearer namespace is not accepted here")
+            raise WorkloadPrincipalRejectedError("bearer namespace is not accepted here")
         return namespace, service_account
 
     @staticmethod
     def _one_claim(values: list[str] | None, label: str) -> str:
         if not isinstance(values, list) or len(values) != 1 or not isinstance(values[0], str) or not values[0]:
-            raise SandboxPrincipalRejectedError(f"bearer is not bound to exactly one {label}")
+            raise WorkloadPrincipalRejectedError(f"bearer is not bound to exactly one {label}")
         return values[0]

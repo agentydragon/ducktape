@@ -19,8 +19,6 @@ from more_itertools import one
 
 from x.agentplane.egress.resources import SANDBOXES_PLURAL
 from x.agentplane.llm_ingress.app import IngressResources, create_app
-from x.agentplane.sandbox_auth.http import WorkloadPrincipalAuthenticator
-from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 from x.agentplane.testing.fake_apiserver import (
     SANDBOX_NAMESPACE,
     FakeApiServer,
@@ -29,6 +27,8 @@ from x.agentplane.testing.fake_apiserver import (
     pod_for,
     sandbox,
 )
+from x.agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
+from x.agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 AUDIENCE = "agentplane-egress"
 SUBJECT = f"system:serviceaccount:{SANDBOX_NAMESPACE}:agentplane-runner"
@@ -122,7 +122,7 @@ async def ingress_clients(
         ApiClient(configuration=configuration(kubernetes)) as api,
         httpx.AsyncClient(base_url=f"http://127.0.0.1:{backend.port}", timeout=5) as backend_http,
     ):
-        resolver = SandboxPrincipalResolver(
+        resolver = WorkloadPrincipalResolver(
             authentication=AuthenticationV1Api(api),
             audience=AUDIENCE,
             allowed_service_account_namespaces=frozenset({SANDBOX_NAMESPACE}),

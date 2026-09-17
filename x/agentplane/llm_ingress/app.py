@@ -10,8 +10,8 @@ import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request
 from starlette.responses import Response, StreamingResponse
 
-from x.agentplane.sandbox_auth.http import WorkloadPrincipalAuthenticator
-from x.agentplane.sandbox_auth.principal import WorkloadPrincipal
+from x.agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
+from x.agentplane.workload_auth.principal import WorkloadPrincipal
 
 _HOP_BY_HOP = frozenset(
     {

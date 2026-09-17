@@ -7,11 +7,11 @@ from typing import Never
 
 from fastapi import HTTPException, Request, status
 
-from x.agentplane.sandbox_auth.bearer import parse_bearer, sole_header
-from x.agentplane.sandbox_auth.principal import (
-    SandboxPrincipalRejectedError,
-    SandboxPrincipalResolver,
+from x.agentplane.workload_auth.bearer import parse_bearer, sole_header
+from x.agentplane.workload_auth.principal import (
     WorkloadPrincipal,
+    WorkloadPrincipalRejectedError,
+    WorkloadPrincipalResolver,
 )
 
 
@@ -19,13 +19,13 @@ from x.agentplane.sandbox_auth.principal import (
 class WorkloadPrincipalAuthenticator:
     """Resolve the request's sole ordinary Authorization bearer or fail closed with 401."""
 
-    resolver: SandboxPrincipalResolver
+    resolver: WorkloadPrincipalResolver
 
     async def __call__(self, request: Request) -> WorkloadPrincipal:
         token = _sole_bearer(request)
         try:
             return await self.resolver.resolve_workload(token)
-        except SandboxPrincipalRejectedError:
+        except WorkloadPrincipalRejectedError:
             _reject()
 
 

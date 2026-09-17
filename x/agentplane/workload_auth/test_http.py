@@ -12,12 +12,12 @@ from fastapi import HTTPException, Request
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import AuthenticationV1Api
 
-from x.agentplane.sandbox_auth.http import WorkloadPrincipalAuthenticator
-from x.agentplane.sandbox_auth.principal import (
+from x.agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
+from x.agentplane.workload_auth.principal import (
     POD_NAME_CLAIM,
     POD_UID_CLAIM,
-    SandboxPrincipalResolver,
     WorkloadPrincipal,
+    WorkloadPrincipalResolver,
 )
 
 TOKEN = "workload-token"
@@ -41,7 +41,7 @@ def authenticator() -> tuple[WorkloadPrincipalAuthenticator, AsyncMock]:
     )
     return (
         WorkloadPrincipalAuthenticator(
-            SandboxPrincipalResolver(
+            WorkloadPrincipalResolver(
                 authentication=cast(AuthenticationV1Api, SimpleNamespace(create_token_review=create_token_review)),
                 audience="agentplane-egress",
                 allowed_service_account_namespaces=frozenset({NAMESPACE}),

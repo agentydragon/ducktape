@@ -17,8 +17,8 @@ bbr test //x/agentplane/egress/...
   credential's placeholder sits in a request, and how to put the real value there.
 - `policy.py`: the pure decision over an in-memory `Index` — subject bindings, the matching rule
   the request's placeholder directs it to, substitution, binding resolution. No I/O.
-- `identity.py`: the shared `sandbox_auth` TokenReview/live-Pod resolver plus the egress-only
-  source-Pod address check and expiry-bounded verdict cache.
+- `identity.py`: the shared `workload_auth` resolver behind a proxied connection, translating a
+  refused bearer into the `DenyReason` the client sees.
 - `upstream.py`: the admitted host resolved by the proxy, refused when it points anywhere not
   globally reachable, and pinned so the dial goes to the address checked.
 - `informer.py`: read-only list-and-watch of the four kinds into each replica’s `Index`.
