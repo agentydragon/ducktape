@@ -162,7 +162,6 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         ("kubectl-machine-mcp", "agents/kubectl-machine-mcp/app"),
         ("kubectl-machine-mcp-namespace", "agents/kubectl-machine-mcp/namespace"),
         ("kubectl-passthrough-mcp", "agents/kubectl-passthrough-mcp/app"),
-        ("kubectl-passthrough-mcp-namespace", "agents/kubectl-passthrough-mcp/namespace"),
         ("kubevirt", "kubevirt/app"),
         ("kubevirt-cdi-operator", "kubevirt/cdi-operator"),
         ("kubevirt-operator", "kubevirt/operator"),

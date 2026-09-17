@@ -766,14 +766,6 @@ spec:
           exclude:
             - flux-kustomization.yaml
 
-    - name: kubectl-passthrough-mcp-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/kubectl-passthrough-mcp/namespace/**"
-          to: "@artifact/cluster/k8s/agents/kubectl-passthrough-mcp/namespace/"
-          exclude:
-            - flux-kustomization.yaml
-
     - name: loki-read-proxy
       originRevision: "@repo"
       copy:
