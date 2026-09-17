@@ -18,7 +18,7 @@ def test_public_coder_and_haku_configured_diagnostics_are_secret_free(k8s_dir: P
     expected_namespace_labels = {
         k8s_dir / "agents/agent-sandbox/controller/patches.yaml": agent_readable_metadata_label,
         k8s_dir / "agents/public-coder-agent/namespace/namespace.yaml": agent_readable_metadata_label,
-        k8s_dir / "nix-cache/namespace/namespace.yaml": agent_readable_metadata_label,
+        k8s_dir / "nix-cache/namespace.yaml": agent_readable_metadata_label,
         k8s_dir / "vm-images-publisher/namespace.yaml": agent_readable_metadata_label,
         k8s_dir / "cli-proxy-api/namespace.yaml": agent_readable_logs_label,
         k8s_dir / "grocy/sf/app/namespace.yaml": agent_readable_logs_label,

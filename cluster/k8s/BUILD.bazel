@@ -177,7 +177,7 @@ filegroup(
         "matrix/namespace/namespace.yaml",
         "monitoring/loki/namespace.yaml",
         "monitoring/namespace/namespace.yaml",
-        "nix-cache/namespace/namespace.yaml",
+        "nix-cache/namespace.yaml",
         "vm-images-publisher/namespace.yaml",
         "//haku/x/dispatch:deploy/namespace/namespace.yaml",
         "//props:deploy/namespace/namespace.yaml",

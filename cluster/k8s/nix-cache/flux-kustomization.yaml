@@ -11,7 +11,7 @@ spec:
     kind: ExternalArtifact
     name: nix-cache
     namespace: ducktape-flux
-  path: ./cluster/k8s/nix-cache/app
+  path: ./cluster/k8s/nix-cache
   prune: true
   wait: true
   decryption:
@@ -24,9 +24,11 @@ spec:
       name: attic
       namespace: nix-cache
   dependsOn:
-    - name: forgejo-images
+    - name: cnpg
       namespace: ducktape-flux
-    - name: attic-db
+    - name: external-secrets-config
+      namespace: ducktape-flux
+    - name: forgejo-images
       namespace: ducktape-flux
     - name: gateway
       namespace: ducktape-flux

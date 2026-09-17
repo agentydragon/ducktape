@@ -228,10 +228,7 @@ resources:
   - matrix/user-provisioner/flux-kustomization.yaml
 
   # --- nix-cache ---
-  - nix-cache/namespace/flux-kustomization.yaml
-  - nix-cache/db/flux-kustomization.yaml
-  - nix-cache/app/flux-kustomization.yaml
-  - nix-cache/bootstrap/flux-kustomization.yaml
+  - nix-cache/flux-kustomization.yaml
 
   # --- atuin ---
   - atuin/namespace/flux-kustomization.yaml
