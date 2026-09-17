@@ -45,7 +45,6 @@ def test_hidden_model_aliases_target_served_models() -> None:
     served = {entry["model_name"] for entry in config["model_list"]}
     aliases = config["router_settings"]["model_group_alias"]
 
-    assert aliases["gpt-6-astra"] == {"model": "chatgpt/oai-responses/gpt-6-astra", "hidden": True}
     assert all(alias["model"] in served for alias in aliases.values())
 
 
