@@ -33,7 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from x.agentplane.action_service.catalog import Key
 from x.agentplane.action_service.db import McpLinkageFlowRow, McpOAuthTokenStateRow, McpServerLinkageRow, SessionMaker
-from x.agentplane.action_service.models import OperatorPrincipal, operator_key
+from x.agentplane.action_service.models import OperatorPrincipal
 
 logger = logging.getLogger(__name__)
 _REFRESH_SKEW = timedelta(minutes=1)
@@ -103,7 +103,7 @@ class McpLinkageView(BaseModel):
     scopes: list[str]
     expires_at: datetime | None
     linked_at: datetime | None
-    linked_by: str | None
+    linked_by: OperatorPrincipal | None
     refresh_failure: McpRefreshFailure | None = None
 
 
@@ -296,7 +296,8 @@ class McpLinkageAuthority:
                     token_endpoint=token_endpoint,
                     resource=resource,
                     linked_at=now,
-                    linked_by=operator_key(linked_by),
+                    linked_by_issuer=linked_by.issuer,
+                    linked_by_subject=linked_by.subject,
                 )
                 db.add(current)
             else:
@@ -308,7 +309,8 @@ class McpLinkageAuthority:
                 current.token_endpoint = token_endpoint
                 current.resource = resource
                 current.linked_at = now
-                current.linked_by = operator_key(linked_by)
+                current.linked_by_issuer = linked_by.issuer
+                current.linked_by_subject = linked_by.subject
             await db.flush()
             view = _view(server, current, token_state)
         self._notify_change(server.server_id)
@@ -328,7 +330,8 @@ class McpLinkageAuthority:
                 row.token_state_id = None
                 row.scopes = server.scopes
                 row.linked_at = None
-                row.linked_by = None
+                row.linked_by_issuer = None
+                row.linked_by_subject = None
             if state is not None:
                 await db.delete(state)
             view = _view(server, row, None)
@@ -651,7 +654,7 @@ def _view(
             row.scopes,
             state.expires_at,
             row.linked_at,
-            row.linked_by,
+            _linked_by(row),
         )
         failure = McpRefreshFailure(
             action=state.refresh_failure_action, attempts=state.refresh_failure_count, retry_at=state.refresh_retry_at
@@ -663,7 +666,7 @@ def _view(
             row.scopes,
             state.expires_at,
             row.linked_at,
-            row.linked_by,
+            _linked_by(row),
         )
         failure = None
     else:
@@ -673,7 +676,7 @@ def _view(
             row.scopes,
             state.expires_at,
             row.linked_at,
-            row.linked_by,
+            _linked_by(row),
         )
         failure = None
     return McpLinkageView(
@@ -688,6 +691,13 @@ def _view(
         linked_by=linked_by,
         refresh_failure=failure,
     )
+
+
+def _linked_by(row: McpServerLinkageRow) -> OperatorPrincipal | None:
+    """Both columns are written together and a check constraint keeps them that way, so either one
+    being absent means nobody is recorded."""
+    issuer, subject = row.linked_by_issuer, row.linked_by_subject
+    return None if issuer is None or subject is None else OperatorPrincipal(issuer=issuer, subject=subject)
 
 
 def _digest(value: str) -> str:

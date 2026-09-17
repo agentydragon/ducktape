@@ -8,7 +8,7 @@ from typing import Any, Protocol
 from uuid import UUID, uuid4
 
 from pydantic import JsonValue, TypeAdapter
-from sqlalchemy import DateTime, ForeignKey, Integer, Text, UniqueConstraint, event, func, select
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, Text, UniqueConstraint, event, func, select
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID, insert as pg_insert
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
@@ -233,6 +233,11 @@ class McpServerLinkageRow(Base):
     """One shared OAuth token family for a configured MCP server."""
 
     __tablename__ = "mcp_server_linkage"
+    __table_args__ = (
+        CheckConstraint(
+            "(linked_by_issuer IS NULL) = (linked_by_subject IS NULL)", name="mcp_server_linkage_linked_by_whole"
+        ),
+    )
 
     server_id: Mapped[str] = mapped_column(Text, primary_key=True)
     provider: Mapped[str] = mapped_column(Text)
@@ -245,7 +250,8 @@ class McpServerLinkageRow(Base):
     token_endpoint: Mapped[str | None] = mapped_column(Text, nullable=True)
     resource: Mapped[str | None] = mapped_column(Text, nullable=True)
     linked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    linked_by: Mapped[str | None] = mapped_column(Text)
+    linked_by_issuer: Mapped[str | None] = mapped_column(Text)
+    linked_by_subject: Mapped[str | None] = mapped_column(Text)
 
 
 class McpOAuthTokenStateRow(Base):
