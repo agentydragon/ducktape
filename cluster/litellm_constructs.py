@@ -11,8 +11,39 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from cdk8s import ApiObject, JsonPatch, Yaml
-from cdk8s_plus_33 import ConfigMap
+from cdk8s import ApiObject, Duration, JsonPatch, Size, Yaml
+from cdk8s_plus_33 import (
+    ConfigMap,
+    ContainerPort,
+    ContainerResources,
+    ContainerSecurityContextProps,
+    Cpu,
+    CpuResources,
+    Deployment,
+    DeploymentStrategy,
+    EnvValue,
+    ImagePullPolicy,
+    ISecret,
+    LabeledNode,
+    MemoryResources,
+    Node,
+    NodeLabelQuery,
+    NodeTaintQuery,
+    PathMapping,
+    PercentOrAbsolute,
+    PodSecurityContextProps,
+    Probe,
+    Protocol,
+    Secret,
+    SecretValue,
+    Service,
+    ServiceAccount,
+    ServicePort,
+    ServiceType,
+    TaintedNode,
+    TaintEffect,
+    Volume,
+)
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
     ExternalSecret,
@@ -44,6 +75,23 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 from cluster.litellm_config import ConfigMapSpec, proxy_configs
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
+_CONTAINER_PORT = 4000
+
+
+@dataclass(frozen=True)
+class _LiteralEnv:
+    name: str
+    value: str
+
+
+@dataclass(frozen=True)
+class _SecretEnv:
+    name: str
+    secret_name: str
+    key: str
+
+
+_EnvEntry = _LiteralEnv | _SecretEnv
 
 
 @dataclass(frozen=True)
@@ -51,9 +99,8 @@ class ServiceSpec:
     """The small set of Service fields that differs between the proxies."""
 
     labels: dict[str, str] | None = None
-    target_port: str | int = "http"
-    type: str | None = "ClusterIP"
-    protocol: str | None = "TCP"
+    type: ServiceType | None = ServiceType.CLUSTER_IP
+    protocol: Protocol | None = Protocol.TCP
 
 
 @dataclass(frozen=True)
@@ -63,17 +110,20 @@ class ProxySpec:
     config: ConfigMapSpec
     image_name: str  # untagged -- e.g. "git.allegedly.works/ducktape-ci/tana-litellm-proxy"
     replicas: int
-    env: tuple[dict[str, object], ...]
+    env: tuple[_EnvEntry, ...]
     startup_failure_threshold: int
-    resources: dict[str, object] | None = None
-    image_pull_policy: str | None = None
-    image_pull_secrets: tuple[dict[str, str], ...] = ()
+    resources: ContainerResources | None = None
+    image_pull_policy: ImagePullPolicy | None = None
+    image_pull_secret_name: str | None = None
     service_account_name: str | None = None
     termination_grace_period_seconds: int | None = None
-    node_selector: dict[str, str] | None = None
-    tolerations: tuple[dict[str, object], ...] = ()
+    node_affinity: LabeledNode | None = None
+    tolerations: tuple[TaintedNode, ...] = ()
+    # cdk8s_plus_33 has no typed builder for custom topologySpreadConstraints
+    # (only an all-or-nothing `spread: bool` auto-toggle) -- stays a raw dict,
+    # applied via the ApiObject escape hatch in _add_deployment.
     topology_spread_constraints: tuple[dict[str, object], ...] = ()
-    strategy: dict[str, object] | None = None
+    strategy: DeploymentStrategy | None = None
     service: ServiceSpec = field(default_factory=ServiceSpec)
     hostname: str | None = None
     forgejo_image_credentials: bool = False
@@ -87,19 +137,19 @@ class ProxySpec:
         return self.config.namespace
 
 
-def _literal_env(name: str, value: str) -> dict[str, object]:
-    return {"name": name, "value": value}
+def _literal_env(name: str, value: str) -> _EnvEntry:
+    return _LiteralEnv(name, value)
 
 
-def _secret_env(name: str, secret_name: str, key: str) -> dict[str, object]:
-    return {"name": name, "valueFrom": {"secretKeyRef": {"name": secret_name, "key": key}}}
+def _secret_env(name: str, secret_name: str, key: str) -> _EnvEntry:
+    return _SecretEnv(name, secret_name, key)
 
 
-def _base_env(*entries: dict[str, object]) -> tuple[dict[str, object], ...]:
+def _base_env(*entries: _EnvEntry) -> tuple[_EnvEntry, ...]:
     return (_literal_env("HOST", "0.0.0.0"), _literal_env("PORT", "4000"), *entries)
 
 
-def _langfuse_env(*entries: dict[str, object]) -> tuple[dict[str, object], ...]:
+def _langfuse_env(*entries: _EnvEntry) -> tuple[_EnvEntry, ...]:
     return (
         *_base_env(*entries),
         _literal_env("LANGFUSE_OTEL_HOST", "http://langfuse-web.langfuse.svc.cluster.local:3000"),
@@ -128,14 +178,19 @@ def proxy_specs() -> tuple[ProxySpec, ...]:
                 _secret_env("TANA_FIREBASE_REFRESH_TOKEN", "tana-firebase-refresh-token", "refresh_token"),
             ),
             startup_failure_threshold=36,
-            resources={"requests": {"cpu": "100m", "memory": "1Gi"}, "limits": {"cpu": "2", "memory": "4Gi"}},
-            image_pull_policy="Always",
-            image_pull_secrets=({"name": "forgejo-images-creds"},),
+            resources=ContainerResources(
+                cpu=CpuResources(request=Cpu.millis(100), limit=Cpu.units(2)),
+                memory=MemoryResources(request=Size.gibibytes(1), limit=Size.gibibytes(4)),
+            ),
+            image_pull_policy=ImagePullPolicy.ALWAYS,
+            image_pull_secret_name="forgejo-images-creds",
             service_account_name="litellm",
             termination_grace_period_seconds=90,
-            node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
+            node_affinity=Node.labeled(NodeLabelQuery.is_("topology.kubernetes.io/zone", "hil-ovh")),
             tolerations=(
-                {"key": "node-role.kubernetes.io/control-plane", "operator": "Exists", "effect": "NoSchedule"},
+                Node.tainted(
+                    NodeTaintQuery.exists("node-role.kubernetes.io/control-plane", effect=TaintEffect.NO_SCHEDULE)
+                ),
             ),
             topology_spread_constraints=(
                 {
@@ -145,7 +200,9 @@ def proxy_specs() -> tuple[ProxySpec, ...]:
                     "labelSelector": {"matchLabels": {"app.kubernetes.io/name": "litellm"}},
                 },
             ),
-            strategy={"type": "RollingUpdate", "rollingUpdate": {"maxSurge": 1, "maxUnavailable": 0}},
+            strategy=DeploymentStrategy.rolling_update(
+                max_surge=PercentOrAbsolute.absolute(1), max_unavailable=PercentOrAbsolute.absolute(0)
+            ),
             service=ServiceSpec(labels={"app.kubernetes.io/name": "litellm"}),
             hostname="litellm.allegedly.works",
             forgejo_image_credentials=True,
@@ -168,15 +225,6 @@ def _formatted_config_map_data(data: dict[str, object]) -> dict[str, str]:
     return formatted
 
 
-def _api_resource(
-    scope: Construct, resource_id: str, *, api_version: str, kind: str, metadata: dict, fields: dict[str, object]
-) -> None:
-    """Emit an unstructured Kubernetes resource through cdk8s's escape hatch."""
-    resource = ApiObject(scope, resource_id, api_version=api_version, kind=kind, metadata=metadata)
-    for field_name, value in fields.items():
-        resource.add_json_patch(JsonPatch.add(f"/{field_name}", value))
-
-
 def _metadata(
     name: str, namespace: str, *, labels: dict[str, str] | None = None, annotations: dict[str, str] | None = None
 ) -> dict[str, object]:
@@ -188,14 +236,15 @@ def _metadata(
     return result
 
 
-def _health_probe(path: str, initial_delay_seconds: int, failure_threshold: int) -> dict[str, object]:
-    return {
-        "httpGet": {"path": path, "port": "http"},
-        "initialDelaySeconds": initial_delay_seconds,
-        "periodSeconds": 10,
-        "timeoutSeconds": 5,
-        "failureThreshold": failure_threshold,
-    }
+def _http_probe(path: str, initial_delay_seconds: int, failure_threshold: int) -> Probe:
+    return Probe.from_http_get(
+        path,
+        port=_CONTAINER_PORT,
+        initial_delay_seconds=Duration.seconds(initial_delay_seconds),
+        period_seconds=Duration.seconds(10),
+        timeout_seconds=Duration.seconds(5),
+        failure_threshold=failure_threshold,
+    )
 
 
 class LiteLLMProxy(Construct):
@@ -205,22 +254,17 @@ class LiteLLMProxy(Construct):
         super().__init__(scope, id)
         self.spec = spec
 
-        self._add_config_map()
+        config_map = self._add_config_map()
         if spec.forgejo_image_credentials:
             self._add_forgejo_image_credentials()
-        self._add_deployment()
-        self._add_service()
-        if spec.service_account_name is not None:
-            self._add_service_account()
+        service_account = self._add_service_account() if spec.service_account_name is not None else None
+        deployment = self._add_deployment(config_map, service_account)
+        self._add_service(deployment)
         if spec.hostname is not None:
             self._add_http_route()
 
-    @property
-    def _config_items(self) -> list[dict[str, str]]:
-        return [{"key": filename, "path": filename} for filename in self.spec.config.data]
-
-    def _add_config_map(self) -> None:
-        ConfigMap(
+    def _add_config_map(self) -> ConfigMap:
+        return ConfigMap(
             self,
             "config",
             metadata={
@@ -235,85 +279,108 @@ class LiteLLMProxy(Construct):
             data=_formatted_config_map_data(self.spec.config.data),
         )
 
-    def _add_deployment(self) -> None:
-        labels = {"app.kubernetes.io/name": self.spec.name}
-        container: dict[str, object] = {
-            "name": "litellm",
-            "image": f"{self.spec.image_name}:{_PLACEHOLDER_TAG}",
-            "args": ["--config", "/etc/litellm/config.yaml"],
-            "ports": [{"name": "http", "containerPort": 4000, "protocol": "TCP"}],
-            "env": list(self.spec.env),
-            "livenessProbe": _health_probe("/health/liveliness", 30, 3),
-            "readinessProbe": _health_probe("/health/readiness", 10, 3),
-            "startupProbe": _health_probe("/health/liveliness", 5, self.spec.startup_failure_threshold),
-            "volumeMounts": [{"name": "config", "mountPath": "/etc/litellm", "readOnly": True}],
-        }
-        pod_spec: dict[str, object] = {
-            "containers": [container],
-            "volumes": [
-                {"name": "config", "configMap": {"name": self.spec.config.config_map_name, "items": self._config_items}}
-            ],
-        }
-        if self.spec.image_pull_policy is not None:
-            container["imagePullPolicy"] = self.spec.image_pull_policy
-        if self.spec.resources is not None:
-            container["resources"] = self.spec.resources
-        if self.spec.image_pull_secrets:
-            pod_spec["imagePullSecrets"] = list(self.spec.image_pull_secrets)
-        if self.spec.service_account_name is not None:
-            pod_spec["serviceAccountName"] = self.spec.service_account_name
-        if self.spec.termination_grace_period_seconds is not None:
-            pod_spec["terminationGracePeriodSeconds"] = self.spec.termination_grace_period_seconds
-        if self.spec.node_selector is not None:
-            pod_spec["nodeSelector"] = self.spec.node_selector
-        if self.spec.tolerations:
-            pod_spec["tolerations"] = list(self.spec.tolerations)
-        if self.spec.topology_spread_constraints:
-            pod_spec["topologySpreadConstraints"] = list(self.spec.topology_spread_constraints)
+    def _env_variables(self) -> dict[str, EnvValue]:
+        secrets: dict[str, ISecret] = {}
 
-        deployment_spec: dict[str, object] = {
-            "replicas": self.spec.replicas,
-            "selector": {"matchLabels": labels},
-            "template": {"metadata": {"labels": labels}, "spec": pod_spec},
-        }
-        if self.spec.strategy is not None:
-            deployment_spec["strategy"] = self.spec.strategy
-        _api_resource(
+        def secret_for(name: str) -> ISecret:
+            if name not in secrets:
+                secrets[name] = Secret.from_secret_name(self, f"{name}-secret", name)
+            return secrets[name]
+
+        result: dict[str, EnvValue] = {}
+        for entry in self.spec.env:
+            if isinstance(entry, _LiteralEnv):
+                result[entry.name] = EnvValue.from_value(entry.value)
+            else:
+                result[entry.name] = EnvValue.from_secret_value(
+                    SecretValue(secret=secret_for(entry.secret_name), key=entry.key)
+                )
+        return result
+
+    def _add_deployment(self, config_map: ConfigMap, service_account: ServiceAccount | None) -> Deployment:
+        labels = {"app.kubernetes.io/name": self.spec.name}
+        deployment = Deployment(
             self,
             "deployment",
-            api_version="apps/v1",
-            kind="Deployment",
             metadata=_metadata(
                 self.spec.name, self.spec.namespace, labels=labels, annotations={"reloader.stakater.com/auto": "true"}
             ),
-            fields={"spec": deployment_spec},
+            pod_metadata={"labels": labels},
+            replicas=self.spec.replicas,
+            strategy=self.spec.strategy,
+            service_account=service_account,
+            termination_grace_period=(
+                Duration.seconds(self.spec.termination_grace_period_seconds)
+                if self.spec.termination_grace_period_seconds is not None
+                else None
+            ),
+            docker_registry_auth=(
+                Secret.from_secret_name(self, "forgejo-images-creds-ref", self.spec.image_pull_secret_name)
+                if self.spec.image_pull_secret_name is not None
+                else None
+            ),
+            # cdk8s_plus_33 defaults pods to a hardened SecurityContext
+            # (runAsNonRoot). Opt out explicitly to preserve today's actual behavior
+            # -- the real container's root needs haven't been audited, so silently
+            # hardening it here could break the running proxy.
+            security_context=PodSecurityContextProps(ensure_non_root=False),
         )
 
-    def _add_service(self) -> None:
-        port: dict[str, object] = {"name": "http", "port": 4000, "targetPort": self.spec.service.target_port}
-        if self.spec.service.protocol is not None:
-            port["protocol"] = self.spec.service.protocol
-        service_spec: dict[str, object] = {"selector": {"app.kubernetes.io/name": self.spec.name}, "ports": [port]}
-        if self.spec.service.type is not None:
-            service_spec["type"] = self.spec.service.type
-        _api_resource(
+        deployment.add_container(
+            name="litellm",
+            image=f"{self.spec.image_name}:{_PLACEHOLDER_TAG}",
+            args=["--config", "/etc/litellm/config.yaml"],
+            ports=[ContainerPort(name="http", number=_CONTAINER_PORT, protocol=Protocol.TCP)],
+            env_variables=self._env_variables(),
+            image_pull_policy=self.spec.image_pull_policy,
+            liveness=_http_probe("/health/liveliness", 30, 3),
+            readiness=_http_probe("/health/readiness", 10, 3),
+            startup=_http_probe("/health/liveliness", 5, self.spec.startup_failure_threshold),
+            resources=self.spec.resources,
+            # Same rationale as the pod-level override above.
+            security_context=ContainerSecurityContextProps(read_only_root_filesystem=False, ensure_non_root=False),
+        )
+        volume = Volume.from_config_map(
+            self, "config-volume", config_map, items={"config.yaml": PathMapping(path="config.yaml")}
+        )
+        deployment.containers[0].mount("/etc/litellm", volume, read_only=True)
+
+        if self.spec.node_affinity is not None:
+            deployment.scheduling.attract(self.spec.node_affinity)
+        for toleration in self.spec.tolerations:
+            deployment.scheduling.tolerate(toleration)
+        if self.spec.topology_spread_constraints:
+            # cdk8s_plus_33's Deployment (a Workload, not an ApiObject subclass) has
+            # no direct escape hatch; ApiObject.of() reaches the ApiObject it
+            # manages internally.
+            ApiObject.of(deployment).add_json_patch(
+                JsonPatch.add(
+                    "/spec/template/spec/topologySpreadConstraints", list(self.spec.topology_spread_constraints)
+                )
+            )
+        return deployment
+
+    def _add_service(self, deployment: Deployment) -> None:
+        Service(
             self,
             "service",
-            api_version="v1",
-            kind="Service",
             metadata=_metadata(self.spec.name, self.spec.namespace, labels=self.spec.service.labels),
-            fields={"spec": service_spec},
+            selector=deployment,
+            ports=[
+                ServicePort(
+                    name="http", port=_CONTAINER_PORT, target_port=_CONTAINER_PORT, protocol=self.spec.service.protocol
+                )
+            ],
+            type=self.spec.service.type,
         )
 
-    def _add_service_account(self) -> None:
+    def _add_service_account(self) -> ServiceAccount:
         assert self.spec.service_account_name is not None
-        _api_resource(
+        return ServiceAccount(
             self,
             "serviceaccount",
-            api_version="v1",
-            kind="ServiceAccount",
             metadata=_metadata(self.spec.service_account_name, self.spec.namespace),
-            fields={"automountServiceAccountToken": False},
+            automount_token=False,
         )
 
     def _add_http_route(self) -> None:

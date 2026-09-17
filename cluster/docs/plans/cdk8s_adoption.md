@@ -64,11 +64,3 @@ phase 1's actual pattern has run for a while, not before.
   a test that the `name:` in `images:` matches `ProxySpec.image_name`, so the two
   can't drift apart silently) — not built, low urgency while there's only one
   instance to keep in sync by eye.
-- `litellm_constructs.py`'s `_add_deployment`/`_add_service`/`_add_service_account`/
-  `_add_http_route` go through the raw `ApiObject`/`JsonPatch` escape hatch rather
-  than `cdk8s_plus_33`'s typed `Deployment`/`Service`/`ServiceAccount` builders
-  (already a dependency, used for `ConfigMap`). Switching needs care: the
-  escape-hatch version carries fields (the `reloader.stakater.com` annotation,
-  `topologySpreadConstraints`, the forgejo-image-credentials patch) that'd need
-  verifying against what `cdk8s_plus_33`'s builder API actually exposes before
-  trusting it not to silently drop one. Not attempted yet.

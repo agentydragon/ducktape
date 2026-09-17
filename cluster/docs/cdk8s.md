@@ -197,12 +197,33 @@ versa, a reason this specific problem doesn't move that decision either way.
   — the generated jsii assembly tarball keeps a dashed group segment as-is (it's
   an npm package name), while the Python package directory next to it underscores
   it (a dash isn't valid there), so the two can't be derived from one string.
-- **`litellm_constructs.py`'s Deployment/Service/ServiceAccount** still go
-  through the raw `ApiObject`/`JsonPatch` escape hatch rather than `cdk8s_plus_33`'s
-  typed builders (already a dependency, used for `ConfigMap`) — not yet attempted;
-  open question, see the plan. These are core Kubernetes types, not CRDs, so
-  `cdk8s_import` doesn't apply to them; the fix there is switching to
-  `cdk8s_plus_33`'s own already-vendored typed builders instead.
+- **Deployment/Service/ServiceAccount** are core Kubernetes types, not CRDs, so
+  `cdk8s_import` doesn't apply — they're built from `cdk8s_plus_33`'s own
+  already-vendored typed builders (already a dependency, used for `ConfigMap`)
+  instead of the raw `ApiObject`/`JsonPatch` escape hatch. Unlike the CRD
+  conversions above, this wasn't a same-shape swap: `cdk8s_plus_33` is a fluent,
+  opinionated builder, not a typed mirror of the raw manifest fields, so a few
+  fields translate rather than map 1:1:
+  - `nodeSelector` becomes a required `nodeAffinity` match (`Deployment.scheduling.attract(Node.labeled(...))`)
+    — same hard-requirement semantics, different manifest shape.
+  - `Service`'s selector is the `Deployment` construct itself
+    (`selector=deployment`), not a copied label dict — the two can no longer
+    drift apart.
+  - `topologySpreadConstraints` has no typed builder (only an all-or-nothing
+    `spread: bool` auto-toggle) — `cdk8s.ApiObject.of(deployment)` reaches the
+    `Deployment`'s internally-managed `ApiObject` for a `JsonPatch` escape hatch,
+    since `Deployment` doesn't extend `ApiObject` directly.
+  - **`cdk8s_plus_33` defaults containers and pods to a hardened
+    `securityContext`** (`readOnlyRootFilesystem: true`, `runAsNonRoot: true`).
+    Both are explicitly overridden back to `false` to preserve today's actual
+    (unrestricted) behavior — the real container's filesystem-write/root needs
+    were never audited, so silently hardening it as a side effect of switching
+    builders could have broken the running proxy.
+  - The Deployment's own `matchLabels` selector uses cdk8s's own
+    `cdk8s.io/metadata.addr` construct-address label instead of
+    `app.kubernetes.io/name` (`app.kubernetes.io/name` still remains on the pod
+    template's own labels) — `cdk8s_plus_33`'s own selector-uniqueness
+    convention, adopted rather than fought.
 
 ## Reference example
 

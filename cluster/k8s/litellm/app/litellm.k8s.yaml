@@ -613,6 +613,13 @@ spec:
       mergePolicy: Merge
       type: kubernetes.io/dockerconfigjson
 ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: litellm
+  namespace: litellm
+automountServiceAccountToken: false
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -623,25 +630,38 @@ metadata:
   name: litellm
   namespace: litellm
 spec:
+  minReadySeconds: 0
+  progressDeadlineSeconds: 600
   replicas: 2
+  revisionHistoryLimit: 10
   selector:
     matchLabels:
-      app.kubernetes.io/name: litellm
+      cdk8s.io/metadata.addr: litellm-proxy-deployment-c87123b0
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
   template:
     metadata:
       labels:
         app.kubernetes.io/name: litellm
+        cdk8s.io/metadata.addr: litellm-proxy-deployment-c87123b0
     spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: topology.kubernetes.io/zone
+                    operator: In
+                    values:
+                      - hil-ovh
+      automountServiceAccountToken: false
       containers:
-        - name: litellm
-          image: git.allegedly.works/ducktape-ci/tana-litellm-proxy:unset
-          args:
+        - args:
             - --config
             - /etc/litellm/config.yaml
-          ports:
-            - name: http
-              containerPort: 4000
-              protocol: TCP
           env:
             - name: HOST
               value: 0.0.0.0
@@ -650,125 +670,140 @@ spec:
             - name: LITELLM_MASTER_KEY
               valueFrom:
                 secretKeyRef:
-                  name: litellm-master-key
                   key: api-key
+                  name: litellm-master-key
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: litellm-db-app
                   key: uri
+                  name: litellm-db-app
             - name: LITELLM_SALT_KEY
               valueFrom:
                 secretKeyRef:
-                  name: litellm-salt-key
                   key: key
+                  name: litellm-salt-key
             - name: ANTHROPIC_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: litellm-anthropic-key
                   key: api-key
+                  name: litellm-anthropic-key
             - name: GROQ_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: litellm-groq-key
                   key: GROQ_API_KEY
+                  name: litellm-groq-key
             - name: GEMINI_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: litellm-gemini-key
                   key: GEMINI_API_KEY
+                  name: litellm-gemini-key
             - name: MISTRAL_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: litellm-mistral-key
                   key: MISTRAL_API_KEY
+                  name: litellm-mistral-key
             - name: CLIPROXY_CLIENT_KEY
               valueFrom:
                 secretKeyRef:
-                  name: litellm-cliproxy-key
                   key: CLIPROXY_CLIENT_KEY
+                  name: litellm-cliproxy-key
             - name: TANA_FIREBASE_REFRESH_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: tana-firebase-refresh-token
                   key: refresh_token
+                  name: tana-firebase-refresh-token
             - name: LANGFUSE_OTEL_HOST
               value: http://langfuse-web.langfuse.svc.cluster.local:3000
             - name: LANGFUSE_PUBLIC_KEY
               valueFrom:
                 secretKeyRef:
-                  name: langfuse-secrets
                   key: LANGFUSE_INIT_PROJECT_PUBLIC_KEY
+                  name: langfuse-secrets
             - name: LANGFUSE_SECRET_KEY
               valueFrom:
                 secretKeyRef:
-                  name: langfuse-secrets
                   key: LANGFUSE_INIT_PROJECT_SECRET_KEY
+                  name: langfuse-secrets
+          image: git.allegedly.works/ducktape-ci/tana-litellm-proxy:unset
+          imagePullPolicy: Always
           livenessProbe:
+            failureThreshold: 3
             httpGet:
               path: /health/liveliness
-              port: http
+              port: 4000
+              scheme: HTTP
             initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 5
-            failureThreshold: 3
+          name: litellm
+          ports:
+            - containerPort: 4000
+              name: http
+              protocol: TCP
           readinessProbe:
+            failureThreshold: 3
             httpGet:
               path: /health/readiness
-              port: http
+              port: 4000
+              scheme: HTTP
             initialDelaySeconds: 10
             periodSeconds: 10
             timeoutSeconds: 5
-            failureThreshold: 3
+          resources:
+            limits:
+              cpu: "2"
+              memory: 4096Mi
+            requests:
+              cpu: 100m
+              memory: 1024Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: false
           startupProbe:
+            failureThreshold: 36
             httpGet:
               path: /health/liveliness
-              port: http
+              port: 4000
+              scheme: HTTP
             initialDelaySeconds: 5
             periodSeconds: 10
             timeoutSeconds: 5
-            failureThreshold: 36
           volumeMounts:
-            - name: config
-              mountPath: /etc/litellm
+            - mountPath: /etc/litellm
+              name: configmap-litellm-config
               readOnly: true
-          imagePullPolicy: Always
-          resources:
-            requests:
-              cpu: 100m
-              memory: 1Gi
-            limits:
-              cpu: "2"
-              memory: 4Gi
+      dnsPolicy: ClusterFirst
+      hostNetwork: false
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      restartPolicy: Always
+      securityContext:
+        fsGroupChangePolicy: Always
+        runAsNonRoot: false
+      serviceAccountName: litellm
+      setHostnameAsFQDN: false
+      shareProcessNamespace: false
+      terminationGracePeriodSeconds: 90
+      tolerations:
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/control-plane
+          operator: Exists
+      topologySpreadConstraints:
+        - labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: litellm
+          maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
       volumes:
-        - name: config
-          configMap:
-            name: litellm-config
+        - configMap:
             items:
               - key: config.yaml
                 path: config.yaml
-      imagePullSecrets:
-        - name: forgejo-images-creds
-      serviceAccountName: litellm
-      terminationGracePeriodSeconds: 90
-      nodeSelector:
-        topology.kubernetes.io/zone: hil-ovh
-      tolerations:
-        - key: node-role.kubernetes.io/control-plane
-          operator: Exists
-          effect: NoSchedule
-      topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
-          labelSelector:
-            matchLabels:
-              app.kubernetes.io/name: litellm
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
+            name: litellm-config
+          name: configmap-litellm-config
 ---
 apiVersion: v1
 kind: Service
@@ -778,21 +813,15 @@ metadata:
   name: litellm
   namespace: litellm
 spec:
-  selector:
-    app.kubernetes.io/name: litellm
+  externalIPs: []
   ports:
     - name: http
       port: 4000
-      targetPort: http
       protocol: TCP
+      targetPort: 4000
+  selector:
+    cdk8s.io/metadata.addr: litellm-proxy-deployment-c87123b0
   type: ClusterIP
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: litellm
-  namespace: litellm
-automountServiceAccountToken: false
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
