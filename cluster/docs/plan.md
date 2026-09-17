@@ -212,7 +212,7 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       lists more recipients than the file actually has. Audit with
       `for f in $(git ls-files '*.sops.*'); do jq -r '.sops.age[]?.recipient' $f; done`
       and compare to expected recipients per rule.
-- [ ] **Restore SDR kustomization** — unsuspend `cluster/k8s/sdr/flux-kustomization.yaml`
+- [ ] **Restore SDR kustomization** — unsuspend `cluster/k8s/parked/sdr/flux-kustomization.yaml`
       (remove `suspend: true`) once the radio hardware is set up at the new place.
 - [ ] **Set up offsite tofu-state backup** — the Proxmox-pinned `pg_dump` CronJob
       (`cluster/k8s/tofu-state/backup/`) was deleted 2026-06-02: it couldn't run with

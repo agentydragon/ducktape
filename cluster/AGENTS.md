@@ -206,6 +206,26 @@ that serves the CRDs.
 - Flat example: `k8s/aiquota/` — single flux-kustomization, all manifests at root
 - Grouped example: `k8s/langfuse/{namespace,secrets,db,app}/` — multi-layer with dependsOn
 
+### Parked (non-ducktape-owned) application manifests
+
+An app whose source ducktape does **not** own — a third-party image, Helm chart, or
+tool, as opposed to `<project>/deploy/`-pattern code like `props/deploy/`,
+`loom/wayback/deploy/`, `haku/x/dispatch/deploy/` — moves entirely to
+`cluster/k8s/parked/<name>/` when decommissioned or suspended indefinitely. Keep the
+layout it already had (flat, or `namespace/`/`db/`/`app/`/etc.). Every
+`flux-kustomization.yaml` under it carries `spec.suspend: true` and
+`metadata.annotations.ducktape.org/parked: "true"`, and is **never** referenced from
+root `cluster/k8s/kustomization.yaml`. `cluster/validation/test_cluster_integration.py`'s
+`test_parked_manifests_location` enforces both directions: the annotation is required
+under `cluster/k8s/parked/` and forbidden anywhere else.
+
+Revive by reversing all three: drop the annotation, drop (or flip) `suspend`, move the
+directory back out of `parked/`, and add its `flux-kustomization.yaml` back to root.
+
+Ducktape-owned code is never part of this convention — it keeps manifests under its own
+`<project>/deploy/`, active or suspended, right beside the source. Current inventory and
+per-app reasons: <docs/decisions.md> § "Parked application manifests".
+
 ## Kustomize configuration inputs
 
 Keep YAML configuration inputs as `.yaml` files; do not disguise YAML as `.txt` merely to avoid

@@ -757,7 +757,7 @@
 
         # agent-box - headless CLI-only KubeVirt VM hosting agent users, each under
         # its own scoped identity. `codex` runs OpenAI Codex. See
-        # cluster/k8s/agent-box/README.md.
+        # cluster/k8s/parked/agent-box/README.md.
         agent-box = mkNixos {
           hostname = "agent-box";
           username = "codex";
