@@ -1,11 +1,4 @@
-"""Authenticate a Pod-bound Kubernetes bearer, and resolve the live Sandbox owning it where one must.
-
-Everything except the final ownership step is common: TokenReview against the audience, the
-ServiceAccount subject, and the Pod the token is bound to. A caller that requires a managed Sandbox
-asks for `SandboxPrincipal`; one that accepts any workload in an allowed namespace -- a Deployment
-named as a ServiceAccount subject -- asks for `WorkloadPrincipal` and gets the same proofs without
-the ownership requirement.
-"""
+"""Authenticate a Pod-bound Kubernetes bearer, and resolve the live Sandbox owning it where one must."""
 
 from __future__ import annotations
 
@@ -43,23 +36,6 @@ class SandboxPrincipal(WorkloadPrincipal):
     sandbox_uid: str
 
 
-def sandbox_controller(pod: k8s_client.V1Pod) -> k8s_client.V1OwnerReference | None:
-    """The one Sandbox controlling this Pod, or None: no owner, several, or an incomplete reference.
-
-    A Pod with no Sandbox owner is not by itself a rejection -- a caller that admits plain workloads
-    reads this as "not a Sandbox" and decides on the ServiceAccount instead.
-    """
-    metadata = pod.metadata
-    owners = [
-        owner
-        for owner in (metadata.owner_references or [] if metadata is not None else [])
-        if owner.kind == SANDBOX_KIND and owner.controller is True
-    ]
-    if len(owners) != 1:
-        return None
-    return owners[0] if owners[0].name and owners[0].uid else None
-
-
 class RejectionReason(StrEnum):
     TOKEN_REJECTED = "token-rejected"
     POD_MISMATCH = "pod-mismatch"
@@ -72,6 +48,33 @@ class SandboxPrincipalRejectedError(Exception):
     def __init__(self, reason: RejectionReason, detail: str) -> None:
         super().__init__(detail)
         self.reason = reason
+
+
+def sandbox_controller(pod: k8s_client.V1Pod) -> k8s_client.V1OwnerReference | None:
+    """The one Sandbox controlling this Pod, or None where none does.
+
+    Several Sandbox controllers, or one naming no `name`/`uid`, is ownership this cannot read rather
+    than an absence of it, and is refused: returning None there would hand the Pod to the caller that
+    admits plain workloads, which authenticates it as its ServiceAccount.
+    """
+    metadata = pod.metadata
+    owners = [
+        owner
+        for owner in (metadata.owner_references or [] if metadata is not None else [])
+        if owner.kind == SANDBOX_KIND and owner.controller is True
+    ]
+    if not owners:
+        return None
+    if len(owners) > 1:
+        raise SandboxPrincipalRejectedError(
+            RejectionReason.SANDBOX_UNKNOWN, "Pod names more than one controlling Sandbox"
+        )
+    owner = owners[0]
+    if not owner.name or not owner.uid:
+        raise SandboxPrincipalRejectedError(
+            RejectionReason.SANDBOX_UNKNOWN, "Pod's controlling Sandbox reference has no name or UID"
+        )
+    return owner
 
 
 class SandboxPrincipalResolver:
@@ -98,35 +101,19 @@ class SandboxPrincipalResolver:
 
     async def resolve(self, token: str) -> SandboxPrincipal:
         """Return only the destination-safe principal; never infer identity from request metadata."""
-        principal, _ = await self.resolve_with_pod(token)
-        return principal
-
-    async def resolve_caller(self, token: str) -> WorkloadPrincipal:
-        """The strongest identity this bearer proves, for a caller that accepts either.
-
-        A `SandboxPrincipal` where a live Sandbox controls the Pod, a plain `WorkloadPrincipal`
-        otherwise -- so a caller distinguishes the two with `isinstance` rather than by asking twice.
-        """
-        principal, _ = await self.resolve_caller_with_pod(token)
-        return principal
-
-    async def resolve_caller_with_pod(self, token: str) -> tuple[WorkloadPrincipal, k8s_client.V1Pod]:
-        """`resolve_caller`, also returning the Pod for source-address correlation."""
-        workload, pod = await self.resolve_workload_with_pod(token)
-        owner = sandbox_controller(pod)
-        if owner is None:
-            return workload, pod
-        return self._owned_by(workload, owner), pod
-
-    async def resolve_with_pod(self, token: str) -> tuple[SandboxPrincipal, k8s_client.V1Pod]:
-        """Also return the authoritative live Pod for egress-only source-address correlation."""
         workload, pod = await self.resolve_workload_with_pod(token)
         owner = sandbox_controller(pod)
         if owner is None:
             raise SandboxPrincipalRejectedError(
-                RejectionReason.SANDBOX_UNKNOWN, f"Pod {workload.pod_name} is not controlled by exactly one Sandbox"
+                RejectionReason.SANDBOX_UNKNOWN, f"Pod {workload.pod_name} is controlled by no Sandbox"
             )
-        return self._owned_by(workload, owner), pod
+        return self._owned_by(workload, owner)
+
+    async def resolve_caller(self, token: str) -> WorkloadPrincipal:
+        """The strongest identity this bearer proves, for a caller that accepts either kind."""
+        workload, pod = await self.resolve_workload_with_pod(token)
+        owner = sandbox_controller(pod)
+        return workload if owner is None else self._owned_by(workload, owner)
 
     @staticmethod
     def _owned_by(workload: WorkloadPrincipal, owner: k8s_client.V1OwnerReference) -> SandboxPrincipal:
@@ -141,11 +128,7 @@ class SandboxPrincipalResolver:
         )
 
     async def resolve_workload_with_pod(self, token: str) -> tuple[WorkloadPrincipal, k8s_client.V1Pod]:
-        """Everything a bearer proves short of ownership: audience, ServiceAccount, and the bound Pod.
-
-        A caller that accepts any workload in an allowed namespace stops here. One that requires a
-        managed Sandbox uses `resolve_with_pod`, which adds the ownership check to this.
-        """
+        """Everything a bearer proves short of ownership: audience, ServiceAccount, and the bound Pod."""
         try:
             review = await self._authentication.create_token_review(
                 k8s_client.V1TokenReview(spec=k8s_client.V1TokenReviewSpec(token=token, audiences=[self._audience]))
