@@ -17,56 +17,24 @@ See cluster/docs/cdk8s.md.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
 
 from cdk8s import Testing
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    Kustomization,
-    KustomizationSpec,
-    KustomizationSpecDependsOn,
-    KustomizationSpecSourceRef,
-    KustomizationSpecSourceRefKind,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpec
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
-_NAMESPACE = "ducktape-flux"
+NAMESPACE = "ducktape-flux"  # shared Flux namespace every generated Kustomization CR lives in
 
 
-@dataclass(frozen=True)
-class FluxKustomizationSpec:
-    name: str
-    path: str
-    interval: str
-    # Names of Kustomizations this one depends on. All live in the shared Flux
-    # namespace, same as this one -- KustomizationSpecDependsOn's own `namespace`
-    # already defaults to "the namespace of the resource object that contains the
-    # reference" when omitted, so there's nothing to set explicitly here.
-    depends_on: tuple[str, ...] = ()
-    timeout: str | None = None
-    source_name: str | None = None  # defaults to `name`
+def flux_kustomization(name: str, *, spec: KustomizationSpec) -> dict[str, object]:
+    """Return a Flux `Kustomization` custom resource as a plain manifest dict.
 
-
-def flux_kustomization(spec: FluxKustomizationSpec) -> dict[str, object]:
-    """Return the Flux `Kustomization` custom resource as a plain manifest dict."""
+    `spec` is the generated typed `KustomizationSpec` (//third_party/flux:kustomization) --
+    build it directly rather than through a hand-rolled subset of its fields; this only
+    supplies the metadata/chart/synth plumbing that isn't part of the CRD's own spec.
+    """
     chart = Testing.chart()
-    Kustomization(
-        chart,
-        spec.name,
-        metadata={"name": spec.name, "namespace": _NAMESPACE},
-        spec=KustomizationSpec(
-            interval=spec.interval,
-            path=spec.path,
-            prune=True,
-            source_ref=KustomizationSpecSourceRef(
-                kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT,
-                name=spec.source_name or spec.name,
-                namespace=_NAMESPACE,
-            ),
-            timeout=spec.timeout,
-            depends_on=[KustomizationSpecDependsOn(name=name) for name in spec.depends_on] or None,
-        ),
-    )
+    Kustomization(chart, name, metadata={"name": name, "namespace": NAMESPACE}, spec=spec)
     (manifest,) = Testing.synth(chart)
     assert isinstance(manifest, dict)
     return manifest

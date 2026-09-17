@@ -10,8 +10,14 @@ the real tag at `kustomize build` time. See cluster/docs/cdk8s.md.
 from pathlib import Path
 
 from cdk8s import App, Chart, Yaml
+from flux_kustomize.io.fluxcd.toolkit.kustomize import (
+    KustomizationSpec,
+    KustomizationSpecDependsOn,
+    KustomizationSpecSourceRef,
+    KustomizationSpecSourceRefKind,
+)
 
-from cluster.flux_constructs import FluxKustomizationSpec, flux_kustomization, kustomize_kustomization
+from cluster.flux_constructs import NAMESPACE, flux_kustomization, kustomize_kustomization
 from cluster.litellm_constructs import LiteLLMProxy, LiteLLMServiceMonitor, proxy_specs
 from util.bazel.workspace import get_build_workspace_directory
 
@@ -37,26 +43,33 @@ def generate_manifests(root: Path) -> None:
     _write_yaml(
         app_dir / "flux-kustomization.yaml",
         flux_kustomization(
-            FluxKustomizationSpec(
-                name="litellm",
-                path=f"./{_APP_DIR}",
+            "litellm",
+            spec=KustomizationSpec(
                 interval="10m",
-                timeout="10m",
-                depends_on=(
-                    "external-secrets-config",
-                    "forgejo-images",
-                    "litellm-secrets",
-                    "litellm-db",
-                    "gateway",
-                    "cert-manager-environment",
-                    "langfuse-secrets",
-                    "reflector",
-                    "tana-mcp",
-                    # The ServiceMonitor/PodMonitor CRD (folded in from the retired
-                    # litellm-servicemonitor Kustomization, #7103).
-                    "monitoring-crds",
+                path=f"./{_APP_DIR}",
+                prune=True,
+                source_ref=KustomizationSpecSourceRef(
+                    kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name="litellm", namespace=NAMESPACE
                 ),
-            )
+                timeout="10m",
+                depends_on=[
+                    KustomizationSpecDependsOn(name=dep)
+                    for dep in (
+                        "external-secrets-config",
+                        "forgejo-images",
+                        "litellm-secrets",
+                        "litellm-db",
+                        "gateway",
+                        "cert-manager-environment",
+                        "langfuse-secrets",
+                        "reflector",
+                        "tana-mcp",
+                        # The ServiceMonitor/PodMonitor CRD (folded in from the retired
+                        # litellm-servicemonitor Kustomization, #7103).
+                        "monitoring-crds",
+                    )
+                ],
+            ),
         ),
     )
     _write_yaml(
