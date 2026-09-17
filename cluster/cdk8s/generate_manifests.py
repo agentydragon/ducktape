@@ -18,7 +18,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 )
 
 from cluster.cdk8s.flux_constructs import NAMESPACE, flux_kustomization, kustomize_kustomization
-from cluster.cdk8s.litellm_constructs import LiteLLMProxy, LiteLLMServiceMonitor, proxy_specs
+from cluster.cdk8s.litellm_constructs import LiteLLMProxy, LiteLLMServiceMonitor, RuggedNpuLlmEndpoints, proxy_specs
 from util.bazel.workspace import get_build_workspace_directory
 
 _APP_DIR = "cluster/k8s/litellm/app"
@@ -38,6 +38,7 @@ def generate_manifests(root: Path) -> None:
     chart = Chart(app, spec.name, disable_resource_name_hashes=True)
     LiteLLMProxy(chart, "proxy", spec)
     LiteLLMServiceMonitor(chart, "monitoring")
+    RuggedNpuLlmEndpoints(chart, "rugged-npu-llm")
     app.synth()
 
     _write_yaml(

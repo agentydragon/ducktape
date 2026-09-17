@@ -175,6 +175,7 @@ def proxy_specs() -> tuple[ProxySpec, ...]:
                 _secret_env("GEMINI_API_KEY", "litellm-gemini-key", "GEMINI_API_KEY"),
                 _secret_env("MISTRAL_API_KEY", "litellm-mistral-key", "MISTRAL_API_KEY"),
                 _secret_env("CLIPROXY_CLIENT_KEY", "litellm-cliproxy-key", "CLIPROXY_CLIENT_KEY"),
+                _secret_env("RUGGED_NPU_LLM_KEY", "rugged-npu-llm-bearer-token", "token"),
                 _secret_env("TANA_FIREBASE_REFRESH_TOKEN", "tana-firebase-refresh-token", "refresh_token"),
             ),
             startup_failure_threshold=36,
@@ -442,6 +443,104 @@ class LiteLLMServiceMonitor(Construct):
                             name="litellm-master-key", key="api-key"
                         ),
                     )
+                ],
+            ),
+        )
+
+
+_RUGGED_NPU_LLM_NAME = "rugged-npu-llm"
+_RUGGED_NPU_LLM_PORT = 18080
+# rugged's Nebula IP (nebula-mesh.json); confirm there before ever changing this.
+_RUGGED_NPU_LLM_NEBULA_IP = "10.42.0.30"
+
+
+class RuggedNpuLlmEndpoints(Construct):
+    """Static Service+EndpointSlice pinning rugged's Nebula IP as a backend.
+
+    The same pattern etcd's talos-etcd-metrics uses for reaching Talos control-plane
+    nodes directly (../k8s/monitoring/etcd/endpoints.yaml, hand-written because that
+    whole directory isn't cdk8s-converted): rugged is a k8s Node (nebula-mesh.json),
+    not a Pod, so a selector-based Service can't back it -- Cilium already
+    VXLAN-routes pod traffic to every node's Nebula IP, same as any other node's
+    InternalIP. No CiliumNetworkPolicy needed either: litellm's namespace has none,
+    so its egress is already unrestricted. This directory is fully generated (see
+    cluster/docs/cdk8s.md), so the pin is a construct rather than a hand-maintained
+    YAML file; built from the raw ApiObject/JsonPatch escape hatch (like the
+    Deployment's topologySpreadConstraints above) since neither Service nor
+    EndpointSlice has a typed cdk8s_plus_33 builder for a selector-less, static
+    backend.
+
+    18080 is the bearer-proxy's port on rugged
+    (nix/nixos/hosts/rugged/local_llm_npu.nix), not llama-server's own port --
+    llama-server itself is loopback-only, the proxy is the only network-facing
+    surface, same shape as activitywatch's bearer-proxy in front of aw-server.
+    """
+
+    def __init__(self, scope: Construct, id: str) -> None:
+        super().__init__(scope, id)
+
+        service = ApiObject(
+            self,
+            "service",
+            api_version="v1",
+            kind="Service",
+            metadata=_metadata(
+                _RUGGED_NPU_LLM_NAME,
+                "litellm",
+                labels={"app.kubernetes.io/name": _RUGGED_NPU_LLM_NAME},
+                annotations={
+                    "description": "Rugged's NPU-backed llama-server, bearer-gated, reached over Nebula. "
+                    "Endpoints are a static EndpointSlice, not a selector -- rugged is a k8s Node, not a Pod."
+                },
+            ),
+        )
+        service.add_json_patch(
+            JsonPatch.add(
+                "/spec",
+                {
+                    "clusterIP": "None",
+                    "ports": [
+                        {
+                            "name": "http",
+                            "port": _RUGGED_NPU_LLM_PORT,
+                            "targetPort": _RUGGED_NPU_LLM_PORT,
+                            "protocol": "TCP",
+                        }
+                    ],
+                },
+            )
+        )
+
+        endpoint_slice = ApiObject(
+            self,
+            "endpointslice",
+            api_version="discovery.k8s.io/v1",
+            kind="EndpointSlice",
+            metadata=_metadata(
+                _RUGGED_NPU_LLM_NAME,
+                "litellm",
+                labels={
+                    "kubernetes.io/service-name": _RUGGED_NPU_LLM_NAME,
+                    "endpointslice.kubernetes.io/managed-by": "ducktape-static",
+                },
+            ),
+        )
+        endpoint_slice.add_json_patch(
+            JsonPatch.add("/addressType", "IPv4"),
+            JsonPatch.add("/ports", [{"name": "http", "protocol": "TCP", "port": _RUGGED_NPU_LLM_PORT}]),
+            JsonPatch.add(
+                "/endpoints",
+                [
+                    {
+                        "addresses": [_RUGGED_NPU_LLM_NEBULA_IP],
+                        "hostname": "rugged",
+                        "nodeName": "rugged",
+                        # rugged is a roaming laptop, often offline (cluster/README.md Node
+                        # Types) -- ready:true regardless, same as etcd's static endpoints;
+                        # litellm's health check on this backend (not yet wired) is what
+                        # should degrade gracefully, not this field.
+                        "conditions": {"ready": True},
+                    }
                 ],
             ),
         )

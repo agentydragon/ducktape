@@ -4,7 +4,14 @@ import pytest_bazel
 import yaml
 from more_itertools import one
 
-from cluster.k8s.litellm.app.model_rosters import ANTHROPIC_MODELS, CLIPROXY_MODELS, ApiShape, Provider, exposed_name
+from cluster.k8s.litellm.app.model_rosters import (
+    ANTHROPIC_MODELS,
+    CLIPROXY_MODELS,
+    RUGGED_NPU_MODELS,
+    ApiShape,
+    Provider,
+    exposed_name,
+)
 from cluster.validation.terraform_hcl import locals_blocks
 from util.bazel.runfiles import get_required_path
 
@@ -38,6 +45,17 @@ def test_terraform_claude_allowlist_matches_the_model_roster() -> None:
     tf_locals = _model_key_locals()
     assert tf_locals["claude_client_models"] == [
         exposed_name(Provider.ANTHROPIC_MAX20, ApiShape.ANT_MESSAGES, model) for model in ANTHROPIC_MODELS
+    ]
+
+
+# The rugged-npu names live in RUGGED_NPU_MODELS (model_rosters.py) and
+# `rugged_npu_models` in tf/gitops/litellm-keys/main.tf, which scopes the
+# rugged-npu-clients key. This pins the two in sync, so a new on-device model
+# cannot half-land and leave the key policy out of sync with the catalog.
+def test_terraform_rugged_npu_allowlist_matches_the_model_roster() -> None:
+    tf_locals = _model_key_locals()
+    assert tf_locals["rugged_npu_models"] == [
+        exposed_name(Provider.RUGGED_NPU, ApiShape.OAI_CHAT, model) for model in RUGGED_NPU_MODELS
     ]
 
 

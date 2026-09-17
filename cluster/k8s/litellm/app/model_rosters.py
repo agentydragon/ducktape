@@ -21,6 +21,9 @@ model:
   which serves the same models on an OpenAI-compatible `/v1` and on its own native
   endpoints; the chat model segment carries the `num_ctx` variant (`gpt-oss-20b-512k`)
   that distinguishes chat entries
+- `rugged-npu/oai-chat/*` — rugged's NPU-backed llama-server (a distinct provider from
+  a hypothetical future GPU-backed rugged entry, same host but different hardware and
+  a separate service)
 
 The shape is the OUTBOUND wire — the request LiteLLM makes to the provider, never the
 request a client makes to LiteLLM. Nothing about the inbound side is pinned: LiteLLM routes
@@ -76,6 +79,7 @@ class Provider(StrEnum):
     MISTRAL = "mistral"
     OLLAMA = "ollama"
     GROQ = "groq"
+    RUGGED_NPU = "rugged-npu"
 
 
 class ApiShape(StrEnum):
@@ -294,3 +298,13 @@ GEMINI_MAX_OUTPUT_TOKENS = 65_536
 # supported but not automatic-by-default -- this tracks capability/product
 # positioning, not the literal default toggle.
 GEMINI_NON_REASONING_MODELS: frozenset[str] = frozenset({"gemini-3.5-flash-lite"})
+
+# Rugged's own NPU-backed llama-server (nix/nixos/hosts/rugged/local_llm_npu.nix),
+# reached over Nebula through the static rugged-npu-llm Service/EndpointSlice
+# (RuggedNpuLlmEndpoints in cluster/cdk8s/litellm_constructs.py). Router mode
+# (llama-server --models-dir/--models-preset) serves both from one process on one
+# port, routed by the "model" field -- the alias each is loaded under, which
+# litellm_params.model must match exactly. Roaming/often offline (cluster/README.md
+# Node Types), unlike every other entry in this file: a backend that can simply be
+# unreachable, not a provider outage.
+RUGGED_NPU_MODELS: list[str] = ["qwen3-4b", "llama-3.2-1b"]

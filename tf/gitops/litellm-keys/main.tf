@@ -115,6 +115,12 @@ locals {
     "google/goog-generate/gemini-3.7-flash",
     "google/goog-generate/gemini-3.5-flash-lite",
   ]
+  # Rugged's on-device NPU models (RUGGED_NPU_MODELS in model_rosters.py),
+  # reachable only when rugged itself is online.
+  rugged_npu_models = [
+    "rugged-npu/oai-chat/qwen3-4b",
+    "rugged-npu/oai-chat/llama-3.2-1b",
+  ]
   # Shared by agents only through an expiring Haku Console Kubernetes grant. This
   # is intentionally an exact, cheap-model-only set rather than a provider-wide
   # prefix or wildcard. The Ollama names cover every model/context/protocol variant
@@ -524,6 +530,28 @@ resource "litellm_key" "gemini_clients" {
   team_id   = litellm_team.gemini_clients.id
   metadata = {
     consumer = "laptop-gemini-claude"
+  }
+}
+
+# ============================================================================
+# rugged-npu-clients — scoped key for reaching rugged's on-device NPU models
+# ============================================================================
+# Same Pattern-B pinned key: value in a git SOPS file in this module dir, decrypted
+# with the shared narrow client-key age key. Scoped to exactly the two rugged-npu
+# models -- no team or fallback, since no other model can substitute for "runs on
+# rugged's on-device NPU" when rugged is offline. Deliberately one key only: nothing
+# else consumes this roster yet, so there is no reason to mint more.
+
+data "sops_file" "rugged_npu_clients_key" {
+  source_file = "${path.module}/litellm-rugged-npu-clients-key.yaml"
+}
+
+resource "litellm_key" "rugged_npu_clients" {
+  key_alias = "rugged-npu-clients"
+  key       = data.sops_file.rugged_npu_clients_key.data["litellm_rugged_npu_key"]
+  models    = local.rugged_npu_models
+  metadata = {
+    consumer = "rugged-npu on-device model clients"
   }
 }
 

@@ -29,6 +29,7 @@ _TF_LITERAL_MODEL_LOCALS = [
     "embedding_client_models",
     "gemini_client_models",
     "cheap_experiments_models",
+    "rugged_npu_models",
 ]
 
 
