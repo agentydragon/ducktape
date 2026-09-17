@@ -33,6 +33,7 @@ mkdir -p "$ANDROID_EMULATOR_HOME"
 # the -headless binary has no Qt linked in at all.
 exec "$S/sdk/emulator/qemu/linux-x86_64/qemu-system-aarch64-headless" -avd nod14 \
   -no-window \
+  -show-kernel \
   -no-qt \
   -no-metrics \
   -crash-report-mode disabled \
@@ -43,6 +44,6 @@ exec "$S/sdk/emulator/qemu/linux-x86_64/qemu-system-aarch64-headless" -avd nod14
   -accel off \
   -memory 4096 \
   -cores 4 \
-  -writable-system \
+  ${WRITABLE_SYSTEM:- } \
   -verbose \
   "$@"

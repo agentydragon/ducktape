@@ -23,9 +23,12 @@ including `open` on the app's own pty type and the `TCGETS` ioctl, in AOSP `main
 well as Android 9.
 
 The open question is whether that is what the phone actually does, which only running
-the real command answers. The environment for that is Android 14 arm64 — the phone's own
-version and architecture — described under
-[Harness](#harness-android-14-arm64-scriptsarm64).
+the real command answers.
+**`nix-on-droid switch --flake github:agentydragon/ducktape?ref=devel#pixel6` has not
+been run**, and cannot be in this container, for two independent reasons established
+below: the Android 14 arm64 guest does not reach userspace (§ Harness), and this
+session's GitHub egress scope refuses the flake's inputs (§ egress scope). Neither is a
+statement about the phone.
 
 ## Where the error comes from
 
@@ -81,7 +84,8 @@ allowxperm untrusted_app_all untrusted_app_all_devpts:chr_file ioctl
 - The one pty permission apps lack is `setattr` (`chmod`/`chown`) — Nix's `buildUser`
   branch, not this one.
 
-Policy therefore predicts the sequence succeeds, which is what the guest did.
+Policy therefore predicts the sequence succeeds, which is what the Android 9 x86_64
+guest did. Whether an Android 14 device behaves the same was not established here.
 
 ## Harness: Android 14 arm64 (`scripts/arm64/`)
 
@@ -92,6 +96,21 @@ Google's own `system-images;android-34;google_apis;arm64-v8a` (Android 14, API 3
 `/dev/kvm` and no `vmx`/`svm` here (the container is itself a Firecracker microVM), and
 the guest is aarch64 on an x86_64 host, so acceleration is impossible in both
 directions.
+
+`scripts/arm64/` is this harness:
+
+| Script                             | Role                                                         |
+| ---------------------------------- | ------------------------------------------------------------ |
+| `launch.sh`, `avd-config.ini`      | boot the AVD; always keep `-show-kernel`                     |
+| `patch_soundhw.py`, `patch_cpu.py` | inspect/patch the emulator's hardcoded `-soundhw` and `-cpu` |
+| `advancedFeatures.diff`            | the feature set that leaves no PCI device behind             |
+| `tryboot.sh`                       | bounded boot attempt that prints how far the kernel got      |
+| `tryvirt.sh`                       | same kernel+initrd on stock `qemu-system-aarch64 -M virt`    |
+| `ghprobe.sh`, `proxytest.sh`       | egress-scope and proxy/CA probes                             |
+| `mkca.sh`, `provision.sh`          | build and install the proxy CA into both guest stores        |
+| `install_nod.sh`, `run_nod.sh`     | install com.termux.nix; run a command inside its proot       |
+| `userenv_build.sh`                 | build a `user-environment.drv` from the reachable channel    |
+| `extract_part.py`                  | carve an ext4 partition out of a GPT image (no loop here)    |
 
 Google blocks this combination, and getting past the block took four separate fixes.
 Each is a real defect in the linux-x86_64 emulator package, not a policy gate:
@@ -116,11 +135,49 @@ not supported by the QEMU2 emulator on x86_64 host`. The package nonetheless shi
    command line comes from an advanced feature, so turning those off
    (`scripts/arm64/advancedFeatures.diff`: `VirtioSndCard`, `VirtioWifi`,
    `VirtioVsockPipe`, `VirtconsoleLogcat`, `VirtioInput`, `BluetoothEmulation`,
-   `Mac80211hwsimUserspaceManaged`, `ModemSimulator`) leaves only virtio-mmio devices
-   and the guest boots. Block, net and rng were already `virtio-*-device` (mmio).
-   Disabling `VirtioVsockPipe` puts adb back on goldfish_pipe, and disabling
-   `VirtioWifi` leaves the radio `-netdev user` interface, so neither costs
-   connectivity.
+   `Mac80211hwsimUserspaceManaged`, `ModemSimulator`) leaves only virtio-mmio devices,
+   and QEMU then starts and the kernel boots. Block, net and rng were already
+   `virtio-*-device` (mmio).
+
+**It still does not reach userspace.** The kernel — `6.1.23-android14-4`, the Pixel 6's
+kernel generation — comes up fine and hands off, and then init dies instantly:
+
+```text
+[    1.593294][    T1] Run /init as init process
+[    2.702757][    T1] Kernel panic - not syncing: Attempted to kill init! exitcode=0x0000000b
+[    2.706293][    T1]  el0_da+0x84/0xe0
+```
+
+`exitcode=0xb` with `el0_da` is a SIGSEGV from a user-mode data abort, before init logs
+anything. Two more symptoms place the blame on the machine rather than on Android:
+`psci: no cpu_on method, not booting CPU1..3` (so only one core ever runs), and the CPU
+is `MIDR 0x411fd070` — Cortex-A57, ARMv8.0 — which neither `-qemu -cpu max` nor the
+documented `hw.cpu.model` AVD property will change. Google only ships arm64 images for
+Apple Silicon hosts, where HVF ignores `-cpu` and the guest sees a real ARMv8.5+ core,
+so no upstream configuration exercises this userspace on an emulated ARMv8.0 CPU.
+
+**Gotcha worth keeping**: without `-show-kernel` this failure is invisible. The emulator
+passes `-serial null` and `console=0`, adb reports the device as `offline`, and the
+QEMU process sits at 100% of one core — indistinguishable from a slow TCG boot. Half an
+hour was spent waiting on a guest that had halted at 2.7 seconds. Always boot this
+harness with `-show-kernel`.
+
+The same kernel and initrd on **stock `qemu-system-aarch64 -machine virt -cpu max`**
+(`scripts/arm64/tryvirt.sh`) confirm the diagnosis: PSCI and PCIe work, the CPU is
+honoured, and init runs properly, reaching `FirstStageMain` and failing cleanly on
+storage rather than crashing:
+
+```text
+init: BlockDevInitializer::InitDevices: partition(s) not found after polling timeout: metadata
+init: Failed to mount required partitions early ...
+```
+
+That is as far as `virt` can go without more work than it is worth: `fstab.ranchu` marks
+`system`/`vendor`/`product`/`system_ext`/`system_dlkm` as `logical`, so first-stage
+mount wants a `super` partition with LP metadata plus a by-name `metadata` partition
+under `/dev/block/platform/a003c00.virtio_mmio/`. The emulator's ranchu synthesizes
+those from the separate `system.img`/`vendor.img` at runtime (its `DynamicPartition`
+feature); reproducing it on `virt` needs `lpmake`, which is not available here.
 
 ## Guest networking and proxy trust
 
@@ -325,26 +382,37 @@ explained by any rule read so far.
 
 ## Next steps, cheapest first
 
-1. **Run `ptytest.c` on the phone**, inside nix-on-droid, as the app. It reports `errno`
-   per step and separates "which syscall" from "which failure". If `tcgetattr` fails
-   there and every earlier step passes, that pins the phone-side failure precisely.
-2. **Check for an AVC at the moment of failure** on the phone: `logcat -b all | grep -i
-avc` around a failing `nix-on-droid switch`. If nothing appears, SELinux is excluded
-   outright on the device itself and this investigation can stop.
-3. **Query the phone's own policy**: pull `/sys/fs/selinux/policy` and run
-   `sesearch --allowxperm -t untrusted_app_all_devpts` plus `--allow`. That is the
-   authoritative answer for that device rather than an AOSP approximation.
-4. If SELinux is excluded, follow the nixpkgs 2026-01-24 → 2026-01-31 window instead. The
-   reporter found downgrading Nix alone does not help, which points at something under
-   Nix rather than Nix — glibc's pty helpers are the obvious candidate given the
-   `open`-succeeds-then-`TCGETS`-fails shape.
+The phone is a far cheaper instrument than the emulator, and it is the only one that can
+answer the question directly. Everything here runs on the device in minutes.
+
+1. **Check for an AVC at the moment of failure**: `logcat -b all | grep -i avc` around a
+   failing `nix-on-droid switch`. If nothing appears, SELinux is excluded outright and
+   this whole line of investigation closes.
+2. **Run `scripts/ptytest.c` inside nix-on-droid, as the app.** It reports `errno` per
+   step, so it separates "which syscall" from "which failure". If `tcgetattr` fails
+   there while every earlier step passes, that pins the failure precisely.
+3. **Query the phone's own policy** rather than an AOSP approximation: pull
+   `/sys/fs/selinux/policy` and run `sesearch --allow -t untrusted_app_all_devpts` and
+   `--allowxperm`. If `0x5401` (`TCGETS`) is present and `open` is allowed, SELinux
+   cannot be producing this error.
+4. If SELinux is excluded, follow the nixpkgs 2026-01-24 → 2026-01-31 window instead.
+   Downgrading Nix alone reportedly does not help, which points below Nix; glibc's pty
+   helpers are the obvious candidate given the `open`-succeeds-then-`TCGETS`-fails
+   shape.
+
+Resuming the emulator work needs a host with `/dev/kvm` and an arm64 CPU (where the
+emulator is supported and fast), or `lpmake` to build a `super` image for the stock-QEMU
+`virt` route. It also needs a session whose GitHub egress covers the flake's inputs.
 
 ## Not done
 
-- **`nix-on-droid switch --flake github:agentydragon/ducktape?ref=devel#pixel6` has not
-  completed here**, and cannot: its flake inputs are GitHub tarballs this session's
-  egress policy refuses (§ The session's GitHub egress scope). That is an environment
-  limit, not a property of the phone or of the guest.
+- **The literal command was never run.** Two independent blockers, either sufficient on
+  its own: the Android 14 arm64 guest panics in init (§ Harness), and its flake inputs
+  are GitHub tarballs this session's egress policy refuses (§ egress scope). Both are
+  environment limits; neither says anything about the phone.
+- **The guest-side proxy and CA work was never exercised end to end.** The route and the
+  bundle are verified from the host only; `scripts/arm64/provision.sh` and the
+  `curl https://cache.nixos.org` check from inside the proot need a booted guest.
 - On Android 9 x86_64, `pm install` of the APK repeatedly killed `system_server`
   (`Failure calling service package: Broken pipe`) under TCG load, so the bootstrap was
   unpacked by hand instead — the same steps the app performs (unzip, replay
