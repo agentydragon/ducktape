@@ -86,8 +86,9 @@ flowchart TB
     PROD["Milestone<br/>production-capable governed action execution"]:::milestone
     ACTION_PROVENANCE_PRUNE["Deferred idea<br/>prune ActionRequestInput origin/correlation<br/>collapse to one client-authored identifier?"]:::future
     CONNECTION_SA_REBIND["Planned mutation<br/>rebind a Connection's ServiceAccount in place<br/>no mutation exists; only a fresh OAuth consent does"]:::future
-    SANDBOX_SA["Deferred design<br/>one ServiceAccount per Sandbox<br/>a native Kubernetes identity to separate and grant on"]:::future
     SANDBOX_RBAC["Planned Kubernetes access<br/>Sandbox permissions and lifecycle<br/>individually editable, optionally preset"]:::future
+    CALLER_GRANT_VIEW["Planned UI<br/>one grant view for Sandboxes and unmanaged agents<br/>an unmanaged agent's policy is invisible today"]:::future
+    MANAGED_SA_RBAC["Planned Kubernetes access<br/>RoleBindings as a managed grant kind<br/>any managed ServiceAccount, Sandbox-backed or not"]:::future
     CONSOLE_POLICIES["Deferred migration<br/>console auto-approval policies not yet sets<br/>each needs an ActionGroup, a kind, or DENY_LISTS"]:::future
 
     UISHELL_DRAWER["Planned UI<br/>pending-approval badge + drawer<br/>global subscription, non-modal"]:::future
@@ -163,8 +164,9 @@ flowchart TB
     T3 -. product work .-> PROD
 
     ACCESS -. authority choice .-> EGRESS_CHANGE
-    SANDBOX_SA -. if per-Sandbox ServiceAccounts chosen .-> SANDBOX_RBAC
     ACCESS -. Kubernetes authority and credential choices .-> SANDBOX_RBAC
+    SANDBOX_RBAC -. subject generalization .-> MANAGED_SA_RBAC
+    MANAGED_SA_RBAC -. third grant kind to render .-> CALLER_GRANT_VIEW
 ```
 
 Completed work is off this board: the credentialless MCP vertical, whose deployed Claude/Codex
@@ -283,24 +285,6 @@ reconnect; and does it require re-running eligibility checks (the ServiceAccount
 No dependency on anything else; nothing waits on this. Once it exists, the settings table's
 ServiceAccount column becomes a real dropdown instead of static text.
 
-### `SANDBOX_SA` — one ServiceAccount per Sandbox
-
-**Deferred design:** every Sandbox Pod runs as the shared `agentplane-runner` ServiceAccount
-(`sandboxtemplate-agentplane-runner.yaml`), so a Sandbox has no Kubernetes identity of its own: the
-Action Service tells Sandboxes apart by namespace and UID from workload authentication, and an
-`ActionPolicyBinding` names one with the `sandbox {name, uid}` subject rather than a ServiceAccount.
-Running each Sandbox under its own ServiceAccount would give it a native identity to separate
-permissions on, and letting an agent act in Kubernetes directly would become a Kubernetes-native
-RoleBinding on its Sandbox's ServiceAccount rather than a governed Action or a policy exception.
-
-**Questions, not yet settled:** who creates and garbage-collects the per-Sandbox ServiceAccount (the
-integration app at launch, with an `ownerReference` like the bindings it writes, or the Sandbox
-controller); whether the ServiceAccount then becomes the one policy subject for both caller classes,
-collapsing the `sandbox` and `serviceAccount` subject forms and the two operator policy-read routes
-into one; and how the workload token's pinning of the live Sandbox (name and UID from TokenReview
-and the Pod) carries over. `SANDBOX_RBAC` consumes this principal lifecycle if per-Sandbox
-ServiceAccounts are chosen; it does not require unifying the Action policy subject forms.
-
 ### `SANDBOX_RBAC` — manage Sandbox Kubernetes access, optionally through presets
 
 **Planned, not in the current Thread correctness batch:** support explicit Kubernetes
@@ -310,8 +294,9 @@ to Sandbox creation and optional preset defaults. Presets only prefill values; n
 the apiserver nor credential handling interprets preset names as authority. This does
 not require the broad `PROFILES` design.
 
-Resolve independently attributable Sandbox principals and their lifecycle with `ACCESS`
-and, if using per-Sandbox ServiceAccounts, `SANDBOX_SA`. Separate ServiceAccounts can
+Resolve the credential path for those principals with `ACCESS`. The principal itself
+already exists: each Sandbox runs as a ServiceAccount of its own, created and owned by the
+app at launch. Separate ServiceAccounts can
 share role definitions without sharing identity;
 Threads inside one Sandbox share its workload authority. Preserve live Sandbox UID/Pod
 attribution in workload authentication. Distinct ServiceAccounts in accepted namespaces
@@ -327,6 +312,7 @@ existing GitOps ownership. Merely creating a RoleBinding does not provide a usab
 safely revocable API access path.
 Current `ELEVATE` grants Action policy bindings, not Kubernetes roles; any Kubernetes
 elevation workflow must authorize the grant itself.
+`MANAGED_SA_RBAC` carries the same grant for an account with no Sandbox to own it.
 
 **Acceptance:** launch with a public-coder-style preset and without a preset using the
 same explicit fields; prove equivalent effective access, including overrides and an empty
@@ -336,6 +322,60 @@ Cover independent grants for two Sandboxes, inspection of effective access, revo
 and reconciliation failure, suspend/resume, deletion/name reuse, and orphan-grant
 cleanup. Preset edits must not silently widen existing Sandboxes' grants. Verify the
 chosen credential boundary without exposing privileged credentials in evidence.
+
+### `CALLER_GRANT_VIEW` — one grant view for Sandboxes and unmanaged agents
+
+**Planned UI:** a caller with no Sandbox is an **unmanaged agent** -- an OAuth-bound externally
+hosted one such as claude.ai, holding an account and its grants while the app runs no Pod for it.
+An Action policy bound to such a caller cannot be seen in the web UI at all. The only surface that
+renders one is the Sandbox page's "Action policy" tab, which `live.py` fills from
+`policy.for_subject(sandbox.service_account)` and skips entirely when there is no Sandbox. Egress is
+the same shape: `GET /sandboxes/{name}/egress` is the only read. So the operator can create such a
+caller through consent, rename and unbind its Connection, and never learn what it may reach or do.
+
+**Most of the machinery is already account-keyed.** `Egress.bindings_for(subject: ServiceAccountRef)`
+returns every binding naming an account, and `ActionPolicy.for_subject(subject)` asks the Action
+Service's `/v1/operator/action-policy/service-accounts/{namespace}/{name}` for the same. The Sandbox
+is a lookup detour rather than a data dependency: `sandbox_egress` dereferences one only to reach
+`.service_account`. The roster exists too -- `caller_service_accounts()` lists every account carrying
+`CALLER_LABEL`, sandbox-backed or not, already plumbed to `callerServiceAccounts()` in the frontend,
+where both consumers use it as a picker (the OAuth-clients table, the consent dropdown) rather than
+as a subject to inspect.
+
+What is missing is therefore routes and a page, not a read model: an app route for an arbitrary
+account's action policy (`for_subject` has no HTTP exposure, only `live.py`'s snapshot path), an
+egress read keyed by account rather than Sandbox name, and a surface that joins the roster to both.
+
+**Settled intent:** Sandboxes and unmanaged agents share one Action policy view rather than each
+getting their own, and share the Kubernetes permissions view too once `MANAGED_SA_RBAC` provides one.
+The subject is the account in every case, so what differs between the two is what else the page can
+say about the subject -- a Sandbox has a Pod, a state and a template; an unmanaged agent has a
+Connection -- not how its grants are read or rendered.
+
+**Questions, not yet settled:** whether the shared view is a per-account page or one roster table
+with grant columns; and whether the roster is the `CALLER_LABEL` set or every account the app
+manages, which differ exactly for an account whose label was removed to cut it off while its
+bindings still exist.
+
+### `MANAGED_SA_RBAC` — Kubernetes RoleBindings as a managed grant kind
+
+**Planned Kubernetes access:** grant and inspect Kubernetes RoleBindings on the ServiceAccounts the
+app manages the way it already does egress policies and Action policy sets -- so an agent can be
+allowed to talk to the apiserver by a grant on its account, rather than through a governed Action or
+a hand-written manifest.
+
+`SANDBOX_RBAC` is the Sandbox-scoped form of this, reached through launch fields and presets. The
+generalization is the subject: a caller with no Sandbox, such as an OAuth-bound externally hosted
+agent, has an account and can hold bindings, but no Sandbox to hang them off. That difference is the
+design question rather than a detail -- a Sandbox's grants are garbage-collected by an
+`ownerReference` on the Sandbox, and an account that outlives every Sandbox has no such owner, so
+what creates, owns and reclaims its RoleBindings is unsettled.
+
+**Further questions, not yet settled:** whether a grant names a Role the operator selects or a named
+bundle the way an `ActionPolicySet` does; whether expiry works as it does for the other two kinds,
+given that Kubernetes RBAC has no expiry of its own and something must sweep; and whether this
+shares `ACCESS`'s credential boundary or only its authority decisions. Respect existing GitOps
+ownership: an account's bindings must not fight a reconciler for the same objects.
 
 ### `CONSOLE_POLICIES` — console auto-approval policies without a set
 
