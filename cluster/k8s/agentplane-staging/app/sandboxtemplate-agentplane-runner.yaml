@@ -171,7 +171,8 @@ spec:
             name: agentplane-egress-ca
         # The Pod's identity to the central proxy: a ServiceAccount token bound to this Pod, with
         # the proxy's audience, rotated by kubelet (the sidecar re-reads it per request). It proves
-        # the Pod, and the proxy follows the Pod to its Sandbox; it is mounted into the sidecar only.
+        # the Pod, and the proxy authorizes the ServiceAccount that Pod runs as; it is mounted into
+        # the sidecar only.
         - name: egress-token
           projected:
             sources:

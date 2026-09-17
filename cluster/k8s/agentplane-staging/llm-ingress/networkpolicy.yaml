@@ -1,5 +1,5 @@
 # Only central egress can call the workload-authenticated listener. The ingress can reach only DNS,
-# TokenReview/live Pod reads at the API server, and the existing LiteLLM Service.
+# TokenReview at the API server, and the existing LiteLLM Service.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
