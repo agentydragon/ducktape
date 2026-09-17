@@ -6,7 +6,7 @@ metadata:
 spec:
   retryInterval: 1m
   interval: 10m
-  timeout: 5m
+  timeout: 10m
   sourceRef:
     kind: ExternalArtifact
     name: cnpg
@@ -19,3 +19,14 @@ spec:
       kind: HelmRelease
       name: cnpg
       namespace: cnpg-system
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: plugin-barman-cloud
+      namespace: cnpg-system
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: plugin-barman-cloud
+      namespace: cnpg-system
+  dependsOn:
+    - name: cert-manager
+      namespace: ducktape-flux

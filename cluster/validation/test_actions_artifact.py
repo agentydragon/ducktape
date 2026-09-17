@@ -70,7 +70,6 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         ("clickhouse-operator", "clickhouse/operator"),
         ("clickhouse-schema", "clickhouse/schema"),
         ("cnpg", "cnpg"),
-        ("cnpg-barman-cloud", "cnpg-barman-cloud"),
         ("coinbase-read", "agents/coinbase-read"),
         ("coredns-custom", "coredns-custom"),
         ("cpap-data", "forgejo/cpap-data"),

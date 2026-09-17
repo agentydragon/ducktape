@@ -106,14 +106,6 @@ spec:
           exclude:
             - flux-kustomization.yaml
 
-    - name: cnpg-barman-cloud
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/cnpg-barman-cloud/**"
-          to: "@artifact/cluster/k8s/cnpg-barman-cloud/"
-          exclude:
-            - flux-kustomization.yaml
-
     - name: external-secrets-config
       originRevision: "@repo"
       copy:
