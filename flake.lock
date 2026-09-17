@@ -313,22 +313,6 @@
         "type": "github"
       }
     },
-    "nixpkgs-for-droid": {
-      "locked": {
-        "lastModified": 1769298944,
-        "narHash": "sha256-qvA63Rte8t611uxqIQjHCpbmAHIW1K92jNQWxa/bzf4=",
-        "owner": "NixOS",
-        "repo": "nixpkgs",
-        "rev": "0902e92e43f022c24066a69dd73d76793b6a90c2",
-        "type": "github"
-      },
-      "original": {
-        "owner": "NixOS",
-        "repo": "nixpkgs",
-        "rev": "0902e92e43f022c24066a69dd73d76793b6a90c2",
-        "type": "github"
-      }
-    },
     "nixpkgs-lib": {
       "locked": {
         "lastModified": 1697935651,
@@ -465,7 +449,6 @@
         "nix-openclaw": "nix-openclaw",
         "nixGL": "nixGL",
         "nixpkgs": "nixpkgs_2",
-        "nixpkgs-for-droid": "nixpkgs-for-droid",
         "nixpkgs-master": "nixpkgs-master",
         "nixpkgs-unstable": "nixpkgs-unstable",
         "siderolabs-docs": "siderolabs-docs",
