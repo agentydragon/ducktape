@@ -122,11 +122,11 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
 - The proxy depends on the API server and nothing else. The integration app is a viewer of the
   same resources, never a participant: no part of a decision passes through it, so an app that is
   down or broken changes nothing about what a sandbox may reach.
-- The proxy watches policies, bindings and credentials in its configured rule namespace, and
-  Secrets in the credentials namespace; a caller's Pod is read live rather than watched. The rule
-  and sandbox namespaces may be one namespace, and in both deployments they
-  are; the credentials namespace is separate, so a sandbox is never in a namespace holding the
-  Secrets the proxy substitutes. The proxy's picture is kept equal to the API server's, and a
+- The proxy watches policies, bindings and credentials in its one configured rules namespace, and
+  Secrets in the credentials namespace; a caller's Pod is read live rather than watched, in
+  whichever of the configured workload namespaces the bearer named. The rules namespace may be one
+  of the workload namespaces, and in both deployments it is the only one; the credentials namespace
+  is separate, so a workload is never in a namespace holding the Secrets the proxy substitutes. The proxy's picture is kept equal to the API server's, and a
   rotated Secret is substituted from the next request on without a restart. An authenticated
   workload source is request context, not a Secret or another watched object.
 - Bindings have no Kubernetes `status`. The admin binding observations describe the answering

@@ -16,7 +16,7 @@ py_library(
 py_library(
     name = "subjects",
     srcs = ["subjects.py"],
-    # Also the cluster validation that pins both binding CRDs to the key set this discriminates on.
+    # Also the cluster validation that pins both binding CRDs to this model's schema.
     visibility = [
         "//cluster/validation:__pkg__",
         "//x/agentplane:__subpackages__",

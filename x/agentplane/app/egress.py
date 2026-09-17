@@ -207,8 +207,8 @@ class EgressInventory:
                     # Not the controller: the Sandbox controller owns the Pod and PVC, and this
                     # reference is for cascading deletion only. It cascades only while bindings and
                     # Sandboxes share a namespace — Kubernetes treats a namespaced owner in another
-                    # namespace as absent and collects the dependent — so splitting
-                    # `--sandbox-namespace` off `--namespace` has to replace this with a sweep.
+                    # namespace as absent and collects the dependent — so pointing the proxy's
+                    # `--rules-namespace` away from the sandboxes has to replace this with a sweep.
                     "ownerReferences": [
                         {
                             "apiVersion": _SANDBOX_API_VERSION,

@@ -1027,8 +1027,8 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
         settings = [
             Settings(
                 _cli_parse_args=False,
-                namespace=NAMESPACE,
-                sandbox_namespace=SANDBOX_NAMESPACE,
+                rules_namespace=NAMESPACE,
+                workload_namespaces=frozenset({SANDBOX_NAMESPACE}),
                 credentials_namespace=CREDENTIALS_NAMESPACE,
                 kubeconfig=kubeconfig(tmp_path / f"kube-{i}.yaml", fake.port),
                 ca_cert=cert,

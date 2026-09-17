@@ -693,6 +693,20 @@ py_test(
 )
 
 py_test(
+    name = "test_agentplane_egress_flags",
+    srcs = ["test_agentplane_egress_flags.py"],
+    data = ["//cluster/k8s:cluster_yaml_files"],
+    deps = [
+        "//util/bazel:runfiles",
+        "//x/agentplane/egress:main",  # keep: gazelle does not resolve x/ imports from this tree
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
     name = "test_agentplane_action_policies",
     srcs = ["test_agentplane_action_policies.py"],
     data = ["//cluster/k8s:cluster_yaml_files"],
