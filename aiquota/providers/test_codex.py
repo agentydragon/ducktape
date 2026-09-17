@@ -31,6 +31,7 @@ from aiquota.providers.codex import (
     USAGE_URL,
     CodexProvider,
     CodexSettings,
+    _UsageResponse,
 )
 
 if __name__ == "__main__":
@@ -83,6 +84,45 @@ def _management_provider() -> CodexProvider:
 
 def _fixture(name: str) -> dict[str, Any]:
     return cast(dict[str, Any], json.loads((Path(__file__).parent / "fixtures" / name).read_text()))
+
+
+def test_usage_response_parses_null_additional_rate_limits() -> None:
+    usage = _UsageResponse.model_validate(
+        {
+            "plan_type": "pro",
+            "rate_limit": {
+                "allowed": True,
+                "limit_reached": False,
+                "primary_window": {
+                    "used_percent": 96,
+                    "limit_window_seconds": 604800,
+                    "reset_after_seconds": 128369,
+                    "reset_at": 1789805391,
+                },
+                "secondary_window": None,
+            },
+            "code_review_rate_limit": None,
+            "additional_rate_limits": None,
+            "model_usage": {"gpt-6-astra": {"available": True, "available_at": None, "credits_would_enable": False}},
+            "credits": {
+                "has_credits": False,
+                "unlimited": False,
+                "overage_limit_reached": False,
+                "balance": "0",
+                "approx_local_messages": [0, 0],
+                "approx_cloud_messages": [0, 0],
+            },
+            "spend_control": {"reached": False, "individual_limit": None},
+            "rate_limit_reached_type": None,
+            "promo": None,
+            "rate_limit_reset_credits": {"available_count": 0, "applicable_available_count": 0},
+        }
+    )
+
+    assert usage.additional_rate_limits is None
+    assert usage.rate_limit is not None
+    assert usage.rate_limit.primary_window is not None
+    assert usage.rate_limit.primary_window.used_percent == 96
 
 
 async def test_refreshes_expired_access_token_before_usage(tmp_path: Path) -> None:
@@ -273,6 +313,8 @@ async def test_credit_detail_failure_keeps_the_authoritative_banked_count(tmp_pa
 
 
 async def test_management_api_uses_runtime_codex_auth_index() -> None:
+    usage = {**_USAGE_BODY, "additional_rate_limits": None}
+
     with respx.mock(assert_all_called=False) as mock:
         auth_files = mock.get("http://cliproxy.test/v0/management" + MANAGEMENT_AUTH_FILES_PATH).mock(
             return_value=httpx.Response(
@@ -282,11 +324,7 @@ async def test_management_api_uses_runtime_codex_auth_index() -> None:
         api_call = mock.post("http://cliproxy.test/v0/management" + MANAGEMENT_API_CALL_PATH).mock(
             return_value=httpx.Response(
                 200,
-                json={
-                    "status_code": 200,
-                    "header": {"Content-Type": ["application/json"]},
-                    "body": json.dumps(_USAGE_BODY),
-                },
+                json={"status_code": 200, "header": {"Content-Type": ["application/json"]}, "body": json.dumps(usage)},
             )
         )
 

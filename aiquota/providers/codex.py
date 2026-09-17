@@ -106,7 +106,7 @@ class _UsageResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     rate_limit: _RateLimit | None = None
-    additional_rate_limits: list[_AdditionalRateLimit] = []
+    additional_rate_limits: list[_AdditionalRateLimit] | None = None
     rate_limit_reset_credits: _ResetCreditsSummary | None = None
 
 
@@ -366,13 +366,14 @@ def _to_success(usage: _UsageResponse) -> FetchSuccess:
     windows: list[QuotaWindow | None] = []
     if usage.rate_limit:
         windows.extend((_to_window(usage.rate_limit.primary_window), _to_window(usage.rate_limit.secondary_window)))
-    for additional in usage.additional_rate_limits:
-        windows.extend(
-            (
-                _to_window(additional.rate_limit.primary_window, additional.limit_name, display=False),
-                _to_window(additional.rate_limit.secondary_window, additional.limit_name, display=False),
+    if usage.additional_rate_limits is not None:
+        for additional in usage.additional_rate_limits:
+            windows.extend(
+                (
+                    _to_window(additional.rate_limit.primary_window, additional.limit_name, display=False),
+                    _to_window(additional.rate_limit.secondary_window, additional.limit_name, display=False),
+                )
             )
-        )
     reset_credits = usage.rate_limit_reset_credits
     return FetchSuccess(
         windows=[window for window in windows if window],
