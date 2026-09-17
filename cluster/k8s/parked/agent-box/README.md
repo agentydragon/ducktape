@@ -84,7 +84,7 @@ around in `nix/nixos/hosts/agent-box/default.nix`:
 ## See also
 
 - <../../../../nix/nixos/hosts/agent-box/default.nix> — NixOS host config
-- <app/virtualmachine.yaml> — KubeVirt VM definition
+- <virtualmachine.yaml> — KubeVirt VM definition
 - <../../agents/agent-rbac-base/README.md> § "agent-box Codex" — cluster RBAC for the
   codex user
 - Per-VM SSH beyond a few VMs: <../../../docs/plans/vm_ssh_exposure.md>

@@ -12,7 +12,7 @@ This server is **not** auth-aware — it speaks to PostScan Mail with a single
 static `x-api-key` for the account-wide developer key. Per-caller auth and
 the agentydragon-only ACL are enforced upstream by the `mcp-oauth-facade`
 sidecar in the same Kubernetes pod (see
-<cluster/k8s/parked/postscanmail-mcp/app/deployment.yaml>).
+<cluster/k8s/parked/postscanmail-mcp/deployment.yaml>).
 """
 
 from __future__ import annotations

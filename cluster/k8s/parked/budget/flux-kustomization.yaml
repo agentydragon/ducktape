@@ -1,7 +1,7 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: budget-app
+  name: budget
   namespace: ducktape-flux
   annotations:
     ducktape.org/parked: "true"
@@ -10,16 +10,15 @@ spec:
   interval: 10m
   retryInterval: 1m
   timeout: 5m
-  path: ./cluster/k8s/parked/budget/app
+  path: ./cluster/k8s/parked/budget
   prune: true
   wait: true
   sourceRef:
     kind: ExternalArtifact
-    name: budget-app
+    name: budget
 
     namespace: ducktape-flux
   dependsOn:
-    - name: budget-namespace
     - name: budget-ledger # provisions budget-ledger-git-creds in the budget ns
       namespace: ducktape-flux
     - name: gateway

@@ -12,7 +12,7 @@ spec:
   interval: 10m
   retryInterval: 1m
   timeout: 30m
-  path: ./cluster/k8s/parked/agent-box/app
+  path: ./cluster/k8s/parked/agent-box
   prune: true
   sourceRef:
     kind: ExternalArtifact
@@ -23,8 +23,6 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    - name: agent-box-namespace
-      namespace: ducktape-flux
     - name: kubevirt
       namespace: ducktape-flux
     - name: cdi
@@ -37,6 +35,9 @@ spec:
       namespace: ducktape-flux
   wait: true
   healthChecks:
+    - apiVersion: v1
+      kind: Namespace
+      name: agent-box
     - apiVersion: external-secrets.io/v1
       kind: ExternalSecret
       name: agent-box-vm-images-s3-reader

@@ -18,6 +18,6 @@ NetworkPolicy prevents any other pod from reaching the application port and spoo
 that header. The Authentik objects are intentionally retired while the workload is
 suspended.
 
-The app Kustomization uses `deletionPolicy: Orphan` while experimental so
+The Kustomization uses `deletionPolicy: Orphan` while experimental so
 removing its Flux controller cannot silently delete captured data. Explicitly
 delete the namespace/PVCs only when the archive is intentionally retired.
