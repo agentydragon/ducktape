@@ -21,6 +21,9 @@ _GENERATED_FILES = (
     "cluster/k8s/agents/ha-mcp/credentials/ha-mcp-credentials.k8s.yaml",
     "cluster/k8s/agents/ha-mcp/credentials/flux-kustomization.yaml",
     "cluster/k8s/agents/ha-mcp/credentials/kustomization.yaml",
+    "cluster/k8s/agents/ha-mcp/app/ha-mcp.k8s.yaml",
+    "cluster/k8s/agents/ha-mcp/app/flux-kustomization.yaml",
+    "cluster/k8s/agents/ha-mcp/app/kustomization.yaml",
 )
 
 

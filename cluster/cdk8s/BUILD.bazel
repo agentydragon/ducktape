@@ -58,11 +58,24 @@ py_library(
 )
 
 py_library(
+    name = "ha_mcp_app_constructs",
+    srcs = ["ha_mcp_app_constructs.py"],
+    deps = [
+        ":forgejo_images",
+        "//third_party/prometheus_operator:servicemonitor",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_33",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "generate_manifests_lib",
     srcs = ["generate_manifests.py"],
     visibility = ["//visibility:private"],
     deps = [
         ":flux_constructs",
+        ":ha_mcp_app_constructs",
         ":ha_mcp_credentials_constructs",
         ":litellm_constructs",
         "//util/bazel:workspace",
@@ -83,6 +96,9 @@ py_test(
     name = "test_generate_manifests",
     srcs = ["test_generate_manifests.py"],
     data = [
+        "//cluster/k8s/agents/ha-mcp/app:flux-kustomization.yaml",
+        "//cluster/k8s/agents/ha-mcp/app:ha-mcp.k8s.yaml",
+        "//cluster/k8s/agents/ha-mcp/app:kustomization.yaml",
         "//cluster/k8s/agents/ha-mcp/credentials:flux-kustomization.yaml",
         "//cluster/k8s/agents/ha-mcp/credentials:ha-mcp-credentials.k8s.yaml",
         "//cluster/k8s/agents/ha-mcp/credentials:kustomization.yaml",

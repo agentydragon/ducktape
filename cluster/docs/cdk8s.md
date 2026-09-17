@@ -13,7 +13,8 @@ directory converts next, undecided bigger changes) lives in
 Convert at Kustomization-directory granularity — the same unit the CRD-layering
 split and the flat-vs-grouped directory examples already use (`cluster/AGENTS.md`).
 A directory is either fully hand-written or has its application manifests fully
-generated.
+generated (a SOPS secret can still live in a converted directory hand-written — see
+below — that doesn't make the directory "partially converted").
 
 A fully-converted directory generates all three files:
 
@@ -27,14 +28,32 @@ A fully-converted directory generates all three files:
 - `<name>.k8s.yaml` — one file per cdk8s `Chart`, generated and committed. The
   `.k8s.yaml` suffix is conventionally cdk8s-only.
 
-**One exception stays hand-written** even in an otherwise-generated directory:
-SOPS-encrypted `*.sops.yaml` secrets (cdk8s has no key material and has no business
-synthesizing ciphertext). Already satisfied by the existing convention of splitting
-secrets into their own `<service>-secrets/` Kustomization — the CRD-layering rule
-already forces this split for unrelated reasons (`cluster/AGENTS.md` § Flux
-Kustomization Wiring). A cdk8s-owned directory should simply never be the one
-holding a `.sops.yaml`. `ExternalSecret` objects are fine to generate — they carry
-no ciphertext, only a pointer at a `SecretStore` key.
+### SOPS secrets in a converted directory
+
+A `.sops.yaml` secret stays hand-written (cdk8s has no key material and has no
+business synthesizing ciphertext) but can live **in the same directory** as an
+otherwise fully-generated Kustomization — no split into a separate `<service>-secrets/`
+Kustomization needed, and no reason to fight the fleet-wide trend of consolidating a
+service's secrets back into its app directory (`agents/ssh-mcp`, `#7138`;
+`agents/ollama`, `#7131`). cdk8s never touches the file's bytes; it only needs to know
+about it in two places, both plain metadata, never the ciphertext:
+
+- The generated `kustomization.yaml` lists its filename as an ordinary sibling entry
+  in `resources:`, alongside the generated `<name>.k8s.yaml`.
+- If the directory's Flux `Kustomization` needs SOPS decryption, the generated
+  `flux-kustomization.yaml` carries a `decryption:` block
+  (`KustomizationSpecDecryption`/`KustomizationSpecDecryptionSecretRef` from
+  `//third_party/flux:kustomization`, a real field on the CRD like `healthChecks` or
+  `wait`) — same mechanism as a hand-written directory's `decryption:` stanza.
+
+Verified end-to-end for `cluster/k8s/agents/ha-mcp/app` (`bearer.sops.yaml` stays
+hand-written; everything else in the directory is generated): `flux build --dry-run`
+resolves the file through the generated `decryption:` block exactly as it would for a
+hand-written Kustomization (rendering the field as SOPS's `**SOPS**` placeholder,
+confirming Flux recognized it as encrypted).
+
+`ExternalSecret` objects are fine to generate outright — they carry no ciphertext,
+only a pointer at a `SecretStore` key.
 
 **CI pins generated output to committed output**: a Bazel test regenerates the
 manifests in-memory and asserts the result equals the committed file — the
@@ -76,7 +95,9 @@ manifests were produced:
 - kubeconform validates everything under `cluster/k8s/**/*.yaml` unconditionally,
   generated or hand-written.
 
-The one real constraint is secrets, covered above.
+A SOPS secret hand-written inside a converted directory (§SOPS secrets in a converted
+directory, above) is the same story: the generated `kustomization.yaml` names it as an
+ordinary sibling resource, and cdk8s never touches its bytes.
 
 ## The one-writer-per-byte-range principle
 
@@ -267,11 +288,30 @@ versa, a reason this specific problem doesn't move that decision either way.
     `docker_registry_auth=Secret.from_secret_name(...)` on the `Job`/`CronJob`
     itself, not `imagePullSecrets` on the `ServiceAccount`.
 
+- **`ha-mcp/app`** (`cluster/cdk8s/ha_mcp_app_constructs.py`) is a multi-container
+  Deployment plus a CiliumNetworkPolicy and a hand-written SOPS secret in the same
+  directory — three more wrinkles:
+  - **`add_container`'s `env_from` takes `cdk8s_plus_33.EnvFrom` wrapper objects, not
+    the `IConfigMap`/`ISecret` directly** — `env_from=[EnvFrom(config_map=config_map)]`,
+    not `env_from=[config_map]`. The type error is clear (`typeguard` rejects the plain
+    object at call time) but easy to reach for a source, since every other place a
+    `ConfigMap`/`Secret` is consumed elsewhere in this codebase (`Volume.from_config_map`,
+    `SecretValue`) takes the object directly.
+  - **No typed builder exists for Cilium CRDs** (no `third_party/cilium` package) — the
+    `CiliumNetworkPolicy` is a raw `cdk8s.ApiObject` (`api_version`/`kind`/`metadata`)
+    with the whole `spec` injected via one `JsonPatch.add("/spec", {...})`, the same
+    escape hatch as the credentials directory's `Role`. Worth a typed
+    `cdk8s_import` package once a second Cilium CRD shows up; not yet for one caller.
+  - **`Volume.from_empty_dir(scope, id, name)`** builds an `emptyDir` volume (no size
+    limit/medium needed here) — mounted the same way as `Volume.from_config_map`
+    (`deployment.containers[i].mount(path, volume)`).
+
 ## Reference example
 
-`cluster/k8s/litellm/app` and `cluster/k8s/agents/ha-mcp/credentials` are the
-converted directories so far: every file in each is generated except
-`image-pins/kustomization.yaml`.
+`cluster/k8s/litellm/app`, `cluster/k8s/agents/ha-mcp/credentials`, and
+`cluster/k8s/agents/ha-mcp/app` are the converted directories so far: every file in
+each is generated except `image-pins/kustomization.yaml` and, in `ha-mcp/app`,
+`bearer.sops.yaml` (§SOPS secrets in a converted directory, above).
 
 ## Regenerating locally
 

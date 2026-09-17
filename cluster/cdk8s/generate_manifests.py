@@ -13,6 +13,9 @@ from pathlib import Path
 from cdk8s import App, Chart, Yaml
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
+    KustomizationSpecDecryption,
+    KustomizationSpecDecryptionProvider,
+    KustomizationSpecDecryptionSecretRef,
     KustomizationSpecDependsOn,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
@@ -20,12 +23,14 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 )
 
 from cluster.cdk8s.flux_constructs import NAMESPACE, flux_kustomization, kustomize_kustomization
+from cluster.cdk8s.ha_mcp_app_constructs import HaMcpApp
 from cluster.cdk8s.ha_mcp_credentials_constructs import HaMcpCredentialsProvisioner
 from cluster.cdk8s.litellm_constructs import LiteLLMProxy, LiteLLMServiceMonitor, proxy_specs
 from util.bazel.workspace import get_build_workspace_directory
 
 _LITELLM_APP_DIR = "cluster/k8s/litellm/app"
 _HA_MCP_CREDENTIALS_DIR = "cluster/k8s/agents/ha-mcp/credentials"
+_HA_MCP_APP_DIR = "cluster/k8s/agents/ha-mcp/app"
 
 
 def _write_yaml(path: Path, manifest: dict[str, object]) -> None:
@@ -122,10 +127,66 @@ def _generate_ha_mcp_credentials(root: Path) -> None:
     )
 
 
+def _generate_ha_mcp_app(root: Path) -> None:
+    name = "ha-mcp"
+    app_dir = root / _HA_MCP_APP_DIR
+    app_dir.mkdir(parents=True, exist_ok=True)
+    app = App(outdir=str(app_dir))
+    chart = Chart(app, name, disable_resource_name_hashes=True)
+    HaMcpApp(chart, "app")
+    app.synth()
+
+    _write_yaml(
+        app_dir / "flux-kustomization.yaml",
+        flux_kustomization(
+            name,
+            spec=KustomizationSpec(
+                retry_interval="1m",
+                interval="10m",
+                timeout="5m",
+                source_ref=KustomizationSpecSourceRef(
+                    kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace=NAMESPACE
+                ),
+                path=f"./{_HA_MCP_APP_DIR}",
+                prune=True,
+                wait=True,
+                health_checks=[
+                    KustomizationSpecHealthChecks(
+                        api_version="apps/v1", kind="Deployment", name=name, namespace="ha-mcp"
+                    )
+                ],
+                # bearer.sops.yaml (hand-written, stays alongside this generated output --
+                # see cluster/docs/cdk8s.md) is SOPS-encrypted; without this Flux applies the
+                # ENC[...] ciphertext literally and the facade rejects every call from haku-console.
+                decryption=KustomizationSpecDecryption(
+                    provider=KustomizationSpecDecryptionProvider.SOPS,
+                    secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
+                ),
+                depends_on=[
+                    KustomizationSpecDependsOn(name=dep)
+                    for dep in (
+                        "external-secrets-config",
+                        "forgejo-images",
+                        "ha-mcp-namespace",
+                        "monitoring-crds",  # the ServiceMonitor CRD
+                    )
+                ],
+            ),
+        ),
+    )
+    _write_yaml(
+        app_dir / "kustomization.yaml",
+        # bearer.sops.yaml stays hand-written; this generated file just lists it as a plain
+        # sibling resource -- cdk8s never touches its bytes. See cluster/docs/cdk8s.md.
+        kustomize_kustomization(resources=[f"{name}.k8s.yaml", "bearer.sops.yaml"], components=["./image-pins"]),
+    )
+
+
 def generate_manifests(root: Path) -> None:
     """Write every converted directory's generated manifests under `root`."""
     _generate_litellm_app(root)
     _generate_ha_mcp_credentials(root)
+    _generate_ha_mcp_app(root)
 
 
 def main() -> None:
