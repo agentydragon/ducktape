@@ -161,7 +161,7 @@ Goldilocks VPA enabled (auto mode) for nix-cache, ollama, and litellm —
 will recommend limits.
 
 - `nix-cache/deployment.yaml` — attic container missing `resources:`
-- `ollama/app/deployment.yaml` — auth-proxy sidecar missing `resources:`
+- `ollama/deployment.yaml` — auth-proxy sidecar missing `resources:`
 
 ## SecurityContext
 
