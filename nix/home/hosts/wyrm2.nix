@@ -301,6 +301,7 @@
   home.packages = [
     # TODO: Add syncthing tray (syncthing-gtk not in nixpkgs).
     # Options: gnomeExtensions.syncthing-indicator, gnomeExtensions.syncthing-toggle, qsyncthingtray
+    pkgs.android-tools # adb/fastboot for Android device debugging
     ducktapePackages.bebas-neue-font
     config.ducktape.githubApiProxy.desktopPackage
     pkgs.inkscape
