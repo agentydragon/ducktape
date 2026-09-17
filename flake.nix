@@ -63,6 +63,10 @@
       url = "github:nix-community/nix-on-droid";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    # Pinned nixpkgs for the phone's `pkgsAarch64` (see comment there) — kept
+    # off the shared `nixpkgs` input because of an open nix-on-droid regression.
+    nixpkgs-for-droid.url = "git+https://github.com/NixOS/nixpkgs?rev=0902e92e43f022c24066a69dd73d76793b6a90c2";
   };
 
   outputs =
@@ -71,6 +75,7 @@
       nixpkgs,
       nixpkgs-unstable,
       nixpkgs-master,
+      nixpkgs-for-droid,
       home-manager,
       nix-colors,
       nixGL,
@@ -165,7 +170,14 @@
 
       # aarch64 nixpkgs instance for nix-on-droid (the phone). Everything else in
       # this flake is pinned to `system` (x86_64-linux) above.
-      pkgsAarch64 = import nixpkgs {
+      #
+      # CLEANUP(added 2026-09-17): pinned to nixpkgs-for-droid (2026-01-24) rather
+      # than the shared `nixpkgs` input because a nixpkgs revision shortly after
+      # this one breaks local (non-substituted) builds under nix-on-droid's proot
+      # with `error: getting pseudoterminal attributes: Permission denied`
+      # (nix-community/nix-on-droid#495, open, root cause not yet identified
+      # upstream). Switch back to `nixpkgs` once that issue is fixed.
+      pkgsAarch64 = import nixpkgs-for-droid {
         system = "aarch64-linux";
         config.allowUnfree = true;
       };
@@ -757,7 +769,7 @@
 
         # agent-box - headless CLI-only KubeVirt VM hosting agent users, each under
         # its own scoped identity. `codex` runs OpenAI Codex. See
-        # cluster/k8s/agent-box/README.md.
+        # cluster/k8s/parked/agent-box/README.md.
         agent-box = mkNixos {
           hostname = "agent-box";
           username = "codex";

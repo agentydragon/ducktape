@@ -153,9 +153,6 @@ resources:
   - clickhouse/schema/flux-kustomization.yaml
   - analytics/grafana/flux-kustomization.yaml
 
-  # --- suspended Authelia experiment ---
-  - x/authelia/app/flux-kustomization.yaml
-
   # --- authentik ---
   - authentik/namespace/flux-kustomization.yaml
   - authentik/db/flux-kustomization.yaml
@@ -292,18 +289,11 @@ resources:
   # --- github-branch-protection ---
   - github-branch-protection/flux-kustomization.yaml
 
-  # --- archived standalone applications ---
-  - x/buildbuddy-executor/flux-kustomization.yaml
-  - gecko/namespace/flux-kustomization.yaml
-  - gecko/app/flux-kustomization.yaml
-  - agent-box/namespace/flux-kustomization.yaml
-  - agent-box/app/flux-kustomization.yaml
+  # --- website ---
   - website/flux-kustomization.yaml
+
   # --- cpap-sync ---
   - cpap-sync/flux-kustomization.yaml
-
-  # --- sdr ---
-  - sdr/flux-kustomization.yaml
 
   # --- study-casino ---
   - study-casino/namespace/flux-kustomization.yaml

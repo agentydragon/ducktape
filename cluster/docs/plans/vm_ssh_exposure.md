@@ -5,7 +5,7 @@
 ## Current State
 
 Gecko's SSH is reachable at `ssh agentydragon@gecko.allegedly.works:22` via a
-hand-written `CiliumEnvoyConfig` in <../../k8s/gecko/app/ciliumenvoyconfig.yaml>.
+hand-written `CiliumEnvoyConfig` in <../../k8s/parked/gecko/app/ciliumenvoyconfig.yaml>.
 The CEC binds `0.0.0.0:22` on every hil hostNetwork Envoy node and forwards
 to `gecko-ssh:22`.
 
@@ -127,7 +127,7 @@ comes first.
 
 ## Related
 
-- <../../k8s/gecko/app/ciliumenvoyconfig.yaml> — current implementation.
+- <../../k8s/parked/gecko/app/ciliumenvoyconfig.yaml> — current implementation.
 - <../kubevirt_nixos_vm.md> "Exposing SSH Publicly" — runbook reference.
 - <../../k8s/gateway/gateway.yaml> — where a new `tls-passthrough-vms`
   listener would live for Option A.

@@ -338,47 +338,48 @@ See `cluster/k8s/agents/tana-mcp/facade-deployment.yaml` for a working example
 ## Parked application manifests
 
 These applications remain in Git for possible revival, but their Flux
-declarations are no longer included in the active root bundle. Their
-application manifests and per-component Flux declarations are revival inputs,
-not currently reconciled cluster state.
+declarations are no longer included in the active root bundle (`ducktape.org/parked`
+annotation, `cluster/k8s/parked/<name>/` — see <../AGENTS.md> § Parked (non-ducktape-owned)
+application manifests). Not currently reconciled cluster state.
 
-- **Firecrawl**: `x/firecrawl/` — parked; its namespace, database, and app
+- **Firecrawl**: `cluster/k8s/parked/firecrawl/` — its namespace, database, and app
   declarations remain in Git.
-- **OpenHands**: `x/openhands/` — experimental and not currently used; its
-  namespace, secrets, sandbox, and app declarations remain in Git.
-- **Tandoor**: `x/tandoor/` — replaced by Grocy; its namespace, database, and
-  app declarations remain in Git.
-- **Wayback cache**: `loom/wayback/deploy/` — decommissioned by operator
-  request; its parked Flux declaration and deployment package remain in Git.
-- **Browsertrix**: `x/browsertrix/` — decommissioned; its revival package remains
-  in Git.
-- **ArchiveBox**: `x/archivebox/` — decommissioned; its revival package remains
-  in Git.
-- **Google Workspace MCP**: `x/google-workspace-mcp/` — decommissioned; its
-  revival package remains in Git.
-- **egress-proxy-rugged**: `egress-proxy-rugged/` — decommissioned; its
-  configuration remains in Git.
-- **InvenTree**: `inventree/` — decommissioned; its revival package remains in
-  Git.
-
-## Suspended Kustomizations
-
-### Intentionally parked
-
-These stay suspended until explicitly revived. The atlas/wyrm2 outage that idled
-the Proxmox-pinned entries is over (both are back as of 2026-08), so for those
-the open question is unsuspending, not hardware.
-
-- **agent-box**: `agent-box`, `agent-box-namespace` — inactive while the unschedulable
+- **OpenHands**: `cluster/k8s/parked/openhands/` — experimental and not currently used;
+  its namespace, secrets, sandbox, and app declarations remain in Git.
+- **Tandoor**: `cluster/k8s/parked/tandoor/` — replaced by Grocy; its namespace,
+  database, and app declarations remain in Git.
+- **Browsertrix**: `cluster/k8s/parked/browsertrix/` — decommissioned; its revival
+  package remains in Git.
+- **ArchiveBox**: `cluster/k8s/parked/archivebox/` — decommissioned; its revival
+  package remains in Git.
+- **Google Workspace MCP**: `cluster/k8s/parked/google-workspace-mcp/` — decommissioned;
+  its revival package remains in Git.
+- **egress-proxy-rugged**: `cluster/k8s/parked/egress-proxy-rugged/` — decommissioned;
+  its configuration remains in Git.
+- **InvenTree**: `cluster/k8s/parked/inventree/` — decommissioned; its revival package
+  remains in Git.
+- **Authelia**: `cluster/k8s/parked/authelia/` — suspended SSO alternative experiment;
+  Authentik is the active SSO provider.
+- **agent-box**: `cluster/k8s/parked/agent-box/` — inactive while the unschedulable
   legacy VM is retired; the VM and its local disk stay untouched until explicitly
   deleted.
-- **BuildBuddy Executor**: `buildbuddy-executor` — scaled to 0; Proxmox-pinned, and
-  atlas/wyrm2 being back removes that blocker — re-enable when needed.
-- **gecko**: `gecko`, `gecko-namespace` — same legacy-VM retirement hold as agent-box.
-- **props**: `props`, `props-{namespace,secrets,db,agent-rbac}` — suspended 2026-08-20
-  for a temporary teardown.
+- **gecko**: `cluster/k8s/parked/gecko/` — same legacy-VM retirement hold as agent-box.
+- **BuildBuddy Executor**: `cluster/k8s/parked/buildbuddy-executor/` — scaled to 0;
+  Proxmox-pinned, and atlas/wyrm2 being back (both returned 2026-08) removes that
+  blocker — re-enable when needed.
+- **sdr**: `cluster/k8s/parked/sdr/` — suspended pending the radio re-set-up
+  post-relocation (not unblocked by atlas/wyrm2 returning).
 
-### Still down
+**Wayback cache**: `loom/wayback/deploy/` — decommissioned by operator request, but this
+is ducktape-owned code (`loom/wayback/cache/`), so its parked Flux declaration stays
+colocated with its source rather than moving to `cluster/k8s/parked/`. Same for
+**props**: `props/deploy/` — suspended 2026-08-20 for a temporary teardown, ducktape-owned
+code, not part of this convention.
 
-- **sdr** — suspended pending the radio re-set-up post-relocation (not unblocked by
-  atlas/wyrm2 returning).
+**Why `cluster/k8s/parked/`, not `archive/` or `x/`.** `archive/` (root README.md
+§ Conventions) already means something else — curated historical-lesson docs, explicitly
+"not a parking lot." `x/` (same section) is a maturity axis — "experimental, in-flux,
+hasn't stabilized" — not a run-state axis; before this convention, `cluster/k8s/x/` held
+only decommissioned apps with nothing actually experimental in it, and didn't cover the
+flat-top-level cases (`egress-proxy-rugged/`, `inventree/`) at all. `parked` reuses the
+vocabulary the `ducktape.org/parked` annotation already had.

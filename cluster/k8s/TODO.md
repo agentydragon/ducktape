@@ -323,7 +323,7 @@ already shows replays, the marginal-link canary), ECC, thermal/power violations.
 ## agent-box follow-ups
 
 The agent-box VM and its `codex` user are live (see
-<agents/agent-box/README.md>). Remaining work:
+<parked/agent-box/README.md>). Remaining work:
 
 - [ ] **Enable the attic substituter** on agent-box: the Nix wiring is tombstoned
       in `nix/nixos/hosts/agent-box/default.nix` + `nix/home/hosts/agent-box/common.nix`.

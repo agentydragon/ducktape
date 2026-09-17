@@ -356,7 +356,7 @@ class _ArtifactCopy(BaseModel):
     to: str = ""
 
     def artifact_dir(self) -> str:
-        """The repo-relative directory this copy lands in: `@artifact/cluster/k8s/x/` -> `cluster/k8s/x`."""
+        """The repo-relative directory this copy lands in: `@artifact/cluster/k8s/parked/` -> `cluster/k8s/parked`."""
         return self.to.removeprefix("@artifact/").strip("/")
 
 

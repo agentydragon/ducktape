@@ -1,0 +1,21 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: egress-proxy-rugged
+  namespace: ducktape-flux
+  annotations:
+    ducktape.org/parked: "true"
+spec:
+  # Decommissioned by operator request; keep its configuration but stop reconciliation.
+  suspend: true
+  interval: 10m
+  retryInterval: 1m
+  timeout: 5m
+  sourceRef:
+    kind: ExternalArtifact
+    name: egress-proxy-rugged
+
+    namespace: ducktape-flux
+  path: ./cluster/k8s/parked/egress-proxy-rugged
+  prune: true
+  wait: true

@@ -305,7 +305,7 @@ Authentik secret stays in Vault/ESO until Authentik is fully turned off.
 
 ## Authelia user provisioning (still current)
 
-Authelia's retained manifests are under `cluster/k8s/x/authelia/`, with a
+Authelia's retained manifests are under `cluster/k8s/parked/authelia/`, with a
 non-credential placeholder for `users.yml`. Before reactivation, provision a
 real user database through the chosen secret-management path; Reloader restarts
 the pod when its configuration changes. Runtime self-service

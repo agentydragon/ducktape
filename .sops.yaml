@@ -20,7 +20,7 @@ keys:
   # Codex cloud agent key (OpenAI Codex, private key stored in Codex env secrets)
   # TODO: consider splitting shared tokens (buildbuddy, k8s jwt) into codex-specific variants
   - &codex-cloud-agent age1hy7al8s2cxjhehgf93mnkfdv2plr579t9uhvtdaxlmh3rx0j2g7sludsex
-  # Self-hosted agent-box VM (cluster/k8s/agent-box). agent-box-host = the VM's
+  # Self-hosted agent-box VM (cluster/k8s/parked/agent-box). agent-box-host = the VM's
   # persisted SSH host key (installed via cloud-init); agent-box-codex-user = the
   # codex user's id_ed25519, planted by NixOS sops-nix and doubling as the codex
   # user's age decryption identity.

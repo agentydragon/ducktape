@@ -1,0 +1,28 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: buildbuddy-executor
+  namespace: ducktape-flux
+  annotations:
+    ducktape.org/parked: "true"
+spec:
+  suspend: true
+  retryInterval: 1m
+  interval: 10m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  path: ./cluster/k8s/parked/buildbuddy-executor
+  prune: true
+  wait: true
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: buildbuddy-executor
+      namespace: buildbuddy-executor
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
