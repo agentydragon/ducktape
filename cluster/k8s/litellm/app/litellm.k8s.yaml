@@ -126,6 +126,20 @@ data:
           api_base: http://ollama.ollama.svc.cluster.local:11434
         model_info:
           mode: embedding
+      - model_name: rugged-npu/oai-chat/qwen3-4b
+        litellm_params:
+          model: openai/qwen3-4b
+          api_base: http://rugged-npu-llm.litellm.svc.cluster.local:18080/v1
+          api_key: os.environ/RUGGED_NPU_LLM_KEY
+        model_info:
+          mode: chat
+      - model_name: rugged-npu/oai-chat/llama-3.2-1b
+        litellm_params:
+          model: openai/llama-3.2-1b
+          api_base: http://rugged-npu-llm.litellm.svc.cluster.local:18080/v1
+          api_key: os.environ/RUGGED_NPU_LLM_KEY
+        model_info:
+          mode: chat
       - model_name: tana/ant-messages/claude-sonnet-4-6
         litellm_params:
           model: tana/tana/claude-sonnet-4-6/medium
@@ -707,6 +721,11 @@ spec:
                 secretKeyRef:
                   key: CLIPROXY_CLIENT_KEY
                   name: litellm-cliproxy-key
+            - name: RUGGED_NPU_LLM_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: token
+                  name: rugged-npu-llm-bearer-token
             - name: TANA_FIREBASE_REFRESH_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -859,3 +878,41 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: litellm
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    description: Rugged's NPU-backed llama-server, bearer-gated, reached over Nebula. Endpoints are a static EndpointSlice, not a selector -- rugged is a k8s Node, not a Pod.
+  labels:
+    app.kubernetes.io/name: rugged-npu-llm
+  name: rugged-npu-llm
+  namespace: litellm
+spec:
+  clusterIP: None
+  ports:
+    - name: http
+      port: 18080
+      targetPort: 18080
+      protocol: TCP
+---
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  labels:
+    endpointslice.kubernetes.io/managed-by: ducktape-static
+    kubernetes.io/service-name: rugged-npu-llm
+  name: rugged-npu-llm
+  namespace: litellm
+addressType: IPv4
+ports:
+  - name: http
+    protocol: TCP
+    port: 18080
+endpoints:
+  - addresses:
+      - 10.42.0.30
+    hostname: rugged
+    nodeName: rugged
+    conditions:
+      ready: true

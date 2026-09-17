@@ -16,6 +16,7 @@ from cluster.k8s.litellm.app.model_rosters import (
     GEMINI_EMBEDDING_MODELS,
     GEMINI_MODELS,
     MISTRAL_MODELS,
+    RUGGED_NPU_MODELS,
     TANA_MODELS,
     Provider,
     exposed_name,
@@ -25,6 +26,9 @@ from cluster.k8s.litellm.app.model_rosters import (
 
 _OLLAMA_BASE = "http://ollama.ollama.svc.cluster.local:11434"
 _CLIPROXY_BASE = "http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317"
+# The bearer-proxy in front of rugged's llama-server (RuggedNpuLlmEndpoints in
+# cluster/cdk8s/litellm_constructs.py), not llama-server's own loopback-only port.
+_RUGGED_NPU_LLM_BASE = "http://rugged-npu-llm.litellm.svc.cluster.local:18080/v1"
 
 
 @dataclass(frozen=True)
@@ -195,6 +199,20 @@ def _ollama_entries() -> list[dict]:
     return entries
 
 
+def _rugged_npu_entries() -> list[dict]:
+    # Router mode -- both models served from one process on one port
+    # (RuggedNpuLlmEndpoints), routed by the "model" field. Roaming/often offline;
+    # no supports_function_calling claim yet, unverified on this path.
+    return _provider_entries(
+        RUGGED_NPU_MODELS,
+        provider=Provider.RUGGED_NPU,
+        upstream_prefix="openai",
+        protocol="chat",
+        api_base=_RUGGED_NPU_LLM_BASE,
+        api_key="os.environ/RUGGED_NPU_LLM_KEY",
+    )
+
+
 def _codex_model_info(model: str) -> dict[str, int]:
     if model == "gpt-6-astra":
         return {
@@ -342,6 +360,7 @@ def main_proxy_config() -> dict:
     """Return the complete main-proxy config from the shared Python roster."""
     model_list = [
         *_ollama_entries(),
+        *_rugged_npu_entries(),
         *_tana_entries(),
         *_cliproxy_entries(),
         *_anthropic_entries(),
