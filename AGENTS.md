@@ -105,6 +105,21 @@ and inside the key for BuildBuddy's warm Firecracker snapshot pool; moving it or
 cache and dumps every snapshot. Developer and agent tooling belongs in
 <devinfra/bbr_runner/Dockerfile>, whose digest no action hashes.
 
+## Issue Tracking
+
+Apply the `upstream-waiting` label to issues whose purpose is to record an external
+upstream bug that blocks us until the upstream project fixes it. Do not use it merely
+because an issue links to upstream, involves upstream coordination, or has a workaround;
+remove it once the upstream blocker no longer describes the issue.
+
+Apply the `upstream` label to issues whose underlying defect is in an external
+dependency or service rather than in ducktape. It may coexist with `upstream-waiting`,
+but is broader: use it even when the issue has a workaround. Do not use it for ordinary
+dependency upgrades, feature gaps, or ducktape's own integration/configuration bugs
+merely because they involve an upstream project. If a newer upstream release fixes an
+issue but the remaining work is migrating or adapting ducktape, the issue remains
+ducktape-owned and does not get this label.
+
 ## Refactoring
 
 When renaming/moving/deleting files or symbols, search **all references** across the
