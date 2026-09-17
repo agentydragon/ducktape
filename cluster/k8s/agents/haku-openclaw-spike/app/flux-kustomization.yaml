@@ -32,7 +32,17 @@ spec:
       namespace: ducktape-flux
     - name: flux-image-automation-forgejo
       namespace: ducktape-flux
+    - name: seaweedfs-cluster
+      namespace: ducktape-flux
   healthChecks:
+    - apiVersion: seaweed.seaweedfs.com/v1
+      kind: Bucket
+      name: haku-openclaw-spike-backups
+      namespace: haku-openclaw-spike
+    - apiVersion: seaweed.seaweedfs.com/v1
+      kind: S3Credentials
+      name: haku-openclaw-spike-backups
+      namespace: haku-openclaw-spike
     - apiVersion: apps/v1
       kind: Deployment
       name: haku-openclaw-spike
