@@ -766,14 +766,6 @@ spec:
           exclude:
             - flux-kustomization.yaml
 
-    - name: manifold-mcp-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/manifold-mcp/namespace/**"
-          to: "@artifact/cluster/k8s/agents/manifold-mcp/namespace/"
-          exclude:
-            - flux-kustomization.yaml
-
     - name: agents-mitmproxy-namespace
       originRevision: "@repo"
       copy:
