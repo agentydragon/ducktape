@@ -23,8 +23,6 @@ spec:
   dependsOn:
     - name: gateway
       namespace: ducktape-flux
-    - name: kubectl-passthrough-mcp-namespace
-      namespace: ducktape-flux
     # TF writes the kubectl-passthrough-mcp secret (with config.toml) into the namespace.
     - name: agent-machine-access-tf
       namespace: ducktape-flux

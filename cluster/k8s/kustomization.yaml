@@ -70,7 +70,6 @@ resources:
   - agents/coinbase-read/flux-kustomization.yaml
   - grocy/sf/mcp/flux-kustomization.yaml
   - grocy/vallejo/mcp/flux-kustomization.yaml
-  - agents/kubectl-passthrough-mcp/namespace/flux-kustomization.yaml
   - agents/kubectl-passthrough-mcp/app/flux-kustomization.yaml
   - agents/kubectl-machine-mcp/app/flux-kustomization.yaml
   - agents/manifold-mcp/namespace/flux-kustomization.yaml
