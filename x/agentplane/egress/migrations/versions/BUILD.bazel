@@ -3,8 +3,7 @@ load("//devinfra/python:defs.bzl", "py_library")
 exports_files(
     [
         "0001_decisions.py",
-        "0002_subject_kind.py",
-        "0003_service_account_subject.py",
+        "0002_service_account_subject.py",
     ],
     visibility = ["//x/agentplane/egress/migrations:__pkg__"],
 )
@@ -19,17 +18,8 @@ py_library(
 )
 
 py_library(
-    name = "0002_subject_kind",
-    srcs = ["0002_subject_kind.py"],
-    deps = [
-        "@pypi//alembic",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "0003_service_account_subject",
-    srcs = ["0003_service_account_subject.py"],
+    name = "0002_service_account_subject",
+    srcs = ["0002_service_account_subject.py"],
     deps = [
         "@pypi//alembic",
         "@pypi//sqlalchemy",

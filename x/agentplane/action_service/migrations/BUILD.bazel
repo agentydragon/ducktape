@@ -23,8 +23,6 @@ filegroup(
         "//x/agentplane/action_service/migrations/versions:0014_action_policies.py",
         "//x/agentplane/action_service/migrations/versions:0015_action_request_context.py",
         "//x/agentplane/action_service/migrations/versions:0016_structured_principals.py",
-        "//x/agentplane/action_service/migrations/versions:0017_linkage_linked_by_operator.py",
-        "//x/agentplane/action_service/migrations/versions:0018_decision_operator_columns.py",
     ],
     visibility = ["//x/agentplane/action_service:__pkg__"],
 )
