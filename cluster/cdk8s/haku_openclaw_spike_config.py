@@ -3,6 +3,12 @@
 from __future__ import annotations
 
 from cluster.cdk8s.model_rosters import ANTHROPIC_MODELS
+from cluster.cdk8s.openclaw_gateway import (
+    disabled_commands,
+    haku_console_mcp,
+    session_memory_hook,
+    trusted_proxy_gateway,
+)
 
 # OpenClaw's own native `anthropic/<model>` id, not the `{provider}/{shape}/{model}`
 # LiteLLM scheme -- this agent's `anthropic` plugin calls the Anthropic API directly,
@@ -43,36 +49,13 @@ def config() -> dict:
                 "enabled": False
             }
         },
-        "commands": {"config": False, "mcp": False, "restart": False},
+        "commands": disabled_commands(),
         "cron": {"enabled": False},
-        "gateway": {
-            "auth": {
-                "mode": "trusted-proxy",
-                "trustedProxy": {
-                    "allowLoopback": True,
-                    "allowUsers": ["agentydragon"],
-                    "requiredHeaders": ["x-authentik-email", "x-forwarded-host", "x-forwarded-proto"],
-                    "userHeader": "x-authentik-username",
-                    "deviceAutoApprove": {"enabled": True, "scopes": ["operator.admin"]},
-                },
-            },
-            "bind": "lan",
-            "controlUi": {"allowedOrigins": ["https://haku-openclaw-spike.allegedly.works"]},
-            "mode": "local",
-            "trustedProxies": ["10.0.0.0/8"],
-        },
-        "hooks": {"internal": {"entries": {"session-memory": {"enabled": True, "llmSlug": False, "messages": 15}}}},
-        "mcp": {
-            "servers": {
-                "haku-console": {
-                    "headers": {"Authorization": "Bearer ${HAKU_CONSOLE_TOKEN}"},
-                    "requestTimeoutMs": 60000,
-                    "supportsParallelToolCalls": True,
-                    "transport": "streamable-http",
-                    "url": "https://haku.allegedly.works/mcp",
-                }
-            }
-        },
+        "gateway": trusted_proxy_gateway(
+            allowed_origin="https://haku-openclaw-spike.allegedly.works", device_approve_scopes=["operator.admin"]
+        ),
+        "hooks": session_memory_hook(),
+        "mcp": haku_console_mcp(request_timeout_ms=60000),
         "plugins": {"entries": {"anthropic": {"enabled": True}}},
         "tools": {
             "allow": [

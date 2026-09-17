@@ -135,13 +135,13 @@ data:
       "mcp": {
         "servers": {
           "haku-console": {
+            "url": "https://haku.allegedly.works/mcp",
+            "transport": "streamable-http",
+            "supportsParallelToolCalls": true,
+            "requestTimeoutMs": 60000,
             "headers": {
               "Authorization": "Bearer ${HAKU_CONSOLE_TOKEN}"
-            },
-            "requestTimeoutMs": 60000,
-            "supportsParallelToolCalls": true,
-            "transport": "streamable-http",
-            "url": "https://haku.allegedly.works/mcp"
+            }
           }
         }
       },

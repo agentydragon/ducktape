@@ -14,6 +14,12 @@ from cluster.cdk8s.model_rosters import (
     Provider,
     exposed_name,
 )
+from cluster.cdk8s.openclaw_gateway import (
+    disabled_commands,
+    haku_console_mcp,
+    session_memory_hook,
+    trusted_proxy_gateway,
+)
 
 _DEFAULT_CODEX_MODEL = "gpt-5.6-luna"
 _TPM_CODEX_MODEL = "gpt-6-astra"
@@ -98,7 +104,7 @@ def config() -> dict:
                 },
             }
         },
-        "commands": {"config": False, "mcp": False, "restart": False},
+        "commands": disabled_commands(),
         "channels": {
             "matrix": {
                 # MATRIX_PASSWORD is intentionally absent: OpenClaw reads the stable
@@ -127,54 +133,20 @@ def config() -> dict:
             }
         },
         "cron": {"enabled": True, "triggers": {"enabled": True}},
-        "gateway": {
-            # Local backend and subagent calls have no Authentik headers, so they use
-            # the generated gateway password supplied by the Deployment. Keep it out
-            # of this file.
-            "auth": {
-                "mode": "trusted-proxy",
-                # Browser requests arrive with Authentik identity headers.
-                "trustedProxy": {
-                    "allowLoopback": True,
-                    "allowUsers": ["agentydragon"],
-                    "requiredHeaders": ["x-authentik-email", "x-forwarded-host", "x-forwarded-proto"],
-                    "userHeader": "x-authentik-username",
-                    # Authentik has already authenticated the browser, so do not demand a
-                    # second, manual device pairing on top of it. 2026.8.1 retired
-                    # gateway.controlUi.dangerouslyDisableDeviceAuth (silently ignored, so
-                    # the Control UI started asking to pair); this is its replacement, and
-                    # unlike the old flag it caps what an auto-approved device may do.
-                    #
-                    # What makes this safe is the same thing that makes trusted-proxy mode
-                    # safe at all: app/networkpolicy-ingress.yaml admits only the outpost's
-                    # pods, so nothing else can forge x-authentik-username -- and
-                    # allowUsers above further restricts it to agentydragon alone.
-                    #
-                    # scopes is a ceiling, not a grant: it caps what an auto-approved
-                    # device may request, defaulting to operator.{read,write,approvals,
-                    # questions}. Listing operator.admin raises that ceiling to full
-                    # admin for the one already-trusted proxied user.
-                    "deviceAutoApprove": {
-                        "enabled": True,
-                        "scopes": [
-                            "operator.read",
-                            "operator.write",
-                            "operator.approvals",
-                            "operator.questions",
-                            "operator.admin",
-                        ],
-                    },
-                },
-            },
-            # Authentik reaches the pod over the cluster network, hence "lan" rather
-            # than loopback. The ingress NetworkPolicy, not this bind address, is the
-            # trust boundary. Valid values are loopback, lan, tailnet, auto, custom.
-            "bind": "lan",
-            "controlUi": {"allowedOrigins": ["https://public-coder-agent.allegedly.works"]},
-            "mode": "local",
-            "trustedProxies": ["10.0.0.0/8"],
-        },
-        "hooks": {"internal": {"entries": {"session-memory": {"enabled": True, "llmSlug": False, "messages": 15}}}},
+        # Local backend and subagent calls have no Authentik headers, so they use
+        # the generated gateway password supplied by the Deployment. Keep it out
+        # of this file.
+        "gateway": trusted_proxy_gateway(
+            allowed_origin="https://public-coder-agent.allegedly.works",
+            device_approve_scopes=[
+                "operator.read",
+                "operator.write",
+                "operator.approvals",
+                "operator.questions",
+                "operator.admin",
+            ],
+        ),
+        "hooks": session_memory_hook(),
         "models": {
             "providers": {
                 # One provider intentionally covers both working model families. Codex
@@ -199,26 +171,7 @@ def config() -> dict:
                 }
             }
         },
-        "mcp": {
-            "servers": {
-                "haku-console": {
-                    "url": "https://haku.allegedly.works/mcp",
-                    "transport": "streamable-http",
-                    # Haku fans out to many upstream MCP servers and each call is
-                    # independent, so let the agent issue concurrent tool calls against it.
-                    "supportsParallelToolCalls": True,
-                    # Haku exposes a large tools catalog and can take longer than the
-                    # default client timeout. Keep this above Haku's terminal-result wait
-                    # so the client does not time out first.
-                    "requestTimeoutMs": 70000,
-                    "headers": {
-                        # Haku's token is an inert placeholder here; runtime interpolation
-                        # and iron-proxy substitution provide the controller-owned secret.
-                        "Authorization": "Bearer ${HAKU_CONSOLE_TOKEN}"
-                    },
-                }
-            }
-        },
+        "mcp": haku_console_mcp(request_timeout_ms=70000),
         "plugins": {
             "entries": {
                 # Matrix is bundled into the image as a trusted plugin; loading a copy
