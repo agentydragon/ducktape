@@ -2,6 +2,7 @@ apiVersion: redis.redis.opstreelabs.in/v1beta2
 kind: RedisReplication
 metadata:
   name: mcp-valkey-ovh
+  namespace: tana-mcp
   annotations:
     description: Replacement OVH Valkey for Tana MCP facade OAuth state
 spec:
