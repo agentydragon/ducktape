@@ -20,6 +20,8 @@ spec:
   timeout: 5m
   retryInterval: 1m
   dependsOn:
+    - name: public-coder-agent-namespace
+      namespace: ducktape-flux
     # The proxy layer owns the trust Bundle this pod mounts, so it must land first.
     - name: public-coder-agent-proxy
       namespace: ducktape-flux
