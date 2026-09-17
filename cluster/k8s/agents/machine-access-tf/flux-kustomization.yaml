@@ -25,7 +25,3 @@ spec:
       namespace: ducktape-flux
     - name: authentik
       namespace: ducktape-flux
-    # The HA OAuth Secret is retained as a rollback tombstone until the static
-    # bearer migration's expiry window; its namespace must still exist.
-    - name: ha-mcp
-      namespace: ducktape-flux
