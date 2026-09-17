@@ -47,8 +47,11 @@ dependencies = [
     # Python cdk8s uses jsii to synthesize ordinary Kubernetes YAML.
     "cdk8s>=2.70.101,<3",
     # cdk8s-plus supplies typed Kubernetes resources such as ConfigMap; the
-    # core cdk8s ApiObject intentionally only models metadata.
-    "cdk8s-plus-33>=2.5,<3",
+    # core cdk8s ApiObject intentionally only models metadata. Pinned to the
+    # newest published k8s-version line (cdk8s-plus-35 doesn't exist yet) --
+    # the cluster itself runs Kubernetes 1.35.1
+    # (cluster/terraform/main/variables.tf's kubernetes_version).
+    "cdk8s-plus-34>=2.0,<3",
     "aiohttp>=3.14.3",
     "requests>=2.32.5",
 

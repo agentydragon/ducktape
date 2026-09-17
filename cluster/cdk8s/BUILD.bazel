@@ -33,7 +33,7 @@ py_library(
     srcs = ["probes.py"],
     deps = [
         "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_33",
+        "@pypi//cdk8s_plus_34",
     ],
 )
 
@@ -43,7 +43,7 @@ py_library(
     deps = [
         "//third_party/external_secrets:externalsecret",
         "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_33",
+        "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
     ],
 )
@@ -59,7 +59,7 @@ py_library(
         "//third_party/gateway_api:httproute",
         "//third_party/prometheus_operator:servicemonitor",
         "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_33",
+        "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
     ],
 )
@@ -74,7 +74,7 @@ py_library(
         "//third_party/cilium:ciliumnetworkpolicy",
         "//third_party/prometheus_operator:servicemonitor",
         "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_33",
+        "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
     ],
 )

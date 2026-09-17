@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from cdk8s import Duration
-from cdk8s_plus_33 import Probe
+from cdk8s_plus_34 import Probe
 
 
 def http_probe(

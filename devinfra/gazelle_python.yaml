@@ -69,7 +69,7 @@ manifest:
     cattr: cattrs
     cattrs: cattrs
     cdk8s: cdk8s
-    cdk8s_plus_33: cdk8s_plus_33
+    cdk8s_plus_34: cdk8s_plus_34
     certifi: certifi
     cffi: cffi
     cfgv: cfgv

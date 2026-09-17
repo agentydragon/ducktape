@@ -842,10 +842,10 @@ cdk8s==2.70.103 \
     --hash=sha256:e528640cc294110b73f704043e84f834729853f6bbefcfcb9530b893669fac89
     # via
     #   ducktape (pyproject.toml)
-    #   cdk8s-plus-33
-cdk8s-plus-33==2.5.56 \
-    --hash=sha256:8aa32da9943336aba8c239ccd4ca29b458895fbc3850ca7ec598c00c1969fc93 \
-    --hash=sha256:d11f78fc3da5b00dc4ac55062de31fb3241c898e90e9b74942995bc24fcb1573
+    #   cdk8s-plus-34
+cdk8s-plus-34==2.0.57 \
+    --hash=sha256:754569c241cb28343e8c4ed39bcd27c2d9a5bcd5b43dc963c8e8786e8e3130f8 \
+    --hash=sha256:ab9781a8fc5b3194f70bd10c800491f1bb102a6bf2d4b3f9cf346fb617755730
     # via ducktape (pyproject.toml)
 certifi==2026.7.22 \
     --hash=sha256:62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775 \
@@ -1198,7 +1198,7 @@ constructs==10.8.1 \
     --hash=sha256:f71297db64723889147c82de46dcacaa76b120f856d5b5ac5f65abb22ea88355
     # via
     #   cdk8s
-    #   cdk8s-plus-33
+    #   cdk8s-plus-34
 contourpy==1.4.0 \
     --hash=sha256:018227e134b73090b06f911e773a526c77c9af426be29065500ce096a5accd4c \
     --hash=sha256:072a702e2e178f4fcf96f04775d0c059e4c917925abf0d3208ebb6865df3c23d \
@@ -2863,7 +2863,7 @@ jsii==1.140.0 \
     --hash=sha256:aa24f27d15d8d7db1ff32a9c56074bc87e728b30330ead97fb149419a3721a50
     # via
     #   cdk8s
-    #   cdk8s-plus-33
+    #   cdk8s-plus-34
     #   constructs
 json5==0.15.0 \
     --hash=sha256:56636a30c0e8a4665fe2179c0212f32eae3796dea89ea6f649b9436ecdb39618 \
@@ -5131,7 +5131,7 @@ publication==0.0.3 \
     --hash=sha256:68416a0de76dddcdd2930d1c8ef853a743cc96c82416c4e4d3b5d901c6276dc4
     # via
     #   cdk8s
-    #   cdk8s-plus-33
+    #   cdk8s-plus-34
     #   constructs
     #   jsii
 publicsuffix2==2.20191221 \
