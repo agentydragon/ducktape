@@ -6,7 +6,6 @@ exports_files(
     [
         "flux-kustomization.yaml",
         "kustomization.yaml",
-        "litellm-servicemonitor.k8s.yaml",
         "litellm.k8s.yaml",
         "proxy-config.yaml",
     ],
