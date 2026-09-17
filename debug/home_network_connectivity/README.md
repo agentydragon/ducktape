@@ -59,13 +59,46 @@ but nothing was measured to confirm signal degradation was the actual mechanism:
 - Not ruled in or out: whether this is the same underlying issue as last week's
   Zyxel-switch-blamed incident.
 
+## Gateway telemetry research (2026-09-17)
+
+The BGW320-500 does expose optical/GPON diagnostics natively: `Broadband` tab →
+"Fiber Status" (`/cgi-bin/fiberstat.ha`) — Rx/Tx power and wavelength on-screen; the
+BGW320-CLI parser (below) also pulls temperature, voltage, bias current, and alarm
+thresholds from the same page. No LAN-side SNMP exists on this gateway family — every
+non-web management path is ISP-side TR-069/CWMP, not customer-reachable.
+
+Caveat: multiple DSLReports/AT&T-community threads (e.g.
+"bgw320-received-power-display-bug") report the on-screen Rx/Tx numbers as a
+firmware-version-dependent, possibly uncalibrated scale rather than straightforward
+dBm (one user's normal range was 265–367, dropping to 74 during a fault; that's not a
+plausible dBm range). Log raw values and trend them — don't treat the displayed number
+as calibrated dBm without cross-checking firmware version.
+
+No Home Assistant/HACS integration and no Prometheus-native exporter exist for any
+AT&T BGW gateway. Closest prior art, ranked:
+
+1. `TheSethRose/BGW320-CLI` (GitHub, TypeScript/Bun) — the only project that parses
+   `fiberstat.ha` into structured fields, plus a logs/event-notifications command.
+   Small (7 stars, 11 commits) and unverified at scale — read its actual scraper
+   against the live gateway before trusting field names.
+2. `edgan/att-fiber-gateway-info` (GitHub, Go) — production-grade polling/export
+   scaffolding (StatsD/Datadog, Docker/k8s/systemd), tested on BGW320-505/-500. No
+   optical stats or logs; would need a `fiberstat.ha` parser added.
+3. `erikh/attrouter` (Rust), `rjwalters/att-gateway-py` (Python) — sysinfo/config
+   tools, not monitoring; lower relevance.
+
+Recommendation: fork BGW320-CLI for the optical/log parsing specifically (verify its
+scraper against the live gateway first — some of the above came from cached search
+snippets rather than a directly-fetched page, since DSLReports and AT&T's community
+forum weren't reachable during this research), or extend
+`att-fiber-gateway-info`'s existing polling scaffolding with a `fiberstat.ha` parser
+if BGW320-CLI proves too immature.
+
 ## Next steps
 
-- Find out whether the AT&T BGW320-500 exposes historical telemetry (event log,
-  optical Rx/Tx power, uptime) via its web UI, an API, or SNMP, and whether a
-  collector (Home Assistant integration, Prometheus exporter, or similar) already
-  exists for this model. This is the main gap keeping this incident at "probably"
-  instead of "confirmed."
+- Build a poller against `fiberstat.ha` (see Gateway telemetry research above) so the
+  next incident has real signal data instead of guesswork. This is the main gap
+  keeping this incident at "probably" instead of "confirmed."
 - Once reachable, pull `wyrm2`'s and `atlas`'s NetworkManager/kernel journal for the
   outage window (both live SSH attempts during the incident failed with
   `ssh_connection_failed`; unclear whether that was `wyrm2`-side, Nebula-side, or
