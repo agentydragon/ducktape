@@ -18,6 +18,7 @@ from cluster.rotators.attic_jwt_rotation.rotate import (
     Config,
     Token,
     _configure_ca_trust,
+    _load_keypair,
     clone_repo,
     commit_and_push,
     ensure_cache,
@@ -419,6 +420,32 @@ def test_ensure_cache_creates_public_when_requested():
     with _client(transport) as client:
         assert ensure_cache(client, "public", is_public=True) == "public:xyz="
     assert json.loads(transport.calls[1][2])["is_public"] is True
+
+
+def test_ensure_cache_creates_with_supplied_keypair():
+    transport = _ScriptedTransport(
+        [
+            httpx.Response(404, text="not found"),
+            httpx.Response(201, text=""),
+            httpx.Response(200, json={"public_key": "main:xyz="}),
+        ]
+    )
+    with _client(transport) as client:
+        ensure_cache(client, "main", keypair="main:supplied-secret==")
+    assert json.loads(transport.calls[1][2])["keypair"] == {"Keypair": "main:supplied-secret=="}
+
+
+def test_load_keypair_returns_none_when_dir_is_none():
+    assert _load_keypair(None, "main") is None
+
+
+def test_load_keypair_returns_none_when_cache_file_missing(tmp_path: Path):
+    assert _load_keypair(tmp_path, "main") is None
+
+
+def test_load_keypair_reads_and_strips_file(tmp_path: Path):
+    (tmp_path / "main").write_text("main:secret==\n")
+    assert _load_keypair(tmp_path, "main") == "main:secret=="
 
 
 def test_ensure_cache_raises_on_unexpected_error():

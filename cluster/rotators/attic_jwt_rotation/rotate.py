@@ -6,8 +6,13 @@ pattern so the HS256 signing secret never leaves the attic pod:
   * `rotate`           — mints per-token JWTs into SOPS-encrypted files and
                          pushes the result to devel.
   * `bootstrap-caches` — idempotently ensures each named cache exists (creating
-                         via attic's REST API when absent) and prints its public
-                         key for `nix/attic-pubkeys.json`.
+                         via attic's REST API when absent, with a `--keypair-dir`
+                         signing key when one is mounted) and prints its public
+                         key.
+
+Deriving `nix/attic-pubkeys.json` from the signing keys is a separate, local-only
+concern (`sync_pubkeys.py` in this package) — it needs SOPS decrypt access to
+cluster secrets, which this file's container image intentionally does not have.
 
 `rotate` reads the unencrypted-by-suffix `expires_unencrypted` field of each
 existing `sops_file` (no SOPS decryption, no in-cluster age key) and skips when
@@ -281,13 +286,17 @@ def rotate_cmd(
     commit_and_push(repo, config, rotated, token)
 
 
-def _create_body(is_public: bool) -> dict[str, Any]:
+def _create_body(is_public: bool, keypair: str | None = None) -> dict[str, Any]:
     """Body for `POST /_api/v1/cache-config/<name>` — matches `attic cache create <name>`
     with no flags (cf. attic upstream client/src/command/cache.rs::create_cache) except
     `is_public`, which callers set explicitly.
+
+    `keypair`, when given, is a `nix key generate-secret` string (`<name>:<base64>`)
+    supplied verbatim to attic's `KeypairConfig::Keypair` variant instead of
+    `Generate` — see cluster/docs/nix_cache.md § Bootstrap for why.
     """
     return {
-        "keypair": "Generate",
+        "keypair": {"Keypair": keypair} if keypair is not None else "Generate",
         "is_public": is_public,
         "store_dir": "/nix/store",
         "priority": 41,
@@ -334,19 +343,21 @@ def mint_admin_jwt(namespace: str, deployment: str, server_config: str) -> str:
     return jwt
 
 
-def ensure_cache(client: httpx.Client, cache: str, is_public: bool = False) -> str:
+def ensure_cache(client: httpx.Client, cache: str, is_public: bool = False, keypair: str | None = None) -> str:
     """Idempotently ensure `cache` exists on the attic server behind `client`; return its public_key.
 
     `client` must already carry the admin Bearer token and a base URL pointing
     at the attic server. Non-2xx from the initial GET is only tolerated on 404
-    (cache absent → create), everything else raises. `is_public` only affects
-    creation — an already-existing cache's visibility is left as-is.
+    (cache absent → create), everything else raises. `is_public` and `keypair`
+    only affect creation — an already-existing cache's config is left as-is.
     """
     config_path = f"/_api/v1/cache-config/{cache}"
     response = client.get(config_path)
     if response.status_code == 404:
-        logger.info("cache %s: missing — creating (is_public=%s)", cache, is_public)
-        create = client.post(config_path, json=_create_body(is_public))
+        logger.info(
+            "cache %s: missing — creating (is_public=%s, supplied_key=%s)", cache, is_public, keypair is not None
+        )
+        create = client.post(config_path, json=_create_body(is_public, keypair))
         if not create.is_success:
             raise RuntimeError(f"cache {cache}: create failed (HTTP {create.status_code}): {create.text}")
         response = client.get(config_path)
@@ -355,6 +366,21 @@ def ensure_cache(client: httpx.Client, cache: str, is_public: bool = False) -> s
     public_key: str = response.json()["public_key"]
     logger.info("cache %s: %s", cache, public_key)
     return public_key
+
+
+def _load_keypair(keypair_dir: Path | None, cache: str) -> str | None:
+    """The supplied `nix key generate-secret` string for `cache`, or None to let attic generate one.
+
+    `keypair_dir` is a directory of per-cache key files (Secret volume mount, filename
+    = cache name) — absent entirely, or missing a given cache's file, falls back to
+    server-generated keys.
+    """
+    if keypair_dir is None:
+        return None
+    keypair_file = keypair_dir / cache
+    if not keypair_file.exists():
+        return None
+    return keypair_file.read_text().strip()
 
 
 @app.command("bootstrap-caches")
@@ -376,22 +402,30 @@ def bootstrap_caches_cmd(
     server_config: Annotated[
         str, typer.Option(help="Attic server config path inside the attic pod")
     ] = "/config/server.toml",
+    keypair_dir: Annotated[
+        Path | None,
+        typer.Option(
+            help="Directory of mounted per-cache signing keys (filename = cache name; "
+            "cluster/k8s/nix-cache/cache-keys.sops.yaml), supplied on creation instead of "
+            "a server-generated key. A cache missing from the directory still gets one generated."
+        ),
+    ] = None,
 ) -> None:
     """Ensure each --cache / --public-cache exists on `server`; print its public_key on stdout.
 
-    Idempotent: existing caches are left alone (including their visibility — flipping
-    is_public on an existing cache needs a direct API call, not this command). Public keys
-    are printed for manual paste into nix/attic-pubkeys.json (attic's public
-    /{cache}/nix-cache-info does not include the pubkey; the authenticated
-    /_api/v1/cache-config/<cache> endpoint does).
+    Idempotent: existing caches are left alone (including their visibility and signing
+    key — flipping is_public, or swapping in a supplied key, on an existing cache needs a
+    direct API call, not this command). Public keys are printed for
+    nix/attic-pubkeys.json — regenerate that file with
+    cluster/rotators/attic_jwt_rotation/sync_pubkeys.py rather than pasting these by hand.
     """
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     jwt = mint_admin_jwt(attic_namespace, attic_deployment, server_config)
     with httpx.Client(base_url=server, headers={"Authorization": f"Bearer {jwt}"}, timeout=30.0) as client:
         for cache in caches or []:
-            ensure_cache(client, cache)
+            ensure_cache(client, cache, keypair=_load_keypair(keypair_dir, cache))
         for cache in public_caches or []:
-            ensure_cache(client, cache, is_public=True)
+            ensure_cache(client, cache, is_public=True, keypair=_load_keypair(keypair_dir, cache))
 
 
 if __name__ == "__main__":

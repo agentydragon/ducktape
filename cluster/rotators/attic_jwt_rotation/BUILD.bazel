@@ -39,6 +39,34 @@ aspect_py_binary(
     deps = [":rotate"],
 )
 
+# Local/operator-only tool (needs SOPS decrypt access to cluster secrets) —
+# deliberately not a dep of ":layers"/":image" below, so it never ships in the
+# attic-jwt-rotation container image.
+py_library(
+    name = "sync_pubkeys",
+    srcs = ["sync_pubkeys.py"],
+    deps = [
+        "@pypi//pyyaml",
+        "@pypi//typer",
+    ],
+)
+
+py_test(
+    name = "test_sync_pubkeys",
+    srcs = ["test_sync_pubkeys.py"],
+    deps = [
+        ":sync_pubkeys",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+aspect_py_binary(
+    name = "sync_pubkeys_bin",
+    main = "sync_pubkeys.py",
+    deps = [":sync_pubkeys"],
+)
+
 # sops binary layer — placed at /usr/local/bin/sops.
 pkg_tar(
     name = "sops_layer",

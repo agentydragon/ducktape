@@ -10,36 +10,43 @@ metadata and a SeaweedFS S3 bucket for NAR chunk storage. Manifests in
 - **Database**: CNPG cluster `attic-db` (2 instances, OVH-HA, hdd tier via the
   deprecated `local-path-ovh` alias)
 - **Cache storage**: SeaweedFS S3 bucket `attic` (`seaweedfs-s3.seaweedfs:8333`), replicated `001` across OVH volume servers
-- **Caches** (priority 41, server-generated ED25519 keypairs):
+- **Caches** (priority 41, ED25519 keypairs supplied from SOPS — see Bootstrap):
   - `main` — private; ducktape CI's general-purpose cache (flake outputs)
   - `gaffer` — private; gaffer-private CI's cache (drivefs and friends)
   - `public` — anonymous-readable (`is_public: true`); carries only the Claude Code
     web/Haku bootstrap closures (`devtools`/`bb`/`bbr`/`bbapi`/`agent-haku`/
     `devShells.default`) — see "Public bootstrap cache" below
-- **Trusted public keys** (consumer side): single source of truth is
-  `nix/attic-pubkeys.json`, consumed by both
-  `nix/nixos/modules/attic-substituter.nix` and the `nix-attic-push` CI
-  workflow. Update that file on cluster rebuild (see Bootstrap below).
+- **Trusted public keys** (consumer side): `nix/attic-pubkeys.json`, consumed
+  by both `nix/nixos/modules/attic-substituter.nix` and the `nix-attic-push`
+  CI workflow. Generated from `cache-keys.sops.yaml` (see Bootstrap below) —
+  that SOPS file is the real source of truth.
 
-Caches are created (and signing keypairs generated) by the bootstrap Job in
-`cluster/k8s/nix-cache/`. Re-running the Job is idempotent: GET the
-cache config first, only POST when missing. On a full cluster wipe, the
-new server generates fresh keypairs — consumer pubkeys must then be updated.
+Caches are created by the bootstrap Job in `cluster/k8s/nix-cache/`, with the
+signing keypair supplied from `cache-keys.sops.yaml` rather than server-generated.
+Re-running the Job is idempotent: GET the cache config first, only POST when
+missing. Because the keypair is supplied and stable, a full cluster wipe no
+longer invalidates trust or requires updating consumer pubkeys — the recreated
+cache signs with the same key as before.
 
 ## Secrets
 
-| Secret            | Source                                     | Contains                                                             |
-| ----------------- | ------------------------------------------ | -------------------------------------------------------------------- |
-| `attic-jwt-token` | SOPS (`k8s/nix-cache/jwt-token.sops.yaml`) | HS256 secret. atticadm signs JWTs with it; server validates with it. |
-| `attic-db-app`    | CNPG-generated                             | PostgreSQL connection URI                                            |
+| Secret             | Source                                      | Contains                                                                                 |
+| ------------------ | ------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `attic-jwt-token`  | SOPS (`k8s/nix-cache/jwt-token.sops.yaml`)  | HS256 secret. atticadm signs JWTs with it; server validates with it.                     |
+| `attic-cache-keys` | SOPS (`k8s/nix-cache/cache-keys.sops.yaml`) | Per-cache ED25519 signing keypairs, one `nix key generate-secret` string per cache name. |
+| `attic-db-app`     | CNPG-generated                              | PostgreSQL connection URI                                                                |
 
 Tokens (admin, per-host readers, CI writers) are HS256 JWTs signed with the
 `attic-jwt-token` secret. Reader/writer tokens are auto-rotated by
 `cluster/k8s/agents/attic-jwt-rotation/` (single CronJob driven by
 `rotators.yaml`); admin tokens are minted ad hoc via `kubectl exec`.
 
-(Cache **signing** keypairs — distinct from the JWT signing secret — live in
-attic's Postgres DB per cache, server-generated, never extracted.)
+Cache **signing** keypairs — distinct from the JWT signing secret — are sourced
+from `attic-cache-keys` (mounted into the bootstrap Job at
+`/secrets/cache-keys/<cache-name>`) and supplied to attic's cache-config API on
+creation, rather than left to attic's own `Generate` option. This trades
+attic's "never extracted" default for keys that survive a wipe of the Postgres
+DB they'd otherwise live in exclusively.
 
 ## Bootstrap
 
@@ -54,27 +61,31 @@ describe is gone):
 
 1. `GET /_api/v1/cache-config/<name>` — exists?
 2. If 200: log "exists", skip (existing caches are never reconfigured — flipping
-   `is_public` on one needs a direct API call, not this command).
-3. If 4xx: `POST /_api/v1/cache-config/<name>` with
-   `{"keypair":"Generate","is_public":<bool>,"store_dir":"/nix/store","priority":41,"upstream_cache_key_names":[]}`
-   — `is_public` is `true` only for `--public-cache` args (currently just `public`).
+   `is_public`, or swapping in a different signing key, on one needs a direct
+   API call, not this command).
+3. If 4xx: `POST /_api/v1/cache-config/<name>` with a body carrying the cache's
+   key from `--keypair-dir` (mounted `attic-cache-keys` Secret) when present:
+   `{"keypair":{"Keypair":"<name>:<base64>"},"is_public":<bool>,"store_dir":"/nix/store","priority":41,"upstream_cache_key_names":[]}`
+   — or `{"keypair":"Generate",...}` for a cache with no file under
+   `--keypair-dir`. `is_public` is `true` only for `--public-cache` args
+   (currently just `public`).
 
-Public keys aren't auto-published back to git (TODO); after a cluster wipe (or
-after adding a new cache — e.g. `public`), fetch the new pubkeys via:
+### Adding a new cache
 
-```bash
-JWT=$(kubectl -n nix-cache exec deploy/attic -- \
-  atticadm -f /config/server.toml make-token \
-  --sub fetch-pubkey --validity '5 minutes' --pull '*')
-for cache in main gaffer public; do
-  curl -sSf -H "Authorization: Bearer $JWT" \
-    "https://cache.allegedly.works/_api/v1/cache-config/$cache" \
-    | jq -r '.public_key'
-done
-```
-
-…and paste into `nix/attic-pubkeys.json` (the single source of truth, read by
-both `nix/nixos/modules/attic-substituter.nix` and the `nix-attic-push` workflow).
+1. Generate a keypair: `nix key generate-secret --key-name <cache>`.
+2. Add it to `cluster/k8s/nix-cache/cache-keys.sops.yaml` (`sops <file>` to edit
+   in place; an operator's age key is required — this repo's machine-level keys
+   are encryption-only for cluster secrets, see AGENTS.md § SOPS) and add
+   `--cache=<cache>` / `--public-cache=<cache>` to `job.yaml`'s args.
+3. Regenerate `nix/attic-pubkeys.json` from the same file:
+   `bazel run //cluster/rotators/attic_jwt_rotation:sync_pubkeys_bin -- sync`
+   (also needs that operator decrypt access — deliberately not something the
+   in-cluster bootstrap Job or its container image can do, see
+   `rotate.py`'s module docstring). Until this runs, Nix refuses anything
+   substituted from the new cache on signature-verification grounds even
+   though the substituter is configured.
+4. Flux reconciles the bootstrap Job, which creates the cache with the
+   supplied key on its next run.
 
 ## Public bootstrap cache
 
@@ -99,16 +110,13 @@ every later one still gets `main`+`gaffer` once authenticated. `main`/`gaffer`
 stay exactly as private as before — `public` is a strict addition, not a
 downgrade of either.
 
-**Rollout after adding a cache:** (1) Flux reconciles the bootstrap Job,
-creating the cache; (2) fetch its pubkey (above — for a public cache,
-`/_api/v1/cache-config/<name>` answers anonymously) and commit it to
-`nix/attic-pubkeys.json` — until then, Nix would refuse anything substituted
-from it on signature-verification grounds even though the substituter is
-configured; (3) scope changes in `rotators.yaml` (e.g. a writer JWT gaining
+**Rollout after adding a cache:** (1) follow "Adding a new cache" above
+(generate + SOPS-seal a keypair, regenerate `nix/attic-pubkeys.json`, let Flux
+create it); (2) scope changes in `rotators.yaml` (e.g. a writer JWT gaining
 `push: [main, public]`) propagate on the next hourly `attic-jwt-rotation` run
 by themselves — `rotate_one` re-mints when the stamped `pull_unencrypted` /
 `push_unencrypted` scope diverges from the configured one, not just on
-staleness; (4) run `nix-attic-push.yml` (push to `devel` or
+staleness; (3) run `nix-attic-push.yml` (push to `devel` or
 `workflow_dispatch`) so CI pushes the new cache's closures for the first time.
 
 ## CI Push
@@ -221,5 +229,7 @@ The previous incarnation of this repo had a plaintext private signing key
 checked into `cluster/terraform/main/nix-cache-key.json`. The cache it
 described was never actually created in attic, so the leaked key never
 signed any live closures; it has been deleted and the matching pubkey
-removed from `trusted-public-keys`. The `main` cache now exists with a
-fresh server-generated keypair.
+removed from `trusted-public-keys`. The `main` cache's current keypair is
+unrelated, supplied from `cache-keys.sops.yaml` (see Bootstrap above) — SOPS
+encryption is the intended way private key material lives in this repo,
+unlike that earlier plaintext leak.
