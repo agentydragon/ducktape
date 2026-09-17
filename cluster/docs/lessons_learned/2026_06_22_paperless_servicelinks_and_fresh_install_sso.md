@@ -1,6 +1,6 @@
 # Paperless-ngx: service-link env collision + fresh-install SSO claim
 
-Two non-obvious gotchas hit while bringing up `cluster/k8s/paperless/` (single-user
+Two non-obvious gotchas hit while bringing up `cluster/k8s/parked/paperless/` (single-user
 Authentik OIDC, passwordless). Both are reusable beyond Paperless.
 
 ## 1. Service named `paperless` crashed the app via legacy service-link env vars
@@ -18,7 +18,7 @@ The Service was named `paperless`, so the pod got `PAPERLESS_PORT=tcp://<cluster
 received a URL instead of an integer and died on every start.
 
 **Fix**: `enableServiceLinks: false` on the pod spec (commit in
-`cluster/k8s/paperless/app/deployment.yaml`). granian falls back to its default 8000.
+`cluster/k8s/parked/paperless/app/deployment.yaml`). granian falls back to its default 8000.
 
 **General lesson**: any app whose config env var matches `<UPPERCASE_SERVICE_NAME>_PORT`
 (or `_SERVICE_HOST`/`_SERVICE_PORT`) will be silently overwritten by the service-link

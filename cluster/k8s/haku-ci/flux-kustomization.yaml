@@ -21,9 +21,9 @@ spec:
       namespace: ducktape-flux
     - name: keda # supplies the ScaledObject and TriggerAuthentication CRDs
       namespace: ducktape-flux
-    # Reflector mirrors haku-forgejo-tea from the completed managed-agent
+    # Reflector mirrors haku-forgejo-tea from the completed haku-forgejo-tea
     # Kustomization into haku-ci for the native Forgejo KEDA scaler.
     - name: reflector
       namespace: ducktape-flux
-    - name: haku-managed-agent
+    - name: haku-forgejo-tea
       namespace: ducktape-flux

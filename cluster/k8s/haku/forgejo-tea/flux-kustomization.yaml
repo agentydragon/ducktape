@@ -1,0 +1,27 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: haku-forgejo-tea
+  namespace: ducktape-flux
+  annotations:
+    description: >-
+      Forgejo API token Reflector mirrors into haku-ci's KEDA scaler. Split out
+      of haku/managed-agent so haku-ci doesn't depend on the (parked) worker.
+spec:
+  interval: 10m
+  retryInterval: 1m
+  timeout: 5m
+  path: ./cluster/k8s/haku/forgejo-tea
+  prune: true
+  wait: true
+  sourceRef:
+    kind: ExternalArtifact
+    name: haku-forgejo-tea
+    namespace: ducktape-flux
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
+  dependsOn:
+    - name: haku-rbac # haku-sandbox ns the secret lives in
+      namespace: ducktape-flux

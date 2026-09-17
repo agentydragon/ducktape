@@ -36,7 +36,7 @@ rotations:
     #   are already k8s manifests; it won't synthesize a Secret from a bare jwt:
     #   file). Revisit if Flux/an operator grows a "SOPS data file -> Secret" path.
     k8s_secret:
-      path: cluster/k8s/haku/cloud-agent-tf/haku-kube-token.sops.yaml
+      path: cluster/k8s/parked/cloud-agent-tf/haku-kube-token.sops.yaml
       name: haku-cloud-kube-token
       namespace: flux-system
     # /apis needs only system:discovery (bound to system:authenticated), so any

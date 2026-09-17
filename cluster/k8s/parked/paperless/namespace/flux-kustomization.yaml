@@ -3,10 +3,12 @@ kind: Kustomization
 metadata:
   name: paperless-namespace
   namespace: ducktape-flux
+  annotations:
+    ducktape.org/parked: "true"
 spec:
-  suspend: false
+  suspend: true
   interval: 10m
-  path: ./cluster/k8s/paperless/namespace
+  path: ./cluster/k8s/parked/paperless/namespace
   prune: true
   sourceRef:
     kind: ExternalArtifact

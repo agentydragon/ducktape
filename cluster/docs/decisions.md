@@ -342,6 +342,24 @@ declarations are no longer included in the active root bundle (`ducktape.org/par
 annotation, `cluster/k8s/parked/<name>/` — see <../AGENTS.md> § Parked (non-ducktape-owned)
 application manifests). Not currently reconciled cluster state.
 
+- **postscanmail-mcp**: `cluster/k8s/parked/postscanmail-mcp/` — decommissioned; its
+  ducktape-owned source (`x/postscanmail_mcp_server/`) stays live and unparked, only
+  the k8s manifests moved.
+- **kubectl-machine-mcp**: `cluster/k8s/parked/kubectl-machine-mcp/` — decommissioned
+  alongside its only consumer, the Anthropic-hosted cloud agent below.
+- **Haku cloud agent**: `cluster/k8s/parked/cloud-agent-tf/` — Anthropic-hosted Managed
+  Agent; already effectively dead (the cloud objects were deleted at Anthropic), now
+  formally parked. HCL root (`tf/gitops/haku-cloud-agent/`) and design docs
+  (`haku/runtime/managed_agent/anthropic_hosted/`) are ducktape-owned and untouched.
+- **Haku managed agent**: `cluster/k8s/parked/managed-agent/` — the self-hosted
+  in-cluster worker (Runtime B), decommissioned by operator request despite being
+  live at the time. Design/image source (`haku/runtime/managed_agent/self_hosted/`)
+  stays. Its `haku-forgejo-tea.sops.yaml` secret served a second consumer
+  (`haku-ci`'s KEDA scaler via Reflector) unrelated to the worker itself, so it was
+  split into its own small active Kustomization at `cluster/k8s/haku/forgejo-tea/`
+  rather than parked with the rest.
+- **Paperless**: `cluster/k8s/parked/paperless/` — decommissioned; third-party
+  (`ghcr.io/paperless-ngx/paperless-ngx`), no ducktape source.
 - **Firecrawl**: `cluster/k8s/parked/firecrawl/` — its namespace, database, and app
   declarations remain in Git.
 - **OpenHands**: `cluster/k8s/parked/openhands/` — experimental and not currently used;

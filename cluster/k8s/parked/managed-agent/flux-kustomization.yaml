@@ -3,12 +3,14 @@ kind: Kustomization
 metadata:
   name: haku-managed-agent
   namespace: ducktape-flux
+  annotations:
+    ducktape.org/parked: "true"
 spec:
-  suspend: false
+  suspend: true
   interval: 10m
   retryInterval: 1m
   timeout: 5m
-  path: ./cluster/k8s/haku/managed-agent
+  path: ./cluster/k8s/parked/managed-agent
   prune: true
   wait: true
   sourceRef:
