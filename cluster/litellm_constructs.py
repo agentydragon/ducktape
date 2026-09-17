@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from cdk8s import ApiObject, Duration, JsonPatch, Size, Yaml
+from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch, Size, Yaml
 from cdk8s_plus_33 import (
     ConfigMap,
     ContainerPort,
@@ -227,13 +227,8 @@ def _formatted_config_map_data(data: dict[str, object]) -> dict[str, str]:
 
 def _metadata(
     name: str, namespace: str, *, labels: dict[str, str] | None = None, annotations: dict[str, str] | None = None
-) -> dict[str, object]:
-    result: dict[str, object] = {"name": name, "namespace": namespace}
-    if labels is not None:
-        result["labels"] = labels
-    if annotations is not None:
-        result["annotations"] = annotations
-    return result
+) -> ApiObjectMetadata:
+    return ApiObjectMetadata(name=name, namespace=namespace, labels=labels, annotations=annotations)
 
 
 def _http_probe(path: str, initial_delay_seconds: int, failure_threshold: int) -> Probe:
@@ -267,15 +262,15 @@ class LiteLLMProxy(Construct):
         return ConfigMap(
             self,
             "config",
-            metadata={
-                "name": self.spec.config.config_map_name,
-                "namespace": self.spec.namespace,
-                "labels": {"app.kubernetes.io/managed-by": "cdk8s", "app.kubernetes.io/part-of": "litellm"},
-                "annotations": {
+            metadata=_metadata(
+                self.spec.config.config_map_name,
+                self.spec.namespace,
+                labels={"app.kubernetes.io/managed-by": "cdk8s", "app.kubernetes.io/part-of": "litellm"},
+                annotations={
                     "ducktape.dev/generated": "by cdk8s under Bazel",
                     "ducktape.dev/delivery": "Flux can consume this ordinary Kubernetes YAML",
                 },
-            },
+            ),
             data=_formatted_config_map_data(self.spec.config.data),
         )
 
@@ -305,7 +300,7 @@ class LiteLLMProxy(Construct):
             metadata=_metadata(
                 self.spec.name, self.spec.namespace, labels=labels, annotations={"reloader.stakater.com/auto": "true"}
             ),
-            pod_metadata={"labels": labels},
+            pod_metadata=ApiObjectMetadata(labels=labels),
             replicas=self.spec.replicas,
             strategy=self.spec.strategy,
             service_account=service_account,

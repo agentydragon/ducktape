@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from cdk8s import Testing
+from cdk8s import ApiObjectMetadata, Testing
 from flux_kustomize.io.fluxcd.toolkit.kustomize import Kustomization, KustomizationSpec
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
@@ -34,7 +34,7 @@ def flux_kustomization(name: str, *, spec: KustomizationSpec) -> dict[str, objec
     supplies the metadata/chart/synth plumbing that isn't part of the CRD's own spec.
     """
     chart = Testing.chart()
-    Kustomization(chart, name, metadata={"name": name, "namespace": NAMESPACE}, spec=spec)
+    Kustomization(chart, name, metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE), spec=spec)
     (manifest,) = Testing.synth(chart)
     assert isinstance(manifest, dict)
     return manifest
