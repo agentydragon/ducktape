@@ -387,6 +387,36 @@ application manifests). Not currently reconciled cluster state.
   blocker — re-enable when needed.
 - **sdr**: `cluster/k8s/parked/sdr/` — suspended pending the radio re-set-up
   post-relocation (not unblocked by atlas/wyrm2 returning).
+- **manifold-mcp**: `cluster/k8s/parked/manifold-mcp/` — decommissioned; third-party npm
+  MCP server (`bmorphism/manifold-mcp-server`), ducktape's OCI build wrapper
+  (`third_party/manifold_mcp_server/`) stays live and unparked. Its API-key Secret was
+  Reflector-mirrored into an `augur` namespace defined in the separate `gaffer-private`
+  repo (not accessible from this repo) — parking stops that mirror source; whether
+  `augur` still consumes the key was not verified before parking.
+- **osm-mcp**: `cluster/k8s/parked/osm-mcp/` — decommissioned; third-party Go MCP server
+  (`github.com/NERVsystems/osmmcp`), ducktape's build wrapper (`third_party/osmmcp/`)
+  stays live and unparked. Already unwired from haku-console's tool config since
+  2026-07-19 (routing-profile bug), so it had no live consumer.
+- **codex-pod, codex-nix-pod, codex-nix-image-pod, codex-nix-pvc-uid-pod**:
+  `cluster/k8s/parked/<name>/` — four successive Codex-in-a-pod experiments, previously
+  under `cluster/k8s/agents/x/`; none were wired into root or Flux-reconciled (pure
+  manual-`kubectl apply` spikes — `codex-pod` was Flux-wired once but had already
+  retired its `flux-kustomization.yaml` before this move). `codex-pod`'s Nix flake
+  source (`x/codex_pod_image/`) stays live and unparked; the other three had no
+  ducktape-owned source elsewhere.
+- **budget (Fava)**: `cluster/k8s/parked/budget/` — decommissioned read-only Beancount
+  ledger viewer. The underlying ledger data (a Forgejo git repo provisioned by
+  `cluster/k8s/forgejo/budget-ledger/`) is untouched. Its Authentik SSO blueprint was
+  tombstoned (`fava-sso-retire.yaml`, replacing `fava-sso.yaml`) per
+  <sso.md> § "Deleting Authentik providers or applications".
+- **docker-ci**: `cluster/k8s/parked/docker-ci/` — decommissioned despite backing
+  `loom/gym`'s on-demand forecasting-eval Job (`loom/gym/k8s/eval-job.yaml`); parked at
+  operator request, accepting that an eval run needs reviving it first.
+- **haku-dispatch**: `cluster/k8s/parked/haku-dispatch/` — only the Flux Kustomization
+  pointer moved (it was already `spec.suspend: true`); the ducktape-owned manifests it
+  deploys (`haku/x/dispatch/deploy/`) stay untouched, per the usual ducktape-owned-code
+  exemption below. Operator request: the pointer itself moves under `parked/` and out
+  of root `kustomization.yaml` regardless.
 
 **Wayback cache**: `loom/wayback/deploy/` — decommissioned by operator request, but this
 is ducktape-owned code (`loom/wayback/cache/`), so its parked Flux declaration stays

@@ -9,11 +9,14 @@ no local DinD), hence the remote daemon. This README is just the run procedure.
 The Job reaches docker-ci by its in-cluster service name (`docker-ci.docker-ci.svc`),
 which `NO_PROXY` excludes — so it connects direct, bypassing the agent mitmproxy
 entirely. The docker-ci server cert carries that svc name as a SAN (cert-manager
-`cluster-internal-ca`; see `cluster/k8s/docker-ci/README.md`).
+`cluster-internal-ca`; see `cluster/k8s/parked/docker-ci/README.md`).
 
 The `docker-ci-client` mTLS Secret is issued straight into `claude-sandbox` by
-cert-manager (`cluster/k8s/docker-ci/certificates.yaml`) and mounted by the Job —
-no manual create-secret step. The client private key never leaves the cluster.
+cert-manager (`cluster/k8s/parked/docker-ci/certificates.yaml`) and mounted by the
+Job — no manual create-secret step. The client private key never leaves the cluster.
+
+**`docker-ci` is currently parked** (`cluster/k8s/parked/docker-ci/`, `spec.suspend:
+true`) — revive its Flux Kustomization before running an eval.
 
 Prereqs: `docker-ci` Running on OVH; the `ghcr.io/agentydragon/{loom-gym-eval,wayback-proxy,loom-gym-sandbox}`
 images published (on merge to `devel`); the `docker-ci-client` Secret present

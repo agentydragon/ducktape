@@ -3,9 +3,12 @@ kind: Kustomization
 metadata:
   name: budget-namespace
   namespace: ducktape-flux
+  annotations:
+    ducktape.org/parked: "true"
 spec:
+  suspend: true
   interval: 10m
-  path: ./cluster/k8s/budget/namespace
+  path: ./cluster/k8s/parked/budget/namespace
   prune: true
   sourceRef:
     kind: ExternalArtifact

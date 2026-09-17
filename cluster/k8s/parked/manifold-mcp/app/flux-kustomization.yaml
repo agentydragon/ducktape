@@ -3,7 +3,10 @@ kind: Kustomization
 metadata:
   name: manifold-mcp
   namespace: ducktape-flux
+  annotations:
+    ducktape.org/parked: "true"
 spec:
+  suspend: true
   retryInterval: 1m
   interval: 10m
   timeout: 5m
@@ -11,7 +14,7 @@ spec:
     kind: ExternalArtifact
     name: manifold-mcp
     namespace: ducktape-flux
-  path: ./cluster/k8s/agents/manifold-mcp/app
+  path: ./cluster/k8s/parked/manifold-mcp/app
   prune: true
   wait: true
   decryption:

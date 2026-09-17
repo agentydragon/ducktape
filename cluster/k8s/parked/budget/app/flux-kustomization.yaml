@@ -3,11 +3,14 @@ kind: Kustomization
 metadata:
   name: budget-app
   namespace: ducktape-flux
+  annotations:
+    ducktape.org/parked: "true"
 spec:
+  suspend: true
   interval: 10m
   retryInterval: 1m
   timeout: 5m
-  path: ./cluster/k8s/budget/app
+  path: ./cluster/k8s/parked/budget/app
   prune: true
   wait: true
   sourceRef:

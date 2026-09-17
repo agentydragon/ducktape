@@ -34,7 +34,7 @@ spec:
               protocol: TCP
 ```
 
-Live example: <../k8s/agents/manifold-mcp/app/networkpolicy.yaml>.
+Live example: <../k8s/parked/manifold-mcp/app/networkpolicy.yaml>.
 
 ### Debugging a mis-classified source
 

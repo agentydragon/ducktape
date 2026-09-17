@@ -31,7 +31,7 @@ configMapGenerator:
       - blueprints/sdr-sso.yaml
       - blueprints/adsb-sso.yaml
       - blueprints/claude-service-account.yaml
-      - blueprints/fava-sso.yaml
+      - blueprints/fava-sso-retire.yaml
       - blueprints/activitywatch-sso.yaml
       - blueprints/haku-ui-sso.yaml
     namespace: authentik
