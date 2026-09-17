@@ -2,83 +2,84 @@
 
 Full design and worked examples: <../docs/cdk8s.md>.
 
-**Never default to `cdk8s.ApiObject` + `JsonPatch` for a whole resource just because
-the first typed builder you reach for doesn't cover it.** Before writing one:
+**Rule**: never build a resource with raw `cdk8s.ApiObject` + `JsonPatch` when a typed
+`cdk8s_plus_33` builder exists, and never leave a CRD as a raw `ApiObject` instead of
+generating real bindings via `cdk8s_import` (`devinfra/js/cdk8s_import.bzl`;
+`//third_party/{flux,prometheus_operator,gateway_api,external_secrets,cilium}` are the
+examples). Typed builders give synth-time validation; raw dicts fail only at
+`kubectl apply`, if at all. Check the table below — built by cloning
+`cdk8s-team/cdk8s-plus` and reading `src/*.ts`, not guessing from `dir()` — before
+writing any raw `ApiObject`. Extend it the same way when a new construct comes up.
 
-1. **Core Kubernetes type** (`Namespace`, `Deployment`, `Service`, `ConfigMap`,
-   `ServiceAccount`, `Role`, `Job`, ...): check whether `cdk8s_plus_33` already has a
-   typed builder — it covers far more than the handful used so far. Don't assume one
-   is missing; import it and try it, or grep its module for the class name, before
-   falling back to anything else.
-2. **CRD type** (anything with its own `apiVersion` group like `external-secrets.io`,
-   `monitoring.coreos.com`, `gateway.networking.k8s.io`): set up real typed bindings
-   via `cdk8s_import` (`devinfra/js/cdk8s_import.bzl`), the same way
-   `//third_party/flux:kustomization`, `//third_party/prometheus_operator:servicemonitor`,
-   `//third_party/gateway_api:httproute`, and `//third_party/external_secrets:externalsecret`
-   already do: fetch the upstream CRD YAML verbatim via an `http_file` in
-   `MODULE.bazel`, add a `third_party/<name>/BUILD.bazel` calling `cdk8s_import`,
-   import the generated dataclasses. This is normal, expected effort for a new CRD,
-   not a fallback path — it gets you real schema validation (synth-time errors on a
-   bad field) instead of a raw dict that only fails at `kubectl apply` time, if it
-   fails at all.
+**The only legitimate raw usage** is patching one field a typed builder is missing, on
+an object that's otherwise fully typed — never the whole resource:
+`ApiObject.of(construct).add_json_patch(JsonPatch.add(path, value))` (typed non-`ApiObject`
+constructs like `Deployment`) or `.add_json_patch(...)` directly (`cdk8s.ApiObject`
+subclasses, e.g. CRD-generated classes).
 
-**The one legitimate use of the raw escape hatch** is patching a single field a typed
-builder is missing on an object that's otherwise typed — never the whole resource.
-Build the resource with its typed constructor, then reach into the specific
-already-typed construct: `ApiObject.of(construct).add_json_patch(JsonPatch.add(path,
-value))` (`cdk8s_plus_33` non-`ApiObject` constructs like `Deployment` manage one
-internally) or `.add_json_patch(...)` directly (`cdk8s.ApiObject` subclasses, e.g.
-CRD-generated classes). Example: `Deployment`'s `topologySpreadConstraints`
-(`litellm_constructs.py`) — no typed builder exists for it (only an all-or-nothing
-`spread: bool` auto-toggle), so it keeps the typed `Deployment` constructor for every
-other field and patches only that one in.
+## Typed affordances (`cdk8s_plus_33`) — use these
 
-A raw `ApiObject` replacing an entire resource is a shortcut that throws away real
-validation for the whole object to avoid the CRD-import setup cost. Do the setup.
+| Kind                                                 | Builder                                                                         | Reference existing by name                                                                                                                                                                                            |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Namespace                                            | `Namespace`                                                                     | —                                                                                                                                                                                                                     |
+| ServiceAccount                                       | `ServiceAccount`                                                                | `.from_service_account_name(scope, id, name, namespace_name=...)`                                                                                                                                                     |
+| Secret                                               | `Secret`, `BasicAuthSecret`, `SshAuthSecret`, `TlsSecret`, `DockerConfigSecret` | `Secret.from_secret_name(scope, id, name)`                                                                                                                                                                            |
+| ConfigMap                                            | `ConfigMap`                                                                     | `.from_config_map_name(scope, id, name)`                                                                                                                                                                              |
+| PVC / PV                                             | `PersistentVolumeClaim`, `PersistentVolume` (+ AWS/Azure/GCE disk subclasses)   | `.from_claim_name`, `.from_persistent_volume_name`                                                                                                                                                                    |
+| Role / ClusterRole                                   | `Role`, `ClusterRole` — pass real `rules=` to the constructor, see below        | `.from_role_name`, `.from_cluster_role_name`                                                                                                                                                                          |
+| RoleBinding / ClusterRoleBinding                     | `RoleBinding`, `ClusterRoleBinding` + `.add_subjects(...)`                      | subjects: `User.from_name`, `Group.from_name` (any string, incl. `oidc-ksbx-groups:haku`), `ServiceAccount.from_service_account_name`, or a `Role`/`ClusterRole` instance                                             |
+| Deployment / StatefulSet / DaemonSet / Job / CronJob | matching `Workload` subclass                                                    | —                                                                                                                                                                                                                     |
+| Service                                              | `Service`                                                                       | —                                                                                                                                                                                                                     |
+| NetworkPolicy (stock k8s)                            | `NetworkPolicy`                                                                 | —                                                                                                                                                                                                                     |
+| Ingress                                              | `Ingress`                                                                       | —                                                                                                                                                                                                                     |
+| HorizontalPodAutoscaler                              | `HorizontalPodAutoscaler`                                                       | —                                                                                                                                                                                                                     |
+| Probes / handlers                                    | `Probe`, `Handler`                                                              | `.from_http_get`, `.from_command`, `.from_tcp_socket`, `.from_grpc`                                                                                                                                                   |
+| Volumes                                              | `Volume`                                                                        | `.from_config_map`, `.from_secret`, `.from_empty_dir`, `.from_persistent_volume_claim`, `.from_host_path`, `.from_nfs`, `.from_csi`, `.from_aws_elastic_block_store`, `.from_azure_disk`, `.from_gce_persistent_disk` |
+| Any CRD (own `apiVersion` group)                     | `cdk8s_import`-generated bindings                                               | —                                                                                                                                                                                                                     |
+
+### RBAC rules go through the typed constructor, not a `/rules` patch
+
+`Role`/`ClusterRole`'s `rules=` takes `RolePolicyRule`/`ClusterRolePolicyRule`, each
+`resources`/`endpoints` a list of real `IApiResource`/`IApiEndpoint` — not dicts. Fully
+typed, including `resourceNames`:
+
+- **Resource type, no name scoping**: `ApiResource.<CONSTANT>` (60+ constants — `dir(cdk8s_plus_33.ApiResource)`) or `ApiResource.custom(api_group=..., resource_type=...)` for anything else, subresources included (`"pods/exec"`, `"serviceaccounts/token"`).
+- **Scoped to one named object**: pass that kind's own `from_*_name` reference (`Secret.from_secret_name(...)`, `Role.from_role_name(...)`, ...) as the `IApiResource` — its `resource_name` is already wired.
+- **Scoped to a name with no typed kind covering it** (e.g. `serviceaccounts/token`): `ApiResource.custom()` never sets `resource_name`. Implement `IApiResource` directly — `@jsii.implements(cdk8s_plus_33.IApiResource)` on a small class with `api_group`/`resource_type`/`resource_name` properties, same as `Secret.from_secret_name` does internally. Needs `@pypi//jsii` as an explicit `BUILD.bazel` dep. Example: `agentplane_constructs.py`'s `_NamedApiResource`.
+- **Caveat, not an excuse to go raw**: synthesis emits **one output rule per `IApiResource` entry**, always — `RolePolicyRule(resources=[a, b], ...)` becomes two rules, never one rule listing two resource types (`role.ts`'s `synthesizeRules()`; no typed way around it). RBAC-equivalent (Kubernetes unions all rules), so a hand-written file's rule _grouping_ won't survive conversion unchanged — only its permissions. Expect that diff.
+
+Anything not in the table above: check `dir(cdk8s_plus_33.<Thing>)` first; if
+inconclusive, clone `https://github.com/cdk8s-team/cdk8s-plus` and grep `src/*.ts` for
+the kind's `export class` before reaching for `ApiObject`. Add the result to the table.
 
 ## Restructuring which Kustomization owns an object: land it in two steps
 
-Converting a directory to cdk8s often merges or splits which Flux `Kustomization`
-renders a given object (e.g. folding a directory's separate `namespace`/`credentials`
-Kustomizations into one `app` Kustomization, matching the fleet-wide "fold X into app"
-pattern). **Never do this in one step.** Deleting the old Kustomization and having the
-new one claim the same objects in the same PR is a race, not a handoff: Flux's default
-`deletionPolicy: MirrorPrune` means deleting a Kustomization CR (because it's no longer
-in the rendered `cluster/k8s/kustomization.yaml` tree) prunes every object it manages,
-and nothing guarantees the new Kustomization re-applies and re-claims those objects
-(updating their `kustomize.toolkit.fluxcd.io/name` ownership label) before that prune
-fires. **Confirmed, not theoretical**: exactly this race deleted `ha-mcp`'s entire
-namespace (Deployment, Service, ConfigMap, RBAC, CiliumNetworkPolicy, ServiceMonitor —
-zero PVCs involved) when `cluster/k8s/agents/ha-mcp`'s `namespace`/`credentials`
-Kustomizations were folded into `app` (#7150). For a stateless object this is a
-self-healing blip once the new Kustomization's `dependsOn` is satisfied again; for a
-`PersistentVolumeClaim` the same race can be permanent — deleting a PVC can delete the
-underlying volume depending on the StorageClass's `reclaimPolicy`, and a freshly
-recreated PVC does not automatically rebind to an orphaned `PersistentVolume`.
+Converting a directory to cdk8s often changes which Flux `Kustomization` renders a
+given object (e.g. folding `namespace`/`credentials` into `app`). **Never do this in
+one step.** Deleting the old Kustomization and having the new one claim the same
+objects in the same PR is a race: Flux's default `deletionPolicy: MirrorPrune` prunes
+everything the old CR managed once it's gone, and nothing guarantees the new
+Kustomization re-claims those objects (updates `kustomize.toolkit.fluxcd.io/name`)
+first. **Confirmed, not theoretical**: this race deleted `ha-mcp`'s entire namespace
+(Deployment, Service, ConfigMap, RBAC, CiliumNetworkPolicy, ServiceMonitor) when its
+`namespace`/`credentials` Kustomizations folded into `app` (#7150). Stateless objects
+self-heal; a `PersistentVolumeClaim` can permanently lose its volume (depends on
+`reclaimPolicy`) and won't auto-rebind to an orphaned `PersistentVolume`.
 
-The fix is a typed field already on `//third_party/flux:kustomization`'s
-`KustomizationSpec`, unused anywhere in this repo before this note:
-`deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN`. Land the restructuring as two
-separate changes:
+Fix: `//third_party/flux:kustomization`'s `KustomizationSpec` has
+`deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN`. Land in two changes:
 
-1. **First**, a small change that sets `deletionPolicy: Orphan` on the _old_
-   Kustomization(s) being folded away — nothing else changes. Merge it and let it
-   reconcile before proceeding; this is the step that makes the handoff safe, since
-   Orphan means Flux leaves the managed objects alone when that CR is deleted, instead
-   of racing to prune them.
-2. **Only then**, land the actual restructuring: delete the old Kustomization(s), have
-   the new one render and claim the same objects. Flux's SSA apply adopts them
-   (updates the ownership label) with no race left to lose, because the old
-   Kustomization's deletion no longer touches them at all.
+1. Set `deletionPolicy: Orphan` on the _old_ Kustomization(s) being folded away, nothing
+   else. Merge and let it reconcile — this is what makes the handoff safe.
+2. Only then: delete the old Kustomization(s), let the new one render and claim the
+   same objects. Flux's SSA apply adopts them (updates the ownership label); no race
+   left, since the old CR's deletion no longer touches them.
 
-This is a live-cluster ownership concern, not a manifest-content one — `kustomize
-build` and `flux build --dry-run` render output correctly either way and cannot catch
-it, since neither has any visibility into what a real cluster currently owns. Verifying
-a restructuring landed safely means checking the live cluster (e.g. `kubectl get <kind>
--n <namespace> -o jsonpath='{.metadata.uid}'` unchanged across the change confirms an
-object was adopted, not deleted and recreated), not just diffing rendered YAML.
+Live-cluster ownership concern, not manifest content — `kustomize build`/`flux build
+--dry-run` render correctly either way and can't catch it. Verify via the live cluster
+(`kubectl get <kind> -n <namespace> -o jsonpath='{.metadata.uid}'` unchanged = adopted,
+not recreated), not by diffing rendered YAML.
 
-The complementary, resource-level tool is the `kustomize.toolkit.fluxcd.io/prune:
-"disabled"` annotation, for the different failure mode of a single object dropped from
-a still-live Kustomization's rendered output (no CR deletion involved) — it exempts
-that one resource from pruning regardless of ownership-label timing.
+Complementary, resource-level tool: `kustomize.toolkit.fluxcd.io/prune: "disabled"`
+annotation, for a single object dropped from a still-live Kustomization's output (no CR
+deletion involved) — exempts it from pruning regardless of ownership-label timing.
