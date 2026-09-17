@@ -63,17 +63,14 @@ class HaMcpCredentialsProvisioner(Construct):
         self._add_cronjob(service_account, break_glass_secret, pull_secret)
 
     def _add_rbac(self, service_account: ServiceAccount) -> None:
-        # cdk8s_plus_33's RolePolicyRule has no resourceNames field, so the Role
-        # (which needs one) is a raw ApiObject; RoleBinding's fluent API covers
-        # subjects/role-refs fully and stays typed.
-        role = ApiObject(
-            self,
-            "role",
-            api_version="rbac.authorization.k8s.io/v1",
-            kind="Role",
-            metadata=ApiObjectMetadata(name=_NAME, namespace=_RBAC_NAMESPACE),
-        )
-        role.add_json_patch(
+        # cdk8s_plus_33's RolePolicyRule has no resourceNames field, so this Role's
+        # /rules (which needs one) is patched in directly -- same escape hatch as
+        # Deployment's topologySpreadConstraints in litellm_constructs.py: the typed
+        # Role construct stays authoritative for apiVersion/kind/metadata, and
+        # ApiObject.of() reaches its internally-managed ApiObject for the one field
+        # the typed API can't express.
+        role = Role(self, "role", metadata=ApiObjectMetadata(name=_NAME, namespace=_RBAC_NAMESPACE))
+        ApiObject.of(role).add_json_patch(
             JsonPatch.add(
                 "/rules",
                 [

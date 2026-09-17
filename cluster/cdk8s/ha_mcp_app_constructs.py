@@ -17,7 +17,7 @@ secrets in a converted directory.
 
 from __future__ import annotations
 
-from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch, Size
+from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_33 import (
     Capability,
     ConfigMap,
@@ -39,6 +39,16 @@ from cdk8s_plus_33 import (
     Service,
     ServicePort,
     Volume,
+)
+from cilium_crds.io.cilium import (
+    CiliumNetworkPolicy,
+    CiliumNetworkPolicySpec,
+    CiliumNetworkPolicySpecEndpointSelector,
+    CiliumNetworkPolicySpecIngress,
+    CiliumNetworkPolicySpecIngressFromEndpoints,
+    CiliumNetworkPolicySpecIngressToPorts,
+    CiliumNetworkPolicySpecIngressToPortsPorts,
+    CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
 )
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import (
@@ -241,15 +251,28 @@ class HaMcpApp(Construct):
             ],
         )
 
+    def _ingress_rule(self, source_namespace: str, port: int) -> CiliumNetworkPolicySpecIngress:
+        return CiliumNetworkPolicySpecIngress(
+            from_endpoints=[
+                CiliumNetworkPolicySpecIngressFromEndpoints(
+                    match_labels={"k8s:io.kubernetes.pod.namespace": source_namespace}
+                )
+            ],
+            to_ports=[
+                CiliumNetworkPolicySpecIngressToPorts(
+                    ports=[
+                        CiliumNetworkPolicySpecIngressToPortsPorts(
+                            port=str(port), protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP
+                        )
+                    ]
+                )
+            ],
+        )
+
     def _add_network_policy(self) -> None:
-        # cdk8s_plus_33 has no typed builder for Cilium CRDs (no third_party/cilium typed
-        # bindings exist yet) -- raw ApiObject + JsonPatch, same escape hatch as the Role in
-        # ha_mcp_credentials_constructs.py.
-        netpol = ApiObject(
+        CiliumNetworkPolicy(
             self,
             "networkpolicy",
-            api_version="cilium.io/v2",
-            kind="CiliumNetworkPolicy",
             metadata=_metadata(
                 "ha-mcp-ingress",
                 annotations={
@@ -260,24 +283,13 @@ class HaMcpApp(Construct):
                     )
                 },
             ),
-        )
-        netpol.add_json_patch(
-            JsonPatch.add(
-                "/spec",
-                {
-                    "endpointSelector": {"matchLabels": _LABELS},
-                    "ingress": [
-                        {
-                            "fromEndpoints": [{"matchLabels": {"k8s:io.kubernetes.pod.namespace": "haku-console"}}],
-                            "toPorts": [{"ports": [{"port": str(_FACADE_PORT), "protocol": "TCP"}]}],
-                        },
-                        {
-                            "fromEndpoints": [{"matchLabels": {"k8s:io.kubernetes.pod.namespace": "monitoring"}}],
-                            "toPorts": [{"ports": [{"port": str(_METRICS_PORT), "protocol": "TCP"}]}],
-                        },
-                    ],
-                },
-            )
+            spec=CiliumNetworkPolicySpec(
+                endpoint_selector=CiliumNetworkPolicySpecEndpointSelector(match_labels=_LABELS),
+                ingress=[
+                    self._ingress_rule("haku-console", _FACADE_PORT),
+                    self._ingress_rule("monitoring", _METRICS_PORT),
+                ],
+            ),
         )
 
     def _add_service_monitor(self) -> None:

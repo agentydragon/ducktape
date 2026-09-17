@@ -184,6 +184,23 @@ versa, a reason this specific problem doesn't move that decision either way.
 
 ## Typed constructs vs. hand-rolled dicts
 
+### The raw ApiObject escape hatch
+
+`cdk8s.ApiObject` + `JsonPatch` can express any manifest with zero schema validation,
+which makes it tempting to reach for whenever a typed builder is missing or
+incomplete. **Don't build a whole resource this way just because a typed builder
+doesn't cover it.** Check first: a core type may already have a `cdk8s_plus_33`
+builder you haven't tried, and a CRD type gets real typed bindings via `cdk8s_import`
+(below) — normal, expected effort, not a fallback. See <AGENTS.md> for the full rule.
+
+The one legitimate use is patching a single field a typed builder is missing, on an
+object that's otherwise built with its typed constructor:
+`ApiObject.of(construct).add_json_patch(...)` reaches a non-`ApiObject` cdk8s_plus_33
+construct's (e.g. `Deployment`, `Role`) internally-managed `ApiObject`; a
+CRD-generated class (already an `ApiObject` subclass) takes `.add_json_patch(...)`
+directly. Two examples below: `Deployment`'s `topologySpreadConstraints` and `Role`'s
+`resourceNames`. Both keep the typed constructor for every other field.
+
 - **Flux's `Kustomization` CR** is built from real typed constructs.
   `devinfra/js/cdk8s_import.bzl` wraps `cdk8s import`, generating jsii-backed Python
   bindings from a CRD YAML the same way upstream `cdk8s_plus_33` was generated for
@@ -273,11 +290,14 @@ versa, a reason this specific problem doesn't move that decision either way.
   Deployment/Service/ServiceAccount above they come from `cdk8s_plus_33`'s fluent
   builders, with two more wrinkles:
   - `cdk8s_plus_33`'s `RolePolicyRule` has no `resourceNames` field, so a `Role`
-    scoped to one specific resource name (rather than an entire resource type) falls
-    back to a raw `cdk8s.ApiObject` + `JsonPatch.add("/rules", [...])`; the
-    `RoleBinding` referencing it still uses the typed builder, via the
-    `Role.from_role_name(scope, id, name)` static factory (a name-only reference,
-    since the fluent `Role` construct was never built).
+    scoped to one specific resource name (rather than an entire resource type) keeps
+    the typed `Role` constructor (for `apiVersion`/`kind`/`metadata`) and patches only
+    the missing field: `ApiObject.of(role).add_json_patch(JsonPatch.add("/rules",
+[...]))` — never a raw `ApiObject` replacing the whole resource (see §The raw
+    ApiObject escape hatch above). The `RoleBinding` referencing it still uses the
+    typed builder throughout, via the `Role.from_role_name(scope, id, name)` static
+    factory (a name-only reference, since the fluent `Role` construct's own `rules`
+    param goes unused here).
   - **`cdk8s_plus_33` defaults every pod to no mounted ServiceAccount token**
     (`automountServiceAccountToken: false`), unlike the Deployment default covered
     above. A workload whose entire purpose is calling the K8s API under its RBAC
@@ -297,11 +317,12 @@ versa, a reason this specific problem doesn't move that decision either way.
     object at call time) but easy to reach for a source, since every other place a
     `ConfigMap`/`Secret` is consumed elsewhere in this codebase (`Volume.from_config_map`,
     `SecretValue`) takes the object directly.
-  - **No typed builder exists for Cilium CRDs** (no `third_party/cilium` package) — the
-    `CiliumNetworkPolicy` is a raw `cdk8s.ApiObject` (`api_version`/`kind`/`metadata`)
-    with the whole `spec` injected via one `JsonPatch.add("/spec", {...})`, the same
-    escape hatch as the credentials directory's `Role`. Worth a typed
-    `cdk8s_import` package once a second Cilium CRD shows up; not yet for one caller.
+  - **`CiliumNetworkPolicy`** is built from real typed constructs the same way as
+    Flux's `Kustomization` and the other CRDs above —
+    `//third_party/cilium:ciliumnetworkpolicy` generates bindings from Cilium's own
+    CRD, pinned to the same `v1.19.6` tag as `cluster/terraform/main/cilium.tf`'s
+    `local.cilium_version`. No genrule needed (Cilium ships `CiliumNetworkPolicy` as
+    its own file, unlike external-secrets' bundle).
   - **`Volume.from_empty_dir(scope, id, name)`** builds an `emptyDir` volume (no size
     limit/medium needed here) — mounted the same way as `Volume.from_config_map`
     (`deployment.containers[i].mount(path, volume)`).

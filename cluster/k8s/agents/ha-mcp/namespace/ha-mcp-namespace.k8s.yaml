@@ -5,3 +5,4 @@ metadata:
     app.kubernetes.io/name: ha-mcp
     goldilocks.fairwinds.com/enabled: "false"
   name: ha-mcp
+spec: {}

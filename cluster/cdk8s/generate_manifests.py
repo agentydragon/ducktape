@@ -10,7 +10,8 @@ cluster/docs/cdk8s.md.
 
 from pathlib import Path
 
-from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, Yaml
+from cdk8s import ApiObjectMetadata, App, Chart, Yaml
+from cdk8s_plus_33 import Namespace
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
     KustomizationSpecDecryption,
@@ -93,11 +94,9 @@ def _generate_ha_mcp_namespace(root: Path) -> None:
     app_dir.mkdir(parents=True, exist_ok=True)
     app = App(outdir=str(app_dir))
     chart = Chart(app, name, disable_resource_name_hashes=True)
-    ApiObject(
+    Namespace(
         chart,
         "namespace",
-        api_version="v1",
-        kind="Namespace",
         metadata=ApiObjectMetadata(
             name="ha-mcp", labels={"app.kubernetes.io/name": "ha-mcp", "goldilocks.fairwinds.com/enabled": "false"}
         ),

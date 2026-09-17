@@ -62,6 +62,7 @@ py_library(
     srcs = ["ha_mcp_app_constructs.py"],
     deps = [
         ":forgejo_images",
+        "//third_party/cilium:ciliumnetworkpolicy",
         "//third_party/prometheus_operator:servicemonitor",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_33",
@@ -80,6 +81,7 @@ py_library(
         ":litellm_constructs",
         "//util/bazel:workspace",
         "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_33",
     ],
 )
 
