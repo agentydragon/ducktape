@@ -3,6 +3,36 @@
 **Status: open, active investigation.** Device: `pixel6` (Pixel 6, aarch64, Android 14,
 kernel `6.1.157-android14-...`).
 
+## Why this matters — the broader goal
+
+This isn't about nix-on-droid for its own sake. The actual goal is phone usage data
+(which apps are open, ideally URLs visited) flowing into the cluster's ActivityWatch
+setup, the same way every other device already does: see
+[cluster/docs/activitywatch/README.md](../../../cluster/docs/activitywatch/README.md)
+for how that works today (one central `aw-server-rust`, each device runs a small
+importer — `@ducktape_activitywatch//importer` — that pushes into it over a
+bearer-gated write route, deduped and idempotent), and
+`cluster/k8s/TODO.md`'s "Wire the phone into ActivityWatch" item, which this whole
+effort is in service of.
+
+nix-on-droid was chosen (over Tasker, forking the aw-android app, or Android's
+built-in "Linux Terminal" VM) specifically so the phone's config lives in this repo
+the same way `nix/home/` and `nix/nixos/` already do for desktops — reflashing or
+replacing the phone should be "reinstall the app, run one command," not
+reconstructing everything by hand — and because it shares the host's network/process
+space (unlike a VM), which the eventual importer will need to reach aw-android's
+`127.0.0.1`-bound local server.
+
+The explicit plan (the user's own sequencing): a minimal nix-on-droid hello-world
+bring-up first (`nix/droid/`, `pixel6.nix` — landed in #7114), then build the actual
+`aw-importer`-equivalent "pseudocron" on top of it (age/sops for the write token, a
+phone-specific age keypair added as a new recipient on
+`activitywatch-write-token.sops.yaml`, scheduling via Termux:Boot +
+`termux-job-scheduler` since nix-on-droid has no systemd). None of that second phase
+has started. **This bug blocks it entirely**: `nix-on-droid switch` is the only
+deployment mechanism for the phone's config, so until it works reliably, no further
+package or service — including the eventual importer — can be added at all.
+
 ## Symptom
 
 `nix-on-droid switch --flake github:agentydragon/ducktape?ref=devel#pixel6` fails
