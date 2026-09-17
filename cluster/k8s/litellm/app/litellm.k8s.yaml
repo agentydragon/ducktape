@@ -600,18 +600,18 @@ metadata:
   name: forgejo-images-creds
   namespace: litellm
 spec:
-  refreshInterval: 1h
-  secretStoreRef:
-    name: kubernetes-forgejo-images-secret-store
-    kind: ClusterSecretStore
-  target:
-    name: forgejo-images-creds
-    template:
-      type: kubernetes.io/dockerconfigjson
-      mergePolicy: Merge
   dataFrom:
     - extract:
         key: forgejo-images-creds
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-forgejo-images-secret-store
+  target:
+    name: forgejo-images-creds
+    template:
+      mergePolicy: Merge
+      type: kubernetes.io/dockerconfigjson
 ---
 apiVersion: apps/v1
 kind: Deployment

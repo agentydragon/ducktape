@@ -14,13 +14,15 @@ load("@aspect_rules_js//js:defs.bzl", "js_run_binary")
 load("@npm_ducktape//:cdk8s-cli/package_json.bzl", cdk8s_bin = "bin")
 load("//devinfra/python:defs.bzl", "py_library")
 
-def cdk8s_import(name, crd, module_name, module_path, visibility = None):
+def cdk8s_import(name, crd, module_name, module_path, jsii_module_path = None, visibility = None):
     """Generate a py_library of typed cdk8s constructs from a vendored CRD YAML.
 
     Args:
         name:        Name of the output py_library target.
         crd:         Label of the CRD YAML (apiextensions.k8s.io CustomResourceDefinition) --
-                      an http_file target (MODULE.bazel), never a vendored in-tree copy.
+                      an http_file target (MODULE.bazel) or a same-repo generated file (e.g. a
+                      genrule extracting one CRD from a multi-CRD bundle), never a vendored
+                      in-tree copy.
         module_name: A unique top-level Python package name for this import (the `NAME` half of
                       `cdk8s import NAME:=SPEC`). Required -- cdk8s's default naming reverse-DNSes
                       the CRD's `spec.group` into a bare top-level path (e.g. `io/fluxcd/...` for
@@ -33,11 +35,22 @@ def cdk8s_import(name, crd, module_name, module_path, visibility = None):
                       and kind `Kustomization` import as `io/fluxcd/toolkit/kustomize`). Run
                       `cdk8s import NAME:=<crd> --language python -o imports` locally once to
                       find it; wrong values fail loudly (declared outs the action doesn't produce).
+                      A group segment containing a dash (e.g. `external-secrets.io`) gets
+                      underscored here (`io/external_secrets`) since it's also a Python package
+                      path -- see jsii_module_path for the one place that dash survives.
+        jsii_module_path: The same reverse-DNS path, but exactly as cdk8s names the `_jsii/*.jsii.tgz`
+                      assembly tarball -- unlike the Python package directory, that name keeps a
+                      dashed group segment as-is (an npm/jsii package name, not a Python one).
+                      Defaults to module_path, which is correct whenever the group has no dashes;
+                      pass the dashed variant explicitly when it does (checked the same way as
+                      module_path: run `cdk8s import` locally once and read the actual filename
+                      under `_jsii/`).
         visibility:  Visibility of the output py_library target.
     """
+    jsii_module_path = jsii_module_path if jsii_module_path != None else module_path
     out_dir = "_" + name + "_imports"
     module_dir = out_dir + "/" + module_name + "/" + module_path
-    jsii_tarball = module_dir + "/_jsii/" + module_name + "_" + module_path.replace("/", "") + "@0.0.0.jsii.tgz"
+    jsii_tarball = module_dir + "/_jsii/" + module_name + "_" + jsii_module_path.replace("/", "") + "@0.0.0.jsii.tgz"
     py_srcs = [
         module_dir + "/__init__.py",
         module_dir + "/_jsii/__init__.py",

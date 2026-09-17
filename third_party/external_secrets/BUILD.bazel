@@ -1,0 +1,32 @@
+# Typed cdk8s Python constructs generated from external-secrets' upstream CRDs (fetched
+# via MODULE.bazel's external_secrets_crds_bundle http_file, never vendored). See
+# cluster/docs/cdk8s.md.
+
+# external_secrets_crds is generated at build time by cdk8s_import below, not a pip
+# package -- gazelle can't resolve it from the requirements manifest.
+# gazelle:resolve py external_secrets_crds //third_party/external_secrets:externalsecret
+
+load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
+
+# external-secrets ships all its CRDs bundled in one multi-document file; cdk8s import
+# only ingests one CRD per invocation (and importing the whole bundle fails on unrelated
+# CRDs' jsii-incompatible field names -- see devinfra/k8s/extract_crd.py), so pull out
+# just the ExternalSecret CRD first.
+genrule(
+    name = "externalsecret_crd",
+    srcs = ["@external_secrets_crds_bundle//file"],
+    outs = ["externalsecret_crd.yaml"],
+    cmd = "$(location //devinfra/k8s:extract_crd_bin) --name externalsecrets.external-secrets.io $(location @external_secrets_crds_bundle//file) $@",
+    tools = ["//devinfra/k8s:extract_crd_bin"],
+)
+
+cdk8s_import(
+    name = "externalsecret",
+    crd = ":externalsecret_crd",
+    # The CRD group (external-secrets.io) has a dash -- the jsii assembly tarball keeps
+    # it, unlike the Python package path (see cdk8s_import.bzl's jsii_module_path doc).
+    jsii_module_path = "io/external-secrets",
+    module_name = "external_secrets_crds",
+    module_path = "io/external_secrets",
+    visibility = ["//visibility:public"],
+)

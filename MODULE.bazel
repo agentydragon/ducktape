@@ -933,6 +933,20 @@ http_file(
     urls = ["https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.5.1/config/crd/experimental/gateway.networking.k8s.io_httproutes.yaml"],
 )
 
+# external-secrets' CRD bundle (all its CRDs in one multi-document file -- it doesn't
+# publish per-kind files) -- fetched verbatim so //third_party/external_secrets:externalsecret
+# can extract just the ExternalSecret CRD (devinfra/k8s/extract_crd.py; `cdk8s import` only
+# ingests one CRD per invocation, and importing the whole bundle fails on unrelated CRDs'
+# jsii-incompatible field names) and generate typed cdk8s Python constructs from it, without
+# vendoring the CRD in-tree. Pinned to the same v2.10.0 tag as
+# cluster/k8s/external-secrets/crds/gitrepository.yaml.
+http_file(
+    name = "external_secrets_crds_bundle",
+    downloaded_file_path = "external-secrets-crds-bundle.yaml",
+    sha256 = "948a27467c69d01db0c4d1975a1409cfeb6716aa5a3278b3de91aeb7569ec151",
+    urls = ["https://raw.githubusercontent.com/external-secrets/external-secrets/v2.10.0/deploy/crds/bundle.yaml"],
+)
+
 # Grocy OpenAPI 3.1 spec — fetched verbatim from the upstream repo so
 # `//grocy_mcp:server` can drive `FastMCP.from_openapi` without
 # vendoring the 100 KB JSON in-tree. Refresh by bumping the tag and

@@ -183,6 +183,20 @@ versa, a reason this specific problem doesn't move that decision either way.
   experimental-channel tag `cluster/terraform/main/cilium.tf` installs directly
   (experimental rather than standard, because Cilium 1.19 needs the `v1alpha2`
   `TLSRoute` variant the standard channel dropped).
+- **The `ExternalSecret` CR** (`LiteLLMProxy._add_forgejo_image_credentials`) is
+  built from typed constructs the same way —
+  `//third_party/external_secrets:externalsecret` generates bindings from
+  external-secrets' own CRD, pinned to the same `v2.10.0` tag as
+  `cluster/k8s/external-secrets/crds/gitrepository.yaml`. Its only wrinkle:
+  external-secrets ships all its CRDs bundled in one multi-document file rather
+  than per-kind files, and `cdk8s import` only ingests one CRD per invocation
+  (importing the whole bundle fails — unrelated CRDs in it have jsii-incompatible
+  field names), so a `genrule` (`devinfra/k8s/extract_crd.py`) pulls out just the
+  `ExternalSecret` document first. Its CRD group (`external-secrets.io`) also has
+  a dash, which `cdk8s_import.bzl`'s `jsii_module_path` parameter exists to handle
+  — the generated jsii assembly tarball keeps a dashed group segment as-is (it's
+  an npm package name), while the Python package directory next to it underscores
+  it (a dash isn't valid there), so the two can't be derived from one string.
 - **`litellm_constructs.py`'s Deployment/Service/ServiceAccount** still go
   through the raw `ApiObject`/`JsonPatch` escape hatch rather than `cdk8s_plus_33`'s
   typed builders (already a dependency, used for `ConfigMap`) — not yet attempted;

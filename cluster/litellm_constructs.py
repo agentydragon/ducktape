@@ -14,6 +14,17 @@ from dataclasses import dataclass, field
 from cdk8s import ApiObject, JsonPatch, Yaml
 from cdk8s_plus_33 import ConfigMap
 from constructs import Construct
+from external_secrets_crds.io.external_secrets import (
+    ExternalSecret,
+    ExternalSecretSpec,
+    ExternalSecretSpecDataFrom,
+    ExternalSecretSpecDataFromExtract,
+    ExternalSecretSpecSecretStoreRef,
+    ExternalSecretSpecSecretStoreRefKind,
+    ExternalSecretSpecTarget,
+    ExternalSecretSpecTargetTemplate,
+    ExternalSecretSpecTargetTemplateMergePolicy,
+)
 from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRoute,
     HttpRouteSpec,
@@ -324,23 +335,27 @@ class LiteLLMProxy(Construct):
         )
 
     def _add_forgejo_image_credentials(self) -> None:
-        _api_resource(
+        ExternalSecret(
             self,
             "forgejo-images-creds",
-            api_version="external-secrets.io/v1",
-            kind="ExternalSecret",
             metadata=_metadata("forgejo-images-creds", self.spec.namespace),
-            fields={
-                "spec": {
-                    "refreshInterval": "1h",
-                    "secretStoreRef": {"name": "kubernetes-forgejo-images-secret-store", "kind": "ClusterSecretStore"},
-                    "target": {
-                        "name": "forgejo-images-creds",
-                        "template": {"type": "kubernetes.io/dockerconfigjson", "mergePolicy": "Merge"},
-                    },
-                    "dataFrom": [{"extract": {"key": "forgejo-images-creds"}}],
-                }
-            },
+            spec=ExternalSecretSpec(
+                refresh_interval="1h",
+                secret_store_ref=ExternalSecretSpecSecretStoreRef(
+                    name="kubernetes-forgejo-images-secret-store",
+                    kind=ExternalSecretSpecSecretStoreRefKind.CLUSTER_SECRET_STORE,
+                ),
+                target=ExternalSecretSpecTarget(
+                    name="forgejo-images-creds",
+                    template=ExternalSecretSpecTargetTemplate(
+                        type="kubernetes.io/dockerconfigjson",
+                        merge_policy=ExternalSecretSpecTargetTemplateMergePolicy.MERGE,
+                    ),
+                ),
+                data_from=[
+                    ExternalSecretSpecDataFrom(extract=ExternalSecretSpecDataFromExtract(key="forgejo-images-creds"))
+                ],
+            ),
         )
 
 
