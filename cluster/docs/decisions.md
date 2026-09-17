@@ -401,3 +401,17 @@ hasn't stabilized" — not a run-state axis; before this convention, `cluster/k8
 only decommissioned apps with nothing actually experimental in it, and didn't cover the
 flat-top-level cases (`egress-proxy-rugged/`, `inventree/`) at all. `parked` reuses the
 vocabulary the `ducktape.org/parked` annotation already had.
+
+**Why `haku-forgejo-tea` mints in `haku-sandbox`, not `haku-ci`.** KEDA's
+`TriggerAuthentication.secretTargetRef` only ever reads a Secret in its own namespace, so
+`haku-ci`'s scaler needs the token there, and Reflector mirroring it in from
+`haku-sandbox` (`cluster/k8s/haku/forgejo-tea/`) can look like avoidable indirection next
+to minting directly into `haku-ci`. That was tried and reverted: Haku's own Claude Code
+web-session bootstrap (`haku/runtime/claude_web_env/bootstrap.sh`) also reads this secret,
+via `kubectl -n haku-sandbox`, using Haku's `haku-sandbox-admin` Role — deliberately
+scoped to `haku-sandbox` only (`cluster/k8s/haku/rbac/role.yaml`), with no grant into
+`haku-ci`. Relocating the secret would either silently break `tea` CLI login in every
+future web session (the read degrades to a warning on absence, so the breakage would go
+unnoticed) or require widening Haku's own RBAC into a second namespace — a bigger, more
+security-relevant change than a namespace move. `haku-sandbox` stays the mint target;
+`haku-ci` stays served by Reflector.
