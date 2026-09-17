@@ -15,9 +15,4 @@ terraform {
       version = "~> 3.9.0"
     }
   }
-
-  backend "kubernetes" {
-    secret_suffix = "flux-webhook-token"
-    namespace     = "flux-system"
-  }
 }
