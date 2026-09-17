@@ -75,15 +75,23 @@ operator, and that edge is class 1. Re-check with
 `kubectl get validatingwebhookconfigurations,mutatingwebhookconfigurations`
 before moving one; charts add and remove webhooks across versions.
 
-## 5. Central `namespaces` Kustomization
+## 5. Central `namespaces` Kustomization — multi-tenant Namespaces only
 
-~35 Namespace-only Kustomizations collapse into one with `prune: false`, and the
-~60 `dependsOn` edges pointing at them disappear.
+Narrowed from the original ~35: a Namespace with exactly one tenant (nothing
+else depends on it, no sibling `db`/`cache`/`secrets` Kustomization reaches into
+it) has no reason to wait for this batch — fold it straight into that one
+Kustomization as part of batch 7 (confirmed safe and already landing:
+`kubectl-machine-mcp`, `kubectl-passthrough-mcp`, `postscanmail-mcp`,
+`manifold-mcp`, `x/authelia`, ...). What's left here is Namespaces genuinely
+shared by more than one Kustomization, which collapse into one `namespaces`
+Kustomization with `prune: false`; the `dependsOn` edges pointing at them
+disappear.
 
 This moves an existing object between Kustomizations, so it is the one batch
-with a real hazard: a Namespace prune cascade-deletes its contents. Orphan each
-Namespace from its current owner and verify it is unowned before the new
-Kustomization adopts it. Do it in slices, not one PR.
+with a real hazard: a Namespace prune cascade-deletes its contents, and here
+that contents belongs to more than one owner. Orphan each Namespace from its
+current owner and verify it is unowned before the new Kustomization adopts it.
+Do it in slices, not one PR.
 
 ## 6. Replace the validation law
 
@@ -114,9 +122,9 @@ or after the batch that makes them pass.
 
 ~92 Kustomizations sit in `{namespace,secrets,app,db,cache,agent-rbac,servicemonitor}`
 splits of a single component. `db/` and `cache/` mostly stay under rule 3b;
-`namespace/` goes in batch 5; the rest merge into the component's one
-Kustomization, dropping an `ArtifactGenerator` entry and a root-kustomization
-line each.
+`namespace/` merges here too unless the Namespace has another tenant (batch 5);
+the rest merge into the component's one Kustomization, dropping an
+`ArtifactGenerator` entry and a root-kustomization line each.
 
 Biggest first: `forgejo` (6), `langfuse` (6), `authentik` (5), `litellm` (5),
 `paperless` (5), `seaweedfs` (5), `atuin` (4), `cert-manager` (4), `gatus` (4),

@@ -158,16 +158,27 @@ An ungated `wait` buys a red light that `FluxKustomizationNotReady` and
 eight worker slots, parked for the full `timeout` (5–20m here), on every
 reconcile of a sick component.
 
-### 5. Namespaces are owned centrally
+### 5. Namespaces are owned centrally — where "owned" is contested
 
 Application Namespaces live in one `namespaces` Kustomization with `prune:
-false`, not in the components that use them. Two reasons, in order: a Namespace
-inside a component's Kustomization is a prune target, and pruning a Namespace
-cascade-deletes everything in it including PVCs; and a Namespace that several of
-a component's Kustomizations need has no natural owner among them.
+false`, not in the components that use them, **when the Namespace has more than
+one tenant**: several of a component's Kustomizations reaching into it (rule 3's
+`db`/`cache` exceptions alongside `app`), or a Namespace shared across
+components. There the reasons are two, in order: a Namespace inside one
+Kustomization is a prune target, and pruning it cascade-deletes everything in
+it including PVCs — someone else's, not just the owner's; and a Namespace
+several sibling Kustomizations need has no natural single owner among them.
 
-Consumers do not `dependsOn` it. An apply into a missing namespace fails and
-retries at `retryInterval`, which converges at bootstrap without an edge.
+Neither reason survives a Namespace with exactly one tenant. Folded into that
+one Kustomization, a prune destroys precisely what the component's own prune
+already destroys — merging changes the deletion mechanism (per-resource vs.
+namespace cascade), not its reach, because nothing else is there to reach.
+Such a Namespace goes in the component's one Kustomization same as any other
+resource (rule 3); it does not wait for or need the central one.
+
+Consumers of the central Kustomization do not `dependsOn` it. An apply into a
+missing namespace fails and retries at `retryInterval`, which converges at
+bootstrap without an edge.
 
 ### 6. Real ordering needs a shared artifact, not an edge
 
