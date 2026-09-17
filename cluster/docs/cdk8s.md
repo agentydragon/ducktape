@@ -103,12 +103,28 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   - name: <image>
-    newTag: <tag> # {"$imagepolicy": "<namespace>:<name>"}
+    newTag: <tag> # {"$imagepolicy": "<namespace>:<name>:tag"}
 ```
 
 **Gotcha**: a `components:` entry must be a _directory_ reference (kustomize looks
 for a `kustomization.yaml` inside it) — `components: [./image-pins.yaml]` fails with
 `must build at directory: ... file is not directory`.
+
+**Gotcha, the expensive one**: the marker's suffix must match what the field
+actually holds. Bare `# {"$imagepolicy": "ns:name"}` tells Setters to write the
+_full_ `repository:tag` reference into the marked field, unconditionally — it
+doesn't parse the field's meaning, it just replaces the whole value. A kustomize
+`images:` entry's `newTag:` field only ever holds a bare tag by kustomize's own
+schema, so marking it with the bare (full-reference) form is wrong; the fix is
+the `:tag` suffix above, which tells Setters to write only the bare tag (Flux
+docs: fluxcd.io/flux/components/image/imageupdateautomations, "Field-specific
+update markers" — also `:name` and `:digest` variants for splitting out just
+the repository or just the digest). Shipping the bare form here caused a real
+incident (2026-09-17): the very next image-automation-controller pass rewrote
+`newTag:` to `<repository>:<repository>:<tag>` (the tag hadn't even changed —
+Setters was just normalizing the field to its own full-reference output shape),
+and Flux applied that as the live container image, taking `litellm` down
+(`InvalidImageName`).
 
 The generator never constructs or reasons about a real image tag; the relevant
 `*Spec.image_name` field is always untagged. A test asserts no _generated_ file ever
