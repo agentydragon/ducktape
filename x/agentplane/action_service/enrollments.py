@@ -21,7 +21,8 @@ from x.agentplane.action_service.connections import (
     ReconnectConnection,
 )
 from x.agentplane.action_service.db import EnrollmentRow, SessionMaker
-from x.agentplane.action_service.models import Principal, PrincipalRole, ServiceAccountRef, Verdict
+from x.agentplane.action_service.models import OperatorPrincipal, Verdict
+from x.agentplane.subjects import ServiceAccountRef
 
 
 class EnrollmentInput(BaseModel):
@@ -136,8 +137,9 @@ class EnrollmentAuthority:
                 raise EnrollmentConflictError("authorization correlation was already used; restart with fresh PKCE")
         return CreatedEnrollment(handle=handle)
 
-    async def preview(self, handle: str, request: EnrollmentPreviewInput, operator: Principal) -> EnrollmentPreview:
-        _require_operator(operator)
+    async def preview(
+        self, handle: str, request: EnrollmentPreviewInput, operator: OperatorPrincipal
+    ) -> EnrollmentPreview:
         async with self._sessions.begin() as db:
             row = await db.scalar(
                 select(EnrollmentRow).where(EnrollmentRow.handle_hash == _digest(handle)).with_for_update()
@@ -158,9 +160,8 @@ class EnrollmentAuthority:
             )
 
     async def decide(
-        self, handle: str, request: EnrollmentDecisionInput, operator: Principal
+        self, handle: str, request: EnrollmentDecisionInput, operator: OperatorPrincipal
     ) -> EnrollmentDecisionResult:
-        _require_operator(operator)
         async with self._sessions.begin() as db:
             row = await db.scalar(
                 select(EnrollmentRow).where(EnrollmentRow.handle_hash == _digest(handle)).with_for_update()
@@ -194,10 +195,9 @@ class EnrollmentAuthority:
             return _result(row)
 
     async def approved(
-        self, *, client_id: str, redirect_uri: str, code_challenge: str, operator: Principal
+        self, *, client_id: str, redirect_uri: str, code_challenge: str, operator: OperatorPrincipal
     ) -> GrantBinding:
         """Verify consent before any framework code consumption or grant activation."""
-        _require_operator(operator)
         async with self._sessions() as db:
             row = await db.scalar(
                 select(EnrollmentRow).where(
@@ -253,11 +253,6 @@ def _digest(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
 
 
-def _require_operator(operator: Principal) -> None:
-    if operator.role is not PrincipalRole.OPERATOR:
-        raise EnrollmentRejectedError("operator authority is required")
-
-
 def _require_live(row: EnrollmentRow | None) -> EnrollmentRow:
     if row is None:
         raise EnrollmentNotFoundError("enrollment not found")
@@ -266,7 +261,7 @@ def _require_live(row: EnrollmentRow | None) -> EnrollmentRow:
     return row
 
 
-def _require_browser(row: EnrollmentRow, binding: str, operator: Principal) -> None:
+def _require_browser(row: EnrollmentRow, binding: str, operator: OperatorPrincipal) -> None:
     if (
         row.browser_hash is None
         or not secrets.compare_digest(row.browser_hash, binding)

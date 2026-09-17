@@ -8,50 +8,44 @@ from contextlib import asynccontextmanager, contextmanager
 from datetime import UTC, datetime
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request, status
+from fastapi import FastAPI, Request
 
 from x.agentplane.egress.agent_view import AgentEgressView, agent_view
 from x.agentplane.egress.policy import Index
-from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
+from x.agentplane.sandbox_auth.http import WorkloadPrincipalAuthenticator
+from x.agentplane.sandbox_auth.principal import WorkloadPrincipal
+from x.agentplane.subjects import ServiceAccountRef
 
 HOST = "agentplane-egress.agentplane-staging.svc.cluster.local"
 PATH = "/v1/rules"
 URL = f"http://{HOST}{PATH}"
 
 
-class SandboxNotCurrentError(Exception):
-    """The authenticated Sandbox no longer exists under the same UID in the policy index."""
-
-
 class RulesProjection:
-    """Project one current Sandbox's effective rules without exposing source resources."""
+    """Project one caller's effective rules without exposing source resources."""
 
     def __init__(self, index: Index, clock: Callable[[], datetime] = lambda: datetime.now(UTC)) -> None:
         self._index = index
         self._clock = clock
 
-    def for_sandbox(self, sandbox_name: str, sandbox_uid: str) -> AgentEgressView:
-        sandbox = self._index.sandboxes.get(sandbox_name)
-        if sandbox is None or sandbox.metadata.uid != sandbox_uid:
-            raise SandboxNotCurrentError(sandbox_name)
-        return agent_view(self._index, sandbox, self._clock())
+    def for_caller(self, principal: WorkloadPrincipal) -> AgentEgressView:
+        """The view of the ServiceAccount the bearer proved. Nothing here can go stale between
+        authentication and projection: the subject is the token's, not an object in the index."""
+        return agent_view(
+            self._index,
+            ServiceAccountRef(namespace=principal.namespace, name=principal.service_account_name),
+            self._clock(),
+        )
 
 
-def create_rules_app(authenticate: SandboxPrincipalAuthenticator, projection: RulesProjection) -> FastAPI:
+def create_rules_app(authenticate: WorkloadPrincipalAuthenticator, projection: RulesProjection) -> FastAPI:
     """Create the ordinary destination API; request metadata is never an identity authority."""
     app = FastAPI(title="agentplane-egress-rules")
 
     @app.get(PATH, response_model=AgentEgressView)
     async def rules(request: Request) -> AgentEgressView:
         verified = await authenticate(request)
-        try:
-            return projection.for_sandbox(verified.sandbox_name, verified.sandbox_uid)
-        except SandboxNotCurrentError as error:
-            # Match the authenticator's deliberately generic response. The object name and UID may
-            # have changed after TokenReview/live Pod resolution; neither belongs in the response.
-            raise HTTPException(
-                status.HTTP_401_UNAUTHORIZED, "invalid workload bearer", headers={"WWW-Authenticate": "Bearer"}
-            ) from error
+        return projection.for_caller(verified)
 
     return app
 

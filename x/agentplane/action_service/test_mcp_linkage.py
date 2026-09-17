@@ -18,9 +18,9 @@ from x.agentplane.action_service.mcp_linkage import (
     McpOAuthServer,
     McpProvider,
 )
-from x.agentplane.action_service.models import Principal, PrincipalRole
+from x.agentplane.action_service.models import OperatorPrincipal
 
-OPERATOR = Principal(issuer="test-linkage", subject="operator", role=PrincipalRole.OPERATOR)
+OPERATOR = OperatorPrincipal(issuer="test-linkage", subject="operator")
 TOKEN_ENDPOINT = "https://idp.example.test/token"
 
 

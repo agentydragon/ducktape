@@ -1,6 +1,7 @@
 load("//devinfra/python:defs.bzl", "py_library")
 
-# Scoped to the two callers under this tree: the egress proxy's informer and the app's live index.
+# Scoped to the callers under this tree: the egress proxy's informer, the Action Service's policy
+# informer, and the app's live index.
 # This is x/ code with no stable API, not repo-wide infrastructure.
 package(default_visibility = ["//x/agentplane:__subpackages__"])
 
@@ -10,5 +11,26 @@ py_library(
     deps = [
         "@pypi//kubernetes_asyncio",
         "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "subjects",
+    srcs = ["subjects.py"],
+    # Also the cluster validation that pins both binding CRDs to this model's schema.
+    visibility = [
+        "//cluster/validation:__pkg__",
+        "//x/agentplane:__subpackages__",
+    ],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "crds",
+    srcs = ["crds.py"],
+    # Also the cluster validation that reads the checked-in manifests by apiVersion.
+    visibility = [
+        "//cluster/validation:__pkg__",
+        "//x/agentplane:__subpackages__",
     ],
 )

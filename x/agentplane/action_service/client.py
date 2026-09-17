@@ -26,9 +26,9 @@ from x.agentplane.action_service.models import (
     ActionState,
     CancellationResult,
     DecisionInput,
-    ServiceAccountRef,
 )
 from x.agentplane.action_service.policy_view import CallerActionPolicyView, SubjectActionPolicyView
+from x.agentplane.subjects import ServiceAccountRef
 
 WORKLOAD_CREDENTIAL_PLACEHOLDER = "agentplane-credential-agentplane-workload"
 
@@ -91,10 +91,6 @@ class ActionServiceClient(_BearerClient):
 
 class OperatorActionServiceClient(_BearerClient):
     """BFF-facing client; its authenticator and paths are distinct from Sandbox workload auth."""
-
-    async def sandbox_action_policy(self, *, namespace: str, sandbox_uid: str) -> SubjectActionPolicyView:
-        response = await self._request("GET", f"/v1/operator/action-policy/sandboxes/{namespace}/{sandbox_uid}")
-        return SubjectActionPolicyView.model_validate(response.json())
 
     async def service_account_action_policy(self, account: ServiceAccountRef) -> SubjectActionPolicyView:
         response = await self._request(

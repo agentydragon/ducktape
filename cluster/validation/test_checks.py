@@ -191,7 +191,7 @@ def _egress_binding(namespace: str, policies: list[str]) -> dict:
         "apiVersion": "agentplane.allegedly.works/v1alpha1",
         "kind": "EgressBinding",
         "metadata": {"name": "binding", "namespace": namespace},
-        "spec": {"subjects": [{"sandbox": {"name": "box"}}], "policies": policies},
+        "spec": {"subjects": [{"namespace": namespace, "name": "box"}], "policies": policies},
     }
 
 

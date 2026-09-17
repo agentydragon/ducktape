@@ -9,9 +9,9 @@ import httpx
 
 class FakeEgressAdmin:
     def __init__(self) -> None:
-        self.decisions: dict[str, list[dict[str, Any]]] = {}
+        self.decisions: dict[tuple[str, str], list[dict[str, Any]]] = {}
         self.reachable = True
-        self.queries: list[str] = []
+        self.queries: list[tuple[str, str]] = []
 
     def transport(self) -> httpx.MockTransport:
         return httpx.MockTransport(self._handle)
@@ -20,9 +20,9 @@ class FakeEgressAdmin:
         if not self.reachable:
             raise httpx.ConnectError("connection refused", request=request)
         assert request.url.path == "/decisions"
-        sandbox = request.url.params["sandbox"]
-        self.queries.append(sandbox)
-        return httpx.Response(200, json=self.decisions.get(sandbox, []))
+        subject = (request.url.params["namespace"], request.url.params["name"])
+        self.queries.append(subject)
+        return httpx.Response(200, json=self.decisions.get(subject, []))
 
 
 def decision(
@@ -38,7 +38,7 @@ def decision(
     """One decision as the proxy's `/decisions` serialises it."""
     return {
         "at": at,
-        "sandbox": "live",
+        "subject": {"namespace": "agentplane-test", "name": "live"},
         "method": method,
         "host": host,
         "port": 443,

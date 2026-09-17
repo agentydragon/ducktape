@@ -22,7 +22,7 @@ import grpc
 import pytest
 import pytest_bazel
 from aiohttp import web
-from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api
+from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api
 from mitmproxy import connection, http
 from more_itertools import one
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
@@ -42,6 +42,8 @@ from x.agentplane.egress.conftest import (
     SCHEME,
     SECRET_NAME,
     SECRET_VALUE,
+    SUBJECT_A,
+    SUBJECT_B,
     TOKEN_A,
     TOKEN_B,
     UPSTREAM_HOST,
@@ -50,7 +52,7 @@ from x.agentplane.egress.conftest import (
 )
 from x.agentplane.egress.decision_log import DecisionLog
 from x.agentplane.egress.decisions import Phase
-from x.agentplane.egress.identity import IdentityRejectedError, PodIdentityVerifier
+from x.agentplane.egress.identity import IdentityRejectedError, WorkloadIdentityVerifier
 from x.agentplane.egress.main import Settings
 from x.agentplane.egress.policy import DenyReason, Index
 from x.agentplane.egress.proxy import EgressProxyServer, write_interception_ca
@@ -93,7 +95,7 @@ from x.agentplane.egress.testing.tls import (
     write_ca,
 )
 from x.agentplane.egress.upstream import Address, Network, Pin, UpstreamResolver
-from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
+from x.agentplane.sandbox_auth.http import WorkloadPrincipalAuthenticator
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 
 
@@ -227,7 +229,7 @@ class ProxyUnderTest:
         policies = [*current["spec"]["policies"]]
         if BASIC_POLICY not in policies:
             policies.append(BASIC_POLICY)
-        self.fake.put(BINDINGS_PLURAL, binding(BINDING, subjects=[{"sandbox": {"name": SANDBOX_A}}], policies=policies))
+        self.fake.put(BINDINGS_PLURAL, binding(BINDING, subjects=[SUBJECT_A.model_dump()], policies=policies))
         await self.index.wait_for(
             lambda: (
                 WORKLOAD_CREDENTIAL in self.index.credentials
@@ -299,28 +301,17 @@ async def proxy(
     upstream_ca = make_ca("agentplane-egress-test-upstream")
     upstream_ca_cert, _ = write_ca(upstream_ca, tmp_path, "upstream")
     index = Index()
-    verifier = PodIdentityVerifier(
+    workload_resolver = SandboxPrincipalResolver(
         authentication=AuthenticationV1Api(api_client),
-        core_v1=CoreV1Api(api_client),
-        namespace=SANDBOX_NAMESPACE,
         audience=AUDIENCE,
-        cache_seconds=60,
+        allowed_service_account_namespaces=frozenset({SANDBOX_NAMESPACE}),
     )
+    verifier = WorkloadIdentityVerifier(workload_resolver)
     informer_task = asyncio.create_task(informer(index, api_client).run())
     try:
         await index.wait_for(lambda: index.synced)
         agent_api_port = pick_free_port()
-        agent_api = create_rules_app(
-            SandboxPrincipalAuthenticator(
-                SandboxPrincipalResolver(
-                    authentication=AuthenticationV1Api(api_client),
-                    core_v1=CoreV1Api(api_client),
-                    audience=AUDIENCE,
-                    allowed_service_account_namespaces=frozenset({SANDBOX_NAMESPACE}),
-                )
-            ),
-            RulesProjection(index),
-        )
+        agent_api = create_rules_app(WorkloadPrincipalAuthenticator(workload_resolver), RulesProjection(index))
         resolver = ServiceMappingResolver(agent_api_port=agent_api_port, exempt=exempt_networks)
         async with (
             serve_rules_api(agent_api, host="127.0.0.1", port=agent_api_port),
@@ -386,28 +377,30 @@ async def test_rejected_replacement_clears_authenticated_connection_context(
 ) -> None:
     client = connection.Client(peername=(POD_A_IP, 12345), sockname=("127.0.0.1", 8080))
     admitted = authentication_flow(client, f"Bearer {TOKEN_A}")
-    assert (await proxy.addon._sandbox_of(admitted)).metadata.name == SANDBOX_A
+    admitted_caller = await proxy.addon._caller_of(admitted)
+    assert admitted_caller == SUBJECT_A
     assert "proxy-authorization" not in admitted.request.headers
 
     rejected = authentication_flow(client, replacement)
     with pytest.raises(IdentityRejectedError) as refusal:
-        await proxy.addon._sandbox_of(rejected)
+        await proxy.addon._caller_of(rejected)
     assert refusal.value.reason is reason
     assert "proxy-authorization" not in rejected.request.headers
 
     with pytest.raises(IdentityRejectedError) as after:
-        await proxy.addon._sandbox_of(authentication_flow(client, None))
+        await proxy.addon._caller_of(authentication_flow(client, None))
     assert after.value.reason is DenyReason.TOKEN_MISSING
 
 
 async def test_connection_end_clears_authenticated_context(proxy: ProxyUnderTest) -> None:
     client = connection.Client(peername=(POD_A_IP, 12345), sockname=("127.0.0.1", 8080))
-    assert (await proxy.addon._sandbox_of(authentication_flow(client, f"Bearer {TOKEN_A}"))).metadata.name == SANDBOX_A
+    caller = await proxy.addon._caller_of(authentication_flow(client, f"Bearer {TOKEN_A}"))
+    assert caller == SUBJECT_A
 
     proxy.addon.client_disconnected(client)
 
     with pytest.raises(IdentityRejectedError) as after:
-        await proxy.addon._sandbox_of(authentication_flow(client, None))
+        await proxy.addon._caller_of(authentication_flow(client, None))
     assert after.value.reason is DenyReason.TOKEN_MISSING
 
 
@@ -434,8 +427,7 @@ async def install_workload_credential(fake: FakeApiServer, proxy: ProxyUnderTest
         ),
     )
     fake.put(
-        BINDINGS_PLURAL,
-        binding(BINDING, subjects=[{"sandbox": {"name": SANDBOX_A}}], policies=[GITHUB_POLICY, WORKLOAD_POLICY]),
+        BINDINGS_PLURAL, binding(BINDING, subjects=[SUBJECT_A.model_dump()], policies=[GITHUB_POLICY, WORKLOAD_POLICY])
     )
     if bind_b:
         # A faithful second Pod identity reaching the in-process listener from the same loopback
@@ -443,11 +435,7 @@ async def install_workload_credential(fake: FakeApiServer, proxy: ProxyUnderTest
         fake.pods[SANDBOX_B] = pod_for(fake, SANDBOX_B, pod_uid=POD_B_UID, ip=POD_A_IP)
         fake.put(
             BINDINGS_PLURAL,
-            binding(
-                f"{SANDBOX_B}-{WORKLOAD_POLICY}",
-                subjects=[{"sandbox": {"name": SANDBOX_B}}],
-                policies=[WORKLOAD_POLICY],
-            ),
+            binding(f"{SANDBOX_B}-{WORKLOAD_POLICY}", subjects=[SUBJECT_B.model_dump()], policies=[WORKLOAD_POLICY]),
         )
     await proxy.index.wait_for(
         lambda: (
@@ -654,8 +642,7 @@ async def test_buildbuddy_http_and_grpc_metadata_placeholder_is_substituted(
         ),
     )
     fake.put(
-        BINDINGS_PLURAL,
-        binding(BINDING, subjects=[{"sandbox": {"name": SANDBOX_A}}], policies=[GITHUB_POLICY, policy_name]),
+        BINDINGS_PLURAL, binding(BINDING, subjects=[SUBJECT_A.model_dump()], policies=[GITHUB_POLICY, policy_name])
     )
     await proxy.index.wait_for(
         lambda: (
@@ -764,25 +751,16 @@ async def test_missing_token_refused_at_connect(proxy: ProxyUnderTest) -> None:
     assert refused.value.headers[DENIED_HEADER] == f"denied; reason={DenyReason.TOKEN_MISSING}"
 
 
-async def test_copied_token_refused_at_connect(proxy: ProxyUnderTest) -> None:
-    """Pod B's token, presented from an address that is not Pod B's."""
-    with pytest.raises(aiohttp.ClientHttpProxyError) as refused:
-        await proxy.get("/repos/o/r", token=TOKEN_B)
-    assert refused.value.status == 403
-    assert refused.value.headers is not None
-    assert refused.value.headers[DENIED_HEADER] == f"denied; reason={DenyReason.POD_MISMATCH}"
-
-
-async def test_unbound_sandbox_refused(fake: FakeApiServer, proxy: ProxyUnderTest) -> None:
+async def test_unbound_subject_refused(fake: FakeApiServer, proxy: ProxyUnderTest) -> None:
+    """A workload that authenticates and that no binding names reaches no rule."""
     fake.put(SANDBOXES_PLURAL, sandbox("sb-c"))
     fake.pods["sb-c"] = pod_for(fake, "sb-c", pod_uid="pod-c-uid", ip=POD_A_IP)
     fake.tokens["token-c"] = TokenVerdict(
-        username=f"system:serviceaccount:{SANDBOX_NAMESPACE}:sandbox",
+        username=f"system:serviceaccount:{SANDBOX_NAMESPACE}:sb-c",
         pod_name="sb-c",
         pod_uid="pod-c-uid",
         audiences=(AUDIENCE,),
     )
-    await proxy.index.wait_for(lambda: "sb-c" in proxy.index.sandboxes)
     with pytest.raises(aiohttp.ClientHttpProxyError) as refused:
         await proxy.get("/repos/o/r", token="token-c")
     assert refused.value.headers is not None
@@ -821,7 +799,7 @@ async def test_admin_serves_decisions_and_health(proxy: ProxyUnderTest, decision
     async with aiohttp.ClientSession(f"http://127.0.0.1:{proxy.admin_port}") as admin:
         async with admin.get("/healthz") as health:
             assert (health.status, (await health.json())["synced"]) == (200, True)
-        async with admin.get("/decisions", params={"sandbox": SANDBOX_A}) as listing:
+        async with admin.get("/decisions", params=SUBJECT_A.model_dump()) as listing:
             decisions = await listing.json()
         async with admin.get("/decisions") as listing:
             unidentified = await listing.json()
@@ -838,7 +816,7 @@ async def test_admin_serves_decisions_and_health(proxy: ProxyUnderTest, decision
     assert all(SECRET_VALUE not in str(d) and PLACEHOLDER not in str(d) for d in decisions)
 
 
-async def test_a_sandbox_reads_the_rules_that_apply_to_it(proxy: ProxyUnderTest) -> None:
+async def test_a_workload_reads_the_rules_that_apply_to_it(proxy: ProxyUnderTest) -> None:
     """The Service DNS request is forwarded to the separate destination listener."""
     response = await proxy.get_rules(RULES_PATH)
 
@@ -846,7 +824,7 @@ async def test_a_sandbox_reads_the_rules_that_apply_to_it(proxy: ProxyUnderTest)
     assert proxy.upstream.requests == []
     assert (RULES_HOST, 80, True) in proxy.resolver.pin_calls
     view = json.loads(response.body)
-    assert view["sandbox"] == SANDBOX_A
+    assert view["subject"] == SUBJECT_A.model_dump()
     credentials = [rule["credential"] for policy in view["policies"] for rule in policy["rules"]]
     presented = one(c for c in credentials if c is not None and c["placeholder"] == PLACEHOLDER)
     assert presented["placeholder"] == PLACEHOLDER, view
@@ -856,7 +834,7 @@ async def test_a_sandbox_reads_the_rules_that_apply_to_it(proxy: ProxyUnderTest)
     assert SECRET_VALUE not in response.body.decode(), "the proxy handed the sandbox the real credential"
 
 
-async def test_a_sandbox_reads_rules_through_its_loopback_sidecar(proxy: ProxyUnderTest) -> None:
+async def test_a_workload_reads_rules_through_its_loopback_sidecar(proxy: ProxyUnderTest) -> None:
     """Ordinary HTTP via loopback and central, then independent destination TokenReview."""
     before = proxy.fake.token_reviews
     token_file = proxy.tmp_path / "rules-sidecar-token"
@@ -867,7 +845,7 @@ async def test_a_sandbox_reads_rules_through_its_loopback_sidecar(proxy: ProxyUn
         response = await proxy.get_rules(RULES_PATH, token=None, proxy_port=sidecar.listen_port)
 
     assert response.status == 200, response.body
-    assert json.loads(response.body)["sandbox"] == SANDBOX_A
+    assert json.loads(response.body)["subject"] == SUBJECT_A.model_dump()
     assert proxy.fake.token_reviews == before + 2, "central and API each validate independently"
     assert proxy.resolver.pin_calls == [(RULES_HOST, 80, True)], "one forward, no recursion"
     assert all(value not in response.body.decode() for value in (TOKEN_A, SECRET_VALUE))
@@ -878,14 +856,14 @@ async def test_rules_identity_ignores_forged_request_headers_and_body(proxy: Pro
         RULES_PATH,
         headers={
             "Authorization": f"Bearer {WORKLOAD_PLACEHOLDER}",
-            "X-Agentplane-Sandbox": SANDBOX_B,
+            "X-Agentplane-Subject": SANDBOX_B,
             "Content-Type": "application/json",
         },
-        body=json.dumps({"sandbox": SANDBOX_B, "sandbox_uid": POD_B_UID}).encode(),
+        body=json.dumps(SUBJECT_B.model_dump()).encode(),
     )
 
     assert response.status == 200, response.body
-    assert json.loads(response.body)["sandbox"] == SANDBOX_A
+    assert json.loads(response.body)["subject"] == SUBJECT_A.model_dump()
 
 
 async def test_the_agent_view_needs_the_same_identity_every_request_does(proxy: ProxyUnderTest) -> None:
@@ -962,12 +940,12 @@ async def test_history_omits_secret_bearing_paths_queries_and_headers(
     )
     assert response.status == 200
     await decision_log.flush()
-    rows = await decision_log.store.recent(SANDBOX_A)
+    rows = await decision_log.store.recent(SUBJECT_A)
     assert len(rows) == 2
     assert all(row.path is None for row in rows)
     assert rows[0].connection_id == rows[1].connection_id
     assert rows[0].producer_id == rows[1].producer_id
-    assert all(row.source_pod_uid == POD_A_UID and row.sandbox_uid is not None for row in rows)
+    assert all(row.source_pod_uid == POD_A_UID for row in rows)
     payload = " ".join(row.model_dump_json() for row in rows)
     decision_messages = " ".join(
         entry.getMessage() for entry in caplog.records if entry.name == "x.agentplane.egress.decision_log"
@@ -1009,7 +987,7 @@ async def test_existing_tls_connection_rechecks_every_admission(
         assert await get("/public/after") == (403 if state == "revoked" else 502)
         assert len(proxy.upstream.requests) == 1
         await decision_log.flush()
-        rows = await decision_log.store.recent(SANDBOX_A)
+        rows = await decision_log.store.recent(SUBJECT_A)
         assert len({row.connection_id for row in rows}) == 1
         assert sum(row.phase is Phase.CONNECT for row in rows) == 1
 
@@ -1029,8 +1007,8 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
         settings = [
             Settings(
                 _cli_parse_args=False,
-                namespace=NAMESPACE,
-                sandbox_namespace=SANDBOX_NAMESPACE,
+                rules_namespace=NAMESPACE,
+                workload_namespaces=frozenset({SANDBOX_NAMESPACE}),
                 credentials_namespace=CREDENTIALS_NAMESPACE,
                 kubeconfig=kubeconfig(tmp_path / f"kube-{i}.yaml", fake.port),
                 ca_cert=cert,
@@ -1080,7 +1058,7 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
             await get(second.proxy_port, "recovered-revocation", 403)
             async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.05), reraise=True):
                 with attempt:
-                    rows = await decision_log.store.recent(SANDBOX_A)
+                    rows = await decision_log.store.recent(SUBJECT_A)
                     assert len({row.producer_id for row in rows}) == 2
                     assert all(
                         len({row.connection_id for row in rows if row.producer_id == producer}) == 1

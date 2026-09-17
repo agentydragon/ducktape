@@ -7,8 +7,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 from uuid import UUID, uuid4
 
-from pydantic import JsonValue
-from sqlalchemy import DateTime, ForeignKey, Integer, Text, UniqueConstraint, event, func, select
+from pydantic import JsonValue, TypeAdapter
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, Text, UniqueConstraint, event, func, select
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID, insert as pg_insert
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
@@ -16,11 +16,11 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Mapper, mapped_column
 
 from x.agentplane.action_service.catalog import ActionIdentity
 from x.agentplane.action_service.models import (
-    SERVICE_ACCOUNT_ISSUER,
     ActionEventView,
     ActionRequestInput,
     ActionRequestView,
     ActionState,
+    CallerPrincipal,
     CancellationOutcome,
     CancellationResult,
     DecisionInput,
@@ -31,14 +31,16 @@ from x.agentplane.action_service.models import (
     ExecutionState,
     ExecutionView,
     ExternalGrantProvenance,
+    OperatorPrincipal,
     PolicyEvidence,
     Principal,
-    PrincipalRole,
     ReconciliationSource,
     UnknownOutcomeReason,
     Verdict,
+    operator_or_none,
 )
 from x.agentplane.action_service.updates import CHANNEL
+from x.agentplane.subjects import ServiceAccountRef
 
 # SQLAlchemy loads asyncpg from the URL scheme; Gazelle cannot infer that runtime dependency.
 # gazelle:include_dep @pypi//asyncpg
@@ -108,7 +110,7 @@ class ConnectionGrantRow(Base):
 
 class ActionRequestRow(Base):
     __tablename__ = "action_request"
-    __table_args__ = (UniqueConstraint("caller_principal", "idempotency_key"),)
+    __table_args__ = (UniqueConstraint("caller_namespace", "caller_name", "idempotency_key"),)
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     idempotency_key: Mapped[str] = mapped_column(Text)
@@ -118,7 +120,8 @@ class ActionRequestRow(Base):
     description: Mapped[str | None] = mapped_column(Text)
     origin: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
     correlation: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
-    caller_principal: Mapped[str] = mapped_column(Text)
+    caller_namespace: Mapped[str] = mapped_column(Text)
+    caller_name: Mapped[str] = mapped_column(Text)
     external_grant: Mapped[dict[str, JsonValue] | None] = mapped_column(JSONB(none_as_null=True))
     state: Mapped[str] = mapped_column(Text)
     version: Mapped[int] = mapped_column(Integer)
@@ -135,7 +138,8 @@ class ActionEventRow(Base):
     sequence: Mapped[int] = mapped_column(Integer, primary_key=True)
     state: Mapped[str] = mapped_column(Text)
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    actor_principal: Mapped[str | None] = mapped_column(Text)
+    # Either kind of principal, and nothing queries by it, so it keeps its own shape.
+    actor: Mapped[dict[str, JsonValue] | None] = mapped_column(JSONB(none_as_null=True))
 
 
 @event.listens_for(ActionEventRow, "after_insert")
@@ -147,13 +151,30 @@ def _notify_event(_mapper: Mapper[ActionEventRow], connection: Connection, row: 
 
 class DecisionRow(Base):
     __tablename__ = "action_decision"
-    __table_args__ = (UniqueConstraint("request_id"), UniqueConstraint("provider", "issuer", "idempotency_key"))
+    __table_args__ = (
+        UniqueConstraint("request_id"),
+        # A DecisionProvider decided when both operator columns are NULL, and Postgres counts NULLs
+        # as distinct by default -- which would exempt exactly those rows from the replay backstop.
+        UniqueConstraint(
+            "provider",
+            "operator_issuer",
+            "operator_subject",
+            "idempotency_key",
+            name="action_decision_provider_operator_idempotency_key",
+            postgresql_nulls_not_distinct=True,
+        ),
+        CheckConstraint(
+            "(operator_issuer IS NULL) = (operator_subject IS NULL)", name="action_decision_operator_whole"
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     request_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("action_request.id", ondelete="CASCADE"))
     verdict: Mapped[str] = mapped_column(Text)
     provider: Mapped[str] = mapped_column(Text)
-    issuer: Mapped[str] = mapped_column(Text)
+    # Set together for a human Decision, both NULL for a DecisionProvider's.
+    operator_issuer: Mapped[str | None] = mapped_column(Text)
+    operator_subject: Mapped[str | None] = mapped_column(Text)
     decision_note: Mapped[str | None] = mapped_column(Text)
     reason_code: Mapped[str | None] = mapped_column(Text)
     reason_description: Mapped[str | None] = mapped_column(Text)
@@ -204,7 +225,8 @@ class PushSubscriptionRow(Base):
     __tablename__ = "action_push_subscription"
 
     endpoint: Mapped[str] = mapped_column(Text, primary_key=True)
-    operator_principal: Mapped[str] = mapped_column(Text, index=True)
+    operator_issuer: Mapped[str] = mapped_column(Text)
+    operator_subject: Mapped[str] = mapped_column(Text, index=True)
     p256dh: Mapped[str] = mapped_column(Text)
     auth: Mapped[str] = mapped_column(Text)
     user_agent: Mapped[str | None] = mapped_column(Text)
@@ -228,6 +250,11 @@ class McpServerLinkageRow(Base):
     """One shared OAuth token family for a configured MCP server."""
 
     __tablename__ = "mcp_server_linkage"
+    __table_args__ = (
+        CheckConstraint(
+            "(linked_by_issuer IS NULL) = (linked_by_subject IS NULL)", name="mcp_server_linkage_linked_by_whole"
+        ),
+    )
 
     server_id: Mapped[str] = mapped_column(Text, primary_key=True)
     provider: Mapped[str] = mapped_column(Text)
@@ -240,7 +267,8 @@ class McpServerLinkageRow(Base):
     token_endpoint: Mapped[str | None] = mapped_column(Text, nullable=True)
     resource: Mapped[str | None] = mapped_column(Text, nullable=True)
     linked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    linked_by: Mapped[str | None] = mapped_column(Text)
+    linked_by_issuer: Mapped[str | None] = mapped_column(Text)
+    linked_by_subject: Mapped[str | None] = mapped_column(Text)
 
 
 class McpOAuthTokenStateRow(Base):
@@ -276,7 +304,8 @@ class McpLinkageFlowRow(Base):
     server_id: Mapped[str] = mapped_column(Text)
     state_hash: Mapped[str] = mapped_column(Text, unique=True)
     verifier: Mapped[str] = mapped_column(Text)
-    operator_principal: Mapped[str] = mapped_column(Text)
+    operator_issuer: Mapped[str] = mapped_column(Text)
+    operator_subject: Mapped[str] = mapped_column(Text)
     scopes: Mapped[list[str]] = mapped_column(JSONB)
     authorization_endpoint: Mapped[str] = mapped_column(Text)
     token_endpoint: Mapped[str] = mapped_column(Text)
@@ -351,15 +380,26 @@ class ActionStore:
         self._external_grants = external_grants
 
     async def submit(
-        self, body: ActionRequestInput, principal: Principal, *, external_grant: ExternalGrantProvenance | None = None
+        self,
+        body: ActionRequestInput,
+        principal: CallerPrincipal,
+        *,
+        external_grant: ExternalGrantProvenance | None = None,
     ) -> ActionRequestView:
-        """Persist an admitted request; ActionService resolves its group/action before calling here."""
+        """Persist an admitted request; ActionService resolves its group/action before calling here.
+
+        A grant, where one is presented, has to still authorize this exact caller. Whether a caller
+        needed a grant at all is settled before this: a Connection's bearer only ever resolves
+        through `ActionsOAuthProxy`, which attaches the grant it resolved, and a workload's only
+        through TokenReview, which is its own proof. A caller ServiceAccount names the identity, not
+        how it authenticated -- a Pod running as it and a Connection acting as it are the same
+        subject with the same policy -- so the principal cannot answer that question here.
+        """
         async with self._sessions.begin() as session:
-            if external_grant is not None:
-                if principal != external_grant.principal() or not await self._grant_authorized(session, external_grant):
-                    raise ExternalGrantNotAuthorizedError("external grant is not authorized")
-            elif principal.issuer == SERVICE_ACCOUNT_ISSUER:
-                raise ExternalGrantNotAuthorizedError("an external caller requires an authenticated grant")
+            if external_grant is not None and (
+                principal != external_grant.principal() or not await self._grant_authorized(session, external_grant)
+            ):
+                raise ExternalGrantNotAuthorizedError("external grant is not authorized")
             now = datetime.now(UTC)
             request_id = uuid4()
             inserted_id = await session.scalar(
@@ -373,14 +413,15 @@ class ActionStore:
                     description=body.description,
                     origin=body.origin,
                     correlation=body.correlation,
-                    caller_principal=principal.key,
+                    caller_namespace=principal.account.namespace,
+                    caller_name=principal.account.name,
                     external_grant=external_grant.model_dump(mode="json") if external_grant is not None else None,
                     state=ActionState.DECISION_PENDING.value,
                     version=1,
                     created_at=now,
                     updated_at=now,
                 )
-                .on_conflict_do_nothing(index_elements=["caller_principal", "idempotency_key"])
+                .on_conflict_do_nothing(index_elements=["caller_namespace", "caller_name", "idempotency_key"])
                 .returning(ActionRequestRow.id)
             )
             if inserted_id is None:
@@ -397,8 +438,11 @@ class ActionStore:
         self, principal: Principal, *, states: Sequence[ActionState] = (), idempotency_key: str | None = None
     ) -> list[ActionRequestView]:
         query = select(ActionRequestRow).order_by(ActionRequestRow.created_at.desc())
-        if principal.role is PrincipalRole.CALLER:
-            query = query.where(ActionRequestRow.caller_principal == principal.key)
+        if isinstance(principal, CallerPrincipal):
+            query = query.where(
+                ActionRequestRow.caller_namespace == principal.account.namespace,
+                ActionRequestRow.caller_name == principal.account.name,
+            )
         if states:
             query = query.where(ActionRequestRow.state.in_([state.value for state in states]))
         if idempotency_key is not None:
@@ -432,7 +476,10 @@ class ActionStore:
             )
             return [
                 ActionEventView(
-                    sequence=e.sequence, state=ActionState(e.state), at=e.at, actor_principal=e.actor_principal
+                    sequence=e.sequence,
+                    state=ActionState(e.state),
+                    at=e.at,
+                    actor=None if e.actor is None else TypeAdapter(Principal).validate_python(e.actor),
                 )
                 for e in events
             ]
@@ -444,7 +491,7 @@ class ActionStore:
                 select(ActionRequestRow).where(ActionRequestRow.id == request_id).with_for_update()
             )
             # Operator-all read/decision authority does not confer cancellation ownership.
-            if row is None or row.caller_principal != principal.key:
+            if row is None or not _is_caller(row, principal):
                 raise ActionNotFoundError(str(request_id))
             state = ActionState(row.state)
             if state is ActionState.CANCELLED:
@@ -466,22 +513,20 @@ class ActionStore:
                 row.state = ActionState.CANCELLED.value
                 row.version += 1
                 row.updated_at = now
-                _record_event(session, row, now, actor_principal=principal.key)
+                _record_event(session, row, now, actor=principal)
                 outcome = CancellationOutcome.CANCELLED
             return CancellationResult(outcome=outcome, request=await self._view(session, row, principal))
 
     async def decide(
-        self, request_id: UUID, body: DecisionInput, principal: Principal, *, provider: str
+        self, request_id: UUID, body: DecisionInput, principal: OperatorPrincipal, *, provider: str
     ) -> tuple[ActionRequestView, bool]:
-        """Human/operator Decision route: requires an authenticated operator Principal."""
-        if principal.role is not PrincipalRole.OPERATOR:
-            raise ActionNotFoundError(str(request_id))
+        """Human/operator Decision route; only an operator has one to make."""
         return await self._commit_decision(
             request_id,
             principal,
             verdict=body.verdict,
             provider=provider,
-            issuer=principal.key,
+            operator=principal,
             idempotency_key=body.idempotency_key,
             expected_version=body.expected_version,
             decision_note=body.decision_note,
@@ -502,15 +547,15 @@ class ActionStore:
     ) -> tuple[ActionRequestView, bool]:
         """Synchronous non-human DecisionProvider route: no operator identity, no human decision note.
 
-        `caller_principal` only scopes the returned view (caller-own vs. operator-all projection);
-        the provider itself, not a human, is the decision's issuer.
+        `caller_principal` only scopes the returned view (caller-own vs. operator-all projection). It
+        is never the decider: the Decision records no operator, and `provider` names what decided.
         """
         return await self._commit_decision(
             request_id,
             caller_principal,
             verdict=verdict,
             provider=provider,
-            issuer=provider,
+            operator=None,
             idempotency_key=idempotency_key,
             expected_version=expected_version,
             reason_code=reason_code,
@@ -525,7 +570,7 @@ class ActionStore:
         *,
         verdict: Verdict,
         provider: str,
-        issuer: str,
+        operator: OperatorPrincipal | None,
         idempotency_key: str,
         expected_version: int,
         decision_note: str | None = None,
@@ -539,10 +584,13 @@ class ActionStore:
             )
             if row is None:
                 raise ActionNotFoundError(str(request_id))
+            operator_issuer = None if operator is None else operator.issuer
+            operator_subject = None if operator is None else operator.subject
             prior_key = await session.scalar(
                 select(DecisionRow).where(
                     DecisionRow.provider == provider,
-                    DecisionRow.issuer == issuer,
+                    DecisionRow.operator_issuer == operator_issuer,
+                    DecisionRow.operator_subject == operator_subject,
                     DecisionRow.idempotency_key == idempotency_key,
                 )
             )
@@ -562,7 +610,8 @@ class ActionStore:
                     request_id=row.id,
                     verdict=verdict.value,
                     provider=provider,
-                    issuer=issuer,
+                    operator_issuer=operator_issuer,
+                    operator_subject=operator_subject,
                     decision_note=decision_note,
                     reason_code=reason_code,
                     reason_description=reason_description,
@@ -690,7 +739,7 @@ class ActionStore:
                 arguments=row.arguments,
                 origin=row.origin,
                 correlation=row.correlation,
-                caller_principal=row.caller_principal,
+                caller=ServiceAccountRef(namespace=row.caller_namespace, name=row.caller_name),
                 external_grant=ExternalGrantProvenance.model_validate(row.external_grant)
                 if row.external_grant is not None
                 else None,
@@ -824,7 +873,7 @@ class ActionStore:
     async def _view(self, session: AsyncSession, row: ActionRequestRow, principal: Principal) -> ActionRequestView:
         decision = await session.scalar(select(DecisionRow).where(DecisionRow.request_id == row.id))
         execution = await session.scalar(select(ExecutionRow).where(ExecutionRow.request_id == row.id))
-        operator = principal.role is PrincipalRole.OPERATOR
+        operator = isinstance(principal, OperatorPrincipal)
         return ActionRequestView(
             id=row.id,
             idempotency_key=row.idempotency_key,
@@ -834,7 +883,7 @@ class ActionStore:
             description=row.description,
             origin=_redact(row.origin),
             correlation=_redact(row.correlation),
-            caller_principal=row.caller_principal if operator else None,
+            caller=ServiceAccountRef(namespace=row.caller_namespace, name=row.caller_name) if operator else None,
             external_grant=ExternalGrantProvenance.model_validate(row.external_grant)
             if row.external_grant is not None
             else None,
@@ -847,15 +896,28 @@ class ActionStore:
         )
 
 
+def _is_caller(row: ActionRequestRow, principal: Principal) -> bool:
+    return isinstance(principal, CallerPrincipal) and (row.caller_namespace, row.caller_name) == (
+        principal.account.namespace,
+        principal.account.name,
+    )
+
+
 def _may_read(row: ActionRequestRow, principal: Principal) -> bool:
-    return principal.role is PrincipalRole.OPERATOR or row.caller_principal == principal.key
+    return isinstance(principal, OperatorPrincipal) or _is_caller(row, principal)
 
 
 def _record_event(
-    session: AsyncSession, row: ActionRequestRow, at: datetime, *, actor_principal: str | None = None
+    session: AsyncSession, row: ActionRequestRow, at: datetime, *, actor: Principal | None = None
 ) -> None:
     session.add(
-        ActionEventRow(request_id=row.id, sequence=row.version, state=row.state, at=at, actor_principal=actor_principal)
+        ActionEventRow(
+            request_id=row.id,
+            sequence=row.version,
+            state=row.state,
+            at=at,
+            actor=None if actor is None else actor.model_dump(mode="json"),
+        )
     )
 
 
@@ -866,7 +928,7 @@ def _decision_view(row: DecisionRow | None) -> DecisionView | None:
         id=row.id,
         verdict=Verdict(row.verdict),
         provider=row.provider,
-        issuer=row.issuer,
+        operator=operator_or_none(row.operator_issuer, row.operator_subject),
         decision_note=row.decision_note,
         reason_code=row.reason_code,
         reason_description=row.reason_description,

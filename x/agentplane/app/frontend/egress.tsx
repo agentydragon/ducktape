@@ -153,7 +153,10 @@ function BindingsTable({
           const rows = [
             <Table.Tr key={binding.name}>
               <Table.Td>
-                <Tooltip label={binding.subjects.join(", ")} withArrow>
+                <Tooltip
+                  label={binding.subjects.map((subject) => `${subject.namespace}/${subject.name}`).join(", ")}
+                  withArrow
+                >
                   <Text size="sm" fw={600} style={{ overflowWrap: "anywhere" }}>
                     {binding.name}
                   </Text>

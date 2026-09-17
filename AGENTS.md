@@ -128,6 +128,15 @@ entire codebase (imports, BUILD files, CI configs, docs, Dockerfiles, k8s manife
 **Atomic API changes**: update all callers in the same commit. No transitional shims
 within this monorepo.
 
+**There is no production tier — only staging and testing — so deployed state is disposable.**
+A schema, CRD or wire change does not have to keep existing rows, custom resources or messages
+readable: change the shape, and delete and recreate whatever no longer parses. Do not write a
+migration, a tolerant reader, or a compatibility field to carry old data forward, and do not
+stage a rollout to avoid a window where the two disagree. What this does not license is
+destroying data a person authored and cannot regenerate — a repo, a notebook, a mailbox — or
+skipping the roll-safety rules where a reader genuinely is a newer release of a rolling
+deployment (<STYLE.md> § General, strict data mapping).
+
 ### Declarative configuration scope
 
 Before enabling or installing a declaratively managed feature, search the configuration

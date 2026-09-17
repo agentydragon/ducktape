@@ -96,7 +96,7 @@ export function ActionCaller({ request }: { request: ActionRequestView }): JSX.E
   if (!request.external_grant)
     return (
       <Text size="xs" c="dimmed">
-        {request.caller_principal}
+        {request.caller && `${request.caller.namespace}/${request.caller.name}`}
       </Text>
     );
   return (

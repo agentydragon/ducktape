@@ -14,7 +14,7 @@ import pytest
 import pytest_bazel
 from aiohttp import web
 from kubernetes_asyncio import client as k8s_client
-from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api
+from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api
 from more_itertools import one
 
 from x.agentplane.egress.resources import SANDBOXES_PLURAL
@@ -27,7 +27,7 @@ from x.agentplane.egress.testing.fake_apiserver import (
     sandbox,
 )
 from x.agentplane.llm_ingress.app import IngressResources, create_app
-from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
+from x.agentplane.sandbox_auth.http import WorkloadPrincipalAuthenticator
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 
 AUDIENCE = "agentplane-egress"
@@ -35,8 +35,6 @@ SUBJECT = f"system:serviceaccount:{SANDBOX_NAMESPACE}:agentplane-runner"
 TOKEN_A = "opaque-workload-token-a"
 TOKEN_B = "opaque-workload-token-b"
 WRONG_AUDIENCE_TOKEN = "opaque-wrong-audience-token"
-STALE_TOKEN = "opaque-stale-token"
-REPLACED_TOKEN = "opaque-replaced-token"
 UNOWNED_TOKEN = "opaque-unowned-token"
 LITELLM_KEY = "sk-server-held-test-key"
 
@@ -126,13 +124,12 @@ async def ingress_clients(
     ):
         resolver = SandboxPrincipalResolver(
             authentication=AuthenticationV1Api(api),
-            core_v1=CoreV1Api(api),
             audience=AUDIENCE,
             allowed_service_account_namespaces=frozenset({SANDBOX_NAMESPACE}),
         )
         app = create_app(
             IngressResources(
-                authenticate=SandboxPrincipalAuthenticator(resolver), backend=backend_http, litellm_key=LITELLM_KEY
+                authenticate=WorkloadPrincipalAuthenticator(resolver), backend=backend_http, litellm_key=LITELLM_KEY
             )
         )
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://ingress.test") as client:
@@ -185,15 +182,13 @@ async def test_two_workloads_share_one_backend_key_and_keep_distinct_verified_me
         "agentplane.namespace": SANDBOX_NAMESPACE,
         "agentplane.pod_name": "sandbox-a",
         "agentplane.pod_uid": "pod-a-uid",
-        "agentplane.sandbox_name": "sandbox-a",
-        "agentplane.sandbox_uid": kubernetes.objects[SANDBOXES_PLURAL]["sandbox-a"]["metadata"]["uid"],
         "agentplane.service_account": "agentplane-runner",
         "agentplane.service_account_subject": SUBJECT,
     }
-    assert verified_metadata(backend.requests[1])["agentplane.sandbox_name"] == "sandbox-b"
+    assert verified_metadata(backend.requests[1])["agentplane.pod_name"] == "sandbox-b"
     assert (
-        verified_metadata(backend.requests[1])["agentplane.sandbox_uid"]
-        != verified_metadata(backend.requests[0])["agentplane.sandbox_uid"]
+        verified_metadata(backend.requests[1])["agentplane.pod_uid"]
+        != verified_metadata(backend.requests[0])["agentplane.pod_uid"]
     )
     for forged_header in ("x-litellm-customer-id", "x-sandbox-name", "x-pod-uid", "x-agent-id", "x-thread-id"):
         assert forged_header not in backend.requests[0].headers
@@ -220,30 +215,23 @@ async def test_anthropic_status_error_body_and_request_shape_pass_unchanged() ->
 
 
 @pytest.mark.asyncio
-async def test_invalid_stale_replaced_and_unowned_bearers_fail_before_backend(caplog: pytest.LogCaptureFixture) -> None:
+async def test_missing_malformed_unknown_and_wrong_audience_bearers_fail_before_backend(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Everything the TokenReview itself settles. A Pod that is gone or replaced is settled there
+    too -- the API server validates the object the token is bound to -- and is not re-checked here."""
     caplog.set_level(logging.INFO)
     async with fake_apiserver() as kubernetes, fake_litellm() as backend:
         add_sandbox(kubernetes, "live", TOKEN_A, pod_uid="live-pod-uid")
         kubernetes.tokens[WRONG_AUDIENCE_TOKEN] = TokenVerdict(
             username=SUBJECT, pod_name="live", pod_uid="live-pod-uid", audiences=("somewhere-else",)
         )
-        kubernetes.tokens[STALE_TOKEN] = TokenVerdict(
-            username=SUBJECT, pod_name="deleted", pod_uid="deleted-pod-uid", audiences=(AUDIENCE,)
-        )
-        kubernetes.tokens[REPLACED_TOKEN] = TokenVerdict(
-            username=SUBJECT, pod_name="live", pod_uid="old-pod-uid", audiences=(AUDIENCE,)
-        )
-        add_sandbox(kubernetes, "unowned", UNOWNED_TOKEN, pod_uid="unowned-pod-uid")
-        kubernetes.pods["unowned"]["metadata"]["ownerReferences"] = []
         async with ingress_clients(kubernetes, backend) as (client, _):
             attempts = [
                 await client.post("/v1/messages", content=b"{}"),
                 await client.post("/v1/messages", content=b"{}", headers={"Authorization": "not-a-bearer"}),
                 await client.post("/v1/messages", content=b"{}", headers=bearer("unknown-token")),
                 await client.post("/v1/messages", content=b"{}", headers=bearer(WRONG_AUDIENCE_TOKEN)),
-                await client.post("/v1/messages", content=b"{}", headers=bearer(STALE_TOKEN)),
-                await client.post("/v1/messages", content=b"{}", headers=bearer(REPLACED_TOKEN)),
-                await client.post("/v1/messages", content=b"{}", headers=bearer(UNOWNED_TOKEN)),
             ]
 
     assert not backend.requests
@@ -251,8 +239,24 @@ async def test_invalid_stale_replaced_and_unowned_bearers_fail_before_backend(ca
         (401, "invalid workload bearer")
     }
     transcript = caplog.text + "".join(response.text for response in attempts)
-    for credential in (TOKEN_A, WRONG_AUDIENCE_TOKEN, STALE_TOKEN, REPLACED_TOKEN, UNOWNED_TOKEN, LITELLM_KEY):
+    for credential in (TOKEN_A, WRONG_AUDIENCE_TOKEN, LITELLM_KEY):
         assert credential not in transcript
+
+
+async def test_a_workload_no_sandbox_owns_is_served_as_its_service_account() -> None:
+    """The deliberate widening: spend is attributed to the account, and nothing follows an owner."""
+    async with fake_apiserver() as kubernetes, fake_litellm() as backend:
+        add_sandbox(kubernetes, "unowned", UNOWNED_TOKEN, pod_uid="unowned-pod-uid")
+        kubernetes.pods["unowned"]["metadata"]["ownerReferences"] = []
+        async with ingress_clients(kubernetes, backend) as (client, _):
+            served = await client.post(
+                "/v1/responses",
+                content=b'{"model":"chatgpt/oai-responses/gpt-5.6-luna","stream":true}',
+                headers={**bearer(UNOWNED_TOKEN), "content-type": "application/json"},
+            )
+
+    assert served.status_code == 200, served.text
+    assert verified_metadata(backend.requests[0])["agentplane.pod_name"] == "unowned"
 
 
 if __name__ == "__main__":

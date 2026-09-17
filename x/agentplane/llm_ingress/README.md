@@ -3,7 +3,7 @@
 This is the authenticated Sandbox-facing hop in front of the existing LiteLLM deployment. The
 central egress proxy substitutes the caller's already-authenticated Pod-bound workload token into
 an ordinary `Authorization: Bearer` header. This service resolves that bearer with the shared
-`SandboxPrincipalAuthenticator`, removes it, and forwards the request to LiteLLM with one
+`WorkloadPrincipalAuthenticator`, removes it, and forwards the request to LiteLLM with one
 server-held virtual key.
 
 The forwarded byte body, status, error body, and streamed chunks are not translated. Verified

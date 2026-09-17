@@ -14,6 +14,7 @@ py_library(
         "//x/agentplane/llm_ingress:__pkg__",
     ],
     deps = [
+        "//x/agentplane:crds",
         "//x/agentplane/egress:resources",
         "//x/agentplane/sandbox_auth:principal",
         "@pypi//aiohttp",

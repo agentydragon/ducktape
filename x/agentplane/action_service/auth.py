@@ -7,14 +7,14 @@ import hmac
 from pathlib import Path
 from typing import Protocol
 
-from x.agentplane.action_service.models import Principal, PrincipalRole, SandboxCaller
-from x.agentplane.sandbox_auth.principal import SandboxPrincipal
+from x.agentplane.action_service.models import CallerPrincipal, OperatorPrincipal
+from x.agentplane.sandbox_auth.principal import WorkloadPrincipal
 
 
 class OperatorAuthenticator(Protocol):
-    """Replaceable BFF/operator boundary; deliberately separate from SandboxPrincipal auth."""
+    """Replaceable BFF/operator boundary; deliberately separate from workload auth."""
 
-    async def authenticate(self, token: str) -> Principal | None: ...
+    async def authenticate(self, token: str) -> OperatorPrincipal | None: ...
 
 
 class DisabledOperatorAuthenticator:
@@ -47,13 +47,12 @@ class ConfiguredOperatorBearerAuthenticator:
             raise ValueError("operator bearer file must not be empty")
         return cls(token_digest=hashlib.sha256(token).digest(), subject=subject)
 
-    async def authenticate(self, token: str) -> Principal | None:
+    async def authenticate(self, token: str) -> OperatorPrincipal | None:
         presented = hashlib.sha256(token.encode()).digest()
         if not hmac.compare_digest(presented, self._token_digest):
             return None
-        return Principal(issuer="configured-operator", subject=self._subject, role=PrincipalRole.OPERATOR)
+        return OperatorPrincipal(issuer="configured-operator", subject=self._subject)
 
 
-def workload_principal(principal: SandboxPrincipal) -> Principal:
-    """Derive durable ownership only from the destination-resolved live Sandbox identity."""
-    return SandboxCaller(namespace=principal.namespace, sandbox_uid=principal.sandbox_uid).principal()
+def workload_principal(principal: WorkloadPrincipal) -> CallerPrincipal:
+    return CallerPrincipal(account=principal.account)

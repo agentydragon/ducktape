@@ -18,21 +18,13 @@ from x.agentplane.action_service.models import (
     PolicySetEvidence,
     ProviderOutcome,
     ProviderVerdict,
-    SandboxCaller,
-    ServiceAccountCaller,
-    ServiceAccountRef,
 )
 from x.agentplane.action_service.policies.kind import Matched, NotMatched
 from x.agentplane.action_service.policies.registry import evaluate
-from x.agentplane.action_service.policies.resources import (
-    ActionPolicyBinding,
-    ActionPolicySet,
-    InvalidResource,
-    SandboxSubject,
-    ServiceAccountSubject,
-)
+from x.agentplane.action_service.policies.resources import ActionPolicyBinding, ActionPolicySet, InvalidResource
 from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.providers import DecisionContext, ResolvedBinding
+from x.agentplane.subjects import ServiceAccountRef
 
 PROVIDER_NAME = "action_policy_set"
 AUTO_APPROVE_REASON = "policy_set_auto_approve"
@@ -41,23 +33,7 @@ NO_MATCH_REASON = "no_auto_approve_match"
 _DESCRIPTION_LIMIT = 500
 
 
-def _names(
-    subject: SandboxSubject | ServiceAccountSubject, namespace: str, named: SandboxCaller | ServiceAccountRef
-) -> bool:
-    """Whether a binding in `namespace` with this subject names the caller. A Sandbox is matched by
-    namespace and UID; its name is for humans."""
-    match subject:
-        case SandboxSubject(sandbox=sandbox):
-            return (
-                isinstance(named, SandboxCaller) and named.namespace == namespace and named.sandbox_uid == sandbox.uid
-            )
-        case ServiceAccountSubject(service_account=account):
-            return isinstance(named, ServiceAccountRef) and named == account
-
-
-def resolve_bindings(
-    index: PolicyIndex, caller: SandboxCaller | ServiceAccountCaller | ServiceAccountRef, now: datetime
-) -> tuple[ResolvedBinding, ...]:
+def resolve_bindings(index: PolicyIndex, caller: ServiceAccountRef, now: datetime) -> tuple[ResolvedBinding, ...]:
     """The caller's unexpired, valid bindings in key order, each with the valid sets it names that
     exist; a set it names that is missing or invalid contributes nothing. Nothing before sync.
 
@@ -65,7 +41,7 @@ def resolve_bindings(
     ServiceAccount directly, without a grant."""
     if not index.synced:
         return ()
-    named = caller.service_account if isinstance(caller, ServiceAccountCaller) else caller
+    named = caller
     resolved: list[ResolvedBinding] = []
     for key in sorted(index.bindings):
         binding = index.bindings[key]
@@ -74,7 +50,7 @@ def resolve_bindings(
         spec = binding.spec
         if spec.expires_at is not None and spec.expires_at <= now:
             continue
-        if not _names(spec.subject, binding.metadata.namespace, named):
+        if spec.subject != named:
             continue
         sets = tuple(
             policy_set

@@ -20,7 +20,7 @@ function HistoryCard({ request }: { request: ActionRequestView }): JSX.Element {
               {request.action.group} / {request.action.name}
             </Text>
             <Text size="xs" c="dimmed">
-              requested by {request.caller_principal}
+              requested by {request.caller && `${request.caller.namespace}/${request.caller.name}`}
             </Text>
             {decision && (
               <Badge color={decision.verdict === "allow" ? "green" : "red"} style={{ marginLeft: "auto" }}>

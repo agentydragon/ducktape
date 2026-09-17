@@ -15,15 +15,7 @@ from pydantic import JsonValue
 
 from github_policy.visibility import RepositoryVisibilityService
 from x.agentplane.action_service.catalog import ActionIdentity
-from x.agentplane.action_service.models import (
-    MatchedPolicy,
-    MatchedRepository,
-    PolicyKind,
-    ProviderVerdict,
-    SandboxCaller,
-    ServiceAccountCaller,
-    ServiceAccountRef,
-)
+from x.agentplane.action_service.models import MatchedPolicy, MatchedRepository, PolicyKind, ProviderVerdict
 from x.agentplane.action_service.policies.resources import (
     ActionPolicyBinding,
     ActionPolicySet,
@@ -48,12 +40,13 @@ from x.agentplane.action_service.policy_view import (
     subject_view,
 )
 from x.agentplane.action_service.providers import DecisionContext, ResolvedBinding
+from x.agentplane.subjects import ServiceAccountRef
 
 NAMESPACE = "agentplane-test"
 NOW = datetime(2026, 9, 12, 12, 0, tzinfo=UTC)
-SANDBOX = SandboxCaller(namespace=NAMESPACE, sandbox_uid="sandbox-uid-1")
-ACCOUNT = ServiceAccountRef(namespace=NAMESPACE, name="test-caller")
-CALLER = ServiceAccountCaller(service_account=ACCOUNT, grant_revision=1)
+WORKLOAD = ServiceAccountRef(namespace=NAMESPACE, name="workload-1")
+GRANTED = ServiceAccountRef(namespace=NAMESPACE, name="test-caller")
+CALLER = GRANTED
 SCHEMA_POLICY: dict[str, Any] = {
     "type": "argument_schema",
     "actions": {"everything": ["echo"]},
@@ -111,57 +104,36 @@ def test_resolution_takes_unexpired_valid_bindings_naming_the_caller_with_their_
     index = index_of(
         reads,
         broken,
+        binding("b-workload", WORKLOAD.model_dump(), ["set-reads", "set-broken", "set-missing"]),
+        binding("b-granted", GRANTED.model_dump(), ["set-reads"]),
+        binding("b-expired", WORKLOAD.model_dump(), ["set-reads"], expires_at=(NOW - timedelta(seconds=1)).isoformat()),
+        binding("b-later", WORKLOAD.model_dump(), ["set-reads"], expires_at=(NOW + timedelta(hours=1)).isoformat()),
         binding(
-            "b-sandbox",
-            {"sandbox": {"name": "coder", "uid": SANDBOX.sandbox_uid}},
-            ["set-reads", "set-broken", "set-missing"],
+            "b-other-account", ServiceAccountRef(namespace=NAMESPACE, name="someone-else").model_dump(), ["set-reads"]
         ),
-        binding("b-account", {"serviceAccount": {"namespace": NAMESPACE, "name": ACCOUNT.name}}, ["set-reads"]),
-        binding(
-            "b-expired",
-            {"sandbox": {"name": "coder", "uid": SANDBOX.sandbox_uid}},
-            ["set-reads"],
-            expires_at=(NOW - timedelta(seconds=1)).isoformat(),
-        ),
-        binding(
-            "b-later",
-            {"sandbox": {"name": "coder", "uid": SANDBOX.sandbox_uid}},
-            ["set-reads"],
-            expires_at=(NOW + timedelta(hours=1)).isoformat(),
-        ),
-        binding("b-other-uid", {"sandbox": {"name": "coder", "uid": "someone-else"}}, ["set-reads"]),
-        binding("b-invalid", {"sandbox": {"name": "coder"}}, ["set-reads"]),
+        binding("b-invalid", {"name": "coder"}, ["set-reads"]),
     )
-    for_sandbox = resolve_bindings(index, SANDBOX, NOW)
-    assert [resolved.binding.metadata.name for resolved in for_sandbox] == ["b-later", "b-sandbox"]
-    assert [[s.metadata.name for s in resolved.policy_sets] for resolved in for_sandbox] == [
+    for_workload = resolve_bindings(index, WORKLOAD, NOW)
+    assert [resolved.binding.metadata.name for resolved in for_workload] == ["b-later", "b-workload"]
+    assert [[s.metadata.name for s in resolved.policy_sets] for resolved in for_workload] == [
         ["set-reads"],
         ["set-reads"],
     ]
     for_account = resolve_bindings(index, CALLER, NOW)
-    assert [resolved.binding.metadata.name for resolved in for_account] == ["b-account"]
-    assert (
-        resolve_bindings(index, SandboxCaller(namespace="agentplane-other", sandbox_uid=SANDBOX.sandbox_uid), NOW) == ()
-    )
-    assert (
-        resolve_bindings(
-            index,
-            ServiceAccountCaller(service_account=ServiceAccountRef(namespace=NAMESPACE, name="x"), grant_revision=3),
-            NOW,
-        )
-        == ()
-    )
+    assert [resolved.binding.metadata.name for resolved in for_account] == ["b-granted"]
+    assert resolve_bindings(index, ServiceAccountRef(namespace="agentplane-other", name=WORKLOAD.name), NOW) == ()
+    assert resolve_bindings(index, ServiceAccountRef(namespace=NAMESPACE, name="x"), NOW) == ()
 
 
 def test_nothing_resolves_before_the_informer_has_synced() -> None:
     index = index_of(
         policy_set("set-reads", [{"type": "exact_actions", "actions": {"everything": ["echo"]}}]),
-        binding("b-sandbox", {"sandbox": {"name": "coder", "uid": SANDBOX.sandbox_uid}}, ["set-reads"]),
+        binding("b-workload", WORKLOAD.model_dump(), ["set-reads"]),
         synced=False,
     )
-    assert resolve_bindings(index, SANDBOX, NOW) == ()
+    assert resolve_bindings(index, WORKLOAD, NOW) == ()
     index.synced = True
-    assert len(resolve_bindings(index, SANDBOX, NOW)) == 1
+    assert len(resolve_bindings(index, WORKLOAD, NOW)) == 1
 
 
 def test_every_kind_projects_to_its_own_view() -> None:
@@ -175,9 +147,9 @@ def test_every_kind_projects_to_its_own_view() -> None:
                 {"type": "github_public_repository", "actions": {"github": ["get_file_contents"]}},
             ],
         ),
-        binding("b-kinds", {"sandbox": {"name": "coder", "uid": SANDBOX.sandbox_uid}}, ["set-kinds"]),
+        binding("b-kinds", WORKLOAD.model_dump(), ["set-kinds"]),
     )
-    views = [entry.policy for entry in caller_view(index, SANDBOX, NOW).auto_approve_if]
+    views = [entry.policy for entry in caller_view(index, WORKLOAD, NOW).auto_approve_if]
     assert [view.type for view in views] == list(PolicyKind)
     assert isinstance(views[2], GitHubRepositoryView)
     assert (views[2].owner, views[2].repository, views[2].actions) == ("o", "r", {"github": ["search_code"]})
@@ -187,49 +159,42 @@ def test_every_kind_projects_to_its_own_view() -> None:
 
 @pytest.fixture
 def mixed_index() -> PolicyIndex:
-    """One Sandbox with a valid, a refused and a missing set on one binding, a second binding of
-    its own, and the bindings the resolution skips: expired, another Sandbox's, a ServiceAccount's."""
+    """One ServiceAccount with a valid, a refused and a missing set on one binding, a second binding
+    of its own, and the bindings the resolution skips: expired, another account's, and one held
+    through a Connection grant."""
     return index_of(
         policy_set("set-reads", [{"type": "exact_actions", "actions": {"everything": ["echo", "add"]}}]),
         policy_set("set-echo", [SCHEMA_POLICY], generation=3),
         policy_set("set-broken", [{"type": "nope", "actions": {"everything": ["echo"]}}]),
         binding(
-            "b-sandbox",
-            {"sandbox": {"name": "coder", "uid": SANDBOX.sandbox_uid}},
+            "b-workload",
+            WORKLOAD.model_dump(),
             ["set-reads", "set-broken", "set-missing"],
             labels={"test.example/managed-by": "test-writer"},
         ),
+        binding("b-afternoon", WORKLOAD.model_dump(), ["set-echo"], expires_at=(NOW + timedelta(hours=1)).isoformat()),
+        binding("b-expired", WORKLOAD.model_dump(), ["set-reads"], expires_at=(NOW - timedelta(seconds=1)).isoformat()),
         binding(
-            "b-afternoon",
-            {"sandbox": {"name": "coder", "uid": SANDBOX.sandbox_uid}},
-            ["set-echo"],
-            expires_at=(NOW + timedelta(hours=1)).isoformat(),
+            "b-other-account", ServiceAccountRef(namespace=NAMESPACE, name="someone-else").model_dump(), ["set-reads"]
         ),
-        binding(
-            "b-expired",
-            {"sandbox": {"name": "coder", "uid": SANDBOX.sandbox_uid}},
-            ["set-reads"],
-            expires_at=(NOW - timedelta(seconds=1)).isoformat(),
-        ),
-        binding("b-other-uid", {"sandbox": {"name": "coder", "uid": "someone-else"}}, ["set-reads"]),
-        binding("b-account", {"serviceAccount": {"namespace": NAMESPACE, "name": ACCOUNT.name}}, ["set-echo"]),
+        binding("b-granted", GRANTED.model_dump(), ["set-echo"]),
     )
 
 
 def test_a_caller_reads_its_own_resolution_and_nothing_of_the_sets_it_cannot_use(mixed_index: PolicyIndex) -> None:
     """The caller view names the bindings admission resolves and, per binding, only the sets that
     contribute: a refused or missing set is simply not there, and another subject's bindings never are."""
-    view = caller_view(mixed_index, SANDBOX, NOW)
+    view = caller_view(mixed_index, WORKLOAD, NOW)
 
     assert view.synced is True
     assert [(b.name, b.policy_sets) for b in view.bindings] == [
         ("b-afternoon", ["set-echo"]),
-        ("b-sandbox", ["set-reads"]),
+        ("b-workload", ["set-reads"]),
     ]
     assert view.bindings[0].expires_at == NOW + timedelta(hours=1)
     assert [(p.binding, p.policy_set, p.index, p.policy.type) for p in view.auto_approve_if] == [
         ("b-afternoon", "set-echo", 0, PolicyKind.ARGUMENT_SCHEMA),
-        ("b-sandbox", "set-reads", 0, PolicyKind.EXACT_ACTIONS),
+        ("b-workload", "set-reads", 0, PolicyKind.EXACT_ACTIONS),
     ]
     echo, reads = (p.policy for p in view.auto_approve_if)
     assert isinstance(echo, ArgumentSchemaView)
@@ -240,40 +205,40 @@ def test_a_caller_reads_its_own_resolution_and_nothing_of_the_sets_it_cannot_use
     assert "set-broken" not in view.model_dump_json()
     assert "set-missing" not in view.model_dump_json()
 
-    other = caller_view(mixed_index, SandboxCaller(namespace=NAMESPACE, sandbox_uid="someone-else"), NOW)
-    assert [b.name for b in other.bindings] == ["b-other-uid"]
-    assert [b.name for b in caller_view(mixed_index, CALLER, NOW).bindings] == ["b-account"]
+    other = caller_view(mixed_index, ServiceAccountRef(namespace=NAMESPACE, name="someone-else"), NOW)
+    assert [b.name for b in other.bindings] == ["b-other-account"]
+    assert [b.name for b in caller_view(mixed_index, CALLER, NOW).bindings] == ["b-granted"]
 
 
 def test_the_operator_reads_the_same_resolution_with_each_named_set_standing(mixed_index: PolicyIndex) -> None:
     """The subject view keeps the caller's lists and adds what the caller is not shown: labels, the
     Ready verdicts, the refused set's report, and the names nothing answers to."""
-    view = subject_view(mixed_index, SANDBOX, NOW)
+    view = subject_view(mixed_index, WORKLOAD, NOW)
 
-    assert view.auto_approve_if == caller_view(mixed_index, SANDBOX, NOW).auto_approve_if
-    afternoon, sandbox = view.bindings
-    assert (sandbox.name, sandbox.labels, sandbox.ready) == (
-        "b-sandbox",
+    assert view.auto_approve_if == caller_view(mixed_index, WORKLOAD, NOW).auto_approve_if
+    afternoon, workload = view.bindings
+    assert (workload.name, workload.labels, workload.ready) == (
+        "b-workload",
         {"test.example/managed-by": "test-writer"},
         None,
     )
-    reads, broken = sandbox.policy_sets
+    reads, broken = workload.policy_sets
     assert (reads.name, reads.generation, reads.refused) == ("set-reads", 1, None)
     assert broken.name == "set-broken"
     assert broken.refused is not None
     assert "nope" in broken.refused
-    assert sandbox.missing_policy_sets == ["set-missing"]
+    assert workload.missing_policy_sets == ["set-missing"]
     assert (afternoon.name, afternoon.labels, afternoon.missing_policy_sets) == ("b-afternoon", {}, [])
     assert [(s.name, s.generation) for s in afternoon.policy_sets] == [("set-echo", 3)]
 
-    account = subject_view(mixed_index, ACCOUNT, NOW)
-    assert [b.name for b in account.bindings] == ["b-account"]
+    account = subject_view(mixed_index, GRANTED, NOW)
+    assert [b.name for b in account.bindings] == ["b-granted"]
     assert account.auto_approve_if == caller_view(mixed_index, CALLER, NOW).auto_approve_if
 
 
 def test_both_views_say_nothing_auto_decides_before_sync(mixed_index: PolicyIndex) -> None:
     mixed_index.synced = False
-    for view in (caller_view(mixed_index, SANDBOX, NOW), subject_view(mixed_index, SANDBOX, NOW)):
+    for view in (caller_view(mixed_index, WORKLOAD, NOW), subject_view(mixed_index, WORKLOAD, NOW)):
         assert view.synced is False
         assert (view.bindings, view.auto_approve_if) == ([], [])
 
@@ -283,14 +248,14 @@ async def test_an_entry_is_named_as_the_decision_names_the_policy_that_matched(
 ) -> None:
     """A caller reads a Decision's evidence and its own policy in one vocabulary: the entry the
     provider records in `MatchedPolicy` is the first `auto_approve_if` entry that matches."""
-    view = caller_view(mixed_index, SANDBOX, NOW)
+    view = caller_view(mixed_index, WORKLOAD, NOW)
     outcome = await PolicySetDecisionProvider(visibility=github_visibility()).decide(
         DecisionContext(
             request_id=uuid4(),
             action=ActionIdentity(group="everything", name="add"),
             arguments={},
-            caller=SANDBOX,
-            bindings=resolve_bindings(mixed_index, SANDBOX, NOW),
+            caller=WORKLOAD,
+            bindings=resolve_bindings(mixed_index, WORKLOAD, NOW),
         )
     )
 
@@ -303,7 +268,7 @@ async def test_an_entry_is_named_as_the_decision_names_the_policy_that_matched(
 
 
 def test_invalid_resource_keeps_metadata_for_status_reporting() -> None:
-    broken = binding("b-invalid", {"sandbox": {"name": "coder"}}, ["set-reads"])
+    broken = binding("b-invalid", {"name": "coder"}, ["set-reads"])
     assert isinstance(broken, InvalidResource)
     assert broken.metadata == ObjectMeta(
         name="b-invalid", namespace=NAMESPACE, uid="uid-b-invalid", generation=1, resource_version="1"
@@ -321,15 +286,13 @@ PUBLIC_SET = policy_set("set-public", [{"type": "github_public_repository", "act
 
 
 def _context(action: ActionIdentity, arguments: dict[str, JsonValue], *sets: ActionPolicySet) -> DecisionContext:
-    bound = binding(
-        "b-github", {"sandbox": {"name": "coder", "uid": SANDBOX.sandbox_uid}}, [s.metadata.name for s in sets]
-    )
+    bound = binding("b-github", WORKLOAD.model_dump(), [s.metadata.name for s in sets])
     assert isinstance(bound, ActionPolicyBinding)
     return DecisionContext(
         request_id=uuid4(),
         action=action,
         arguments=arguments,
-        caller=SANDBOX,
+        caller=WORKLOAD,
         bindings=(ResolvedBinding(binding=bound, policy_sets=sets),),
     )
 

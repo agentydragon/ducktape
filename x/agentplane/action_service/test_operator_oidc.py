@@ -22,6 +22,7 @@ from x.agentplane.action_service.operator_oidc import (
     OperatorTokenProfile,
 )
 from x.agentplane.action_service.service import ActionService
+from x.agentplane.action_service.test_fixtures.callers import admitted_callers
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 
@@ -46,6 +47,7 @@ async def test_signed_operator_admission(
             )
         ),
         catalog,
+        callers=admitted_callers(),
         updates=ActionUpdates("postgresql://unused-test-listener"),
     )
     now = int(time.time())

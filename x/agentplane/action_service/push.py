@@ -22,9 +22,10 @@ from pywebpush import WebPusher
 from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.sql.elements import ColumnElement
 
 from x.agentplane.action_service.db import ActionRequestRow, PushDeliveryRow, PushSubscriptionRow
-from x.agentplane.action_service.models import ActionState
+from x.agentplane.action_service.models import ActionState, OperatorPrincipal
 from x.agentplane.action_service.updates import ActionUpdates
 
 logger = logging.getLogger(__name__)
@@ -89,18 +90,25 @@ class PushIdentity:
         return str(self._vapid.sign({"aud": audience, "sub": self._subject, "exp": expiry})["Authorization"])
 
 
+def _owned_by(operator: OperatorPrincipal) -> ColumnElement[bool]:
+    return and_(
+        PushSubscriptionRow.operator_issuer == operator.issuer, PushSubscriptionRow.operator_subject == operator.subject
+    )
+
+
 class PushSubscriptionStore:
     def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
         self._sessions = sessions
 
     async def save(
-        self, *, operator_principal: str, endpoint: str, p256dh: str, auth: str, user_agent: str | None
+        self, *, operator: OperatorPrincipal, endpoint: str, p256dh: str, auth: str, user_agent: str | None
     ) -> None:
         statement = (
             insert(PushSubscriptionRow)
             .values(
                 endpoint=endpoint,
-                operator_principal=operator_principal,
+                operator_issuer=operator.issuer,
+                operator_subject=operator.subject,
                 p256dh=p256dh,
                 auth=auth,
                 user_agent=user_agent,
@@ -108,7 +116,7 @@ class PushSubscriptionStore:
             )
             .on_conflict_do_update(
                 index_elements=[PushSubscriptionRow.endpoint],
-                where=PushSubscriptionRow.operator_principal == operator_principal,
+                where=_owned_by(operator),
                 set_={"p256dh": p256dh, "auth": auth, "user_agent": user_agent},
             )
         )
@@ -117,24 +125,18 @@ class PushSubscriptionStore:
             if saved is None:
                 raise ValueError("subscription belongs to another operator")
 
-    async def list_for(self, operator_principal: str) -> list[PushSubscriptionRow]:
+    async def list_for(self, operator: OperatorPrincipal) -> list[PushSubscriptionRow]:
         async with self._sessions() as session:
-            return list(
-                (
-                    await session.scalars(
-                        select(PushSubscriptionRow).where(PushSubscriptionRow.operator_principal == operator_principal)
-                    )
-                ).all()
-            )
+            return list((await session.scalars(select(PushSubscriptionRow).where(_owned_by(operator)))).all())
 
     async def list_all(self) -> list[PushSubscriptionRow]:
         async with self._sessions() as session:
             return list((await session.scalars(select(PushSubscriptionRow))).all())
 
-    async def delete(self, *, operator_principal: str, endpoint: str) -> bool:
+    async def delete(self, *, operator: OperatorPrincipal, endpoint: str) -> bool:
         async with self._sessions.begin() as session:
             row = await session.get(PushSubscriptionRow, endpoint)
-            if row is None or row.operator_principal != operator_principal:
+            if row is None or (row.operator_issuer, row.operator_subject) != (operator.issuer, operator.subject):
                 return False
             await session.delete(row)
             return True

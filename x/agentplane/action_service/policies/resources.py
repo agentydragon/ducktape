@@ -2,7 +2,8 @@
 
 `ActionPolicySet` and `ActionPolicyBinding` are Agentplane's own kinds (group
 `agentplane.allegedly.works`, `v1alpha1`; the CRDs live in `cluster/k8s/agentplane-crds`). A
-caller ServiceAccount is an ordinary ServiceAccount carrying `CALLER_LABEL`. The operator-authored
+caller ServiceAccount is an ordinary ServiceAccount carrying `CALLER_LABEL`, which is what admits
+it here at all -- a Pod running as it and a Connection acting as it alike. The operator-authored
 `spec` is parsed strictly, so a typo or an unknown policy kind is refused here rather than
 silently granting nothing; such an object is kept as `InvalidResource`, which the informer reports
 in the object's `Ready` condition. Server-stamped metadata and status are read only as far as the
@@ -12,20 +13,19 @@ service needs them.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Annotated, Any, Literal
+from typing import Any, Literal
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Discriminator, Field, Tag, ValidationError
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError
 
-from x.agentplane.action_service.models import NamespacedName, ServiceAccountRef
+from x.agentplane.action_service.models import NamespacedName
 from x.agentplane.action_service.policies.kind import Spec
 from x.agentplane.action_service.policies.registry import Policy
+from x.agentplane.subjects import ServiceAccountRef
 
-GROUP = "agentplane.allegedly.works"
-VERSION = "v1alpha1"
 POLICY_SETS_PLURAL = "actionpolicysets"
 BINDINGS_PLURAL = "actionpolicybindings"
 SERVICE_ACCOUNTS_PLURAL = "serviceaccounts"
-CALLER_LABEL = "agentplane.allegedly.works/action-caller"
+CALLER_LABEL = "agentplane.allegedly.works/use-action-service"
 CALLER_LABEL_SELECTOR = f"{CALLER_LABEL}=true"
 READY_CONDITION = "Ready"
 # metav1.Condition.message is capped by the CRD schema; a pydantic report for a large object can be longer.
@@ -98,42 +98,8 @@ class ActionPolicySet(_Namespaced):
     status: Status = Field(default_factory=Status)
 
 
-class SandboxRef(Spec):
-    name: str = Field(min_length=1)
-    uid: str = Field(min_length=1, description="Pins the live Sandbox; a binding whose Sandbox is gone is inert.")
-
-
-class ServiceAccountSubject(Spec):
-    service_account: ServiceAccountRef = Field(alias="serviceAccount")
-
-
-class SandboxSubject(Spec):
-    sandbox: SandboxRef
-
-
-def _subject_kind(value: Any) -> str | None:
-    """Which one-key form the subject takes; both keys at once fails as an extra field on the chosen one."""
-    if isinstance(value, ServiceAccountSubject):
-        return "serviceAccount"
-    if isinstance(value, SandboxSubject):
-        return "sandbox"
-    if isinstance(value, dict):
-        for key in ("serviceAccount", "service_account"):
-            if key in value:
-                return "serviceAccount"
-        if "sandbox" in value:
-            return "sandbox"
-    return None
-
-
-Subject = Annotated[
-    Annotated[ServiceAccountSubject, Tag("serviceAccount")] | Annotated[SandboxSubject, Tag("sandbox")],
-    Discriminator(_subject_kind),
-]
-
-
 class BindingSpec(Spec):
-    subject: Subject
+    subject: ServiceAccountRef
     policy_sets: list[str] = Field(
         alias="policySets", min_length=1, description="ActionPolicySet names in the binding's namespace."
     )

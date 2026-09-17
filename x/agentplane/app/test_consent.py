@@ -13,8 +13,8 @@ from starlette.requests import Request
 
 from x.agentplane.action_service.client import CredentialPlaceholder, OperatorActionServiceClient
 from x.agentplane.action_service.connections import NewConnection
-from x.agentplane.action_service.models import ServiceAccountRef
 from x.agentplane.app.consent import ConsentAllow, ConsentDeny, decide_enrollment, preview_enrollment
+from x.agentplane.subjects import ServiceAccountRef
 
 PUBLIC_CODER = ServiceAccountRef(namespace="agentplane-test", name="test-public-coder")
 

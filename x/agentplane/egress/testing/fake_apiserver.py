@@ -21,17 +21,17 @@ from typing import Any
 from aiohttp import web
 from more_itertools import one
 
+from x.agentplane.crds import GROUP, VERSION
 from x.agentplane.egress.resources import (
     BINDINGS_PLURAL,
     CREDENTIALS_PLURAL,
-    GROUP,
     POLICIES_PLURAL,
     SANDBOX_GROUP,
+    SANDBOX_KIND,
     SANDBOX_VERSION,
     SANDBOXES_PLURAL,
-    VERSION,
 )
-from x.agentplane.sandbox_auth.principal import POD_NAME_CLAIM, POD_UID_CLAIM, SANDBOX_KIND
+from x.agentplane.sandbox_auth.principal import POD_NAME_CLAIM, POD_UID_CLAIM
 
 NAMESPACE = "agentplane-egress-test"
 SANDBOX_NAMESPACE = "agentplane-egress-test-sandboxes"
@@ -247,6 +247,11 @@ def sandbox(name: str) -> dict[str, Any]:
         "metadata": {"name": name},
         "spec": {},
     }
+
+
+def sandbox_uid(name: str) -> str:
+    """The UID this server stamps on a stored Sandbox, which a binding's subject has to name."""
+    return f"uid-{SANDBOXES_PLURAL}-{name}"
 
 
 def pod_for(fake: FakeApiServer, sandbox_name: str, *, pod_uid: str, ip: str) -> dict[str, Any]:

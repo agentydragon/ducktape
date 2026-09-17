@@ -13,8 +13,10 @@ Console's being the one to retire, not two systems that happen to resemble each 
 
 ## External Connections
 
-An external caller is a ServiceAccount labeled `agentplane.allegedly.works/action-caller: "true"`
-in one of `allowed_service_account_namespaces`; staging commits `claude-ai`, the principal for
+Any caller is a ServiceAccount labeled `agentplane.allegedly.works/use-action-service: "true"` in
+one of `allowed_service_account_namespaces` — a Pod-bound workload token and a Connection are two
+ways to prove one account, and the label admits either. The integration app labels the account it
+mints per Sandbox; staging commits `claude-ai`, the principal for
 Connections enrolled from the Claude.ai MCP connector, next to its settings
 (`cluster/k8s/agentplane-staging/actions/serviceaccount-claude-ai.yaml`). Testing commits none:
 nothing there enrolls an external Connection, and the acceptance suite creates the objects it
@@ -322,8 +324,7 @@ transactionally if unexpected preexisting rows exist.
 
 `policies/resources` parses `ActionPolicySet` and `ActionPolicyBinding` (CRDs in
 `cluster/k8s/agentplane-crds/`) strictly: an unknown key or policy kind, an invalid JSON Schema, or
-a subject that is not exactly one of `serviceAccount`/`sandbox` makes the object an
-`InvalidResource`. `policy_informer` list-and-watches both kinds and the labeled caller
+a subject that is not a namespaced ServiceAccount makes the object an `InvalidResource`. `policy_informer` list-and-watches both kinds and the labeled caller
 ServiceAccounts in every `allowed_service_account_namespaces` entry into one `PolicyIndex`, and
 writes each set's and binding's `Ready` condition with `observedGeneration`, so `kubectl get`
 shows a refused edit and a writer can wait for the service to have seen a spec change. The
@@ -349,13 +350,13 @@ are parsed and reported but decide nothing yet. Dispatch is unchanged: it re-che
 authority, never policy.
 
 `policy_view` projects that same `resolve_bindings` for readers: `GET /v1/action-policy` answers
-the authenticated caller (a Sandbox principal on the workload route) and the `get_action_policy`
-tool a `target` (the caller itself, a Sandbox principal or the grant's ServiceAccount, by default;
-or a named Sandbox or ServiceAccount) with the redacted `CallerActionPolicyView`, and
-`GET /v1/operator/action-policy/{sandboxes/{namespace}/{uid},service-accounts/{namespace}/{name}}`
-answers the operator with `SubjectActionPolicyView`, adding each binding's labels and `Ready`
-verdict and each named set as present, refused or missing. Both carry `synced`; the integration
-app's Sandbox page reads the operator form.
+the authenticated caller (the ServiceAccount its Pod runs as, on the workload route) and the
+`get_action_policy` tool a `target` (the caller itself by default, or a named ServiceAccount) with
+the redacted `CallerActionPolicyView`, and
+`GET /v1/operator/action-policy/service-accounts/{namespace}/{name}` answers the operator with
+`SubjectActionPolicyView`, adding each binding's labels and `Ready` verdict and each named set as
+present, refused or missing. Both carry `synced`; the integration app's Sandbox page reads the
+operator form.
 
 The deployed proof is `//x/agentplane/acceptance:test_mcp`, which creates the set and binding
 for the Sandbox it launches through the Kubernetes API (see [the acceptance README](../acceptance/README.md))
@@ -374,10 +375,10 @@ not hold that token: it presents the public
 path, whose generic `authenticatedWorkloadToken` source substitutes the already-authenticated
 `agentplane-egress` bearer for the exact first-party destination rule.
 
-At the destination, `SandboxPrincipalAuthenticator` and `SandboxPrincipalResolver` from
-`//x/agentplane/sandbox_auth` perform TokenReview plus live Pod/Sandbox-owner resolution. Ownership
-is derived only from the resolved Sandbox namespace and UID. ServiceAccount subject lists, identity
-headers, and request `origin`/`correlation` fields are never authorization. Thread and Agent fields
+At the destination, `WorkloadPrincipalAuthenticator` and `SandboxPrincipalResolver` from
+`//x/agentplane/sandbox_auth` perform the TokenReview. The caller is the
+ServiceAccount that Pod runs as, derived only from what the bearer proved. Identity headers and
+request `origin`/`correlation` fields are never authorization. Thread and Agent fields
 remain untrusted provenance until an authoritative binding exists; workload authentication performs
 no Thread or Agent lookup.
 

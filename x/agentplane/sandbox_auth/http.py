@@ -1,40 +1,41 @@
-"""FastAPI dependency for destination-side SandboxPrincipal authentication."""
+"""FastAPI dependencies for destination-side workload authentication."""
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from typing import Never
 
 from fastapi import HTTPException, Request, status
 
+from x.agentplane.sandbox_auth.bearer import parse_bearer, sole_header
 from x.agentplane.sandbox_auth.principal import (
-    SandboxPrincipal,
     SandboxPrincipalRejectedError,
     SandboxPrincipalResolver,
+    WorkloadPrincipal,
 )
-
-_BEARER = re.compile(r"Bearer +([A-Za-z0-9._~+/=-]+)", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
-class SandboxPrincipalAuthenticator:
+class WorkloadPrincipalAuthenticator:
     """Resolve the request's sole ordinary Authorization bearer or fail closed with 401."""
 
     resolver: SandboxPrincipalResolver
 
-    async def __call__(self, request: Request) -> SandboxPrincipal:
-        values = request.headers.getlist("authorization")
-        match = _BEARER.fullmatch(values[0]) if len(values) == 1 else None
-        if match is None:
-            self._reject()
+    async def __call__(self, request: Request) -> WorkloadPrincipal:
+        token = _sole_bearer(request)
         try:
-            return await self.resolver.resolve(match.group(1))
+            return await self.resolver.resolve_workload(token)
         except SandboxPrincipalRejectedError:
-            self._reject()
+            _reject()
 
-    @staticmethod
-    def _reject() -> Never:
-        raise HTTPException(
-            status.HTTP_401_UNAUTHORIZED, "invalid workload bearer", headers={"WWW-Authenticate": "Bearer"}
-        )
+
+def _sole_bearer(request: Request) -> str:
+    value = sole_header(request.headers.getlist("authorization"))
+    token = parse_bearer(value) if value is not None else None
+    if token is None:
+        _reject()
+    return token
+
+
+def _reject() -> Never:
+    raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid workload bearer", headers={"WWW-Authenticate": "Bearer"})

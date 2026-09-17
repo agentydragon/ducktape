@@ -6,11 +6,15 @@ Caller-provided provenance never assigns authority. A caller-scoped idempotency 
 once: a repeated key is refused, and the request it named is recovered by looking it up by key,
 never by another submission.
 
-## External Connection authority
+## Caller admission and Connection authority
 
-An external caller is a Kubernetes ServiceAccount carrying the label
-`agentplane.allegedly.works/action-caller: "true"` in a namespace the service accepts callers
-from; the service watches those ServiceAccounts and lists the eligible ones to the operator. The
+**Every** caller is a Kubernetes ServiceAccount carrying the label
+`agentplane.allegedly.works/use-action-service: "true"` in a namespace the service accepts callers
+from, whether it proves that account with a Pod-bound workload token or through an external
+Connection acting as it. Authenticating is not being admitted: an unlabeled account reaches no
+route, so a workload the operator has not named cannot queue Actions for them either. Nothing is
+admitted before the ServiceAccount watch has synced. The service lists the labeled accounts to the
+operator, which is what a Connection's consent picks from. The
 single operator can inspect Connections, rename them, and unbind them. A Connection's UUID does
 not change on rename; names are presentation and need not be unique.
 
@@ -44,8 +48,9 @@ historical Decision or invoking an executor. Revocation does not stop already cl
 ## Action policies
 
 An `ActionPolicySet` holds typed policies in `autoApproveIf`, `autoDenyIf` and `autoDenyUnless`;
-an `ActionPolicyBinding` joins one subject, a labeled ServiceAccount or a live Sandbox by name and
-UID, to sets by name, optionally until `expiresAt`. Both are namespaced Kubernetes objects the
+an `ActionPolicyBinding` joins one subject -- a namespaced ServiceAccount, which is what a
+workload's Pod runs as and what an external Connection acts as -- to sets by name, optionally until
+`expiresAt`. Both are namespaced Kubernetes objects the
 service watches in the namespaces it accepts callers from. It reads `spec` only and reports in
 each object's `Ready` condition, stamped with the generation it judged, whether the spec parsed;
 an invalid set or binding contributes nothing.
@@ -62,8 +67,9 @@ never denied for it. This version decides from `autoApproveIf` only; the deny li
 and validated and produce no Decision.
 
 Policies are evaluated once, at admission, against the objects as the service holds them then:
-the caller's unexpired bindings, whose subject is matched from the authenticated Sandbox's
-namespace and UID or the Connection's ServiceAccount and never from any request field, the
+the caller's unexpired bindings, whose subject is matched from the ServiceAccount the bearer
+proved -- the one its Pod runs as, or the one its Connection acts as -- and never from any request
+field, the
 existing valid sets they name, and the first `autoApproveIf` policy that matches. A match
 auto-approves with an Execution; no match leaves the request on the human path; until the watch
 has synced, every caller is human-only. A later edit, expiry or deletion changes the next Action's
@@ -71,7 +77,7 @@ Decision, not this one's; dispatch re-checks only caller authority. The Decision
 bindings with their resource versions, the sets with their generations, and the matching policy.
 
 A caller can read an effective policy: the bindings admission would resolve now for its own
-subject, or for a Sandbox or ServiceAccount it names, the sets that resolved, and the three lists
+subject, or for a ServiceAccount it names, the sets that resolved, and the three lists
 in evaluation order, each entry named as a Decision's evidence names the matching policy. The read
 and the Decision come from one resolution, so they cannot disagree; the answer says whose it is; a
 subject the service does not watch reads as no bindings; and it carries `synced`, which is false
@@ -137,7 +143,7 @@ not mirrored into MCP tools. Catalog responses omit input schemas and full descr
 explicitly requested. Lists and wait durations are bounded, and backend configuration is never
 exposed.
 
-Every MCP HTTP request authenticates its bearer, with live workload validation for Sandbox callers.
+Every MCP HTTP request authenticates its bearer, with live workload validation for in-cluster callers.
 Reused MCP session identifiers confer no authority. Long waits revalidate
 caller authorization before returning data. Operator bearers, unexchanged credential placeholders,
 and caller-supplied identity/policy claims cannot acquire this authority. An Origin header does not
@@ -155,7 +161,7 @@ Refresh and bearer admission resolve current canonical grant validity. Ended bin
 acquire replacement ServiceAccount authority. External receipts/idempotency are
 ServiceAccount-scoped while each Action permanently records exact submitting
 Connection/grant/revision/issuer/client evidence.
-Sandbox authentication remains live-workload-based; neither path accepts operator credentials as
+In-cluster authentication remains live-workload-based; neither path accepts operator credentials as
 a caller bypass. OAuth protocol state shares durable encrypted storage and stable configured keys
 across replacement/replicas. Enabling these contracts does not imply deployed client acceptance.
 

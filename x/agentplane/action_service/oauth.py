@@ -34,7 +34,7 @@ from mcp.server.auth.provider import (
 from mcp.server.auth.routes import cors_middleware
 from mcp.server.auth.settings import RevocationOptions
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.requests import Request
@@ -56,7 +56,7 @@ from x.agentplane.action_service.connections import (
     GrantRejectedError,
 )
 from x.agentplane.action_service.enrollments import EnrollmentAuthority, EnrollmentInput, EnrollmentRejectedError
-from x.agentplane.action_service.models import Principal, PrincipalRole
+from x.agentplane.action_service.models import OperatorPrincipal
 
 _ISSUING: ContextVar[UUID | None] = ContextVar("agentplane_oauth_issuing", default=None)
 _VERIFY_FAILURES: ContextVar[list[Exception] | None] = ContextVar("agentplane_oauth_verify_failures", default=None)
@@ -129,13 +129,7 @@ class OAuthSettings(BaseModel):
     encryption_key_file: Path
     upstream_issuer: str
     upstream_subject: str = Field(min_length=1)
-    approving_operator: Principal
-
-    @model_validator(mode="after")
-    def operator_mapping(self) -> OAuthSettings:
-        if self.approving_operator.role is not PrincipalRole.OPERATOR:
-            raise ValueError("approving_operator must be the configured operator principal")
-        return self
+    approving_operator: OperatorPrincipal
 
 
 class ActionsOAuthProxy(DownstreamClientIdentityOIDCProxy):

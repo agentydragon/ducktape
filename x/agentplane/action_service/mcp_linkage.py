@@ -33,7 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from x.agentplane.action_service.catalog import Key
 from x.agentplane.action_service.db import McpLinkageFlowRow, McpOAuthTokenStateRow, McpServerLinkageRow, SessionMaker
-from x.agentplane.action_service.models import Principal, PrincipalRole
+from x.agentplane.action_service.models import OperatorPrincipal, operator_or_none
 
 logger = logging.getLogger(__name__)
 _REFRESH_SKEW = timedelta(minutes=1)
@@ -103,7 +103,7 @@ class McpLinkageView(BaseModel):
     scopes: list[str]
     expires_at: datetime | None
     linked_at: datetime | None
-    linked_by: str | None
+    linked_by: OperatorPrincipal | None
     refresh_failure: McpRefreshFailure | None = None
 
 
@@ -213,8 +213,7 @@ class McpLinkageAuthority:
             state = await db.get(McpOAuthTokenStateRow, row.token_state_id) if row and row.token_state_id else None
         return _view(server, row, state)
 
-    async def start(self, server_id: str, request: McpLinkageStart, operator: Principal) -> McpLinkageStartView:
-        self._require_operator(operator)
+    async def start(self, server_id: str, request: McpLinkageStart, operator: OperatorPrincipal) -> McpLinkageStartView:
         server = self._server(server_id)
         authorization_endpoint, token_endpoint, resource, discovered_scopes = await self._discover(server)
         scopes = _scopes(request.scopes or server.scopes or discovered_scopes, server.scopes or discovered_scopes)
@@ -230,7 +229,8 @@ class McpLinkageAuthority:
                     server_id=server_id,
                     state_hash=_digest(state),
                     verifier=verifier,
-                    operator_principal=operator.key,
+                    operator_issuer=operator.issuer,
+                    operator_subject=operator.subject,
                     scopes=scopes,
                     authorization_endpoint=authorization_endpoint,
                     token_endpoint=token_endpoint,
@@ -266,7 +266,7 @@ class McpLinkageAuthority:
                 raise McpLinkageConflictError("OAuth linkage flow is invalid or expired")
             server = self._server(flow.server_id)
             verifier = flow.verifier
-            operator_principal = flow.operator_principal
+            linked_by = OperatorPrincipal(issuer=flow.operator_issuer, subject=flow.operator_subject)
             scopes = list(flow.scopes)
             token_endpoint = flow.token_endpoint
             resource = flow.resource
@@ -296,7 +296,8 @@ class McpLinkageAuthority:
                     token_endpoint=token_endpoint,
                     resource=resource,
                     linked_at=now,
-                    linked_by=operator_principal,
+                    linked_by_issuer=linked_by.issuer,
+                    linked_by_subject=linked_by.subject,
                 )
                 db.add(current)
             else:
@@ -308,14 +309,14 @@ class McpLinkageAuthority:
                 current.token_endpoint = token_endpoint
                 current.resource = resource
                 current.linked_at = now
-                current.linked_by = operator_principal
+                current.linked_by_issuer = linked_by.issuer
+                current.linked_by_subject = linked_by.subject
             await db.flush()
             view = _view(server, current, token_state)
         self._notify_change(server.server_id)
         return view
 
-    async def disconnect(self, server_id: str, operator: Principal) -> McpLinkageView:
-        self._require_operator(operator)
+    async def disconnect(self, server_id: str, operator: OperatorPrincipal) -> McpLinkageView:
         server = self._server(server_id)
         async with self._sessions.begin() as db:
             row = await db.get(McpServerLinkageRow, server_id, with_for_update=True)
@@ -329,7 +330,8 @@ class McpLinkageAuthority:
                 row.token_state_id = None
                 row.scopes = server.scopes
                 row.linked_at = None
-                row.linked_by = None
+                row.linked_by_issuer = None
+                row.linked_by_subject = None
             if state is not None:
                 await db.delete(state)
             view = _view(server, row, None)
@@ -535,11 +537,6 @@ class McpLinkageAuthority:
         except KeyError:
             raise McpLinkageNotFoundError("unknown MCP server") from None
 
-    @staticmethod
-    def _require_operator(operator: Principal) -> None:
-        if operator.role is not PrincipalRole.OPERATOR:
-            raise McpLinkageError("operator authority is required")
-
     async def _exchange(
         self,
         server: McpOAuthServer,
@@ -657,7 +654,7 @@ def _view(
             row.scopes,
             state.expires_at,
             row.linked_at,
-            row.linked_by,
+            operator_or_none(row.linked_by_issuer, row.linked_by_subject),
         )
         failure = McpRefreshFailure(
             action=state.refresh_failure_action, attempts=state.refresh_failure_count, retry_at=state.refresh_retry_at
@@ -669,7 +666,7 @@ def _view(
             row.scopes,
             state.expires_at,
             row.linked_at,
-            row.linked_by,
+            operator_or_none(row.linked_by_issuer, row.linked_by_subject),
         )
         failure = None
     else:
@@ -679,7 +676,7 @@ def _view(
             row.scopes,
             state.expires_at,
             row.linked_at,
-            row.linked_by,
+            operator_or_none(row.linked_by_issuer, row.linked_by_subject),
         )
         failure = None
     return McpLinkageView(

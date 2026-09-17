@@ -23,18 +23,17 @@ from x.agentplane.egress.resources import (
     BINDINGS_PLURAL,
     CREDENTIALS_PLURAL,
     POLICIES_PLURAL,
-    SANDBOXES_PLURAL,
     ActiveReason,
     EgressBinding,
     EgressCredential,
     EgressPolicy,
     Rule,
-    Sandbox,
     Secret,
 )
+from x.agentplane.subjects import ServiceAccountRef
 
 CONNECT = "CONNECT"
-WATCHED_KINDS = frozenset({POLICIES_PLURAL, BINDINGS_PLURAL, CREDENTIALS_PLURAL, SANDBOXES_PLURAL, "secrets"})
+WATCHED_KINDS = frozenset({POLICIES_PLURAL, BINDINGS_PLURAL, CREDENTIALS_PLURAL, "secrets"})
 STALE_AFTER_CYCLES = 3
 
 
@@ -44,7 +43,6 @@ class DenyReason(StrEnum):
     TOKEN_MISSING = "token-missing"
     TOKEN_REJECTED = "token-rejected"
     POD_MISMATCH = "pod-mismatch"
-    SANDBOX_UNKNOWN = "sandbox-unknown"
     NO_BINDING = "no-binding"
     NO_RULE = "no-rule"
     PLACEHOLDER_UNRESOLVED = "placeholder-unresolved"
@@ -62,7 +60,6 @@ class Index:
     policies: dict[str, EgressPolicy] = field(default_factory=dict)
     bindings: dict[str, EgressBinding] = field(default_factory=dict)
     credentials: dict[str, EgressCredential] = field(default_factory=dict)
-    sandboxes: dict[str, Sandbox] = field(default_factory=dict)
     secrets: dict[str, Secret] = field(default_factory=dict, repr=False)
     synced: bool = field(default=False)
     draining: bool = False
@@ -111,12 +108,11 @@ class AuthenticatedWorkloadContext:
     """Credential material retained only after central authenticated this request or tunnel."""
 
     bearer: str = field(repr=False)
-    sandbox_name: str
-    sandbox_uid: str
+    caller: ServiceAccountRef
     pod_uid: str
 
-    def is_bound_to(self, sandbox: Sandbox) -> bool:
-        return self.sandbox_name == sandbox.metadata.name and self.sandbox_uid == sandbox.metadata.uid
+    def is_bound_to(self, caller: ServiceAccountRef) -> bool:
+        return self.caller == caller
 
 
 @dataclass(frozen=True)
@@ -165,13 +161,13 @@ def resolve_binding(index: Index, binding: EgressBinding, now: datetime) -> Bind
     return BindingResolution(binding=binding, policies=policies, missing=missing, reason=reason)
 
 
-def subject_bindings(index: Index, sandbox: Sandbox, now: datetime) -> list[BindingResolution]:
-    """The active bindings naming this Sandbox, in name order."""
+def subject_bindings(index: Index, caller: ServiceAccountRef, now: datetime) -> list[BindingResolution]:
+    """The active bindings naming this caller, in name order."""
     return [
         resolution
         for name in sorted(index.bindings)
         if (resolution := resolve_binding(index, index.bindings[name], now)).active
-        and any(subject.sandbox.name == sandbox.metadata.name for subject in resolution.binding.spec.subjects)
+        and caller in resolution.binding.spec.subjects
     ]
 
 
@@ -247,7 +243,7 @@ def _resolves(rule: Rule, presented: Collection[str]) -> bool:
 
 def evaluate(
     index: Index,
-    sandbox: Sandbox,
+    caller: ServiceAccountRef,
     request: EgressRequest,
     now: datetime,
     authenticated_workload: AuthenticatedWorkloadContext | None = None,
@@ -259,7 +255,7 @@ def evaluate(
     came. So a placeholder is never forwarded, and widening what a subject may reach never takes a
     credential away from it.
     """
-    bindings = subject_bindings(index, sandbox, now)
+    bindings = subject_bindings(index, caller, now)
     if not bindings:
         return Denied(DenyReason.NO_BINDING)
     matches = _matching_rules(bindings, request)
@@ -286,7 +282,7 @@ def evaluate(
     else:
         value = (
             authenticated_workload.bearer
-            if authenticated_workload is not None and authenticated_workload.is_bound_to(sandbox)
+            if authenticated_workload is not None and authenticated_workload.is_bound_to(caller)
             else None
         )
     if value is None:

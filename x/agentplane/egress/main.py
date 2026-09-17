@@ -8,28 +8,36 @@ import signal
 from datetime import timedelta
 from ipaddress import IPv4Network, IPv6Network
 from pathlib import Path
-from typing import Any, cast
+from typing import Annotated, Any, cast
 
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api, CustomObjectsApi
-from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import BeforeValidator, Field
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from util.kubernetes import CustomObjectsClient
 from x.agentplane.egress.addon import EgressAddon
 from x.agentplane.egress.admin import create_admin_app, serve_admin
 from x.agentplane.egress.decision_log import DecisionLog
 from x.agentplane.egress.decision_store import DecisionStore, make_engine
-from x.agentplane.egress.identity import PodIdentityVerifier
+from x.agentplane.egress.identity import WorkloadIdentityVerifier
 from x.agentplane.egress.informer import Informer
 from x.agentplane.egress.policy import STALE_AFTER_CYCLES, Index
 from x.agentplane.egress.proxy import EgressProxyServer, write_interception_ca
 from x.agentplane.egress.rules_api import RulesProjection, create_rules_app, serve_rules_api
 from x.agentplane.egress.upstream import UpstreamResolver
-from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
+from x.agentplane.sandbox_auth.http import WorkloadPrincipalAuthenticator
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 
 logger = logging.getLogger(__name__)
+
+
+def _comma_separated(value: object) -> object:
+    """A set spelled for a Deployment's `args`, which writes one string per flag. `NoDecode` on the
+    field is what stops pydantic-settings JSON-decoding the flag before this ever sees it."""
+    if not isinstance(value, str):
+        return value
+    return frozenset(filter(None, (part.strip() for part in value.split(","))))
 
 
 class Settings(BaseSettings):
@@ -37,13 +45,18 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="AGENTPLANE_EGRESS_", cli_parse_args=True, cli_kebab_case=True)
 
-    namespace: str = Field(description="Namespace holding the policies and bindings the proxy enforces.")
-    sandbox_namespace: str = Field(
-        description="Namespace the sandbox Pods run in: the Sandboxes bindings name as subjects, and the Pods "
-        "whose sidecar tokens the proxy verifies. May equal the rule namespace, as it does in both deployments."
+    rules_namespace: str = Field(
+        description="The one namespace holding the EgressPolicy, EgressBinding and EgressCredential objects this "
+        "proxy enforces. One deployment serves one policy set; a caller's own namespace is unrelated to it."
     )
     credentials_namespace: str = Field(
         default="agentplane-egress-credentials", description="Namespace the rules' Secrets are read from."
+    )
+    workload_namespaces: Annotated[frozenset[str], NoDecode, BeforeValidator(_comma_separated)] = Field(
+        min_length=1,
+        description="Every namespace whose ServiceAccounts may authenticate here, the sandbox namespace included. "
+        "An agent this cluster does not host runs where it runs, so naming its namespace is what lets it present a "
+        "token at all; it grants nothing on its own, since a subject no binding names still reaches no rule.",
     )
     listen_host: str = Field(default="0.0.0.0", description="Proxy listener bind address.")
     listen_port: int = Field(default=8888, description="Proxy listener port the sidecars relay to.")
@@ -56,8 +69,8 @@ class Settings(BaseSettings):
     confdir: Path = Field(description="Writable directory mitmproxy keeps its CA and issued leaves in.")
     token_audience: str = Field(default="agentplane-egress", description="Audience of the sidecars' projected tokens.")
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
+
     resync_seconds: int = Field(default=300, gt=0, description="Watch lifetime; every kind is relisted this often.")
-    identity_cache_seconds: float = Field(default=60, description="Upper bound on how long a token verdict is kept.")
     database_url: str = Field(repr=False, description="Shared diagnostic PostgreSQL database; migrated separately.")
     decision_history_size: int = Field(default=200, ge=1, le=1000)
     decision_retention_days: int = Field(default=7, ge=1, le=365)
@@ -108,39 +121,26 @@ async def async_main(settings: Settings) -> None:
             index=index,
             custom_objects=custom_objects,
             core_v1=CoreV1Api(api),
-            namespace=settings.namespace,
-            sandbox_namespace=settings.sandbox_namespace,
+            namespace=settings.rules_namespace,
             credentials_namespace=settings.credentials_namespace,
             resync_seconds=settings.resync_seconds,
         )
-        authentication = AuthenticationV1Api(api)
-        core_v1 = CoreV1Api(api)
-        verifier = PodIdentityVerifier(
-            authentication=authentication,
-            core_v1=core_v1,
-            namespace=settings.sandbox_namespace,
+        workload_resolver = SandboxPrincipalResolver(
+            authentication=AuthenticationV1Api(api),
             audience=settings.token_audience,
-            cache_seconds=settings.identity_cache_seconds,
+            allowed_service_account_namespaces=settings.workload_namespaces,
         )
         resolver = UpstreamResolver(exempt=frozenset(settings.exempt_networks))
         addon = EgressAddon(
             index=index,
-            verifier=verifier,
+            verifier=WorkloadIdentityVerifier(workload_resolver),
             decision_log=decision_log,
             resolver=resolver,
             stale_after_seconds=settings.resync_seconds * STALE_AFTER_CYCLES,
         )
-        rules_app = create_rules_app(
-            SandboxPrincipalAuthenticator(
-                SandboxPrincipalResolver(
-                    authentication=authentication,
-                    core_v1=core_v1,
-                    audience=settings.token_audience,
-                    allowed_service_account_namespaces=frozenset({settings.sandbox_namespace}),
-                )
-            ),
-            RulesProjection(index),
-        )
+        # One resolver for both doors: the tunnel and the rules API authenticate the same bearers,
+        # so a verdict either reached is a verdict the other need not spend a TokenReview on.
+        rules_app = create_rules_app(WorkloadPrincipalAuthenticator(workload_resolver), RulesProjection(index))
         informer_task = asyncio.create_task(informer.run(), name="egress-informer")
         try:
             async with (

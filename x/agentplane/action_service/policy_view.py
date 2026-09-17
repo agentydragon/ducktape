@@ -19,13 +19,7 @@ from typing import Annotated, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-from x.agentplane.action_service.models import (
-    NamespacedName,
-    PolicyKind,
-    SandboxCaller,
-    ServiceAccountCaller,
-    ServiceAccountRef,
-)
+from x.agentplane.action_service.models import NamespacedName, PolicyKind
 from x.agentplane.action_service.policies.argument_schema import ArgumentSchema
 from x.agentplane.action_service.policies.exact_actions import ExactActions
 from x.agentplane.action_service.policies.github_public_repository import GitHubPublicRepository
@@ -40,20 +34,11 @@ from x.agentplane.action_service.policies.resources import (
 from x.agentplane.action_service.policy_evaluation import resolve_bindings
 from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.providers import ResolvedBinding
-
-# What a binding's subject names, as the operator asks about it: a live Sandbox by namespace and
-# UID, or a ServiceAccount. A caller is one of these behind its authentication.
-type PolicySubject = SandboxCaller | ServiceAccountRef
+from x.agentplane.subjects import ServiceAccountRef
 
 
 class _View(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-class SandboxTarget(_View):
-    """A live Sandbox as the subject to read, by the namespace and UID a binding pins."""
-
-    sandbox: SandboxCaller
 
 
 class ServiceAccountTarget(_View):
@@ -63,7 +48,7 @@ class ServiceAccountTarget(_View):
 # Whose policy a caller asks for: its own, or a named subject.
 type SelfTarget = Literal["self"]
 SELF: Final[SelfTarget] = "self"
-type PolicyTarget = SelfTarget | SandboxTarget | ServiceAccountTarget
+type PolicyTarget = SelfTarget | ServiceAccountTarget
 
 
 class ReadyConditionView(_View):
@@ -142,9 +127,7 @@ class CallerActionPolicyView(_EffectivePolicy):
     """What a subject's bindings auto-decide, as admission would resolve them now, in the form a
     caller may see: the caller's own subject by default, or one it named."""
 
-    subject: SandboxCaller | ServiceAccountRef = Field(
-        description="Whose bindings these are: a Sandbox by namespace and UID, or a ServiceAccount."
-    )
+    subject: ServiceAccountRef = Field(description="The ServiceAccount whose bindings these are.")
     bindings: list[CallerBindingView] = Field(
         description="The subject's unexpired, valid bindings in name order; empty means every request waits for the operator."
     )
@@ -228,14 +211,12 @@ def _effective(
     return auto_approve_if, auto_deny_if, auto_deny_unless
 
 
-def caller_view(
-    index: PolicyIndex, subject: PolicySubject | ServiceAccountCaller, now: datetime
-) -> CallerActionPolicyView:
+def caller_view(index: PolicyIndex, subject: ServiceAccountRef, now: datetime) -> CallerActionPolicyView:
     """The caller-facing view of a subject, from the same bindings admission resolves."""
     bindings = resolve_bindings(index, subject, now)
     auto_approve_if, auto_deny_if, auto_deny_unless = _effective(bindings)
     return CallerActionPolicyView(
-        subject=subject.service_account if isinstance(subject, ServiceAccountCaller) else subject,
+        subject=subject,
         synced=index.synced,
         bindings=[
             CallerBindingView(
@@ -251,7 +232,7 @@ def caller_view(
     )
 
 
-def subject_view(index: PolicyIndex, subject: PolicySubject, now: datetime) -> SubjectActionPolicyView:
+def subject_view(index: PolicyIndex, subject: ServiceAccountRef, now: datetime) -> SubjectActionPolicyView:
     """The operator's view of one subject: the same resolution, with each named set's standing."""
     bindings = resolve_bindings(index, subject, now)
     auto_approve_if, auto_deny_if, auto_deny_unless = _effective(bindings)

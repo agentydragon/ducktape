@@ -30,7 +30,7 @@ Flux-managed binding's `sandboxSelector` matched. That gave the concept no ownin
 profile existed only as a string two unrelated places agreed on — while binding it into the egress
 CRD, which pre-commits the cross-cutting design to one consumer and makes the second consumer
 either extend the egress resource or invent a parallel notion. The selector subject form is
-removed for this reason, not merely unused: a subject is one named Sandbox.
+removed for this reason, not merely unused: a subject is one named object, never a selector.
 
 Storage remains an open design choice, including Kubernetes resources, app configuration, and
 PostgreSQL. The [action policies design](../docs/action_policies.md) records why that slice chose

@@ -35,10 +35,9 @@ from x.agentplane.action_service.models import (
     CancellationResult,
     DecisionInput,
     Executor,
-    Principal,
-    PrincipalRole,
-    SandboxCaller,
+    OperatorPrincipal,
     Verdict,
+    service_account_key,
 )
 from x.agentplane.action_service.policies.resources import parse_binding, parse_policy_set
 from x.agentplane.action_service.policy_informer import PolicyIndex
@@ -48,29 +47,29 @@ from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.principal import (
     POD_NAME_CLAIM,
     POD_UID_CLAIM,
-    SandboxPrincipal,
     SandboxPrincipalResolver,
+    WorkloadPrincipal,
 )
+from x.agentplane.subjects import ServiceAccountRef
 
 AUDIENCE = "test-action-audience"
 NAMESPACE = "test-action-sandboxes"
-OPERATOR = Principal(issuer="test", subject="operator", role=PrincipalRole.OPERATOR)
+OPERATOR = OperatorPrincipal(issuer="test", subject="operator")
 
 
-def sandbox(label: str) -> SandboxPrincipal:
-    return SandboxPrincipal(
+def sandbox(label: str) -> WorkloadPrincipal:
+    """One sandbox, running as the ServiceAccount of its own that the app mints per Sandbox."""
+    return WorkloadPrincipal(
         namespace=NAMESPACE,
-        service_account_name="test-runner",
-        service_account_subject=f"system:serviceaccount:{NAMESPACE}:test-runner",
+        service_account_name=f"test-runner-{label}",
+        service_account_subject=f"system:serviceaccount:{NAMESPACE}:test-runner-{label}",
         pod_name=f"test-pod-{label}",
         pod_uid=f"test-pod-uid-{label}",
-        sandbox_name=f"test-sandbox-{label}",
-        sandbox_uid=f"test-sandbox-uid-{label}",
     )
 
 
 def _policy_index() -> PolicyIndex:
-    """Sandbox a bound to `test-reads`, sandbox b to nothing: what each may read of its own policy."""
+    """Workload a bound to `test-reads`, workload b to nothing: what each may read of its own policy."""
     index = PolicyIndex(synced=True)
     for name, spec in (
         ("test-reads", {"autoApproveIf": [{"type": "exact_actions", "actions": {"test-group": ["alpha"]}}]}),
@@ -89,9 +88,9 @@ def _policy_index() -> PolicyIndex:
             }
         )
         index.policy_sets[policy_set.namespaced_name] = policy_set
-    for name, uid, sets in (
-        ("test-a-reads", sandbox("a").sandbox_uid, ["test-reads", "test-vanished"]),
-        ("test-elsewhere", "test-sandbox-uid-elsewhere", ["test-other"]),
+    for name, account, sets in (
+        ("test-a-reads", sandbox("a").service_account_name, ["test-reads", "test-vanished"]),
+        ("test-elsewhere", "test-runner-elsewhere", ["test-other"]),
     ):
         binding = parse_binding(
             {
@@ -102,11 +101,22 @@ def _policy_index() -> PolicyIndex:
                     "generation": 1,
                     "resourceVersion": "1",
                 },
-                "spec": {"subject": {"sandbox": {"name": f"test-sandbox-{name}", "uid": uid}}, "policySets": sets},
+                "spec": {"subject": {"namespace": NAMESPACE, "name": account}, "policySets": sets},
             }
         )
         index.bindings[binding.namespaced_name] = binding
+    for admitted in (workload("a"), workload("b")):
+        index.service_accounts[service_account_key(admitted)] = admitted
     return index
+
+
+def _bearer(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}", "Accept": "application/json, text/event-stream"}
+
+
+def workload(label: str) -> ServiceAccountRef:
+    """The account one sandbox runs as, which is also what admits it here."""
+    return ServiceAccountRef(namespace=NAMESPACE, name=sandbox(label).service_account_name)
 
 
 class EgressSubstitution(httpx2.AsyncBaseTransport):
@@ -133,7 +143,7 @@ class Frontend:
     authentication: AsyncMock
     core: AsyncMock
     updates: ActionUpdates
-    tokens: dict[str, SandboxPrincipal]
+    tokens: dict[str, WorkloadPrincipal]
 
     def client(self, token: str = "test-token-a", *, egress: bool = False) -> Client[StreamableHttpTransport]:
         def factory(
@@ -163,7 +173,7 @@ class Frontend:
 
 @pytest.fixture
 async def frontend(engine: AsyncEngine, db_url: str, echo_executor: Executor) -> AsyncIterator[Frontend]:
-    tokens = {f"test-token-{label}": sandbox(label) for label in ("a", "b")}
+    tokens = {f"test-token-{label}": sandbox(label) for label in ("a", "b", "elsewhere")}
     authentication = AsyncMock(spec=AuthenticationV1Api)
     core = AsyncMock(spec=CoreV1Api)
 
@@ -183,27 +193,7 @@ async def frontend(engine: AsyncEngine, db_url: str, echo_executor: Executor) ->
             ),
         )
 
-    async def pod(name: str, namespace: str) -> k8s_client.V1Pod:
-        identity = next(identity for identity in tokens.values() if identity.pod_name == name)
-        return k8s_client.V1Pod(
-            metadata=k8s_client.V1ObjectMeta(
-                name=name,
-                namespace=namespace,
-                uid=identity.pod_uid,
-                owner_references=[
-                    k8s_client.V1OwnerReference(
-                        api_version="agents.x-k8s.io/v1beta1",
-                        kind="Sandbox",
-                        controller=True,
-                        name=identity.sandbox_name,
-                        uid=identity.sandbox_uid,
-                    )
-                ],
-            )
-        )
-
     authentication.create_token_review = AsyncMock(side_effect=review)
-    core.read_namespaced_pod = AsyncMock(side_effect=pod)
     catalog = ActionCatalog(
         groups={
             "test-group": ActionGroup(
@@ -228,18 +218,17 @@ async def frontend(engine: AsyncEngine, db_url: str, echo_executor: Executor) ->
         }
     )
     store = ActionStore(make_sessionmaker(engine))
-    service = ActionService(store, catalog, {"test-group": echo_executor}, policies=_policy_index())
+    policies = _policy_index()
+    service = ActionService(store, catalog, {"test-group": echo_executor}, policies=policies)
     updates = ActionUpdates(db_url)
     app = create_app(
         service,
         SandboxPrincipalResolver(
-            authentication=authentication,
-            core_v1=core,
-            audience=AUDIENCE,
-            allowed_service_account_namespaces=frozenset({NAMESPACE}),
+            authentication=authentication, audience=AUDIENCE, allowed_service_account_namespaces=frozenset({NAMESPACE})
         ),
         DisabledOperatorAuthenticator(),
         catalog,
+        callers=policies,
         updates=updates,
     )
     # pytest-asyncio resumes yield-fixture teardown in another task. The MCP lifespan's
@@ -347,6 +336,19 @@ async def test_submission_wait_receipts_events_and_owner_scope(frontend: Fronten
         ).id == receipt.id
 
 
+async def test_an_unlabelled_account_is_refused_at_the_transport_despite_a_binding(frontend: Frontend) -> None:
+    """A binding is what a subject may do; the caller label is whether it may ask at all. The
+    `test-elsewhere` account has the former and not the latter, so its token proves a Pod and still
+    opens no MCP session -- the same refusal an unknown bearer gets."""
+    async with httpx2.AsyncClient(transport=httpx2.ASGITransport(frontend.app), base_url="http://actions.test") as http:
+        initialize = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
+        refused = await http.post("/mcp", headers=_bearer("test-token-elsewhere"), json=initialize)
+        admitted = await http.post("/mcp", headers=_bearer("test-token-b"), json=initialize)
+
+    assert refused.status_code == 401
+    assert admitted.status_code != 401, "the labelled account with no binding still opens a session"
+
+
 async def test_a_caller_reads_the_effective_policy_of_itself_or_a_named_target(frontend: Frontend) -> None:
     """The tool answers for the authenticated Sandbox unless a target is named: its bindings and the
     sets that resolved (a name nothing answers to is simply absent), and another Sandbox's binding
@@ -354,8 +356,8 @@ async def test_a_caller_reads_the_effective_policy_of_itself_or_a_named_target(f
     caller's own view. Nothing is submitted by reading."""
     async with frontend.client(egress=True) as caller, frontend.client("test-token-b") as other:
         own = CallerActionPolicyView.model_validate((await caller.call_tool("get_action_policy")).structured_content)
-        assert isinstance(own.subject, SandboxCaller)
-        assert own.subject == SandboxCaller.from_principal(workload_principal(frontend.tokens["test-token-a"]))
+        assert isinstance(own.subject, ServiceAccountRef)
+        assert own.subject == workload_principal(frontend.tokens["test-token-a"]).account
         assert own.synced is True
         assert [(binding.name, binding.policy_sets) for binding in own.bindings] == [("test-a-reads", ["test-reads"])]
         assert [(p.binding, p.policy_set, p.index, p.policy.actions) for p in own.auto_approve_if] == [
@@ -366,17 +368,14 @@ async def test_a_caller_reads_the_effective_policy_of_itself_or_a_named_target(f
         by_name = await caller.call_tool("get_action_policy", {"target": "self"})
         assert CallerActionPolicyView.model_validate(by_name.structured_content) == own
         nothing = CallerActionPolicyView.model_validate((await other.call_tool("get_action_policy")).structured_content)
-        assert nothing.subject == SandboxCaller.from_principal(workload_principal(frontend.tokens["test-token-b"]))
+        assert nothing.subject == workload_principal(frontend.tokens["test-token-b"]).account
         assert (nothing.synced, nothing.bindings, nothing.auto_approve_if) == (True, [], [])
         # A named target gets the same view its own caller would; one the service does not watch has nothing.
-        about_a = await other.call_tool(
-            "get_action_policy",
-            {"target": {"sandbox": {"namespace": own.subject.namespace, "sandbox_uid": own.subject.sandbox_uid}}},
-        )
+        about_a = await other.call_tool("get_action_policy", {"target": {"service_account": own.subject.model_dump()}})
         assert CallerActionPolicyView.model_validate(about_a.structured_content) == own
         elsewhere = await caller.call_tool(
             "get_action_policy",
-            {"target": {"sandbox": {"namespace": NAMESPACE, "sandbox_uid": "test-sandbox-uid-elsewhere"}}},
+            {"target": {"service_account": {"namespace": NAMESPACE, "name": "test-runner-elsewhere"}}},
         )
         assert [b.name for b in CallerActionPolicyView.model_validate(elsewhere.structured_content).bindings] == [
             "test-elsewhere"
@@ -450,11 +449,11 @@ async def test_tools_act_as_the_identity_the_transport_verified(frontend: Fronte
             receipts[token] = ActionRequestView.model_validate(result.structured_content)
     for token, receipt in receipts.items():
         stored = await frontend.store.get(receipt.id, OPERATOR)
-        assert stored.caller_principal == workload_principal(frontend.tokens[token]).key
+        assert stored.caller == workload_principal(frontend.tokens[token]).account
         assert stored.external_grant is None
 
 
-async def test_revalidates_live_pod_and_rejects_duplicate_auth_and_forgery(frontend: Frontend) -> None:
+async def test_rejects_a_revoked_bearer_duplicate_auth_and_forged_caller_fields(frontend: Frontend) -> None:
     async with frontend.client() as client:
         invalid = await client.call_tool(
             "request_action",
@@ -471,7 +470,8 @@ async def test_revalidates_live_pod_and_rejects_duplicate_auth_and_forgery(front
         )
         assert invalid.is_error
         assert await frontend.store.list_requests(OPERATOR) == []
-        frontend.core.read_namespaced_pod.side_effect = k8s_client.ApiException(status=404)
+        # A bearer is revoked at the TokenReview now, which is the only thing consulted.
+        del frontend.tokens["test-token-a"]
     async with httpx2.AsyncClient(transport=httpx2.ASGITransport(frontend.app), base_url="http://actions.test") as http:
         revoked = await http.post(
             "/mcp",

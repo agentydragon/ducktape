@@ -24,9 +24,10 @@ from x.agentplane.action_service.mcp_linkage import (
     McpOAuthServer,
     McpProvider,
 )
-from x.agentplane.action_service.models import ExecutionLease, ExecutionRequest, Principal, PrincipalRole
+from x.agentplane.action_service.models import ExecutionLease, ExecutionRequest, OperatorPrincipal
 from x.agentplane.action_service.test_fixtures.lifecycle import wait_available
 from x.agentplane.action_service.test_fixtures.oauth_mcp_server import CLIENT_ID, PATH, build_app, build_dex_app
+from x.agentplane.subjects import ServiceAccountRef
 
 REDIRECT_URI = "https://app.example.test/mcp-linkage/callback"
 
@@ -63,7 +64,7 @@ async def test_full_linkage_cycle_and_tool_call(engine: AsyncEngine, execution_l
         )
         async with httpx2.AsyncClient(follow_redirects=False) as http:
             authority = McpLinkageAuthority(make_sessionmaker(engine), {"example": server}, http=http)
-            operator = Principal(issuer="test-oauth-fixture", subject="operator", role=PrincipalRole.OPERATOR)
+            operator = OperatorPrincipal(issuer="test-oauth-fixture", subject="operator")
 
             start = await authority.start("example", McpLinkageStart(), operator)
             authorize = await http.get(start.authorization_url)
@@ -97,7 +98,7 @@ async def test_full_linkage_cycle_and_tool_call(engine: AsyncEngine, execution_l
                         arguments={"message": "hi"},
                         origin={},
                         correlation={},
-                        caller_principal="test-caller",
+                        caller=ServiceAccountRef(namespace="agentplane-test", name="test-caller"),
                     ),
                     execution_lease,
                 )

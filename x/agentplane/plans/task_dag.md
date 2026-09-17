@@ -279,7 +279,7 @@ ServiceAccount as read-only text for exactly this reason.
 **Design questions, not yet settled:** should rebinding revoke the prior grant's revision the same
 way a fresh consent does, or coexist with it; does it need its own audit trail distinct from a
 reconnect; and does it require re-running eligibility checks (the ServiceAccount must still carry
-`agentplane.allegedly.works/action-caller: "true"`) at rebind time, not just at original consent.
+`agentplane.allegedly.works/use-action-service: "true"`) at rebind time, not just at original consent.
 No dependency on anything else; nothing waits on this. Once it exists, the settings table's
 ServiceAccount column becomes a real dropdown instead of static text.
 
@@ -615,15 +615,48 @@ or an external OAuth grant". A plain Deployment is neither, and the OAuth path i
 operator consent for an external connector rather than an in-cluster workload, so a workload
 ServiceAccount is a third caller class beside those two.
 
-Egress has taken the matching step already: its `Subject` names a `serviceAccount` alongside a
-`sandbox`, and `sandbox_auth.resolve_workload_with_pod` stops at the proofs common to both, so
-this is the same shape applied to the other service. Its own clock — nothing about the egress
+Egress has taken the matching step already: its `Subject` is a `ServiceAccountRef`, and
+`sandbox_auth.resolve_workload` stops at the proofs a bearer carries by itself, so this is the same
+shape applied to the other service. Its own clock — nothing about the egress
 path waits on it, and it is what a tool-surface switch waits on rather than an egress cutover.
+
+### `BINDING_SUBJECT_ARITY` — one subject shape across both binding kinds
+
+**Planned schema:** `EgressBinding.spec.subjects` is an array (`minItems: 1`); `ActionPolicyBinding`
+names one `subject`. Everything inside them is now the same `ServiceAccountRef`, so arity is the
+only difference left, and `cluster/validation:test_agentplane_crd_schemas` has to special-case
+array-versus-object to compare them.
+
+Nothing writes the plural side. No `EgressBinding` manifest is checked in anywhere under
+`cluster/`, and `EgressInventory.grant` writes exactly one entry, so the multi-subject shape is an
+untested degree of freedom in the authorization path. Collapsing it to a singular `subject` makes
+the two CRDs identical rather than merely compatible; the cost is that a seed granting several
+accounts one policy becomes several objects, which is already what per-binding `expiresAt` wants.
+
+Its own clock, and cheaper before something starts using it than after.
+
+### `EGRESS_SOURCE_ADDRESS` — bind an egress bearer to its Pod's address again
+
+**Removed, deliberately.** The proxy used to read the calling Pod live, keep its `pod_ip`, and
+refuse any request whose connection source did not match -- on every request, including cache hits.
+That check was the only thing the Pod read bought once the subject became the ServiceAccount, and it
+cost a `pods` grant in every namespace the proxy accepts bearers from, which is what made
+`--workload-namespaces` unusable without widening RBAC.
+
+What it defended: a token copied out of its Pod and replayed from elsewhere in the cluster. The
+bearer is already audience-scoped, short-lived and bound by the API server to a Pod that must still
+exist, and whoever holds it is refused everything the source Pod is refused -- so the exposure is
+one in-cluster workload borrowing another's egress rules, not an escalation past the policy.
+
+Add it back if that borrowing becomes a real concern -- a compromised sidecar reading another Pod's
+projected token, or a namespace whose Pod specs are not ours. Doing so means a `pod_ip` on the
+principal, the check in `WorkloadIdentityVerifier.identify`, the peer-address read in the addon, and
+the `pods` read in every namespace named by `--workload-namespaces`.
 
 ### `PC_EGRESS_CREDENTIALS` — public-coder's substitutions as EgressCredentials
 
 **Planned configuration:** give the app Pod a dedicated ServiceAccount, labelled
-`agentplane.allegedly.works/action-caller` so one object serves both surfaces, and express every
+`agentplane.allegedly.works/use-action-service` so one object serves both surfaces, and express every
 substitution its own iron-proxy performs today as an `EgressCredential` with its exact targets:
 a GitHub PAT, the Haku Console bearer, an AIQuota bearer, a Brave Search key, a Matrix password
 and a kubeconfig token. Six, not one — the entry used to read as though GitHub were the whole
@@ -665,12 +698,11 @@ smaller than its description implies:
   public-coder is allowed to do today is not established here; the ported ones are a starting point
   to diff against, not a finished policy.
 
-**The gap is the subject kind, not the proxy.** Egress authenticates a Pod-bound ServiceAccount
-token and then requires the Pod's controller owner to be a `Sandbox` the proxy's watch knows
-(`egress/identity.py` via `SandboxPrincipalResolver`), and `BindingSpec.subjects` is a list of
-`Subject`, which today has exactly one field, `sandbox: SandboxRef` (`egress/resources.py`).
-public-coder is a plain Deployment running OpenClaw, so it has no Sandbox to be, and no binding can
-name it.
+**The gap is the policy, not the proxy.** Egress authenticates a Pod-bound ServiceAccount token
+and stops there (`egress/identity.py` via `SandboxPrincipalResolver`), and `BindingSpec.subjects`
+is a list of `ServiceAccountRef` (`egress/resources.py`), so public-coder being a plain Deployment
+running OpenClaw is no longer what stands in its way -- what it lacks is a dedicated ServiceAccount
+and the bindings naming it.
 
 **The per-agent proxy can go before that is settled.** Egress already ships a sidecar: a loopback
 listener in the Pod that the workload speaks ordinary HTTP proxy to, forwarding every request and
@@ -714,21 +746,18 @@ and `ServiceAccountRef` would need a home egress can reach without depending on 
 
 **Decided: a dedicated Kubernetes ServiceAccount is the identity.** The app Pod runs as `default`
 today -- only the sshpiper Deployment names one -- so this is an addition rather than a change, and
-most of the verification already exists. `sandbox_auth/principal.py` already TokenReviews a
-Pod-bound token, reads the `pod-name` and `pod-uid` claims, and checks the Pod against the
-connection's source address; the only Sandbox-specific step is the last one, where the Pod's
-controller owner must be a `Sandbox` the watch knows. A ServiceAccount subject keeps every earlier
-check and ends instead at the ServiceAccount the token names. Labelled
-`agentplane.allegedly.works/action-caller: "true"`, the same object is what the Action Service
+most of the verification already exists: `sandbox_auth/principal.py` TokenReviews a Pod-bound
+token, reads the `pod-name` and `pod-uid` claims, and ends at the ServiceAccount the token names,
+with no Sandbox-specific step left anywhere. Labelled
+`agentplane.allegedly.works/use-action-service: "true"`, the same object is what the Action Service
 already watches and lists, so one SA serves both surfaces.
 
 **The trade to state rather than discover.** A Sandbox subject is lifecycle-bound: the identity
 exists only while a Sandbox the proxy watches owns that Pod, and deleting the Sandbox ends it. A
 ServiceAccount subject is not -- anything running as that ServiceAccount in that namespace is the
 subject, which is ordinary Kubernetes trust and is only as narrow as the ServiceAccount is
-dedicated. So give it to exactly one workload, never reuse it, and keep the Pod-binding and
-source-address checks, which are what stop a token copied out of the Pod from being replayed
-elsewhere.
+dedicated. So give it to exactly one workload and never reuse it: the token's Pod binding is all
+that stands between it and replay from elsewhere in the cluster.
 
 **Acceptance evidence:** public-coder can reach every currently supported destination, each existing
 substituted token is presented only at its intended destination, denied/unmatched traffic behaves as

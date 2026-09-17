@@ -30,7 +30,7 @@ from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair, si
 from x.agentplane.action_service import api as service_api
 from x.agentplane.action_service.catalog import ActionCatalog, ActionGroup, ActionIdentity, McpExecutorBinding
 from x.agentplane.action_service.connections import ConnectionAuthority, GrantBinding, GrantStatus, NewConnection
-from x.agentplane.action_service.database_migrate import apply_migrations
+from x.agentplane.action_service.database_migrate import RUNNER as ACTIONS_RUNNER
 from x.agentplane.action_service.db import ActionStore, make_engine, make_sessionmaker
 from x.agentplane.action_service.enrollments import ConfirmedReconnectConnection, EnrollmentAuthority, EnrollmentInput
 from x.agentplane.action_service.mcp_executor import McpActionGroupExecutor
@@ -38,14 +38,14 @@ from x.agentplane.action_service.models import (
     ActionEventView,
     ActionRequestInput,
     ActionState,
-    Principal,
-    PrincipalRole,
+    CallerPrincipal,
+    OperatorPrincipal,
 )
 from x.agentplane.action_service.operator_oidc import OidcOperatorAuthenticator, OperatorOidcSettings
 from x.agentplane.action_service.policies.resources import parse_binding, parse_policy_set
 from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.service import ActionService
-from x.agentplane.action_service.test_fixtures.callers import PERSONAL, eligible_callers
+from x.agentplane.action_service.test_fixtures.callers import PERSONAL, admitted_callers
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.app.action_federation import (
     DirectFederationSettings,
@@ -74,8 +74,9 @@ from x.agentplane.app.presets import Harness
 from x.agentplane.app.testing.kubernetes import NAMESPACE, FakeCustomObjectsApi, sandbox
 from x.agentplane.app.trajectory import TrajectoryStore
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
+from x.agentplane.subjects import ServiceAccountRef
 
-CALLER = Principal(issuer="test-workload", subject="test-sandbox", role=PrincipalRole.CALLER)
+CALLER = CallerPrincipal(account=ServiceAccountRef(namespace="agentplane-test", name="test-sandbox"))
 SUBJECT_A = "test-operator-subject"
 SUBJECT_B = "test-second-subject"
 
@@ -119,7 +120,7 @@ async def review(
     operator_connection: str,
     direct_federation: bool,
 ) -> AsyncIterator[Review]:
-    apply_migrations(db_url)
+    ACTIONS_RUNNER.apply(db_url)
     server = FastMCP("test-review")
     calls: list[str] = []
 
@@ -148,7 +149,7 @@ async def review(
             audience="test-app" if direct_federation and operator_connection != "wrong-audience" else "test-actions",
             jwks_uri=f"{idp_url}jwks/",
         )
-        policies = eligible_callers(PERSONAL)
+        policies = admitted_callers(PERSONAL)
         service = ActionService(
             ActionStore(make_sessionmaker(engine)), catalog, {"test_review": executor}, policies=policies
         )
@@ -161,6 +162,7 @@ async def review(
             cast(SandboxPrincipalResolver, None),
             OidcOperatorAuthenticator(target),
             catalog,
+            callers=policies,
             connections=connections,
             enrollments=enrollments,
             updates=ActionUpdates(db_url),
@@ -387,9 +389,9 @@ async def test_connection_management_preserves_federation_csrf_versions_and_hist
     assert review.calls == []
 
 
-def _bind_live_sandbox(policies: PolicyIndex, sandbox_uid: str) -> None:
-    """What the Action Service's informer would hold: a set and a binding pinning the Sandbox's UID,
-    plus a binding for another Sandbox of the same name that must not show."""
+def _bind_live_sandbox(policies: PolicyIndex) -> None:
+    """What the Action Service's informer would hold: a set and a binding naming the ServiceAccount
+    the sandbox runs as, plus one naming a like-named account elsewhere that must not show."""
     metadata = {"namespace": NAMESPACE, "uid": "test-uid", "generation": 1, "resourceVersion": "1"}
     policy_set = parse_policy_set(
         {
@@ -398,14 +400,14 @@ def _bind_live_sandbox(policies: PolicyIndex, sandbox_uid: str) -> None:
         }
     )
     policies.policy_sets[policy_set.namespaced_name] = policy_set
-    for name, uid, labels in (
-        ("live-launch", sandbox_uid, {MANAGED_BY_LABEL: MANAGED_BY_APP}),
-        ("live-previous", str(uuid4()), {}),
+    for name, namespace, labels in (
+        ("live-launch", NAMESPACE, {MANAGED_BY_LABEL: MANAGED_BY_APP}),
+        ("live-elsewhere", "agentplane-elsewhere", {}),
     ):
         binding = parse_binding(
             {
                 "metadata": {"name": name, "labels": labels, **metadata},
-                "spec": {"subject": {"sandbox": {"name": "live", "uid": uid}}, "policySets": ["test-reads", "gone"]},
+                "spec": {"subject": {"namespace": namespace, "name": "live"}, "policySets": ["test-reads", "gone"]},
             }
         )
         policies.bindings[binding.namespaced_name] = binding
@@ -440,15 +442,15 @@ async def _first_snapshot(client: httpx.AsyncClient, path: str, headers: dict[st
 
 
 @pytest.mark.parametrize("operator_connection", ["configured", "disabled"])
-async def test_the_sandbox_policy_frame_is_the_services_answer_for_its_uid_or_says_why_not(
+async def test_the_sandbox_policy_frame_is_the_services_answer_for_its_account_or_says_why_not(
     review: Review, custom_objects: FakeCustomObjectsApi, live_index: LiveIndex, operator_connection: str
 ) -> None:
-    """The live frame carries what the Action Service resolves for the Sandbox's UID through the
-    operator federation, with the app adding only who wrote each binding. Where the service cannot
+    """The live frame carries what the Action Service resolves for the ServiceAccount the sandbox
+    runs as, through the operator federation, with the app adding only who wrote each binding. Where the service cannot
     be asked, the frame says so in place of the policy rather than showing an empty one, and an
     agent watching the same stream is told why rather than shown an operator's answer."""
     custom_objects.objects[("sandboxes", "live")] = live_index.sandboxes["live"] = sandbox("live")
-    _bind_live_sandbox(review.policies, custom_objects.objects[("sandboxes", "live")]["metadata"]["uid"])
+    _bind_live_sandbox(review.policies)
     browser = review.browser
     await browser.get("/auth/login")
     session = {"Cookie": f"{INSECURE_COOKIE}={browser.cookies[INSECURE_COOKIE]}"}
@@ -526,7 +528,7 @@ async def test_operator_decision_reaches_canonical_service_and_mcp_once(
     assert review.calls == []
     allowed = await browser.post(path, json=decision)
     assert allowed.status_code == 200, allowed.text
-    assert allowed.json()["decision"]["issuer"] == f"{review.issuer}:{SUBJECT_A}"
+    assert allowed.json()["decision"]["operator"] == {"issuer": review.issuer, "subject": SUBJECT_A}
     assert (await browser.post(path, json={**decision, "decision_note": "ignored replay"})).json()[
         "decision"
     ] == allowed.json()["decision"]
@@ -695,7 +697,7 @@ async def test_two_replicas_share_login_callback_and_logout_and_keep_two_operato
             json={"verdict": "deny", "expected_version": pending.version, "idempotency_key": f"deny-{pending.id}"},
         )
         assert denied.status_code == 200
-        assert denied.json()["decision"]["issuer"] == f"{review.issuer}:{identity}"
+        assert denied.json()["decision"]["operator"] == {"issuer": review.issuer, "subject": identity}
     assert review.exchanged_subjects == [SUBJECT_A, SUBJECT_B, SUBJECT_A]
     assert review.calls == []
     b.cookies.clear()
@@ -798,7 +800,7 @@ async def test_consent_allow_round_trip_replays_across_app_replicas(review: Revi
         client_id="test-external-client",
         redirect_uri="https://external-client.test/callback",
         code_challenge="test-pkce-test-external-client",
-        operator=Principal(issuer=review.issuer, subject=SUBJECT_A, role=PrincipalRole.OPERATOR),
+        operator=OperatorPrincipal(issuer=review.issuer, subject=SUBJECT_A),
     )
     assert approved.service_account == PERSONAL
     assert review.exchanged_subjects

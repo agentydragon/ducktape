@@ -97,6 +97,12 @@ function StatusView({ sandbox }: { sandbox: SandboxView }): JSX.Element {
             Sandbox {sandbox.operating_mode.toLowerCase()}, created {new Date(sandbox.created_at).toLocaleString()}
             {sandbox.node_name ? `, placed on ${sandbox.node_name}` : ", not placed"}
           </Text>
+          {/* The account its Pod runs as is what every binding names, so the tabs below are its policy, not this
+              Sandbox's: two sandboxes sharing an account share what they may do. */}
+          <Text size="sm">
+            Runs as ServiceAccount {sandbox.service_account.namespace}/{sandbox.service_account.name}, the subject its
+            egress and action-policy bindings name.
+          </Text>
           {sandbox.conditions.length > 0 && <ConditionsTable conditions={sandbox.conditions} />}
           {sandbox.pod ? (
             <>

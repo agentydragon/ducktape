@@ -11,7 +11,7 @@ import httpx
 import pytest
 import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
-from kubernetes_asyncio.client import AuthenticationV1Api, CoreV1Api
+from kubernetes_asyncio.client import AuthenticationV1Api
 
 from x.agentplane.action_service.api import create_app
 from x.agentplane.action_service.auth import (
@@ -26,15 +26,24 @@ from x.agentplane.action_service.client import (
     ActionServiceClient,
     CredentialPlaceholder,
 )
-from x.agentplane.action_service.models import ActionRequestInput, ActionRequestView, ActionState, Principal
+from x.agentplane.action_service.models import (
+    ActionRequestInput,
+    ActionRequestView,
+    ActionState,
+    CallerPrincipal,
+    OperatorPrincipal,
+)
+from x.agentplane.action_service.policies.resources import CALLER_LABEL
 from x.agentplane.action_service.service import ActionService
+from x.agentplane.action_service.test_fixtures.callers import admitted_callers
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.principal import (
     POD_NAME_CLAIM,
     POD_UID_CLAIM,
-    SandboxPrincipal,
     SandboxPrincipalResolver,
+    WorkloadPrincipal,
 )
+from x.agentplane.subjects import ServiceAccountRef
 
 AUDIENCE = "agentplane-egress"
 NAMESPACE = "agentplane-staging"
@@ -43,15 +52,13 @@ TOKEN_A = "opaque-bound-workload-a"
 TOKEN_B = "opaque-bound-workload-b"
 
 
-def principal(label: str) -> SandboxPrincipal:
-    return SandboxPrincipal(
+def principal(label: str) -> WorkloadPrincipal:
+    return WorkloadPrincipal(
         namespace=NAMESPACE,
         service_account_name="agentplane-runner",
         service_account_subject=SUBJECT,
         pod_name=f"sandbox-{label}-pod",
         pod_uid=f"pod-{label}-uid",
-        sandbox_name=f"sandbox-{label}",
-        sandbox_uid=f"sandbox-{label}-uid",
     )
 
 
@@ -59,7 +66,7 @@ PRINCIPAL_A = principal("a")
 PRINCIPAL_B = principal("b")
 
 
-def review(token: str, resolved: SandboxPrincipal, *, audience: str = AUDIENCE) -> k8s_client.V1TokenReview:
+def review(token: str, resolved: WorkloadPrincipal, *, audience: str = AUDIENCE) -> k8s_client.V1TokenReview:
     return k8s_client.V1TokenReview(
         spec=k8s_client.V1TokenReviewSpec(token=token, audiences=[AUDIENCE]),
         status=k8s_client.V1TokenReviewStatus(
@@ -70,25 +77,6 @@ def review(token: str, resolved: SandboxPrincipal, *, audience: str = AUDIENCE) 
                 extra={POD_NAME_CLAIM: [resolved.pod_name], POD_UID_CLAIM: [resolved.pod_uid]},
             ),
         ),
-    )
-
-
-def pod(resolved: SandboxPrincipal) -> k8s_client.V1Pod:
-    return k8s_client.V1Pod(
-        metadata=k8s_client.V1ObjectMeta(
-            namespace=resolved.namespace,
-            name=resolved.pod_name,
-            uid=resolved.pod_uid,
-            owner_references=[
-                k8s_client.V1OwnerReference(
-                    api_version="agents.x-k8s.io/v1beta1",
-                    kind="Sandbox",
-                    name=resolved.sandbox_name,
-                    uid=resolved.sandbox_uid,
-                    controller=True,
-                )
-            ],
-        )
     )
 
 
@@ -107,19 +95,10 @@ class FakeAuthenticationApi:
         )
 
 
-class FakeCoreApi:
-    def __init__(self) -> None:
-        self.pods = {(p.namespace, p.pod_name): pod(p) for p in (PRINCIPAL_A, PRINCIPAL_B)}
-
-    async def read_namespaced_pod(self, name: str, namespace: str) -> k8s_client.V1Pod:
-        return self.pods[(namespace, name)]
-
-
 def workload_resolver() -> tuple[SandboxPrincipalResolver, FakeAuthenticationApi]:
     authentication = FakeAuthenticationApi()
     resolver = SandboxPrincipalResolver(
         authentication=cast(AuthenticationV1Api, authentication),
-        core_v1=cast(CoreV1Api, FakeCoreApi()),
         audience=AUDIENCE,
         allowed_service_account_namespaces=frozenset({NAMESPACE}),
     )
@@ -130,10 +109,10 @@ class RecordingActionService:
     draining = False
 
     def __init__(self) -> None:
-        self.principals: list[Principal] = []
+        self.principals: list[CallerPrincipal] = []
         self.bodies: list[ActionRequestInput] = []
 
-    async def submit(self, body: ActionRequestInput, principal_value: Principal) -> ActionRequestView:
+    async def submit(self, body: ActionRequestInput, principal_value: CallerPrincipal) -> ActionRequestView:
         self.principals.append(principal_value)
         self.bodies.append(body)
         now = datetime.now(UTC)
@@ -146,7 +125,7 @@ class RecordingActionService:
             description=body.description,
             origin=body.origin,
             correlation=body.correlation,
-            caller_principal=None,
+            caller=None,
             state=ActionState.DECISION_PENDING,
             version=1,
             created_at=now,
@@ -176,13 +155,13 @@ class FakeCentralProxy(httpx.AsyncBaseTransport):
         await self._upstream.aclose()
 
 
-async def test_same_service_account_pods_resolve_two_sandbox_principals() -> None:
+async def test_same_service_account_pods_are_one_caller_from_two_bearers() -> None:
     resolver, authentication = workload_resolver()
 
-    first, second = await resolver.resolve(TOKEN_A), await resolver.resolve(TOKEN_B)
+    first, second = await resolver.resolve_workload(TOKEN_A), await resolver.resolve_workload(TOKEN_B)
 
     assert first.service_account_subject == second.service_account_subject == SUBJECT
-    assert (first.pod_uid, first.sandbox_uid) != (second.pod_uid, second.sandbox_uid)
+    assert first.pod_uid != second.pod_uid
     assert authentication.seen_tokens == [TOKEN_A, TOKEN_B]
 
 
@@ -196,6 +175,7 @@ async def test_central_placeholder_replay_is_required_before_action_service_auth
         resolver,
         cast(OperatorAuthenticator, DisabledOperatorAuthenticator()),
         ActionCatalog(),
+        callers=admitted_callers(ServiceAccountRef(namespace=NAMESPACE, name=PRINCIPAL_A.service_account_name)),
         updates=ActionUpdates("postgresql://unused-test-listener"),
     )
     body = ActionRequestInput(
@@ -203,7 +183,7 @@ async def test_central_placeholder_replay_is_required_before_action_service_auth
         title="test title for central-replay",
         action=ActionIdentity(group="agentplane", name="echo"),
         arguments={"text": "hello"},
-        origin={"sandbox_id": PRINCIPAL_B.sandbox_uid, "thread_id": "untrusted"},
+        origin={"sandbox_id": "forged-sandbox-uid", "thread_id": "untrusted"},
     )
 
     proxy = FakeCentralProxy(app, TOKEN_A)
@@ -244,6 +224,45 @@ async def test_central_placeholder_replay_is_required_before_action_service_auth
     assert TOKEN_A not in str(service.principals)
 
 
+async def test_an_unlabelled_account_authenticates_and_reaches_no_route(caplog: pytest.LogCaptureFixture) -> None:
+    """The label is admission, separate from proving who you are: a bearer TokenReview accepts still
+    reaches nothing while the index does not list its account, so a workload the operator has not
+    named cannot even queue an Action for them to decide."""
+    caplog.set_level("WARNING", logger="x.agentplane.action_service.api")
+    resolver, authentication = workload_resolver()
+    service = RecordingActionService()
+    app = create_app(
+        cast(ActionService, service),
+        resolver,
+        cast(OperatorAuthenticator, DisabledOperatorAuthenticator()),
+        ActionCatalog(),
+        callers=admitted_callers(),
+        updates=ActionUpdates("postgresql://unused-test-listener"),
+    )
+    body = ActionRequestInput(
+        idempotency_key="unlabelled",
+        title="test title for unlabelled",
+        action=ActionIdentity(group="agentplane", name="echo"),
+        arguments={"text": "hello"},
+    )
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://agentplane-actions") as http:
+        refused = await http.post(
+            "/v1/action-requests", headers={"Authorization": f"Bearer {TOKEN_A}"}, json=body.model_dump(mode="json")
+        )
+
+    assert refused.status_code == 401
+    assert authentication.seen_tokens == [TOKEN_A], "the bearer was proven; what failed is admission"
+    assert service.principals == []
+    assert service.bodies == []
+    # Opaque to the caller, explicit in the log: the operator needs to know which account to label.
+    assert "invalid workload bearer" in refused.text
+    assert CALLER_LABEL not in refused.text
+    rendered = "\n".join(record.getMessage() for record in caplog.records)
+    assert PRINCIPAL_A.service_account_name in rendered
+    assert CALLER_LABEL in rendered
+
+
 async def test_operator_adapter_is_distinct_digest_only_and_file_configured(tmp_path: Path) -> None:
     path = tmp_path / "operator-bearer"
     path.write_text("opaque-bff-bearer\n")
@@ -252,7 +271,7 @@ async def test_operator_adapter_is_distinct_digest_only_and_file_configured(tmp_
     accepted = await authenticator.authenticate("opaque-bff-bearer")
 
     assert accepted is not None
-    assert accepted.key == "configured-operator:haku-bff"
+    assert accepted == OperatorPrincipal(issuer="configured-operator", subject="haku-bff")
     assert await authenticator.authenticate("wrong") is None
     assert "opaque-bff-bearer" not in repr(authenticator.__dict__)
     await DisabledOperatorAuthenticator().authenticate("anything")

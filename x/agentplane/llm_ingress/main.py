@@ -10,12 +10,12 @@ from typing import Any
 import httpx
 import uvicorn
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
-from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api
+from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from x.agentplane.llm_ingress.app import IngressResources, create_app
-from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
+from x.agentplane.sandbox_auth.http import WorkloadPrincipalAuthenticator
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 
 logger = logging.getLogger(__name__)
@@ -59,13 +59,12 @@ async def async_main(settings: Settings) -> None:
     ):
         resolver = SandboxPrincipalResolver(
             authentication=AuthenticationV1Api(api),
-            core_v1=CoreV1Api(api),
             audience=settings.token_audience,
             allowed_service_account_namespaces=frozenset({settings.namespace}),
         )
         app = create_app(
             IngressResources(
-                authenticate=SandboxPrincipalAuthenticator(resolver),
+                authenticate=WorkloadPrincipalAuthenticator(resolver),
                 backend=backend,
                 litellm_key=settings.litellm_key.get_secret_value(),
             )

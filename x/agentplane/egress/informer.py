@@ -8,26 +8,21 @@ from datetime import UTC, datetime
 from kubernetes_asyncio.client import CoreV1Api
 
 from util.kubernetes import CustomObjectsClient
+from x.agentplane.crds import GROUP, VERSION
 from x.agentplane.egress.policy import Index
 from x.agentplane.egress.resources import (
     BINDINGS_PLURAL,
     CREDENTIALS_PLURAL,
-    GROUP,
     POLICIES_PLURAL,
-    SANDBOX_GROUP,
-    SANDBOX_VERSION,
-    SANDBOXES_PLURAL,
-    VERSION,
     EgressBinding,
     EgressCredential,
     EgressPolicy,
-    Sandbox,
     Secret,
 )
 from x.agentplane.kubernetes_watch import ListWatch, WatchedKind, apply_to
 
 
-def _name(obj: EgressPolicy | EgressBinding | EgressCredential | Sandbox) -> str:
+def _name(obj: EgressPolicy | EgressBinding | EgressCredential) -> str:
     return obj.metadata.name
 
 
@@ -39,7 +34,6 @@ class Informer:
         custom_objects: CustomObjectsClient,
         core_v1: CoreV1Api,
         namespace: str,
-        sandbox_namespace: str,
         credentials_namespace: str,
         resync_seconds: int,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
@@ -73,15 +67,6 @@ class Informer:
                     key=_name,
                     names=lambda: set(index.credentials),
                     apply=lambda name, obj: apply_to(index.credentials, name, obj),
-                ),
-                WatchedKind(
-                    name=SANDBOXES_PLURAL,
-                    list=custom_objects.list_namespaced_custom_object,
-                    args=(SANDBOX_GROUP, SANDBOX_VERSION, sandbox_namespace, SANDBOXES_PLURAL),
-                    parse=Sandbox.model_validate,
-                    key=_name,
-                    names=lambda: set(index.sandboxes),
-                    apply=lambda name, obj: apply_to(index.sandboxes, name, obj),
                 ),
                 WatchedKind(
                     name="secrets",

@@ -23,7 +23,9 @@ from kubernetes_asyncio.client import CoreV1Api
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from util.kubernetes import CustomObjectsClient
+from x.agentplane.action_service.policies.resources import CALLER_LABEL
 from x.agentplane.app.presets import SandboxBinding, ThreadDefaults
+from x.agentplane.subjects import ServiceAccountRef
 
 MANAGED_LABEL = "agentplane.allegedly.works/managed"
 SANDBOX_BINDING_ANNOTATION = "agentplane.allegedly.works/sandbox-binding"
@@ -141,6 +143,10 @@ class SandboxView(BaseModel):
     operating_mode: OperatingMode
     conditions: list[Condition] = Field(description="The Sandbox's own status conditions.")
     node_name: str | None = Field(default=None, description="Where the Sandbox controller placed the Pod.")
+    service_account: ServiceAccountRef = Field(
+        description="The ServiceAccount its Pod runs as, read off the Sandbox: the subject every "
+        "egress and action-policy binding names it by."
+    )
     binding: SandboxBinding | None = Field(
         default=None, description="The app-owned concrete Thread defaults and bootstrap selected for this Sandbox."
     )
@@ -154,10 +160,24 @@ class _ObjectMeta(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     name: str
+    namespace: str
     uid: UUID
     labels: dict[str, str] = Field(default_factory=dict)
     annotations: dict[str, str] = Field(default_factory=dict)
     creation_timestamp: datetime = Field(alias="creationTimestamp")
+
+
+class _PodSpec(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    # Kubernetes' own default: a Pod naming no account runs as `default` in its namespace.
+    service_account_name: str = Field(alias="serviceAccountName", default="default")
+
+
+class _PodTemplate(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    spec: _PodSpec = Field(default_factory=_PodSpec)
 
 
 class _SandboxSpec(BaseModel):
@@ -165,6 +185,7 @@ class _SandboxSpec(BaseModel):
 
     # The CRD defaults `operatingMode` to Running, so a stored Sandbox without it is a running one.
     operating_mode: OperatingMode = Field(alias="operatingMode", default=OperatingMode.RUNNING)
+    pod_template: _PodTemplate = Field(alias="podTemplate", default_factory=_PodTemplate)
 
 
 class _SandboxStatus(BaseModel):
@@ -258,7 +279,14 @@ class SandboxInventory:
         # Sandbox never appears, rather than being left for nothing to collect.
         await self._core_v1.create_namespaced_service_account(
             self._namespace,
-            k8s_client.V1ServiceAccount(metadata=k8s_client.V1ObjectMeta(name=name, labels={MANAGED_LABEL: "true"})),
+            k8s_client.V1ServiceAccount(
+                metadata=k8s_client.V1ObjectMeta(
+                    # The Action Service admits an account only while it carries its caller label,
+                    # so a sandbox without this one authenticates and reaches no route.
+                    name=name,
+                    labels={MANAGED_LABEL: "true", CALLER_LABEL: "true"},
+                )
+            ),
         )
         body = {
             "apiVersion": f"{SANDBOX_API[0]}/{SANDBOX_API[1]}",
@@ -314,11 +342,6 @@ class SandboxInventory:
 
     async def resume(self, name: str) -> None:
         await self._set_operating_mode(name, OperatingMode.RUNNING)
-
-    async def require_known(self, name: str) -> None:
-        """Raise `SandboxNotFoundError` unless the name is one of Agentplane's sandboxes; the
-        existence check behind routes that answer from the name alone."""
-        await self._sandbox(name)
 
     async def delete(self, name: str) -> None:
         """Delete a suspended Sandbox; the controller removes its Pod and PVC, and with them
@@ -401,6 +424,9 @@ def _view(sandbox: _Sandbox, pod: k8s_client.V1Pod | None) -> SandboxView:
         state=_state(sandbox, pod),
         created_at=sandbox.metadata.creation_timestamp,
         operating_mode=sandbox.spec.operating_mode,
+        service_account=ServiceAccountRef(
+            namespace=sandbox.metadata.namespace, name=sandbox.spec.pod_template.spec.service_account_name
+        ),
         conditions=sandbox.status.conditions,
         node_name=sandbox.status.node_name,
         binding=_binding(sandbox),

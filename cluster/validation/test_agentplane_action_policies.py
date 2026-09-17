@@ -17,7 +17,8 @@ import pytest_bazel
 import yaml
 
 from util.bazel.runfiles import get_required_path
-from x.agentplane.action_service.policies.resources import GROUP, VERSION, BindingSpec, PolicySetSpec
+from x.agentplane.action_service.policies.resources import BindingSpec, PolicySetSpec
+from x.agentplane.crds import GROUP, VERSION
 
 _K8S_DIR = get_required_path("_main/cluster/k8s/kustomization.yaml").parent
 _DOCUMENTS = [

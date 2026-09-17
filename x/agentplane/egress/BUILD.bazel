@@ -19,8 +19,10 @@ py_library(
         ":decisions",
         ":identity",
         ":policy",
-        ":resources",
         ":upstream",
+        "//x/agentplane:subjects",
+        "//x/agentplane/sandbox_auth:bearer",
+        "//x/agentplane/sandbox_auth:principal",
         "@pypi//mitmproxy",
     ],
 )
@@ -31,6 +33,7 @@ py_library(
     deps = [
         ":decision_log",
         ":policy",
+        "//x/agentplane:subjects",
         "@pypi//aiohttp",
         "@pypi//more_itertools",
     ],
@@ -41,6 +44,7 @@ py_library(
     srcs = ["decisions.py"],
     deps = [
         ":policy",
+        "//x/agentplane:subjects",
         "@pypi//pydantic",
     ],
 )
@@ -51,7 +55,6 @@ py_library(
     deps = [
         ":policy",
         "//x/agentplane/sandbox_auth:principal",
-        "@pypi//kubernetes_asyncio",
     ],
 )
 
@@ -62,6 +65,7 @@ py_library(
         ":policy",
         ":resources",
         "//util:kubernetes",
+        "//x/agentplane:crds",
         "//x/agentplane:kubernetes_watch",
         "@pypi//kubernetes_asyncio",
     ],
@@ -70,6 +74,11 @@ py_library(
 py_library(
     name = "main",
     srcs = ["main.py"],
+    # Also the cluster validation that parses the deployed flags through this Settings.
+    visibility = [
+        "//cluster/validation:__pkg__",
+        "//x/agentplane:__subpackages__",
+    ],
     deps = [
         ":addon",
         ":admin",
@@ -100,6 +109,7 @@ py_library(
     deps = [
         ":presentation",
         ":resources",
+        "//x/agentplane:subjects",
         "@pypi//more_itertools",
     ],
 )
@@ -121,6 +131,7 @@ py_library(
         "//x/agentplane:__subpackages__",
     ],
     deps = [
+        "//x/agentplane:subjects",
         "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",
     ],
@@ -140,6 +151,7 @@ py_library(
         "//util:kubernetes",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
+        "//x/agentplane:subjects",
         "//x/agentplane/egress/testing:fake_apiserver",
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
@@ -158,6 +170,7 @@ py_test(
         ":policy",
         "//:conftest",
         "//x/agentplane/egress/testing:fake_apiserver",
+        "//x/agentplane/sandbox_auth:principal",
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -189,6 +202,7 @@ py_test(
         ":presentation",
         ":resources",
         "//:conftest",
+        "//x/agentplane:subjects",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -369,6 +383,7 @@ py_library(
     deps = [
         ":policy",
         ":resources",
+        "//x/agentplane:subjects",
         "@pypi//pydantic",
     ],
 )
@@ -382,6 +397,7 @@ py_test(
         ":policy",
         ":resources",
         "//:conftest",
+        "//x/agentplane:subjects",
         "@pypi//pytest_bazel",
     ],
 )
@@ -392,7 +408,9 @@ py_library(
     deps = [
         ":agent_view",
         ":policy",
+        "//x/agentplane:subjects",
         "//x/agentplane/sandbox_auth:http",
+        "//x/agentplane/sandbox_auth:principal",
         "@pypi//fastapi",
         "@pypi//uvicorn",
     ],
@@ -404,7 +422,6 @@ py_test(
     deps = [
         ":conftest",
         ":policy",
-        ":resources",
         ":rules_api",
         "//:conftest",
         "//x/agentplane/egress/testing:fake_apiserver",
@@ -442,10 +459,8 @@ py_library(
     data = ["//x/agentplane/egress/migrations:files"],
     deps = [
         ":decision_store",
-        "@pypi//alembic",
-        "@pypi//psycopg",
+        "//util:db_migrations",
         "@pypi//pydantic_settings",
-        "@pypi//sqlalchemy",
     ],
 )
 
@@ -463,6 +478,7 @@ py_test(
         ":decisions",
         ":policy",
         "//:conftest",
+        "//x/agentplane:subjects",
         "@pypi//aiohttp",
         "@pypi//alembic",
         "@pypi//pytest",
@@ -512,6 +528,7 @@ py_library(
     deps = [
         ":decisions",
         ":policy",
+        "//x/agentplane:subjects",
         "@pypi//asyncpg",
         "@pypi//sqlalchemy",
     ],

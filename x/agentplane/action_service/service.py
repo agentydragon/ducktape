@@ -30,6 +30,7 @@ from x.agentplane.action_service.models import (
     ActionRequestInput,
     ActionRequestView,
     ActionState,
+    CallerPrincipal,
     CancellationResult,
     DecisionInput,
     ExecutionClaim,
@@ -37,11 +38,10 @@ from x.agentplane.action_service.models import (
     ExecutionState,
     Executor,
     ExternalGrantProvenance,
+    OperatorPrincipal,
     Principal,
     ProviderOutcome,
     ProviderVerdict,
-    SandboxCaller,
-    ServiceAccountCaller,
     UnknownOutcomeReason,
     Verdict,
 )
@@ -49,12 +49,12 @@ from x.agentplane.action_service.policy_evaluation import resolve_bindings
 from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.policy_view import (
     CallerActionPolicyView,
-    PolicySubject,
     SubjectActionPolicyView,
     caller_view,
     subject_view,
 )
 from x.agentplane.action_service.providers import DecisionContext, DecisionProvider
+from x.agentplane.subjects import ServiceAccountRef
 
 # types-jsonschema stubs import referencing; the mypy aspect needs that typed package directly.
 # gazelle:include_dep @pypi//referencing
@@ -94,16 +94,6 @@ class UnsupportedActionError(Exception):
 
 class InvalidActionArgumentsError(Exception):
     """Arguments do not match the advertised Action schema; nothing was persisted."""
-
-
-def _caller(
-    principal: Principal, external_grant: ExternalGrantProvenance | None
-) -> SandboxCaller | ServiceAccountCaller:
-    """The typed caller providers see: the grant's ServiceAccount, else the Sandbox the principal
-    was minted for. Admission already refused any grant a ServiceAccount does not back."""
-    if external_grant is None:
-        return SandboxCaller.from_principal(principal)
-    return ServiceAccountCaller(service_account=external_grant.caller, grant_revision=external_grant.revision)
 
 
 class _StoreBackedLease:
@@ -237,7 +227,11 @@ class ActionService:
         self._sweep_task = None
 
     async def submit(
-        self, body: ActionRequestInput, principal: Principal, *, external_grant: ExternalGrantProvenance | None = None
+        self,
+        body: ActionRequestInput,
+        principal: CallerPrincipal,
+        *,
+        external_grant: ExternalGrantProvenance | None = None,
     ) -> ActionRequestView:
         if self.draining:
             raise ServiceDrainingError("Action Service is draining")
@@ -265,14 +259,14 @@ class ActionService:
         self,
         view: ActionRequestView,
         body: ActionRequestInput,
-        principal: Principal,
+        principal: CallerPrincipal,
         external_grant: ExternalGrantProvenance | None,
     ) -> ActionRequestView:
         """Evaluate configured synchronous providers once, against the policy objects as they stand
         now; defer to the human path on no decisive outcome."""
         if not self._providers:
             return view
-        caller = _caller(principal, external_grant)
+        caller = principal.account
         context = DecisionContext(
             request_id=view.id,
             action=body.action,
@@ -329,16 +323,16 @@ class ActionService:
         return _ProviderVote(provider=provider.name, outcome=outcome)
 
     def caller_action_policy(
-        self, principal: Principal, external_grant: ExternalGrantProvenance | None
+        self, principal: CallerPrincipal, external_grant: ExternalGrantProvenance | None
     ) -> CallerActionPolicyView:
         """What the caller's own bindings auto-decide, resolved as admission would resolve them now."""
-        return caller_view(self._policies, _caller(principal, external_grant), self._clock())
+        return caller_view(self._policies, principal.account, self._clock())
 
-    def target_action_policy(self, subject: PolicySubject) -> CallerActionPolicyView:
+    def target_action_policy(self, subject: ServiceAccountRef) -> CallerActionPolicyView:
         """What a named subject's bindings auto-decide, in the view a caller may see."""
         return caller_view(self._policies, subject, self._clock())
 
-    def subject_action_policy(self, subject: PolicySubject) -> SubjectActionPolicyView:
+    def subject_action_policy(self, subject: ServiceAccountRef) -> SubjectActionPolicyView:
         """The operator's view of what a named subject's bindings auto-decide, resolved the same way."""
         return subject_view(self._policies, subject, self._clock())
 
@@ -358,7 +352,7 @@ class ActionService:
     ) -> list[ActionEventView]:
         return await self._store.events(request_id, principal, after_sequence=after_sequence, limit=limit)
 
-    async def decide(self, request_id: UUID, body: DecisionInput, principal: Principal) -> ActionRequestView:
+    async def decide(self, request_id: UUID, body: DecisionInput, principal: OperatorPrincipal) -> ActionRequestView:
         if self.draining:
             raise ServiceDrainingError("Action Service is draining")
         view, should_dispatch = await self._store.decide(request_id, body, principal, provider=self.HUMAN_PROVIDER)

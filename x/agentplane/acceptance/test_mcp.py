@@ -36,19 +36,15 @@ from x.agentplane.action_service.models import (
     DecisionInput,
     ExecutionState,
     MatchedPolicy,
+    OperatorPrincipal,
     PolicyKind,
     Verdict,
 )
-from x.agentplane.action_service.policies.resources import (
-    BINDINGS_PLURAL,
-    GROUP,
-    POLICY_SETS_PLURAL,
-    READY_CONDITION,
-    VERSION,
-)
+from x.agentplane.action_service.policies.resources import BINDINGS_PLURAL, POLICY_SETS_PLURAL, READY_CONDITION
 from x.agentplane.action_service.policy_evaluation import PROVIDER_NAME
 from x.agentplane.app.client import Client
 from x.agentplane.app.inventory import SandboxView
+from x.agentplane.crds import GROUP, VERSION
 from x.agentplane.runner import protocol_pb2
 
 # `protocol_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
@@ -118,7 +114,7 @@ class PolicyObjects:
             "ActionPolicyBinding",
             BINDINGS_PLURAL,
             name,
-            {"subject": {"sandbox": {"name": sandbox.name, "uid": str(sandbox.uid)}}, "policySets": policy_sets},
+            {"subject": {"namespace": self.namespace, "name": sandbox.name}, "policySets": policy_sets},
         )
 
     def expire_binding(self, name: str) -> None:
@@ -345,8 +341,8 @@ wait for an operator decision in this turn.
     assert decided.decision is not None
     assert decided.decision.verdict is verdict
     assert decided.decision.provider == "human_operator"
-    if decided.decision.issuer != (
-        f"{operator_credentials.issuer.get_secret_value()}:{operator_credentials.subject.get_secret_value()}"
+    if decided.decision.operator != OperatorPrincipal(
+        issuer=operator_credentials.issuer.get_secret_value(), subject=operator_credentials.subject.get_secret_value()
     ):
         pytest.fail("Decision operator identity differs from the dedicated Secret", pytrace=False)
     assert decided.decision.idempotency_key == decision.idempotency_key
@@ -376,7 +372,7 @@ and result. Copy result from execution when it exists; otherwise use null. Do no
     assert terminal.idempotency_key == pending.idempotency_key
     assert terminal.action == pending.action
     assert terminal.arguments == pending.arguments
-    assert terminal.caller_principal == pending.caller_principal
+    assert terminal.caller == pending.caller
     if terminal.decision != decided.decision:
         pytest.fail("Terminal Decision changed", pytrace=False)
     assert terminal.state is expected_state

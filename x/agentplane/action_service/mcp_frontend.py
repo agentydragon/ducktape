@@ -34,10 +34,10 @@ from x.agentplane.action_service.models import (
     ActionEventView,
     ActionRequestInput,
     ActionRequestView,
+    CallerPrincipal,
     ExternalGrantProvenance,
-    Principal,
 )
-from x.agentplane.action_service.policy_view import SELF, PolicyTarget, SandboxTarget
+from x.agentplane.action_service.policy_view import SELF, PolicyTarget
 from x.agentplane.action_service.service import ActionService, InvalidActionArgumentsError, UnsupportedActionError
 from x.agentplane.action_service.updates import ActionUpdates, UpdatesUnavailableError
 from x.agentplane.action_service.waits import ActionWaiter, WaitOptions, WaitUntil
@@ -130,10 +130,14 @@ class TransportDisconnects:
 
 @dataclass(frozen=True, slots=True)
 class Caller:
-    """Who this transport request authenticated as, as `CallerTokenVerifier` verified it: injected
-    into every tool that acts for a caller, never a tool argument."""
+    """Who this transport request authenticated as, injected into every tool that acts for a caller
+    and never a tool argument.
 
-    principal: Principal
+    The same two fields as `CallerToken`, deliberately: that one extends FastMCP's `AccessToken` and
+    so carries the bearer itself, which tool code has no business holding.
+    """
+
+    principal: CallerPrincipal
     external_grant: ExternalGrantProvenance | None
 
 
@@ -211,14 +215,14 @@ def create_server(
         tasks=False,
     )
 
-    async def revalidate(principal: Principal) -> None:
+    async def revalidate(principal: CallerPrincipal) -> None:
         current = await verifier.verify_token(_caller_token(get_access_token()).token)
         if current is None:
             raise ToolError("Caller authorization expired during the wait; reconnect with a valid caller bearer.")
         if current.principal != principal:
             raise ToolError("Caller identity changed during the wait; recover the request as its original caller.")
 
-    async def wait_for_receipt(request_id: UUID, principal: Principal, options: WaitOptions) -> ActionRequestView:
+    async def wait_for_receipt(request_id: UUID, principal: CallerPrincipal, options: WaitOptions) -> ActionRequestView:
         if options.wait_seconds == 0:
             return await waiter.get(request_id, principal, options)
         disconnected = cast(asyncio.Event, get_http_request().state.action_disconnected)
@@ -283,8 +287,8 @@ def create_server(
     @server.tool(annotations={"readOnlyHint": True})
     @_tool_errors
     async def get_action_policy(target: PolicyTarget = SELF, caller: Caller = CALLER) -> ToolResult:
-        """Read what bindings auto-decide for a target: your own ("self", the default), or a named Sandbox
-        (namespace and UID) or ServiceAccount. The answer is the policy sets bound to it and the auto_approve_if,
+        """Read what bindings auto-decide for a target: your own ("self", the default), or a named
+        ServiceAccount. The answer is the policy sets bound to it and the auto_approve_if,
         auto_deny_if and auto_deny_unless entries in evaluation order, each naming the binding, set and index
         a Decision's policy_evidence names. Use it before request_action to learn which Actions and arguments
         are approved without an operator; a request matching nothing waits for one, and until synced is true
@@ -293,7 +297,7 @@ def create_server(
         """
         if target == SELF:
             return _result(service.caller_action_policy(caller.principal, caller.external_grant))
-        subject = target.sandbox if isinstance(target, SandboxTarget) else target.service_account
+        subject = target.service_account
         return _result(service.target_action_policy(subject))
 
     @server.tool(annotations={"readOnlyHint": False, "idempotentHint": True})

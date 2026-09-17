@@ -24,7 +24,7 @@ from x.agentplane.egress.testing.fake_apiserver import binding, policy
 
 RESYNC_SECONDS = 300
 STARTED = datetime(2026, 9, 3, 12, 0, tzinfo=UTC)
-KINDS = ("egresspolicies", "egressbindings", "egresscredentials", "sandboxes", "secrets")
+KINDS = ("egresspolicies", "egressbindings", "egresscredentials", "secrets")
 
 
 @dataclass
@@ -117,7 +117,7 @@ async def test_binding_observations_are_local_and_derived_at_read_time(
     index.bindings["test-binding"] = EgressBinding.model_validate(
         binding(
             "test-binding",
-            subjects=[{"sandbox": {"name": "test-sandbox"}}],
+            subjects=[{"namespace": "test-namespace", "name": "test-workload"}],
             policies=["test-policy", "test-absent"],
             expires_at=(STARTED + timedelta(seconds=10)).isoformat(),
         )

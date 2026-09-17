@@ -9,6 +9,7 @@ import pytest
 import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 
+from x.agentplane.action_service.policies.resources import CALLER_LABEL
 from x.agentplane.app.inventory import (
     MANAGED_LABEL,
     NewSandbox,
@@ -18,6 +19,7 @@ from x.agentplane.app.inventory import (
     SandboxRunningError,
 )
 from x.agentplane.app.testing.kubernetes import (
+    NAMESPACE,
     POD_TEMPLATE,
     VOLUME_CLAIM_TEMPLATES,
     FakeCoreV1Api,
@@ -38,7 +40,12 @@ def _populate_one_of_each_state(custom_objects: FakeCustomObjectsApi, core_v1: F
     custom_objects.objects[("sandboxes", "paused")] = sandbox("paused", operating_mode="Suspended")
     # Not Agentplane's: another tenant's Sandbox in the same namespace stays invisible.
     custom_objects.objects[("sandboxes", "foreign")] = {
-        "metadata": {"name": "foreign", "uid": str(uuid4()), "creationTimestamp": "2026-09-01T12:00:00Z"},
+        "metadata": {
+            "name": "foreign",
+            "namespace": NAMESPACE,
+            "uid": str(uuid4()),
+            "creationTimestamp": "2026-09-01T12:00:00Z",
+        },
         "spec": {"podTemplate": POD_TEMPLATE},
     }
 
@@ -117,11 +124,13 @@ async def test_create_gives_the_sandbox_a_service_account_of_its_own_that_it_run
     inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api
 ) -> None:
     """What the Pod runs as is what egress and the Action Service authenticate it by, so a sandbox
-    sharing the template's account could only ever be granted what every other sandbox is."""
+    sharing the template's account could only ever be granted what every other sandbox is. The
+    caller label is what the Action Service admits it on; without it the sandbox authenticates and
+    reaches no route."""
     view = await inventory.create(NewSandbox(slug="my-task", template="agentplane-test-runner"))
 
     account = core_v1.service_accounts[view.name]
-    assert account.metadata.labels == {MANAGED_LABEL: "true"}
+    assert account.metadata.labels == {MANAGED_LABEL: "true", CALLER_LABEL: "true"}
     assert (
         custom_objects.objects[("sandboxes", view.name)]["spec"]["podTemplate"]["spec"]["serviceAccountName"]
         == view.name

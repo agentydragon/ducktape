@@ -28,7 +28,6 @@ from contextlib import ExitStack
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Annotated, Any
-from uuid import UUID
 
 import httpx
 import httpx2
@@ -68,6 +67,7 @@ from x.agentplane.app.inventory import (
 from x.agentplane.app.shutdown import Shutdown
 from x.agentplane.app.trajectory import ThreadView, TrajectoryStore
 from x.agentplane.kubernetes_watch import ListWatch, WatchedKind, apply_to
+from x.agentplane.subjects import ServiceAccountRef
 
 PODS_PLURAL = "pods"
 
@@ -152,9 +152,9 @@ class LiveIndex:
         raw = self.sandboxes.get(name)
         return None if raw is None else sandbox_view(raw, self.pods.get(name))
 
-    def bindings_for(self, name: str) -> list[BindingView]:
+    def bindings_for(self, subject: ServiceAccountRef) -> list[BindingView]:
         return matching_bindings(
-            self.bindings.values(), self.policies.values(), self.credentials.values(), sandbox=name
+            self.bindings.values(), self.policies.values(), self.credentials.values(), subject=subject
         )
 
     def action_policy_seen(self, names: set[str], name: str, obj: object | None) -> None:
@@ -306,13 +306,12 @@ def _frame(event: str, data: dict[str, object]) -> bytes:
 
 
 async def action_policy_frame(
-    request: Request, caller: CallerIdentity, inventory: ActionPolicyInventory, sandbox_uid: UUID
+    request: Request, caller: CallerIdentity, inventory: ActionPolicyInventory, subject: ServiceAccountRef
 ) -> ActionPolicyView | ActionPolicyUnavailable:
-    """The Action Service's answer for the sandbox, or why it could not be asked: the failure
-    `GET /sandboxes/{name}/action-policy` would answer with, carried in the frame instead of ending
-    a stream that also carries the sandbox itself."""
+    """The Action Service's answer for the subject, or why it could not be asked, carried in the
+    frame rather than ending a stream that also carries the sandbox itself."""
     try:
-        return await inventory.for_sandbox(operator_actions(request, caller), sandbox_uid)
+        return await inventory.for_subject(operator_actions(request, caller), subject)
     except OperatorFederationError as error:
         return ActionPolicyUnavailable(code=str(error))
     except (httpx.HTTPStatusError, httpx.RequestError, httpx2.HTTPStatusError, httpx2.TransportError) as error:
@@ -321,22 +320,29 @@ async def action_policy_frame(
 
 class ActionPolicyFrames:
     """One stream's action policy: asked of the service again when a policy object changed or the
-    sandbox is another incarnation, and otherwise repeated, so a Pod or thread event does not cost an
-    exchange with the identity provider. A failure is never kept; the next change retries."""
+    stream is following another subject, and otherwise repeated, so a Pod or thread event does not
+    cost an exchange with the identity provider. A failure is never kept; the next change retries.
+
+    Keyed by the subject asked about, which is the whole of what the answer depends on: two
+    sandboxes running as one account share it, and a replacement sandbox with an account of its own
+    misses it.
+    """
 
     def __init__(
-        self, index: LiveIndex, fetch: Callable[[UUID], Awaitable[ActionPolicyView | ActionPolicyUnavailable]]
+        self,
+        index: LiveIndex,
+        fetch: Callable[[ServiceAccountRef], Awaitable[ActionPolicyView | ActionPolicyUnavailable]],
     ) -> None:
         self._index = index
         self._fetch = fetch
-        self._kept: tuple[UUID, int, ActionPolicyView] | None = None
+        self._kept: tuple[ServiceAccountRef, int, ActionPolicyView] | None = None
 
-    async def for_sandbox(self, sandbox_uid: UUID) -> ActionPolicyView | ActionPolicyUnavailable:
+    async def for_subject(self, subject: ServiceAccountRef) -> ActionPolicyView | ActionPolicyUnavailable:
         seen = self._index.action_policy_changes
-        if self._kept is not None and self._kept[:2] == (sandbox_uid, seen):
+        if self._kept is not None and self._kept[:2] == (subject, seen):
             return self._kept[2]
-        frame = await self._fetch(sandbox_uid)
-        self._kept = (sandbox_uid, seen, frame) if isinstance(frame, ActionPolicyView) else None
+        frame = await self._fetch(subject)
+        self._kept = (subject, seen, frame) if isinstance(frame, ActionPolicyView) else None
         return frame
 
 
@@ -432,14 +438,14 @@ async def live_sandbox(
     Service's answer, asked as the operator this session is; the watch on the policy kinds only says
     when to ask again.
     """
-    policy = ActionPolicyFrames(index, lambda uid: action_policy_frame(request, caller, action_policy, uid))
+    policy = ActionPolicyFrames(index, lambda subject: action_policy_frame(request, caller, action_policy, subject))
 
     async def snapshot() -> SandboxSnapshot:
         sandbox = index.sandbox_view(name)
         return SandboxSnapshot(
             sandbox=sandbox,
-            bindings=index.bindings_for(name),
-            action_policy=None if sandbox is None else await policy.for_sandbox(sandbox.uid),
+            bindings=[] if sandbox is None else index.bindings_for(sandbox.service_account),
+            action_policy=None if sandbox is None else await policy.for_subject(sandbox.service_account),
             threads=await store.list_threads(sandbox=name, include_archived=include_archived),
             watch=_health(index),
         )

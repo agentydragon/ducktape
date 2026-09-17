@@ -8,8 +8,9 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from x.agentplane.action_service.catalog import ActionIdentity
-from x.agentplane.action_service.models import ProviderOutcome, SandboxCaller, ServiceAccountCaller
+from x.agentplane.action_service.models import ProviderOutcome
 from x.agentplane.action_service.policies.resources import ActionPolicyBinding, ActionPolicySet
+from x.agentplane.subjects import ServiceAccountRef
 
 
 class ResolvedBinding(BaseModel):
@@ -34,7 +35,7 @@ class DecisionContext(BaseModel):
     request_id: UUID
     action: ActionIdentity
     arguments: dict[str, JsonValue]
-    caller: SandboxCaller | ServiceAccountCaller
+    caller: ServiceAccountRef
     bindings: tuple[ResolvedBinding, ...] = Field(
         description="Empty until the informer has synced, and for a caller nothing names: human-only."
     )

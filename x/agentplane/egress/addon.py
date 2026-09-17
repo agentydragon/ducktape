@@ -14,7 +14,6 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from ipaddress import IPv6Address, ip_address
 from uuid import uuid4
 
 from mitmproxy import connection, http
@@ -22,7 +21,7 @@ from mitmproxy.proxy import server_hooks
 
 from x.agentplane.egress.decision_log import DecisionLog
 from x.agentplane.egress.decisions import DecisionRecord, Outcome, Phase
-from x.agentplane.egress.identity import IdentityRejectedError, PodIdentity, PodIdentityVerifier
+from x.agentplane.egress.identity import IdentityRejectedError, WorkloadIdentityVerifier
 from x.agentplane.egress.policy import (
     CONNECT,
     Allowed,
@@ -34,8 +33,10 @@ from x.agentplane.egress.policy import (
     Index,
     evaluate,
 )
-from x.agentplane.egress.resources import Sandbox
 from x.agentplane.egress.upstream import Pin, UpstreamRefusedError, UpstreamResolver
+from x.agentplane.sandbox_auth.bearer import parse_bearer
+from x.agentplane.sandbox_auth.principal import WorkloadPrincipal
+from x.agentplane.subjects import ServiceAccountRef
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +48,7 @@ class _AuthenticatedConnection:
     """A bearer associated with a client connection only after successful verification."""
 
     token: str = field(repr=False)
-    identity: PodIdentity
+    identity: WorkloadPrincipal
 
 
 def _refusal(reason: DenyReason) -> http.Response:
@@ -55,20 +56,12 @@ def _refusal(reason: DenyReason) -> http.Response:
     return http.Response.make(status, b"", {DENIED_HEADER: f"denied; reason={reason}"})
 
 
-def _peer_ip(flow: http.HTTPFlow) -> str:
-    peername = flow.client_conn.peername
-    if peername is None:
-        raise IdentityRejectedError(DenyReason.POD_MISMATCH, "client connection has no peer address")
-    address = ip_address(peername[0])
-    return str(address.ipv4_mapped or address) if isinstance(address, IPv6Address) else str(address)
-
-
 class EgressAddon:
     def __init__(
         self,
         *,
         index: Index,
-        verifier: PodIdentityVerifier,
+        verifier: WorkloadIdentityVerifier,
         decision_log: DecisionLog,
         resolver: UpstreamResolver,
         stale_after_seconds: float,
@@ -148,19 +141,15 @@ class EgressAddon:
         # A new hop credential must stand on its own. It can never fall back to an earlier tunnel's
         # authenticated state when malformed or rejected.
         self._authenticated.pop(client_id, None)
-        scheme, _, token = header.partition(" ")
-        token = token.strip()
-        if scheme.lower() != "bearer" or not token:
-            return None
-        return token
+        return parse_bearer(header)
 
-    async def _sandbox_of(self, flow: http.HTTPFlow) -> Sandbox:
-        """The live Sandbox this connection's token proves, or IdentityRejectedError saying why not."""
-        sandbox, _ = await self._authenticate(flow)
-        return sandbox
+    async def _caller_of(self, flow: http.HTTPFlow) -> ServiceAccountRef:
+        """The subject this connection's token proves, or IdentityRejectedError saying why not."""
+        caller, _ = await self._authenticate(flow)
+        return caller
 
-    async def _authenticate(self, flow: http.HTTPFlow) -> tuple[Sandbox, AuthenticatedWorkloadContext]:
-        """Authenticate this hop or tunnel context and bind its bearer to the resulting Sandbox."""
+    async def _authenticate(self, flow: http.HTTPFlow) -> tuple[ServiceAccountRef, AuthenticatedWorkloadContext]:
+        """Authenticate this hop or tunnel context and bind its bearer to the resulting caller."""
         client_id = flow.client_conn.id
         previous = (
             self._authenticated.get(client_id) if flow.request.headers.get("proxy-authorization") is None else None
@@ -169,22 +158,16 @@ class EgressAddon:
         if token is None:
             raise IdentityRejectedError(DenyReason.TOKEN_MISSING, "no bearer token in Proxy-Authorization")
         try:
-            identity = await self._verifier.identify(token, _peer_ip(flow))
+            identity = await self._verifier.identify(token)
         except IdentityRejectedError:
             self._authenticated.pop(client_id, None)
             raise
         if previous is not None and previous.identity != identity:
             self._authenticated.pop(client_id, None)
             raise IdentityRejectedError(DenyReason.POD_MISMATCH, "authenticated tunnel identity changed")
-        sandbox = self._index.sandboxes.get(identity.sandbox_name)
-        if sandbox is None or sandbox.metadata.uid != identity.sandbox_uid:
-            self._authenticated.pop(client_id, None)
-            raise IdentityRejectedError(
-                DenyReason.SANDBOX_UNKNOWN, f"Sandbox {identity.sandbox_name} is not in the index"
-            )
         self._authenticated[client_id] = _AuthenticatedConnection(token=token, identity=identity)
-        return sandbox, AuthenticatedWorkloadContext(
-            bearer=token, sandbox_name=identity.sandbox_name, sandbox_uid=identity.sandbox_uid, pod_uid=identity.pod_uid
+        return identity.account, AuthenticatedWorkloadContext(
+            bearer=token, caller=identity.account, pod_uid=identity.pod_uid
         )
 
     async def _gate(self, flow: http.HTTPFlow) -> None:
@@ -197,17 +180,17 @@ class EgressAddon:
             path=None if request.method == CONNECT else request.path,
             headers={name.lower(): request.headers.get_all(name) for name in set(request.headers.keys())},
         )
-        sandbox_name: str | None = None
+        subject: ServiceAccountRef | None = None
         authenticated_workload: AuthenticatedWorkloadContext | None = None
         pin: Pin | None = None
         decision: Decision
         try:
-            sandbox, authenticated_workload = await self._authenticate(flow)
-            sandbox_name = sandbox.metadata.name
+            caller, authenticated_workload = await self._authenticate(flow)
+            subject = caller
             if not self._index.available(self._clock(), stale_after_seconds=self._stale_after_seconds):
                 raise IdentityRejectedError(DenyReason.UNAVAILABLE, "enforcement index unavailable")
             decision = evaluate(
-                self._index, sandbox, egress, self._clock(), authenticated_workload=authenticated_workload
+                self._index, caller, egress, self._clock(), authenticated_workload=authenticated_workload
             )
             if isinstance(decision, Allowed):
                 admitted = decision
@@ -218,9 +201,9 @@ class EgressAddon:
                     decision = Denied(DenyReason.UNAVAILABLE)
                 else:
                     decision = evaluate(
-                        self._index, sandbox, egress, self._clock(), authenticated_workload=authenticated_workload
+                        self._index, caller, egress, self._clock(), authenticated_workload=authenticated_workload
                     )
-                    if decision != admitted or self._index.sandboxes.get(sandbox.metadata.name) != sandbox:
+                    if decision != admitted:
                         decision = Denied(DenyReason.UNAVAILABLE)
         except IdentityRejectedError as error:
             logger.info("identity rejected for %s %s:%d: %s", egress.method, egress.host, egress.port, error.reason)
@@ -240,15 +223,13 @@ class EgressAddon:
             decision = Denied(DenyReason.UNAVAILABLE)
         common = {
             "at": self._clock(),
-            "sandbox": sandbox_name,
+            "subject": subject,
             "method": egress.method[:32],
             "host": egress.host.lower()[:253],
             "port": egress.port,
             "producer_id": self._producer_id,
             "connection_id": flow.client_conn.id,
             "phase": Phase.CONNECT if egress.method == CONNECT else Phase.HTTP_REQUEST,
-            "sandbox_namespace": self._verifier.namespace if sandbox_name is not None else None,
-            "sandbox_uid": authenticated_workload.sandbox_uid if authenticated_workload is not None else None,
             "source_pod_uid": authenticated_workload.pod_uid if authenticated_workload is not None else None,
         }
         match decision:

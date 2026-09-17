@@ -10,8 +10,8 @@ import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request
 from starlette.responses import Response, StreamingResponse
 
-from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
-from x.agentplane.sandbox_auth.principal import SandboxPrincipal
+from x.agentplane.sandbox_auth.http import WorkloadPrincipalAuthenticator
+from x.agentplane.sandbox_auth.principal import WorkloadPrincipal
 
 _HOP_BY_HOP = frozenset(
     {
@@ -37,12 +37,12 @@ _REQUEST_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
 class IngressResources:
     """The only authorities the ingress holds: workload auth, one backend, and one key."""
 
-    authenticate: SandboxPrincipalAuthenticator
+    authenticate: WorkloadPrincipalAuthenticator
     backend: httpx.AsyncClient
     litellm_key: str
 
 
-def _verified_metadata(principal: SandboxPrincipal) -> str:
+def _verified_metadata(principal: WorkloadPrincipal) -> str:
     return json.dumps(
         {
             "agentplane.namespace": principal.namespace,
@@ -50,8 +50,6 @@ def _verified_metadata(principal: SandboxPrincipal) -> str:
             "agentplane.service_account_subject": principal.service_account_subject,
             "agentplane.pod_name": principal.pod_name,
             "agentplane.pod_uid": principal.pod_uid,
-            "agentplane.sandbox_name": principal.sandbox_name,
-            "agentplane.sandbox_uid": principal.sandbox_uid,
         },
         separators=(",", ":"),
         sort_keys=True,
@@ -59,7 +57,7 @@ def _verified_metadata(principal: SandboxPrincipal) -> str:
 
 
 def _forwarded_request_headers(
-    request: Request, principal: SandboxPrincipal, litellm_key: str
+    request: Request, principal: WorkloadPrincipal, litellm_key: str
 ) -> list[tuple[str, str]]:
     forwarded: list[tuple[str, str]] = []
     connection_tokens = {
@@ -109,13 +107,13 @@ def create_app(resources: IngressResources) -> FastAPI:
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}
 
-    async def principal(request: Request) -> SandboxPrincipal:
+    async def principal(request: Request) -> WorkloadPrincipal:
         return await resources.authenticate(request)
 
     principal_dependency = Depends(principal)
 
     @app.api_route("/{path:path}", methods=_REQUEST_METHODS)
-    async def forward(request: Request, path: str, verified: SandboxPrincipal = principal_dependency) -> Response:
+    async def forward(request: Request, path: str, verified: WorkloadPrincipal = principal_dependency) -> Response:
         del path  # The raw ASGI path below is the whole forwarded path; this value is only routing syntax.
         url = request.url.path
         if request.url.query:

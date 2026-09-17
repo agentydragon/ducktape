@@ -11,29 +11,39 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from x.agentplane.action_service.catalog import ActionIdentity
+from x.agentplane.subjects import ServiceAccountRef
 
 
-class PrincipalRole(StrEnum):
-    CALLER = "caller"
-    OPERATOR = "operator"
+class CallerPrincipal(BaseModel):
+    """A workload or Connection that proved one ServiceAccount, never established by a request body.
 
-
-class Principal(BaseModel):
-    """Identity established by an authentication adapter, never by the request body."""
+    A Pod running as the account and an external Connection acting as it are the same caller here:
+    what differs is the proof, which `ExternalGrantProvenance` carries separately when there is one.
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    issuer: str
-    subject: str
-    role: PrincipalRole
-
-    @property
-    def key(self) -> str:
-        return f"{self.issuer}:{self.subject}"
+    account: ServiceAccountRef
 
 
-SANDBOX_ISSUER = "kubernetes-sandbox"
-SERVICE_ACCOUNT_ISSUER = "service-account"
+class OperatorPrincipal(BaseModel):
+    """The human or BFF behind the operator surface, as its adapter verified them."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    issuer: str = Field(min_length=1)
+    subject: str = Field(min_length=1)
+
+
+# The two identities this service serves. Which one a principal is *is* its role, so nothing carries
+# a role flag beside a subject that may or may not fit it; readers dispatch with `isinstance`.
+type Principal = CallerPrincipal | OperatorPrincipal
+
+
+def operator_or_none(issuer: str | None, subject: str | None) -> OperatorPrincipal | None:
+    """Read back the two columns an operator is stored as. They are written together and a check
+    constraint keeps them that way, so either one being absent means nobody is recorded."""
+    return None if issuer is None or subject is None else OperatorPrincipal(issuer=issuer, subject=subject)
 
 
 @dataclass(frozen=True, slots=True, order=True)
@@ -44,64 +54,10 @@ class NamespacedName:
     name: str
 
 
-class ServiceAccountRef(BaseModel):
-    """A Kubernetes ServiceAccount by namespace and name; as an Action caller it is eligible only while
-    labeled, which the Connection authority checks on every resolution."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    namespace: str = Field(min_length=1)
-    name: str = Field(min_length=1)
-
-    @property
-    def namespaced_name(self) -> NamespacedName:
-        return NamespacedName(self.namespace, self.name)
-
-    def principal(self) -> Principal:
-        return Principal(
-            issuer=SERVICE_ACCOUNT_ISSUER, subject=f"{self.namespace}:{self.name}", role=PrincipalRole.CALLER
-        )
-
-
-class SandboxCaller(BaseModel):
-    """The live Sandbox proven by workload authentication, as an ActionPolicyBinding names it."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    namespace: str = Field(min_length=1)
-    sandbox_uid: str = Field(min_length=1)
-
-    def principal(self) -> Principal:
-        return Principal(
-            issuer=SANDBOX_ISSUER, subject=f"{self.namespace}:{self.sandbox_uid}", role=PrincipalRole.CALLER
-        )
-
-    @classmethod
-    def from_principal(cls, principal: Principal) -> SandboxCaller:
-        """The inverse of `principal()`; only a principal workload authentication minted decodes."""
-        namespace, separator, sandbox_uid = principal.subject.partition(":")
-        if (
-            principal.issuer != SANDBOX_ISSUER
-            or principal.role is not PrincipalRole.CALLER
-            or not separator
-            or not namespace
-            or not sandbox_uid
-            or ":" in sandbox_uid
-        ):
-            raise ValueError("principal was not minted by Sandbox workload authentication")
-        return cls(namespace=namespace, sandbox_uid=sandbox_uid)
-
-
-class ServiceAccountCaller(BaseModel):
-    """An external Connection acting as a labeled ServiceAccount through one active grant revision."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    service_account: ServiceAccountRef
-    grant_revision: int = Field(ge=1)
-
-    def principal(self) -> Principal:
-        return self.service_account.principal()
+def service_account_key(account: ServiceAccountRef) -> NamespacedName:
+    """The policy index's key for a caller ServiceAccount. As an Action caller it is admitted only
+    while labeled, which the informer's index answers on every resolution."""
+    return NamespacedName(account.namespace, account.name)
 
 
 class PolicyKind(StrEnum):
@@ -181,8 +137,8 @@ class ExternalGrantProvenance(BaseModel):
     grant_id: UUID
     revision: int = Field(ge=1)
 
-    def principal(self) -> Principal:
-        return self.caller.principal()
+    def principal(self) -> CallerPrincipal:
+        return CallerPrincipal(account=self.caller)
 
 
 class ActionState(StrEnum):
@@ -279,7 +235,9 @@ class DecisionView(BaseModel):
     id: UUID
     verdict: Verdict
     provider: str
-    issuer: str
+    operator: OperatorPrincipal | None = Field(
+        description="The human who decided; absent when a DecisionProvider decided, which `provider` names."
+    )
     decision_note: str | None = Field(
         max_length=2000,
         description="Human-authored note shared unchanged with caller and operator; absent for provider decisions.",
@@ -324,7 +282,7 @@ class ActionRequestView(BaseModel):
     )
     origin: dict[str, JsonValue]
     correlation: dict[str, JsonValue]
-    caller_principal: str | None
+    caller: ServiceAccountRef | None = Field(description="Who submitted it; operator-only.")
     external_grant: ExternalGrantProvenance | None = None
     state: ActionState
     version: int
@@ -340,7 +298,7 @@ class ActionEventView(BaseModel):
     sequence: int
     state: ActionState
     at: datetime
-    actor_principal: str | None = Field(default=None, description="Authenticated cancellation actor; absent otherwise.")
+    actor: Principal | None = Field(default=None, description="Authenticated cancellation actor; absent otherwise.")
 
 
 class CancellationOutcome(StrEnum):
@@ -367,7 +325,7 @@ class ExecutionRequest(BaseModel):
     arguments: dict[str, JsonValue]
     origin: dict[str, JsonValue]
     correlation: dict[str, JsonValue]
-    caller_principal: str
+    caller: ServiceAccountRef
     external_grant: ExternalGrantProvenance | None = None
 
 

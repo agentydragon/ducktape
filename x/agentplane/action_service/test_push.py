@@ -9,7 +9,13 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from x.agentplane.action_service.catalog import ActionIdentity
 from x.agentplane.action_service.db import ActionStore, PushSubscriptionRow, make_sessionmaker
-from x.agentplane.action_service.models import ActionRequestInput, DecisionInput, Principal, PrincipalRole, Verdict
+from x.agentplane.action_service.models import (
+    ActionRequestInput,
+    CallerPrincipal,
+    DecisionInput,
+    OperatorPrincipal,
+    Verdict,
+)
 from x.agentplane.action_service.push import (
     ActionPushNotifier,
     PushIdentity,
@@ -17,9 +23,11 @@ from x.agentplane.action_service.push import (
     PushShow,
     PushSubscriptionStore,
 )
+from x.agentplane.subjects import ServiceAccountRef
 
-OPERATOR = Principal(issuer="test", subject="operator", role=PrincipalRole.OPERATOR)
-CALLER = Principal(issuer="test", subject="caller", role=PrincipalRole.CALLER)
+OPERATOR = OperatorPrincipal(issuer="test", subject="operator")
+OTHER_OPERATOR = OperatorPrincipal(issuer="test", subject="other-operator")
+CALLER = CallerPrincipal(account=ServiceAccountRef(namespace="agentplane-test", name="test-caller"))
 
 
 class RecordingNotifier(ActionPushNotifier):
@@ -46,9 +54,7 @@ async def test_replica_delivery_and_recovery(engine: AsyncEngine, db_url: str) -
     sessions = make_sessionmaker(engine)
     subscriptions = PushSubscriptionStore(sessions)
     for endpoint in ("https://push.example/a", "https://push.example/b"):
-        await subscriptions.save(
-            operator_principal=OPERATOR.key, endpoint=endpoint, p256dh="test", auth="test", user_agent="test"
-        )
+        await subscriptions.save(operator=OPERATOR, endpoint=endpoint, p256dh="test", auth="test", user_agent="test")
     store = ActionStore(sessions)
     request = await store.submit(
         ActionRequestInput(
@@ -91,13 +97,13 @@ async def test_replica_delivery_and_recovery(engine: AsyncEngine, db_url: str) -
 async def test_registration_owner_cannot_be_overwritten(engine: AsyncEngine) -> None:
     store = PushSubscriptionStore(make_sessionmaker(engine))
     args = {"endpoint": "https://push.example/a", "p256dh": "test", "auth": "test", "user_agent": "test"}
-    await store.save(operator_principal=OPERATOR.key, **args)
+    await store.save(operator=OPERATOR, **args)
     with pytest.raises(ValueError, match="another operator"):
-        await store.save(operator_principal="other", **args)
-    assert not await store.delete(operator_principal="other", endpoint=args["endpoint"])
-    assert len(await store.list_for(OPERATOR.key)) == 1
-    assert await store.delete(operator_principal=OPERATOR.key, endpoint=args["endpoint"])
-    assert not await store.list_for(OPERATOR.key)
+        await store.save(operator=OTHER_OPERATOR, **args)
+    assert not await store.delete(operator=OTHER_OPERATOR, endpoint=args["endpoint"])
+    assert len(await store.list_for(OPERATOR)) == 1
+    assert await store.delete(operator=OPERATOR, endpoint=args["endpoint"])
+    assert not await store.list_for(OPERATOR)
 
 
 if __name__ == "__main__":

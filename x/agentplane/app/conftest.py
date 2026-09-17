@@ -15,7 +15,7 @@ from util.testing.postgres import create_database_sync, force_drop_database_sync
 from util.testing.postgres_fixtures import postgres_container
 from x.agentplane.app.action_policy import ActionPolicyInventory
 from x.agentplane.app.bridge import RunnerBridge, SandboxNotReachableError
-from x.agentplane.app.database_migrate import apply_migrations
+from x.agentplane.app.database_migrate import RUNNER
 from x.agentplane.app.decisions import DecisionsClient
 from x.agentplane.app.egress import EgressInventory
 from x.agentplane.app.identity import TokenReviewer
@@ -48,7 +48,7 @@ def db_url(postgres_container: PostgresContainer, request: pytest.FixtureRequest
     db_name = re.sub(r"[^a-z0-9_]", "_", request.node.name.lower())[:45].rstrip("_")
     url = create_database_sync(admin_url, db_name)
     async_url = make_url(url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
-    apply_migrations(async_url)
+    RUNNER.apply(async_url)
     yield async_url
     force_drop_database_sync(admin_url, db_name)
 

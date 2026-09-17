@@ -49,26 +49,28 @@ from x.agentplane.action_service.enrollments import (
 )
 from x.agentplane.action_service.models import (
     ActionRequestView,
+    CallerPrincipal,
     CancellationResult,
     Executor,
-    Principal,
-    PrincipalRole,
-    ServiceAccountRef,
+    OperatorPrincipal,
 )
 from x.agentplane.action_service.oauth import ActionsOAuthProxy, OAuthSettings, running_oauth
+from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.service import ActionService
-from x.agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, eligible_callers
+from x.agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, admitted_callers
 from x.agentplane.action_service.updates import ActionUpdates
-from x.agentplane.sandbox_auth.principal import RejectionReason, SandboxPrincipalRejectedError, SandboxPrincipalResolver
+from x.agentplane.sandbox_auth.principal import SandboxPrincipalRejectedError, SandboxPrincipalResolver
+from x.agentplane.subjects import ServiceAccountRef
 
 CALLBACK = "https://client.example.test/callback"
 SCOPES = "openid email profile offline_access"
-OPERATOR = Principal(issuer="https://operator.example.test/", subject="operator", role=PrincipalRole.OPERATOR)
+OPERATOR = OperatorPrincipal(issuer="https://operator.example.test/", subject="operator")
 
 
 @dataclass
 class OAuthFixture:
     proxy: ActionsOAuthProxy
+    callers: PolicyIndex
     connections: ConnectionAuthority
     enrollments: EnrollmentAuthority
     browser: httpx.AsyncClient
@@ -183,7 +185,8 @@ async def oauth(engine: AsyncEngine, db_url: str, tmp_path: Path) -> AsyncIterat
         upstream_subject="test-user",
         approving_operator=OPERATOR,
     )
-    connections = ConnectionAuthority(make_sessionmaker(engine), eligible_callers(PERSONAL, OTHER))
+    callers = admitted_callers(PERSONAL, OTHER)
+    connections = ConnectionAuthority(make_sessionmaker(engine), callers)
     enrollments = EnrollmentAuthority(make_sessionmaker(engine), connections)
     idp = build_mock_oidc_app(
         issuer_url=issuer, private_key=private_key, public_key=public_key, authentik_compatible=True
@@ -195,7 +198,7 @@ async def oauth(engine: AsyncEngine, db_url: str, tmp_path: Path) -> AsyncIterat
         ) as browser:
             response = await browser.get(f"{base_url}/.well-known/oauth-authorization-server")
             response.raise_for_status()
-            yield OAuthFixture(proxy, connections, enrollments, browser, base_url, response.json(), settings)
+            yield OAuthFixture(proxy, callers, connections, enrollments, browser, base_url, response.json(), settings)
 
 
 async def test_cimd_reaches_canonical_consent_and_grants(oauth: OAuthFixture, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -268,6 +271,7 @@ async def test_real_sdk_dcr_over_http_persists_client_metadata(
         _no_workload(),
         DisabledOperatorAuthenticator(),
         echo_catalog,
+        callers=oauth.callers,
         updates=ActionUpdates(db_url),
         connections=oauth.connections,
         enrollments=oauth.enrollments,
@@ -323,7 +327,7 @@ async def test_dcr_consent_pkce_refresh_and_revocation(oauth: OAuthFixture, db_u
     grant = await oauth.proxy.authenticate(tokens["access_token"])
     assert grant is not None
     assert (grant.caller, grant.client_id) == (PERSONAL, client_id)
-    assert grant.principal() == PERSONAL.principal()
+    assert grant.principal() == CallerPrincipal(account=PERSONAL)
     assert (await oauth.exchange(client_id, code, verifier)).status_code == 401
     async with make_sessionmaker(engine)() as db:
         stored_values = list(await db.scalars(text("SELECT value::text FROM agentplane_oauth_kv")))
@@ -603,6 +607,7 @@ async def test_external_grant_reaches_canonical_mcp_admission_and_cancel(
         sandbox,
         DisabledOperatorAuthenticator(),
         echo_catalog,
+        callers=oauth.callers,
         updates=ActionUpdates(db_url),
         connections=oauth.connections,
         enrollments=oauth.enrollments,
@@ -632,8 +637,8 @@ async def test_external_grant_reaches_canonical_mcp_admission_and_cancel(
             await _call_mcp(http, bearer, "request_action", {"request": request})
         )
         assert receipt.external_grant == grant.provenance()
-        assert receipt.caller_principal is None
-        assert (await store.get(receipt.id, OPERATOR)).caller_principal == grant.principal().key
+        assert receipt.caller is None, "a caller reading its own receipt is not shown the caller column"
+        assert (await store.get(receipt.id, OPERATOR)).caller == grant.caller
         cancelled = CancellationResult.model_validate(
             await _call_mcp(http, bearer, "cancel_action_request", {"request_id": str(receipt.id)})
         )
@@ -660,14 +665,14 @@ async def test_external_grant_reaches_canonical_mcp_admission_and_cancel(
             "/mcp", headers={"Authorization": f"Bearer {issued.json()['refresh_token']}"}, json={}
         )
         assert refresh_bearer.status_code == 401
-        sandbox.resolve.assert_not_awaited()  # Failed local OAuth credentials do not get forwarded to TokenReview.
+        sandbox.resolve_workload.assert_not_awaited()  # Failed local OAuth credentials never reach TokenReview.
     await service.close()
 
 
 def _no_workload() -> AsyncMock:
     """The unrelated Kubernetes TokenReview boundary, accepting no bearer at all."""
     resolver = AsyncMock(spec=SandboxPrincipalResolver)
-    resolver.resolve.side_effect = SandboxPrincipalRejectedError(RejectionReason.TOKEN_REJECTED, "test: no workload")
+    resolver.resolve_workload.side_effect = SandboxPrincipalRejectedError("test: no workload")
     return resolver
 
 

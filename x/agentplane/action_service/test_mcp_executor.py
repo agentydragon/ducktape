@@ -31,20 +31,21 @@ from x.agentplane.action_service.mcp_executor import McpActionGroupExecutor
 from x.agentplane.action_service.models import (
     ActionRequestInput,
     ActionState,
+    CallerPrincipal,
     DecisionInput,
     ExecutionLease,
     ExecutionRequest,
     ExecutionState,
-    Principal,
-    PrincipalRole,
+    OperatorPrincipal,
     Verdict,
 )
 from x.agentplane.action_service.runtime import running_executor
 from x.agentplane.action_service.service import ActionService, ExecutionOutcomeUnknownError
 from x.agentplane.action_service.test_fixtures.lifecycle import wait_available
+from x.agentplane.subjects import ServiceAccountRef
 
-CALLER = Principal(issuer="test-workload", subject="sandbox-a", role=PrincipalRole.CALLER)
-OPERATOR = Principal(issuer="test-bff", subject="operator", role=PrincipalRole.OPERATOR)
+CALLER = CallerPrincipal(account=ServiceAccountRef(namespace="agentplane-test", name="test-workload-a"))
+OPERATOR = OperatorPrincipal(issuer="test-bff", subject="operator")
 GROUP_KEY = "demo"
 FAKE_SERVER = "_main/x/agentplane/action_service/test_fixtures/fake_mcp_server.py"
 
@@ -59,7 +60,7 @@ def _group() -> ActionGroup:
 
 def _request(*, action: ActionIdentity, arguments: dict[str, Any]) -> ExecutionRequest:
     return ExecutionRequest(
-        request_id=uuid4(), action=action, arguments=arguments, origin={}, correlation={}, caller_principal=CALLER.key
+        request_id=uuid4(), action=action, arguments=arguments, origin={}, correlation={}, caller=CALLER.account
     )
 
 

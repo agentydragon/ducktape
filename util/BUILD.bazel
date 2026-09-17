@@ -234,3 +234,14 @@ py_wheel(
     visibility = ["//devinfra/claude/claude_hook/container_e2e:__pkg__"],
     deps = [":util_pkg"],
 )
+
+py_library(
+    name = "db_migrations",
+    srcs = ["db_migrations.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//psycopg",
+        "@pypi//sqlalchemy",
+    ],
+)

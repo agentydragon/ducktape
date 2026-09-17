@@ -8,7 +8,6 @@ import json
 import time
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
-from uuid import UUID, uuid4
 
 import httpx
 import pytest
@@ -43,6 +42,7 @@ from x.agentplane.app.oidc import OIDCSettings
 from x.agentplane.app.presets import Harness
 from x.agentplane.app.shutdown import Drain
 from x.agentplane.app.testing.kubernetes import (
+    NAMESPACE,
     FakeCoreV1Api,
     FakeCustomObjectsApi,
     action_policy_binding,
@@ -54,6 +54,7 @@ from x.agentplane.app.testing.kubernetes import (
 )
 from x.agentplane.app.trajectory import TrajectoryStore
 from x.agentplane.runner import protocol_pb2
+from x.agentplane.subjects import ServiceAccountRef
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -74,19 +75,18 @@ def seeded(custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api, live_in
         "github", [{"hosts": ["api.github.com"], "methods": ["GET"]}]
     )
     custom_objects.objects[("egressbindings", "runner-1-picked")] = egress_binding(
-        "runner-1-picked", subjects=[{"sandbox": {"name": "runner-1"}}], policies=["github"]
+        "runner-1-picked", subjects=[{"namespace": NAMESPACE, "name": "runner-1"}], policies=["github"]
     )
     custom_objects.objects[("egressbindings", "elsewhere")] = egress_binding(
-        "elsewhere", subjects=[{"sandbox": {"name": "shelved"}}], policies=["github"]
+        "elsewhere", subjects=[{"namespace": NAMESPACE, "name": "shelved"}], policies=["github"]
     )
     custom_objects.objects[("actionpolicysets", "reads")] = action_policy_set(
         "reads",
         auto_approve_if=[{"type": "exact_actions", "actions": {"github": ["search_code"]}}],
         ready=("True", "Valid", "spec accepted"),
     )
-    runner_uid = custom_objects.objects[(SANDBOXES_PLURAL, "runner-1")]["metadata"]["uid"]
     custom_objects.objects[("actionpolicybindings", "runner-1-reads")] = action_policy_binding(
-        "runner-1-reads", subject={"sandbox": {"name": "runner-1", "uid": runner_uid}}, policy_sets=["reads"]
+        "runner-1-reads", subject={"namespace": NAMESPACE, "name": "runner-1"}, policy_sets=["reads"]
     )
     for (kind, name), obj in custom_objects.objects.items():
         match kind:
@@ -113,8 +113,9 @@ async def test_the_index_projects_the_rows_a_listing_would_return(
 
 
 async def test_the_index_selects_the_bindings_a_request_would(seeded: LiveIndex, egress: EgressInventory) -> None:
-    assert seeded.bindings_for("runner-1") == await egress.bindings_for("runner-1")
-    assert [binding.name for binding in seeded.bindings_for("runner-1")] == ["runner-1-picked"]
+    runner = ServiceAccountRef(namespace=NAMESPACE, name="runner-1")
+    assert seeded.bindings_for(runner) == await egress.bindings_for(runner)
+    assert [binding.name for binding in seeded.bindings_for(runner)] == ["runner-1-picked"]
 
 
 EMPTY_POLICY = ActionPolicyView(synced=True, bindings=[], auto_approve_if=[], auto_deny_if=[], auto_deny_unless=[])
@@ -122,29 +123,30 @@ EMPTY_POLICY = ActionPolicyView(synced=True, bindings=[], auto_approve_if=[], au
 
 async def test_the_sandbox_stream_asks_the_service_again_only_when_a_policy_object_changed(seeded: LiveIndex) -> None:
     """Every other change -- a Pod, a thread -- repeats the last answer; a failure is never repeated,
-    and another incarnation of the sandbox (a new UID) is asked about afresh."""
+    and a different sandbox is asked about on its own."""
     answers: list[ActionPolicyView | ActionPolicyUnavailable] = [
         ActionPolicyUnavailable(code="test-first-attempt-failed"),
         EMPTY_POLICY,
         EMPTY_POLICY.model_copy(update={"synced": False}),
         EMPTY_POLICY,
     ]
-    asked: list[UUID] = []
+    asked: list[ServiceAccountRef] = []
 
-    async def fetch(uid: UUID) -> ActionPolicyView | ActionPolicyUnavailable:
-        asked.append(uid)
+    async def fetch(subject: ServiceAccountRef) -> ActionPolicyView | ActionPolicyUnavailable:
+        asked.append(subject)
         return answers.pop(0)
 
-    uid, reborn = uuid4(), uuid4()
+    runner = ServiceAccountRef(namespace=NAMESPACE, name="runner-1")
+    other = ServiceAccountRef(namespace=NAMESPACE, name="shelved")
     policy = ActionPolicyFrames(seeded, fetch)
 
-    assert await policy.for_sandbox(uid) == ActionPolicyUnavailable(code="test-first-attempt-failed")
-    assert await policy.for_sandbox(uid) == EMPTY_POLICY  # retried: the failure was not kept
-    assert await policy.for_sandbox(uid) == EMPTY_POLICY  # nothing changed: repeated, not asked
+    assert await policy.for_subject(runner) == ActionPolicyUnavailable(code="test-first-attempt-failed")
+    assert await policy.for_subject(runner) == EMPTY_POLICY  # retried: the failure was not kept
+    assert await policy.for_subject(runner) == EMPTY_POLICY  # nothing changed: repeated, not asked
     seeded.action_policy_seen(seeded.action_policy_bindings, "runner-1-reads", None)
-    assert await policy.for_sandbox(uid) == EMPTY_POLICY.model_copy(update={"synced": False})
-    assert await policy.for_sandbox(reborn) == EMPTY_POLICY
-    assert asked == [uid, uid, uid, reborn]
+    assert await policy.for_subject(runner) == EMPTY_POLICY.model_copy(update={"synced": False})
+    assert await policy.for_subject(other) == EMPTY_POLICY
+    assert asked == [runner, runner, runner, other]
 
 
 def _request(app: FastAPI, session: dict[str, object]) -> Request:
@@ -208,7 +210,9 @@ async def test_a_policy_the_service_cannot_be_asked_for_is_said_so_in_the_frame(
         "expires_at": time.time() + 600,
     }
 
-    frame = await action_policy_frame(_request(app, session), caller, action_policy, uuid4())
+    frame = await action_policy_frame(
+        _request(app, session), caller, action_policy, ServiceAccountRef(namespace=NAMESPACE, name="runner-1")
+    )
 
     assert frame == ActionPolicyUnavailable(code=code)
 

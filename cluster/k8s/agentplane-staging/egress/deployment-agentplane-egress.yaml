@@ -86,9 +86,10 @@ spec:
           image: git.allegedly.works/ducktape-ci/agentplane-egress:devel-20260915215458-fd98650 # {"$imagepolicy": "flux-system:agentplane-egress"}
           imagePullPolicy: IfNotPresent
           args:
-            - --namespace=agentplane-staging
-            # The same namespace for now; see the app Deployment's note.
-            - --sandbox-namespace=agentplane-staging
+            - --rules-namespace=agentplane-staging
+            # Every namespace whose ServiceAccounts may present a token here. One for now: the
+            # sandboxes run beside the rules. An agent hosted elsewhere gets another line.
+            - --workload-namespaces=agentplane-staging
             - --credentials-namespace=agentplane-egress-credentials
             - --listen-port=8888
             - --admin-port=8081

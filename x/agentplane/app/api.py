@@ -21,13 +21,7 @@ from x.agentplane.action_service.client import OperatorActionServiceClient
 from x.agentplane.action_service.connections import Connection, ConnectionRename, ConnectionVersion
 from x.agentplane.action_service.enrollments import EnrollmentDecisionResult
 from x.agentplane.action_service.mcp_linkage import McpLinkageStart, McpLinkageStartView, McpLinkageView
-from x.agentplane.action_service.models import (
-    ActionEventView,
-    ActionRequestView,
-    ActionState,
-    DecisionInput,
-    ServiceAccountRef,
-)
+from x.agentplane.action_service.models import ActionEventView, ActionRequestView, ActionState, DecisionInput
 from x.agentplane.app import auth_routes, bridge as runner_bridge
 from x.agentplane.app.action_federation import (
     FederatedOperatorActions,
@@ -68,6 +62,7 @@ from x.agentplane.app.presets import Harness, PresetCatalog, SandboxBinding, San
 from x.agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown
 from x.agentplane.app.trajectory import CommandIdConflictError, ThreadNotFoundError, ThreadView, TrajectoryStore
 from x.agentplane.runner.client import RunnerError
+from x.agentplane.subjects import ServiceAccountRef
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -186,9 +181,9 @@ async def create_sandbox(
     )
     view = await inventory.create(spec, annotations=annotations)
     if policies:
-        await egress.grant(sandbox=view.name, sandbox_uid=view.uid, policies=policies)
+        await egress.grant(view, policies)
     if spec.action_policy_sets:
-        await action_policy.bind(sandbox=view.name, sandbox_uid=view.uid, policy_sets=spec.action_policy_sets)
+        await action_policy.bind(view, spec.action_policy_sets)
     return view
 
 
@@ -226,24 +221,22 @@ class EgressGrant(BaseModel):
 
 @router.get("/{name}/egress")
 async def sandbox_egress(inventory: Inventory, egress: Egress, name: str) -> list[BindingView]:
-    """What may leave the sandbox: the bindings naming it, with their policies as they resolve."""
-    await inventory.require_known(name)
-    return await egress.bindings_for(name)
+    """What may leave the sandbox: the bindings naming the ServiceAccount it runs as, with their
+    policies as they resolve."""
+    return await egress.bindings_for((await inventory.get(name)).service_account)
 
 
 @router.post("/{name}/egress", status_code=status.HTTP_201_CREATED)
 async def grant_sandbox_egress(inventory: Inventory, egress: Egress, name: str, body: EgressGrant) -> BindingView:
     """Grant policies to a sandbox already running: a new binding naming it, never an edit of one it
     has, so this grant's expiry and revocation are its own."""
-    view = await inventory.get(name)
-    return await egress.grant(sandbox=view.name, sandbox_uid=view.uid, policies=body.policies)
+    return await egress.grant(await inventory.get(name), body.policies)
 
 
 @router.get("/{name}/egress/decisions")
 async def sandbox_egress_decisions(inventory: Inventory, decisions: Decisions, name: str) -> list[Decision]:
     """What recently left or was refused, from the proxy; 502 when the proxy cannot be asked."""
-    await inventory.require_known(name)
-    return await decisions.recent(name)
+    return await decisions.recent((await inventory.get(name)).service_account)
 
 
 egress_router = APIRouter(prefix="/egress", tags=["egress"])

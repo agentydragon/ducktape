@@ -43,11 +43,12 @@ from x.agentplane.action_service.enrollments import (
     EnrollmentPreviewInput,
     EnrollmentRejectedError,
 )
-from x.agentplane.action_service.models import Principal, PrincipalRole, ServiceAccountRef, Verdict
+from x.agentplane.action_service.models import OperatorPrincipal, Verdict
 from x.agentplane.action_service.service import ActionService
-from x.agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, UNLABELED, eligible_callers
+from x.agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, UNLABELED, admitted_callers
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
+from x.agentplane.subjects import ServiceAccountRef
 
 
 @dataclass
@@ -57,13 +58,13 @@ class Consent:
     request: EnrollmentInput
     handle: str
     browser: EnrollmentPreviewInput
-    operator: Principal
+    operator: OperatorPrincipal
     allow: EnrollmentAllow
 
 
 @pytest.fixture
 async def consent(engine: AsyncEngine) -> Consent:
-    connections = ConnectionAuthority(make_sessionmaker(engine), eligible_callers(PERSONAL, OTHER))
+    connections = ConnectionAuthority(make_sessionmaker(engine), admitted_callers(PERSONAL, OTHER))
     authority = EnrollmentAuthority(make_sessionmaker(engine), connections)
     request = EnrollmentInput(
         issuer="https://test-actions.example",
@@ -76,7 +77,7 @@ async def consent(engine: AsyncEngine) -> Consent:
     )
     created = await authority.create(request)
     browser = EnrollmentPreviewInput(browser_binding="test-browser-" + "a" * 32)
-    operator = Principal(issuer="configured-operator", subject="test-operator", role=PrincipalRole.OPERATOR)
+    operator = OperatorPrincipal(issuer="configured-operator", subject="test-operator")
     preview = await authority.preview(created.handle, browser, operator)
     allow = EnrollmentAllow(
         browser_binding=browser.browser_binding,
@@ -127,8 +128,8 @@ async def test_browser_operator_and_caller_boundaries(consent: Consent) -> None:
     other_browser = EnrollmentPreviewInput(browser_binding="test-browser-" + "b" * 32)
     for operator, browser in [
         (consent.operator, other_browser),
+        # A different operator, and the right operator from a different browser: both are refused.
         (consent.operator.model_copy(update={"subject": "test-other-operator"}), consent.browser),
-        (consent.operator.model_copy(update={"role": PrincipalRole.CALLER}), consent.browser),
     ]:
         with pytest.raises(EnrollmentRejectedError):
             await consent.authority.preview(consent.handle, browser, operator)
@@ -175,7 +176,7 @@ async def test_picker_rejects_unlabeled_and_missing_service_accounts(consent: Co
             )
     await consent.authority.decide(consent.handle, consent.allow, consent.operator)
     unlabeled = EnrollmentAuthority(
-        make_sessionmaker(engine), ConnectionAuthority(make_sessionmaker(engine), eligible_callers(OTHER))
+        make_sessionmaker(engine), ConnectionAuthority(make_sessionmaker(engine), admitted_callers(OTHER))
     )
     with pytest.raises(EnrollmentRejectedError):
         await unlabeled.approved(
@@ -252,6 +253,7 @@ async def test_operator_routes_require_auth_and_reject_redirect_injection(
             token_digest=hashlib.sha256(token.encode()).digest(), subject="test-operator"
         ),
         catalog,
+        callers=admitted_callers(),
         updates=ActionUpdates(db_url),
         connections=consent.connections,
         enrollments=consent.authority,

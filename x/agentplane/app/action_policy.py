@@ -17,7 +17,6 @@ from collections.abc import Sequence
 from datetime import datetime
 from enum import StrEnum
 from typing import Any, Literal
-from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -25,9 +24,7 @@ from util.kubernetes import CustomObjectsClient
 from x.agentplane.action_service.client import OperatorActionServiceClient
 from x.agentplane.action_service.policies.resources import (
     BINDINGS_PLURAL,
-    GROUP,
     POLICY_SETS_PLURAL,
-    VERSION,
     ActionPolicySet,
     InvalidResource,
     parse_policy_set,
@@ -42,7 +39,9 @@ from x.agentplane.action_service.policy_view import (
 )
 from x.agentplane.app.action_federation import UpstreamFailure
 from x.agentplane.app.egress import FLUX_KUSTOMIZATION_LABEL
-from x.agentplane.app.inventory import SANDBOX_API, InventoryError
+from x.agentplane.app.inventory import SANDBOX_API, InventoryError, SandboxView
+from x.agentplane.crds import GROUP, VERSION
+from x.agentplane.subjects import ServiceAccountRef
 
 ACTION_POLICY_API = (GROUP, VERSION)
 # Stamped on every binding the app writes, so a reader can tell it from one the operator wrote with
@@ -144,16 +143,14 @@ class ActionPolicyInventory:
         """Every set in the namespace, refused ones included, in name order."""
         return [set_view(policy_set) for name, policy_set in sorted((await self._policy_sets_by_name()).items())]
 
-    async def for_sandbox(self, client: OperatorActionServiceClient, sandbox_uid: UUID) -> ActionPolicyView:
-        """The Sandbox's policy as the Action Service resolves it now, for the UID a subject pins."""
-        return action_policy_view(
-            await client.sandbox_action_policy(namespace=self._namespace, sandbox_uid=str(sandbox_uid))
-        )
+    async def for_subject(self, client: OperatorActionServiceClient, subject: ServiceAccountRef) -> ActionPolicyView:
+        """The subject's policy as the Action Service resolves it now."""
+        return action_policy_view(await client.service_account_action_policy(subject))
 
-    async def bind(self, *, sandbox: str, sandbox_uid: UUID, policy_sets: Sequence[str]) -> None:
-        """One binding of the Sandbox to the sets, owned by the Sandbox so its deletion
-        garbage-collects it. Creating it is the whole grant; the Action Service reads `spec` and
-        learns nothing of which preset chose the sets.
+    async def bind(self, sandbox: SandboxView, policy_sets: Sequence[str]) -> None:
+        """One binding of the ServiceAccount the sandbox runs as to the sets, owned by the Sandbox
+        so its deletion garbage-collects it. Creating it is the whole grant; the Action Service
+        reads `spec` and learns nothing of which preset chose the sets.
         """
         _require_known(policy_sets, await self._policy_sets_by_name())
         await self._custom_objects.create_namespaced_custom_object(
@@ -166,7 +163,7 @@ class ActionPolicyInventory:
                 "metadata": {
                     # The API server names it, as it does the egress binding: a Sandbox may be
                     # bound again later, and a name derived from the Sandbox alone would 409.
-                    "generateName": f"{sandbox}-",
+                    "generateName": f"{sandbox.name}-",
                     "labels": {MANAGED_BY_LABEL: MANAGED_BY_APP},
                     # Not the controller: the Sandbox controller owns the Pod and PVC, and this
                     # reference is for cascading deletion only. The binding lives in the Sandbox's
@@ -176,17 +173,14 @@ class ActionPolicyInventory:
                         {
                             "apiVersion": "/".join(SANDBOX_API),
                             "kind": "Sandbox",
-                            "name": sandbox,
-                            "uid": str(sandbox_uid),
+                            "name": sandbox.name,
+                            "uid": str(sandbox.uid),
                             "controller": False,
                             "blockOwnerDeletion": False,
                         }
                     ],
                 },
-                "spec": {
-                    "subject": {"sandbox": {"name": sandbox, "uid": str(sandbox_uid)}},
-                    "policySets": list(policy_sets),
-                },
+                "spec": {"subject": sandbox.service_account.model_dump(), "policySets": list(policy_sets)},
             },
         )
 
