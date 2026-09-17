@@ -1,7 +1,8 @@
 # nix-on-droid switch fails: getting pseudoterminal attributes: Permission denied
 
-**Status: open, active investigation.** Device: `pixel6` (Pixel 6, aarch64, Android 14,
-kernel `6.1.157-android14-...`).
+**Status: root cause confirmed; repair/workaround open.** Device: `pixel6` (Pixel 6,
+aarch64, Android build property `17`, kernel
+`6.1.157-android14-11-gbd23337e42e7-ab14791245`).
 
 ## Why this matters — the broader goal
 
@@ -78,6 +79,31 @@ found`, likely their ELF interpreter living under `/apex/...` not being reachabl
   `Permission denied` (file exists, unreadable) — expected for an unprivileged app
   context on stock Android, so this doesn't tell us enforcing vs permissive either
   way, same as the exec failures above.
+- On 2026-09-17, the phone was connected over USB-C with debugging enabled. `adb
+devices` eventually showed the authorized device (`1A251FDF6005LY`). External
+  ADB access made it possible to inspect Android's state without going through
+  nix-on-droid's restricted process environment.
+- `adb shell getenforce` reported `Enforcing`. While reproducing the switch, an
+  external `adb logcat -b all` capture recorded this AVC at the failure point:
+
+  ```text
+  09-17 14:26:08.166  6078 6078 W nix-env: avc: denied { ioctl } for
+      comm="nix-env" path="/dev/pts/1" dev="devpts" ino=4
+      ioctlcmd=0x542a
+      scontext=u:r:untrusted_app_27:s0:c214,c257,c512,c768
+      tcontext=u:object_r:untrusted_app_all_devpts:s0:c214,c257,c512,c768
+      tclass=chr_file permissive=0 app=com.termux.nix
+  ```
+
+  The audit command component `0x542a` matches the Linux `TCGETS2`
+  terminal-attributes ioctl. This is the exact PTY operation that fails as
+  `getting pseudoterminal attributes: Permission denied`; it is an Android
+  SELinux denial, not a Nix build-user or ordinary DAC-permissions failure.
+
+- The same capture also recorded a `proot-static` denial for `{ search }` on a
+  cgroup2 directory. That is separate process-environment noise; the
+  `nix-env` denial on `/dev/pts/1` is the one directly correlated with the
+  switch failure.
 
 ## Ruled out
 
@@ -96,34 +122,46 @@ found`, likely their ELF interpreter living under `/apex/...` not being reachabl
   `2.18.8` also predates that regression window by over a year, so this device's
   failure isn't that regression anyway.
 
-## Leading hypothesis: Android SELinux denying the ioctl, not Nix or proot
+## Confirmed root cause: Android SELinux denies the PTY ioctl
 
-First VM reproduction attempt (x86_64, Android-x86 9, kernel 4.19 — chosen for setup
-convenience, a real mistake: 5 Android versions and a different CPU arch away from
-the actual device) found zero AVC denials on devpts across four variants, and read
-the AOSP policy source directly: apps get their own pty type via `type_transition`
-on `open()`, and that type's `allowxperm` ioctl range explicitly includes TCGETS.
-That's a real, version-independent policy fact, but the empirical "nothing failed"
-part of that run isn't good evidence given how far it was from the real device —
-treat it as weak, not as a negative result.
+The stock Android app domain `u:r:untrusted_app_27:s0` is not permitted to issue
+the terminal-attributes ioctl against the app-labeled devpts node
+`u:object_r:untrusted_app_all_devpts:s0`. Nix's `openSlave()` calls
+`tcgetattr()` while setting up the local build slave, so the denial aborts the
+local derivation before activation can complete.
 
-A corrected VM attempt (aarch64, an Android version close to 14/kernel 6.1, real
-guest network + proxy CA trust instead of routing around it, running the literal
-`nix-on-droid switch --flake ...#pixel6`) is in progress. See
-`debug/nix_on_droid_495_pty/` for the harness and detailed notes from both attempts.
+This explains all of the observed behavior:
 
-## Open on-device checks
+- The failure is deterministic and survives a fresh nix-on-droid installation.
+- Changing the nixpkgs revision or the configured Nix package cannot help when
+  the currently running bootstrap Nix is the process performing the switch.
+- The `/dev/pts` DAC mode is not sufficient: SELinux rejects the ioctl after
+  the file has been opened.
+- The old Android-x86 VM result is not evidence against this diagnosis; it had
+  a different Android release, kernel, and architecture, and produced no
+  useful AVC signal. The real phone's enforcing policy is now the decisive
+  observation.
 
-Everything reachable from inside nix-on-droid's own restricted app context has now
-been tried (SELinux enforce read, logcat, direct Android binary exec) and hits the
-same wall each time. What's left needs access outside that context:
+The original in-app diagnostic paths are no longer the information bottleneck:
+external ADB logcat supplied the decisive AVC. Pulling
+`/sys/fs/selinux/policy` would add policy detail, but requires root and is not
+needed to establish the cause.
 
-- AVC denials via `adb logcat -b all | grep -i avc` from an external computer while
-  re-triggering the switch on the phone — sidesteps the in-app exec restrictions
-  entirely. Needs a computer to pair/plug the phone into.
-- Pulling the phone's actual SELinux policy (`/sys/fs/selinux/policy`, needs real
-  root/adb) for a `sesearch` against its real policy rather than an AOSP
-  approximation.
+## Remaining work
+
+The remaining question is which repair is worth carrying upstream:
+
+- Patch/upgrade Nix or nix-on-droid so a denied terminal-attribute ioctl is
+  handled gracefully, or so local build logging does not require this PTY
+  operation. This needs a focused source-level change and validation that build
+  output and failure reporting remain usable.
+- On a rooted/custom-policy phone, inspect the actual policy and test a narrowly
+  scoped permission for the nix-on-droid app domain. The exact device policy
+  should be checked before proposing an `allow` rule; the generic app-domain
+  names above are evidence from this build, not a portable policy recipe.
+- As a workaround, arrange for every required path to substitute from a trusted
+  cache or use a remote builder. This may avoid the failing local derivation but
+  does not fix the local PTY incompatibility and needs end-to-end validation.
 
 ## Related
 
