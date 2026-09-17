@@ -3,7 +3,10 @@ kind: Kustomization
 metadata:
   name: docker-ci
   namespace: ducktape-flux
+  annotations:
+    ducktape.org/parked: "true"
 spec:
+  suspend: true
   retryInterval: 1m
   interval: 10m
   timeout: 5m
@@ -12,7 +15,7 @@ spec:
     name: docker-ci
 
     namespace: ducktape-flux
-  path: ./cluster/k8s/docker-ci
+  path: ./cluster/k8s/parked/docker-ci
   prune: true
   wait: true
   healthChecks:

@@ -394,14 +394,6 @@ spec:
           exclude:
             - flux-kustomization.yaml
 
-    - name: budget-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/budget/namespace/**"
-          to: "@artifact/cluster/k8s/budget/namespace/"
-          exclude:
-            - flux-kustomization.yaml
-
     - name: github-secrets-sync-secrets
       originRevision: "@repo"
       copy:
@@ -726,27 +718,11 @@ spec:
           exclude:
             - flux-kustomization.yaml
 
-    - name: manifold-mcp
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/manifold-mcp/app/**"
-          to: "@artifact/cluster/k8s/agents/manifold-mcp/app/"
-          exclude:
-            - flux-kustomization.yaml
-
     - name: agents-mitmproxy-namespace
       originRevision: "@repo"
       copy:
         - from: "@repo/cluster/k8s/agents/mitmproxy-namespace/**"
           to: "@artifact/cluster/k8s/agents/mitmproxy-namespace/"
-          exclude:
-            - flux-kustomization.yaml
-
-    - name: osm-mcp
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/osm-mcp/**"
-          to: "@artifact/cluster/k8s/agents/osm-mcp/"
           exclude:
             - flux-kustomization.yaml
 
@@ -896,13 +872,6 @@ spec:
           to: "@artifact/cluster/k8s/authentik/proxy-routes/"
           exclude:
             - flux-kustomization.yaml
-    - name: budget-app
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/budget/app/**"
-          to: "@artifact/cluster/k8s/budget/app/"
-          exclude:
-            - flux-kustomization.yaml
     - name: cli-proxy-api
       originRevision: "@repo"
       copy:
@@ -964,13 +933,6 @@ spec:
       copy:
         - from: "@repo/cluster/k8s/dns-automation/**"
           to: "@artifact/cluster/k8s/dns-automation/"
-          exclude:
-            - flux-kustomization.yaml
-    - name: docker-ci
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/docker-ci/**"
-          to: "@artifact/cluster/k8s/docker-ci/"
           exclude:
             - flux-kustomization.yaml
     - name: evidence-market-roster

@@ -24,7 +24,7 @@
   proxy (pinned to `WAYBACK_AS_OF`), so it physically cannot read post-`as_of` or
   un-archived internet. That guarantee holds only relative to _its own_ compose
   project. When the eval runs against the shared `docker-ci` DinD (see
-  <../../cluster/k8s/docker-ci/README.md>), anything else with the mTLS client key —
+  <../../cluster/k8s/parked/docker-ci/README.md>), anything else with the mTLS client key —
   or a contestant that escapes its container onto the daemon's host network / the
   shared `egress` bridge — can start an unclamped container with full egress,
   bypassing the proxy entirely. It would be nice to close this with a **dedicated

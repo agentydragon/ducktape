@@ -1,0 +1,16 @@
+version: 1
+metadata:
+  name: Retire Fava SSO
+  labels:
+    blueprints.goauthentik.io/description: "Delete the decommissioned Fava application and proxy provider"
+
+entries:
+  - model: authentik_core.application
+    state: absent
+    identifiers:
+      slug: fava
+
+  - model: authentik_providers_proxy.proxyprovider
+    state: absent
+    identifiers:
+      name: fava

@@ -51,7 +51,6 @@ resources:
   - kube-api-proxy/flux-kustomization.yaml
   - github-api-proxy/identity/flux-kustomization.yaml
   - github-api-proxy/app/flux-kustomization.yaml
-  - docker-ci/flux-kustomization.yaml
   - keda/flux-kustomization.yaml # event-driven autoscaler; presently scoped to haku-ci
   - haku-ci/flux-kustomization.yaml # Forgejo Actions runner for Haku's in-cluster image builds
 
@@ -71,8 +70,6 @@ resources:
   - grocy/sf/mcp/flux-kustomization.yaml
   - grocy/vallejo/mcp/flux-kustomization.yaml
   - agents/kubectl-passthrough-mcp/app/flux-kustomization.yaml
-  - agents/manifold-mcp/app/flux-kustomization.yaml
-  - agents/osm-mcp/flux-kustomization.yaml
   - agents/plaid-mcp/flux-kustomization.yaml
   - agents/ha-mcp/app/flux-kustomization.yaml
   - home-assistant/flux-kustomization.yaml
@@ -179,10 +176,6 @@ resources:
   - forgejo/agentydragon/flux-kustomization.yaml
   - forgejo/haku-state/flux-kustomization.yaml
 
-  # --- budget (Beancount ledger + exporter + Fava) ---
-  - budget/namespace/flux-kustomization.yaml
-  - budget/app/flux-kustomization.yaml
-
   # --- evidence (shared evidence-scraping config: the market mirror roster) ---
   - evidence/flux-kustomization.yaml
 
@@ -198,8 +191,6 @@ resources:
   - haku/mailbox/app/flux-kustomization.yaml # Stalwart: haku's mailbox (haku@allegedly.works)
   - haku/forgejo-tea/flux-kustomization.yaml # Forgejo token for haku-ci's KEDA scaler (split from the parked managed-agent worker)
   - haku/workspaces/app/flux-kustomization.yaml # Haku sandbox warm pool in haku-sandbox (exec target for the sandbox-provisioning MCP)
-  # --- haku dispatch (parked; flip cluster/k8s/haku-dispatch.yaml suspend to revive) ---
-  - haku-dispatch.yaml
   # (self-hosted agent is provisioned imperatively via `ant`, not TF — the provider has no
   #  self_hosted support; see haku/runtime/managed_agent/self_hosted/README.md)
   - haku/workloads/flux-kustomization.yaml # Flux reconciles Haku's haku-state k8s/ workloads under a constrained SA

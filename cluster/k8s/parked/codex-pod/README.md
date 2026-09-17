@@ -1,12 +1,12 @@
 # codex-pod
 
-**Retired, unwired from Flux** (moved to `agents/x/`; its `flux-kustomization.yaml`
-is deleted rather than kept unreferenced, since every `flux-kustomization.yaml` on
-disk here is expected to be wired — `test_no_unwired_flux_kustomizations`). Its
-Deployment had no OVH nodeSelector, so the scheduler could place it on non-OVH nodes
-(e.g. `wyrm2`) where the SeaweedFS CSI driver isn't present, and its
-`codex-workspace` PVC then failed to attach — the Deployment sat
-`ProgressDeadlineExceeded` rather than being fixed. `agent-sandbox`'s
+**Retired, unwired from Flux** (moved to `cluster/k8s/parked/`; its
+`flux-kustomization.yaml` is deleted rather than kept unreferenced, since every
+`flux-kustomization.yaml` on disk here is expected to be wired —
+`test_no_unwired_flux_kustomizations`). Its Deployment had no OVH nodeSelector, so
+the scheduler could place it on non-OVH nodes (e.g. `wyrm2`) where the SeaweedFS CSI
+driver isn't present, and its `codex-workspace` PVC then failed to attach — the
+Deployment sat `ProgressDeadlineExceeded` rather than being fixed. `agent-sandbox`'s
 `SandboxTemplate`-based codex workspace (`cluster/k8s/agents/agent-sandbox/`) is the
 newer pattern for this workload. Manifests kept here for reference; re-wiring means
 recreating `flux-kustomization.yaml` (see git history), listing it in
@@ -52,12 +52,11 @@ Registry-hosting rationale (why Forgejo over GHCR) + the general pattern:
   baked into `~/.ssh/authorized_keys`) so ssh-native tooling (rsync/scp/git/VS Code
   Remote) works. The sshd host key persists on the PVC (`/workspace/.sshd`).
 
-## Bring-up
+## Bring-up (historical — describes the original Flux-wired flow, since retired; see top)
 
-Flux-wired (in `cluster/k8s/kustomization.yaml`). Hosting on our own Forgejo
-registry means **no manual "make public" step** (the pull credential is
-provisioned in code — that's the whole point of the GHCR→Forgejo move). On merge
-to `devel`:
+Hosting on our own Forgejo registry means **no manual "make public" step** (the
+pull credential is provisioned in code — that's the whole point of the
+GHCR→Forgejo move). On merge to `devel`, once re-wired:
 
 1. `forgejo-images` Terraform provisions the `ducktape-ci` Forgejo user;
    reflector mirrors `forgejo-images-creds` into `flux-system` + `codex-pod`.

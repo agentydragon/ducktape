@@ -589,17 +589,18 @@ mcp:
     # place lookup via Overpass — all public, anonymous, read-only APIs. No secret, no
     # per-operator identity, so unlike every other remote server here it isn't
     # OAuth-fronted: reachable only from haku-console's own namespace via
-    # CiliumNetworkPolicy (cluster/k8s/agents/osm-mcp/), not a public HTTPRoute.
+    # CiliumNetworkPolicy (cluster/k8s/parked/osm-mcp/), not a public HTTPRoute.
     #
     # Unwired for now (operator, 2026-07-19): not yet tested properly and possibly clunky —
     # first live use found routing `mode` is a no-op (the public OSRM demo serves only the
     # car profile; the URL's profile segment is decorative), so foot/bike distances and
     # durations are silently car values, and route geometry is returned as a path on the
     # SERVER pod's own /tmp (osmmcp is local-first). Findings + interim recipes:
-    # haku-state memory/improvements/geocoding-geo-search-api.md. Re-enable by
-    # uncommenting once routing has a properly profiled backend and a real test pass
-    # (the deployment and its NetworkPolicy stay up; add an explicit exact-tools atom when
-    # reconnecting it).
+    # haku-state memory/improvements/geocoding-geo-search-api.md.
+    #
+    # Now parked (cluster/k8s/parked/osm-mcp/) on top of the routing gap. Re-enable by
+    # reviving the Kustomization and uncommenting once routing has a properly profiled
+    # backend and a real test pass (add an explicit exact-tools atom when reconnecting it).
     # - id: osm
     #   backend:
     #     kind: remote_mcp
