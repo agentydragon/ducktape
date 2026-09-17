@@ -174,6 +174,9 @@ document/media/state volumes. Use `local-path-*` only when:
 - A benchmark shows SeaweedFS latency/throughput is inadequate for the workload
   (see <docs/seaweedfs_csi_bench.md>) — record the finding before falling back.
 
+For SeaweedFS `Bucket`, `S3Identity`, `S3Credentials`, and related S3 objects,
+read <skills/seaweed_operator/SKILL.md> before operating on them.
+
 ## Flux Kustomization Wiring
 
 Flux `Kustomization` resources (`flux-kustomization.yaml`) are applied from the **root**

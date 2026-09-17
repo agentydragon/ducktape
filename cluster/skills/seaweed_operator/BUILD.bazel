@@ -1,0 +1,6 @@
+load("//skills:defs.bzl", "skill_package")
+
+skill_package(
+    name = "seaweed_operator",
+    srcs = ["SKILL.md"],
+)
