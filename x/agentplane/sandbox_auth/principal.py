@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from enum import StrEnum
 
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import AuthenticationV1Api
@@ -36,17 +35,13 @@ class WorkloadPrincipal:
         return ServiceAccountRef(namespace=self.namespace, name=self.service_account_name)
 
 
-class RejectionReason(StrEnum):
-    TOKEN_REJECTED = "token-rejected"
-    POD_MISMATCH = "pod-mismatch"
-
-
 class SandboxPrincipalRejectedError(Exception):
-    """The bearer does not prove a workload identity; no bearer value is retained."""
+    """The bearer does not prove a workload identity; no bearer value is retained.
 
-    def __init__(self, reason: RejectionReason, detail: str) -> None:
-        super().__init__(detail)
-        self.reason = reason
+    There is one way to fail: the TokenReview did not accept the bearer as a workload this
+    destination serves. `detail` says which check, for the log; a caller is told only that its
+    bearer was refused, never which of these it tripped.
+    """
 
 
 class SandboxPrincipalResolver:
@@ -88,9 +83,9 @@ class SandboxPrincipalResolver:
             raise
         status = review.status
         if status is None or not status.authenticated:
-            raise SandboxPrincipalRejectedError(RejectionReason.TOKEN_REJECTED, "TokenReview rejected the bearer")
+            raise SandboxPrincipalRejectedError("TokenReview rejected the bearer")
         if self._audience not in (status.audiences or []):
-            raise SandboxPrincipalRejectedError(RejectionReason.TOKEN_REJECTED, "bearer has the wrong audience")
+            raise SandboxPrincipalRejectedError("bearer has the wrong audience")
         subject = status.user.username if status.user is not None else None
         namespace, service_account = self._service_account(subject)
         extra = status.user.extra or {}
@@ -106,24 +101,18 @@ class SandboxPrincipalResolver:
 
     def _service_account(self, subject: str | None) -> tuple[str, str]:
         if not isinstance(subject, str) or not subject.startswith(_SERVICE_ACCOUNT_PREFIX):
-            raise SandboxPrincipalRejectedError(
-                RejectionReason.TOKEN_REJECTED, "bearer subject is not a ServiceAccount"
-            )
+            raise SandboxPrincipalRejectedError("bearer subject is not a ServiceAccount")
         remainder = subject.removeprefix(_SERVICE_ACCOUNT_PREFIX)
         parts = remainder.split(":")
         if len(parts) != 2 or not all(parts):
-            raise SandboxPrincipalRejectedError(
-                RejectionReason.TOKEN_REJECTED, "bearer has an invalid ServiceAccount subject"
-            )
+            raise SandboxPrincipalRejectedError("bearer has an invalid ServiceAccount subject")
         namespace, service_account = parts
         if namespace not in self._allowed_service_account_namespaces:
-            raise SandboxPrincipalRejectedError(RejectionReason.TOKEN_REJECTED, "bearer namespace is not accepted here")
+            raise SandboxPrincipalRejectedError("bearer namespace is not accepted here")
         return namespace, service_account
 
     @staticmethod
     def _one_claim(values: list[str] | None, label: str) -> str:
         if not isinstance(values, list) or len(values) != 1 or not isinstance(values[0], str) or not values[0]:
-            raise SandboxPrincipalRejectedError(
-                RejectionReason.TOKEN_REJECTED, f"bearer is not bound to exactly one {label}"
-            )
+            raise SandboxPrincipalRejectedError(f"bearer is not bound to exactly one {label}")
         return values[0]

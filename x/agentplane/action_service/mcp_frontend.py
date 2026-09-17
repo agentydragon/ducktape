@@ -287,8 +287,8 @@ def create_server(
     @server.tool(annotations={"readOnlyHint": True})
     @_tool_errors
     async def get_action_policy(target: PolicyTarget = SELF, caller: Caller = CALLER) -> ToolResult:
-        """Read what bindings auto-decide for a target: your own ("self", the default), or a named Sandbox
-        (namespace and UID) or ServiceAccount. The answer is the policy sets bound to it and the auto_approve_if,
+        """Read what bindings auto-decide for a target: your own ("self", the default), or a named
+        ServiceAccount. The answer is the policy sets bound to it and the auto_approve_if,
         auto_deny_if and auto_deny_unless entries in evaluation order, each naming the binding, set and index
         a Decision's policy_evidence names. Use it before request_action to learn which Actions and arguments
         are approved without an operator; a request matching nothing waits for one, and until synced is true

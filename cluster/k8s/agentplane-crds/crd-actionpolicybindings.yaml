@@ -1,5 +1,5 @@
-# Attaches ActionPolicySets to one caller: a labeled ServiceAccount, or a live Sandbox by name
-# and UID. The binding's existence is the grant: creating one allows, deleting one takes that
+# Attaches ActionPolicySets to one caller, a labeled namespaced ServiceAccount.
+# The binding's existence is the grant: creating one allows, deleting one takes that
 # back, and it contributes nothing after it expires. The Action Service evaluates it at
 # admission only and writes back whether it accepted the spec in the Ready condition. Shared
 # contract with the Action Service (x/agentplane/action_service/SPEC.md); the kubeconform schema

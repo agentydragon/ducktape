@@ -41,7 +41,6 @@ from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.test_fixtures.callers import admitted_callers
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.principal import (
-    RejectionReason,
     SandboxPrincipalRejectedError,
     SandboxPrincipalResolver,
     WorkloadPrincipal,
@@ -75,7 +74,7 @@ WORKLOAD_TOKENS = {"workload-a": SANDBOX_A, "workload-b": SANDBOX_B}
 class FakeSandboxResolver:
     async def resolve_workload(self, token: str) -> WorkloadPrincipal:
         if token not in WORKLOAD_TOKENS:
-            raise SandboxPrincipalRejectedError(RejectionReason.TOKEN_REJECTED, "test: unknown workload bearer")
+            raise SandboxPrincipalRejectedError("test: unknown workload bearer")
         return WORKLOAD_TOKENS[token]
 
 

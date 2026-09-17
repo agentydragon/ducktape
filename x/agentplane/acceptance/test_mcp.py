@@ -40,16 +40,11 @@ from x.agentplane.action_service.models import (
     PolicyKind,
     Verdict,
 )
-from x.agentplane.action_service.policies.resources import (
-    BINDINGS_PLURAL,
-    GROUP,
-    POLICY_SETS_PLURAL,
-    READY_CONDITION,
-    VERSION,
-)
+from x.agentplane.action_service.policies.resources import BINDINGS_PLURAL, POLICY_SETS_PLURAL, READY_CONDITION
 from x.agentplane.action_service.policy_evaluation import PROVIDER_NAME
 from x.agentplane.app.client import Client
 from x.agentplane.app.inventory import SandboxView
+from x.agentplane.crds import GROUP, VERSION
 from x.agentplane.runner import protocol_pb2
 
 # `protocol_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
@@ -377,7 +372,7 @@ and result. Copy result from execution when it exists; otherwise use null. Do no
     assert terminal.idempotency_key == pending.idempotency_key
     assert terminal.action == pending.action
     assert terminal.arguments == pending.arguments
-    assert terminal.caller_principal == pending.caller_principal
+    assert terminal.caller == pending.caller
     if terminal.decision != decided.decision:
         pytest.fail("Terminal Decision changed", pytrace=False)
     assert terminal.state is expected_state

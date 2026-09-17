@@ -17,7 +17,6 @@ from multidict import CIMultiDict, CIMultiDictProxy
 from x.agentplane.sandbox_auth.principal import (
     POD_NAME_CLAIM,
     POD_UID_CLAIM,
-    RejectionReason,
     SandboxPrincipalRejectedError,
     SandboxPrincipalResolver,
     WorkloadPrincipal,
@@ -112,21 +111,19 @@ async def test_distinct_service_accounts_in_scope_work() -> None:
 
 
 @pytest.mark.parametrize(
-    ("bad_review", "reason"),
+    "bad_review",
     [
-        (review(audiences=("someone-else",)), RejectionReason.TOKEN_REJECTED),
-        (review(subject="human@example.com"), RejectionReason.TOKEN_REJECTED),
-        (review(subject="system:serviceaccount:elsewhere:runner"), RejectionReason.TOKEN_REJECTED),
-        (review(authenticated=False), RejectionReason.TOKEN_REJECTED),
+        review(audiences=("someone-else",)),
+        review(subject="human@example.com"),
+        review(subject="system:serviceaccount:elsewhere:runner"),
+        review(authenticated=False),
     ],
 )
-async def test_tokenreview_identity_gates(bad_review: k8s_client.V1TokenReview, reason: RejectionReason) -> None:
+async def test_tokenreview_identity_gates(bad_review: k8s_client.V1TokenReview) -> None:
     subject_resolver, _ = resolver({TOKEN: bad_review})
 
-    with pytest.raises(SandboxPrincipalRejectedError) as rejected:
+    with pytest.raises(SandboxPrincipalRejectedError):
         await subject_resolver.resolve_workload(TOKEN)
-
-    assert rejected.value.reason is reason
 
 
 @pytest.mark.parametrize(
@@ -144,10 +141,8 @@ async def test_requires_exactly_one_pod_name_and_uid_claim(extra: Mapping[str, l
     there is no Pod binding to speak of, whoever the ServiceAccount turns out to be."""
     subject_resolver, _ = resolver({TOKEN: review(extra=extra)})
 
-    with pytest.raises(SandboxPrincipalRejectedError) as rejected:
+    with pytest.raises(SandboxPrincipalRejectedError):
         await subject_resolver.resolve_workload(TOKEN)
-
-    assert rejected.value.reason is RejectionReason.TOKEN_REJECTED
 
 
 async def test_bearer_never_appears_in_principal_error_repr_or_logs(caplog: pytest.LogCaptureFixture) -> None:

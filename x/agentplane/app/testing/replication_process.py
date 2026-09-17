@@ -226,11 +226,7 @@ async def _serve(
 
     bridge = RunnerBridge(address_of=address_of, store=store)
     custom, core = cast(Any, FakeCustomObjectsApi()), cast(Any, FakeCoreV1Api())
-    index = LiveIndex(
-        stale_after_seconds=90,
-        namespace=NAMESPACE,
-        refreshed={"sandboxes": datetime.now(UTC), "pods": datetime.now(UTC)},
-    )
+    index = LiveIndex(stale_after_seconds=90, refreshed={"sandboxes": datetime.now(UTC), "pods": datetime.now(UTC)})
     if sandbox_state is not None:
         raw = sandbox(
             SANDBOX, operating_mode="Suspended" if sandbox_state is ProvisioningState.SUSPENDED else "Running"

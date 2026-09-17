@@ -1,5 +1,4 @@
-# Attaches EgressPolicies to subjects: a named Sandbox, or a named ServiceAccount for a workload
-# no Sandbox owns. The
+# Attaches EgressPolicies to subjects, each a namespaced ServiceAccount. The
 # binding's existence is the grant: creating one allows, deleting one takes that back, and it
 # contributes nothing after it expires. Shared contract with the proxy (x/agentplane/egress/SPEC.md);
 # the kubeconform schema under cluster/schemas/ is this file's openAPIV3Schema, pinned by

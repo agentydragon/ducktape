@@ -154,6 +154,7 @@ py_test(
         ":conftest",
         ":operator_login",
         "//:conftest",
+        "//x/agentplane:crds",
         "//x/agentplane/action_service:mcp_linkage",
         "//x/agentplane/action_service:models",
         "//x/agentplane/action_service:policy_evaluation",

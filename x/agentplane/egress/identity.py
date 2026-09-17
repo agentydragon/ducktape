@@ -10,16 +10,10 @@ from dataclasses import dataclass
 
 from x.agentplane.egress.policy import DenyReason
 from x.agentplane.sandbox_auth.principal import (
-    RejectionReason,
     SandboxPrincipalRejectedError,
     SandboxPrincipalResolver,
     WorkloadPrincipal,
 )
-
-_DENY_REASON = {
-    RejectionReason.TOKEN_REJECTED: DenyReason.TOKEN_REJECTED,
-    RejectionReason.POD_MISMATCH: DenyReason.POD_MISMATCH,
-}
 
 
 class IdentityRejectedError(Exception):
@@ -38,4 +32,4 @@ class WorkloadIdentityVerifier:
         try:
             return await self.resolver.resolve_workload(token)
         except SandboxPrincipalRejectedError as error:
-            raise IdentityRejectedError(_DENY_REASON[error.reason], str(error)) from error
+            raise IdentityRejectedError(DenyReason.TOKEN_REJECTED, str(error)) from error

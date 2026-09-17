@@ -131,8 +131,6 @@ class LiveIndex:
     """
 
     stale_after_seconds: float
-    # The namespace a sandbox's own ServiceAccount lives in, which is the subject a binding names.
-    namespace: str
     sandboxes: dict[str, object] = field(default_factory=dict)
     pods: dict[str, k8s_client.V1Pod] = field(default_factory=dict, repr=False)
     bindings: dict[str, object] = field(default_factory=dict)

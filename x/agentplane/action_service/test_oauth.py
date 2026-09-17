@@ -59,7 +59,7 @@ from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, admitted_callers
 from x.agentplane.action_service.updates import ActionUpdates
-from x.agentplane.sandbox_auth.principal import RejectionReason, SandboxPrincipalRejectedError, SandboxPrincipalResolver
+from x.agentplane.sandbox_auth.principal import SandboxPrincipalRejectedError, SandboxPrincipalResolver
 from x.agentplane.subjects import ServiceAccountRef
 
 CALLBACK = "https://client.example.test/callback"
@@ -672,9 +672,7 @@ async def test_external_grant_reaches_canonical_mcp_admission_and_cancel(
 def _no_workload() -> AsyncMock:
     """The unrelated Kubernetes TokenReview boundary, accepting no bearer at all."""
     resolver = AsyncMock(spec=SandboxPrincipalResolver)
-    resolver.resolve_workload.side_effect = SandboxPrincipalRejectedError(
-        RejectionReason.TOKEN_REJECTED, "test: no workload"
-    )
+    resolver.resolve_workload.side_effect = SandboxPrincipalRejectedError("test: no workload")
     return resolver
 
 
