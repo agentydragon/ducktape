@@ -23,7 +23,7 @@ spec:
       namespace: ducktape-flux
     - name: seaweedfs-csi
       namespace: ducktape-flux
-    - name: monitoring-stack
+    - name: monitoring-crds # PodMonitor + PrometheusRule
       namespace: ducktape-flux
     - name: gateway
       namespace: ducktape-flux

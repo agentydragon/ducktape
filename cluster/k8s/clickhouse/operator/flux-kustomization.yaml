@@ -26,5 +26,5 @@ spec:
   dependsOn:
     - name: clickhouse-namespace
       namespace: ducktape-flux
-    - name: monitoring-stack
+    - name: monitoring-crds # the chart's serviceMonitor.enabled
       namespace: ducktape-flux

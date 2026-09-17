@@ -19,5 +19,5 @@ spec:
   dependsOn:
     - name: tana-mcp
       namespace: ducktape-flux
-    - name: monitoring-stack
+    - name: monitoring-crds # ServiceMonitor + PrometheusRule
       namespace: ducktape-flux

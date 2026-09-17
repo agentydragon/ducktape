@@ -14,7 +14,7 @@ spec:
     name: monitoring-cilium
     namespace: ducktape-flux
   dependsOn:
-    - name: monitoring-stack
+    - name: monitoring-crds # ServiceMonitor
       namespace: ducktape-flux
   wait: true
   healthChecks:
