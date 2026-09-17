@@ -24,7 +24,7 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    - name: seaweedfs-haku-openclaw-spike-backups-bucket
+    - name: haku-openclaw-spike-app
       namespace: ducktape-flux
     - name: external-secrets-config
       namespace: ducktape-flux
