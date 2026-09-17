@@ -34,7 +34,7 @@ spec:
       namespace: ducktape-flux
     - name: volsync
       namespace: ducktape-flux
-    - name: monitoring-stack
+    - name: monitoring-crds # ServiceMonitor + PrometheusRule
       namespace: ducktape-flux
     - name: gateway
       namespace: ducktape-flux

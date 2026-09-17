@@ -38,7 +38,7 @@ spec:
       namespace: ducktape-flux
     - name: monitoring-namespace
       namespace: ducktape-flux
-    - name: monitoring-stack
+    - name: monitoring-crds # ServiceMonitor
       namespace: ducktape-flux
     - name: grafana-instance
       namespace: ducktape-flux
