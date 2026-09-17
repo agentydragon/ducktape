@@ -48,7 +48,6 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         ("atuin-db", "atuin/db"),
         ("atuin-namespace", "atuin/namespace"),
         ("atuin-user-provisioner", "atuin/user-provisioner"),
-        ("augur-evidence", "forgejo/augur-evidence"),
         ("authentik", "authentik/app"),
         ("authentik-db", "authentik/db"),
         ("authentik-db-backups", "authentik/db-backups"),

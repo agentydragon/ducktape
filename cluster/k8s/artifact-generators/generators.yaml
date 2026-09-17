@@ -975,13 +975,6 @@ spec:
           to: "@artifact/cluster/k8s/forgejo/agentydragon-repos/"
           exclude:
             - flux-kustomization.yaml
-    - name: augur-evidence
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/forgejo/augur-evidence/**"
-          to: "@artifact/cluster/k8s/forgejo/augur-evidence/"
-          exclude:
-            - flux-kustomization.yaml
     - name: budget-ledger
       originRevision: "@repo"
       copy:

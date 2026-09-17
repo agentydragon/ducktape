@@ -36,7 +36,7 @@ After the wipe, `fs.ls /buckets` returned **empty**:
 ## Resolution
 
 1. **Re-seeded augur-assets** from the source-of-truth copy at
-   `gaffer-private/k8s/augur/assets/*.jpg` via `aws s3 cp` against the
+   `gaffer-private/k8s/parked/augur/assets/*.jpg` via `aws s3 cp` against the
    port-forwarded SeaweedFS s3 endpoint. Bucket dir had to be created
    first via `weed shell fs.mkdir /buckets/augur-assets` because the s3
    gateway's auto-bucket-create races the identity actions.

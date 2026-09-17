@@ -36,6 +36,6 @@ the corresponding namespaced RoleBindings. Sensitive or identity-specific access
 service RBAC.
 
 Augur is reconciled from `gaffer-private`, so its agent RBAC lives cross-repo at
-`gaffer-private/k8s/augur/agent-rbac/`. That directory also defines an
+`gaffer-private/k8s/parked/augur/agent-rbac/`. That directory also defines an
 in-namespace Role granting `pods/exec`, `pods/attach`, and `pods/portforward` for
 debugging the single-replica augur deployment.

@@ -409,6 +409,9 @@ application manifests). Not currently reconciled cluster state.
   `cluster/k8s/forgejo/budget-ledger/`) is untouched. Its Authentik SSO blueprint was
   tombstoned (`fava-sso-retire.yaml`, replacing `fava-sso.yaml`) per
   <sso.md> § "Deleting Authentik providers or applications".
+- **augur-evidence**: `cluster/k8s/parked/augur-evidence/` — retired Forgejo evidence
+  repository provisioning and Flux package. The repository and credentials are retained;
+  revive the parked Kustomization and artifact generator when the evidence pipeline returns.
 - **docker-ci**: `cluster/k8s/parked/docker-ci/` — decommissioned despite backing
   `loom/gym`'s on-demand forecasting-eval Job (`loom/gym/k8s/eval-job.yaml`); parked at
   operator request, accepting that an eval run needs reviving it first.
