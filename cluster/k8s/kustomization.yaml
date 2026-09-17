@@ -228,8 +228,7 @@ resources:
   - gatus/app/flux-kustomization.yaml
 
   # --- ollama ---
-  - ollama/namespace/flux-kustomization.yaml
-  - ollama/app/flux-kustomization.yaml
+  - ollama/flux-kustomization.yaml
 
   # --- litellm ---
   - litellm/namespace/flux-kustomization.yaml

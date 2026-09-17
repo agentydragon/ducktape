@@ -6,7 +6,7 @@ metadata:
 spec:
   interval: 10m
   retryInterval: 1m
-  path: ./cluster/k8s/ollama/app
+  path: ./cluster/k8s/ollama
   prune: true
   sourceRef:
     kind: ExternalArtifact
@@ -19,8 +19,6 @@ spec:
       name: ollama-direct-token
       namespace: ollama
   dependsOn:
-    - name: ollama-namespace
-      namespace: ducktape-flux
     - name: gateway
       namespace: ducktape-flux
     - name: cert-manager-environment

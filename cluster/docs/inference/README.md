@@ -58,7 +58,7 @@ with their dated run records.
 ## Current state
 
 Cluster inference runs on **Ollama / GGUF on wyrm2** (no tensor parallel; see
-<../../k8s/ollama/app/deployment.yaml>). Host experiments (`x/local_llm/` on wyrm2,
+<../../k8s/ollama/deployment.yaml>). Host experiments (`x/local_llm/` on wyrm2,
 incl. vLLM AWQ scripts never moved to k8s) and the full, dated backend matrix
 live in <backend_comparison.md>.
 

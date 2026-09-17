@@ -474,14 +474,6 @@ spec:
           exclude:
             - flux-kustomization.yaml
 
-    - name: ollama-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/ollama/namespace/**"
-          to: "@artifact/cluster/k8s/ollama/namespace/"
-          exclude:
-            - flux-kustomization.yaml
-
     - name: seaweedfs-csi
       originRevision: "@repo"
       copy:
@@ -1419,8 +1411,8 @@ spec:
     - name: ollama-app
       originRevision: "@repo"
       copy:
-        - from: "@repo/cluster/k8s/ollama/app/**"
-          to: "@artifact/cluster/k8s/ollama/app/"
+        - from: "@repo/cluster/k8s/ollama/**"
+          to: "@artifact/cluster/k8s/ollama/"
           exclude:
             - flux-kustomization.yaml
     - name: openebs-lvm

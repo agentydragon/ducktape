@@ -7,7 +7,7 @@ the wider docs hub.
 
 | Aspect          | Value                                                                                                                 |
 | --------------- | --------------------------------------------------------------------------------------------------------------------- |
-| Backend         | Ollama (single Deployment, <../../k8s/ollama/app/deployment.yaml>)                                                    |
+| Backend         | Ollama (single Deployment, <../../k8s/ollama/deployment.yaml>)                                                        |
 | Node            | wyrm2 (2× RTX 5090, 32 GB each, 64 GB total VRAM, **no GPU P2P** — VM passthrough)                                    |
 | Model storage   | PVC `llm-models` (200 Gi, **`lvm-proxmox-hdd`** — OpenEBS LVM on wyrm2 HDD, on-node) at `/models`                     |
 | Auth            | nginx sidecar bearer-token proxy                                                                                      |
