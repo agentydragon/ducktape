@@ -37,7 +37,7 @@ class DecisionContext(BaseModel):
     arguments: dict[str, JsonValue]
     caller: ServiceAccountRef
     bindings: tuple[ResolvedBinding, ...] = Field(
-        description="Empty until the informer has synced, and for a caller nothing names: human-only."
+        description="Empty while the informer's copy is not in sync, and for a caller nothing names: human-only."
     )
 
 

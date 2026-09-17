@@ -103,8 +103,10 @@ class EffectivePolicyView(_View):
 
 class _EffectivePolicy(_View):
     synced: bool = Field(
-        description="Whether the service's watch has synced. Until it has, nothing auto-decides and every "
-        "request takes the human path, whatever the objects say; the lists below are then empty."
+        description="Whether the service's copy of the policy objects is complete and still being refreshed. "
+        "False while it is not -- including where a watch has wedged and the copy has stopped moving -- and "
+        "then nothing auto-decides, every request takes the human path whatever the objects say, and the "
+        "lists below are empty."
     )
     auto_approve_if: list[EffectivePolicyView] = Field(description="In evaluation order; the first match approves.")
     auto_deny_if: list[EffectivePolicyView] = Field(

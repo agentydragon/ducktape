@@ -91,6 +91,7 @@ py_library(
     name = "callers",
     srcs = ["callers.py"],
     deps = [
+        "//x/agentplane:kubernetes_watch",
         "//x/agentplane:subjects",
         "//x/agentplane/action_service:models",
         "//x/agentplane/action_service:policy_informer",

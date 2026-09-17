@@ -480,7 +480,9 @@ async def test_main_oauth_serves_during_backend_outage_and_recovers(
         assert fake_server.calls == []
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url=oauth_settings.base_url) as client:
             assert (await client.get("/healthz")).status_code == 200
-            assert (await client.get("/readyz")).status_code == 200
+            # The MCP backend's outage is this test's subject; the unready reading is the policy
+            # informer's, which has no API server to reach here.
+            assert (await client.get("/readyz")).status_code == 503
             metadata = await client.get("/.well-known/oauth-authorization-server")
             assert metadata.status_code == 200
             registration = await client.post(

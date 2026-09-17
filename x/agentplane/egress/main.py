@@ -22,10 +22,11 @@ from x.agentplane.egress.decision_log import DecisionLog
 from x.agentplane.egress.decision_store import DecisionStore, make_engine
 from x.agentplane.egress.identity import WorkloadIdentityVerifier
 from x.agentplane.egress.informer import Informer
-from x.agentplane.egress.policy import STALE_AFTER_CYCLES, Index
+from x.agentplane.egress.policy import Index
 from x.agentplane.egress.proxy import EgressProxyServer, write_interception_ca
 from x.agentplane.egress.rules_api import RulesProjection, create_rules_app, serve_rules_api
 from x.agentplane.egress.upstream import UpstreamResolver
+from x.agentplane.kubernetes_watch import STALE_AFTER_CYCLES
 from x.agentplane.sandbox_auth.http import WorkloadPrincipalAuthenticator
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 

@@ -31,11 +31,12 @@ from x.agentplane.app.decisions import DecisionsClient
 from x.agentplane.app.egress import EgressInventory
 from x.agentplane.app.identity import TokenReviewer
 from x.agentplane.app.inventory import ProvisioningState, SandboxInventory
-from x.agentplane.app.live import STALE_AFTER_CYCLES, LiveIndex, watch_for
+from x.agentplane.app.live import LiveIndex, watch_for
 from x.agentplane.app.oidc import load_settings
 from x.agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
 from x.agentplane.app.shutdown import Drain, drain_of
 from x.agentplane.app.trajectory import TrajectoryStore
+from x.agentplane.kubernetes_watch import STALE_AFTER_CYCLES
 
 # YamlConfigSettingsSource loads yaml lazily inside pydantic-settings; gazelle cannot see the dependency.
 # gazelle:include_dep @pypi//pyyaml

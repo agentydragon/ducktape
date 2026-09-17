@@ -33,6 +33,7 @@ py_library(
     deps = [
         ":decision_log",
         ":policy",
+        "//x/agentplane:kubernetes_watch",
         "//x/agentplane:subjects",
         "@pypi//aiohttp",
         "@pypi//more_itertools",
@@ -91,6 +92,7 @@ py_library(
         ":rules_api",
         ":upstream",
         "//util:kubernetes",
+        "//x/agentplane:kubernetes_watch",
         "//x/agentplane/sandbox_auth:http",
         "//x/agentplane/sandbox_auth:principal",
         "@pypi//kubernetes_asyncio",

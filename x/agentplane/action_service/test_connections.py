@@ -42,6 +42,7 @@ from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, UNLABELED, admitted_callers
 from x.agentplane.action_service.updates import ActionUpdates
+from x.agentplane.kubernetes_watch import Freshness
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 from x.agentplane.subjects import ServiceAccountRef
 
@@ -202,7 +203,7 @@ async def test_unlabeled_removed_unsynced_and_expired_grants_do_not_authorize(en
     expired = binding().model_copy(update={"activation_deadline": datetime.now(UTC) - timedelta(seconds=1)})
     with pytest.raises(GrantRejectedError):
         await service.bind(expired)
-    unsynced = PolicyIndex()
+    unsynced = PolicyIndex(freshness=Freshness(stale_after_seconds=900))
     unsynced.service_accounts[service_account_key(PERSONAL)] = PERSONAL
     for callers in [admitted_callers(), admitted_callers(OTHER, UNLABELED), unsynced]:
         changed = ConnectionAuthority(make_sessionmaker(engine), callers)

@@ -71,10 +71,6 @@ from x.agentplane.subjects import ServiceAccountRef
 
 PODS_PLURAL = "pods"
 
-# How many resync periods a kind may miss before the stream calls itself stale, as the egress
-# proxy's /healthz counts them: one late cycle is a slow API server, three in a row is a wedge.
-STALE_AFTER_CYCLES = 3
-
 # Seconds of silence after which a health frame goes out anyway, so a tab learns its stream has
 # gone stale without waiting for a change that is never coming, and proxies keep the stream open.
 HEALTH_INTERVAL_S = 15

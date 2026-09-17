@@ -101,7 +101,8 @@ class ActionPolicyView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     synced: bool = Field(
-        description="False until the service's watch has synced: nothing auto-decides then, whatever the objects say."
+        description="False until the service's copy is complete, and again if its watch stops refreshing it: "
+        "nothing auto-decides then, whatever the objects say."
     )
     bindings: list[ActionPolicyBindingView] = Field(
         description="The unexpired, valid bindings whose subject is the live Sandbox, in name order."

@@ -35,10 +35,9 @@ from x.agentplane.action_service.models import (
     Verdict,
 )
 from x.agentplane.action_service.policies.resources import parse_binding, parse_policy_set
-from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.policy_view import SubjectActionPolicyView
 from x.agentplane.action_service.service import ActionService
-from x.agentplane.action_service.test_fixtures.callers import admitted_callers
+from x.agentplane.action_service.test_fixtures.callers import admitted_callers, in_sync_index
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.principal import (
     SandboxPrincipalRejectedError,
@@ -570,7 +569,7 @@ async def test_operator_reads_a_named_subjects_effective_policy(
     """The operator asks about a subject by what a binding pins -- a namespaced ServiceAccount --
     and gets the same resolution admission uses, with each named set's standing. A workload bearer
     is not an operator on this surface either."""
-    index = PolicyIndex(synced=True)
+    index = in_sync_index()
     metadata = {"namespace": NAMESPACE, "uid": "test-uid", "generation": 2, "resourceVersion": "9"}
     policy_set = parse_policy_set(
         {
