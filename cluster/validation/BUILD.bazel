@@ -22,6 +22,7 @@ py_test(
     data = [
         "//cluster/k8s:cluster_all_files",
         "//cluster/k8s:flux_bootstrap_files",
+        "//cluster/k8s/agents/ha-mcp/namespace:manifests",
         "//cluster/k8s/agents/loki-read-proxy:manifests",
         "//cluster/k8s/cli-proxy-api:manifests",
         "//cluster/k8s/home-assistant/app:manifests",
@@ -803,6 +804,7 @@ py_test(
     data = [
         "//cluster/k8s:cluster_all_files",
         "//cluster/k8s:flux_system_files",
+        "//cluster/k8s/agents/ha-mcp/namespace:manifests",
         "//cluster/k8s/agents/loki-read-proxy:manifests",
         "//cluster/k8s/cli-proxy-api:manifests",
         "//cluster/k8s/home-assistant/app:manifests",

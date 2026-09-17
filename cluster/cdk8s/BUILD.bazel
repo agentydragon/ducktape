@@ -61,6 +61,9 @@ py_test(
     name = "test_generate_manifests",
     srcs = ["test_generate_manifests.py"],
     data = [
+        "//cluster/k8s/agents/ha-mcp/namespace:flux-kustomization.yaml",
+        "//cluster/k8s/agents/ha-mcp/namespace:ha-mcp-namespace.k8s.yaml",
+        "//cluster/k8s/agents/ha-mcp/namespace:kustomization.yaml",
         "//cluster/k8s/litellm/app:flux-kustomization.yaml",
         "//cluster/k8s/litellm/app:kustomization.yaml",
         "//cluster/k8s/litellm/app:litellm.k8s.yaml",
