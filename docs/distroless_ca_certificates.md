@@ -27,3 +27,9 @@ Then, by TLS client:
   `pygit2.settings.set_ssl_cert_locations("/etc/ssl/certs/ca-certificates.crt", None)`.
 - **Python `requests`/`httpx`, Rust `reqwest` (rustls)**: these bundle their own roots
   (`certifi` / webpki), so they need **no** CA layer at all.
+- **Python `httpx2`** (FastMCP 4 / mcp-sdk v2's unconditional HTTP client, see
+  `nix/packages/httpx2.nix`) **depends on `truststore`, not `certifi`.** On Linux
+  `truststore` has no native trust-store API to call, so it falls back to OpenSSL's own
+  default-verify-paths lookup — a system-trust client in disguise. It needs the `cacerts`
+  layer and `SSL_CERT_FILE` exactly like the CLI case above; do not extend the
+  `requests`/`httpx` exemption to it.
