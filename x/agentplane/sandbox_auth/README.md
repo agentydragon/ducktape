@@ -21,12 +21,19 @@ object the token is bound to, so a deleted or replaced Pod fails the TokenReview
 header, body field, source address, operator identity, role, permission, Agent, or Thread
 participates, and no destination reads the Pod object.
 
+An accepted verdict is kept against a digest of the bearer for the shorter of the token's remaining
+life and a minute, so every door in front of the resolver -- a proxied connection, an MCP request,
+an HTTP route -- shares one answer rather than each spending a TokenReview per call. The window is
+the same everywhere, and it is a window: a bearer that stops being valid keeps working until its
+entry lapses. A refusal is never kept.
+
 Kubernetes API failures log only the fixed operation (`create_token_review`) and numeric status,
 never exception reason, body, headers or traceback. The original API exception still propagates.
 These diagnostics distinguish the failed authentication hop, not the underlying outage's cause.
 
 `WorkloadPrincipalAuthenticator` is the small FastAPI dependency shared by first-party destination
-services. It accepts exactly one well-formed Bearer credential and returns 401 otherwise, and both
+services; `egress.identity.WorkloadIdentityVerifier` is the same translation for a proxied
+connection, answering with a `DenyReason` where the dependency answers 401. It accepts exactly one well-formed Bearer credential and returns 401 otherwise, and both
 halves of that rule live in `bearer.py`: `sole_header`, because several credentials are not one, and
 `parse_bearer` for the `token68` spelling a projected ServiceAccount token has. A door that also
 admits credentials this service did not mint uses `sole_header` alone and lets the issuer's own

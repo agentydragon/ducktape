@@ -55,7 +55,6 @@ py_library(
     deps = [
         ":policy",
         "//x/agentplane/sandbox_auth:principal",
-        "@pypi//kubernetes_asyncio",
     ],
 )
 

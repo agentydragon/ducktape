@@ -21,7 +21,7 @@ from mitmproxy.proxy import server_hooks
 
 from x.agentplane.egress.decision_log import DecisionLog
 from x.agentplane.egress.decisions import DecisionRecord, Outcome, Phase
-from x.agentplane.egress.identity import IdentityRejectedError, PodIdentityVerifier
+from x.agentplane.egress.identity import IdentityRejectedError, WorkloadIdentityVerifier
 from x.agentplane.egress.policy import (
     CONNECT,
     Allowed,
@@ -61,7 +61,7 @@ class EgressAddon:
         self,
         *,
         index: Index,
-        verifier: PodIdentityVerifier,
+        verifier: WorkloadIdentityVerifier,
         decision_log: DecisionLog,
         resolver: UpstreamResolver,
         stale_after_seconds: float,

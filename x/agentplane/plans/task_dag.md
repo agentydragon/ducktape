@@ -615,9 +615,9 @@ or an external OAuth grant". A plain Deployment is neither, and the OAuth path i
 operator consent for an external connector rather than an in-cluster workload, so a workload
 ServiceAccount is a third caller class beside those two.
 
-Egress has taken the matching step already: its `Subject` names a `serviceAccount` alongside a
-`sandbox`, and `sandbox_auth.resolve_workload_with_pod` stops at the proofs common to both, so
-this is the same shape applied to the other service. Its own clock — nothing about the egress
+Egress has taken the matching step already: its `Subject` is a `ServiceAccountRef`, and
+`sandbox_auth.resolve_workload` stops at the proofs a bearer carries by itself, so this is the same
+shape applied to the other service. Its own clock — nothing about the egress
 path waits on it, and it is what a tool-surface switch waits on rather than an egress cutover.
 
 ### `BINDING_SUBJECT_ARITY` — one subject shape across both binding kinds
@@ -649,9 +649,10 @@ exist, and whoever holds it is refused everything the source Pod is refused -- s
 one in-cluster workload borrowing another's egress rules, not an escalation past the policy.
 
 Add it back if that borrowing becomes a real concern -- a compromised sidecar reading another Pod's
-projected token, or a namespace whose Pod specs are not ours. Doing so means restoring `pod_ip` on
-`PodIdentity`, the check in `PodIdentityVerifier.identify`, the peer-address read in the addon, and
-the `pods` read in every namespace named by `--workload-namespaces`.
+projected token, or a namespace whose Pod specs are not ours. Doing so means a `pod_ip` on the
+principal, the check in `WorkloadIdentityVerifier.identify`, the peer-address read in the addon, and
+the `pods` read in every namespace named by `--workload-namespaces`. The verdict cache would have to
+be keyed by address too, or bypassed for that check.
 
 ### `PC_EGRESS_CREDENTIALS` — public-coder's substitutions as EgressCredentials
 
@@ -698,12 +699,11 @@ smaller than its description implies:
   public-coder is allowed to do today is not established here; the ported ones are a starting point
   to diff against, not a finished policy.
 
-**The gap is the subject kind, not the proxy.** Egress authenticates a Pod-bound ServiceAccount
-token and then requires the Pod's controller owner to be a `Sandbox` the proxy's watch knows
-(`egress/identity.py` via `SandboxPrincipalResolver`), and `BindingSpec.subjects` is a list of
-`Subject`, which today has exactly one field, `sandbox: SandboxRef` (`egress/resources.py`).
-public-coder is a plain Deployment running OpenClaw, so it has no Sandbox to be, and no binding can
-name it.
+**The gap is the policy, not the proxy.** Egress authenticates a Pod-bound ServiceAccount token
+and stops there (`egress/identity.py` via `SandboxPrincipalResolver`), and `BindingSpec.subjects`
+is a list of `ServiceAccountRef` (`egress/resources.py`), so public-coder being a plain Deployment
+running OpenClaw is no longer what stands in its way -- what it lacks is a dedicated ServiceAccount
+and the bindings naming it.
 
 **The per-agent proxy can go before that is settled.** Egress already ships a sidecar: a loopback
 listener in the Pod that the workload speaks ordinary HTTP proxy to, forwarding every request and
@@ -747,10 +747,9 @@ and `ServiceAccountRef` would need a home egress can reach without depending on 
 
 **Decided: a dedicated Kubernetes ServiceAccount is the identity.** The app Pod runs as `default`
 today -- only the sshpiper Deployment names one -- so this is an addition rather than a change, and
-most of the verification already exists. `sandbox_auth/principal.py` already TokenReviews a
-Pod-bound token and reads the `pod-name` and `pod-uid` claims; the only Sandbox-specific step is
-the last one, where the Pod's controller owner must be a `Sandbox` the watch knows. A ServiceAccount subject keeps every earlier
-check and ends instead at the ServiceAccount the token names. Labelled
+most of the verification already exists: `sandbox_auth/principal.py` TokenReviews a Pod-bound
+token, reads the `pod-name` and `pod-uid` claims, and ends at the ServiceAccount the token names,
+with no Sandbox-specific step left anywhere. Labelled
 `agentplane.allegedly.works/use-action-service: "true"`, the same object is what the Action Service
 already watches and lists, so one SA serves both surfaces.
 

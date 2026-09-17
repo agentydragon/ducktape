@@ -23,14 +23,14 @@ Pod-local egress sidecar
         |
         v
 central egress proxy
-  validates TokenReview + source Pod/live Sandbox
+  validates TokenReview
   EgressPolicy selects exact host/method/path and credentialRef
   authenticatedWorkloadToken substitutes the already-authenticated bearer
         |
         +-----------------------------+
         v                             v
 authenticated LLM ingress       standalone Action Service
-shared SandboxPrincipal         shared SandboxPrincipal
+shared WorkloadPrincipal        shared WorkloadPrincipal
 server-held LiteLLM key         service-owned authorization/lifecycle
 ```
 
@@ -43,11 +43,12 @@ fails closed. Existing `secretRef` behavior remains unchanged.
 
 PR #5696 added the shared destination-side `WorkloadPrincipalAuthenticator` and
 `SandboxPrincipalResolver`. They require one well-formed Bearer, TokenReview for the configured
-audience, an allowed ServiceAccount subject, one Pod name/UID claim pair, and the same live Pod UID.
-Every service uses the one authenticator, and no owner reference is followed: a Pod no Sandbox
-controls is its ServiceAccount like any other. The immutable principal contains namespace,
-ServiceAccount and Pod identity only. It contains no Thread, Agent, operator role,
-permissions, token, or caller body/header identity.
+audience, an allowed ServiceAccount subject, and one Pod name/UID claim pair. Nothing else is read:
+the API server validates the object the token is bound to, so a deleted or replaced Pod fails the
+TokenReview, and a Pod no Sandbox controls is its ServiceAccount like any other. Every service uses
+the one authenticator, over one resolver whose accepted verdicts are shared for at most the token's
+remaining life. The immutable principal contains namespace, ServiceAccount and Pod identity only.
+It contains no Thread, Agent, operator role, permissions, token, or caller body/header identity.
 
 The compatibility audience remains `agentplane-egress`. A future coordinated rename to
 `agentplane-workload` does not change the contract and is not required for the landed P0 behavior.
@@ -57,7 +58,7 @@ The compatibility audience remains `agentplane-egress`. A future coordinated ren
 ### Authenticated LLM ingress
 
 PR #5698 added an independently deployable ingress in front of LiteLLM. Staging runner traffic uses
-only the workload placeholder. The ingress resolves `SandboxPrincipal`, strips caller credentials and
+only the workload placeholder. The ingress resolves `WorkloadPrincipal`, strips caller credentials and
 identity-like metadata headers, forwards provider-native bodies/status/errors/SSE without protocol
 translation, and authenticates to LiteLLM with one server-held virtual key. Verified Sandbox
 metadata is stamped through LiteLLM's documented metadata header. See
@@ -75,10 +76,10 @@ one `ActionPolicyBinding` covers both. The integration app/BFF operator surface 
 The landed tests prove:
 
 - two Pod-bound workload tokens substitute per request rather than becoming one static value;
-- same-ServiceAccount Pods resolve to distinct live Sandboxes;
+- same-ServiceAccount Pods are one caller, whatever else owns them;
 - harnesses see only the inert placeholder;
 - malformed, wrong-audience and stale/deleted/replaced workload identities fail before a
-  destination/backend call, as do unowned ones where a Sandbox owner is required;
+  destination/backend call;
 - direct placeholder bypass and forged identity headers/body fields do not establish ownership;
 - exact target/host/method/path selection remains the substitution authority;
 - provider-native LLM streaming and error bodies pass through unchanged;

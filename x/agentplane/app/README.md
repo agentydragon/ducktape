@@ -401,7 +401,7 @@ one. Which lists the service enforces is its contract
   key or workload token: a harness sends the inert placeholder the `agentplane-workload`
   EgressCredential derives from its name, central substitutes the sidecar-only Pod-bound token,
   and the authenticated LLM ingress replaces it with its one server-held key after resolving the
-  live SandboxPrincipal. The model endpoint remains governed by the credentialless egress design
+  `WorkloadPrincipal` the token proves. The model endpoint remains governed by the credentialless egress design
   in [the ADR](../docs/adr_sandbox_proxy_gateway.md) rather than excepted from it.
 - **Transport security on the runner port:** Cilium policy between the app namespace and the
   sandbox Pods is the v0 control. Authentication on the port itself waits for the credentialed

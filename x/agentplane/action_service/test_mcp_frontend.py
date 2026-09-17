@@ -453,7 +453,7 @@ async def test_tools_act_as_the_identity_the_transport_verified(frontend: Fronte
         assert stored.external_grant is None
 
 
-async def test_rejects_a_revoked_bearer_duplicate_auth_and_forged_caller_fields(frontend: Frontend) -> None:
+async def test_rejects_an_unaccepted_bearer_duplicate_auth_and_forged_caller_fields(frontend: Frontend) -> None:
     async with frontend.client() as client:
         invalid = await client.call_tool(
             "request_action",
@@ -470,15 +470,17 @@ async def test_rejects_a_revoked_bearer_duplicate_auth_and_forged_caller_fields(
         )
         assert invalid.is_error
         assert await frontend.store.list_requests(OPERATOR) == []
-        # A bearer is revoked at the TokenReview now, which is the only thing consulted.
-        del frontend.tokens["test-token-a"]
+        # Nothing on this connection stands in for the TokenReview: a second bearer the API server
+        # will not accept is refused, however the first one fared. How long an accepted verdict
+        # outlives the token is `sandbox_auth`'s boundary, and tested there.
+        del frontend.tokens["test-token-b"]
     async with httpx2.AsyncClient(transport=httpx2.ASGITransport(frontend.app), base_url="http://actions.test") as http:
-        revoked = await http.post(
+        unaccepted = await http.post(
             "/mcp",
-            headers={"Authorization": "Bearer test-token-a"},
+            headers={"Authorization": "Bearer test-token-b"},
             json={"jsonrpc": "2.0", "id": 99, "method": "tools/list"},
         )
-        assert revoked.status_code == 401
+        assert unaccepted.status_code == 401
         duplicate = await http.post(
             "/mcp", headers=[("Authorization", "Bearer test-token-a"), ("Authorization", "Bearer test-token-b")]
         )

@@ -20,7 +20,7 @@ from x.agentplane.egress.addon import EgressAddon
 from x.agentplane.egress.admin import create_admin_app, serve_admin
 from x.agentplane.egress.decision_log import DecisionLog
 from x.agentplane.egress.decision_store import DecisionStore, make_engine
-from x.agentplane.egress.identity import PodIdentityVerifier
+from x.agentplane.egress.identity import WorkloadIdentityVerifier
 from x.agentplane.egress.informer import Informer
 from x.agentplane.egress.policy import STALE_AFTER_CYCLES, Index
 from x.agentplane.egress.proxy import EgressProxyServer, write_interception_ca
@@ -71,7 +71,6 @@ class Settings(BaseSettings):
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
 
     resync_seconds: int = Field(default=300, gt=0, description="Watch lifetime; every kind is relisted this often.")
-    identity_cache_seconds: float = Field(default=60, description="Upper bound on how long a token verdict is kept.")
     database_url: str = Field(repr=False, description="Shared diagnostic PostgreSQL database; migrated separately.")
     decision_history_size: int = Field(default=200, ge=1, le=1000)
     decision_retention_days: int = Field(default=7, ge=1, le=365)
@@ -126,31 +125,22 @@ async def async_main(settings: Settings) -> None:
             credentials_namespace=settings.credentials_namespace,
             resync_seconds=settings.resync_seconds,
         )
-        authentication = AuthenticationV1Api(api)
-        verifier = PodIdentityVerifier(
-            authentication=authentication,
-            namespaces=settings.workload_namespaces,
+        workload_resolver = SandboxPrincipalResolver(
+            authentication=AuthenticationV1Api(api),
             audience=settings.token_audience,
-            cache_seconds=settings.identity_cache_seconds,
+            allowed_service_account_namespaces=settings.workload_namespaces,
         )
         resolver = UpstreamResolver(exempt=frozenset(settings.exempt_networks))
         addon = EgressAddon(
             index=index,
-            verifier=verifier,
+            verifier=WorkloadIdentityVerifier(workload_resolver),
             decision_log=decision_log,
             resolver=resolver,
             stale_after_seconds=settings.resync_seconds * STALE_AFTER_CYCLES,
         )
-        rules_app = create_rules_app(
-            WorkloadPrincipalAuthenticator(
-                SandboxPrincipalResolver(
-                    authentication=authentication,
-                    audience=settings.token_audience,
-                    allowed_service_account_namespaces=settings.workload_namespaces,
-                )
-            ),
-            RulesProjection(index),
-        )
+        # One resolver for both doors: the tunnel and the rules API authenticate the same bearers,
+        # so a verdict either reached is a verdict the other need not spend a TokenReview on.
+        rules_app = create_rules_app(WorkloadPrincipalAuthenticator(workload_resolver), RulesProjection(index))
         informer_task = asyncio.create_task(informer.run(), name="egress-informer")
         try:
             async with (

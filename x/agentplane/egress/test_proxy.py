@@ -52,7 +52,7 @@ from x.agentplane.egress.conftest import (
 )
 from x.agentplane.egress.decision_log import DecisionLog
 from x.agentplane.egress.decisions import Phase
-from x.agentplane.egress.identity import IdentityRejectedError, PodIdentityVerifier
+from x.agentplane.egress.identity import IdentityRejectedError, WorkloadIdentityVerifier
 from x.agentplane.egress.main import Settings
 from x.agentplane.egress.policy import DenyReason, Index
 from x.agentplane.egress.proxy import EgressProxyServer, write_interception_ca
@@ -301,26 +301,17 @@ async def proxy(
     upstream_ca = make_ca("agentplane-egress-test-upstream")
     upstream_ca_cert, _ = write_ca(upstream_ca, tmp_path, "upstream")
     index = Index()
-    verifier = PodIdentityVerifier(
+    workload_resolver = SandboxPrincipalResolver(
         authentication=AuthenticationV1Api(api_client),
-        namespaces=frozenset({SANDBOX_NAMESPACE}),
         audience=AUDIENCE,
-        cache_seconds=60,
+        allowed_service_account_namespaces=frozenset({SANDBOX_NAMESPACE}),
     )
+    verifier = WorkloadIdentityVerifier(workload_resolver)
     informer_task = asyncio.create_task(informer(index, api_client).run())
     try:
         await index.wait_for(lambda: index.synced)
         agent_api_port = pick_free_port()
-        agent_api = create_rules_app(
-            WorkloadPrincipalAuthenticator(
-                SandboxPrincipalResolver(
-                    authentication=AuthenticationV1Api(api_client),
-                    audience=AUDIENCE,
-                    allowed_service_account_namespaces=frozenset({SANDBOX_NAMESPACE}),
-                )
-            ),
-            RulesProjection(index),
-        )
+        agent_api = create_rules_app(WorkloadPrincipalAuthenticator(workload_resolver), RulesProjection(index))
         resolver = ServiceMappingResolver(agent_api_port=agent_api_port, exempt=exempt_networks)
         async with (
             serve_rules_api(agent_api, host="127.0.0.1", port=agent_api_port),
@@ -844,8 +835,7 @@ async def test_a_workload_reads_the_rules_that_apply_to_it(proxy: ProxyUnderTest
 
 
 async def test_a_workload_reads_rules_through_its_loopback_sidecar(proxy: ProxyUnderTest) -> None:
-    """Ordinary HTTP via loopback and central, then independent destination TokenReview."""
-    before = proxy.fake.token_reviews
+    """Ordinary HTTP via loopback and central to a destination that authenticates the bearer itself."""
     token_file = proxy.tmp_path / "rules-sidecar-token"
     token_file.write_text(TOKEN_A)
     async with SidecarRelay(
@@ -855,7 +845,6 @@ async def test_a_workload_reads_rules_through_its_loopback_sidecar(proxy: ProxyU
 
     assert response.status == 200, response.body
     assert json.loads(response.body)["subject"] == SUBJECT_A.model_dump()
-    assert proxy.fake.token_reviews == before + 2, "central and API each validate independently"
     assert proxy.resolver.pin_calls == [(RULES_HOST, 80, True)], "one forward, no recursion"
     assert all(value not in response.body.decode() for value in (TOKEN_A, SECRET_VALUE))
 
