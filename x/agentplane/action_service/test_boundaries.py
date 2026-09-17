@@ -26,7 +26,13 @@ from x.agentplane.action_service.client import (
     ActionServiceClient,
     CredentialPlaceholder,
 )
-from x.agentplane.action_service.models import ActionRequestInput, ActionRequestView, ActionState, Principal
+from x.agentplane.action_service.models import (
+    ActionRequestInput,
+    ActionRequestView,
+    ActionState,
+    CallerPrincipal,
+    OperatorPrincipal,
+)
 from x.agentplane.action_service.policies.resources import CALLER_LABEL
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.test_fixtures.callers import admitted_callers
@@ -133,10 +139,10 @@ class RecordingActionService:
     draining = False
 
     def __init__(self) -> None:
-        self.principals: list[Principal] = []
+        self.principals: list[CallerPrincipal] = []
         self.bodies: list[ActionRequestInput] = []
 
-    async def submit(self, body: ActionRequestInput, principal_value: Principal) -> ActionRequestView:
+    async def submit(self, body: ActionRequestInput, principal_value: CallerPrincipal) -> ActionRequestView:
         self.principals.append(principal_value)
         self.bodies.append(body)
         now = datetime.now(UTC)
@@ -149,7 +155,7 @@ class RecordingActionService:
             description=body.description,
             origin=body.origin,
             correlation=body.correlation,
-            caller_principal=None,
+            caller=None,
             state=ActionState.DECISION_PENDING,
             version=1,
             created_at=now,
@@ -295,7 +301,7 @@ async def test_operator_adapter_is_distinct_digest_only_and_file_configured(tmp_
     accepted = await authenticator.authenticate("opaque-bff-bearer")
 
     assert accepted is not None
-    assert accepted.key == "configured-operator:haku-bff"
+    assert accepted == OperatorPrincipal(issuer="configured-operator", subject="haku-bff")
     assert await authenticator.authenticate("wrong") is None
     assert "opaque-bff-bearer" not in repr(authenticator.__dict__)
     await DisabledOperatorAuthenticator().authenticate("anything")

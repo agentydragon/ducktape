@@ -30,8 +30,8 @@ from x.agentplane.action_service.models import (
     ExecutionRequest,
     ExecutionResult,
     ExecutionState,
+    OperatorPrincipal,
     Principal,
-    PrincipalRole,
     Verdict,
 )
 from x.agentplane.action_service.policies.resources import parse_binding, parse_policy_set
@@ -70,7 +70,7 @@ ACCOUNT_A = ServiceAccountRef(namespace=NAMESPACE, name=SANDBOX_A.service_accoun
 ACCOUNT_B = ServiceAccountRef(namespace=NAMESPACE, name=SANDBOX_B.service_account_name)
 CALLER_A = workload_principal(SANDBOX_A)
 CALLER_B = workload_principal(SANDBOX_B)
-OPERATOR = Principal(issuer="test-bff", subject="operator", role=PrincipalRole.OPERATOR)
+OPERATOR = OperatorPrincipal(issuer="test-bff", subject="operator")
 WORKLOAD_TOKENS = {"workload-a": SANDBOX_A, "workload-b": SANDBOX_B}
 
 
@@ -158,7 +158,7 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
             # Every identity-like value here is deliberately forged, accepted only as untrusted
             # provenance, and must not affect the caller derived from SandboxPrincipal.
             "origin": {
-                "owner": CALLER_B.key,
+                "owner": CALLER_B.account.name,
                 "sandbox_id": SANDBOX_B.sandbox_uid,
                 "thread_id": "forged-thread",
                 "agent_id": "forged-agent",
@@ -172,7 +172,7 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
             await client.post(
                 "/v1/action-requests",
                 json=envelope,
-                headers={"x-sandbox-uid": SANDBOX_B.sandbox_uid, "x-caller-principal": CALLER_B.key},
+                headers={"x-sandbox-uid": SANDBOX_B.sandbox_uid, "x-caller-principal": CALLER_B.account.name},
             )
         ).status_code == 401
         assert (await client.post("/v1/action-requests", json=envelope, headers=_operator())).status_code == 401, (
@@ -196,7 +196,7 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
         pending = submitted.json()
         request_id = pending["id"]
         assert pending["state"] == "decision_pending"
-        assert pending["caller_principal"] is None
+        assert pending["caller"] is None
         assert pending["arguments"]["nested"]["api_key"] == "[redacted]"
         assert pending["origin"]["authorization"] == "[redacted]"
         # The caller's own plaintext context is projected verbatim, unlike credential-shaped values.
@@ -235,8 +235,8 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
         assert operator_detail.json()["arguments"] == envelope["arguments"]
         assert operator_detail.json()["title"] == envelope["title"]
         assert operator_detail.json()["description"] == envelope["description"]
-        assert operator_list.json()[0]["caller_principal"] == CALLER_A.key
-        assert operator_list.json()[0]["origin"]["owner"] == CALLER_B.key, "forgery remains inert provenance"
+        assert operator_list.json()[0]["caller"] == CALLER_A.account.model_dump()
+        assert operator_list.json()[0]["origin"]["owner"] == CALLER_B.account.name, "forgery remains inert provenance"
 
         stale = await client.post(
             _operator_path(request_id, "/decision"),
@@ -845,7 +845,7 @@ async def test_cancellation_http_is_owner_only_and_needs_no_version(
                 title="test title for test-http-cancel",
                 action=ActionIdentity(group="agentplane", name="echo"),
                 arguments={"access_token": "must-redact"},
-                origin={"caller_principal": CALLER_B.key, "thread_id": "untrusted-thread"},
+                origin={"caller": CALLER_B.account.name, "thread_id": "untrusted-thread"},
             ).model_dump(mode="json"),
         )
         response.raise_for_status()

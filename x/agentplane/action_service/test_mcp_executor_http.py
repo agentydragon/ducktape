@@ -49,14 +49,13 @@ from x.agentplane.action_service.mcp_linkage import McpLinkageStatus
 from x.agentplane.action_service.models import (
     ActionRequestInput,
     ActionState,
+    CallerPrincipal,
     DecisionInput,
     ExecutionLease,
     ExecutionRequest,
     ExecutionState,
-    Principal,
-    PrincipalRole,
+    OperatorPrincipal,
     Verdict,
-    service_account_principal,
 )
 from x.agentplane.action_service.oauth import OAuthSettings
 from x.agentplane.action_service.runtime import running_executor
@@ -191,7 +190,7 @@ def oauth_settings(tmp_path: Path) -> Iterator[OAuthSettings]:
             encryption_key_file=encryption,
             upstream_issuer=issuer,
             upstream_subject="test-user",
-            approving_operator=Principal(issuer="test-http", subject="operator", role=PrincipalRole.OPERATOR),
+            approving_operator=OperatorPrincipal(issuer="test-http", subject="operator"),
         )
 
 
@@ -214,7 +213,7 @@ def execution_request() -> ExecutionRequest:
         arguments={"text": "hi"},
         origin={},
         correlation={},
-        caller_principal="test-http-caller",
+        caller=ServiceAccountRef(namespace="agentplane-test", name="test-http-caller"),
     )
 
 
@@ -499,7 +498,7 @@ async def test_main_oauth_serves_during_backend_outage_and_recovers(
             assert registration.json()["client_id"]
             fake_server.list_unavailable = False
             await wait_available(http_group)
-            caller = service_account_principal(ServiceAccountRef(namespace="agentplane-test", name="sandbox-uid"))
+            caller = CallerPrincipal(account=ServiceAccountRef(namespace="agentplane-test", name="sandbox-uid"))
             pending = await service.submit(
                 ActionRequestInput(
                     idempotency_key="after-outage",
@@ -534,8 +533,8 @@ async def test_production_http_composition_one_execution_no_replay(
     db_url: str, engine: AsyncEngine, http_group: ActionGroup, fake_server: FakeMcpServer, outcome: str
 ) -> None:
     """Real main, HTTP MCP, and PostgreSQL; only Kubernetes setup and the serving loop are replaced."""
-    caller = service_account_principal(ServiceAccountRef(namespace="agentplane-test", name="sandbox-uid"))
-    operator = Principal(issuer="test-http", subject="operator", role=PrincipalRole.OPERATOR)
+    caller = CallerPrincipal(account=ServiceAccountRef(namespace="agentplane-test", name="sandbox-uid"))
+    operator = OperatorPrincipal(issuer="test-http", subject="operator")
     settings = Settings(database_url=db_url, action_groups={"remote": http_group}, _cli_parse_args=False)
 
     async def serve(server: uvicorn.Server) -> None:

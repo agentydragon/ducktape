@@ -14,26 +14,37 @@ from x.agentplane.action_service.catalog import ActionIdentity
 from x.agentplane.subjects import ServiceAccountRef
 
 
-class PrincipalRole(StrEnum):
-    CALLER = "caller"
-    OPERATOR = "operator"
+class CallerPrincipal(BaseModel):
+    """A workload or Connection that proved one ServiceAccount, never established by a request body.
 
-
-class Principal(BaseModel):
-    """Identity established by an authentication adapter, never by the request body."""
+    A Pod running as the account and an external Connection acting as it are the same caller here:
+    what differs is the proof, which `ExternalGrantProvenance` carries separately when there is one.
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    issuer: str
-    subject: str
-    role: PrincipalRole
-
-    @property
-    def key(self) -> str:
-        return f"{self.issuer}:{self.subject}"
+    account: ServiceAccountRef
 
 
-SERVICE_ACCOUNT_ISSUER = "service-account"
+class OperatorPrincipal(BaseModel):
+    """The human or BFF behind the operator surface, as its adapter verified them."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    issuer: str = Field(min_length=1)
+    subject: str = Field(min_length=1)
+
+
+# The two identities this service serves. Which one a principal is *is* its role, so nothing carries
+# a role flag beside a subject that may or may not fit it; readers dispatch with `isinstance`.
+type Principal = CallerPrincipal | OperatorPrincipal
+
+
+def operator_key(principal: OperatorPrincipal) -> str:
+    """The one place a principal is flattened, for the one column that needs it: `action_decision`
+    shares `issuer` between a deciding operator and a deciding provider's name, and that column is
+    part of the decision's uniqueness key. Everything else stores a principal's own fields."""
+    return f"{principal.issuer}:{principal.subject}"
 
 
 @dataclass(frozen=True, slots=True, order=True)
@@ -45,23 +56,9 @@ class NamespacedName:
 
 
 def service_account_key(account: ServiceAccountRef) -> NamespacedName:
-    """The policy index's key for a caller ServiceAccount. As an Action caller it is eligible only
-    while labeled, which the Connection authority checks on every resolution."""
+    """The policy index's key for a caller ServiceAccount. As an Action caller it is admitted only
+    while labeled, which the informer's index answers on every resolution."""
     return NamespacedName(account.namespace, account.name)
-
-
-def service_account_principal(account: ServiceAccountRef) -> Principal:
-    return Principal(
-        issuer=SERVICE_ACCOUNT_ISSUER, subject=f"{account.namespace}:{account.name}", role=PrincipalRole.CALLER
-    )
-
-
-def service_account_ref(principal: Principal) -> ServiceAccountRef:
-    """The inverse of `service_account_principal`; only a principal this service minted decodes."""
-    namespace, separator, name = principal.subject.partition(":")
-    if principal.issuer != SERVICE_ACCOUNT_ISSUER or not separator or not namespace or not name or ":" in name:
-        raise ValueError(f"principal was not minted for a ServiceAccount: {principal.key}")
-    return ServiceAccountRef(namespace=namespace, name=name)
 
 
 class ServiceAccountCaller(BaseModel):
@@ -72,8 +69,8 @@ class ServiceAccountCaller(BaseModel):
     service_account: ServiceAccountRef
     grant_revision: int = Field(ge=1)
 
-    def principal(self) -> Principal:
-        return service_account_principal(self.service_account)
+    def principal(self) -> CallerPrincipal:
+        return CallerPrincipal(account=self.service_account)
 
 
 class PolicyKind(StrEnum):
@@ -153,8 +150,8 @@ class ExternalGrantProvenance(BaseModel):
     grant_id: UUID
     revision: int = Field(ge=1)
 
-    def principal(self) -> Principal:
-        return service_account_principal(self.caller)
+    def principal(self) -> CallerPrincipal:
+        return CallerPrincipal(account=self.caller)
 
 
 class ActionState(StrEnum):
@@ -296,7 +293,7 @@ class ActionRequestView(BaseModel):
     )
     origin: dict[str, JsonValue]
     correlation: dict[str, JsonValue]
-    caller_principal: str | None
+    caller: ServiceAccountRef | None = Field(description="Who submitted it; operator-only.")
     external_grant: ExternalGrantProvenance | None = None
     state: ActionState
     version: int
@@ -312,7 +309,7 @@ class ActionEventView(BaseModel):
     sequence: int
     state: ActionState
     at: datetime
-    actor_principal: str | None = Field(default=None, description="Authenticated cancellation actor; absent otherwise.")
+    actor: Principal | None = Field(default=None, description="Authenticated cancellation actor; absent otherwise.")
 
 
 class CancellationOutcome(StrEnum):
@@ -339,7 +336,7 @@ class ExecutionRequest(BaseModel):
     arguments: dict[str, JsonValue]
     origin: dict[str, JsonValue]
     correlation: dict[str, JsonValue]
-    caller_principal: str
+    caller: ServiceAccountRef
     external_grant: ExternalGrantProvenance | None = None
 
 

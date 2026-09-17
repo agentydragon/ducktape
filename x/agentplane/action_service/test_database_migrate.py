@@ -13,7 +13,14 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from x.agentplane.action_service.catalog import ActionIdentity
 from x.agentplane.action_service.db import ActionStore, Base, make_sessionmaker
-from x.agentplane.action_service.models import ActionRequestInput, DecisionInput, Principal, PrincipalRole, Verdict
+from x.agentplane.action_service.models import (
+    ActionRequestInput,
+    CallerPrincipal,
+    DecisionInput,
+    OperatorPrincipal,
+    Verdict,
+)
+from x.agentplane.subjects import ServiceAccountRef
 
 
 def _round_trip(connection: Connection) -> None:
@@ -25,7 +32,8 @@ def _round_trip(connection: Connection) -> None:
     # Historical column spelling exists only to verify upgrade/downgrade compatibility.
     assert connection.scalar(text("SELECT private_reason FROM action_decision")) == "Original note — preserved."
     connection.execute(text("UPDATE action_decision SET private_reason = 'Existing deployed note — preserved.'"))
-    command.upgrade(config, "head")
+    # Up to the last migration that carries data forward; `0016` deliberately does not.
+    command.upgrade(config, "0015_action_request_context")
     assert connection.scalar(text("SELECT decision_note FROM action_decision")) == "Existing deployed note — preserved."
     assert connection.scalar(text("SELECT count(*) FROM action_event WHERE actor_principal IS NOT NULL")) == 0
     assert connection.scalar(text("SELECT count(*) FROM action_request WHERE external_grant IS NOT NULL")) == 0
@@ -33,6 +41,12 @@ def _round_trip(connection: Connection) -> None:
     # title, not an empty one, or the approval surfaces show a blank line for it forever.
     assert connection.scalar(text("SELECT title FROM action_request"))
     assert connection.scalar(text("SELECT count(*) FROM action_request WHERE description IS NOT NULL")) == 0
+    # `0016` stores a principal as its own fields and drops what the old encoding held rather than
+    # parsing it apart, so the rows this seeded do not survive it. That is the documented behaviour.
+    command.upgrade(config, "head")
+    assert connection.scalar(text("SELECT count(*) FROM action_request")) == 0
+    assert connection.scalar(text("SELECT count(*) FROM action_decision")) == 0
+
     # Check the changed tables, not unrelated migration-only request/execution indexes.
     context = MigrationContext.configure(
         connection,
@@ -47,8 +61,8 @@ def _round_trip(connection: Connection) -> None:
 
 async def test_decision_note_migration_preserves_data_and_matches_metadata(engine: AsyncEngine) -> None:
     store = ActionStore(make_sessionmaker(engine))
-    caller = Principal(issuer="test", subject="caller", role=PrincipalRole.CALLER)
-    operator = Principal(issuer="test", subject="operator", role=PrincipalRole.OPERATOR)
+    caller = CallerPrincipal(account=ServiceAccountRef(namespace="agentplane-test", name="test-caller"))
+    operator = OperatorPrincipal(issuer="test", subject="operator")
     pending = await store.submit(
         ActionRequestInput(
             idempotency_key="migration-request",
@@ -71,12 +85,8 @@ async def test_decision_note_migration_preserves_data_and_matches_metadata(engin
     )
     async with engine.begin() as connection:
         await connection.run_sync(_round_trip)
-    caller_view = await store.get(pending.id, caller)
-    operator_view = await store.get(pending.id, operator)
-    assert caller_view.decision == operator_view.decision
-    assert caller_view.decision is not None
-    assert caller_view.decision.decision_note == "Existing deployed note — preserved."
-    assert caller_view.execution is None
+    # Nothing is read back through the ORM: `0016` emptied the request on the way back up, which the
+    # round trip asserted where it happens.
 
 
 if __name__ == "__main__":

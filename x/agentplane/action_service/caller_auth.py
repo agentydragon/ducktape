@@ -28,7 +28,7 @@ from starlette.requests import HTTPConnection
 from starlette.responses import JSONResponse, Response
 
 from x.agentplane.action_service.auth import workload_account
-from x.agentplane.action_service.models import ExternalGrantProvenance, Principal, service_account_principal
+from x.agentplane.action_service.models import CallerPrincipal, ExternalGrantProvenance
 from x.agentplane.action_service.oauth import ActionsOAuthProxy
 from x.agentplane.action_service.policies.resources import CALLER_LABEL
 from x.agentplane.action_service.policy_informer import PolicyIndex
@@ -37,10 +37,14 @@ from x.agentplane.sandbox_auth.principal import SandboxPrincipalRejectedError, S
 logger = logging.getLogger(__name__)
 
 
+def _client_id(principal: CallerPrincipal) -> str:
+    return f"{principal.account.namespace}/{principal.account.name}"
+
+
 class CallerToken(AccessToken):
     """The verified identity FastMCP carries for one transport request."""
 
-    principal: Principal
+    principal: CallerPrincipal
     external_grant: ExternalGrantProvenance | None
 
 
@@ -90,7 +94,8 @@ class CallerTokenVerifier(TokenVerifier):
                 principal = grant.principal()
                 return CallerToken(
                     token=token,
-                    client_id=principal.subject,
+                    # FastMCP's own attribution field, so the account as a person reads it.
+                    client_id=_client_id(principal),
                     scopes=[],
                     principal=principal,
                     external_grant=grant.provenance(),
@@ -108,9 +113,9 @@ class CallerTokenVerifier(TokenVerifier):
                 "workload bearer refused: %s/%s does not carry %s", account.namespace, account.name, CALLER_LABEL
             )
             return None
-        principal = service_account_principal(account)
+        principal = CallerPrincipal(account=account)
         return CallerToken(
-            token=token, client_id=principal.subject, scopes=[], principal=principal, external_grant=None
+            token=token, client_id=_client_id(principal), scopes=[], principal=principal, external_grant=None
         )
 
     def get_middleware(self) -> list[Middleware]:

@@ -37,7 +37,7 @@ from x.agentplane.action_service.db import (
     ConnectionGrantRow,
     make_sessionmaker,
 )
-from x.agentplane.action_service.models import ActionRequestInput, Principal, PrincipalRole, service_account_key
+from x.agentplane.action_service.models import ActionRequestInput, OperatorPrincipal, service_account_key
 from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, UNLABELED, admitted_callers
@@ -128,7 +128,7 @@ async def test_same_service_account_shares_receipts_while_distinct_accounts_are_
         await store.events(original.id, different)
     separate = await store.submit(body, different, external_grant=submitted_grants[2].provenance())
     assert separate.id != original.id
-    operator = Principal(issuer="operator", subject="only-operator", role=PrincipalRole.OPERATOR)
+    operator = OperatorPrincipal(issuer="operator", subject="only-operator")
     assert len(await store.list_requests(operator)) == 2
 
 

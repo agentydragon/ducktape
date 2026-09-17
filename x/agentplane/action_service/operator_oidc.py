@@ -17,7 +17,7 @@ from mcp_infra.oidc_principal import (
     OidcPrincipalResolver,
     OidcPrincipalVerificationUnavailableError,
 )
-from x.agentplane.action_service.models import Principal, PrincipalRole
+from x.agentplane.action_service.models import OperatorPrincipal
 
 
 class OperatorTokenProfile(StrEnum):
@@ -53,9 +53,9 @@ class OidcOperatorAuthenticator:
     def __init__(self, settings: OperatorOidcSettings) -> None:
         self._resolver = settings.resolver()
 
-    async def authenticate(self, token: str) -> Principal | None:
+    async def authenticate(self, token: str) -> OperatorPrincipal | None:
         try:
             identity = await self._resolver.resolve({"access_token": token, "token_type": "Bearer"})
         except InvalidOidcPrincipalError, OidcPrincipalVerificationUnavailableError:
             return None
-        return Principal(issuer=identity.issuer, subject=identity.subject, role=PrincipalRole.OPERATOR)
+        return OperatorPrincipal(issuer=identity.issuer, subject=identity.subject)

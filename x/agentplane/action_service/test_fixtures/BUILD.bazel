@@ -46,6 +46,7 @@ py_test(
         "//:conftest",
         "//util:net",
         "//util/testing:asgi",
+        "//x/agentplane:subjects",
         "//x/agentplane/action_service:catalog",
         "//x/agentplane/action_service:conftest",
         "//x/agentplane/action_service:db",

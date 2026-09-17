@@ -19,7 +19,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from x.agentplane.action_service.db import ConnectionGrantRow, ConnectionRow, SessionMaker
-from x.agentplane.action_service.models import ExternalGrantProvenance, Principal
+from x.agentplane.action_service.models import CallerPrincipal, ExternalGrantProvenance
 from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.subjects import ServiceAccountRef
 
@@ -89,7 +89,7 @@ class Grant(BaseModel):
     activated_at: datetime | None
     revoked_at: datetime | None
 
-    def principal(self) -> Principal:
+    def principal(self) -> CallerPrincipal:
         """The ServiceAccount owns receipts; the submitting grant remains separate evidence."""
         if self.status is not GrantStatus.ACTIVE:
             raise GrantRejectedError("grant is not active")

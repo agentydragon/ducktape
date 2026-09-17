@@ -7,7 +7,7 @@ import hmac
 from pathlib import Path
 from typing import Protocol
 
-from x.agentplane.action_service.models import Principal, PrincipalRole, service_account_principal
+from x.agentplane.action_service.models import CallerPrincipal, OperatorPrincipal
 from x.agentplane.sandbox_auth.principal import WorkloadPrincipal
 from x.agentplane.subjects import ServiceAccountRef
 
@@ -15,7 +15,7 @@ from x.agentplane.subjects import ServiceAccountRef
 class OperatorAuthenticator(Protocol):
     """Replaceable BFF/operator boundary; deliberately separate from SandboxPrincipal auth."""
 
-    async def authenticate(self, token: str) -> Principal | None: ...
+    async def authenticate(self, token: str) -> OperatorPrincipal | None: ...
 
 
 class DisabledOperatorAuthenticator:
@@ -48,11 +48,11 @@ class ConfiguredOperatorBearerAuthenticator:
             raise ValueError("operator bearer file must not be empty")
         return cls(token_digest=hashlib.sha256(token).digest(), subject=subject)
 
-    async def authenticate(self, token: str) -> Principal | None:
+    async def authenticate(self, token: str) -> OperatorPrincipal | None:
         presented = hashlib.sha256(token.encode()).digest()
         if not hmac.compare_digest(presented, self._token_digest):
             return None
-        return Principal(issuer="configured-operator", subject=self._subject, role=PrincipalRole.OPERATOR)
+        return OperatorPrincipal(issuer="configured-operator", subject=self._subject)
 
 
 def workload_account(principal: WorkloadPrincipal) -> ServiceAccountRef:
@@ -65,5 +65,5 @@ def workload_account(principal: WorkloadPrincipal) -> ServiceAccountRef:
     return ServiceAccountRef(namespace=principal.namespace, name=principal.service_account_name)
 
 
-def workload_principal(principal: WorkloadPrincipal) -> Principal:
-    return service_account_principal(workload_account(principal))
+def workload_principal(principal: WorkloadPrincipal) -> CallerPrincipal:
+    return CallerPrincipal(account=workload_account(principal))

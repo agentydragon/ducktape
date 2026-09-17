@@ -24,7 +24,7 @@ export function request(state: ActionState, index: number): ActionRequestView {
     origin: { thread_id: "10000000-0000-4000-8000-000000000000" },
     correlation: {},
     idempotency_key: `request-${index}`,
-    caller_principal: "system:serviceaccount:test:agent",
+    caller: { namespace: "agentplane-test", name: "test-agent" },
     state,
     version: decided ? 2 : 1,
     created_at: "2026-09-05T12:00:00Z",

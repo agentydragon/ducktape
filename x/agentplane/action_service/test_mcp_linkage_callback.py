@@ -23,7 +23,7 @@ from x.agentplane.action_service.mcp_linkage import (
     McpOAuthServer,
     McpProvider,
 )
-from x.agentplane.action_service.models import Principal, PrincipalRole
+from x.agentplane.action_service.models import OperatorPrincipal
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.test_fixtures.callers import admitted_callers
 from x.agentplane.action_service.updates import ActionUpdates
@@ -77,7 +77,7 @@ async def callback_client(
 async def test_first_link_relink_and_link_after_disconnect(
     linkage: McpLinkageAuthority, callback_client: httpx.AsyncClient, engine: AsyncEngine
 ) -> None:
-    operator = Principal(issuer="test-issuer", subject="test-operator", role=PrincipalRole.OPERATOR)
+    operator = OperatorPrincipal(issuer="test-issuer", subject="test-operator")
     for expected_revision, expected_token_revision in [(1, 1), (2, 2), (4, 1)]:
         if expected_revision == 4:
             disconnected = await linkage.disconnect("test-kubernetes", operator)
@@ -101,7 +101,7 @@ async def test_first_link_relink_and_link_after_disconnect(
 async def test_rejected_code_is_reported_and_leaves_the_server_unlinked(
     linkage: McpLinkageAuthority, callback_client: httpx.AsyncClient
 ) -> None:
-    operator = Principal(issuer="test-issuer", subject="test-operator", role=PrincipalRole.OPERATOR)
+    operator = OperatorPrincipal(issuer="test-issuer", subject="test-operator")
     started = await linkage.start("test-kubernetes", McpLinkageStart(), operator)
     state = parse_qs(urlsplit(started.authorization_url).query)["state"][0]
     response = await callback_client.get("/v1/mcp-linkage/callback", params={"state": state, "code": "test-bad-code"})

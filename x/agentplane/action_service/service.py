@@ -30,6 +30,7 @@ from x.agentplane.action_service.models import (
     ActionRequestInput,
     ActionRequestView,
     ActionState,
+    CallerPrincipal,
     CancellationResult,
     DecisionInput,
     ExecutionClaim,
@@ -37,13 +38,13 @@ from x.agentplane.action_service.models import (
     ExecutionState,
     Executor,
     ExternalGrantProvenance,
+    OperatorPrincipal,
     Principal,
     ProviderOutcome,
     ProviderVerdict,
     ServiceAccountCaller,
     UnknownOutcomeReason,
     Verdict,
-    service_account_ref,
 )
 from x.agentplane.action_service.policy_evaluation import resolve_bindings
 from x.agentplane.action_service.policy_informer import PolicyIndex
@@ -97,12 +98,12 @@ class InvalidActionArgumentsError(Exception):
 
 
 def _caller(
-    principal: Principal, external_grant: ExternalGrantProvenance | None
+    principal: CallerPrincipal, external_grant: ExternalGrantProvenance | None
 ) -> ServiceAccountCaller | ServiceAccountRef:
-    """The typed caller providers see: the grant's ServiceAccount, else the one the principal was
-    minted for. Admission already refused any grant a ServiceAccount does not back."""
+    """The typed caller providers see: the grant's ServiceAccount, else the account the bearer
+    proved. Admission already refused any grant a ServiceAccount does not back."""
     if external_grant is None:
-        return service_account_ref(principal)
+        return principal.account
     return ServiceAccountCaller(service_account=external_grant.caller, grant_revision=external_grant.revision)
 
 
@@ -237,7 +238,11 @@ class ActionService:
         self._sweep_task = None
 
     async def submit(
-        self, body: ActionRequestInput, principal: Principal, *, external_grant: ExternalGrantProvenance | None = None
+        self,
+        body: ActionRequestInput,
+        principal: CallerPrincipal,
+        *,
+        external_grant: ExternalGrantProvenance | None = None,
     ) -> ActionRequestView:
         if self.draining:
             raise ServiceDrainingError("Action Service is draining")
@@ -265,7 +270,7 @@ class ActionService:
         self,
         view: ActionRequestView,
         body: ActionRequestInput,
-        principal: Principal,
+        principal: CallerPrincipal,
         external_grant: ExternalGrantProvenance | None,
     ) -> ActionRequestView:
         """Evaluate configured synchronous providers once, against the policy objects as they stand
@@ -329,7 +334,7 @@ class ActionService:
         return _ProviderVote(provider=provider.name, outcome=outcome)
 
     def caller_action_policy(
-        self, principal: Principal, external_grant: ExternalGrantProvenance | None
+        self, principal: CallerPrincipal, external_grant: ExternalGrantProvenance | None
     ) -> CallerActionPolicyView:
         """What the caller's own bindings auto-decide, resolved as admission would resolve them now."""
         return caller_view(self._policies, _caller(principal, external_grant), self._clock())
@@ -358,7 +363,7 @@ class ActionService:
     ) -> list[ActionEventView]:
         return await self._store.events(request_id, principal, after_sequence=after_sequence, limit=limit)
 
-    async def decide(self, request_id: UUID, body: DecisionInput, principal: Principal) -> ActionRequestView:
+    async def decide(self, request_id: UUID, body: DecisionInput, principal: OperatorPrincipal) -> ActionRequestView:
         if self.draining:
             raise ServiceDrainingError("Action Service is draining")
         view, should_dispatch = await self._store.decide(request_id, body, principal, provider=self.HUMAN_PROVIDER)

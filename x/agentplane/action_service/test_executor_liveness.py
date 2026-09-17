@@ -21,22 +21,23 @@ from x.agentplane.action_service.db import ActionConflictError, ActionStore, Exe
 from x.agentplane.action_service.models import (
     ActionRequestInput,
     ActionState,
+    CallerPrincipal,
     DecisionInput,
     ExecutionClaim,
     ExecutionLease,
     ExecutionRequest,
     ExecutionResult,
     ExecutionState,
-    Principal,
-    PrincipalRole,
+    OperatorPrincipal,
     ReconciliationSource,
     UnknownOutcomeReason,
     Verdict,
 )
 from x.agentplane.action_service.service import ActionService, ServiceDrainingError
+from x.agentplane.subjects import ServiceAccountRef
 
-CALLER = Principal(issuer="test-workload", subject="sandbox-a", role=PrincipalRole.CALLER)
-OPERATOR = Principal(issuer="test-bff", subject="operator", role=PrincipalRole.OPERATOR)
+CALLER = CallerPrincipal(account=ServiceAccountRef(namespace="agentplane-test", name="test-workload-a"))
+OPERATOR = OperatorPrincipal(issuer="test-bff", subject="operator")
 ACTION_ID = ActionIdentity(group="agentplane", name="echo")
 ALREADY_EXPIRED = timedelta(seconds=-1)
 

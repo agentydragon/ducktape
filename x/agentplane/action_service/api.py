@@ -62,11 +62,10 @@ from x.agentplane.action_service.models import (
     ActionRequestInput,
     ActionRequestView,
     ActionState,
+    CallerPrincipal,
     CancellationResult,
     DecisionInput,
-    Principal,
-    PrincipalRole,
-    service_account_principal,
+    OperatorPrincipal,
 )
 from x.agentplane.action_service.oauth import ActionsOAuthProxy
 from x.agentplane.action_service.policies.resources import CALLER_LABEL
@@ -134,7 +133,7 @@ async def _workload(
     request: Request,
     authenticator: Annotated[SandboxPrincipalAuthenticator, Depends(_workload_authenticator)],
     callers: Annotated[PolicyIndex, Depends(_callers)],
-) -> Principal:
+) -> CallerPrincipal:
     """The ServiceAccount the bearer proves, once the index says that account may call here.
 
     Authenticating is not being admitted: without the label an account reaches no route, so a
@@ -150,19 +149,19 @@ async def _workload(
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED, "invalid workload bearer", headers={"WWW-Authenticate": "Bearer"}
         )
-    return service_account_principal(account)
+    return CallerPrincipal(account=account)
 
 
 async def _operator(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_operator_bearer)],
     authenticator: Annotated[OperatorAuthenticator, Depends(_operator_authenticator)],
-) -> Principal:
+) -> OperatorPrincipal:
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED, "operator bearer required", headers={"WWW-Authenticate": "Bearer"}
         )
     principal = await authenticator.authenticate(credentials.credentials)
-    if principal is None or principal.role is not PrincipalRole.OPERATOR:
+    if principal is None:
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED, "operator bearer is not accepted", headers={"WWW-Authenticate": "Bearer"}
         )
@@ -278,14 +277,14 @@ def create_app(
     @app.post("/v1/action-requests", response_model=ActionRequestView, status_code=status.HTTP_202_ACCEPTED)
     async def submit(
         body: ActionRequestInput,
-        principal: Annotated[Principal, Depends(_workload)],
+        principal: Annotated[CallerPrincipal, Depends(_workload)],
         action_service: Annotated[ActionService, Depends(_service)],
     ) -> ActionRequestView:
         return await action_service.submit(body, principal)
 
     @app.get("/v1/action-requests", response_model=list[ActionRequestView])
     async def list_own_requests(
-        principal: Annotated[Principal, Depends(_workload)],
+        principal: Annotated[CallerPrincipal, Depends(_workload)],
         action_service: Annotated[ActionService, Depends(_service)],
         state_filter: Annotated[list[ActionState] | None, Query(alias="state")] = None,
         idempotency_key: Annotated[str | None, Query(description=IDEMPOTENCY_KEY_FILTER)] = None,
@@ -297,7 +296,7 @@ def create_app(
     @app.get("/v1/action-requests/{request_id}", response_model=ActionRequestView)
     async def get_own_request(
         request_id: UUID,
-        principal: Annotated[Principal, Depends(_workload)],
+        principal: Annotated[CallerPrincipal, Depends(_workload)],
         action_service: Annotated[ActionService, Depends(_service)],
     ) -> ActionRequestView:
         return await action_service.get(request_id, principal)
@@ -305,7 +304,7 @@ def create_app(
     @app.post("/v1/action-requests/{request_id}/cancel", response_model=CancellationResult)
     async def cancel_own_request(
         request_id: UUID,
-        principal: Annotated[Principal, Depends(_workload)],
+        principal: Annotated[CallerPrincipal, Depends(_workload)],
         action_service: Annotated[ActionService, Depends(_service)],
     ) -> CancellationResult:
         return await action_service.cancel(request_id, principal)
@@ -313,7 +312,7 @@ def create_app(
     @app.get("/v1/action-requests/{request_id}/events", response_model=list[ActionEventView])
     async def own_events(
         request_id: UUID,
-        principal: Annotated[Principal, Depends(_workload)],
+        principal: Annotated[CallerPrincipal, Depends(_workload)],
         action_service: Annotated[ActionService, Depends(_service)],
         after_sequence: Annotated[int, Query(ge=0)] = 0,
     ) -> list[ActionEventView]:
@@ -323,7 +322,8 @@ def create_app(
     # same for every caller, so it carries no owner-scoping unlike the ActionRequest surface above.
     @app.get("/v1/action-groups", response_model=list[ActionGroupView])
     async def list_action_groups(
-        principal: Annotated[Principal, Depends(_workload)], action_catalog: Annotated[ActionCatalog, Depends(_catalog)]
+        principal: Annotated[CallerPrincipal, Depends(_workload)],
+        action_catalog: Annotated[ActionCatalog, Depends(_catalog)],
     ) -> list[ActionGroupView]:
         del principal
         return action_catalog.group_views()
@@ -332,7 +332,7 @@ def create_app(
     async def get_action(
         group_key: str,
         action_key: str,
-        principal: Annotated[Principal, Depends(_workload)],
+        principal: Annotated[CallerPrincipal, Depends(_workload)],
         action_catalog: Annotated[ActionCatalog, Depends(_catalog)],
     ) -> ActionView:
         del principal
@@ -340,7 +340,8 @@ def create_app(
 
     @app.get("/v1/action-policy", response_model=CallerActionPolicyView)
     async def own_action_policy(
-        principal: Annotated[Principal, Depends(_workload)], action_service: Annotated[ActionService, Depends(_service)]
+        principal: Annotated[CallerPrincipal, Depends(_workload)],
+        action_service: Annotated[ActionService, Depends(_service)],
     ) -> CallerActionPolicyView:
         """The caller's own effective policy, from the resolution admission uses: the bindings on it, the
         sets that resolved, and the auto_approve_if / auto_deny_if / auto_deny_unless entries in evaluation
@@ -352,7 +353,7 @@ def create_app(
     # never acquire operator-all read or decision authority merely by authenticating as a Sandbox.
     @app.get("/v1/operator/action-requests", response_model=list[ActionRequestView])
     async def operator_list_requests(
-        principal: Annotated[Principal, Depends(_operator)],
+        principal: Annotated[OperatorPrincipal, Depends(_operator)],
         action_service: Annotated[ActionService, Depends(_service)],
         state_filter: Annotated[list[ActionState] | None, Query(alias="state")] = None,
         idempotency_key: Annotated[str | None, Query(description=IDEMPOTENCY_KEY_FILTER)] = None,
@@ -363,7 +364,7 @@ def create_app(
 
     @app.get("/v1/operator/action-requests/stream")
     async def operator_stream(
-        principal: Annotated[Principal, Depends(_operator)],
+        principal: Annotated[OperatorPrincipal, Depends(_operator)],
         action_service: Annotated[ActionService, Depends(_service)],
         action_updates: Annotated[ActionUpdates, Depends(_updates)],
         credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_operator_bearer)],
@@ -398,7 +399,7 @@ def create_app(
     @app.get("/v1/operator/action-requests/{request_id}", response_model=ActionRequestView)
     async def operator_get_request(
         request_id: UUID,
-        principal: Annotated[Principal, Depends(_operator)],
+        principal: Annotated[OperatorPrincipal, Depends(_operator)],
         action_service: Annotated[ActionService, Depends(_service)],
     ) -> ActionRequestView:
         return await action_service.get(request_id, principal)
@@ -407,7 +408,7 @@ def create_app(
     async def operator_service_account_action_policy(
         namespace: str,
         name: str,
-        principal: Annotated[Principal, Depends(_operator)],
+        principal: Annotated[OperatorPrincipal, Depends(_operator)],
         action_service: Annotated[ActionService, Depends(_service)],
     ) -> SubjectActionPolicyView:
         """A subject's effective policy as the operator sees it: each binding with its labels and
@@ -416,22 +417,24 @@ def create_app(
         return action_service.subject_action_policy(ServiceAccountRef(namespace=namespace, name=name))
 
     @app.get("/v1/operator/push/config")
-    async def push_config(principal: Annotated[Principal, Depends(_operator)]) -> dict[str, str | None]:
+    async def push_config(principal: Annotated[OperatorPrincipal, Depends(_operator)]) -> dict[str, str | None]:
         del principal
         return {"application_server_key": push_identity.application_server_key if push_identity else None}
 
     @app.get("/v1/operator/push/subscriptions")
-    async def list_push_subscriptions(principal: Annotated[Principal, Depends(_operator)]) -> list[dict[str, object]]:
+    async def list_push_subscriptions(
+        principal: Annotated[OperatorPrincipal, Depends(_operator)],
+    ) -> list[dict[str, object]]:
         if push_subscriptions is None:
             return []
         return [
             {"endpoint": row.endpoint, "user_agent": row.user_agent, "created_at": row.created_at.isoformat()}
-            for row in await push_subscriptions.list_for(principal.key)
+            for row in await push_subscriptions.list_for(principal)
         ]
 
     @app.post("/v1/operator/push/subscriptions", status_code=status.HTTP_204_NO_CONTENT)
     async def register_push_subscription(
-        body: PushSubscriptionInput, principal: Annotated[Principal, Depends(_operator)], request: Request
+        body: PushSubscriptionInput, principal: Annotated[OperatorPrincipal, Depends(_operator)], request: Request
     ) -> None:
         if push_identity is None or push_subscriptions is None:
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "web push is not configured")
@@ -442,7 +445,7 @@ def create_app(
         user_agent = request.headers.get("user-agent")
         try:
             await push_subscriptions.save(
-                operator_principal=principal.key,
+                operator=principal,
                 endpoint=body.endpoint,
                 p256dh=body.p256dh,
                 auth=body.auth,
@@ -452,16 +455,16 @@ def create_app(
             raise HTTPException(status.HTTP_409_CONFLICT, "subscription is already registered") from None
 
     @app.delete("/v1/operator/push/subscriptions", status_code=status.HTTP_204_NO_CONTENT)
-    async def remove_push_subscription(endpoint: str, principal: Annotated[Principal, Depends(_operator)]) -> None:
-        if push_subscriptions is None or not await push_subscriptions.delete(
-            operator_principal=principal.key, endpoint=endpoint
-        ):
+    async def remove_push_subscription(
+        endpoint: str, principal: Annotated[OperatorPrincipal, Depends(_operator)]
+    ) -> None:
+        if push_subscriptions is None or not await push_subscriptions.delete(operator=principal, endpoint=endpoint):
             raise HTTPException(status.HTTP_404_NOT_FOUND, "no such push subscription")
 
     @app.get("/v1/operator/action-requests/{request_id}/events", response_model=list[ActionEventView])
     async def operator_events(
         request_id: UUID,
-        principal: Annotated[Principal, Depends(_operator)],
+        principal: Annotated[OperatorPrincipal, Depends(_operator)],
         action_service: Annotated[ActionService, Depends(_service)],
         after_sequence: Annotated[int, Query(ge=0)] = 0,
     ) -> list[ActionEventView]:
@@ -471,7 +474,7 @@ def create_app(
     async def decide(
         request_id: UUID,
         body: DecisionInput,
-        principal: Annotated[Principal, Depends(_operator)],
+        principal: Annotated[OperatorPrincipal, Depends(_operator)],
         action_service: Annotated[ActionService, Depends(_service)],
     ) -> ActionRequestView:
         return await action_service.decide(request_id, body, principal)
@@ -534,13 +537,13 @@ def _enrollment_routes(app: FastAPI, authority: EnrollmentAuthority) -> None:
 
     @app.post("/v1/operator/connection-enrollments/{handle}/preview")
     async def enrollment_preview(
-        handle: str, body: EnrollmentPreviewInput, principal: Annotated[Principal, Depends(_operator)]
+        handle: str, body: EnrollmentPreviewInput, principal: Annotated[OperatorPrincipal, Depends(_operator)]
     ) -> EnrollmentPreview:
         return await authority.preview(handle, body, principal)
 
     @app.post("/v1/operator/connection-enrollments/{handle}/decision")
     async def enrollment_decision(
-        handle: str, body: EnrollmentDecisionInput, principal: Annotated[Principal, Depends(_operator)]
+        handle: str, body: EnrollmentDecisionInput, principal: Annotated[OperatorPrincipal, Depends(_operator)]
     ) -> EnrollmentDecisionResult:
         return await authority.decide(handle, body, principal)
 
@@ -568,18 +571,20 @@ def _mcp_linkage_routes(app: FastAPI, authority: McpLinkageAuthority) -> None:
         return _error(status.HTTP_404_NOT_FOUND, str(error))
 
     @app.get("/v1/operator/mcp-servers/{server_id}/linkage", response_model=McpLinkageView)
-    async def linkage_status(server_id: str, principal: Annotated[Principal, Depends(_operator)]) -> McpLinkageView:
+    async def linkage_status(
+        server_id: str, principal: Annotated[OperatorPrincipal, Depends(_operator)]
+    ) -> McpLinkageView:
         del principal
         return await authority.status(server_id)
 
     @app.get("/v1/operator/mcp-servers", response_model=list[McpLinkageView])
-    async def list_mcp_linkages(principal: Annotated[Principal, Depends(_operator)]) -> list[McpLinkageView]:
+    async def list_mcp_linkages(principal: Annotated[OperatorPrincipal, Depends(_operator)]) -> list[McpLinkageView]:
         del principal
         return await authority.statuses()
 
     @app.post("/v1/operator/mcp-servers/{server_id}/linkage/start", response_model=McpLinkageStartView)
     async def linkage_start(
-        server_id: str, body: McpLinkageStart, principal: Annotated[Principal, Depends(_operator)]
+        server_id: str, body: McpLinkageStart, principal: Annotated[OperatorPrincipal, Depends(_operator)]
     ) -> McpLinkageStartView:
         return await authority.start(server_id, body, principal)
 
@@ -588,5 +593,7 @@ def _mcp_linkage_routes(app: FastAPI, authority: McpLinkageAuthority) -> None:
         return await authority.callback(state, code)
 
     @app.post("/v1/operator/mcp-servers/{server_id}/linkage/disconnect", response_model=McpLinkageView)
-    async def linkage_disconnect(server_id: str, principal: Annotated[Principal, Depends(_operator)]) -> McpLinkageView:
+    async def linkage_disconnect(
+        server_id: str, principal: Annotated[OperatorPrincipal, Depends(_operator)]
+    ) -> McpLinkageView:
         return await authority.disconnect(server_id, principal)

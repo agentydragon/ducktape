@@ -38,8 +38,7 @@ from x.agentplane.action_service.models import (
     ExecutionResult,
     ExecutionState,
     ExternalGrantProvenance,
-    Principal,
-    PrincipalRole,
+    OperatorPrincipal,
     ProviderOutcome,
     ProviderVerdict,
     ServiceAccountCaller,
@@ -54,7 +53,7 @@ from x.agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, a
 from x.agentplane.subjects import ServiceAccountRef
 
 ISSUER = "https://actions.example.test"
-OPERATOR = Principal(issuer="operator", subject="single", role=PrincipalRole.OPERATOR)
+OPERATOR = OperatorPrincipal(issuer="operator", subject="single")
 LEASE_DURATION = timedelta(seconds=30)
 
 
@@ -148,8 +147,6 @@ async def test_admission_fails_closed_on_missing_disabled_revoked_or_mismatched_
             await store.submit(
                 envelope, grant.principal(), external_grant=grant.provenance().model_copy(update=changes)
             )
-    with pytest.raises(ExternalGrantNotAuthorizedError):
-        await store.submit(envelope, OPERATOR, external_grant=grant.provenance())
     for checker in [None, ConnectionAuthority(make_sessionmaker(engine), admitted_callers(OTHER))]:
         with pytest.raises(ExternalGrantNotAuthorizedError):
             await ActionStore(make_sessionmaker(engine), external_grants=checker).submit(
@@ -313,7 +310,7 @@ async def test_service_preserves_human_approval_and_canonical_external_provenanc
         await service.close()
     (executed,) = echo_executor.requests
     assert executed.external_grant == grant.provenance()
-    assert executed.caller_principal == grant.principal().key
+    assert executed.caller == grant.principal().account
 
 
 async def test_bound_service_account_is_auto_approved_by_its_binding_only(

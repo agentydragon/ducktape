@@ -24,16 +24,15 @@ from x.agentplane.action_service.models import (
     ActionRequestView,
     ActionState,
     BindingEvidence,
+    CallerPrincipal,
     DecisionInput,
     MatchedPolicy,
+    OperatorPrincipal,
     PolicyKind,
     PolicySetEvidence,
-    Principal,
-    PrincipalRole,
     ProviderOutcome,
     ProviderVerdict,
     Verdict,
-    service_account_principal,
 )
 from x.agentplane.action_service.policies.resources import parse_binding, parse_policy_set
 from x.agentplane.action_service.policy_evaluation import AUTO_APPROVE_REASON, PROVIDER_NAME, PolicySetDecisionProvider
@@ -44,8 +43,8 @@ from x.agentplane.subjects import ServiceAccountRef
 
 NAMESPACE = "agentplane-test"
 SUBJECT = ServiceAccountRef(namespace=NAMESPACE, name="workload-a")
-CALLER = service_account_principal(SUBJECT)
-OPERATOR = Principal(issuer="test-bff", subject="operator", role=PrincipalRole.OPERATOR)
+CALLER = CallerPrincipal(account=SUBJECT)
+OPERATOR = OperatorPrincipal(issuer="test-bff", subject="operator")
 NOW = datetime(2026, 9, 12, 12, 0, tzinfo=UTC)
 ECHO = ActionIdentity(group="agentplane", name="echo")
 

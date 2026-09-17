@@ -35,11 +35,9 @@ from x.agentplane.action_service.models import (
     CancellationResult,
     DecisionInput,
     Executor,
-    Principal,
-    PrincipalRole,
+    OperatorPrincipal,
     Verdict,
     service_account_key,
-    service_account_ref,
 )
 from x.agentplane.action_service.policies.resources import parse_binding, parse_policy_set
 from x.agentplane.action_service.policy_informer import PolicyIndex
@@ -56,7 +54,7 @@ from x.agentplane.subjects import ServiceAccountRef
 
 AUDIENCE = "test-action-audience"
 NAMESPACE = "test-action-sandboxes"
-OPERATOR = Principal(issuer="test", subject="operator", role=PrincipalRole.OPERATOR)
+OPERATOR = OperatorPrincipal(issuer="test", subject="operator")
 
 
 def sandbox(label: str) -> SandboxPrincipal:
@@ -384,7 +382,7 @@ async def test_a_caller_reads_the_effective_policy_of_itself_or_a_named_target(f
     async with frontend.client(egress=True) as caller, frontend.client("test-token-b") as other:
         own = CallerActionPolicyView.model_validate((await caller.call_tool("get_action_policy")).structured_content)
         assert isinstance(own.subject, ServiceAccountRef)
-        assert own.subject == service_account_ref(workload_principal(frontend.tokens["test-token-a"]))
+        assert own.subject == workload_principal(frontend.tokens["test-token-a"]).account
         assert own.synced is True
         assert [(binding.name, binding.policy_sets) for binding in own.bindings] == [("test-a-reads", ["test-reads"])]
         assert [(p.binding, p.policy_set, p.index, p.policy.actions) for p in own.auto_approve_if] == [
@@ -395,7 +393,7 @@ async def test_a_caller_reads_the_effective_policy_of_itself_or_a_named_target(f
         by_name = await caller.call_tool("get_action_policy", {"target": "self"})
         assert CallerActionPolicyView.model_validate(by_name.structured_content) == own
         nothing = CallerActionPolicyView.model_validate((await other.call_tool("get_action_policy")).structured_content)
-        assert nothing.subject == service_account_ref(workload_principal(frontend.tokens["test-token-b"]))
+        assert nothing.subject == workload_principal(frontend.tokens["test-token-b"]).account
         assert (nothing.synced, nothing.bindings, nothing.auto_approve_if) == (True, [], [])
         # A named target gets the same view its own caller would; one the service does not watch has nothing.
         about_a = await other.call_tool("get_action_policy", {"target": {"service_account": own.subject.model_dump()}})
@@ -476,7 +474,7 @@ async def test_tools_act_as_the_identity_the_transport_verified(frontend: Fronte
             receipts[token] = ActionRequestView.model_validate(result.structured_content)
     for token, receipt in receipts.items():
         stored = await frontend.store.get(receipt.id, OPERATOR)
-        assert stored.caller_principal == workload_principal(frontend.tokens[token]).key
+        assert stored.caller == workload_principal(frontend.tokens[token]).account
         assert stored.external_grant is None
 
 

@@ -34,8 +34,8 @@ from x.agentplane.action_service.models import (
     ActionEventView,
     ActionRequestInput,
     ActionRequestView,
+    CallerPrincipal,
     ExternalGrantProvenance,
-    Principal,
 )
 from x.agentplane.action_service.policy_view import SELF, PolicyTarget
 from x.agentplane.action_service.service import ActionService, InvalidActionArgumentsError, UnsupportedActionError
@@ -133,7 +133,7 @@ class Caller:
     """Who this transport request authenticated as, as `CallerTokenVerifier` verified it: injected
     into every tool that acts for a caller, never a tool argument."""
 
-    principal: Principal
+    principal: CallerPrincipal
     external_grant: ExternalGrantProvenance | None
 
 
@@ -211,14 +211,14 @@ def create_server(
         tasks=False,
     )
 
-    async def revalidate(principal: Principal) -> None:
+    async def revalidate(principal: CallerPrincipal) -> None:
         current = await verifier.verify_token(_caller_token(get_access_token()).token)
         if current is None:
             raise ToolError("Caller authorization expired during the wait; reconnect with a valid caller bearer.")
         if current.principal != principal:
             raise ToolError("Caller identity changed during the wait; recover the request as its original caller.")
 
-    async def wait_for_receipt(request_id: UUID, principal: Principal, options: WaitOptions) -> ActionRequestView:
+    async def wait_for_receipt(request_id: UUID, principal: CallerPrincipal, options: WaitOptions) -> ActionRequestView:
         if options.wait_seconds == 0:
             return await waiter.get(request_id, principal, options)
         disconnected = cast(asyncio.Event, get_http_request().state.action_disconnected)

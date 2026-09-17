@@ -29,7 +29,7 @@ describe("ActionHistory", () => {
     };
     const row = {
       ...request("succeeded", 1),
-      caller_principal: "service-account:agentplane-test:test-caller",
+      caller: { namespace: "agentplane-test", name: "test-caller" },
       external_grant: grant,
     };
     const container = await render({ list: async () => [row], decide: vi.fn() }, ActionHistory);
@@ -63,7 +63,7 @@ describe("ActionHistory", () => {
     const container = await render(service, ActionHistory);
 
     for (const state of states) expect(container.textContent).toContain(stateLabel(state));
-    expect(container.textContent).toContain("requested by system:serviceaccount:test:agent");
+    expect(container.textContent).toContain("requested by agentplane-test/test-agent");
     expect(container.textContent).toContain("Allowed");
     expect(container.textContent).toContain("Denied");
     expect(container.textContent).toContain("Reviewed scope — allowed for this request.");

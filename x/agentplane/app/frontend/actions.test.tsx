@@ -28,7 +28,7 @@ describe("ActionRequests", () => {
     };
     const row = {
       ...request("decision_pending", 1),
-      caller_principal: "service-account:agentplane-test:test-caller",
+      caller: { namespace: "agentplane-test", name: "test-caller" },
       external_grant: grant,
       origin: { identity_id: "forged-origin-identity", client_id: "forged-origin-client" },
       correlation: { connection_id: "forged-correlation-connection", display_name: "mutable-connection-name" },
@@ -61,7 +61,7 @@ describe("ActionRequests", () => {
         origin: { identity_id: "forged-origin-identity" },
       };
       const container = await render({ list: async () => [row], decide: vi.fn() }, ActionRequests);
-      expect(container.textContent).toContain(row.caller_principal);
+      expect(container.textContent).toContain(`${row.caller!.namespace}/${row.caller!.name}`);
       expect(container.textContent).not.toContain("Authenticated external caller");
       expect(container.textContent).not.toContain("forged-origin-identity");
       // The request-id disclosure exists regardless of external_grant, but carries only the id --

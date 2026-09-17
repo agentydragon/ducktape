@@ -14,26 +14,26 @@ from x.agentplane.action_service.models import (
     ActionRequestInput,
     ActionRequestView,
     ActionState,
+    CallerPrincipal,
     CancellationOutcome,
     DecisionInput,
     ExecutionLease,
     ExecutionRequest,
     ExecutionResult,
     ExecutionState,
+    OperatorPrincipal,
     Principal,
-    PrincipalRole,
     ProviderOutcome,
     ProviderVerdict,
     Verdict,
-    service_account_principal,
 )
 from x.agentplane.action_service.providers import DecisionContext
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.subjects import ServiceAccountRef
 
-CALLER = service_account_principal(ServiceAccountRef(namespace="agentplane-test", name="sandbox-a"))
-OTHER_CALLER = service_account_principal(ServiceAccountRef(namespace="agentplane-test", name="sandbox-b"))
-OPERATOR = Principal(issuer="test-bff", subject="operator", role=PrincipalRole.OPERATOR)
+CALLER = CallerPrincipal(account=ServiceAccountRef(namespace="agentplane-test", name="sandbox-a"))
+OTHER_CALLER = CallerPrincipal(account=ServiceAccountRef(namespace="agentplane-test", name="sandbox-b"))
+OPERATOR = OperatorPrincipal(issuer="test-bff", subject="operator")
 LEASE_DURATION = timedelta(seconds=30)
 
 
@@ -49,7 +49,7 @@ def envelope() -> ActionRequestInput:
         title="test title for test-cancellation",
         action=ActionIdentity(group="agentplane", name="echo"),
         arguments={},
-        origin={"thread_id": "untrusted-thread", "caller_principal": OTHER_CALLER.key},
+        origin={"thread_id": "untrusted-thread", "caller": OTHER_CALLER.account.name},
     )
 
 
@@ -89,7 +89,7 @@ async def test_pending_cancellation_is_durable_and_idempotent(
     assert fresh.state is ActionState.DECISION_PENDING
     events = await restarted.events(pending.id, CALLER)
     assert [event.state for event in events] == [ActionState.DECISION_PENDING, ActionState.CANCELLED]
-    assert events[-1].actor_principal == CALLER.key
+    assert events[-1].actor == CALLER
     assert events[-1].at == result.request.updated_at
     with pytest.raises(ActionConflictError):
         await store.decide(pending.id, decision(pending), OPERATOR, provider=ActionService.HUMAN_PROVIDER)

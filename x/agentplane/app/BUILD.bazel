@@ -170,6 +170,7 @@ py_test(
         "//util:net",
         "//util/testing:asgi",
         "//util/testing:mock_oidc",
+        "//x/agentplane:subjects",
         "//x/agentplane/action_service:api",
         "//x/agentplane/action_service:catalog",
         "//x/agentplane/action_service:connections",

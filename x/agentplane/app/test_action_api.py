@@ -38,8 +38,8 @@ from x.agentplane.action_service.models import (
     ActionEventView,
     ActionRequestInput,
     ActionState,
-    Principal,
-    PrincipalRole,
+    CallerPrincipal,
+    OperatorPrincipal,
 )
 from x.agentplane.action_service.operator_oidc import OidcOperatorAuthenticator, OperatorOidcSettings
 from x.agentplane.action_service.policies.resources import parse_binding, parse_policy_set
@@ -74,8 +74,9 @@ from x.agentplane.app.presets import Harness
 from x.agentplane.app.testing.kubernetes import NAMESPACE, FakeCustomObjectsApi, sandbox
 from x.agentplane.app.trajectory import TrajectoryStore
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
+from x.agentplane.subjects import ServiceAccountRef
 
-CALLER = Principal(issuer="test-workload", subject="test-sandbox", role=PrincipalRole.CALLER)
+CALLER = CallerPrincipal(account=ServiceAccountRef(namespace="agentplane-test", name="test-sandbox"))
 SUBJECT_A = "test-operator-subject"
 SUBJECT_B = "test-second-subject"
 
@@ -799,7 +800,7 @@ async def test_consent_allow_round_trip_replays_across_app_replicas(review: Revi
         client_id="test-external-client",
         redirect_uri="https://external-client.test/callback",
         code_challenge="test-pkce-test-external-client",
-        operator=Principal(issuer=review.issuer, subject=SUBJECT_A, role=PrincipalRole.OPERATOR),
+        operator=OperatorPrincipal(issuer=review.issuer, subject=SUBJECT_A),
     )
     assert approved.service_account == PERSONAL
     assert review.exchanged_subjects

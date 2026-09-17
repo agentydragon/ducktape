@@ -43,7 +43,7 @@ from x.agentplane.action_service.enrollments import (
     EnrollmentPreviewInput,
     EnrollmentRejectedError,
 )
-from x.agentplane.action_service.models import Principal, PrincipalRole, Verdict
+from x.agentplane.action_service.models import OperatorPrincipal, Verdict
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.test_fixtures.callers import OTHER, PERSONAL, UNLABELED, admitted_callers
 from x.agentplane.action_service.updates import ActionUpdates
@@ -58,7 +58,7 @@ class Consent:
     request: EnrollmentInput
     handle: str
     browser: EnrollmentPreviewInput
-    operator: Principal
+    operator: OperatorPrincipal
     allow: EnrollmentAllow
 
 
@@ -77,7 +77,7 @@ async def consent(engine: AsyncEngine) -> Consent:
     )
     created = await authority.create(request)
     browser = EnrollmentPreviewInput(browser_binding="test-browser-" + "a" * 32)
-    operator = Principal(issuer="configured-operator", subject="test-operator", role=PrincipalRole.OPERATOR)
+    operator = OperatorPrincipal(issuer="configured-operator", subject="test-operator")
     preview = await authority.preview(created.handle, browser, operator)
     allow = EnrollmentAllow(
         browser_binding=browser.browser_binding,
@@ -128,8 +128,8 @@ async def test_browser_operator_and_caller_boundaries(consent: Consent) -> None:
     other_browser = EnrollmentPreviewInput(browser_binding="test-browser-" + "b" * 32)
     for operator, browser in [
         (consent.operator, other_browser),
+        # A different operator, and the right operator from a different browser: both are refused.
         (consent.operator.model_copy(update={"subject": "test-other-operator"}), consent.browser),
-        (consent.operator.model_copy(update={"role": PrincipalRole.CALLER}), consent.browser),
     ]:
         with pytest.raises(EnrollmentRejectedError):
             await consent.authority.preview(consent.handle, browser, operator)

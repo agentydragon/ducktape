@@ -49,11 +49,10 @@ from x.agentplane.action_service.enrollments import (
 )
 from x.agentplane.action_service.models import (
     ActionRequestView,
+    CallerPrincipal,
     CancellationResult,
     Executor,
-    Principal,
-    PrincipalRole,
-    service_account_principal,
+    OperatorPrincipal,
 )
 from x.agentplane.action_service.oauth import ActionsOAuthProxy, OAuthSettings, running_oauth
 from x.agentplane.action_service.policy_informer import PolicyIndex
@@ -65,7 +64,7 @@ from x.agentplane.subjects import ServiceAccountRef
 
 CALLBACK = "https://client.example.test/callback"
 SCOPES = "openid email profile offline_access"
-OPERATOR = Principal(issuer="https://operator.example.test/", subject="operator", role=PrincipalRole.OPERATOR)
+OPERATOR = OperatorPrincipal(issuer="https://operator.example.test/", subject="operator")
 
 
 @dataclass
@@ -328,7 +327,7 @@ async def test_dcr_consent_pkce_refresh_and_revocation(oauth: OAuthFixture, db_u
     grant = await oauth.proxy.authenticate(tokens["access_token"])
     assert grant is not None
     assert (grant.caller, grant.client_id) == (PERSONAL, client_id)
-    assert grant.principal() == service_account_principal(PERSONAL)
+    assert grant.principal() == CallerPrincipal(account=PERSONAL)
     assert (await oauth.exchange(client_id, code, verifier)).status_code == 401
     async with make_sessionmaker(engine)() as db:
         stored_values = list(await db.scalars(text("SELECT value::text FROM agentplane_oauth_kv")))
@@ -638,8 +637,8 @@ async def test_external_grant_reaches_canonical_mcp_admission_and_cancel(
             await _call_mcp(http, bearer, "request_action", {"request": request})
         )
         assert receipt.external_grant == grant.provenance()
-        assert receipt.caller_principal is None
-        assert (await store.get(receipt.id, OPERATOR)).caller_principal == grant.principal().key
+        assert receipt.caller is None, "a caller reading its own receipt is not shown the caller column"
+        assert (await store.get(receipt.id, OPERATOR)).caller == grant.caller
         cancelled = CancellationResult.model_validate(
             await _call_mcp(http, bearer, "cancel_action_request", {"request_id": str(receipt.id)})
         )

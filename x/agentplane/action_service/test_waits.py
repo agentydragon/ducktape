@@ -19,20 +19,22 @@ from x.agentplane.action_service.models import (
     ActionRequestInput,
     ActionRequestView,
     ActionState,
+    CallerPrincipal,
     DecisionInput,
     ExecutionResult,
     ExecutionState,
+    OperatorPrincipal,
     Principal,
-    PrincipalRole,
     Verdict,
 )
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.updates import CHANNEL, ActionUpdates, UpdatesUnavailableError
 from x.agentplane.action_service.waits import ActionWaiter, WaitOptions, WaitUntil
+from x.agentplane.subjects import ServiceAccountRef
 
-CALLER = Principal(issuer="test", subject="caller", role=PrincipalRole.CALLER)
-OTHER = Principal(issuer="test", subject="other", role=PrincipalRole.CALLER)
-OPERATOR = Principal(issuer="test", subject="operator", role=PrincipalRole.OPERATOR)
+CALLER = CallerPrincipal(account=ServiceAccountRef(namespace="agentplane-test", name="test-caller"))
+OTHER = CallerPrincipal(account=ServiceAccountRef(namespace="agentplane-test", name="test-other-caller"))
+OPERATOR = OperatorPrincipal(issuer="test", subject="operator")
 
 
 class ObservedService(ActionService):

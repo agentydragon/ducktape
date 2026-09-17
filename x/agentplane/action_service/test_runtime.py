@@ -34,14 +34,13 @@ from x.agentplane.action_service.mcp_executor import McpActionGroupExecutor
 from x.agentplane.action_service.models import (
     ActionRequestInput,
     ActionState,
+    CallerPrincipal,
     DecisionInput,
     ExecutionLease,
     ExecutionRequest,
     ExecutionState,
-    Principal,
-    PrincipalRole,
+    OperatorPrincipal,
     Verdict,
-    service_account_principal,
 )
 from x.agentplane.action_service.policies.resources import (
     BINDINGS_PLURAL,
@@ -60,8 +59,8 @@ from x.agentplane.egress.testing.fake_apiserver import fake_apiserver
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 from x.agentplane.subjects import ServiceAccountRef
 
-CALLER = service_account_principal(ServiceAccountRef(namespace="agentplane-test", name="fixture-caller"))
-OPERATOR = Principal(issuer="test", subject="operator", role=PrincipalRole.OPERATOR)
+CALLER = CallerPrincipal(account=ServiceAccountRef(namespace="agentplane-test", name="fixture-caller"))
+OPERATOR = OperatorPrincipal(issuer="test", subject="operator")
 
 
 def _group(config: dict[str, JsonValue]) -> ActionGroup:
@@ -74,7 +73,7 @@ def _group(config: dict[str, JsonValue]) -> ActionGroup:
 
 def _request(action: ActionIdentity) -> ExecutionRequest:
     return ExecutionRequest(
-        request_id=uuid4(), action=action, arguments={}, origin={}, correlation={}, caller_principal=CALLER.key
+        request_id=uuid4(), action=action, arguments={}, origin={}, correlation={}, caller=CALLER.account
     )
 
 
@@ -387,7 +386,7 @@ async def test_main_auto_approves_the_bound_service_account_from_watched_policy_
     namespace = "agentplane-runtime-test"
     bound = ServiceAccountRef(namespace=namespace, name="fixture-caller")
     unbound = ServiceAccountRef(namespace=namespace, name="other-caller")
-    bound_caller = service_account_principal(bound)
+    bound_caller = CallerPrincipal(account=bound)
     settings = Settings(
         database_url=db_url,
         action_groups={"fixture": _group({"transport": "streamable-http", "url": everything_url, "auth": "none"})},
@@ -434,9 +433,9 @@ async def test_main_auto_approves_the_bound_service_account_from_watched_policy_
                     title=f"test title for {key}",
                     action=body.action,
                     arguments={"message": message},
-                    origin={"caller": bound_caller.key, "binding": "fixture-echo"},
+                    origin={"caller": bound_caller.account.name, "binding": "fixture-echo"},
                 ),
-                service_account_principal(caller),
+                CallerPrincipal(account=caller),
             )
             assert pending.state is ActionState.DECISION_PENDING
             assert pending.execution is None
