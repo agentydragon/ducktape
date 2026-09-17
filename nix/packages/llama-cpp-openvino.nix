@@ -11,6 +11,7 @@
   ocl-icd,
   opencl-headers,
   opencl-clhpp,
+  autoPatchelfHook,
 }:
 llama-cpp.overrideAttrs (old: {
   cmakeFlags = old.cmakeFlags ++ [
@@ -25,6 +26,13 @@ llama-cpp.overrideAttrs (old: {
     opencl-clhpp
   ];
 
+  # openvino-npu's libopenvino.so lives at the non-standard runtime/lib/intel64
+  # (CMake links it there via an imported target's absolute IMPORTED_LOCATION,
+  # not a -L/-l pair), so the generic nixpkgs per-`-L`-flag rpath mechanism that
+  # already covers onetbb never sees it. autoPatchelfHook finds and patches it
+  # in regardless of that layout.
+  nativeBuildInputs = old.nativeBuildInputs ++ [ autoPatchelfHook ];
+
   # ggml/src/ggml-openvino/CMakeLists.txt hardcodes
   # `include("${OpenVINO_DIR}/../3rdparty/tbb/lib/cmake/TBB/TBBConfig.cmake")`,
   # assuming Intel's official toolkit archive layout, which vendors its own TBB
@@ -37,5 +45,17 @@ llama-cpp.overrideAttrs (old: {
       -e 's|include(".*3rdparty/tbb/lib/cmake/TBB/TBBConfig\.cmake")|include("${lib.getDev onetbb}/lib/cmake/TBB/TBBConfig.cmake")|' \
       ggml/src/ggml-openvino/CMakeLists.txt
     grep -q '${lib.getDev onetbb}/lib/cmake/TBB/TBBConfig.cmake' ggml/src/ggml-openvino/CMakeLists.txt
+  '';
+
+  # Upstream's postInstall generates bash completion by executing the just-
+  # linked llama-server binary -- but that runs before fixupPhase (where
+  # autoPatchelfHook patches in openvino-npu's rpath), so the binary can't find
+  # libopenvino.so yet and the build fails. A systemd unit invoking llama-server
+  # directly has no use for its bash completion, so drop that step rather than
+  # chase a working LD_LIBRARY_PATH for a build-time self-exec; keep upstream's
+  # other postInstall step (staging llama.h for downstream consumers).
+  postInstall = ''
+    mkdir -p $out/include
+    cp $src/include/llama.h $out/include/
   '';
 })
