@@ -4,13 +4,23 @@
 
 **Hardware**: Lunar Lake NPU (~45 TOPS int8, "Intel AI Boost").
 
-## Current setup — working (Docker)
+## Current setup — Nix-native, currently disabled (2026-09-17)
 
-llama.cpp with OpenVINO backend ([PR #15307](https://github.com/ggml-org/llama.cpp/pull/15307),
-March 2026). Built from source as Docker image `llama-openvino:server`.
-Standard `llama-server` with OpenAI-compatible API, no custom wrappers.
+Fully native Nix package, no container: `nix/packages/{npu-compiler-libs,openvino-npu,llama-cpp-openvino}.nix`
+build a real `llama-server` against a hermetically-fetched OpenVINO NPU compiler
+library, wired into a systemd service by `nix/nixos/hosts/rugged/local_llm_npu.nix`
+(`ducktape.localLlm.npu`). Router mode serves both `qwen3-4b` and `llama-3.2-1b`
+from one process, OpenAI-compatible API, `--sleep-idle-seconds 300` idle-unload.
+Landed via #7127; **disabled** as of tonight's real-hardware test — see
+"Real-hardware status" below.
 
-**Benchmarks (2026-04-18)**, context 512:
+Supersedes the Docker image (`llama-openvino:server`) this file used to describe
+as current; that image is no longer used. Its benchmarks below remain a useful
+reference point but were measured against Intel's own bundled Level Zero driver
+inside the container, not NixOS's host driver package — see the status section
+for why that distinction now matters.
+
+**Benchmarks (2026-04-18, Docker image, `-c 512`)**:
 
 | Model              | Prompt eval | Generation     |
 | ------------------ | ----------- | -------------- |
@@ -25,32 +35,50 @@ Gemma 4 was tested on 2026-06-05. The existing OpenVINO/Linux stack loads and
 offloads Gemma 4 E2B QAT to `OPENVINO0`, but prompt compute fails with a tensor
 shape mismatch. See <gemma4.md>.
 
-### Running
+## Real-hardware status (2026-09-17): disabled, NPU not actually reached
 
-```bash
-# Model at ~/llm-npu-test/Llama-3.2-1B-Instruct-Q4_0.gguf
-docker run --rm -d --name llama-npu \
-  --device=/dev/accel --device=/dev/dri \
-  -p 8080:8080 \
-  -v ~/llm-npu-test:/models \
-  --env=GGML_OPENVINO_DEVICE=NPU \
-  llama-openvino:server \
-  --no-warmup -c 512 -m /models/Llama-3.2-1B-Instruct-Q4_0.gguf
+First real-hardware test of the Nix-native service (`rugged-npu-llm.service`).
+Two bugs found, both real, neither yet fixed. `ducktape.localLlm.npu.enable`
+is now `false` pending both.
 
-# Test
-curl http://localhost:8080/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{"messages":[{"role":"user","content":"Hello"}],"max_tokens":50}'
+**1. NPU device is unreachable at the Level Zero layer** (tracked in <npu.md>
+§ Known issues — same root cause for anything touching the NPU on this host,
+not specific to this service). The OpenVINO backend logs this and silently
+continues on CPU rather than failing loudly:
+
+```text
+W GGML OpenVINO Backend: device NPU is not available, fallback to CPU
 ```
 
-### Building the image
+Directly confirmed for the `qwen3-4b` request (full journal captured the
+warning). **Not directly confirmed for `llama-3.2-1b`** — the first diagnostic
+pass used a grep pattern that didn't happen to include this warning text, and
+by the time that was noticed the service had been restarted. Given both models
+share the identical broken driver stack and `GGML_OPENVINO_DEVICE=NPU` env var,
+llama-3.2-1b almost certainly also ran on CPU, not NPU — treat every inference
+number produced during tonight's test as a CPU-fallback number, not a real NPU
+measurement, until this is re-verified with the driver actually fixed.
 
-No prebuilt image available — built from source:
+**2. No explicit `--ctx-size` cap, which turned the silent CPU fallback into a
+near system hang.** `local_llm_npu.nix`'s `ExecStart` sets no `-c`/`--ctx-size`,
+so llama-server sized the KV cache close to the model's full trained context —
+the `qwen3-4b` request loaded with `n_ctx = 198912` (of `n_ctx_train = 262144`)
+across 4 parallel slots. Running that on CPU drove the process to **26.5G RSS
+with a 42.1G swap peak** on this 30GiB machine — severe enough swap thrashing
+that the whole machine appeared frozen (unresponsive keyboard/display) for
+**3 minutes 42 seconds**, then self-recovered once the oversized allocation and
+warm-up pass finished. Confirmed via `systemctl status` (swap peak, 12m33s CPU
+time on the child process) and the journal timeline (model-load start to
+"model loaded" spanned 3m42s). This is dangerous independent of the NPU bug —
+even a working NPU path should have an explicit, bounded context size (the
+"NPU constraints" section below already recommended small contexts; the
+service just didn't apply that).
 
-```bash
-cd ~/llm-npu-test/llama.cpp  # cloned from b8840
-docker build --target=server -t llama-openvino:server -f .devops/openvino.Dockerfile .
-```
+**Before re-enabling**: fix (1) — probably means chasing the driver-version-lag
+angle in <npu.md>, or finding what differs from whatever let the old Docker
+benchmarks above actually reach the NPU — and fix (2) by adding an explicit,
+conservative `--ctx-size` (and probably `--parallel`) to the router presets in
+`local_llm_npu.nix`, regardless of which backend ends up serving requests.
 
 ### Models
 
@@ -73,15 +101,15 @@ Can't set the input tensor with index: 3, because the model input (shape=[1,1,2,
 
 ## TODO
 
-- Nixify as a pinned podman container service first; a fully native package needs
-  the Intel OpenVINO NPU compiler library, not just nixpkgs `openvino`.
+- Root-cause and fix the Level Zero driver init failure (see "Real-hardware
+  status" above and <npu.md> § Known issues) — the actual blocker now.
+- Add an explicit `--ctx-size` cap to `local_llm_npu.nix`'s router presets
+  (see "Real-hardware status" above) before ever re-enabling the service.
 - Test larger models (Qwen 2.5 1.5B, Phi-3-mini) on NPU
 - Compare NPU vs Arc GPU vs CPU on same model sizes
 - Retest Gemma 4 after llama.cpp/OpenVINO backend updates
 - Consider running both Arc GPU and NPU servers simultaneously (different ports,
   different model sizes)
-- The `local_llm_npu` nix module with `openvino_genai` Python scripts can probably
-  be simplified or removed in favor of the Docker approach
 
 ## NPU constraints
 
@@ -117,6 +145,10 @@ Practical options:
    build llama.cpp's OpenVINO backend against that payload.
 3. **Pure nixpkgs OpenVINO**: blocked for NPU until nixpkgs packages the NPU
    compiler library or OpenVINO no longer needs it for the tested workloads.
+
+Update (2026-09-17): option 2 shipped, via #7127 —
+`nix/packages/{npu-compiler-libs,openvino-npu,llama-cpp-openvino}.nix`. See
+"Current setup" and "Real-hardware status" above for where that stands now.
 
 ## Dead ends encountered
 
