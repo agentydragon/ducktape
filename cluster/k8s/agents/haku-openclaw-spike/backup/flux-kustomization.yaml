@@ -24,7 +24,13 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    - name: haku-openclaw-spike-app
+    # Backup/S3 wiring must converge even when the OpenClaw Deployment is down.
+    # The Bucket and S3Credentials remain app-owned, but their readiness is
+    # retried by the ExternalSecret rather than coupling this Kustomization to
+    # the app Deployment health check.
+    - name: haku-openclaw-spike-namespace
+      namespace: ducktape-flux
+    - name: seaweedfs-cluster
       namespace: ducktape-flux
     - name: external-secrets-config
       namespace: ducktape-flux
