@@ -11,11 +11,4 @@ terraform {
       version = "~> 3.0"
     }
   }
-
-  # Placeholder; the actual backend (pg, tofu-state) is injected by the Terraform
-  # CR's backendConfig.customConfiguration (see cluster/k8s/forgejo/agentydragon).
-  backend "kubernetes" {
-    secret_suffix = "forgejo-agentydragon"
-    namespace     = "flux-system"
-  }
 }
