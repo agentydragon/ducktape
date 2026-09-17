@@ -14,6 +14,14 @@ from dataclasses import dataclass, field
 from cdk8s import ApiObject, JsonPatch, Yaml
 from cdk8s_plus_33 import ConfigMap
 from constructs import Construct
+from gateway_api_crds.io.k8s.networking.gateway import (
+    HttpRoute,
+    HttpRouteSpec,
+    HttpRouteSpecParentRefs,
+    HttpRouteSpecRules,
+    HttpRouteSpecRulesBackendRefs,
+    HttpRouteSpecRulesTimeouts,
+)
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitor,
     ServiceMonitorSpec,
@@ -298,24 +306,21 @@ class LiteLLMProxy(Construct):
         )
 
     def _add_http_route(self) -> None:
-        _api_resource(
+        assert self.spec.hostname is not None
+        HttpRoute(
             self,
             "httproute",
-            api_version="gateway.networking.k8s.io/v1",
-            kind="HTTPRoute",
             metadata=_metadata(self.spec.name, self.spec.namespace),
-            fields={
-                "spec": {
-                    "parentRefs": [{"name": "cluster-gateway", "namespace": "gateway-system"}],
-                    "hostnames": [self.spec.hostname],
-                    "rules": [
-                        {
-                            "timeouts": {"request": "600s", "backendRequest": "600s"},
-                            "backendRefs": [{"name": self.spec.name, "port": 4000}],
-                        }
-                    ],
-                }
-            },
+            spec=HttpRouteSpec(
+                parent_refs=[HttpRouteSpecParentRefs(name="cluster-gateway", namespace="gateway-system")],
+                hostnames=[self.spec.hostname],
+                rules=[
+                    HttpRouteSpecRules(
+                        timeouts=HttpRouteSpecRulesTimeouts(request="600s", backend_request="600s"),
+                        backend_refs=[HttpRouteSpecRulesBackendRefs(name=self.spec.name, port=4000)],
+                    )
+                ],
+            ),
         )
 
     def _add_forgejo_image_credentials(self) -> None:
