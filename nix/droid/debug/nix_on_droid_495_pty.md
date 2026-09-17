@@ -29,17 +29,25 @@ The active `nix` on this device throughout has been the original bootstrap-era
 unix-derivation-builder.cc` (`openSlave()`) does `posix_openpt()` → fork →
   `open(slave)` → `tcgetattr()` unconditionally, on every local build, to capture
   builder stderr in raw mode. `tcgetattr()` is the call that fails.
-- Deterministic: identical error, identical step, across every attempt.
+- Deterministic: identical error, identical step, across every attempt, including a
+  completely fresh `nix-on-droid` reinstall (wiped app data, fresh bootstrap). Rules
+  out stale/corrupted state from earlier failed switches as the cause — this is
+  structural, not accumulated.
 - A bare `ls -la /dev/pts` also gets `Permission denied` despite permissive DAC bits
   (`/dev/pts` 755, `/dev/ptmx` 666 root:root) — but per the VM investigation below,
   this is a universal, years-old Android behavior (`search` without `read` on the
   devpts directory, for every app) and does **not** indicate a new or broader
   restriction. Noted here so nobody re-derives it as a lead.
 - Executing real Android binaries through nix-on-droid's `-b /:/android` proot bind
-  (`/android/system/bin/getenforce`, `.../toybox`) fails with `cannot execute:
-required file not found` — likely their ELF interpreter living under `/apex/...`
-  not being reachable through that bind. Closes off "just exec real Android tools
-  through the proot" as a diagnostic path.
+  fails every time: `getenforce`, `toybox` (`cannot execute: required file not
+found`, likely their ELF interpreter living under `/apex/...` not being reachable
+  through that bind) and `logcat` (`No such file or directory` via `timeout`).
+  Closed off as a diagnostic path — three different real Android binaries, same
+  wall; don't spend more effort trying a fourth.
+- `cat /sys/fs/selinux/enforce` and `/android/sys/fs/selinux/enforce`: both
+  `Permission denied` (file exists, unreadable) — expected for an unprivileged app
+  context on stock Android, so this doesn't tell us enforcing vs permissive either
+  way, same as the exec failures above.
 
 ## Ruled out
 
@@ -74,14 +82,18 @@ guest network + proxy CA trust instead of routing around it, running the literal
 `nix-on-droid switch --flake ...#pixel6`) is in progress. See
 `debug/nix_on_droid_495_pty/` for the harness and detailed notes from both attempts.
 
-## Open on-device checks (not yet reported back)
+## Open on-device checks
 
-- `cat /sys/fs/selinux/enforce` (and `/android/sys/fs/selinux/enforce`) — enforcing
-  vs permissive on the real device. Plain file read, no exec needed.
-- AVC denials in logcat during an actual failing switch:
-  `(timeout 60 /android/system/bin/logcat -b all > /tmp/logcat.txt 2>&1 &)`, then run
-  the switch, then inspect the log. May hit the same exec-through-`/android` wall as
-  `getenforce`.
+Everything reachable from inside nix-on-droid's own restricted app context has now
+been tried (SELinux enforce read, logcat, direct Android binary exec) and hits the
+same wall each time. What's left needs access outside that context:
+
+- AVC denials via `adb logcat -b all | grep -i avc` from an external computer while
+  re-triggering the switch on the phone — sidesteps the in-app exec restrictions
+  entirely. Needs a computer to pair/plug the phone into.
+- Pulling the phone's actual SELinux policy (`/sys/fs/selinux/policy`, needs real
+  root/adb) for a `sesearch` against its real policy rather than an AOSP
+  approximation.
 
 ## Related
 
