@@ -63,6 +63,8 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret
 from cluster.cdk8s.litellm_config import ConfigMapSpec, proxy_configs
+from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.probes import http_probe
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _CONTAINER_PORT = 4000
@@ -215,19 +217,12 @@ def _formatted_config_map_data(data: dict[str, object]) -> dict[str, str]:
     return formatted
 
 
-def _metadata(
-    name: str, namespace: str, *, labels: dict[str, str] | None = None, annotations: dict[str, str] | None = None
-) -> ApiObjectMetadata:
-    return ApiObjectMetadata(name=name, namespace=namespace, labels=labels, annotations=annotations)
-
-
 def _http_probe(path: str, initial_delay_seconds: int, failure_threshold: int) -> Probe:
-    return Probe.from_http_get(
+    return http_probe(
         path,
         port=_CONTAINER_PORT,
-        initial_delay_seconds=Duration.seconds(initial_delay_seconds),
-        period_seconds=Duration.seconds(10),
-        timeout_seconds=Duration.seconds(5),
+        initial_delay_seconds=initial_delay_seconds,
+        timeout_seconds=5,
         failure_threshold=failure_threshold,
     )
 
@@ -252,7 +247,7 @@ class LiteLLMProxy(Construct):
         return ConfigMap(
             self,
             "config",
-            metadata=_metadata(
+            metadata=metadata(
                 self.spec.config.config_map_name,
                 self.spec.namespace,
                 labels={"app.kubernetes.io/managed-by": "cdk8s", "app.kubernetes.io/part-of": "litellm"},
@@ -287,7 +282,7 @@ class LiteLLMProxy(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=_metadata(
+            metadata=metadata(
                 self.spec.name, self.spec.namespace, labels=labels, annotations={"reloader.stakater.com/auto": "true"}
             ),
             pod_metadata=ApiObjectMetadata(labels=labels),
@@ -349,7 +344,7 @@ class LiteLLMProxy(Construct):
         Service(
             self,
             "service",
-            metadata=_metadata(self.spec.name, self.spec.namespace, labels=self.spec.service.labels),
+            metadata=metadata(self.spec.name, self.spec.namespace, labels=self.spec.service.labels),
             selector=deployment,
             ports=[
                 ServicePort(
@@ -364,7 +359,7 @@ class LiteLLMProxy(Construct):
         return ServiceAccount(
             self,
             "serviceaccount",
-            metadata=_metadata(self.spec.service_account_name, self.spec.namespace),
+            metadata=metadata(self.spec.service_account_name, self.spec.namespace),
             automount_token=False,
         )
 
@@ -373,7 +368,7 @@ class LiteLLMProxy(Construct):
         HttpRoute(
             self,
             "httproute",
-            metadata=_metadata(self.spec.name, self.spec.namespace),
+            metadata=metadata(self.spec.name, self.spec.namespace),
             spec=HttpRouteSpec(
                 parent_refs=[HttpRouteSpecParentRefs(name="cluster-gateway", namespace="gateway-system")],
                 hostnames=[self.spec.hostname],
@@ -398,7 +393,7 @@ class LiteLLMServiceMonitor(Construct):
         ServiceMonitor(
             self,
             "servicemonitor",
-            metadata=_metadata("litellm", "litellm"),
+            metadata=metadata("litellm", "litellm"),
             spec=ServiceMonitorSpec(
                 selector=ServiceMonitorSpecSelector(match_labels={"app.kubernetes.io/name": "litellm"}),
                 endpoints=[

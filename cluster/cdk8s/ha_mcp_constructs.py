@@ -38,7 +38,6 @@ from cdk8s_plus_33 import (
     Job,
     MemoryResources,
     Namespace,
-    Probe,
     Protocol,
     RestartPolicy,
     Role,
@@ -68,7 +67,9 @@ from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecSelector,
 )
 
-from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret
+from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
+from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.probes import http_probe
 
 _NAMESPACE = "ha-mcp"
 _HOME_ASSISTANT_NAMESPACE = "home-assistant"  # where the token-provisioner's SA/Job/CronJob run
@@ -88,12 +89,6 @@ _APP_METRICS_PORT = 9090
 _APP_LABELS = {"app.kubernetes.io/name": _APP_NAME}
 
 
-def _metadata(
-    name: str, namespace: str, *, labels: dict[str, str] | None = None, annotations: dict[str, str] | None = None
-) -> ApiObjectMetadata:
-    return ApiObjectMetadata(name=name, namespace=namespace, labels=labels, annotations=annotations)
-
-
 class HaMcpCredentialsProvisioner(Construct):
     """Validates and repairs the token after expiry, revocation, or a Home Assistant restore."""
 
@@ -101,11 +96,11 @@ class HaMcpCredentialsProvisioner(Construct):
         super().__init__(scope, id)
         forgejo_images_creds_external_secret(self, "forgejo-images-creds", namespace=_HOME_ASSISTANT_NAMESPACE)
         service_account = ServiceAccount(
-            self, "serviceaccount", metadata=_metadata(_PROVISIONER_NAME, _HOME_ASSISTANT_NAMESPACE)
+            self, "serviceaccount", metadata=metadata(_PROVISIONER_NAME, _HOME_ASSISTANT_NAMESPACE)
         )
         self._add_rbac(service_account)
         break_glass_secret = Secret.from_secret_name(self, "home-assistant-break-glass", "home-assistant-break-glass")
-        pull_secret = Secret.from_secret_name(self, "forgejo-images-creds-ref", "forgejo-images-creds")
+        pull_secret = forgejo_images_creds_secret_ref(self, "forgejo-images-creds-ref")
         self._add_job(service_account, break_glass_secret, pull_secret)
         self._add_cronjob(service_account, break_glass_secret, pull_secret)
 
@@ -116,7 +111,7 @@ class HaMcpCredentialsProvisioner(Construct):
         # Role construct stays authoritative for apiVersion/kind/metadata, and
         # ApiObject.of() reaches its internally-managed ApiObject for the one field
         # the typed API can't express.
-        role = Role(self, "role", metadata=_metadata(_PROVISIONER_NAME, _NAMESPACE))
+        role = Role(self, "role", metadata=metadata(_PROVISIONER_NAME, _NAMESPACE))
         ApiObject.of(role).add_json_patch(
             JsonPatch.add(
                 "/rules",
@@ -134,7 +129,7 @@ class HaMcpCredentialsProvisioner(Construct):
         RoleBinding(
             self,
             "rolebinding",
-            metadata=_metadata(_PROVISIONER_NAME, _NAMESPACE),
+            metadata=metadata(_PROVISIONER_NAME, _NAMESPACE),
             role=Role.from_role_name(self, "role-ref", _PROVISIONER_NAME),
         ).add_subjects(service_account)
 
@@ -169,7 +164,7 @@ class HaMcpCredentialsProvisioner(Construct):
         job = Job(
             self,
             "job",
-            metadata=_metadata(
+            metadata=metadata(
                 _PROVISIONER_NAME,
                 _HOME_ASSISTANT_NAMESPACE,
                 annotations={
@@ -208,7 +203,7 @@ class HaMcpCredentialsProvisioner(Construct):
         cronjob = CronJob(
             self,
             "cronjob",
-            metadata=_metadata(_PROVISIONER_NAME, _HOME_ASSISTANT_NAMESPACE),
+            metadata=metadata(_PROVISIONER_NAME, _HOME_ASSISTANT_NAMESPACE),
             pod_metadata=ApiObjectMetadata(labels=_PROVISIONER_LABELS),
             # Weekly, Sunday 04:00 -- matches the Job's own weekly-repair cadence.
             schedule=Cron.schedule(minute="0", hour="4", week_day="0"),
@@ -240,7 +235,7 @@ class HaMcpApp(Construct):
         return ConfigMap(
             self,
             "config",
-            metadata=_metadata(_APP_CONFIG_MAP_NAME, _NAMESPACE),
+            metadata=metadata(_APP_CONFIG_MAP_NAME, _NAMESPACE),
             data={
                 "HOMEASSISTANT_URL": "http://home-assistant.home-assistant.svc.cluster.local:8123",
                 "MCP_HOST": "0.0.0.0",
@@ -276,7 +271,7 @@ class HaMcpApp(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=_metadata(
+            metadata=metadata(
                 _APP_NAME,
                 _NAMESPACE,
                 labels=_APP_LABELS,
@@ -291,7 +286,7 @@ class HaMcpApp(Construct):
             ),
             pod_metadata=ApiObjectMetadata(labels=_APP_LABELS),
             replicas=1,
-            docker_registry_auth=Secret.from_secret_name(self, "forgejo-images-creds-ref", "forgejo-images-creds"),
+            docker_registry_auth=forgejo_images_creds_secret_ref(self, "forgejo-images-creds-ref"),
             automount_service_account_token=False,
         )
 
@@ -319,18 +314,8 @@ class HaMcpApp(Construct):
                 cpu=CpuResources(request=Cpu.millis(50), limit=Cpu.millis(500)),
                 memory=MemoryResources(request=Size.mebibytes(256), limit=Size.gibibytes(1)),
             ),
-            readiness=Probe.from_http_get(
-                "/healthz",
-                port=_APP_UPSTREAM_PORT,
-                initial_delay_seconds=Duration.seconds(5),
-                period_seconds=Duration.seconds(10),
-            ),
-            liveness=Probe.from_http_get(
-                "/healthz",
-                port=_APP_UPSTREAM_PORT,
-                initial_delay_seconds=Duration.seconds(20),
-                period_seconds=Duration.seconds(20),
-            ),
+            readiness=http_probe("/healthz", port=_APP_UPSTREAM_PORT, initial_delay_seconds=5),
+            liveness=http_probe("/healthz", port=_APP_UPSTREAM_PORT, initial_delay_seconds=20, period_seconds=20),
             security_context=ContainerSecurityContextProps(
                 capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]), user=999, group=999
             ),
@@ -360,18 +345,8 @@ class HaMcpApp(Construct):
                 cpu=CpuResources(request=Cpu.millis(50), limit=Cpu.millis(200)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(256)),
             ),
-            readiness=Probe.from_http_get(
-                "/healthz",
-                port=_APP_FACADE_PORT,
-                initial_delay_seconds=Duration.seconds(5),
-                period_seconds=Duration.seconds(10),
-            ),
-            liveness=Probe.from_http_get(
-                "/healthz",
-                port=_APP_FACADE_PORT,
-                initial_delay_seconds=Duration.seconds(20),
-                period_seconds=Duration.seconds(20),
-            ),
+            readiness=http_probe("/healthz", port=_APP_FACADE_PORT, initial_delay_seconds=5),
+            liveness=http_probe("/healthz", port=_APP_FACADE_PORT, initial_delay_seconds=20, period_seconds=20),
             # cdk8s_plus_33 defaults containers to a hardened SecurityContext
             # (readOnlyRootFilesystem/runAsNonRoot: true). Opt out explicitly to preserve
             # today's actual (unrestricted) behavior -- the real container's
@@ -385,7 +360,7 @@ class HaMcpApp(Construct):
         Service(
             self,
             "service",
-            metadata=_metadata(_APP_NAME, _NAMESPACE, labels=_APP_LABELS),
+            metadata=metadata(_APP_NAME, _NAMESPACE, labels=_APP_LABELS),
             selector=deployment,
             ports=[
                 ServicePort(name="http", port=_APP_FACADE_PORT, target_port=_APP_FACADE_PORT, protocol=Protocol.TCP),
@@ -417,7 +392,7 @@ class HaMcpApp(Construct):
         CiliumNetworkPolicy(
             self,
             "networkpolicy",
-            metadata=_metadata(
+            metadata=metadata(
                 "ha-mcp-ingress",
                 _NAMESPACE,
                 annotations={
@@ -441,7 +416,7 @@ class HaMcpApp(Construct):
         ServiceMonitor(
             self,
             "servicemonitor",
-            metadata=_metadata(_APP_NAME, _NAMESPACE),
+            metadata=metadata(_APP_NAME, _NAMESPACE),
             spec=ServiceMonitorSpec(
                 selector=ServiceMonitorSpecSelector(match_labels=_APP_LABELS),
                 endpoints=[ServiceMonitorSpecEndpoints(port="metrics", interval="30s")],
