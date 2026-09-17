@@ -21,11 +21,11 @@ object the token is bound to, so a deleted or replaced Pod fails the TokenReview
 header, body field, source address, operator identity, role, permission, Agent, or Thread
 participates, and no destination reads the Pod object.
 
-An accepted verdict is kept against a digest of the bearer for the shorter of the token's remaining
-life and a minute, so every door in front of the resolver -- a proxied connection, an MCP request,
-an HTTP route -- shares one answer rather than each spending a TokenReview per call. The window is
-the same everywhere, and it is a window: a bearer that stops being valid keeps working until its
-entry lapses. A refusal is never kept.
+Every call reviews the bearer, at every door, with nothing memoized. A TokenReview writes nothing
+-- it is a signature check plus an existence check on the object the token is bound to -- so the
+round trip buys a verdict that is true now, and a revoked bearer stops working here at the moment it
+stops working anywhere. A cache would buy a little latency for a revocation window, and the trade is
+not worth making on an authentication path.
 
 Kubernetes API failures log only the fixed operation (`create_token_review`) and numeric status,
 never exception reason, body, headers or traceback. The original API exception still propagates.

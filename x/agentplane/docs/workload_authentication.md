@@ -46,8 +46,8 @@ PR #5696 added the shared destination-side `WorkloadPrincipalAuthenticator` and
 audience, an allowed ServiceAccount subject, and one Pod name/UID claim pair. Nothing else is read:
 the API server validates the object the token is bound to, so a deleted or replaced Pod fails the
 TokenReview, and a Pod no Sandbox controls is its ServiceAccount like any other. Every service uses
-the one authenticator, over one resolver whose accepted verdicts are shared for at most the token's
-remaining life. The immutable principal contains namespace, ServiceAccount and Pod identity only.
+the one authenticator, and every call reviews the bearer. The immutable principal contains
+namespace, ServiceAccount and Pod identity only.
 It contains no Thread, Agent, operator role, permissions, token, or caller body/header identity.
 
 The compatibility audience remains `agentplane-egress`. A future coordinated rename to

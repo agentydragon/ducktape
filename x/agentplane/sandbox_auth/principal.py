@@ -2,14 +2,8 @@
 
 from __future__ import annotations
 
-import base64
-import binascii
-import hashlib
-import json
 import logging
-import time
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 
 from kubernetes_asyncio import client as k8s_client
@@ -22,8 +16,6 @@ logger = logging.getLogger(__name__)
 POD_NAME_CLAIM = "authentication.kubernetes.io/pod-name"
 POD_UID_CLAIM = "authentication.kubernetes.io/pod-uid"
 _SERVICE_ACCOUNT_PREFIX = "system:serviceaccount:"
-_CACHE_TTL = timedelta(seconds=60)
-_CACHE_SWEEP_SIZE = 256
 
 
 @dataclass(frozen=True)
@@ -57,36 +49,13 @@ class SandboxPrincipalRejectedError(Exception):
         self.reason = reason
 
 
-@dataclass(frozen=True)
-class _CachedPrincipal:
-    principal: WorkloadPrincipal
-    expires_at: float
-
-
-def token_expiry(token: str) -> datetime | None:
-    """The `exp` claim of a JWT, unverified: TokenReview is the verification, this only bounds a cache."""
-    parts = token.split(".")
-    if len(parts) != 3:
-        return None
-    payload = parts[1]
-    try:
-        claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
-    except binascii.Error, ValueError:
-        return None
-    expiry = claims.get("exp") if isinstance(claims, dict) else None
-    return datetime.fromtimestamp(expiry, tz=UTC) if isinstance(expiry, int | float) else None
-
-
 class SandboxPrincipalResolver:
     """Resolve Pod-bound workload tokens only from ServiceAccounts in the allowed namespaces.
 
-    An accepted verdict is kept against a digest of the bearer for the shorter of the token's
-    remaining life and a minute. Every door in front of this -- a proxied connection, an MCP
-    request, an HTTP route -- would otherwise spend a TokenReview per call re-learning what the
-    previous call just learned, on the caller's critical path and against one shared API server.
-    The cost is that a bearer that stops being valid keeps working until its entry lapses; a
-    refusal is not kept, being cheap to repeat and wrong to hold against a token that has since
-    been bound.
+    Every call reviews the bearer. A TokenReview writes nothing -- it is a signature check plus an
+    existence check on the object the token is bound to -- so the round trip buys a verdict that is
+    true now rather than one that was true a minute ago, and a revoked bearer stops working here at
+    the moment it stops working anywhere.
     """
 
     def __init__(
@@ -101,32 +70,13 @@ class SandboxPrincipalResolver:
         self._authentication = authentication
         self._audience = audience
         self._allowed_service_account_namespaces = allowed_service_account_namespaces
-        self._cache: dict[str, _CachedPrincipal] = {}
 
     async def resolve_workload(self, token: str) -> WorkloadPrincipal:
-        """Everything a bearer proves by itself: audience, ServiceAccount, and the Pod it is bound to."""
-        key = hashlib.sha256(token.encode()).hexdigest()
-        cached = self._cache.get(key)
-        if cached is not None and cached.expires_at > time.monotonic():
-            return cached.principal
-        principal = await self._review(token)
-        self._remember(key, principal, token)
-        return principal
+        """Everything a bearer proves by itself: audience, ServiceAccount, and the Pod it is bound to.
 
-    def _remember(self, key: str, principal: WorkloadPrincipal, token: str) -> None:
-        ttl = _CACHE_TTL.total_seconds()
-        if (expiry := token_expiry(token)) is not None:
-            ttl = min(ttl, (expiry - datetime.now(UTC)).total_seconds())
-        if ttl <= 0:
-            return
-        now = time.monotonic()
-        if len(self._cache) >= _CACHE_SWEEP_SIZE:
-            self._cache = {k: v for k, v in self._cache.items() if v.expires_at > now}
-        self._cache[key] = _CachedPrincipal(principal=principal, expires_at=now + ttl)
-
-    async def _review(self, token: str) -> WorkloadPrincipal:
-        """The Pod claims come from the TokenReview, which the API server answers by validating the
-        token's bound object -- so a deleted or replaced Pod fails here, with nothing read."""
+        The Pod claims come from the TokenReview, which the API server answers by validating the
+        token's bound object -- so a deleted or replaced Pod fails here, with nothing read.
+        """
         try:
             review = await self._authentication.create_token_review(
                 k8s_client.V1TokenReview(spec=k8s_client.V1TokenReviewSpec(token=token, audiences=[self._audience]))

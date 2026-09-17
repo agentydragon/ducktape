@@ -835,7 +835,8 @@ async def test_a_workload_reads_the_rules_that_apply_to_it(proxy: ProxyUnderTest
 
 
 async def test_a_workload_reads_rules_through_its_loopback_sidecar(proxy: ProxyUnderTest) -> None:
-    """Ordinary HTTP via loopback and central to a destination that authenticates the bearer itself."""
+    """Ordinary HTTP via loopback and central, then independent destination TokenReview."""
+    before = proxy.fake.token_reviews
     token_file = proxy.tmp_path / "rules-sidecar-token"
     token_file.write_text(TOKEN_A)
     async with SidecarRelay(
@@ -845,6 +846,7 @@ async def test_a_workload_reads_rules_through_its_loopback_sidecar(proxy: ProxyU
 
     assert response.status == 200, response.body
     assert json.loads(response.body)["subject"] == SUBJECT_A.model_dump()
+    assert proxy.fake.token_reviews == before + 2, "central and API each validate independently"
     assert proxy.resolver.pin_calls == [(RULES_HOST, 80, True)], "one forward, no recursion"
     assert all(value not in response.body.decode() for value in (TOKEN_A, SECRET_VALUE))
 

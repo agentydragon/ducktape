@@ -651,8 +651,7 @@ one in-cluster workload borrowing another's egress rules, not an escalation past
 Add it back if that borrowing becomes a real concern -- a compromised sidecar reading another Pod's
 projected token, or a namespace whose Pod specs are not ours. Doing so means a `pod_ip` on the
 principal, the check in `WorkloadIdentityVerifier.identify`, the peer-address read in the addon, and
-the `pods` read in every namespace named by `--workload-namespaces`. The verdict cache would have to
-be keyed by address too, or bypassed for that check.
+the `pods` read in every namespace named by `--workload-namespaces`.
 
 ### `PC_EGRESS_CREDENTIALS` — public-coder's substitutions as EgressCredentials
 

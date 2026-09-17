@@ -138,8 +138,8 @@ context; no rules-specific proxy dispatch or credential injection mode is involv
 Service port `80` targets the separate HTTP API listener on `8082`; port `8888` remains the forward
 proxy. Central resolves and dials the API like any other cluster-internal policy destination.
 The FastAPI endpoint validates ordinary `Authorization` through `WorkloadPrincipalAuthenticator`,
-against the same resolver the tunnel uses: presenting the bearer is what admits a caller here, and a
-TokenReview already spent on it is not spent again. The API sees central's
+reviewing the bearer itself rather than inheriting the tunnel's verdict: one proxied read is two
+TokenReviews, deliberately. The API sees central's
 source address, not the caller's Pod address; proxy-hop identity and caller metadata are not API
 identity authorities. Missing or forged destination auth fails closed.
 

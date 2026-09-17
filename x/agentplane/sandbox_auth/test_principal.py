@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import base64
-import json
 import logging
-import time
 from collections.abc import Mapping
 from types import SimpleNamespace
 from typing import cast
@@ -24,7 +21,6 @@ from x.agentplane.sandbox_auth.principal import (
     SandboxPrincipalRejectedError,
     SandboxPrincipalResolver,
     WorkloadPrincipal,
-    token_expiry,
 )
 
 AUDIENCE = "agentplane-egress"
@@ -74,11 +70,6 @@ def resolver(
         ),
         create_token_review_mock,
     )
-
-
-def jwt_with_expiry(expiry: float) -> str:
-    payload = base64.urlsafe_b64encode(json.dumps({"exp": expiry}).encode()).decode().rstrip("=")
-    return f"eyJhbGciOiJSUzI1NiJ9.{payload}.signature"
 
 
 async def test_a_valid_bearer_is_the_service_account_its_pod_runs_as() -> None:
@@ -204,42 +195,6 @@ async def test_tokenreview_api_failure_logs_only_operation_and_status(
     assert caplog.records[0].exc_info is None
     assert TOKEN not in caplog.text
     assert "credential-bearing" not in caplog.text
-
-
-async def test_a_verdict_is_reused_without_reviewing_the_token_again() -> None:
-    subject_resolver, authentication = resolver({TOKEN: review()})
-
-    assert await subject_resolver.resolve_workload(TOKEN) == await subject_resolver.resolve_workload(TOKEN)
-
-    authentication.assert_awaited_once()
-
-
-async def test_a_verdict_is_not_kept_past_the_token_expiry() -> None:
-    """A bearer already out of life is reviewed every time, so the cache cannot outlive the token."""
-    token = jwt_with_expiry(time.time() - 1)
-    subject_resolver, authentication = resolver({token: review()})
-
-    await subject_resolver.resolve_workload(token)
-    await subject_resolver.resolve_workload(token)
-
-    assert authentication.await_count == 2
-
-
-async def test_a_refusal_is_reviewed_again() -> None:
-    """Nothing keeps a rejection: a bearer bound a moment later must not be refused for a minute."""
-    subject_resolver, authentication = resolver({TOKEN: review(authenticated=False)})
-
-    for _ in range(2):
-        with pytest.raises(SandboxPrincipalRejectedError):
-            await subject_resolver.resolve_workload(TOKEN)
-
-    assert authentication.await_count == 2
-
-
-def test_token_expiry_parses_jwt_and_ignores_opaque() -> None:
-    assert token_expiry(jwt_with_expiry(1_800_000_000)) is not None
-    assert token_expiry("opaque-token") is None
-    assert token_expiry("a.b.c") is None
 
 
 if __name__ == "__main__":
