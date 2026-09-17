@@ -36,7 +36,7 @@ spec:
   dependsOn:
     - name: authentik-db
       namespace: ducktape-flux
-    - name: cnpg-barman-cloud
+    - name: cnpg
       namespace: ducktape-flux
     - name: seaweedfs-cluster
       namespace: ducktape-flux

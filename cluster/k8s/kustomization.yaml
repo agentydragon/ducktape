@@ -33,7 +33,6 @@ resources:
   - kube-system/flux-kustomization.yaml
   - descheduler/flux-kustomization.yaml
   - cnpg/flux-kustomization.yaml
-  - cnpg-barman-cloud/flux-kustomization.yaml
   - valkey/flux-kustomization.yaml
   - reflector/flux-kustomization.yaml
   - node-feature-discovery/flux-kustomization.yaml
