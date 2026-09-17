@@ -37,9 +37,12 @@ cache signs with the same key as before.
 | `attic-db-app`     | CNPG-generated                              | PostgreSQL connection URI                                                                |
 
 Tokens (admin, per-host readers, CI writers) are HS256 JWTs signed with the
-`attic-jwt-token` secret. Reader/writer tokens are auto-rotated by
-`cluster/k8s/agents/attic-jwt-rotation/` (single CronJob driven by
-`rotators.yaml`); admin tokens are minted ad hoc via `kubectl exec`.
+`attic-jwt-token` secret. Reader/writer tokens are auto-rotated by the
+`attic-jwt-rotation` CronJob (`cluster/k8s/nix-cache/cronjob.yaml`, driven by
+`rotators.yaml` — merged into this Kustomization so its `attic-jwt-rotator`
+ServiceAccount and the bootstrap Job that reuses it apply in one ordered pass,
+rather than deadlocking across two Kustomizations depending on each other);
+admin tokens are minted ad hoc via `kubectl exec`.
 
 Cache **signing** keypairs — distinct from the JWT signing secret — are sourced
 from `attic-cache-keys` (mounted into the bootstrap Job at
