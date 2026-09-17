@@ -7,9 +7,9 @@ Full design and worked examples: <../docs/cdk8s.md>.
 generating real bindings via `cdk8s_import` (`devinfra/js/cdk8s_import.bzl`;
 `//third_party/{flux,prometheus_operator,gateway_api,external_secrets,cilium}` are the
 examples). Typed builders give synth-time validation; raw dicts fail only at
-`kubectl apply`, if at all. Check the tables below — built by cloning
+`kubectl apply`, if at all. Check the table below — built by cloning
 `cdk8s-team/cdk8s-plus` and reading `src/*.ts`, not guessing from `dir()` — before
-writing any raw `ApiObject`. Extend them the same way when a new construct comes up.
+writing any raw `ApiObject`. Extend it the same way when a new construct comes up.
 
 **The only legitimate raw usage** is patching one field a typed builder is missing, on
 an object that's otherwise fully typed — never the whole resource:
@@ -48,18 +48,9 @@ typed, including `resourceNames`:
 - **Scoped to a name with no typed kind covering it** (e.g. `serviceaccounts/token`): `ApiResource.custom()` never sets `resource_name`. Implement `IApiResource` directly — `@jsii.implements(cdk8s_plus_33.IApiResource)` on a small class with `api_group`/`resource_type`/`resource_name` properties, same as `Secret.from_secret_name` does internally. Needs `@pypi//jsii` as an explicit `BUILD.bazel` dep. Example: `agentplane_constructs.py`'s `_NamedApiResource`.
 - **Caveat, not an excuse to go raw**: synthesis emits **one output rule per `IApiResource` entry**, always — `RolePolicyRule(resources=[a, b], ...)` becomes two rules, never one rule listing two resource types (`role.ts`'s `synthesizeRules()`; no typed way around it). RBAC-equivalent (Kubernetes unions all rules), so a hand-written file's rule _grouping_ won't survive conversion unchanged — only its permissions. Expect that diff.
 
-## Confirmed gaps — no typed construct exists, raw ApiObject/JsonPatch is correct
-
-Checked against `cdk8s-team/cdk8s-plus`'s `src/` (`src/index.ts`'s export list; 234
-exports in the installed `cdk8s_plus_33`) — genuinely absent, not just unused here:
-
-- **`ResourceQuota`, `LimitRange`**: no source file, no `export class`, anywhere. Only exist as `ApiResource.RESOURCE_QUOTAS`/`.LIMIT_RANGES` (for a _Role rule about_ one). Raw `ApiObject(kind="ResourceQuota"|"LimitRange")` + `.add_json_patch(JsonPatch.add("/spec", {...}))` — see `agentplane_constructs.py`.
-- **`PodDisruptionBudget`**: same — no source file, not exported. Not yet used here; same raw pattern when needed.
-- **`Deployment`/`Workload`'s `topologySpreadConstraints`**: `workload.ts` only has `spread: bool`, which sets **pod anti-affinity** (`WorkloadScheduling.spread()` → `separate()`), not `topologySpreadConstraints` at all. No typed way to set custom `maxSkew`/`labelSelector`. Patch onto `ApiObject.of(deployment)` — see `litellm_constructs.py`.
-
-Anything not in either table: check `dir(cdk8s_plus_33.<Thing>)` first; if inconclusive,
-clone `https://github.com/cdk8s-team/cdk8s-plus` and grep `src/*.ts` for the kind's
-`export class` before reaching for `ApiObject`. Add the result to the right table.
+Anything not in the table above: check `dir(cdk8s_plus_33.<Thing>)` first; if
+inconclusive, clone `https://github.com/cdk8s-team/cdk8s-plus` and grep `src/*.ts` for
+the kind's `export class` before reaching for `ApiObject`. Add the result to the table.
 
 ## Restructuring which Kustomization owns an object: land it in two steps
 
