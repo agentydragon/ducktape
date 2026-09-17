@@ -154,8 +154,39 @@ trust store:
   at the proxy bundle and sets `http_proxy`/`https_proxy`. `bin/login` execs
   `/usr/bin/env "$@"` when given arguments, so that environment reaches Nix.
 
-`api.github.com`, `codeload.github.com`, `cache.nixos.org` and `channels.nixos.org` are
-all reachable through the proxy, so `--flake github:…` can resolve its ref and fetch.
+### The session's GitHub egress scope blocks the literal command
+
+Getting the route and the trust right is not sufficient, because the proxy also enforces
+an **organization egress policy**, and it scopes GitHub by repository. Measured
+(`scripts/arm64/ghprobe.sh`):
+
+```text
+github.com/nix-community/nix-on-droid/archive/<rev>.tar.gz          403
+codeload.github.com/nix-community/nix-on-droid/tar.gz/<rev>         403
+api.github.com/repos/nix-community/nix-on-droid/commits/master      403
+codeload.github.com/NixOS/nixpkgs/tar.gz/refs/heads/nixos-unstable   403
+github.com/nix-community/nix-on-droid/info/refs?service=…           200
+codeload.github.com/agentydragon/ducktape/tar.gz/refs/heads/devel    200
+api.github.com/repos/agentydragon/ducktape/commits/devel             200
+```
+
+Only the **git smart-HTTP protocol** is served anonymously for an unattached public
+repo; every tarball and API endpoint is refused. Nix's `github:` fetcher uses the
+tarball endpoints, and `agentydragon/ducktape` is the only repo attached to this
+session, so `--flake github:agentydragon/ducktape?ref=devel#pixel6` can fetch the
+ducktape tree itself but none of its 16 other inputs
+(`nix-community/nix-on-droid`, `NixOS/nixpkgs`, `nix-community/home-manager`, …).
+`add_repo` cannot widen this: attaching `nix-community/nix-on-droid` is refused with
+`cross-tier adds are not supported in v1: session already has repos from owner(s)
+[agentydragon]`. nix-on-droid's non-flake path is blocked for the same reason — its
+default channel is `github.com/nix-community/nix-on-droid/archive/release-24.05.tar.gz`
+(`modules/build/initial-build.nix`), even though `nixos.org/channels/nixos-24.05`
+itself answers 200.
+
+This is the failure class `/root/.ccr/README.md` says to report rather than work
+around, so it is reported rather than worked around. What _is_ reachable and does work:
+`cache.nixos.org`, `channels.nixos.org`/`nixos.org`, and
+`nix-on-droid.unboiled.info` (the bootstrap zip).
 
 ## Earlier, weaker environment: Android 9 x86_64
 

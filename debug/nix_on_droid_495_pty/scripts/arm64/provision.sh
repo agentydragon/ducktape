@@ -62,15 +62,17 @@ chcon u:object_r:system_file:s0 \$APEXCA/*
 echo APEX_STORE_OK: \$(ls \$APEXCA | wc -l) certs
 "
 
-echo "=== propagate the APEX overlay into every running mount namespace ==="
-# Apps forked from zygote before the mount would otherwise keep the old store.
-a shell '
-for pid in 1 $(pidof zygote) $(pidof zygote64); do
-  [ -z "$pid" ] && continue
-  nsenter --mount=/proc/$pid/ns/mnt -- /bin/mount -t tmpfs tmpfs /apex/com.android.conscrypt/cacerts 2>/dev/null \
-    && nsenter --mount=/proc/$pid/ns/mnt -- /bin/cp /data/local/tmp/ca-copy/. /apex/com.android.conscrypt/cacerts/ -r 2>/dev/null \
-    && echo "ns $pid updated"
-done; true'
+echo "=== restart the framework so apps see the new store ==="
+# zygote's children keep the mount namespace they were forked with, so the
+# overlay only reaches apps after zygote re-forks. A framework restart is the
+# portable way to force that (Android's toybox has no nsenter).
+a shell 'stop && start' 2>&1 | tail -1
+a wait-for-device
+for _ in $(seq 1 60); do
+  [ "$(a shell getprop sys.boot_completed 2>/dev/null | tr -d '\r\n')" = "1" ] && break
+  sleep 15
+done
+a shell 'ls /apex/com.android.conscrypt/cacerts | wc -l'
 
 echo "=== android global http proxy ==="
 a shell "settings put global http_proxy $PROXY_HOST:$PROXY_PORT"
