@@ -17,9 +17,10 @@ from cluster.k8s.litellm.app.model_rosters import (
     GEMINI_MODELS,
     MISTRAL_MODELS,
     TANA_MODELS,
-    ApiShape,
     Provider,
     exposed_name,
+    shape_for,
+    shape_mode,
 )
 
 _OLLAMA_BASE = "http://ollama.ollama.svc.cluster.local:11434"
@@ -102,19 +103,19 @@ def _provider_entries(
     models: Iterable[str],
     *,
     provider: Provider,
-    shape: ApiShape,
     upstream_prefix: str,
-    mode: str = "chat",
+    protocol: str,
     api_base: str | None = None,
     api_key: str | None = None,
     supports_function_calling: bool = False,
     model_info: Callable[[str], dict[str, int]] | None = None,
 ) -> list[dict]:
+    shape = shape_for(upstream_prefix, protocol)
     return _entries(
         models,
         name=lambda model: exposed_name(provider, shape, model),
         upstream=lambda model: f"{upstream_prefix}/{model}",
-        mode=mode,
+        mode=shape_mode(shape),
         api_base=api_base,
         api_key=api_key,
         supports_function_calling=supports_function_calling,
@@ -131,16 +132,17 @@ def _ollama_variant_entries(
     ollama_model: str,
     suffixes: list[tuple[str, int]],
     *,
-    shape: ApiShape,
     upstream_prefix: str,
+    protocol: str,
     api_base: str,
     api_key: str | None,
 ) -> list[dict]:
+    shape = shape_for(upstream_prefix, protocol)
     return [
         _model_entry(
             exposed_name(Provider.OLLAMA, shape, f"{model}-{suffix}"),
             f"{upstream_prefix}/{ollama_model}",
-            "chat",
+            shape_mode(shape),
             api_base=api_base,
             api_key=api_key,
             supports_function_calling=True,
@@ -163,8 +165,8 @@ def _ollama_entries() -> list[dict]:
                 model,
                 ollama_model,
                 suffixes,
-                shape=ApiShape.OAI_CHAT,
                 upstream_prefix="openai",
+                protocol="chat",
                 api_base=f"{_OLLAMA_BASE}/v1",
                 api_key="ollama",
             )
@@ -174,18 +176,19 @@ def _ollama_entries() -> list[dict]:
                 model,
                 ollama_model,
                 suffixes,
-                shape=ApiShape.OLM_CHAT,
                 upstream_prefix="ollama",
+                protocol="chat",
                 api_base=_OLLAMA_BASE,
                 api_key=None,
             )
         )
 
+    embed_shape = shape_for("ollama", "embed")
     entries.append(
         _model_entry(
-            exposed_name(Provider.OLLAMA, ApiShape.OLM_EMBED, "qwen3-embedding-4b"),
+            exposed_name(Provider.OLLAMA, embed_shape, "qwen3-embedding-4b"),
             "ollama/qwen3-embedding:4b",
-            "embedding",
+            shape_mode(embed_shape),
             api_base=_OLLAMA_BASE,
         )
     )
@@ -214,17 +217,16 @@ def _codex_model_info(model: str) -> dict[str, int]:
 
 def _cliproxy_entries() -> list[dict]:
     entries: list[dict] = []
-    for shape, upstream_prefix, api_base, mode in (
-        (ApiShape.ANT_MESSAGES, "anthropic", _CLIPROXY_BASE, "chat"),
-        (ApiShape.OAI_RESPONSES, "openai", f"{_CLIPROXY_BASE}/v1", "responses"),
+    for upstream_prefix, protocol, api_base in (
+        ("anthropic", "messages", _CLIPROXY_BASE),
+        ("openai", "responses", f"{_CLIPROXY_BASE}/v1"),
     ):
         entries.extend(
             _provider_entries(
                 CLIPROXY_MODELS,
                 provider=Provider.CHATGPT,
-                shape=shape,
                 upstream_prefix=upstream_prefix,
-                mode=mode,
+                protocol=protocol,
                 api_base=api_base,
                 api_key="os.environ/CLIPROXY_CLIENT_KEY",
                 supports_function_calling=True,
@@ -235,11 +237,12 @@ def _cliproxy_entries() -> list[dict]:
 
 
 def _tana_entries() -> list[dict]:
+    shape = shape_for("tana", "messages")
     return [
         _model_entry(
-            exposed_name(Provider.TANA, ApiShape.ANT_MESSAGES, exposed),
+            exposed_name(Provider.TANA, shape, exposed),
             f"tana/tana/{downstream}",
-            "chat",
+            shape_mode(shape),
             supports_function_calling=True,
             custom_llm_provider="tana",
         )
@@ -252,8 +255,8 @@ def _anthropic_entries() -> list[dict]:
         *_provider_entries(
             ANTHROPIC_MODELS,
             provider=Provider.ANTHROPIC_MAX20,
-            shape=ApiShape.ANT_MESSAGES,
             upstream_prefix="anthropic",
+            protocol="messages",
             api_base=_CLIPROXY_BASE,
             api_key="os.environ/CLIPROXY_CLIENT_KEY",
             supports_function_calling=True,
@@ -261,8 +264,8 @@ def _anthropic_entries() -> list[dict]:
         *_provider_entries(
             ANTHROPIC_MODELS,
             provider=Provider.ANTHROPIC_API,
-            shape=ApiShape.ANT_MESSAGES,
             upstream_prefix="anthropic",
+            protocol="messages",
             api_key="os.environ/ANTHROPIC_API_KEY",
             supports_function_calling=True,
         ),
@@ -273,8 +276,8 @@ def _simple_provider_entries() -> list[dict]:
     entries = _provider_entries(
         ("llama-3.3-70b-versatile", "llama-3.1-8b-instant"),
         provider=Provider.GROQ,
-        shape=ApiShape.OAI_CHAT,
         upstream_prefix="groq",
+        protocol="chat",
         api_key="os.environ/GROQ_API_KEY",
         supports_function_calling=True,
     )
@@ -291,8 +294,8 @@ def _simple_provider_entries() -> list[dict]:
         _provider_entries(
             GEMINI_MODELS,
             provider=Provider.GOOGLE,
-            shape=ApiShape.GOOG_GENERATE,
             upstream_prefix="gemini",
+            protocol="generate",
             api_key="os.environ/GEMINI_API_KEY",
             supports_function_calling=True,
         )
@@ -301,9 +304,8 @@ def _simple_provider_entries() -> list[dict]:
         _provider_entries(
             (GEMINI_EMBEDDING_MODELS[0],),
             provider=Provider.GOOGLE,
-            shape=ApiShape.GOOG_EMBED,
             upstream_prefix="gemini",
-            mode="embedding",
+            protocol="embed",
             api_key="os.environ/GEMINI_API_KEY",
         )
     )
@@ -318,9 +320,8 @@ def _simple_provider_entries() -> list[dict]:
         _provider_entries(
             (GEMINI_EMBEDDING_MODELS[1],),
             provider=Provider.GOOGLE,
-            shape=ApiShape.GOOG_EMBED,
             upstream_prefix="gemini",
-            mode="embedding",
+            protocol="embed",
             api_key="os.environ/GEMINI_API_KEY",
         )
     )
@@ -328,8 +329,8 @@ def _simple_provider_entries() -> list[dict]:
         _provider_entries(
             MISTRAL_MODELS,
             provider=Provider.MISTRAL,
-            shape=ApiShape.OAI_CHAT,
             upstream_prefix="mistral",
+            protocol="chat",
             api_key="os.environ/MISTRAL_API_KEY",
             supports_function_calling=True,
         )
@@ -339,14 +340,21 @@ def _simple_provider_entries() -> list[dict]:
 
 def main_proxy_config() -> dict:
     """Return the complete main-proxy config from the shared Python roster."""
+    model_list = [
+        *_ollama_entries(),
+        *_tana_entries(),
+        *_cliproxy_entries(),
+        *_anthropic_entries(),
+        *_simple_provider_entries(),
+    ]
+    # Reuses the exact name _cliproxy_entries() gives this model (same provider, same
+    # shape_for(upstream_prefix, protocol) derivation), so the alias can't drift from
+    # what's actually served by construction; the one thing that can't be derived this
+    # way is whether "gpt-6-astra" still exists in CLIPROXY_MODELS at all.
+    astra_alias_target = exposed_name(Provider.CHATGPT, shape_for("openai", "responses"), "gpt-6-astra")
+    assert astra_alias_target in {entry["model_name"] for entry in model_list}, astra_alias_target
     return {
-        "model_list": [
-            *_ollama_entries(),
-            *_tana_entries(),
-            *_cliproxy_entries(),
-            *_anthropic_entries(),
-            *_simple_provider_entries(),
-        ],
+        "model_list": model_list,
         "litellm_settings": {
             "drop_params": True,
             "callbacks": ["langfuse_otel", "prometheus"],
@@ -358,12 +366,7 @@ def main_proxy_config() -> dict:
             # Codex 0.153+ bundles metadata for this exact slug (272k base / 872k
             # configurable maximum). Keep the alias hidden so Codex can select the
             # recognized slug while requests still use the Responses-only route above.
-            "model_group_alias": {
-                "gpt-6-astra": {
-                    "model": exposed_name(Provider.CHATGPT, ApiShape.OAI_RESPONSES, "gpt-6-astra"),
-                    "hidden": True,
-                }
-            }
+            "model_group_alias": {"gpt-6-astra": {"model": astra_alias_target, "hidden": True}}
         },
         "general_settings": {
             # Forward the client's `anthropic-beta` and `x-*` headers upstream -- never

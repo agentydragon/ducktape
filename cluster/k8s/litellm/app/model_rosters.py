@@ -95,6 +95,48 @@ def exposed_name(provider: Provider, shape: ApiShape, model: str) -> str:
     return f"{provider}/{shape}/{model}"
 
 
+_SHAPE_MODE: dict[ApiShape, str] = {
+    ApiShape.ANT_MESSAGES: "chat",
+    ApiShape.OAI_CHAT: "chat",
+    ApiShape.OAI_RESPONSES: "responses",
+    ApiShape.GOOG_GENERATE: "chat",
+    ApiShape.GOOG_EMBED: "embedding",
+    ApiShape.OLM_CHAT: "chat",
+    ApiShape.OLM_EMBED: "embedding",
+}
+
+
+def shape_mode(shape: ApiShape) -> str:
+    """The LiteLLM `model_info.mode` this wire shape always implies."""
+    return _SHAPE_MODE[shape]
+
+
+# The upstream account/API family that speaks each definer -- several upstream prefixes
+# can share one definer (openai/mistral/groq all speak "oai"), so a shape's definer
+# can't be derived from the shape alone; it has to come from here.
+_UPSTREAM_DEFINER: dict[str, str] = {
+    "anthropic": "ant",
+    "openai": "oai",
+    "mistral": "oai",  # OpenAI-compatible chat at api.mistral.ai
+    "groq": "oai",  # OpenAI-compatible chat at api.groq.com/openai/v1
+    "gemini": "goog",
+    "ollama": "olm",
+    # The in-process Tana adapter speaks Anthropic Messages on the wire while using its
+    # own LiteLLM provider prefix for dispatch.
+    "tana": "ant",
+}
+
+
+def shape_for(upstream_prefix: str, protocol: str) -> ApiShape:
+    """The wire shape for this upstream account and protocol.
+
+    Deriving the shape this way -- rather than a call site naming `shape` and
+    `upstream_prefix` as two independent values -- makes it structurally impossible to
+    pick a shape whose definer disagrees with the upstream it's actually calling.
+    """
+    return ApiShape(f"{_UPSTREAM_DEFINER[upstream_prefix]}-{protocol}")
+
+
 # ChatGPT/Codex-subscription models behind CLIProxyAPI, exposed on both wire surfaces
 # for clients that need them. OpenClaw uses the Responses surface below because it is
 # the working native passthrough to CLIProxyAPI.

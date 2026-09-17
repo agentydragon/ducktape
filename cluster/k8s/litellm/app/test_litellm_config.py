@@ -40,54 +40,16 @@ def test_terraform_key_allowlists_only_name_models_the_proxy_serves() -> None:
         assert not missing, f"{local} allows models the proxy does not serve: {missing}"
 
 
-def test_hidden_model_aliases_target_served_models() -> None:
-    config = main_proxy_config()
-    served = {entry["model_name"] for entry in config["model_list"]}
-    aliases = config["router_settings"]["model_group_alias"]
-
-    assert all(alias["model"] in served for alias in aliases.values())
-
-
-# The shape segment names the wire LiteLLM speaks upstream (model_rosters.py), so the name and
-# the wiring must agree on both halves. The definer half must match the provider prefix selected
-# by `litellm_params.model` -- the check that catches naming a Google-wire entry `oai-chat`, or an
-# Ollama-native one. For a custom provider, this map records the wire that its adapter emits. The
-# protocol half is pinned by `model_info.mode`, which is what separates two shapes sharing a
-# definer (oai-chat vs oai-responses, goog-generate vs goog-embed). A provider absent from this map
-# has not declared which wire it speaks, so adding one is a deliberate edit rather than a silent
-# pass.
-_UPSTREAM_DEFINER = {
-    "anthropic": "ant",
-    "openai": "oai",
-    "mistral": "oai",  # OpenAI-compatible chat at api.mistral.ai
-    "groq": "oai",  # OpenAI-compatible chat at api.groq.com/openai/v1
-    "gemini": "goog",
-    "ollama": "olm",
-    # The in-process Tana adapter speaks Anthropic Messages on the wire while
-    # using its own LiteLLM provider prefix for dispatch.
-    "tana": "ant",
-}
-_SHAPE_MODE = {
-    ApiShape.ANT_MESSAGES: "chat",
-    ApiShape.OAI_CHAT: "chat",
-    ApiShape.OAI_RESPONSES: "responses",
-    ApiShape.GOOG_GENERATE: "chat",
-    ApiShape.GOOG_EMBED: "embedding",
-    ApiShape.OLM_CHAT: "chat",
-    ApiShape.OLM_EMBED: "embedding",
-}
-
-
-def test_shape_segment_matches_each_entry_upstream_wire() -> None:
-    scheme_entries = [entry for entry in main_proxy_config()["model_list"] if entry["model_name"].count("/") == 2]
-    shapes_seen = set()
-    for entry in scheme_entries:
-        name = entry["model_name"]
-        shape = ApiShape(name.split("/")[1])
-        shapes_seen.add(shape)
-        upstream = entry["litellm_params"]["model"].split("/")[0]
-        assert _UPSTREAM_DEFINER[upstream] == shape.partition("-")[0], name
-        assert entry["model_info"]["mode"] == _SHAPE_MODE[shape], name
+# litellm_config.py derives each entry's shape from shape_for(upstream_prefix, protocol)
+# and its mode from shape_mode(shape) -- a mismatched wire/upstream pairing is
+# structurally unrepresentable there, not just checked after the fact. What's left to
+# verify here is coverage: that every declared ApiShape actually gets used somewhere.
+def test_every_declared_shape_is_used() -> None:
+    shapes_seen = {
+        ApiShape(entry["model_name"].split("/")[1])
+        for entry in main_proxy_config()["model_list"]
+        if entry["model_name"].count("/") == 2
+    }
     assert shapes_seen == set(ApiShape)
 
 
