@@ -1,10 +1,9 @@
 # Plan: cdk8s adoption for cluster manifests
 
-**Status**: phase 1 landed. `cluster/k8s/litellm/app`,
-`cluster/k8s/agents/ha-mcp/credentials`, and `cluster/k8s/agents/ha-mcp/app` are fully
-cdk8s-generated and committed. How the current system works (conventions, mechanisms,
-constraints) is documented in <../cdk8s.md>, not here — this file holds only what's
-still undecided or unbuilt.
+**Status**: phase 1 landed. `cluster/k8s/litellm/app` and `cluster/k8s/agents/ha-mcp/app`
+are fully cdk8s-generated and committed. How the current system works (conventions,
+mechanisms, constraints) is documented in <../cdk8s.md>, not here — this file holds
+only what's still undecided or unbuilt.
 
 ## Where to convert next
 

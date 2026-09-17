@@ -418,7 +418,7 @@ reconcile recreates and re-runs it — recovery without a human. Change-driven s
 (the `readonly-role` GRANT Jobs) deliberately do **not**: a TTL there would convert a
 run-on-change script into a run-on-schedule one. Those stay on the manual recovery above.
 Rationale lives next to the Jobs themselves — see
-<../k8s/agents/ha-mcp/credentials/job.yaml> and
+`HaMcpCredentialsProvisioner._add_job` in <../cdk8s/ha_mcp_constructs.py> and
 <../k8s/study-casino/db/readonly-role-provisioner-job.yaml>.
 
 ## Removing a CRD Operator (Uninstall Runbook)

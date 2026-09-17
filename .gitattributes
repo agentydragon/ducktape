@@ -44,10 +44,6 @@ gotk-sync.yaml linguist-generated=true
 cluster/k8s/**/*.k8s.yaml linguist-generated=true
 cluster/k8s/litellm/app/flux-kustomization.yaml linguist-generated=true
 cluster/k8s/litellm/app/kustomization.yaml linguist-generated=true
-cluster/k8s/agents/ha-mcp/namespace/flux-kustomization.yaml linguist-generated=true
-cluster/k8s/agents/ha-mcp/namespace/kustomization.yaml linguist-generated=true
-cluster/k8s/agents/ha-mcp/credentials/flux-kustomization.yaml linguist-generated=true
-cluster/k8s/agents/ha-mcp/credentials/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/ha-mcp/app/flux-kustomization.yaml linguist-generated=true
 cluster/k8s/agents/ha-mcp/app/kustomization.yaml linguist-generated=true
 

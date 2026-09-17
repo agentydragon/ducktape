@@ -76,8 +76,6 @@ resources:
   - agents/osm-mcp/flux-kustomization.yaml
   - agents/plaid-mcp/flux-kustomization.yaml
   - agents/postscanmail-mcp/app/flux-kustomization.yaml
-  - agents/ha-mcp/namespace/flux-kustomization.yaml
-  - agents/ha-mcp/credentials/flux-kustomization.yaml
   - agents/ha-mcp/app/flux-kustomization.yaml
   - home-assistant/flux-kustomization.yaml
   - agents/mitmproxy-namespace/flux-kustomization.yaml

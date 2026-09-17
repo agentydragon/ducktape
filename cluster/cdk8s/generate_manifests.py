@@ -10,8 +10,7 @@ cluster/docs/cdk8s.md.
 
 from pathlib import Path
 
-from cdk8s import ApiObjectMetadata, App, Chart, Yaml
-from cdk8s_plus_33 import Namespace
+from cdk8s import App, Chart, Yaml
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
     KustomizationSpecDecryption,
@@ -24,15 +23,12 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 )
 
 from cluster.cdk8s.flux_constructs import NAMESPACE, flux_kustomization, kustomize_kustomization
-from cluster.cdk8s.ha_mcp_app_constructs import HaMcpApp
-from cluster.cdk8s.ha_mcp_credentials_constructs import HaMcpCredentialsProvisioner
+from cluster.cdk8s.ha_mcp_constructs import HaMcp
 from cluster.cdk8s.litellm_constructs import LiteLLMProxy, LiteLLMServiceMonitor, proxy_specs
 from util.bazel.workspace import get_build_workspace_directory
 
 _LITELLM_APP_DIR = "cluster/k8s/litellm/app"
-_HA_MCP_NAMESPACE_DIR = "cluster/k8s/agents/ha-mcp/namespace"
-_HA_MCP_CREDENTIALS_DIR = "cluster/k8s/agents/ha-mcp/credentials"
-_HA_MCP_APP_DIR = "cluster/k8s/agents/ha-mcp/app"
+_HA_MCP_DIR = "cluster/k8s/agents/ha-mcp/app"
 
 
 def _write_yaml(path: Path, manifest: dict[str, object]) -> None:
@@ -88,47 +84,13 @@ def _generate_litellm_app(root: Path) -> None:
     )
 
 
-def _generate_ha_mcp_namespace(root: Path) -> None:
-    name = "ha-mcp-namespace"
-    app_dir = root / _HA_MCP_NAMESPACE_DIR
+def _generate_ha_mcp(root: Path) -> None:
+    name = "ha-mcp"
+    app_dir = root / _HA_MCP_DIR
     app_dir.mkdir(parents=True, exist_ok=True)
     app = App(outdir=str(app_dir))
     chart = Chart(app, name, disable_resource_name_hashes=True)
-    Namespace(
-        chart,
-        "namespace",
-        metadata=ApiObjectMetadata(
-            name="ha-mcp", labels={"app.kubernetes.io/name": "ha-mcp", "goldilocks.fairwinds.com/enabled": "false"}
-        ),
-    )
-    app.synth()
-
-    _write_yaml(
-        app_dir / "flux-kustomization.yaml",
-        flux_kustomization(
-            name,
-            spec=KustomizationSpec(
-                retry_interval="1m",
-                interval="10m",
-                path=f"./{_HA_MCP_NAMESPACE_DIR}",
-                prune=True,
-                wait=True,
-                source_ref=KustomizationSpecSourceRef(
-                    kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace=NAMESPACE
-                ),
-            ),
-        ),
-    )
-    _write_yaml(app_dir / "kustomization.yaml", kustomize_kustomization(resources=[f"{name}.k8s.yaml"]))
-
-
-def _generate_ha_mcp_credentials(root: Path) -> None:
-    name = "ha-mcp-credentials"
-    app_dir = root / _HA_MCP_CREDENTIALS_DIR
-    app_dir.mkdir(parents=True, exist_ok=True)
-    app = App(outdir=str(app_dir))
-    chart = Chart(app, name, disable_resource_name_hashes=True)
-    HaMcpCredentialsProvisioner(chart, "provisioner")
+    HaMcp(chart, "ha-mcp")
     app.synth()
 
     _write_yaml(
@@ -142,54 +104,14 @@ def _generate_ha_mcp_credentials(root: Path) -> None:
                 source_ref=KustomizationSpecSourceRef(
                     kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace=NAMESPACE
                 ),
-                path=f"./{_HA_MCP_CREDENTIALS_DIR}",
+                path=f"./{_HA_MCP_DIR}",
                 prune=True,
                 wait=True,
                 health_checks=[
                     KustomizationSpecHealthChecks(
                         api_version="batch/v1", kind="Job", name="ha-mcp-token-provisioner", namespace="home-assistant"
-                    )
-                ],
-                depends_on=[
-                    KustomizationSpecDependsOn(name=dep)
-                    for dep in ("external-secrets-config", "forgejo-images", "home-assistant", "ha-mcp-namespace")
-                ],
-            ),
-        ),
-    )
-    _write_yaml(
-        app_dir / "kustomization.yaml",
-        kustomize_kustomization(resources=[f"{name}.k8s.yaml"], components=["./image-pins"]),
-    )
-
-
-def _generate_ha_mcp_app(root: Path) -> None:
-    name = "ha-mcp"
-    app_dir = root / _HA_MCP_APP_DIR
-    app_dir.mkdir(parents=True, exist_ok=True)
-    app = App(outdir=str(app_dir))
-    chart = Chart(app, name, disable_resource_name_hashes=True)
-    HaMcpApp(chart, "app")
-    app.synth()
-
-    _write_yaml(
-        app_dir / "flux-kustomization.yaml",
-        flux_kustomization(
-            name,
-            spec=KustomizationSpec(
-                retry_interval="1m",
-                interval="10m",
-                timeout="5m",
-                source_ref=KustomizationSpecSourceRef(
-                    kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=name, namespace=NAMESPACE
-                ),
-                path=f"./{_HA_MCP_APP_DIR}",
-                prune=True,
-                wait=True,
-                health_checks=[
-                    KustomizationSpecHealthChecks(
-                        api_version="apps/v1", kind="Deployment", name=name, namespace="ha-mcp"
-                    )
+                    ),
+                    KustomizationSpecHealthChecks(api_version="apps/v1", kind="Deployment", name=name, namespace=name),
                 ],
                 # bearer.sops.yaml (hand-written, stays alongside this generated output --
                 # see cluster/docs/cdk8s.md) is SOPS-encrypted; without this Flux applies the
@@ -203,7 +125,7 @@ def _generate_ha_mcp_app(root: Path) -> None:
                     for dep in (
                         "external-secrets-config",
                         "forgejo-images",
-                        "ha-mcp-namespace",
+                        "home-assistant",
                         "monitoring-crds",  # the ServiceMonitor CRD
                     )
                 ],
@@ -221,9 +143,7 @@ def _generate_ha_mcp_app(root: Path) -> None:
 def generate_manifests(root: Path) -> None:
     """Write every converted directory's generated manifests under `root`."""
     _generate_litellm_app(root)
-    _generate_ha_mcp_namespace(root)
-    _generate_ha_mcp_credentials(root)
-    _generate_ha_mcp_app(root)
+    _generate_ha_mcp(root)
 
 
 def main() -> None:

@@ -286,7 +286,8 @@ directly. Two examples below: `Deployment`'s `topologySpreadConstraints` and `Ro
     convention, adopted rather than fought.
 
 - **Job/CronJob/Role/RoleBinding/ServiceAccount**
-  (`cluster/cdk8s/ha_mcp_credentials_constructs.py`) are core/RBAC types, so like
+  (`cluster/cdk8s/ha_mcp_constructs.py`'s `HaMcpCredentialsProvisioner`) are core/RBAC
+  types, so like
   Deployment/Service/ServiceAccount above they come from `cdk8s_plus_33`'s fluent
   builders, with two more wrinkles:
   - `cdk8s_plus_33`'s `RolePolicyRule` has no `resourceNames` field, so a `Role`
@@ -308,9 +309,9 @@ directly. Two examples below: `Deployment`'s `topologySpreadConstraints` and `Ro
     `docker_registry_auth=Secret.from_secret_name(...)` on the `Job`/`CronJob`
     itself, not `imagePullSecrets` on the `ServiceAccount`.
 
-- **`ha-mcp/app`** (`cluster/cdk8s/ha_mcp_app_constructs.py`) is a multi-container
-  Deployment plus a CiliumNetworkPolicy and a hand-written SOPS secret in the same
-  directory — three more wrinkles:
+- **`ha-mcp/app`** (`cluster/cdk8s/ha_mcp_constructs.py`'s `HaMcpApp`) is a
+  multi-container Deployment plus a CiliumNetworkPolicy and a hand-written SOPS secret
+  in the same directory — three more wrinkles:
   - **`add_container`'s `env_from` takes `cdk8s_plus_33.EnvFrom` wrapper objects, not
     the `IConfigMap`/`ISecret` directly** — `env_from=[EnvFrom(config_map=config_map)]`,
     not `env_from=[config_map]`. The type error is clear (`typeguard` rejects the plain
@@ -329,10 +330,13 @@ directly. Two examples below: `Deployment`'s `topologySpreadConstraints` and `Ro
 
 ## Reference example
 
-`cluster/k8s/litellm/app`, `cluster/k8s/agents/ha-mcp/credentials`, and
-`cluster/k8s/agents/ha-mcp/app` are the converted directories so far: every file in
-each is generated except `image-pins/kustomization.yaml` and, in `ha-mcp/app`,
-`bearer.sops.yaml` (§SOPS secrets in a converted directory, above).
+`cluster/k8s/litellm/app` and `cluster/k8s/agents/ha-mcp/app` are the converted
+directories so far: every file in each is generated except
+`image-pins/kustomization.yaml` and, in `ha-mcp/app`, `bearer.sops.yaml` (§SOPS
+secrets in a converted directory, above). `ha-mcp/app` also shows that a converted
+directory has no need to mirror a hand-written tree's Namespace/credentials/app
+directory split — cdk8s generates all of it, so its Namespace, RBAC/Job/CronJob, and
+Deployment/Service/ConfigMap live in one Kustomization and one Python module.
 
 ## Regenerating locally
 

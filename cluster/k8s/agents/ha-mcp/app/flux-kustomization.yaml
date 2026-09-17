@@ -11,9 +11,13 @@ spec:
   dependsOn:
     - name: external-secrets-config
     - name: forgejo-images
-    - name: ha-mcp-namespace
+    - name: home-assistant
     - name: monitoring-crds
   healthChecks:
+    - apiVersion: batch/v1
+      kind: Job
+      name: ha-mcp-token-provisioner
+      namespace: home-assistant
     - apiVersion: apps/v1
       kind: Deployment
       name: ha-mcp

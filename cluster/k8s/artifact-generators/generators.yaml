@@ -426,14 +426,6 @@ spec:
           exclude:
             - flux-kustomization.yaml
 
-    - name: ha-mcp-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/ha-mcp/namespace/**"
-          to: "@artifact/cluster/k8s/agents/ha-mcp/namespace/"
-          exclude:
-            - flux-kustomization.yaml
-
     - name: haku-egress-proxy
       originRevision: "@repo"
       copy:
@@ -707,14 +699,6 @@ spec:
       copy:
         - from: "@repo/cluster/k8s/agents/ha-mcp/app/**"
           to: "@artifact/cluster/k8s/agents/ha-mcp/app/"
-          exclude:
-            - flux-kustomization.yaml
-
-    - name: ha-mcp-credentials
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/ha-mcp/credentials/**"
-          to: "@artifact/cluster/k8s/agents/ha-mcp/credentials/"
           exclude:
             - flux-kustomization.yaml
 
