@@ -11,7 +11,7 @@ from pathlib import Path
 
 from cdk8s import App, Chart, Yaml
 
-from cluster.flux_constructs import FluxDependency, FluxKustomizationSpec, flux_kustomization, kustomize_kustomization
+from cluster.flux_constructs import FluxKustomizationSpec, flux_kustomization, kustomize_kustomization
 from cluster.litellm_constructs import LiteLLMProxy, LiteLLMServiceMonitor, proxy_specs
 from util.bazel.workspace import get_build_workspace_directory
 
@@ -43,18 +43,18 @@ def generate_manifests(root: Path) -> None:
                 interval="10m",
                 timeout="10m",
                 depends_on=(
-                    FluxDependency("external-secrets-config"),
-                    FluxDependency("forgejo-images"),
-                    FluxDependency("litellm-secrets"),
-                    FluxDependency("litellm-db"),
-                    FluxDependency("gateway"),
-                    FluxDependency("cert-manager-environment"),
-                    FluxDependency("langfuse-secrets"),
-                    FluxDependency("reflector"),
-                    FluxDependency("tana-mcp"),
+                    "external-secrets-config",
+                    "forgejo-images",
+                    "litellm-secrets",
+                    "litellm-db",
+                    "gateway",
+                    "cert-manager-environment",
+                    "langfuse-secrets",
+                    "reflector",
+                    "tana-mcp",
                     # The ServiceMonitor/PodMonitor CRD (folded in from the retired
                     # litellm-servicemonitor Kustomization, #7103).
-                    FluxDependency("monitoring-crds"),
+                    "monitoring-crds",
                 ),
             )
         ),

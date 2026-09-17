@@ -54,9 +54,10 @@ elsewhere.
 per-entry `#` comments explaining _why_ a dependency exists; cdk8s's YAML emission
 does not preserve comments (see §Why cdk8s can't preserve comments). Where a
 dependency's purpose is self-explanatory from its name alone, drop the comment —
-keep the reason as an ordinary Python comment on the generator's `FluxDependency(...)`
-call for whoever edits the generator next. A dependency that genuinely needs its
-rationale visible _in the manifest_ has no answer yet (open question, see the plan).
+keep the reason as an ordinary Python comment next to the generator's `depends_on`
+tuple entry for whoever edits the generator next. A dependency that genuinely needs
+its rationale visible _in the manifest_ has no answer yet (open question, see the
+plan).
 
 ## Mixing with hand-written Flux manifests
 

@@ -34,19 +34,15 @@ _NAMESPACE = "ducktape-flux"
 
 
 @dataclass(frozen=True)
-class FluxDependency:
-    """One `dependsOn` entry. `namespace` defaults to the shared Flux namespace."""
-
-    name: str
-    namespace: str = _NAMESPACE
-
-
-@dataclass(frozen=True)
 class FluxKustomizationSpec:
     name: str
     path: str
     interval: str
-    depends_on: tuple[FluxDependency, ...] = ()
+    # Names of Kustomizations this one depends on. All live in the shared Flux
+    # namespace, same as this one -- KustomizationSpecDependsOn's own `namespace`
+    # already defaults to "the namespace of the resource object that contains the
+    # reference" when omitted, so there's nothing to set explicitly here.
+    depends_on: tuple[str, ...] = ()
     timeout: str | None = None
     source_name: str | None = None  # defaults to `name`
 
@@ -68,8 +64,7 @@ def flux_kustomization(spec: FluxKustomizationSpec) -> dict[str, object]:
                 namespace=_NAMESPACE,
             ),
             timeout=spec.timeout,
-            depends_on=[KustomizationSpecDependsOn(name=dep.name, namespace=dep.namespace) for dep in spec.depends_on]
-            or None,
+            depends_on=[KustomizationSpecDependsOn(name=name) for name in spec.depends_on] or None,
         ),
     )
     (manifest,) = Testing.synth(chart)
