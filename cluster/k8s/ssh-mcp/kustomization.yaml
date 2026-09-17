@@ -5,6 +5,11 @@ resources:
   - deployment.yaml
   - service.yaml
   - networkpolicy.yaml
+  - bearer-eso.yaml
+  - forgejo-images-creds-eso.yaml
+  - keys-atlas.sops.yaml
+  - keys-public-coder-devbox.sops.yaml
+  - keys.sops.yaml
 configMapGenerator:
   - name: ssh-mcp-config
     files:

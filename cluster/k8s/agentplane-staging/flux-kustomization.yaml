@@ -99,5 +99,5 @@ spec:
       namespace: ducktape-flux
     - name: sso-providers-tf
       namespace: ducktape-flux
-    - name: ssh-mcp-secrets
+    - name: ssh-mcp
       namespace: ducktape-flux

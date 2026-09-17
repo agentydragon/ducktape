@@ -151,7 +151,7 @@ def test_ssh_backend_uses_shared_secret_and_requires_agent_approval(monkeypatch:
     )["valueFrom"]["secretKeyRef"]
     source = next(
         r
-        for r in yaml.safe_load_all(get_required_path("_main/cluster/k8s/ssh-mcp/secrets/bearer-eso.yaml").read_text())
+        for r in yaml.safe_load_all(get_required_path("_main/cluster/k8s/ssh-mcp/bearer-eso.yaml").read_text())
         if r["kind"] == "ExternalSecret"
     )
     assert reference["name"] == source["spec"]["target"]["name"]

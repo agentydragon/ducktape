@@ -530,14 +530,6 @@ spec:
           exclude:
             - flux-kustomization.yaml
 
-    - name: ssh-mcp-secrets
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/ssh-mcp/secrets/**"
-          to: "@artifact/cluster/k8s/ssh-mcp/secrets/"
-          exclude:
-            - flux-kustomization.yaml
-
     - name: study-casino-namespace
       originRevision: "@repo"
       copy:

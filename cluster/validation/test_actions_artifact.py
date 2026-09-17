@@ -249,7 +249,6 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         ("seaweedfs-registry-cache-bucket", "seaweedfs/registry-cache-bucket"),
         ("seaweedfs-secrets", "seaweedfs/secrets"),
         ("ssh-mcp", "ssh-mcp"),
-        ("ssh-mcp-secrets", "ssh-mcp/secrets"),
         ("sshpiper-crds", "sshpiper-crds"),
         ("sso-providers-tf", "authentik/sso-providers-tf"),
         ("study-casino-app", "study-casino/app"),
