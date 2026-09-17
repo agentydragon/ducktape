@@ -9,7 +9,6 @@ from typing import Protocol
 
 from x.agentplane.action_service.models import CallerPrincipal, OperatorPrincipal
 from x.agentplane.sandbox_auth.principal import WorkloadPrincipal
-from x.agentplane.subjects import ServiceAccountRef
 
 
 class OperatorAuthenticator(Protocol):
@@ -55,15 +54,5 @@ class ConfiguredOperatorBearerAuthenticator:
         return OperatorPrincipal(issuer="configured-operator", subject=self._subject)
 
 
-def workload_account(principal: WorkloadPrincipal) -> ServiceAccountRef:
-    """The ServiceAccount a workload token proves: the one its Pod runs as.
-
-    Whatever else owns that Pod -- a Sandbox, a Deployment, nothing -- is not the caller. An agent
-    this cluster does not host has no owner to follow, and every sandbox now runs as an account of
-    its own, so following one would only ever have named a subset of callers.
-    """
-    return ServiceAccountRef(namespace=principal.namespace, name=principal.service_account_name)
-
-
 def workload_principal(principal: WorkloadPrincipal) -> CallerPrincipal:
-    return CallerPrincipal(account=workload_account(principal))
+    return CallerPrincipal(account=principal.account)

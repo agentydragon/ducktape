@@ -130,8 +130,12 @@ class TransportDisconnects:
 
 @dataclass(frozen=True, slots=True)
 class Caller:
-    """Who this transport request authenticated as, as `CallerTokenVerifier` verified it: injected
-    into every tool that acts for a caller, never a tool argument."""
+    """Who this transport request authenticated as, injected into every tool that acts for a caller
+    and never a tool argument.
+
+    The same two fields as `CallerToken`, deliberately: that one extends FastMCP's `AccessToken` and
+    so carries the bearer itself, which tool code has no business holding.
+    """
 
     principal: CallerPrincipal
     external_grant: ExternalGrantProvenance | None

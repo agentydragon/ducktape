@@ -41,7 +41,6 @@ from x.agentplane.action_service.models import (
     OperatorPrincipal,
     ProviderOutcome,
     ProviderVerdict,
-    ServiceAccountCaller,
     Verdict,
 )
 from x.agentplane.action_service.policies.resources import parse_binding, parse_policy_set
@@ -299,7 +298,7 @@ async def test_service_preserves_human_approval_and_canonical_external_provenanc
         assert receipt.state is ActionState.ALLOWED
         assert receipt.external_grant == grant.provenance()
         (context,) = provider.contexts
-        assert context.caller == ServiceAccountCaller(service_account=PERSONAL, grant_revision=grant.revision)
+        assert context.caller == PERSONAL
         assert context.bindings == ()
         async with asyncio.timeout(10):
             view = await service.get(receipt.id, grant.principal())

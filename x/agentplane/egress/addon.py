@@ -21,7 +21,7 @@ from mitmproxy.proxy import server_hooks
 
 from x.agentplane.egress.decision_log import DecisionLog
 from x.agentplane.egress.decisions import DecisionRecord, Outcome, Phase
-from x.agentplane.egress.identity import IdentityRejectedError, PodIdentity, PodIdentityVerifier
+from x.agentplane.egress.identity import IdentityRejectedError, PodIdentityVerifier
 from x.agentplane.egress.policy import (
     CONNECT,
     Allowed,
@@ -34,6 +34,7 @@ from x.agentplane.egress.policy import (
     evaluate,
 )
 from x.agentplane.egress.upstream import Pin, UpstreamRefusedError, UpstreamResolver
+from x.agentplane.sandbox_auth.principal import WorkloadPrincipal
 from x.agentplane.subjects import ServiceAccountRef
 
 logger = logging.getLogger(__name__)
@@ -46,7 +47,7 @@ class _AuthenticatedConnection:
     """A bearer associated with a client connection only after successful verification."""
 
     token: str = field(repr=False)
-    identity: PodIdentity
+    identity: WorkloadPrincipal
 
 
 def _refusal(reason: DenyReason) -> http.Response:
@@ -168,8 +169,8 @@ class EgressAddon:
             self._authenticated.pop(client_id, None)
             raise IdentityRejectedError(DenyReason.POD_MISMATCH, "authenticated tunnel identity changed")
         self._authenticated[client_id] = _AuthenticatedConnection(token=token, identity=identity)
-        return identity.subject, AuthenticatedWorkloadContext(
-            bearer=token, caller=identity.subject, pod_uid=identity.pod_uid
+        return identity.account, AuthenticatedWorkloadContext(
+            bearer=token, caller=identity.account, pod_uid=identity.pod_uid
         )
 
     async def _gate(self, flow: http.HTTPFlow) -> None:

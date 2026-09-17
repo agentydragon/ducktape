@@ -60,18 +60,6 @@ def service_account_key(account: ServiceAccountRef) -> NamespacedName:
     return NamespacedName(account.namespace, account.name)
 
 
-class ServiceAccountCaller(BaseModel):
-    """An external Connection acting as a labeled ServiceAccount through one active grant revision."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    service_account: ServiceAccountRef
-    grant_revision: int = Field(ge=1)
-
-    def principal(self) -> CallerPrincipal:
-        return CallerPrincipal(account=self.service_account)
-
-
 class PolicyKind(StrEnum):
     """The `type` of one ActionPolicySet policy; each names one Python evaluator."""
 

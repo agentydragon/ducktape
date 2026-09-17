@@ -21,26 +21,16 @@ from datetime import UTC, datetime
 from kubernetes_asyncio.client import AuthenticationV1Api
 
 from x.agentplane.egress.policy import DenyReason
-from x.agentplane.sandbox_auth.principal import RejectionReason, SandboxPrincipalRejectedError, SandboxPrincipalResolver
-from x.agentplane.subjects import ServiceAccountRef
+from x.agentplane.sandbox_auth.principal import (
+    RejectionReason,
+    SandboxPrincipalRejectedError,
+    SandboxPrincipalResolver,
+    WorkloadPrincipal,
+)
 
 logger = logging.getLogger(__name__)
 
 _CACHE_SWEEP_SIZE = 256
-
-
-@dataclass(frozen=True)
-class PodIdentity:
-    """The Pod a bearer proves, and the ServiceAccount it runs as -- the subject policy binds to."""
-
-    namespace: str
-    pod_name: str
-    pod_uid: str
-    service_account_name: str
-
-    @property
-    def subject(self) -> ServiceAccountRef:
-        return ServiceAccountRef(namespace=self.namespace, name=self.service_account_name)
 
 
 class IdentityRejectedError(Exception):
@@ -53,7 +43,7 @@ class IdentityRejectedError(Exception):
 
 @dataclass(frozen=True)
 class _CachedIdentity:
-    identity: PodIdentity
+    identity: WorkloadPrincipal
     expires_at: float
 
 
@@ -88,7 +78,7 @@ class PodIdentityVerifier:
             authentication=authentication, audience=audience, allowed_service_account_namespaces=namespaces
         )
 
-    async def identify(self, token: str) -> PodIdentity:
+    async def identify(self, token: str) -> WorkloadPrincipal:
         key = hashlib.sha256(token.encode()).hexdigest()
         cached = self._cache.get(key)
         if cached is not None and cached.expires_at > time.monotonic():
@@ -97,7 +87,7 @@ class PodIdentityVerifier:
         self._remember(key, identity, token)
         return identity
 
-    def _remember(self, key: str, identity: PodIdentity, token: str) -> None:
+    def _remember(self, key: str, identity: WorkloadPrincipal, token: str) -> None:
         ttl = self._cache_seconds
         if (expiry := token_expiry(token)) is not None:
             ttl = min(ttl, (expiry - self._clock()).total_seconds())
@@ -108,14 +98,14 @@ class PodIdentityVerifier:
             self._cache = {k: v for k, v in self._cache.items() if v.expires_at > now}
         self._cache[key] = _CachedIdentity(identity=identity, expires_at=now + ttl)
 
-    async def _verify(self, token: str) -> PodIdentity:
+    async def _verify(self, token: str) -> WorkloadPrincipal:
         """Every Pod is its ServiceAccount, whatever else owns it.
 
         Authorization is unaffected by what authenticates: a subject no binding names reaches no
         rule, so this is only ever the question of who is asking.
         """
         try:
-            principal = await self._resolver.resolve_workload(token)
+            return await self._resolver.resolve_workload(token)
         except SandboxPrincipalRejectedError as error:
             # `resolve_workload` reads nothing beyond the TokenReview, so `SANDBOX_UNKNOWN` cannot
             # arrive and has no entry: a KeyError here would mean that stopping point moved.
@@ -124,9 +114,3 @@ class PodIdentityVerifier:
                 RejectionReason.POD_MISMATCH: DenyReason.POD_MISMATCH,
             }[error.reason]
             raise IdentityRejectedError(reason, str(error)) from error
-        return PodIdentity(
-            namespace=principal.namespace,
-            pod_name=principal.pod_name,
-            pod_uid=principal.pod_uid,
-            service_account_name=principal.service_account_name,
-        )

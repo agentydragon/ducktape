@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.middleware.base import RequestResponseEndpoint
 from starlette.routing import Route
 
-from x.agentplane.action_service.auth import OperatorAuthenticator, workload_account
+from x.agentplane.action_service.auth import OperatorAuthenticator
 from x.agentplane.action_service.caller_auth import CallerTokenVerifier
 from x.agentplane.action_service.catalog import (
     ActionCatalog,
@@ -139,7 +139,7 @@ async def _workload(
     Authenticating is not being admitted: without the label an account reaches no route, so a
     workload the operator has not named cannot queue Actions for them either.
     """
-    account = workload_account(await authenticator(request))
+    account = (await authenticator(request)).account
     if not callers.admits(account):
         # Deliberately the authenticator's own generic refusal: which account was presented is not
         # the caller's to learn from the difference.

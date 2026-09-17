@@ -15,13 +15,7 @@ from pydantic import JsonValue
 
 from github_policy.visibility import RepositoryVisibilityService
 from x.agentplane.action_service.catalog import ActionIdentity
-from x.agentplane.action_service.models import (
-    MatchedPolicy,
-    MatchedRepository,
-    PolicyKind,
-    ProviderVerdict,
-    ServiceAccountCaller,
-)
+from x.agentplane.action_service.models import MatchedPolicy, MatchedRepository, PolicyKind, ProviderVerdict
 from x.agentplane.action_service.policies.resources import (
     ActionPolicyBinding,
     ActionPolicySet,
@@ -52,7 +46,7 @@ NAMESPACE = "agentplane-test"
 NOW = datetime(2026, 9, 12, 12, 0, tzinfo=UTC)
 WORKLOAD = ServiceAccountRef(namespace=NAMESPACE, name="workload-1")
 GRANTED = ServiceAccountRef(namespace=NAMESPACE, name="test-caller")
-CALLER = ServiceAccountCaller(service_account=GRANTED, grant_revision=1)
+CALLER = GRANTED
 SCHEMA_POLICY: dict[str, Any] = {
     "type": "argument_schema",
     "actions": {"everything": ["echo"]},
@@ -128,14 +122,7 @@ def test_resolution_takes_unexpired_valid_bindings_naming_the_caller_with_their_
     for_account = resolve_bindings(index, CALLER, NOW)
     assert [resolved.binding.metadata.name for resolved in for_account] == ["b-granted"]
     assert resolve_bindings(index, ServiceAccountRef(namespace="agentplane-other", name=WORKLOAD.name), NOW) == ()
-    assert (
-        resolve_bindings(
-            index,
-            ServiceAccountCaller(service_account=ServiceAccountRef(namespace=NAMESPACE, name="x"), grant_revision=3),
-            NOW,
-        )
-        == ()
-    )
+    assert resolve_bindings(index, ServiceAccountRef(namespace=NAMESPACE, name="x"), NOW) == ()
 
 
 def test_nothing_resolves_before_the_informer_has_synced() -> None:

@@ -60,7 +60,6 @@ py_library(
     srcs = ["auth.py"],
     deps = [
         ":models",
-        "//x/agentplane:subjects",
         "//x/agentplane/sandbox_auth:principal",
     ],
 )
@@ -820,7 +819,6 @@ py_library(
     name = "caller_auth",
     srcs = ["caller_auth.py"],
     deps = [
-        ":auth",
         ":models",
         ":oauth",
         ":policy_informer",

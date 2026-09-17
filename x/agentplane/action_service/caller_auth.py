@@ -27,7 +27,6 @@ from starlette.middleware.authentication import AuthenticationMiddleware
 from starlette.requests import HTTPConnection
 from starlette.responses import JSONResponse, Response
 
-from x.agentplane.action_service.auth import workload_account
 from x.agentplane.action_service.models import CallerPrincipal, ExternalGrantProvenance
 from x.agentplane.action_service.oauth import ActionsOAuthProxy
 from x.agentplane.action_service.policies.resources import CALLER_LABEL
@@ -35,10 +34,6 @@ from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalRejectedError, SandboxPrincipalResolver
 
 logger = logging.getLogger(__name__)
-
-
-def _client_id(principal: CallerPrincipal) -> str:
-    return f"{principal.account.namespace}/{principal.account.name}"
 
 
 class CallerToken(AccessToken):
@@ -91,19 +86,18 @@ class CallerTokenVerifier(TokenVerifier):
         if self._oauth is not None:
             grant = await self._oauth.authenticate(token)
             if grant is not None:
-                principal = grant.principal()
+                provenance = grant.provenance()
                 return CallerToken(
                     token=token,
-                    # FastMCP's own attribution field, so the account as a person reads it.
-                    client_id=_client_id(principal),
+                    client_id=provenance.client_id,
                     scopes=[],
-                    principal=principal,
-                    external_grant=grant.provenance(),
+                    principal=grant.principal(),
+                    external_grant=provenance,
                 )
             if self._oauth.targets_issuer(token):
                 return None
         try:
-            account = workload_account(await self._sandbox.resolve_workload(token))
+            account = (await self._sandbox.resolve_workload(token)).account
         except SandboxPrincipalRejectedError:
             return None
         if not self._callers.admits(account):
@@ -113,9 +107,14 @@ class CallerTokenVerifier(TokenVerifier):
                 "workload bearer refused: %s/%s does not carry %s", account.namespace, account.name, CALLER_LABEL
             )
             return None
-        principal = CallerPrincipal(account=account)
         return CallerToken(
-            token=token, client_id=_client_id(principal), scopes=[], principal=principal, external_grant=None
+            token=token,
+            # FastMCP's field names an OAuth client, and a workload bearer has none. The account is
+            # what a person reading a FastMCP log needs; the authoritative one is `provenance`.
+            client_id=f"{account.namespace}/{account.name}",
+            scopes=[],
+            principal=CallerPrincipal(account=account),
+            external_grant=None,
         )
 
     def get_middleware(self) -> list[Middleware]:

@@ -42,7 +42,6 @@ from x.agentplane.action_service.models import (
     Principal,
     ProviderOutcome,
     ProviderVerdict,
-    ServiceAccountCaller,
     UnknownOutcomeReason,
     Verdict,
 )
@@ -95,16 +94,6 @@ class UnsupportedActionError(Exception):
 
 class InvalidActionArgumentsError(Exception):
     """Arguments do not match the advertised Action schema; nothing was persisted."""
-
-
-def _caller(
-    principal: CallerPrincipal, external_grant: ExternalGrantProvenance | None
-) -> ServiceAccountCaller | ServiceAccountRef:
-    """The typed caller providers see: the grant's ServiceAccount, else the account the bearer
-    proved. Admission already refused any grant a ServiceAccount does not back."""
-    if external_grant is None:
-        return principal.account
-    return ServiceAccountCaller(service_account=external_grant.caller, grant_revision=external_grant.revision)
 
 
 class _StoreBackedLease:
@@ -277,7 +266,7 @@ class ActionService:
         now; defer to the human path on no decisive outcome."""
         if not self._providers:
             return view
-        caller = _caller(principal, external_grant)
+        caller = principal.account
         context = DecisionContext(
             request_id=view.id,
             action=body.action,
@@ -337,7 +326,7 @@ class ActionService:
         self, principal: CallerPrincipal, external_grant: ExternalGrantProvenance | None
     ) -> CallerActionPolicyView:
         """What the caller's own bindings auto-decide, resolved as admission would resolve them now."""
-        return caller_view(self._policies, _caller(principal, external_grant), self._clock())
+        return caller_view(self._policies, principal.account, self._clock())
 
     def target_action_policy(self, subject: ServiceAccountRef) -> CallerActionPolicyView:
         """What a named subject's bindings auto-decide, in the view a caller may see."""

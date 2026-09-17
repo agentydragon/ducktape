@@ -9,6 +9,8 @@ from enum import StrEnum
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import AuthenticationV1Api
 
+from x.agentplane.subjects import ServiceAccountRef
+
 logger = logging.getLogger(__name__)
 
 POD_NAME_CLAIM = "authentication.kubernetes.io/pod-name"
@@ -18,13 +20,20 @@ _SERVICE_ACCOUNT_PREFIX = "system:serviceaccount:"
 
 @dataclass(frozen=True)
 class WorkloadPrincipal:
-    """The Pod-bound ServiceAccount identity a bearer proves, before any ownership requirement."""
+    """The Pod-bound ServiceAccount identity a bearer proves."""
 
     namespace: str
     service_account_name: str
     service_account_subject: str
     pod_name: str
     pod_uid: str
+
+    @property
+    def account(self) -> ServiceAccountRef:
+        """The subject a binding names. Whatever else owns the Pod -- a Sandbox, a Deployment,
+        nothing -- is not the caller: an agent this cluster does not host has no owner to follow,
+        and every sandbox runs as an account of its own, so following one would name a subset."""
+        return ServiceAccountRef(namespace=self.namespace, name=self.service_account_name)
 
 
 class RejectionReason(StrEnum):

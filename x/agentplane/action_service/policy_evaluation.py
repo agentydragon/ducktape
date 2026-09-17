@@ -18,7 +18,6 @@ from x.agentplane.action_service.models import (
     PolicySetEvidence,
     ProviderOutcome,
     ProviderVerdict,
-    ServiceAccountCaller,
 )
 from x.agentplane.action_service.policies.kind import Matched, NotMatched
 from x.agentplane.action_service.policies.registry import evaluate
@@ -34,9 +33,7 @@ NO_MATCH_REASON = "no_auto_approve_match"
 _DESCRIPTION_LIMIT = 500
 
 
-def resolve_bindings(
-    index: PolicyIndex, caller: ServiceAccountCaller | ServiceAccountRef, now: datetime
-) -> tuple[ResolvedBinding, ...]:
+def resolve_bindings(index: PolicyIndex, caller: ServiceAccountRef, now: datetime) -> tuple[ResolvedBinding, ...]:
     """The caller's unexpired, valid bindings in key order, each with the valid sets it names that
     exist; a set it names that is missing or invalid contributes nothing. Nothing before sync.
 
@@ -44,7 +41,7 @@ def resolve_bindings(
     ServiceAccount directly, without a grant."""
     if not index.synced:
         return ()
-    named = caller.service_account if isinstance(caller, ServiceAccountCaller) else caller
+    named = caller
     resolved: list[ResolvedBinding] = []
     for key in sorted(index.bindings):
         binding = index.bindings[key]

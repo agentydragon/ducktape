@@ -5,7 +5,10 @@ package(default_visibility = ["//x/agentplane:__subpackages__"])
 py_library(
     name = "principal",
     srcs = ["principal.py"],
-    deps = ["@pypi//kubernetes_asyncio"],
+    deps = [
+        "//x/agentplane:subjects",
+        "@pypi//kubernetes_asyncio",
+    ],
 )
 
 py_library(

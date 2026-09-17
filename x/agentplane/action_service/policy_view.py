@@ -19,7 +19,7 @@ from typing import Annotated, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-from x.agentplane.action_service.models import NamespacedName, PolicyKind, ServiceAccountCaller
+from x.agentplane.action_service.models import NamespacedName, PolicyKind
 from x.agentplane.action_service.policies.argument_schema import ArgumentSchema
 from x.agentplane.action_service.policies.exact_actions import ExactActions
 from x.agentplane.action_service.policies.github_public_repository import GitHubPublicRepository
@@ -211,14 +211,12 @@ def _effective(
     return auto_approve_if, auto_deny_if, auto_deny_unless
 
 
-def caller_view(
-    index: PolicyIndex, subject: ServiceAccountCaller | ServiceAccountRef, now: datetime
-) -> CallerActionPolicyView:
+def caller_view(index: PolicyIndex, subject: ServiceAccountRef, now: datetime) -> CallerActionPolicyView:
     """The caller-facing view of a subject, from the same bindings admission resolves."""
     bindings = resolve_bindings(index, subject, now)
     auto_approve_if, auto_deny_if, auto_deny_unless = _effective(bindings)
     return CallerActionPolicyView(
-        subject=subject.service_account if isinstance(subject, ServiceAccountCaller) else subject,
+        subject=subject,
         synced=index.synced,
         bindings=[
             CallerBindingView(

@@ -21,9 +21,10 @@ from x.agentplane.egress.conftest import (
     TOKEN_A,
     TOKEN_B,
 )
-from x.agentplane.egress.identity import IdentityRejectedError, PodIdentity, PodIdentityVerifier, token_expiry
+from x.agentplane.egress.identity import IdentityRejectedError, PodIdentityVerifier, token_expiry
 from x.agentplane.egress.policy import DenyReason
 from x.agentplane.egress.testing.fake_apiserver import SANDBOX_NAMESPACE, FakeApiServer, TokenVerdict
+from x.agentplane.sandbox_auth.principal import WorkloadPrincipal
 
 
 @pytest.fixture
@@ -43,10 +44,14 @@ def jwt_with_expiry(expiry: float) -> str:
 
 async def test_a_good_token_is_the_service_account_its_pod_runs_as(verifier: PodIdentityVerifier) -> None:
     identity = await verifier.identify(TOKEN_A)
-    assert identity == PodIdentity(
-        namespace=SANDBOX_NAMESPACE, pod_name=SANDBOX_A, pod_uid=POD_A_UID, service_account_name=SANDBOX_A
+    assert identity == WorkloadPrincipal(
+        namespace=SANDBOX_NAMESPACE,
+        service_account_name=SANDBOX_A,
+        service_account_subject=f"system:serviceaccount:{SANDBOX_NAMESPACE}:{SANDBOX_A}",
+        pod_name=SANDBOX_A,
+        pod_uid=POD_A_UID,
     )
-    assert identity.subject == SUBJECT_A
+    assert identity.account == SUBJECT_A
 
 
 async def test_a_verdict_is_reused_without_reviewing_the_token_again(
@@ -103,7 +108,7 @@ async def test_the_proxy_never_reads_a_pod(fake: FakeApiServer, verifier: PodIde
     fail a test. A replaced or deleted Pod is the API server's to catch, in the TokenReview itself;
     `sandbox_auth` covers that where the object is still read, for the callers that want its owner."""
     del fake.pods[SANDBOX_A]
-    assert (await verifier.identify(TOKEN_A)).subject == SUBJECT_A
+    assert (await verifier.identify(TOKEN_A)).account == SUBJECT_A
     assert fake.pod_reads == 0
 
 
@@ -117,8 +122,12 @@ async def test_pod_no_sandbox_owns_is_still_its_service_account(
         fake.tokens[TOKEN_B], username=f"system:serviceaccount:{SANDBOX_NAMESPACE}:test-workload-sa"
     )
     identity = await verifier.identify(TOKEN_B)
-    assert identity == PodIdentity(
-        namespace=SANDBOX_NAMESPACE, pod_name=SANDBOX_B, pod_uid=POD_B_UID, service_account_name="test-workload-sa"
+    assert identity == WorkloadPrincipal(
+        namespace=SANDBOX_NAMESPACE,
+        service_account_name="test-workload-sa",
+        service_account_subject=f"system:serviceaccount:{SANDBOX_NAMESPACE}:test-workload-sa",
+        pod_name=SANDBOX_B,
+        pod_uid=POD_B_UID,
     )
 
 

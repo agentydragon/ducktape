@@ -21,6 +21,7 @@ py_library(
         ":policy",
         ":upstream",
         "//x/agentplane:subjects",
+        "//x/agentplane/sandbox_auth:principal",
         "@pypi//mitmproxy",
     ],
 )
@@ -52,7 +53,6 @@ py_library(
     srcs = ["identity.py"],
     deps = [
         ":policy",
-        "//x/agentplane:subjects",
         "//x/agentplane/sandbox_auth:principal",
         "@pypi//kubernetes_asyncio",
     ],
@@ -169,6 +169,7 @@ py_test(
         ":policy",
         "//:conftest",
         "//x/agentplane/egress/testing:fake_apiserver",
+        "//x/agentplane/sandbox_auth:principal",
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
