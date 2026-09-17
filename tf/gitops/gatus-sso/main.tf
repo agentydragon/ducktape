@@ -11,11 +11,6 @@ terraform {
       version = "~> 3.0"
     }
   }
-
-  backend "kubernetes" {
-    secret_suffix = "gatus-sso"
-    namespace     = "flux-system"
-  }
 }
 
 data "kubernetes_secret" "authentik_bootstrap" {
