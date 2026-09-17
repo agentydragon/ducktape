@@ -14,6 +14,13 @@ from dataclasses import dataclass, field
 from cdk8s import ApiObject, JsonPatch, Yaml
 from cdk8s_plus_33 import ConfigMap
 from constructs import Construct
+from prometheus_operator_crds.com.coreos.monitoring import (
+    ServiceMonitor,
+    ServiceMonitorSpec,
+    ServiceMonitorSpecEndpoints,
+    ServiceMonitorSpecEndpointsBearerTokenSecret,
+    ServiceMonitorSpecSelector,
+)
 
 from cluster.litellm_config import ConfigMapSpec, proxy_configs
 
@@ -337,24 +344,22 @@ class LiteLLMServiceMonitor(Construct):
 
     def __init__(self, scope: Construct, id: str) -> None:
         super().__init__(scope, id)
-        _api_resource(
+        ServiceMonitor(
             self,
             "servicemonitor",
-            api_version="monitoring.coreos.com/v1",
-            kind="ServiceMonitor",
             metadata=_metadata("litellm", "litellm"),
-            fields={
-                "spec": {
-                    "selector": {"matchLabels": {"app.kubernetes.io/name": "litellm"}},
-                    "endpoints": [
-                        {
-                            "port": "http",
-                            "path": "/metrics",
-                            "interval": "15s",
-                            "scrapeTimeout": "10s",
-                            "bearerTokenSecret": {"name": "litellm-master-key", "key": "api-key"},
-                        }
-                    ],
-                }
-            },
+            spec=ServiceMonitorSpec(
+                selector=ServiceMonitorSpecSelector(match_labels={"app.kubernetes.io/name": "litellm"}),
+                endpoints=[
+                    ServiceMonitorSpecEndpoints(
+                        port="http",
+                        path="/metrics",
+                        interval="15s",
+                        scrape_timeout="10s",
+                        bearer_token_secret=ServiceMonitorSpecEndpointsBearerTokenSecret(
+                            name="litellm-master-key", key="api-key"
+                        ),
+                    )
+                ],
+            ),
         )

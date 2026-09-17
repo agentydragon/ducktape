@@ -168,6 +168,15 @@ versa, a reason this specific problem doesn't move that decision either way.
   types without that conversion effort — the same `alias_generator=to_camel` /
   `populate_by_name` pattern already used elsewhere in this repo for camelCase wire
   models.
+- **The `ServiceMonitor` CR** (`LiteLLMServiceMonitor`) is built from typed
+  constructs the same way as Flux's `Kustomization` —
+  `//third_party/prometheus_operator:servicemonitor` generates bindings from
+  prometheus-operator's own CRD (pinned to the same `v0.94.0` tag as
+  `cluster/k8s/monitoring/crds/gitrepository.yaml`, which tracks
+  kube-prometheus-stack's deployed `appVersion`). Unlike Flux's `Kustomization`, the
+  generated `ServiceMonitor` class is built directly into the real `App`/`Chart`
+  (not a throwaway `Testing` chart) since it's synthesized as part of the normal
+  `generate_manifests.py` run, not extracted as an intermediate dict.
 - **`litellm_constructs.py`'s Deployment/Service/ServiceAccount/HTTPRoute** still go
   through the raw `ApiObject`/`JsonPatch` escape hatch rather than `cdk8s_plus_33`'s
   typed builders (already a dependency, used for `ConfigMap`) — not yet attempted;
