@@ -41,7 +41,8 @@ def relay() -> None:
     # from power-on, before this relay can connect), so the relay only drains
     # the socket to keep the guest from blocking on a full buffer.
     while True:
-        ready, _, _ = select.select([sock, fifo], [], [], 30.0)
+        readers: list[socket.socket | int] = [sock, fifo]
+        ready, _, _ = select.select(readers, [], [], 30.0)
         if sock in ready and not sock.recv(65536):
             return
         if fifo in ready:
