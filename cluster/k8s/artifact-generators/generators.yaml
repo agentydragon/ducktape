@@ -1253,13 +1253,6 @@ spec:
           to: "@artifact/cluster/k8s/github-api-proxy/identity/"
           exclude:
             - flux-kustomization.yaml
-    - name: github-api-proxy-secrets
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/github-api-proxy/secrets/**"
-          to: "@artifact/cluster/k8s/github-api-proxy/secrets/"
-          exclude:
-            - flux-kustomization.yaml
     - name: github-branch-protection
       originRevision: "@repo"
       copy:

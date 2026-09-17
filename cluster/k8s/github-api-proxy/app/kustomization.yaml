@@ -10,6 +10,8 @@ resources:
   - podmonitor.yaml
   - prometheus-rule.yaml
   - service.yaml
+  - wyrm2-credentials.sops.yaml
+  - rugged-credentials.sops.yaml
 configMapGenerator:
   - name: github-api-proxy-config
     files:

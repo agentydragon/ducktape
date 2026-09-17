@@ -50,7 +50,6 @@ resources:
   - infra-drift/flux-kustomization.yaml # plan-only drift watch on cluster/terraform/main
   - kube-api-proxy/flux-kustomization.yaml
   - github-api-proxy/identity/flux-kustomization.yaml
-  - github-api-proxy/secrets/flux-kustomization.yaml
   - github-api-proxy/app/flux-kustomization.yaml
   - docker-ci/flux-kustomization.yaml
   - keda/flux-kustomization.yaml # event-driven autoscaler; presently scoped to haku-ci

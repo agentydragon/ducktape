@@ -114,7 +114,6 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         ("gecko-namespace", "gecko/namespace"),
         ("github-api-proxy", "github-api-proxy/app"),
         ("github-api-proxy-identity", "github-api-proxy/identity"),
-        ("github-api-proxy-secrets", "github-api-proxy/secrets"),
         ("github-branch-protection", "github-branch-protection"),
         ("github-exporter", "github-exporter"),
         ("github-secrets-sync", "github-secrets-sync"),
