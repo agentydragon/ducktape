@@ -21,17 +21,25 @@ llama-cpp.overrideAttrs (old: {
 
   buildInputs = old.buildInputs ++ [
     openvino-npu
+    onetbb
     ocl-icd
     opencl-headers
     opencl-clhpp
   ];
 
-  # openvino-npu's libopenvino.so lives at the non-standard runtime/lib/intel64
-  # (CMake links it there via an imported target's absolute IMPORTED_LOCATION,
-  # not a -L/-l pair), so the generic nixpkgs per-`-L`-flag rpath mechanism that
-  # already covers onetbb never sees it. autoPatchelfHook finds and patches it
-  # in regardless of that layout.
+  # ggml-openvino links openvino::runtime and TBB::tbb via CMake imported
+  # targets' absolute paths, not a -L/-l pair, so the generic nixpkgs
+  # per-`-L`-flag rpath mechanism never sees either -- autoPatchelfHook patches
+  # the rpath in instead, from buildInputs' closures. onetbb's libtbb.so.12
+  # sits at its standard $out/lib, so listing it above is enough; openvino-npu's
+  # libopenvino.so.2612 sits at the non-standard runtime/lib/intel64, outside
+  # autoPatchelfHook's default search paths, so that one extra dir is added
+  # explicitly below.
   nativeBuildInputs = old.nativeBuildInputs ++ [ autoPatchelfHook ];
+
+  preFixup = (old.preFixup or "") + ''
+    addAutoPatchelfSearchPath "${openvino-npu}/runtime/lib/intel64"
+  '';
 
   # ggml/src/ggml-openvino/CMakeLists.txt hardcodes
   # `include("${OpenVINO_DIR}/../3rdparty/tbb/lib/cmake/TBB/TBBConfig.cmake")`,
