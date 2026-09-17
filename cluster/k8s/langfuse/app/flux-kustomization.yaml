@@ -34,3 +34,5 @@ spec:
       namespace: ducktape-flux
     - name: gateway
       namespace: ducktape-flux
+    - name: claude-rbac
+      namespace: ducktape-flux
