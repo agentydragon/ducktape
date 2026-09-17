@@ -7,6 +7,9 @@ spec:
   interval: 1h
   path: ./cluster/k8s/oci-cache/namespace
   prune: false
+  # The Namespace is about to be adopted by the consolidated oci-cache
+  # Kustomization. Orphan it if this owner is removed during that handoff.
+  deletionPolicy: Orphan
   sourceRef:
     kind: ExternalArtifact
     name: oci-cache-namespace
