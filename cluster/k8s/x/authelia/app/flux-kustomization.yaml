@@ -24,8 +24,6 @@ spec:
       namespace: authelia
   timeout: 5m
   dependsOn:
-    - name: authelia-namespace
-      namespace: ducktape-flux
     - name: gateway
       namespace: ducktape-flux
     - name: cert-manager-environment

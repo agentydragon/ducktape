@@ -162,7 +162,6 @@ resources:
   - analytics/grafana/flux-kustomization.yaml
 
   # --- suspended Authelia experiment ---
-  - x/authelia/namespace/flux-kustomization.yaml
   - x/authelia/app/flux-kustomization.yaml
 
   # --- authentik ---

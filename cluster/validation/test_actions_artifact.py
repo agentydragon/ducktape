@@ -53,7 +53,6 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         ("atuin-user-provisioner", "atuin/user-provisioner"),
         ("augur-evidence", "forgejo/augur-evidence"),
         ("authelia-app", "x/authelia/app"),
-        ("authelia-namespace", "x/authelia/namespace"),
         ("authentik", "authentik/app"),
         ("authentik-db", "authentik/db"),
         ("authentik-db-backups", "authentik/db-backups"),

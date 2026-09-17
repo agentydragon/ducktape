@@ -1571,13 +1571,6 @@ spec:
           to: "@artifact/cluster/k8s/x/authelia/app/"
           exclude:
             - flux-kustomization.yaml
-    - name: authelia-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/x/authelia/namespace/**"
-          to: "@artifact/cluster/k8s/x/authelia/namespace/"
-          exclude:
-            - flux-kustomization.yaml
     - name: oci-cache-app
       originRevision: "@repo"
       copy:
