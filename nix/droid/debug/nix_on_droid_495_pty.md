@@ -105,19 +105,50 @@ the AOSP policy source directly: apps get their own pty type via `type_transitio
 on `open()`, and that type's `allowxperm` ioctl range explicitly includes TCGETS.
 That's a real, version-independent policy fact, but the empirical "nothing failed"
 part of that run isn't good evidence given how far it was from the real device —
-treat it as weak, not as a negative result.
+weak evidence about the policy, not about the phone.
 
-A corrected VM attempt (aarch64, an Android version close to 14/kernel 6.1, real
-guest network + proxy CA trust instead of routing around it, running the literal
-`nix-on-droid switch --flake ...#pixel6`) is in progress. See
-`debug/nix_on_droid_495_pty/` for the harness and detailed notes from both attempts.
+Second attempt (aarch64, Google's real Android 14 arm64-v8a system image, SELinux
+enforcing by default, guest proxy/CA trust actually solved rather than routed
+around) got the real kernel booting — `6.1.23-android14-4`, the Pixel 6's own
+generation — but hit two independent, structural blockers before the literal
+`nix-on-droid switch` command could run at all:
+
+1. **init segfaults immediately after the kernel boots.** Root-caused: Google only
+   ships arm64 emulator images for hosts with real ARMv8.5+ CPU behavior (Apple
+   Silicon's HVF); under QEMU's software emulation (TCG) the guest only gets a
+   single ARMv8.0 core with no working multi-core boot path (`psci: no cpu_on
+method`), which nothing in that userspace tolerates. Confirmed by a control: the
+   identical kernel+initrd under a generic `-cpu max` QEMU machine boots init fine
+   and fails cleanly on a missing storage partition instead (needs `lpmake` to build
+   a `super` image — a real but different, tractable problem, not available here).
+2. **This session's own sandbox can't fetch nix-on-droid's other 16 flake inputs.**
+   The egress proxy serves only the git protocol for unattached repos; every
+   tarball/archive endpoint Nix's `github:` fetcher actually uses is 403 for
+   anything except `agentydragon/ducktape`, and `add_repo` can't widen it
+   ("cross-tier adds are not supported"). Verified on the host before spending
+   guest boot time on it. Switching the inputs to `git+https://` would dodge this,
+   but silently stops testing the literal reported command — declined for that
+   reason.
+
+So: still no reproduction, but for two well-understood, external reasons (need real
+ARM hardware/KVM or a working `super.img`; need a session whose GitHub access
+actually covers nix-on-droid's inputs), not because the hypothesis was tested and
+failed. Re-attempting the same approach a third time in this environment isn't
+expected to get further. See `debug/nix_on_droid_495_pty/` (harness + both attempts'
+detailed notes) on branch `debug/nix-on-droid-495-android-vm-repro`.
 
 ## Open on-device checks
 
-Everything reachable from inside nix-on-droid's own restricted app context has now
-been tried (SELinux enforce read, logcat, direct Android binary exec) and hits the
-same wall each time. What's left needs access outside that context:
+Everything reachable from inside nix-on-droid's own restricted app context has been
+tried (SELinux enforce read, logcat, direct Android binary exec) and hits the same
+wall each time. What's left needs either the phone itself doing more than the app's
+restricted shell allows, or access outside that context entirely — all cheaper than
+continuing the VM route:
 
+- Run `scripts/ptytest.c` (from the VM branch's harness) compiled and executed _as
+  the actual nix-on-droid app_ on the phone — replicates Nix's exact
+  `posix_openpt`/fork/`open`/`tcgetattr` sequence with per-step `errno`, separating
+  which syscall fails from which specific failure, directly on the real device.
 - AVC denials via `adb logcat -b all | grep -i avc` from an external computer while
   re-triggering the switch on the phone — sidesteps the in-app exec restrictions
   entirely. Needs a computer to pair/plug the phone into.
