@@ -190,7 +190,7 @@ def test_haku_ci_keda_resources_are_wired_to_the_runner_job(k8s_dir: Path) -> No
     )
     assert keda_release["spec"]["values"]["watchNamespace"] == scaled_job["metadata"]["namespace"]
 
-    token_manifest = yaml.safe_load((k8s_dir / "haku/managed-agent/haku-forgejo-tea.sops.yaml").read_text())
+    token_manifest = yaml.safe_load((k8s_dir / "haku/forgejo-tea/haku-forgejo-tea.sops.yaml").read_text())
     [secret_ref] = auth["spec"]["secretTargetRef"]
     assert secret_ref["name"] == token_manifest["metadata"]["name"]
     assert secret_ref["key"] in token_manifest["stringData"]
