@@ -35,7 +35,9 @@ filegroup(
 # manifests.
 exports_files(
     [
+        "agentplane-staging/agentplane-namespace-rbac.k8s.yaml",
         "agentplane-staging/app/agentplane-app-config.k8s.yaml",
+        "agentplane-testing/agentplane-namespace-rbac.k8s.yaml",
         "agentplane-testing/app/agentplane-app-config.k8s.yaml",
         "agents/haku-openclaw-spike/app/haku-openclaw-spike-config.k8s.yaml",
         "agents/public-coder-agent/app/public-coder-agent-config.k8s.yaml",
@@ -103,7 +105,7 @@ filegroup(
     name = "haku_manifest_contract_files",
     srcs = [
         "activitywatch/activitywatch-read-token.sops.yaml",
-        "agentplane-staging/agent-rbac/rolebinding-agentplane-operator.yaml",
+        "agentplane-staging/agentplane-namespace-rbac.k8s.yaml",
         "agents/agent-rbac-base/clusterrole-agent-readable-namespace-logs.yaml",
         "agents/agent-rbac-base/clusterrole-agent-readable-namespace-metadata.yaml",
         "agents/agent-rbac-base/clusterrole-cluster-diagnostics-reader.yaml",

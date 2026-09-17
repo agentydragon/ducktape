@@ -29,6 +29,7 @@ from cluster.cdk8s import (
     haku_openclaw_spike_config,
     public_coder_agent_config,
 )
+from cluster.cdk8s.agentplane_constructs import AgentplaneAgentRbac, AgentplaneEnvSpec, AgentplaneNamespace
 from cluster.cdk8s.config_format import json5_config, yaml_config
 from cluster.cdk8s.flux_constructs import NAMESPACE, flux_kustomization, kustomize_kustomization
 from cluster.cdk8s.ha_mcp_constructs import HaMcp
@@ -38,8 +39,24 @@ from util.bazel.workspace import get_build_workspace_directory
 
 _LITELLM_APP_DIR = "cluster/k8s/litellm/app"
 _HA_MCP_DIR = "cluster/k8s/agents/ha-mcp/app"
-_AGENTPLANE_TESTING_APP_DIR = "cluster/k8s/agentplane-testing/app"
-_AGENTPLANE_STAGING_APP_DIR = "cluster/k8s/agentplane-staging/app"
+_AGENTPLANE_TESTING_DIR = "cluster/k8s/agentplane-testing"
+_AGENTPLANE_STAGING_DIR = "cluster/k8s/agentplane-staging"
+_AGENTPLANE_TESTING_APP_DIR = f"{_AGENTPLANE_TESTING_DIR}/app"
+_AGENTPLANE_STAGING_APP_DIR = f"{_AGENTPLANE_STAGING_DIR}/app"
+
+_AGENTPLANE_STAGING_SPEC = AgentplaneEnvSpec(
+    namespace="agentplane-staging",
+    description=(
+        "Agentplane staging - sandboxed runner Pods (one per Sandbox) and the integration app that drives them."
+    ),
+)
+_AGENTPLANE_TESTING_SPEC = AgentplaneEnvSpec(
+    namespace="agentplane-testing",
+    description=(
+        "Agentplane testing - sandboxed runner Pods (one per Sandbox) and the integration app that drives them."
+    ),
+    include_action_policy_rule=True,
+)
 _HAKU_OPENCLAW_SPIKE_APP_DIR = "cluster/k8s/agents/haku-openclaw-spike/app"
 _PUBLIC_CODER_AGENT_APP_DIR = "cluster/k8s/agents/public-coder-agent/app"
 
@@ -153,6 +170,21 @@ def _generate_ha_mcp(root: Path) -> None:
     )
 
 
+def _generate_agentplane_namespace_rbac(root: Path, app_dir: str, spec: AgentplaneEnvSpec) -> None:
+    """Synthesize into `app_dir`'s existing, otherwise hand-written top-level
+    Kustomization -- same mixed generated/hand-written pattern as
+    `_write_config_map_chart`, replacing what used to be the `namespace/` and
+    `agent-rbac/` subdirectory Kustomize bases.
+    """
+    out_dir = root / app_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+    app = App(outdir=str(out_dir))
+    chart = Chart(app, "agentplane-namespace-rbac", disable_resource_name_hashes=True)
+    AgentplaneNamespace(chart, "namespace", spec)
+    AgentplaneAgentRbac(chart, "rbac", spec)
+    app.synth()
+
+
 def _write_config_map_chart(
     root: Path, app_dir: str, *, chart_name: str, configmap_name: str, namespace: str, data: dict[str, str]
 ) -> None:
@@ -222,6 +254,8 @@ def generate_manifests(root: Path) -> None:
     """Write every converted directory's generated manifests under `root`."""
     _generate_litellm_app(root)
     _generate_ha_mcp(root)
+    _generate_agentplane_namespace_rbac(root, _AGENTPLANE_STAGING_DIR, _AGENTPLANE_STAGING_SPEC)
+    _generate_agentplane_namespace_rbac(root, _AGENTPLANE_TESTING_DIR, _AGENTPLANE_TESTING_SPEC)
     _generate_agentplane_testing_config(root)
     _generate_agentplane_staging_config(root)
     _generate_haku_openclaw_spike_config(root)

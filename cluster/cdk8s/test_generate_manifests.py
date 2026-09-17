@@ -23,6 +23,8 @@ _GENERATED_FILES = (
     "cluster/k8s/agents/ha-mcp/app/kustomization.yaml",
     "cluster/k8s/agentplane-testing/app/agentplane-app-config.k8s.yaml",
     "cluster/k8s/agentplane-staging/app/agentplane-app-config.k8s.yaml",
+    "cluster/k8s/agentplane-testing/agentplane-namespace-rbac.k8s.yaml",
+    "cluster/k8s/agentplane-staging/agentplane-namespace-rbac.k8s.yaml",
     "cluster/k8s/agents/haku-openclaw-spike/app/haku-openclaw-spike-config.k8s.yaml",
     "cluster/k8s/agents/public-coder-agent/app/public-coder-agent-config.k8s.yaml",
 )

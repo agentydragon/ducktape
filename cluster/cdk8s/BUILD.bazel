@@ -49,6 +49,17 @@ py_library(
 )
 
 py_library(
+    name = "agentplane_constructs",
+    srcs = ["agentplane_constructs.py"],
+    deps = [
+        ":metadata",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_33",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "agentplane_testing_config",
     srcs = ["agentplane_testing_config.py"],
     deps = [
@@ -152,6 +163,7 @@ py_library(
     srcs = ["generate_manifests.py"],
     visibility = ["//visibility:private"],
     deps = [
+        ":agentplane_constructs",
         ":agentplane_staging_config",
         ":agentplane_testing_config",
         ":config_format",
@@ -180,7 +192,9 @@ py_test(
     name = "test_generate_manifests",
     srcs = ["test_generate_manifests.py"],
     data = [
+        "//cluster/k8s:agentplane-staging/agentplane-namespace-rbac.k8s.yaml",
         "//cluster/k8s:agentplane-staging/app/agentplane-app-config.k8s.yaml",
+        "//cluster/k8s:agentplane-testing/agentplane-namespace-rbac.k8s.yaml",
         "//cluster/k8s:agentplane-testing/app/agentplane-app-config.k8s.yaml",
         "//cluster/k8s:agents/haku-openclaw-spike/app/haku-openclaw-spike-config.k8s.yaml",
         "//cluster/k8s:agents/public-coder-agent/app/public-coder-agent-config.k8s.yaml",
