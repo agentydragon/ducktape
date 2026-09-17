@@ -943,20 +943,6 @@ spec:
           to: "@artifact/cluster/k8s/agents/shared-secrets/"
           exclude:
             - flux-kustomization.yaml
-    - name: tana-mcp-facade
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/tana-mcp-facade/**"
-          to: "@artifact/cluster/k8s/agents/tana-mcp-facade/"
-          exclude:
-            - flux-kustomization.yaml
-    - name: tana-mcp-facade-monitoring
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/tana-mcp-facade/monitoring/**"
-          to: "@artifact/cluster/k8s/agents/tana-mcp-facade/monitoring/"
-          exclude:
-            - flux-kustomization.yaml
     - name: aiquota
       originRevision: "@repo"
       copy:

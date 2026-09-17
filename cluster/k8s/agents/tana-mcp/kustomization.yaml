@@ -8,6 +8,13 @@ resources:
   - tana-agentydragon-gmail-com-account-pat.sops.yaml
   - tana-firebase-refresh-token.sops.yaml
   - firebase-resigner-rbac.yaml
+  - facade-configmap.yaml
+  - facade-deployment.yaml
+  - facade-httproute.yaml
+  - facade-service.yaml
+  - facade-valkey-ovh-instance.yaml
+  - facade-servicemonitor.yaml
+  - facade-prometheusrule.yaml
 generatorOptions:
   disableNameSuffixHash: true
 configMapGenerator:
