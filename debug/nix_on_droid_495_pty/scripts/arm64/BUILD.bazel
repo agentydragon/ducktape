@@ -1,0 +1,16 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+py_library(
+    name = "extract_part",
+    srcs = ["extract_part.py"],
+)
+
+py_library(
+    name = "patch_cpu",
+    srcs = ["patch_cpu.py"],
+)
+
+py_library(
+    name = "patch_soundhw",
+    srcs = ["patch_soundhw.py"],
+)
