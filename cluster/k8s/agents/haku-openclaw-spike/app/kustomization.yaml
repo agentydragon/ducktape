@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - forgejo-images-creds-eso.yaml
   - gateway-password-eso.yaml
+  - seaweed.yaml
   - pvc.yaml
   - pvc-v2.yaml
   - deployment.yaml

@@ -22,11 +22,11 @@ spec:
   data:
     - secretKey: AWS_ACCESS_KEY_ID
       remoteRef:
-        key: haku-openclaw-spike-volsync-s3
+        key: haku-openclaw-spike-volsync-s3-credentials
         property: AWS_ACCESS_KEY_ID
     - secretKey: AWS_SECRET_ACCESS_KEY
       remoteRef:
-        key: haku-openclaw-spike-volsync-s3
+        key: haku-openclaw-spike-volsync-s3-credentials
         property: AWS_SECRET_ACCESS_KEY
     - secretKey: RESTIC_PASSWORD
       remoteRef:
