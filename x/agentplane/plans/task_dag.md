@@ -301,7 +301,8 @@ share role definitions without sharing identity;
 Threads inside one Sandbox share its workload authority. Preserve live Sandbox UID/Pod
 attribution in workload authentication. Distinct ServiceAccounts in accepted namespaces
 are already supported by that authenticator; a wholesale identity-model replacement is
-not a prerequisite. Any unification with external-caller identities is a separate decision.
+not a prerequisite. There is nothing left to unify on the policy subject: an external
+caller and a Sandbox already resolve to the same one kind, a ServiceAccount.
 
 The credential path and whether/how Kubernetes RBAC objects represent grants remain
 open under `ACCESS`; their canonical design questions are in
@@ -486,7 +487,7 @@ identify which operation failed. After this diagnostic reaches the proxy, retain
 failure evidence and correlate it with Kubernetes health; this is not an incident repair.
 
 Correlate the path from runner/sidecar through central egress authentication, Kubernetes
-TokenReview/live Pod reads, Agentplane LLM ingress, LiteLLM, and the model backend. Identify
+TokenReview, Agentplane LLM ingress, LiteLLM, and the model backend. Identify
 the first failing hop and distinguish policy denial, identity-service unavailability,
 transport failure, and backend rejection using safe status/correlation evidence. Do not
 log bearer headers or relax the fail-closed identity boundary. Fix the established cause
