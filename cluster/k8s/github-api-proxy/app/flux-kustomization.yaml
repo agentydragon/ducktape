@@ -14,10 +14,14 @@ spec:
     kind: ExternalArtifact
     name: github-api-proxy
     namespace: ducktape-flux
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
   dependsOn:
     - name: external-secrets-config
       namespace: ducktape-flux
-    - name: github-api-proxy-secrets
+    - name: github-api-proxy-identity
       namespace: ducktape-flux
     - name: forgejo-images
       namespace: ducktape-flux
