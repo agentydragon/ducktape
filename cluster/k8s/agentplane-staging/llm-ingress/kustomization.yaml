@@ -3,7 +3,6 @@ kind: Kustomization
 resources:
   - serviceaccount.yaml
   - clusterrole-token-reviewer.yaml
-  - role-pod-reader.yaml
   - deployment.yaml
   - service.yaml
   - networkpolicy.yaml
