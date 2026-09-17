@@ -4,6 +4,10 @@ Wraps `cdk8s import` (cdk8s-cli), which generates jsii-backed constructs the sam
 upstream cdk8s_plus_33 was generated for core Kubernetes types. Unlike the manifest
 files under cluster/k8s (committed because Flux reads them from git), this is a
 compile-time codegen dependency -- outputs are pure build artifacts, never committed.
+
+"Generated bindings load and synthesize under Bazel" is a property of this mechanism,
+not of any one CRD -- proven once by //third_party/flux:test_kustomization_import.
+A caller importing another CRD doesn't need its own copy of that smoke test.
 """
 
 load("@aspect_rules_js//js:defs.bzl", "js_run_binary")
