@@ -96,19 +96,46 @@ generated: the Deployment gets a deliberate placeholder image tag (see
 `_PLACEHOLDER_TAG` in `cluster/cdk8s/litellm_constructs.py`), and a hand-written
 `image-pins/kustomization.yaml` — a Kustomize `Component` the generated
 `kustomization.yaml` references via `components: [./image-pins]` — carries the
-marker and overrides the real tag at `kustomize build` time:
+marker and overrides the real tag at `kustomize build` time via a strategic-merge
+patch on the container's own `image:` field:
 
 ```yaml
 apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
-images:
-  - name: <image>
-    newTag: <tag> # {"$imagepolicy": "<namespace>:<name>"}
+patches:
+  - target:
+      kind: Deployment
+      name: <deployment-name>
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: <deployment-name>
+      spec:
+        template:
+          spec:
+            containers:
+              - name: <container-name>
+                image: <image>:<tag> # {"$imagepolicy": "<namespace>:<name>"}
 ```
 
 **Gotcha**: a `components:` entry must be a _directory_ reference (kustomize looks
 for a `kustomization.yaml` inside it) — `components: [./image-pins.yaml]` fails with
 `must build at directory: ... file is not directory`.
+
+**Gotcha, the expensive one**: the marker must sit on a field that holds the
+_full_ `repository:tag` reference, never a bare tag. Flux's Setters strategy
+doesn't parse the field's meaning — on every write-back it replaces the whole
+marked value with `"<repository>:<newTag>"`, unconditionally. The first version of
+this mechanism put the marker on a kustomize `images:` entry's `newTag:` field
+(which only ever holds a bare tag by kustomize's own schema); the very next
+image-automation-controller pass rewrote it to
+`newTag: <repository>:<repository>:<tag>` — a real incident (2026-09-17: the
+tag hadn't even changed, the marker's field just didn't match Setters' output
+shape), landing `<repository>:<repository>:<tag>` as the live container image
+and taking `litellm` down (`InvalidImageName`). The patch-based `image:` target
+above is the fix, and the reason: that field already holds a full reference, so
+Setters' whole-field rewrite is exactly the update it's supposed to be.
 
 The generator never constructs or reasons about a real image tag; the relevant
 `*Spec.image_name` field is always untagged. A test asserts no _generated_ file ever
