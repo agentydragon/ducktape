@@ -177,7 +177,7 @@ ASTRA_MAX_TOKENS = 128_000
 # Only the probed 5.6 models carry the measured window in the LiteLLM manifest;
 # gpt-5.4/5.5/5.3-codex-spark were never probed and are left without model_info
 # token limits. A newly added 5.6 model must be probed before being added here.
-CODEX_MEASURED_MODELS: list[str] = ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]
+CODEX_MEASURED_MODELS: list[str] = ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"]
 
 # Tana-UI models served by the main LiteLLM proxy's in-process Tana provider. Tana
 # encodes reasoning effort in the
@@ -204,9 +204,7 @@ ANTHROPIC_MODELS: list[str] = ["claude-opus-5", "claude-sonnet-5", "claude-fable
 # proxy's authenticated /v1/models endpoint.
 OPENCLAW_CLIPROXY_MODEL_LIMITS: dict[str, tuple[int, int]] = {
     "gpt-6-astra": (ASTRA_CONTEXT_WINDOW, ASTRA_MAX_TOKENS),
-    "gpt-5.6-luna": (CODEX_CONTEXT_WINDOW, CODEX_MAX_TOKENS),
-    "gpt-5.6-terra": (CODEX_CONTEXT_WINDOW, CODEX_MAX_TOKENS),
-    "gpt-5.6-sol": (CODEX_CONTEXT_WINDOW, CODEX_MAX_TOKENS),
+    **dict.fromkeys(CODEX_MEASURED_MODELS, (CODEX_CONTEXT_WINDOW, CODEX_MAX_TOKENS)),
 }
 OPENCLAW_CODEX_MODELS: list[str] = [
     exposed_name(Provider.CHATGPT, ApiShape.OAI_RESPONSES, model) for model in OPENCLAW_CLIPROXY_MODEL_LIMITS
