@@ -226,7 +226,6 @@ resources:
   - haku/ui-image-webhook/flux-kustomization.yaml # operator-owned Receiver: Forgejo package webhook → reconcile the (Haku-owned) haku-ui ImageRepository
   # --- matrix ---
   - matrix/namespace/flux-kustomization.yaml
-  - matrix/secrets/flux-kustomization.yaml
   - matrix/db/flux-kustomization.yaml
   - matrix/app/flux-kustomization.yaml
   - matrix/user-provisioner/flux-kustomization.yaml
