@@ -1813,13 +1813,6 @@ spec:
           to: "@artifact/cluster/k8s/sshpiper-crds/"
           exclude:
             - flux-kustomization.yaml
-    - name: study-casino-agent-rbac
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/study-casino/agent-rbac/**"
-          to: "@artifact/cluster/k8s/study-casino/agent-rbac/"
-          exclude:
-            - flux-kustomization.yaml
     - name: study-casino-app
       originRevision: "@repo"
       copy:
