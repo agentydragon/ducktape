@@ -222,9 +222,20 @@ oci_image(
     name = "image",
     base = "@debian_trixie_slim_linux_amd64",
     entrypoint = py_image_entrypoint("server_image_bin"),
-    env = py_image_env(binary_name = "server_image_bin"),
+    # CA bundle (//third_party/debian_slim:cacerts): the OAuth/MCP-execution paths (oauth.py,
+    # mcp_executor.py, mcp_linkage.py) resolve to httpx2 via FastMCP 4's OIDCProxy. httpx2
+    # verifies TLS through truststore (OS-native trust store), not bundled certifi roots, so
+    # it needs the same system CA bundle a C git/curl client would. See
+    # docs/distroless_ca_certificates.md.
+    env = py_image_env(
+        binary_name = "server_image_bin",
+        extra_env = {"SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt"},
+    ),
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
-    tars = [":server_layers"],
+    tars = [
+        ":server_layers",
+        "//third_party/debian_slim:cacerts",
+    ],
     user = "1000:1000",
     visibility = ["//visibility:public"],
 )
