@@ -354,7 +354,6 @@ spec:
           exclude:
             - flux-kustomization.yaml
 
-
     - name: public-coder-agent-namespace
       originRevision: "@repo"
       copy:
@@ -711,7 +710,6 @@ spec:
           exclude:
             - flux-kustomization.yaml
 
-
     - name: kubectl-passthrough-mcp
       originRevision: "@repo"
       copy:
@@ -759,7 +757,6 @@ spec:
           to: "@artifact/cluster/k8s/agents/plaid-mcp/"
           exclude:
             - flux-kustomization.yaml
-
 
     - name: public-coder-agent-app
       originRevision: "@repo"
