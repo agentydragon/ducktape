@@ -11,7 +11,7 @@ import httpx
 import pytest
 import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
-from kubernetes_asyncio.client import AuthenticationV1Api, CoreV1Api
+from kubernetes_asyncio.client import AuthenticationV1Api
 
 from x.agentplane.action_service.api import create_app
 from x.agentplane.action_service.auth import (
@@ -40,8 +40,8 @@ from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.principal import (
     POD_NAME_CLAIM,
     POD_UID_CLAIM,
-    SandboxPrincipal,
     SandboxPrincipalResolver,
+    WorkloadPrincipal,
 )
 from x.agentplane.subjects import ServiceAccountRef
 
@@ -52,15 +52,13 @@ TOKEN_A = "opaque-bound-workload-a"
 TOKEN_B = "opaque-bound-workload-b"
 
 
-def principal(label: str) -> SandboxPrincipal:
-    return SandboxPrincipal(
+def principal(label: str) -> WorkloadPrincipal:
+    return WorkloadPrincipal(
         namespace=NAMESPACE,
         service_account_name="agentplane-runner",
         service_account_subject=SUBJECT,
         pod_name=f"sandbox-{label}-pod",
         pod_uid=f"pod-{label}-uid",
-        sandbox_name=f"sandbox-{label}",
-        sandbox_uid=f"sandbox-{label}-uid",
     )
 
 
@@ -68,7 +66,7 @@ PRINCIPAL_A = principal("a")
 PRINCIPAL_B = principal("b")
 
 
-def review(token: str, resolved: SandboxPrincipal, *, audience: str = AUDIENCE) -> k8s_client.V1TokenReview:
+def review(token: str, resolved: WorkloadPrincipal, *, audience: str = AUDIENCE) -> k8s_client.V1TokenReview:
     return k8s_client.V1TokenReview(
         spec=k8s_client.V1TokenReviewSpec(token=token, audiences=[AUDIENCE]),
         status=k8s_client.V1TokenReviewStatus(
@@ -79,25 +77,6 @@ def review(token: str, resolved: SandboxPrincipal, *, audience: str = AUDIENCE) 
                 extra={POD_NAME_CLAIM: [resolved.pod_name], POD_UID_CLAIM: [resolved.pod_uid]},
             ),
         ),
-    )
-
-
-def pod(resolved: SandboxPrincipal) -> k8s_client.V1Pod:
-    return k8s_client.V1Pod(
-        metadata=k8s_client.V1ObjectMeta(
-            namespace=resolved.namespace,
-            name=resolved.pod_name,
-            uid=resolved.pod_uid,
-            owner_references=[
-                k8s_client.V1OwnerReference(
-                    api_version="agents.x-k8s.io/v1beta1",
-                    kind="Sandbox",
-                    name=resolved.sandbox_name,
-                    uid=resolved.sandbox_uid,
-                    controller=True,
-                )
-            ],
-        )
     )
 
 
@@ -116,19 +95,10 @@ class FakeAuthenticationApi:
         )
 
 
-class FakeCoreApi:
-    def __init__(self) -> None:
-        self.pods = {(p.namespace, p.pod_name): pod(p) for p in (PRINCIPAL_A, PRINCIPAL_B)}
-
-    async def read_namespaced_pod(self, name: str, namespace: str) -> k8s_client.V1Pod:
-        return self.pods[(namespace, name)]
-
-
 def workload_resolver() -> tuple[SandboxPrincipalResolver, FakeAuthenticationApi]:
     authentication = FakeAuthenticationApi()
     resolver = SandboxPrincipalResolver(
         authentication=cast(AuthenticationV1Api, authentication),
-        core_v1=cast(CoreV1Api, FakeCoreApi()),
         audience=AUDIENCE,
         allowed_service_account_namespaces=frozenset({NAMESPACE}),
     )
@@ -185,13 +155,13 @@ class FakeCentralProxy(httpx.AsyncBaseTransport):
         await self._upstream.aclose()
 
 
-async def test_same_service_account_pods_resolve_two_sandbox_principals() -> None:
+async def test_same_service_account_pods_are_one_caller_from_two_bearers() -> None:
     resolver, authentication = workload_resolver()
 
-    first, second = await resolver.resolve(TOKEN_A), await resolver.resolve(TOKEN_B)
+    first, second = await resolver.resolve_workload(TOKEN_A), await resolver.resolve_workload(TOKEN_B)
 
     assert first.service_account_subject == second.service_account_subject == SUBJECT
-    assert (first.pod_uid, first.sandbox_uid) != (second.pod_uid, second.sandbox_uid)
+    assert first.pod_uid != second.pod_uid
     assert authentication.seen_tokens == [TOKEN_A, TOKEN_B]
 
 
@@ -213,7 +183,7 @@ async def test_central_placeholder_replay_is_required_before_action_service_auth
         title="test title for central-replay",
         action=ActionIdentity(group="agentplane", name="echo"),
         arguments={"text": "hello"},
-        origin={"sandbox_id": PRINCIPAL_B.sandbox_uid, "thread_id": "untrusted"},
+        origin={"sandbox_id": "forged-sandbox-uid", "thread_id": "untrusted"},
     )
 
     proxy = FakeCentralProxy(app, TOKEN_A)

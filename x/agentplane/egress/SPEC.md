@@ -11,12 +11,14 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
   inner requests inherit the tunnel's authenticated context. The proxy strips the hop header and
   retains its bearer only after successful verification; malformed or rejected replacement headers
   clear earlier connection context rather than falling back to it.
-- The token is proven by TokenReview against that audience. The Pod it is bound to is read live:
-  its UID must equal the token's and its address must equal the connection's source. The subject is
-  the ServiceAccount the Pod runs as, whatever else owns the Pod. Authenticating a workload is not
-  admitting it: a subject no binding names reaches no rule.
-- A verdict is cached for at most the token's remaining life, bounded by a configured limit; the
-  source-address check runs on every request regardless.
+- The token is proven by TokenReview against that audience, which names the Pod the API server
+  bound it to; a deleted or replaced Pod fails there. The subject is the ServiceAccount the Pod runs
+  as, whatever else owns the Pod. Authenticating a workload is not admitting it: a subject no
+  binding names reaches no rule.
+- The connection's source address is not checked. A token copied out of its Pod and presented from
+  elsewhere in the cluster is accepted for as long as it is valid, and is refused the same rules as
+  the Pod it was taken from.
+- A verdict is cached for at most the token's remaining life, bounded by a configured limit.
 
 ## Decision
 
@@ -123,8 +125,7 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
   same resources, never a participant: no part of a decision passes through it, so an app that is
   down or broken changes nothing about what a sandbox may reach.
 - The proxy watches policies, bindings and credentials in its one configured rules namespace, and
-  Secrets in the credentials namespace; a caller's Pod is read live rather than watched, in
-  whichever of the configured workload namespaces the bearer named. The rules namespace may be one
+  Secrets in the credentials namespace; it reads no Pods at all, in any namespace. The rules namespace may be one
   of the workload namespaces, and in both deployments it is the only one; the credentials namespace
   is separate, so a workload is never in a namespace holding the Secrets the proxy substitutes. The proxy's picture is kept equal to the API server's, and a
   rotated Secret is substituted from the next request on without a restart. An authenticated

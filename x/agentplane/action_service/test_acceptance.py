@@ -42,25 +42,23 @@ from x.agentplane.action_service.test_fixtures.callers import admitted_callers
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.principal import (
     RejectionReason,
-    SandboxPrincipal,
     SandboxPrincipalRejectedError,
     SandboxPrincipalResolver,
+    WorkloadPrincipal,
 )
 from x.agentplane.subjects import ServiceAccountRef
 
 NAMESPACE = "agentplane-staging"
 
 
-def _sandbox(label: str) -> SandboxPrincipal:
+def _sandbox(label: str) -> WorkloadPrincipal:
     """One sandbox, running as the ServiceAccount of its own the app mints per Sandbox."""
-    return SandboxPrincipal(
+    return WorkloadPrincipal(
         namespace=NAMESPACE,
         service_account_name=f"sandbox-{label}",
         service_account_subject=f"system:serviceaccount:{NAMESPACE}:sandbox-{label}",
         pod_name=f"sandbox-{label}-pod",
         pod_uid=f"pod-{label}-uid",
-        sandbox_name=f"sandbox-{label}",
-        sandbox_uid=f"sandbox-{label}-uid",
     )
 
 
@@ -75,7 +73,7 @@ WORKLOAD_TOKENS = {"workload-a": SANDBOX_A, "workload-b": SANDBOX_B}
 
 
 class FakeSandboxResolver:
-    async def resolve(self, token: str) -> SandboxPrincipal:
+    async def resolve_workload(self, token: str) -> WorkloadPrincipal:
         if token not in WORKLOAD_TOKENS:
             raise SandboxPrincipalRejectedError(RejectionReason.TOKEN_REJECTED, "test: unknown workload bearer")
         return WORKLOAD_TOKENS[token]
@@ -156,10 +154,10 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
             "action": {"group": "agentplane", "name": "echo"},
             "arguments": {"text": "hello", "nested": {"api_key": "provider-material"}},
             # Every identity-like value here is deliberately forged, accepted only as untrusted
-            # provenance, and must not affect the caller derived from SandboxPrincipal.
+            # provenance, and must not affect the caller derived from the workload principal.
             "origin": {
                 "owner": CALLER_B.account.name,
-                "sandbox_id": SANDBOX_B.sandbox_uid,
+                "sandbox_id": "forged-sandbox-uid",
                 "thread_id": "forged-thread",
                 "agent_id": "forged-agent",
                 "caller_role": "operator",
@@ -172,7 +170,7 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
             await client.post(
                 "/v1/action-requests",
                 json=envelope,
-                headers={"x-sandbox-uid": SANDBOX_B.sandbox_uid, "x-caller-principal": CALLER_B.account.name},
+                headers={"x-sandbox-uid": "forged-sandbox-uid", "x-caller-principal": CALLER_B.account.name},
             )
         ).status_code == 401
         assert (await client.post("/v1/action-requests", json=envelope, headers=_operator())).status_code == 401, (

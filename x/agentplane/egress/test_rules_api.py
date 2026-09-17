@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 import httpx
 import pytest
 import pytest_bazel
-from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api
+from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api
 
 from x.agentplane.egress.conftest import AUDIENCE, SANDBOX_A, SANDBOX_B, TOKEN_A
 from x.agentplane.egress.policy import Index
@@ -25,7 +25,6 @@ def client(api_client: ApiClient, index: Index) -> httpx.AsyncClient:
     authenticator = WorkloadPrincipalAuthenticator(
         SandboxPrincipalResolver(
             authentication=AuthenticationV1Api(api_client),
-            core_v1=CoreV1Api(api_client),
             audience=AUDIENCE,
             allowed_service_account_namespaces=frozenset({SANDBOX_NAMESPACE}),
         )
@@ -46,7 +45,7 @@ async def test_api_independently_tokenreviews_authorization_and_returns_redacted
     assert f"http://{HOST}{PATH}" == URL
     assert response.status_code == 200
     assert response.json() == {"subject": SUBJECT_A, "policies": []}
-    assert (fake.token_reviews, fake.pod_reads) == (before[0] + 1, before[1] + 1)
+    assert (fake.token_reviews, fake.pod_reads) == (before[0] + 1, before[1])
     assert TOKEN_A not in response.text
 
 

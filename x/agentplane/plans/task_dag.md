@@ -635,6 +635,24 @@ accounts one policy becomes several objects, which is already what per-binding `
 
 Its own clock, and cheaper before something starts using it than after.
 
+### `EGRESS_SOURCE_ADDRESS` — bind an egress bearer to its Pod's address again
+
+**Removed, deliberately.** The proxy used to read the calling Pod live, keep its `pod_ip`, and
+refuse any request whose connection source did not match -- on every request, including cache hits.
+That check was the only thing the Pod read bought once the subject became the ServiceAccount, and it
+cost a `pods` grant in every namespace the proxy accepts bearers from, which is what made
+`--workload-namespaces` unusable without widening RBAC.
+
+What it defended: a token copied out of its Pod and replayed from elsewhere in the cluster. The
+bearer is already audience-scoped, short-lived and bound by the API server to a Pod that must still
+exist, and whoever holds it is refused everything the source Pod is refused -- so the exposure is
+one in-cluster workload borrowing another's egress rules, not an escalation past the policy.
+
+Add it back if that borrowing becomes a real concern -- a compromised sidecar reading another Pod's
+projected token, or a namespace whose Pod specs are not ours. Doing so means restoring `pod_ip` on
+`PodIdentity`, the check in `PodIdentityVerifier.identify`, the peer-address read in the addon, and
+the `pods` read in every namespace named by `--workload-namespaces`.
+
 ### `PC_EGRESS_CREDENTIALS` — public-coder's substitutions as EgressCredentials
 
 **Planned configuration:** give the app Pod a dedicated ServiceAccount, labelled
@@ -730,9 +748,8 @@ and `ServiceAccountRef` would need a home egress can reach without depending on 
 **Decided: a dedicated Kubernetes ServiceAccount is the identity.** The app Pod runs as `default`
 today -- only the sshpiper Deployment names one -- so this is an addition rather than a change, and
 most of the verification already exists. `sandbox_auth/principal.py` already TokenReviews a
-Pod-bound token, reads the `pod-name` and `pod-uid` claims, and checks the Pod against the
-connection's source address; the only Sandbox-specific step is the last one, where the Pod's
-controller owner must be a `Sandbox` the watch knows. A ServiceAccount subject keeps every earlier
+Pod-bound token and reads the `pod-name` and `pod-uid` claims; the only Sandbox-specific step is
+the last one, where the Pod's controller owner must be a `Sandbox` the watch knows. A ServiceAccount subject keeps every earlier
 check and ends instead at the ServiceAccount the token names. Labelled
 `agentplane.allegedly.works/use-action-service: "true"`, the same object is what the Action Service
 already watches and lists, so one SA serves both surfaces.
@@ -741,9 +758,8 @@ already watches and lists, so one SA serves both surfaces.
 exists only while a Sandbox the proxy watches owns that Pod, and deleting the Sandbox ends it. A
 ServiceAccount subject is not -- anything running as that ServiceAccount in that namespace is the
 subject, which is ordinary Kubernetes trust and is only as narrow as the ServiceAccount is
-dedicated. So give it to exactly one workload, never reuse it, and keep the Pod-binding and
-source-address checks, which are what stop a token copied out of the Pod from being replayed
-elsewhere.
+dedicated. So give it to exactly one workload and never reuse it: the token's Pod binding is all
+that stands between it and replay from elsewhere in the cluster.
 
 **Acceptance evidence:** public-coder can reach every currently supported destination, each existing
 substituted token is presented only at its intended destination, denied/unmatched traffic behaves as

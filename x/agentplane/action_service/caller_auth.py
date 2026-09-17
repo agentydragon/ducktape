@@ -103,7 +103,7 @@ class CallerTokenVerifier(TokenVerifier):
             if self._oauth.targets_issuer(token):
                 return None
         try:
-            account = workload_account(await self._sandbox.resolve_caller(token))
+            account = workload_account(await self._sandbox.resolve_workload(token))
         except SandboxPrincipalRejectedError:
             return None
         if not self._callers.admits(account):

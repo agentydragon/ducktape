@@ -27,11 +27,12 @@ from x.agentplane.egress.resources import (
     GROUP,
     POLICIES_PLURAL,
     SANDBOX_GROUP,
+    SANDBOX_KIND,
     SANDBOX_VERSION,
     SANDBOXES_PLURAL,
     VERSION,
 )
-from x.agentplane.sandbox_auth.principal import POD_NAME_CLAIM, POD_UID_CLAIM, SANDBOX_KIND
+from x.agentplane.sandbox_auth.principal import POD_NAME_CLAIM, POD_UID_CLAIM
 
 NAMESPACE = "agentplane-egress-test"
 SANDBOX_NAMESPACE = "agentplane-egress-test-sandboxes"

@@ -14,7 +14,6 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from ipaddress import IPv6Address, ip_address
 from uuid import uuid4
 
 from mitmproxy import connection, http
@@ -53,14 +52,6 @@ class _AuthenticatedConnection:
 def _refusal(reason: DenyReason) -> http.Response:
     status = 502 if reason in {DenyReason.UNAVAILABLE, DenyReason.HOST_UNRESOLVED} else 403
     return http.Response.make(status, b"", {DENIED_HEADER: f"denied; reason={reason}"})
-
-
-def _peer_ip(flow: http.HTTPFlow) -> str:
-    peername = flow.client_conn.peername
-    if peername is None:
-        raise IdentityRejectedError(DenyReason.POD_MISMATCH, "client connection has no peer address")
-    address = ip_address(peername[0])
-    return str(address.ipv4_mapped or address) if isinstance(address, IPv6Address) else str(address)
 
 
 class EgressAddon:
@@ -169,7 +160,7 @@ class EgressAddon:
         if token is None:
             raise IdentityRejectedError(DenyReason.TOKEN_MISSING, "no bearer token in Proxy-Authorization")
         try:
-            identity = await self._verifier.identify(token, _peer_ip(flow))
+            identity = await self._verifier.identify(token)
         except IdentityRejectedError:
             self._authenticated.pop(client_id, None)
             raise

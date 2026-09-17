@@ -41,13 +41,12 @@ blindly copies a raw `Proxy-Authorization` header, unconditionally appends `Auth
 new token, or introduces an LLM/Action service branch. Missing, stale, mismatched, or unbound context
 fails closed. Existing `secretRef` behavior remains unchanged.
 
-PR #5696 added the shared destination-side `SandboxPrincipalAuthenticator` and
+PR #5696 added the shared destination-side `WorkloadPrincipalAuthenticator` and
 `SandboxPrincipalResolver`. They require one well-formed Bearer, TokenReview for the configured
 audience, an allowed ServiceAccount subject, one Pod name/UID claim pair, and the same live Pod UID.
-`SandboxPrincipalAuthenticator` additionally requires one controller Sandbox owner;
-`WorkloadPrincipalAuthenticator` does not, and resolves a Pod no Sandbox controls as the
-ServiceAccount it runs as. The immutable principal contains namespace, ServiceAccount, Pod, and --
-where one was required -- Sandbox identity only. It contains no Thread, Agent, operator role,
+Every service uses the one authenticator, and no owner reference is followed: a Pod no Sandbox
+controls is its ServiceAccount like any other. The immutable principal contains namespace,
+ServiceAccount and Pod identity only. It contains no Thread, Agent, operator role,
 permissions, token, or caller body/header identity.
 
 The compatibility audience remains `agentplane-egress`. A future coordinated rename to

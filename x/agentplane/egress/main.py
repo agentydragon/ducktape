@@ -127,10 +127,8 @@ async def async_main(settings: Settings) -> None:
             resync_seconds=settings.resync_seconds,
         )
         authentication = AuthenticationV1Api(api)
-        core_v1 = CoreV1Api(api)
         verifier = PodIdentityVerifier(
             authentication=authentication,
-            core_v1=core_v1,
             namespaces=settings.workload_namespaces,
             audience=settings.token_audience,
             cache_seconds=settings.identity_cache_seconds,
@@ -147,7 +145,6 @@ async def async_main(settings: Settings) -> None:
             WorkloadPrincipalAuthenticator(
                 SandboxPrincipalResolver(
                     authentication=authentication,
-                    core_v1=core_v1,
                     audience=settings.token_audience,
                     allowed_service_account_namespaces=settings.workload_namespaces,
                 )

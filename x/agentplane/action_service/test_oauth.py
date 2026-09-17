@@ -665,14 +665,16 @@ async def test_external_grant_reaches_canonical_mcp_admission_and_cancel(
             "/mcp", headers={"Authorization": f"Bearer {issued.json()['refresh_token']}"}, json={}
         )
         assert refresh_bearer.status_code == 401
-        sandbox.resolve.assert_not_awaited()  # Failed local OAuth credentials do not get forwarded to TokenReview.
+        sandbox.resolve_workload.assert_not_awaited()  # Failed local OAuth credentials never reach TokenReview.
     await service.close()
 
 
 def _no_workload() -> AsyncMock:
     """The unrelated Kubernetes TokenReview boundary, accepting no bearer at all."""
     resolver = AsyncMock(spec=SandboxPrincipalResolver)
-    resolver.resolve.side_effect = SandboxPrincipalRejectedError(RejectionReason.TOKEN_REJECTED, "test: no workload")
+    resolver.resolve_workload.side_effect = SandboxPrincipalRejectedError(
+        RejectionReason.TOKEN_REJECTED, "test: no workload"
+    )
     return resolver
 
 

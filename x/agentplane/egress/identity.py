@@ -1,10 +1,9 @@
-"""Who is calling: the sidecar's Pod-bound token to the live Pod to the ServiceAccount it runs as.
+"""Who is calling: the sidecar's Pod-bound token to the ServiceAccount its Pod runs as.
 
 The token is a projected ServiceAccount token with the proxy's audience. TokenReview proves it and
-names the Pod it is bound to; the Pod is then read live so a replaced Pod (same name, new UID) or a
-token presented from another address (copied out of its Pod) is refused. The verdict is cached,
-keyed by a digest of the token, for the shorter of the token's remaining life and a bound, and the
-source-address check runs on every call regardless.
+names the Pod the API server bound it to, which is all the subject needs -- a deleted or replaced
+Pod fails the TokenReview itself. The verdict is cached, keyed by a digest of the token, for the
+shorter of the token's remaining life and a configured bound.
 """
 
 from __future__ import annotations
@@ -19,7 +18,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from kubernetes_asyncio.client import AuthenticationV1Api, CoreV1Api
+from kubernetes_asyncio.client import AuthenticationV1Api
 
 from x.agentplane.egress.policy import DenyReason
 from x.agentplane.sandbox_auth.principal import RejectionReason, SandboxPrincipalRejectedError, SandboxPrincipalResolver
@@ -37,7 +36,6 @@ class PodIdentity:
     namespace: str
     pod_name: str
     pod_uid: str
-    pod_ip: str
     service_account_name: str
 
     @property
@@ -46,7 +44,7 @@ class PodIdentity:
 
 
 class IdentityRejectedError(Exception):
-    """The token does not prove a live Pod at this address; `reason` is what the client sees."""
+    """The token does not prove a live Pod; `reason` is what the client sees."""
 
     def __init__(self, reason: DenyReason, detail: str) -> None:
         super().__init__(detail)
@@ -78,7 +76,6 @@ class PodIdentityVerifier:
         self,
         *,
         authentication: AuthenticationV1Api,
-        core_v1: CoreV1Api,
         namespaces: frozenset[str],
         audience: str,
         cache_seconds: float,
@@ -88,24 +85,16 @@ class PodIdentityVerifier:
         self._clock = clock
         self._cache: dict[str, _CachedIdentity] = {}
         self._resolver = SandboxPrincipalResolver(
-            authentication=authentication,
-            core_v1=core_v1,
-            audience=audience,
-            allowed_service_account_namespaces=namespaces,
+            authentication=authentication, audience=audience, allowed_service_account_namespaces=namespaces
         )
 
-    async def identify(self, token: str, source_ip: str) -> PodIdentity:
+    async def identify(self, token: str) -> PodIdentity:
         key = hashlib.sha256(token.encode()).hexdigest()
         cached = self._cache.get(key)
-        if cached is None or cached.expires_at <= time.monotonic():
-            identity = await self._verify(token)
-            self._remember(key, identity, token)
-        else:
-            identity = cached.identity
-        if identity.pod_ip != source_ip:
-            raise IdentityRejectedError(
-                DenyReason.POD_MISMATCH, f"token bound to Pod {identity.pod_name} presented elsewhere"
-            )
+        if cached is not None and cached.expires_at > time.monotonic():
+            return cached.identity
+        identity = await self._verify(token)
+        self._remember(key, identity, token)
         return identity
 
     def _remember(self, key: str, identity: PodIdentity, token: str) -> None:
@@ -126,22 +115,18 @@ class PodIdentityVerifier:
         rule, so this is only ever the question of who is asking.
         """
         try:
-            principal, pod = await self._resolver.resolve_workload_with_pod(token)
+            principal = await self._resolver.resolve_workload(token)
         except SandboxPrincipalRejectedError as error:
-            # `resolve_workload_with_pod` stops before ownership, so `SANDBOX_UNKNOWN` cannot arrive
-            # and has no entry: a KeyError here would mean that stopping point moved.
+            # `resolve_workload` reads nothing beyond the TokenReview, so `SANDBOX_UNKNOWN` cannot
+            # arrive and has no entry: a KeyError here would mean that stopping point moved.
             reason = {
                 RejectionReason.TOKEN_REJECTED: DenyReason.TOKEN_REJECTED,
                 RejectionReason.POD_MISMATCH: DenyReason.POD_MISMATCH,
             }[error.reason]
             raise IdentityRejectedError(reason, str(error)) from error
-        pod_ip = pod.status.pod_ip if pod.status is not None else None
-        if not pod_ip:
-            raise IdentityRejectedError(DenyReason.POD_MISMATCH, f"Pod {principal.pod_name} has no address yet")
         return PodIdentity(
             namespace=principal.namespace,
             pod_name=principal.pod_name,
             pod_uid=principal.pod_uid,
-            pod_ip=pod_ip,
             service_account_name=principal.service_account_name,
         )

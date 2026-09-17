@@ -22,7 +22,7 @@ import grpc
 import pytest
 import pytest_bazel
 from aiohttp import web
-from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api
+from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api
 from mitmproxy import connection, http
 from more_itertools import one
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
@@ -303,7 +303,6 @@ async def proxy(
     index = Index()
     verifier = PodIdentityVerifier(
         authentication=AuthenticationV1Api(api_client),
-        core_v1=CoreV1Api(api_client),
         namespaces=frozenset({SANDBOX_NAMESPACE}),
         audience=AUDIENCE,
         cache_seconds=60,
@@ -316,7 +315,6 @@ async def proxy(
             WorkloadPrincipalAuthenticator(
                 SandboxPrincipalResolver(
                     authentication=AuthenticationV1Api(api_client),
-                    core_v1=CoreV1Api(api_client),
                     audience=AUDIENCE,
                     allowed_service_account_namespaces=frozenset({SANDBOX_NAMESPACE}),
                 )
@@ -760,15 +758,6 @@ async def test_missing_token_refused_at_connect(proxy: ProxyUnderTest) -> None:
     assert refused.value.status == 403
     assert refused.value.headers is not None
     assert refused.value.headers[DENIED_HEADER] == f"denied; reason={DenyReason.TOKEN_MISSING}"
-
-
-async def test_copied_token_refused_at_connect(proxy: ProxyUnderTest) -> None:
-    """Pod B's token, presented from an address that is not Pod B's."""
-    with pytest.raises(aiohttp.ClientHttpProxyError) as refused:
-        await proxy.get("/repos/o/r", token=TOKEN_B)
-    assert refused.value.status == 403
-    assert refused.value.headers is not None
-    assert refused.value.headers[DENIED_HEADER] == f"denied; reason={DenyReason.POD_MISMATCH}"
 
 
 async def test_unbound_subject_refused(fake: FakeApiServer, proxy: ProxyUnderTest) -> None:

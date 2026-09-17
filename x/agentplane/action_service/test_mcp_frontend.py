@@ -47,8 +47,8 @@ from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.principal import (
     POD_NAME_CLAIM,
     POD_UID_CLAIM,
-    SandboxPrincipal,
     SandboxPrincipalResolver,
+    WorkloadPrincipal,
 )
 from x.agentplane.subjects import ServiceAccountRef
 
@@ -57,16 +57,14 @@ NAMESPACE = "test-action-sandboxes"
 OPERATOR = OperatorPrincipal(issuer="test", subject="operator")
 
 
-def sandbox(label: str) -> SandboxPrincipal:
+def sandbox(label: str) -> WorkloadPrincipal:
     """One sandbox, running as the ServiceAccount of its own that the app mints per Sandbox."""
-    return SandboxPrincipal(
+    return WorkloadPrincipal(
         namespace=NAMESPACE,
         service_account_name=f"test-runner-{label}",
         service_account_subject=f"system:serviceaccount:{NAMESPACE}:test-runner-{label}",
         pod_name=f"test-pod-{label}",
         pod_uid=f"test-pod-uid-{label}",
-        sandbox_name=f"test-sandbox-{label}",
-        sandbox_uid=f"test-sandbox-uid-{label}",
     )
 
 
@@ -145,7 +143,7 @@ class Frontend:
     authentication: AsyncMock
     core: AsyncMock
     updates: ActionUpdates
-    tokens: dict[str, SandboxPrincipal]
+    tokens: dict[str, WorkloadPrincipal]
 
     def client(self, token: str = "test-token-a", *, egress: bool = False) -> Client[StreamableHttpTransport]:
         def factory(
@@ -195,27 +193,7 @@ async def frontend(engine: AsyncEngine, db_url: str, echo_executor: Executor) ->
             ),
         )
 
-    async def pod(name: str, namespace: str) -> k8s_client.V1Pod:
-        identity = next(identity for identity in tokens.values() if identity.pod_name == name)
-        return k8s_client.V1Pod(
-            metadata=k8s_client.V1ObjectMeta(
-                name=name,
-                namespace=namespace,
-                uid=identity.pod_uid,
-                owner_references=[
-                    k8s_client.V1OwnerReference(
-                        api_version="agents.x-k8s.io/v1beta1",
-                        kind="Sandbox",
-                        controller=True,
-                        name=identity.sandbox_name,
-                        uid=identity.sandbox_uid,
-                    )
-                ],
-            )
-        )
-
     authentication.create_token_review = AsyncMock(side_effect=review)
-    core.read_namespaced_pod = AsyncMock(side_effect=pod)
     catalog = ActionCatalog(
         groups={
             "test-group": ActionGroup(
@@ -246,10 +224,7 @@ async def frontend(engine: AsyncEngine, db_url: str, echo_executor: Executor) ->
     app = create_app(
         service,
         SandboxPrincipalResolver(
-            authentication=authentication,
-            core_v1=core,
-            audience=AUDIENCE,
-            allowed_service_account_namespaces=frozenset({NAMESPACE}),
+            authentication=authentication, audience=AUDIENCE, allowed_service_account_namespaces=frozenset({NAMESPACE})
         ),
         DisabledOperatorAuthenticator(),
         catalog,
@@ -478,7 +453,7 @@ async def test_tools_act_as_the_identity_the_transport_verified(frontend: Fronte
         assert stored.external_grant is None
 
 
-async def test_revalidates_live_pod_and_rejects_duplicate_auth_and_forgery(frontend: Frontend) -> None:
+async def test_rejects_a_revoked_bearer_duplicate_auth_and_forged_caller_fields(frontend: Frontend) -> None:
     async with frontend.client() as client:
         invalid = await client.call_tool(
             "request_action",
@@ -495,7 +470,8 @@ async def test_revalidates_live_pod_and_rejects_duplicate_auth_and_forgery(front
         )
         assert invalid.is_error
         assert await frontend.store.list_requests(OPERATOR) == []
-        frontend.core.read_namespaced_pod.side_effect = k8s_client.ApiException(status=404)
+        # A bearer is revoked at the TokenReview now, which is the only thing consulted.
+        del frontend.tokens["test-token-a"]
     async with httpx2.AsyncClient(transport=httpx2.ASGITransport(frontend.app), base_url="http://actions.test") as http:
         revoked = await http.post(
             "/mcp",

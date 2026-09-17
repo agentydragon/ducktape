@@ -79,7 +79,7 @@ from x.agentplane.action_service.service import (
     UnsupportedActionError,
 )
 from x.agentplane.action_service.updates import ActionUpdates
-from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
+from x.agentplane.sandbox_auth.http import WorkloadPrincipalAuthenticator
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 from x.agentplane.subjects import ServiceAccountRef
 
@@ -117,8 +117,8 @@ def _updates(request: Request) -> ActionUpdates:
     return cast(ActionUpdates, request.app.state.action_updates)
 
 
-def _workload_authenticator(request: Request) -> SandboxPrincipalAuthenticator:
-    return cast(SandboxPrincipalAuthenticator, request.app.state.workload_authenticator)
+def _workload_authenticator(request: Request) -> WorkloadPrincipalAuthenticator:
+    return cast(WorkloadPrincipalAuthenticator, request.app.state.workload_authenticator)
 
 
 def _operator_authenticator(request: Request) -> OperatorAuthenticator:
@@ -131,7 +131,7 @@ def _callers(request: Request) -> PolicyIndex:
 
 async def _workload(
     request: Request,
-    authenticator: Annotated[SandboxPrincipalAuthenticator, Depends(_workload_authenticator)],
+    authenticator: Annotated[WorkloadPrincipalAuthenticator, Depends(_workload_authenticator)],
     callers: Annotated[PolicyIndex, Depends(_callers)],
 ) -> CallerPrincipal:
     """The ServiceAccount the bearer proves, once the index says that account may call here.
@@ -202,7 +202,7 @@ def create_app(
 
     app = FastAPI(title="Agentplane Action Service", version="v1", lifespan=lifespan)
     app.state.action_service = service
-    app.state.workload_authenticator = SandboxPrincipalAuthenticator(workload_resolver)
+    app.state.workload_authenticator = WorkloadPrincipalAuthenticator(workload_resolver)
     app.state.callers = callers
     app.state.operator_authenticator = operator_authenticator
     app.state.action_catalog = catalog
@@ -272,8 +272,8 @@ def create_app(
     async def metrics() -> Response:
         return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
-    # Workload surface: every endpoint resolves an ordinary Authorization bearer through the
-    # shared destination-side SandboxPrincipal path. No operator adapter is consulted here.
+    # Workload surface: every endpoint resolves an ordinary Authorization bearer through the same
+    # shared workload path the MCP surface uses. No operator adapter is consulted here.
     @app.post("/v1/action-requests", response_model=ActionRequestView, status_code=status.HTTP_202_ACCEPTED)
     async def submit(
         body: ActionRequestInput,

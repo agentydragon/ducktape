@@ -1,5 +1,6 @@
-# Destination-side SandboxPrincipal resolution: TokenReview proves the Pod-bound bearer, then the
-# live Pod owner reference proves the Sandbox. No Thread/Agent reads and no Secrets. The policy
+# Workload authentication is the TokenReview alone: it proves the Pod-bound bearer and names the
+# ServiceAccount its Pod runs as, which is the caller. No Pods, no Thread/Agent reads, no Secrets.
+# The policy
 # informer watches the sets and bindings it evaluates and the labeled caller ServiceAccounts, and
 # writes back only each object's Ready condition.
 apiVersion: rbac.authorization.k8s.io/v1
@@ -8,9 +9,6 @@ metadata:
   name: agentplane-actions
   namespace: agentplane-testing
 rules:
-  - apiGroups: [""]
-    resources: ["pods"]
-    verbs: ["get"]
   - apiGroups: [""]
     resources: ["serviceaccounts"]
     verbs: ["get", "list", "watch"]

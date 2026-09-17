@@ -375,8 +375,8 @@ not hold that token: it presents the public
 path, whose generic `authenticatedWorkloadToken` source substitutes the already-authenticated
 `agentplane-egress` bearer for the exact first-party destination rule.
 
-At the destination, `SandboxPrincipalAuthenticator` and `SandboxPrincipalResolver` from
-`//x/agentplane/sandbox_auth` perform TokenReview plus live Pod resolution. The caller is the
+At the destination, `WorkloadPrincipalAuthenticator` and `SandboxPrincipalResolver` from
+`//x/agentplane/sandbox_auth` perform the TokenReview. The caller is the
 ServiceAccount that Pod runs as, derived only from what the bearer proved. Identity headers and
 request `origin`/`correlation` fields are never authorization. Thread and Agent fields
 remain untrusted provenance until an authoritative binding exists; workload authentication performs

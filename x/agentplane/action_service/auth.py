@@ -13,7 +13,7 @@ from x.agentplane.subjects import ServiceAccountRef
 
 
 class OperatorAuthenticator(Protocol):
-    """Replaceable BFF/operator boundary; deliberately separate from SandboxPrincipal auth."""
+    """Replaceable BFF/operator boundary; deliberately separate from workload auth."""
 
     async def authenticate(self, token: str) -> OperatorPrincipal | None: ...
 

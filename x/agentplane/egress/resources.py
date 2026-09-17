@@ -25,6 +25,7 @@ BINDINGS_PLURAL = "egressbindings"
 CREDENTIALS_PLURAL = "egresscredentials"
 SANDBOX_GROUP = "agents.x-k8s.io"
 SANDBOX_VERSION = "v1beta1"
+SANDBOX_KIND = "Sandbox"
 SANDBOXES_PLURAL = "sandboxes"
 
 

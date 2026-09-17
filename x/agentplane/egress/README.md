@@ -152,10 +152,9 @@ an informational snapshot of the answering replica, not a global acknowledgement
 ## ServiceAccount permissions
 
 In the rules namespace (`--rules-namespace`): `get`, `list`, `watch` on `egresspolicies`,
-`egressbindings` and `egresscredentials`. In **each** `--workload-namespaces` entry: `get` on
-`pods` — one at a time, by the name a TokenReview named. Today both deployments name one namespace
-for both, so one Role covers it; naming a second workload namespace needs its own Role and
-RoleBinding there, or the proxy authenticates nobody from it. In the credentials namespace
+`egressbindings` and `egresscredentials`. **Nothing at all in a `--workload-namespaces` entry**: the
+TokenReview names the ServiceAccount a bearer's Pod runs as, and that is the subject, so naming a
+second workload namespace needs no Role there. In the credentials namespace
 (`--credentials-namespace`, `agentplane-egress-credentials` by default): `get`, `list`, `watch` on
 `secrets`, and nothing else. Cluster-wide: `create` on `tokenreviews.authentication.k8s.io`. There
 are no Kubernetes status writes or leader election.

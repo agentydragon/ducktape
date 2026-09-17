@@ -10,23 +10,23 @@ import pytest
 import pytest_bazel
 from fastapi import HTTPException, Request
 from kubernetes_asyncio import client as k8s_client
-from kubernetes_asyncio.client import AuthenticationV1Api, CoreV1Api
+from kubernetes_asyncio.client import AuthenticationV1Api
 
-from x.agentplane.sandbox_auth.http import SandboxPrincipalAuthenticator
+from x.agentplane.sandbox_auth.http import WorkloadPrincipalAuthenticator
 from x.agentplane.sandbox_auth.principal import (
     POD_NAME_CLAIM,
     POD_UID_CLAIM,
-    SandboxPrincipal,
     SandboxPrincipalResolver,
+    WorkloadPrincipal,
 )
 
 TOKEN = "workload-token"
 NAMESPACE = "sandboxes"
 SUBJECT = f"system:serviceaccount:{NAMESPACE}:runner"
-PRINCIPAL = SandboxPrincipal(NAMESPACE, "runner", SUBJECT, "pod-a", "pod-uid", "sandbox-a", "sandbox-uid")
+PRINCIPAL = WorkloadPrincipal(NAMESPACE, "runner", SUBJECT, "pod-a", "pod-uid")
 
 
-def authenticator() -> tuple[SandboxPrincipalAuthenticator, AsyncMock]:
+def authenticator() -> tuple[WorkloadPrincipalAuthenticator, AsyncMock]:
     create_token_review = AsyncMock(
         return_value=k8s_client.V1TokenReview(
             spec=k8s_client.V1TokenReviewSpec(token=TOKEN, audiences=["agentplane-egress"]),
@@ -39,29 +39,10 @@ def authenticator() -> tuple[SandboxPrincipalAuthenticator, AsyncMock]:
             ),
         )
     )
-    read_namespaced_pod = AsyncMock(
-        return_value=k8s_client.V1Pod(
-            metadata=k8s_client.V1ObjectMeta(
-                namespace=NAMESPACE,
-                name=PRINCIPAL.pod_name,
-                uid=PRINCIPAL.pod_uid,
-                owner_references=[
-                    k8s_client.V1OwnerReference(
-                        api_version="agents.x-k8s.io/v1beta1",
-                        kind="Sandbox",
-                        name=PRINCIPAL.sandbox_name,
-                        uid=PRINCIPAL.sandbox_uid,
-                        controller=True,
-                    )
-                ],
-            )
-        )
-    )
     return (
-        SandboxPrincipalAuthenticator(
+        WorkloadPrincipalAuthenticator(
             SandboxPrincipalResolver(
                 authentication=cast(AuthenticationV1Api, SimpleNamespace(create_token_review=create_token_review)),
-                core_v1=cast(CoreV1Api, SimpleNamespace(read_namespaced_pod=read_namespaced_pod)),
                 audience="agentplane-egress",
                 allowed_service_account_namespaces=frozenset({NAMESPACE}),
             )

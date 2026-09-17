@@ -232,7 +232,6 @@ async def async_main(settings: Settings) -> None:
             service,
             SandboxPrincipalResolver(
                 authentication=AuthenticationV1Api(api),
-                core_v1=CoreV1Api(api),
                 audience=settings.token_audience,
                 allowed_service_account_namespaces=settings.allowed_service_account_namespaces,
             ),
