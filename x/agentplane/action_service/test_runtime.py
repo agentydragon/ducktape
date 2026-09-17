@@ -47,10 +47,12 @@ from x.agentplane.action_service.policy_evaluation import PROVIDER_NAME
 from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.runtime import running_executor
 from x.agentplane.action_service.service import ActionService, UnsupportedActionError
+from x.agentplane.action_service.test_fixtures.callers import in_sync_index
 from x.agentplane.action_service.test_fixtures.lifecycle import wait_available
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.crds import GROUP, VERSION
 from x.agentplane.egress.testing.fake_apiserver import fake_apiserver
+from x.agentplane.kubernetes_watch import Freshness
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 from x.agentplane.subjects import ServiceAccountRef
 
@@ -388,7 +390,7 @@ async def test_main_auto_approves_the_bound_service_account_from_watched_policy_
         allowed_service_account_namespaces=frozenset({namespace}),
         _cli_parse_args=False,
     )
-    index = PolicyIndex()
+    index = PolicyIndex(freshness=Freshness(stale_after_seconds=900))
 
     async def serve(server: uvicorn.Server) -> None:
         app = cast(FastAPI, server.config.app)
@@ -489,7 +491,7 @@ async def test_sigterm_fences_readiness_and_traffic_before_http_shutdown(engine:
         MagicMock(spec=SandboxPrincipalResolver),
         DisabledOperatorAuthenticator(),
         catalog,
-        callers=PolicyIndex(),
+        callers=in_sync_index(),
         updates=ActionUpdates(db_url),
     )
     server = ActionServer(uvicorn.Config(app, timeout_graceful_shutdown=5), service)
@@ -528,7 +530,9 @@ async def test_http_serves_before_optional_backend_connects(db_url: str, tmp_pat
         assert not group.available
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test-actions") as client:
             assert (await client.get("/healthz")).status_code == 200
-            assert (await client.get("/readyz")).status_code == 200
+            # Serving is what this test is about; readiness is not, and cannot be here -- there is no
+            # API server behind the policy informer, so the index never syncs and the replica says so.
+            assert (await client.get("/readyz")).status_code == 503
 
     with (
         patch("x.agentplane.action_service.main.k8s_config.load_incluster_config"),

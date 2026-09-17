@@ -54,6 +54,7 @@ from x.agentplane.action_service.policy_view import (
     subject_view,
 )
 from x.agentplane.action_service.providers import DecisionContext, DecisionProvider
+from x.agentplane.kubernetes_watch import Freshness
 from x.agentplane.subjects import ServiceAccountRef
 
 # types-jsonschema stubs import referencing; the mypy aspect needs that typed package directly.
@@ -151,9 +152,10 @@ class ActionService:
         self._catalog = catalog
         self._executors = dict(executors)
         self._providers = tuple(providers)
-        # None: this deployment watches no policy objects. An index nothing feeds never syncs, so
-        # every caller is human-only and reads as much.
-        self._policies = policies if policies is not None else PolicyIndex()
+        # None: this deployment watches no policy objects. Nothing records a cycle into an index
+        # nothing feeds, so it never reads as synced whatever the bound, and every caller is
+        # human-only.
+        self._policies = policies if policies is not None else PolicyIndex(freshness=Freshness(stale_after_seconds=0))
         self._clock = clock
         self._provider_timeout_seconds = provider_timeout_seconds
         self._executor_id = executor_id or f"executor-{uuid4()}"

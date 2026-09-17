@@ -43,6 +43,7 @@ from x.agentplane.action_service.policies.resources import parse_binding, parse_
 from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.policy_view import CallerActionPolicyView
 from x.agentplane.action_service.service import ActionService
+from x.agentplane.action_service.test_fixtures.callers import in_sync_index
 from x.agentplane.action_service.updates import ActionUpdates
 from x.agentplane.sandbox_auth.principal import (
     POD_NAME_CLAIM,
@@ -70,7 +71,7 @@ def sandbox(label: str) -> WorkloadPrincipal:
 
 def _policy_index() -> PolicyIndex:
     """Workload a bound to `test-reads`, workload b to nothing: what each may read of its own policy."""
-    index = PolicyIndex(synced=True)
+    index = in_sync_index()
     for name, spec in (
         ("test-reads", {"autoApproveIf": [{"type": "exact_actions", "actions": {"test-group": ["alpha"]}}]}),
         ("test-other", {"autoApproveIf": [{"type": "exact_actions", "actions": {"test-group": ["beta"]}}]}),

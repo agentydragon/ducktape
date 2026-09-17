@@ -34,7 +34,6 @@ from x.agentplane.subjects import ServiceAccountRef
 
 CONNECT = "CONNECT"
 WATCHED_KINDS = frozenset({POLICIES_PLURAL, BINDINGS_PLURAL, CREDENTIALS_PLURAL, "secrets"})
-STALE_AFTER_CYCLES = 3
 
 
 class DenyReason(StrEnum):

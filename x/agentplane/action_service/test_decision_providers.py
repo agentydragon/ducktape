@@ -39,6 +39,7 @@ from x.agentplane.action_service.policy_evaluation import AUTO_APPROVE_REASON, P
 from x.agentplane.action_service.policy_informer import PolicyIndex
 from x.agentplane.action_service.providers import DecisionContext
 from x.agentplane.action_service.service import ActionService, InvalidActionArgumentsError
+from x.agentplane.kubernetes_watch import Freshness
 from x.agentplane.subjects import ServiceAccountRef
 
 NAMESPACE = "agentplane-test"
@@ -358,7 +359,9 @@ def _index(
     synced: bool = True,
 ) -> PolicyIndex:
     """An index from raw specs, parsed the way the informer parses them, so invalid ones stay invalid."""
-    index = PolicyIndex(synced=synced)
+    index = PolicyIndex(
+        listed=synced, freshness=Freshness(stale_after_seconds=900, at={"test-kind": NOW}), clock=lambda: NOW
+    )
     for name, spec in (sets or {}).items():
         policy_set = parse_policy_set({"metadata": _meta(name, generation=4, version="40"), "spec": spec})
         index.policy_sets[policy_set.namespaced_name] = policy_set

@@ -257,8 +257,23 @@ def create_app(
         return await call_next(request)
 
     @app.get("/readyz")
-    async def readyz() -> dict[str, str]:
-        return {"status": "ok"}
+    async def readyz() -> Response:
+        """Ready means the policy index is complete and still moving, not merely that the process serves.
+
+        A replica whose watches have wedged auto-decides from a frozen snapshot -- the wrong
+        direction for a policy engine to be wrong in -- so it leaves the Service here rather than
+        going on answering. The ages are the facts; the status code is the verdict on them.
+        """
+        now = callers.clock()
+        return JSONResponse(
+            {
+                "synced": callers.synced,
+                "listed": callers.listed,
+                "staleAfterSeconds": callers.freshness.stale_after_seconds,
+                "refreshedSecondsAgo": {kind: round(age, 1) for kind, age in callers.freshness.ages(now).items()},
+            },
+            status_code=status.HTTP_200_OK if callers.synced else status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:

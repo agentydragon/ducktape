@@ -11,7 +11,8 @@ from aiohttp import web
 from more_itertools import one
 
 from x.agentplane.egress.decision_log import DB_ERRORS, DecisionLog
-from x.agentplane.egress.policy import STALE_AFTER_CYCLES, Index, resolve_binding
+from x.agentplane.egress.policy import Index, resolve_binding
+from x.agentplane.kubernetes_watch import STALE_AFTER_CYCLES
 from x.agentplane.subjects import ServiceAccountRef
 
 logger = logging.getLogger(__name__)

@@ -43,6 +43,7 @@ from x.agentplane.action_service.push import ActionPushNotifier, PushIdentity, P
 from x.agentplane.action_service.runtime import running_executor
 from x.agentplane.action_service.service import ActionService
 from x.agentplane.action_service.updates import ActionUpdates
+from x.agentplane.kubernetes_watch import STALE_AFTER_CYCLES, Freshness
 from x.agentplane.sandbox_auth.principal import SandboxPrincipalResolver
 
 # YamlConfigSettingsSource loads yaml lazily inside pydantic-settings; gazelle cannot see the dependency.
@@ -161,7 +162,9 @@ async def async_main(settings: Settings) -> None:
         )
         stack.push_async_callback(visibility.aclose)
         api = await stack.enter_async_context(ApiClient(configuration=configuration))
-        policy_index = PolicyIndex()
+        policy_index = PolicyIndex(
+            freshness=Freshness(stale_after_seconds=settings.policy_resync_seconds * STALE_AFTER_CYCLES)
+        )
         informer_task = asyncio.create_task(
             PolicyInformer(
                 index=policy_index,

@@ -26,9 +26,11 @@ from x.agentplane.action_service.policies.resources import (
 from x.agentplane.action_service.policy_informer import PolicyIndex, PolicyInformer
 from x.agentplane.crds import GROUP, VERSION
 from x.agentplane.egress.testing.fake_apiserver import FakeApiServer, fake_apiserver
+from x.agentplane.kubernetes_watch import Freshness
 from x.agentplane.subjects import ServiceAccountRef
 
 NAMESPACE = "agentplane-policy-test"
+NOW = datetime(2026, 9, 12, 12, 0, tzinfo=UTC)
 VALID_SET = "reads"
 GITHUB_SET = "github-reads"
 INVALID_SET = "broken"
@@ -103,14 +105,13 @@ async def fake() -> AsyncIterator[FakeApiServer]:
 async def index(fake: FakeApiServer) -> AsyncIterator[PolicyIndex]:
     configuration = k8s_client.Configuration(host=f"http://127.0.0.1:{fake.port}")
     async with ApiClient(configuration=configuration) as api:
-        index = PolicyIndex()
+        index = PolicyIndex(freshness=Freshness(stale_after_seconds=900), clock=lambda: NOW)
         informer = PolicyInformer(
             index=index,
             custom_objects=cast(CustomObjectsClient, CustomObjectsApi(api)),
             core_v1=CoreV1Api(api),
             namespaces={NAMESPACE},
             resync_seconds=60,
-            clock=lambda: datetime(2026, 9, 12, 12, 0, tzinfo=UTC),
         )
         task = asyncio.create_task(informer.run())
         try:

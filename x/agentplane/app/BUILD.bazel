@@ -108,6 +108,7 @@ py_library(
         ":trajectory",
         "//util:kubernetes",
         "//util/bazel:runfiles",
+        "//x/agentplane:kubernetes_watch",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//jinja2",

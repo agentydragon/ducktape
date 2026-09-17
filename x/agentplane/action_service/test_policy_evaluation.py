@@ -15,7 +15,13 @@ from pydantic import JsonValue
 
 from github_policy.visibility import RepositoryVisibilityService
 from x.agentplane.action_service.catalog import ActionIdentity
-from x.agentplane.action_service.models import MatchedPolicy, MatchedRepository, PolicyKind, ProviderVerdict
+from x.agentplane.action_service.models import (
+    MatchedPolicy,
+    MatchedRepository,
+    PolicyKind,
+    ProviderVerdict,
+    service_account_key,
+)
 from x.agentplane.action_service.policies.resources import (
     ActionPolicyBinding,
     ActionPolicySet,
@@ -40,6 +46,7 @@ from x.agentplane.action_service.policy_view import (
     subject_view,
 )
 from x.agentplane.action_service.providers import DecisionContext, ResolvedBinding
+from x.agentplane.kubernetes_watch import Freshness
 from x.agentplane.subjects import ServiceAccountRef
 
 NAMESPACE = "agentplane-test"
@@ -86,7 +93,9 @@ def binding(
 
 
 def index_of(*objects: ActionPolicySet | ActionPolicyBinding | InvalidResource, synced: bool = True) -> PolicyIndex:
-    index = PolicyIndex(synced=synced)
+    index = PolicyIndex(
+        listed=synced, freshness=Freshness(stale_after_seconds=900, at={"test-kind": NOW}), clock=lambda: NOW
+    )
     for obj in objects:
         key = obj.namespaced_name
         if isinstance(obj, ActionPolicySet) or (
@@ -132,7 +141,7 @@ def test_nothing_resolves_before_the_informer_has_synced() -> None:
         synced=False,
     )
     assert resolve_bindings(index, WORKLOAD, NOW) == ()
-    index.synced = True
+    index.listed = True
     assert len(resolve_bindings(index, WORKLOAD, NOW)) == 1
 
 
@@ -237,7 +246,7 @@ def test_the_operator_reads_the_same_resolution_with_each_named_set_standing(mix
 
 
 def test_both_views_say_nothing_auto_decides_before_sync(mixed_index: PolicyIndex) -> None:
-    mixed_index.synced = False
+    mixed_index.listed = False
     for view in (caller_view(mixed_index, WORKLOAD, NOW), subject_view(mixed_index, WORKLOAD, NOW)):
         assert view.synced is False
         assert (view.bindings, view.auto_approve_if) == ([], [])
@@ -389,6 +398,35 @@ async def test_github_public_repository_set_never_approves_without_a_confirmed_l
     )
     assert outcome.verdict is ProviderVerdict.NO_OPINION
     assert outcome.evidence is None
+
+
+def test_a_watch_that_stopped_refreshing_stops_auto_deciding() -> None:
+    """The bug this guards: listing every kind once is a latch, so a replica whose watches wedged
+    went on auto-approving from the snapshot it took before they did -- against bindings an operator
+    may since have revoked, with nothing about the answers looking wrong."""
+    index = index_of(
+        policy_set("set-reads", [{"type": "exact_actions", "actions": {"everything": ["echo"]}}]),
+        binding("b-workload", WORKLOAD.model_dump(), ["set-reads"]),
+    )
+    assert len(resolve_bindings(index, WORKLOAD, NOW)) == 1
+
+    wedged = NOW + timedelta(seconds=index.freshness.stale_after_seconds + 1)
+    index.clock = lambda: wedged
+    assert index.listed is True, "the latch is still set: that is the point"
+    assert index.synced is False
+    assert resolve_bindings(index, WORKLOAD, wedged) == ()
+    assert caller_view(index, WORKLOAD, wedged).synced is False
+
+
+def test_an_account_the_label_admitted_is_refused_once_the_copy_stops_moving() -> None:
+    """Admission reads the same ServiceAccounts the watch keeps; a frozen copy cannot say whether
+    the label is still there, so it says no rather than vouching for what it last saw."""
+    index = index_of()
+    index.service_accounts[service_account_key(WORKLOAD)] = WORKLOAD
+    assert index.admits(WORKLOAD) is True
+
+    index.clock = lambda: NOW + timedelta(seconds=index.freshness.stale_after_seconds + 1)
+    assert index.admits(WORKLOAD) is False
 
 
 if __name__ == "__main__":

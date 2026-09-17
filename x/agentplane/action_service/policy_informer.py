@@ -35,7 +35,7 @@ from x.agentplane.action_service.policies.resources import (
     parse_policy_set,
 )
 from x.agentplane.crds import GROUP, VERSION
-from x.agentplane.kubernetes_watch import ListWatch, WatchedKind, apply_to
+from x.agentplane.kubernetes_watch import Freshness, ListWatch, WatchedKind, apply_to
 from x.agentplane.subjects import ServiceAccountRef
 
 logger = logging.getLogger(__name__)
@@ -48,16 +48,31 @@ class PolicyIndex:
     """Everything the policy decision reads, keyed by `NamespacedName`. Mutated only by the informer;
     `changed` pulses on every mutation so readers can wait for a state rather than a duration."""
 
+    freshness: Freshness
     policy_sets: dict[NamespacedName, ActionPolicySet | InvalidResource] = field(default_factory=dict)
     bindings: dict[NamespacedName, ActionPolicyBinding | InvalidResource] = field(default_factory=dict)
     service_accounts: dict[NamespacedName, ServiceAccountRef] = field(default_factory=dict)
-    synced: bool = False
+    # Every kind listed at least once. A latch: true from the first full list and never false again,
+    # which is why it is not on its own the question `synced` answers.
+    listed: bool = False
+    clock: Callable[[], datetime] = lambda: datetime.now(UTC)
     changed: asyncio.Condition = field(default_factory=asyncio.Condition, repr=False)
+
+    @property
+    def synced(self) -> bool:
+        """Whether this replica's copy is complete *and* still moving, which is what acting on it needs.
+
+        Listing every kind once is the weaker fact, and taking it for this one is how a replica whose
+        watches have wedged goes on auto-deciding from a snapshot it took hours ago: the bindings it
+        holds are the bindings an operator has since revoked, and nothing about the answers looks
+        wrong. A watch the server keeps refusing stops advancing `freshness` instead.
+        """
+        return self.listed and self.freshness.fresh(self.clock())
 
     def admits(self, ref: ServiceAccountRef) -> bool:
         """Whether this ServiceAccount may call the service at all: it carries the caller label now.
 
-        Nothing is admitted before the watch has synced, so an informer that cannot reach the API
+        Nothing is admitted while the index is out of sync, so an informer that cannot reach the API
         server refuses every caller rather than serving a picture it cannot vouch for.
         """
         return self.synced and service_account_key(ref) in self.service_accounts
@@ -123,11 +138,12 @@ class PolicyInformer:
         core_v1: CoreV1Api,
         namespaces: Collection[str],
         resync_seconds: int,
-        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self._index = index
         self._custom_objects = custom_objects
-        self._clock = clock
+        # The index's, not one of its own: it stamps the cycle times the index reads back as
+        # freshness, and a second clock would be one more thing that has to agree.
+        self._clock = index.clock
         # What this replica last wrote, by object UID, so a write is not repeated while its own MODIFIED
         # event is in flight and a recreated object (same name, new UID) is judged afresh.
         self._written: dict[str, Condition] = {}
@@ -164,7 +180,11 @@ class PolicyInformer:
                 ),
             ]
         self._watch = ListWatch(
-            kinds=kinds, resync_seconds=resync_seconds, on_change=self._changed, on_cycle=self._completed, clock=clock
+            kinds=kinds,
+            resync_seconds=resync_seconds,
+            on_change=self._changed,
+            on_cycle=self._completed,
+            clock=index.clock,
         )
 
     async def run(self) -> None:
@@ -172,12 +192,13 @@ class PolicyInformer:
         await self._watch.run()
 
     async def _changed(self, kind: WatchedKind) -> None:
-        self._index.synced = self._watch.synced
+        self._index.listed = self._watch.synced
         await self._reconcile_status()
         await self._index.notify()
 
     async def _completed(self, kind: WatchedKind, at: datetime) -> None:
-        del kind, at
+        self._index.freshness.record(kind.name, at)
+        await self._index.notify()
 
     async def _reconcile_status(self) -> None:
         now = self._clock()
