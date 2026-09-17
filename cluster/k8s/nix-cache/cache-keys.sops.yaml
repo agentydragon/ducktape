@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: attic-cache-keys
+    namespace: nix-cache
+    annotations:
+        description: Per-cache ED25519 signing keypairs (nix key generate-secret format), supplied to Attic on cache creation instead of server-generated keys — see cluster/docs/nix_cache.md § Bootstrap.
+type: Opaque
+stringData:
+    main: ENC[AES256_GCM,data:pPDo366gmRGYd2/s/iF+go8i8Awf6XjK4/jNyZBWhnOrUEKErz6Ct1Rv2OizdmOVbVp4Tq3pMe12lnRXV1jYezLOfDsjdLmzFhyny/a0+52yRtfGPywzyRIbPO60,iv:J+nCKrgoVB/zzpaGC6m2/aM1B75caS/K32lqLSgRTjc=,tag:yLTKTG+sjcEACn1ffisXmQ==,type:str]
+    gaffer: ENC[AES256_GCM,data:sg133cAImYE6guSncZGYvimm7nlLXTfL6Jzrgd85oRjm4KvCwhCB2sZGvg/BtubL41q7xTgW0lL0Q4xSHwhdXRZNIfK1cZjeDkopMkz5f9ZYK6q+q/dVR/RrBDynIiY=,iv:G7hVI7xFZ0ncdZgkn8DR6obxbb5I8yxijYX2BhvonRw=,tag:ZZ+pp4Jp8vBZBYGSZzRVIg==,type:str]
+    public: ENC[AES256_GCM,data:f3PaWQDuU8WP9YAExFivGwkvUirQMORjjyTBxQ048cTzaRbsSx4uYtrrwK96SoLzfZ0Zgyp7FLSPcXyoc1FO7BXjSQXiYhxcBd73QKRe+NV9l6sYJEU4jztQjBPDGsQ=,iv:x8kxJeo0TM0RTP+oEf0fwCgHtBfto5ovj0ujhSxcQ3U=,tag:h5uMRKOjOj1hbg/cPqr7iA==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBVTDdGdXl5SEd4TS9FZUdN
+            QmlLNFJ6U1RTZG9CK1Y2SFA3elhuUVBDZ1E0ClZlMEtDbVpRUEY2cWpGVjVJeHlQ
+            cEI4aUF2c2wwaVFud3dvNTFhTjhwc3cKLS0tIGZ0Rk1pTDYvbWpnTklQUFArS0cw
+            Vm15a0FCVzhMUzNQK1BvaXNUTFdIMXMK3KdmKdRNAjH/nvt8MomwL7jfotHytw+z
+            SA3GzWWgPV/waftUZvedNsQuWvPW/o+WsgWH/VSfuDRlUiD/zNVI8g==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBCM2tHcHQxZEFZWDNqdjVY
+            Z3NOVHBUVEY5VS9taWVrS245UVFmVitiejA0CitWQ2o2RmVmRkdLTzd1cGJoczhW
+            UEszNjVwKzlIZ3FKNHBVaThBNTFwZmMKLS0tIFl6bG0zRVZPbm9EaFNrd1dwMU1L
+            ellMN29XZCtrdDRQUUhVdkhHZWY0cjAKmLUGXTJvjnpw9nLVah6jSWYDpRoXm4f/
+            FT+lmBfgkkbCra43K2x9fK5jEsKV8OJYm1L+QUwRayQ2NKFXOqtN8w==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-09-17T07:54:01Z"
+    mac: ENC[AES256_GCM,data:DIfZYrDsg6wXGpmobHuLHsoKkLe7vPeAS++wybVclPXw6AnEdqCIlfR+j5LRsDetZmQy4LRMCUpMDQ2DRYcndS4vY9Ja6q4hHRtuHziARrpwesjBeaL/Fvj6QSsdIPmDP8ekdAJ/CTGLFZSIqXECjjIC8r+RfdoSYvkw/xdDOC8=,iv:1ta6VNGqBwPTyZlci9SE2OFPPvMdZWEGbyoDCxkQbzg=,tag:y+5ob6ZbHqN7sGmHhLhIXA==,type:str]
+    version: 3.13.3

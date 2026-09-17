@@ -5,6 +5,7 @@ resources:
   - postgres-cluster.yaml
   - forgejo-images-creds-eso.yaml
   - jwt-token.sops.yaml
+  - cache-keys.sops.yaml
   - bucket.yaml
   - iam.yaml
   - s3-credentials.yaml
