@@ -12,14 +12,23 @@ spec:
     name: ollama-app
     namespace: ducktape-flux
   timeout: 10m
+  healthChecks:
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      name: ollama-direct-token
+      namespace: ollama
   dependsOn:
     - name: ollama-namespace
-      namespace: ducktape-flux
-    - name: ollama-secrets
       namespace: ducktape-flux
     - name: gateway
       namespace: ducktape-flux
     - name: cert-manager-environment
       namespace: ducktape-flux
     - name: nvidia-runtimeclass
+      namespace: ducktape-flux
+    - name: external-secrets-config # langfuse ESO remains
+      namespace: ducktape-flux
+    - name: reflector
+      namespace: ducktape-flux
+    - name: claude-rbac
       namespace: ducktape-flux

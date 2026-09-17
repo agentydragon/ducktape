@@ -259,8 +259,6 @@ resources:
 
   # --- ollama ---
   - ollama/namespace/flux-kustomization.yaml
-  - ollama/agent-rbac/flux-kustomization.yaml
-  - ollama/secrets/flux-kustomization.yaml
   - ollama/app/flux-kustomization.yaml
 
   # --- litellm ---
