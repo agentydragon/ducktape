@@ -29,8 +29,9 @@ def generate_manifests(root: Path) -> None:
     app_dir = root / _APP_DIR
     app_dir.mkdir(parents=True, exist_ok=True)
     app = App(outdir=str(app_dir))
-    LiteLLMProxy(Chart(app, spec.name, disable_resource_name_hashes=True), "proxy", spec)
-    LiteLLMServiceMonitor(Chart(app, "litellm-servicemonitor", disable_resource_name_hashes=True), "monitoring")
+    chart = Chart(app, spec.name, disable_resource_name_hashes=True)
+    LiteLLMProxy(chart, "proxy", spec)
+    LiteLLMServiceMonitor(chart, "monitoring")
     app.synth()
 
     _write_yaml(
@@ -60,11 +61,7 @@ def generate_manifests(root: Path) -> None:
     )
     _write_yaml(
         app_dir / "kustomization.yaml",
-        kustomize_kustomization(
-            namespace="litellm",
-            resources=[f"{spec.name}.k8s.yaml", "litellm-servicemonitor.k8s.yaml"],
-            components=["./image-pins"],
-        ),
+        kustomize_kustomization(namespace="litellm", resources=[f"{spec.name}.k8s.yaml"], components=["./image-pins"]),
     )
 
 
