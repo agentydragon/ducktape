@@ -9,6 +9,7 @@ resources:
   - bucket.yaml
   - iam.yaml
   - s3-credentials.yaml
+  - seaweed-reference-grant.yaml
   - deployment.yaml
   - service.yaml
   - httproute.yaml

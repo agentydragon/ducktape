@@ -5,9 +5,12 @@ apiVersion: seaweed.seaweedfs.com/v1
 kind: Bucket
 metadata:
   name: attic
-  namespace: seaweedfs
+  namespace: nix-cache
 spec:
   name: attic
+  # Handing the existing (freshly emptied) bucket to this tenant-local CR —
+  # same precedent as seaweedfs/registry-cache-bucket/bucket.yaml.
+  adoptExisting: true
   clusterRef:
     name: seaweedfs
     namespace: seaweedfs
