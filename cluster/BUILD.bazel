@@ -25,6 +25,7 @@ py_library(
     srcs = ["litellm_constructs.py"],
     deps = [
         ":litellm_config",
+        "//third_party/prometheus_operator:servicemonitor",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_33",
         "@pypi//constructs",
