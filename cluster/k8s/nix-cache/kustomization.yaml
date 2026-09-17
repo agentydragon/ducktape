@@ -14,9 +14,16 @@ resources:
   - service.yaml
   - httproute.yaml
   - job.yaml
+  - github-pat.yaml
+  - serviceaccount.yaml
+  - cronjob.yaml
 
 configMapGenerator:
   - name: attic-config
     namespace: nix-cache
     files:
       - server.toml
+  - name: attic-rotators-config
+    namespace: nix-cache
+    files:
+      - rotators.yaml

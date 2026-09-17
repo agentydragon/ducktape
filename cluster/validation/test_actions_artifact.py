@@ -46,7 +46,6 @@ def test_artifact_generators_preserve_render_inputs(tmp_path: Path) -> None:
         ("aiquota", "aiquota"),
         ("airlock", "agents/airlock"),
         ("alloy-otlp-bearer", "agents/alloy-otlp-bearer"),
-        ("attic-jwt-rotation", "agents/attic-jwt-rotation"),
         ("atuin", "atuin/app"),
         ("atuin-db", "atuin/db"),
         ("atuin-namespace", "atuin/namespace"),
