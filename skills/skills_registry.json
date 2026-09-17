@@ -36,6 +36,13 @@
       "filename": "proxmox_vm.skill"
     },
     {
+      "name": "seaweed_operator",
+      "pkg": "skill-seaweed_operator",
+      "target": "//cluster/skills/seaweed_operator:seaweed_operator_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/cluster/skills/seaweed_operator/seaweed_operator.skill",
+      "filename": "seaweed_operator.skill"
+    },
+    {
       "name": "cpap",
       "pkg": "skill-cpap",
       "target": "//cpap/skill:cpap_skill",
