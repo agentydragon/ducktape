@@ -4,13 +4,12 @@ metadata:
   name: ha-mcp-namespace
   namespace: ducktape-flux
 spec:
-  retryInterval: 1m
   interval: 10m
   path: ./cluster/k8s/agents/ha-mcp/namespace
   prune: true
-  wait: true
+  retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
     name: ha-mcp-namespace
-
     namespace: ducktape-flux
+  wait: true
