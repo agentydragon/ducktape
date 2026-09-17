@@ -1,7 +1,7 @@
-# Dogfood: read-off minimizer on the real tana/re spec
+# Dogfood: read-off minimizer on the real <downstream-spec> spec
 
 Real-chunk measurements of the read-off `synthesize-selectors` minimizer against
-the ~7 MB minified chunk (`static/index-DI2GynTv.js`). Earlier search-era and
+the ~7 MB minified chunk (`static/<primary-chunk>.js`). Earlier search-era and
 migration-phase findings (the apply-crash fix, the original over-pin shapes) are
 superseded; next steps live in <../TODO.md>. What remains here is the load-bearing perf
 measurement that backs the latency budget, plus the current dogfood-apply survey
@@ -9,8 +9,8 @@ measurement that backs the latency budget, plus the current dogfood-apply survey
 
 ## Dogfood-apply survey (2026-06-17, post enclosing-context + interior-cover)
 
-Whole-spec `synthesize-selectors --apply` (`-c opt` binary, gaffer
-`tana/re/web/78d928dca7` spec, the unmodified name-pinned spec). Measures what the
+Whole-spec `synthesize-selectors --apply` (`-c opt` binary, the downstream corpus
+`<downstream-spec>` spec, the unmodified name-pinned spec). Measures what the
 **current** minimizer — with the post-#2291 capabilities landed
 (#2310 wide-destructure, #2315 enclosing-context anchoring, #2318 callee/arg
 holing, #2289 interior cover, #2306 multi-target binding-group read-off) — does on
@@ -26,7 +26,7 @@ the real spec, and where it still over-pins.
 | wall (`--apply`, whole spec, `-c opt`)   | **13.1 s**      |
 
 The **~50% conversion** is a large jump from the ~9%-convertible the plan recorded
-at gaffer `main` after #360 (then: ~91% "no sparse selector"). The
+at the downstream corpus `main` after #360 (then: ~91% "no sparse selector"). The
 enclosing-context anchoring (#2315) and interior cover (#2289) recover most of the
 previously-skipped whole-body-only tail — but they are also where the new over-pin
 debt comes from (below). The ~1123 still-skipped are the residual hard tail.
@@ -86,7 +86,7 @@ W4 perf acceptance measurement of the **current read-off minimizer** (shape-inde
 directly (no Bazel overhead), wall-clock via `time.perf_counter`, peak RSS via
 `getrusage(RUSAGE_CHILDREN)` on a fresh child per scope. Members counted as
 `name_binding_members` (the members the minimizer actually processes). Chunk:
-`static/index-DI2GynTv.js`.
+`static/<primary-chunk>.js`.
 
 | Scope           | members | seconds       | peak RSS    |
 | --------------- | ------- | ------------- | ----------- |
@@ -151,7 +151,7 @@ reports **2,227** `name_binding_members`, not the 4,506 of the table above —
 fewer members to minimize, so even the unmodified binary is already under the
 ≤10s ideal). To isolate the data-structure change from the spec-size change,
 binaries were built `-c opt` and run back-to-back on this same spec
-(`static/index-DI2GynTv.js`, `time.perf_counter` × 3, `RUSAGE_CHILDREN`):
+(`static/<primary-chunk>.js`, `time.perf_counter` × 3, `RUSAGE_CHILDREN`):
 
 | binary                           | whole chunk (median) | best  | peak RSS |
 | -------------------------------- | -------------------- | ----- | -------- |

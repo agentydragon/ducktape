@@ -1,7 +1,9 @@
 //! In-process Datalog (Ascent) resolution over the owner-graph EDB.
 //!
-//! Phase-1 shadow of the selector resolution layer (see
-//! `plans/selector_constraint_model.md`). The EDB is the owner graph: `owner:N`
+//! The relational-selector prototype, exposed as `debundle selector-solve`.
+//! It is **not** on the `run` path (see <docs/selector_resolution.md>); it is
+//! the vehicle for relational/cross-reference selector work.
+//! The EDB is the owner graph: `owner:N`
 //! top-level statements, the bindings each declares, and owner->owner reference
 //! edges carrying the binding and edge kind. The bootstrap rule resolves each
 //! binding name to its declaring owner — this reproduces today's name-pin
@@ -80,8 +82,8 @@ pub struct DecorateCallUse {
 /// `getOwnPropertyDescriptor`). N byte-identical copies share one `property`, so the
 /// row alone cannot disambiguate — the resolver pairs it with the inverse-`references`
 /// edge from the alias's sole referencing owner (the trio's `__decorate` helper),
-/// the re-minify-invariant anchor `selector_constraint_model.md`'s "the intrinsic
-/// alias *referenced by* `@<decorateHelper>`" calls for.
+/// the re-minify-invariant anchor: the intrinsic alias *referenced by*
+/// `@<decorateHelper>`.
 #[derive(Deserialize)]
 pub struct IntrinsicAliasUse {
     pub binding: String,
@@ -331,7 +333,7 @@ ascent! {
     // (the `var __decorate_X = …` statement) via `name_owner`. The decorated class
     // `class_anchor` (a separately-pinned entity) is carried through so the resolver
     // narrows the byte-identical helper copies by the class each one decorates — the
-    // use-site disambiguation `selector_constraint_model.md` calls for. The
+    // use-site disambiguation these byte-identical copies require. The
     // `declares(o, _d)` conjunct mirrors the other primitives: only a declaring owner
     // has an identity a selector can name as the target. The optional member literal
     // is carried for further narrowing. ----

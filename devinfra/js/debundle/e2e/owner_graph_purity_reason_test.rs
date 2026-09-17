@@ -1,6 +1,6 @@
-//! Pin the owner-graph `purity` field carries structured reasons
-//! for non-Pure verdicts. Replaces the legacy `has_side_effect:
-//! bool` with `purity: Purity { kind: "pure" | "not_pure", reasons }`.
+//! Pin that the owner-graph `purity` field carries structured reasons
+//! for non-Pure verdicts: `purity: Purity { kind: "pure" | "not_pure",
+//! reasons }`.
 //!
 //! Diagnostic contract: every owner with `purity.kind != "pure"`
 //! has at least one `PurityReason` describing which classifier

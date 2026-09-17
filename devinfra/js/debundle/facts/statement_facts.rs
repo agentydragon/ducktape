@@ -137,7 +137,7 @@ pub struct StatementFacts {
 
 impl StatementFacts {
     /// Per-statement (writes, reads) cell summary used by the
-    /// dataflow-aware S-chain emission in `graph.rs` and the vendor
+    /// dataflow-aware S-chain emission in `graph/` and the vendor
     /// strip's swap-privacy gate. Derived on demand: the
     /// `Binding`-cell half restates `declared` / `reads.eager` /
     /// `rebinds.eager`; only the `GlobalProp` half (`global_writes` /

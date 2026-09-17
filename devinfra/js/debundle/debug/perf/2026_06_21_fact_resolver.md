@@ -1,20 +1,18 @@
-# Historical profile: fact-based selector resolver
+# Shape matcher: scaling profile and the quadratic fix
 
-Historical measured profile of the post-#2398 fact-based selector resolver — the
-`source_match::ChunkResolver` (`datalog_resolver.rs`) that became the sole
-`SelectorResolver` when the AST matcher was deleted. It builds a per-chunk
-`chunk_facts` EDB once and resolves every `source_match` selector against it
-via the `selector_match` structural homomorphism.
+Measured profile of the `source_match` shape matcher — `ChunkResolver`
+(`source_match/chunk_resolver.rs`) over the `selector_match` structural
+homomorphism. It builds a per-chunk `chunk_facts` EDB once and resolves every
+`source_match` selector against it. This is the production candidate generator
+(<../../docs/selector_resolution.md>).
 
-This note is the measured baseline for that legacy path, not the current target
-architecture. The selector cutover now routes native production selectors and
-`match-selector` baseline probes through `selector_runtime`; remaining work is
-to delete the production `ChunkResolver` projection fallback tracked in
-<../../plans/selector_constraint_model.md>. The current solver-path fastbuild versus
-optimized profile lives in
-<2026_07_13_match_selector_full_domain_profile.md>. The proposer/gate path lives
-in <../../perf/proposer.md>; the older declaration-hole `source_match`
-micro-profile lives in <../../perf/source_match_selector_profile.md>.
+The load-bearing result is the **scaling exponent** and the two changes that
+produced it; the absolute 2026-06-21 numbers are from a synthetic corpus on a
+different host. For the matcher measured against native lowering on a real
+downstream chunk, see <2026_09_17_matcher_vs_native_lowering.md>. The
+proposer/gate path lives in <../../perf/proposer.md>; the older declaration-hole
+`source_match` micro-profile lives in
+<../../perf/source_match_selector_profile.md>.
 
 ## Budget
 
@@ -31,9 +29,9 @@ points at the `debundle_pipeline` profile sibling targets over the
 `props/frontend/debundle/` corpus. This historical run predates that setup: at
 HEAD `05572738` (the #2398 commit), `pipeline.bzl` defined only the base
 `debundle_pipeline` rule and there was no `props/frontend/debundle/` corpus. The
-gaffer `tana/re/web/78d928dca7` spec was off-limits (a concurrent lane worker
+the downstream corpus `<downstream-spec>` spec was off-limits (a concurrent lane worker
 was editing it). So this run uses the reproducible public stand-in the proposer
-note already established — the `gen_synth_corpus.py` corpus (gaffer-scale graph
+note already established — the `gen_synth_corpus.py` corpus (the downstream corpus-scale graph
 shape) — with one rewrite to make it exercise the fact resolver.
 
 **Corpus.** `gen_synth_corpus.py --statements 10000 --seed 1 --claim-blocks 62`
@@ -66,15 +64,16 @@ finding.
 Binary built `-c opt --@rules_rust//:extra_rustc_flag=-Cdebuginfo=1`. Wall is
 median of ≥3 warmed runs.
 
-| Command                                   | binding-name selectors | source_match selectors |
-| ----------------------------------------- | ---------------------: | ---------------------: |
-| `run --spec` (10k corpus)                 |                  0.43s |                   4.4s |
-| `spec validate --spec` (10k corpus)       |                  0.30s |                   4.4s |
-| legacy `spec match-selector` (1 selector) |                      — |      0.10s (alpha-all) |
+| Command                             | binding-name selectors | source_match selectors |
+| ----------------------------------- | ---------------------: | ---------------------: |
+| `run --spec` (10k corpus)           |                  0.43s |                   4.4s |
+| `spec validate --spec` (10k corpus) |                  0.30s |                   4.4s |
+| `spec match-selector` (1 selector)  |                      — |      0.10s (alpha-all) |
 
-That 0.10-second row describes the 2026-06-21 `ChunkResolver` implementation.
-It must not be used as a current `selector_runtime` baseline. The whole-spec
-commands in this historical workload paid the legacy match 2461 times.
+That 0.10-second row is a matcher-only probe on a 436 KB synthetic chunk. It is
+not comparable to a `match-selector` run today, which lowers natively and solves
+through the CP-SAT sidecar — see <2026_09_17_matcher_vs_native_lowering.md>. The
+whole-spec rows above paid the match 2461 times.
 
 ### Scaling — the headline
 
@@ -162,7 +161,7 @@ pipeline::run_transform_cli_with_options                       99.24%
       └─ ChunkPlanBuilder::add_explicit_request                92.18%
          └─ ChunkResolver::resolve_member                      92.09%  ← fact resolver
             └─ selector_match::matches_indexed                 89.72%  ← homomorphism
-               └─ datalog_resolver::member_matches_var_declarator  88.75%
+               └─ chunk_resolver::member_matches_var_declarator  88.75%
                   ├─ selector_match::homo                      42.50%
                   ├─ selector_match::unsupported_needle_construct  38.33%
                   └─ selector_match::homo'2                    35.09%
@@ -191,11 +190,9 @@ Read-out:
   (`chunk_facts::extract_facts`, `selector_match::Index::build` at 0.08% self) is
   a cheap once-per-chunk build and never surfaces in the top inclusive list. The
   cost is per-selector _matching_, not fact extraction.
-- **`selector_solve` / the Ascent datalog kernel does not appear at all.** It is
-  the separate Phase-1 shadow / X-primitive solver (the `selector-solve`
-  subcommand and the shadow gate), not on the `run` / `validate` path. The "fact
-  resolver" that is hot is `datalog_resolver` + `selector_match`, not the Ascent
-  IDB.
+- **`selector_solve` does not appear at all.** It is the relational-selector
+  prototype behind the `selector-solve` subcommand, not on the `run` /
+  `validate` path. What is hot is `chunk_resolver` + `selector_match`.
 - **Known suspects (`JsChunk` linear scans, `split_entry_body` clone) are not
   hot** on this workload — they are below threshold, dwarfed by the matcher.
 

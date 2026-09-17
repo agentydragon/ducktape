@@ -1,7 +1,7 @@
 //! Measure `chunk_facts` coverage on a real chunk: how many top-level
 //! statements fully extract vs. hit a fail-closed `Unsupported`, with the
-//! first-blocker histogram. The instrument that drives P1 growth by real-corpus
-//! frequency (see `plans/selector_constraint_model.md`).
+//! first-blocker histogram. The instrument that prioritizes fact-extraction
+//! coverage work by real-corpus frequency.
 //!
 //! Run locally against a chunk: `bb run //devinfra/js/debundle:chunk_facts_coverage -- <chunk.js>`.
 

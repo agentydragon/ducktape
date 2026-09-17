@@ -8,7 +8,7 @@
 //! promoted at-init reads of FnDecl bindings from the call-graph
 //! closure that feeds the promoted-edge emission. The *direct*
 //! top-level eager-read path (the loop over `stmt.reads.eager`
-//! in `graph.rs`) used to skip that filter: any top-level
+//! in `graph/`) used to skip that filter: any top-level
 //! `const x = f()` where `f` is a hoisted `function f() {}`
 //! emitted a direct `EagerUse` edge `caller → f_owner` with
 //! `constrains_init_order: true`.
@@ -25,7 +25,7 @@
 //! read manufactures a cross-module init-order constraint that
 //! no realizable trace actually demands.
 //!
-//! Compare with `target_is_hoisted` in `graph.rs`:
+//! Compare with `target_is_hoisted` in `graph/`:
 //!
 //! > Other declared kinds (`VarDecl`, `ClassDecl`) are kept:
 //! > const / let / class are TDZ-locked until their statement
@@ -49,7 +49,7 @@
 //! The owner-graph report used to emit an `EagerUse` edge for
 //! binding `f` from the residual `const x` statement to the
 //! FnDecl owner, with `constrains_init_order: true`. Now the
-//! direct-read path in `graph.rs` applies the same
+//! direct-read path in `graph/` applies the same
 //! `target_is_hoisted` filter the promoted-read path uses, so no
 //! `EagerUse` edge to a FnDecl owner is emitted.
 

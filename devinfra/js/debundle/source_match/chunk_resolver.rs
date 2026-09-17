@@ -317,7 +317,7 @@ fn matching_body_indices(
     // uniformly), then match it against each cached body index.
     let needle_index = selector_match::Index::build(needle_facts);
     selector_match::matches_indexed(&needle_index, &needle_index, mode)
-        .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?;
+        .map_err(|unsupported| anyhow::anyhow!("source_match resolver: {}", unsupported.reason))?;
     // Sound root-kind prefilter: when the needle root is a concrete kind, a
     // subject whose root kind differs is a guaranteed non-match (the `nkind !=
     // subject kind` gate in the matcher), so skip it without matching.
@@ -379,11 +379,11 @@ fn member_matches_var_declarator(
     selector: &AnonymousStatementSelector,
 ) -> Result<Vec<MemberBindingMatch>> {
     let needle_facts = needle_item_facts(needle, selector)
-        .ok_or_else(|| anyhow::anyhow!("datalog resolver: needle did not project to facts"))?;
+        .ok_or_else(|| anyhow::anyhow!("source_match resolver: needle did not project to facts"))?;
     let mode = selector_mode(selector);
     // Probe the needle once: an unsupported construct errors uniformly.
     selector_match::matches(&needle_facts, &needle_facts, mode)
-        .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?;
+        .map_err(|unsupported| anyhow::anyhow!("source_match resolver: {}", unsupported.reason))?;
     // Which of the needle declarator's declared bindings is the target.
     let target_binding_idx = match &selector.target_binding {
         Some(target_binding) => {
@@ -439,14 +439,16 @@ fn member_matches_var_declarator(
         let declared = declared_bindings_for_var_declarator(declarator);
         if selector.target_binding.is_none() && declared.len() != 1 {
             bail!(
-                "datalog resolver: export `{export_name}` matched a declarator binding {} \
+                "source_match resolver: export `{export_name}` matched a declarator binding {} \
                  names; needs a single-binding declarator or source_matches[].bindings \
                  projection",
                 declared.len(),
             );
         }
         let Some(binding) = declared.into_iter().nth(target_binding_idx) else {
-            bail!("datalog resolver: target binding index out of range for matched declarator");
+            bail!(
+                "source_match resolver: target binding index out of range for matched declarator"
+            );
         };
         matches.push(MemberBindingMatch {
             body_idx: subject.body_idx,
@@ -471,22 +473,26 @@ fn member_matches_declarator_hole(
     selector: &AnonymousStatementSelector,
 ) -> Result<Vec<MemberBindingMatch>> {
     let target_binding = selector.target_binding.as_deref().ok_or_else(|| {
-        anyhow::anyhow!("datalog resolver: declarator-hole member selector needs target_binding")
+        anyhow::anyhow!(
+            "source_match resolver: declarator-hole member selector needs target_binding"
+        )
     })?;
     let needle_var = item_var_decl(needle).ok_or_else(|| {
-        anyhow::anyhow!("datalog resolver: declarator-hole needle is not a variable declaration")
+        anyhow::anyhow!(
+            "source_match resolver: declarator-hole needle is not a variable declaration"
+        )
     })?;
     let (target_decl_idx, target_binding_idx) =
         selector_var_declarator_binding_location(needle_var, request_id, selector, target_binding)?;
     let needle_facts = needle_item_facts(needle, selector)
-        .ok_or_else(|| anyhow::anyhow!("datalog resolver: needle did not project to facts"))?;
+        .ok_or_else(|| anyhow::anyhow!("source_match resolver: needle did not project to facts"))?;
     let needle_index = selector_match::Index::build(&needle_facts);
     let mode = selector_mode(selector);
     // Probe the needle once: an unsupported construct errors uniformly (and makes
     // the per-subject `.expect` below sound — the only `Unsupported` source is the
     // needle construct, invariant across subjects and prebindings).
     selector_match::var_declarator_alignment_indexed(&needle_index, &needle_index, mode, None)
-        .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?;
+        .map_err(|unsupported| anyhow::anyhow!("source_match resolver: {}", unsupported.reason))?;
     let mut matches: Vec<MemberBindingMatch> = Vec::new();
     // The fixed (non-hole) declarators pin invariant tokens any matching owner
     // must carry, so the token index narrows the owner scan (the giant
@@ -523,13 +529,17 @@ fn member_matches_declarator_hole(
             );
         };
         let Some(candidate_declarator) = candidate_var.decls.get(*candidate_decl_idx) else {
-            bail!("datalog resolver: target binding aligned to a missing candidate declarator");
+            bail!(
+                "source_match resolver: target binding aligned to a missing candidate declarator"
+            );
         };
         let Some(binding) = declared_bindings_for_var_declarator(candidate_declarator)
             .into_iter()
             .nth(target_binding_idx)
         else {
-            bail!("datalog resolver: target binding index out of range for matched declarator");
+            bail!(
+                "source_match resolver: target binding index out of range for matched declarator"
+            );
         };
         matches.push(MemberBindingMatch { body_idx, binding });
     }
@@ -548,7 +558,7 @@ fn parse_source_match_selector(
     ParsedSourceMatchSelector::parse(
         request_id,
         "source_match",
-        format!("<datalog needle in {request_id}>"),
+        format!("<source_match needle in {request_id}>"),
         selector,
         "source_match",
     )
@@ -580,7 +590,7 @@ fn member_matches_single_declarator_target_window(
         .iter()
         .map(|item| needle_item_facts(item, selector))
         .collect::<Option<Vec<_>>>()
-        .ok_or_else(|| anyhow::anyhow!("datalog resolver: needle did not project to facts"))?;
+        .ok_or_else(|| anyhow::anyhow!("source_match resolver: needle did not project to facts"))?;
     let needle_indices: Vec<_> = needle_facts
         .iter()
         .map(selector_match::Index::build)
@@ -591,20 +601,22 @@ fn member_matches_single_declarator_target_window(
         target_item_idx,
         selector_mode(selector),
     )
-    .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?;
+    .map_err(|unsupported| anyhow::anyhow!("source_match resolver: {}", unsupported.reason))?;
     let mut matches: Vec<MemberBindingMatch> = Vec::new();
     for (target_body_idx, subject_decl_idx) in windows {
         let Some(candidate_var) = item_var_decl(&chunk.module.body[target_body_idx]) else {
-            bail!("datalog resolver: matched window target is not a variable declaration");
+            bail!("source_match resolver: matched window target is not a variable declaration");
         };
         let Some(declarator) = candidate_var.decls.get(subject_decl_idx) else {
-            bail!("datalog resolver: matched declarator index out of range");
+            bail!("source_match resolver: matched declarator index out of range");
         };
         let Some(binding) = declared_bindings_for_var_declarator(declarator)
             .into_iter()
             .nth(target_binding_idx)
         else {
-            bail!("datalog resolver: target binding index out of range for matched declarator");
+            bail!(
+                "source_match resolver: target binding index out of range for matched declarator"
+            );
         };
         matches.push(MemberBindingMatch {
             body_idx: target_body_idx,
@@ -628,7 +640,9 @@ fn member_matches_multi(
     selector: &AnonymousStatementSelector,
 ) -> Result<Vec<MemberBindingMatch>> {
     let target_binding = selector.target_binding.as_deref().ok_or_else(|| {
-        anyhow::anyhow!("datalog resolver: multi-statement member selector needs target_binding")
+        anyhow::anyhow!(
+            "source_match resolver: multi-statement member selector needs target_binding"
+        )
     })?;
     let (target_item_idx, target_binding_idx) =
         selector_binding_location(needles, request_id, selector, target_binding)?;
@@ -663,7 +677,7 @@ fn member_matches_multi(
         .iter()
         .map(|item| needle_item_facts(item, selector))
         .collect::<Option<Vec<_>>>()
-        .ok_or_else(|| anyhow::anyhow!("datalog resolver: needle did not project to facts"))?;
+        .ok_or_else(|| anyhow::anyhow!("source_match resolver: needle did not project to facts"))?;
     let needle_indices: Vec<_> = needle_facts
         .iter()
         .map(selector_match::Index::build)
@@ -673,7 +687,7 @@ fn member_matches_multi(
         &chunk.body_indices,
         selector_mode(selector),
     )
-    .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?;
+    .map_err(|unsupported| anyhow::anyhow!("source_match resolver: {}", unsupported.reason))?;
     let mut matches: Vec<MemberBindingMatch> = Vec::new();
     for start in starts {
         let body_idx = start + target_item_idx;
@@ -681,7 +695,7 @@ fn member_matches_multi(
             .into_iter()
             .nth(target_binding_idx)
         else {
-            bail!("datalog resolver: target binding index out of range");
+            bail!("source_match resolver: target binding index out of range");
         };
         matches.push(MemberBindingMatch { body_idx, binding });
     }
@@ -702,7 +716,7 @@ fn group_matches_declarator_holes(
 ) -> Result<Vec<MemberBindingGroupMatch>> {
     let needle_var = item_var_decl(needle).ok_or_else(|| {
         anyhow::anyhow!(
-            "datalog resolver: declarator-hole group needle is not a variable declaration"
+            "source_match resolver: declarator-hole group needle is not a variable declaration"
         )
     })?;
     let target_locations: BTreeMap<String, (usize, usize)> = exports_by_target
@@ -713,11 +727,11 @@ fn group_matches_declarator_holes(
         })
         .collect::<Result<_>>()?;
     let needle_facts = needle_item_facts(needle, selector)
-        .ok_or_else(|| anyhow::anyhow!("datalog resolver: needle did not project to facts"))?;
+        .ok_or_else(|| anyhow::anyhow!("source_match resolver: needle did not project to facts"))?;
     let needle_index = selector_match::Index::build(&needle_facts);
     let mode = selector_mode(selector);
     selector_match::var_declarator_alignment_indexed(&needle_index, &needle_index, mode, None)
-        .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?;
+        .map_err(|unsupported| anyhow::anyhow!("source_match resolver: {}", unsupported.reason))?;
     let mut matches: Vec<MemberBindingGroupMatch> = Vec::new();
     // No prebind here (the alignment runs un-prebound), so an exact-mode needle may
     // require its pinned-declarator identifier spellings; `DECLARATORS`-hole
@@ -745,14 +759,14 @@ fn group_matches_declarator_holes(
             };
             let Some(declarator) = candidate_var.decls.get(*candidate_decl_idx) else {
                 bail!(
-                    "datalog resolver: target `{target}` aligned to a missing candidate declarator"
+                    "source_match resolver: target `{target}` aligned to a missing candidate declarator"
                 );
             };
             let Some(binding) = declared_bindings_for_var_declarator(declarator)
                 .into_iter()
                 .nth(*target_binding_idx)
             else {
-                bail!("datalog resolver: target `{target}` binding index out of range");
+                bail!("source_match resolver: target `{target}` binding index out of range");
             };
             resolved.insert(target.clone(), MemberBindingMatch { body_idx, binding });
         }
@@ -795,12 +809,12 @@ fn group_matches_single_declarator(
         })
         .collect::<Result<_>>()?;
     let needle_facts = needle_item_facts(needle, selector)
-        .ok_or_else(|| anyhow::anyhow!("datalog resolver: needle did not project to facts"))?;
+        .ok_or_else(|| anyhow::anyhow!("source_match resolver: needle did not project to facts"))?;
     let needle_index = selector_match::Index::build(&needle_facts);
     let init_prefilter = selector_match::needle_var_declarator_init_kind_prefilter(&needle_facts);
     let mode = selector_mode(selector);
     selector_match::matches_indexed(&needle_index, &needle_index, mode)
-        .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?;
+        .map_err(|unsupported| anyhow::anyhow!("source_match resolver: {}", unsupported.reason))?;
     let mut matches: Vec<MemberBindingGroupMatch> = Vec::new();
     // No prebind (the declarator match is un-prebound); an exact-mode needle may
     // require its identifier spellings.
@@ -823,7 +837,7 @@ fn group_matches_single_declarator(
         let mut resolved = BTreeMap::new();
         for (target, target_binding_idx) in &target_binding_indices {
             let Some(binding) = declarator_bindings.get(*target_binding_idx) else {
-                bail!("datalog resolver: target `{target}` binding index out of range");
+                bail!("source_match resolver: target `{target}` binding index out of range");
             };
             resolved.insert(
                 target.clone(),
@@ -859,7 +873,7 @@ fn group_matches_general(
         .iter()
         .map(|item| needle_item_facts(item, selector))
         .collect::<Option<Vec<_>>>()
-        .ok_or_else(|| anyhow::anyhow!("datalog resolver: needle did not project to facts"))?;
+        .ok_or_else(|| anyhow::anyhow!("source_match resolver: needle did not project to facts"))?;
     let needle_indices: Vec<_> = needle_facts
         .iter()
         .map(selector_match::Index::build)
@@ -869,7 +883,7 @@ fn group_matches_general(
         &chunk.body_indices,
         selector_mode(selector),
     )
-    .map_err(|unsupported| anyhow::anyhow!("datalog resolver: {}", unsupported.reason))?;
+    .map_err(|unsupported| anyhow::anyhow!("source_match resolver: {}", unsupported.reason))?;
     let mut matches = Vec::new();
     for alignment in alignments {
         let mut resolved = BTreeMap::new();
@@ -884,7 +898,7 @@ fn group_matches_general(
                 .into_iter()
                 .nth(*target_binding_idx)
             else {
-                bail!("datalog resolver: target `{target}` binding index out of range");
+                bail!("source_match resolver: target `{target}` binding index out of range");
             };
             resolved.insert(
                 target.clone(),
@@ -944,7 +958,7 @@ fn member_matches_single_statement(
     selector: &AnonymousStatementSelector,
 ) -> Result<Vec<MemberBindingMatch>> {
     let needle_facts = needle_item_facts(needle, selector)
-        .ok_or_else(|| anyhow::anyhow!("datalog resolver: needle did not project to facts"))?;
+        .ok_or_else(|| anyhow::anyhow!("source_match resolver: needle did not project to facts"))?;
     let indices = matching_body_indices(chunk, &needle_facts, selector_mode(selector))?;
     let mut matches: Vec<MemberBindingMatch> = Vec::new();
     match &selector.target_binding {
@@ -1067,7 +1081,7 @@ impl ChunkResolver<'_> {
         let selector = parsed.selector();
         if selector.target_binding.is_some() {
             bail!(
-                "datalog resolver: binding-group selector for {request_id} unexpectedly has \
+                "source_match resolver: binding-group selector for {request_id} unexpectedly has \
                  target_binding set"
             );
         }
@@ -1185,7 +1199,7 @@ impl SelectorResolver for ChunkResolver<'_> {
     ) -> Result<ResolvedMemberBindingGroup> {
         if selector.target_binding.is_some() {
             bail!(
-                "datalog resolver: binding-group selector for {request_id} unexpectedly has \
+                "source_match resolver: binding-group selector for {request_id} unexpectedly has \
                  target_binding set"
             );
         }
@@ -1218,8 +1232,9 @@ impl ChunkResolver<'_> {
         let [needle] = needles else {
             unreachable!("anonymous selector validation requires one parsed statement")
         };
-        let needle_facts = needle_item_facts(needle, selector)
-            .ok_or_else(|| anyhow::anyhow!("datalog resolver: needle did not project to facts"))?;
+        let needle_facts = needle_item_facts(needle, selector).ok_or_else(|| {
+            anyhow::anyhow!("source_match resolver: needle did not project to facts")
+        })?;
         Ok(
             matching_body_indices(self, &needle_facts, selector_mode(selector))?
                 .into_iter()
@@ -1261,7 +1276,7 @@ mod tests {
     }
 
     #[test]
-    fn datalog_resolver_resolves_declarator_hole_group_like_production() {
+    fn chunk_resolver_resolves_declarator_hole_group_like_production() {
         js_ast::with_swc_globals(|| {
             // The `*-module_*` binding-group shape: holes around several pinned,
             // string-predicate declarators; one alignment supplies every target.
@@ -1272,59 +1287,59 @@ mod tests {
                  DECLARATORS_AFTER = null;",
             );
             let exports = exports(&[("a", "ExportA"), ("b", "ExportB")]);
-            let datalog = ChunkResolver::new(&chunk)
+            let resolved = ChunkResolver::new(&chunk)
                 .resolve_member_group("test", &selector, &exports)
-                .expect("datalog resolves the group");
-            assert_eq!(datalog.bindings["a"].binding_name, "aClass");
-            assert_eq!(datalog.bindings["b"].binding_name, "bClass");
+                .expect("resolver resolves the group");
+            assert_eq!(resolved.bindings["a"].binding_name, "aClass");
+            assert_eq!(resolved.bindings["b"].binding_name, "bClass");
         });
     }
 
     #[test]
-    fn datalog_resolver_resolves_general_group() {
+    fn chunk_resolver_resolves_general_group() {
         js_ast::with_swc_globals(|| {
             // A multi-statement (general-path) group: a leading anonymous statement
             // then two single-declarator targets, matched as a contiguous window.
             let chunk = module("init();\nconst alpha = makeA();\nconst beta = makeB();\n");
             let selector = group("init();\nconst a = makeA();\nconst b = makeB();");
             let exports = exports(&[("a", "ExportA"), ("b", "ExportB")]);
-            let datalog = ChunkResolver::new(&chunk)
+            let resolved = ChunkResolver::new(&chunk)
                 .resolve_member_group("test", &selector, &exports)
-                .expect("datalog resolves the general group");
-            assert_eq!(datalog.bindings["a"].binding_name, "alpha");
-            assert_eq!(datalog.bindings["b"].binding_name, "beta");
+                .expect("resolver resolves the general group");
+            assert_eq!(resolved.bindings["a"].binding_name, "alpha");
+            assert_eq!(resolved.bindings["b"].binding_name, "beta");
         });
     }
 
     #[test]
-    fn datalog_resolver_resolves_member() {
+    fn chunk_resolver_resolves_member() {
         js_ast::with_swc_globals(|| {
             let chunk = module("function alpha(n) { return n + 1; }\nconst beta = alpha(2);\n");
             // A function with a body the alpha selector matches structurally.
             let selector = member("function f(x) { return x + 1; }", Some("f"));
-            let datalog = ChunkResolver::new(&chunk)
+            let resolved = ChunkResolver::new(&chunk)
                 .resolve_member("test", "Alpha", &selector)
-                .expect("datalog resolves the function");
-            assert_eq!(datalog.binding_name, "alpha");
+                .expect("resolver resolves the function");
+            assert_eq!(resolved.binding_name, "alpha");
         });
     }
 
     #[test]
-    fn datalog_resolver_resolves_declarator_inside_multi_declarator_owner() {
+    fn chunk_resolver_resolves_declarator_inside_multi_declarator_owner() {
         js_ast::with_swc_globals(|| {
             // The target init lives in the second declarator of a multi-declarator
             // statement — only declarator-level matching finds it.
             let chunk = module("const a = 1, target = compute();\nconst other = 2;\n");
             let selector = member("const x = compute();", Some("x"));
-            let datalog = ChunkResolver::new(&chunk)
+            let resolved = ChunkResolver::new(&chunk)
                 .resolve_member("test", "X", &selector)
-                .expect("datalog resolves the inner declarator");
-            assert_eq!(datalog.binding_name, "target");
+                .expect("resolver resolves the inner declarator");
+            assert_eq!(resolved.binding_name, "target");
         });
     }
 
     #[test]
-    fn datalog_resolver_var_declarator_categoricity_rejects_ambiguous() {
+    fn chunk_resolver_var_declarator_categoricity_rejects_ambiguous() {
         js_ast::with_swc_globals(|| {
             // The same init appears in two declarators (one inside a
             // multi-declarator owner) — ambiguous. The resolver must count both
@@ -1342,7 +1357,7 @@ mod tests {
     }
 
     #[test]
-    fn datalog_resolver_resolves_declarator_hole_member() {
+    fn chunk_resolver_resolves_declarator_hole_member() {
         js_ast::with_swc_globals(|| {
             // A `DECLARATORS`-hole needle pins one declarator by a string-literal
             // predicate; the holes absorb the surrounding declarators. Only the
@@ -1353,15 +1368,15 @@ mod tests {
                  DECLARATORS_AFTER = null;",
                 Some("c"),
             );
-            let datalog = ChunkResolver::new(&chunk)
+            let resolved = ChunkResolver::new(&chunk)
                 .resolve_member("test", "C", &selector)
-                .expect("datalog resolves the declarator-hole target");
-            assert_eq!(datalog.binding_name, "theClass");
+                .expect("resolver resolves the declarator-hole target");
+            assert_eq!(resolved.binding_name, "theClass");
         });
     }
 
     #[test]
-    fn datalog_resolver_regex_prefix_predicate_prunes_declarator_candidates() {
+    fn chunk_resolver_regex_prefix_predicate_prunes_declarator_candidates() {
         js_ast::with_swc_globals(|| {
             let chunk = module(
                 "const offPrefix = \"Token-secondary-202\";\n\
@@ -1387,15 +1402,15 @@ mod tests {
                 .collect();
             assert_eq!(candidate_body_indices, vec![2]);
 
-            let datalog = resolver
+            let resolved = resolver
                 .resolve_member("test", "Target", &selector)
-                .expect("datalog resolves the regex-prefixed declarator");
-            assert_eq!(datalog.binding_name, "target");
+                .expect("resolver resolves the regex-prefixed declarator");
+            assert_eq!(resolved.binding_name, "target");
         });
     }
 
     #[test]
-    fn datalog_resolver_unanchored_regex_predicate_keeps_fallback_scan() {
+    fn chunk_resolver_unanchored_regex_predicate_keeps_fallback_scan() {
         js_ast::with_swc_globals(|| {
             let chunk = module(
                 "const decoy = \"abcx\";\n\
@@ -1417,15 +1432,15 @@ mod tests {
                 "unanchored regex has no safe prefix and must not prune candidates"
             );
 
-            let datalog = resolver
+            let resolved = resolver
                 .resolve_member("test", "Target", &selector)
-                .expect("datalog resolves through fallback candidate scan");
-            assert_eq!(datalog.binding_name, "target");
+                .expect("resolver resolves through fallback candidate scan");
+            assert_eq!(resolved.binding_name, "target");
         });
     }
 
     #[test]
-    fn datalog_resolver_regex_alternation_keeps_fallback_scan() {
+    fn chunk_resolver_regex_alternation_keeps_fallback_scan() {
         js_ast::with_swc_globals(|| {
             let chunk = module(
                 "const target = \"bar\";\n\
@@ -1449,15 +1464,15 @@ mod tests {
                 "alternation has no globally safe literal prefix and must not prune candidates"
             );
 
-            let datalog = resolver
+            let resolved = resolver
                 .resolve_member("test", "Target", &selector)
-                .expect("datalog resolves alternation through fallback candidate scan");
-            assert_eq!(datalog.binding_name, "target");
+                .expect("resolver resolves alternation through fallback candidate scan");
+            assert_eq!(resolved.binding_name, "target");
         });
     }
 
     #[test]
-    fn datalog_resolver_declarator_hole_categoricity_rejects_ambiguous() {
+    fn chunk_resolver_declarator_hole_categoricity_rejects_ambiguous() {
         js_ast::with_swc_globals(|| {
             // Two separate var-decl owners each match the hole needle → ambiguous
             // at the owner level. The resolver must reject (no spurious unique
@@ -1478,7 +1493,7 @@ mod tests {
     }
 
     #[test]
-    fn datalog_resolver_resolves_single_declarator_target_window() {
+    fn chunk_resolver_resolves_single_declarator_target_window() {
         js_ast::with_swc_globals(|| {
             // A contiguous two-statement window: a helper function then a
             // single-declarator var-decl target living inside a multi-declarator
@@ -1492,15 +1507,15 @@ mod tests {
                 "function f(x) { return x + 1; }\nconst t = makeThing();",
                 Some("t"),
             );
-            let datalog = ChunkResolver::new(&chunk)
+            let resolved = ChunkResolver::new(&chunk)
                 .resolve_member("test", "T", &selector)
-                .expect("datalog resolves the windowed single-declarator target");
-            assert_eq!(datalog.binding_name, "theTarget");
+                .expect("resolver resolves the windowed single-declarator target");
+            assert_eq!(resolved.binding_name, "theTarget");
         });
     }
 
     #[test]
-    fn datalog_resolver_single_declarator_target_window_categoricity_rejects_ambiguous() {
+    fn chunk_resolver_single_declarator_target_window_categoricity_rejects_ambiguous() {
         js_ast::with_swc_globals(|| {
             // The window shape appears twice → ambiguous; the resolver rejects.
             let chunk = module(
@@ -1521,7 +1536,7 @@ mod tests {
     }
 
     #[test]
-    fn datalog_resolver_resolves_multi_statement_declarator_hole_target() {
+    fn chunk_resolver_resolves_multi_statement_declarator_hole_target() {
         js_ast::with_swc_globals(|| {
             // A two-statement window whose target item is a declarator-hole var-decl
             // with the pinned target declarator first (the corpus `const mR =
@@ -1536,21 +1551,21 @@ mod tests {
                 "function f(x) { return x; }\nconst m = ANYTHING, DECLARATORS = null;",
                 Some("m"),
             );
-            let datalog = ChunkResolver::new(&chunk)
+            let resolved = ChunkResolver::new(&chunk)
                 .resolve_member("test", "M", &selector)
-                .expect("datalog resolves the windowed declarator-hole target");
-            assert_eq!(datalog.binding_name, "theTarget");
+                .expect("resolver resolves the windowed declarator-hole target");
+            assert_eq!(resolved.binding_name, "theTarget");
         });
     }
 
     #[test]
-    fn datalog_resolver_resolves_anonymous_statement() {
+    fn chunk_resolver_resolves_anonymous_statement() {
         js_ast::with_swc_globals(|| {
             let chunk = module("init();\nregister(widget);\nteardown();\n");
             let selector = member("register(ANYTHING);", None);
             let groups = ChunkResolver::new(&chunk)
                 .resolve_anonymous_groups("test", &selector)
-                .expect("datalog resolves the anonymous statement");
+                .expect("resolver resolves the anonymous statement");
             // matches exactly the `register(widget);` statement at body index 1.
             assert_eq!(groups, vec![vec![1]]);
         });
@@ -1573,7 +1588,7 @@ mod tests {
     // still found — i.e. the discriminator never prunes a real match.
 
     #[test]
-    fn datalog_resolver_exact_ident_discriminator_resolves_identifier_only_decl() {
+    fn chunk_resolver_exact_ident_discriminator_resolves_identifier_only_decl() {
         js_ast::with_swc_globals(|| {
             // The perf-corpus shape: identifier-only inits with no literal/prop token
             // to pin, in exact mode, so *only* the exact-mode identifier discriminator
@@ -1586,15 +1601,15 @@ mod tests {
                  const target = wrap(dep_b);\nconst other = wrap(dep_a);\n",
             );
             let selector = exact_member("const target = wrap(dep_b);", Some("target"));
-            let datalog = ChunkResolver::new(&chunk)
+            let resolved = ChunkResolver::new(&chunk)
                 .resolve_member("test", "T", &selector)
                 .expect("exact-mode identifier-only needle resolves");
-            assert_eq!(datalog.binding_name, "target");
+            assert_eq!(resolved.binding_name, "target");
         });
     }
 
     #[test]
-    fn datalog_resolver_exact_ident_discriminator_keeps_match_when_referenced_name_is_decisive() {
+    fn chunk_resolver_exact_ident_discriminator_keeps_match_when_referenced_name_is_decisive() {
         js_ast::with_swc_globals(|| {
             // Two declarators share the binding name shape but differ only in the
             // referenced identifier; in exact mode the reference is compared
@@ -1603,15 +1618,15 @@ mod tests {
             // a wrongful prune would surface as a no-match, not a wrong owner.
             let chunk = module("const m = wrap(dep_a);\nconst m2 = wrap(dep_b);\n");
             let selector = exact_member("const m2 = wrap(dep_b);", Some("m2"));
-            let datalog = ChunkResolver::new(&chunk)
+            let resolved = ChunkResolver::new(&chunk)
                 .resolve_member("test", "M2", &selector)
                 .expect("exact-mode needle resolves uniquely by referenced name");
-            assert_eq!(datalog.binding_name, "m2");
+            assert_eq!(resolved.binding_name, "m2");
         });
     }
 
     #[test]
-    fn datalog_resolver_exact_ident_anonymous_statement_resolves() {
+    fn chunk_resolver_exact_ident_anonymous_statement_resolves() {
         js_ast::with_swc_globals(|| {
             // The no-prebind single-statement scan (anonymous) also uses the
             // exact-mode identifier discriminator: `register(widget)` must reach
@@ -1626,7 +1641,7 @@ mod tests {
     }
 
     #[test]
-    fn datalog_resolver_exact_declarator_hole_resolves_despite_target_rename() {
+    fn chunk_resolver_exact_declarator_hole_resolves_despite_target_rename() {
         js_ast::with_swc_globals(|| {
             // The declarator-hole path *prebinds* the target name, alpha-coupling it
             // to the candidate's binding — so the exact-mode discriminator must NOT
@@ -1639,10 +1654,10 @@ mod tests {
                  DECLARATORS_AFTER = null;",
                 Some("c"),
             );
-            let datalog = ChunkResolver::new(&chunk)
+            let resolved = ChunkResolver::new(&chunk)
                 .resolve_member("test", "C", &selector)
                 .expect("exact-mode declarator-hole needle resolves despite target rename");
-            assert_eq!(datalog.binding_name, "theClass");
+            assert_eq!(resolved.binding_name, "theClass");
         });
     }
 }

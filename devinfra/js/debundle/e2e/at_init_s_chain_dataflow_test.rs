@@ -3,7 +3,7 @@
 //! emitting a `Sequenced` owner edge between two consecutive
 //! impure top-level statements.
 //!
-//! Background. The baseline S-chain emission in `graph.rs` walks
+//! Background. The baseline S-chain emission in `graph/` walks
 //! every impure top-level statement in source order and
 //! unconditionally emits
 //!

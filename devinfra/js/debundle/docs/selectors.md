@@ -44,7 +44,12 @@ Default to this ladder when writing or repairing selectors:
    needed to disambiguate. If `ANYTHING`, `EXPR`, `ARGS`,
    `CASE_REST`, `STMT_LIST`, or declarator gaps keep the selector
    unique, use the hole form.
-5. Use `selector.binding.name` only for already-stable semantic names or as
+5. When the entity has no distinctive shape of its own — a bare delegator, one
+   of several byte-identical helper copies, an empty subclass, a re-export
+   alias — pin it by a **relation** to something already pinned. See
+   "Relational selectors" below. A relation to a stable anchor is stronger than
+   a name pin and stronger than borrowing an unrelated neighbour's shape.
+6. Use `selector.binding.name` only for already-stable semantic names or as
    temporary debt that will be visible in `debundle spec selector-debt`.
 
 The minimizer is a suggester and uniqueness oracle, not the final authority on
@@ -53,6 +58,57 @@ today; an agent still chooses whether the surviving anchors are semantic enough
 to survive a future minified rebuild. Use `match-selector` to test a candidate
 and inspect over-pin slack, and use `synthesize-selectors --candidates N` as a
 ranked menu rather than an automatic accept list.
+
+## Relational selectors
+
+`source_matches[]` pins an entity by its own AST shape. When that shape is not
+distinctive — and for shapeless delegators, empty subclasses, registry targets
+and bundler-helper copies it never is — pin the entity by an invariant
+**relation** instead. These live under `members[].selector` and are one-of with
+`binding`; each names another spec member by its readable `name:`, written
+`@Name` in prose, and resolves through the owner graph in the same joint solve
+as every other selector.
+
+| Selector              | Pins the entity that…                                       | Required fields               |
+| --------------------- | ----------------------------------------------------------- | ----------------------------- |
+| `cross_ref`           | references, or aliases, `@Anchor`                           | `references` **or** `aliases` |
+| `reads_member`        | reads `.member` (optionally off `@object`)                  | `member`                      |
+| `member_of_module`    | consumes `<module>.<member>` at a use site                  | `module`, `member`            |
+| `passed_to_call`      | is passed as an argument to `.callee_member`                | `callee_member`               |
+| `makes_decorate_call` | is the callee decorating `@class`                           | `class`                       |
+| `intrinsic_alias`     | aliases `Object.<property>` and is read by `@referenced_by` | `property`, `referenced_by`   |
+
+All six take an optional `kind:` (`function_declaration`, `class_declaration`,
+`variable_declarator`, …) to disambiguate when several owners stand in the
+relation.
+
+```yaml
+members:
+  # A shapeless delegator: `function T(x){ return Anchor(x) }`.
+  - name: isTranscriptionProvider
+    selector:
+      cross_ref:
+        references: transcriptionRegistry
+        kind: function_declaration
+
+  # A registry target whose only identity is an external registration call.
+  - name: DocumentAccessor
+    selector:
+      passed_to_call:
+        callee_member: register
+        object: accessorRegistry
+        kind: class_declaration
+```
+
+Why these and not a neighbour-borrowed `source_match`: the fields are things a
+bundler does not rewrite — property names, import specifiers, export names,
+intrinsic method names — while adjacency to an unrelated declaration is exactly
+what a rebuild destroys.
+
+What the relational language cannot express yet: negation, counting/uniqueness,
+transitive reachability, combining a shape and a relation for one target, and
+referring to `@Name` from inside a `source_match` body. Those are open
+selector-language work.
 
 ## Matcher pitfalls
 
@@ -82,10 +138,15 @@ the anchor is identity, not a body photograph:
    distinctive prop/param names survive minification.
 3. **Stable member/property fingerprint** — `.startSpan`/`.setAttribute`,
    distinctive option-bag keys or method names.
-4. **Adjacent-class / sibling-declaration anchor** — for boilerplate with no
-   self-identity (e.g. esbuild decorate-helper trios emitted many times): a
-   `source_matches[]` entry with `DECLARATORS_AFTER` keyed off an adjacent named
-   class.
+4. **Relation to an already-pinned entity** — `cross_ref`, `reads_member`,
+   `member_of_module`, `passed_to_call`, `makes_decorate_call`,
+   `intrinsic_alias`. For boilerplate with no self-identity (esbuild
+   decorate-helper trios, empty subclasses, registry targets) this is the
+   strongest anchor available, because the relation's fields are names the
+   bundler does not rewrite.
+5. **Adjacent-class / sibling-declaration anchor** — a `source_matches[]` entry
+   with `DECLARATORS_AFTER` keyed off an adjacent named class. Last resort:
+   adjacency is what a rebuild reorders. Prefer tier 4 when a relation exists.
 
 Reject as if stable (leave a name-pin with a `note:` instead): hashed chunk URLs
 (`import("./index-<hash>.js")`), registration-roster / long-body photographs,
@@ -373,8 +434,8 @@ that target unique.
 
 At top level in an anonymous-statement selector, `STMT_LIST;` absorbs a run of
 module-body statements that should be used only as skipped context. Treat
-top-level statement-list holes as a legacy compatibility surface until native
-run-hole lowering defines the retained form.
+top-level statement-list holes as a compatibility surface: they pin by source
+order, which a rebuild reorders.
 
 Do not solve ambiguity with opaque hashes. A selector should be readable
 enough for a reviewer to audit and edit. When an anonymous statement needs
@@ -488,8 +549,8 @@ absorbed sequence for cross-occurrence equality.
 
 - `STMT_LIST;` (or `STMT_LIST_name;`) in a block body matches any run of
   statements, including none. Top-level `STMT_LIST` support for anonymous
-  statements is legacy compatibility surface pending native run-hole lowering;
-  avoid new selectors that require source-order indexing.
+  statements is a compatibility surface; avoid new selectors that require
+  source-order indexing.
 - `ANYTHING` (or `ANYTHING_name`) as an object-literal shorthand property
   matches any run of key/value properties or spreads. Use it to pin only the
   stable keys needed to make the selector unique, without overpinning generated

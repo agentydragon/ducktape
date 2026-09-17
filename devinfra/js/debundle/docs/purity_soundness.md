@@ -184,7 +184,7 @@ accessor channels". Eliminates the chain-of-hints needed when a
 chunk-local helper's body is just a property read on a chunk-local
 config object — including the `let envConfig = {...}` / `envConfig =
 {...envConfig, ...n}` pattern that the
-`runtime/environment/env_config.yaml` spec hints in gaffer-private
+`runtime/environment/env_config.yaml` spec hints in the private downstream repo
 were a workaround for.
 
 ## `PURE_OBJECT_CALLS_ON_PLAIN_DATA`

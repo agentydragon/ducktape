@@ -93,6 +93,12 @@ Fastbuild magnifies that CPU work because Rust dependencies are not optimized.
 
 ## Remaining work
 
+Unimplemented as of 2026-09-17. Items 1–2 bound native `source_match` lowering,
+which is the fallback path — production shape selectors reach the solver as
+projected candidate rows (<../../docs/selector_resolution.md>). Item 4 is still
+the open measurement; the matcher-versus-native comparison on this same chunk is
+in <2026_09_17_matcher_vs_native_lowering.md>.
+
 1. In native source-match lowering, avoid allocating node variables for the
    skipped expression-statement and identifier nodes that carry list holes.
 2. Reject or prune unreferenced variables before backend serialization.

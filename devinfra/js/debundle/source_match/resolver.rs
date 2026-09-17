@@ -1,10 +1,11 @@
-//! Legacy selector-resolution seam: the `SelectorResolver` trait.
+//! The candidate-resolution seam: the `SelectorResolver` trait.
 //!
 //! A resolver answers, for a parsed chunk and a JS-template selector: which
-//! top-level statement does the selector claim, and what binding(s) does it
-//! resolve to? The fact-based `ChunkResolver` (`datalog_resolver`) is the sole
-//! implementor. This API is retained for parity tests and migration oracles;
-//! production selector resolution should go through `selector_runtime`.
+//! top-level statements does the selector match, and what binding(s) do they
+//! declare? `ChunkResolver` (`chunk_resolver`) is the sole implementor and the
+//! production candidate generator for shape (`source_match`) selectors —
+//! materialization projects its candidates into the selector IR, and the global
+//! solve picks one target per selector. See <docs/selector_resolution.md>.
 //!
 //! The output granularity is deliberately coarse: a member resolves to its
 //! `ResolvedMemberBinding` (the claimed binding + kind), an anonymous selector to

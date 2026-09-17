@@ -1,6 +1,6 @@
-# gaffer-private P4 Phase A selector-stabilization — lane recipe (battle-tested)
+# Downstream P4 Phase A selector-stabilization — lane recipe (battle-tested)
 
-Self-contained instructions for a `debundle_lane_worker` converting one tana/re
+Self-contained instructions for a `debundle_lane_worker` converting one <downstream-spec>
 spec family's fragile minified-name pins to genuine stable `source_match`
 selectors. Proven across the billing / infra / app-commands lanes (2026-06-20).
 Read this + the two skills, then execute the rolling workflow.
@@ -33,13 +33,13 @@ identity unknown`); **all bazel flags before `--`**:
 bazelisk \
   --host_jvm_args=-Djavax.net.ssl.trustStore=/etc/ssl/certs/java/cacerts \
   --host_jvm_args=-Djavax.net.ssl.trustStorePassword=changeit \
-  run //tana/re:debundle_cli --config=nolint --config=rbe \
+  run //<downstream-spec>:debundle_cli --config=nolint --config=rbe \
   --remote_header="x-buildbuddy-api-key=${BUILDBUDDY_API_KEY}" --shell_executable=/bin/bash \
   -- <subcommand>
 ```
 
 **Byte-identical gate** (from the lane worktree): `/tmp/bz test
-//tana/re/web/78d928dca7:regen_js_test --config=nolint` → must print `PASSED`. Run after
+//<downstream-spec>:regen_js_test --config=nolint` → must print `PASSED`. Run after
 every batch. Never add `--platforms=` or `--output_base` to the gate.
 
 **Transient flake:** `PERMISSION_DENIED: Container identity unknown` appears
@@ -53,7 +53,7 @@ selector-debt --group-module-depth 2 --format json`) and filter to your family
   (`name_only[].module`, or `name_only_module_groups[].module_prefix`/`name_only_count`).
 - `spec synthesize-selectors` / `match-selector` **do** take `--module-prefix <fam>`. For
   name→source_match use `--rewrite name-binding-to-source-match`. They need the source
-  chunk explicitly: `--source-file <abs>/static/index-DI2GynTv.js` (the main chunk; every
+  chunk explicitly: `--source-file <abs>/static/<primary-chunk>.js` (the main chunk; every
   family lives in it) — `DEBUNDLE_SOURCE_ROOT` alone is not honored by `--chunk`.
 - The minimizer frequently **skips** items ("no sparse selector"/malformed) — expect to
   hand-author most selectors and prove each with `match-selector`.

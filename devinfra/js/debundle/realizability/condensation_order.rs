@@ -1,10 +1,8 @@
 //! Incremental SCC-condensation order: the tier-1/2 structure of the
 //! incremental-gate unification design.
 //!
-//! Generalizes the peel kernel's deleted Pearce–Kelly `TopoOrder`
-//! (formerly `peel/topo_order.rs`; absorbed here by the §8 PR 4
-//! cutover) from "topological order over a DAG, degrade to `!is_dag`
-//! when cycles appear" to "topological order over the
+//! Generalizes Pearce–Kelly `TopoOrder` from "topological order over a
+//! DAG, degrade to `!is_dag` when cycles appear" to "topological order over the
 //! **condensation** of an arbitrary directed graph": a union-find
 //! tracks SCC membership, a PK rank order is maintained over the
 //! condensation DAG, and cycles are **unioned** instead of degrading

@@ -1,9 +1,8 @@
 //! Factorization-validation tests: cycle detection, realizability,
 //! and purity interplay through `validate_factorization` over real
 //! parsed chunks. They exercise the analysis crate's
-//! `chunk_factorization`, `validation`, and purity machinery (the
-//! file lived at `peel/factorize_tests.rs` historically, but never
-//! tested `peel::factorize`).
+//! `chunk_factorization`, `validation`, and purity machinery. Despite
+//! the name, nothing here tests `peel::factorize`.
 
 use std::collections::{BTreeSet, HashMap};
 

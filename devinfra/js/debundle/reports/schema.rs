@@ -106,9 +106,8 @@ pub struct OwnerGraphNodeReport {
     pub declared_bindings: Vec<BindingReport>,
     pub statement_kind: StatementKind,
     /// At-init purity classification, with structured reasons on
-    /// any non-`Pure` verdict. Replaces the legacy
-    /// `has_purity: bool` — consumers that want the boolean
-    /// can use `purity.kind == "pure"`.
+    /// any non-`Pure` verdict. A consumer wanting a boolean reads
+    /// `purity.kind == "pure"`.
     pub purity: Purity,
     /// The module this owner is assigned to, as an interned
     /// [`ModuleKey`]. Resolve to a path / residual flag via the module

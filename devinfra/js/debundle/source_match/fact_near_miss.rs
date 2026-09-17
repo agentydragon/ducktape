@@ -28,7 +28,7 @@ use selector_match::{Index, Mode};
 
 /// The exact-match top-level alignments of a parsed selector body against a chunk
 /// body, over the fact model — the same `Vec<Vec<Option<usize>>>` shape the
-/// legacy resolver's anonymous path (`ChunkResolver::resolve_anonymous_groups`
+/// shape matcher's anonymous path (`ChunkResolver::resolve_anonymous_groups`
 /// → [`selector_match::match_top_level_sequence_indexed`]) produces. A needle
 /// statement that does not project to facts (an unsupported construct) yields an
 /// empty index whose match fails closed, so it pins nothing — the same outcome as
@@ -253,7 +253,7 @@ fn has_declarator_hole_after(needle: &VarDecl, needle_idx: usize) -> bool {
 }
 
 /// Per-statement facts for one top-level item — the same projection the
-/// production fact resolver (`datalog_resolver::item_facts`) builds. `None` for a
+/// production fact resolver (`chunk_resolver::item_facts`) builds. `None` for a
 /// non-extractable item (which has no root and so matches nothing).
 fn item_index(item: &ModuleItem) -> Option<Index> {
     chunk_facts::extract_facts_items(std::slice::from_ref(item))
@@ -928,10 +928,8 @@ mod tests {
     }
 
     /// Drive the fact `fact_first_mismatch_reason` over one case and assert it
-    /// produces the captured golden reason for this variant. The golden strings
-    /// were the `hints.rs` matcher reasons before the matcher was deleted (the
-    /// corpus near-miss differential proved the two byte-identical), so this pins
-    /// the near-miss path's output without the matcher oracle.
+    /// produces the captured golden reason for this variant, pinning the
+    /// near-miss path's output.
     fn assert_golden(case: &Case) {
         let sel = selector(case.alpha);
         let needle = parse_one(case.needle_src);
@@ -1261,10 +1259,9 @@ mod tests {
         },
     ];
 
-    /// Variants 7 (`declaration shape differs`) and 13 (`variable declaration
-    /// shape differs`) of the (deleted) `hints.rs` reason family were reachable in
-    /// the AST path **only** through TypeScript-only constructs the fact model does
-    /// not represent:
+    /// Two near-miss reasons — `declaration shape differs` and `variable
+    /// declaration shape differs` — are unreachable here. They require
+    /// TypeScript-only constructs the fact model does not represent:
     ///
     /// - Variant 7 needs two same-discriminant declarations that are neither
     ///   class, function, nor variable — e.g. two `TsInterface`s. The fact

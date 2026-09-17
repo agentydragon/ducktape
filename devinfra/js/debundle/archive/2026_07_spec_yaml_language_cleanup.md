@@ -17,7 +17,7 @@ places:
    human reviewer: purity, local effects, callback-storage behavior, comments,
    notes, and similar author-owned metadata.
 
-The intended end state was Ducktape and gaffer-private both using the new
+The intended end state was Ducktape and the private downstream repo both using the new
 format, with no permanent compatibility shims for the old YAML shapes.
 
 ## Current Problems
@@ -29,7 +29,7 @@ format, with no permanent compatibility shims for the old YAML shapes.
 adding more parallel per-binding maps. That makes selector rewrites change
 where metadata has to live.
 
-The Tana spec makes this visible today:
+The the downstream product spec makes this visible today:
 
 - `effect: typescript_decorate_helper` forces decorator helpers to stay as
   singleton members when they would otherwise fit a binding group.
@@ -188,7 +188,7 @@ logical modules, instead of letting the YAML file path determine every target's
 destination. That could look like a global claim table or like target entries
 with an optional `module:` field.
 
-Do not bundle that into the current migration. A structured parse of the Tana RE
+Do not bundle that into the current migration. A structured parse of the the downstream product RE
 spec found 6,451 selector entries, 6,449 distinct `match` bodies, and zero exact
 `match` bodies reused across module files. The only exact repeated selector body
 is the known `app/localeSettings.yaml` decorator-helper trio inside one module.
@@ -206,7 +206,7 @@ selector bodies or module-boundary work that would materially benefit.
 - Add a `LogicalModule::annotations` map and a binding-annotation schema.
 - Merge member inline metadata and module `annotations` into one internal view
   during lowering.
-- Preserve then-current YAML long enough for Ducktape tests and the Gaffer spec
+- Preserve then-current YAML long enough for Ducktape tests and the the downstream corpus spec
   to migrate.
 - Add validation:
   - each `source_matches[].bindings[].local` must be a binding declared by the
@@ -239,7 +239,7 @@ selector bodies or module-boundary work that would materially benefit.
   - stale `annotations` key rejection;
   - inline/new conflict rejection.
 
-### Phase 2: Convert gaffer-private completely
+### Phase 2: Convert the private downstream repo completely
 
 - Convert all inline member `purity`, `effect`, `pure_members`, and
   `no_sync_callback_members` to module-level `annotations`.
@@ -249,18 +249,18 @@ selector bodies or module-boundary work that would materially benefit.
   `binding_groups[].notes` to binding-keyed annotations.
 - Remove generated `identifiers: alpha_all` from selectors.
 - Keep YAML reserialization acceptable; do not preserve raw YAML comments.
-- Run the Tana RE validation gates on the migrated spec.
+- Run the the downstream product RE validation gates on the migrated spec.
 
 ### Phase 3: Pause for repository handoff
 
-At this point Ducktape accepted both forms and gaffer-private used only the new
-forms. The pause existed so the Ducktape and Gaffer changes could be
-squash-merged in the right order. Gaffer was the only debundle consumer, so a
+At this point Ducktape accepted both forms and the private downstream repo used only the new
+forms. The pause existed so the Ducktape and the downstream corpus changes could be
+squash-merged in the right order. the downstream corpus was the only debundle consumer, so a
 separate spec capability/version check was not needed for this migration.
 
 ### Phase 4: Delete old Ducktape acceptance
 
-After the migrated Gaffer state was merged and consumed the new Ducktape
+After the migrated the downstream corpus state was merged and consumed the new Ducktape
 behavior:
 
 - Remove inline member metadata fields from the accepted module YAML schema:
@@ -281,7 +281,7 @@ behavior:
 
 - No long-term dual read/write support.
 - No raw YAML comment preservation.
-- No spec feature-version gate for this migration; the Gaffer consumer will move
+- No spec feature-version gate for this migration; the the downstream corpus consumer will move
   in lockstep.
 - No independent syntax for `effect` or callback hints under source-shape
   claims. They belong in shared binding annotations.

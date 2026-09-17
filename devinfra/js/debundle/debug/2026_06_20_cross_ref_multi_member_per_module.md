@@ -3,7 +3,7 @@
 **Status: fixed**, landed in #2398 (`28daa5f17`). Root cause and fix below; kept
 as an RCA.
 
-Found while stabilizing the gaffer tana/re `domains/graph/metaNode` spec
+Found while stabilizing the the downstream corpus <downstream-spec> `domains/graph/metaNode` spec
 (2026-06-20). Three sibling re-export aliases in one module want `cross_ref`
 `aliases:` selectors:
 
@@ -24,7 +24,7 @@ is pinned by its own `source_match` (renamed to the readable name).
   `<unresolved>` sentinel and the build fails the duplicate-claim gate:
 
   ```
-  logical_module static/index-DI2GynTv::domains/graph/metaNode has duplicate
+  logical_module <primary-chunk>::domains/graph/metaNode has duplicate
   source binding claims:
   - source binding <unresolved> claimed 2 times:
     - export `calendarViewAccessor` (members[].selector.cross_ref as `calendarViewAccessor`)
@@ -80,8 +80,8 @@ Regression test:
 module; asserts both aliases resolve to their distinct bindings (`A2`, `B2`) and
 the tree runs under Node.
 
-## Follow-up (gaffer, separate pass)
+## Follow-up (downstream, separate pass)
 
 The same-module alias clusters left as honest name-pins with a `note:` blocker in
-gaffer `metaNode.yaml` are now convertible to `cross_ref`. That's a separate
-gaffer-repo pass; this note records only the ducktape-side fix.
+the downstream corpus `metaNode.yaml` are now convertible to `cross_ref`. That's a separate
+the downstream corpus-repo pass; this note records only the ducktape-side fix.

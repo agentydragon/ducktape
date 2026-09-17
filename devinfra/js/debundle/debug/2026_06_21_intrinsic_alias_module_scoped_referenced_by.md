@@ -3,7 +3,7 @@
 **Status: fixed**, landed in #2428 (`8fb90debc`). Root cause and fix below; kept
 as an RCA.
 
-Found while preparing the gaffer decorate-trio conversion (2026-06-21). esbuild
+Found while preparing the the downstream corpus decorate-trio conversion (2026-06-21). esbuild
 emits a byte-identical `__decorate` helper copy per module; the readable `name:`
 those helpers carry is generic and repeats across modules (e.g.
 `applyDecorators`, shared by ~11 modules' helpers). Each helper's two companions
@@ -25,7 +25,7 @@ by `intrinsic_alias { referenced_by: @<helper> }`.
   ```
 
   This blocked converting the 19 `__defineProperty` + 16
-  `__getOwnPropertyDescriptor` gaffer companions whose helper is generically
+  `__getOwnPropertyDescriptor` the downstream corpus companions whose helper is generically
   named — even though each companion's helper is co-located in its own module and
   is unambiguous there.
 
@@ -73,10 +73,10 @@ minified bindings `pa` / `pb`, never crossing) and the tree runs under Node. Fai
 before the fix (chunk-global map collapses `applyDecorators → None` → ambiguous
 bail), passes after.
 
-## Follow-up (gaffer, separate pass)
+## Follow-up (downstream, separate pass)
 
-The gaffer decorate-trio conversion (19 `__defineProperty` + 16
+The the downstream corpus decorate-trio conversion (19 `__defineProperty` + 16
 `__getOwnPropertyDescriptor` companions, ~35 of the ~72 decorate-trio pins) is no
 longer blocked by a generic helper `name:`. Converting them is a separate
-gaffer-repo pass once gaffer repins to this ducktape commit; this note records
+the downstream corpus-repo pass once the downstream corpus repins to this ducktape commit; this note records
 only the ducktape-side fix.

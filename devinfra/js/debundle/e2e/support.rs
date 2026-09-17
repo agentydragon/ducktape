@@ -955,7 +955,7 @@ pub struct FixtureOpts<'a> {
     /// [`unassigned_mode_catchall_file`], or
     /// [`unassigned_mode_mini_factors`] to build typical bodies.
     pub unassigned_mode: Value,
-    /// Opt into the dataflow-aware S-chain emission in `graph.rs` for
+    /// Opt into the dataflow-aware S-chain emission in `graph/` for
     /// this chunk. Default `false` — leaves the strictly-conservative
     /// adjacent-impure chain. Tests that exercise the relaxation set
     /// this `true`.

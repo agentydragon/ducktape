@@ -120,56 +120,50 @@ The likely algorithmic mistakes are:
    the end-of-run hot stack in the current profile, but it is the next model
    shape to revisit after domain construction stops dominating.
 
-## Next Actions
+## Open recommendations
 
-1. **Add a pre-solver model-build summary that is emitted before backend
-   request creation.** Timeout runs must report selector program counts, fact
-   relation cardinalities, global domain sizes, per-variable candidate sizes,
-   derived relation counts, and allowed-table histograms if reached. Keep this
-   as data output, not manual timing instrumentation.
-2. **Replace eager `FactDomains` BTree construction with compact dictionaries.**
+Item 1 of this list — a pre-solver model-build summary emitted before backend
+request creation — landed; the side files are described at the end of this note.
+The rest are unimplemented as of 2026-09-17, and `FactDomains` still builds
+eager `BTreeSet<String>` domains.
+
+1. **Replace eager `FactDomains` BTree construction with compact dictionaries.**
    Intern strings and typed ids once, collect into vectors/hash tables during
    fact ingestion, then sort/dedup at the boundary where deterministic output is
    needed.
-3. **Build only demanded indexes and derived relations.** Inspect the
+2. **Build only demanded indexes and derived relations.** Inspect the
    `SelectorProgram` first, identify which atom kinds and constants are present,
    and construct only the relation views needed by those atoms.
-4. **Derive candidate domains before materializing variables.** For each atom,
+3. **Derive candidate domains before materializing variables.** For each atom,
    compute support sets after constants are applied; intersect supports per
    variable; fall back to full domains only for genuinely unconstrained
    variables.
-5. **Keep relation rows compact from the start.** Lower facts and allowed rows
+4. **Keep relation rows compact from the start.** Lower facts and allowed rows
    to interned integer ids before tuple construction; avoid cloned
    `ConstraintValue`/`String` rows on the production path.
-6. **Revisit child-list and relation atom lowering after domain construction is
+5. **Revisit child-list and relation atom lowering after domain construction is
    no longer the measured blocker.** Prefer solver-level constraints or compact
    table/element encodings over enumerating large intermediate relations in
    Rust.
-7. **Only tune OR-Tools after a CP-SAT request exists.** When the run reaches
+6. **Only tune OR-Tools after a CP-SAT request exists.** When the run reaches
    the sidecar, profile the saved proto through the C++ solver separately and
    use CP-SAT stats to decide whether model changes, backend parameters, or
    search strategies are justified.
 
-## Immediate Plan
+These bound the cost of native `source_match` lowering, which is the fallback
+path — production shape selectors reach the solver as projected candidate rows
+(<../../docs/selector_resolution.md>). They do not block the production path;
+they bound how far native lowering can scale.
 
-The next PR should target the high-level Rust-side shape, not solver heuristics:
+## Profiling technique
 
-1. add the pre-solver summary so future two-minute capped profiles are
-   informative even when the sidecar is not reached;
-2. make `FactDomains` demand-driven and compact-id based;
-3. reprofile the same downstream direct replay under `perf` with the `120s`
-   cap;
-4. if the run reaches the sidecar, capture CP-SAT problem-size stats and profile
-   the sidecar separately.
+For timeout investigations, prefer stopping the profiled debundler at the cap
+rather than killing it. A stopped process can be inspected with `gdb` to read
+live stacks, heap shape, and relation/model state without writing a large core
+file. Dump core only if the exact interrupted state must outlive the process.
 
-For future timeout investigations, prefer stopping instead of immediately
-killing the profiled debundler at the cap. A stopped process can be inspected
-with `gdb` to read live stacks, heap shape, and relation/model state without
-writing a large core file. Dump core only if the exact interrupted state must be
-kept after the process exits.
-
-The pre-solver summary side files should be enabled during these runs. They
-report selector-program counts, input fact relation cardinalities, model-build
+Enable the pre-solver summary side files during these runs. They report
+selector-program counts, input fact relation cardinalities, model-build
 domain/relation counts when reached, and compiled CSP shape when reached:
 variables by domain, domain-size histograms, allowed-table row/cell histograms,
 linear/binary/all-different counts, and broad `constraint_count_by_kind`.

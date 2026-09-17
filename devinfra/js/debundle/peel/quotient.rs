@@ -249,7 +249,7 @@ pub struct QuotientGraph {
     /// same residual identification `factorize.rs` uses). Used by
     /// `project_partition` to decide which class projects to the
     /// partition's residual `ModuleId` for the realizability gate;
-    /// distinct from the legacy `ClassData::is_residual` field
+    /// distinct from the `ClassData::is_residual` field
     /// which the rest of the kernel keys off of for residual
     /// stickiness.
     gate_residual_owners: BTreeSet<OwnerIdx>,

@@ -1,11 +1,10 @@
-# Global selector solver — Gaffer evidence worklist
+# Selector debt — downstream evidence worklist
 
-Companion evidence for <../plans/selector_constraint_model.md>, the canonical
-selector global-solve plan. This is the construct-by-construct downstream
+The construct-by-construct downstream
 worklist for reducing `binding.name` debt and collecting missing
 language/fact/diagnostic requirements, ordered by impact-per-unit-effort.
 
-## Where the debt is (measured 2026-06-21, gaffer `78d928dca7`, post round-2)
+## Where the debt is (measured 2026-06-21, downstream `<snapshot>`, post round-2)
 
 `spec selector-debt`: **989** fragile `binding.name` pins remain (down from ~2198
 original / 1665 on 2026-06-20), against **6156** structural `source_match` selectors.
@@ -26,14 +25,14 @@ The three relational primitives this program needed — `passed_to_call`
 (target-as-argument), `makes_decorate_call` (the esbuild `__decorate` keystone), and
 `intrinsic_alias` (the `__defineProperty` / `__getOwnPropertyDescriptor` companions) —
 have **all landed** in ducktape (EDB + kernel + spec surface + lowering + full e2e;
-the `//devinfra/js/debundle/...` suite is green with lint). What remains is the gaffer
+the `//devinfra/js/debundle/...` suite is green with lint). What remains is the the downstream corpus
 application of them plus the two global-solve items.
 
-### Apply the decorate-trio conversion in gaffer (~72 pins)
+### Apply the decorate-trio conversion downstream (~72 pins)
 
 `makes_decorate_call` + `intrinsic_alias` make all 72 esbuild TS decorate-trio pins (37
 `__decorate`, 19 `__defineProperty`, 16 `__getOwnPropertyDescriptor`) retirable in one
-gaffer application pass: the `__decorate` helper rides its decorated `@Class` (reached
+the downstream corpus application pass: the `__decorate` helper rides its decorated `@Class` (reached
 through `resolves_to`, plus the optional member literal); the two companions ride
 `referenced_by @<decorateHelper>` narrowed by the intrinsic property name. The
 primitives are landed and fail-closed / re-minify-proof — only the spec conversion
@@ -49,7 +48,7 @@ naming (see <2026_06_21_intrinsic_alias_module_scoped_referenced_by.md>).
 The convertible distributed tail, grouped into coherent ~60–90-pin lanes (excluding
 `app/bootstrap` and the round-1/round-2 families' honest-debt residue). Convert via
 self-emitted-literal / rich-signature anchors (the `debundle_stabilize` skill + the lane
-recipe <2026_06_20_gaffer_phaseA_lane_recipe.md>); ~25–40% convertible, honest debt for the
+recipe <2026_06_20_the downstream corpus_phaseA_lane_recipe.md>); ~25–40% convertible, honest debt for the
 rest.
 
 | lane                | families                                                                                                                       | ~pins |
@@ -84,8 +83,8 @@ into it.
   one-`cross_ref`-per-module ceiling is **lifted** — N same-module `cross_ref` members
   (each anchored on a same-module `source_match` anchor) now resolve to distinct
   bindings (see <2026_06_20_cross_ref_multi_member_per_module.md>), so the same-module
-  alias clusters held back as `note:` debt in gaffer `metaNode.yaml` are now convertible
-  in a follow-up gaffer pass.
+  alias clusters held back as `note:` debt in the downstream corpus `metaNode.yaml` are now convertible
+  in a follow-up the downstream corpus pass.
 - **`reads_member`**: **largely exhausted here — ~7 genuine conversions landed**, not the
   ~72 an earlier estimate assumed. This bundle has no distinctive-per-helper codegen-context
   cluster; the `.X`-reading helpers that exist are mostly the global-`Object` decorate trios

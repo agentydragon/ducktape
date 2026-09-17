@@ -6,8 +6,7 @@
 //! miss: the pipeline models `export { ... }` and side-effect statements as
 //! owners that reference every binding they touch, so the cross-ref primitive
 //! resolves categorically only because it counts references from *declaring*
-//! owners (the `declares` conjunct in the `references` rule). See
-//! plans/selector_constraint_model.md.
+//! owners (the `declares` conjunct in the `references` rule).
 
 use std::fs;
 

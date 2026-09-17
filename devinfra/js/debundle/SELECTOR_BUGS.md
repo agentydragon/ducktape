@@ -1,9 +1,22 @@
 # Selector Bugs And Gaps
 
-This note tracks selector issues found while porting a downstream debundle spec.
-Examples are intentionally generic and anonymized.
+Selector issues found while porting a downstream debundle spec. Examples are
+intentionally generic and anonymized.
+
+Every entry carries a **Status**. `open` means reproduced on the date given;
+`fixed` means the behavior landed and the entry stays only until its fix is
+covered by a test named here. Entries marked `unverified` were recorded during
+the porting pass and have not been re-reproduced since — treat them as reports,
+not as current behavior.
 
 ## Global Matching Needs Injective Target Assignment
+
+Status: fixed (2026-09-17). `all_different` over claimed targets is compiled
+into the CP-SAT model (`require_target_all_different`, reason
+`target_injectivity`) and covered by model- and backend-level tests. The
+end-to-end fixture at
+`e2e/testdata/global_selector_assignment_stress/broad_specific_injective/` is
+still not wired to a test; that is the remaining gap.
 
 Some selectors are intentionally broad, and the spec relies on the whole
 assignment to disambiguate them. Solving each selector independently, or
@@ -35,6 +48,10 @@ Desired behavior:
 - Add regression coverage before replacing the current `AssignmentRow` solver.
 
 ## Stable Identifiers Are Only Local To One Match
+
+Status: unverified — reported during the porting pass, not re-reproduced.
+This is a selector-language gap; the burn-down is in
+<plans/relational_selectors.md>.
 
 `source_match` with `identifiers: alpha_all` makes readable names usable for
 bindings that are local to the selected AST. It does not make those names a
@@ -75,6 +92,8 @@ Desired behavior:
 
 ## Multi-Declaration Source Matches Are Hard To Use
 
+Status: unverified — reported during the porting pass, not re-reproduced.
+
 Binding groups are useful for capturing multiple names from one stable selector,
 but source matches spanning more than one top-level declaration are fragile when
 the source has unrelated declarations between the anchors.
@@ -109,6 +128,8 @@ Desired behavior:
   the candidate was rejected by shape prefiltering or by binding comparison.
 
 ## Adjacent Binding Groups Can Miss Large Alpha-Renamed Functions
+
+Status: unverified — reported during the porting pass, not re-reproduced.
 
 A binding group over adjacent top-level declarations can still miss when a
 readable `alpha_all` selector targets a large function with many local
@@ -172,6 +193,8 @@ Desired behavior:
 
 ## Declarator-List Holes Need Better Diagnostics
 
+Status: unverified — reported during the porting pass, not re-reproduced.
+
 `DECLARATORS_*` holes are useful for matching runs of variable declarators, but
 failures can be opaque when the hole placement is too broad or insufficiently
 anchored.
@@ -199,6 +222,8 @@ Desired behavior:
   does not require fake `= null` declarators.
 
 ## Alpha-Renamed Multi-Declarator Groups Can Miss
+
+Status: unverified — reported during the porting pass, not re-reproduced.
 
 A binding group over one `const` declaration matched when written with emitted
 local names, but missed when the same selector was written with readable names
@@ -229,6 +254,8 @@ Desired behavior:
   identifier or property binding instead of a generic no-match.
 
 ## Async Destructured Function Selectors Can Miss
+
+Status: unverified — reported during the porting pass, not re-reproduced.
 
 An `async function` with an object-pattern parameter failed to match even after
 the selector used explicit property bindings rather than shorthand.
@@ -270,12 +297,11 @@ Desired behavior:
 
 ## Statement-List Holes Were Missing
 
-Status: addressed by `STMT_LIST_*` holes for block/function statement lists.
+Status: fixed. `STMT_LIST_*` holes match zero or more statements in
+block/function statement lists; verified 2026-09-17 on a try/catch shape.
 
 Before this was added, `STMT_*` holes matched one statement and did not
-represent zero or more statements.
-
-Observed desired selector:
+represent zero or more statements. This selector shape now resolves:
 
 ```js
 async function runTask(input) {
@@ -288,9 +314,6 @@ async function runTask(input) {
 }
 ```
 
-Today this has to be rewritten as several single-statement holes, and it fails
-when the number of setup/body statements changes.
-
 Implemented behavior:
 
 - `STMT_LIST_*` holes match zero or more statements in block/function statement
@@ -298,6 +321,12 @@ Implemented behavior:
 - Top-level module-item list holes remain a separate possible extension.
 
 ## Pinned Binary Versus Local Selector Syntax
+
+Status: open (reproduced 2026-09-17). A `match-selector` probe whose pattern
+contains an unknown hole keyword returns `unique: false, matches: []` — the
+keyword is matched as an ordinary identifier, so an unsupported hole is
+indistinguishable from a genuine no-match. `parse_selector_module_with_capability_check`
+guards the authored-spec path but not this one.
 
 Downstream builds can accidentally run with an older pinned debundler even when
 the module is overridden to local Ducktape sources. New selector syntax then
@@ -310,6 +339,8 @@ Desired behavior:
   hole" rather than attempting to match it as ordinary JavaScript.
 
 ## Duplicate Claims Should Use Declaration Identity
+
+Status: unverified — reported during the porting pass, not re-reproduced.
 
 Observed failure mode:
 
@@ -337,6 +368,10 @@ Desired behavior:
   reused.
 
 ## List-Hole Lowering Leaves Full-Domain Variables
+
+Status: open. This bounds native `source_match` lowering, which is the fallback
+path — production shape selectors reach the solver as projected candidate rows
+(<docs/selector_resolution.md>).
 
 Observed selector:
 

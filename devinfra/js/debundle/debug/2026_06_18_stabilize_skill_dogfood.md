@@ -1,7 +1,7 @@
-# Dogfood: the `debundle_stabilize` _skill_ on real tana/re (2026-06-18)
+# Dogfood: the `debundle_stabilize` _skill_ on real <downstream-spec> (2026-06-18)
 
 Friction log from running the `debundle_stabilize` skill end-to-end against
-gaffer-private `tana/re/web/78d928dca7` as an **agent consumer** (not as the
+the private downstream repo `<downstream-spec>` as an **agent consumer** (not as the
 minimizer's author). The complementary minimizer-internals/perf view is in
 [the minimizer dogfood note](selector_minimizer_dogfood.md) and
 [its perf companion](selector_minimizer_perf.md); this note is
@@ -11,7 +11,7 @@ already-tracked minimizer gap, it cross-references rather than re-files.
 
 Setup used: released `debundle` binary (pin `debundle-fa51a08d1a27`), the spec's
 `modules/` tree, and the upstream chunk
-`tana/upstream/web/snapshots/78d928dca7/static/index-DI2GynTv.js`. No pipeline
+`<primary-chunk>.js`. No pipeline
 build was needed (the per-selector loop is binary-only; only the whole-spec gate
 needs the Bazel pipeline).
 
