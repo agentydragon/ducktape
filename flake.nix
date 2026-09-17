@@ -66,7 +66,7 @@
 
     # Pinned nixpkgs for the phone's `pkgsAarch64` (see comment there) — kept
     # off the shared `nixpkgs` input because of an open nix-on-droid regression.
-    nixpkgs-for-droid.url = "git+https://github.com/NixOS/nixpkgs?rev=0902e92e43f022c24066a69dd73d76793b6a90c2";
+    nixpkgs-for-droid.url = "github:NixOS/nixpkgs/0902e92e43f022c24066a69dd73d76793b6a90c2";
   };
 
   outputs =
