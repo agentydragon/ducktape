@@ -3,8 +3,10 @@ kind: Kustomization
 metadata:
   name: kubectl-machine-mcp
   namespace: ducktape-flux
+  annotations:
+    ducktape.org/parked: "true"
 spec:
-  suspend: false
+  suspend: true
   retryInterval: 1m
   interval: 10m
   timeout: 5m
@@ -13,7 +15,7 @@ spec:
     name: kubectl-machine-mcp
 
     namespace: ducktape-flux
-  path: ./cluster/k8s/agents/kubectl-machine-mcp/app
+  path: ./cluster/k8s/parked/kubectl-machine-mcp/app
   prune: true
   wait: true
   healthChecks:

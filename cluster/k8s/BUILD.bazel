@@ -164,7 +164,7 @@ filegroup(
         "haku/console/static-deployment.yaml",
         "haku/console/static-metadata.yaml",
         "haku/console/static-service.yaml",
-        "haku/managed-agent/haku-forgejo-tea.sops.yaml",
+        "haku/forgejo-tea/haku-forgejo-tea.sops.yaml",
         "haku/rbac/role.yaml",
         "haku/rbac/rolebinding-haku.yaml",
         "haku/workspaces/app/flux-kustomization.yaml",

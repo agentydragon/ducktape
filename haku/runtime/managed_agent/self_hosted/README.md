@@ -128,7 +128,7 @@ path — redundant here with in-pod `kubectl`, kept for parity).
 
 The `haku-managed-agent` Deployment, its `haku-managed-agent` ServiceAccount (bound to
 `haku-sandbox-admin`), the `ANTHROPIC_ENVIRONMENT_KEY` secret stub, and the
-clone/git env live in <../../../../cluster/k8s/haku/managed-agent/README.md> (that
+clone/git env live in <../../../../cluster/k8s/parked/managed-agent/README.md> (that
 dir's README is the bring-up runbook). The worker reuses Haku's `haku-sandbox`
 perimeter (`haku-sandbox-admin` RBAC, `haku-egress-proxy` egress + CA injection,
 ResourceQuota); none of it relies on agent restraint.

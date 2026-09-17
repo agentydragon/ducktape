@@ -71,11 +71,9 @@ resources:
   - grocy/sf/mcp/flux-kustomization.yaml
   - grocy/vallejo/mcp/flux-kustomization.yaml
   - agents/kubectl-passthrough-mcp/app/flux-kustomization.yaml
-  - agents/kubectl-machine-mcp/app/flux-kustomization.yaml
   - agents/manifold-mcp/app/flux-kustomization.yaml
   - agents/osm-mcp/flux-kustomization.yaml
   - agents/plaid-mcp/flux-kustomization.yaml
-  - agents/postscanmail-mcp/app/flux-kustomization.yaml
   - agents/ha-mcp/app/flux-kustomization.yaml
   - home-assistant/flux-kustomization.yaml
   - agents/mitmproxy-namespace/flux-kustomization.yaml
@@ -198,9 +196,8 @@ resources:
   - haku/mailbox-namespace/flux-kustomization.yaml # the mailbox's own trusted namespace
   - haku/mailbox/db/flux-kustomization.yaml # CNPG store for the Stalwart mailserver
   - haku/mailbox/app/flux-kustomization.yaml # Stalwart: haku's mailbox (haku@allegedly.works)
-  - haku/managed-agent/flux-kustomization.yaml # self-hosted Managed Agents worker (Runtime B)
+  - haku/forgejo-tea/flux-kustomization.yaml # Forgejo token for haku-ci's KEDA scaler (split from the parked managed-agent worker)
   - haku/workspaces/app/flux-kustomization.yaml # Haku sandbox warm pool in haku-sandbox (exec target for the sandbox-provisioning MCP)
-  - haku/cloud-agent-tf/flux-kustomization.yaml # Anthropic-hosted agent via claude-managed-agents tofu provider
   # --- haku dispatch (parked; flip cluster/k8s/haku-dispatch.yaml suspend to revive) ---
   - haku-dispatch.yaml
   # (self-hosted agent is provisioned imperatively via `ant`, not TF — the provider has no
@@ -260,12 +257,6 @@ resources:
 
   # --- headlamp ---
   - headlamp/flux-kustomization.yaml
-
-  # --- paperless ---
-  - paperless/namespace/flux-kustomization.yaml
-  - paperless/db/flux-kustomization.yaml
-  - paperless/cache/flux-kustomization.yaml
-  - paperless/app/flux-kustomization.yaml
 
   # --- activitywatch ---
   - activitywatch/flux-kustomization.yaml

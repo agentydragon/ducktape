@@ -2,7 +2,7 @@
 
 Status: **PARKED (2026-07-04).** The cloud control-plane objects
 (environment/agent/vault/static_bearer credential/deployment) were deleted at
-Anthropic by the operator, and `cluster/k8s/haku/cloud-agent-tf` is suspended
+Anthropic by the operator, and `cluster/k8s/parked/cloud-agent-tf` is suspended
 (`suspend: true`). Resuming starts with the decision in
 [Resuming](#resuming-recreate-via-the-provider-vs-retire-it) below. What follows
 describes the **v0 architecture as it was built**, before parking — historical
@@ -10,10 +10,10 @@ until resumed:
 
 - **Terraform root:** <../../../../tf/gitops/haku-cloud-agent> — the
   `claude-managed-agents` provider, pinned + hash-locked.
-- **Deployed by:** <../../../../cluster/k8s/haku/cloud-agent-tf> (tofu-controller
+- **Deployed by:** <../../../../cluster/k8s/parked/cloud-agent-tf> (tofu-controller
   `Terraform` CR; runbook + provisioned IDs there).
 - **Cluster access path:** the public, Authentik-authed `kubectl-machine-mcp`
-  passthrough MCP (<../../../../cluster/k8s/agents/kubectl-machine-mcp/README.md>).
+  passthrough MCP (<../../../../cluster/k8s/parked/kubectl-machine-mcp/README.md>).
 
 > **Retired (2026-06-26):** the imperative bring-up — `provision.sh` plus
 > `haku.{agent,environment,deployment}.yaml` — and **Path B** (the cloud agent

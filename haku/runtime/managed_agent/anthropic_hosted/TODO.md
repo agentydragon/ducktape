@@ -1,7 +1,7 @@
 # Managed Agents — Anthropic-hosted cloud TODO
 
 Status: **PARKED (2026-07-04)** — the cloud control-plane objects were deleted at
-Anthropic by the operator, and `cluster/k8s/haku/cloud-agent-tf` is suspended. See
+Anthropic by the operator, and `cluster/k8s/parked/cloud-agent-tf` is suspended. See
 <README.md> § Resuming for the reason and the resume decision. The items below
 describe the pre-parking v0 state and are **moot until resumed**:
 

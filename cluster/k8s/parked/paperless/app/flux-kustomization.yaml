@@ -3,11 +3,13 @@ kind: Kustomization
 metadata:
   name: paperless
   namespace: ducktape-flux
+  annotations:
+    ducktape.org/parked: "true"
 spec:
-  suspend: false
+  suspend: true
   retryInterval: 1m
   interval: 10m
-  path: ./cluster/k8s/paperless/app
+  path: ./cluster/k8s/parked/paperless/app
   prune: true
   sourceRef:
     kind: ExternalArtifact

@@ -12,7 +12,7 @@ upstream JSON verbatim.
 The server itself holds a single account-wide `x-api-key` and does **no**
 per-caller authentication. End-user authentication and the agentydragon-only
 ACL come from the `mcp-oauth-facade` sidecar in the same Kubernetes pod —
-see <../../cluster/k8s/agents/postscanmail-mcp/app/deployment.yaml> and
+see <../../cluster/k8s/parked/postscanmail-mcp/app/deployment.yaml> and
 the Authentik provider/group/policy block in
 <../../tf/gitops/agent-machine-access/main.tf>.
 

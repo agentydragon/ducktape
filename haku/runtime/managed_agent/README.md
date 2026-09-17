@@ -19,7 +19,7 @@ variants, by sandbox location (Anthropic's own vocabulary):
   cluster through a tunneled, `haku`-scoped Kubernetes MCP server (ephemeral pods
   in `haku-sandbox` for in-cluster compute). Sidesteps the self-hosted worker
   entirely; **parked (2026-07-04)** — the cloud control-plane objects were
-  deleted at Anthropic and `cluster/k8s/haku/cloud-agent-tf` is suspended; see
+  deleted at Anthropic and `cluster/k8s/parked/cloud-agent-tf` is suspended; see
   <anthropic_hosted/README.md> for the reason and the resume decision.
 
 The "which runtime" comparison (A / B / C) is <../../plans/runtime_options.md>.

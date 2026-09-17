@@ -354,14 +354,6 @@ spec:
           exclude:
             - flux-kustomization.yaml
 
-    - name: paperless-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/paperless/namespace/**"
-          to: "@artifact/cluster/k8s/paperless/namespace/"
-          exclude:
-            - flux-kustomization.yaml
-
     - name: public-coder-agent-namespace
       originRevision: "@repo"
       copy:
@@ -718,14 +710,6 @@ spec:
           exclude:
             - flux-kustomization.yaml
 
-    - name: kubectl-machine-mcp
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/kubectl-machine-mcp/app/**"
-          to: "@artifact/cluster/k8s/agents/kubectl-machine-mcp/app/"
-          exclude:
-            - flux-kustomization.yaml
-
     - name: kubectl-passthrough-mcp
       originRevision: "@repo"
       copy:
@@ -771,14 +755,6 @@ spec:
       copy:
         - from: "@repo/cluster/k8s/agents/plaid-mcp/**"
           to: "@artifact/cluster/k8s/agents/plaid-mcp/"
-          exclude:
-            - flux-kustomization.yaml
-
-    - name: postscanmail-mcp
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/agents/postscanmail-mcp/app/**"
-          to: "@artifact/cluster/k8s/agents/postscanmail-mcp/app/"
           exclude:
             - flux-kustomization.yaml
 
@@ -1198,13 +1174,6 @@ spec:
             - flux-kustomization.yaml
         - from: "@repo/cluster/k8s/grocy/user-perms-base/**"
           to: "@artifact/cluster/k8s/grocy/user-perms-base/"
-    - name: haku-cloud-agent
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/haku/cloud-agent-tf/**"
-          to: "@artifact/cluster/k8s/haku/cloud-agent-tf/"
-          exclude:
-            - flux-kustomization.yaml
     - name: haku-console-db
       originRevision: "@repo"
       copy:
@@ -1240,11 +1209,11 @@ spec:
           to: "@artifact/cluster/k8s/haku/mailbox/db/"
           exclude:
             - flux-kustomization.yaml
-    - name: haku-managed-agent
+    - name: haku-forgejo-tea
       originRevision: "@repo"
       copy:
-        - from: "@repo/cluster/k8s/haku/managed-agent/**"
-          to: "@artifact/cluster/k8s/haku/managed-agent/"
+        - from: "@repo/cluster/k8s/haku/forgejo-tea/**"
+          to: "@artifact/cluster/k8s/haku/forgejo-tea/"
           exclude:
             - flux-kustomization.yaml
     - name: haku-ui-image-webhook
@@ -1497,27 +1466,6 @@ spec:
       copy:
         - from: "@repo/cluster/k8s/openebs-lvm/**"
           to: "@artifact/cluster/k8s/openebs-lvm/"
-          exclude:
-            - flux-kustomization.yaml
-    - name: paperless-app
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/paperless/app/**"
-          to: "@artifact/cluster/k8s/paperless/app/"
-          exclude:
-            - flux-kustomization.yaml
-    - name: paperless-cache
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/paperless/cache/**"
-          to: "@artifact/cluster/k8s/paperless/cache/"
-          exclude:
-            - flux-kustomization.yaml
-    - name: paperless-db
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/paperless/db/**"
-          to: "@artifact/cluster/k8s/paperless/db/"
           exclude:
             - flux-kustomization.yaml
     - name: proxmox-proxy
