@@ -157,8 +157,7 @@ resources:
 
 
   # --- oci-cache (Zot pull-through mirror for docker.io/ghcr.io/quay.io/etc.) ---
-  - oci-cache/namespace/flux-kustomization.yaml
-  - oci-cache/app/flux-kustomization.yaml
+  - oci-cache/flux-kustomization.yaml
 
   # --- forgejo ---
   - forgejo/namespace/flux-kustomization.yaml

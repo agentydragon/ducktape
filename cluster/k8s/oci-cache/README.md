@@ -15,6 +15,7 @@ allowlisting every registry CDN.
 | Local state       | none durable — only ephemeral upload staging on `emptyDir`, so the pod reschedules freely                                                                                                                                                                                                                                                                                                                                   |
 | Placement         | Zot is unpinned; Valkey is operator-managed on OVH HDD node-local storage (`local-path-ovh-hdd`). Valkey holds rebuildable cache metadata/dedupe state; losing it is acceptable, but expect brief cache misses and possible Zot restart/Valkey flush for stale metadb entries.                                                                                                                                              |
 | S3 credentials    | `registry-cache` Bucket and S3Credentials live in `oci-cache`; the operator generates `registry-cache-s3-credentials` there and Zot reads it as `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`                                                                                                                                                                                                                                 |
+| Metrics           | Zot Prometheus metrics at `/metrics`, scraped by Alloy into Mimir through the namespace-local `ServiceMonitor`                                                                                                                                                                                                                                                                                                              |
 | Internal exposure | ClusterIP, plain HTTP on `oci-cache.oci-cache.svc:80` (→ Zot container 5000), no auth. This is intentional: dockerd's Docker Hub `--registry-mirror` probe does not attach Docker-config credentials for the mirror host. (Port 80 is for conventional addressing; a port-restricted egress policy must still allow the **backend** port 5000 — Cilium enforces egress on the translated targetPort, not the Service port.) |
 | Public exposure   | `https://oci-cache.allegedly.works` routes to the nginx `public-auth-proxy` sidecar on Service port 8080. The sidecar enforces the `puller-credential` htpasswd and then proxies to the unauthenticated in-pod Zot listener.                                                                                                                                                                                                |
 
@@ -57,7 +58,7 @@ that fallback is intentionally not a reliable path through the egress fence.
 Time/count-based, **not** a hard byte cap. A cached tag is kept if pulled within the
 last 30d (`pulledWithin: 720h`) **or** among the 20 most-recently-pulled per repo;
 everything else ages out and `gc` reclaims its blobs from S3. Tune `pulledWithin` /
-`mostRecentlyPulledCount` in `app/config.json` to your storage budget. Never add a
+`mostRecentlyPulledCount` in `config.json` to your storage budget. Never add a
 SeaweedFS bucket-lifecycle rule under Zot — deleting blobs out from under the registry
 corrupts manifests.
 
@@ -67,7 +68,7 @@ The public authenticated endpoint is wired, but node-level pull-through is delib
 deferred because Talos machine-config changes reboot nodes.
 
 1. **Public credential rotation**. Generate the credential from the devshell and update
-   `app/puller-credential.sops.yaml`; `htpasswd` is mounted into the nginx public-auth
+   `puller-credential.sops.yaml`; `htpasswd` is mounted into the nginx public-auth
    sidecar, while `config.json` is reflected into haku-ci for clients that explicitly pull
    from `oci-cache.allegedly.works`:
 

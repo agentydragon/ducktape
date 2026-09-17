@@ -3,16 +3,20 @@ kind: Kustomization
 metadata:
   name: oci-cache
   namespace: ducktape-flux
+  annotations:
+    description: Zot OCI pull-through cache and its namespace-local monitoring.
 spec:
   retryInterval: 1m
   interval: 10m
   timeout: 5m
   sourceRef:
     kind: ExternalArtifact
-    name: oci-cache-app
+    name: oci-cache
     namespace: ducktape-flux
-  path: ./cluster/k8s/oci-cache/app
+  path: ./cluster/k8s/oci-cache
   prune: true
+  # Do not delete the cache namespace if this Flux owner is removed later.
+  deletionPolicy: Orphan
   wait: true
   decryption:
     provider: sops
@@ -24,11 +28,11 @@ spec:
       name: zot
       namespace: oci-cache
   dependsOn:
-    - name: oci-cache-namespace
-      namespace: ducktape-flux
-    # RedisReplication CRD (Opstree operator)
+    # Namespace, app, and ServiceMonitor are managed together here.
     - name: valkey
       namespace: ducktape-flux
     # S3 backend: tenant-local Bucket and operator-generated credentials.
     - name: seaweedfs-registry-cache-bucket
+      namespace: ducktape-flux
+    - name: monitoring-crds
       namespace: ducktape-flux
