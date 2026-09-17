@@ -665,8 +665,8 @@ spec:
     - name: nix-cache
       originRevision: "@repo"
       copy:
-        - from: "@repo/cluster/k8s/nix-cache/app/**"
-          to: "@artifact/cluster/k8s/nix-cache/app/"
+        - from: "@repo/cluster/k8s/nix-cache/**"
+          to: "@artifact/cluster/k8s/nix-cache/"
           exclude:
             - flux-kustomization.yaml
 
@@ -1577,27 +1577,6 @@ spec:
       copy:
         - from: "@repo/cluster/k8s/monitoring/tempo/**"
           to: "@artifact/cluster/k8s/monitoring/tempo/"
-          exclude:
-            - flux-kustomization.yaml
-    - name: nix-cache-bootstrap
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/nix-cache/bootstrap/**"
-          to: "@artifact/cluster/k8s/nix-cache/bootstrap/"
-          exclude:
-            - flux-kustomization.yaml
-    - name: nix-cache-db
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/nix-cache/db/**"
-          to: "@artifact/cluster/k8s/nix-cache/db/"
-          exclude:
-            - flux-kustomization.yaml
-    - name: nix-cache-namespace
-      originRevision: "@repo"
-      copy:
-        - from: "@repo/cluster/k8s/nix-cache/namespace/**"
-          to: "@artifact/cluster/k8s/nix-cache/namespace/"
           exclude:
             - flux-kustomization.yaml
     - name: node-feature-discovery

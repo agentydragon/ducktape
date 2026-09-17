@@ -22,16 +22,16 @@ metadata and a SeaweedFS S3 bucket for NAR chunk storage. Manifests in
   workflow. Update that file on cluster rebuild (see Bootstrap below).
 
 Caches are created (and signing keypairs generated) by the bootstrap Job in
-`cluster/k8s/nix-cache/bootstrap/`. Re-running the Job is idempotent: GET the
+`cluster/k8s/nix-cache/`. Re-running the Job is idempotent: GET the
 cache config first, only POST when missing. On a full cluster wipe, the
 new server generates fresh keypairs — consumer pubkeys must then be updated.
 
 ## Secrets
 
-| Secret            | Source                                         | Contains                                                             |
-| ----------------- | ---------------------------------------------- | -------------------------------------------------------------------- |
-| `attic-jwt-token` | SOPS (`k8s/nix-cache/app/jwt-token.sops.yaml`) | HS256 secret. atticadm signs JWTs with it; server validates with it. |
-| `attic-db-app`    | CNPG-generated                                 | PostgreSQL connection URI                                            |
+| Secret            | Source                                     | Contains                                                             |
+| ----------------- | ------------------------------------------ | -------------------------------------------------------------------- |
+| `attic-jwt-token` | SOPS (`k8s/nix-cache/jwt-token.sops.yaml`) | HS256 secret. atticadm signs JWTs with it; server validates with it. |
+| `attic-db-app`    | CNPG-generated                             | PostgreSQL connection URI                                            |
 
 Tokens (admin, per-host readers, CI writers) are HS256 JWTs signed with the
 `attic-jwt-token` secret. Reader/writer tokens are auto-rotated by
@@ -43,8 +43,8 @@ attic's Postgres DB per cache, server-generated, never extracted.)
 
 ## Bootstrap
 
-The bootstrap Job in `cluster/k8s/nix-cache/bootstrap/` runs on every Flux
-reconcile of the `nix-cache-bootstrap` Kustomization (`job.yaml`'s
+The bootstrap Job in `cluster/k8s/nix-cache/` runs on every Flux
+reconcile of the `nix-cache` Kustomization (`job.yaml`'s
 `kustomize.toolkit.fluxcd.io/force: enabled` recreates it on every change so it
 always re-runs). It mints a 5-minute admin JWT via `kubectl exec deploy/attic
 -- atticadm`, then for each `--cache`/`--public-cache` arg
