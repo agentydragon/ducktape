@@ -21,6 +21,12 @@ non-pruning Flux owner.
 
 ## Targets
 
+`settings.yaml` (the target roster) and `known_hosts` are generated: edit the roster or a
+captured host key in <../../ssh_targets/generate.py> and run
+`bb run //cluster/ssh_targets:generate_bin`. The devbox's hostname and key are read from its
+Service manifest and `ssh_keys/public-coder-devbox-host.pub`, which sshpiper's pin is generated
+from too.
+
 `ssh-mcp-keys` holds four per-`(host,user)` ed25519 keys for `{wyrm2,rugged} ×
 {agentydragon,root}`, SOPS-encrypted in `secrets/keys.sops.yaml`, with the public halves
 in each host's NixOS `authorizedKeys`.
@@ -48,9 +54,9 @@ separate-Secret pattern as the devbox pair: `ssh-mcp-keys-atlas`
 (`secrets/keys-atlas.sops.yaml`). `atlas` is a Nebula mesh peer like `wyrm2`/`rugged`
 (reached over the same `hostAliases` pinning), but unlike them it is not a registered
 Kubernetes node (`nebula-mesh.json`: `role: "non-k8s"`), so it needs its own network
-selector shape — see below. Like `rugged`, its SSH host key has not yet been captured, so
-the target is wired but stays unverified/fail-closed until that key is pinned into
-`known_hosts`.
+selector shape — see below. Its SSH host key has not yet been captured, so the target is
+wired but stays unverified/fail-closed until that key is added to the generator's host-key
+table and `known_hosts` regenerated.
 
 ## Network path
 
