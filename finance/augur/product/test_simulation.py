@@ -10,15 +10,14 @@ import pytest
 import pytest_bazel
 
 from finance.augur.model.series import HomeValueKey, LocationId, SecurityKey, SecuritySymbol
-from finance.augur.sim import configured
-from finance.augur.sim.compiler.execution import compile_run
-from finance.augur.sim.configured import (
+from finance.augur.product.simulation import (
     execute,
     project_events,
     project_product_metrics,
     simulate_events,
     simulate_product_metrics,
 )
+from finance.augur.sim.compiler.execution import compile_run
 from finance.augur.sim.events import EVENT_FRAME_SPECS
 from finance.augur.sim.external_series import ExternalSeriesContext
 from finance.augur.sim.locations import Location
@@ -187,7 +186,7 @@ class TestConfigured:
     def test_events_carry_every_canonical_frame(self, run: CompiledRun) -> None:
         """A frame an engine omits reads downstream as "nothing happened", not as a gap."""
 
-        events = simulate_events(run)
+        events = simulate_events(run, AGENT)
         for spec in EVENT_FRAME_SPECS:
             frame = getattr(events, spec.name)
             assert isinstance(frame, pl.DataFrame), f"{spec.name} is not a frame"
@@ -196,7 +195,7 @@ class TestConfigured:
     def test_the_scheduled_sale_is_reported_as_a_disposition(self, run: CompiledRun) -> None:
         """Proceeds and basis follow from the scenario, so every engine owes the same ones."""
 
-        rows = simulate_events(run).lot_dispositions.filter(pl.col("month_index") == SALE_MONTH).to_dicts()
+        rows = simulate_events(run, AGENT).lot_dispositions.filter(pl.col("month_index") == SALE_MONTH).to_dicts()
         assert len(rows) == 1, f"one lot sold once, got {len(rows)} rows"
         sold = rows[0]
         assert sold["agent_id"] == AGENT
@@ -207,7 +206,7 @@ class TestConfigured:
     def test_the_gain_is_assessed_at_the_tax_year_that_closes_after_it(self, run: CompiledRun) -> None:
         """A realized gain reaches an accrual. Which figure is the statute suites' business."""
 
-        accruals = simulate_events(run).tax_accruals.filter(pl.col("agent_id") == AGENT)
+        accruals = simulate_events(run, AGENT).tax_accruals.filter(pl.col("agent_id") == AGENT)
         assert accruals.height, "a long-term gain went unassessed"
         assert accruals.filter(pl.col("month_index") > SALE_MONTH).height, "no accrual after the sale"
 
@@ -227,7 +226,7 @@ class TestConfigured:
         """Anti-vacuity for the assertions above: they describe a rollout that ran to the end."""
 
         assert int(simulate_product_metrics(run, primary_agent_id=AGENT).failed_month[0]) < 0
-        assert simulate_events(run).rollout_failures.height == 0
+        assert simulate_events(run, AGENT).rollout_failures.height == 0
 
     def test_the_fan_is_ordered_and_agrees_with_the_terminal_samples(self, run: CompiledRun) -> None:
         """The two reductions are of one population, so the fan must sit inside its range.
@@ -260,7 +259,7 @@ class TestConfigured:
         every fractional level a real sampled path produces.
         """
 
-        rows = simulate_events(property_run).property_sale_events.to_dicts()
+        rows = simulate_events(property_run, AGENT).property_sale_events.to_dicts()
         assert len(rows) == 1, f"one property sold once, got {len(rows)} rows"
         assert rows[0]["month_index"] == PROPERTY_SALE_MONTH
         assert rows[0]["gross_proceeds_quanta"] == HOME_VALUE_AT_SALE_QUANTA, (
@@ -280,7 +279,7 @@ class TestConfigured:
         whole scenario was refused.
         """
 
-        rows = simulate_events(fractional_closing_cost_run).property_sale_events.to_dicts()
+        rows = simulate_events(fractional_closing_cost_run, AGENT).property_sale_events.to_dicts()
         assert len(rows) == 1, f"one property sold once, got {len(rows)} rows"
         assert rows[0]["gross_proceeds_quanta"] == FRACTIONAL_CLOSING_COST_PROCEEDS_QUANTA
 
@@ -302,7 +301,7 @@ class TestConfigured:
 @pytest.mark.parametrize("capture", ["summary", "dense", "forensic"])
 def test_completed_capture_projects_same_financial_metrics(capture: Capture) -> None:
     run = sale_and_tax_year()
-    completed = execute(run, capture, product_actor=AGENT)
+    completed = execute(run, capture, AGENT)
     arrays = project_product_metrics(run, completed)
     compact = simulate_product_metrics(run, primary_agent_id=AGENT)
 
@@ -316,7 +315,7 @@ def test_completed_capture_projects_same_financial_metrics(capture: Capture) -> 
             project_events(completed)
     else:
         assert all(result.configured_summary is None for result in completed)
-        assert project_events(completed) == simulate_events(run)
+        assert project_events(completed) == simulate_events(run, AGENT)
         assert all(result.financial is not None for result in completed)
         for result in completed:
             assert result.financial is not None
@@ -325,7 +324,7 @@ def test_completed_capture_projects_same_financial_metrics(capture: Capture) -> 
 
 def test_projection_preserves_selected_original_path_identity() -> None:
     run = sale_and_tax_year(rollout_count=3)
-    completed = execute(run, "dense", product_actor=AGENT)
+    completed = execute(run, "dense", AGENT)
     selected = (completed[-1], completed[0])
     arrays = project_product_metrics(run, selected)
     expected = project_product_metrics(run, completed).select(tuple(result.rollout_id for result in selected))
@@ -333,23 +332,6 @@ def test_projection_preserves_selected_original_path_identity() -> None:
     assert arrays.rollout_ids == project_events(selected).rollout_ids == expected.rollout_ids
     for actual, block in zip(arrays.base_series, expected.base_series, strict=True):
         np.testing.assert_array_equal(actual, block)
-
-
-def test_in_process_events_do_not_export_json(monkeypatch: pytest.MonkeyPatch) -> None:
-    def reject_export(*_args, **_kwargs):
-        raise AssertionError("in-process event projection must not serialize a configured artifact")
-
-    monkeypatch.setattr(configured, "export_results", reject_export)
-    events = simulate_events(sale_and_tax_year())
-    assert events.lot_dispositions.height > 0
-    assert events.tax_accruals.height > 0
-
-
-def test_metrics_require_product_capture() -> None:
-    run = sale_and_tax_year()
-    completed = execute(run, "dense")
-    with pytest.raises(ValueError, match="product snapshots, expected"):
-        project_product_metrics(run, completed)
 
 
 if __name__ == "__main__":

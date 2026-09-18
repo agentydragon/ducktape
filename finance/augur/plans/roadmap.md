@@ -34,7 +34,7 @@ features or silent timing changes.
 **World is the selected composition.** The experiment tracks agents, contracts
 and components on an empty `World` and loops over `World.step()`: open, drain a
 deterministic queue of typed messages to quiescence, close. Each tracked
-`EconomicAgent`'s `decide` handles month-opened once per month with its inbox;
+`EconomicAgent` handles `MonthOpened` once per month over the statements it was posted;
 settlement stays synchronous with fatal rejection; untracked domains are absent,
 not empty. COMPOSE lands it. **Metrics collection also remains open:** caller-authored per-step
 `metrics.append(...)`, observers/recorders and hybrids are candidates, not selected
@@ -47,8 +47,7 @@ reader migrations remain allowed. It does not block preserving supported behavio
 
 - Do not add experiment-specific strategy/lifecycle fields to the universal
   `Scenario`/`PreparedScenario` bag or require a new schema variant for each study.
-- Do not add new implicit policies or consumers of the configured runner; existing
-  consumers remain supported until their named migration can preserve behavior.
+- Do not add new implicit policies; a policy is something a household consults.
 - Do not extend the central component constructor/dispatch for a new experiment
   outside COMPOSE's tracked-component constructor. Keep one owner per financial fact.
 - Do not add new product-specific counters/slabs to `World` or grow legacy
@@ -176,7 +175,7 @@ prepared-file test. The joint example varies both policy dimensions on shared
 synthetic taxable paths, records intentions separately from actual requests and
 payments, and verifies selected replay. An unattempted request remains absent;
 its observed paid amount is zero, while post-stop months remain unobserved.
-P12 owns retirement of the remaining configured runner and implicit policy input.
+P12 owns retirement of the remaining implicit policy input.
 Its Python `policy/configured_allocation.py` proposer uses shared sleeve helpers
 for rounded funding, selected zero targets and full exits, including rounded-zero
 dust. An all-zero target vector remains invalid;
@@ -229,16 +228,16 @@ and cross-actor timing, not the initial ordered-action integration.
 
 Paths are relative to `finance/augur/`. Each row names the change that removes it.
 
-| Existing problem and evidence                                                                                                                                    | Replacement / deletion criterion                                                                                                                                 | Landing unit   |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
-| Configured product capture requires a primary actor and fixed metric slabs (`sim/configured.py`); known contract/tax views are not yet selected domain capture.  | CAP adds concrete missing financial observations. RECORD moves metric ownership out of financial state after GMETRICS; no collection API is preselected.         | CAP; RECORD    |
-| Configured policy input still selects implicit funding/rebalancing through `policy/configured_allocation.py` and `sim/configured.py`.                            | Migrate consumers to common actions; remove configured policy schemas, lowering and orchestration with their last caller, reusing the shared Python helpers.     | P12; GP        |
-| Configured settlement still groups generated claims by source account under all-or-none funding, including scheduled spending claims.                            | Contracts generate claims; actors choose funding and ordered payments through the common session. Resolve each consumer's grouping convention explicitly.        | P12, HOUSE; GP |
-| A total-return equity proxy can look like a taxable security, and `SecurityDistribution` treats payouts as interest.                                             | Explicit product bindings and supported distribution character; separate price return from payouts for taxed holdings.                                           | BIND, TAX      |
-| `BondHolding` means par-bought, unmarked and unsellable; a portfolio choice is encoded as an instrument invariant.                                               | The same dated position can pay coupons, sell partially, or redeem; hold/sell/roll are choices. Keep the old constant-maturity approximation explicitly labeled. | BOND           |
-| Tax surface is narrower than the intended fidelity: single filing status; missing NIIT/qualified-dividend support; no effective-year schedule in `Jurisdiction`. | Declared supported-case matrix, dated rules and opening tax state; unsupported relevant cases reject. Existing loss netting/carryforward is not reimplemented.   | GT, TAX        |
-| `sim/configured.py` still drives implicit allocation/grouped claims and legacy output methods over the shared Python session.                                    | Move callers to ordinary batch actions/common results and delete those configured branches. Retire obsolete configured projections with their last readers.      | P12            |
-| Configured forensic output has a separate acceptance-test result model and adapter.                                                                              | Move real suites to common typed results; delete old test contracts with last readers.                                                                           | ACCEPT         |
+| Existing problem and evidence                                                                                                                                                             | Replacement / deletion criterion                                                                                                                                 | Landing unit   |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| The app's capture requires a primary actor and fixed metric slabs (`product/simulation.py`, `product_metrics.product_row`); known contract/tax views are not yet selected domain capture. | CAP adds concrete missing financial observations. RECORD moves metric ownership out of financial state after GMETRICS; no collection API is preselected.         | CAP; RECORD    |
+| The app's authored `Scenario` still lowers funding policies through `compile_run` for `policy/configured_household.py` to consult.                                                        | Migrate consumers to common actions; remove configured policy schemas, lowering and orchestration with their last caller, reusing the shared Python helpers.     | P12; GP        |
+| Configured settlement still groups generated claims by source account under all-or-none funding, including scheduled spending claims.                                                     | Contracts generate claims; actors choose funding and ordered payments through the common session. Resolve each consumer's grouping convention explicitly.        | P12, HOUSE; GP |
+| A total-return equity proxy can look like a taxable security, and `SecurityDistribution` treats payouts as interest.                                                                      | Explicit product bindings and supported distribution character; separate price return from payouts for taxed holdings.                                           | BIND, TAX      |
+| `BondHolding` means par-bought, unmarked and unsellable; a portfolio choice is encoded as an instrument invariant.                                                                        | The same dated position can pay coupons, sell partially, or redeem; hold/sell/roll are choices. Keep the old constant-maturity approximation explicitly labeled. | BOND           |
+| Tax surface is narrower than the intended fidelity: single filing status; missing NIIT/qualified-dividend support; no effective-year schedule in `Jurisdiction`.                          | Declared supported-case matrix, dated rules and opening tax state; unsupported relevant cases reject. Existing loss netting/carryforward is not reimplemented.   | GT, TAX        |
+| `sim/testing/case.py` and `example_run.py` still hand the remaining sim tests a compiled run.                                                                                             | Move callers to ordinary batch actions/common results and delete those configured branches. Retire obsolete configured projections with their last readers.      | P12            |
+| Configured forensic output has a separate acceptance-test result model and adapter.                                                                                                       | Move real suites to common typed results; delete old test contracts with last readers.                                                                           | ACCEPT         |
 
 The user-facing experiment **RUN** must use canonical execution.
 
@@ -267,7 +266,7 @@ flowchart TB
     GX{"GX: backstop jurisdiction and realism"}
     GL{"GL: future measured workload tuning; parked"}
     RUNTIME["RUNTIME: future bottleneck investigation; parked"] --> GE{"GE: future optimization choice; parked"}
-    IDTYPES["IDTYPES: distinct entity IDs; deferred"]
+    IDTYPES["IDTYPES: typed actor and entity IDs"] --> COMPOSE
 
     ACCEPT["ACCEPT: legacy acceptance-suite readers"] --> P12["P12: delete remaining configured drivers and schemas"]
 
@@ -449,7 +448,7 @@ atomic caller updates and deletion criteria.
 
 | Unit    | Change                                                                    | Needs                                          |
 | ------- | ------------------------------------------------------------------------- | ---------------------------------------------- |
-| IDTYPES | Distinct entity IDs, not prefix renaming; deferred until a concrete need. | None; not a gate to product composition        |
+| IDTYPES | Distinct entity IDs, not prefix renaming; messages are addressed by them. | None; lands with COMPOSE's queue slice         |
 | ACCEPT  | Move remaining acceptance suites to common typed traces/receipts.         | Expanded capabilities only for affected suites |
 
 Reuse the typed `CompiledRun` and exact total opening basis from
@@ -469,10 +468,11 @@ mixed-scale raw-quantity PE selection to a generic helper contract.
 
 Current legacy readers make that retirement concrete:
 
-- `policy/configured_allocation.py` proposes sales and deferred purchases for
-  `sim/configured.py`; retire its configured-policy reader with the last consumer,
-  not the shared sleeve calculations. The compiler's strategy-derived pool and
-  first-source-account lowering retires with that input.
+- `policy/configured_allocation.py` proposes sales and purchases for
+  `policy/configured_household.py`; retire its prepared-run reader
+  (`validate_prepared`) with the last compiled-run caller, not the shared sleeve
+  calculations. The compiler's strategy-derived pool and first-source-account
+  lowering retires with that input.
 - `sim/holdings.py::Holdings.scheduled_sale` serves
   `sim/holdings.py` scheduled sales and
   `sim/private_equity.py` recovery/forced/tender flows: their respective
@@ -620,7 +620,7 @@ all the others to be solved first.
    the capabilities they actually need; do not remove those regressions or add
    a compatibility driver to claim convergence. Public reader deletions proceed.
    **GL and RUNTIME/GE remain parked** without outgoing gates to this work.
-   **IDTYPES is deferred**, the “exogenous” rename is only a consideration, and
+   **IDTYPES lands with COMPOSE's queue slice**, the “exogenous” rename is only a consideration, and
    constituent-level managed portfolios wait for decision-relevant fidelity gaps.
    New evidence-fetch/cache infrastructure waits for observed throttling; richer
    PE app controls are dropped, not a deferred product feature.

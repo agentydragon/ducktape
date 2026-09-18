@@ -9,10 +9,9 @@ import pstats
 import resource
 from pathlib import Path
 
-from finance.augur.sim.artifacts import write_prepared_input
 from finance.augur.sim.results import Finished
 from finance.augur.x.bounded_spending.python_policy import BatchPolicy, Parameters, ScalarAdapter, SpendingPolicy, run
-from finance.augur.x.bounded_spending.stress_paths import prepare
+from finance.augur.x.bounded_spending.stress_paths import equity_only
 
 
 def main() -> None:
@@ -29,10 +28,7 @@ def main() -> None:
     # Set before the extension initializes Rayon's global pool.
     os.environ["RAYON_NUM_THREADS"] = str(args.native_threads)
     args.output_dir.mkdir(parents=True, exist_ok=False)
-    prepared = prepare(rollout_count=args.rollouts, horizon_months=args.horizon_months)
-    input_path = args.output_dir / "input.json"
-    write_prepared_input(prepared, input_path)
-    input_bytes = input_path.read_bytes()
+    compose = equity_only(rollout_count=args.rollouts, horizon_months=args.horizon_months)
     parameters = Parameters(400, 1000, 500)
 
     def execute() -> Finished:
@@ -40,7 +36,7 @@ def main() -> None:
         policy = (
             ScalarAdapter(parameters, ids) if args.authoring == "scalar" else BatchPolicy(parameters, args.rollouts)
         )
-        return run(prepared, SpendingPolicy(policy, {("brokerage", "STOCKS"): 1}), ids, capture=args.capture)
+        return run(compose, SpendingPolicy(policy, {("brokerage", "STOCKS"): 1}), ids, capture=args.capture)
 
     profiler = cProfile.Profile()
     output = profiler.runcall(execute)
@@ -60,13 +56,11 @@ def main() -> None:
         "output_sha256": hashlib.sha256(output.model_dump_json().encode()).hexdigest(),
         "logical_cpu_count": os.cpu_count(),
         "rayon_num_threads": os.environ.get("RAYON_NUM_THREADS"),
-        "input_sha256": hashlib.sha256(input_bytes).hexdigest(),
-        "input_bytes": len(input_bytes),
         "parameters": {"rate_bps": 400, "max_cut_bps": 1000, "max_raise_bps": 500},
         "paths": "three repeated stipulated equity price paths; 100 -> 200/50/130 at month 12; CPI 1 -> 1.25",
         "financial_scope": "tax-free equity-only, sales-only proposals then explicit consumption; post-cashflow review; no purchases",
-        "timing_scope": "cProfile-instrumented policy/session construction through decoded final output; excludes path compilation/input-file creation",
-        "memory_scope": "one process high-water mark including Python/native state and input preparation; not an isolated native heap",
+        "timing_scope": "cProfile-instrumented world composition, policy/session construction through decoded final output; excludes path compilation",
+        "memory_scope": "one process high-water mark including Python/native state and path compilation; not an isolated native heap",
     }
     (args.output_dir / "report.json").write_text(json.dumps(report, indent=2))
     print(json.dumps(report, sort_keys=True))

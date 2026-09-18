@@ -6,13 +6,14 @@ from decimal import Decimal
 from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.compiler.tax import PreparedTaxBracket, PreparedTaxProfile, PreparedTaxRules
+from finance.augur.sim.ids import AgentId
 from finance.augur.sim.prepared import PreparedScenario
 from finance.augur.sim.scenario import ORDINARY_INCOME, InitialAccountBalance, InterestIncome
 from finance.augur.sim.testing.case import Case, scenario
 
-HOUSEHOLD = "test_household"
-OTHER = "test_other"
-WORLD = "test_world"
+HOUSEHOLD = AgentId("test_household")
+OTHER = AgentId("test_other")
+WORLD = AgentId("test_world")
 CASH = AccountRef(agent_id=HOUSEHOLD, account_id="checking")
 RESERVE = AccountRef(agent_id=HOUSEHOLD, account_id="savings")
 RECIPIENT = AccountRef(agent_id=OTHER, account_id="checking")
@@ -52,6 +53,17 @@ def prepared_scenario() -> PreparedScenario:
     return replace(prepared, tax_profiles=profiles, income_sources=(ORDINARY_INCOME, InterestIncome()))
 
 
+def prepared_books(scenario_: PreparedScenario) -> Accounting:
+    """The prepared scenario's accounts and taxpayers on a fresh ledger."""
+    accounting_ = Accounting(scenario_.income_sources, scenario_.jurisdictions)
+    for account in scenario_.accounts:
+        accounting_.declare(account)
+    for profile in scenario_.tax_profiles:
+        accounting_.enroll(profile)
+    accounting_.tax.salt_policies = scenario_._federal_salt_deduction_policies
+    accounting_.tax.mortgage_interest_policies = scenario_._mortgage_interest_deduction_policies
+    return accounting_
+
+
 def accounting() -> Accounting:
-    scenario_ = prepared_scenario()
-    return Accounting(scenario_.accounts, scenario_.tax_profiles, scenario_.income_sources)
+    return prepared_books(prepared_scenario())
