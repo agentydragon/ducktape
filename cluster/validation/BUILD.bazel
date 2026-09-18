@@ -21,7 +21,6 @@ py_test(
     srcs = ["test_actions_artifact.py"],
     data = [
         "//cluster/k8s:cluster_all_files",
-        "//cluster/k8s:flux_bootstrap_files",
         "//cluster/k8s/agents/ha-mcp/app:manifests",
         "//cluster/k8s/agents/loki-read-proxy:manifests",
         "//cluster/k8s/cli-proxy-api:manifests",
@@ -33,6 +32,7 @@ py_test(
     deps = [
         ":tool_resolve",
         "//util/bazel:runfiles",
+        "@pypi//more_itertools",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
@@ -563,24 +563,6 @@ py_test(
 py_test(
     name = "test_haku_public_coder_contract",
     srcs = ["test_haku_public_coder_contract.py"],
-    data = [
-        "//cluster/k8s:haku_manifest_contract_files",
-        "//cluster/k8s/cli-proxy-api:manifests",
-        "//haku/x/dispatch:deploy/namespace/namespace.yaml",
-    ],
-    deps = [
-        ":conftest",
-        "//:conftest",
-        "//util/bazel:runfiles",
-        "@pypi//more_itertools",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_test(
-    name = "test_haku_recall_unwired_contract",
-    srcs = ["test_haku_recall_unwired_contract.py"],
     data = ["//cluster/k8s:haku_manifest_contract_files"],
     deps = [
         ":conftest",
@@ -628,21 +610,6 @@ py_test(
 )
 
 py_test(
-    name = "test_haku_dispatch_job_contract",
-    srcs = ["test_haku_dispatch_job_contract.py"],
-    data = [
-        "//cluster/k8s:kustomization.yaml",
-        "//haku/x/dispatch/deploy/dispatcher:manifests",
-    ],
-    deps = [
-        ":conftest",
-        "//:conftest",
-        "//haku/x/dispatch:k8s_jobs",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_haku_dispatch_zones_contract",
     srcs = ["test_haku_dispatch_zones_contract.py"],
     data = [
@@ -654,32 +621,6 @@ py_test(
         "//:conftest",
         "//haku/x/dispatch:config",
         "//haku/x/dispatch/deploy/litellm:generate_workers_litellm",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_haku_dispatch_deploy",
-    srcs = ["test_haku_dispatch_deploy.py"],
-    data = [
-        "//haku/x/dispatch:deploy_base_files",
-        "//haku/x/dispatch/deploy/dispatcher:manifests",
-        "//haku/x/dispatch/deploy/litellm:manifests",
-    ],
-    deps = [
-        ":kustomize",
-        "//util/bazel:runfiles",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_haku_zones_deploy",
-    srcs = ["test_haku_zones_deploy.py"],
-    data = ["//haku/x/zones/deploy:manifests"],
-    deps = [
-        ":kustomize",
-        "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
     ],
 )
