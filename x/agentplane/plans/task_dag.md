@@ -382,7 +382,7 @@ ownership: an account's bindings must not fight a reconciler for the same object
 
 **Deferred migration:** the Haku console's `auto_approval_policies`
 (`cluster/k8s/haku/console/config.yaml`) is the reviewed authority the Action policy model
-replaces; its GitHub policies exist as sets in `cluster/k8s/agentplane-staging/actions/`. What
+replaces; its GitHub policies exist as sets in `cluster/k8s/agentplane-staging/`. What
 remains, each with what it needs; an entry leaves when its set can be written.
 
 - **`exact_tools` for servers with no ActionGroup**: `gmail_reads`, `google_calendar_reads`,
@@ -732,7 +732,7 @@ smaller than its description implies:
   the `schemeToken` target parses `<scheme> <credential>`, which is the shape public-coder's GitHub
   token already travels in. That is iron-proxy's `iron.yaml` expressed as resources
   (<../egress/SPEC.md>), so the GitHub token substitution needs configuration, not code.
-- **Some GitHub auto-approval is ported**: `cluster/k8s/agentplane-staging/actions/` carries
+- **Some GitHub auto-approval is ported**: `cluster/k8s/agentplane-staging/` carries
   `ActionPolicySet`s for `github-identity-reads`, `github-reads`, `public-github-reads`,
   `public-ducktape-reads`, `public-ducktape-fork-reads` and `public-gaffer-private-reads`.
   Whether that set covers what

@@ -730,6 +730,7 @@ py_test(
         "//util/bazel:runfiles",
         "//x/agentplane:crd_group",
         "//x/agentplane/action_service/policies:resources",
+        "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",

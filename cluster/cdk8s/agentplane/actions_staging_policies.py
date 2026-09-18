@@ -1,8 +1,8 @@
 """Staging-only Action Service policy objects: the claude-ai caller ServiceAccount, its
 five reviewed GitHub-reads ActionPolicySets, and the ActionPolicyBinding granting them to
-that ServiceAccount. See cluster/k8s/agentplane-staging/actions/README.md § Action
-policies -- Sandbox-subject bindings are written by the integration app at runtime and
-are never checked in here.
+that ServiceAccount. See cluster/k8s/agentplane-staging/README.md § Action policies --
+Sandbox-subject bindings are written by the integration app at runtime and are never
+checked in here.
 """
 
 from __future__ import annotations

@@ -1,7 +1,0 @@
-apiVersion: kustomize.config.k8s.io/v1alpha1
-kind: Component
-images:
-  - name: git.allegedly.works/ducktape-ci/agentplane-egress
-    newTag: devel-20260917104409-99b584a # {"$imagepolicy": "flux-system:agentplane-egress:tag"}
-  - name: git.allegedly.works/ducktape-ci/agentplane-egress-migrate
-    newTag: devel-20260917104411-99b584a # {"$imagepolicy": "flux-system:agentplane-egress-migrate:tag"}

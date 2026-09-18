@@ -3,7 +3,7 @@
 Use the existing `tzolov/mcp-everything-server:v3` Docker image, pinned to the published
 multi-platform digest in the `agentplane-mcp-everything` Deployment
 (`cluster/cdk8s/agentplane/actions_testing_fixtures.py`, generated into
-`cluster/k8s/agentplane-testing/actions/agentplane-actions.k8s.yaml`). The image packages the upstream
+`cluster/k8s/agentplane-testing/agentplane-services.k8s.yaml`). The image packages the upstream
 Everything reference server with streamable HTTP support. Its
 [source and Dockerfile](https://github.com/tzolov/mcp-everything-server-docker-image/tree/18d3cedb9f3685fff86b9e18dad413c9ad99506c)
 are maintained outside this repository. There is no Agentplane MCP server
@@ -37,7 +37,7 @@ in the Action Service; the fixture itself has no credentials.
 
 This remains our own image because `everything` has no auth and cannot exercise the linkage
 against an external authorization server. The fixture is deployed under
-`cluster/k8s/agentplane-testing/actions/`, cluster-internal only (no public route), same as
+`cluster/k8s/agentplane-testing/`, cluster-internal only (no public route), same as
 `everything`. The acceptance suite reuses the Dex session established by its existing operator
 login, follows Dex's HTTPS authorization redirects, completes the callback through the app BFF,
 and then executes the protected tool.

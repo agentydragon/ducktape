@@ -29,48 +29,49 @@ NAMESPACES = ["agentplane-staging", "agentplane-testing"]
 DATABASE_URL = "--database-url=postgresql://validation-test/validation-test"
 LITELLM_KEY = "--litellm-key=validation-test-not-a-key"
 
-PROXY = ("egress", "agentplane-egress.k8s.yaml", "proxy", "AGENTPLANE_EGRESS_CONFIG_FILE", "agentplane-egress-settings")
-INGRESS = (
-    "llm-ingress",
-    "agentplane-llm-ingress.k8s.yaml",
-    "ingress",
-    "AGENTPLANE_LLM_INGRESS_CONFIG_FILE",
-    "agentplane-llm-ingress-settings",
-)
+# (Deployment name, container name, config-file env var, settings ConfigMap name)
+PROXY = ("agentplane-egress", "proxy", "AGENTPLANE_EGRESS_CONFIG_FILE", "agentplane-egress-settings")
+INGRESS = ("agentplane-llm-ingress", "ingress", "AGENTPLANE_LLM_INGRESS_CONFIG_FILE", "agentplane-llm-ingress-settings")
 
 
-def _documents(namespace: str, directory: str, manifest: str) -> list[dict[str, Any]]:
-    path = get_required_path(f"_main/cluster/k8s/{namespace}/{directory}/{manifest}")
+def _documents(namespace: str) -> list[dict[str, Any]]:
+    path = get_required_path(f"_main/cluster/k8s/{namespace}/agentplane-services.k8s.yaml")
     return list(yaml.safe_load_all(Path(path).read_text()))
 
 
-def _container(namespace: str, directory: str, manifest: str, name: str) -> dict[str, Any]:
-    deployment = one(doc for doc in _documents(namespace, directory, manifest) if doc["kind"] == "Deployment")
-    pod: dict[str, Any] = deployment["spec"]["template"]["spec"]
-    return one(candidate for candidate in pod["containers"] if candidate["name"] == name)
-
-
-def _settings_file(tmp_path: Path, namespace: str, directory: str, manifest: str, configmap_name: str) -> Path:
-    config_map = one(
+def _container(namespace: str, deployment_name: str, container_name: str) -> dict[str, Any]:
+    deployment = one(
         doc
-        for doc in _documents(namespace, directory, manifest)
-        if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == configmap_name
+        for doc in _documents(namespace)
+        if doc["kind"] == "Deployment" and doc["metadata"]["name"] == deployment_name
     )
-    config_file = tmp_path / f"{directory}-settings.yaml"
+    pod: dict[str, Any] = deployment["spec"]["template"]["spec"]
+    return one(candidate for candidate in pod["containers"] if candidate["name"] == container_name)
+
+
+def _settings_file(tmp_path: Path, namespace: str, deployment_name: str, configmap_name: str) -> Path:
+    config_map = one(
+        doc for doc in _documents(namespace) if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == configmap_name
+    )
+    config_file = tmp_path / f"{deployment_name}-settings.yaml"
     config_file.write_text(config_map["data"]["settings.yaml"])
     return config_file
 
 
 def _proxy(tmp_path: Path, namespace: str, monkeypatch: pytest.MonkeyPatch) -> EgressSettings:
-    directory, manifest, name, env, cm_name = PROXY
-    monkeypatch.setenv(env, str(_settings_file(tmp_path, namespace, directory, manifest, cm_name)))
-    return EgressSettings(_cli_parse_args=[*_container(namespace, directory, manifest, name)["args"], DATABASE_URL])
+    deployment_name, container_name, env, cm_name = PROXY
+    monkeypatch.setenv(env, str(_settings_file(tmp_path, namespace, deployment_name, cm_name)))
+    return EgressSettings(
+        _cli_parse_args=[*_container(namespace, deployment_name, container_name)["args"], DATABASE_URL]
+    )
 
 
 def _ingress(tmp_path: Path, namespace: str, monkeypatch: pytest.MonkeyPatch) -> IngressSettings:
-    directory, manifest, name, env, cm_name = INGRESS
-    monkeypatch.setenv(env, str(_settings_file(tmp_path, namespace, directory, manifest, cm_name)))
-    return IngressSettings(_cli_parse_args=[*_container(namespace, directory, manifest, name)["args"], LITELLM_KEY])
+    deployment_name, container_name, env, cm_name = INGRESS
+    monkeypatch.setenv(env, str(_settings_file(tmp_path, namespace, deployment_name, cm_name)))
+    return IngressSettings(
+        _cli_parse_args=[*_container(namespace, deployment_name, container_name)["args"], LITELLM_KEY]
+    )
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)
@@ -98,15 +99,15 @@ def test_both_read_the_same_projected_token_audience(
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)
-@pytest.mark.parametrize(("directory", "manifest", "name", "env", "cm_name"), [PROXY, INGRESS])
+@pytest.mark.parametrize(("deployment_name", "container_name", "env", "cm_name"), [PROXY, INGRESS])
 def test_each_deployment_mounts_the_settings_file_it_names(
-    namespace: str, directory: str, manifest: str, name: str, env: str, cm_name: str
+    namespace: str, deployment_name: str, container_name: str, env: str, cm_name: str
 ) -> None:
     """The env var names a path inside the container; the mount is what puts a file there. They are
     written in different blocks of the same manifest, and the service refuses to start on a path
     that is not a regular file -- so disagreeing spellings are a CrashLoopBackOff, not a default."""
     del cm_name  # only needed by _settings_file, not this manifest-shape assertion
-    container = _container(namespace, directory, manifest, name)
+    container = _container(namespace, deployment_name, container_name)
     configured = one(entry for entry in container["env"] if entry["name"] == env)["value"]
     mount = one(entry for entry in container["volumeMounts"] if entry["mountPath"] == configured)
 

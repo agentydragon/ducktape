@@ -10,16 +10,16 @@ from cluster.cdk8s.agentplane import staging_config
 from util.bazel.runfiles import get_required_path
 
 
-def egress_object(kind: str, name: str | None = None) -> dict[str, Any]:
+def egress_object(kind: str, name: str) -> dict[str, Any]:
     documents = yaml.safe_load_all(
-        get_required_path("_main/cluster/k8s/agentplane-staging/egress/agentplane-egress.k8s.yaml").read_text()
+        get_required_path("_main/cluster/k8s/agentplane-staging/agentplane-services.k8s.yaml").read_text()
     )
-    return one(doc for doc in documents if doc["kind"] == kind and (name is None or doc["metadata"]["name"] == name))
+    return one(doc for doc in documents if doc["kind"] == kind and doc["metadata"]["name"] == name)
 
 
 def test_service_routes_rules_to_the_separate_declared_listener() -> None:
     service = egress_object("Service", "agentplane-egress")["spec"]
-    deployment = egress_object("Deployment")["spec"]
+    deployment = egress_object("Deployment", "agentplane-egress")["spec"]
     pod = deployment["template"]
     container = one(c for c in pod["spec"]["containers"] if c["name"] == "proxy")
     ports = {p["name"]: p["containerPort"] for p in container["ports"]}
@@ -68,8 +68,8 @@ def test_public_coder_defaults_and_nonsecret_instructions_bootstrap_workload_cre
 
 
 def test_staging_egress_retains_one_available_replica_during_voluntary_changes() -> None:
-    deployment = egress_object("Deployment")["spec"]
-    budget = egress_object("PodDisruptionBudget")["spec"]
+    deployment = egress_object("Deployment", "agentplane-egress")["spec"]
+    budget = egress_object("PodDisruptionBudget", "agentplane-egress")["spec"]
     pod = deployment["template"]
     assert deployment["replicas"] == 2  # Staging capacity requested by the operator.
     assert deployment["strategy"]["type"] == "RollingUpdate"

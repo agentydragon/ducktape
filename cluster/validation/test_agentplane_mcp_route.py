@@ -14,26 +14,25 @@ from x.agentplane.egress.resources import EgressPolicy
 
 @pytest.fixture
 def manifests() -> dict[str, Any]:
-    actions_documents = list(
+    documents = list(
         yaml.safe_load_all(
-            get_required_path("_main/cluster/k8s/agentplane-staging/actions/agentplane-actions.k8s.yaml").read_text()
+            get_required_path("_main/cluster/k8s/agentplane-staging/agentplane-services.k8s.yaml").read_text()
         )
     )
     result = {
-        name: one(doc for doc in actions_documents if doc["kind"] == kind)
-        for name, kind in {"route": "HTTPRoute", "service": "Service", "deployment": "Deployment"}.items()
+        name: one(doc for doc in documents if doc["kind"] == kind and doc["metadata"]["name"] == resource_name)
+        for name, (kind, resource_name) in {
+            "route": ("HTTPRoute", "agentplane-actions-mcp"),
+            "service": ("Service", "agentplane-actions"),
+            "deployment": ("Deployment", "agentplane-actions"),
+        }.items()
     }
-    egress_documents = list(
-        yaml.safe_load_all(
-            get_required_path("_main/cluster/k8s/agentplane-staging/egress/agentplane-egress.k8s.yaml").read_text()
-        )
-    )
     result["policy"] = one(
-        doc for doc in egress_documents if doc["kind"] == "EgressPolicy" and doc["metadata"]["name"] == "basic"
+        doc for doc in documents if doc["kind"] == "EgressPolicy" and doc["metadata"]["name"] == "basic"
     )
     result["credential"] = one(
         doc
-        for doc in egress_documents
+        for doc in documents
         if doc["kind"] == "EgressCredential" and doc["metadata"]["name"] == "agentplane-workload"
     )
     return result

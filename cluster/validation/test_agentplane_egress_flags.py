@@ -26,13 +26,17 @@ CONFIG_FILE_ENV = "AGENTPLANE_EGRESS_CONFIG_FILE"
 DATABASE_URL = "--database-url=postgresql://validation-test/validation-test"
 
 
-def _egress_documents(namespace: str) -> list[dict[str, Any]]:
-    manifest = get_required_path(f"_main/cluster/k8s/{namespace}/egress/agentplane-egress.k8s.yaml")
+def _services_documents(namespace: str) -> list[dict[str, Any]]:
+    manifest = get_required_path(f"_main/cluster/k8s/{namespace}/agentplane-services.k8s.yaml")
     return list(yaml.safe_load_all(Path(manifest).read_text()))
 
 
 def _proxy_args(namespace: str) -> list[str]:
-    deployment = one(doc for doc in _egress_documents(namespace) if doc["kind"] == "Deployment")
+    deployment = one(
+        doc
+        for doc in _services_documents(namespace)
+        if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "agentplane-egress"
+    )
     pod: dict[str, Any] = deployment["spec"]["template"]["spec"]
     return list(one(container for container in pod["containers"] if container["name"] == "proxy")["args"])
 
@@ -40,7 +44,7 @@ def _proxy_args(namespace: str) -> list[str]:
 def _settings_file(tmp_path: Path, namespace: str) -> Path:
     config_map = one(
         doc
-        for doc in _egress_documents(namespace)
+        for doc in _services_documents(namespace)
         if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "agentplane-egress-settings"
     )
     config_file = tmp_path / "settings.yaml"

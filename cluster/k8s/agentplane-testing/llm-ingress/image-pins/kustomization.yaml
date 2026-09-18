@@ -1,5 +1,0 @@
-apiVersion: kustomize.config.k8s.io/v1alpha1
-kind: Component
-images:
-  - name: git.allegedly.works/ducktape-ci/agentplane-llm-ingress
-    newTag: devel-20260917092052-c42b848 # {"$imagepolicy": "flux-system:agentplane-llm-ingress:tag"}

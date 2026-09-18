@@ -2,7 +2,7 @@
 them directly into their `cluster/k8s` directory.
 
 Every generated Deployment/Job/CronJob carries a placeholder image tag -- each
-directory's own hand-written `image-pins/kustomization.yaml` Kustomize
+environment's own hand-written `image-pins/kustomization.yaml` Kustomize
 Component (never written by this generator) carries Flux's `$imagepolicy`
 marker and overrides the real tag at `kustomize build` time. See
 cluster/docs/cdk8s.md.
@@ -60,17 +60,6 @@ _LITELLM_APP_DIR = "cluster/k8s/litellm/app"
 _HA_MCP_DIR = "cluster/k8s/agents/ha-mcp/app"
 _AGENTPLANE_TESTING_DIR = "cluster/k8s/agentplane-testing"
 _AGENTPLANE_STAGING_DIR = "cluster/k8s/agentplane-staging"
-_AGENTPLANE_TESTING_APP_DIR = f"{_AGENTPLANE_TESTING_DIR}/app"
-_AGENTPLANE_STAGING_APP_DIR = f"{_AGENTPLANE_STAGING_DIR}/app"
-_AGENTPLANE_TESTING_DB_DIR = f"{_AGENTPLANE_TESTING_DIR}/db"
-_AGENTPLANE_STAGING_DB_DIR = f"{_AGENTPLANE_STAGING_DIR}/db"
-_AGENTPLANE_TESTING_LLM_INGRESS_DIR = f"{_AGENTPLANE_TESTING_DIR}/llm-ingress"
-_AGENTPLANE_STAGING_LLM_INGRESS_DIR = f"{_AGENTPLANE_STAGING_DIR}/llm-ingress"
-_AGENTPLANE_TESTING_EGRESS_DIR = f"{_AGENTPLANE_TESTING_DIR}/egress"
-_AGENTPLANE_STAGING_EGRESS_DIR = f"{_AGENTPLANE_STAGING_DIR}/egress"
-_AGENTPLANE_TESTING_ACTIONS_DIR = f"{_AGENTPLANE_TESTING_DIR}/actions"
-_AGENTPLANE_STAGING_ACTIONS_DIR = f"{_AGENTPLANE_STAGING_DIR}/actions"
-_AGENTPLANE_TESTING_DEX_DIR = f"{_AGENTPLANE_TESTING_DIR}/dex"
 
 _AGENTPLANE_STAGING_SPEC = namespace_rbac_constructs.EnvSpec(
     namespace="agentplane-staging",
@@ -519,140 +508,57 @@ def _generate_agentplane_namespace_rbac(root: Path, app_dir: str, spec: namespac
     app.synth()
 
 
-def _generate_agentplane_db(root: Path, db_dir: str, spec: db_constructs.DbEnvSpec) -> None:
-    """Synthesize into `db_dir`'s existing, otherwise hand-written Kustomization --
-    same mixed generated/hand-written pattern as `_generate_agentplane_namespace_rbac`,
-    replacing what used to be role-secrets.yaml, postgres-cluster.yaml, and
-    databases.yaml.
-    """
-    out_dir = root / db_dir
-    out_dir.mkdir(parents=True, exist_ok=True)
-    app = App(outdir=str(out_dir))
-    chart = Chart(app, "agentplane-db", disable_resource_name_hashes=True)
-    db_constructs.Db(chart, "db", spec)
-    app.synth()
-
-
-def _generate_agentplane_llm_ingress(
-    root: Path, llm_ingress_dir: str, spec: llm_ingress_constructs.LlmIngressEnvSpec
-) -> None:
-    """Synthesize into `llm_ingress_dir` -- replaces clusterrole-token-reviewer.yaml,
-    deployment.yaml, kustomization.yaml, networkpolicy.yaml, service.yaml, and
-    serviceaccount.yaml. The sibling image-pins/ Component (never generated) stays
-    hand-written, same as litellm/ha-mcp.
-    """
-    out_dir = root / llm_ingress_dir
-    out_dir.mkdir(parents=True, exist_ok=True)
-    app = App(outdir=str(out_dir))
-    chart = Chart(app, "agentplane-llm-ingress", disable_resource_name_hashes=True)
-    llm_ingress_constructs.LlmIngress(chart, "llm-ingress", spec)
-    app.synth()
-
-    _write_yaml(
-        out_dir / "kustomization.yaml",
-        kustomize_kustomization(resources=["agentplane-llm-ingress.k8s.yaml"], components=["./image-pins"]),
-    )
-
-
-def _generate_agentplane_egress(root: Path, egress_dir: str, spec: egress_constructs.EgressEnvSpec) -> None:
-    """Synthesize into `egress_dir` -- replaces certificate-agentplane-egress-ca.yaml,
-    clusterrole-*-egress-token-reviewer.yaml, deployment-agentplane-egress.yaml,
-    egresscredential-*.yaml, egresspolicy-*.yaml, kustomization.yaml,
-    networkpolicy.yaml, poddisruptionbudget-agentplane-egress.yaml (staging only),
-    role-agentplane-egress.yaml, rolebinding-agentplane-egress.yaml,
-    service-agentplane-egress[-admin].yaml, serviceaccount-agentplane-egress.yaml,
-    and trust-bundle.yaml. The sibling image-pins/ Component (never generated) stays
-    hand-written, same as litellm/ha-mcp/llm-ingress.
-    """
-    out_dir = root / egress_dir
-    out_dir.mkdir(parents=True, exist_ok=True)
-    app = App(outdir=str(out_dir))
-    chart = Chart(app, "agentplane-egress", disable_resource_name_hashes=True)
-    egress_constructs.Egress(chart, "egress", spec)
-    app.synth()
-
-    _write_yaml(
-        out_dir / "kustomization.yaml",
-        kustomize_kustomization(resources=["agentplane-egress.k8s.yaml"], components=["./image-pins"]),
-    )
-
-
-def _generate_agentplane_app(root: Path, app_dir: str, spec: app_constructs.AppEnvSpec) -> None:
-    """Synthesize into `app_dir` -- replaces clusterrole-*-app-token-reviewer.yaml,
-    deployment-agentplane-app.yaml, forgejo-images-creds-eso.yaml (both environments
-    now generate it here, resolving the placement decision recorded in the plan;
-    testing's llm-ingress/ no longer carries it), httproute.yaml, kustomization.yaml,
-    networkpolicy.yaml, poddisruptionbudget-agentplane-app.yaml (staging only),
-    role-agentplane-app.yaml, rolebinding-agentplane-app.yaml,
-    sandboxtemplate-agentplane-runner.yaml, service-agentplane-app.yaml, and the three
-    serviceaccount-agentplane-*.yaml files. `agentplane-app-config.k8s.yaml` (a
-    separate chart -- see `_write_config_map_chart`) and the sibling image-pins/
-    Component (never generated) are untouched by this function but listed in the
-    Kustomization it writes.
-    """
-    out_dir = root / app_dir
-    out_dir.mkdir(parents=True, exist_ok=True)
-    app = App(outdir=str(out_dir))
-    chart = Chart(app, "agentplane-app", disable_resource_name_hashes=True)
-    app_constructs.App(chart, "app", spec)
-    app.synth()
-
-    _write_yaml(
-        out_dir / "kustomization.yaml",
-        kustomize_kustomization(
-            resources=["agentplane-app.k8s.yaml", "agentplane-app-config.k8s.yaml"], components=["./image-pins"]
-        ),
-    )
-
-
-def _generate_agentplane_actions(
+def _generate_agentplane_services(
     root: Path,
-    actions_dir: str,
-    spec: actions_constructs.ActionsEnvSpec,
+    env_dir: str,
     *,
+    db_spec: db_constructs.DbEnvSpec,
+    llm_ingress_spec: llm_ingress_constructs.LlmIngressEnvSpec,
+    egress_spec: egress_constructs.EgressEnvSpec,
+    app_spec: app_constructs.AppEnvSpec,
+    actions_spec: actions_constructs.ActionsEnvSpec,
     add_extra: Callable[[Chart], None],
     extra_resources: Sequence[str] = (),
 ) -> None:
-    """Synthesize into `actions_dir` -- replaces clusterrole-*-actions-token-reviewer.yaml,
-    configmap-action-federation.yaml, deployment.yaml, httproute.yaml, kustomization.yaml,
-    networkpolicy.yaml, poddisruptionbudget.yaml (staging only), rbac.yaml, service.yaml,
-    serviceaccount.yaml, settings.yaml, and (via `add_extra`) staging's
-    ActionPolicySet/Binding objects and claude-ai ServiceAccount, or testing's
-    mcp-everything/oauth-fixture fixtures. `web-push-vapid.sops.yaml` (staging only) and
-    the sibling image-pins/ Component (never generated) stay hand-written, listed in the
-    Kustomization this function writes.
+    """Synthesize into `env_dir` -- the environment's entire workload surface (db,
+    llm-ingress, egress, app, actions, and via `add_extra` either staging's
+    ActionPolicySet/Binding objects and claude-ai ServiceAccount or testing's
+    mcp-everything/oauth-fixture fixtures and Dex) as one chart, replacing what used to
+    be five (six for testing) separate subdirectories each with their own Kustomization.
+    Single failure domain by design -- including the CNPG Postgres `Cluster` -- accepted
+    for both non-production environments.
+
+    Also (re)writes `env_dir`'s root Kustomization, now just this chart's output plus
+    `agentplane-namespace-rbac.k8s.yaml`, `agentplane-app-config.k8s.yaml` (the
+    model-catalog ConfigMap -- a separate chart, see `_write_config_map_chart`), and
+    `extra_resources` (staging's hand-written `web-push-vapid.sops.yaml`). The sibling
+    image-pins/ Component (never generated, now also merged into one per environment)
+    stays hand-written, same as litellm/ha-mcp.
     """
-    out_dir = root / actions_dir
+    out_dir = root / env_dir
     out_dir.mkdir(parents=True, exist_ok=True)
     app = App(outdir=str(out_dir))
-    chart = Chart(app, "agentplane-actions", disable_resource_name_hashes=True)
-    actions_constructs.Actions(chart, "actions", spec)
+    chart = Chart(app, "agentplane-services", disable_resource_name_hashes=True)
+    db_constructs.Db(chart, "db", db_spec)
+    llm_ingress_constructs.LlmIngress(chart, "llm-ingress", llm_ingress_spec)
+    egress_constructs.Egress(chart, "egress", egress_spec)
+    app_constructs.App(chart, "app", app_spec)
+    actions_constructs.Actions(chart, "actions", actions_spec)
     add_extra(chart)
     app.synth()
 
     _write_yaml(
         out_dir / "kustomization.yaml",
         kustomize_kustomization(
-            resources=["agentplane-actions.k8s.yaml", *extra_resources], components=["./image-pins"]
+            resources=[
+                "agentplane-namespace-rbac.k8s.yaml",
+                "agentplane-app-config.k8s.yaml",
+                "agentplane-services.k8s.yaml",
+                *extra_resources,
+            ],
+            components=["./image-pins"],
         ),
     )
-
-
-def _generate_agentplane_dex(root: Path, dex_dir: str) -> None:
-    """Synthesize into `dex_dir` -- replaces credentials-eso.yaml, deployment.yaml,
-    httproute.yaml, kustomization.yaml, networkpolicy.yaml, and service.yaml.
-    `ghcr.io/dexidp/dex:v2.45.1` is a manually pinned upstream release, not a
-    Flux-automated build of this repo, so unlike every other converted Deployment there
-    is no placeholder tag and no sibling image-pins/ Component.
-    """
-    out_dir = root / dex_dir
-    out_dir.mkdir(parents=True, exist_ok=True)
-    app = App(outdir=str(out_dir))
-    chart = Chart(app, "agentplane-testing-dex", disable_resource_name_hashes=True)
-    dex_constructs.Dex(chart, "dex")
-    app.synth()
-
-    _write_yaml(out_dir / "kustomization.yaml", kustomize_kustomization(resources=["agentplane-testing-dex.k8s.yaml"]))
 
 
 def _write_config_map_chart(
@@ -676,7 +582,7 @@ def _write_config_map_chart(
 def _generate_agentplane_testing_config(root: Path) -> None:
     _write_config_map_chart(
         root,
-        _AGENTPLANE_TESTING_APP_DIR,
+        _AGENTPLANE_TESTING_DIR,
         chart_name="agentplane-app-config",
         configmap_name="agentplane-app-config",
         namespace="agentplane-testing",
@@ -687,7 +593,7 @@ def _generate_agentplane_testing_config(root: Path) -> None:
 def _generate_agentplane_staging_config(root: Path) -> None:
     _write_config_map_chart(
         root,
-        _AGENTPLANE_STAGING_APP_DIR,
+        _AGENTPLANE_STAGING_DIR,
         chart_name="agentplane-app-config",
         configmap_name="agentplane-app-config",
         namespace="agentplane-staging",
@@ -720,36 +626,41 @@ def _generate_public_coder_agent_config(root: Path) -> None:
     )
 
 
+def _add_testing_extra(chart: Chart) -> None:
+    actions_testing_fixtures.add_testing_fixtures(chart)
+    # Testing-only: staging federates directly to the shared Authentik instead.
+    dex_constructs.Dex(chart, "dex")
+
+
 def generate_manifests(root: Path) -> None:
     """Write every converted directory's generated manifests under `root`."""
     _generate_litellm_app(root)
     _generate_ha_mcp(root)
     _generate_agentplane_namespace_rbac(root, _AGENTPLANE_STAGING_DIR, _AGENTPLANE_STAGING_SPEC)
     _generate_agentplane_namespace_rbac(root, _AGENTPLANE_TESTING_DIR, _AGENTPLANE_TESTING_SPEC)
-    _generate_agentplane_db(root, _AGENTPLANE_STAGING_DB_DIR, _AGENTPLANE_STAGING_DB_SPEC)
-    _generate_agentplane_db(root, _AGENTPLANE_TESTING_DB_DIR, _AGENTPLANE_TESTING_DB_SPEC)
-    _generate_agentplane_llm_ingress(root, _AGENTPLANE_STAGING_LLM_INGRESS_DIR, _AGENTPLANE_STAGING_LLM_INGRESS_SPEC)
-    _generate_agentplane_llm_ingress(root, _AGENTPLANE_TESTING_LLM_INGRESS_DIR, _AGENTPLANE_TESTING_LLM_INGRESS_SPEC)
-    _generate_agentplane_egress(root, _AGENTPLANE_STAGING_EGRESS_DIR, _AGENTPLANE_STAGING_EGRESS_SPEC)
-    _generate_agentplane_egress(root, _AGENTPLANE_TESTING_EGRESS_DIR, _AGENTPLANE_TESTING_EGRESS_SPEC)
     _generate_agentplane_staging_config(root)
     _generate_agentplane_testing_config(root)
-    _generate_agentplane_app(root, _AGENTPLANE_STAGING_APP_DIR, _AGENTPLANE_STAGING_APP_SPEC)
-    _generate_agentplane_app(root, _AGENTPLANE_TESTING_APP_DIR, _AGENTPLANE_TESTING_APP_SPEC)
-    _generate_agentplane_actions(
+    _generate_agentplane_services(
         root,
-        _AGENTPLANE_STAGING_ACTIONS_DIR,
-        _AGENTPLANE_STAGING_ACTIONS_SPEC,
+        _AGENTPLANE_STAGING_DIR,
+        db_spec=_AGENTPLANE_STAGING_DB_SPEC,
+        llm_ingress_spec=_AGENTPLANE_STAGING_LLM_INGRESS_SPEC,
+        egress_spec=_AGENTPLANE_STAGING_EGRESS_SPEC,
+        app_spec=_AGENTPLANE_STAGING_APP_SPEC,
+        actions_spec=_AGENTPLANE_STAGING_ACTIONS_SPEC,
         add_extra=actions_staging_policies.add_staging_action_policies,
         extra_resources=["web-push-vapid.sops.yaml"],
     )
-    _generate_agentplane_actions(
+    _generate_agentplane_services(
         root,
-        _AGENTPLANE_TESTING_ACTIONS_DIR,
-        _AGENTPLANE_TESTING_ACTIONS_SPEC,
-        add_extra=actions_testing_fixtures.add_testing_fixtures,
+        _AGENTPLANE_TESTING_DIR,
+        db_spec=_AGENTPLANE_TESTING_DB_SPEC,
+        llm_ingress_spec=_AGENTPLANE_TESTING_LLM_INGRESS_SPEC,
+        egress_spec=_AGENTPLANE_TESTING_EGRESS_SPEC,
+        app_spec=_AGENTPLANE_TESTING_APP_SPEC,
+        actions_spec=_AGENTPLANE_TESTING_ACTIONS_SPEC,
+        add_extra=_add_testing_extra,
     )
-    _generate_agentplane_dex(root, _AGENTPLANE_TESTING_DEX_DIR)
     _generate_haku_openclaw_spike_config(root)
     _generate_public_coder_agent_config(root)
 

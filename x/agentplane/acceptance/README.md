@@ -28,7 +28,7 @@ receive the Action API URL and public workload placeholder, discover the `everyt
 group's `echo` Action, submit a structured group/name request, poll until terminal,
 and report JSON. The test checks the reported result against the fresh marker's exact
 upstream echo output. It uses the existing sandbox setup/teardown and `Agent` fixtures.
-Testing GitOps (`cluster/k8s/agentplane-testing/actions/`) wires the upstream image, ActionGroup
+Testing GitOps (`cluster/k8s/agentplane-testing/`) wires the upstream image, ActionGroup
 and discovery egress; nothing there auto-approves. `test_agent_executes_mcp_action` first binds
 its Sandbox to an `exact_actions` set naming `everything/echo`, written through the Kubernetes
 API as below. Run after the PR's images and manifests have rolled out; remote adapter tests are

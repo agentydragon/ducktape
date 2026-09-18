@@ -31,15 +31,15 @@ from x.agentplane.action_service.runtime import running_executor
 @pytest.fixture(scope="module")
 def rendered() -> list[dict[str, Any]]:
     kustomize = get_required_path("multitool/tools/kustomize/kustomize")
-    actions = get_required_path("_main/cluster/k8s/agentplane-testing/actions/kustomization.yaml").parent
-    return list(yaml.safe_load_all(subprocess.check_output([str(kustomize), "build", str(actions)])))
+    services = get_required_path("_main/cluster/k8s/agentplane-testing/kustomization.yaml").parent
+    return list(yaml.safe_load_all(subprocess.check_output([str(kustomize), "build", str(services)])))
 
 
 @pytest.fixture(scope="module")
 def staging_rendered() -> list[dict[str, Any]]:
     kustomize = get_required_path("multitool/tools/kustomize/kustomize")
-    actions = get_required_path("_main/cluster/k8s/agentplane-staging/actions/kustomization.yaml").parent
-    return list(yaml.safe_load_all(subprocess.check_output([str(kustomize), "build", str(actions)])))
+    services = get_required_path("_main/cluster/k8s/agentplane-staging/kustomization.yaml").parent
+    return list(yaml.safe_load_all(subprocess.check_output([str(kustomize), "build", str(services)])))
 
 
 @pytest.fixture
@@ -101,7 +101,9 @@ def test_rendered_ssh_binding_uses_shared_bearer_file(
     config: McpHttpServerConfigValue = TypeAdapter(McpHttpServerConfig).validate_python(group.executor.config)
     assert config.auth == "static_bearer"
     McpActionGroupExecutor.from_group("ssh", group)
-    deployment = one(r for r in staging_rendered if r["kind"] == "Deployment")
+    deployment = one(
+        r for r in staging_rendered if r["kind"] == "Deployment" and r["metadata"]["name"] == "agentplane-actions"
+    )
     pod = deployment["spec"]["template"]["spec"]
     actions = one(pod["containers"])
     mount = one(m for m in actions["volumeMounts"] if Path(m["mountPath"]) == config.bearer_file.parent)
@@ -227,10 +229,12 @@ async def test_reviewed_binding_errors_fail_before_any_connection(
 
 
 def test_staging_push_key_config_and_egress_agree(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    root = get_required_path("_main/cluster/k8s/agentplane-staging/actions/kustomization.yaml").parent
+    root = get_required_path("_main/cluster/k8s/agentplane-staging/kustomization.yaml").parent
     kustomize = get_required_path("multitool/tools/kustomize/kustomize")
     resources = list(yaml.safe_load_all(subprocess.check_output([str(kustomize), "build", str(root)])))
-    deployment = one(r for r in resources if r["kind"] == "Deployment")
+    deployment = one(
+        r for r in resources if r["kind"] == "Deployment" and r["metadata"]["name"] == "agentplane-actions"
+    )
     pod = deployment["spec"]["template"]["spec"]
     container = one(c for c in pod["containers"] if c["name"] == "actions")
     key_env = one(e for e in container["env"] if e["name"] == "AGENTPLANE_ACTIONS_WEB_PUSH__PRIVATE_KEY_PEM")
@@ -271,7 +275,9 @@ def test_staging_push_key_config_and_egress_agree(monkeypatch: pytest.MonkeyPatc
         with pytest.raises(ValueError, match="configured HTTPS push service"):
             identity.validate_endpoint(endpoint)
 
-    policy = one(r for r in resources if r["kind"] == "CiliumNetworkPolicy")
+    policy = one(
+        r for r in resources if r["kind"] == "CiliumNetworkPolicy" and r["metadata"]["name"] == "agentplane-actions"
+    )
     rule = one(
         r
         for r in policy["spec"]["egress"]

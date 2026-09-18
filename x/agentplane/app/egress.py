@@ -32,7 +32,7 @@ from x.agentplane.egress.resources import (
 )
 from x.agentplane.subjects import ServiceAccountRef
 
-# Flux stamps its inventory labels on everything it applies (cluster/k8s/agentplane-staging/egress);
+# Flux stamps its inventory labels on everything it applies (cluster/k8s/agentplane-staging);
 # nothing at runtime deletes such a binding, since the next reconcile would apply it again.
 FLUX_KUSTOMIZATION_LABEL = "kustomize.toolkit.fluxcd.io/name"
 

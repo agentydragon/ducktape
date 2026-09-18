@@ -1,5 +1,6 @@
-"""Generates agentplane-testing/app/config.yaml's content -- x/agentplane/app/main.py's
-`Settings`, mounted by the Deployment. See model_rosters.py for the model-name scheme.
+"""Generates agentplane-testing's `agentplane-app-config` ConfigMap's `config.yaml`
+content -- x/agentplane/app/main.py's `Settings`, mounted by the Deployment. See
+model_rosters.py for the model-name scheme.
 """
 
 from __future__ import annotations

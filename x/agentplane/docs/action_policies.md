@@ -53,7 +53,7 @@ Each object is owned by Git through Flux or by a runtime writer (the integration
 operator with `kubectl`); the split is per object, never per kind.
 
 - Policy sets and caller ServiceAccounts normally live in Git next to the environment's Action
-  Service settings (`cluster/k8s/agentplane-staging/actions/`); one created at runtime is simply
+  Service settings (`cluster/k8s/agentplane-staging/`); one created at runtime is simply
   not Flux-owned.
 - The integration app writes one `ActionPolicyBinding` per Sandbox it launches, naming the
   ServiceAccount it gave that Sandbox to run as, alongside the `EgressBinding`, with an
@@ -81,7 +81,7 @@ with the message in its status, so a bad runtime edit is visible in `kubectl get
 Staging's Git-owned half is the `github-reads` `ActionPolicySet`, the `claude-ai`
 `ServiceAccount`, and the `claude-ai-github-reads` `ActionPolicyBinding`, defined in
 `cluster/cdk8s/agentplane/actions_staging_policies.py` and generated into
-`cluster/k8s/agentplane-staging/actions/agentplane-actions.k8s.yaml`. The runtime half,
+`cluster/k8s/agentplane-staging/agentplane-services.k8s.yaml`. The runtime half,
 for a Sandbox `coder-7f3a` launched from a preset naming `github-reads`:
 
 ```yaml

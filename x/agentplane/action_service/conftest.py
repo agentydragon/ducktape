@@ -73,7 +73,7 @@ def echo_catalog() -> ActionCatalog:
 @pytest.fixture
 def everything_url() -> Iterator[str]:
     documents = yaml.safe_load_all(
-        get_required_path("_main/cluster/k8s/agentplane-testing/actions/agentplane-actions.k8s.yaml").read_text()
+        get_required_path("_main/cluster/k8s/agentplane-testing/agentplane-services.k8s.yaml").read_text()
     )
     deployment = one(
         doc

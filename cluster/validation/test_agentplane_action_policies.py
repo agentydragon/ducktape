@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 import pytest_bazel
 import yaml
+from more_itertools import one
 
 from util.bazel.runfiles import get_required_path
 from x.agentplane.action_service.policies.resources import BindingSpec, PolicySetSpec
@@ -31,8 +32,9 @@ _DOCUMENTS = [
 ]
 _POLICY_SETS = [document for document in _DOCUMENTS if document["kind"] == "ActionPolicySet"]
 _BINDINGS = [document for document in _DOCUMENTS if document["kind"] == "ActionPolicyBinding"]
-# Each environment's integration-app config; the directory is the namespace its presets bind in.
-_APP_CONFIGS = sorted(_K8S_DIR.glob("agentplane-*/app/config.yaml"))
+# Each environment's integration-app config ConfigMap chart; the directory is the namespace its
+# presets bind in.
+_APP_CONFIG_FILES = sorted(_K8S_DIR.glob("agentplane-*/agentplane-app-config.k8s.yaml"))
 
 
 def _key(document: dict[str, Any]) -> str:
@@ -57,12 +59,13 @@ def test_binding_spec_parses_and_names_defined_sets(document: dict[str, Any]) ->
     assert not missing, f"{_key(document)} names sets not defined in {namespace}: {sorted(missing)}"
 
 
-@pytest.mark.parametrize("config_path", _APP_CONFIGS, ids=lambda path: path.parent.parent.name)
+@pytest.mark.parametrize("config_path", _APP_CONFIG_FILES, ids=lambda path: path.parent.name)
 def test_preset_action_policy_sets_are_defined(config_path: Path) -> None:
     """A launch preset binds every Sandbox it launches to the sets it names; the app refuses a
     launch naming a set the namespace does not hold, so a stale name here breaks every launch."""
-    namespace = config_path.parent.parent.name
-    config = yaml.safe_load(config_path.read_text())
+    namespace = config_path.parent.name
+    config_map = one(doc for doc in yaml.safe_load_all(config_path.read_text()) if doc["kind"] == "ConfigMap")
+    config = yaml.safe_load(config_map["data"]["config.yaml"])
     defined = {
         policy_set["metadata"]["name"]
         for policy_set in _POLICY_SETS
@@ -77,6 +80,7 @@ def test_policy_objects_are_git_managed() -> None:
     # Anchors the parametrized tests: an empty roster would skip them rather than fail.
     assert _POLICY_SETS
     assert _BINDINGS
+    assert _APP_CONFIG_FILES
 
 
 if __name__ == "__main__":

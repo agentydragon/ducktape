@@ -14,13 +14,8 @@ def manifest(root: Path, path: str) -> dict[str, Any]:
     return document
 
 
-def egress_object(root: Path, kind: str) -> dict[str, Any]:
-    documents = yaml.safe_load_all((root / "egress/agentplane-egress.k8s.yaml").read_text())
-    return one(doc for doc in documents if doc["kind"] == kind)
-
-
-def app_object(root: Path, kind: str, name: str | None = None) -> dict[str, Any]:
-    documents = yaml.safe_load_all((root / "app/agentplane-app.k8s.yaml").read_text())
+def services_object(root: Path, kind: str, name: str | None = None) -> dict[str, Any]:
+    documents = yaml.safe_load_all((root / "agentplane-services.k8s.yaml").read_text())
     return one(doc for doc in documents if doc["kind"] == kind and (name is None or doc["metadata"]["name"] == name))
 
 
@@ -29,10 +24,10 @@ def test_environment_ca_publication_and_consumers_are_isolated(k8s_dir: Path) ->
     reflected_names = set()
     for namespace in ("agentplane-staging", "agentplane-testing"):
         root = k8s_dir / namespace
-        certificate = egress_object(root, "Certificate")
-        bundle = egress_object(root, "Bundle")
-        proxy = egress_object(root, "Deployment")
-        template = app_object(root, "SandboxTemplate", "agentplane-runner")
+        certificate = services_object(root, "Certificate")
+        bundle = services_object(root, "Bundle")
+        proxy = services_object(root, "Deployment", "agentplane-egress")
+        template = services_object(root, "SandboxTemplate", "agentplane-runner")
         flux = manifest(root, "flux-kustomization.yaml")["spec"]
         secret_name = certificate["spec"]["secretName"]
         bundle_name = bundle["metadata"]["name"]
