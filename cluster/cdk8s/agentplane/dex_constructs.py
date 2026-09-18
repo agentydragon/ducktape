@@ -31,6 +31,7 @@ from cdk8s_plus_34 import (
     Service,
     ServicePort,
     Volume,
+    k8s,
 )
 from cilium_crds.io.cilium import (
     CiliumNetworkPolicy,
@@ -324,11 +325,12 @@ def _add_deployment(scope: Construct) -> Deployment:
     deployment.containers[0].mount("/etc/dex", config_volume, read_only=True)
     deployment.containers[0].mount("/tmp", tmp_volume)
 
-    # cdk8s_plus_34's PodSecurityContextProps has no seccompProfile builder -- patch the
-    # pod-level field directly (same escape hatch used elsewhere for this exact gap; see
+    # cdk8s_plus_34's PodSecurityContextProps has no seccompProfile builder (only
+    # ContainerSecurityContextProps does) -- patch the pod-level field directly
+    # (same escape hatch used elsewhere for this exact gap; see
     # llm_ingress_constructs.py).
     ApiObject.of(deployment).add_json_patch(
-        JsonPatch.add("/spec/template/spec/securityContext/seccompProfile", {"type": "RuntimeDefault"})
+        JsonPatch.add("/spec/template/spec/securityContext/seccompProfile", k8s.SeccompProfile(type="RuntimeDefault"))
     )
     return deployment
 

@@ -402,7 +402,9 @@ class Actions(Construct):
         # ContainerSecurityContextProps does) -- patch the pod-level field directly,
         # same escape hatch used elsewhere in this PR.
         pod_spec_patches = [
-            JsonPatch.add("/spec/template/spec/securityContext/seccompProfile", {"type": "RuntimeDefault"})
+            JsonPatch.add(
+                "/spec/template/spec/securityContext/seccompProfile", k8s.SeccompProfile(type="RuntimeDefault")
+            )
         ]
         if self.spec.topology_spread:
             pod_spec_patches.append(

@@ -25,6 +25,7 @@ from cdk8s_plus_34 import (
     Secret,
     Service,
     ServicePort,
+    k8s,
 )
 from cilium_crds.io.cilium import (
     CiliumNetworkPolicy,
@@ -103,11 +104,12 @@ def _add_mcp_everything(scope: Construct) -> None:
             capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
         ),
     )
-    # cdk8s_plus_34's PodSecurityContextProps has no seccompProfile builder -- patch the
-    # pod-level field directly (same escape hatch used elsewhere for this exact gap; see
+    # cdk8s_plus_34's PodSecurityContextProps has no seccompProfile builder (only
+    # ContainerSecurityContextProps does) -- patch the pod-level field directly
+    # (same escape hatch used elsewhere for this exact gap; see
     # llm_ingress_constructs.py).
     ApiObject.of(deployment).add_json_patch(
-        JsonPatch.add("/spec/template/spec/securityContext/seccompProfile", {"type": "RuntimeDefault"})
+        JsonPatch.add("/spec/template/spec/securityContext/seccompProfile", k8s.SeccompProfile(type="RuntimeDefault"))
     )
     Service(
         scope,
@@ -262,7 +264,7 @@ def _add_oauth_fixture(scope: Construct) -> None:
     # See _add_mcp_everything's matching comment: seccompProfile has no
     # PodSecurityContextProps builder.
     ApiObject.of(deployment).add_json_patch(
-        JsonPatch.add("/spec/template/spec/securityContext/seccompProfile", {"type": "RuntimeDefault"})
+        JsonPatch.add("/spec/template/spec/securityContext/seccompProfile", k8s.SeccompProfile(type="RuntimeDefault"))
     )
     Service(
         scope,

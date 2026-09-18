@@ -477,11 +477,14 @@ class Egress(Construct):
             Node.tainted(NodeTaintQuery.exists("node-role.kubernetes.io/control-plane", effect=TaintEffect.NO_SCHEDULE))
         )
 
-        # cdk8s_plus_34's PodSecurityContextProps has no seccompProfile builder --
-        # patch the pod-level field directly (same escape hatch used elsewhere for
-        # this exact gap; see llm_ingress_constructs.py).
+        # cdk8s_plus_34's PodSecurityContextProps has no seccompProfile builder (only
+        # ContainerSecurityContextProps does) -- patch the pod-level field directly
+        # (same escape hatch used elsewhere for this exact gap; see
+        # llm_ingress_constructs.py).
         pod_spec_patches = [
-            JsonPatch.add("/spec/template/spec/securityContext/seccompProfile", {"type": "RuntimeDefault"})
+            JsonPatch.add(
+                "/spec/template/spec/securityContext/seccompProfile", k8s.SeccompProfile(type="RuntimeDefault")
+            )
         ]
         if self.spec.topology_spread:
             pod_spec_patches.append(
