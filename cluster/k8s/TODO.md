@@ -63,12 +63,6 @@ since there's no first-class Forgejo provider in OpenHands.
       `10.96.0.0/12`). Only allow egress to external internet + DNS (port 53 to
       kube-dns). Agent pods shouldn't reach internal cluster services by default.
 
-## Event-driven autoscaling
-
-- [ ] Consider deploying [KEDA](https://keda.sh/) for event-driven autoscaling and
-      scale-to-zero workloads, especially queue-backed workers, scheduled jobs,
-      and services whose load signals are not well represented by CPU/memory HPA.
-
 ## Proxmox drift watch
 
 `cluster/k8s/infra-drift/` plans the OVH half of `cluster/terraform/main` and
@@ -180,10 +174,6 @@ The MCP server tries to fetch Grocy's OpenAPI spec at startup, but Grocy returns
 errors until migrations complete. After a manual visit to the Grocy web UI,
 the MCP server starts successfully. Consider an init container or startup probe
 that pokes Grocy's `/login` endpoint before the MCP server starts.
-
-## `ghcr.io/servercontainers/samba:latest`
-
-No semver tags published. Keep `:latest` until upstream adopts versioned releases.
 
 ## Nix cache circular dependency on wyrm2 (incident 2026-05-06)
 
