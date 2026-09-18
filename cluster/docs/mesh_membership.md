@@ -17,8 +17,8 @@ The mesh host roster is a single JSON file at the repo root,
   certificate material for every tofu-managed entry
 - `cluster/cdk8s/generate_manifests.py` — renders the etcd metrics scrape
   targets (`cluster/k8s/monitoring/etcd`, every control plane's Nebula IP) and
-  `tf/gitops/dns-records/public-nodes.json` (every public k8s node, for the
-  Route 53 records); regenerate after any roster edit, CI fails on drift
+  the dns-records Terraform CR's `public_nodes` var (every public k8s node, for
+  the Route 53 records); regenerate after any roster edit, CI fails on drift
 - `ansible/roles/nebula` — renders Atlas's config and peer MTU routes
 - `cluster/scripts/render_mobile_nebula_config.py` — mobile client config
 

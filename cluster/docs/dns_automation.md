@@ -22,8 +22,9 @@ cert-manager Route 53 solver manages ACME challenge TXT records.
 | wildcard | `*.allegedly.works.` | OVH gateway node IPs | 300 |
 | apex     | `allegedly.works.`   | OVH gateway node IPs | 300 |
 
-The gateway and API node IPs come from `tf/gitops/dns-records/public-nodes.json`,
-generated from `nebula-mesh.json` (<mesh_membership.md>).
+The gateway and API node IPs are the `public_nodes` var on the generated Terraform CR
+(`k8s/dns-automation/dns-records.k8s.yaml`), rendered from `nebula-mesh.json`
+(<mesh_membership.md>).
 
 ## Key Files
 
@@ -56,6 +57,5 @@ kubectl get certificate -A
 ## Updating Gateway Node IPs
 
 Edit the node's `nebula-mesh.json` entry and
-`bb run //cluster/cdk8s:generate_manifests`, which rewrites
-`tf/gitops/dns-records/public-nodes.json`. Commit and push; tofu-controller
-applies automatically.
+`bb run //cluster/cdk8s:generate_manifests`, which rewrites the Terraform CR's
+`public_nodes` var. Commit and push; tofu-controller applies automatically.

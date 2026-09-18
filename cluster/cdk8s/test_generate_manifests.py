@@ -55,7 +55,6 @@ _GENERATED_FILES = (
     "cluster/k8s/monitoring/etcd/etcd-monitoring.k8s.yaml",
     "cluster/k8s/monitoring/etcd/flux-kustomization.yaml",
     "cluster/k8s/monitoring/etcd/kustomization.yaml",
-    "tf/gitops/dns-records/public-nodes.json",
 )
 
 

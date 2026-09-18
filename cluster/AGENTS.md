@@ -231,12 +231,11 @@ per-app reasons: <docs/decisions.md> § "Parked application manifests".
 
 ## Generated manifests
 
-Every `*.k8s.yaml` under `cluster/k8s`, the `flux-kustomization.yaml` and
+Every `*.k8s.yaml` under `cluster/k8s`, and the `flux-kustomization.yaml` and
 `kustomization.yaml` beside one in `agentplane-{staging,testing}`, `litellm/app`,
 `agents/ha-mcp/app`, `aiquota`, `clickhouse/schema`, `haku/console{,/db,/migration}` and
 `monitoring/etcd`, is `bb run //cluster/cdk8s:generate_manifests` output
-(`.gitattributes` lists them), as is `tf/gitops/dns-records/public-nodes.json`, the
-mesh roster's projection for Terraform. Change the generator under `cluster/cdk8s/` and
+(`.gitattributes` lists them). Change the generator under `cluster/cdk8s/` and
 regenerate; `//cluster/cdk8s:test_generate_manifests` fails on drift. The layout rules in
 this file for hand-written directories bind a generated directory only where the
 generator has a knob for them. An invariant over generated objects is a fleet rule or a

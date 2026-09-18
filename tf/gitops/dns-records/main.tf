@@ -1,10 +1,8 @@
 # Route 53 DNS for allegedly.works — zone records and domain delegation.
 #
 # All DNS is served by AWS Route 53. No in-cluster DNS authority.
-# Node IPs come from public-nodes.json, generated from the repo-root nebula-mesh.json
-# by //cluster/cdk8s:generate_manifests: the tofu-controller runs this module from the
-# `ducktape` GitRepository, a sparse checkout of deployment directories that cannot
-# carry a repo-root file, so the roster itself is out of file()'s reach here.
+# var.public_nodes is the mesh roster's projection, set on the generated Terraform CR
+# (cluster/k8s/dns-automation/dns-records.k8s.yaml) from the repo-root nebula-mesh.json.
 
 terraform {
   required_version = ">= 1.0"
@@ -20,15 +18,12 @@ terraform {
 locals {
   domain = "allegedly.works"
 
-  # Every Kubernetes node with a public endpoint, keyed by host name: {public_ip, role}.
-  public_nodes = jsondecode(file("${path.module}/public-nodes.json"))
-
   # Every public node runs the Gateway (Cilium Envoy on the host network).
-  public_gateway_ips = [for node in values(local.public_nodes) : node.public_ip]
+  public_gateway_ips = [for node in values(var.public_nodes) : node.public_ip]
 
   # Kubernetes API endpoints — every control-plane node. The apiserver listens on
   # the host directly on :6443, independent of Cilium gateway/L2-announce state.
-  kube_api_ips = [for node in values(local.public_nodes) : node.public_ip if node.role == "control-plane"]
+  kube_api_ips = [for node in values(var.public_nodes) : node.public_ip if node.role == "control-plane"]
 }
 
 provider "aws" {

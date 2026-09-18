@@ -1,6 +1,5 @@
 """Synthesize each converted directory's manifests with Python cdk8s, writing
-them directly into their `cluster/k8s` directory, plus the mesh roster's projection
-for `tf/gitops/dns-records`.
+them directly into their `cluster/k8s` directory.
 
 Every generated Deployment/Job/CronJob carries a placeholder image tag -- each
 environment's own hand-written `image-pins/kustomization.yaml` Kustomize
@@ -9,7 +8,6 @@ marker and overrides the real tag at `kustomize build` time. See
 cluster/docs/cdk8s.md.
 """
 
-import json
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
@@ -61,7 +59,6 @@ _CLICKHOUSE_SCHEMA_DIR = "cluster/k8s/clickhouse/schema"
 _AIQUOTA_DIR = "cluster/k8s/aiquota"
 _DNS_AUTOMATION_DIR = "cluster/k8s/dns-automation"
 _ETCD_MONITORING_DIR = "cluster/k8s/monitoring/etcd"
-_DNS_RECORDS_DIR = "tf/gitops/dns-records"
 
 # The chart objects whose readiness gates the environment, in the order the checks are
 # listed. The trust-manager Bundle writes its target ConfigMap asynchronously, outside
@@ -478,14 +475,24 @@ def _stateful_infra_priority_class_chart(app: App) -> Chart:
     return chart
 
 
-def _dns_records_chart(app: App) -> Chart:
+def _dns_records_chart(app: App, mesh: nebula_mesh.Mesh) -> Chart:
     """Route 53 records for allegedly.works (tf/gitops/dns-records)."""
     chart = Chart(app, "dns-records", disable_resource_name_hashes=True)
     terraform_constructs.gitops_terraform(
         chart,
         "terraform",
         name="dns-records",
-        variables={"route53_zone_id": "Z02901943N8ZFQFOD9P5I"},
+        variables={
+            "route53_zone_id": "Z02901943N8ZFQFOD9P5I",
+            # Inline rather than a ConfigMap read through varsFrom: tofu-controller writes
+            # spec.vars structurally into the runner's tfvars (a varsFrom value arrives as one
+            # string) and reconciles a spec change at once, while a referenced ConfigMap is
+            # never watched and waits for the interval.
+            "public_nodes": {
+                name: {"public_ip": host.public_ip, "role": host.role}
+                for name, host in sorted(mesh.public_kubernetes_nodes().items())
+            },
+        },
         env_from=[terraform_constructs.secret_env_from("aws-route53-credentials")],
     )
     return chart
@@ -525,22 +532,6 @@ def _generate_etcd_monitoring(root: Path, mesh: nebula_mesh.Mesh) -> None:
     )
 
 
-def _generate_dns_records_nodes(root: Path, mesh: nebula_mesh.Mesh) -> None:
-    """The roster's public Kubernetes nodes, for tf/gitops/dns-records' record sets.
-
-    Terraform there cannot `file()` the roster itself: the tofu-controller runs from the
-    `ducktape` GitRepository, a sparse checkout of deployment directories that cannot
-    carry a repo-root file.
-    """
-    out_dir = root / _DNS_RECORDS_DIR
-    out_dir.mkdir(parents=True, exist_ok=True)
-    nodes = {
-        name: {"public_ip": host.public_ip, "role": host.role}
-        for name, host in sorted(mesh.public_kubernetes_nodes().items())
-    }
-    (out_dir / "public-nodes.json").write_text(json.dumps(nodes, indent=2) + "\n")
-
-
 def generate_manifests(root: Path) -> None:
     """Write every converted directory's generated manifests under `root`."""
     mesh = nebula_mesh.load(get_required_path("_main/nebula-mesh.json"))
@@ -563,10 +554,9 @@ def generate_manifests(root: Path) -> None:
         egress_fences.haku_openclaw_spike,
     )
     _write_charts(root, _MITMPROXY_DIR, egress_fences.mitmproxy_cloud_api)
-    _write_charts(root, _DNS_AUTOMATION_DIR, _dns_records_chart)
+    _write_charts(root, _DNS_AUTOMATION_DIR, lambda app: _dns_records_chart(app, mesh))
     _write_charts(root, _LITELLM_KEYS_TF_DIR, _litellm_keys_chart)
     _generate_etcd_monitoring(root, mesh)
-    _generate_dns_records_nodes(root, mesh)
 
 
 def main() -> None:
