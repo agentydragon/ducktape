@@ -210,6 +210,50 @@ py_library(
 )
 
 py_library(
+    name = "clickhouse_client",
+    srcs = ["clickhouse_client.py"],
+    deps = [
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "clickhouse_schema_constructs",
+    srcs = ["clickhouse_schema_constructs.py"],
+    visibility = ["//cluster/validation:__pkg__"],
+    deps = [
+        ":clickhouse_client",
+        ":flux_constructs",
+        ":metadata",
+        ":pod_spec_patches",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "aiquota_constructs",
+    srcs = ["aiquota_constructs.py"],
+    visibility = ["//cluster/validation:__pkg__"],
+    deps = [
+        ":clickhouse_client",
+        ":flux_constructs",
+        ":forgejo_images",
+        ":gateway",
+        ":metadata",
+        ":pod_spec_patches",
+        ":probes",
+        "//third_party/external_secrets:externalsecret",
+        "//third_party/prometheus_operator:servicemonitor",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "generate_manifests_lib",
     srcs = ["generate_manifests.py"],
     visibility = [
@@ -217,6 +261,8 @@ py_library(
         "//cluster/validation:__pkg__",
     ],
     deps = [
+        ":aiquota_constructs",
+        ":clickhouse_schema_constructs",
         ":config_format",
         ":descheduler_constructs",
         ":flux_constructs",
@@ -259,6 +305,12 @@ py_test(
         "//cluster/k8s:agentplane-testing/kustomization.yaml",
         "//cluster/k8s:agents/haku-openclaw-spike/app/haku-openclaw-spike-config.k8s.yaml",
         "//cluster/k8s:agents/public-coder-agent/app/public-coder-agent-config.k8s.yaml",
+        "//cluster/k8s:aiquota/aiquota.k8s.yaml",
+        "//cluster/k8s:aiquota/flux-kustomization.yaml",
+        "//cluster/k8s:aiquota/kustomization.yaml",
+        "//cluster/k8s:clickhouse/schema/clickhouse-schema.k8s.yaml",
+        "//cluster/k8s:clickhouse/schema/flux-kustomization.yaml",
+        "//cluster/k8s:clickhouse/schema/kustomization.yaml",
         "//cluster/k8s:descheduler/helmrelease.k8s.yaml",
         "//cluster/k8s:seaweedfs/cluster/priorityclass.k8s.yaml",
         "//cluster/k8s/agents/ha-mcp/app:flux-kustomization.yaml",

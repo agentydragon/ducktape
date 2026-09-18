@@ -98,9 +98,12 @@ and lands in its own PR with the violations fixed. Exceptions are explicit param
   caller; `readOnlyRootFilesystem`/`runAsNonRoot` hardened
   (`agentplane/container_security.py` opts out where unaudited);
   `allowPrivilegeEscalation: false` and `privileged: false` always emitted; the
-  Deployment selector is `cdk8s.io/metadata.addr`, not `app.kubernetes.io/name`;
-  `scheduling.attract(Node.labeled(...))` renders as required node affinity, not
-  `nodeSelector`.
+  Deployment selector is `cdk8s.io/metadata.addr`, not `app.kubernetes.io/name`
+  (`select=False` plus `deployment.select(LabelSelector.of(labels=...))` keeps a
+  hand-written selector, which is immutable on the live Deployment;
+  `Service(selector=deployment)` still selects the address label, which the pods
+  carry either way); `scheduling.attract(Node.labeled(...))` renders as required node
+  affinity, not `nodeSelector`.
 - `add_container(env_from=[EnvFrom(config_map=...)])` takes the wrapper, not the
   ConfigMap.
 - `Chart(namespace=...)` would drop the `metadata(name, namespace)` call from every

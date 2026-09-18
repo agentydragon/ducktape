@@ -486,19 +486,21 @@ py_test(
 py_test(
     name = "test_clickhouse_distributed_ddl_contract",
     srcs = ["test_clickhouse_distributed_ddl_contract.py"],
+    # Synthesizes the clickhouse-schema and aiquota charts in memory, which needs jsii's
+    # Node runtime.
     data = [
-        "//cluster/k8s:aiquota/deployment.yaml",
-        "//cluster/k8s:aiquota/kustomization.yaml",
         "//cluster/k8s:clickhouse/cluster/clickhouse.yaml",
-        "//cluster/k8s:clickhouse/schema/flux-kustomization.yaml",
-        "//cluster/k8s:clickhouse/schema/kustomization.yaml",
-        "//cluster/k8s:clickhouse/schema/schema-job.yaml",
         "//cluster/k8s:kustomization.yaml",
+        "@nodejs_linux_amd64//:bin/node",
     ],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":conftest",
         "//:conftest",
+        "//cluster/cdk8s:aiquota_constructs",
+        "//cluster/cdk8s:clickhouse_schema_constructs",
         "//util/bazel:runfiles",
+        "@pypi//cdk8s",
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -548,10 +550,18 @@ py_test(
 py_test(
     name = "test_haku_public_coder_contract",
     srcs = ["test_haku_public_coder_contract.py"],
-    data = ["//cluster/k8s:haku_manifest_contract_files"],
+    # Synthesizes the aiquota chart in memory for its bearer mirror, which needs jsii's
+    # Node runtime.
+    data = [
+        "//cluster/k8s:haku_manifest_contract_files",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":conftest",
         "//:conftest",
+        "//cluster/cdk8s:aiquota_constructs",
+        "@pypi//cdk8s",
         "@pypi//more_itertools",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",

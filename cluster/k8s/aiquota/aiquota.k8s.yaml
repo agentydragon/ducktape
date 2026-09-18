@@ -1,0 +1,373 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: forgejo-images-creds
+  namespace: cli-proxy-api
+spec:
+  dataFrom:
+    - extract:
+        key: forgejo-images-creds
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-forgejo-images-secret-store
+  target:
+    name: forgejo-images-creds
+    template:
+      mergePolicy: Merge
+      type: kubernetes.io/dockerconfigjson
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: aiquota-api-bearer-public-coder
+  namespace: cli-proxy-api
+spec:
+  data:
+    - remoteRef:
+        key: aiquota-api-bearer
+        property: bearer-token
+      secretKey: bearer-token
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-cli-proxy-api-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: aiquota-api-bearer-public-coder
+    template:
+      metadata:
+        annotations:
+          description: Shared AIQuota API bearer mirrored only to public-coder-agent's trusted egress proxy.
+          reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+          reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: public-coder-agent
+          reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+          reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: public-coder-agent
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: aiquota-api-bearer-haku-claude
+  namespace: cli-proxy-api
+spec:
+  data:
+    - remoteRef:
+        key: aiquota-api-bearer
+        property: bearer-token
+      secretKey: bearer-token
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-cli-proxy-api-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: aiquota-api-bearer-haku-claude
+    template:
+      metadata:
+        annotations:
+          description: Shared AIQuota API bearer mirrored only to the haku-claude-oauth-proxy egress proxy.
+          reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+          reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: haku-egress-proxy
+          reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+          reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: haku-egress-proxy
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: aiquota-api-bearer-haku-console
+  namespace: cli-proxy-api
+spec:
+  data:
+    - remoteRef:
+        key: aiquota-api-bearer
+        property: bearer-token
+      secretKey: bearer-token
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-cli-proxy-api-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: aiquota-api-bearer-haku-console
+    template:
+      metadata:
+        annotations:
+          description: Shared AIQuota API bearer mirrored only to the Haku Console backend.
+          reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+          reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: haku-console
+          reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+          reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: haku-console
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: aiquota-api-bearer-haku-sandbox
+  namespace: cli-proxy-api
+spec:
+  data:
+    - remoteRef:
+        key: aiquota-api-bearer
+        property: bearer-token
+      secretKey: bearer-token
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-cli-proxy-api-secret-store
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    name: aiquota-api-bearer-haku-sandbox
+    template:
+      metadata:
+        annotations:
+          description: Shared AIQuota API bearer mirrored only to haku-sandbox for Haku's own quota reads.
+          reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+          reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: haku-sandbox
+          reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+          reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: haku-sandbox
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    description: Claude and Codex subscription quota API via the CLIProxyAPI integration.
+    reloader.stakater.com/auto: "true"
+  labels:
+    app.kubernetes.io/name: aiquota
+  name: aiquota-api
+  namespace: cli-proxy-api
+spec:
+  minReadySeconds: 0
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: aiquota
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: aiquota
+        cdk8s.io/metadata.addr: aiquota-deployment-c8f2e17a
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - env:
+            - name: AIQUOTA_API_BEARER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: bearer-token
+                  name: aiquota-api-bearer
+            - name: AIQUOTA_CLIPROXY_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: management-password
+                  name: cli-proxy-api-management
+            - name: AIQUOTA_CLICKHOUSE_URL
+              value: http://clickhouse.clickhouse.svc.cluster.local:8123
+            - name: AIQUOTA_CLICKHOUSE_DATABASE
+              value: aiquota
+            - name: AIQUOTA_CLICKHOUSE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  key: username
+                  name: clickhouse-aiquota-credentials
+            - name: AIQUOTA_CLICKHOUSE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: password
+                  name: clickhouse-aiquota-credentials
+            - name: AIQUOTA_POLL_INTERVAL_SECONDS
+              value: "300"
+            - name: AIQUOTA_HISTORY_INTERVAL_SECONDS
+              value: "3600"
+            - name: AIQUOTA_OAUTH_ISSUER
+              value: https://auth.allegedly.works/application/o/aiquota/
+            - name: AIQUOTA_OAUTH_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  key: client_id
+                  name: aiquota-oidc
+            - name: AIQUOTA_OAUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: client_secret
+                  name: aiquota-oidc
+            - name: AIQUOTA_OAUTH_SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  key: session_secret
+                  name: aiquota-oidc
+          image: git.allegedly.works/ducktape-ci/aiquota-api:unset
+          imagePullPolicy: Always
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /healthz
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          name: aiquota-api
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          readinessProbe:
+            failureThreshold: 12
+            httpGet:
+              path: /readyz
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            limits:
+              cpu: 250m
+              memory: 256Mi
+            requests:
+              cpu: 25m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+          volumeMounts:
+            - mountPath: /etc/aiquota
+              name: config
+              readOnly: true
+      dnsPolicy: ClusterFirst
+      enableServiceLinks: false
+      hostNetwork: false
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      initContainers:
+        - args:
+            - --host=clickhouse.clickhouse.svc.cluster.local
+            - --port=9000
+            - --connect_timeout=10
+            - --receive_timeout=60
+            - --multiquery
+            - --queries-file=/schema/schema.sql
+          command:
+            - clickhouse-client
+          env:
+            - name: CLICKHOUSE_USER
+              valueFrom:
+                secretKeyRef:
+                  key: username
+                  name: clickhouse-aiquota-credentials
+            - name: CLICKHOUSE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: password
+                  name: clickhouse-aiquota-credentials
+            - name: HOME
+              value: /tmp
+          image: clickhouse/clickhouse-server:26.8.3.105@sha256:d73903d1b61dfe825fc3810542f252966f33d3fd8efb3b3edcbbafb46b524b04
+          imagePullPolicy: IfNotPresent
+          name: migrate
+          resources:
+            limits:
+              cpu: 250m
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+          volumeMounts:
+            - mountPath: /schema
+              name: schema
+              readOnly: true
+            - mountPath: /tmp
+              name: tmp
+      restartPolicy: Always
+      securityContext:
+        fsGroupChangePolicy: Always
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      setHostnameAsFQDN: false
+      shareProcessNamespace: false
+      terminationGracePeriodSeconds: 30
+      volumes:
+        - configMap:
+            name: aiquota-api-config
+          name: config
+        - configMap:
+            name: aiquota-schema
+          name: schema
+        - emptyDir: {}
+          name: tmp
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    description: Internal bearer-authenticated API for normalized and raw Claude and Codex subscription quota responses via CLIProxyAPI.
+  labels:
+    app.kubernetes.io/name: aiquota
+  name: aiquota-api
+  namespace: cli-proxy-api
+spec:
+  externalIPs: []
+  ports:
+    - name: http
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    cdk8s.io/metadata.addr: aiquota-deployment-c8f2e17a
+  type: ClusterIP
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: aiquota-api
+  namespace: cli-proxy-api
+spec:
+  hostnames:
+    - aiquota.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - backendRefs:
+        - name: aiquota-api
+          port: 8080
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: aiquota
+  namespace: cli-proxy-api
+spec:
+  endpoints:
+    - interval: 60s
+      path: /metrics
+      port: http
+      scrapeTimeout: 15s
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: aiquota

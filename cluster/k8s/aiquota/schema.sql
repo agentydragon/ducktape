@@ -1,6 +1,6 @@
 -- aiquota-owned ClickHouse schema, applied by the Deployment's `migrate` init
--- container (deployment.yaml, clickhouse-client --multiquery) ahead of the API
--- server. Every statement is CREATE/ALTER ... IF NOT EXISTS, so re-running it
+-- container (cluster/cdk8s/aiquota_constructs.py, clickhouse-client --multiquery)
+-- ahead of the API server. Every statement is CREATE/ALTER ... IF NOT EXISTS, so re-running it
 -- on every rollout is safe. The `aiquota` database itself is bootstrapped once
 -- by ClickHouse admin (cluster/k8s/clickhouse/schema/schema.sql) since
 -- database creation is outside the aiquota_ingest identity's grants.

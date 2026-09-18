@@ -114,13 +114,6 @@ find-and-replace.
   `toPorts.rules.dns`/`server_names` list built from two separate hand-written YAML
   blocks instead of one Python tuple. Convert these two CiliumNetworkPolicies to
   cdk8s and build both lists from one tuple the same way.
-- **ClickHouse schema Job / aiquota migrate container health-check literal**
-  (`test_clickhouse_distributed_ddl_contract.py`). The Job's own
-  apiVersion/kind/name/namespace is hand-retyped into the Flux Kustomization's
-  `healthChecks` entry. `generate_manifests.py` already has the fix pattern for
-  this exact shape (`KustomizationSpecHealthChecks` built from the same
-  `name`/`namespace` the chart itself uses, e.g. `_generate_ha_mcp`) — needs
-  `cluster/k8s/clickhouse/schema/` and `cluster/k8s/aiquota/` converted first.
 - **`ssh-mcp` known_hosts / sshpiper pinning** (`test_ssh_mcp_known_hosts.py`,
   and `cluster/validation/test_ssh_mcp_consumers.py`).
   `cluster/k8s/ssh-mcp/known_hosts`, `ssh_keys/public-coder-devbox-host.pub`,

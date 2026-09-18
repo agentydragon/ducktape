@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlparse
 
 import pytest_bazel
 import yaml
+from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 from more_itertools import one
+
+from cluster.cdk8s import aiquota_constructs
 
 _PUBLIC_CODER_SUBJECT = {
     "kind": "Group",
@@ -171,7 +174,12 @@ def test_public_coder_kubernetes_proxy_contract(k8s_dir: Path) -> None:
     proxy_container = one(proxy_deployment["spec"]["template"]["spec"]["containers"])
     proxy_env = {entry["name"]: entry for entry in proxy_container["env"]}
     aiquota_ref = proxy_env["AIQUOTA_API_BEARER_TOKEN"]["valueFrom"]["secretKeyRef"]
-    aiquota_mirror = yaml.safe_load((k8s_dir / "aiquota" / "public-coder-bearer-eso.yaml").read_text())
+    aiquota_objects = cast(list[dict[str, Any]], Cdk8sTesting.synth(aiquota_constructs.chart(Cdk8sTesting.app())))
+    aiquota_mirror = one(
+        obj
+        for obj in aiquota_objects
+        if obj["kind"] == "ExternalSecret" and obj["metadata"]["name"] == aiquota_ref["name"]
+    )
     assert aiquota_mirror["spec"]["target"]["name"] == aiquota_ref["name"]
     assert aiquota_ref["key"] in {entry["secretKey"] for entry in aiquota_mirror["spec"]["data"]}
     annotations = aiquota_mirror["spec"]["target"]["template"]["metadata"]["annotations"]

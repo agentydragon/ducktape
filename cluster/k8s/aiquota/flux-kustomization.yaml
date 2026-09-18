@@ -1,36 +1,28 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: aiquota
-  namespace: ducktape-flux
   annotations:
     description: aiquota API with Claude and Codex quota through the CLIProxyAPI integration.
+  name: aiquota
+  namespace: ducktape-flux
 spec:
-  retryInterval: 1m
-  interval: 10m
-  path: ./cluster/k8s/aiquota
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: aiquota
-    namespace: ducktape-flux
-  timeout: 5m
-  wait: true
   decryption:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
     - name: external-secrets-config
-      namespace: ducktape-flux
     - name: forgejo-images
-      namespace: ducktape-flux
-    # Provides the shared namespace and the CLIProxyAPI integration Secret.
     - name: cli-proxy-api
-      namespace: ducktape-flux
-    # Materializes the narrow mirrored copy of the shared API bearer for the
-    # public-coder proxy. The source Secret remains SOPS-managed here.
     - name: external-secrets-operator
-      namespace: ducktape-flux
     - name: clickhouse-schema
-      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/k8s/aiquota
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: aiquota
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true

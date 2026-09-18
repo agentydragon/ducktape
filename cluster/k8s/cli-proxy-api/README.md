@@ -120,8 +120,8 @@ submission. CI publishes `git.allegedly.works/ducktape-ci/cli-proxy-api`; Flux t
 its `devel-*` tags. The bundled UI is immutable and cannot be replaced by the
 upstream panel updater.
 
-The namespace's `forgejo-images-creds` pull Secret belongs to
-`aiquota/forgejo-images-creds-eso.yaml`. A Forgejo outage prevents uncached replacement
+The namespace's `forgejo-images-creds` pull Secret belongs to the aiquota chart
+(`cluster/cdk8s/aiquota_constructs.py`). A Forgejo outage prevents uncached replacement
 image pulls but does not interrupt a running process.
 
 ## Secrets
