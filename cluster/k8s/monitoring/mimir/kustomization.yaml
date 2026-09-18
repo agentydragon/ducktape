@@ -3,7 +3,5 @@ kind: Kustomization
 resources:
   - seaweed.yaml
   - seaweedfs-credentials.yaml
-  - s3-credentials-grant.yaml
   - iam.yaml
-  - buckets.yaml
   - helmrelease.yaml
