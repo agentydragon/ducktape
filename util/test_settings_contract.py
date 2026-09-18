@@ -3,7 +3,7 @@ import pytest_bazel
 from pydantic import BaseModel, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from x.agentplane.settings_contract import checked_value, cli_args, env_name, settings_file
+from util.settings_contract import checked_value, cli_args, env_name, settings_file
 
 
 class _Push(BaseModel):

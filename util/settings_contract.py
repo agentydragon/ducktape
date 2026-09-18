@@ -1,4 +1,4 @@
-"""Every agentplane service's `Settings` is its deployment contract: each field is a
+"""A service's `Settings` is its deployment contract: each field is a
 `--kebab-case` flag, an `<env_prefix>FIELD` environment variable (nested levels joined by
 `env_nested_delimiter`) and a key of the YAML settings file. Rendering a Deployment's flags,
 env var names and settings file through the model fails at synth on a renamed or dropped
