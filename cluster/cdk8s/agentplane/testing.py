@@ -30,6 +30,7 @@ _NAMESPACE = "agentplane-testing"
 _HOSTNAME = "agentplane-testing.allegedly.works"
 _DEX_HOSTNAME = "agentplane-dex-testing.allegedly.works"
 _DEX_ISSUER = f"https://{_DEX_HOSTNAME}/dex"
+_LITELLM_KEY_SECRET = "litellm-key-cheap-experiments"
 _OAUTH_FIXTURE_MCP_URL = f"http://{OAUTH_FIXTURE_NAME}.{_NAMESPACE}.svc.cluster.local:{OAUTH_FIXTURE_PORT}/mcp"
 
 _ACTIONS_SETTINGS = {
@@ -99,13 +100,14 @@ ENV = Environment(
     ),
     depends_on=DEPENDS_ON,
     extra_resources=(),
+    provided_secrets={_LITELLM_KEY_SECRET: "litellm-keys-tf"},
     include_action_policy_rule=True,
     replicas=ReplicaProfile(
         count=1, strategy=DeploymentStrategy.recreate(), topology_spread=False, min_ready=None, pdb_min_available=None
     ),
     app_config=testing_config.config(),
     db=DbProps(instances=1, pod_anti_affinity=False),
-    llm_ingress=LlmIngressProps(litellm_key_secret_name="litellm-key-cheap-experiments"),
+    llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET),
     egress=EgressProps(ca_secret_name="agentplane-testing-egress-ca"),
     app=AppProps(hostname=_HOSTNAME, oidc_issuer=_DEX_ISSUER, reach_incluster_authentik=False, runner_zone=None),
     actions=ActionsProps(
