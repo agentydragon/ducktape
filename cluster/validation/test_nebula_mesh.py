@@ -3,21 +3,12 @@
 from __future__ import annotations
 
 import ipaddress
-from collections import defaultdict
-from pathlib import Path
 
 import pytest
 import pytest_bazel
-import yaml
 
 from cluster.scripts import nebula_mesh
-from cluster.validation.terraform_hcl import locals_blocks
 from util.bazel.runfiles import get_required_path
-
-# The `locals` maps in ovh-nodes.tf that carry per-node role/hostname/nebula_ip. pygohcl decodes
-# string literals to plain Python values (it wraps HashiCorp's HCL2 parser), so these fields come
-# out unquoted directly — no expression evaluation needed (the fields we read are literals).
-_NODE_INVENTORY_LOCALS = ("kimsufi_servers", "kimsufi_cp_servers")
 
 
 @pytest.fixture(scope="module")
@@ -92,15 +83,13 @@ def test_nebula_ips_are_valid_and_unique(mesh: nebula_mesh.Mesh) -> None:
 
 
 def test_endpoints_are_host_port(mesh: nebula_mesh.Mesh) -> None:
-    """Every endpoint parses as <ip-or-host>:<port>."""
+    """Every endpoint parses as <ip-or-host>:4242, the port nebula.tf's drift check builds live endpoints with."""
     for name, host in mesh.hosts.items():
         if host.endpoint is None:
             continue
         head, _, tail = host.endpoint.rpartition(":")
         assert head, f"{name}: endpoint {host.endpoint!r} must be host:port"
-        assert tail.isdigit(), f"{name}: endpoint {host.endpoint!r} must be host:port"
-        port = int(tail)
-        assert 1 <= port <= 65535, f"{name}: endpoint port {port} out of range"
+        assert tail == "4242", f"{name}: endpoint {host.endpoint!r} must use the Nebula public port"
 
 
 def test_lighthouses_have_endpoints(mesh: nebula_mesh.Mesh) -> None:
@@ -125,71 +114,27 @@ def test_at_least_one_control_plane(mesh: nebula_mesh.Mesh) -> None:
     assert cps, "roster must contain at least one role=control-plane host"
 
 
-def _control_plane_nebula_ips(mesh: nebula_mesh.Mesh) -> dict[str, str]:
-    return {name: host.nebula_ip for name, host in mesh.hosts.items() if host.role == "control-plane"}
-
-
-def _terraform_control_plane_nebula_ips(path: Path) -> dict[str, str]:
-    nodes: dict[str, dict[str, str]] = {}
-    for block in locals_blocks(path):
-        for local_name in _NODE_INVENTORY_LOCALS:
-            nodes.update(block.get(local_name, {}))
-    by_role: dict[str, dict[str, str]] = defaultdict(dict)
-    for node in nodes.values():
-        by_role[node["role"]][node["hostname"]] = node["nebula_ip"]
-    control_planes = by_role["controlplane"]
-    assert control_planes, f"{path}: expected at least one control-plane node"
-    return control_planes
-
-
-def _static_etcd_endpoint_nebula_ips(path: Path) -> dict[str, str]:
-    docs = [doc for doc in yaml.safe_load_all(path.read_text()) if doc is not None]
-    services = {doc["metadata"]["name"]: doc for doc in docs if doc.get("kind") == "Service"}
-    endpoint_slices = [doc for doc in docs if doc.get("kind") == "EndpointSlice"]
-    assert endpoint_slices, f"{path}: expected at least one EndpointSlice"
-
-    endpoints: dict[str, str] = {}
-    for endpoint_slice in endpoint_slices:
-        service_name = endpoint_slice["metadata"]["labels"]["kubernetes.io/service-name"]
-        service_ports = {port["name"]: port for port in services[service_name]["spec"]["ports"]}
-        for endpoint_port in endpoint_slice["ports"]:
-            service_port = service_ports[endpoint_port["name"]]
-            assert endpoint_port["port"] == service_port["targetPort"]
-            assert endpoint_port.get("protocol", "TCP") == service_port.get("protocol", "TCP")
-
-        slice_addresses: list[str] = []
-        for endpoint in endpoint_slice.get("endpoints", []):
-            hostname = endpoint.get("hostname")
-            assert hostname, f"{path}: EndpointSlice endpoint is missing hostname"
-            assert endpoint.get("nodeName") == hostname, f"{hostname}: endpoint nodeName should match hostname"
-            assert endpoint.get("conditions", {}).get("ready") is True, f"{hostname}: endpoint should be marked ready"
-
-            addresses = endpoint.get("addresses")
-            assert isinstance(addresses, list), f"{hostname}: endpoint addresses must be a list"
-            assert len(addresses) == 1, f"{hostname}: expected exactly one endpoint address, got {addresses!r}"
-            assert hostname not in endpoints, f"{path}: duplicate endpoint hostname {hostname}"
-            endpoints[hostname] = addresses[0]
-            slice_addresses.extend(addresses)
-
-        [address_version] = {ipaddress.ip_address(ip).version for ip in slice_addresses}
-        assert endpoint_slice["addressType"] == f"IPv{address_version}"
-
-    assert endpoints, f"{path}: expected at least one endpoint"
-    return endpoints
-
-
-def test_etcd_metrics_static_endpoints_match_control_plane_rosters(mesh: nebula_mesh.Mesh) -> None:
-    """The static etcd scrape endpoints must follow the control-plane node inventories."""
-    mesh_control_planes = _control_plane_nebula_ips(mesh)
-    terraform_control_planes = _terraform_control_plane_nebula_ips(
-        get_required_path("_main/cluster/terraform/main/ovh-nodes.tf")
-    )
-    static_etcd_endpoints = _static_etcd_endpoint_nebula_ips(
-        get_required_path("_main/cluster/k8s/monitoring/etcd/endpoints.yaml")
-    )
-
-    assert terraform_control_planes == mesh_control_planes
-    assert static_etcd_endpoints == mesh_control_planes
+def test_public_kubernetes_nodes_are_reachable_cluster_members() -> None:
+    """DNS and the etcd scrape follow these projections: every k8s node with a public
+    endpoint, and every control plane."""
+    hosts = {
+        "cp": nebula_mesh.Host(
+            nebula_ip="10.42.255.1", endpoint="203.0.113.1:4242", role="control-plane", managed_by="tofu-ovh"
+        ),
+        "worker": nebula_mesh.Host(
+            nebula_ip="10.42.255.2", endpoint="203.0.113.2:4242", role="worker", managed_by="tofu-ovh"
+        ),
+        "home-worker": nebula_mesh.Host(nebula_ip="10.42.255.3", role="worker", managed_by="tofu-home"),
+        "relay": nebula_mesh.Host(
+            nebula_ip="10.42.255.4", endpoint="203.0.113.4:4242", role="non-k8s", managed_by="ansible"
+        ),
+    }
+    mesh = nebula_mesh.Mesh(hosts=hosts)
+    assert {name: host.public_ip for name, host in mesh.public_kubernetes_nodes().items()} == {
+        "cp": "203.0.113.1",
+        "worker": "203.0.113.2",
+    }
+    assert mesh.control_planes() == {"cp": hosts["cp"]}
 
 
 def test_host_names_have_no_dots(mesh: nebula_mesh.Mesh) -> None:

@@ -10,9 +10,8 @@ literals is then a visible, reviewable diff instead of a silent runtime break.
 This file tracks the candidates found by a full-repo audit (every test that reads a
 cdk8s-generated YAML file, plus every `cluster/validation/` test) that are **not yet
 reachable from cdk8s** — the manifests/configs on one or both sides are still
-hand-written, so unifying them needs a YAML→cdk8s conversion (or, for the nebula
-entry below, a non-Kubernetes fix in Terraform) before the drift can be closed by
-construction. Candidates where both sides were already cdk8s-generated Python were
+hand-written, so unifying them needs a YAML→cdk8s conversion before the drift can be
+closed by construction. Candidates where both sides were already cdk8s-generated Python were
 fixed directly instead of listed here (see git log — `cluster/cdk8s/litellm_config.py`,
 `model_rosters.py`, `agentplane/staging.py`, `generate_manifests.py`,
 `app_constructs.py`, `egress_constructs.py`, `dex_constructs.py`,
@@ -20,30 +19,6 @@ fixed directly instead of listed here (see git log — `cluster/cdk8s/litellm_co
 equalities).
 
 Entries are removed once landed — this is a burn-down, not a changelog.
-
-## Flagship: `nebula-mesh.json` should be the only place the node roster lives
-
-`nebula-mesh.json`'s own `_comment` field already calls itself "Single source of
-truth for the Nebula mesh host roster" and lists its consumers — but two real
-consumers aren't on that list and don't actually read the file:
-
-- `cluster/terraform/main/ovh-nodes.tf` hand-types the control-plane node
-  IPs/hostnames as separate HCL `locals` (`test_nebula_mesh.py` pins these against
-  the JSON's own `Mesh` roster).
-- `cluster/k8s/monitoring/etcd/endpoints.yaml` hand-types the same IPs a third time
-  as a hand-written Kubernetes `Endpoints`/`EndpointSlice` manifest.
-- `tf/gitops/dns-records/main.tf`'s `local.public_gateway_ips`/`kube_api_ips` are a
-  _fourth_ independent hand-typed copy (`test_dns_records.py`).
-
-Terraform can `jsondecode(file("${path.module}/../../../nebula-mesh.json"))`
-directly — this doesn't need a cdk8s conversion, just wiring the existing JSON into
-the `.tf` locals instead of retyping them. `monitoring/etcd/endpoints.yaml` is a
-plain Kubernetes manifest with no cdk8s presence at all yet; either convert it to a
-small cdk8s chart reading the same roster (`cluster.scripts.nebula_mesh` already
-parses it in Python — see `test_roaming_daemonset_capacity.py`'s use of it), or
-generate it via the same `jsondecode` approach if a non-cdk8s generator is
-preferred. Once this lands, `test_nebula_mesh.py`'s cross-source IP-agreement test
-and `test_dns_records.py`'s equivalent collapse to unreachable-by-construction.
 
 ## Follow-ups from the agentplane conversion
 

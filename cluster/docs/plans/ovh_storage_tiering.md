@@ -162,20 +162,15 @@ kubectl get pv -o json | jq -r --arg n "$node" '
 
 ## Control-plane membership checklist (any CP add/remove)
 
-Changing which nodes are control-plane is **not** just the Terraform `role` field. The Stage-2
-reshuffle flipped the roles but left downstream rosters on the old CP set, which broke devel
-(`test_nebula_mesh`/`test_dns_records`) and silently mis-pointed live etcd metrics + the
-`api.allegedly.works` record. Any CP add/remove (Stage 3's `103656` removal + new-box addition)
-must update **all** of these in the same change — the two validation tests enforce the last three:
+CP membership is the per-host `role` in `nebula-mesh.json` (leave `lighthouse`/`relay`/
+`cert_groups` alone): the Talos machine type in `ovh-nodes.tf`, the etcd metrics scrape
+EndpointSlice (`cluster/k8s/monitoring/etcd`, or `ControlPlaneLeasePutLatency` alerts point
+nowhere) and the `api.allegedly.works` A records (`tf/gitops/dns-records`) are all derived from
+it — `bb run //cluster/cdk8s:generate_manifests` after the edit. Any CP add/remove (Stage 3's
+`103656` removal + new-box addition) also updates, in the same change:
 
-- `cluster/terraform/main/ovh-nodes.tf` — the node `role` field (actual CP membership).
 - `cluster/terraform/main/infrastructure.tf` — `primary_controlplane_ip` + the
   `talos_machine_bootstrap`/`talos_cluster_kubeconfig` `ignore_changes` guards, if the anchor moves.
-- `nebula-mesh.json` — the per-host `role` (leave `lighthouse`/`relay`/`cert_groups` alone).
-- `cluster/k8s/monitoring/etcd/endpoints.yaml` — the etcd metrics scrape EndpointSlice (exactly
-  the nodes running etcd, or `ControlPlaneLeasePutLatency` alerts point nowhere).
-- `tf/gitops/dns-records/main.tf` — `kube_api_ips` (the `api.allegedly.works` A records must be
-  the CPs' public IPs).
 - `cluster/README.md` — the "Node Types" table (human-facing CP/worker roster).
 
 ## Stage 3 — third SSD node (optional, future)

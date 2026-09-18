@@ -60,6 +60,8 @@ cluster/k8s/haku/console/db/flux-kustomization.yaml linguist-generated=true
 cluster/k8s/haku/console/db/kustomization.yaml linguist-generated=true
 cluster/k8s/haku/console/migration/flux-kustomization.yaml linguist-generated=true
 cluster/k8s/haku/console/migration/kustomization.yaml linguist-generated=true
+cluster/k8s/monitoring/etcd/flux-kustomization.yaml linguist-generated=true
+cluster/k8s/monitoring/etcd/kustomization.yaml linguist-generated=true
 # kubeconform schemas of the Agentplane CRDs — `bb run //x/agentplane/crds:generate_bin`
 # output, pinned by //x/agentplane/crds:test_generate.
 cluster/schemas/**/*.json linguist-generated=true

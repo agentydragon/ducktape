@@ -31,6 +31,7 @@ from cluster.cdk8s import (
     clickhouse_schema_constructs,
     descheduler_constructs,
     egress_fences,
+    etcd_constructs,
     haku_openclaw_spike_config,
     public_coder_agent_config,
     stateful_infra,
@@ -40,12 +41,15 @@ from cluster.cdk8s.agentplane import staging, testing
 from cluster.cdk8s.agentplane.chart import environment_chart
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.config_format import json5_config
+from cluster.cdk8s.etcd_constructs import TalosEtcdMetrics
 from cluster.cdk8s.flux_constructs import NAMESPACE, flux_kustomization, health_checks, kustomize_kustomization
 from cluster.cdk8s.ha_mcp_constructs import HaMcp
 from cluster.cdk8s.haku import charts as haku_charts
 from cluster.cdk8s.litellm_constructs import LiteLLMProxy, LiteLLMServiceMonitor, proxy_specs
 from cluster.cdk8s.litellm_keys import model_allowlists
 from cluster.cdk8s.metadata import metadata
+from cluster.scripts import nebula_mesh
+from util.bazel.runfiles import get_required_path
 from util.bazel.workspace import get_build_workspace_directory
 
 _LITELLM_APP_DIR = "cluster/k8s/litellm/app"
@@ -54,6 +58,7 @@ _HA_MCP_DIR = "cluster/k8s/agents/ha-mcp/app"
 _CLICKHOUSE_SCHEMA_DIR = "cluster/k8s/clickhouse/schema"
 _AIQUOTA_DIR = "cluster/k8s/aiquota"
 _DNS_AUTOMATION_DIR = "cluster/k8s/dns-automation"
+_ETCD_MONITORING_DIR = "cluster/k8s/monitoring/etcd"
 
 # The chart objects whose readiness gates the environment, in the order the checks are
 # listed. The trust-manager Bundle writes its target ConfigMap asynchronously, outside
@@ -470,21 +475,66 @@ def _stateful_infra_priority_class_chart(app: App) -> Chart:
     return chart
 
 
-def _dns_records_chart(app: App) -> Chart:
+def _dns_records_chart(app: App, mesh: nebula_mesh.Mesh) -> Chart:
     """Route 53 records for allegedly.works (tf/gitops/dns-records)."""
     chart = Chart(app, "dns-records", disable_resource_name_hashes=True)
     terraform_constructs.gitops_terraform(
         chart,
         "terraform",
         name="dns-records",
-        variables={"route53_zone_id": "Z02901943N8ZFQFOD9P5I"},
+        variables={
+            "route53_zone_id": "Z02901943N8ZFQFOD9P5I",
+            # Inline rather than a ConfigMap read through varsFrom: tofu-controller writes
+            # spec.vars structurally into the runner's tfvars (a varsFrom value arrives as one
+            # string) and reconciles a spec change at once, while a referenced ConfigMap is
+            # never watched and waits for the interval.
+            "public_nodes": {
+                name: {"public_ip": host.public_ip, "role": host.role}
+                for name, host in sorted(mesh.public_kubernetes_nodes().items())
+            },
+        },
         env_from=[terraform_constructs.secret_env_from("aws-route53-credentials")],
     )
     return chart
 
 
+def _generate_etcd_monitoring(root: Path, mesh: nebula_mesh.Mesh) -> None:
+    name = "etcd-monitoring"
+    out_dir = root / _ETCD_MONITORING_DIR
+    out_dir.mkdir(parents=True, exist_ok=True)
+    app = App(outdir=str(out_dir))
+    chart = Chart(app, name, disable_resource_name_hashes=True)
+    TalosEtcdMetrics(chart, "etcd", mesh)
+    app.synth()
+
+    _write_yaml(
+        out_dir / "flux-kustomization.yaml",
+        flux_kustomization(
+            name,
+            spec=KustomizationSpec(
+                interval="10m",
+                retry_interval="1m",
+                timeout="2m",
+                path=f"./{_ETCD_MONITORING_DIR}",
+                prune=True,
+                source_ref=KustomizationSpecSourceRef(
+                    kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name="monitoring-etcd", namespace=NAMESPACE
+                ),
+                depends_on=[KustomizationSpecDependsOn(name="monitoring-crds")],  # the ServiceMonitor CRD
+                wait=True,
+                health_checks=health_checks(chart, ("ServiceMonitor",)),
+            ),
+        ),
+    )
+    _write_yaml(
+        out_dir / "kustomization.yaml",
+        kustomize_kustomization(namespace=etcd_constructs.NAMESPACE, resources=[f"{name}.k8s.yaml"]),
+    )
+
+
 def generate_manifests(root: Path) -> None:
     """Write every converted directory's generated manifests under `root`."""
+    mesh = nebula_mesh.load(get_required_path("_main/nebula-mesh.json"))
     _generate_litellm_app(root)
     _generate_ha_mcp(root)
     _generate_clickhouse_schema(root)
@@ -504,8 +554,9 @@ def generate_manifests(root: Path) -> None:
         egress_fences.haku_openclaw_spike,
     )
     _write_charts(root, _MITMPROXY_DIR, egress_fences.mitmproxy_cloud_api)
-    _write_charts(root, _DNS_AUTOMATION_DIR, _dns_records_chart)
+    _write_charts(root, _DNS_AUTOMATION_DIR, lambda app: _dns_records_chart(app, mesh))
     _write_charts(root, _LITELLM_KEYS_TF_DIR, _litellm_keys_chart)
+    _generate_etcd_monitoring(root, mesh)
 
 
 def main() -> None:

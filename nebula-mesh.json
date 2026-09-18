@@ -1,5 +1,5 @@
 {
-  "_comment": "Single source of truth for the Nebula mesh host roster. Consumers: nix/nixos/modules/nebula.nix, nix/nixos/modules/k8s-worker.nix, cluster/terraform/main/nebula.tf, cluster/terraform/main/persistent-auth.tf, ansible/roles/nebula, cluster/scripts/render_mobile_nebula_config.py. Add/remove/re-IP runbook: cluster/docs/mesh_membership.md.",
+  "_comment": "Single source of truth for the Nebula mesh host roster. Consumers: nix/nixos/modules/nebula.nix, nix/nixos/modules/k8s-worker.nix, cluster/terraform/main/{nebula,persistent-auth,ovh-nodes,home-nodes}.tf, cluster/cdk8s/generate_manifests.py (etcd scrape endpoints, the dns-records Terraform CR's public_nodes var), ansible/roles/nebula, cluster/scripts/render_mobile_nebula_config.py. Add/remove/re-IP runbook: cluster/docs/mesh_membership.md.",
   "hosts": {
     "ovh-ns103656": {
       "nebula_ip": "10.42.0.13",

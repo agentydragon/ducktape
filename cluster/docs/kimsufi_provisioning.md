@@ -48,7 +48,8 @@ this naming pattern, or free up one of these slots via §5 (replacing an existin
 | `kimsufi_service_name_ks_game_1` | `ovh-ns104963`   | KS-GAME  |
 
 Slot ↔ Nebula identity is fixed in code (`cluster/terraform/main/ovh-nodes.tf`,
-`local.kimsufi_servers`):
+`local.kimsufi_server_provisioning`, keyed by the `nebula-mesh.json` entry that
+holds the hostname, Nebula IP and role):
 
 | Variable                         | Hostname       | Nebula IP       | Talos role    | Install disk                     | Data disk selector               |
 | -------------------------------- | -------------- | --------------- | ------------- | -------------------------------- | -------------------------------- |

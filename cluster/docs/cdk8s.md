@@ -10,7 +10,7 @@ for writing a generator: <../cdk8s/AGENTS.md>.
 ## Three shapes of a directory
 
 1. **Fully generated** (`agentplane-{staging,testing}`, `litellm/app`,
-   `agents/ha-mcp/app`, `aiquota`, `clickhouse/schema`, `haku/console{,/db,/migration}`): `flux-kustomization.yaml` (from `//third_party/flux:kustomization`'s
+   `agents/ha-mcp/app`, `aiquota`, `clickhouse/schema`, `haku/console{,/db,/migration}`, `monitoring/etcd`): `flux-kustomization.yaml` (from `//third_party/flux:kustomization`'s
    typed bindings via `flux_constructs.flux_kustomization`), `kustomization.yaml`
    (`flux_constructs.kustomize_kustomization`, a Pydantic model: the plain
    `kustomize.config.k8s.io` Kustomization has a JSON Schema but no CRD for
@@ -34,11 +34,13 @@ lines for the shared filenames `flux-kustomization.yaml`/`kustomization.yaml`).
 
 A value a `tf/gitops` module takes from the generators reaches it as an inline
 `spec.vars` entry on its generated CR (`litellm/keys-tf`'s `model_allowlists`, the
-per-key lanes `cluster/cdk8s/litellm_keys.py` derives from the roster), never as a
-generated file beside the module: `vars[].value` is written structurally into the
-runner's tfvars, so a map arrives typed, and a CR spec change reconciles immediately,
-whereas `varsFrom` ConfigMap values are stringified and picked up only on the interval
-(tofu-controller v0.16.5).
+per-key lanes `cluster/cdk8s/litellm_keys.py` derives from the roster; `dns-automation`'s
+`public_nodes`, the mesh roster's projection), never as a generated file beside the
+module: the tofu-controller's `ducktape` GitRepository is a sparse checkout of deployment
+directories, so a module cannot `file()` a repo-root input, and `vars[].value` is written
+structurally into the runner's tfvars, so a map arrives typed, and a CR spec change
+reconciles immediately, whereas `varsFrom` ConfigMap values are stringified and picked
+up only on the interval (tofu-controller v0.16.5).
 
 ### SOPS secrets in a converted directory
 
