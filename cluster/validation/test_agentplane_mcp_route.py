@@ -4,21 +4,20 @@ from typing import Any
 
 import pytest
 import pytest_bazel
-import yaml
 from more_itertools import one
 
-from util.bazel.runfiles import get_required_path
 from x.agentplane.egress.policy import EgressRequest, rule_matches
 from x.agentplane.egress.resources import EgressPolicy
 
+# pytest_plugins loads cluster.validation.agentplane_fixtures by name; gazelle cannot see
+# the dependency.
+# gazelle:include_dep //cluster/validation:agentplane_fixtures
+pytest_plugins = ("cluster.validation.agentplane_fixtures",)
+
 
 @pytest.fixture
-def manifests() -> dict[str, Any]:
-    documents = list(
-        yaml.safe_load_all(
-            get_required_path("_main/cluster/k8s/agentplane-staging/agentplane-services.k8s.yaml").read_text()
-        )
-    )
+def manifests(agentplane_services: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
+    documents = agentplane_services["agentplane-staging"]
     result = {
         name: one(doc for doc in documents if doc["kind"] == kind and doc["metadata"]["name"] == resource_name)
         for name, (kind, resource_name) in {

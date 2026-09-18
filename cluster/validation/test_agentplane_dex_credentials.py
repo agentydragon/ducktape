@@ -1,14 +1,22 @@
 """Dex and the acceptance client must consume the same generated password."""
 
 from pathlib import Path
+from typing import Any
 
 import pytest_bazel
 import yaml
 from more_itertools import one
 
+# pytest_plugins loads cluster.validation.agentplane_fixtures by name; gazelle cannot see
+# the dependency.
+# gazelle:include_dep //cluster/validation:agentplane_fixtures
+pytest_plugins = ("cluster.validation.agentplane_fixtures",)
 
-def test_dex_config_and_operator_password_share_one_generator_invocation(k8s_dir: Path) -> None:
-    resources = list(yaml.safe_load_all((k8s_dir / "agentplane-testing/agentplane-services.k8s.yaml").read_text()))
+
+def test_dex_config_and_operator_password_share_one_generator_invocation(
+    agentplane_services: dict[str, list[dict[str, Any]]],
+) -> None:
+    resources = agentplane_services["agentplane-testing"]
     secrets = [resource for resource in resources if resource["kind"] == "ExternalSecret"]
     operator = one(
         secret for secret in secrets if secret["metadata"]["name"] == "agentplane-testing-acceptance-operator"

@@ -13,12 +13,15 @@ from typing import Any
 
 import pytest
 import pytest_bazel
-import yaml
 from more_itertools import one
 from pydantic import ValidationError
 
-from util.bazel.runfiles import get_required_path
 from x.agentplane.egress.main import Settings
+
+# pytest_plugins loads cluster.validation.agentplane_fixtures by name; gazelle cannot see
+# the dependency.
+# gazelle:include_dep //cluster/validation:agentplane_fixtures
+pytest_plugins = ("cluster.validation.agentplane_fixtures",)
 
 NAMESPACES = ["agentplane-staging", "agentplane-testing"]
 CONFIG_FILE_ENV = "AGENTPLANE_EGRESS_CONFIG_FILE"
@@ -26,25 +29,18 @@ CONFIG_FILE_ENV = "AGENTPLANE_EGRESS_CONFIG_FILE"
 DATABASE_URL = "--database-url=postgresql://validation-test/validation-test"
 
 
-def _services_documents(namespace: str) -> list[dict[str, Any]]:
-    manifest = get_required_path(f"_main/cluster/k8s/{namespace}/agentplane-services.k8s.yaml")
-    return list(yaml.safe_load_all(Path(manifest).read_text()))
-
-
-def _proxy_args(namespace: str) -> list[str]:
+def _proxy_args(documents: list[dict[str, Any]]) -> list[str]:
     deployment = one(
-        doc
-        for doc in _services_documents(namespace)
-        if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "agentplane-egress"
+        doc for doc in documents if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "agentplane-egress"
     )
     pod: dict[str, Any] = deployment["spec"]["template"]["spec"]
     return list(one(container for container in pod["containers"] if container["name"] == "proxy")["args"])
 
 
-def _settings_file(tmp_path: Path, namespace: str) -> Path:
+def _settings_file(tmp_path: Path, documents: list[dict[str, Any]]) -> Path:
     config_map = one(
         doc
-        for doc in _services_documents(namespace)
+        for doc in documents
         if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "agentplane-egress-settings"
     )
     config_file = tmp_path / "settings.yaml"
@@ -54,11 +50,15 @@ def _settings_file(tmp_path: Path, namespace: str) -> Path:
 
 @pytest.mark.parametrize("namespace", NAMESPACES)
 def test_the_deployed_configuration_parses_into_settings(
-    namespace: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    namespace: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    agentplane_services: dict[str, list[dict[str, Any]]],
 ) -> None:
-    monkeypatch.setenv(CONFIG_FILE_ENV, str(_settings_file(tmp_path, namespace)))
+    documents = agentplane_services[namespace]
+    monkeypatch.setenv(CONFIG_FILE_ENV, str(_settings_file(tmp_path, documents)))
 
-    settings = Settings(_cli_parse_args=[*_proxy_args(namespace), DATABASE_URL])
+    settings = Settings(_cli_parse_args=[*_proxy_args(documents), DATABASE_URL])
 
     assert settings.rules_namespace == namespace
     assert namespace in settings.allowed_service_account_namespaces, (
@@ -66,20 +66,25 @@ def test_the_deployed_configuration_parses_into_settings(
     )
 
 
-def test_a_second_workload_namespace_is_another_list_entry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_second_workload_namespace_is_another_list_entry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, agentplane_services: dict[str, list[dict[str, Any]]]
+) -> None:
     """What hosting an agent elsewhere costs: one more entry in the settings file."""
     config = tmp_path / "settings.yaml"
     config.write_text("allowed_service_account_namespaces:\n  - agentplane-staging\n  - public-coder\n")
     monkeypatch.setenv(CONFIG_FILE_ENV, str(config))
 
-    settings = Settings(_cli_parse_args=[*_proxy_args("agentplane-staging"), DATABASE_URL])
+    settings = Settings(_cli_parse_args=[*_proxy_args(agentplane_services["agentplane-staging"]), DATABASE_URL])
 
     assert settings.allowed_service_account_namespaces == frozenset({"agentplane-staging", "public-coder"})
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)
 def test_a_deployment_naming_no_workload_namespace_is_refused(
-    namespace: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    namespace: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    agentplane_services: dict[str, list[dict[str, Any]]],
 ) -> None:
     """The allowlist is what lets a bearer be presented at all, so an empty one accepts nothing and
     is a misconfiguration to fail on at startup rather than serve."""
@@ -88,16 +93,18 @@ def test_a_deployment_naming_no_workload_namespace_is_refused(
     monkeypatch.setenv(CONFIG_FILE_ENV, str(config))
 
     with pytest.raises(ValidationError, match="allowed_service_account_namespaces"):
-        Settings(_cli_parse_args=[*_proxy_args(namespace), DATABASE_URL])
+        Settings(_cli_parse_args=[*_proxy_args(agentplane_services[namespace]), DATABASE_URL])
 
 
-def test_a_settings_file_that_is_not_there_is_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_settings_file_that_is_not_there_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, agentplane_services: dict[str, list[dict[str, Any]]]
+) -> None:
     """pydantic-settings ignores an absent YAML file, which would leave a bound deployment running on
     defaults. A path the deployment names and the cluster does not mount has to be fatal instead."""
     monkeypatch.setenv(CONFIG_FILE_ENV, str(tmp_path / "never-written.yaml"))
 
     with pytest.raises(ValueError, match="not a regular file"):
-        Settings(_cli_parse_args=[*_proxy_args("agentplane-staging"), DATABASE_URL])
+        Settings(_cli_parse_args=[*_proxy_args(agentplane_services["agentplane-staging"]), DATABASE_URL])
 
 
 if __name__ == "__main__":

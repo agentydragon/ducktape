@@ -223,6 +223,17 @@ py_library(
     ],
 )
 
+py_library(
+    name = "agentplane_fixtures",
+    testonly = True,
+    srcs = ["agentplane_fixtures.py"],
+    deps = [
+        "//cluster/cdk8s:generate_manifests_lib",
+        "@pypi//cdk8s",
+        "@pypi//pytest",
+    ],
+)
+
 py_test(
     name = "test_github_proxy_rules",
     srcs = ["test_github_proxy_rules.py"],
@@ -696,37 +707,48 @@ py_test(
 py_test(
     name = "test_agentplane_egress_flags",
     srcs = ["test_agentplane_egress_flags.py"],
-    data = ["//cluster/k8s:cluster_yaml_files"],
+    # agentplane_services (agentplane_fixtures.py, loaded via pytest_plugins) synthesizes a
+    # cdk8s chart in memory, which needs jsii's Node runtime.
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
-        "//util/bazel:runfiles",
+        ":agentplane_fixtures",
         "//x/agentplane/egress:main",
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 
 py_test(
     name = "test_agentplane_workload_namespaces",
     srcs = ["test_agentplane_workload_namespaces.py"],
-    data = ["//cluster/k8s:cluster_yaml_files"],
+    # agentplane_services (agentplane_fixtures.py, loaded via pytest_plugins) synthesizes a
+    # cdk8s chart in memory, which needs jsii's Node runtime.
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
-        "//util/bazel:runfiles",
+        ":agentplane_fixtures",
         "//x/agentplane/egress:main",
         "//x/agentplane/llm_ingress:main",
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 
 py_test(
     name = "test_agentplane_action_policies",
     srcs = ["test_agentplane_action_policies.py"],
-    data = ["//cluster/k8s:cluster_yaml_files"],
+    # agentplane_app_config (agentplane_fixtures.py, loaded via pytest_plugins) synthesizes
+    # a cdk8s chart in memory, which needs jsii's Node runtime.
+    data = [
+        "//cluster/k8s:cluster_yaml_files",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
+        ":agentplane_fixtures",
         "//util/bazel:runfiles",
         "//x/agentplane:crd_group",
         "//x/agentplane/action_service/policies:resources",
@@ -879,8 +901,15 @@ py_test(
 py_test(
     name = "test_agentplane_ca_isolation",
     srcs = ["test_agentplane_ca_isolation.py"],
-    data = ["//cluster/k8s:cluster_yaml_files"],
+    # agentplane_services (agentplane_fixtures.py, loaded via pytest_plugins) synthesizes a
+    # cdk8s chart in memory, which needs jsii's Node runtime.
+    data = [
+        "//cluster/k8s:cluster_yaml_files",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
+        ":agentplane_fixtures",
         ":conftest",
         "@pypi//more_itertools",
         "@pypi//pytest_bazel",
@@ -891,9 +920,12 @@ py_test(
 py_test(
     name = "test_agentplane_dex_credentials",
     srcs = ["test_agentplane_dex_credentials.py"],
-    data = ["//cluster/k8s:cluster_yaml_files"],
+    # agentplane_services (agentplane_fixtures.py, loaded via pytest_plugins) synthesizes a
+    # cdk8s chart in memory, which needs jsii's Node runtime.
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
-        ":conftest",
+        ":agentplane_fixtures",
         "@pypi//more_itertools",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
@@ -903,39 +935,45 @@ py_test(
 py_test(
     name = "test_agentplane_inventory_rbac",
     srcs = ["test_agentplane_inventory_rbac.py"],
-    data = ["//cluster/k8s:cluster_yaml_files"],
+    # agentplane_services (agentplane_fixtures.py, loaded via pytest_plugins) synthesizes a
+    # cdk8s chart in memory, which needs jsii's Node runtime.
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
-        ":conftest",
+        ":agentplane_fixtures",
         "@pypi//more_itertools",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 
 py_test(
     name = "test_agentplane_rules_route",
     srcs = ["test_agentplane_rules_route.py"],
-    data = ["//cluster/k8s:cluster_yaml_files"],
+    # agentplane_services (agentplane_fixtures.py, loaded via pytest_plugins) synthesizes a
+    # cdk8s chart in memory, which needs jsii's Node runtime.
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
+        ":agentplane_fixtures",
         "//cluster/cdk8s/agentplane:staging_config",
-        "//util/bazel:runfiles",
         "@pypi//more_itertools",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 
 py_test(
     name = "test_agentplane_mcp_route",
     srcs = ["test_agentplane_mcp_route.py"],
-    data = ["//cluster/k8s:cluster_yaml_files"],
+    # agentplane_services (agentplane_fixtures.py, loaded via pytest_plugins) synthesizes a
+    # cdk8s chart in memory, which needs jsii's Node runtime.
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
-        "//util/bazel:runfiles",
+        ":agentplane_fixtures",
         "//x/agentplane/egress:policy",
         "//x/agentplane/egress:resources",
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )

@@ -15,14 +15,16 @@ from typing import Any
 
 import pytest
 import pytest_bazel
-import yaml
 from more_itertools import one
-
-from util.bazel.runfiles import get_required_path
 
 # Both services name their settings `Settings`, and these tests parse one of each.
 from x.agentplane.egress.main import Settings as EgressSettings
 from x.agentplane.llm_ingress.main import Settings as IngressSettings
+
+# pytest_plugins loads cluster.validation.agentplane_fixtures by name; gazelle cannot see
+# the dependency.
+# gazelle:include_dep //cluster/validation:agentplane_fixtures
+pytest_plugins = ("cluster.validation.agentplane_fixtures",)
 
 NAMESPACES = ["agentplane-staging", "agentplane-testing"]
 # The settings each Deployment supplies as an environment variable rather than a flag or the file.
@@ -34,52 +36,49 @@ PROXY = ("agentplane-egress", "proxy", "AGENTPLANE_EGRESS_CONFIG_FILE", "agentpl
 INGRESS = ("agentplane-llm-ingress", "ingress", "AGENTPLANE_LLM_INGRESS_CONFIG_FILE", "agentplane-llm-ingress-settings")
 
 
-def _documents(namespace: str) -> list[dict[str, Any]]:
-    path = get_required_path(f"_main/cluster/k8s/{namespace}/agentplane-services.k8s.yaml")
-    return list(yaml.safe_load_all(Path(path).read_text()))
-
-
-def _container(namespace: str, deployment_name: str, container_name: str) -> dict[str, Any]:
+def _container(documents: list[dict[str, Any]], deployment_name: str, container_name: str) -> dict[str, Any]:
     deployment = one(
-        doc
-        for doc in _documents(namespace)
-        if doc["kind"] == "Deployment" and doc["metadata"]["name"] == deployment_name
+        doc for doc in documents if doc["kind"] == "Deployment" and doc["metadata"]["name"] == deployment_name
     )
     pod: dict[str, Any] = deployment["spec"]["template"]["spec"]
     return one(candidate for candidate in pod["containers"] if candidate["name"] == container_name)
 
 
-def _settings_file(tmp_path: Path, namespace: str, deployment_name: str, configmap_name: str) -> Path:
+def _settings_file(tmp_path: Path, documents: list[dict[str, Any]], deployment_name: str, configmap_name: str) -> Path:
     config_map = one(
-        doc for doc in _documents(namespace) if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == configmap_name
+        doc for doc in documents if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == configmap_name
     )
     config_file = tmp_path / f"{deployment_name}-settings.yaml"
     config_file.write_text(config_map["data"]["settings.yaml"])
     return config_file
 
 
-def _proxy(tmp_path: Path, namespace: str, monkeypatch: pytest.MonkeyPatch) -> EgressSettings:
+def _proxy(tmp_path: Path, documents: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch) -> EgressSettings:
     deployment_name, container_name, env, cm_name = PROXY
-    monkeypatch.setenv(env, str(_settings_file(tmp_path, namespace, deployment_name, cm_name)))
+    monkeypatch.setenv(env, str(_settings_file(tmp_path, documents, deployment_name, cm_name)))
     return EgressSettings(
-        _cli_parse_args=[*_container(namespace, deployment_name, container_name)["args"], DATABASE_URL]
+        _cli_parse_args=[*_container(documents, deployment_name, container_name)["args"], DATABASE_URL]
     )
 
 
-def _ingress(tmp_path: Path, namespace: str, monkeypatch: pytest.MonkeyPatch) -> IngressSettings:
+def _ingress(tmp_path: Path, documents: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch) -> IngressSettings:
     deployment_name, container_name, env, cm_name = INGRESS
-    monkeypatch.setenv(env, str(_settings_file(tmp_path, namespace, deployment_name, cm_name)))
+    monkeypatch.setenv(env, str(_settings_file(tmp_path, documents, deployment_name, cm_name)))
     return IngressSettings(
-        _cli_parse_args=[*_container(namespace, deployment_name, container_name)["args"], LITELLM_KEY]
+        _cli_parse_args=[*_container(documents, deployment_name, container_name)["args"], LITELLM_KEY]
     )
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)
 def test_the_ingress_admits_every_namespace_the_proxy_does(
-    namespace: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    namespace: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    agentplane_services: dict[str, list[dict[str, Any]]],
 ) -> None:
-    proxy = _proxy(tmp_path, namespace, monkeypatch)
-    ingress = _ingress(tmp_path, namespace, monkeypatch)
+    documents = agentplane_services[namespace]
+    proxy = _proxy(tmp_path, documents, monkeypatch)
+    ingress = _ingress(tmp_path, documents, monkeypatch)
 
     assert proxy.allowed_service_account_namespaces <= ingress.allowed_service_account_namespaces, (
         "the proxy authenticates a workload and sends it to the ingress, which authenticates the same "
@@ -89,12 +88,16 @@ def test_the_ingress_admits_every_namespace_the_proxy_does(
 
 @pytest.mark.parametrize("namespace", NAMESPACES)
 def test_both_read_the_same_projected_token_audience(
-    namespace: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    namespace: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    agentplane_services: dict[str, list[dict[str, Any]]],
 ) -> None:
     """The substituted credential is the workload's own token, so one audience has to satisfy both."""
+    documents = agentplane_services[namespace]
     assert (
-        _proxy(tmp_path, namespace, monkeypatch).token_audience
-        == _ingress(tmp_path, namespace, monkeypatch).token_audience
+        _proxy(tmp_path, documents, monkeypatch).token_audience
+        == _ingress(tmp_path, documents, monkeypatch).token_audience
     )
 
 

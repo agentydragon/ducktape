@@ -56,6 +56,11 @@ from x.agentplane.subjects import ServiceAccountRef
 from x.agentplane.testing.fake_apiserver import fake_apiserver
 from x.agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
+# pytest_plugins loads x.agentplane.action_service.agentplane_fixtures by name; gazelle
+# cannot see the dependency.
+# gazelle:include_dep //x/agentplane/action_service:agentplane_fixtures
+pytest_plugins = ("x.agentplane.action_service.agentplane_fixtures",)
+
 CALLER = CallerPrincipal(account=ServiceAccountRef(namespace="agentplane-test", name="fixture-caller"))
 OPERATOR = OperatorPrincipal(issuer="test", subject="operator")
 

@@ -7,6 +7,11 @@ import pytest_bazel
 import yaml
 from more_itertools import one
 
+# pytest_plugins loads cluster.validation.agentplane_fixtures by name; gazelle cannot see
+# the dependency.
+# gazelle:include_dep //cluster/validation:agentplane_fixtures
+pytest_plugins = ("cluster.validation.agentplane_fixtures",)
+
 
 def manifest(root: Path, path: str) -> dict[str, Any]:
     document = yaml.safe_load((root / path).read_text())
@@ -14,21 +19,22 @@ def manifest(root: Path, path: str) -> dict[str, Any]:
     return document
 
 
-def services_object(root: Path, kind: str, name: str | None = None) -> dict[str, Any]:
-    documents = yaml.safe_load_all((root / "agentplane-services.k8s.yaml").read_text())
+def services_object(documents: list[dict[str, Any]], kind: str, name: str | None = None) -> dict[str, Any]:
     return one(doc for doc in documents if doc["kind"] == kind and (name is None or doc["metadata"]["name"] == name))
 
 
-def test_environment_ca_publication_and_consumers_are_isolated(k8s_dir: Path) -> None:
+def test_environment_ca_publication_and_consumers_are_isolated(
+    k8s_dir: Path, agentplane_services: dict[str, list[dict[str, Any]]]
+) -> None:
     bundle_names = set()
     reflected_names = set()
     for namespace in ("agentplane-staging", "agentplane-testing"):
-        root = k8s_dir / namespace
-        certificate = services_object(root, "Certificate")
-        bundle = services_object(root, "Bundle")
-        proxy = services_object(root, "Deployment", "agentplane-egress")
-        template = services_object(root, "SandboxTemplate", "agentplane-runner")
-        flux = manifest(root, "flux-kustomization.yaml")["spec"]
+        documents = agentplane_services[namespace]
+        certificate = services_object(documents, "Certificate")
+        bundle = services_object(documents, "Bundle")
+        proxy = services_object(documents, "Deployment", "agentplane-egress")
+        template = services_object(documents, "SandboxTemplate", "agentplane-runner")
+        flux = manifest(k8s_dir / namespace, "flux-kustomization.yaml")["spec"]
         secret_name = certificate["spec"]["secretName"]
         bundle_name = bundle["metadata"]["name"]
         assert secret_name not in reflected_names

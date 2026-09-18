@@ -1,21 +1,25 @@
 """The app's Kubernetes inventory calls have their narrowly sufficient RBAC verbs."""
 
-from pathlib import Path
 from typing import Any
 
 import pytest_bazel
-import yaml
 from more_itertools import one
 
+# pytest_plugins loads cluster.validation.agentplane_fixtures by name; gazelle cannot see
+# the dependency.
+# gazelle:include_dep //cluster/validation:agentplane_fixtures
+pytest_plugins = ("cluster.validation.agentplane_fixtures",)
 
-def services_object(root: Path, kind: str, name: str | None = None) -> dict[str, Any]:
-    documents = yaml.safe_load_all((root / "agentplane-services.k8s.yaml").read_text())
+
+def services_object(documents: list[dict[str, Any]], kind: str, name: str | None = None) -> dict[str, Any]:
     return one(doc for doc in documents if doc["kind"] == kind and (name is None or doc["metadata"]["name"] == name))
 
 
-def test_agentplane_app_can_list_the_sandbox_templates_its_route_offers(k8s_dir: Path) -> None:
+def test_agentplane_app_can_list_the_sandbox_templates_its_route_offers(
+    agentplane_services: dict[str, list[dict[str, Any]]],
+) -> None:
     for namespace in ("agentplane-staging", "agentplane-testing"):
-        role = services_object(k8s_dir / namespace, "Role", "agentplane-app")
+        role = services_object(agentplane_services[namespace], "Role", "agentplane-app")
         template_rule = one(
             rule
             for rule in role["rules"]

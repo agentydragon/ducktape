@@ -3,23 +3,26 @@
 from typing import Any
 
 import pytest_bazel
-import yaml
 from more_itertools import one
 
 from cluster.cdk8s.agentplane import staging_config
-from util.bazel.runfiles import get_required_path
+
+# pytest_plugins loads cluster.validation.agentplane_fixtures by name; gazelle cannot see
+# the dependency.
+# gazelle:include_dep //cluster/validation:agentplane_fixtures
+pytest_plugins = ("cluster.validation.agentplane_fixtures",)
 
 
-def egress_object(kind: str, name: str) -> dict[str, Any]:
-    documents = yaml.safe_load_all(
-        get_required_path("_main/cluster/k8s/agentplane-staging/agentplane-services.k8s.yaml").read_text()
-    )
+def egress_object(documents: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any]:
     return one(doc for doc in documents if doc["kind"] == kind and doc["metadata"]["name"] == name)
 
 
-def test_service_routes_rules_to_the_separate_declared_listener() -> None:
-    service = egress_object("Service", "agentplane-egress")["spec"]
-    deployment = egress_object("Deployment", "agentplane-egress")["spec"]
+def test_service_routes_rules_to_the_separate_declared_listener(
+    agentplane_services: dict[str, list[dict[str, Any]]],
+) -> None:
+    documents = agentplane_services["agentplane-staging"]
+    service = egress_object(documents, "Service", "agentplane-egress")["spec"]
+    deployment = egress_object(documents, "Deployment", "agentplane-egress")["spec"]
     pod = deployment["template"]
     container = one(c for c in pod["spec"]["containers"] if c["name"] == "proxy")
     ports = {p["name"]: p["containerPort"] for p in container["ports"]}
@@ -32,9 +35,12 @@ def test_service_routes_rules_to_the_separate_declared_listener() -> None:
     assert f"--listen-port={proxy['targetPort']}" in container["args"]
 
 
-def test_public_coder_defaults_and_nonsecret_instructions_bootstrap_workload_credentials() -> None:
-    policy = egress_object("EgressPolicy", "basic")
-    credential = egress_object("EgressCredential", "agentplane-workload")
+def test_public_coder_defaults_and_nonsecret_instructions_bootstrap_workload_credentials(
+    agentplane_services: dict[str, list[dict[str, Any]]],
+) -> None:
+    documents = agentplane_services["agentplane-staging"]
+    policy = egress_object(documents, "EgressPolicy", "basic")
+    credential = egress_object(documents, "EgressCredential", "agentplane-workload")
     config = staging_config.config()
     rules = {one(rule["hosts"]): rule for rule in policy["spec"]["rules"]}
     rules_host = "agentplane-egress.agentplane-staging.svc.cluster.local"
@@ -67,9 +73,12 @@ def test_public_coder_defaults_and_nonsecret_instructions_bootstrap_workload_cre
     assert config["agent_egress_api_url"] == f"http://{one(rule['hosts'])}"
 
 
-def test_staging_egress_retains_one_available_replica_during_voluntary_changes() -> None:
-    deployment = egress_object("Deployment", "agentplane-egress")["spec"]
-    budget = egress_object("PodDisruptionBudget", "agentplane-egress")["spec"]
+def test_staging_egress_retains_one_available_replica_during_voluntary_changes(
+    agentplane_services: dict[str, list[dict[str, Any]]],
+) -> None:
+    documents = agentplane_services["agentplane-staging"]
+    deployment = egress_object(documents, "Deployment", "agentplane-egress")["spec"]
+    budget = egress_object(documents, "PodDisruptionBudget", "agentplane-egress")["spec"]
     pod = deployment["template"]
     assert deployment["replicas"] == 2  # Staging capacity requested by the operator.
     assert deployment["strategy"]["type"] == "RollingUpdate"
