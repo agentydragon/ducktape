@@ -7,20 +7,3 @@ spec:
   seaweedRef:
     name: seaweedfs
   reclaimPolicy: Retain
----
-apiVersion: seaweed.seaweedfs.com/v1
-kind: S3Credentials
-metadata:
-  name: mimir
-  namespace: seaweedfs
-spec:
-  seaweedRef:
-    name: seaweedfs
-  identityRef:
-    name: mimir
-  secretRef:
-    name: mimir-s3-credentials
-    namespace: monitoring
-    accessKeyField: AWS_ACCESS_KEY_ID
-    secretKeyField: AWS_SECRET_ACCESS_KEY
-  reclaimPolicy: Retain
