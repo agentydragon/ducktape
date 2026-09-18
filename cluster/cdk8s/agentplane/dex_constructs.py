@@ -1,10 +1,6 @@
-"""Reusable cdk8s constructs for agentplane-testing's dex/ directory: the Dex
-Deployment, Service, HTTPRoute, NetworkPolicy, and the ESO-generated credentials
-(4 Password generators + 3 ExternalSecrets, one of which carries the inline Dex
-config.yaml -- built the same way litellm_config.py embeds a YAML config string
-inside a ConfigMap's data, not a new mechanism).
-
-Testing-only: staging has no Dex, it federates directly to the shared Authentik.
+"""agentplane-testing's Dex: Deployment, Service, HTTPRoute, NetworkPolicy, and the
+ESO-generated credentials (4 Password generators + 3 ExternalSecrets, one carrying the
+inline Dex config.yaml). Testing-only: staging federates directly to the shared Authentik.
 """
 
 from __future__ import annotations

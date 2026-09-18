@@ -1,15 +1,8 @@
-"""Reusable cdk8s constructs for the Agentplane staging/testing environments'
-egress/ directory: the central egress proxy, its interception CA/trust bundle, and
-the EgressCredential/EgressPolicy resources it reads.
-
-The Deployment's image tags are deliberate placeholders ("unset") -- the sibling
-image-pins/ Kustomize Component (hand-written, never generated) overrides them at
-`kustomize build` time via Flux's image-automation marker. See cluster/docs/cdk8s.md.
+"""The central egress proxy, its interception CA/trust bundle, and the
+EgressCredential/EgressPolicy resources it reads.
 """
 
 from __future__ import annotations
-
-from typing import cast
 
 from agentplane_egresscredential_crds.works.allegedly.agentplane import (
     EgressCredential,
@@ -28,7 +21,6 @@ from agentplane_egresspolicy_crds.works.allegedly.agentplane import (
 )
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
-    ApiResource,
     ConfigMap,
     ContainerPort,
     ContainerResources,
@@ -36,7 +28,6 @@ from cdk8s_plus_34 import (
     CpuResources,
     Deployment,
     EnvValue,
-    IApiResource,
     ImagePullPolicy,
     MemoryResources,
     PodSecurityContextProps,
@@ -84,6 +75,7 @@ from cluster.cdk8s.agentplane import (
 from cluster.cdk8s.agentplane.app_settings import BASIC_POLICY, GITHUB_PUBLIC_POLICY
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
+from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.metadata import metadata
@@ -107,13 +99,6 @@ _SETTINGS_PATH = "/etc/agentplane-egress/settings.yaml"
 # The trust bundle's ConfigMap key -- the runner SandboxTemplate's volumeMount subPath
 # (app_constructs.py) must name the same key.
 CA_BUNDLE_KEY = "ca-certificates.crt"
-
-
-# cdk8s_plus_34's Python stub doesn't declare ApiResource as implementing
-# IApiResource's `resource_name` member (see namespace_rbac_constructs.py's `_custom`,
-# same cast for the same reason).
-def _custom(api_group: str, resource_type: str) -> IApiResource:
-    return cast(IApiResource, ApiResource.custom(api_group=api_group, resource_type=resource_type))
 
 
 def _egress_credentials(scope: Construct, *, namespace: str) -> None:
@@ -263,7 +248,7 @@ class Egress(Construct):
             rules=[
                 RolePolicyRule(
                     resources=[
-                        _custom("agentplane.allegedly.works", resource)
+                        custom_resource("agentplane.allegedly.works", resource)
                         for resource in ["egresspolicies", "egressbindings", "egresscredentials"]
                     ],
                     verbs=["get", "list", "watch"],

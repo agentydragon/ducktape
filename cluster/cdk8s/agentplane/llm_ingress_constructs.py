@@ -1,10 +1,5 @@
-"""Reusable cdk8s constructs for the Agentplane staging/testing environments'
-llm-ingress/ directory: the authenticated byte-streaming ingress between Agentplane
-central egress and the shared LiteLLM deployment.
-
-The Deployment's image tag is a deliberate placeholder ("unset") -- the sibling
-image-pins/ Kustomize Component (hand-written, never generated) overrides it at
-`kustomize build` time via Flux's image-automation marker. See cluster/docs/cdk8s.md.
+"""The authenticated byte-streaming ingress between Agentplane central egress and the
+shared LiteLLM deployment.
 """
 
 from __future__ import annotations
@@ -51,9 +46,7 @@ _SETTINGS_PATH = "/etc/agentplane-llm-ingress/settings.yaml"
 # The Sandbox runner's workload token audience: minted once by the runner
 # (app_constructs.py's projected ServiceAccountToken), verified unchanged by the
 # central egress proxy, then forwarded and verified again here -- every hop must accept
-# the same audience string. Lives here rather than egress_constructs.py because that
-# module already imports this one, and actions_constructs.py/app_constructs.py both
-# reference it too.
+# the same audience string.
 WORKLOAD_TOKEN_AUDIENCE = "agentplane-egress"
 
 
@@ -67,8 +60,7 @@ class LlmIngress(Construct):
         self.env = env
 
         # cdk8s_plus_34 defaults ServiceAccounts to automount_token=False; the ingress
-        # calls TokenReview as itself, so it needs its own mounted token -- opt back
-        # in explicitly to preserve today's actual (and required) behavior.
+        # calls TokenReview as itself, so it needs its own mounted token.
         service_account = ServiceAccount(
             self, "serviceaccount", metadata=metadata(_NAME, env.namespace), automount_token=True
         )
@@ -113,8 +105,7 @@ class LlmIngress(Construct):
             strategy=self.env.replicas.strategy,
             service_account=service_account,
             # cdk8s_plus_34 defaults this to False independent of the ServiceAccount's
-            # own automount_token (Kubernetes uses whichever is explicitly set at the
-            # narrower pod scope) -- opt in for the same reason as the ServiceAccount above.
+            # own automount_token -- opt in for the same reason as the ServiceAccount.
             automount_service_account_token=True,
             docker_registry_auth=forgejo_images_creds_secret_ref(self, "forgejo-images-creds-ref"),
             security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000, fs_group=1000),

@@ -253,12 +253,9 @@ def _build_config_map_chart(
 
 
 def _write_config_map_chart(root: Path, app_dir: str, chart_builder: Callable[[App], Chart]) -> None:
-    """Synthesize `chart_builder`'s output into `app_dir`'s existing, otherwise
-    hand-written Kustomization -- see cluster/docs/cdk8s.md's "SOPS secrets in a
-    converted directory" for the general pattern of a directory mixing generated and
-    hand-written files. `flux-kustomization.yaml`/`kustomization.yaml` stay hand-written;
-    only this one ConfigMap's content is generated, replacing what used to be a Kustomize
-    `configMapGenerator` entry.
+    """Synthesize `chart_builder`'s output into `app_dir`, whose `flux-kustomization.yaml`
+    and `kustomization.yaml` stay hand-written (cluster/docs/cdk8s.md § SOPS secrets in
+    a converted directory).
     """
     out_dir = root / app_dir
     out_dir.mkdir(parents=True, exist_ok=True)

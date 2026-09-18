@@ -1,11 +1,7 @@
-"""Reusable cdk8s constructs for the Agentplane staging/testing environments' db/
-directory: the shared CNPG Postgres Cluster, the per-service Databases, and the ESO
+"""The shared CNPG Postgres Cluster, the per-service Databases, and the ESO
 Password+ExternalSecret pairs for the actions/egress managed roles' credentials.
 
-Both environments are non-production; data loss in either's Postgres is explicitly
-acceptable -- see the original cluster/k8s/agentplane-{staging,testing}/db/
-postgres-cluster.yaml comments (preserved in git history) for the fuller tier/affinity
-reasoning this module doesn't repeat.
+Both environments are non-production; data loss in either's Postgres is acceptable.
 """
 
 from __future__ import annotations

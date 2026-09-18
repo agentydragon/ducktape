@@ -47,6 +47,13 @@ py_library(
 )
 
 py_library(
+    name = "api_resource",
+    srcs = ["api_resource.py"],
+    visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
+    deps = ["@pypi//cdk8s_plus_34"],
+)
+
+py_library(
     name = "token_reviewer_rbac",
     srcs = ["token_reviewer_rbac.py"],
     visibility = ["//cluster/cdk8s/agentplane:__pkg__"],

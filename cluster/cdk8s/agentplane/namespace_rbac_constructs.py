@@ -1,23 +1,9 @@
-"""Reusable cdk8s constructs for the Agentplane staging/testing environments'
-Namespace and operator RBAC -- see cluster/k8s/agentplane-{staging,testing}/README.md
-for what the rest of each environment (db, egress, llm-ingress, actions, app) does.
+"""The Namespace with its ResourceQuota/LimitRange, and the operator Role/RoleBinding.
 
-cdk8s_plus_34's hand-written fluent layer has no ResourceQuota/LimitRange builder, but
-its `k8s` submodule -- the same schema-generated layer `cdk8s_import` produces for
-CRDs, pre-generated here for every core Kubernetes kind -- has fully typed
-`KubeResourceQuota`/`KubeLimitRange` classes with real `ResourceQuotaSpec`/
-`LimitRangeSpec`/`LimitRangeItem` structs. Used directly below instead of a raw
-`ApiObject` + `JsonPatch`; see AGENTS.md.
-
-Namespace, Role, and RoleBinding are fully typed constructs, including every rule:
-`Role(rules=[RolePolicyRule(resources=[...], verbs=[...])])` takes real
-`IApiResource` objects, not raw dicts. A resourceNames-scoped rule needs an
-`IApiResource` whose `resourceName` property is set -- `ApiResource.custom()` never
-sets one, and no built-in cdk8s-plus type covers the `serviceaccounts/token`
-subresource, so `_NamedApiResource` below implements the (public, documented)
-`IApiResource` interface directly for that one case, the same extension point
-`Secret.from_secret_name()` and friends use internally for their own
-resourceName-scoped references (see AGENTS.md).
+A resourceNames-scoped rule needs an `IApiResource` whose `resourceName` is set:
+`ApiResource.custom()` never sets one and no cdk8s-plus type covers the
+`serviceaccounts/token` subresource, so `_NamedApiResource` implements the interface for
+that one case (see AGENTS.md).
 """
 
 from __future__ import annotations
@@ -40,6 +26,7 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 
 from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.metadata import metadata
 
 
@@ -69,24 +56,17 @@ class _NamedApiResource:
         return self._resource_name
 
 
-# cdk8s_plus_34's Python stub doesn't declare ApiResource as implementing
-# IApiResource's `resource_name` member (TS's `@jsii.implements(IApiResource, ...)`
-# on the class doesn't reach the generated .pyi), even though every ApiResource
-# instance satisfies the interface at runtime (resource_name is always None,
-# verified via the actual generated rules above). Cast at the one boundary that
-# needs it rather than widening every call site's inferred type.
-def _custom(api_group: str, resource_type: str) -> IApiResource:
-    return cast(IApiResource, ApiResource.custom(api_group=api_group, resource_type=resource_type))
-
-
 _SANDBOX_RULES = [
-    RolePolicyRule(resources=[_custom("extensions.agents.x-k8s.io", "sandboxtemplates")], verbs=["get"]),
+    RolePolicyRule(resources=[custom_resource("extensions.agents.x-k8s.io", "sandboxtemplates")], verbs=["get"]),
     RolePolicyRule(
-        resources=[_custom("agents.x-k8s.io", "sandboxes")], verbs=["create", "get", "list", "watch", "patch", "delete"]
+        resources=[custom_resource("agents.x-k8s.io", "sandboxes")],
+        verbs=["create", "get", "list", "watch", "patch", "delete"],
     ),
     RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["get", "list", "watch"]),
-    RolePolicyRule(resources=[_custom("", "pods/exec"), _custom("", "pods/portforward")], verbs=["create"]),
-    RolePolicyRule(resources=[_custom("", "pods/log")], verbs=["get"]),
+    RolePolicyRule(
+        resources=[custom_resource("", "pods/exec"), custom_resource("", "pods/portforward")], verbs=["create"]
+    ),
+    RolePolicyRule(resources=[custom_resource("", "pods/log")], verbs=["get"]),
 ]
 
 # The credential the agent presents to the app's own API: a token scoped to the
@@ -109,8 +89,8 @@ _TOKEN_RULE = RolePolicyRule(
 # immaterial to RBAC evaluation.
 _ACTION_POLICY_RULE = RolePolicyRule(
     resources=[
-        _custom("agentplane.allegedly.works", "actionpolicysets"),
-        _custom("agentplane.allegedly.works", "actionpolicybindings"),
+        custom_resource("agentplane.allegedly.works", "actionpolicysets"),
+        custom_resource("agentplane.allegedly.works", "actionpolicybindings"),
     ],
     verbs=["create", "get", "patch", "delete"],
 )

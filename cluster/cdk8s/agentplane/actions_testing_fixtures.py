@@ -76,11 +76,10 @@ def _add_mcp_everything(scope: Construct) -> None:
             cpu=CpuResources(request=Cpu.millis(25), limit=Cpu.millis(250)),
             memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(256)),
             # EphemeralStorageResources only accepts whole gibibytes (cdk8s-plus
-            # container.ts: `toGibibytes().toString() + 'Gi'`) -- the original
-            # hand-written 16Mi/128Mi rounds up to the smallest expressible value.
-            # JsonPatch can't reach this field either: container resources are
-            # re-rendered from the construct's own props after patches apply, so a
-            # patch into `containers/N/resources` is silently discarded.
+            # container.ts: `toGibibytes().toString() + 'Gi'`), and JsonPatch can't reach
+            # the field: container resources are re-rendered from the construct's own
+            # props after patches apply, so a patch into `containers/N/resources` is
+            # silently discarded.
             ephemeral_storage=EphemeralStorageResources(request=Size.gibibytes(1), limit=Size.gibibytes(1)),
         ),
         security_context=ContainerSecurityContextProps(
@@ -182,8 +181,7 @@ def _add_oauth_fixture(scope: Construct) -> None:
         resources=ContainerResources(
             cpu=CpuResources(request=Cpu.millis(25), limit=Cpu.millis(250)),
             memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(256)),
-            # See _add_mcp_everything's matching comment: EphemeralStorageResources
-            # can't express the original 16Mi/128Mi, so this rounds up to 1Gi.
+            # Whole gibibytes only, as in _add_mcp_everything.
             ephemeral_storage=EphemeralStorageResources(request=Size.gibibytes(1), limit=Size.gibibytes(1)),
         ),
         # No readOnlyRootFilesystem: the aspect_rules_py launcher materialises its venv

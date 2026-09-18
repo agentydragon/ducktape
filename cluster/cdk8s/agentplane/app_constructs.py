@@ -1,15 +1,10 @@
-"""Reusable cdk8s constructs for the Agentplane staging/testing environments' app/
-directory: the integration app Deployment (+ Alembic migrate initContainer), its own
-RBAC, HTTPRoute, NetworkPolicy, the runner SandboxTemplate, and the three
-ServiceAccounts (agent/app/runner) involved.
+"""The integration app: its Deployment (+ Alembic migrate initContainer), RBAC,
+HTTPRoute, NetworkPolicy, the runner SandboxTemplate, and the three ServiceAccounts
+(agent/app/runner) involved.
 
-The app Deployment's image tags are deliberate placeholders ("unset") -- the sibling
-image-pins/ Kustomize Component (hand-written, never generated) overrides them at
-`kustomize build` time via Flux's image-automation marker. See cluster/docs/cdk8s.md.
-The runner SandboxTemplate's two container images carry the same placeholder for the
-same reason -- kustomize's `images:` transformer patches by image name across every
-resource in a Kustomization, not just Deployments, so the same image-pins/
-Component also covers these.
+The runner SandboxTemplate's container images carry the same `unset` placeholder tag as
+the Deployment's: kustomize's `images:` transformer patches by image name across every
+resource in the Kustomization, so image-pins/ covers them too.
 """
 
 from __future__ import annotations
@@ -89,6 +84,7 @@ from cluster.cdk8s.agentplane import (
 )
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
+from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.forgejo_images import (
     SECRET_NAME,
     forgejo_images_creds_external_secret,
@@ -138,13 +134,6 @@ _CA_BUNDLE_VAR_NAMES = (
 )
 
 
-# cdk8s_plus_34's Python stub doesn't declare ApiResource as implementing
-# IApiResource's `resource_name` member (see namespace_rbac_constructs.py's `_custom`,
-# same cast for the same reason).
-def _custom(api_group: str, resource_type: str) -> IApiResource:
-    return cast(IApiResource, ApiResource.custom(api_group=api_group, resource_type=resource_type))
-
-
 class App(Construct):
     """ServiceAccounts, RBAC, Deployment (+ migrate initContainer), Service,
     HTTPRoute, NetworkPolicy, optional PodDisruptionBudget, and the runner
@@ -168,9 +157,8 @@ class App(Construct):
 
     def _add_service_accounts(self) -> ServiceAccount:
         namespace = self.env.namespace
-        # The identity an agent presents to the app's own API -- no Pod runs as it, so
-        # it needs no mounted token (see serviceaccount-agentplane-agent.yaml's own
-        # comment, preserved in the generated file).
+        # The identity an agent presents to the app's own API; no Pod runs as it, so no
+        # mounted token.
         ServiceAccount(
             self, "serviceaccount-agent", metadata=metadata("agentplane-agent", namespace), automount_token=False
         )
@@ -179,8 +167,7 @@ class App(Construct):
         app_service_account = ServiceAccount(
             self, "serviceaccount-app", metadata=metadata(_NAME, namespace), automount_token=True
         )
-        # The runner Pods' identity, with no RBAC of its own -- see
-        # serviceaccount-agentplane-runner.yaml's own comment.
+        # The runner Pods' identity, with no RBAC of its own.
         ServiceAccount(
             self, "serviceaccount-runner", metadata=metadata("agentplane-runner", namespace), automount_token=False
         )
@@ -204,36 +191,37 @@ class App(Construct):
             rules=[
                 # GET /sandboxes/templates lists them; a get-only Role 403'd the route (#7023).
                 RolePolicyRule(
-                    resources=[_custom("extensions.agents.x-k8s.io", "sandboxtemplates")], verbs=["get", "list"]
+                    resources=[custom_resource("extensions.agents.x-k8s.io", "sandboxtemplates")], verbs=["get", "list"]
                 ),
                 RolePolicyRule(
-                    resources=[_custom("agents.x-k8s.io", "sandboxes")],
+                    resources=[custom_resource("agents.x-k8s.io", "sandboxes")],
                     verbs=["create", "get", "list", "watch", "patch", "delete"],
                 ),
                 RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["get", "list", "watch"]),
                 # One ServiceAccount per Sandbox, created with it and owned by it; no
                 # patching beyond stamping that owner reference, and no reading of the
                 # tokens minted for it.
-                RolePolicyRule(resources=[_custom("", "serviceaccounts")], verbs=["create", "patch", "delete"]),
+                RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["create", "patch", "delete"]),
                 RolePolicyRule(
                     resources=[
-                        _custom("agentplane.allegedly.works", resource)
+                        custom_resource("agentplane.allegedly.works", resource)
                         for resource in ("egresspolicies", "egressbindings", "egresscredentials")
                     ],
                     verbs=["get", "list", "watch"],
                 ),
                 RolePolicyRule(
-                    resources=[_custom("agentplane.allegedly.works", "egressbindings")], verbs=["create", "delete"]
+                    resources=[custom_resource("agentplane.allegedly.works", "egressbindings")],
+                    verbs=["create", "delete"],
                 ),
                 RolePolicyRule(
                     resources=[
-                        _custom("agentplane.allegedly.works", resource)
+                        custom_resource("agentplane.allegedly.works", resource)
                         for resource in ("actionpolicysets", "actionpolicybindings")
                     ],
                     verbs=["get", "list", "watch"],
                 ),
                 RolePolicyRule(
-                    resources=[_custom("agentplane.allegedly.works", "actionpolicybindings")],
+                    resources=[custom_resource("agentplane.allegedly.works", "actionpolicybindings")],
                     verbs=["create", "delete"],
                 ),
             ],
@@ -339,10 +327,8 @@ class App(Construct):
         volume = Volume.from_config_map(self, "config-volume", config)
         deployment.containers[0].mount(_CONFIG_DIR, volume, read_only=True)
 
-        # With the database (cnpg_conventions R5); it had no pin at all while the
-        # database was Proxmox-single, which is the rule already unmet rather than a
-        # new constraint. Unlike llm-ingress/egress, the app carries no control-plane
-        # toleration.
+        # With the database (cnpg_conventions R5). Unlike llm-ingress/egress, the app
+        # carries no control-plane toleration.
         node_scheduling.attract_to_zone(deployment)
         apply_pod_spec_patches(deployment, labels=_LABELS, topology_spread=self.env.replicas.topology_spread)
         return deployment

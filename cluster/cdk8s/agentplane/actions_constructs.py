@@ -1,23 +1,12 @@
-"""Reusable cdk8s constructs for the Agentplane staging/testing environments' actions/
-directory: the Action Service Deployment (+ Alembic migrate initContainer), its own
-RBAC, ConfigMaps, Service, HTTPRoute, NetworkPolicy, and optional PodDisruptionBudget.
-
-Environment-specific pieces (staging's ActionPolicySet/Binding objects and claude-ai
-ServiceAccount; testing's mcp-everything/oauth-fixture) live in sibling modules and are
-added to the same Chart alongside this construct -- see generate_manifests.py.
-
-The Deployment's image tags are deliberate placeholders ("unset") -- the sibling
-image-pins/ Kustomize Component (hand-written, never generated) overrides them at
-`kustomize build` time via Flux's image-automation marker. See cluster/docs/cdk8s.md.
+"""The Action Service: its Deployment (+ Alembic migrate initContainer), RBAC, ConfigMaps,
+Service, HTTPRoute, NetworkPolicy, and optional PodDisruptionBudget. Environment-only
+objects (staging's policy sets, testing's MCP fixtures) come from `Environment.extra`.
 """
 
 from __future__ import annotations
 
-from typing import cast
-
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
-    ApiResource,
     ConfigMap,
     ContainerPort,
     ContainerResources,
@@ -25,7 +14,6 @@ from cdk8s_plus_34 import (
     CpuResources,
     Deployment,
     EnvValue,
-    IApiResource,
     ImagePullPolicy,
     MemoryResources,
     PathMapping,
@@ -53,6 +41,7 @@ from cluster.cdk8s.agentplane import (
 )
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
+from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import json5_config, yaml_config
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
@@ -81,13 +70,6 @@ _MCP_PATHS = (
     "/revoke",
     "/auth/callback",
 )
-
-
-# cdk8s_plus_34's Python stub doesn't declare ApiResource as implementing
-# IApiResource's `resource_name` member (see namespace_rbac_constructs.py's `_custom`,
-# same cast for the same reason).
-def _custom(api_group: str, resource_type: str) -> IApiResource:
-    return cast(IApiResource, ApiResource.custom(api_group=api_group, resource_type=resource_type))
 
 
 class Actions(Construct):
@@ -136,17 +118,17 @@ class Actions(Construct):
             "role",
             metadata=metadata(_NAME, namespace),
             rules=[
-                RolePolicyRule(resources=[_custom("", "serviceaccounts")], verbs=["get", "list", "watch"]),
+                RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["get", "list", "watch"]),
                 RolePolicyRule(
                     resources=[
-                        _custom("agentplane.allegedly.works", resource)
+                        custom_resource("agentplane.allegedly.works", resource)
                         for resource in ("actionpolicysets", "actionpolicybindings")
                     ],
                     verbs=["get", "list", "watch"],
                 ),
                 RolePolicyRule(
                     resources=[
-                        _custom("agentplane.allegedly.works", resource)
+                        custom_resource("agentplane.allegedly.works", resource)
                         for resource in ("actionpolicysets/status", "actionpolicybindings/status")
                     ],
                     verbs=["patch"],
@@ -238,9 +220,8 @@ class Actions(Construct):
                 labels=_LABELS,
                 annotations={
                     "secret.reloader.stakater.com/reload": secret_reload,
-                    # agentplane-actions-settings has no kustomize configMapGenerator hash
-                    # here to roll the Deployment on content changes (see
-                    # cluster/docs/cdk8s.md); reloader covers that gap explicitly.
+                    # No configMapGenerator hash rolls the Deployment on settings changes
+                    # (cluster/docs/cdk8s.md); reloader does.
                     "configmap.reloader.stakater.com/reload": "agentplane-action-federation,agentplane-actions-settings",
                 },
             ),
