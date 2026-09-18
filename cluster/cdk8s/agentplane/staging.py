@@ -7,7 +7,8 @@ from __future__ import annotations
 from cdk8s import Duration
 from cdk8s_plus_34 import DeploymentStrategy, PercentOrAbsolute
 
-from cluster.cdk8s.agentplane import actions_constructs, cilium_helpers, staging_config
+from cluster.cdk8s import cilium
+from cluster.cdk8s.agentplane import actions_constructs, staging_config
 from cluster.cdk8s.agentplane.actions_staging_policies import add_staging_action_policies
 from cluster.cdk8s.agentplane.environment import (
     DEPENDS_ON,
@@ -170,22 +171,20 @@ ENV = Environment(
         github_mcp_client_secret_name=_GITHUB_MCP_CLIENT_SECRET,
         ssh_mcp_bearer=True,
         extra_egress=[
-            cilium_helpers.egress_to_fqdns(*_WEB_PUSH_ALLOWED_HOSTS),
-            cilium_helpers.egress_to(cilium_helpers.endpoint_labels("ssh-mcp", "ssh-mcp"), 8080),
+            cilium.egress_to_fqdns(*_WEB_PUSH_ALLOWED_HOSTS),
+            cilium.egress_to(cilium.endpoint_labels("ssh-mcp", "ssh-mcp"), 8080),
             # Same public-origin Gateway path as the BFF: only Authentik SNI on node:443. The
             # resolver fetches /application/o/agentplane-actions/jwks/ over HTTPS.
-            cilium_helpers.egress_via_gateway("auth.allegedly.works"),
+            cilium.egress_via_gateway("auth.allegedly.works"),
             # GitHub MCP discovery advertises github.com as its OAuth authorization server.
-            cilium_helpers.egress_to_fqdns("api.githubcopilot.com", "github.com"),
+            cilium.egress_to_fqdns("api.githubcopilot.com", "github.com"),
             # `github_public_repository` policies confirm a repository is public with an
             # unauthenticated GitHub REST call (github_policy/visibility.py); no credential
             # rides this path.
-            cilium_helpers.egress_to_fqdns("api.github.com"),
+            cilium.egress_to_fqdns("api.github.com"),
             # The Kubernetes MCP server uses the public Gateway/remote-node path.
-            cilium_helpers.egress_via_gateway("kubectl-passthrough-mcp.allegedly.works"),
-            cilium_helpers.egress_to(
-                cilium_helpers.AUTHENTIK_SERVER_LABELS, 9000, server_names=["auth.allegedly.works"]
-            ),
+            cilium.egress_via_gateway("kubectl-passthrough-mcp.allegedly.works"),
+            cilium.egress_to(cilium.AUTHENTIK_SERVER_LABELS, 9000, server_names=["auth.allegedly.works"]),
         ],
     ),
     extra=add_staging_action_policies,

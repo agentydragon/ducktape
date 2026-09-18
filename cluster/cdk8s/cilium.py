@@ -1,5 +1,5 @@
 """One call per CiliumNetworkPolicy rule. The generated `cilium_crds` structs spell a single
-TCP port out over a dozen lines; these name the shapes the Agentplane constructs repeat.
+TCP port out over a dozen lines; these name the shapes the generators repeat.
 """
 
 from __future__ import annotations
@@ -33,9 +33,10 @@ from cilium_crds.io.cilium import (
 from constructs import Construct
 
 Protocol = Literal["TCP", "UDP", "ANY"]
-Entity = Literal["world", "remote-node", "host", "kube-apiserver"]
+Entity = Literal["world", "cluster", "remote-node", "host", "kube-apiserver"]
 _ENTITIES = {
     "world": CiliumNetworkPolicySpecEgressToEntities.WORLD,
+    "cluster": CiliumNetworkPolicySpecEgressToEntities.CLUSTER,
     "remote-node": CiliumNetworkPolicySpecEgressToEntities.REMOTE_HYPHEN_NODE,
     "host": CiliumNetworkPolicySpecEgressToEntities.HOST,
     "kube-apiserver": CiliumNetworkPolicySpecEgressToEntities.KUBE_HYPHEN_APISERVER,
@@ -107,6 +108,19 @@ def _egress_ports(
     )
 
 
+def _dns_matcher(name: str) -> CiliumNetworkPolicySpecEgressToPortsRulesDns:
+    """A wildcard makes a Cilium pattern; anything else is an exact name."""
+    if "*" in name:
+        return CiliumNetworkPolicySpecEgressToPortsRulesDns(match_pattern=name)
+    return CiliumNetworkPolicySpecEgressToPortsRulesDns(match_name=name)
+
+
+def _fqdn_matcher(host: str) -> CiliumNetworkPolicySpecEgressToFqdNs:
+    if "*" in host:
+        return CiliumNetworkPolicySpecEgressToFqdNs(match_pattern=host)
+    return CiliumNetworkPolicySpecEgressToFqdNs(match_name=host)
+
+
 def ingress_from(*sources: dict[str, str], ports: Sequence[int]) -> CiliumNetworkPolicySpecIngress:
     """TCP `ports` from Pods matching any of `sources`."""
     return CiliumNetworkPolicySpecIngress(
@@ -150,18 +164,34 @@ def egress_via_gateway(*server_names: str, port: int = 443) -> CiliumNetworkPoli
     return egress_to_entities("remote-node", "host", ports=[port], server_names=server_names)
 
 
-def egress_to_fqdns(*hosts: str, port: int = 443) -> CiliumNetworkPolicySpecEgress:
-    """`hosts` over TLS on `port`, with the SNI pinned to the same names: a toFQDNs match alone
-    admits any SNI to an address one of them resolved to."""
+def _egress_to_fqdns(
+    hosts: Sequence[str], *, port: int, server_names: Sequence[str] | None
+) -> CiliumNetworkPolicySpecEgress:
     return CiliumNetworkPolicySpecEgress(
-        to_fqd_ns=[CiliumNetworkPolicySpecEgressToFqdNs(match_name=host) for host in hosts],
-        to_ports=[_egress_ports([port], "TCP", server_names=hosts)],
+        to_fqd_ns=[_fqdn_matcher(host) for host in hosts],
+        to_ports=[_egress_ports([port], "TCP", server_names=server_names)],
     )
 
 
-def dns_egress(*, protocols: Sequence[Protocol] = ("UDP", "TCP"), l7: bool = False) -> CiliumNetworkPolicySpecEgress:
-    """kube-dns on port 53. `l7` adds the DNS-aware rule that lets Cilium observe the answers a
-    toFQDNs rule in the same policy needs."""
+def egress_to_fqdns(*hosts: str, port: int = 443) -> CiliumNetworkPolicySpecEgress:
+    """`hosts` over TLS on `port`, with the SNI pinned to the same names: a toFQDNs match alone
+    admits any SNI to an address one of them resolved to."""
+    return _egress_to_fqdns(hosts, port=port, server_names=hosts)
+
+
+def dns_allowlist(*names: str) -> list[str]:
+    """The matchers a DNS rule carries for `names`: patterns first, then exact names, each
+    sorted, so the rule is stable under regrouping the toFQDNs side."""
+    unique = set(names)
+    return sorted(name for name in unique if "*" in name) + sorted(name for name in unique if "*" not in name)
+
+
+def dns_egress(
+    *, protocols: Sequence[Protocol] = ("UDP", "TCP"), resolves: Sequence[str] | None = None
+) -> CiliumNetworkPolicySpecEgress:
+    """kube-dns on port 53. `resolves` adds the DNS-aware rule that lets Cilium observe the
+    answers a toFQDNs rule in the same policy needs, and bounds the query names to those
+    matchers (`"*"` for any)."""
     return CiliumNetworkPolicySpecEgress(
         to_endpoints=[CiliumNetworkPolicySpecEgressToEndpoints(match_labels=KUBE_DNS_LABELS)],
         to_ports=[
@@ -173,15 +203,34 @@ def dns_egress(*, protocols: Sequence[Protocol] = ("UDP", "TCP"), l7: bool = Fal
                     for protocol in protocols
                 ],
                 rules=(
-                    CiliumNetworkPolicySpecEgressToPortsRules(
-                        dns=[CiliumNetworkPolicySpecEgressToPortsRulesDns(match_pattern="*")]
-                    )
-                    if l7
+                    CiliumNetworkPolicySpecEgressToPortsRules(dns=[_dns_matcher(name) for name in resolves])
+                    if resolves is not None
                     else None
                 ),
             )
         ],
     )
+
+
+def fqdn_fence(
+    *groups: Sequence[str], resolves_also: Sequence[str] = (), port: int = 443
+) -> list[CiliumNetworkPolicySpecEgress]:
+    """An FQDN allowlist's two halves from one host list: the DNS rule admitting exactly the
+    names `groups` hold plus `resolves_also`, then one toFQDNs rule per group on TCP `port`.
+
+    The DNS rule is not redundant with toFQDNs. The DNS proxy matches the query name before
+    any destination identity exists, so it is the only layer that can fence a name resolving
+    to a node IP, which toFQDNs cannot select (cluster/docs/cilium_network_policy.md); and
+    Cilium has no way to share one list between the two rule kinds, so deriving both here is
+    what keeps them equal. Both halves bound the selected Pod's own resolution and
+    connections, not those of the workloads behind a proxy. SNI is not pinned: serverNames
+    cannot carry the patterns a group may hold.
+    """
+    hosts = [host for group in groups for host in group]
+    return [
+        dns_egress(protocols=["ANY"], resolves=dns_allowlist(*hosts, *resolves_also)),
+        *(_egress_to_fqdns(group, port=port, server_names=None) for group in groups),
+    ]
 
 
 def deny_all_egress() -> list[CiliumNetworkPolicySpecEgressDeny]:

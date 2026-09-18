@@ -355,3 +355,41 @@ would hand a hostile author only a credential they could already obtain.
       flag.
 - [ ] Re-evaluate if Alloy ever mounts a Secret. The flag's low cost rests on
       it having nothing worth reading; that assumption is the tripwire.
+
+## Egress fences: known gaps
+
+The fences in `cluster/cdk8s/egress_fences.py` bound the host set each proxy pod may
+reach on the public internet, and nothing else. Known wrong or unverified around them
+as of 2026-08-04 (operator-facing summary: `haku/docs/security.md`):
+
+- [ ] Collapse the fences. Five allowlists express about three distinct policies — one
+      host (`api.anthropic.com`), build registries plus a model API, and the
+      operator-data tier; `agents/public-coder-agent` is a waiver rather than a fence.
+- [ ] Converge on one proxy. mitmproxy (`agents/haku-egress-proxy`, `agents/mitmproxy`)
+      has no credential placeholders, so `haku-sandbox` sends real unredacted tokens
+      upstream where iron would send a placeholder and substitute in a trusted pod.
+      Blocked on verifying iron equivalents of `--set stream_large_bodies=1m` (dind
+      image layers were buffered whole into memory and OOM-killed the pod) and the
+      `--ignore-hosts` raw TLS passthrough for `api.anthropic.com` (interception breaks
+      the Managed Agents HTTP/2 session stream).
+- [ ] Enforce at two layers. The mitmproxy fences confine only via Cilium `toFQDNs` —
+      the container has no allowlist; the iron fences confine only in app config — the
+      spike's policy opens `toEntities: [world, remote-node, host]` on 443 and
+      `claude-iron.yaml` carries no `allowlist` transform.
+- [ ] Route cluster-internal traffic through the proxies too. The Kyverno injection
+      (`kyverno/policies/inject-haku-egress-proxy.yaml`) sets `NO_PROXY` to
+      `*.allegedly.works`, `.svc`, `.svc.cluster.local` and `10.0.0.0/8`, so anything
+      under the operator's own domains or the cluster network is reached with no proxy
+      in the path and no allowlist applied.
+- [ ] Allowlist DNS for the **sandboxes**, where the exfil channel actually is. Verified
+      in-cluster 2026-08-04: the force-proxy CCNPs admit sandbox pods to kube-dns with a
+      plain L4 rule and no `rules.dns`, so Cilium does not proxy their queries and they
+      resolve anything (a probe pod in `haku-sandbox` resolved `example.com` while the
+      same name 502'd through the proxy). The fix belongs in the force-proxy CCNPs.
+- [ ] Record traffic, including rejections. The proxies filter and substitute
+      credentials but keep no request log, so a blocked request is invisible after the
+      fact — and rejections are how a fence being too tight, or an agent trying
+      somewhere it should not, becomes observable at all.
+- [ ] Verify which pod is routed through which proxy. The force-proxy
+      `CiliumClusterwideNetworkPolicy` selectors are unverified, and one that matches
+      nothing bypasses the fence entirely.

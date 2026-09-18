@@ -32,13 +32,8 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 
-from cluster.cdk8s.agentplane import (
-    cilium_helpers,
-    container_security,
-    db_constructs,
-    llm_ingress_constructs,
-    node_scheduling,
-)
+from cluster.cdk8s import cilium
+from cluster.cdk8s.agentplane import container_security, db_constructs, llm_ingress_constructs, node_scheduling
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.api_resource import custom_resource
@@ -304,26 +299,22 @@ class Actions(Construct):
 
     def _add_network_policy(self) -> None:
         namespace = self.env.namespace
-        cilium_helpers.network_policy(
+        cilium.network_policy(
             self,
             "networkpolicy",
             metadata=metadata(_NAME, namespace),
             selector=_LABELS,
             ingress=[
-                cilium_helpers.ingress_from_gateway(CONTAINER_PORT),
-                cilium_helpers.ingress_from(
-                    cilium_helpers.endpoint_labels(namespace, "agentplane-egress"), ports=[CONTAINER_PORT]
-                ),
-                cilium_helpers.ingress_from(
-                    cilium_helpers.endpoint_labels(namespace, "agentplane-app"), ports=[CONTAINER_PORT]
-                ),
+                cilium.ingress_from_gateway(CONTAINER_PORT),
+                cilium.ingress_from(cilium.endpoint_labels(namespace, "agentplane-egress"), ports=[CONTAINER_PORT]),
+                cilium.ingress_from(cilium.endpoint_labels(namespace, "agentplane-app"), ports=[CONTAINER_PORT]),
             ],
             egress=[
-                cilium_helpers.dns_egress(l7=True),
+                cilium.dns_egress(resolves=["*"]),
                 # Claude's credentialless CIMD document; no wildcard hosts, ports, or redirects.
-                cilium_helpers.egress_to_fqdns("claude.ai"),
-                cilium_helpers.egress_to_entities("kube-apiserver"),
-                cilium_helpers.egress_to(
+                cilium.egress_to_fqdns("claude.ai"),
+                cilium.egress_to_entities("kube-apiserver"),
+                cilium.egress_to(
                     {"k8s:io.kubernetes.pod.namespace": namespace, "k8s:cnpg.io/cluster": "postgres"},
                     db_constructs.POSTGRES_PORT,
                 ),

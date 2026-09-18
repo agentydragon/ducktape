@@ -32,6 +32,7 @@ from cluster.cdk8s import (
     aiquota_constructs,
     clickhouse_schema_constructs,
     descheduler_constructs,
+    egress_fences,
     haku_openclaw_spike_config,
     public_coder_agent_config,
     stateful_infra,
@@ -65,6 +66,8 @@ _HAKU_OPENCLAW_SPIKE_APP_DIR = "cluster/k8s/agents/haku-openclaw-spike/app"
 _PUBLIC_CODER_AGENT_APP_DIR = "cluster/k8s/agents/public-coder-agent/app"
 _DESCHEDULER_DIR = "cluster/k8s/descheduler"
 _SEAWEEDFS_CLUSTER_DIR = "cluster/k8s/seaweedfs/cluster"
+_HAKU_EGRESS_PROXY_DIR = "cluster/k8s/agents/haku-egress-proxy"
+_MITMPROXY_DIR = "cluster/k8s/agents/mitmproxy"
 
 
 def _write_yaml(path: Path, manifest: dict[str, object]) -> None:
@@ -353,21 +356,22 @@ def _build_config_map_chart(
     app: App, *, chart_name: str, configmap_name: str, namespace: str, data: dict[str, str]
 ) -> Chart:
     """Build a single-ConfigMap chart without synthesizing it -- shared by
-    `_write_config_map_chart` (writes it to disk) and tests (in-memory synth)."""
+    `_write_charts` (writes it to disk) and tests (in-memory synth)."""
     chart = Chart(app, chart_name, disable_resource_name_hashes=True)
     ConfigMap(chart, "config", metadata=metadata(configmap_name, namespace), data=data)
     return chart
 
 
-def _write_chart(root: Path, app_dir: str, chart_builder: Callable[[App], Chart]) -> None:
-    """Synthesize `chart_builder`'s output into `app_dir`, whose `flux-kustomization.yaml`
-    and `kustomization.yaml` stay hand-written (cluster/docs/cdk8s.md § Three shapes of a
-    directory).
+def _write_charts(root: Path, app_dir: str, *chart_builders: Callable[[App], Chart]) -> None:
+    """Synthesize each builder's chart into `app_dir` as `<chart id>.k8s.yaml`; the directory's
+    `flux-kustomization.yaml` and `kustomization.yaml` stay hand-written (cluster/docs/cdk8s.md
+    § Three shapes of a directory).
     """
     out_dir = root / app_dir
     out_dir.mkdir(parents=True, exist_ok=True)
     app = App(outdir=str(out_dir))
-    chart_builder(app)
+    for build in chart_builders:
+        build(app)
     app.synth()
 
 
@@ -384,10 +388,6 @@ def _haku_openclaw_spike_config_chart(app: App) -> Chart:
     )
 
 
-def _generate_haku_openclaw_spike_config(root: Path) -> None:
-    _write_chart(root, _HAKU_OPENCLAW_SPIKE_APP_DIR, _haku_openclaw_spike_config_chart)
-
-
 def _public_coder_agent_config_chart(app: App) -> Chart:
     return _build_config_map_chart(
         app,
@@ -396,10 +396,6 @@ def _public_coder_agent_config_chart(app: App) -> Chart:
         namespace="public-coder-agent",
         data={"openclaw.json5": json5_config(public_coder_agent_config.config())},
     )
-
-
-def _generate_public_coder_agent_config(root: Path) -> None:
-    _write_chart(root, _PUBLIC_CODER_AGENT_APP_DIR, _public_coder_agent_config_chart)
 
 
 def _descheduler_chart(app: App) -> Chart:
@@ -423,10 +419,18 @@ def generate_manifests(root: Path) -> None:
     _generate_aiquota(root)
     for env in (staging.ENV, testing.ENV):
         _generate_agentplane(root, env)
-    _generate_haku_openclaw_spike_config(root)
-    _generate_public_coder_agent_config(root)
-    _write_chart(root, _DESCHEDULER_DIR, _descheduler_chart)
-    _write_chart(root, _SEAWEEDFS_CLUSTER_DIR, _stateful_infra_priority_class_chart)
+    _write_charts(root, _HAKU_OPENCLAW_SPIKE_APP_DIR, _haku_openclaw_spike_config_chart)
+    _write_charts(root, _PUBLIC_CODER_AGENT_APP_DIR, _public_coder_agent_config_chart)
+    _write_charts(root, _DESCHEDULER_DIR, _descheduler_chart)
+    _write_charts(root, _SEAWEEDFS_CLUSTER_DIR, _stateful_infra_priority_class_chart)
+    _write_charts(
+        root,
+        _HAKU_EGRESS_PROXY_DIR,
+        egress_fences.haku_cloud_api,
+        egress_fences.haku_claude,
+        egress_fences.haku_openclaw_spike,
+    )
+    _write_charts(root, _MITMPROXY_DIR, egress_fences.mitmproxy_cloud_api)
 
 
 def main() -> None:

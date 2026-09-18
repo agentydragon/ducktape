@@ -58,19 +58,18 @@ and `test_dns_records.py`'s equivalent collapse to unreachable-by-construction.
   drops out of every namespaced object.
 - **One PodDisruptionBudget helper** for the three `_add_pdb` copies (actions, app,
   egress).
-- **Cilium peers as constructs.** `cilium_helpers.endpoint_labels(namespace, name)`
+- **Cilium peers as constructs.** `cilium.endpoint_labels(namespace, name)`
   takes strings; the target construct's exported labels would make a renamed workload
   fail at synth instead of at runtime.
 
 ## Ready to convert — small, focused, and the pattern to copy already exists in this repo
 
-- **`cluster/k8s/agents/haku-egress-proxy/` and `cluster/k8s/agents/mitmproxy/`
-  CiliumNetworkPolicy `toFQDNs`/`server_names`** (`test_egress_allowlists.py`,
-  `test_dns_rule_matches_the_allowlist`). Same shape as the web-push fix just
-  applied in `agentplane/staging.py` — a `toFQDNs` list and a
-  `toPorts.rules.dns`/`server_names` list built from two separate hand-written YAML
-  blocks instead of one Python tuple. Convert these two CiliumNetworkPolicies to
-  cdk8s and build both lists from one tuple the same way.
+- **`openclaw-spike-iron.yaml`'s `allowlist` transform** (`test_egress_allowlists.py`,
+  `test_openclaw_spike_resolves_exactly_its_iron_allowlist`). The spike's Cilium DNS
+  rule is generated from `egress_fences.OPENCLAW_SPIKE_ALLOWLIST`, but the iron config
+  it mirrors is still a hand-written `configMapGenerator` input. Render the iron
+  ConfigMap from the same tuple (the `<name>-config.k8s.yaml` shape
+  `agents/public-coder-agent/app` uses) and the pin collapses.
 - **`ssh-mcp` known_hosts / sshpiper pinning** (`test_ssh_mcp_known_hosts.py`,
   and `cluster/validation/test_ssh_mcp_consumers.py`).
   `cluster/k8s/ssh-mcp/known_hosts`, `ssh_keys/public-coder-devbox-host.pub`,
