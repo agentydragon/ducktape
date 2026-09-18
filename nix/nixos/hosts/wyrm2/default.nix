@@ -182,6 +182,7 @@ in
   environment.systemPackages = [
     pkgs.lvm2_dmeventd # LVM tools with dmeventd client support for thin pool autoextend
     pkgs.freecad
+    pkgs.zoom-us
   ];
 
   # Podman
