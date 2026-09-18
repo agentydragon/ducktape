@@ -1253,6 +1253,13 @@ spec:
           to: "@artifact/cluster/k8s/langfuse/app/"
           exclude:
             - flux-kustomization.yaml
+    - name: langfuse-seaweed
+      originRevision: "@repo"
+      copy:
+        - from: "@repo/cluster/k8s/langfuse/seaweed/**"
+          to: "@artifact/cluster/k8s/langfuse/seaweed/"
+          exclude:
+            - flux-kustomization.yaml
     - name: langfuse-cache
       originRevision: "@repo"
       copy:
