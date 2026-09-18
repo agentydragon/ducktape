@@ -94,16 +94,25 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
     host = "0bda:2838"
     usb3 = true
   }
-  # TEX Shura keyboard via the FV43U monitor hub's USB-B uplink → atlas front
-  # port (bus 3 port 12), passed by PORT PATH through the hub (QEMU can't pass
-  # hubs themselves): grabbed only while the monitor's KVM routes its hub to
-  # USB-B; on the USB-C/KVM side the path is empty and atlas keeps the
+  # TEX Shura keyboard via the FV43U monitor hub's USB-B uplink → atlas rear
+  # USB-A port (bus 3 port 2), passed by PORT PATH through the hub (QEMU can't
+  # pass hubs themselves): grabbed only while the monitor's KVM routes its hub
+  # to USB-B; on the USB-C/KVM side the path is empty and atlas keeps the
   # keyboard. Feeds wyrm2's local logind seat0 (direct-display gaming) — see
-  # debug/atlas/direct_display_bringup/README.md. Update the path if the cable moves
-  # to a rear port.
+  # debug/atlas/direct_display_bringup/README.md. Update the path if the cable
+  # moves to another rear port.
   usb {
-    host = "3-12.1"
+    host = "3-2.1"
     usb3 = true
+  }
+  # Logitech C920 webcam via the sibling port on the same FV43U monitor hub.
+  # Like the keyboard, this child device is present only while the monitor's
+  # KVM routes the hub to USB-B; atlas owns the hub in USB-C/KVM mode.
+  usb {
+    host = "3-2.2"
+    # The VM's xHCI root ports are full; use the free high-speed EHCI port
+    # rather than placing this USB 2.0 camera behind the full-speed hub.
+    usb3 = false
   }
   hotplug = "network,disk,cpu,usb" # note: memory hotplug requires NUMA
 

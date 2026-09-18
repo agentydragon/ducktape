@@ -48,8 +48,9 @@ intended:
 
 - **Play games with the RTX 5090s (wired 2026-07-05).** Direct
   output: RTX 5090 `01:00.0` DP-OUT → FV43U DP 1.4 in (Ivanky 8K DP
-  m-m); keyboard via FV43U USB-B uplink → atlas rear USB-A (bus 3 port 2)
-  → QEMU port-path passthrough to wyrm2 at path `3-2.1` (USB A→B). Monitor dual-KVM OSD
+  m-m); keyboard and camera via FV43U USB-B uplink → atlas rear USB-A
+  (bus 3 port 2) → QEMU port-path passthrough to wyrm2 at paths `3-2.1`
+  (keyboard) and `3-2.2` (camera). Monitor dual-KVM OSD
   configured USB-B ↔ DP and USB-C ↔ USB-C — one press switches both
   video and USB hub between the host/KVM path (USB-C) and wyrm2's local
   `seat0` (DP/USB-B path). wyrm2 runs GNOME on that physical seat; per-title
@@ -67,7 +68,7 @@ intended:
 | AORUS FV43U             | 43" 4K@144 monitor. Inputs: 1× DP 1.4, 2× HDMI 2.1 (24 Gb/s), 1× USB-C (DP-Alt + USB data + PD). USB hub: 1× USB-B uplink, 2× USB-A downstream. 2× 3.5 mm jacks (headphone, line-out). Internal "dual-KVM" toggles which uplink (USB-B vs. USB-C) feeds the hub. Hub chip: Realtek RTS5411 (USB VID `0bda:5411`).                                                                                                                                                                                                         |
 | Sabrent SB-TB4K         | TB4 KVM. 2× TB4 host (PC1, PC2) + 3× TB4 downstream (40 Gb/s, 60 W PD per port) + 4× USB-A 3.2 Gen 2 (10 Gb/s, 5 V / 2.4 A). **No standalone DP output** — video goes over TB4 downstream USB-C. USB VID `2eb9:0123` (SSI TBT4 KVM HUB).                                                                                                                                                                                                                                                                                  |
 | TEX Shura               | 60% mech with trackpoint, USB-C jack at the back. USB VID/PID `04d9:0532` (Holtek). One unit; lives on FV43U USB-A upper port permanently. The FV43U dual-KVM routes the hub to USB-C (host path: Sabrent KVM → atlas/laptop) or USB-B (wyrm2 local `seat0` path: atlas rear USB-A bus 3 port 2 → QEMU at `3-2.1` → wyrm2). Keyboard follows the monitor switch — no manual replug needed.                                                                                                                                |
-| USB-A camera            | Logitech C920 HD Pro. Sits atop the FV43U, plugged into the monitor's **lower** USB-A downstream port. USB-A plug on the camera end.                                                                                                                                                                                                                                                                                                                                                                                      |
+| USB-A camera            | Logitech C920 HD Pro. Sits atop the FV43U, plugged into the monitor's **lower** USB-A downstream port. USB-A plug on the camera end. In wyrm2 mode it is passed by port path `3-2.2` as QEMU `usb4` on the guest's high-speed EHCI bus.                                                                                                                                                                                                                                                                                   |
 | Underdesk USB-A hub     | Mounted left-underside of the desk. USB-A uplink plug — plugs directly into a KVM USB-A port.                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | USB WiFi adapter        | Model TBD. Spare; could go into atlas as a temporary wireless NIC.                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | Atlas front-panel USB-C | Physical port-path passthrough at host path `3-1` to wyrm2 VM 110 as QEMU `usb1`; validated with YubiKey `1050:0407`.                                                                                                                                                                                                                                                                                                                                                                                                     |
@@ -162,14 +163,14 @@ monitor's dual-KVM OSD (USB-B ↔ DP, USB-C ↔ USB-C) switches both
 video input and hub uplink in one press, routing between the host/KVM
 (USB-C) and wyrm2 local `seat0` (DP/USB-B) paths.
 
-| Link                      | Source port               | Destination port                             | Cable      | Have?                                                                                 |
-| ------------------------- | ------------------------- | -------------------------------------------- | ---------- | ------------------------------------------------------------------------------------- |
-| wyrm2 display → monitor   | RTX 5090 `01:00.0` DP-OUT | FV43U DP 1.4 in                              | DP m-m, 8K | In use — Ivanky 8K DP m-m.                                                            |
-| Monitor hub → wyrm2 input | FV43U USB-B uplink        | atlas rear USB-A bus 3 port 2 → QEMU → wyrm2 | USB A → B  | In use — keyboard at QEMU path `3-2.1` (hub child port 1) when monitor in USB-B mode. |
+| Link                      | Source port               | Destination port                             | Cable      | Have?                                                                                                   |
+| ------------------------- | ------------------------- | -------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------- |
+| wyrm2 display → monitor   | RTX 5090 `01:00.0` DP-OUT | FV43U DP 1.4 in                              | DP m-m, 8K | In use — Ivanky 8K DP m-m.                                                                              |
+| Monitor hub → wyrm2 input | FV43U USB-B uplink        | atlas rear USB-A bus 3 port 2 → QEMU → wyrm2 | USB A → B  | In use — keyboard at QEMU path `3-2.1` and C920 at `3-2.2` (EHCI `usb4`) when monitor is in USB-B mode. |
 
 **Gotcha: the USB A→B cable must stay in the atlas port the passthrough
-is pinned to.** wyrm2's `usb3:` entry pins a **physical host port path**
-(`host=3-2.1`), not a VID/PID. Move the cable to another atlas USB-A
+is pinned to.** wyrm2's `usb3:` and `usb4:` entries pin **physical host port paths**
+(`host=3-2.1` and `host=3-2.2`), not VID/PIDs. Move the cable to another atlas USB-A
 port and the symptom is: the KVM press still switches video to wyrm2,
 but the keyboard silently lands on the **atlas host** instead — atlas's
 `usbhid` binds it and QEMU, still watching the vacated port, hands the
