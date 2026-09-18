@@ -10,6 +10,7 @@ resources:
   - gpu.yaml
   - node-exporter-full.yaml
   - rugged-power.yaml
+  - cluster-storage-io.yaml
 
 configMapGenerator:
   - name: flux-cluster-dashboard
@@ -20,6 +21,10 @@ configMapGenerator:
     namespace: monitoring
     files:
       - rugged-power.json
+  - name: cluster-storage-io-dashboard
+    namespace: monitoring
+    files:
+      - cluster-storage-io.json
 
 configurations:
   - kustomizeconfig
