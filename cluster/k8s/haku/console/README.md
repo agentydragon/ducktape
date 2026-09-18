@@ -3,10 +3,19 @@
 Manifests for `haku/console/` (see that directory's README for the app itself). Deploy
 notes here cover only what's specific to running it in-cluster.
 
+The `haku-console.k8s.yaml`, `flux-kustomization.yaml` and `kustomization.yaml` here and
+in `db/` and `migration/` are generated from `cluster/cdk8s/haku/` (`charts.py` lists the
+three Kustomizations; `console_config.py` is the non-secret config the
+`haku-console-config` ConfigMap carries, rendered and checked through the console's own
+`Settings`). Regenerate per <../../../docs/cdk8s.md>. Hand-written beside them: the SOPS
+Secrets, `indexer-role.sql` (a `configMapGenerator` input, so a changed script re-hashes
+the ConfigMap and recreates the provisioner Job), `image-pins/`, and the two ConfigMaps
+carrying Flux image markers (`static-metadata.yaml`, `image-metadata.yaml`).
+
 ## App-owned auth (the forward-auth outpost is retired)
 
 The console authenticates its own surface instead of sitting behind the shared Authentik
-proxy outpost. `httproute.yaml` points `haku.allegedly.works` at the standalone static
+proxy outpost. The HTTPRoute points `haku.allegedly.works` at the standalone static
 Service; its nginx proxies backend paths to the API Service. The retired `haku-dashboard`
 proxy provider and its deletion tombstone are gone.
 Two Authentik OAuth2 providers, minted by `tf/gitops/agent-machine-access` (application slugs
@@ -30,8 +39,7 @@ the `/.well-known/oauth-*` discovery docs) to the `haku-console` API Service; ev
 the SPA catch-all. So a **new top-level backend prefix needs a matching `location` in
 `haku/console/default.conf.template`**, or it silently returns the SPA shell instead of reaching
 the app (the footgun that first bit `/mcp`). The static Deployment's
-`HAKU_CONSOLE_API_UPSTREAM` is the API Service DNS name plus port; keep it aligned with
-`service.yaml`. nginx sets response headers (CSP/Cache-Control/…) only
+`HAKU_CONSOLE_API_UPSTREAM` is derived from the API Service's name and port. nginx sets response headers (CSP/Cache-Control/…) only
 on the static content it serves itself; the app owns the headers on everything proxied (`app.py`
 `_security_headers`), so the two no longer write the same policy twice. The static Deployment has
 no Console secrets, ServiceAccount token, or database access.
@@ -130,7 +138,7 @@ roughly weekly. Calendar uses a separate project/client so its narrower sensitiv
 can proceed without Gmail's restricted scopes; once that project is published, Calendar tokens no
 longer inherit Gmail's Testing-mode churn.
 
-Scopes are explicit per deploy-named connection in `config.yaml`: Google Mail requests
+Scopes are explicit per deploy-named connection in `console_config.py`: Google Mail requests
 `gmail.modify`, `gmail.compose`, and `gmail.settings.basic`; Google Calendar requests
 `calendar.events`. Add a new logical connection when another Google surface is actually exposed
 rather than broadening either existing grant.
@@ -140,7 +148,7 @@ rather than broadening either existing grant.
 GitHub's hosted MCP endpoint is `https://api.githubcopilot.com/mcp/`. It discovers its OAuth
 authorization server normally, but GitHub does **not** support Dynamic Client Registration, so the
 Console needs an organization-owned, pre-registered **GitHub App**. The Console uses GitHub's normal
-endpoint: its upstream catalog includes write tools, but `config.yaml` explicitly auto-approves only
+endpoint: its upstream catalog includes write tools, but `console_config.py` explicitly auto-approves only
 the reviewed read-only tool names for Haku. The same entry denies the Copilot delegation tools to every Agent, including stale-schema and generic-dispatch calls. Other GitHub tools remain per-call operator approval.
 
 1. Create a private GitHub App owned by the organization. Set its user-authorization callback URL
@@ -149,11 +157,11 @@ the reviewed read-only tool names for Haku. The same entry denies the Copilot de
    permissions. Install/approve the App for the intended organization and
    repositories. Do not substitute a PAT or the OAuth client embedded in GitHub's local MCP binary.
 2. Put the App's `client_id` and `client_secret` in a new SOPS-encrypted Secret named
-   `haku-console-github-mcp-client-credentials`, with those exact keys. Add that manifest to this
-   directory's `kustomization.yaml`. The Deployment overlays the values directly at
+   `haku-console-github-mcp-client-credentials`, with those exact keys, listed in the `haku-console`
+   directory's `extra_resources` (`cluster/cdk8s/haku/charts.py`). The Deployment overlays the values directly at
    `HAKU_CONSOLE__MCP__SERVERS__GITHUB__BACKEND__AUTH__CLIENT_REGISTRATION__CLIENT_{ID,SECRET}`
    and tolerates the Secret being absent until this step is complete.
-3. Keep the existing keyed `mcp.servers.github` entry in `config.yaml`. Its non-secret shape is:
+3. Keep the existing keyed `mcp.servers.github` entry in `console_config.py`. Its non-secret shape (as YAML) is:
 
    ```yaml
    github:
@@ -178,7 +186,7 @@ no Dynamic Client Registration: <https://github.com/github/github-mcp-server/blo
 
 ## One-time bootstrap: `kubectl-passthrough-mcp` (cluster-admin, operator-linked)
 
-The `kubectl-passthrough-mcp` MCP server entry (config.yaml — `pods_*`, `resources_*`,
+The `kubectl-passthrough-mcp` MCP server entry (console_config.py — `pods_*`, `resources_*`,
 `nodes_*`, `events_list`, `configuration_view`) uses `auth: {kind: remote_server_oauth}`, the same
 per-operator browser-linked mechanism as `grocy-sf`: the operator connects once
 from the console's Access tab (⚙ → Access → Connect next to `kubectl-passthrough-mcp`),

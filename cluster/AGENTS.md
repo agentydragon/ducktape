@@ -233,7 +233,7 @@ per-app reasons: <docs/decisions.md> § "Parked application manifests".
 
 Every `*.k8s.yaml` under `cluster/k8s`, and the `flux-kustomization.yaml` and
 `kustomization.yaml` beside one in `agentplane-{staging,testing}`, `litellm/app`,
-`agents/ha-mcp/app`, `aiquota` and `clickhouse/schema`, is
+`agents/ha-mcp/app`, `aiquota`, `clickhouse/schema` and `haku/console{,/db,/migration}`, is
 `bb run //cluster/cdk8s:generate_manifests` output
 (`.gitattributes` lists them). Change the generator under `cluster/cdk8s/` and
 regenerate; `//cluster/cdk8s:test_generate_manifests` fails on drift. The layout rules in

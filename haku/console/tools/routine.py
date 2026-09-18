@@ -21,7 +21,7 @@ from haku.console.config import LaunchRoutineConfig
 
 logger = logging.getLogger(__name__)
 
-# Wire-frozen id: named by cluster/k8s/haku/console/config.yaml and persisted in
+# Wire-frozen id: named by cluster/cdk8s/haku/console_config.py and persisted in
 # ledger `server_id` rows — renaming is a config + data migration.
 HAKU_ROUTINE_SERVER_ID = "haku_routine"
 

@@ -1,31 +1,19 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: haku-console
-
 resources:
-  - agent-diagnostics-rbac.yaml
-  - deployment.yaml
-  - serviceaccount.yaml
+  - haku-console.k8s.yaml
   - haku-console-google-calendar-client-credentials.sops.yaml
   - haku-console-google-client-credentials.sops.yaml
   - haku-console-github-mcp-client-credentials.sops.yaml
-  - httproute.yaml
-  - indexer-role-provisioner-job.yaml
-  - kube-api-proxy.yaml
-  - kubernetes-authorization-rbac.yaml
   - routine-launch-token.sops.yaml
-  - service.yaml
-  - servicemonitor.yaml
-  - static-deployment.yaml
-  - static-metadata.yaml
-  - static-service.yaml
   - web-push-vapid.sops.yaml
-  - external-creds-reader.yaml
-
+  - static-metadata.yaml
+  - image-metadata.yaml
+components:
+  - ./image-pins
 configMapGenerator:
-  - name: haku-console-config
-    files:
-      - config.yaml
   - name: haku-console-db-indexer-sql
+    namespace: haku-console
     files:
       - indexer-role.sql

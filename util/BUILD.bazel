@@ -251,6 +251,7 @@ py_library(
     srcs = ["settings_contract.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "@pypi//more_itertools",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
     ],

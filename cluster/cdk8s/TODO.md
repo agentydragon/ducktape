@@ -83,12 +83,6 @@ and `test_dns_records.py`'s equivalent collapse to unreachable-by-construction.
 
 ## Larger conversions — whole hand-written directories, no cdk8s presence yet
 
-- **`cluster/k8s/haku/console/`** — `test_haku_deployment_config_contract.py` and
-  `test_haku_deployment_contract.py` cross-check Service selectors against
-  Deployment labels, static Service `targetPort` against container ports, HTTPRoute
-  backends against Service names, `dependsOn` sets across 3 `flux-kustomization.yaml`
-  files, and the console's ssh-mcp wiring — all hand-typed relationships within and
-  around one directory that has zero cdk8s footprint today.
 - **`cluster/k8s/agents/public-coder-agent/{app,proxy,devbox}/`,
   `agent-rbac-base/`, and `clickhouse/cluster/`** — `test_haku_public_coder_contract.py`
   and `test_public_coder_clickhouse_reader_contract.py` tie together ~15-22

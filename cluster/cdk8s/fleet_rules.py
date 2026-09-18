@@ -94,14 +94,18 @@ def _references(pod: dict[str, Any]) -> Iterator[tuple[str, str]]:
 
 
 def resolved_references(
-    objects: list[dict[str, Any]], *, provided_secrets: Mapping[str, str], providers: frozenset[str]
+    objects: list[dict[str, Any]],
+    *,
+    provided_secrets: Mapping[str, str],
+    providers: frozenset[str],
+    provided_config_maps: Mapping[str, str] = {},
 ) -> list[str]:
     """Every Secret and ConfigMap a Pod template reads exists in the chart -- as the
     object itself, an ExternalSecret's target, a Certificate's secret, a trust-manager
     Bundle's target ConfigMap, or a CNPG Cluster's `<name>-app` bootstrap secret -- or
-    is listed in `provided_secrets` with the dependency that creates it, which must be
-    one of `providers` (the Flux Kustomizations and sibling files the environment waits
-    on). A `provided_secrets` entry nothing reads is stale."""
+    is listed in `provided_secrets`/`provided_config_maps` with the dependency that
+    creates it, which must be one of `providers` (the Flux Kustomizations and sibling
+    files the environment waits on). A provided entry nothing reads is stale."""
     secrets = {
         *(
             o["spec"].get("target", {}).get("name", o["metadata"]["name"])
@@ -117,27 +121,27 @@ def resolved_references(
         ),
     }
     config_maps = {o["metadata"]["name"] for o in objects if o["kind"] in ("ConfigMap", "Bundle")}
+    created = {"Secret": secrets, "ConfigMap": config_maps}
+    provided = {"Secret": provided_secrets, "ConfigMap": provided_config_maps}
     errors: list[str] = []
-    read = set()
+    read: dict[str, set[str]] = {"Secret": set(), "ConfigMap": set()}
     for owner, pod in _pod_specs(objects):
         for kind, name in _references(pod):
-            if kind == "ConfigMap":
-                if name not in config_maps:
-                    errors.append(f"{owner} reads ConfigMap {name!r}, which nothing in the chart creates")
-            elif name in secrets:
+            if name in created[kind]:
                 continue
-            elif name not in provided_secrets:
+            if name not in provided[kind]:
                 errors.append(
-                    f"{owner} reads Secret {name!r}, which nothing in the chart creates and no dependency is listed as providing"
+                    f"{owner} reads {kind} {name!r}, which nothing in the chart creates and no dependency is listed as providing"
                 )
-            else:
-                read.add(name)
-                if (provider := provided_secrets[name]) not in providers:
-                    errors.append(f"{owner} reads Secret {name!r} provided by {provider!r}, which is not a dependency")
-    errors.extend(
-        f"provided_secrets lists {name!r}, which no Pod template reads"
-        for name in sorted(provided_secrets.keys() - read)
-    )
+                continue
+            read[kind].add(name)
+            if (provider := provided[kind][name]) not in providers:
+                errors.append(f"{owner} reads {kind} {name!r} provided by {provider!r}, which is not a dependency")
+    for kind, roster in (("Secret", "provided_secrets"), ("ConfigMap", "provided_config_maps")):
+        errors.extend(
+            f"{roster} lists {name!r}, which no Pod template reads"
+            for name in sorted(provided[kind].keys() - read[kind])
+        )
     return errors
 
 
@@ -149,10 +153,12 @@ class FleetRules:
         *,
         provided_secrets: Mapping[str, str],
         providers: frozenset[str],
+        provided_config_maps: Mapping[str, str] = {},
         unpinned_https_egress: frozenset[str] = frozenset(),
     ) -> None:
         self._chart = chart
         self._provided_secrets = provided_secrets
+        self._provided_config_maps = provided_config_maps
         self._providers = providers
         self._unpinned_https_egress = unpinned_https_egress
 
@@ -163,7 +169,12 @@ class FleetRules:
         return [
             *pod_hardening(objects),
             *pinned_https_egress(objects, unpinned=self._unpinned_https_egress),
-            *resolved_references(objects, provided_secrets=self._provided_secrets, providers=self._providers),
+            *resolved_references(
+                objects,
+                provided_secrets=self._provided_secrets,
+                providers=self._providers,
+                provided_config_maps=self._provided_config_maps,
+            ),
         ]
 
 
@@ -172,10 +183,15 @@ def add_fleet_rules(
     *,
     provided_secrets: Mapping[str, str],
     providers: frozenset[str],
+    provided_config_maps: Mapping[str, str] = {},
     unpinned_https_egress: frozenset[str] = frozenset(),
 ) -> None:
     chart.node.add_validation(
         FleetRules(
-            chart, provided_secrets=provided_secrets, providers=providers, unpinned_https_egress=unpinned_https_egress
+            chart,
+            provided_secrets=provided_secrets,
+            providers=providers,
+            provided_config_maps=provided_config_maps,
+            unpinned_https_egress=unpinned_https_egress,
         )
     )

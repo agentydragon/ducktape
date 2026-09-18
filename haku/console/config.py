@@ -14,6 +14,10 @@ from haku.recall_index.config import EmbedderConfig, RecallIndexSettings
 from mcp_infra.authentik_auth.config import AuthentikAuthConfig
 from mcp_infra.persistence import PostgresPersistence
 
+# The one environment variable read before the YAML source exists; every other setting is
+# `HAKU_CONSOLE__*` (`settings.Settings`).
+CONFIG_FILE_ENV = "HAKU_CONSOLE_CONFIG_FILE"
+
 # Both URLs are built from the routine (trigger) id, so only the id + token are
 # configured. The fire endpoint performs the launch; the claude.ai page is the
 # operator-facing deep-link to review past runs (there's no runs-listing API).
@@ -300,7 +304,7 @@ class ConsoleProcessConfig(BaseModel):
 
     # Bootstrap path for the YAML settings source. It deliberately retains its established
     # single-underscore environment name while ordinary settings use HAKU_CONSOLE__*.
-    config_file: Path = Field(validation_alias=AliasChoices("config_file", "HAKU_CONSOLE_CONFIG_FILE"))
+    config_file: Path = Field(validation_alias=AliasChoices("config_file", CONFIG_FILE_ENV))
 
     # Optional operator-only proxy to the internal aiquota service. The browser never sees this
     # bearer token; the console fetches quota snapshots server-side.

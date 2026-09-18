@@ -1,0 +1,8 @@
+# Hand-written: carries the Flux image-automation marker the generated manifests cannot
+# (cluster/cdk8s/AGENTS.md § image-pins/kustomization.yaml). The same policy as the API
+# Deployment's: the migration must run from the exact image that will serve.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+images:
+  - name: git.allegedly.works/ducktape-ci/haku-console
+    newTag: devel-20260916175501-b92451d # {"$imagepolicy": "flux-system:haku-console:tag"}

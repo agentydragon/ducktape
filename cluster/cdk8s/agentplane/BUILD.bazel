@@ -21,12 +21,14 @@ py_library(
 py_library(
     name = "container_security",
     srcs = ["container_security.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = ["@pypi//cdk8s_plus_34"],
 )
 
 py_library(
     name = "node_scheduling",
     srcs = ["node_scheduling.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = ["@pypi//cdk8s_plus_34"],
 )
 
@@ -46,6 +48,7 @@ py_library(
     deps = [
         ":environment",
         ":node_scheduling",
+        "//cluster/cdk8s:cnpg",
         "//third_party/cnpg:cluster",
         "//third_party/cnpg:database",
         "//third_party/external_secrets:externalsecret",
