@@ -372,6 +372,13 @@ spec:
     # Kube-state-metrics configuration
     kube-state-metrics:
       fullnameOverride: kube-state-metrics
+      # Export the node media tier used by the local-path storage classes. The
+      # default kube-state-metrics configuration intentionally omits arbitrary
+      # Kubernetes labels; this narrow allowlist lets dashboards join node
+      # device/cAdvisor metrics to the authoritative hdd/ssd classification
+      # without maintaining a node-name regex.
+      metricLabelsAllowlist:
+        - nodes=[storage.allegedly.works/tier]
       rbac:
         extraRules:
           - apiGroups: ["apiextensions.k8s.io"]
