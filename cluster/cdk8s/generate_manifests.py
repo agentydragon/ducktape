@@ -10,8 +10,9 @@ cluster/docs/cdk8s.md.
 
 from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import cast
 
-from cdk8s import App, Chart, Yaml
+from cdk8s import ApiObject, App, Chart, Yaml
 from cdk8s_plus_34 import ConfigMap
 from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecEgress,
@@ -27,7 +28,9 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecDecryption,
     KustomizationSpecDecryptionProvider,
     KustomizationSpecDecryptionSecretRef,
+    KustomizationSpecDeletionPolicy,
     KustomizationSpecDependsOn,
+    KustomizationSpecHealthCheckExprs,
     KustomizationSpecHealthChecks,
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
@@ -346,6 +349,32 @@ _AGENTPLANE_TESTING_ACTIONS_EXTRA_EGRESS = [
         ],
     ),
 ]
+# What each environment's Flux Kustomization waits on. Staging additionally federates
+# operator login through the shared Authentik (sso-providers-tf) and reaches ssh-mcp.
+_AGENTPLANE_DEPENDS_ON = (
+    "agentplane-crds",
+    "agent-sandbox-controller",
+    "cert-manager-environment",
+    "cert-manager-trust",
+    "claude-rbac",
+    "cnpg",
+    "external-creds",
+    "external-secrets-config",
+    "forgejo-images",
+    "gateway",
+    "litellm-keys-tf",
+    "local-path-provisioner",
+    "reflector",
+)
+_AGENTPLANE_STAGING_DEPENDS_ON = (*_AGENTPLANE_DEPENDS_ON, "sso-providers-tf", "ssh-mcp")
+# The chart objects whose readiness gates the environment, in the order the checks are
+# listed. The trust-manager Bundle writes its target ConfigMap asynchronously, outside
+# the rendered input, so that ConfigMap is checked explicitly rather than via `wait`.
+_HEALTH_CHECK_KINDS = ("Namespace", "Cluster", "Database", "Deployment", "Certificate", "Bundle")
+_CNPG_DATABASE_READY = (
+    "has(status.applied) && status.applied && "
+    "has(status.observedGeneration) && status.observedGeneration == metadata.generation"
+)
 _AGENTPLANE_STAGING_ACTIONS_SPEC = actions_constructs.ActionsEnvSpec(
     namespace="agentplane-staging",
     replicas=_STAGING_REPLICAS.replicas,
@@ -563,26 +592,89 @@ def staging_chart(app: App) -> Chart:
     )
 
 
+def _agentplane_health_checks(chart: Chart, namespace: str) -> list[KustomizationSpecHealthChecks]:
+    # `Chart.api_objects` is direct children only; every object here sits inside a Construct.
+    api_objects = [cast(ApiObject, node) for node in chart.node.find_all() if ApiObject.is_api_object(node)]
+    objects = sorted(
+        (obj for obj in api_objects if obj.kind in _HEALTH_CHECK_KINDS),
+        key=lambda obj: _HEALTH_CHECK_KINDS.index(obj.kind),
+    )
+    checks = [
+        KustomizationSpecHealthChecks(
+            api_version=obj.api_version, kind=obj.kind, name=obj.name, namespace=obj.metadata.namespace
+        )
+        for obj in objects
+    ]
+    # trust-manager names a Bundle's target ConfigMap after the Bundle.
+    checks.extend(
+        KustomizationSpecHealthChecks(api_version="v1", kind="ConfigMap", name=obj.name, namespace=namespace)
+        for obj in objects
+        if obj.kind == "Bundle"
+    )
+    return checks
+
+
 def _generate_agentplane(
-    root: Path, env_dir: str, *, chart_builder: Callable[[App], Chart], extra_resources: Sequence[str] = ()
+    root: Path,
+    env_dir: str,
+    *,
+    namespace: str,
+    description: str,
+    depends_on: Sequence[str],
+    chart_builder: Callable[[App], Chart],
+    extra_resources: Sequence[str] = (),
 ) -> None:
     """Synthesize `chart_builder`'s output (`staging_chart`/`testing_chart`) into
-    `env_dir` as a single `agentplane.k8s.yaml`, replacing what used to be three
-    separate generated files (namespace/RBAC, the model-catalog ConfigMap, and the
-    workload services) each with their own Chart. Single failure domain by design --
+    `env_dir` as a single `agentplane.k8s.yaml`. Single failure domain by design --
     including the CNPG Postgres `Cluster` -- accepted for both non-production
     environments.
 
-    Also (re)writes `env_dir`'s root Kustomization, now just this one generated file
-    plus `extra_resources` (staging's hand-written `web-push-vapid.sops.yaml`). The
-    sibling image-pins/ Component stays hand-written, same as litellm/ha-mcp.
+    Also (re)writes `env_dir`'s Flux Kustomization (health checks derived from the
+    chart's own objects) and its root Kustomization, just this one generated file plus
+    `extra_resources` (staging's hand-written `web-push-vapid.sops.yaml`). The sibling
+    image-pins/ Component stays hand-written, same as litellm/ha-mcp.
     """
     out_dir = root / env_dir
     out_dir.mkdir(parents=True, exist_ok=True)
     app = App(outdir=str(out_dir))
-    chart_builder(app)
+    chart = chart_builder(app)
     app.synth()
 
+    _write_yaml(
+        out_dir / "flux-kustomization.yaml",
+        flux_kustomization(
+            namespace,
+            description=description,
+            spec=KustomizationSpec(
+                retry_interval="1m",
+                interval="10m",
+                timeout="10m",
+                path=f"./{env_dir}",
+                prune=True,
+                # This one Kustomization owns the CNPG Cluster's PVCs; pruning on
+                # deletion would take the database with them.
+                deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
+                health_checks=_agentplane_health_checks(chart, namespace),
+                health_check_exprs=[
+                    KustomizationSpecHealthCheckExprs(
+                        api_version="postgresql.cnpg.io/v1", kind="Database", current=_CNPG_DATABASE_READY
+                    )
+                ],
+                decryption=(
+                    KustomizationSpecDecryption(
+                        provider=KustomizationSpecDecryptionProvider.SOPS,
+                        secret_ref=KustomizationSpecDecryptionSecretRef(name="sops-age-cluster-secrets"),
+                    )
+                    if any(resource.endswith(".sops.yaml") for resource in extra_resources)
+                    else None
+                ),
+                source_ref=KustomizationSpecSourceRef(
+                    kind=KustomizationSpecSourceRefKind.EXTERNAL_ARTIFACT, name=namespace, namespace=NAMESPACE
+                ),
+                depends_on=[KustomizationSpecDependsOn(name=dep) for dep in depends_on],
+            ),
+        ),
+    )
     _write_yaml(
         out_dir / "kustomization.yaml",
         kustomize_kustomization(resources=["agentplane.k8s.yaml", *extra_resources], components=["./image-pins"]),
@@ -656,9 +748,28 @@ def generate_manifests(root: Path) -> None:
     _generate_litellm_app(root)
     _generate_ha_mcp(root)
     _generate_agentplane(
-        root, _AGENTPLANE_STAGING_DIR, chart_builder=staging_chart, extra_resources=["web-push-vapid.sops.yaml"]
+        root,
+        _AGENTPLANE_STAGING_DIR,
+        namespace=_AGENTPLANE_STAGING_SPEC.namespace,
+        description=(
+            "Complete Agentplane staging environment, including namespace, database, egress, LLM ingress, "
+            "Actions, app, runner template, and operator RBAC."
+        ),
+        depends_on=_AGENTPLANE_STAGING_DEPENDS_ON,
+        chart_builder=staging_chart,
+        extra_resources=["web-push-vapid.sops.yaml"],
     )
-    _generate_agentplane(root, _AGENTPLANE_TESTING_DIR, chart_builder=testing_chart)
+    _generate_agentplane(
+        root,
+        _AGENTPLANE_TESTING_DIR,
+        namespace=_AGENTPLANE_TESTING_SPEC.namespace,
+        description=(
+            "Complete Agentplane testing environment, including namespace, database, Dex, egress, LLM ingress, "
+            "Actions fixtures, app, runner template, and operator RBAC."
+        ),
+        depends_on=_AGENTPLANE_DEPENDS_ON,
+        chart_builder=testing_chart,
+    )
     _generate_haku_openclaw_spike_config(root)
     _generate_public_coder_agent_config(root)
 

@@ -1,23 +1,36 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: agentplane-staging
-  namespace: ducktape-flux
   annotations:
     description: Complete Agentplane staging environment, including namespace, database, egress, LLM ingress, Actions, app, runner template, and operator RBAC.
+  name: agentplane-staging
+  namespace: ducktape-flux
 spec:
-  retryInterval: 1m
-  interval: 10m
-  timeout: 10m
-  path: ./cluster/k8s/agentplane-staging
-  prune: true
-  # Safety net for a planned cdk8s conversion of app/'s model-catalog config that may
-  # move which Kustomization owns an object: see cluster/cdk8s/AGENTS.md's two-step
-  # deletionPolicy landing. This single Kustomization also owns the CNPG postgres
-  # Cluster's PVCs in db/.
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
   deletionPolicy: Orphan
-  # The trust-manager Bundle creates this ConfigMap asynchronously and it is not
-  # part of the rendered input, so use explicit checks rather than wait:true.
+  dependsOn:
+    - name: agentplane-crds
+    - name: agent-sandbox-controller
+    - name: cert-manager-environment
+    - name: cert-manager-trust
+    - name: claude-rbac
+    - name: cnpg
+    - name: external-creds
+    - name: external-secrets-config
+    - name: forgejo-images
+    - name: gateway
+    - name: litellm-keys-tf
+    - name: local-path-provisioner
+    - name: reflector
+    - name: sso-providers-tf
+    - name: ssh-mcp
+  healthCheckExprs:
+    - apiVersion: postgresql.cnpg.io/v1
+      current: has(status.applied) && status.applied && has(status.observedGeneration) && status.observedGeneration == metadata.generation
+      kind: Database
   healthChecks:
     - apiVersion: v1
       kind: Namespace
@@ -44,11 +57,11 @@ spec:
       namespace: agentplane-staging
     - apiVersion: apps/v1
       kind: Deployment
-      name: agentplane-actions
+      name: agentplane-app
       namespace: agentplane-staging
     - apiVersion: apps/v1
       kind: Deployment
-      name: agentplane-app
+      name: agentplane-actions
       namespace: agentplane-staging
     - apiVersion: cert-manager.io/v1
       kind: Certificate
@@ -61,48 +74,12 @@ spec:
       kind: ConfigMap
       name: agentplane-egress-ca
       namespace: agentplane-staging
-  healthCheckExprs:
-    - apiVersion: postgresql.cnpg.io/v1
-      kind: Database
-      current: >-
-        has(status.applied) && status.applied &&
-        has(status.observedGeneration) && status.observedGeneration == metadata.generation
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
+  interval: 10m
+  path: ./cluster/k8s/agentplane-staging
+  prune: true
+  retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
     name: agentplane-staging
     namespace: ducktape-flux
-  dependsOn:
-    - name: agentplane-crds
-      namespace: ducktape-flux
-    - name: agent-sandbox-controller
-      namespace: ducktape-flux
-    - name: cert-manager-environment
-      namespace: ducktape-flux
-    - name: cert-manager-trust
-      namespace: ducktape-flux
-    - name: claude-rbac
-      namespace: ducktape-flux
-    - name: cnpg
-      namespace: ducktape-flux
-    - name: external-creds
-      namespace: ducktape-flux
-    - name: external-secrets-config
-      namespace: ducktape-flux
-    - name: forgejo-images
-      namespace: ducktape-flux
-    - name: gateway
-      namespace: ducktape-flux
-    - name: litellm-keys-tf
-      namespace: ducktape-flux
-    - name: local-path-provisioner
-      namespace: ducktape-flux
-    - name: reflector
-      namespace: ducktape-flux
-    - name: sso-providers-tf
-      namespace: ducktape-flux
-    - name: ssh-mcp
-      namespace: ducktape-flux
+  timeout: 10m

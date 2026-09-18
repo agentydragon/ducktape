@@ -35,8 +35,10 @@ filegroup(
 exports_files(
     [
         "agentplane-staging/agentplane.k8s.yaml",
+        "agentplane-staging/flux-kustomization.yaml",
         "agentplane-staging/kustomization.yaml",
         "agentplane-testing/agentplane.k8s.yaml",
+        "agentplane-testing/flux-kustomization.yaml",
         "agentplane-testing/kustomization.yaml",
         "agents/haku-openclaw-spike/app/haku-openclaw-spike-config.k8s.yaml",
         "agents/public-coder-agent/app/public-coder-agent-config.k8s.yaml",
