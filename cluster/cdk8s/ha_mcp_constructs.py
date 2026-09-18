@@ -89,6 +89,7 @@ _APP_UPSTREAM_PORT = 8086
 _APP_FACADE_PORT = 8765
 _APP_METRICS_PORT = 9090
 _APP_LABELS = {"app.kubernetes.io/name": _APP_NAME}
+_APP_DATA_DIR = "/data"
 
 
 class HaMcpCredentialsProvisioner(Construct):
@@ -243,8 +244,8 @@ class HaMcpApp(Construct):
                 "ENVIRONMENT": "production",
                 "LOG_LEVEL": "INFO",
                 "BACKUP_HINT": "normal",
-                "HA_MCP_CONFIG_DIR": "/data",
-                "HAMCP_BACKUP_DIR": "/data/backups",
+                "HA_MCP_CONFIG_DIR": _APP_DATA_DIR,
+                "HAMCP_BACKUP_DIR": f"{_APP_DATA_DIR}/backups",
                 "ENABLE_TOOL_SEARCH": "false",
                 "READ_ONLY_MODE": "false",
                 "ENABLE_BETA_FEATURES": "false",
@@ -318,7 +319,7 @@ class HaMcpApp(Construct):
             ),
         )
         deployment.containers[0].mount("/tmp", tmp_volume)
-        deployment.containers[0].mount("/data", data_volume)
+        deployment.containers[0].mount(_APP_DATA_DIR, data_volume)
 
         deployment.add_container(
             name="facade",

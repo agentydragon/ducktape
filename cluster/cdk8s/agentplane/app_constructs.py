@@ -129,6 +129,14 @@ _CONTAINER_PORT = 8080
 _ZONE = "hil-ovh"
 _LABELS = {"app.kubernetes.io/name": _NAME}
 _RUNNER_LABELS = {"app.kubernetes.io/name": "agentplane-runner"}
+_CONFIG_DIR = "/etc/agentplane"
+# Shared by the runner's --state-dir flag, its container volumeMount, and the
+# SandboxTemplate's own VolumeClaimTemplate -- all three must name the same volume.
+_STATE_VOLUME_NAME = "state"
+_STATE_DIR = "/state"
+# Shared by the runner's egress-ca volumeMount and its pod-level volume -- Kubernetes
+# matches the two by this name.
+_EGRESS_CA_VOLUME_NAME = "egress-ca"
 
 
 # cdk8s_plus_34's Python stub doesn't declare ApiResource as implementing
@@ -270,7 +278,7 @@ class App(Construct):
         token_subjects = json.dumps([f"system:serviceaccount:{namespace}:agentplane-agent"])
         return {
             "AGENTPLANE_ACTION_FEDERATION": EnvValue.from_config_map(action_federation, "action-federation"),
-            "AGENTPLANE_CONFIG_FILE": EnvValue.from_value("/etc/agentplane/config.yaml"),
+            "AGENTPLANE_CONFIG_FILE": EnvValue.from_value(f"{_CONFIG_DIR}/config.yaml"),
             "AGENTPLANE_DB_USER": EnvValue.from_secret_value(SecretValue(secret=postgres_app, key="username")),
             "AGENTPLANE_DB_PASSWORD": EnvValue.from_secret_value(SecretValue(secret=postgres_app, key="password")),
             "AGENTPLANE_DB_HOST": EnvValue.from_secret_value(SecretValue(secret=postgres_app, key="host")),
@@ -376,7 +384,7 @@ class App(Construct):
         )
         config = ConfigMap.from_config_map_name(self, "app-config-ref", "agentplane-app-config")
         volume = Volume.from_config_map(self, "config-volume", config)
-        deployment.containers[0].mount("/etc/agentplane", volume, read_only=True)
+        deployment.containers[0].mount(_CONFIG_DIR, volume, read_only=True)
 
         # With the database (cnpg_conventions R5); it had no pin at all while the
         # database was Proxmox-single, which is the rule already unmet rather than a
@@ -732,7 +740,7 @@ class App(Construct):
         ]
         args = [
             "--state-dir",
-            "/state",
+            _STATE_DIR,
             "--listen",
             "0.0.0.0:7000",
             "--claude-binary",
@@ -780,13 +788,15 @@ class App(Construct):
                 },
             ),
             volume_mounts=[
-                SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(name="state", mount_path="/state"),
+                SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(
+                    name=_STATE_VOLUME_NAME, mount_path=_STATE_DIR
+                ),
                 # Public roots + cluster root + the proxy's interception root, over
                 # the image's own bundle at the path every client falls back to. A
                 # subPath mount does not follow ConfigMap updates: a CA rotation
                 # reaches a sandbox at its next Pod.
                 SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(
-                    name="egress-ca",
+                    name=_EGRESS_CA_VOLUME_NAME,
                     mount_path="/etc/ssl/certs/ca-certificates.crt",
                     sub_path="ca-certificates.crt",
                     read_only=True,
@@ -870,7 +880,7 @@ class App(Construct):
                         ),
                         volumes=[
                             SandboxTemplateSpecPodTemplateSpecVolumes(
-                                name="egress-ca",
+                                name=_EGRESS_CA_VOLUME_NAME,
                                 config_map=SandboxTemplateSpecPodTemplateSpecVolumesConfigMap(
                                     name=self.spec.runner_ca_configmap_name
                                 ),
@@ -895,7 +905,7 @@ class App(Construct):
                 ),
                 volume_claim_templates=[
                     SandboxTemplateSpecVolumeClaimTemplates(
-                        metadata=SandboxTemplateSpecVolumeClaimTemplatesMetadata(name="state"),
+                        metadata=SandboxTemplateSpecVolumeClaimTemplatesMetadata(name=_STATE_VOLUME_NAME),
                         spec=SandboxTemplateSpecVolumeClaimTemplatesSpec(
                             # The bulk tier, and the only one a sandbox can have: OVH's
                             # `tier=ssd` nodes are control-plane, and a sandbox is not

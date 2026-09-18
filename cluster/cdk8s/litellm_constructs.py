@@ -70,6 +70,7 @@ from cluster.cdk8s.probes import http_probe
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _CONTAINER_PORT = 4000
+_CONFIG_DIR = "/etc/litellm"
 
 
 @dataclass(frozen=True)
@@ -309,7 +310,7 @@ class LiteLLMProxy(Construct):
         deployment.add_container(
             name="litellm",
             image=f"{self.spec.image_name}:{_PLACEHOLDER_TAG}",
-            args=["--config", "/etc/litellm/config.yaml"],
+            args=["--config", f"{_CONFIG_DIR}/config.yaml"],
             ports=[ContainerPort(name="http", number=_CONTAINER_PORT, protocol=Protocol.TCP)],
             env_variables=self._env_variables(),
             image_pull_policy=self.spec.image_pull_policy,
@@ -323,7 +324,7 @@ class LiteLLMProxy(Construct):
         volume = Volume.from_config_map(
             self, "config-volume", config_map, items={"config.yaml": PathMapping(path="config.yaml")}
         )
-        deployment.containers[0].mount("/etc/litellm", volume, read_only=True)
+        deployment.containers[0].mount(_CONFIG_DIR, volume, read_only=True)
 
         if self.spec.node_affinity is not None:
             deployment.scheduling.attract(self.spec.node_affinity)

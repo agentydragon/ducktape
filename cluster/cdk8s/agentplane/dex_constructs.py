@@ -95,6 +95,7 @@ _ISSUER = "https://agentplane-dex-testing.allegedly.works/dex"
 # acceptance suite reads, so the two can't name different identities.
 _ACCEPTANCE_EMAIL = "test-user@agentplane-testing.invalid"
 _ACCEPTANCE_USERNAME = "test-user"
+_CONFIG_DIR = "/etc/dex"
 
 
 def _password_generator(scope: Construct, id: str, *, name: str, length: int, digits: int) -> None:
@@ -305,7 +306,7 @@ def _add_deployment(scope: Construct) -> Deployment:
         image=_IMAGE,
         # A specific pinned release, not a floating tag -- avoid re-pulling on every restart.
         image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
-        args=["dex", "serve", "/etc/dex/config.yaml"],
+        args=["dex", "serve", f"{_CONFIG_DIR}/config.yaml"],
         env_variables={
             "DEX_CLIENT_ID": EnvValue.from_secret_value(SecretValue(secret=oidc_secret, key="client-id")),
             "DEX_CLIENT_SECRET": EnvValue.from_secret_value(SecretValue(secret=oidc_secret, key="client-secret")),
@@ -329,7 +330,7 @@ def _add_deployment(scope: Construct) -> Deployment:
         scope, "config-volume", config_secret, items={"config.yaml": PathMapping(path="config.yaml")}
     )
     tmp_volume = Volume.from_empty_dir(scope, "tmp-volume", "tmp")
-    deployment.containers[0].mount("/etc/dex", config_volume, read_only=True)
+    deployment.containers[0].mount(_CONFIG_DIR, config_volume, read_only=True)
     deployment.containers[0].mount("/tmp", tmp_volume)
 
     # cdk8s_plus_34's PodSecurityContextProps has no seccompProfile builder (only
