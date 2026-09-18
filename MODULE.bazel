@@ -198,7 +198,7 @@ use_repo(tf, "tf_toolchains")
 register_toolchains("@tf_toolchains//:all")
 
 # Python OCI image layering (aspect_rules_py)
-bazel_dep(name = "aspect_rules_py", version = "1.12.1")
+bazel_dep(name = "aspect_rules_py", version = "2.0.0-alpha.6")
 
 # Container images (rules_oci)
 bazel_dep(name = "rules_oci", version = "2.3.0")

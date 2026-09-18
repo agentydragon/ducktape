@@ -1,8 +1,7 @@
-load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_python//python:defs.bzl", "py_binary", "py_test")
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "aspect_py_binary", "py_image_layer", "py_library")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 py_library(
