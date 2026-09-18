@@ -190,6 +190,17 @@ data:
     default_policies:
       - basic
     egress_admin_url: http://agentplane-egress-admin.agentplane-testing.svc:8081
+    action_federation:
+      mode: direct
+      service_url: http://agentplane-actions.agentplane-testing.svc.cluster.local:8080
+      login_jwks_uri: https://agentplane-dex-testing.allegedly.works/dex/keys
+      login_token_profile: dex
+      target:
+        issuer: https://agentplane-dex-testing.allegedly.works/dex
+        audience: agentplane-testing
+        jwks_uri: https://agentplane-dex-testing.allegedly.works/dex/keys
+        token_profile: dex
+      scope: openid
 immutable: false
 ---
 apiVersion: generators.external-secrets.io/v1alpha1
@@ -1250,7 +1261,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    configmap.reloader.stakater.com/reload: agentplane-action-federation
+    configmap.reloader.stakater.com/reload: agentplane-app-config
     secret.reloader.stakater.com/reload: agentplane-oidc
   labels:
     app.kubernetes.io/name: agentplane-app
@@ -1290,11 +1301,6 @@ spec:
             - --host=0.0.0.0
             - --port=8080
           env:
-            - name: AGENTPLANE_ACTION_FEDERATION
-              valueFrom:
-                configMapKeyRef:
-                  key: action-federation
-                  name: agentplane-action-federation
             - name: AGENTPLANE_CONFIG_FILE
               value: /etc/agentplane/config.yaml
             - name: AGENTPLANE_DB_USER
@@ -1392,11 +1398,6 @@ spec:
         - name: forgejo-images-creds
       initContainers:
         - env:
-            - name: AGENTPLANE_ACTION_FEDERATION
-              valueFrom:
-                configMapKeyRef:
-                  key: action-federation
-                  name: agentplane-action-federation
             - name: AGENTPLANE_CONFIG_FILE
               value: /etc/agentplane/config.yaml
             - name: AGENTPLANE_DB_USER
@@ -1875,6 +1876,11 @@ metadata:
   namespace: agentplane-testing
 data:
   settings.yaml: |
+    operator_oidc:
+      issuer: https://agentplane-dex-testing.allegedly.works/dex
+      audience: agentplane-testing
+      jwks_uri: https://agentplane-dex-testing.allegedly.works/dex/keys
+      token_profile: dex
     allowed_service_account_namespaces:
       - agentplane-testing
     mcp_servers:
@@ -1911,42 +1917,11 @@ data:
             auth: oauth
 immutable: false
 ---
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  annotations:
-    description: Direct Dex operator federation pins for the isolated testing Action Service.
-  name: agentplane-action-federation
-  namespace: agentplane-testing
-data:
-  action-federation: |
-    {
-      "mode": "direct",
-      "service_url": "http://agentplane-actions.agentplane-testing.svc.cluster.local:8080",
-      "login_jwks_uri": "https://agentplane-dex-testing.allegedly.works/dex/keys",
-      "login_token_profile": "dex",
-      "target": {
-        "issuer": "https://agentplane-dex-testing.allegedly.works/dex",
-        "audience": "agentplane-testing",
-        "jwks_uri": "https://agentplane-dex-testing.allegedly.works/dex/keys",
-        "token_profile": "dex"
-      },
-      "scope": "openid"
-    }
-  operator-oidc: |
-    {
-      "issuer": "https://agentplane-dex-testing.allegedly.works/dex",
-      "audience": "agentplane-testing",
-      "jwks_uri": "https://agentplane-dex-testing.allegedly.works/dex/keys",
-      "token_profile": "dex"
-    }
-immutable: false
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    configmap.reloader.stakater.com/reload: agentplane-action-federation,agentplane-actions-settings
+    configmap.reloader.stakater.com/reload: agentplane-actions-settings
     secret.reloader.stakater.com/reload: agentplane-mcp-oauth
   labels:
     app.kubernetes.io/name: agentplane-actions
@@ -2011,11 +1986,6 @@ spec:
                   name: postgres-actions
             - name: AGENTPLANE_ACTIONS_DATABASE_URL
               value: postgresql://$(AGENTPLANE_ACTIONS_DB_USER):$(AGENTPLANE_ACTIONS_DB_PASSWORD)@$(AGENTPLANE_ACTIONS_DB_HOST):$(AGENTPLANE_ACTIONS_DB_PORT)/$(AGENTPLANE_ACTIONS_DB_NAME)
-            - name: AGENTPLANE_ACTIONS_OPERATOR_OIDC
-              valueFrom:
-                configMapKeyRef:
-                  key: operator-oidc
-                  name: agentplane-action-federation
             - name: AGENTPLANE_ACTIONS_CONFIG_FILE
               value: /etc/agentplane-actions/settings.yaml
           image: git.allegedly.works/ducktape-ci/agentplane-action-service:unset
@@ -2097,11 +2067,6 @@ spec:
                   name: postgres-actions
             - name: AGENTPLANE_ACTIONS_DATABASE_URL
               value: postgresql://$(AGENTPLANE_ACTIONS_DB_USER):$(AGENTPLANE_ACTIONS_DB_PASSWORD)@$(AGENTPLANE_ACTIONS_DB_HOST):$(AGENTPLANE_ACTIONS_DB_PORT)/$(AGENTPLANE_ACTIONS_DB_NAME)
-            - name: AGENTPLANE_ACTIONS_OPERATOR_OIDC
-              valueFrom:
-                configMapKeyRef:
-                  key: operator-oidc
-                  name: agentplane-action-federation
             - name: AGENTPLANE_ACTIONS_CONFIG_FILE
               value: /etc/agentplane-actions/settings.yaml
           image: git.allegedly.works/ducktape-ci/agentplane-action-service-migrate:unset

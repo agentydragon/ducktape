@@ -232,14 +232,10 @@ class App(Construct):
 
     def _container_env(self) -> dict[str, EnvValue]:
         namespace = self.env.namespace
-        action_federation = ConfigMap.from_config_map_name(
-            self, "action-federation-config-ref", "agentplane-action-federation"
-        )
         postgres_app = Secret.from_secret_name(self, "postgres-app-secret", "postgres-app")
         oidc_secret = Secret.from_secret_name(self, "agentplane-oidc-secret", "agentplane-oidc")
         token_subjects = json.dumps([f"system:serviceaccount:{namespace}:agentplane-agent"])
         return {
-            env_name(Settings, "action_federation"): EnvValue.from_config_map(action_federation, "action-federation"),
             CONFIG_FILE_ENV: EnvValue.from_value(f"{_CONFIG_DIR}/config.yaml"),
             "AGENTPLANE_DB_USER": EnvValue.from_secret_value(SecretValue(secret=postgres_app, key="username")),
             "AGENTPLANE_DB_PASSWORD": EnvValue.from_secret_value(SecretValue(secret=postgres_app, key="password")),
@@ -278,7 +274,7 @@ class App(Construct):
                     # A re-minted client secret otherwise leaves the pod on the old
                     # one, and every login 401s.
                     "secret.reloader.stakater.com/reload": "agentplane-oidc",
-                    "configmap.reloader.stakater.com/reload": "agentplane-action-federation",
+                    "configmap.reloader.stakater.com/reload": "agentplane-app-config",
                 },
             ),
             pod_metadata=ApiObjectMetadata(labels=_LABELS),
