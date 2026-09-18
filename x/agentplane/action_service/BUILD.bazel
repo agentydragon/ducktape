@@ -570,31 +570,6 @@ py_test(
     ],
 )
 
-py_test(
-    name = "test_settings",
-    srcs = ["test_settings.py"],
-    data = [
-        "//cluster/k8s:agentplane_actions_remote_mcp",
-        "@multitool//tools/kustomize",
-    ],
-    deps = [
-        ":catalog",
-        ":conftest",
-        ":main",
-        ":mcp_executor",
-        ":push",
-        ":runtime",
-        "//:conftest",
-        "//util/bazel:runfiles",
-        "@pypi//cryptography",
-        "@pypi//more_itertools",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
-)
-
 py_library(
     name = "updates",
     srcs = ["updates.py"],
@@ -912,6 +887,7 @@ py_test(
         ":push",
         "//:conftest",
         "//x/agentplane:subjects",
+        "@pypi//cryptography",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",

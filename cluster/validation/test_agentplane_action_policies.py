@@ -3,8 +3,8 @@
 kubeconform checks them against the CRD schema; the Action Service parses `spec` more strictly
 (an unknown policy kind or key, an invalid JSON Schema), and on the live cluster a refused object
 contributes nothing and reports `Ready=False`. Running that parse here over every set and binding
-under cluster/k8s fails CI instead, and pins the cross-object relations: each set a binding or a
-launch preset names is defined in its namespace.
+under cluster/k8s fails CI instead, and pins the cross-object relation: each set a binding names
+is defined in its namespace.
 """
 
 from __future__ import annotations
@@ -14,16 +14,10 @@ from typing import Any
 import pytest
 import pytest_bazel
 import yaml
-from more_itertools import one
 
 from util.bazel.runfiles import get_required_path
 from x.agentplane.action_service.policies.resources import BindingSpec, PolicySetSpec
 from x.agentplane.crd_group import GROUP, VERSION
-
-# pytest_plugins loads cluster.validation.agentplane_fixtures by name; gazelle cannot see
-# the dependency.
-# gazelle:include_dep //cluster/validation:agentplane_fixtures
-pytest_plugins = ("cluster.validation.agentplane_fixtures",)
 
 _K8S_DIR = get_required_path("_main/cluster/k8s/kustomization.yaml").parent
 _DOCUMENTS = [
@@ -36,9 +30,6 @@ _DOCUMENTS = [
 ]
 _POLICY_SETS = [document for document in _DOCUMENTS if document["kind"] == "ActionPolicySet"]
 _BINDINGS = [document for document in _DOCUMENTS if document["kind"] == "ActionPolicyBinding"]
-# The directory name for each environment's integration-app config ConfigMap chart is the
-# namespace its presets bind in.
-_NAMESPACES = ["agentplane-staging", "agentplane-testing"]
 
 
 def _key(document: dict[str, Any]) -> str:
@@ -61,28 +52,6 @@ def test_binding_spec_parses_and_names_defined_sets(document: dict[str, Any]) ->
     }
     missing = set(spec.policy_sets) - defined
     assert not missing, f"{_key(document)} names sets not defined in {namespace}: {sorted(missing)}"
-
-
-@pytest.mark.parametrize("namespace", _NAMESPACES)
-def test_preset_action_policy_sets_are_defined(
-    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
-) -> None:
-    """A launch preset binds every Sandbox it launches to the sets it names; the app refuses a
-    launch naming a set the namespace does not hold, so a stale name here breaks every launch."""
-    config_map = one(
-        doc
-        for doc in agentplane_manifests[namespace]
-        if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "agentplane-app-config"
-    )
-    config = yaml.safe_load(config_map["data"]["config.yaml"])
-    defined = {
-        policy_set["metadata"]["name"]
-        for policy_set in _POLICY_SETS
-        if policy_set["metadata"]["namespace"] == namespace
-    }
-    for preset_name, preset in config["sandbox_presets"].items():
-        missing = set(preset.get("action_policy_sets", [])) - defined
-        assert not missing, f"{namespace} preset {preset_name} names sets not defined there: {sorted(missing)}"
 
 
 def test_policy_objects_are_git_managed() -> None:

@@ -1,6 +1,6 @@
 # gazelle:ignore
 
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//cluster/cdk8s:__pkg__"])
 
@@ -83,6 +83,7 @@ py_library(
     srcs = ["egress_constructs.py"],
     deps = [
         ":actions_constructs",
+        ":app_settings",
         ":cilium_helpers",
         ":container_security",
         ":db_constructs",
@@ -194,6 +195,7 @@ py_library(
     name = "actions_staging_policies",
     srcs = ["actions_staging_policies.py"],
     deps = [
+        ":staging_config",
         "//x/agentplane/crds:actionpolicybinding",
         "//x/agentplane/crds:actionpolicyset",
         "@pypi//cdk8s",
@@ -243,5 +245,46 @@ py_library(
     deps = [
         ":app_settings",
         "//cluster/cdk8s:model_rosters",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        "//cluster/cdk8s:generate_manifests_lib",
+        "@pypi//cdk8s",
+        "@pypi//pytest",
+    ],
+)
+
+# The conftest's in-memory synth needs jsii's Node runtime.
+py_test(
+    name = "test_actions_constructs",
+    srcs = ["test_actions_constructs.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_egress_constructs",
+    srcs = ["test_egress_constructs.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":app_settings",
+        ":conftest",
+        "//:conftest",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

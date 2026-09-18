@@ -105,7 +105,7 @@ find-and-replace.
   `name`/`namespace` the chart itself uses, e.g. `_generate_ha_mcp`) — needs
   `cluster/k8s/clickhouse/schema/` and `cluster/k8s/aiquota/` converted first.
 - **`ssh-mcp` known_hosts / sshpiper pinning** (`test_ssh_mcp_known_hosts.py`,
-  and `x/agentplane/action_service/test_settings.py::test_rendered_ssh_binding_uses_shared_bearer_file`).
+  and `cluster/validation/test_ssh_mcp_consumers.py`).
   `cluster/k8s/ssh-mcp/known_hosts`, `ssh_keys/public-coder-devbox-host.pub`,
   `cluster/k8s/ssh-mcp/settings.yaml`, and
   `cluster/k8s/agents/public-coder-agent/sshpiper/pipe-devbox.yaml` all hand-copy

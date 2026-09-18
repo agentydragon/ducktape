@@ -134,7 +134,7 @@ class ActionsEnvSpec:
     # staging spreads its 2 replicas across nodes; testing's single replica has
     # nothing to spread.
     topology_spread: bool
-    enable_pdb: bool
+    pdb_min_available: int | None
     hostname: str
     settings: dict
     action_federation: dict
@@ -175,8 +175,8 @@ class Actions(Construct):
         self._add_service(deployment)
         self._add_http_route()
         self._add_network_policy()
-        if spec.enable_pdb:
-            self._add_pdb()
+        if spec.pdb_min_available is not None:
+            self._add_pdb(spec.pdb_min_available)
 
     def _add_service_account(self) -> ServiceAccount:
         # cdk8s_plus_34 defaults ServiceAccounts to automount_token=False; the Action
@@ -542,12 +542,13 @@ class Actions(Construct):
             ),
         )
 
-    def _add_pdb(self) -> None:
+    def _add_pdb(self, min_available: int) -> None:
         k8s.KubePodDisruptionBudget(
             self,
             "pdb",
             metadata=k8s.ObjectMeta(name=_NAME, namespace=self.spec.namespace),
             spec=k8s.PodDisruptionBudgetSpec(
-                min_available=k8s.IntOrString.from_number(1), selector=k8s.LabelSelector(match_labels=_LABELS)
+                min_available=k8s.IntOrString.from_number(min_available),
+                selector=k8s.LabelSelector(match_labels=_LABELS),
             ),
         )

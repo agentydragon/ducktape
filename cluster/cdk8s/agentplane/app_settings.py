@@ -6,6 +6,10 @@ routes and policies passed in here.
 from __future__ import annotations
 
 _THREAD_PRESET_PUBLIC_CODER_CODEX = "public-coder-codex"
+# The EgressPolicy objects egress_constructs creates in every environment, named here
+# because the presets bind them.
+BASIC_POLICY = "basic"
+GITHUB_PUBLIC_POLICY = "github-public"
 
 
 def settings(
@@ -42,7 +46,7 @@ def settings(
             "public-coder": {
                 "title": "Public coder",
                 "template": "agentplane-runner",
-                "policies": ["basic", "github-public"],
+                "policies": [BASIC_POLICY, GITHUB_PUBLIC_POLICY],
                 **({"action_policy_sets": action_policy_sets} if action_policy_sets is not None else {}),
                 "thread_preset": _THREAD_PRESET_PUBLIC_CODER_CODEX,
                 "bootstrap": (
@@ -57,7 +61,7 @@ def settings(
         # Granted to every sandbox before whatever the operator picks: without the model
         # endpoint a sandbox has no agent, so it is not a choice (see this namespace's
         # egress/ directory).
-        "default_policies": ["basic"],
+        "default_policies": [BASIC_POLICY],
         # The egress proxy's admin port (x/agentplane/egress `Settings.admin_port`), asked
         # for each sandbox's recent decisions; until the proxy Deployment lands the page
         # shows the rules alone.

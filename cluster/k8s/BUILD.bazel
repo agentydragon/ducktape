@@ -289,8 +289,5 @@ filegroup(
         "agentplane-testing/**/*",
         "ssh-mcp/**/*",
     ]),
-    visibility = [
-        "//cluster/validation:__pkg__",
-        "//x/agentplane/action_service:__pkg__",
-    ],
+    visibility = ["//cluster/validation:__pkg__"],
 )

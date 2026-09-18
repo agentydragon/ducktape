@@ -14,7 +14,6 @@ from typing import Any
 import pytest
 import pytest_bazel
 from more_itertools import one
-from pydantic import ValidationError
 
 from x.agentplane.egress.main import Settings
 
@@ -64,47 +63,6 @@ def test_the_deployed_configuration_parses_into_settings(
     assert namespace in settings.allowed_service_account_namespaces, (
         "the sandboxes run beside the rules, so their namespace has to be one a bearer may come from"
     )
-
-
-def test_a_second_workload_namespace_is_another_list_entry(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, agentplane_manifests: dict[str, list[dict[str, Any]]]
-) -> None:
-    """What hosting an agent elsewhere costs: one more entry in the settings file."""
-    config = tmp_path / "settings.yaml"
-    config.write_text("allowed_service_account_namespaces:\n  - agentplane-staging\n  - public-coder\n")
-    monkeypatch.setenv(CONFIG_FILE_ENV, str(config))
-
-    settings = Settings(_cli_parse_args=[*_proxy_args(agentplane_manifests["agentplane-staging"]), DATABASE_URL])
-
-    assert settings.allowed_service_account_namespaces == frozenset({"agentplane-staging", "public-coder"})
-
-
-@pytest.mark.parametrize("namespace", NAMESPACES)
-def test_a_deployment_naming_no_workload_namespace_is_refused(
-    namespace: str,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    agentplane_manifests: dict[str, list[dict[str, Any]]],
-) -> None:
-    """The allowlist is what lets a bearer be presented at all, so an empty one accepts nothing and
-    is a misconfiguration to fail on at startup rather than serve."""
-    config = tmp_path / "settings.yaml"
-    config.write_text("{}\n")
-    monkeypatch.setenv(CONFIG_FILE_ENV, str(config))
-
-    with pytest.raises(ValidationError, match="allowed_service_account_namespaces"):
-        Settings(_cli_parse_args=[*_proxy_args(agentplane_manifests[namespace]), DATABASE_URL])
-
-
-def test_a_settings_file_that_is_not_there_is_refused(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, agentplane_manifests: dict[str, list[dict[str, Any]]]
-) -> None:
-    """pydantic-settings ignores an absent YAML file, which would leave a bound deployment running on
-    defaults. A path the deployment names and the cluster does not mount has to be fatal instead."""
-    monkeypatch.setenv(CONFIG_FILE_ENV, str(tmp_path / "never-written.yaml"))
-
-    with pytest.raises(ValueError, match="not a regular file"):
-        Settings(_cli_parse_args=[*_proxy_args(agentplane_manifests["agentplane-staging"]), DATABASE_URL])
 
 
 if __name__ == "__main__":
