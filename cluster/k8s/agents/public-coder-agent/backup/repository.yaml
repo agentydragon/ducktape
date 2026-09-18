@@ -22,11 +22,11 @@ spec:
   data:
     - secretKey: AWS_ACCESS_KEY_ID
       remoteRef:
-        key: public-coder-agent-volsync-s3
+        key: public-coder-agent-seaweedfs-credentials
         property: AWS_ACCESS_KEY_ID
     - secretKey: AWS_SECRET_ACCESS_KEY
       remoteRef:
-        key: public-coder-agent-volsync-s3
+        key: public-coder-agent-seaweedfs-credentials
         property: AWS_SECRET_ACCESS_KEY
     - secretKey: RESTIC_PASSWORD
       remoteRef:
