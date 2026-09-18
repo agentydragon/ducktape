@@ -109,6 +109,9 @@ from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
+from x.agentplane.egress.database_migrate import MigrationSettings
+from x.agentplane.egress.main import CONFIG_FILE_ENV, Settings
+from x.agentplane.settings_contract import cli_args, env_name, settings_file
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _NAME = "agentplane-egress"
@@ -379,7 +382,11 @@ class Egress(Construct):
             self,
             "settings",
             metadata=metadata(f"{_NAME}-settings", self.spec.namespace),
-            data={"settings.yaml": yaml_config({"allowed_service_account_namespaces": [self.spec.namespace]})},
+            data={
+                "settings.yaml": yaml_config(
+                    settings_file(Settings, {"allowed_service_account_namespaces": [self.spec.namespace]})
+                )
+            },
         )
 
     def _add_deployment(self, service_account: ServiceAccount, settings_cm: ConfigMap) -> Deployment:
@@ -388,7 +395,7 @@ class Egress(Construct):
         confdir_volume = Volume.from_empty_dir(self, "confdir-volume", "confdir")
 
         migrate_env = {
-            "AGENTPLANE_EGRESS_DATABASE_URL": EnvValue.from_secret_value(
+            env_name(MigrationSettings, "database_url"): EnvValue.from_secret_value(
                 SecretValue(
                     secret=Secret.from_secret_name(self, "postgres-egress-secret", "postgres-egress"), key="uri"
                 )
@@ -416,26 +423,27 @@ class Egress(Construct):
             name="proxy",
             image=f"{_PROXY_IMAGE}:{_PLACEHOLDER_TAG}",
             image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
-            args=[
-                f"--rules-namespace={self.spec.namespace}",
-                "--credentials-namespace=agentplane-egress-credentials",
-                f"--listen-port={PROXY_PORT}",
-                f"--admin-port={ADMIN_PORT}",
-                f"--agent-api-port={_AGENT_API_PORT}",
-                "--ca-cert=/etc/agentplane-egress/ca/tls.crt",
-                "--ca-key=/etc/agentplane-egress/ca/tls.key",
-                "--confdir=/var/lib/agentplane-egress",
-                f"--token-audience={llm_ingress_constructs.WORKLOAD_TOKEN_AUDIENCE}",
-            ],
+            args=cli_args(
+                Settings,
+                rules_namespace=self.spec.namespace,
+                credentials_namespace="agentplane-egress-credentials",
+                listen_port=PROXY_PORT,
+                admin_port=ADMIN_PORT,
+                agent_api_port=_AGENT_API_PORT,
+                ca_cert="/etc/agentplane-egress/ca/tls.crt",
+                ca_key="/etc/agentplane-egress/ca/tls.key",
+                confdir="/var/lib/agentplane-egress",
+                token_audience=llm_ingress_constructs.WORKLOAD_TOKEN_AUDIENCE,
+            ),
             env_variables={
-                "AGENTPLANE_EGRESS_DATABASE_URL": EnvValue.from_secret_value(
+                env_name(Settings, "database_url"): EnvValue.from_secret_value(
                     SecretValue(
                         secret=Secret.from_secret_name(self, "postgres-egress-secret-proxy", "postgres-egress"),
                         key="uri",
                     )
                 ),
                 # Settings this deployment supplies as YAML rather than flags, so a list is a list.
-                "AGENTPLANE_EGRESS_CONFIG_FILE": EnvValue.from_value(_SETTINGS_PATH),
+                CONFIG_FILE_ENV: EnvValue.from_value(_SETTINGS_PATH),
             },
             ports=[
                 ContainerPort(name="proxy", number=PROXY_PORT, protocol=Protocol.TCP),

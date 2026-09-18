@@ -54,7 +54,7 @@ py_library(
     name = "resources",
     srcs = ["resources.py"],
     visibility = [
-        "//cluster/validation:__pkg__",
+        "//cluster/cdk8s/agentplane:__pkg__",
         "//x/agentplane:__subpackages__",
     ],
     deps = [

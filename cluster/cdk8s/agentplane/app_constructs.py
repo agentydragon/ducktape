@@ -127,6 +127,10 @@ from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
+from x.agentplane.app.main import CONFIG_FILE_ENV, Settings
+from x.agentplane.app.oidc import OIDCSettings
+from x.agentplane.egress import sidecar
+from x.agentplane.settings_contract import cli_args, env_name
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _NAME = "agentplane-app"
@@ -301,27 +305,29 @@ class App(Construct):
         oidc_secret = Secret.from_secret_name(self, "agentplane-oidc-secret", "agentplane-oidc")
         token_subjects = json.dumps([f"system:serviceaccount:{namespace}:agentplane-agent"])
         return {
-            "AGENTPLANE_ACTION_FEDERATION": EnvValue.from_config_map(action_federation, "action-federation"),
-            "AGENTPLANE_CONFIG_FILE": EnvValue.from_value(f"{_CONFIG_DIR}/config.yaml"),
+            env_name(Settings, "action_federation"): EnvValue.from_config_map(action_federation, "action-federation"),
+            CONFIG_FILE_ENV: EnvValue.from_value(f"{_CONFIG_DIR}/config.yaml"),
             "AGENTPLANE_DB_USER": EnvValue.from_secret_value(SecretValue(secret=postgres_app, key="username")),
             "AGENTPLANE_DB_PASSWORD": EnvValue.from_secret_value(SecretValue(secret=postgres_app, key="password")),
             "AGENTPLANE_DB_HOST": EnvValue.from_secret_value(SecretValue(secret=postgres_app, key="host")),
             "AGENTPLANE_DB_PORT": EnvValue.from_secret_value(SecretValue(secret=postgres_app, key="port")),
             "AGENTPLANE_DB_NAME": EnvValue.from_secret_value(SecretValue(secret=postgres_app, key="dbname")),
-            "AGENTPLANE_DATABASE_URL": EnvValue.from_value(
+            env_name(Settings, "database_url"): EnvValue.from_value(
                 "postgresql+asyncpg://$(AGENTPLANE_DB_USER):$(AGENTPLANE_DB_PASSWORD)"
                 "@$(AGENTPLANE_DB_HOST):$(AGENTPLANE_DB_PORT)/$(AGENTPLANE_DB_NAME)"
             ),
-            "AGENTPLANE_OIDC_ISSUER": EnvValue.from_value(self.spec.oidc_issuer),
-            "AGENTPLANE_OIDC_PUBLIC_BASE_URL": EnvValue.from_value(f"https://{self.spec.hostname}"),
-            "AGENTPLANE_OIDC_CLIENT_ID": EnvValue.from_secret_value(SecretValue(secret=oidc_secret, key="client-id")),
-            "AGENTPLANE_OIDC_CLIENT_SECRET": EnvValue.from_secret_value(
+            env_name(OIDCSettings, "issuer"): EnvValue.from_value(self.spec.oidc_issuer),
+            env_name(OIDCSettings, "public_base_url"): EnvValue.from_value(f"https://{self.spec.hostname}"),
+            env_name(OIDCSettings, "client_id"): EnvValue.from_secret_value(
+                SecretValue(secret=oidc_secret, key="client-id")
+            ),
+            env_name(OIDCSettings, "client_secret"): EnvValue.from_secret_value(
                 SecretValue(secret=oidc_secret, key="client-secret")
             ),
-            "AGENTPLANE_OIDC_SESSION_SECRET": EnvValue.from_secret_value(
+            env_name(OIDCSettings, "session_secret"): EnvValue.from_secret_value(
                 SecretValue(secret=oidc_secret, key="session-secret")
             ),
-            "AGENTPLANE_TOKEN_SUBJECTS": EnvValue.from_value(token_subjects),
+            env_name(Settings, "token_subjects"): EnvValue.from_value(token_subjects),
         }
 
     def _add_deployment(self, app_service_account: ServiceAccount) -> Deployment:
@@ -362,16 +368,17 @@ class App(Construct):
             name="app",
             image=f"{_APP_IMAGE}:{_PLACEHOLDER_TAG}",
             image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
-            args=[
-                f"--namespace={namespace}",
+            args=cli_args(
+                Settings,
+                namespace=namespace,
                 # The same namespace for now: the split the flag exists for is a
                 # separate change, which moves the Sandboxes, their template, and the
                 # runner ServiceAccount out of here.
-                f"--sandbox-namespace={namespace}",
-                f"--runner-port={_RUNNER_PORT}",
-                "--host=0.0.0.0",
-                f"--port={_CONTAINER_PORT}",
-            ],
+                sandbox_namespace=namespace,
+                runner_port=_RUNNER_PORT,
+                host="0.0.0.0",
+                port=_CONTAINER_PORT,
+            ),
             env_variables=env,
             ports=[ContainerPort(name="http", number=_CONTAINER_PORT, protocol=Protocol.TCP)],
             readiness=http_probe("/readyz", port=_CONTAINER_PORT, initial_delay_seconds=3, period_seconds=10),
@@ -696,17 +703,17 @@ class App(Construct):
             image=f"{_EGRESS_SIDECAR_IMAGE}:{_PLACEHOLDER_TAG}",
             env=[
                 SandboxTemplateSpecPodTemplateSpecContainersEnv(
-                    name="AGENTPLANE_EGRESS_SIDECAR_PROXY_HOST",
+                    name=env_name(sidecar.Settings, "proxy_host"),
                     value=f"agentplane-egress.{namespace}.svc.cluster.local",
                 ),
                 SandboxTemplateSpecPodTemplateSpecContainersEnv(
-                    name="AGENTPLANE_EGRESS_SIDECAR_PROXY_PORT", value=str(egress_constructs.PROXY_PORT)
+                    name=env_name(sidecar.Settings, "proxy_port"), value=str(egress_constructs.PROXY_PORT)
                 ),
                 SandboxTemplateSpecPodTemplateSpecContainersEnv(
-                    name="AGENTPLANE_EGRESS_SIDECAR_LISTEN_PORT", value=str(_SIDECAR_LISTEN_PORT)
+                    name=env_name(sidecar.Settings, "listen_port"), value=str(_SIDECAR_LISTEN_PORT)
                 ),
                 SandboxTemplateSpecPodTemplateSpecContainersEnv(
-                    name="AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE", value="/var/run/agentplane-egress/token"
+                    name=env_name(sidecar.Settings, "token_file"), value="/var/run/agentplane-egress/token"
                 ),
             ],
             security_context=SandboxTemplateSpecPodTemplateSpecContainersSecurityContext(

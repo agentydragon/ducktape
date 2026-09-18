@@ -57,6 +57,8 @@ from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
+from x.agentplane.llm_ingress.main import CONFIG_FILE_ENV, Settings
+from x.agentplane.settings_contract import cli_args, env_name, settings_file
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _NAME = "agentplane-llm-ingress"
@@ -120,7 +122,11 @@ class LlmIngress(Construct):
             self,
             "settings",
             metadata=metadata(f"{_NAME}-settings", self.spec.namespace),
-            data={"settings.yaml": yaml_config({"allowed_service_account_namespaces": [self.spec.namespace]})},
+            data={
+                "settings.yaml": yaml_config(
+                    settings_file(Settings, {"allowed_service_account_namespaces": [self.spec.namespace]})
+                )
+            },
         )
 
     def _add_deployment(self, service_account: ServiceAccount, settings_cm: ConfigMap) -> Deployment:
@@ -148,22 +154,23 @@ class LlmIngress(Construct):
             name="ingress",
             image=f"{_IMAGE_NAME}:{_PLACEHOLDER_TAG}",
             image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
-            args=[
-                f"--token-audience={WORKLOAD_TOKEN_AUDIENCE}",
-                "--litellm-url=http://litellm.litellm.svc.cluster.local:4000",
-                "--host=0.0.0.0",
-                f"--port={CONTAINER_PORT}",
-            ],
+            args=cli_args(
+                Settings,
+                token_audience=WORKLOAD_TOKEN_AUDIENCE,
+                litellm_url="http://litellm.litellm.svc.cluster.local:4000",
+                host="0.0.0.0",
+                port=CONTAINER_PORT,
+            ),
             env_variables={
                 # The only real model credential in this service; runners never mount it.
-                "AGENTPLANE_LLM_INGRESS_LITELLM_KEY": EnvValue.from_secret_value(
+                env_name(Settings, "litellm_key"): EnvValue.from_secret_value(
                     SecretValue(
                         secret=Secret.from_secret_name(self, "litellm-key-secret", self.spec.litellm_key_secret_name),
                         key="api-key",
                     )
                 ),
                 # Settings this deployment supplies as YAML rather than flags, so a list is a list.
-                "AGENTPLANE_LLM_INGRESS_CONFIG_FILE": EnvValue.from_value(_SETTINGS_PATH),
+                CONFIG_FILE_ENV: EnvValue.from_value(_SETTINGS_PATH),
             },
             ports=[ContainerPort(name="http", number=CONTAINER_PORT, protocol=Protocol.TCP)],
             readiness=http_probe("/healthz", port=CONTAINER_PORT, initial_delay_seconds=3, period_seconds=10),

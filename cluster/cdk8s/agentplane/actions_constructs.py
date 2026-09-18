@@ -96,6 +96,9 @@ from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
+from x.agentplane.action_service.main import CONFIG_FILE_ENV, Settings
+from x.agentplane.app import main as app_main
+from x.agentplane.settings_contract import checked_value, cli_args, env_name, settings_file
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _NAME = "agentplane-actions"
@@ -231,7 +234,7 @@ class Actions(Construct):
             self,
             "settings",
             metadata=metadata("agentplane-actions-settings", self.spec.namespace),
-            data={"settings.yaml": yaml_config(self.spec.settings)},
+            data={"settings.yaml": yaml_config(settings_file(Settings, self.spec.settings))},
         )
         action_federation_cm = ConfigMap(
             self,
@@ -242,8 +245,11 @@ class Actions(Construct):
                 annotations={"description": self.spec.action_federation_description},
             ),
             data={
-                "action-federation": json5_config(self.spec.action_federation),
-                "operator-oidc": json5_config(self.spec.operator_oidc),
+                # Each key is one reader's field: the app's `action_federation`, this service's `operator_oidc`.
+                "action-federation": json5_config(
+                    checked_value(app_main.Settings, "action_federation", self.spec.action_federation)
+                ),
+                "operator-oidc": json5_config(checked_value(Settings, "operator_oidc", self.spec.operator_oidc)),
             },
         )
         return settings_cm, action_federation_cm
@@ -262,7 +268,7 @@ class Actions(Construct):
             "AGENTPLANE_ACTIONS_DB_NAME": EnvValue.from_secret_value(
                 SecretValue(secret=postgres_actions, key="dbname")
             ),
-            "AGENTPLANE_ACTIONS_DATABASE_URL": EnvValue.from_value(
+            env_name(Settings, "database_url"): EnvValue.from_value(
                 "postgresql://$(AGENTPLANE_ACTIONS_DB_USER):$(AGENTPLANE_ACTIONS_DB_PASSWORD)"
                 "@$(AGENTPLANE_ACTIONS_DB_HOST):$(AGENTPLANE_ACTIONS_DB_PORT)/$(AGENTPLANE_ACTIONS_DB_NAME)"
             ),
@@ -270,20 +276,20 @@ class Actions(Construct):
 
     def _container_env(self, action_federation_cm: ConfigMap) -> dict[str, EnvValue]:
         env = self._database_env()
-        env["AGENTPLANE_ACTIONS_OPERATOR_OIDC"] = EnvValue.from_config_map(action_federation_cm, "operator-oidc")
-        env["AGENTPLANE_ACTIONS_CONFIG_FILE"] = EnvValue.from_value(f"{_SETTINGS_DIR}/settings.yaml")
+        env[env_name(Settings, "operator_oidc")] = EnvValue.from_config_map(action_federation_cm, "operator-oidc")
+        env[CONFIG_FILE_ENV] = EnvValue.from_value(f"{_SETTINGS_DIR}/settings.yaml")
         if self.spec.web_push_secret_name is not None:
             web_push_secret = Secret.from_secret_name(self, "web-push-secret", self.spec.web_push_secret_name)
-            env["AGENTPLANE_ACTIONS_WEB_PUSH__PRIVATE_KEY_PEM"] = EnvValue.from_secret_value(
+            env[env_name(Settings, "web_push", "private_key_pem")] = EnvValue.from_secret_value(
                 SecretValue(secret=web_push_secret, key="private-key-pem")
             )
         if self.spec.github_mcp_client_secret_name is not None:
             oauth_secret = Secret.from_secret_name(self, "mcp-oauth-secret-env", "agentplane-mcp-oauth")
-            env["AGENTPLANE_ACTIONS_OAUTH"] = EnvValue.from_secret_value(SecretValue(secret=oauth_secret, key="oauth"))
+            env[env_name(Settings, "oauth")] = EnvValue.from_secret_value(SecretValue(secret=oauth_secret, key="oauth"))
             github_secret = Secret.from_secret_name(
                 self, "github-mcp-client-secret-env", self.spec.github_mcp_client_secret_name
             )
-            env["AGENTPLANE_ACTIONS_MCP_SERVERS__GITHUB__CLIENT_ID"] = EnvValue.from_secret_value(
+            env[env_name(Settings, "mcp_servers", "github", "client_id")] = EnvValue.from_secret_value(
                 SecretValue(secret=github_secret, key="client_id")
             )
         return env
@@ -328,11 +334,12 @@ class Actions(Construct):
             name="actions",
             image=f"{_ACTIONS_IMAGE}:{_PLACEHOLDER_TAG}",
             image_pull_policy=ImagePullPolicy.ALWAYS,
-            args=[
-                "--host=0.0.0.0",
-                f"--port={CONTAINER_PORT}",
-                f"--token-audience={llm_ingress_constructs.WORKLOAD_TOKEN_AUDIENCE}",
-            ],
+            args=cli_args(
+                Settings,
+                host="0.0.0.0",
+                port=CONTAINER_PORT,
+                token_audience=llm_ingress_constructs.WORKLOAD_TOKEN_AUDIENCE,
+            ),
             env_variables=env,
             ports=[ContainerPort(name="http", number=CONTAINER_PORT, protocol=Protocol.TCP)],
             readiness=http_probe(
