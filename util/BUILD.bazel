@@ -249,6 +249,7 @@ py_library(
 py_library(
     name = "settings_contract",
     srcs = ["settings_contract.py"],
+    visibility = ["//visibility:public"],
     deps = [
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
