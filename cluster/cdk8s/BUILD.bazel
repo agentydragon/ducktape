@@ -287,6 +287,16 @@ py_library(
 )
 
 py_library(
+    name = "terraform_constructs",
+    srcs = ["terraform_constructs.py"],
+    deps = [
+        ":metadata",
+        "//third_party/tofu_controller:terraform",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "generate_manifests_lib",
     srcs = ["generate_manifests.py"],
     visibility = [
@@ -307,6 +317,7 @@ py_library(
         ":metadata",
         ":public_coder_agent_config",
         ":stateful_infra",
+        ":terraform_constructs",
         "//cluster/cdk8s/agentplane:chart",
         "//cluster/cdk8s/agentplane:environment",
         "//cluster/cdk8s/agentplane:staging",
@@ -351,6 +362,7 @@ py_test(
         "//cluster/k8s:clickhouse/schema/flux-kustomization.yaml",
         "//cluster/k8s:clickhouse/schema/kustomization.yaml",
         "//cluster/k8s:descheduler/helmrelease.k8s.yaml",
+        "//cluster/k8s:dns-automation/dns-records.k8s.yaml",
         "//cluster/k8s:seaweedfs/cluster/priorityclass.k8s.yaml",
         "//cluster/k8s/agents/ha-mcp/app:flux-kustomization.yaml",
         "//cluster/k8s/agents/ha-mcp/app:ha-mcp.k8s.yaml",

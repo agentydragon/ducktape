@@ -4,37 +4,32 @@ metadata:
   name: dns-records
   namespace: flux-system
 spec:
-  interval: 15m
-  refreshBeforeApply: true
-  path: ./tf/gitops/dns-records
-  sourceRef:
-    kind: GitRepository
-    name: ducktape
-    namespace: ducktape-flux
-  serviceAccountName: tf-runner
-  approvePlan: "auto"
-
+  approvePlan: auto
   backendConfig:
     customConfiguration: |
       backend "pg" {
         conn_str    = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
         schema_name = "dns_records"
       }
-
-  # Static variables
-  vars:
-    - name: route53_zone_id
-      value: "Z02901943N8ZFQFOD9P5I"
-
-  # AWS credentials + PG password
+  interval: 15m
+  path: ./tf/gitops/dns-records
+  refreshBeforeApply: true
   runnerPodTemplate:
     spec:
-      envFrom:
-        - secretRef:
-            name: aws-route53-credentials
       env:
         - name: PGPASSWORD
           valueFrom:
             secretKeyRef:
-              name: tofu-state-db-credentials
               key: password
+              name: tofu-state-db-credentials
+      envFrom:
+        - secretRef:
+            name: aws-route53-credentials
+  serviceAccountName: tf-runner
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  vars:
+    - name: route53_zone_id
+      value: Z02901943N8ZFQFOD9P5I

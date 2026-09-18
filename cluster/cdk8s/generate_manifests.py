@@ -36,6 +36,7 @@ from cluster.cdk8s import (
     haku_openclaw_spike_config,
     public_coder_agent_config,
     stateful_infra,
+    terraform_constructs,
 )
 from cluster.cdk8s.agentplane import staging, testing
 from cluster.cdk8s.agentplane.chart import environment_chart
@@ -53,6 +54,7 @@ _LITELLM_KEYS_DIR = "tf/gitops/litellm-keys"
 _HA_MCP_DIR = "cluster/k8s/agents/ha-mcp/app"
 _CLICKHOUSE_SCHEMA_DIR = "cluster/k8s/clickhouse/schema"
 _AIQUOTA_DIR = "cluster/k8s/aiquota"
+_DNS_AUTOMATION_DIR = "cluster/k8s/dns-automation"
 
 # The chart objects whose readiness gates the environment, in the order the checks are
 # listed. The trust-manager Bundle writes its target ConfigMap asynchronously, outside
@@ -410,6 +412,19 @@ def _stateful_infra_priority_class_chart(app: App) -> Chart:
     return chart
 
 
+def _dns_records_chart(app: App) -> Chart:
+    """Route 53 records for allegedly.works (tf/gitops/dns-records)."""
+    chart = Chart(app, "dns-records", disable_resource_name_hashes=True)
+    terraform_constructs.gitops_terraform(
+        chart,
+        "terraform",
+        name="dns-records",
+        variables={"route53_zone_id": "Z02901943N8ZFQFOD9P5I"},
+        env_from=[terraform_constructs.secret_env_from("aws-route53-credentials")],
+    )
+    return chart
+
+
 def generate_manifests(root: Path) -> None:
     """Write every converted directory's generated manifests under `root`."""
     _generate_litellm_app(root)
@@ -431,6 +446,7 @@ def generate_manifests(root: Path) -> None:
         egress_fences.haku_openclaw_spike,
     )
     _write_charts(root, _MITMPROXY_DIR, egress_fences.mitmproxy_cloud_api)
+    _write_charts(root, _DNS_AUTOMATION_DIR, _dns_records_chart)
 
 
 def main() -> None:

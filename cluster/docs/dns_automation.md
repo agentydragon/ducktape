@@ -27,12 +27,12 @@ or removing gateway nodes.
 
 ## Key Files
 
-| File                                                     | Purpose                              |
-| -------------------------------------------------------- | ------------------------------------ |
-| `tf/gitops/dns-records/main.tf`                          | Route 53 records + domain delegation |
-| `k8s/dns-automation/dns-records-tf.yaml`                 | tofu-controller Terraform resource   |
-| `k8s/dns-automation/aws-credentials.sops.yaml`           | AWS IAM credentials (SOPS)           |
-| `k8s/cert-manager/config/base/aws-credentials.sops.yaml` | AWS creds for cert-manager (SOPS)    |
+| File                                                     | Purpose                                                                       |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `tf/gitops/dns-records/main.tf`                          | Route 53 records + domain delegation                                          |
+| `k8s/dns-automation/dns-records.k8s.yaml`                | tofu-controller Terraform resource (generated, `cdk8s/generate_manifests.py`) |
+| `k8s/dns-automation/aws-credentials.sops.yaml`           | AWS IAM credentials (SOPS)                                                    |
+| `k8s/cert-manager/config/base/aws-credentials.sops.yaml` | AWS creds for cert-manager (SOPS)                                             |
 
 ### IAM User: `cluster-dns-manager`
 

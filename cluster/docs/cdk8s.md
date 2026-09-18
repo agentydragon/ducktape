@@ -21,10 +21,11 @@ for writing a generator: <../cdk8s/AGENTS.md>.
    ConfigMap replacing a `configMapGenerator` entry (`agents/haku-openclaw-spike/app`,
    `agents/public-coder-agent/app`); the objects that carry a value another directory
    shares (`descheduler`'s HelmRepository + HelmRelease and `seaweedfs/cluster`'s
-   PriorityClass, both rendered from `stateful_infra.PRIORITY`); or the
+   PriorityClass, both rendered from `stateful_infra.PRIORITY`); the
    CiliumNetworkPolicy fences of `agents/haku-egress-proxy` and `agents/mitmproxy`
    (`cdk8s/egress_fences.py`, one chart per policy so each file keeps its hand-written
-   name).
+   name); or a tofu-controller `Terraform` CR (`dns-automation`, through
+   `terraform_constructs.gitops_terraform` and `//third_party/tofu_controller`'s bindings).
 3. **Hand-written.**
 
 Convert at Kustomization-directory granularity. The `.k8s.yaml` suffix is cdk8s-only;

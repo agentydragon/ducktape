@@ -42,6 +42,7 @@ _GENERATED_FILES = (
     "cluster/k8s/agents/haku-egress-proxy/cnp-haku-claude-egress.k8s.yaml",
     "cluster/k8s/agents/haku-egress-proxy/openclaw-spike-cnp-egress.k8s.yaml",
     "cluster/k8s/agents/mitmproxy/cnp-cloud-api-egress.k8s.yaml",
+    "cluster/k8s/dns-automation/dns-records.k8s.yaml",
 )
 
 
