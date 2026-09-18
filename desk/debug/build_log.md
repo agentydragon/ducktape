@@ -669,3 +669,37 @@ qm monitor 110 <<< "device_add usb-host,bus=xhci.0,hostbus=3,hostport=1,id=usb1"
 **Verification.** `qm status 110` remained `running`; QEMU reported
 `YubiKey OTP+FIDO+CCID, ID: usb1`, and the guest exposed the corresponding
 HID and smart-card interfaces.
+
+## 2026-09-17 — C920 webcam passed through live in wyrm2 mode
+
+**Setup.** The monitor was in its DP/USB-B mode. Atlas enumerated the FV43U
+hub on bus path `3-2`, with the TEX Shura keyboard at `3-2.1` and the
+Logitech C920 HD Pro at `3-2.2`. VM 110 was already running with `usb4`
+occupied by a stale `abcd:1234` placeholder.
+
+**Persistent configuration.** Added the webcam's physical child path as
+Proxmox `usb4`, and corrected the persisted keyboard path to the live rear
+port:
+
+```text
+usb3: host=3-2.1,usb3=1
+usb4: host=3-2.2,usb3=0
+```
+
+The camera uses the guest's high-speed EHCI bus because all four guest xHCI
+root ports were already occupied; attaching it behind the existing full-speed
+hub produced a QEMU speed-mismatch warning and no guest enumeration.
+
+**Live application.** `qm set` staged the persistent replacement without
+restarting the VM. The running QEMU device was replaced directly:
+
+```bash
+qm monitor 110 <<< "device_del usb4"
+qm monitor 110 <<< "device_add usb-host,bus=ehci.0,port=2,hostbus=3,hostport=2.2,id=usb4"
+```
+
+**Verification.** VM 110 remained `running`. QEMU reported the C920 at
+480 Mb/s; wyrm2 enumerated `046d:0892`, bound `uvcvideo` and
+`snd-usb-audio`, and created `/dev/video0`, `/dev/video1`, plus stable
+`/dev/v4l/by-id/usb-046d_HD_Pro_Webcam_C920_F2C986EF-video-index0` and
+`video-index1` links. The keyboard passthrough remained present.
