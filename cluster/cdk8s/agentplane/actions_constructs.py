@@ -49,8 +49,8 @@ from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
+from util.settings_contract import cli_args, env_name, settings_file
 from x.agentplane.action_service.main import CONFIG_FILE_ENV, Settings
-from x.agentplane.settings_contract import cli_args, env_name, settings_file
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _NAME = "agentplane-actions"

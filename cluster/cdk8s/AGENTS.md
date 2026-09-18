@@ -24,7 +24,7 @@ Model with constructs, deploy with one props object per environment.
   string spelled again.
 - **The service's `Settings` is its deployment contract.** Flags, env vars and settings
   files are rendered through the binary's pydantic-settings model
-  (`x/agentplane/settings_contract.py`: `cli_args`, `env_name`, `settings_file`,
+  (`util/settings_contract.py`: `cli_args`, `env_name`, `settings_file`,
   `checked_value`), so a renamed field fails at synth. The code package owns `Settings`
   and its `CONFIG_FILE_ENV`; `cluster/cdk8s` owns where and how it runs. Nothing under
   `x/` or `haku/` imports `cluster/`. A project's own `deploy/` may hold a props-driven

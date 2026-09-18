@@ -245,3 +245,26 @@ py_library(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_library(
+    name = "settings_contract",
+    srcs = ["settings_contract.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+    ],
+)
+
+py_test(
+    name = "test_settings_contract",
+    srcs = ["test_settings_contract.py"],
+    deps = [
+        ":settings_contract",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
