@@ -1,0 +1,87 @@
+{
+  "oai_lane_models": [
+    "chatgpt/oai-responses/gpt-6-astra",
+    "chatgpt/oai-responses/gpt-5.4",
+    "chatgpt/oai-responses/gpt-5.5",
+    "chatgpt/oai-responses/gpt-5.6-sol",
+    "chatgpt/oai-responses/gpt-5.6-terra",
+    "chatgpt/oai-responses/gpt-5.6-luna",
+    "chatgpt/oai-responses/gpt-5.3-codex-spark"
+  ],
+  "tana_client_models": [
+    "tana/ant-messages/claude-sonnet-4-6",
+    "tana/ant-messages/claude-opus-4-6",
+    "tana/ant-messages/claude-haiku-4-5"
+  ],
+  "codex_client_models": [
+    "chatgpt/ant-messages/gpt-6-astra",
+    "chatgpt/ant-messages/gpt-5.4",
+    "chatgpt/ant-messages/gpt-5.5",
+    "chatgpt/ant-messages/gpt-5.6-sol",
+    "chatgpt/ant-messages/gpt-5.6-terra",
+    "chatgpt/ant-messages/gpt-5.6-luna",
+    "chatgpt/ant-messages/gpt-5.3-codex-spark"
+  ],
+  "claude_client_models": [
+    "anthropic-max20/ant-messages/claude-opus-5",
+    "anthropic-max20/ant-messages/claude-sonnet-5",
+    "anthropic-max20/ant-messages/claude-fable-5",
+    "anthropic-max20/ant-messages/claude-haiku-4-5-20251001"
+  ],
+  "embedding_client_models": [
+    "gemini-embedding-2",
+    "google/goog-embed/gemini-embedding-2",
+    "google/goog-embed/gemini-embedding-001",
+    "ollama/olm-embed/qwen3-embedding-4b"
+  ],
+  "gemini_client_models": [
+    "google/goog-generate/gemini-3.7-flash",
+    "google/goog-generate/gemini-3.5-flash-lite"
+  ],
+  "cheap_experiments_models": [
+    "google/goog-generate/gemini-3.7-flash",
+    "google/goog-generate/gemini-3.5-flash-lite",
+    "google/goog-embed/gemini-embedding-2",
+    "google/goog-embed/gemini-embedding-001",
+    "mistral/oai-chat/codestral-2508",
+    "mistral/oai-chat/codestral-latest",
+    "mistral/oai-chat/magistral-medium-latest",
+    "mistral/oai-chat/magistral-small-latest",
+    "mistral/oai-chat/ministral-14b-latest",
+    "mistral/oai-chat/ministral-14b-2512",
+    "mistral/oai-chat/ministral-8b-latest",
+    "mistral/oai-chat/ministral-8b-2512",
+    "mistral/oai-chat/ministral-3b-latest",
+    "mistral/oai-chat/ministral-3b-2512",
+    "mistral/oai-chat/mistral-code-fim-latest",
+    "mistral/oai-chat/mistral-code-latest",
+    "mistral/oai-chat/mistral-medium",
+    "mistral/oai-chat/mistral-medium-2604",
+    "mistral/oai-chat/mistral-medium-3",
+    "mistral/oai-chat/mistral-medium-3-5",
+    "mistral/oai-chat/mistral-medium-3.5",
+    "mistral/oai-chat/mistral-medium-latest",
+    "mistral/oai-chat/mistral-small-2603",
+    "mistral/oai-chat/mistral-small-latest",
+    "mistral/oai-chat/mistral-vibe-cli-fast",
+    "mistral/oai-chat/mistral-vibe-cli-latest",
+    "mistral/oai-chat/mistral-vibe-cli-with-tools",
+    "mistral/oai-chat/voxtral-small-2507",
+    "mistral/oai-chat/voxtral-small-latest",
+    "ollama/oai-chat/gpt-oss-20b-128k",
+    "ollama/olm-chat/gpt-oss-20b-128k",
+    "ollama/oai-chat/gpt-oss-20b-256k",
+    "ollama/olm-chat/gpt-oss-20b-256k",
+    "ollama/oai-chat/gpt-oss-20b-512k",
+    "ollama/olm-chat/gpt-oss-20b-512k",
+    "ollama/oai-chat/gpt-oss-20b-1m",
+    "ollama/olm-chat/gpt-oss-20b-1m",
+    "ollama/oai-chat/gpt-oss-120b-128k",
+    "ollama/olm-chat/gpt-oss-120b-128k",
+    "ollama/oai-chat/gemma4-31b-it-q8_0-128k",
+    "ollama/olm-chat/gemma4-31b-it-q8_0-128k",
+    "anthropic-api/ant-messages/claude-haiku-4-5-20251001",
+    "chatgpt/ant-messages/gpt-5.6-luna",
+    "chatgpt/oai-responses/gpt-5.6-luna"
+  ]
+}

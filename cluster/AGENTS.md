@@ -235,8 +235,9 @@ Every `*.k8s.yaml` under `cluster/k8s`, and the `flux-kustomization.yaml` and
 `kustomization.yaml` beside one in `agentplane-{staging,testing}`, `litellm/app`,
 `agents/ha-mcp/app`, `aiquota` and `clickhouse/schema`, is
 `bb run //cluster/cdk8s:generate_manifests` output
-(`.gitattributes` lists them). Change the generator under `cluster/cdk8s/` and
-regenerate; `//cluster/cdk8s:test_generate_manifests` fails on drift. The layout rules in
+(`.gitattributes` lists them), as is `tf/gitops/litellm-keys/model_allowlists.json`, the
+model-roster export that module's `locals` `jsondecode`. Change the generator under
+`cluster/cdk8s/` and regenerate; `//cluster/cdk8s:test_generate_manifests` fails on drift. The layout rules in
 this file for hand-written directories bind a generated directory only where the
 generator has a knob for them. An invariant over generated objects is a fleet rule or a
 test beside the generator, never a new test under `cluster/validation/` reading the

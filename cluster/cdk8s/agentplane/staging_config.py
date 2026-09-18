@@ -6,7 +6,8 @@ model_rosters.py for the model-name scheme.
 from __future__ import annotations
 
 from cluster.cdk8s.agentplane.app_settings import settings
-from cluster.cdk8s.model_rosters import ANTHROPIC_MODELS, CLIPROXY_MODELS, ApiShape, Provider, exposed_name
+from cluster.cdk8s.litellm_keys import CLAUDE_CLIENT_MODELS, OAI_LANE_MODELS
+from cluster.cdk8s.model_rosters import codex_responses_name
 
 _NAMESPACE = "agentplane-staging"
 # The ActionPolicySet objects actions_staging_policies creates for the public-coder
@@ -25,18 +26,14 @@ PUBLIC_CODER_ACTION_POLICY_SETS = (
     PUBLIC_GAFFER_PRIVATE_READS_SET,
 )
 
-# Native subscription routes authorized by the staging key in tf/gitops/litellm-keys
-# (claude_client_models/oai_lane_models there) -- kept in sync with the same source,
-# model_rosters.py, that the Terraform locals derive from.
-_HARNESS_CLAUDE = [exposed_name(Provider.ANTHROPIC_MAX20, ApiShape.ANT_MESSAGES, m) for m in ANTHROPIC_MODELS]
-_HARNESS_CODEX = [exposed_name(Provider.CHATGPT, ApiShape.OAI_RESPONSES, m) for m in CLIPROXY_MODELS]
-
 
 def config() -> dict:
     return settings(
         namespace=_NAMESPACE,
-        harness_claude=_HARNESS_CLAUDE,
-        harness_codex=_HARNESS_CODEX,
-        thread_preset_codex_model=exposed_name(Provider.CHATGPT, ApiShape.OAI_RESPONSES, "gpt-5.6-luna"),
+        # What the session form offers per harness: the native subscription lanes the
+        # staging key admits (litellm_key.agentplane_staging in tf/gitops/litellm-keys).
+        harness_claude=CLAUDE_CLIENT_MODELS,
+        harness_codex=OAI_LANE_MODELS,
+        thread_preset_codex_model=codex_responses_name("gpt-5.6-luna"),
         action_policy_sets=list(PUBLIC_CODER_ACTION_POLICY_SETS),
     )

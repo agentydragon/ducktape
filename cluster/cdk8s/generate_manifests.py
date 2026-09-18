@@ -1,5 +1,6 @@
 """Synthesize each converted directory's manifests with Python cdk8s, writing
-them directly into their `cluster/k8s` directory.
+them directly into their `cluster/k8s` directory, plus the model-roster export
+`tf/gitops/litellm-keys` reads.
 
 Every generated Deployment/Job/CronJob carries a placeholder image tag -- each
 environment's own hand-written `image-pins/kustomization.yaml` Kustomize
@@ -8,6 +9,7 @@ marker and overrides the real tag at `kustomize build` time. See
 cluster/docs/cdk8s.md.
 """
 
+import json
 from collections.abc import Callable
 from pathlib import Path
 
@@ -41,10 +43,12 @@ from cluster.cdk8s.config_format import json5_config
 from cluster.cdk8s.flux_constructs import NAMESPACE, flux_kustomization, health_checks, kustomize_kustomization
 from cluster.cdk8s.ha_mcp_constructs import HaMcp
 from cluster.cdk8s.litellm_constructs import LiteLLMProxy, LiteLLMServiceMonitor, proxy_specs
+from cluster.cdk8s.litellm_keys import model_allowlists
 from cluster.cdk8s.metadata import metadata
 from util.bazel.workspace import get_build_workspace_directory
 
 _LITELLM_APP_DIR = "cluster/k8s/litellm/app"
+_LITELLM_KEYS_DIR = "tf/gitops/litellm-keys"
 _HA_MCP_DIR = "cluster/k8s/agents/ha-mcp/app"
 _CLICKHOUSE_SCHEMA_DIR = "cluster/k8s/clickhouse/schema"
 _AIQUOTA_DIR = "cluster/k8s/aiquota"
@@ -114,6 +118,13 @@ def _generate_litellm_app(root: Path) -> None:
         app_dir / "kustomization.yaml",
         kustomize_kustomization(namespace="litellm", resources=[f"{spec.name}.k8s.yaml"], components=["./image-pins"]),
     )
+
+
+def _generate_litellm_key_allowlists(root: Path) -> None:
+    """The per-key model allowlists tf/gitops/litellm-keys/main.tf `jsondecode`s."""
+    out_dir = root / _LITELLM_KEYS_DIR
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "model_allowlists.json").write_text(json.dumps(model_allowlists(), indent=2) + "\n")
 
 
 def _generate_ha_mcp(root: Path) -> None:
@@ -406,6 +417,7 @@ def _stateful_infra_priority_class_chart(app: App) -> Chart:
 def generate_manifests(root: Path) -> None:
     """Write every converted directory's generated manifests under `root`."""
     _generate_litellm_app(root)
+    _generate_litellm_key_allowlists(root)
     _generate_ha_mcp(root)
     _generate_clickhouse_schema(root)
     _generate_aiquota(root)

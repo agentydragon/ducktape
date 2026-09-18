@@ -10,8 +10,8 @@ literals is then a visible, reviewable diff instead of a silent runtime break.
 This file tracks the candidates found by a full-repo audit (every test that reads a
 cdk8s-generated YAML file, plus every `cluster/validation/` test) that are **not yet
 reachable from cdk8s** — the manifests/configs on one or both sides are still
-hand-written, so unifying them needs a YAML→cdk8s conversion (or, for two entries
-below, a non-Kubernetes fix in Terraform) before the drift can be closed by
+hand-written, so unifying them needs a YAML→cdk8s conversion (or, for the nebula
+entry below, a non-Kubernetes fix in Terraform) before the drift can be closed by
 construction. Candidates where both sides were already cdk8s-generated Python were
 fixed directly instead of listed here (see git log — `cluster/cdk8s/litellm_config.py`,
 `model_rosters.py`, `agentplane/staging.py`, `generate_manifests.py`,
@@ -44,49 +44,6 @@ parses it in Python — see `test_roaming_daemonset_capacity.py`'s use of it), o
 generate it via the same `jsondecode` approach if a non-cdk8s generator is
 preferred. Once this lands, `test_nebula_mesh.py`'s cross-source IP-agreement test
 and `test_dns_records.py`'s equivalent collapse to unreachable-by-construction.
-
-## Flagship: one central LLM model registry
-
-`cluster/cdk8s/model_rosters.py` is already the shared roster (`ANTHROPIC_MODELS`,
-`GEMINI_MODELS`, `CLIPROXY_MODELS`, `TANA_MODELS`, `OPENCLAW_CLIPROXY_MODEL_LIMITS`,
-`Provider`/`ApiShape`/`exposed_name()`/`shape_for()`) and most of `litellm_config.py`,
-`public_coder_agent_config.py`, `staging_config.py`/`testing_config.py`, and
-`haku_openclaw_spike_config.py` already pull from it — that's why the audit found
-very few _already-cdk8s_ duplicates once the tana/qwen3-embedding/web-push fixes
-landed. But the roster is still parallel arrays (a list of ids here, a dict of
-context windows there, a dict of display names in a third file) rather than one
-registry a model is a member of. Concretely still open:
-
-- **Model slug construction is duplicated at the call site, not the data.**
-  `litellm_config.py` and `public_coder_agent_config.py` each independently call
-  `exposed_name(Provider.CHATGPT, ApiShape.OAI_RESPONSES, model)` to name "this Codex
-  model as served through LiteLLM" — same provider+shape pair, hand-typed at two call
-  sites instead of coming from one named helper (e.g. `codex_litellm_id(model)` in
-  `model_rosters.py`). If Codex's shape or provider prefix ever changes, only one
-  call site is guaranteed to notice.
-- **Display names live outside the roster.** `public_coder_agent_config.py`'s
-  `_CODEX_DISPLAY_NAMES`/`_GEMINI_DISPLAY_NAMES` dicts are keyed by the same model
-  ids `model_rosters.py` already lists, but aren't attached to them — nothing stops
-  the two lists from silently diverging (a model added to `GEMINI_MODELS` without a
-  display name fails only when someone notices the catalog entry looks wrong).
-- **Terraform can't consume the roster at all.** `tf/gitops/litellm-keys/main.tf`
-  hand-types five separate model-name allowlists (`oai_lane_models`,
-  `codex_client_models`, `claude_client_models`, and two more) that
-  `test_litellm_config.py`/`test_openclaw_models.py`/`test_model_roster_consumers.py`
-  (5 test functions total) exist purely to keep in sync with `model_rosters.py`.
-  Same `jsondecode` fix as the nebula-mesh entry: export the relevant roster lists as
-  a small generated JSON file Terraform reads, instead of retyping model names in
-  HCL.
-
-The shape to grow toward (not a full redesign — extend what's there): a small
-frozen dataclass per model — id, display name, context window, max tokens,
-provider, shape — with `model_rosters.py` holding one registry of these instead of
-parallel `_MODELS` lists plus separate `_LIMITS`/`_DISPLAY_NAMES` dicts keyed the
-same way in three different files. `litellm_config.py`, the OpenClaw configs, and
-(via the JSON export above) Terraform would all read attributes off the same
-objects instead of reconstructing them. Worth a short design pass before touching
-this broadly — it's the one item here big enough to warrant a plan, not a
-find-and-replace.
 
 ## Follow-ups from the agentplane conversion
 

@@ -45,126 +45,11 @@ provider "litellm" {
 }
 
 locals {
-  # Model names must match generated model_name entries in
-  # cluster/k8s/litellm/app/litellm.k8s.yaml's embedded LiteLLM config ({provider}/{shape}/{model}
-  # scheme, derivations in cluster/cdk8s/model_rosters.py). Spelled out rather
-  # than built with a for-expression so the names are greppable and so the test
-  # can compare structurally -- HCL2 returns a for-expression as unevaluated
-  # source text, not a list.
-  #
-  # The Codex-subscription models on LiteLLM's Responses surface, for Codex CLI clients
-  # (haku oai zone, codex-pod, agent-workspaces-codex) -- served by CLIProxyAPI; see
-  # _cliproxy_responses_entries in cluster/k8s/litellm/app/test_litellm_config.py,
-  # which pins this list against it.
-  oai_lane_models = [
-    "chatgpt/oai-responses/gpt-6-astra",
-    "chatgpt/oai-responses/gpt-5.4",
-    "chatgpt/oai-responses/gpt-5.5",
-    "chatgpt/oai-responses/gpt-5.6-sol",
-    "chatgpt/oai-responses/gpt-5.6-terra",
-    "chatgpt/oai-responses/gpt-5.6-luna",
-    "chatgpt/oai-responses/gpt-5.3-codex-spark",
-  ]
-  # Tana-UI models served by the main LiteLLM proxy's Tana provider
-  # (TANA_MODELS in model_rosters.py).
-  tana_client_models = [
-    "tana/ant-messages/claude-sonnet-4-6",
-    "tana/ant-messages/claude-opus-4-6",
-    "tana/ant-messages/claude-haiku-4-5",
-  ]
-  # Codex-subscription models on the Anthropic Messages surface, fronted through
-  # CLIProxyAPI (_cliproxy_messages_entries) -- Claude Code clients.
-  codex_client_models = [
-    "chatgpt/ant-messages/gpt-6-astra",
-    "chatgpt/ant-messages/gpt-5.4",
-    "chatgpt/ant-messages/gpt-5.5",
-    "chatgpt/ant-messages/gpt-5.6-sol",
-    "chatgpt/ant-messages/gpt-5.6-terra",
-    "chatgpt/ant-messages/gpt-5.6-luna",
-    "chatgpt/ant-messages/gpt-5.3-codex-spark",
-  ]
-  # Claude-subscription models on the Anthropic Messages surface, fronted through CLIProxyAPI's
-  # Claude OAuth session (_cliproxy_claude_entries, ANTHROPIC_MODELS in model_rosters.py) -- the
-  # Console-launched Claude runner. A different upstream session on the same pod as the codex lane
-  # above; distinct from the direct-API anthropic-api/ant-messages/* entries.
-  claude_client_models = [
-    "anthropic-max20/ant-messages/claude-opus-5",
-    "anthropic-max20/ant-messages/claude-sonnet-5",
-    "anthropic-max20/ant-messages/claude-fable-5",
-    "anthropic-max20/ant-messages/claude-haiku-4-5-20251001",
-  ]
-  # Embedding models (GEMINI_EMBEDDING_MODELS in test_litellm_config.py plus the
-  # Ollama Qwen route). Granted to
-  # agents whose egress cannot reach api.openai.com: the main openclaw gateway holds
-  # a direct OpenAI Platform key for memorySearch, but a domain-confined agent has no
-  # route to it and should not gain one just to embed. Routing embeddings through
-  # LiteLLM keeps them on the in-cluster path the agent already uses for turns.
-  embedding_client_models = [
-    # Compatibility alias for public-coder-agent's existing durable index.
-    "gemini-embedding-2",
-    "google/goog-embed/gemini-embedding-2",
-    "google/goog-embed/gemini-embedding-001",
-    "ollama/olm-embed/qwen3-embedding-4b",
-  ]
-  # Google Gemini models (GEMINI_MODELS in model_rosters.py) fronted through the
-  # `gemini/` provider. Current generation only -- see that module for why the
-  # 2.5 generation, gemini-3-pro-preview (shut down), and every non-latest 3.x
-  # minor version are excluded. Consumed by the laptop gemini-claude alias and
-  # public-coder-agent.
-  gemini_client_models = [
-    "google/goog-generate/gemini-3.7-flash",
-    "google/goog-generate/gemini-3.5-flash-lite",
-  ]
-  # Shared by agents only through an expiring Haku Console Kubernetes grant. This
-  # is intentionally an exact, cheap-model-only set rather than a provider-wide
-  # prefix or wildcard. The Ollama names cover every model/context/protocol variant
-  # emitted by the main proxy config; Mistral is the API-key-verified chat roster.
-  cheap_experiments_models = [
-    "google/goog-generate/gemini-3.7-flash",
-    "google/goog-generate/gemini-3.5-flash-lite",
-    "google/goog-embed/gemini-embedding-2",
-    "google/goog-embed/gemini-embedding-001",
-    "mistral/oai-chat/codestral-2508",
-    "mistral/oai-chat/codestral-latest",
-    "mistral/oai-chat/magistral-medium-latest",
-    "mistral/oai-chat/magistral-small-latest",
-    "mistral/oai-chat/ministral-14b-latest",
-    "mistral/oai-chat/ministral-14b-2512",
-    "mistral/oai-chat/ministral-8b-latest",
-    "mistral/oai-chat/ministral-8b-2512",
-    "mistral/oai-chat/ministral-3b-latest",
-    "mistral/oai-chat/ministral-3b-2512",
-    "mistral/oai-chat/mistral-code-fim-latest",
-    "mistral/oai-chat/mistral-code-latest",
-    "mistral/oai-chat/mistral-medium",
-    "mistral/oai-chat/mistral-medium-2604",
-    "mistral/oai-chat/mistral-medium-3",
-    "mistral/oai-chat/mistral-medium-3-5",
-    "mistral/oai-chat/mistral-medium-3.5",
-    "mistral/oai-chat/mistral-medium-latest",
-    "mistral/oai-chat/mistral-small-2603",
-    "mistral/oai-chat/mistral-small-latest",
-    "mistral/oai-chat/mistral-vibe-cli-fast",
-    "mistral/oai-chat/mistral-vibe-cli-latest",
-    "mistral/oai-chat/mistral-vibe-cli-with-tools",
-    "mistral/oai-chat/voxtral-small-2507",
-    "mistral/oai-chat/voxtral-small-latest",
-    "ollama/oai-chat/gpt-oss-20b-128k",
-    "ollama/olm-chat/gpt-oss-20b-128k",
-    "ollama/oai-chat/gpt-oss-20b-256k",
-    "ollama/olm-chat/gpt-oss-20b-256k",
-    "ollama/oai-chat/gpt-oss-20b-512k",
-    "ollama/olm-chat/gpt-oss-20b-512k",
-    "ollama/oai-chat/gpt-oss-20b-1m",
-    "ollama/olm-chat/gpt-oss-20b-1m",
-    "ollama/oai-chat/gpt-oss-120b-128k",
-    "ollama/olm-chat/gpt-oss-120b-128k",
-    "ollama/oai-chat/gemma4-31b-it-q8_0-128k",
-    "ollama/olm-chat/gemma4-31b-it-q8_0-128k",
-    "anthropic-api/ant-messages/claude-haiku-4-5-20251001",
-    "chatgpt/ant-messages/gpt-5.6-luna",
-    "chatgpt/oai-responses/gpt-5.6-luna",
-  ]
+  # Per-key model allowlists ({provider}/{shape}/{model} names, cluster/cdk8s/model_rosters.py),
+  # one lane per key. Generated from cluster/cdk8s/litellm_keys.py -- which documents each lane
+  # and refuses any name the generated LiteLLM config does not serve -- by
+  # `bb run //cluster/cdk8s:generate_manifests`, pinned by //cluster/cdk8s:test_generate_manifests.
+  allowlists = jsondecode(file("${path.module}/model_allowlists.json"))
 }
 
 # One static key per worker lane, held by that lane's llm-proxy (never by workers —
@@ -185,7 +70,7 @@ locals {
 
 resource "litellm_key" "cheap_experiments" {
   key_alias       = "cheap-experiments"
-  models          = local.cheap_experiments_models
+  models          = local.allowlists.cheap_experiments_models
   max_budget      = 50
   budget_duration = "30d"
   metadata = {
@@ -209,7 +94,7 @@ resource "kubernetes_secret" "cheap_experiments" {
 
 resource "litellm_key" "agentplane_staging" {
   key_alias       = "agentplane-staging"
-  models          = concat(local.oai_lane_models, local.claude_client_models)
+  models          = concat(local.allowlists.oai_lane_models, local.allowlists.claude_client_models)
   max_budget      = 50
   budget_duration = "30d"
   metadata = {
@@ -261,7 +146,7 @@ resource "kubernetes_secret" "cheap_experiments_agentplane_testing" {
 
 resource "litellm_key" "codex_pod" {
   key_alias       = "codex-pod"
-  models          = local.oai_lane_models
+  models          = local.allowlists.oai_lane_models
   max_budget      = 50
   budget_duration = "30d"
   metadata = {
@@ -308,7 +193,7 @@ resource "litellm_key" "public_coder_agent" {
   # hosting plus package indexes, and it should not gain one merely to embed.
   # Gemini reaches Google through LiteLLM's own in-cluster GEMINI_API_KEY, so
   # this key never carries that credential either.
-  models = concat(local.codex_client_models, local.oai_lane_models, local.gemini_client_models, local.embedding_client_models)
+  models = concat(local.allowlists.codex_client_models, local.allowlists.oai_lane_models, local.allowlists.gemini_client_models, local.allowlists.embedding_client_models)
   metadata = {
     consumer = "public-coder-agent"
   }
@@ -346,7 +231,7 @@ resource "kubernetes_secret" "public_coder_agent" {
 
 resource "litellm_key" "haku_console_claude" {
   key_alias = "haku-console-claude"
-  models    = local.claude_client_models
+  models    = local.allowlists.claude_client_models
   metadata = {
     consumer = "haku-console-claude"
   }
@@ -405,7 +290,7 @@ resource "litellm_team" "tana_clients" {
 resource "litellm_key" "tana_clients" {
   key_alias = "tana-clients"
   key       = data.sops_file.tana_clients_key.data["litellm_tana_key"]
-  models    = local.tana_client_models
+  models    = local.allowlists.tana_client_models
   team_id   = litellm_team.tana_clients.id
   metadata = {
     consumer = "laptop-tana-claude"
@@ -432,7 +317,7 @@ data "sops_file" "claude_subscription_clients_key" {
 resource "litellm_key" "claude_subscription_clients" {
   key_alias = "claude-subscription-clients"
   key       = data.sops_file.claude_subscription_clients_key.data["litellm_claude_subscription_key"]
-  models    = local.claude_client_models
+  models    = local.allowlists.claude_client_models
   metadata = {
     consumer = "laptop-litellm-claude"
   }
@@ -465,7 +350,7 @@ resource "litellm_team" "codex_clients" {
 resource "litellm_key" "codex_clients" {
   key_alias = "codex-clients"
   key       = data.sops_file.codex_clients_key.data["litellm_codex_key"]
-  models    = local.codex_client_models
+  models    = local.allowlists.codex_client_models
   team_id   = litellm_team.codex_clients.id
   metadata = {
     consumer = "laptop-codex-claude, agent-box-codex, codex-pod"
@@ -520,7 +405,7 @@ resource "litellm_team" "gemini_clients" {
 resource "litellm_key" "gemini_clients" {
   key_alias = "gemini-clients"
   key       = data.sops_file.gemini_clients_key.data["litellm_gemini_key"]
-  models    = local.gemini_client_models
+  models    = local.allowlists.gemini_client_models
   team_id   = litellm_team.gemini_clients.id
   metadata = {
     consumer = "laptop-gemini-claude"
@@ -533,7 +418,7 @@ resource "litellm_key" "gemini_clients" {
 # the `chatgpt/oai-responses/*` Codex-account models, same allowlist as codex-pod.
 resource "litellm_key" "agent_workspaces_codex" {
   key_alias = "agent-workspaces-codex"
-  models    = local.oai_lane_models
+  models    = local.allowlists.oai_lane_models
   metadata = {
     consumer = "agent-workspaces codex-lane sandboxes"
   }

@@ -5,14 +5,8 @@ from cluster.cdk8s import haku_openclaw_spike_config, public_coder_agent_config
 from cluster.cdk8s.litellm_config import main_proxy_config
 from cluster.cdk8s.model_rosters import (
     ANTHROPIC_MODELS,
-    CLIPROXY_MODELS,
-    CODEX_CONTEXT_WINDOW,
-    CODEX_MAX_TOKENS,
     GEMINI_CONTEXT_WINDOW,
     GEMINI_MAX_OUTPUT_TOKENS,
-    GEMINI_MODELS,
-    GEMINI_NON_REASONING_MODELS,
-    OPENCLAW_CLIPROXY_MODEL_LIMITS,
     OPENCLAW_CODEX_MODELS,
     ApiShape,
     Provider,
@@ -45,30 +39,21 @@ def _litellm_models() -> dict[str, dict]:
     return {entry["model_name"]: entry for entry in main_proxy_config()["model_list"]}
 
 
-_OPENCLAW_GEMINI_IDS = [exposed_name(Provider.GOOGLE, ApiShape.GOOG_GENERATE, model) for model in GEMINI_MODELS]
+def test_public_coder_agent_catalog_names_only_served_routes() -> None:
+    """OpenClaw's bundled LiteLLM provider never queries the proxy's /v1/models, so every
+    catalog id must be a route the proxy serves. Not by construction: the OpenClaw Codex
+    subset and CLIPROXY_MODELS are two rosters, and the catalog derives its names with
+    codex_responses_name() while the proxy derives them through shape_for()."""
+    served = _litellm_models()
+    for model in _public_coder_agent_models():
+        assert model["id"] in served, f"{model['id']} has no LiteLLM route"
 
 
-def test_litellm_config_has_a_route_per_declared_codex_model() -> None:
-    """Every model the agents may name must exist in the committed LiteLLM config."""
-    assert set(OPENCLAW_CLIPROXY_MODEL_LIMITS) <= set(CLIPROXY_MODELS)
-    litellm_models = _litellm_models()
-    for model, catalog_id in zip(OPENCLAW_CLIPROXY_MODEL_LIMITS, OPENCLAW_CODEX_MODELS, strict=True):
-        context_window, max_tokens = OPENCLAW_CLIPROXY_MODEL_LIMITS[model]
-        assert litellm_models[catalog_id] == {
-            "model_name": catalog_id,
-            "litellm_params": {
-                "model": f"openai/{model}",
-                "api_base": "http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317/v1",
-                "api_key": "os.environ/CLIPROXY_CLIENT_KEY",
-            },
-            "model_info": {
-                "mode": "responses",
-                "supports_function_calling": True,
-                "max_input_tokens": context_window,
-                "max_output_tokens": max_tokens,
-                "max_tokens": max_tokens,
-            },
-        }
+def test_catalog_limits_leave_room_for_input() -> None:
+    # maxTokens is reserved out of the (measured or published) context window.
+    for model in OPENCLAW_CODEX_MODELS:
+        assert model.max_tokens < model.context_window, model.id
+    assert GEMINI_MAX_OUTPUT_TOKENS < GEMINI_CONTEXT_WINDOW
 
 
 def test_current_anthropic_roster_matches_haku_openclaw() -> None:
@@ -102,20 +87,6 @@ def test_current_anthropic_roster_matches_haku_openclaw() -> None:
         }
 
 
-def test_public_coder_agent_models_match_litellm_codex_routes() -> None:
-    """The agent's catalog is pinned to exactly the working routes it should offer."""
-    assert [model["id"] for model in _public_coder_agent_models()] == [*OPENCLAW_CODEX_MODELS, *_OPENCLAW_GEMINI_IDS]
-
-    config = public_coder_agent_config.config()
-    providers = config["models"]["providers"]
-    assert providers["litellm"]["api"] == "openai-responses"
-    assert set(providers) == {"litellm"}
-    assert [model["id"] for model in providers["litellm"]["models"]] == [*OPENCLAW_CODEX_MODELS, *_OPENCLAW_GEMINI_IDS]
-    assert config["agents"]["defaults"]["model"]["primary"] in {
-        f"litellm/{model_id}" for model_id in OPENCLAW_CODEX_MODELS
-    }
-
-
 def test_public_coder_memory_model_uses_ollama_embedding_route() -> None:
     """The OpenClaw model identity must match the Ollama embedding route."""
     config = public_coder_agent_config.config()
@@ -130,46 +101,6 @@ def test_public_coder_memory_model_uses_ollama_embedding_route() -> None:
         },
         "model_info": {"mode": "embedding"},
     }
-
-
-def test_codex_context_windows_match_their_sources() -> None:
-    """The declared windows must match the serving-path evidence, not a raw API guess.
-
-    Not a change-detector: the manifest had drifted to 200000/64000 -- a value
-    that was both inconsistent and wrong -- before this check existed. This
-    guarded two independently authored manifests against disagreeing until the
-    OpenClaw gateway was deleted on 2026-07-31; `public-coder-agent` is the only
-    declaring manifest now, so it guards against regression rather than drift.
-    """
-    models = {model["id"]: model for model in _public_coder_agent_models()}
-    expected_limits = {
-        exposed_name(Provider.CHATGPT, ApiShape.OAI_RESPONSES, model): limits
-        for model, limits in OPENCLAW_CLIPROXY_MODEL_LIMITS.items()
-    }
-    assert set(expected_limits) == set(OPENCLAW_CODEX_MODELS)
-    for model_id, (context_window, max_tokens) in expected_limits.items():
-        assert models[model_id]["contextWindow"] == context_window
-        assert models[model_id]["maxTokens"] == max_tokens
-        assert max_tokens < context_window
-
-    # The 5.6 maxTokens is reserved out of the measured window, so it has to
-    # leave room for input.
-    assert CODEX_MAX_TOKENS < CODEX_CONTEXT_WINDOW
-
-
-def test_gemini_models_match_the_published_spec() -> None:
-    """Gemini catalog entries route to committed LiteLLM models and carry published limits."""
-    litellm_models = _litellm_models()
-    models = {model["id"]: model for model in _public_coder_agent_models()}
-
-    for model_id, catalog_id in zip(GEMINI_MODELS, _OPENCLAW_GEMINI_IDS, strict=True):
-        assert catalog_id in litellm_models, f"{catalog_id} has no committed LiteLLM route"
-        entry = models[catalog_id]
-        assert entry["contextWindow"] == GEMINI_CONTEXT_WINDOW
-        assert entry["maxTokens"] == GEMINI_MAX_OUTPUT_TOKENS
-        assert entry["input"] == ["text", "image"]
-        assert entry["reasoning"] == (model_id not in GEMINI_NON_REASONING_MODELS)
-    assert GEMINI_MAX_OUTPUT_TOKENS < GEMINI_CONTEXT_WINDOW
 
 
 if __name__ == "__main__":

@@ -238,7 +238,7 @@ py_library(
     srcs = ["testing_config.py"],
     deps = [
         ":app_settings",
-        "//cluster/cdk8s:model_rosters",
+        "//cluster/cdk8s:litellm_keys",
     ],
 )
 
@@ -247,11 +247,11 @@ py_library(
     srcs = ["staging_config.py"],
     visibility = [
         "//cluster/cdk8s:__pkg__",
-        "//cluster/k8s/litellm/app:__pkg__",
         "//cluster/validation:__pkg__",
     ],
     deps = [
         ":app_settings",
+        "//cluster/cdk8s:litellm_keys",
         "//cluster/cdk8s:model_rosters",
     ],
 )

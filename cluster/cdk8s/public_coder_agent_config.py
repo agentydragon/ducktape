@@ -8,11 +8,13 @@ from cluster.cdk8s.model_rosters import (
     GEMINI_CONTEXT_WINDOW,
     GEMINI_MAX_OUTPUT_TOKENS,
     GEMINI_MODELS,
-    GEMINI_NON_REASONING_MODELS,
     OLLAMA_EMBEDDING_MODEL,
-    OPENCLAW_CLIPROXY_MODEL_LIMITS,
+    OPENCLAW_CODEX_MODELS,
     ApiShape,
+    CodexModel,
+    GeminiModel,
     Provider,
+    codex_responses_name,
     exposed_name,
 )
 from cluster.cdk8s.openclaw_gateway import (
@@ -22,42 +24,34 @@ from cluster.cdk8s.openclaw_gateway import (
     trusted_proxy_gateway,
 )
 
-_DEFAULT_CODEX_MODEL = "gpt-5.6-luna"
-_TPM_CODEX_MODEL = "gpt-6-astra"
-
-_CODEX_DISPLAY_NAMES = {
-    "gpt-6-astra": "GPT-6 Astra",
-    "gpt-5.6-luna": "GPT-5.6 Luna",
-    "gpt-5.6-terra": "GPT-5.6 Terra",
-    "gpt-5.6-sol": "GPT-5.6 Sol",
-}
-_GEMINI_DISPLAY_NAMES = {"gemini-3.7-flash": "Gemini 3.7 Flash", "gemini-3.5-flash-lite": "Gemini 3.5 Flash-Lite"}
+_CODEX_BY_ID = {model.id: model for model in OPENCLAW_CODEX_MODELS}
+_DEFAULT_CODEX_MODEL = _CODEX_BY_ID["gpt-5.6-luna"]
+_TPM_CODEX_MODEL = _CODEX_BY_ID["gpt-6-astra"]
 
 
-def _litellm_model_id(model: str) -> str:
-    return f"litellm/{exposed_name(Provider.CHATGPT, ApiShape.OAI_RESPONSES, model)}"
+def _litellm_model_id(model: CodexModel) -> str:
+    return f"litellm/{codex_responses_name(model.id)}"
 
 
-def _codex_model_entry(model: str) -> dict:
-    context_window, max_tokens = OPENCLAW_CLIPROXY_MODEL_LIMITS[model]
+def _codex_model_entry(model: CodexModel) -> dict:
     return {
-        "contextWindow": context_window,
-        "id": exposed_name(Provider.CHATGPT, ApiShape.OAI_RESPONSES, model),
+        "contextWindow": model.context_window,
+        "id": codex_responses_name(model.id),
         "input": ["text", "image"],
-        "maxTokens": max_tokens,
-        "name": f"{_CODEX_DISPLAY_NAMES[model]} (Codex subscription via LiteLLM)",
+        "maxTokens": model.max_tokens,
+        "name": f"{model.display_name} (Codex subscription via LiteLLM)",
         "reasoning": True,
     }
 
 
-def _gemini_model_entry(model: str) -> dict:
+def _gemini_model_entry(model: GeminiModel) -> dict:
     return {
         "contextWindow": GEMINI_CONTEXT_WINDOW,
-        "id": exposed_name(Provider.GOOGLE, ApiShape.GOOG_GENERATE, model),
+        "id": exposed_name(Provider.GOOGLE, ApiShape.GOOG_GENERATE, model.id),
         "input": ["text", "image"],
         "maxTokens": GEMINI_MAX_OUTPUT_TOKENS,
-        "name": f"{_GEMINI_DISPLAY_NAMES[model]} (Google AI via LiteLLM)",
-        "reasoning": model not in GEMINI_NON_REASONING_MODELS,
+        "name": f"{model.display_name} (Google AI via LiteLLM)",
+        "reasoning": model.reasoning,
     }
 
 
@@ -158,14 +152,8 @@ def config() -> dict:
                     "api": "openai-responses",
                     "apiKey": "${OPENCLAW_LITELLM_API_KEY}",
                     "baseUrl": "http://litellm.litellm.svc.cluster.local:4000/v1",
-                    # The roster deliberately excludes gemini-3.1-pro-preview: Google
-                    # returned RESOURCE_EXHAUSTED with quota 0 on 2026-08-30.
-                    #
-                    # Keep serving-path limits synchronized with test_openclaw_models.py.
-                    # Astra uses Codex 0.153.4's maximum configurable window; the 5.6
-                    # limits below were measured directly.
                     "models": [
-                        *(_codex_model_entry(model) for model in OPENCLAW_CLIPROXY_MODEL_LIMITS),
+                        *(_codex_model_entry(model) for model in OPENCLAW_CODEX_MODELS),
                         *(_gemini_model_entry(model) for model in GEMINI_MODELS),
                     ],
                     "request": {"allowPrivateNetwork": True},
