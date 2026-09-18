@@ -138,6 +138,19 @@ _STATE_DIR = "/state"
 # matches the two by this name.
 _EGRESS_CA_VOLUME_NAME = "egress-ca"
 
+_MITM_PROXY_URL = "http://127.0.0.1:3128"
+_PROXY_VAR_NAMES = ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy")
+_NO_PROXY_HOSTS = "127.0.0.1,localhost"
+_NO_PROXY_VAR_NAMES = ("NO_PROXY", "no_proxy")
+_CA_BUNDLE_PATH = "/etc/ssl/certs/ca-certificates.crt"
+_CA_BUNDLE_VAR_NAMES = (
+    "SSL_CERT_FILE",
+    "NODE_EXTRA_CA_CERTS",
+    "CURL_CA_BUNDLE",
+    "GIT_SSL_CAINFO",
+    "REQUESTS_CA_BUNDLE",
+)
+
 
 # cdk8s_plus_34's Python stub doesn't declare ApiResource as implementing
 # IApiResource's `resource_name` member (see namespace_rbac_constructs.py's `_custom`,
@@ -726,17 +739,9 @@ class App(Construct):
         harness_env = [
             "HOME",
             "PATH",
-            "HTTP_PROXY=http://127.0.0.1:3128",
-            "HTTPS_PROXY=http://127.0.0.1:3128",
-            "http_proxy=http://127.0.0.1:3128",
-            "https_proxy=http://127.0.0.1:3128",
-            "NO_PROXY=127.0.0.1,localhost",
-            "no_proxy=127.0.0.1,localhost",
-            "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt",
-            "NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt",
-            "CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt",
-            "GIT_SSL_CAINFO=/etc/ssl/certs/ca-certificates.crt",
-            "REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt",
+            *(f"{name}={_MITM_PROXY_URL}" for name in _PROXY_VAR_NAMES),
+            *(f"{name}={_NO_PROXY_HOSTS}" for name in _NO_PROXY_VAR_NAMES),
+            *(f"{name}={_CA_BUNDLE_PATH}" for name in _CA_BUNDLE_VAR_NAMES),
         ]
         args = [
             "--state-dir",
@@ -797,7 +802,7 @@ class App(Construct):
                 # reaches a sandbox at its next Pod.
                 SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(
                     name=_EGRESS_CA_VOLUME_NAME,
-                    mount_path="/etc/ssl/certs/ca-certificates.crt",
+                    mount_path=_CA_BUNDLE_PATH,
                     sub_path="ca-certificates.crt",
                     read_only=True,
                 ),
