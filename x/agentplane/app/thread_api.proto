@@ -1,0 +1,165 @@
+syntax = "proto3";
+
+// The browser-facing Thread services.
+//
+// A caller opens a Thread with GetView, which returns a bounded window of Segments, the current
+// controls and pending Commands, and the Position all of it is consistent with. It then follows
+// from that Position and applies each Changes batch in order. Applying every batch through K
+// reaches exactly what GetView would have returned at K -- that equivalence is what makes a bounded
+// first load safe, and x/agentplane/app/test_projection.py checks it.
+//
+// Opening a Thread:
+//
+//   -> GetView    {thread: T, window: {max_older: 50}}
+//   <- Snapshot   {position: {S, E, through 900}, window: {50 Segments, covers 640..900},
+//                  controls: {applied_model: "m"}, pending: {unresolved 0}}
+//   -> FollowView {thread: T, position: {S, E, 900}}
+//   <- Changes    {after 900, through 940, segments: [...], controls: {...}}
+//   <- Changes    {after 940, through 970, ...}                  until the caller stops reading
+//
+// Queueing a model change while a turn is running. The runner owns the queue, so admission and
+// effect are separate Events and the picker moves only on the second:
+//
+//   -> Submit     {thread: T, command: {id: C, change_model: {model: "next"}}}
+//   <- EventEntry {cursor 941, command_admitted: {command: C}}    archived runner admission
+//   <- Changes    {after 940, through 941, commands: [{C, pending}]}
+//   <- Changes    {after 941, through 970, commands: [{C, effected at 970}],
+//                  controls: {applied_model: "next"}}
+//
+// An Item streaming in. A batch that extends a Segment the caller already holds carries only what
+// was added, because re-sending a growing value whole on every update costs the sum of its prefixes
+// -- quadratic in its final size, and worse than the raw deltas the view exists to replace:
+//
+//   <- Changes {after 970, through 984, segments: [{cursor 971, revision 984,
+//                from_revision 970, item: {output: {suffix: "...3KB..."}}}]}
+//   <- Changes {after 984, through 992, segments: [{cursor 971, revision 992,
+//                from_revision 984, item: {output: {suffix: "...3KB..."}}}]}
+//
+// A Segment this interval created has nothing to extend and arrives whole, as does a value replaced
+// rather than grown -- an authoritative completion is a suffix only where it extends what streamed.
+// A caller that cannot apply an extension re-reads that Segment with ListSegments at a minimum at or
+// beyond the batch's `through_cursor`; what comes back already includes the extension and replaces
+// it, rather than being a base to append to.
+//
+// Reconnecting mid-stream needs none of that. The caller follows from the position it holds, which
+// is a committed batch boundary, and each replayed batch extends the revision the one before it
+// left. Only a gap past the retained journal forces a rebootstrap, and that returns whole values.
+//
+// Everything else is a demand read that never moves the caller's Position: ListSegments for older
+// history, ReadPayload for a tool output the reader expanded, and GetCommands to reconcile a
+// Command whose Submit response was lost. Exact original Events are a separate service, in
+// x/agentplane/app/thread_events.proto.
+//
+// Every method is unary or server-streaming. Commands are independent unary calls and subscriptions
+// resume from an explicit cursor, so no client or bidirectional stream is needed and a dropped
+// connection never cancels admitted work.
+//
+// Contract: x/agentplane/docs/thread_view_sync.md.
+package ducktape.agentplane.app.v1;
+
+import "x/agentplane/app/thread_view.proto";
+import "x/agentplane/protocol/command.proto";
+import "x/agentplane/protocol/event_log.proto";
+
+// Exactly which Segments to read: the one at `from_cursor`, then up to `max_older` visible Segments
+// going back and up to `max_newer` going forward. Counts are of visible Segments, so a burst of
+// Events that produce none cannot crowd out the conversation. Fewer come back where the Thread
+// ends first; running out on one side never backfills the other. There is no byte budget because
+// the server keeps a Segment small by leaving large values behind a reference.
+message SegmentWindow {
+  // Absent reads from the newest Segment, which is what opening a Thread wants, and pairs with
+  // `max_newer` zero. Set, it reads from the Segment at that cursor -- where the reader's viewport
+  // is parked, not a position they are synchronized to -- so a rebootstrap restores someone
+  // scrolled up rather than jumping them to the tail.
+  optional uint64 from_cursor = 1;
+  uint32 max_older = 2;
+  uint32 max_newer = 3;
+}
+
+// Bootstrap a view of a Thread. The server reads its projection checkpoint, the requested Segment
+// window, the current controls and the first page of pending Commands in one transaction, and
+// returns them with the Position they are all consistent with.
+//
+// The caller holds nothing: this is a first open or an explicit rebootstrap. A caller that already
+// has a Position asks FollowView to carry it forward instead. One window is enough to follow from,
+// because a Changes batch carries complete Segments -- Segments outside the window arrive whole.
+message GetViewRequest {
+  string thread_id = 1;
+  SegmentWindow window = 2;
+}
+
+message FollowViewRequest {
+  string thread_id = 1;
+  // Where the caller's installed view already reaches. Batches must start exactly here.
+  Position position = 2;
+}
+
+// Keyset pagination over immutable cursors, never offsets: a new Segment cannot appear behind a
+// cursor the caller already processed, so the cursor it holds is the only resume token it needs.
+message ListSegmentsRequest {
+  string thread_id = 1;
+  string source_id = 2;
+  string projection_epoch = 3;
+  oneof direction {
+    // Exclusive: Segments whose cursor is strictly lower, newest first.
+    uint64 before_cursor = 4;
+    // Exclusive: Segments whose cursor is strictly higher, oldest first.
+    uint64 after_cursor = 5;
+  }
+  uint32 max_segments = 6;
+  // Answer only once the projection has reached at least here, so the page orders against a
+  // snapshot the caller already holds. Zero imposes no minimum. A server that cannot reach it
+  // before the deadline reports projection lag rather than returning an older successful page.
+  uint64 minimum_through_cursor = 7;
+}
+
+// A payload is returned whole. Segments leave large values behind a reference rather than splitting
+// them, so there is no offset or chunk to reassemble.
+message ReadPayloadRequest {
+  string thread_id = 1;
+  oneof target {
+    // A derived payload, scoped to its source and epoch.
+    PayloadRef payload = 2;
+    // Exact original Event bytes, whose identity is epoch-independent.
+    ducktape.agentplane.protocol.v1.EventOrigin origin = 3;
+  }
+}
+
+// The derived read model: bounded snapshot, live changes, history and on-demand payloads.
+service ThreadViewService {
+  rpc GetView(GetViewRequest) returns (ViewSnapshot);
+  rpc FollowView(FollowViewRequest) returns (stream ViewUpdate);
+  rpc ListSegments(ListSegmentsRequest) returns (SegmentsPage);
+  rpc ReadPayload(ReadPayloadRequest) returns (Payload);
+}
+
+message SubmitRequest {
+  string thread_id = 1;
+  // The exact Command the caller generated, with the id it will reconcile against.
+  ducktape.agentplane.protocol.v1.Command command = 2;
+}
+
+message ListPendingCommandsRequest {
+  string thread_id = 1;
+  string projection_epoch = 2;
+  // Exclusive: Commands admitted strictly later, so paging cannot skip or repeat an admission.
+  uint64 after_admission_cursor = 3;
+  uint32 max_commands = 4;
+  uint64 minimum_through_cursor = 5;
+}
+
+message GetCommandsRequest {
+  string thread_id = 1;
+  repeated string command_ids = 2;
+  uint64 minimum_through_cursor = 3;
+}
+
+// Submission and reconciliation. The runner owns the only command queue; these reads share the
+// view's materialized checkpoint and introduce no second ordering.
+service ThreadCommandService {
+  // Returns the runner's exact CommandAdmitted entry, only after the app has archived it. A normal
+  // return proves archived admission and nothing about native effect; a timeout proves neither.
+  rpc Submit(SubmitRequest) returns (ducktape.agentplane.protocol.v1.EventEntry);
+  rpc ListPendingCommands(ListPendingCommandsRequest) returns (CommandsPage);
+  rpc GetCommands(GetCommandsRequest) returns (CommandLookup);
+}

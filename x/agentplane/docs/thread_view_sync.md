@@ -6,6 +6,35 @@ runner durability, command semantics, and the distinction between conversation,
 pending commands, and operational state. The schemas below select API shapes;
 they are not checked-in executable protobuf definitions yet.
 
+## Requirements
+
+What the protocol must do, independent of how. Each is falsifiable, and the
+[acceptance matrix](#failure-and-acceptance-matrix) says how each is observed. The
+decisions below are answers to these; where a decision stops serving one, the decision
+is what changes.
+
+1. **Opening is bounded.** What opening a Thread transfers and processes does not grow
+   with the Thread's length. A month-old Thread opens like a new one.
+2. **A screenful is enough to work.** What arrives first is the part of the conversation
+   the reader is looking at, the current controls, and the pending queue — enough to read
+   it and to submit a command. Older history and exact evidence load on demand, and never
+   load in the background merely because a tab stayed open.
+3. **Values stream as they grow.** An assistant message, a reasoning step, and a tool
+   call's arguments and output appear while they are being produced, not only once they
+   complete. Following a growing value costs what was added to it, not its size on every
+   update — otherwise the view costs more than the raw Events it replaces.
+4. **Following never reloads.** A reader holding a view receives what changed and never
+   re-reads the Thread to stay current. After a gap it resumes from the position it
+   holds, or is told explicitly that it must bootstrap again.
+5. **A command's fate is observable.** A command can be submitted and what became of it —
+   admitted, taken effect, failed, or not yet observed — read afterwards, including across
+   a lost response or a reload, without downloading history to find it.
+6. **Every step is consistent.** A bootstrap plus every update that follows equals what a
+   rebuild at the same position produces. No update leaves a reader holding a state the
+   log never passed through.
+7. **Nothing is lost underneath.** Everything the view omits stays exactly retrievable.
+   The derived view is a convenience over the archive, never a replacement for it.
+
 ## Decisions
 
 - Keep the runner's sole command queue and the app's lossless copy of its Events.
@@ -206,18 +235,20 @@ Its reads share the view's materialized checkpoint; the route boundary does not 
 an app-owned queue or another ordering. The table below names each operation by its row
 in this list.
 
-| Method                | Request shape                                                                                                              | Response/contract                                                                                                                |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `GetView`             | `thread_id`, recent segment/byte limits, optional reading anchor and bounded surrounding window, bounded local command IDs | One consistent `ViewSnapshot`; both a tail and an old reading window when needed                                                 |
-| `FollowView`          | `thread_id`, projection position                                                                                           | Contiguous committed change batches, or explicit rebootstrap requirement                                                         |
-| `ListSegments`        | `thread_id`, epoch/source, exclusive before/after anchor or around anchor, limits, minimum processed cursor                | Bounded current segments, sampled position, stable next/previous boundaries; not offset pagination                               |
-| `ReadPayload`         | Thread, immutable payload reference, byte offset/limit                                                                     | Exact bounded bytes, next offset, completeness/availability; no live checkpoint advancement                                      |
-| `Submit`              | `thread_id`, exact generated `Command`                                                                                     | Exact runner `CommandAdmitted` EventEntry, only after app archival; not effect completion                                        |
-| `ListPendingCommands` | Thread/epoch, exclusive admission anchor, limits, minimum processed cursor                                                 | Pending summaries sampled at a position; explicit continuation and total unresolved count                                        |
-| `GetCommands`         | Thread, bounded IDs, minimum processed cursor                                                                              | Exact admitted Commands and outcome references, or `not_observed_through`; includes settled commands outside all visible windows |
-| `ListEvents`          | Thread/source, exclusive original cursor, optional end/filter, count/byte limits                                           | Exact entries, scanned range, next page token and availability; filtered output is not a contiguous Event prefix                 |
-| `GetEvents`           | Thread and bounded original `EventOrigin` references                                                                       | Exact evidence or per-reference availability, including outside loaded history                                                   |
-| `FollowEvents`        | Thread/source plus shared `Follow`                                                                                         | Explicit opt-in, unfiltered original Event log; independent raw checkpoint                                                       |
+Operational inventory and runner status remain a separate authority. Existing live
+inventory endpoints stay. A later replacement can offer unary reads and server-streaming
+snapshots with its own version and staleness metadata; it cannot borrow a Thread
+projection cursor. Sandbox CRUD, egress and action policies, Actions, connections, consent
+and settings are not converted by this work.
+
+The shapes are in `thread_view.proto`. What follows is what a schema cannot state about
+itself.
+
+**One integer timeline.** The runner journal's dense sequence. The app archives each Event
+under that same number rather than assigning its own, which `TrajectoryStore.record`
+enforces, so a Segment's position, a Command's admission and a payload's revision are
+directly comparable. A projection checkpoint is a position in that space, never a new app
+Event number, and derived changes are explicitly not Events.
 
 All limits have server-enforced maxima. Page tokens are opaque, bound to Thread,
 source/epoch, direction and filter; not authorization capabilities. Counts are
@@ -232,110 +263,50 @@ oversized admission response reports the archived receipt reference; it is not a
 rejection of the already admitted command. Validate this boundary in transport
 tests, and choose normal unary limits to fit accepted Command sizes.
 
-Operational inventory/runner status remains a separate authority. Existing live
-inventory endpoints remain during this slice. A later RPC replacement can offer
-unary reads and server-streaming snapshots, with its own version/staleness metadata;
-it cannot borrow a Thread projection cursor. Sandbox CRUD, egress/action policies, Actions,
-connections, consent, and settings are not converted in this design PR.
+- `source_id` is the original runner journal identity. A changed source is an integrity and
+  recovery condition, not a routine cache reset. Where the app has not observed that
+  identity yet, answer with an explicit projection-not-ready error rather than inventing a
+  source for an empty view. A known empty source can legitimately sit at a zero checkpoint.
+- `projection_epoch` identifies one coherent materialization generation. It is not an Event
+  counter and not a compatibility version. A rebuild publishes a new epoch atomically, and
+  clients rebootstrap rather than combine generations.
+- `through_cursor` covers every original Event through that position, including Events that
+  produced no Segment. Only a successful atomic installation advances it. A Segment's
+  revision says when that Segment last changed, not what a browser has consumed.
 
-## Positions, segments, and payloads
+**Most Events are carried, not transcribed.** Only an Item is folded, because only an Item
+accumulates across Events -- it is why a derived view exists at all. An Event whose meaning
+is already its final state is carried verbatim, so a reader learns one vocabulary rather
+than a parallel restatement of it, and keeps the Event's timestamp and causal
+`source_sequences`. Three things are genuinely derived, each joining or accumulating rather
+than renaming: `Item`, `CommandSummary`, and `Controls`.
 
-The following notation describes typed messages and `oneof` alternatives, not a
-parallel JSON protocol. `uint64` remains `bigint` in TypeScript.
+Command Events drive the queue and the controls, and produce no Segment. Grouping runs of
+tool calls and reasoning is a rendering rule over whatever a client is showing, not a fact
+about the log, so nothing marks one.
 
-```text
-Position = { source_id, projection_epoch, through_cursor: uint64 }
-Segment = {
-  anchor_cursor: uint64, revision_cursor: uint64,
-  content: oneof(ConfirmedInput, Item, Turn, Control, GroupBoundary, Diagnostic)
-}
-ViewSnapshot = {
-  position, segments: SegmentsPage[], controls, pending: CommandsPage,
-  requested_commands: CommandLookup
-}
-Changes = {
-  source_id, projection_epoch, after_cursor, through_cursor,
-  segments: SegmentChange[], commands: CommandChange[], controls,
-  unresolved_count
-}
-ViewUpdate = oneof(Changes, RebootstrapRequired)
-PayloadRef = {
-  source_id, projection_epoch, owner_anchor, field, revision_cursor, byte_length
-}
-ReadPayloadRequest = {
-  thread_id, target: oneof(PayloadRef, EventOrigin), offset: uint64, max_bytes
-}
-CommandSummary = {
-  command_id, operation_kind, bounded_preview, admission_origin,
-  outcome: oneof(Pending, EffectOrigin, FailedOrigin, NoopOrigin)
-}
-CommandLookupEntry = oneof(AdmittedCommandAndOutcome, NotObservedThrough)
-RebootstrapRequired = {
-  reason: oneof(UpdateCacheExpired, CatchupBudgetExceeded, ProjectionRebuilt)
-}
-```
+`Controls` carry the evidenced applied model, active-turn identity and observed harness
+state. Initial configuration is separately identified as configuration provenance.
+`Attached` may be ahead of the archive and must not seed these Event-derived values.
 
-- `source_id` is the original runner journal identity. A changed source is an
-  integrity/recovery condition, not a routine cache reset.
-  If the app has not observed that identity yet, return an explicit
-  projection-not-ready error; do not invent a source for an empty view. A known
-  empty source can legitimately have a zero checkpoint.
-- `projection_epoch` identifies one coherent materialization/reducer generation.
-  It is not an Event counter or a compatibility version. Rebuild publishes a new
-  epoch atomically; clients rebootstrap rather than combine generations.
-- `through_cursor` covers every original Event through that position, including
-  omitted native traffic. Only successful atomic snapshot/change installation
-  advances it. A segment revision says when that segment last changed, not which Events
-  the browser has consumed.
-- One segment begins at each conversation-bearing Event, keyed by its immutable
-  original cursor within the Thread/source. Item/harness-message/turn IDs remain
-  fields, not substitutes for source scope. Later item/turn changes update the same
-  segment. Receipt/lifecycle boundaries get lightweight segments even when they
-  have no normal-mode card; grouping across pages therefore remains deterministic.
-- `ConfirmedInput` preserves the harness-confirmed text reference and **all**
-  originating command IDs. It is anchored at confirmation, not submission.
-  Item segments preserve kind, native ID, tool name, observed completion/result,
-  bounded text preview, and exact argument/output/text references. Unknown or
-  incomplete output is not converted into successful completion after a crash.
-- Turn-start segments provide context; terminal outcome/diagnostics have a control
-  segment anchored at the terminal Event, after any partial output. Render the
-  outcome once, not again at the start header. An empty failed turn therefore remains
-  visible. Historical model effects have their own control segments; current model
-  state cannot replace them.
-- Controls carry evidenced applied model, active-turn identity and observed harness
-  state. Initial configuration is separately identified as configuration provenance.
-  `Attached` may be ahead of the archive and must not seed these Event-derived values.
+**A growing value streams as its growth.** A batch extending a Segment the caller is known
+to hold carries only what was added; re-sending a value whole on every update costs the sum
+of its prefixes, which is worse than the raw deltas the view replaces. A Segment the
+interval created arrives whole, as does a value replaced rather than grown -- authoritative
+arguments are not an extension of the partial JSON they supersede. A caller that cannot
+apply an extension re-reads that Segment rather than inventing a base. Snapshots and history
+pages only ever carry whole values.
 
-An outcome origin points to the existing shared Event, not a new independent
-execution-status vocabulary: confirmed input, model effect, interrupted turn, or
-command-caused harness exit. Command summaries are materialized from those facts.
+**Payloads are immutable at a reference**, scoped to the source and projection epoch, so a
+corrected rebuild cannot reuse an old derived payload's cache identity. Exact raw references
+remain epoch-independent original Event identities, not derived payload references, and
+`ReadPayload` with an `EventOrigin` returns serialized `EventEntry` bytes. A payload is
+returned whole: a finished value is never split across responses. UTF-8 byte offsets within
+one are not JavaScript string indices.
 
-Bound both segment count **and bytes**, including IDs, previews, command summaries and
-diagnostics. Large user/assistant text is explicitly partial with a payload reference;
-ordinary short completed text arrives assembled. Tool arguments/results are omitted
-from collapsed initial cards. A pre-window active item need not pull its entire turn
-into the snapshot; controls identify it and navigation can fetch its segment/context.
-The requested recent-segment count counts visible anchors; bounded grouping context must
-not let a burst of invisible admission boundaries crowd the conversation out entirely.
-
-Payloads are immutable at a reference, scoped to the source and projection epoch.
-A corrected rebuild cannot reuse an old derived payload's cache identity. Exact
-raw references remain epoch-independent original Event identities, not derived
-payload references. `ReadPayload` with an `EventOrigin` returns serialized shared
-`EventEntry` bytes, including an oversized admitted Command; the target variant
-determines the decoding type. UTF-8 byte offsets are not JavaScript string
-indices; streaming text uses an incremental decoder. Store append chunks plus
-version manifests/prefix lengths, not another full copy of growing text per token.
-A final authoritative replacement has a new reference; do not append a correction
-as though it were a suffix. Normal live batches may include bounded text append
-patches with an expected prior revision/offset, followed by the new reference. If
-the inline budget is exceeded, continue reporting the reference and completeness;
-expanded views fetch bounded ranges on demand. An unopened tool output does not
-stream its body to the browser. No per-token full-message replacements.
-
-Unloaded, loading, loaded-empty, partial/streaming, failed fetch, and unavailable
-payloads are distinct UI states. Loaded payload caches are immutable and separate
-from mutable segment metadata; they never become another authority for item completion.
+Unloaded, loading, loaded-empty, streaming, failed-fetch and unavailable payloads are
+distinct UI states. Loaded payload caches are immutable and separate from mutable Segment
+metadata; they never become another authority for item completion.
 
 ## Server materialization and replay
 
@@ -363,7 +334,7 @@ checks again after listener reconnection. Do not hold a DB transaction open for 
 lifetime of a browser stream.
 
 Publish empty-visible-change batches too: a run of only native Events still advances
-coverage. Coalescing within a batch must retain every new historical anchor and
+coverage. Coalescing within a batch must retain every new historical Segment and
 command/control effect, even when its final state supersedes an earlier intermediate
 state. Exact intermediate streaming chronology remains in Raw.
 
@@ -392,8 +363,8 @@ sequenceDiagram
     participant F as Browser
     participant A as App projection/archive
     participant R as Runner
-    F->>A: GetView {thread:T, recent:50, local_ids:[C]}
-    A-->>F: Snapshot {source:S, epoch:E, through:900, segments, pending, controls}
+    F->>A: GetView {thread:T, window:{max_older:50}}
+    A-->>F: Snapshot {source:S, epoch:E, through:900, window, pending, controls}
     F->>F: Atomically install snapshot and cursor 900
     F->>A: FollowView {T, S, E, after:900}
     A-->>F: Changes {after:900, through:940, segments, commands, controls}
@@ -407,6 +378,10 @@ sequenceDiagram
     R-->>A: Event 970 ModelChanged(C, M)
     A-->>F: Changes {after:941, through:970, C effected, applied_model:M}
 ```
+
+A batch that extends a Segment the caller holds carries only what was added, so an Item
+streaming over hundreds of Events costs its final size rather than the sum of its prefixes.
+A caller that cannot apply an extension re-reads that Segment.
 
 `Submit` never waits for native effect. A normal return proves archived admission;
 a timeout/cancellation does not prove non-admission. Retain the exact local command
@@ -426,9 +401,8 @@ Pending summaries have their own bounded page independent of conversation segmen
 Keep unresolved count and controls always present, locally submitted IDs pinned,
 and fetch further pending entries on demand. Live command summaries/outcomes update
 loaded entries and counts even when their admission is outside the history window.
-The count must not imply the visible first page is the whole queue. Large exact
-Command payloads use the bounded payload mechanism; compare generated Commands on
-reconciliation, not just summary text or IDs.
+The count must not imply the visible first page is the whole queue. Compare generated
+Commands on reconciliation, not just summary text or IDs.
 
 On a short reconnect, follow from the last installed position. Batches must start at
 that position; duplicates require matching identity/content. Partial overlap or a
@@ -436,11 +410,13 @@ gap is not guessed through. Recover by rereading/rebootstrap; report conflicting
 content as an integrity error. Connection loss leaves visible data marked stale.
 
 On a long gap or epoch change, cancel the old subscription, increment the frontend
-request generation, and get a new bounded snapshot, including the reading anchor
-and local command IDs. Install its segments/controls/commands/position atomically, then
-follow. Preserve drafts/disclosures/viewport position, not stale server truth. Old
-generation callbacks cannot write into the new store. Unavailable anchors are
-reported with a reason; the client does not silently jump to the tail.
+request generation, and get a new bounded snapshot whose window is where the reader is
+parked rather than the tail. Install its segments, controls, commands and position
+atomically, then follow, and reconcile any locally retained Command ids with
+`GetCommands` against the position just installed. Preserve drafts, disclosures and
+viewport position, not stale server truth. Old generation callbacks cannot write into the
+new store. An unavailable cursor is reported with a reason; the client does not silently
+jump to the tail.
 
 ```mermaid
 sequenceDiagram
@@ -448,9 +424,11 @@ sequenceDiagram
     participant A as App through 500000
     F->>A: FollowView {T, S, E, after:970}
     A-->>F: RebootstrapRequired {UpdateCacheExpired}
-    F->>F: Cancel old generation. Retain draft and reading anchor 400
-    F->>A: GetView {T, recent:50, around:400, local_ids:[C]}
-    A-->>F: Snapshot {through:500000, tail, reading window, C settled, controls}
+    F->>F: Cancel old generation. Retain draft and viewport at cursor 400
+    F->>A: GetView {T, window:{from_cursor:400, max_older:25, max_newer:25}}
+    A-->>F: Snapshot {through:500000, window around 400, controls, pending}
+    F->>A: GetCommands {T, ids:[C], minimum_through:500000}
+    A-->>F: Lookup {C settled}
     F->>F: Atomic replacement without missed-token replay or jump to bottom
     F->>A: FollowView {T, S, E, after:500000}
     A-->>F: Changes {500000..500020}
@@ -458,14 +436,13 @@ sequenceDiagram
 
 ## History and live-data races
 
-History is keyset-paginated by immutable first-observed anchor, not timestamp or
-offset. A new segment cannot be inserted behind an already processed anchor. Updated
-old items keep their original anchor. Page edges include lightweight group/turn
-context, not every item in a potentially enormous turn.
+History is keyset-paginated by each Segment's immutable cursor, not by timestamp or
+offset. A new Segment cannot appear behind a cursor a caller already processed, and an
+updated old Item keeps the cursor it started at.
 
 **Chosen consistency:** each page is a current short DB snapshot at `P`, at least
 the request's `minimum_through`. Adjacent pages need not share a long-lived historic
-DB snapshot; stable anchors prevent insert-induced holes. A page's segment revisions
+DB snapshot; stable cursors prevent insert-induced holes. A page's Segment revisions
 are at most `P`. It does not advance the browser's live cursor.
 
 The view stream includes compact changes for every affected segment, including those
@@ -477,41 +454,42 @@ or per-browser server-side window registry:
    batches from `H` while the request is outstanding.
 2. A response at `P > current_cursor` waits until the live stream reaches `P`.
    It must not inject future state into an earlier snapshot.
-3. If the browser is already at `K >= P`, merge the page plus buffered changes
-   `(P, K]` for those segments in one transaction. Ignoring a late lower-revision
-   segment is sufficient only if a newer complete segment is already loaded; an
-   evicted segment may need patches based on the page, which is why the buffer exists.
-4. If the needed buffer was evicted, a patch precondition fails, or the epoch/source
-   changed, discard/retry hydration or rebootstrap bounded windows. Never declare a
-   stale page current. Requests and buffered bytes have explicit limits.
+3. If the browser is already at `K >= P`, merge the page plus buffered changes `(P, K]`
+   for those Segments in one transaction. Ignoring a late lower-revision Segment is
+   sufficient only where a newer whole Segment is already loaded; an evicted Segment may
+   need the buffered extensions replayed onto the page, which is why the buffer exists.
+4. If the needed buffer was evicted, an extension names a revision the page does not
+   carry, or the epoch or source changed, discard and retry hydration or rebootstrap
+   bounded windows. Never declare a stale page current. Requests and buffered bytes have
+   explicit limits.
 
-New-segment changes contain a complete bounded segment. Patches for unloaded old
-segments are buffered for pending hydration, not applied to fabricated empty items.
-Page windows become observable only after suffix reconciliation; displaying an
-unreconciled page as current would violate the checkpoint contract. If a minimum
-cursor cannot be served before the request deadline, report projection lag rather
-than return an older successful snapshot.
+A page always carries whole Segments, so it is a valid base to replay extensions onto. An
+extension for an unloaded Segment is buffered for a pending hydration rather than applied
+to a fabricated empty Item. A page becomes observable only after that replay; showing an
+unreconciled page as current would violate the checkpoint contract. Where a minimum cursor
+cannot be served before the request deadline, report projection lag rather than return an
+older successful page.
 
 ```mermaid
 sequenceDiagram
     participant F as Browser at 1000
     participant A as App
-    F->>A: ListSegments {before:400, min_through:1000, limit:50}
+    F->>A: ListSegments {before_cursor:400, minimum_through:1000, max_segments:50}
     A->>A: Read segments and checkpoint P=1010 consistently
     A-->>F: Changes {1000..1010}
     A-->>F: Changes {1010..1030, update old item I}
-    A-->>F: Delayed SegmentsPage {through:1010, I, before:350}
+    A-->>F: Delayed SegmentsPage {covers 350..400, whole Segments incl. I}
     F->>F: Merge page + buffered 1010..1030 for its segments
     Note over F: Still through 1030. Preserve visible segment and pixel offset
-    F->>A: ReadPayload {I.output, revision:1020, offset:0, limit:65536}
-    A-->>F: Exact chunk at that reference without changing live cursor
+    F->>A: ReadPayload {I.output at revision 1020}
+    A-->>F: The whole value at that reference, without changing the live cursor
 ```
 
 Pending-page and command-lookup hydration obey the same position/generation rules.
 For pending membership, live settlement removes an entry even if it raced the page;
-new admissions have higher anchors and are found through live updates. Immutable
-payload chunks need no segment overwrite: cache by reference and show them only while
-that reference is selected, or explicitly label a historical revision.
+new admissions have higher cursors and are found through live updates. An immutable
+payload needs no Segment overwrite: cache it by reference and show it only while that
+reference is selected, or label a historical revision explicitly.
 
 Keep a bounded tail window and, while reading far back, a bounded window around the
 viewport. Evict/refetch intervening history; do not accumulate a month of segments just
@@ -523,22 +501,21 @@ bounds mounted DOM independently of network/cache bounds.
 ## Raw and debug surface
 
 Raw remains additive to the same conversation order and disclosures. Show source,
-segment anchor/revision, installed projection cursor, applied command evidence and
+Segment cursor and revision, installed projection cursor, applied command evidence and
 separately reported archive/runner positions. Fetch exact frames and causal
 `source_sequences` only when requested. Raw chronological entries retain original
 cursor order even when an aggregate card spans interleaved streaming Events.
 
-`ListEvents` reports the original range it scanned and any filter. An empty filtered
-page is not proof no Events occurred. A direct evidence lookup can find Native
-frames before the visible page and receipt/effect Events after its first anchor.
-The unfiltered raw follower is an explicit debugging option, not a background
+`ListEvents` reports the original range it scanned, which bounds what an empty page
+proves and is where a caller resumes from. A direct evidence lookup can find Native frames
+before the visible page and command Events, which the conversation carries no Segment for.
+The raw follower is an explicit debugging option, not a background
 requirement for normal mode. Neither raw pagination nor direct lookup moves the
 conversation checkpoint. A live Raw panel follows archive availability separately
 from the potentially lagging projection.
 
-Availability is typed: retained, not-yet-archived, unavailable/lost, and (only if
-retention is later implemented) not-captured/expired. Transport failure is not empty
-evidence. Raw authentication is no weaker than conversation authentication, and
+Availability is typed: retained, not-yet-archived, and unavailable. Transport failure is
+not empty evidence. Raw authentication is no weaker than conversation authentication, and
 raw payloads are not copied into routine telemetry or error messages.
 
 Initial implementation retains **all** observed runner Events, native frames and
@@ -587,28 +564,30 @@ post-admission failure has `CommandFailed`. A submit deadline is neither kind of
 NACK. Retriable read errors preserve stale visible state and an actionable retry.
 `RebootstrapRequired` is a typed sync transition, not an arbitrary transport error.
 
-| Case                                                | Required observation                                                                       |
-| --------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| Short high-delta or month-long Thread               | Bounded first payload/work; assembled past text; no eventual full-history fetch            |
-| Empty/new Thread; projector behind archive          | Valid empty snapshot or explicit projection-not-ready; never fake successful catch-up      |
-| Native-only interval                                | Coverage advances without fabricated conversation segments                                 |
-| Active pre-window item, huge turn/output            | Current controls intact; bounded segments/previews; exact demand-loaded content            |
-| Model queued during Codex turn                      | Admission visible as pending; picker changes only on evidenced effect                      |
-| Interrupt or command failure                        | Original target/cause and error shown; no fabricated interrupted/completed state           |
-| Claude-coalesced input                              | Exact confirmed text and all origin command IDs, at native confirmation position           |
-| Failed turn without output                          | Visible diagnostic without Raw and without duplicate completion card                       |
-| Lost submit response; old settled local command     | Exact ID/payload reconciliation outside visible history; no duplicate send under a new ID  |
-| App/projector/replica restart, missed notification  | Replay resumes from durable committed checkpoint; segments and coverage agree              |
-| Crash between projection writes/checkpoint          | Transaction rollback or complete batch, never partial progress                             |
-| Long gap, expired update cache, slow client         | Explicit bounded rebootstrap preserving draft/reading anchor/local IDs                     |
-| Late page/lookup/detail, eviction, stream race      | No regression/future contamination; replay buffered suffix or retry explicitly             |
-| Oversized single-Event update or raw entry          | Bounded staging/chunks or explicit resync/error; no partial cursor advancement             |
-| Old-epoch payload returns after rebuild             | Immutable cache identity cannot collide; stale response cannot replace current bytes       |
-| Repeated upward paging during live changes          | No gaps/duplicates; stable viewport, explicit exhaustion, bounded cache                    |
-| Raw entry outside window; filtered empty range      | Exact original provenance/order; independent cursor and explicit availability              |
-| Sandbox suspended/deleted; runner unreachable       | Archived page readable, controls show evidence/staleness, submit does not pretend to queue |
-| Source conflict, unknown observation, corrupt batch | Explicit integrity/projection error; never silently reset or drop evidence                 |
-| Auth expiry, cross-user cache, CSRF, stream cancel  | No auth bypass/leak; controlled login/reconnect; no unintended command cancellation        |
+| Case                                                | Required observation                                                                                                              |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Short high-delta or month-long Thread               | Bounded first payload and work; assembled past text; no eventual full-history fetch                                               |
+| First screenful only                                | The visible conversation, controls and pending queue render and accept a command before any history or evidence is fetched        |
+| Item streaming over hundreds of Events              | Text and tool output appear while produced; bytes followed are proportional to what was added, not to the value's size per update |
+| Empty/new Thread; projector behind archive          | Valid empty snapshot or explicit projection-not-ready; never fake successful catch-up                                             |
+| Native-only interval                                | Coverage advances without fabricated conversation segments                                                                        |
+| Active pre-window item, huge turn/output            | Current controls intact; bounded segments/previews; exact demand-loaded content                                                   |
+| Model queued during Codex turn                      | Admission visible as pending; picker changes only on evidenced effect                                                             |
+| Interrupt or command failure                        | Original target/cause and error shown; no fabricated interrupted/completed state                                                  |
+| Claude-coalesced input                              | Exact confirmed text and all origin command IDs, at native confirmation position                                                  |
+| Failed turn without output                          | Terminal Event visible with its error, without Raw and without a duplicate completion card                                        |
+| Lost submit response; old settled local command     | Exact ID/payload reconciliation outside visible history; no duplicate send under a new ID                                         |
+| App/projector/replica restart, missed notification  | Replay resumes from durable committed checkpoint; segments and coverage agree                                                     |
+| Crash between projection writes/checkpoint          | Transaction rollback or complete batch, never partial progress                                                                    |
+| Long gap, expired update cache, slow client         | Explicit bounded rebootstrap preserving draft and viewport; local ids reconciled on the new position                              |
+| Late page/lookup/detail, eviction, stream race      | No regression or future contamination; buffered extensions replayed onto the page, or an explicit retry                           |
+| Single Event revising many Segments                 | The whole batch or none of it; no partial cursor advancement                                                                      |
+| Old-epoch payload returns after rebuild             | Immutable cache identity cannot collide; stale response cannot replace current bytes                                              |
+| Repeated upward paging during live changes          | No gaps/duplicates; stable viewport, explicit exhaustion, bounded cache                                                           |
+| Raw entry outside the loaded window                 | Exact original provenance and order; independent cursor and explicit availability                                                 |
+| Sandbox suspended/deleted; runner unreachable       | Archived page readable, controls show evidence/staleness, submit does not pretend to queue                                        |
+| Source conflict, unknown observation, corrupt batch | Explicit integrity/projection error; never silently reset or drop evidence                                                        |
+| Auth expiry, cross-user cache, CSRF, stream cancel  | No auth bypass/leak; controlled login/reconnect; no unintended command cancellation                                               |
 
 Reducer tests compare `snapshot(H) + changes(H,K]` to direct projection at `K`,
 including randomized batch boundaries and all command outcome types. Database tests
