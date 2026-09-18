@@ -5,3 +5,5 @@ resources:
   - iam.yaml
   - secret-reference-grant.yaml
   - credentials-secret.sops.yaml
+  - seaweed.yaml
+  - repository-secret-store.yaml
