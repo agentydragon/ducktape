@@ -65,11 +65,15 @@ def test_binding_spec_parses_and_names_defined_sets(document: dict[str, Any]) ->
 
 @pytest.mark.parametrize("namespace", _NAMESPACES)
 def test_preset_action_policy_sets_are_defined(
-    namespace: str, agentplane_app_config: dict[str, list[dict[str, Any]]]
+    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
 ) -> None:
     """A launch preset binds every Sandbox it launches to the sets it names; the app refuses a
     launch naming a set the namespace does not hold, so a stale name here breaks every launch."""
-    config_map = one(doc for doc in agentplane_app_config[namespace] if doc["kind"] == "ConfigMap")
+    config_map = one(
+        doc
+        for doc in agentplane_manifests[namespace]
+        if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "agentplane-app-config"
+    )
     config = yaml.safe_load(config_map["data"]["config.yaml"])
     defined = {
         policy_set["metadata"]["name"]

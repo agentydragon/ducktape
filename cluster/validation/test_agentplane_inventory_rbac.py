@@ -16,10 +16,10 @@ def services_object(documents: list[dict[str, Any]], kind: str, name: str | None
 
 
 def test_agentplane_app_can_list_the_sandbox_templates_its_route_offers(
-    agentplane_services: dict[str, list[dict[str, Any]]],
+    agentplane_manifests: dict[str, list[dict[str, Any]]],
 ) -> None:
     for namespace in ("agentplane-staging", "agentplane-testing"):
-        role = services_object(agentplane_services[namespace], "Role", "agentplane-app")
+        role = services_object(agentplane_manifests[namespace], "Role", "agentplane-app")
         template_rule = one(
             rule
             for rule in role["rules"]

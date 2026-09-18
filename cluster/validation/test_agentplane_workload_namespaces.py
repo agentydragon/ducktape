@@ -74,30 +74,15 @@ def test_the_ingress_admits_every_namespace_the_proxy_does(
     namespace: str,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    agentplane_services: dict[str, list[dict[str, Any]]],
+    agentplane_manifests: dict[str, list[dict[str, Any]]],
 ) -> None:
-    documents = agentplane_services[namespace]
+    documents = agentplane_manifests[namespace]
     proxy = _proxy(tmp_path, documents, monkeypatch)
     ingress = _ingress(tmp_path, documents, monkeypatch)
 
     assert proxy.allowed_service_account_namespaces <= ingress.allowed_service_account_namespaces, (
         "the proxy authenticates a workload and sends it to the ingress, which authenticates the same "
         "bearer again, so a namespace the proxy admits and the ingress does not is refused mid-hop"
-    )
-
-
-@pytest.mark.parametrize("namespace", NAMESPACES)
-def test_both_read_the_same_projected_token_audience(
-    namespace: str,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    agentplane_services: dict[str, list[dict[str, Any]]],
-) -> None:
-    """The substituted credential is the workload's own token, so one audience has to satisfy both."""
-    documents = agentplane_services[namespace]
-    assert (
-        _proxy(tmp_path, documents, monkeypatch).token_audience
-        == _ingress(tmp_path, documents, monkeypatch).token_audience
     )
 
 

@@ -34,13 +34,9 @@ filegroup(
 # manifests.
 exports_files(
     [
-        "agentplane-staging/agentplane-app-config.k8s.yaml",
-        "agentplane-staging/agentplane-namespace-rbac.k8s.yaml",
-        "agentplane-staging/agentplane-services.k8s.yaml",
+        "agentplane-staging/agentplane.k8s.yaml",
         "agentplane-staging/kustomization.yaml",
-        "agentplane-testing/agentplane-app-config.k8s.yaml",
-        "agentplane-testing/agentplane-namespace-rbac.k8s.yaml",
-        "agentplane-testing/agentplane-services.k8s.yaml",
+        "agentplane-testing/agentplane.k8s.yaml",
         "agentplane-testing/kustomization.yaml",
         "agents/haku-openclaw-spike/app/haku-openclaw-spike-config.k8s.yaml",
         "agents/public-coder-agent/app/public-coder-agent-config.k8s.yaml",
@@ -111,7 +107,7 @@ filegroup(
     name = "haku_manifest_contract_files",
     srcs = [
         "activitywatch/activitywatch-read-token.sops.yaml",
-        "agentplane-staging/agentplane-namespace-rbac.k8s.yaml",
+        "agentplane-staging/agentplane.k8s.yaml",
         "agents/agent-rbac-base/clusterrole-agent-readable-namespace-logs.yaml",
         "agents/agent-rbac-base/clusterrole-agent-readable-namespace-metadata.yaml",
         "agents/agent-rbac-base/clusterrole-cluster-diagnostics-reader.yaml",
@@ -282,12 +278,6 @@ filegroup(
     name = "haku_console_deployment",
     srcs = ["haku/console/deployment.yaml"],
     visibility = ["//haku/console:__pkg__"],
-)
-
-filegroup(
-    name = "agentplane_testing_actions_manifest",
-    srcs = ["agentplane-testing/agentplane-services.k8s.yaml"],
-    visibility = ["//x/agentplane/action_service:__pkg__"],
 )
 
 filegroup(

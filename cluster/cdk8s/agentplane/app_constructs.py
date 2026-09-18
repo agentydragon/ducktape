@@ -53,12 +53,9 @@ from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     ApiResource,
-    Capability,
     ConfigMap,
     ContainerPort,
     ContainerResources,
-    ContainerSecurityContextProps,
-    ContainerSecutiryContextCapabilities,
     Cpu,
     CpuResources,
     Deployment,
@@ -113,6 +110,7 @@ from gateway_api_crds.io.k8s.networking.gateway import (
 from cluster.cdk8s.agentplane import (
     actions_constructs,
     cilium_helpers,
+    container_security,
     db_constructs,
     egress_constructs,
     llm_ingress_constructs,
@@ -381,13 +379,7 @@ class App(Construct):
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
             ),
-            # Same rationale as litellm_constructs.py's container securityContext
-            # override: the container's actual root needs haven't been audited.
-            security_context=ContainerSecurityContextProps(
-                allow_privilege_escalation=False,
-                capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
-                read_only_root_filesystem=False,
-            ),
+            security_context=container_security.WRITABLE_ROOT,
         )
         config = ConfigMap.from_config_map_name(self, "app-config-ref", "agentplane-app-config")
         volume = Volume.from_config_map(self, "config-volume", config)
@@ -783,7 +775,9 @@ class App(Construct):
                                     sources=[
                                         SandboxTemplateSpecPodTemplateSpecVolumesProjectedSources(
                                             service_account_token=SandboxTemplateSpecPodTemplateSpecVolumesProjectedSourcesServiceAccountToken(
-                                                audience="agentplane-egress", expiration_seconds=600, path="token"
+                                                audience=llm_ingress_constructs.WORKLOAD_TOKEN_AUDIENCE,
+                                                expiration_seconds=600,
+                                                path="token",
                                             )
                                         )
                                     ]

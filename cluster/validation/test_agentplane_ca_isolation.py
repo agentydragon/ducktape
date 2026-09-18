@@ -24,12 +24,12 @@ def services_object(documents: list[dict[str, Any]], kind: str, name: str | None
 
 
 def test_environment_ca_publication_and_consumers_are_isolated(
-    k8s_dir: Path, agentplane_services: dict[str, list[dict[str, Any]]]
+    k8s_dir: Path, agentplane_manifests: dict[str, list[dict[str, Any]]]
 ) -> None:
     bundle_names = set()
     reflected_names = set()
     for namespace in ("agentplane-staging", "agentplane-testing"):
-        documents = agentplane_services[namespace]
+        documents = agentplane_manifests[namespace]
         certificate = services_object(documents, "Certificate")
         bundle = services_object(documents, "Bundle")
         proxy = services_object(documents, "Deployment", "agentplane-egress")

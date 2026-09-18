@@ -24,7 +24,7 @@ from cluster.cdk8s import generate_manifests
 
 @pytest.fixture
 def everything_url() -> Iterator[str]:
-    documents = Cdk8sTesting.synth(generate_manifests.testing_services_chart(Cdk8sTesting.app()))
+    documents = Cdk8sTesting.synth(generate_manifests.testing_chart(Cdk8sTesting.app()))
     deployment = one(
         doc
         for doc in documents

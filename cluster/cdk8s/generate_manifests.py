@@ -496,24 +496,11 @@ def _generate_ha_mcp(root: Path) -> None:
     )
 
 
-def _generate_agentplane_namespace_rbac(root: Path, app_dir: str, spec: namespace_rbac_constructs.EnvSpec) -> None:
-    """Synthesize into `app_dir`'s existing, otherwise hand-written top-level
-    Kustomization -- same mixed generated/hand-written pattern as
-    `_write_config_map_chart`, replacing what used to be the `namespace/` and
-    `agent-rbac/` subdirectory Kustomize bases.
-    """
-    out_dir = root / app_dir
-    out_dir.mkdir(parents=True, exist_ok=True)
-    app = App(outdir=str(out_dir))
-    chart = Chart(app, "agentplane-namespace-rbac", disable_resource_name_hashes=True)
-    namespace_rbac_constructs.NamespaceQuota(chart, "namespace", spec)
-    namespace_rbac_constructs.AgentRbac(chart, "rbac", spec)
-    app.synth()
-
-
-def _build_agentplane_services_chart(
+def _build_agentplane_chart(
     app: App,
     *,
+    namespace_rbac_spec: namespace_rbac_constructs.EnvSpec,
+    app_config_data: dict[str, str],
     db_spec: db_constructs.DbEnvSpec,
     llm_ingress_spec: llm_ingress_constructs.LlmIngressEnvSpec,
     egress_spec: egress_constructs.EgressEnvSpec,
@@ -521,15 +508,21 @@ def _build_agentplane_services_chart(
     actions_spec: actions_constructs.ActionsEnvSpec,
     add_extra: Callable[[Chart], None],
 ) -> Chart:
-    """Build the environment's entire workload surface (db, llm-ingress, egress, app,
-    actions, and via `add_extra` either staging's ActionPolicySet/Binding objects and
-    claude-ai ServiceAccount or testing's mcp-everything/oauth-fixture fixtures and Dex)
-    as one chart, without synthesizing it -- shared by `_generate_agentplane_services`
-    (writes it to disk) and tests (synth it in memory via `cdk8s.Testing`, see
-    `testing_services_chart`/`staging_services_chart`, instead of reading it back off a
-    committed file).
+    """Build the environment's entire Namespace/RBAC/app-config/workload surface
+    (Namespace, ResourceQuota, LimitRange, operator RBAC, the model-catalog ConfigMap,
+    db, llm-ingress, egress, app, actions, and via `add_extra` either staging's
+    ActionPolicySet/Binding objects and claude-ai ServiceAccount or testing's
+    mcp-everything/oauth-fixture fixtures and Dex) as one chart, without synthesizing it
+    -- shared by `_generate_agentplane` (writes it to disk) and tests (synth it in memory
+    via `cdk8s.Testing`, see `testing_chart`/`staging_chart`, instead of reading it back
+    off a committed file).
     """
-    chart = Chart(app, "agentplane-services", disable_resource_name_hashes=True)
+    chart = Chart(app, "agentplane", disable_resource_name_hashes=True)
+    namespace_rbac_constructs.NamespaceQuota(chart, "namespace", namespace_rbac_spec)
+    namespace_rbac_constructs.AgentRbac(chart, "rbac", namespace_rbac_spec)
+    ConfigMap(
+        chart, "config", metadata=metadata("agentplane-app-config", namespace_rbac_spec.namespace), data=app_config_data
+    )
     db_constructs.Db(chart, "db", db_spec)
     llm_ingress_constructs.LlmIngress(chart, "llm-ingress", llm_ingress_spec)
     egress_constructs.Egress(chart, "egress", egress_spec)
@@ -539,11 +532,13 @@ def _build_agentplane_services_chart(
     return chart
 
 
-def testing_services_chart(app: App) -> Chart:
-    """agentplane-testing's services chart, for in-memory synth (`cdk8s.Testing.synth`)
-    in tests -- the exact same specs `generate_manifests()` writes to disk with."""
-    return _build_agentplane_services_chart(
+def testing_chart(app: App) -> Chart:
+    """agentplane-testing's full chart, for in-memory synth (`cdk8s.Testing.synth`) in
+    tests -- the exact same specs `generate_manifests()` writes to disk with."""
+    return _build_agentplane_chart(
         app,
+        namespace_rbac_spec=_AGENTPLANE_TESTING_SPEC,
+        app_config_data={"config.yaml": yaml_config(testing_config.config())},
         db_spec=_AGENTPLANE_TESTING_DB_SPEC,
         llm_ingress_spec=_AGENTPLANE_TESTING_LLM_INGRESS_SPEC,
         egress_spec=_AGENTPLANE_TESTING_EGRESS_SPEC,
@@ -553,10 +548,12 @@ def testing_services_chart(app: App) -> Chart:
     )
 
 
-def staging_services_chart(app: App) -> Chart:
-    """agentplane-staging's services chart -- see `testing_services_chart`."""
-    return _build_agentplane_services_chart(
+def staging_chart(app: App) -> Chart:
+    """agentplane-staging's full chart -- see `testing_chart`."""
+    return _build_agentplane_chart(
         app,
+        namespace_rbac_spec=_AGENTPLANE_STAGING_SPEC,
+        app_config_data={"config.yaml": yaml_config(staging_config.config())},
         db_spec=_AGENTPLANE_STAGING_DB_SPEC,
         llm_ingress_spec=_AGENTPLANE_STAGING_LLM_INGRESS_SPEC,
         egress_spec=_AGENTPLANE_STAGING_EGRESS_SPEC,
@@ -566,21 +563,19 @@ def staging_services_chart(app: App) -> Chart:
     )
 
 
-def _generate_agentplane_services(
+def _generate_agentplane(
     root: Path, env_dir: str, *, chart_builder: Callable[[App], Chart], extra_resources: Sequence[str] = ()
 ) -> None:
-    """Synthesize `chart_builder`'s output (`staging_services_chart`/
-    `testing_services_chart`) into `env_dir`, replacing what used to be five (six for
-    testing) separate subdirectories each with their own Kustomization. Single failure
-    domain by design -- including the CNPG Postgres `Cluster` -- accepted for both
-    non-production environments.
+    """Synthesize `chart_builder`'s output (`staging_chart`/`testing_chart`) into
+    `env_dir` as a single `agentplane.k8s.yaml`, replacing what used to be three
+    separate generated files (namespace/RBAC, the model-catalog ConfigMap, and the
+    workload services) each with their own Chart. Single failure domain by design --
+    including the CNPG Postgres `Cluster` -- accepted for both non-production
+    environments.
 
-    Also (re)writes `env_dir`'s root Kustomization, now just this chart's output plus
-    `agentplane-namespace-rbac.k8s.yaml`, `agentplane-app-config.k8s.yaml` (the
-    model-catalog ConfigMap -- a separate chart, see `_write_config_map_chart`), and
-    `extra_resources` (staging's hand-written `web-push-vapid.sops.yaml`). The sibling
-    image-pins/ Component (never generated, now also merged into one per environment)
-    stays hand-written, same as litellm/ha-mcp.
+    Also (re)writes `env_dir`'s root Kustomization, now just this one generated file
+    plus `extra_resources` (staging's hand-written `web-push-vapid.sops.yaml`). The
+    sibling image-pins/ Component stays hand-written, same as litellm/ha-mcp.
     """
     out_dir = root / env_dir
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -590,15 +585,7 @@ def _generate_agentplane_services(
 
     _write_yaml(
         out_dir / "kustomization.yaml",
-        kustomize_kustomization(
-            resources=[
-                "agentplane-namespace-rbac.k8s.yaml",
-                "agentplane-app-config.k8s.yaml",
-                "agentplane-services.k8s.yaml",
-                *extra_resources,
-            ],
-            components=["./image-pins"],
-        ),
+        kustomize_kustomization(resources=["agentplane.k8s.yaml", *extra_resources], components=["./image-pins"]),
     )
 
 
@@ -625,36 +612,6 @@ def _write_config_map_chart(root: Path, app_dir: str, chart_builder: Callable[[A
     app = App(outdir=str(out_dir))
     chart_builder(app)
     app.synth()
-
-
-def testing_app_config_chart(app: App) -> Chart:
-    """agentplane-testing's model-catalog ConfigMap chart -- see `testing_services_chart`."""
-    return _build_config_map_chart(
-        app,
-        chart_name="agentplane-app-config",
-        configmap_name="agentplane-app-config",
-        namespace="agentplane-testing",
-        data={"config.yaml": yaml_config(testing_config.config())},
-    )
-
-
-def staging_app_config_chart(app: App) -> Chart:
-    """agentplane-staging's model-catalog ConfigMap chart -- see `testing_services_chart`."""
-    return _build_config_map_chart(
-        app,
-        chart_name="agentplane-app-config",
-        configmap_name="agentplane-app-config",
-        namespace="agentplane-staging",
-        data={"config.yaml": yaml_config(staging_config.config())},
-    )
-
-
-def _generate_agentplane_testing_config(root: Path) -> None:
-    _write_config_map_chart(root, _AGENTPLANE_TESTING_DIR, testing_app_config_chart)
-
-
-def _generate_agentplane_staging_config(root: Path) -> None:
-    _write_config_map_chart(root, _AGENTPLANE_STAGING_DIR, staging_app_config_chart)
 
 
 def _haku_openclaw_spike_config_chart(app: App) -> Chart:
@@ -698,17 +655,10 @@ def generate_manifests(root: Path) -> None:
     """Write every converted directory's generated manifests under `root`."""
     _generate_litellm_app(root)
     _generate_ha_mcp(root)
-    _generate_agentplane_namespace_rbac(root, _AGENTPLANE_STAGING_DIR, _AGENTPLANE_STAGING_SPEC)
-    _generate_agentplane_namespace_rbac(root, _AGENTPLANE_TESTING_DIR, _AGENTPLANE_TESTING_SPEC)
-    _generate_agentplane_staging_config(root)
-    _generate_agentplane_testing_config(root)
-    _generate_agentplane_services(
-        root,
-        _AGENTPLANE_STAGING_DIR,
-        chart_builder=staging_services_chart,
-        extra_resources=["web-push-vapid.sops.yaml"],
+    _generate_agentplane(
+        root, _AGENTPLANE_STAGING_DIR, chart_builder=staging_chart, extra_resources=["web-push-vapid.sops.yaml"]
     )
-    _generate_agentplane_services(root, _AGENTPLANE_TESTING_DIR, chart_builder=testing_services_chart)
+    _generate_agentplane(root, _AGENTPLANE_TESTING_DIR, chart_builder=testing_chart)
     _generate_haku_openclaw_spike_config(root)
     _generate_public_coder_agent_config(root)
 

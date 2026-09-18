@@ -16,8 +16,8 @@ pytest_plugins = ("cluster.validation.agentplane_fixtures",)
 
 
 @pytest.fixture
-def manifests(agentplane_services: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
-    documents = agentplane_services["agentplane-staging"]
+def manifests(agentplane_manifests: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
+    documents = agentplane_manifests["agentplane-staging"]
     result = {
         name: one(doc for doc in documents if doc["kind"] == kind and doc["metadata"]["name"] == resource_name)
         for name, (kind, resource_name) in {

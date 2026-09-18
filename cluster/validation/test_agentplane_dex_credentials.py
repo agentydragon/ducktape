@@ -14,9 +14,9 @@ pytest_plugins = ("cluster.validation.agentplane_fixtures",)
 
 
 def test_dex_config_and_operator_password_share_one_generator_invocation(
-    agentplane_services: dict[str, list[dict[str, Any]]],
+    agentplane_manifests: dict[str, list[dict[str, Any]]],
 ) -> None:
-    resources = agentplane_services["agentplane-testing"]
+    resources = agentplane_manifests["agentplane-testing"]
     secrets = [resource for resource in resources if resource["kind"] == "ExternalSecret"]
     operator = one(
         secret for secret in secrets if secret["metadata"]["name"] == "agentplane-testing-acceptance-operator"

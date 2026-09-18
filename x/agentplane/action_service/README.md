@@ -391,7 +391,7 @@ Kubernetes ServiceAccount lists are the final operator design.
 Migrations run separately through `:migrate`; the server verifies the migrated schema and never
 creates tables at startup. `:image` and `:migration_image` are separate OCI targets. Each deployed
 environment gives the service its own `actions` database and login role on the namespace's shared
-CNPG cluster `postgres` (`cluster/k8s/agentplane-staging/agentplane-services.k8s.yaml`),
+CNPG cluster `postgres` (`cluster/k8s/agentplane-staging/agentplane.k8s.yaml`),
 separate from the integration app's database.
 
 ## MCP executor transports

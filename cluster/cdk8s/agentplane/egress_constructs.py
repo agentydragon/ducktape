@@ -30,12 +30,9 @@ from agentplane_egresspolicy_crds.works.allegedly.agentplane import (
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     ApiResource,
-    Capability,
     ConfigMap,
     ContainerPort,
     ContainerResources,
-    ContainerSecurityContextProps,
-    ContainerSecutiryContextCapabilities,
     Cpu,
     CpuResources,
     Deployment,
@@ -99,6 +96,7 @@ from trust_manager_crds.io.cert_manager.trust import (
 from cluster.cdk8s.agentplane import (
     actions_constructs,
     cilium_helpers,
+    container_security,
     db_constructs,
     llm_ingress_constructs,
     node_scheduling,
@@ -426,7 +424,7 @@ class Egress(Construct):
                 "--ca-cert=/etc/agentplane-egress/ca/tls.crt",
                 "--ca-key=/etc/agentplane-egress/ca/tls.key",
                 "--confdir=/var/lib/agentplane-egress",
-                "--token-audience=agentplane-egress",
+                f"--token-audience={llm_ingress_constructs.WORKLOAD_TOKEN_AUDIENCE}",
             ],
             env_variables={
                 "AGENTPLANE_EGRESS_DATABASE_URL": EnvValue.from_secret_value(
@@ -449,11 +447,7 @@ class Egress(Construct):
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=Size.mebibytes(256), limit=Size.gibibytes(1)),
             ),
-            security_context=ContainerSecurityContextProps(
-                allow_privilege_escalation=False,
-                capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
-                read_only_root_filesystem=False,
-            ),
+            security_context=container_security.WRITABLE_ROOT,
         )
         deployment.containers[0].mount("/etc/agentplane-egress/ca", ca_volume, read_only=True)
         deployment.containers[0].mount("/var/lib/agentplane-egress", confdir_volume)

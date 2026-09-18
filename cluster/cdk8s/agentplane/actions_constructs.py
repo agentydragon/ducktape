@@ -20,12 +20,9 @@ from typing import cast
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     ApiResource,
-    Capability,
     ConfigMap,
     ContainerPort,
     ContainerResources,
-    ContainerSecurityContextProps,
-    ContainerSecutiryContextCapabilities,
     Cpu,
     CpuResources,
     Deployment,
@@ -84,7 +81,13 @@ from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRouteSpecRulesTimeouts,
 )
 
-from cluster.cdk8s.agentplane import cilium_helpers, db_constructs, node_scheduling
+from cluster.cdk8s.agentplane import (
+    cilium_helpers,
+    container_security,
+    db_constructs,
+    llm_ingress_constructs,
+    node_scheduling,
+)
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.config_format import json5_config, yaml_config
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
@@ -325,7 +328,11 @@ class Actions(Construct):
             name="actions",
             image=f"{_ACTIONS_IMAGE}:{_PLACEHOLDER_TAG}",
             image_pull_policy=ImagePullPolicy.ALWAYS,
-            args=["--host=0.0.0.0", f"--port={CONTAINER_PORT}", "--token-audience=agentplane-egress"],
+            args=[
+                "--host=0.0.0.0",
+                f"--port={CONTAINER_PORT}",
+                f"--token-audience={llm_ingress_constructs.WORKLOAD_TOKEN_AUDIENCE}",
+            ],
             env_variables=env,
             ports=[ContainerPort(name="http", number=CONTAINER_PORT, protocol=Protocol.TCP)],
             readiness=http_probe(
@@ -338,13 +345,7 @@ class Actions(Construct):
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
             ),
-            # Same rationale as litellm_constructs.py's container securityContext
-            # override: the container's actual root needs haven't been audited.
-            security_context=ContainerSecurityContextProps(
-                allow_privilege_escalation=False,
-                capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
-                read_only_root_filesystem=False,
-            ),
+            security_context=container_security.WRITABLE_ROOT,
         )
 
         oauth_secret = Secret.from_secret_name(self, "mcp-oauth-secret", "agentplane-mcp-oauth")

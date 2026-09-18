@@ -5,10 +5,10 @@ ExternalArtifact at the environment root. Its artifact contains the complete
 Kustomize input closure for staging; the Flux declaration itself remains owned
 by the root Kustomization and is excluded from the artifact.
 
-`agentplane-services.k8s.yaml` is one generated chart for the whole environment's
-workload surface (db, llm-ingress, egress, app, actions) -- see
-`cluster/cdk8s/agentplane/`. SOPS-encrypted Actions data is decrypted by the
-environment-level Flux consumer. The consumer explicitly checks the
+`agentplane.k8s.yaml` is one generated chart for the whole environment (Namespace,
+quota, RBAC, the model-catalog ConfigMap, and the workload surface -- db, llm-ingress,
+egress, app, actions) -- see `cluster/cdk8s/agentplane/`. SOPS-encrypted Actions data
+is decrypted by the environment-level Flux consumer. The consumer explicitly checks the
 trust-manager-generated CA ConfigMap and Bundle because the ConfigMap is created
 asynchronously outside the artifact.
 
@@ -17,7 +17,7 @@ asynchronously outside the artifact.
 This environment's Git-managed `ActionPolicySet`s and the bindings for labeled caller
 ServiceAccounts such as `claude-ai` are defined in
 `cluster/cdk8s/agentplane/actions_staging_policies.py` and generated into
-`agentplane-services.k8s.yaml`; a new set, or a binding for a ServiceAccount, is a PR to
+`agentplane.k8s.yaml`; a new set, or a binding for a ServiceAccount, is a PR to
 that Python module (regenerate with `bb run //cluster/cdk8s:generate_manifests`). Bindings
 for Sandbox subjects are written by the integration app when it creates the Sandbox and
 are never checked in. `//cluster/validation:test_agentplane_action_policies` parses every

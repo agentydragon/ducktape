@@ -201,10 +201,12 @@ def test_acceptance_secret_is_named_get_for_existing_profile_not_a_pod_credentia
         "name": "haku:access-profile:public-coder",
         "apiGroup": "rbac.authorization.k8s.io",
     }
-    staging_objects = yaml.safe_load_all(
-        (k8s_dir / "agentplane-staging/agentplane-namespace-rbac.k8s.yaml").read_text()
+    staging_objects = yaml.safe_load_all((k8s_dir / "agentplane-staging/agentplane.k8s.yaml").read_text())
+    staging_binding = one(
+        obj
+        for obj in staging_objects
+        if obj["kind"] == "RoleBinding" and obj["metadata"]["name"] == "agent-agentplane-operator"
     )
-    staging_binding = one(obj for obj in staging_objects if obj["kind"] == "RoleBinding")
     assert subject in staging_binding["subjects"]
     kustomization = yaml.safe_load((agent_dir / "app/kustomization.yaml").read_text())
     assert manifest.name in kustomization["resources"]

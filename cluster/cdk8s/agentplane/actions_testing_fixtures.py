@@ -48,7 +48,7 @@ from cilium_crds.io.cilium import (
 )
 from constructs import Construct
 
-from cluster.cdk8s.agentplane import cilium_helpers
+from cluster.cdk8s.agentplane import cilium_helpers, container_security
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
@@ -248,11 +248,7 @@ def _add_oauth_fixture(scope: Construct) -> None:
         # at startup inside the image's own runfiles directory, so the root filesystem
         # must stay writable (see cluster/k8s/ssh-mcp/deployment.yaml for the same
         # constraint).
-        security_context=ContainerSecurityContextProps(
-            allow_privilege_escalation=False,
-            capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
-            read_only_root_filesystem=False,
-        ),
+        security_context=container_security.WRITABLE_ROOT,
     )
     apply_pod_spec_patches(deployment, labels=_OAUTH_FIXTURE_LABELS, topology_spread=False)
     Service(

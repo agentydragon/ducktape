@@ -8,7 +8,7 @@ deleted afterwards.
 ## Root cause
 
 The app's egress rule to `host`/`remote-node`:443 carries `serverNames`
-(<../../k8s/agentplane-staging/agentplane-services.k8s.yaml>). SNI is an L7 rule, so
+(<../../k8s/agentplane-staging/agentplane.k8s.yaml>). SNI is an L7 rule, so
 Cilium redirects the connection to the node's Envoy policy proxy (listener
 `cilium-proxylib-egress:19983`), which opens its own upstream TCP connection to
 the original destination. With `proxy-use-original-source-address: true` (chart

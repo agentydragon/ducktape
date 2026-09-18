@@ -17,6 +17,12 @@ py_library(
 )
 
 py_library(
+    name = "container_security",
+    srcs = ["container_security.py"],
+    deps = ["@pypi//cdk8s_plus_34"],
+)
+
+py_library(
     name = "cilium_helpers",
     srcs = ["cilium_helpers.py"],
     deps = ["//third_party/cilium:ciliumnetworkpolicy"],
@@ -32,6 +38,7 @@ py_library(
     name = "migrate_container",
     srcs = ["migrate_container.py"],
     deps = [
+        ":container_security",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
@@ -77,6 +84,7 @@ py_library(
     deps = [
         ":actions_constructs",
         ":cilium_helpers",
+        ":container_security",
         ":db_constructs",
         ":llm_ingress_constructs",
         ":migrate_container",
@@ -103,6 +111,7 @@ py_library(
     srcs = ["llm_ingress_constructs.py"],
     deps = [
         ":cilium_helpers",
+        ":container_security",
         ":node_scheduling",
         "//cluster/cdk8s:config_format",
         "//cluster/cdk8s:forgejo_images",
@@ -129,6 +138,7 @@ py_library(
     deps = [
         ":actions_constructs",
         ":cilium_helpers",
+        ":container_security",
         ":db_constructs",
         ":egress_constructs",
         ":llm_ingress_constructs",
@@ -160,7 +170,9 @@ py_library(
     srcs = ["actions_constructs.py"],
     deps = [
         ":cilium_helpers",
+        ":container_security",
         ":db_constructs",
+        ":llm_ingress_constructs",
         ":migrate_container",
         ":node_scheduling",
         "//cluster/cdk8s:config_format",
@@ -195,6 +207,7 @@ py_library(
     srcs = ["actions_testing_fixtures.py"],
     deps = [
         ":cilium_helpers",
+        ":container_security",
         "//cluster/cdk8s:forgejo_images",
         "//cluster/cdk8s:metadata",
         "//cluster/cdk8s:pod_spec_patches",

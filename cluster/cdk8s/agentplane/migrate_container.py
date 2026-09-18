@@ -7,17 +7,16 @@ from __future__ import annotations
 
 from cdk8s import Size
 from cdk8s_plus_34 import (
-    Capability,
     ContainerProps,
     ContainerResources,
-    ContainerSecurityContextProps,
-    ContainerSecutiryContextCapabilities,
     Cpu,
     CpuResources,
     EnvValue,
     ImagePullPolicy,
     MemoryResources,
 )
+
+from cluster.cdk8s.agentplane import container_security
 
 
 def migrate_init_container(image: str, *, env_variables: dict[str, EnvValue]) -> ContainerProps:
@@ -30,9 +29,5 @@ def migrate_init_container(image: str, *, env_variables: dict[str, EnvValue]) ->
             cpu=CpuResources(request=Cpu.millis(25)),
             memory=MemoryResources(request=Size.mebibytes(64), limit=Size.mebibytes(256)),
         ),
-        security_context=ContainerSecurityContextProps(
-            allow_privilege_escalation=False,
-            capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
-            read_only_root_filesystem=False,
-        ),
+        security_context=container_security.WRITABLE_ROOT,
     )

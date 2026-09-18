@@ -29,23 +29,13 @@ def _synth(chart_builder: Callable[[App], Chart]) -> list[dict[str, Any]]:
 
 
 @pytest.fixture(scope="session")
-def agentplane_services() -> dict[str, list[dict[str, Any]]]:
-    """Each environment's `agentplane-services.k8s.yaml` chart, synthesized in memory --
-    the same objects `generate_manifests()` writes to disk, without the write/read round
-    trip through git. See `generate_manifests.staging_services_chart`/
-    `testing_services_chart`.
+def agentplane_manifests() -> dict[str, list[dict[str, Any]]]:
+    """Each environment's full `agentplane.k8s.yaml` chart (Namespace/quota/RBAC, the
+    model-catalog ConfigMap, and every workload), synthesized in memory -- the same
+    objects `generate_manifests()` writes to disk, without the write/read round trip
+    through git. See `generate_manifests.staging_chart`/`testing_chart`.
     """
     return {
-        _AGENTPLANE_STAGING: _synth(generate_manifests.staging_services_chart),
-        _AGENTPLANE_TESTING: _synth(generate_manifests.testing_services_chart),
-    }
-
-
-@pytest.fixture(scope="session")
-def agentplane_app_config() -> dict[str, list[dict[str, Any]]]:
-    """Each environment's `agentplane-app-config.k8s.yaml` ConfigMap chart, synthesized in
-    memory -- see `agentplane_services`."""
-    return {
-        _AGENTPLANE_STAGING: _synth(generate_manifests.staging_app_config_chart),
-        _AGENTPLANE_TESTING: _synth(generate_manifests.testing_app_config_chart),
+        _AGENTPLANE_STAGING: _synth(generate_manifests.staging_chart),
+        _AGENTPLANE_TESTING: _synth(generate_manifests.testing_chart),
     }

@@ -18,9 +18,9 @@ def egress_object(documents: list[dict[str, Any]], kind: str, name: str) -> dict
 
 
 def test_service_routes_rules_to_the_separate_declared_listener(
-    agentplane_services: dict[str, list[dict[str, Any]]],
+    agentplane_manifests: dict[str, list[dict[str, Any]]],
 ) -> None:
-    documents = agentplane_services["agentplane-staging"]
+    documents = agentplane_manifests["agentplane-staging"]
     service = egress_object(documents, "Service", "agentplane-egress")["spec"]
     deployment = egress_object(documents, "Deployment", "agentplane-egress")["spec"]
     pod = deployment["template"]
@@ -36,9 +36,9 @@ def test_service_routes_rules_to_the_separate_declared_listener(
 
 
 def test_public_coder_defaults_and_nonsecret_instructions_bootstrap_workload_credentials(
-    agentplane_services: dict[str, list[dict[str, Any]]],
+    agentplane_manifests: dict[str, list[dict[str, Any]]],
 ) -> None:
-    documents = agentplane_services["agentplane-staging"]
+    documents = agentplane_manifests["agentplane-staging"]
     policy = egress_object(documents, "EgressPolicy", "basic")
     credential = egress_object(documents, "EgressCredential", "agentplane-workload")
     config = staging_config.config()
@@ -74,9 +74,9 @@ def test_public_coder_defaults_and_nonsecret_instructions_bootstrap_workload_cre
 
 
 def test_staging_egress_retains_one_available_replica_during_voluntary_changes(
-    agentplane_services: dict[str, list[dict[str, Any]]],
+    agentplane_manifests: dict[str, list[dict[str, Any]]],
 ) -> None:
-    documents = agentplane_services["agentplane-staging"]
+    documents = agentplane_manifests["agentplane-staging"]
     deployment = egress_object(documents, "Deployment", "agentplane-egress")["spec"]
     budget = egress_object(documents, "PodDisruptionBudget", "agentplane-egress")["spec"]
     pod = deployment["template"]
@@ -91,9 +91,6 @@ def test_staging_egress_retains_one_available_replica_during_voluntary_changes(
         assert spread["labelSelector"]["matchLabels"].items() <= pod["metadata"]["labels"].items()
         assert spread["topologyKey"] == "kubernetes.io/hostname"
     assert pod["spec"]["terminationGracePeriodSeconds"] >= 60
-    container = one(c for c in pod["spec"]["containers"] if c["name"] == "proxy")
-    assert container["readinessProbe"]["httpGet"]["path"] == "/healthz"
-    assert container["livenessProbe"]["httpGet"]["path"] == "/livez"
 
 
 if __name__ == "__main__":

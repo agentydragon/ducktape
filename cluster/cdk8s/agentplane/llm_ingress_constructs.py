@@ -13,12 +13,9 @@ from dataclasses import dataclass
 
 from cdk8s import ApiObjectMetadata, Size
 from cdk8s_plus_34 import (
-    Capability,
     ConfigMap,
     ContainerPort,
     ContainerResources,
-    ContainerSecurityContextProps,
-    ContainerSecutiryContextCapabilities,
     Cpu,
     CpuResources,
     Deployment,
@@ -53,7 +50,7 @@ from cilium_crds.io.cilium import (
 )
 from constructs import Construct
 
-from cluster.cdk8s.agentplane import cilium_helpers, node_scheduling
+from cluster.cdk8s.agentplane import cilium_helpers, container_security, node_scheduling
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.metadata import metadata
@@ -67,6 +64,13 @@ _IMAGE_NAME = "git.allegedly.works/ducktape-ci/agentplane-llm-ingress"
 CONTAINER_PORT = 8080
 _LABELS = {"app.kubernetes.io/name": _NAME}
 _SETTINGS_PATH = "/etc/agentplane-llm-ingress/settings.yaml"
+# The Sandbox runner's workload token audience: minted once by the runner
+# (app_constructs.py's projected ServiceAccountToken), verified unchanged by the
+# central egress proxy, then forwarded and verified again here -- every hop must accept
+# the same audience string. Lives here rather than egress_constructs.py because that
+# module already imports this one, and actions_constructs.py/app_constructs.py both
+# reference it too.
+WORKLOAD_TOKEN_AUDIENCE = "agentplane-egress"
 
 
 @dataclass(frozen=True)
@@ -145,7 +149,7 @@ class LlmIngress(Construct):
             image=f"{_IMAGE_NAME}:{_PLACEHOLDER_TAG}",
             image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
             args=[
-                "--token-audience=agentplane-egress",
+                f"--token-audience={WORKLOAD_TOKEN_AUDIENCE}",
                 "--litellm-url=http://litellm.litellm.svc.cluster.local:4000",
                 "--host=0.0.0.0",
                 f"--port={CONTAINER_PORT}",
@@ -168,15 +172,7 @@ class LlmIngress(Construct):
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
             ),
-            # Same rationale as litellm_constructs.py's container securityContext
-            # override: cdk8s_plus_34 defaults to a hardened readOnlyRootFilesystem,
-            # but this container's actual root needs haven't been audited, so
-            # silently hardening it here could break the running ingress.
-            security_context=ContainerSecurityContextProps(
-                allow_privilege_escalation=False,
-                capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
-                read_only_root_filesystem=False,
-            ),
+            security_context=container_security.WRITABLE_ROOT,
         )
 
         settings_volume = Volume.from_config_map(self, "settings-volume", settings_cm)

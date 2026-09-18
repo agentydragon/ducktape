@@ -160,7 +160,7 @@ def test_ssh_backend_uses_shared_secret_and_requires_agent_approval(monkeypatch:
     actions_settings_configmap = next(
         doc
         for doc in yaml.safe_load_all(
-            get_required_path("_main/cluster/k8s/agentplane-staging/agentplane-services.k8s.yaml").read_text()
+            get_required_path("_main/cluster/k8s/agentplane-staging/agentplane.k8s.yaml").read_text()
         )
         if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "agentplane-actions-settings"
     )
