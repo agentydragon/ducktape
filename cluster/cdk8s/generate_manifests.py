@@ -27,7 +27,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
-from cluster.cdk8s import haku_openclaw_spike_config, public_coder_agent_config
+from cluster.cdk8s import descheduler_constructs, haku_openclaw_spike_config, public_coder_agent_config, stateful_infra
 from cluster.cdk8s.agentplane import staging, testing
 from cluster.cdk8s.agentplane.chart import environment_chart
 from cluster.cdk8s.agentplane.environment import Environment
@@ -51,6 +51,8 @@ _CNPG_DATABASE_READY = (
 )
 _HAKU_OPENCLAW_SPIKE_APP_DIR = "cluster/k8s/agents/haku-openclaw-spike/app"
 _PUBLIC_CODER_AGENT_APP_DIR = "cluster/k8s/agents/public-coder-agent/app"
+_DESCHEDULER_DIR = "cluster/k8s/descheduler"
+_SEAWEEDFS_CLUSTER_DIR = "cluster/k8s/seaweedfs/cluster"
 
 
 def _write_yaml(path: Path, manifest: dict[str, object]) -> None:
@@ -252,10 +254,10 @@ def _build_config_map_chart(
     return chart
 
 
-def _write_config_map_chart(root: Path, app_dir: str, chart_builder: Callable[[App], Chart]) -> None:
+def _write_chart(root: Path, app_dir: str, chart_builder: Callable[[App], Chart]) -> None:
     """Synthesize `chart_builder`'s output into `app_dir`, whose `flux-kustomization.yaml`
-    and `kustomization.yaml` stay hand-written (cluster/docs/cdk8s.md § SOPS secrets in
-    a converted directory).
+    and `kustomization.yaml` stay hand-written (cluster/docs/cdk8s.md § Three shapes of a
+    directory).
     """
     out_dir = root / app_dir
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -278,7 +280,7 @@ def _haku_openclaw_spike_config_chart(app: App) -> Chart:
 
 
 def _generate_haku_openclaw_spike_config(root: Path) -> None:
-    _write_config_map_chart(root, _HAKU_OPENCLAW_SPIKE_APP_DIR, _haku_openclaw_spike_config_chart)
+    _write_chart(root, _HAKU_OPENCLAW_SPIKE_APP_DIR, _haku_openclaw_spike_config_chart)
 
 
 def _public_coder_agent_config_chart(app: App) -> Chart:
@@ -292,7 +294,19 @@ def _public_coder_agent_config_chart(app: App) -> Chart:
 
 
 def _generate_public_coder_agent_config(root: Path) -> None:
-    _write_config_map_chart(root, _PUBLIC_CODER_AGENT_APP_DIR, _public_coder_agent_config_chart)
+    _write_chart(root, _PUBLIC_CODER_AGENT_APP_DIR, _public_coder_agent_config_chart)
+
+
+def _descheduler_chart(app: App) -> Chart:
+    chart = Chart(app, "helmrelease", disable_resource_name_hashes=True)
+    descheduler_constructs.Descheduler(chart, "descheduler")
+    return chart
+
+
+def _stateful_infra_priority_class_chart(app: App) -> Chart:
+    chart = Chart(app, "priorityclass", disable_resource_name_hashes=True)
+    stateful_infra.priority_class(chart)
+    return chart
 
 
 def generate_manifests(root: Path) -> None:
@@ -303,6 +317,8 @@ def generate_manifests(root: Path) -> None:
         _generate_agentplane(root, env)
     _generate_haku_openclaw_spike_config(root)
     _generate_public_coder_agent_config(root)
+    _write_chart(root, _DESCHEDULER_DIR, _descheduler_chart)
+    _write_chart(root, _SEAWEEDFS_CLUSTER_DIR, _stateful_infra_priority_class_chart)
 
 
 def main() -> None:

@@ -1,10 +1,11 @@
 # Typed cdk8s Python constructs generated from Flux's upstream CRDs (fetched via
-# MODULE.bazel's flux_kustomization_crd http_file, never vendored). See
-# cluster/docs/cdk8s.md.
+# MODULE.bazel's flux_*_crd http_files, never vendored). See cluster/docs/cdk8s.md.
 
-# flux_kustomize is generated at build time by cdk8s_import below, not a pip package --
-# gazelle can't resolve it from the requirements manifest.
+# flux_kustomize/flux_helm/flux_source are generated at build time by cdk8s_import
+# below, not pip packages -- gazelle can't resolve them from the requirements manifest.
 # gazelle:resolve py flux_kustomize //third_party/flux:kustomization
+# gazelle:resolve py flux_helm //third_party/flux:helmrelease
+# gazelle:resolve py flux_source //third_party/flux:helmrepository
 
 load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
 load("//devinfra/python:defs.bzl", "py_test")
@@ -14,6 +15,22 @@ cdk8s_import(
     crd = "@flux_kustomization_crd//file",
     module_name = "flux_kustomize",
     module_path = "io/fluxcd/toolkit/kustomize",
+    visibility = ["//visibility:public"],
+)
+
+cdk8s_import(
+    name = "helmrelease",
+    crd = "@flux_helmrelease_crd//file",
+    module_name = "flux_helm",
+    module_path = "io/fluxcd/toolkit/helm",
+    visibility = ["//visibility:public"],
+)
+
+cdk8s_import(
+    name = "helmrepository",
+    crd = "@flux_helmrepository_crd//file",
+    module_name = "flux_source",
+    module_path = "io/fluxcd/toolkit/source",
     visibility = ["//visibility:public"],
 )
 

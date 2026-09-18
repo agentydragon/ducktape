@@ -60,8 +60,9 @@ makes every SeaweedFS component ineligible for descheduler eviction. This affect
 only the descheduler — `kubectl drain` still evicts through the eviction API and
 the PDBs, so node maintenance is unchanged.
 
-A validation test pins the threshold to the PriorityClass value and asserts every
-pod-spawning component in the Seaweed CR opts into the class.
+The threshold and the class value are one constant (`cluster/cdk8s/stateful_infra.py`);
+a validation test asserts every pod-spawning component in the Seaweed CR opts into the
+class.
 
 ## Recovery
 

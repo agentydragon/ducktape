@@ -131,11 +131,6 @@ find-and-replace.
   sshpiper's base64 blob is the same "mostly hand-written directory, one generated
   file" shape `ha_mcp_constructs.py` already uses for `bearer.sops.yaml`'s sibling
   files — doesn't need the whole `ssh-mcp/` directory converted.
-- **Descheduler `priorityThreshold` vs. SeaweedFS `PriorityClass`**
-  (`test_descheduler_priority_threshold.py`). Two small standalone files
-  (`cluster/k8s/descheduler/helmrelease.yaml`, `cluster/k8s/seaweedfs/cluster/priorityclass.yaml`,
-  plus `seaweed.yaml`'s several `priorityClassName` fields) — convert to cdk8s and
-  share one constant.
 
 ## Larger conversions — whole hand-written directories, no cdk8s presence yet
 
@@ -168,10 +163,13 @@ find-and-replace.
   equality and configMapGenerator-name-vs-mount-name checks. Small enough this might
   not be worth a dedicated cdk8s chart on its own; reconsider if `mailbox/` gets
   touched for another reason first.
-- **`generators.yaml` / `test_actions_artifact.py`** — ~140 hand-typed `cases`
-  checked against a 1569-line hand-written `generators.yaml` and each target
-  directory's `flux-kustomization.yaml`. Largest single item here by far; needs its
-  own scoping pass rather than folding into an existing directory's conversion.
+- **`generators.yaml` / `test_actions_artifact.py`** — the hand-written
+  `artifact-generators/generators.yaml` retypes, per artifact, the source directory
+  that the directory's own `flux-kustomization.yaml` already names in `spec.path` and
+  `sourceRef` (~200 artifacts). The test discovers those consumers and checks the two
+  agree; one generator emitting both sides would make that hold by construction.
+  Largest single item here by far; needs its own scoping pass rather than folding
+  into an existing directory's conversion.
 
 ## Parked — lower priority
 
@@ -188,12 +186,12 @@ find-and-replace.
 Confirmed via the same audit and intentionally _not_ listed above:
 GENUINE-BOUNDARY tests that exercise a real external tool or a different deployable
 (all of `cluster/validation/kyverno/`, `test_flux_build.py`, `test_helm_templates.py`,
-`test_github_proxy_rules.py`, `test_github_quota_rules.py`, `test_haku_dispatch_deploy.py`,
-`test_haku_zones_deploy.py`, `test_cluster_integration.py`'s `kustomize build` core,
+`test_github_proxy_rules.py`, `test_github_quota_rules.py`,
+`test_cluster_integration.py`'s `kustomize build` core,
 `x/agentplane/acceptance/test_egress.py`, `third_party/flux/test_kustomization_import.py`);
 and pure unit/schema tests with no
 second independently-authored source to drift against (`test_checks.py`,
 `test_cluster.py`, `test_crd_layering.py`, `test_dependencies.py`, `test_flux.py`,
 `test_generator_namespace.py`, `test_health_checks.py`, `test_image_automation.py`,
 `test_k8s.py`, `test_postbuild_substitutions.py`, `test_sops_decryption.py`,
-`test_terraform_backends.py`, `test_haku_recall_unwired_contract.py`).
+`test_terraform_backends.py`).

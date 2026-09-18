@@ -583,9 +583,9 @@ which exposed cluster-wide BestEffort hygiene gaps:
   they're still first OOM/node-pressure victims. Decide on a CNPG `resources`
   convention (see <cnpg_conventions.md>) so DBs leave BestEffort.
 - **Generalize the `stateful-infra` PriorityClass** (added for SeaweedFS in
-  `k8s/seaweedfs/cluster/priorityclass.yaml`, value 1_000_000) into the tiered
+  `cdk8s/stateful_infra.py`, value 1_000_000) into the tiered
   set above, and apply it to the stateful workloads that need it.
-- **Review the descheduler config** (`k8s/descheduler/helmrelease.yaml`):
+- **Review the descheduler config** (`cdk8s/descheduler_constructs.py`):
   `LowNodeUtilization` is metrics/usage-based and evicts BestEffort first;
   consider `ignorePvcPods` and/or requests-based utilization so transient CPU
   bursts (e.g. a runaway agent) don't trigger eviction of stateful pods.
