@@ -228,11 +228,11 @@ spec:
       forcePathStyle: true
       accessKeyId:
         secretKeyRef:
-          name: langfuse-s3-credentials
+          name: langfuse-seaweedfs-credentials
           key: s3-access-key-id
       secretAccessKey:
         secretKeyRef:
-          name: langfuse-s3-credentials
+          name: langfuse-seaweedfs-credentials
           key: s3-secret-access-key
       eventUpload:
         prefix: events/
