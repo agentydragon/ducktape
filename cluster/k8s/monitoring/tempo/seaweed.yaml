@@ -1,0 +1,56 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  name: tempo
+  namespace: monitoring
+  annotations:
+    description: Tempo's tenant-local SeaweedFS trace bucket.
+spec:
+  name: tempo
+  adoptExisting: true
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  reclaimPolicy: Retain
+  access:
+    - user: tempo
+      actions: [Read, Write, List, Tagging]
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  name: tempo
+  namespace: monitoring
+  annotations:
+    description: Tempo's tenant-local SeaweedFS credentials.
+spec:
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  identityRef:
+    name: tempo
+  secretRef:
+    name: tempo-seaweedfs-credentials
+    accessKeyField: AWS_ACCESS_KEY_ID
+    secretKeyField: AWS_SECRET_ACCESS_KEY
+  reclaimPolicy: Retain
+---
+# Permit only Tempo's tenant-local Bucket and S3Credentials to reference the
+# SeaweedFS cluster in its namespace.
+apiVersion: seaweed.seaweedfs.com/v1
+kind: ResourceReferenceGrant
+metadata:
+  name: tempo
+  namespace: seaweedfs
+spec:
+  from:
+    - group: seaweed.seaweedfs.com
+      kind: Bucket
+      namespace: monitoring
+    - group: seaweed.seaweedfs.com
+      kind: S3Credentials
+      namespace: monitoring
+  to:
+    - group: seaweed.seaweedfs.com
+      kind: Seaweed
+      name: seaweedfs
