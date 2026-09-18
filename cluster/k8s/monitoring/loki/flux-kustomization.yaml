@@ -21,6 +21,14 @@ spec:
       kind: HelmRelease
       name: loki
       namespace: loki
+    - apiVersion: seaweed.seaweedfs.com/v1
+      kind: Bucket
+      name: loki
+      namespace: loki
+    - apiVersion: seaweed.seaweedfs.com/v1
+      kind: S3Credentials
+      name: loki
+      namespace: loki
   timeout: 10m
   dependsOn:
     - name: grafana-helmrepository

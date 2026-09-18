@@ -6,6 +6,7 @@ resources:
   - s3-credentials-grant.yaml
   - iam.yaml
   - buckets.yaml
+  - seaweed-local.yaml
   - helmrelease.yaml
   - promtail-helmrelease.yaml
   - promtail-journal-helmrelease.yaml
