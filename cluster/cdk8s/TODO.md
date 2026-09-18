@@ -131,11 +131,6 @@ find-and-replace.
   sshpiper's base64 blob is the same "mostly hand-written directory, one generated
   file" shape `ha_mcp_constructs.py` already uses for `bearer.sops.yaml`'s sibling
   files — doesn't need the whole `ssh-mcp/` directory converted.
-- **Descheduler `priorityThreshold` vs. SeaweedFS `PriorityClass`**
-  (`test_descheduler_priority_threshold.py`). Two small standalone files
-  (`cluster/k8s/descheduler/helmrelease.yaml`, `cluster/k8s/seaweedfs/cluster/priorityclass.yaml`,
-  plus `seaweed.yaml`'s several `priorityClassName` fields) — convert to cdk8s and
-  share one constant.
 
 ## Larger conversions — whole hand-written directories, no cdk8s presence yet
 

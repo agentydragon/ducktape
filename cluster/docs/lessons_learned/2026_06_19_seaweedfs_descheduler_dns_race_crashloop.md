@@ -29,7 +29,7 @@ master-1 7×, master-0 3×, master-2 2×, volume-0 2×.
 
 ### Trigger: the descheduler evicts BestEffort pods off the OVER-utilized node every 15 minutes
 
-`cluster/k8s/descheduler/helmrelease.yaml` runs descheduler as a CronJob
+`cluster/cdk8s/descheduler_constructs.py` runs descheduler as a CronJob
 (`*/15 * * * *`) with the `LowNodeUtilization` balance plugin
 (`thresholds cpu/mem 20`, `targetThresholds cpu 50 / mem 70`) and
 `metricsUtilization.source: KubernetesMetrics` (so it balances on **actual CPU/mem

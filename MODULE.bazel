@@ -917,6 +917,24 @@ http_file(
     urls = ["https://raw.githubusercontent.com/fluxcd/kustomize-controller/v1.9.5/config/crd/bases/kustomize.toolkit.fluxcd.io_kustomizations.yaml"],
 )
 
+# Flux's HelmRelease CRD — see flux_kustomization_crd above; pinned to the helm-controller
+# tag cluster/k8s/flux-system/gotk-components.yaml deploys.
+http_file(
+    name = "flux_helmrelease_crd",
+    downloaded_file_path = "helm.toolkit.fluxcd.io_helmreleases.yaml",
+    sha256 = "aa8638ac68465ceac1f93a617baf5be833c589c51fd78a7384a4a274c252becc",
+    urls = ["https://raw.githubusercontent.com/fluxcd/helm-controller/v1.6.4/config/crd/bases/helm.toolkit.fluxcd.io_helmreleases.yaml"],
+)
+
+# Flux's HelmRepository CRD — see flux_kustomization_crd above; pinned to the
+# source-controller tag cluster/k8s/flux-system/gotk-components.yaml deploys.
+http_file(
+    name = "flux_helmrepository_crd",
+    downloaded_file_path = "source.toolkit.fluxcd.io_helmrepositories.yaml",
+    sha256 = "0f3c34df4a25c88c7ad7825ada26d696aa53d92ec2c0ca540e1f9a05db247fa9",
+    urls = ["https://raw.githubusercontent.com/fluxcd/source-controller/v1.9.5/config/crd/bases/source.toolkit.fluxcd.io_helmrepositories.yaml"],
+)
+
 # prometheus-operator's ServiceMonitor CRD — fetched verbatim so
 # //third_party/prometheus_operator:servicemonitor (devinfra/js/cdk8s_import.bzl) can generate
 # typed cdk8s Python constructs from it without vendoring the CRD in-tree. Pinned to the same

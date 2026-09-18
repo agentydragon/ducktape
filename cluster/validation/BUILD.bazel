@@ -736,10 +736,16 @@ py_test(
 )
 
 py_test(
-    name = "test_descheduler_priority_threshold",
-    srcs = ["test_descheduler_priority_threshold.py"],
-    data = ["//cluster/k8s:descheduler_priority_threshold_files"],
+    name = "test_seaweedfs_priority_class",
+    srcs = ["test_seaweedfs_priority_class.py"],
+    # stateful_infra imports cdk8s_plus_34, which needs jsii's Node runtime.
+    data = [
+        "//cluster/k8s:seaweedfs/cluster/seaweed.yaml",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
+        "//cluster/cdk8s:stateful_infra",
         "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
