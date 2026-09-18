@@ -26,4 +26,6 @@ spec:
     namespace: public-coder-agent
     accessKeyField: AWS_ACCESS_KEY_ID
     secretKeyField: AWS_SECRET_ACCESS_KEY
-  reclaimPolicy: Retain
+  # This old credential was exposed. Delete its recorded IAM key when the
+  # S3Credentials resource is removed after the tenant-local handoff.
+  reclaimPolicy: Delete
