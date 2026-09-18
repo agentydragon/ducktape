@@ -7,20 +7,3 @@ spec:
   seaweedRef:
     name: seaweedfs
   reclaimPolicy: Retain
----
-apiVersion: seaweed.seaweedfs.com/v1
-kind: S3Credentials
-metadata:
-  name: langfuse
-  namespace: seaweedfs
-spec:
-  seaweedRef:
-    name: seaweedfs
-  identityRef:
-    name: langfuse
-  secretRef:
-    name: langfuse-s3-credentials
-    namespace: langfuse
-    accessKeyField: s3-access-key-id
-    secretKeyField: s3-secret-access-key
-  reclaimPolicy: Retain

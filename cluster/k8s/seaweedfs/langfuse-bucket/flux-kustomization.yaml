@@ -15,14 +15,13 @@ spec:
   dependsOn:
     - name: seaweedfs-cluster
       namespace: ducktape-flux
-    - name: seaweedfs-secrets
-      namespace: ducktape-flux
-    - name: langfuse-secrets
-      namespace: ducktape-flux
+  # The Bucket and S3Credentials moved to the Langfuse Kustomization and were
+  # live-verified there. Keep this small Kustomization for the cluster-global
+  # S3Identity that the namespaced S3Credentials references.
   wait: true
   timeout: 5m
   healthChecks:
     - apiVersion: seaweed.seaweedfs.com/v1
-      kind: Bucket
+      kind: S3Identity
       name: langfuse
       namespace: seaweedfs
