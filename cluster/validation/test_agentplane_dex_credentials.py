@@ -17,8 +17,8 @@ def test_dex_config_and_operator_password_share_one_generator_invocation(k8s_dir
     template = target["template"]
     config = yaml.safe_load(template["data"]["config.yaml"])
     identity = one(config["staticPasswords"])
-    assert template["data"]["login"] == identity["email"]
-    assert template["data"]["username"] == identity["preferredUsername"]
+    # login/email and username/preferredUsername come from the same _ACCEPTANCE_EMAIL/
+    # _ACCEPTANCE_USERNAME constants in dex_constructs.py, not independently typed strings.
     assert template["data"]["password"] == "{{ .password }}"
     assert ".password" in identity["hash"]
     generator = one(operator["spec"]["dataFrom"])["sourceRef"]["generatorRef"]

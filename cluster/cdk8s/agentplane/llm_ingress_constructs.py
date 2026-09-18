@@ -69,6 +69,7 @@ _IMAGE_NAME = "git.allegedly.works/ducktape-ci/agentplane-llm-ingress"
 _CONTAINER_PORT = 8080
 _ZONE = "hil-ovh"
 _LABELS = {"app.kubernetes.io/name": _NAME}
+_SETTINGS_PATH = "/etc/agentplane-llm-ingress/settings.yaml"
 
 
 @dataclass(frozen=True)
@@ -161,7 +162,7 @@ class LlmIngress(Construct):
                     )
                 ),
                 # Settings this deployment supplies as YAML rather than flags, so a list is a list.
-                "AGENTPLANE_LLM_INGRESS_CONFIG_FILE": EnvValue.from_value("/etc/agentplane-llm-ingress/settings.yaml"),
+                "AGENTPLANE_LLM_INGRESS_CONFIG_FILE": EnvValue.from_value(_SETTINGS_PATH),
             },
             ports=[ContainerPort(name="http", number=_CONTAINER_PORT, protocol=Protocol.TCP)],
             readiness=http_probe("/healthz", port=_CONTAINER_PORT, initial_delay_seconds=3, period_seconds=10),
@@ -182,9 +183,7 @@ class LlmIngress(Construct):
         )
 
         settings_volume = Volume.from_config_map(self, "settings-volume", settings_cm)
-        deployment.containers[0].mount(
-            "/etc/agentplane-llm-ingress/settings.yaml", settings_volume, sub_path="settings.yaml", read_only=True
-        )
+        deployment.containers[0].mount(_SETTINGS_PATH, settings_volume, sub_path="settings.yaml", read_only=True)
 
         deployment.scheduling.attract(Node.labeled(NodeLabelQuery.is_("topology.kubernetes.io/zone", _ZONE)))
         deployment.scheduling.tolerate(

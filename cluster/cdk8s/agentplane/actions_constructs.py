@@ -100,6 +100,7 @@ _MIGRATE_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-action-service-migr
 _CONTAINER_PORT = 8080
 _ZONE = "hil-ovh"
 _LABELS = {"app.kubernetes.io/name": _NAME}
+_SETTINGS_DIR = "/etc/agentplane-actions"
 _MCP_PATHS = (
     "/mcp",
     "/.well-known/oauth-authorization-server",
@@ -267,7 +268,7 @@ class Actions(Construct):
     def _container_env(self, action_federation_cm: ConfigMap) -> dict[str, EnvValue]:
         env = self._database_env()
         env["AGENTPLANE_ACTIONS_OPERATOR_OIDC"] = EnvValue.from_config_map(action_federation_cm, "operator-oidc")
-        env["AGENTPLANE_ACTIONS_CONFIG_FILE"] = EnvValue.from_value("/etc/agentplane-actions/settings.yaml")
+        env["AGENTPLANE_ACTIONS_CONFIG_FILE"] = EnvValue.from_value(f"{_SETTINGS_DIR}/settings.yaml")
         if self.spec.web_push_secret_name is not None:
             web_push_secret = Secret.from_secret_name(self, "web-push-secret", self.spec.web_push_secret_name)
             env["AGENTPLANE_ACTIONS_WEB_PUSH__PRIVATE_KEY_PEM"] = EnvValue.from_secret_value(
@@ -374,7 +375,7 @@ class Actions(Construct):
         )
         settings_volume = Volume.from_config_map(self, "settings-volume", settings_cm)
         deployment.containers[0].mount("/etc/agentplane-mcp", oauth_volume, read_only=True)
-        deployment.containers[0].mount("/etc/agentplane-actions", settings_volume, read_only=True)
+        deployment.containers[0].mount(_SETTINGS_DIR, settings_volume, read_only=True)
         if self.spec.github_mcp_client_secret_name is not None:
             github_secret = Secret.from_secret_name(
                 self, "github-mcp-client-secret", self.spec.github_mcp_client_secret_name

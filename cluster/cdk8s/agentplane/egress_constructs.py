@@ -116,6 +116,7 @@ _PROXY_PORT = 8888
 _ADMIN_PORT = 8081
 _AGENT_API_PORT = 8082
 _ROOT_CA_ISSUER = "cluster-ca-bootstrap"
+_SETTINGS_PATH = "/etc/agentplane-egress/settings.yaml"
 
 
 # cdk8s_plus_34's Python stub doesn't declare ApiResource as implementing
@@ -446,7 +447,7 @@ class Egress(Construct):
                     )
                 ),
                 # Settings this deployment supplies as YAML rather than flags, so a list is a list.
-                "AGENTPLANE_EGRESS_CONFIG_FILE": EnvValue.from_value("/etc/agentplane-egress/settings.yaml"),
+                "AGENTPLANE_EGRESS_CONFIG_FILE": EnvValue.from_value(_SETTINGS_PATH),
             },
             ports=[
                 ContainerPort(name="proxy", number=_PROXY_PORT, protocol=Protocol.TCP),
@@ -468,9 +469,7 @@ class Egress(Construct):
         deployment.containers[0].mount("/etc/agentplane-egress/ca", ca_volume, read_only=True)
         deployment.containers[0].mount("/var/lib/agentplane-egress", confdir_volume)
         settings_volume = Volume.from_config_map(self, "settings-volume", settings_cm)
-        deployment.containers[0].mount(
-            "/etc/agentplane-egress/settings.yaml", settings_volume, sub_path="settings.yaml", read_only=True
-        )
+        deployment.containers[0].mount(_SETTINGS_PATH, settings_volume, sub_path="settings.yaml", read_only=True)
 
         deployment.scheduling.attract(Node.labeled(NodeLabelQuery.is_("topology.kubernetes.io/zone", _ZONE)))
         deployment.scheduling.tolerate(

@@ -91,6 +91,10 @@ _IMAGE = "ghcr.io/dexidp/dex:v2.45.1"
 _PORT = 5556
 _LABELS = {"app.kubernetes.io/name": _NAME}
 _ISSUER = "https://agentplane-dex-testing.allegedly.works/dex"
+# Shared between Dex's own staticPasswords entry and the ExternalSecret template the
+# acceptance suite reads, so the two can't name different identities.
+_ACCEPTANCE_EMAIL = "test-user@agentplane-testing.invalid"
+_ACCEPTANCE_USERNAME = "test-user"
 
 
 def _password_generator(scope: Construct, id: str, *, name: str, length: int, digits: int) -> None:
@@ -126,10 +130,13 @@ def _dex_config_yaml() -> str:
             ],
             "staticPasswords": [
                 {
-                    "email": "test-user@agentplane-testing.invalid",
-                    "hash": '{{ regexReplaceAll "^test-user:" (htpasswd "test-user" .password "bcrypt") "" }}',
-                    "username": "test-user",
-                    "preferredUsername": "test-user",
+                    "email": _ACCEPTANCE_EMAIL,
+                    "hash": (
+                        f'{{{{ regexReplaceAll "^{_ACCEPTANCE_USERNAME}:" '
+                        f'(htpasswd "{_ACCEPTANCE_USERNAME}" .password "bcrypt") "" }}}}'
+                    ),
+                    "username": _ACCEPTANCE_USERNAME,
+                    "preferredUsername": _ACCEPTANCE_USERNAME,
                     "userID": "test-subject",
                 }
             ],
@@ -246,8 +253,8 @@ def _add_credentials(scope: Construct) -> None:
                         }
                     ),
                     data={
-                        "login": "test-user@agentplane-testing.invalid",
-                        "username": "test-user",
+                        "login": _ACCEPTANCE_EMAIL,
+                        "username": _ACCEPTANCE_USERNAME,
                         "password": "{{ .password }}",
                         "issuer": _ISSUER,
                         # Dex v2.45.1 encodes IDTokenSubject{user_id: "test-subject", conn_id: "local"}

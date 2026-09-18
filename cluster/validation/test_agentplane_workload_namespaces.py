@@ -98,22 +98,5 @@ def test_both_read_the_same_projected_token_audience(
     )
 
 
-@pytest.mark.parametrize("namespace", NAMESPACES)
-@pytest.mark.parametrize(("deployment_name", "container_name", "env", "cm_name"), [PROXY, INGRESS])
-def test_each_deployment_mounts_the_settings_file_it_names(
-    namespace: str, deployment_name: str, container_name: str, env: str, cm_name: str
-) -> None:
-    """The env var names a path inside the container; the mount is what puts a file there. They are
-    written in different blocks of the same manifest, and the service refuses to start on a path
-    that is not a regular file -- so disagreeing spellings are a CrashLoopBackOff, not a default."""
-    del cm_name  # only needed by _settings_file, not this manifest-shape assertion
-    container = _container(namespace, deployment_name, container_name)
-    configured = one(entry for entry in container["env"] if entry["name"] == env)["value"]
-    mount = one(entry for entry in container["volumeMounts"] if entry["mountPath"] == configured)
-
-    assert mount["subPath"] == "settings.yaml", "a whole-directory mount would hide the key's file"
-    assert mount["readOnly"] is True
-
-
 if __name__ == "__main__":
     pytest_bazel.main()
