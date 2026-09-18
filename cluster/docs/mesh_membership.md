@@ -1,7 +1,7 @@
 # Nebula mesh — adding, removing, and re-IPing hosts
 
 The mesh host roster is a single JSON file at the repo root,
-`nebula-mesh.json`. Six places read it:
+`nebula-mesh.json`. Its readers:
 
 - `nix/nixos/modules/nebula.nix` — derives `lighthouses`, `staticHostMap`, and
   peer MTU routes
@@ -10,8 +10,15 @@ The mesh host roster is a single JSON file at the repo root,
 - `cluster/terraform/main/nebula.tf` — per-node ExtensionServiceConfig YAMLs,
   per-node MTU route patches, plus a `check {}` block asserting that roster
   endpoints match the live OVH IPs
+- `cluster/terraform/main/{ovh,home}-nodes.tf` — each Talos node inventory takes
+  its host name, Nebula IP and (OVH) Talos machine type from the roster entry of
+  the same name
 - `cluster/terraform/main/persistent-auth.tf` — reads persisted per-host Nebula
   certificate material for every tofu-managed entry
+- `cluster/cdk8s/generate_manifests.py` — renders the etcd metrics scrape
+  targets (`cluster/k8s/monitoring/etcd`, every control plane's Nebula IP) and
+  `tf/gitops/dns-records/public-nodes.json` (every public k8s node, for the
+  Route 53 records); regenerate after any roster edit, CI fails on drift
 - `ansible/roles/nebula` — renders Atlas's config and peer MTU routes
 - `cluster/scripts/render_mobile_nebula_config.py` — mobile client config
 
@@ -66,15 +73,18 @@ any TF apply.
 2. Edit `nebula-mesh.json`: add the host with `nebula_ip`, `endpoint`, role,
    `lighthouse: true`, `relay: true`, `managed_by: "tofu-ovh"`,
    `cert_groups: ["lighthouse"]`.
-3. Add the host to `local.kimsufi_servers` in
+3. Add the host's provisioning facts (OVH service, disks, zone, storage tier)
+   under the same name in `local.kimsufi_server_provisioning` in
    `cluster/terraform/main/ovh-nodes.tf`; the Terraform-managed Nebula host set
    is derived from that inventory.
-4. Generate and persist `secrets/nebula/<host>.crt` and
+4. `bb run //cluster/cdk8s:generate_manifests` — the etcd scrape targets and
+   the dns-records node export follow the roster.
+5. Generate and persist `secrets/nebula/<host>.crt` and
    `secrets/nebula/<host>.sops.key` with the exact FQDN, Nebula IP, and groups
    from the new roster entry; see <secrets.md> "Generating a new cert".
-5. `bazel run //cluster:bootstrap` — `nebula.tf` builds the per-node config,
+6. `bazel run //cluster:bootstrap` — `nebula.tf` builds the per-node config,
    and the drift `check` verifies the endpoint matches live OVH data.
-6. Restart Nebula on roaming/NixOS hosts (or wait for next `nixos-rebuild
+7. Restart Nebula on roaming/NixOS hosts (or wait for next `nixos-rebuild
 switch`) so they pick up the new `static_host_map`.
 
 ### NixOS / Ansible / laptop / mobile (manual cert)
@@ -104,9 +114,9 @@ Home bare-metal Talos workers are defined in
 `cluster/terraform/main/home-nodes.tf`. They have no public Nebula endpoint and
 are neither lighthouses nor relays.
 
-1. Add the host to `local.home_nodes` with a stable install-disk path, Nebula
-   IP, and home topology labels.
-2. Add the matching roster entry with `role: "worker"` and
+1. Add the host to `local.home_node_provisioning` with a stable install-disk
+   path and home topology labels.
+2. Add the roster entry of the same name with `role: "worker"` and
    `managed_by: "tofu-home"`.
 3. Apply the targeted cert/config dependencies, then deliver the generated
    machine configuration to the node's LAN maintenance address. See
@@ -118,8 +128,10 @@ are neither lighthouses nor relays.
 
 1. Cordon + drain in k8s (existing flow).
 2. Edit `nebula-mesh.json`: delete the host entry.
-3. Remove the matching inventory entry from `local.kimsufi_servers` (or the
-   legacy `local.kimsufi_cp_servers`) in `cluster/terraform/main/ovh-nodes.tf`.
+3. Remove the matching inventory entry from `local.kimsufi_server_provisioning`
+   (or the legacy `local.kimsufi_cp_servers`) in
+   `cluster/terraform/main/ovh-nodes.tf`, and
+   `bb run //cluster/cdk8s:generate_manifests`.
 4. `bazel run //cluster:bootstrap`. TF destroys the underlying resource and
    refreshes remaining Talos node configs.
 5. Delete `secrets/nebula/<host>.crt` and

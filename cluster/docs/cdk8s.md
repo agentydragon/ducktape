@@ -10,7 +10,7 @@ for writing a generator: <../cdk8s/AGENTS.md>.
 ## Three shapes of a directory
 
 1. **Fully generated** (`agentplane-{staging,testing}`, `litellm/app`,
-   `agents/ha-mcp/app`, `aiquota`, `clickhouse/schema`, `haku/console{,/db,/migration}`): `flux-kustomization.yaml` (from `//third_party/flux:kustomization`'s
+   `agents/ha-mcp/app`, `aiquota`, `clickhouse/schema`, `haku/console{,/db,/migration}`, `monitoring/etcd`): `flux-kustomization.yaml` (from `//third_party/flux:kustomization`'s
    typed bindings via `flux_constructs.flux_kustomization`), `kustomization.yaml`
    (`flux_constructs.kustomize_kustomization`, a Pydantic model: the plain
    `kustomize.config.k8s.io` Kustomization has a JSON Schema but no CRD for
@@ -39,6 +39,10 @@ generated file beside the module: `vars[].value` is written structurally into th
 runner's tfvars, so a map arrives typed, and a CR spec change reconciles immediately,
 whereas `varsFrom` ConfigMap values are stringified and picked up only on the interval
 (tofu-controller v0.16.5).
+
+The same run also writes `tf/gitops/dns-records/public-nodes.json`, the mesh roster's
+projection for a Terraform module the tofu-controller runs from a sparse checkout, where
+`nebula-mesh.json` cannot be read directly.
 
 ### SOPS secrets in a converted directory
 

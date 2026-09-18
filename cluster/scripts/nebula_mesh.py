@@ -1,8 +1,9 @@
 """Typed loader for the Nebula mesh host roster (`nebula-mesh.json`).
 
 Single source of truth for the mesh. See cluster/docs/mesh_membership.md for
-add/remove/re-IP flow. Other consumers (Nix, Terraform) read the JSON directly
-via builtins.fromJSON / jsondecode.
+add/remove/re-IP flow. Nix, Ansible and the metal Terraform root read the JSON
+directly (builtins.fromJSON / jsondecode); cluster/cdk8s/generate_manifests.py
+renders the cluster's and tf/gitops' projections of it through this model.
 """
 
 from __future__ import annotations
@@ -56,6 +57,11 @@ class Host(BaseModel):
             raise ValueError("omit destination_mtu instead of setting it to null")
         return value
 
+    @property
+    def public_ip(self) -> str | None:
+        """The endpoint's address; None for behind-NAT hosts."""
+        return None if self.endpoint is None else self.endpoint.rpartition(":")[0]
+
 
 class Mesh(BaseModel):
     """The full mesh roster."""
@@ -73,8 +79,19 @@ class Mesh(BaseModel):
     def static_host_map(self) -> dict[str, list[str]]:
         return {h.nebula_ip: [h.endpoint] for h in self.hosts.values() if h.endpoint is not None}
 
+    def control_planes(self) -> dict[str, Host]:
+        return {name: h for name, h in self.hosts.items() if h.role == "control-plane"}
+
     def control_plane_endpoints(self, port: int = 6443) -> list[str]:
-        return [f"{h.nebula_ip}:{port}" for h in self.hosts.values() if h.role == "control-plane"]
+        return [f"{h.nebula_ip}:{port}" for h in self.control_planes().values()]
+
+    def public_kubernetes_nodes(self) -> dict[str, Host]:
+        """Cluster nodes the internet can reach: the Gateway's and, for control planes, the API's addresses."""
+        return {
+            name: h
+            for name, h in self.hosts.items()
+            if h.role in ("control-plane", "worker") and h.endpoint is not None
+        }
 
     def minimum_path_mtu(self, default: int) -> int:
         """Return a global fallback for consumers without per-peer MTU routes."""

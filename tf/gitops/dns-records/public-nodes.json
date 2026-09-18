@@ -1,0 +1,22 @@
+{
+  "ovh-ns102453": {
+    "public_ip": "147.135.37.175",
+    "role": "worker"
+  },
+  "ovh-ns103656": {
+    "public_ip": "147.135.39.162",
+    "role": "control-plane"
+  },
+  "ovh-ns103711": {
+    "public_ip": "147.135.39.176",
+    "role": "worker"
+  },
+  "ovh-ns104952": {
+    "public_ip": "147.135.104.5",
+    "role": "control-plane"
+  },
+  "ovh-ns104963": {
+    "public_ip": "147.135.104.16",
+    "role": "control-plane"
+  }
+}

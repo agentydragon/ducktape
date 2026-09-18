@@ -1,7 +1,10 @@
 # Route 53 DNS for allegedly.works — zone records and domain delegation.
 #
 # All DNS is served by AWS Route 53. No in-cluster DNS authority.
-# Update public_gateway_ips when adding/removing public Gateway nodes.
+# Node IPs come from public-nodes.json, generated from the repo-root nebula-mesh.json
+# by //cluster/cdk8s:generate_manifests: the tofu-controller runs this module from the
+# `ducktape` GitRepository, a sparse checkout of deployment directories that cannot
+# carry a repo-root file, so the roster itself is out of file()'s reach here.
 
 terraform {
   required_version = ">= 1.0"
@@ -17,28 +20,15 @@ terraform {
 locals {
   domain = "allegedly.works"
 
-  # Public Gateway node IPs. This should match every public OVH Kubernetes node
-  # in nebula-mesh.json with role=control-plane or role=worker. The validation
-  # test in cluster/validation/test_dns_records.py fails if this hand-written
-  # Terraform list drifts from that roster.
-  public_gateway_ips = [
-    "147.135.37.175", # ovh-ns102453 (formerly talos-kimsufi-cp-0)
-    "147.135.39.162", # ovh-ns103656 (formerly talos-kimsufi-worker-0)
-    "147.135.39.176", # ovh-ns103711 (formerly talos-kimsufi-worker-1)
-    "147.135.104.5",  # ovh-ns104952 (formerly talos-ks-game-worker-0)
-    "147.135.104.16", # ovh-ns104963 (formerly talos-ks-game-worker-1)
-  ]
+  # Every Kubernetes node with a public endpoint, keyed by host name: {public_ip, role}.
+  public_nodes = jsondecode(file("${path.module}/public-nodes.json"))
+
+  # Every public node runs the Gateway (Cilium Envoy on the host network).
+  public_gateway_ips = [for node in values(local.public_nodes) : node.public_ip]
 
   # Kubernetes API endpoints — every control-plane node. The apiserver listens on
   # the host directly on :6443, independent of Cilium gateway/L2-announce state.
-  # Post Stage-2 etcd reshuffle (cluster/docs/plans/ovh_storage_tiering.md) the
-  # control plane is 103656 (KS-5 anchor) + the two KS-GAME NVMe nodes; 102453 and
-  # 103711 were demoted to workers and no longer serve the API.
-  kube_api_ips = [
-    "147.135.39.162", # ovh-ns103656
-    "147.135.104.5",  # ovh-ns104952
-    "147.135.104.16", # ovh-ns104963
-  ]
+  kube_api_ips = [for node in values(local.public_nodes) : node.public_ip if node.role == "control-plane"]
 }
 
 provider "aws" {

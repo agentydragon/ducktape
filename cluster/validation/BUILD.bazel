@@ -415,18 +415,12 @@ py_library(
 py_test(
     name = "test_nebula_mesh",
     srcs = ["test_nebula_mesh.py"],
-    data = [
-        "//:nebula-mesh.json",
-        "//cluster/k8s:cluster_all_files",
-        "//cluster/terraform/main:ovh-nodes.tf",
-    ],
+    data = ["//:nebula-mesh.json"],
     deps = [
-        ":terraform_hcl",
         "//cluster/scripts:nebula_mesh",
         "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 
@@ -447,15 +441,10 @@ py_test(
 )
 
 py_test(
-    name = "test_dns_records",
-    srcs = ["test_dns_records.py"],
-    data = [
-        "//:nebula-mesh.json",
-        "//cluster/k8s:cluster_all_files",
-        "//tf/gitops/dns-records:main.tf",
-    ],
+    name = "test_mailbox_smtp_ingress",
+    srcs = ["test_mailbox_smtp_ingress.py"],
+    data = ["//cluster/k8s:cluster_all_files"],
     deps = [
-        ":terraform_hcl",
         "//util/bazel:runfiles",
         "@pypi//more_itertools",
         "@pypi//pytest_bazel",
