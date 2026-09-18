@@ -88,7 +88,8 @@ deferred because Talos machine-config changes reboot nodes.
 
 4. **Haku dind allowlist — ghcr/quay (deferred).** Docker Hub already routes through the
    mirror (see Consumers above). Dropping `ghcr.io` + `pkg-containers.githubusercontent.com`
-   from `cnp-haku-cloud-api-egress.yaml` would require haku-ci's dind to mirror ghcr too,
+   from the haku-egress-proxy fence (`cluster/cdk8s/egress_fences.py`) would require
+   haku-ci's dind to mirror ghcr too,
    which classic dockerd can't — enable Docker's containerd image store + `hosts.toml`, or
    move to buildkit. The mirror side already works (`/v2/ghcr/... → 200`), but this is not
    worth doing unless post-`rules_oci` haku-ci still has frequent or painful ghcr/quay pulls.

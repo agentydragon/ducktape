@@ -1,26 +1,14 @@
-# Allow egress to cloud LLM API providers.
-# Additive with the operator's default-deny NetworkPolicy.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
   name: allow-cloud-api-egress
   namespace: agents-mitmproxy
 spec:
-  endpointSelector:
-    matchLabels:
-      app.kubernetes.io/name: mitmproxy
   egress:
-    # Cilium FQDN egress rules need the proxy pod to query CoreDNS first.
-    #
-    # Mirrors every toFQDNs entry below, pinned against them by
-    # //cluster/validation:test_egress_allowlists. Rationale for the duplication,
-    # for `**.cluster.local`, and for why this layer is not redundant with
-    # toFQDNs: see the same rule in
-    # agents/haku-egress-proxy/cnp-haku-cloud-api-egress.yaml.
     - toEndpoints:
         - matchLabels:
-            k8s:io.kubernetes.pod.namespace: kube-system
             k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
       toPorts:
         - ports:
             - port: "53"
@@ -54,10 +42,6 @@ spec:
               - matchName: snapshot.debian.org
               - matchName: static.crates.io
               - matchName: static.rust-lang.org
-    # The shared build-registry bucket: public package, source and toolchain
-    # registries, granted all-or-none. Pinned as one set by
-    # //cluster/validation:test_egress_allowlists (BUILD_REGISTRIES) -- add a host
-    # there and here together, or the test fails.
     - toFQDNs:
         - matchName: bcr.bazel.build
         - matchName: cache.nixos.org
@@ -86,7 +70,6 @@ spec:
         - ports:
             - port: "443"
               protocol: TCP
-    # Model provider APIs reached directly from sandbox pods.
     - toFQDNs:
         - matchName: generativelanguage.googleapis.com
         - matchName: api.openai.com
@@ -95,13 +78,6 @@ spec:
         - ports:
             - port: "443"
               protocol: TCP
-    # Allow forwarding to any in-cluster Service. Sandbox bench Jobs and
-    # other workloads keep mitmproxy in-path even when targeting cluster
-    # endpoints (e.g. `ollama.ollama:11434`); without this rule mitmproxy
-    # was the bottleneck because it couldn't reach the in-cluster
-    # destination. NO_PROXY in the inject policy still permits explicit
-    # bypass for Service FQDNs that already match (`*.svc.cluster.local`
-    # and `10.0.0.0/8`).
     - toEntities:
         - cluster
       toPorts:
@@ -116,3 +92,6 @@ spec:
               protocol: TCP
             - port: "8080"
               protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: mitmproxy

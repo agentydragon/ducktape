@@ -6,5 +6,5 @@ resources:
   - deployment.yaml
   - service.yaml
   - networkpolicy.yaml
-  - cnp-cloud-api-egress.yaml
+  - cnp-cloud-api-egress.k8s.yaml
   - ccnp-sandbox-proxy-egress.yaml

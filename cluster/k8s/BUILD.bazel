@@ -40,7 +40,11 @@ exports_files(
         "agentplane-testing/agentplane.k8s.yaml",
         "agentplane-testing/flux-kustomization.yaml",
         "agentplane-testing/kustomization.yaml",
+        "agents/haku-egress-proxy/cnp-haku-claude-egress.k8s.yaml",
+        "agents/haku-egress-proxy/cnp-haku-cloud-api-egress.k8s.yaml",
+        "agents/haku-egress-proxy/openclaw-spike-cnp-egress.k8s.yaml",
         "agents/haku-openclaw-spike/app/haku-openclaw-spike-config.k8s.yaml",
+        "agents/mitmproxy/cnp-cloud-api-egress.k8s.yaml",
         "agents/public-coder-agent/app/public-coder-agent-config.k8s.yaml",
         "aiquota/aiquota.k8s.yaml",
         "aiquota/flux-kustomization.yaml",
@@ -167,18 +171,12 @@ filegroup(
     visibility = ["//cluster/validation:__pkg__"],
 )
 
-# Every egress allowlist in the cluster, pinned by
-# //cluster/validation:test_egress_allowlists.
+# The hand-written egress allowlists //cluster/validation:test_egress_allowlists checks
+# alongside the generated fences (cluster/cdk8s/egress_fences.py).
 filegroup(
     name = "egress_allowlist_files",
     srcs = [
-        "agents/haku-egress-proxy/cnp-haku-claude-egress.yaml",
-        "agents/haku-egress-proxy/cnp-haku-cloud-api-egress.yaml",
-        # The spike's two layers live in two files: the iron allowlist and the
-        # Cilium DNS rule pinned against it.
-        "agents/haku-egress-proxy/openclaw-spike-cnp-egress.yaml",
         "agents/haku-egress-proxy/openclaw-spike-iron.yaml",
-        "agents/mitmproxy/cnp-cloud-api-egress.yaml",
         "agents/public-coder-agent/proxy/cnp-egress.yaml",
         "kustomization.yaml",
     ],

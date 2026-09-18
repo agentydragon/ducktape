@@ -21,7 +21,7 @@ spec:
     # //cluster/validation:test_egress_allowlists. Rationale for the duplication,
     # for `**.cluster.local`, and for why this layer is not redundant with
     # toFQDNs: see the same rule in
-    # agents/haku-egress-proxy/cnp-haku-cloud-api-egress.yaml.
+    # cluster/cdk8s/egress_fences.py.
     - toEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: kube-system

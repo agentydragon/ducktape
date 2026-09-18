@@ -88,6 +88,17 @@ py_library(
 )
 
 py_library(
+    name = "cilium",
+    srcs = ["cilium.py"],
+    visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
+    deps = [
+        "//third_party/cilium:ciliumnetworkpolicy",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "token_reviewer_rbac",
     srcs = ["token_reviewer_rbac.py"],
     visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
@@ -186,10 +197,10 @@ py_library(
     name = "ha_mcp_constructs",
     srcs = ["ha_mcp_constructs.py"],
     deps = [
+        ":cilium",
         ":forgejo_images",
         ":metadata",
         ":probes",
-        "//third_party/cilium:ciliumnetworkpolicy",
         "//third_party/prometheus_operator:servicemonitor",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -264,6 +275,18 @@ py_library(
 )
 
 py_library(
+    name = "egress_fences",
+    srcs = ["egress_fences.py"],
+    visibility = ["//cluster/validation:__pkg__"],
+    deps = [
+        ":cilium",
+        ":metadata",
+        "//third_party/cilium:ciliumnetworkpolicy",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
     name = "generate_manifests_lib",
     srcs = ["generate_manifests.py"],
     visibility = [
@@ -275,6 +298,7 @@ py_library(
         ":clickhouse_schema_constructs",
         ":config_format",
         ":descheduler_constructs",
+        ":egress_fences",
         ":flux_constructs",
         ":ha_mcp_constructs",
         ":haku_openclaw_spike_config",
@@ -314,7 +338,11 @@ py_test(
         "//cluster/k8s:agentplane-testing/agentplane.k8s.yaml",
         "//cluster/k8s:agentplane-testing/flux-kustomization.yaml",
         "//cluster/k8s:agentplane-testing/kustomization.yaml",
+        "//cluster/k8s:agents/haku-egress-proxy/cnp-haku-claude-egress.k8s.yaml",
+        "//cluster/k8s:agents/haku-egress-proxy/cnp-haku-cloud-api-egress.k8s.yaml",
+        "//cluster/k8s:agents/haku-egress-proxy/openclaw-spike-cnp-egress.k8s.yaml",
         "//cluster/k8s:agents/haku-openclaw-spike/app/haku-openclaw-spike-config.k8s.yaml",
+        "//cluster/k8s:agents/mitmproxy/cnp-cloud-api-egress.k8s.yaml",
         "//cluster/k8s:agents/public-coder-agent/app/public-coder-agent-config.k8s.yaml",
         "//cluster/k8s:aiquota/aiquota.k8s.yaml",
         "//cluster/k8s:aiquota/flux-kustomization.yaml",

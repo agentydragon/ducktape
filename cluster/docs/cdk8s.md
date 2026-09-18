@@ -16,12 +16,15 @@ for writing a generator: <../cdk8s/AGENTS.md>.
    `kustomize.config.k8s.io` Kustomization has a JSON Schema but no CRD for
    `cdk8s import` to ingest) and one `<name>.k8s.yaml` per chart. Hand-written beside
    them: `image-pins/` (below) and any `.sops.yaml`.
-2. **One generated file** in an otherwise hand-written directory: a `<name>.k8s.yaml`
-   the hand-written `kustomization.yaml` lists as a resource. A ConfigMap replacing a
-   `configMapGenerator` entry (`agents/haku-openclaw-spike/app`,
-   `agents/public-coder-agent/app`), or the objects that carry a value another
-   directory shares (`descheduler`'s HelmRepository + HelmRelease and
-   `seaweedfs/cluster`'s PriorityClass, both rendered from `stateful_infra.PRIORITY`).
+2. **One or a few generated files** in an otherwise hand-written directory, each a
+   `<name>.k8s.yaml` the hand-written `kustomization.yaml` lists as a resource. A
+   ConfigMap replacing a `configMapGenerator` entry (`agents/haku-openclaw-spike/app`,
+   `agents/public-coder-agent/app`); the objects that carry a value another directory
+   shares (`descheduler`'s HelmRepository + HelmRelease and `seaweedfs/cluster`'s
+   PriorityClass, both rendered from `stateful_infra.PRIORITY`); or the
+   CiliumNetworkPolicy fences of `agents/haku-egress-proxy` and `agents/mitmproxy`
+   (`cdk8s/egress_fences.py`, one chart per policy so each file keeps its hand-written
+   name).
 3. **Hand-written.**
 
 Convert at Kustomization-directory granularity. The `.k8s.yaml` suffix is cdk8s-only;

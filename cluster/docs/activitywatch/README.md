@@ -92,9 +92,8 @@ actually hold.
 - The pod sets only the inert placeholder (`AW_READ_TOKEN: activitywatch-read-token-placeholder`);
   the iron proxy substitutes the real read token on `activitywatch-read.allegedly.works` read
   requests (`cluster/k8s/agents/haku-egress-proxy/claude-iron.yaml`).
-- The host is pinned in the Haku-Claude egress fence
-  (`cluster/k8s/agents/haku-egress-proxy/cnp-haku-claude-egress.yaml`) and the
-  `ACTIVITYWATCH` group of `cluster/validation/test_egress_allowlists.py`.
+- The host is in the Haku-Claude egress fence (`haku_claude` in
+  `cluster/cdk8s/egress_fences.py`).
 
 So the agent queries with the placeholder in its environment:
 

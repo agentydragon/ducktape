@@ -20,7 +20,7 @@ Model with constructs, deploy with one props object per environment.
 - **References, not names.** `Service(selector=deployment)`,
   `Volume.from_config_map(config_map)`, `Role.from_role_name(...)`; a network rule
   targets a workload through the constant the owning module exports
-  (`cilium_helpers.endpoint_labels(namespace, egress_constructs.NAME)`), never the
+  (`cilium.endpoint_labels(namespace, egress_constructs.NAME)`), never the
   string spelled again.
 - **The service's `Settings` is its deployment contract.** Flags, env vars and settings
   files are rendered through the binary's pydantic-settings model
@@ -30,8 +30,8 @@ Model with constructs, deploy with one props object per environment.
   `x/` or `haku/` imports `cluster/`. A project's own `deploy/` may hold a props-driven
   construct (tested with synthetic props); the cluster's instantiation of it lives here.
 - **One helper per repeated shape.** When the same dozen generated-struct lines appear
-  twice, name the shape once: `agentplane/cilium_helpers.py` (`ingress_from_gateway`,
-  `egress_to`, `egress_to_fqdns`, `egress_via_gateway`, `dns_egress`,
+  twice, name the shape once: `cilium.py` (`ingress_from_gateway`, `egress_to`,
+  `egress_to_fqdns`, `egress_via_gateway`, `dns_egress`, `fqdn_fence`,
   `deny_all_egress`, ...), `gateway.https_route`, `probes.http_probe`,
   `agentplane/migrate_container.py`, `agentplane/node_scheduling.py`,
   `pod_spec_patches.py`, `api_resource.custom_resource`. Parameterize the variation the

@@ -4,7 +4,7 @@
 # clones/pushes/long-polls), and haku-egress-proxy port 8080. Blocks all direct external
 # internet — the base-image registries, npm/pypi, Bazel/toolchain, and
 # Forgejo-action hosts now flow through the proxy's allowlist
-# (agents/haku-egress-proxy/cnp-haku-cloud-api-egress.yaml).
+# (cluster/cdk8s/egress_fences.py).
 #
 # Deviation from haku-sandbox's force-egress: no kube-apiserver rule — haku-ci runs
 # with automountServiceAccountToken:false and has no RBAC, so it never calls the

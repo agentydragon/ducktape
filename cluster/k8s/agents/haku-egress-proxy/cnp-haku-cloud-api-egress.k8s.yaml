@@ -1,0 +1,132 @@
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-haku-cloud-api-egress
+  namespace: haku-egress-proxy
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY
+          rules:
+            dns:
+              - matchPattern: "**.cluster.local"
+              - matchPattern: "*.ankiweb.net"
+              - matchName: alloy-otlp.allegedly.works
+              - matchName: api.anthropic.com
+              - matchName: api.coinbase.com
+              - matchName: bcr.bazel.build
+              - matchName: cache.nixos.org
+              - matchName: channels.nixos.org
+              - matchName: code.forgejo.org
+              - matchName: codeload.github.com
+              - matchName: data.forgejo.org
+              - matchName: files.pythonhosted.org
+              - matchName: ftp.gnu.org
+              - matchName: ghcr.io
+              - matchName: github.com
+              - matchName: gmail.googleapis.com
+              - matchName: haku-mailbox.allegedly.works
+              - matchName: index.crates.io
+              - matchName: nixos.org
+              - matchName: nodejs.org
+              - matchName: objects.githubusercontent.com
+              - matchName: pkg-containers.githubusercontent.com
+              - matchName: pypi.org
+              - matchName: raw.githubusercontent.com
+              - matchName: registry.npmjs.org
+              - matchName: release-assets.githubusercontent.com
+              - matchName: releases.bazel.build
+              - matchName: snapshot.debian.org
+              - matchName: static.crates.io
+              - matchName: static.rust-lang.org
+              - matchName: tasks.googleapis.com
+              - matchName: www.googleapis.com
+    - toFQDNs:
+        - matchName: ghcr.io
+        - matchName: pkg-containers.githubusercontent.com
+        - matchName: gmail.googleapis.com
+        - matchName: www.googleapis.com
+        - matchName: tasks.googleapis.com
+        - matchName: alloy-otlp.allegedly.works
+        - matchName: haku-mailbox.allegedly.works
+        - matchName: api.coinbase.com
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    - toFQDNs:
+        - matchName: pypi.org
+        - matchName: files.pythonhosted.org
+        - matchName: registry.npmjs.org
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    - toFQDNs:
+        - matchName: cache.nixos.org
+        - matchName: nixos.org
+        - matchName: channels.nixos.org
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    - toFQDNs:
+        - matchName: releases.bazel.build
+        - matchName: bcr.bazel.build
+        - matchName: github.com
+        - matchName: codeload.github.com
+        - matchName: objects.githubusercontent.com
+        - matchName: release-assets.githubusercontent.com
+        - matchName: raw.githubusercontent.com
+        - matchName: ftp.gnu.org
+        - matchName: nodejs.org
+        - matchName: snapshot.debian.org
+        - matchName: static.rust-lang.org
+        - matchName: index.crates.io
+        - matchName: static.crates.io
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    - toFQDNs:
+        - matchName: code.forgejo.org
+        - matchName: data.forgejo.org
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    - toFQDNs:
+        - matchName: api.anthropic.com
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    - toFQDNs:
+        - matchPattern: "*.ankiweb.net"
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    - toEntities:
+        - cluster
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
+            - port: "443"
+              protocol: TCP
+            - port: "8000"
+              protocol: TCP
+            - port: "8080"
+              protocol: TCP
+            - port: "11434"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: haku-egress-proxy

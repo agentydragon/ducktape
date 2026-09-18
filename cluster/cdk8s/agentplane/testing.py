@@ -7,7 +7,8 @@ from __future__ import annotations
 from cdk8s import Chart
 from cdk8s_plus_34 import DeploymentStrategy
 
-from cluster.cdk8s.agentplane import actions_constructs, cilium_helpers, dex_constructs, testing_config
+from cluster.cdk8s import cilium
+from cluster.cdk8s.agentplane import actions_constructs, dex_constructs, testing_config
 from cluster.cdk8s.agentplane.actions_testing_fixtures import (
     MCP_EVERYTHING_NAME,
     MCP_EVERYTHING_PORT,
@@ -124,13 +125,11 @@ ENV = Environment(
         settings=_ACTIONS_SETTINGS,
         extra_egress=[
             # The direct federation verifier fetches Dex's JWKS over the public-origin Gateway path.
-            cilium_helpers.egress_via_gateway(_DEX_HOSTNAME),
+            cilium.egress_via_gateway(_DEX_HOSTNAME),
             # MCP OAuth discovery/token exchange/tool calls for the linked "example" fixture:
             # cluster-internal only, unlike the real GitHub/Kubernetes MCP OAuth providers
             # linked in staging.
-            cilium_helpers.egress_to(
-                cilium_helpers.endpoint_labels(_NAMESPACE, OAUTH_FIXTURE_NAME), OAUTH_FIXTURE_PORT
-            ),
+            cilium.egress_to(cilium.endpoint_labels(_NAMESPACE, OAUTH_FIXTURE_NAME), OAUTH_FIXTURE_PORT),
         ],
     ),
     extra=_extra,

@@ -64,9 +64,9 @@ from trust_manager_crds.io.cert_manager.trust import (
     BundleSpecTargetNamespaceSelectorMatchExpressions,
 )
 
+from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import (
     actions_constructs,
-    cilium_helpers,
     container_security,
     db_constructs,
     llm_ingress_constructs,
@@ -450,35 +450,30 @@ class Egress(Construct):
 
     def _add_network_policy(self) -> None:
         namespace = self.env.namespace
-        cilium_helpers.network_policy(
+        cilium.network_policy(
             self,
             "networkpolicy",
             metadata=metadata(NAME, namespace),
             selector=_LABELS,
             ingress=[
-                cilium_helpers.ingress_from(
-                    cilium_helpers.endpoint_labels(namespace, "agentplane-runner"), ports=[PROXY_PORT]
-                ),
-                cilium_helpers.ingress_from(
-                    cilium_helpers.endpoint_labels(namespace, "agentplane-app"), ports=[ADMIN_PORT]
-                ),
-                cilium_helpers.ingress_from(cilium_helpers.endpoint_labels(namespace, NAME), ports=[_AGENT_API_PORT]),
+                cilium.ingress_from(cilium.endpoint_labels(namespace, "agentplane-runner"), ports=[PROXY_PORT]),
+                cilium.ingress_from(cilium.endpoint_labels(namespace, "agentplane-app"), ports=[ADMIN_PORT]),
+                cilium.ingress_from(cilium.endpoint_labels(namespace, NAME), ports=[_AGENT_API_PORT]),
             ],
             egress=[
-                cilium_helpers.egress_to(
+                cilium.egress_to(
                     {"k8s:io.kubernetes.pod.namespace": namespace, "k8s:cnpg.io/cluster": "postgres"},
                     db_constructs.POSTGRES_PORT,
                 ),
-                cilium_helpers.dns_egress(protocols=["ANY"], l7=True),
-                cilium_helpers.egress_to_entities("kube-apiserver"),
-                cilium_helpers.egress_to(cilium_helpers.endpoint_labels(namespace, NAME), _AGENT_API_PORT),
-                cilium_helpers.egress_to(
-                    cilium_helpers.endpoint_labels(namespace, "agentplane-llm-ingress"),
-                    llm_ingress_constructs.CONTAINER_PORT,
+                cilium.dns_egress(protocols=["ANY"], resolves=["*"]),
+                cilium.egress_to_entities("kube-apiserver"),
+                cilium.egress_to(cilium.endpoint_labels(namespace, NAME), _AGENT_API_PORT),
+                cilium.egress_to(
+                    cilium.endpoint_labels(namespace, "agentplane-llm-ingress"), llm_ingress_constructs.CONTAINER_PORT
                 ),
-                cilium_helpers.egress_to(
-                    cilium_helpers.endpoint_labels(namespace, "agentplane-actions"), actions_constructs.CONTAINER_PORT
+                cilium.egress_to(
+                    cilium.endpoint_labels(namespace, "agentplane-actions"), actions_constructs.CONTAINER_PORT
                 ),
-                cilium_helpers.egress_to_entities("world", "remote-node", "host", ports=[443, 80]),
+                cilium.egress_to_entities("world", "remote-node", "host", ports=[443, 80]),
             ],
         )
