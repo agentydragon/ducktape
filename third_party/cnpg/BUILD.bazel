@@ -1,0 +1,26 @@
+# Typed cdk8s Python constructs generated from CloudNativePG's upstream CRDs (fetched via
+# MODULE.bazel's cnpg_cluster_crd/cnpg_database_crd http_files, never vendored). See
+# cluster/docs/cdk8s.md.
+
+# cnpg_cluster_crds and cnpg_database_crds are generated at build time by cdk8s_import
+# below, not pip packages -- gazelle can't resolve them from the requirements manifest.
+# gazelle:resolve py cnpg_cluster_crds //third_party/cnpg:cluster
+# gazelle:resolve py cnpg_database_crds //third_party/cnpg:database
+
+load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
+
+cdk8s_import(
+    name = "cluster",
+    crd = "@cnpg_cluster_crd//file",
+    module_name = "cnpg_cluster_crds",
+    module_path = "io/cnpg/postgresql",
+    visibility = ["//visibility:public"],
+)
+
+cdk8s_import(
+    name = "database",
+    crd = "@cnpg_database_crd//file",
+    module_name = "cnpg_database_crds",
+    module_path = "io/cnpg/postgresql",
+    visibility = ["//visibility:public"],
+)

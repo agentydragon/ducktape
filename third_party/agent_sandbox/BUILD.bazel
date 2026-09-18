@@ -1,0 +1,35 @@
+# Typed cdk8s Python constructs generated from kubernetes-sigs/agent-sandbox's upstream
+# SandboxTemplate CRD (fetched via MODULE.bazel's agent_sandbox_release_bundle http_file,
+# never vendored). See cluster/docs/cdk8s.md.
+
+# agent_sandbox_sandboxtemplate_crds is generated at build time by cdk8s_import below,
+# not a pip package -- gazelle can't resolve it from the requirements manifest.
+# gazelle:resolve py agent_sandbox_sandboxtemplate_crds //third_party/agent_sandbox:sandboxtemplate
+
+load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
+
+# kubernetes-sigs/agent-sandbox's release asset bundles Sandbox, SandboxTemplate,
+# SandboxClaim, SandboxWarmPool CRDs plus controller manifests in one file; cdk8s import
+# only ingests one CRD per invocation, so pull out just the SandboxTemplate CRD -- the
+# only one Agentplane's generated manifests author statically (Sandbox objects are
+# created at runtime by the app, not authored here).
+#
+# The CRD serves both v1beta1 (served+storage) and a deprecated v1alpha1; cdk8s import
+# generates bindings for whichever version is listed last (v1alpha1 here), not the
+# storage one, so --version pins it to the real, non-deprecated schema.
+genrule(
+    name = "sandboxtemplate_crd",
+    srcs = ["@agent_sandbox_release_bundle//file"],
+    outs = ["sandboxtemplate_crd.yaml"],
+    cmd = "$(location //devinfra/k8s:extract_crd_bin) --name sandboxtemplates.extensions.agents.x-k8s.io --version v1beta1 $(location @agent_sandbox_release_bundle//file) $@",
+    tools = ["//devinfra/k8s:extract_crd_bin"],
+)
+
+cdk8s_import(
+    name = "sandboxtemplate",
+    crd = ":sandboxtemplate_crd",
+    jsii_module_path = "io/x-k8s/agents/extensions",
+    module_name = "agent_sandbox_sandboxtemplate_crds",
+    module_path = "io/x_k8s/agents/extensions",
+    visibility = ["//visibility:public"],
+)

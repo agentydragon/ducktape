@@ -1,0 +1,30 @@
+# Typed cdk8s Python constructs generated from cert-manager's and trust-manager's
+# upstream CRDs (fetched via MODULE.bazel's cert_manager_certificate_crd/
+# trust_manager_bundle_crd http_files, never vendored). See cluster/docs/cdk8s.md.
+
+# cert_manager_crds and trust_manager_crds are generated at build time by cdk8s_import
+# below, not pip packages -- gazelle can't resolve them from the requirements manifest.
+# gazelle:resolve py cert_manager_crds //third_party/cert_manager:certificate
+# gazelle:resolve py trust_manager_crds //third_party/cert_manager:bundle
+
+load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
+
+cdk8s_import(
+    name = "certificate",
+    crd = "@cert_manager_certificate_crd//file",
+    # The CRD group (cert-manager.io) has a dash -- the jsii assembly tarball keeps it,
+    # unlike the Python package path (see cdk8s_import.bzl's jsii_module_path doc).
+    jsii_module_path = "io/cert-manager",
+    module_name = "cert_manager_crds",
+    module_path = "io/cert_manager",
+    visibility = ["//visibility:public"],
+)
+
+cdk8s_import(
+    name = "bundle",
+    crd = "@trust_manager_bundle_crd//file",
+    jsii_module_path = "io/cert-manager/trust",
+    module_name = "trust_manager_crds",
+    module_path = "io/cert_manager/trust",
+    visibility = ["//visibility:public"],
+)
