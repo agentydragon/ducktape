@@ -1,34 +1,19 @@
-"""Reusable cdk8s constructs for the Agentplane staging/testing environments' actions/
-directory: the Action Service Deployment (+ Alembic migrate initContainer), its own
-RBAC, ConfigMaps, Service, HTTPRoute, NetworkPolicy, and optional PodDisruptionBudget.
-
-Environment-specific pieces (staging's ActionPolicySet/Binding objects and claude-ai
-ServiceAccount; testing's mcp-everything/oauth-fixture) live in sibling modules and are
-added to the same Chart alongside this construct -- see generate_manifests.py.
-
-The Deployment's image tags are deliberate placeholders ("unset") -- the sibling
-image-pins/ Kustomize Component (hand-written, never generated) overrides them at
-`kustomize build` time via Flux's image-automation marker. See cluster/docs/cdk8s.md.
+"""The Action Service: its Deployment (+ Alembic migrate initContainer), RBAC, ConfigMaps,
+Service, HTTPRoute, NetworkPolicy, and optional PodDisruptionBudget. Environment-only
+objects (staging's policy sets, testing's MCP fixtures) come from `Environment.extra`.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from dataclasses import dataclass, field
-from typing import cast
-
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
-    ApiResource,
     ConfigMap,
     ContainerPort,
     ContainerResources,
     Cpu,
     CpuResources,
     Deployment,
-    DeploymentStrategy,
     EnvValue,
-    IApiResource,
     ImagePullPolicy,
     MemoryResources,
     PathMapping,
@@ -45,41 +30,7 @@ from cdk8s_plus_34 import (
     Volume,
     k8s,
 )
-from cilium_crds.io.cilium import (
-    CiliumNetworkPolicy,
-    CiliumNetworkPolicySpec,
-    CiliumNetworkPolicySpecEgress,
-    CiliumNetworkPolicySpecEgressToEndpoints,
-    CiliumNetworkPolicySpecEgressToEntities,
-    CiliumNetworkPolicySpecEgressToFqdNs,
-    CiliumNetworkPolicySpecEgressToPorts,
-    CiliumNetworkPolicySpecEgressToPortsPorts,
-    CiliumNetworkPolicySpecEgressToPortsPortsProtocol,
-    CiliumNetworkPolicySpecEgressToPortsRules,
-    CiliumNetworkPolicySpecEgressToPortsRulesDns,
-    CiliumNetworkPolicySpecEndpointSelector,
-    CiliumNetworkPolicySpecIngress,
-    CiliumNetworkPolicySpecIngressFromEndpoints,
-    CiliumNetworkPolicySpecIngressFromEntities,
-    CiliumNetworkPolicySpecIngressToPorts,
-    CiliumNetworkPolicySpecIngressToPortsPorts,
-    CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
-)
 from constructs import Construct
-from gateway_api_crds.io.k8s.networking.gateway import (
-    HttpRoute,
-    HttpRouteSpec,
-    HttpRouteSpecRules,
-    HttpRouteSpecRulesBackendRefs,
-    HttpRouteSpecRulesFilters,
-    HttpRouteSpecRulesFiltersResponseHeaderModifier,
-    HttpRouteSpecRulesFiltersResponseHeaderModifierSet,
-    HttpRouteSpecRulesFiltersType,
-    HttpRouteSpecRulesMatches,
-    HttpRouteSpecRulesMatchesPath,
-    HttpRouteSpecRulesMatchesPathType,
-    HttpRouteSpecRulesTimeouts,
-)
 
 from cluster.cdk8s.agentplane import (
     cilium_helpers,
@@ -88,10 +39,12 @@ from cluster.cdk8s.agentplane import (
     llm_ingress_constructs,
     node_scheduling,
 )
+from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
+from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import json5_config, yaml_config
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
-from cluster.cdk8s.gateway import cluster_gateway_parent_ref
+from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
@@ -119,57 +72,14 @@ _MCP_PATHS = (
 )
 
 
-# cdk8s_plus_34's Python stub doesn't declare ApiResource as implementing
-# IApiResource's `resource_name` member (see namespace_rbac_constructs.py's `_custom`,
-# same cast for the same reason).
-def _custom(api_group: str, resource_type: str) -> IApiResource:
-    return cast(IApiResource, ApiResource.custom(api_group=api_group, resource_type=resource_type))
-
-
-@dataclass(frozen=True)
-class ActionsEnvSpec:
-    """Per-environment values for the Action Service."""
-
-    namespace: str
-    replicas: int
-    strategy: DeploymentStrategy
-    min_ready: Duration | None
-    # staging spreads its 2 replicas across nodes; testing's single replica has
-    # nothing to spread.
-    topology_spread: bool
-    pdb_min_available: int | None
-    hostname: str
-    settings: dict
-    action_federation: dict
-    action_federation_description: str
-    operator_oidc: dict
-    # Secrets whose rotation should roll the Deployment, beyond agentplane-mcp-oauth
-    # (always reloaded) -- staging also reloads its web-push and GitHub MCP client
-    # credentials and the ssh-mcp bearer.
-    extra_reload_secrets: Sequence[str] = ()
-    # Keys mounted from the agentplane-mcp-oauth Secret at /etc/agentplane-mcp: staging
-    # needs the full OAuth linkage triad, testing only the one MCP client's secret.
-    oauth_secret_items: Sequence[str] = ("client-secret",)
-    # Staging-only extras; None/False omits the corresponding env var, volume, and mount.
-    web_push_secret_name: str | None = None
-    github_mcp_client_secret_name: str | None = None
-    ssh_mcp_bearer: bool = False
-    # Additional environment-specific CiliumNetworkPolicy egress rules (the remote-node/
-    # host :443 rule reaching this environment's OIDC provider, push services,
-    # GitHub MCP hosts, kubectl-passthrough-mcp, the in-cluster Authentik Service, the
-    # testing oauth-fixture Service, ...), appended after the shared DNS/claude.ai/
-    # kube-apiserver/postgres rules.
-    extra_egress: Sequence[CiliumNetworkPolicySpecEgress] = field(default_factory=tuple)
-
-
 class Actions(Construct):
     """ServiceAccount, RBAC, ConfigMaps, Deployment (+ migrate initContainer), Service,
     HTTPRoute, NetworkPolicy, and optional PodDisruptionBudget for the Action Service.
     """
 
-    def __init__(self, scope: Construct, id: str, spec: ActionsEnvSpec) -> None:
+    def __init__(self, scope: Construct, id: str, env: Environment) -> None:
         super().__init__(scope, id)
-        self.spec = spec
+        self.env = env
 
         service_account = self._add_service_account()
         self._add_rbac(service_account)
@@ -178,18 +88,18 @@ class Actions(Construct):
         self._add_service(deployment)
         self._add_http_route()
         self._add_network_policy()
-        if spec.pdb_min_available is not None:
-            self._add_pdb(spec.pdb_min_available)
+        if env.replicas.pdb_min_available is not None:
+            self._add_pdb(env.replicas.pdb_min_available)
 
     def _add_service_account(self) -> ServiceAccount:
         # cdk8s_plus_34 defaults ServiceAccounts to automount_token=False; the Action
         # Service calls TokenReview as itself, so it needs its own mounted token.
         return ServiceAccount(
-            self, "serviceaccount", metadata=metadata(_NAME, self.spec.namespace), automount_token=True
+            self, "serviceaccount", metadata=metadata(_NAME, self.env.namespace), automount_token=True
         )
 
     def _add_rbac(self, service_account: ServiceAccount) -> None:
-        namespace = self.spec.namespace
+        namespace = self.env.namespace
         # TokenReview proves the Pod-bound workload bearer the central egress proxy
         # forwards, and the session-bound bearer the app forwards for its BFF/operator
         # adapter. Creating a review grants none of the reviewed identity's authority.
@@ -208,17 +118,17 @@ class Actions(Construct):
             "role",
             metadata=metadata(_NAME, namespace),
             rules=[
-                RolePolicyRule(resources=[_custom("", "serviceaccounts")], verbs=["get", "list", "watch"]),
+                RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["get", "list", "watch"]),
                 RolePolicyRule(
                     resources=[
-                        _custom("agentplane.allegedly.works", resource)
+                        custom_resource("agentplane.allegedly.works", resource)
                         for resource in ("actionpolicysets", "actionpolicybindings")
                     ],
                     verbs=["get", "list", "watch"],
                 ),
                 RolePolicyRule(
                     resources=[
-                        _custom("agentplane.allegedly.works", resource)
+                        custom_resource("agentplane.allegedly.works", resource)
                         for resource in ("actionpolicysets/status", "actionpolicybindings/status")
                     ],
                     verbs=["patch"],
@@ -233,23 +143,23 @@ class Actions(Construct):
         settings_cm = ConfigMap(
             self,
             "settings",
-            metadata=metadata("agentplane-actions-settings", self.spec.namespace),
-            data={"settings.yaml": yaml_config(settings_file(Settings, self.spec.settings))},
+            metadata=metadata("agentplane-actions-settings", self.env.namespace),
+            data={"settings.yaml": yaml_config(settings_file(Settings, self.env.actions.settings))},
         )
         action_federation_cm = ConfigMap(
             self,
             "action-federation",
             metadata=metadata(
                 "agentplane-action-federation",
-                self.spec.namespace,
-                annotations={"description": self.spec.action_federation_description},
+                self.env.namespace,
+                annotations={"description": self.env.actions.action_federation_description},
             ),
             data={
                 # Each key is one reader's field: the app's `action_federation`, this service's `operator_oidc`.
                 "action-federation": json5_config(
-                    checked_value(app_main.Settings, "action_federation", self.spec.action_federation)
+                    checked_value(app_main.Settings, "action_federation", self.env.actions.action_federation)
                 ),
-                "operator-oidc": json5_config(checked_value(Settings, "operator_oidc", self.spec.operator_oidc)),
+                "operator-oidc": json5_config(checked_value(Settings, "operator_oidc", self.env.actions.operator_oidc)),
             },
         )
         return settings_cm, action_federation_cm
@@ -278,16 +188,16 @@ class Actions(Construct):
         env = self._database_env()
         env[env_name(Settings, "operator_oidc")] = EnvValue.from_config_map(action_federation_cm, "operator-oidc")
         env[CONFIG_FILE_ENV] = EnvValue.from_value(f"{_SETTINGS_DIR}/settings.yaml")
-        if self.spec.web_push_secret_name is not None:
-            web_push_secret = Secret.from_secret_name(self, "web-push-secret", self.spec.web_push_secret_name)
+        if self.env.actions.web_push_secret_name is not None:
+            web_push_secret = Secret.from_secret_name(self, "web-push-secret", self.env.actions.web_push_secret_name)
             env[env_name(Settings, "web_push", "private_key_pem")] = EnvValue.from_secret_value(
                 SecretValue(secret=web_push_secret, key="private-key-pem")
             )
-        if self.spec.github_mcp_client_secret_name is not None:
+        if self.env.actions.github_mcp_client_secret_name is not None:
             oauth_secret = Secret.from_secret_name(self, "mcp-oauth-secret-env", "agentplane-mcp-oauth")
             env[env_name(Settings, "oauth")] = EnvValue.from_secret_value(SecretValue(secret=oauth_secret, key="oauth"))
             github_secret = Secret.from_secret_name(
-                self, "github-mcp-client-secret-env", self.spec.github_mcp_client_secret_name
+                self, "github-mcp-client-secret-env", self.env.actions.github_mcp_client_secret_name
             )
             env[env_name(Settings, "mcp_servers", "github", "client_id")] = EnvValue.from_secret_value(
                 SecretValue(secret=github_secret, key="client_id")
@@ -297,9 +207,9 @@ class Actions(Construct):
     def _add_deployment(
         self, service_account: ServiceAccount, settings_cm: ConfigMap, action_federation_cm: ConfigMap
     ) -> Deployment:
-        namespace = self.spec.namespace
+        namespace = self.env.namespace
         env = self._container_env(action_federation_cm)
-        secret_reload = ",".join(["agentplane-mcp-oauth", *self.spec.extra_reload_secrets])
+        secret_reload = ",".join(["agentplane-mcp-oauth", *self.env.actions.extra_reload_secrets])
 
         deployment = Deployment(
             self,
@@ -310,16 +220,15 @@ class Actions(Construct):
                 labels=_LABELS,
                 annotations={
                     "secret.reloader.stakater.com/reload": secret_reload,
-                    # agentplane-actions-settings has no kustomize configMapGenerator hash
-                    # here to roll the Deployment on content changes (see
-                    # cluster/docs/cdk8s.md); reloader covers that gap explicitly.
+                    # No configMapGenerator hash rolls the Deployment on settings changes
+                    # (cluster/docs/cdk8s.md); reloader does.
                     "configmap.reloader.stakater.com/reload": "agentplane-action-federation,agentplane-actions-settings",
                 },
             ),
             pod_metadata=ApiObjectMetadata(labels=_LABELS),
-            replicas=self.spec.replicas,
-            strategy=self.spec.strategy,
-            min_ready=self.spec.min_ready,
+            replicas=self.env.replicas.count,
+            strategy=self.env.replicas.strategy,
+            min_ready=self.env.replicas.min_ready,
             # 20s execution drain + 5s forced persistence, with room for HTTP/adapter teardown.
             termination_grace_period=Duration.seconds(60),
             service_account=service_account,
@@ -361,14 +270,14 @@ class Actions(Construct):
             "oauth-volume",
             oauth_secret,
             default_mode=0o440,
-            items={key: PathMapping(path=key) for key in self.spec.oauth_secret_items},
+            items={key: PathMapping(path=key) for key in self.env.actions.oauth_secret_items},
         )
         settings_volume = Volume.from_config_map(self, "settings-volume", settings_cm)
         deployment.containers[0].mount("/etc/agentplane-mcp", oauth_volume, read_only=True)
         deployment.containers[0].mount(_SETTINGS_DIR, settings_volume, read_only=True)
-        if self.spec.github_mcp_client_secret_name is not None:
+        if self.env.actions.github_mcp_client_secret_name is not None:
             github_secret = Secret.from_secret_name(
-                self, "github-mcp-client-secret", self.spec.github_mcp_client_secret_name
+                self, "github-mcp-client-secret", self.env.actions.github_mcp_client_secret_name
             )
             github_volume = Volume.from_secret(
                 self,
@@ -378,7 +287,7 @@ class Actions(Construct):
                 items={"client_secret": PathMapping(path="client_secret")},
             )
             deployment.containers[0].mount("/etc/agentplane-github", github_volume, read_only=True)
-        if self.spec.ssh_mcp_bearer:
+        if self.env.actions.ssh_mcp_bearer:
             ssh_mcp_secret = Secret.from_secret_name(self, "ssh-mcp-bearer-secret", "ssh-mcp-bearer")
             ssh_mcp_volume = Volume.from_secret(
                 self, "ssh-mcp-bearer-volume", ssh_mcp_secret, items={"bearer-token": PathMapping(path="bearer-token")}
@@ -388,14 +297,14 @@ class Actions(Construct):
             deployment.containers[0].mount("/run/secrets/ssh-mcp", ssh_mcp_volume, read_only=True)
 
         node_scheduling.attract_to_zone(deployment)
-        apply_pod_spec_patches(deployment, labels=_LABELS, topology_spread=self.spec.topology_spread)
+        apply_pod_spec_patches(deployment, labels=_LABELS, topology_spread=self.env.replicas.topology_spread)
         return deployment
 
     def _add_service(self, deployment: Deployment) -> None:
         Service(
             self,
             "service",
-            metadata=metadata(_NAME, self.spec.namespace),
+            metadata=metadata(_NAME, self.env.namespace),
             selector=deployment,
             ports=[ServicePort(name="http", port=CONTAINER_PORT, target_port=CONTAINER_PORT, protocol=Protocol.TCP)],
         )
@@ -403,157 +312,51 @@ class Actions(Construct):
     def _add_http_route(self) -> None:
         # The Actions service owns OAuth and bearer verification; no browser forward-auth
         # hop. Keep REST/operator endpoints off this public origin.
-        HttpRoute(
+        https_route(
             self,
             "httproute",
-            metadata=metadata(f"{_NAME}-mcp", self.spec.namespace),
-            spec=HttpRouteSpec(
-                parent_refs=[cluster_gateway_parent_ref(section_name="https-wildcard")],
-                hostnames=[self.spec.hostname],
-                rules=[
-                    HttpRouteSpecRules(
-                        matches=[
-                            HttpRouteSpecRulesMatches(
-                                path=HttpRouteSpecRulesMatchesPath(
-                                    type=HttpRouteSpecRulesMatchesPathType.EXACT, value=path
-                                )
-                            )
-                            for path in _MCP_PATHS
-                        ],
-                        filters=[
-                            HttpRouteSpecRulesFilters(
-                                type=HttpRouteSpecRulesFiltersType.RESPONSE_HEADER_MODIFIER,
-                                response_header_modifier=HttpRouteSpecRulesFiltersResponseHeaderModifier(
-                                    set=[
-                                        HttpRouteSpecRulesFiltersResponseHeaderModifierSet(
-                                            name="Strict-Transport-Security", value="max-age=31536000"
-                                        )
-                                    ]
-                                ),
-                            )
-                        ],
-                        backend_refs=[HttpRouteSpecRulesBackendRefs(name=_NAME, port=CONTAINER_PORT)],
-                        timeouts=HttpRouteSpecRulesTimeouts(request="3600s", backend_request="3600s"),
-                    )
-                ],
-            ),
+            metadata=metadata(f"{_NAME}-mcp", self.env.namespace),
+            hostname=self.env.actions.hostname,
+            backend=_NAME,
+            port=CONTAINER_PORT,
+            paths=_MCP_PATHS,
+            timeout="3600s",
         )
 
     def _add_network_policy(self) -> None:
-        namespace = self.spec.namespace
-        CiliumNetworkPolicy(
+        namespace = self.env.namespace
+        cilium_helpers.network_policy(
             self,
             "networkpolicy",
             metadata=metadata(_NAME, namespace),
-            spec=CiliumNetworkPolicySpec(
-                endpoint_selector=CiliumNetworkPolicySpecEndpointSelector(match_labels=_LABELS),
-                ingress=[
-                    CiliumNetworkPolicySpecIngress(
-                        from_entities=[CiliumNetworkPolicySpecIngressFromEntities.INGRESS],
-                        to_ports=[
-                            CiliumNetworkPolicySpecIngressToPorts(
-                                ports=[
-                                    CiliumNetworkPolicySpecIngressToPortsPorts(
-                                        port=str(CONTAINER_PORT),
-                                        protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP,
-                                    )
-                                ]
-                            )
-                        ],
-                    ),
-                    CiliumNetworkPolicySpecIngress(
-                        from_endpoints=[
-                            CiliumNetworkPolicySpecIngressFromEndpoints(
-                                match_labels={
-                                    "k8s:io.kubernetes.pod.namespace": namespace,
-                                    "app.kubernetes.io/name": "agentplane-egress",
-                                }
-                            )
-                        ],
-                        to_ports=[
-                            CiliumNetworkPolicySpecIngressToPorts(
-                                ports=[
-                                    CiliumNetworkPolicySpecIngressToPortsPorts(
-                                        port=str(CONTAINER_PORT),
-                                        protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP,
-                                    )
-                                ]
-                            )
-                        ],
-                    ),
-                    CiliumNetworkPolicySpecIngress(
-                        from_endpoints=[
-                            CiliumNetworkPolicySpecIngressFromEndpoints(
-                                match_labels={
-                                    "k8s:io.kubernetes.pod.namespace": namespace,
-                                    "app.kubernetes.io/name": "agentplane-app",
-                                }
-                            )
-                        ],
-                        to_ports=[
-                            CiliumNetworkPolicySpecIngressToPorts(
-                                ports=[
-                                    CiliumNetworkPolicySpecIngressToPortsPorts(
-                                        port=str(CONTAINER_PORT),
-                                        protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP,
-                                    )
-                                ]
-                            )
-                        ],
-                    ),
-                ],
-                egress=[
-                    CiliumNetworkPolicySpecEgress(
-                        to_endpoints=[
-                            CiliumNetworkPolicySpecEgressToEndpoints(match_labels=cilium_helpers.KUBE_DNS_LABELS)
-                        ],
-                        to_ports=[
-                            CiliumNetworkPolicySpecEgressToPorts(
-                                ports=[
-                                    CiliumNetworkPolicySpecEgressToPortsPorts(
-                                        port="53", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.UDP
-                                    ),
-                                    CiliumNetworkPolicySpecEgressToPortsPorts(
-                                        port="53", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
-                                    ),
-                                ],
-                                rules=CiliumNetworkPolicySpecEgressToPortsRules(
-                                    dns=[CiliumNetworkPolicySpecEgressToPortsRulesDns(match_pattern="*")]
-                                ),
-                            )
-                        ],
-                    ),
-                    # Claude's credentialless CIMD document; no wildcard hosts, ports, or redirects.
-                    CiliumNetworkPolicySpecEgress(
-                        to_fqd_ns=[CiliumNetworkPolicySpecEgressToFqdNs(match_name="claude.ai")],
-                        to_ports=[
-                            CiliumNetworkPolicySpecEgressToPorts(
-                                ports=[
-                                    CiliumNetworkPolicySpecEgressToPortsPorts(
-                                        port="443", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
-                                    )
-                                ],
-                                server_names=["claude.ai"],
-                            )
-                        ],
-                    ),
-                    CiliumNetworkPolicySpecEgress(
-                        to_entities=[CiliumNetworkPolicySpecEgressToEntities.KUBE_HYPHEN_APISERVER]
-                    ),
-                    cilium_helpers.tcp_egress_to(
-                        {"k8s:io.kubernetes.pod.namespace": namespace, "k8s:cnpg.io/cluster": "postgres"},
-                        db_constructs.POSTGRES_PORT,
-                    ),
-                    *self.spec.extra_egress,
-                ],
-            ),
+            selector=_LABELS,
+            ingress=[
+                cilium_helpers.ingress_from_gateway(CONTAINER_PORT),
+                cilium_helpers.ingress_from(
+                    cilium_helpers.endpoint_labels(namespace, "agentplane-egress"), ports=[CONTAINER_PORT]
+                ),
+                cilium_helpers.ingress_from(
+                    cilium_helpers.endpoint_labels(namespace, "agentplane-app"), ports=[CONTAINER_PORT]
+                ),
+            ],
+            egress=[
+                cilium_helpers.dns_egress(l7=True),
+                # Claude's credentialless CIMD document; no wildcard hosts, ports, or redirects.
+                cilium_helpers.egress_to_fqdns("claude.ai"),
+                cilium_helpers.egress_to_entities("kube-apiserver"),
+                cilium_helpers.egress_to(
+                    {"k8s:io.kubernetes.pod.namespace": namespace, "k8s:cnpg.io/cluster": "postgres"},
+                    db_constructs.POSTGRES_PORT,
+                ),
+                *self.env.actions.extra_egress,
+            ],
         )
 
     def _add_pdb(self, min_available: int) -> None:
         k8s.KubePodDisruptionBudget(
             self,
             "pdb",
-            metadata=k8s.ObjectMeta(name=_NAME, namespace=self.spec.namespace),
+            metadata=k8s.ObjectMeta(name=_NAME, namespace=self.env.namespace),
             spec=k8s.PodDisruptionBudgetSpec(
                 min_available=k8s.IntOrString.from_number(min_available),
                 selector=k8s.LabelSelector(match_labels=_LABELS),

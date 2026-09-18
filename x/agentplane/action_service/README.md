@@ -448,7 +448,7 @@ The optional `web_push` configuration enables browser subscription storage and b
 - `public_base_url`: integration-app origin used for Action links;
 - `allowed_push_hosts`: exact reviewed HTTPS browser push-service hostnames.
 
-Staging enables it (`cluster/cdk8s/agentplane/actions_settings.py`'s `staging_settings()`): the VAPID key comes
+Staging enables it (`cluster/cdk8s/agentplane/staging.py`): the VAPID key comes
 from the SOPS Secret `agentplane-staging-web-push-vapid` through
 `AGENTPLANE_ACTIONS_WEB_PUSH__PRIVATE_KEY_PEM`, `public_base_url` is the staging app origin, and
 the allowed hosts are FCM and Mozilla's push service. Testing configures no `web_push`; its

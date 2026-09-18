@@ -1,10 +1,6 @@
-"""Reusable cdk8s constructs for agentplane-testing's dex/ directory: the Dex
-Deployment, Service, HTTPRoute, NetworkPolicy, and the ESO-generated credentials
-(4 Password generators + 3 ExternalSecrets, one of which carries the inline Dex
-config.yaml -- built the same way litellm_config.py embeds a YAML config string
-inside a ConfigMap's data, not a new mechanism).
-
-Testing-only: staging has no Dex, it federates directly to the shared Authentik.
+"""agentplane-testing's Dex: Deployment, Service, HTTPRoute, NetworkPolicy, and the
+ESO-generated credentials (4 Password generators + 3 ExternalSecrets, one carrying the
+inline Dex config.yaml). Testing-only: staging federates directly to the shared Authentik.
 """
 
 from __future__ import annotations
@@ -32,24 +28,6 @@ from cdk8s_plus_34 import (
     ServicePort,
     Volume,
 )
-from cilium_crds.io.cilium import (
-    CiliumNetworkPolicy,
-    CiliumNetworkPolicySpec,
-    CiliumNetworkPolicySpecEgress,
-    CiliumNetworkPolicySpecEgressDeny,
-    CiliumNetworkPolicySpecEgressDenyToEntities,
-    CiliumNetworkPolicySpecEgressToEndpoints,
-    CiliumNetworkPolicySpecEgressToPorts,
-    CiliumNetworkPolicySpecEgressToPortsPorts,
-    CiliumNetworkPolicySpecEgressToPortsPortsProtocol,
-    CiliumNetworkPolicySpecEndpointSelector,
-    CiliumNetworkPolicySpecIngress,
-    CiliumNetworkPolicySpecIngressFromEndpoints,
-    CiliumNetworkPolicySpecIngressFromEntities,
-    CiliumNetworkPolicySpecIngressToPorts,
-    CiliumNetworkPolicySpecIngressToPortsPorts,
-    CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
-)
 from constructs import Construct
 from eso_password_generator_crds.io.external_secrets.generators import Password, PasswordSpec
 from external_secrets_crds.io.external_secrets import (
@@ -68,20 +46,10 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplateEngineVersion,
     ExternalSecretSpecTargetTemplateMetadata,
 )
-from gateway_api_crds.io.k8s.networking.gateway import (
-    HttpRoute,
-    HttpRouteSpec,
-    HttpRouteSpecRules,
-    HttpRouteSpecRulesBackendRefs,
-    HttpRouteSpecRulesFilters,
-    HttpRouteSpecRulesFiltersResponseHeaderModifier,
-    HttpRouteSpecRulesFiltersResponseHeaderModifierSet,
-    HttpRouteSpecRulesFiltersType,
-)
 
 from cluster.cdk8s.agentplane import cilium_helpers
 from cluster.cdk8s.config_format import yaml_config
-from cluster.cdk8s.gateway import cluster_gateway_parent_ref
+from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
@@ -352,110 +320,31 @@ def _add_service(scope: Construct, deployment: Deployment) -> None:
 
 
 def _add_http_route(scope: Construct) -> None:
-    HttpRoute(
+    https_route(
         scope,
         "httproute",
         metadata=metadata(_NAME, _NAMESPACE),
-        spec=HttpRouteSpec(
-            parent_refs=[cluster_gateway_parent_ref(section_name="https-wildcard")],
-            hostnames=["agentplane-dex-testing.allegedly.works"],
-            rules=[
-                HttpRouteSpecRules(
-                    backend_refs=[HttpRouteSpecRulesBackendRefs(name=_NAME, port=_PORT)],
-                    filters=[
-                        HttpRouteSpecRulesFilters(
-                            type=HttpRouteSpecRulesFiltersType.RESPONSE_HEADER_MODIFIER,
-                            response_header_modifier=HttpRouteSpecRulesFiltersResponseHeaderModifier(
-                                set=[
-                                    HttpRouteSpecRulesFiltersResponseHeaderModifierSet(
-                                        name="Strict-Transport-Security", value="max-age=31536000"
-                                    )
-                                ]
-                            ),
-                        )
-                    ],
-                )
-            ],
-        ),
+        hostname="agentplane-dex-testing.allegedly.works",
+        backend=_NAME,
+        port=_PORT,
     )
 
 
 def _add_network_policy(scope: Construct) -> None:
-    CiliumNetworkPolicy(
+    cilium_helpers.network_policy(
         scope,
         "networkpolicy",
         metadata=metadata(_NAME, _NAMESPACE),
-        spec=CiliumNetworkPolicySpec(
-            endpoint_selector=CiliumNetworkPolicySpecEndpointSelector(match_labels=_LABELS),
-            ingress=[
-                CiliumNetworkPolicySpecIngress(
-                    from_entities=[CiliumNetworkPolicySpecIngressFromEntities.INGRESS],
-                    to_ports=[
-                        CiliumNetworkPolicySpecIngressToPorts(
-                            ports=[
-                                CiliumNetworkPolicySpecIngressToPortsPorts(
-                                    port=str(_PORT), protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP
-                                )
-                            ]
-                        )
-                    ],
-                ),
-                CiliumNetworkPolicySpecIngress(
-                    from_endpoints=[
-                        CiliumNetworkPolicySpecIngressFromEndpoints(
-                            match_labels=cilium_helpers.endpoint_labels(_NAMESPACE, "agentplane-app")
-                        )
-                    ],
-                    to_ports=[
-                        CiliumNetworkPolicySpecIngressToPorts(
-                            ports=[
-                                CiliumNetworkPolicySpecIngressToPortsPorts(
-                                    port=str(_PORT), protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP
-                                )
-                            ]
-                        )
-                    ],
-                ),
-                CiliumNetworkPolicySpecIngress(
-                    from_endpoints=[
-                        CiliumNetworkPolicySpecIngressFromEndpoints(
-                            match_labels=cilium_helpers.endpoint_labels(_NAMESPACE, "agentplane-oauth-fixture")
-                        )
-                    ],
-                    to_ports=[
-                        CiliumNetworkPolicySpecIngressToPorts(
-                            ports=[
-                                CiliumNetworkPolicySpecIngressToPortsPorts(
-                                    port=str(_PORT), protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP
-                                )
-                            ]
-                        )
-                    ],
-                ),
-            ],
-            egress=[
-                CiliumNetworkPolicySpecEgress(
-                    to_endpoints=[
-                        CiliumNetworkPolicySpecEgressToEndpoints(match_labels=cilium_helpers.KUBE_DNS_LABELS)
-                    ],
-                    to_ports=[
-                        CiliumNetworkPolicySpecEgressToPorts(
-                            ports=[
-                                CiliumNetworkPolicySpecEgressToPortsPorts(
-                                    port="53", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.UDP
-                                ),
-                                CiliumNetworkPolicySpecEgressToPortsPorts(
-                                    port="53", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
-                                ),
-                            ]
-                        )
-                    ],
-                )
-            ],
-            egress_deny=[
-                CiliumNetworkPolicySpecEgressDeny(to_entities=[CiliumNetworkPolicySpecEgressDenyToEntities.ALL])
-            ],
-        ),
+        selector=_LABELS,
+        ingress=[
+            cilium_helpers.ingress_from_gateway(_PORT),
+            cilium_helpers.ingress_from(cilium_helpers.endpoint_labels(_NAMESPACE, "agentplane-app"), ports=[_PORT]),
+            cilium_helpers.ingress_from(
+                cilium_helpers.endpoint_labels(_NAMESPACE, "agentplane-oauth-fixture"), ports=[_PORT]
+            ),
+        ],
+        egress=[cilium_helpers.dns_egress()],
+        egress_deny=cilium_helpers.deny_all_egress(),
     )
 
 

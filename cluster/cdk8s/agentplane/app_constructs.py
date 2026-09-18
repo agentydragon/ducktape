@@ -1,21 +1,15 @@
-"""Reusable cdk8s constructs for the Agentplane staging/testing environments' app/
-directory: the integration app Deployment (+ Alembic migrate initContainer), its own
-RBAC, HTTPRoute, NetworkPolicy, the runner SandboxTemplate, and the three
-ServiceAccounts (agent/app/runner) involved.
+"""The integration app: its Deployment (+ Alembic migrate initContainer), RBAC,
+HTTPRoute, NetworkPolicy, the runner SandboxTemplate, and the three ServiceAccounts
+(agent/app/runner) involved.
 
-The app Deployment's image tags are deliberate placeholders ("unset") -- the sibling
-image-pins/ Kustomize Component (hand-written, never generated) overrides them at
-`kustomize build` time via Flux's image-automation marker. See cluster/docs/cdk8s.md.
-The runner SandboxTemplate's two container images carry the same placeholder for the
-same reason -- kustomize's `images:` transformer patches by image name across every
-resource in a Kustomization, not just Deployments, so the same image-pins/
-Component also covers these.
+The runner SandboxTemplate's container images carry the same `unset` placeholder tag as
+the Deployment's: kustomize's `images:` transformer patches by image name across every
+resource in the Kustomization, so image-pins/ covers them too.
 """
 
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
 from typing import cast
 from urllib.parse import urlsplit
 
@@ -59,7 +53,6 @@ from cdk8s_plus_34 import (
     Cpu,
     CpuResources,
     Deployment,
-    DeploymentStrategy,
     EnvValue,
     IApiResource,
     ImagePullPolicy,
@@ -77,35 +70,8 @@ from cdk8s_plus_34 import (
     Volume,
     k8s,
 )
-from cilium_crds.io.cilium import (
-    CiliumNetworkPolicy,
-    CiliumNetworkPolicySpec,
-    CiliumNetworkPolicySpecEgress,
-    CiliumNetworkPolicySpecEgressToEndpoints,
-    CiliumNetworkPolicySpecEgressToEntities,
-    CiliumNetworkPolicySpecEgressToPorts,
-    CiliumNetworkPolicySpecEgressToPortsPorts,
-    CiliumNetworkPolicySpecEgressToPortsPortsProtocol,
-    CiliumNetworkPolicySpecEndpointSelector,
-    CiliumNetworkPolicySpecIngress,
-    CiliumNetworkPolicySpecIngressFromEndpoints,
-    CiliumNetworkPolicySpecIngressFromEntities,
-    CiliumNetworkPolicySpecIngressToPorts,
-    CiliumNetworkPolicySpecIngressToPortsPorts,
-    CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
-)
+from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from constructs import Construct
-from gateway_api_crds.io.k8s.networking.gateway import (
-    HttpRoute,
-    HttpRouteSpec,
-    HttpRouteSpecRules,
-    HttpRouteSpecRulesBackendRefs,
-    HttpRouteSpecRulesFilters,
-    HttpRouteSpecRulesFiltersResponseHeaderModifier,
-    HttpRouteSpecRulesFiltersResponseHeaderModifierSet,
-    HttpRouteSpecRulesFiltersType,
-    HttpRouteSpecRulesTimeouts,
-)
 
 from cluster.cdk8s.agentplane import (
     actions_constructs,
@@ -116,13 +82,15 @@ from cluster.cdk8s.agentplane import (
     llm_ingress_constructs,
     node_scheduling,
 )
+from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
+from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.forgejo_images import (
     SECRET_NAME,
     forgejo_images_creds_external_secret,
     forgejo_images_creds_secret_ref,
 )
-from cluster.cdk8s.gateway import cluster_gateway_parent_ref
+from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
@@ -166,65 +134,31 @@ _CA_BUNDLE_VAR_NAMES = (
 )
 
 
-# cdk8s_plus_34's Python stub doesn't declare ApiResource as implementing
-# IApiResource's `resource_name` member (see namespace_rbac_constructs.py's `_custom`,
-# same cast for the same reason).
-def _custom(api_group: str, resource_type: str) -> IApiResource:
-    return cast(IApiResource, ApiResource.custom(api_group=api_group, resource_type=resource_type))
-
-
-@dataclass(frozen=True)
-class AppEnvSpec:
-    """Per-environment values for the integration app and its runner SandboxTemplate."""
-
-    namespace: str
-    replicas: int
-    strategy: DeploymentStrategy
-    min_ready: Duration | None
-    # staging spreads its 2 replicas across nodes; testing's single replica has
-    # nothing to spread.
-    topology_spread: bool
-    pdb_min_available: int | None
-    hostname: str
-    oidc_issuer: str
-    # staging's OIDC provider is the in-cluster Authentik Service, reached both by its
-    # public hostname and directly; testing's Dex is reached only by its public
-    # hostname (both environments' egress rule to that public hostname is unconditional).
-    reach_incluster_authentik: bool
-    # staging pins runner Pods to be near the database/LiteLLM; testing has no pin.
-    runner_zone: str | None
-    # The interception CA ConfigMap the egress Bundle (Stage 3) publishes -- same
-    # asymmetric (unprefixed staging / namespace-prefixed testing) name threaded
-    # through EgressEnvSpec.ca_secret_name.
-    runner_ca_configmap_name: str
-
-
 class App(Construct):
     """ServiceAccounts, RBAC, Deployment (+ migrate initContainer), Service,
     HTTPRoute, NetworkPolicy, optional PodDisruptionBudget, and the runner
     SandboxTemplate.
     """
 
-    def __init__(self, scope: Construct, id: str, spec: AppEnvSpec) -> None:
+    def __init__(self, scope: Construct, id: str, env: Environment) -> None:
         super().__init__(scope, id)
-        self.spec = spec
+        self.env = env
 
-        forgejo_images_creds_external_secret(self, "forgejo-images-creds", namespace=spec.namespace)
+        forgejo_images_creds_external_secret(self, "forgejo-images-creds", namespace=env.namespace)
         app_service_account = self._add_service_accounts()
         self._add_rbac(app_service_account)
         deployment = self._add_deployment(app_service_account)
         self._add_service(deployment)
         self._add_http_route()
         self._add_network_policy()
-        if spec.pdb_min_available is not None:
-            self._add_pdb(spec.pdb_min_available)
+        if env.replicas.pdb_min_available is not None:
+            self._add_pdb(env.replicas.pdb_min_available)
         self._add_sandbox_template()
 
     def _add_service_accounts(self) -> ServiceAccount:
-        namespace = self.spec.namespace
-        # The identity an agent presents to the app's own API -- no Pod runs as it, so
-        # it needs no mounted token (see serviceaccount-agentplane-agent.yaml's own
-        # comment, preserved in the generated file).
+        namespace = self.env.namespace
+        # The identity an agent presents to the app's own API; no Pod runs as it, so no
+        # mounted token.
         ServiceAccount(
             self, "serviceaccount-agent", metadata=metadata("agentplane-agent", namespace), automount_token=False
         )
@@ -233,15 +167,14 @@ class App(Construct):
         app_service_account = ServiceAccount(
             self, "serviceaccount-app", metadata=metadata(_NAME, namespace), automount_token=True
         )
-        # The runner Pods' identity, with no RBAC of its own -- see
-        # serviceaccount-agentplane-runner.yaml's own comment.
+        # The runner Pods' identity, with no RBAC of its own.
         ServiceAccount(
             self, "serviceaccount-runner", metadata=metadata("agentplane-runner", namespace), automount_token=False
         )
         return app_service_account
 
     def _add_rbac(self, app_service_account: ServiceAccount) -> None:
-        namespace = self.spec.namespace
+        namespace = self.env.namespace
         # TokenReview proves a Bearer token the app itself was handed. Creating a
         # review grants none of the reviewed identity's authority.
         token_reviewer_cluster_rbac(
@@ -258,36 +191,37 @@ class App(Construct):
             rules=[
                 # GET /sandboxes/templates lists them; a get-only Role 403'd the route (#7023).
                 RolePolicyRule(
-                    resources=[_custom("extensions.agents.x-k8s.io", "sandboxtemplates")], verbs=["get", "list"]
+                    resources=[custom_resource("extensions.agents.x-k8s.io", "sandboxtemplates")], verbs=["get", "list"]
                 ),
                 RolePolicyRule(
-                    resources=[_custom("agents.x-k8s.io", "sandboxes")],
+                    resources=[custom_resource("agents.x-k8s.io", "sandboxes")],
                     verbs=["create", "get", "list", "watch", "patch", "delete"],
                 ),
                 RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["get", "list", "watch"]),
                 # One ServiceAccount per Sandbox, created with it and owned by it; no
                 # patching beyond stamping that owner reference, and no reading of the
                 # tokens minted for it.
-                RolePolicyRule(resources=[_custom("", "serviceaccounts")], verbs=["create", "patch", "delete"]),
+                RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["create", "patch", "delete"]),
                 RolePolicyRule(
                     resources=[
-                        _custom("agentplane.allegedly.works", resource)
+                        custom_resource("agentplane.allegedly.works", resource)
                         for resource in ("egresspolicies", "egressbindings", "egresscredentials")
                     ],
                     verbs=["get", "list", "watch"],
                 ),
                 RolePolicyRule(
-                    resources=[_custom("agentplane.allegedly.works", "egressbindings")], verbs=["create", "delete"]
+                    resources=[custom_resource("agentplane.allegedly.works", "egressbindings")],
+                    verbs=["create", "delete"],
                 ),
                 RolePolicyRule(
                     resources=[
-                        _custom("agentplane.allegedly.works", resource)
+                        custom_resource("agentplane.allegedly.works", resource)
                         for resource in ("actionpolicysets", "actionpolicybindings")
                     ],
                     verbs=["get", "list", "watch"],
                 ),
                 RolePolicyRule(
-                    resources=[_custom("agentplane.allegedly.works", "actionpolicybindings")],
+                    resources=[custom_resource("agentplane.allegedly.works", "actionpolicybindings")],
                     verbs=["create", "delete"],
                 ),
             ],
@@ -297,7 +231,7 @@ class App(Construct):
         ).add_subjects(app_service_account)
 
     def _container_env(self) -> dict[str, EnvValue]:
-        namespace = self.spec.namespace
+        namespace = self.env.namespace
         action_federation = ConfigMap.from_config_map_name(
             self, "action-federation-config-ref", "agentplane-action-federation"
         )
@@ -316,8 +250,8 @@ class App(Construct):
                 "postgresql+asyncpg://$(AGENTPLANE_DB_USER):$(AGENTPLANE_DB_PASSWORD)"
                 "@$(AGENTPLANE_DB_HOST):$(AGENTPLANE_DB_PORT)/$(AGENTPLANE_DB_NAME)"
             ),
-            env_name(OIDCSettings, "issuer"): EnvValue.from_value(self.spec.oidc_issuer),
-            env_name(OIDCSettings, "public_base_url"): EnvValue.from_value(f"https://{self.spec.hostname}"),
+            env_name(OIDCSettings, "issuer"): EnvValue.from_value(self.env.app.oidc_issuer),
+            env_name(OIDCSettings, "public_base_url"): EnvValue.from_value(f"https://{self.env.app.hostname}"),
             env_name(OIDCSettings, "client_id"): EnvValue.from_secret_value(
                 SecretValue(secret=oidc_secret, key="client-id")
             ),
@@ -331,7 +265,7 @@ class App(Construct):
         }
 
     def _add_deployment(self, app_service_account: ServiceAccount) -> Deployment:
-        namespace = self.spec.namespace
+        namespace = self.env.namespace
         env = self._container_env()
         deployment = Deployment(
             self,
@@ -348,9 +282,9 @@ class App(Construct):
                 },
             ),
             pod_metadata=ApiObjectMetadata(labels=_LABELS),
-            replicas=self.spec.replicas,
-            strategy=self.spec.strategy,
-            min_ready=self.spec.min_ready,
+            replicas=self.env.replicas.count,
+            strategy=self.env.replicas.strategy,
+            min_ready=self.env.replicas.min_ready,
             # 5s HTTP/SSE drain (--shutdown-timeout), with room for the bridge's lease
             # release and the store's close.
             termination_grace_period=Duration.seconds(60),
@@ -393,222 +327,97 @@ class App(Construct):
         volume = Volume.from_config_map(self, "config-volume", config)
         deployment.containers[0].mount(_CONFIG_DIR, volume, read_only=True)
 
-        # With the database (cnpg_conventions R5); it had no pin at all while the
-        # database was Proxmox-single, which is the rule already unmet rather than a
-        # new constraint. Unlike llm-ingress/egress, the app carries no control-plane
-        # toleration.
+        # With the database (cnpg_conventions R5). Unlike llm-ingress/egress, the app
+        # carries no control-plane toleration.
         node_scheduling.attract_to_zone(deployment)
-        apply_pod_spec_patches(deployment, labels=_LABELS, topology_spread=self.spec.topology_spread)
+        apply_pod_spec_patches(deployment, labels=_LABELS, topology_spread=self.env.replicas.topology_spread)
         return deployment
 
     def _add_service(self, deployment: Deployment) -> None:
         Service(
             self,
             "service",
-            metadata=metadata(_NAME, self.spec.namespace, labels=_LABELS),
+            metadata=metadata(_NAME, self.env.namespace, labels=_LABELS),
             selector=deployment,
             ports=[ServicePort(name="http", port=_CONTAINER_PORT, target_port=_CONTAINER_PORT, protocol=Protocol.TCP)],
         )
 
     def _add_http_route(self) -> None:
-        namespace = self.spec.namespace
-        HttpRoute(
+        namespace = self.env.namespace
+        https_route(
             self,
             "httproute",
             metadata=metadata(namespace, namespace),
-            spec=HttpRouteSpec(
-                # Not the plaintext listener: the gateway's HTTP-only route owns port
-                # 80 and redirects it.
-                parent_refs=[cluster_gateway_parent_ref(section_name="https-wildcard")],
-                hostnames=[self.spec.hostname],
-                rules=[
-                    HttpRouteSpecRules(
-                        filters=[
-                            # Set at the TLS-aware edge; the app's own hop cannot tell
-                            # that HTTPS was terminated.
-                            HttpRouteSpecRulesFilters(
-                                type=HttpRouteSpecRulesFiltersType.RESPONSE_HEADER_MODIFIER,
-                                response_header_modifier=HttpRouteSpecRulesFiltersResponseHeaderModifier(
-                                    set=[
-                                        HttpRouteSpecRulesFiltersResponseHeaderModifierSet(
-                                            name="Strict-Transport-Security", value="max-age=31536000"
-                                        )
-                                    ]
-                                ),
-                            )
-                        ],
-                        backend_refs=[HttpRouteSpecRulesBackendRefs(name=_NAME, port=_CONTAINER_PORT)],
-                        # A session stream stays attached for as long as the tab is open.
-                        timeouts=HttpRouteSpecRulesTimeouts(request="3600s", backend_request="3600s"),
-                    )
-                ],
-            ),
+            hostname=self.env.app.hostname,
+            backend=_NAME,
+            port=_CONTAINER_PORT,
+            # A session stream stays attached for as long as the tab is open.
+            timeout="3600s",
         )
 
     def _oidc_egress_rules(self) -> list[CiliumNetworkPolicySpecEgress]:
-        server_name = urlsplit(self.spec.oidc_issuer).hostname
-        assert server_name is not None, f"OIDC issuer has no hostname: {self.spec.oidc_issuer!r}"
-        rules = [
-            # Public OIDC origin resolves to hostNetwork Gateway node IPs. FQDN/CIDR
-            # selectors cannot match those identities with the cluster's current
-            # Cilium configuration. TLS SNI restricts the node:443 rule to this one
-            # origin; TLS remains end-to-end (no terminatingTLS secret or MITM).
-            CiliumNetworkPolicySpecEgress(
-                to_entities=[
-                    CiliumNetworkPolicySpecEgressToEntities.REMOTE_HYPHEN_NODE,
-                    CiliumNetworkPolicySpecEgressToEntities.HOST,
-                ],
-                to_ports=[
-                    CiliumNetworkPolicySpecEgressToPorts(
-                        ports=[
-                            CiliumNetworkPolicySpecEgressToPortsPorts(
-                                port="443", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
-                            )
-                        ],
-                        server_names=[server_name],
-                    )
-                ],
-            )
-        ]
-        if self.spec.reach_incluster_authentik:
-            # Gateway Service traffic is checked against the selected backend, with
-            # the client's original SNI.
+        server_name = urlsplit(self.env.app.oidc_issuer).hostname
+        assert server_name is not None, f"OIDC issuer has no hostname: {self.env.app.oidc_issuer!r}"
+        rules = [cilium_helpers.egress_via_gateway(server_name)]
+        if self.env.app.reach_incluster_authentik:
             rules.append(
-                CiliumNetworkPolicySpecEgress(
-                    to_endpoints=[
-                        CiliumNetworkPolicySpecEgressToEndpoints(
-                            match_labels={
-                                "k8s:io.kubernetes.pod.namespace": "authentik",
-                                "app.kubernetes.io/name": "authentik",
-                                "app.kubernetes.io/instance": "authentik",
-                                "app.kubernetes.io/component": "server",
-                            }
-                        )
-                    ],
-                    to_ports=[
-                        CiliumNetworkPolicySpecEgressToPorts(
-                            ports=[
-                                CiliumNetworkPolicySpecEgressToPortsPorts(
-                                    port="9000", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
-                                )
-                            ],
-                            server_names=[server_name],
-                        )
-                    ],
-                )
+                cilium_helpers.egress_to(cilium_helpers.AUTHENTIK_SERVER_LABELS, 9000, server_names=[server_name])
             )
         return rules
 
     def _add_network_policy(self) -> None:
-        namespace = self.spec.namespace
-        dns_egress = CiliumNetworkPolicySpecEgress(
-            to_endpoints=[CiliumNetworkPolicySpecEgressToEndpoints(match_labels=cilium_helpers.KUBE_DNS_LABELS)],
-            to_ports=[
-                CiliumNetworkPolicySpecEgressToPorts(
-                    ports=[
-                        CiliumNetworkPolicySpecEgressToPortsPorts(
-                            port="53", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.UDP
-                        ),
-                        CiliumNetworkPolicySpecEgressToPortsPorts(
-                            port="53", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
-                        ),
-                    ]
-                )
-            ],
-        )
+        namespace = self.env.namespace
+        dns_egress = cilium_helpers.dns_egress()
         # Runner Pods reach DNS and the egress proxy's listener, which the sidecar
         # relays to; port 7000 is open only to Pods in this namespace.
-        CiliumNetworkPolicy(
+        cilium_helpers.network_policy(
             self,
             "networkpolicy-runner",
             metadata=metadata("agentplane-runner", namespace),
-            spec=CiliumNetworkPolicySpec(
-                endpoint_selector=CiliumNetworkPolicySpecEndpointSelector(match_labels=_RUNNER_LABELS),
-                ingress=[
-                    CiliumNetworkPolicySpecIngress(
-                        from_endpoints=[
-                            CiliumNetworkPolicySpecIngressFromEndpoints(
-                                match_labels={"k8s:io.kubernetes.pod.namespace": namespace}
-                            )
-                        ],
-                        to_ports=[
-                            CiliumNetworkPolicySpecIngressToPorts(
-                                ports=[
-                                    CiliumNetworkPolicySpecIngressToPortsPorts(
-                                        port=str(_RUNNER_PORT),
-                                        protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP,
-                                    )
-                                ]
-                            )
-                        ],
-                    )
-                ],
-                egress=[
-                    dns_egress,
-                    cilium_helpers.tcp_egress_to(
-                        cilium_helpers.endpoint_labels(namespace, "agentplane-egress"), egress_constructs.PROXY_PORT
-                    ),
-                ],
-            ),
+            selector=_RUNNER_LABELS,
+            ingress=[cilium_helpers.ingress_from({"k8s:io.kubernetes.pod.namespace": namespace}, ports=[_RUNNER_PORT])],
+            egress=[
+                dns_egress,
+                cilium_helpers.egress_to(
+                    cilium_helpers.endpoint_labels(namespace, "agentplane-egress"), egress_constructs.PROXY_PORT
+                ),
+            ],
         )
         # The app takes browser traffic straight from the gateway and reaches DNS, the
         # API server, the OIDC provider, the runner Pods, the egress proxy's admin
         # port, the Action Service, and the trajectory store.
-        CiliumNetworkPolicy(
+        cilium_helpers.network_policy(
             self,
             "networkpolicy-app",
             metadata=metadata(_NAME, namespace),
-            spec=CiliumNetworkPolicySpec(
-                endpoint_selector=CiliumNetworkPolicySpecEndpointSelector(match_labels=_LABELS),
-                ingress=[
-                    # cilium-envoy is hostNetwork and its egress to a backend Pod
-                    # carries the reserved:ingress identity.
-                    CiliumNetworkPolicySpecIngress(
-                        from_entities=[CiliumNetworkPolicySpecIngressFromEntities.INGRESS],
-                        to_ports=[
-                            CiliumNetworkPolicySpecIngressToPorts(
-                                ports=[
-                                    CiliumNetworkPolicySpecIngressToPortsPorts(
-                                        port=str(_CONTAINER_PORT),
-                                        protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP,
-                                    )
-                                ]
-                            )
-                        ],
-                    )
-                ],
-                egress=[
-                    dns_egress,
-                    CiliumNetworkPolicySpecEgress(
-                        to_entities=[CiliumNetworkPolicySpecEgressToEntities.KUBE_HYPHEN_APISERVER]
-                    ),
-                    *self._oidc_egress_rules(),
-                    cilium_helpers.tcp_egress_to(
-                        cilium_helpers.endpoint_labels(namespace, "agentplane-runner"), _RUNNER_PORT
-                    ),
-                    cilium_helpers.tcp_egress_to(
-                        cilium_helpers.endpoint_labels(namespace, "agentplane-egress"), egress_constructs.ADMIN_PORT
-                    ),
-                    # Separate BFF/operator transport boundary. The Action Service
-                    # still requires its own configured operator authenticator;
-                    # network reachability grants no review authority.
-                    cilium_helpers.tcp_egress_to(
-                        cilium_helpers.endpoint_labels(namespace, "agentplane-actions"),
-                        actions_constructs.CONTAINER_PORT,
-                    ),
-                    cilium_helpers.tcp_egress_to(
-                        {"k8s:io.kubernetes.pod.namespace": namespace, "k8s:cnpg.io/cluster": "postgres"},
-                        db_constructs.POSTGRES_PORT,
-                    ),
-                ],
-            ),
+            selector=_LABELS,
+            ingress=[cilium_helpers.ingress_from_gateway(_CONTAINER_PORT)],
+            egress=[
+                dns_egress,
+                cilium_helpers.egress_to_entities("kube-apiserver"),
+                *self._oidc_egress_rules(),
+                cilium_helpers.egress_to(cilium_helpers.endpoint_labels(namespace, "agentplane-runner"), _RUNNER_PORT),
+                cilium_helpers.egress_to(
+                    cilium_helpers.endpoint_labels(namespace, "agentplane-egress"), egress_constructs.ADMIN_PORT
+                ),
+                # Separate BFF/operator transport boundary. The Action Service
+                # still requires its own configured operator authenticator;
+                # network reachability grants no review authority.
+                cilium_helpers.egress_to(
+                    cilium_helpers.endpoint_labels(namespace, "agentplane-actions"), actions_constructs.CONTAINER_PORT
+                ),
+                cilium_helpers.egress_to(
+                    {"k8s:io.kubernetes.pod.namespace": namespace, "k8s:cnpg.io/cluster": "postgres"},
+                    db_constructs.POSTGRES_PORT,
+                ),
+            ],
         )
 
     def _add_pdb(self, min_available: int) -> None:
         k8s.KubePodDisruptionBudget(
             self,
             "pdb",
-            metadata=k8s.ObjectMeta(name=_NAME, namespace=self.spec.namespace),
+            metadata=k8s.ObjectMeta(name=_NAME, namespace=self.env.namespace),
             spec=k8s.PodDisruptionBudgetSpec(
                 min_available=k8s.IntOrString.from_number(min_available),
                 selector=k8s.LabelSelector(match_labels=_LABELS),
@@ -617,7 +426,7 @@ class App(Construct):
 
     def _runner_container(self) -> SandboxTemplateSpecPodTemplateSpecContainers:
         litellm_url = (
-            f"http://agentplane-llm-ingress.{self.spec.namespace}"
+            f"http://agentplane-llm-ingress.{self.env.namespace}"
             f".svc.cluster.local:{llm_ingress_constructs.CONTAINER_PORT}"
         )
         # The environment a harness child starts from: a bare NAME takes the runner's
@@ -697,7 +506,7 @@ class App(Construct):
         )
 
     def _egress_sidecar_container(self) -> SandboxTemplateSpecPodTemplateSpecContainers:
-        namespace = self.spec.namespace
+        namespace = self.env.namespace
         return SandboxTemplateSpecPodTemplateSpecContainers(
             name="egress-sidecar",
             image=f"{_EGRESS_SIDECAR_IMAGE}:{_PLACEHOLDER_TAG}",
@@ -735,9 +544,9 @@ class App(Construct):
         )
 
     def _add_sandbox_template(self) -> None:
-        namespace = self.spec.namespace
+        namespace = self.env.namespace
         node_selector = (
-            {"topology.kubernetes.io/zone": self.spec.runner_zone} if self.spec.runner_zone is not None else None
+            {"topology.kubernetes.io/zone": self.env.app.runner_zone} if self.env.app.runner_zone is not None else None
         )
 
         SandboxTemplate(
@@ -772,7 +581,7 @@ class App(Construct):
                             SandboxTemplateSpecPodTemplateSpecVolumes(
                                 name=_EGRESS_CA_VOLUME_NAME,
                                 config_map=SandboxTemplateSpecPodTemplateSpecVolumesConfigMap(
-                                    name=self.spec.runner_ca_configmap_name
+                                    name=self.env.egress.ca_secret_name
                                 ),
                             ),
                             # The Pod's identity to the central proxy: a ServiceAccount

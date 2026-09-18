@@ -46,13 +46,6 @@ from cdk8s_plus_34 import (
     k8s,
 )
 from constructs import Construct
-from gateway_api_crds.io.k8s.networking.gateway import (
-    HttpRoute,
-    HttpRouteSpec,
-    HttpRouteSpecRules,
-    HttpRouteSpecRulesBackendRefs,
-    HttpRouteSpecRulesTimeouts,
-)
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitor,
     ServiceMonitorSpec,
@@ -63,7 +56,7 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret
-from cluster.cdk8s.gateway import cluster_gateway_parent_ref
+from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.litellm_config import ConfigMapSpec, proxy_configs
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.probes import http_probe
@@ -242,7 +235,7 @@ class LiteLLMProxy(Construct):
         deployment = self._add_deployment(config_map, service_account)
         self._add_service(deployment)
         if spec.hostname is not None:
-            self._add_http_route()
+            self._add_http_route(spec.hostname)
 
     def _add_config_map(self) -> ConfigMap:
         return ConfigMap(
@@ -364,22 +357,17 @@ class LiteLLMProxy(Construct):
             automount_token=False,
         )
 
-    def _add_http_route(self) -> None:
-        assert self.spec.hostname is not None
-        HttpRoute(
+    def _add_http_route(self, hostname: str) -> None:
+        https_route(
             self,
             "httproute",
             metadata=metadata(self.spec.name, self.spec.namespace),
-            spec=HttpRouteSpec(
-                parent_refs=[cluster_gateway_parent_ref()],
-                hostnames=[self.spec.hostname],
-                rules=[
-                    HttpRouteSpecRules(
-                        timeouts=HttpRouteSpecRulesTimeouts(request="600s", backend_request="600s"),
-                        backend_refs=[HttpRouteSpecRulesBackendRefs(name=self.spec.name, port=4000)],
-                    )
-                ],
-            ),
+            hostname=hostname,
+            backend=self.spec.name,
+            port=4000,
+            timeout="600s",
+            hsts=False,
+            listener=None,
         )
 
     def _add_forgejo_image_credentials(self) -> None:

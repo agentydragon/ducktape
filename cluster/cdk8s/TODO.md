@@ -14,7 +14,7 @@ hand-written, so unifying them needs a YAML→cdk8s conversion (or, for two entr
 below, a non-Kubernetes fix in Terraform) before the drift can be closed by
 construction. Candidates where both sides were already cdk8s-generated Python were
 fixed directly instead of listed here (see git log — `cluster/cdk8s/litellm_config.py`,
-`model_rosters.py`, `actions_settings.py`, `generate_manifests.py`,
+`model_rosters.py`, `agentplane/staging.py`, `generate_manifests.py`,
 `app_constructs.py`, `egress_constructs.py`, `dex_constructs.py`,
 `ha_mcp_constructs.py`, and the validation tests that pinned the now-redundant
 equalities).
@@ -93,10 +93,10 @@ find-and-replace.
 - **`cluster/k8s/agents/haku-egress-proxy/` and `cluster/k8s/agents/mitmproxy/`
   CiliumNetworkPolicy `toFQDNs`/`server_names`** (`test_egress_allowlists.py`,
   `test_dns_rule_matches_the_allowlist`). Same shape as the web-push fix just
-  applied in `generate_manifests.py`/`actions_settings.py` — a `toFQDNs` list and a
+  applied in `agentplane/staging.py` — a `toFQDNs` list and a
   `toPorts.rules.dns`/`server_names` list built from two separate hand-written YAML
   blocks instead of one Python tuple. Convert these two CiliumNetworkPolicies to
-  cdk8s and reuse the `WEB_PUSH_ALLOWED_HOSTS`-style fix directly.
+  cdk8s and build both lists from one tuple the same way.
 - **ClickHouse schema Job / aiquota migrate container health-check literal**
   (`test_clickhouse_distributed_ddl_contract.py`). The Job's own
   apiVersion/kind/name/namespace is hand-retyped into the Flux Kustomization's
