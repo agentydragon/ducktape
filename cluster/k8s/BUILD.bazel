@@ -276,6 +276,17 @@ exports_files(
     visibility = ["//x/agentplane/action_service:__pkg__"],
 )
 
+# //cluster/ssh_targets derives the last three from the devbox Service (and ssh_keys/).
+exports_files(
+    [
+        "agents/public-coder-agent/devbox/service.yaml",
+        "agents/public-coder-agent/sshpiper/pipe-devbox.yaml",
+        "ssh-mcp/known_hosts",
+        "ssh-mcp/settings.yaml",
+    ],
+    visibility = ["//cluster/ssh_targets:__pkg__"],
+)
+
 filegroup(
     name = "agentplane_actions_remote_mcp",
     srcs = glob([

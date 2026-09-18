@@ -22,13 +22,16 @@ than the devbox's.
 
 Four, all ed25519, none shared with anything else:
 
-| Key                        | Private half lives in                             | Public half                                                                 |
-| -------------------------- | ------------------------------------------------- | --------------------------------------------------------------------------- |
-| Agent → piper (downstream) | Agent Pod, from `../app/devbox-ssh-key.sops.yaml` | `authorized_keys_data` in the Pipe                                          |
-| piper host key             | `host-key.sops.yaml`, this Pod only               | Agent's `known_hosts`                                                       |
-| piper → devbox (mapping)   | `devbox-key.sops.yaml`, this Pod only             | `coder`'s `authorized_keys` in `nix/nixos/hosts/public-coder-devbox`        |
-| devbox host key            | `<../devbox/ssh-host-key.sops.yaml>`, the VM only | `ssh_keys/public-coder-devbox-host.pub`, and `known_hosts_data` in the Pipe |
+| Key                        | Private half lives in                             | Public half                                                                               |
+| -------------------------- | ------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Agent → piper (downstream) | Agent Pod, from `../app/devbox-ssh-key.sops.yaml` | `ssh_keys/public-coder-agent-devbox.pub`, rendered into the Pipe's `authorized_keys_data` |
+| piper host key             | `host-key.sops.yaml`, this Pod only               | Agent's `known_hosts`                                                                     |
+| piper → devbox (mapping)   | `devbox-key.sops.yaml`, this Pod only             | `coder`'s `authorized_keys` in `nix/nixos/hosts/public-coder-devbox`                      |
+| devbox host key            | `<../devbox/ssh-host-key.sops.yaml>`, the VM only | `ssh_keys/public-coder-devbox-host.pub`, rendered into the Pipe's `known_hosts_data`      |
 
+`pipe-devbox.yaml` is generated from those two `.pub` files and the devbox Service
+(`bb run //cluster/ssh_targets:generate_bin`, <../../../../ssh_targets/generate.py>) by the same
+generator that writes ssh-mcp's `known_hosts`, so both consumers pin one devbox identity.
 Rotating either host key breaks the pin that trusts it, so the pin moves in the same change.
 Rotating the mapping key means updating the NixOS `authorized_keys` and rebuilding the VM image.
 
