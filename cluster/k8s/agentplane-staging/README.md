@@ -31,11 +31,10 @@ Action Service reads the private key through a Secret-backed environment variabl
 and derives the public subscription key at startup. Redeployment preserves the key;
 rotation requires browsers to register again. Do not reuse it for testing or Haku.
 
-The application allowlist in `agentplane/actions_settings.py`'s `staging_settings()`
-and the HTTPS FQDN/SNI egress rules in `generate_manifests.py`'s
-`_AGENTPLANE_STAGING_ACTIONS_EXTRA_EGRESS` must agree. Currently Chrome/Chromium (FCM)
-and Firefox (Mozilla Autopush) are allowed. Other browser push services require explicit
-review and changes to both lists. DNS inspection lets Cilium learn the endpoint IPs; it
+The application allowlist and the HTTPS FQDN/SNI egress rule are both built from one
+tuple in `cluster/cdk8s/agentplane/staging.py`. Currently Chrome/Chromium (FCM) and
+Firefox (Mozilla Autopush) are allowed. Other browser push services require explicit
+review before joining it. DNS inspection lets Cilium learn the endpoint IPs; it
 does not authorize arbitrary outbound HTTPS.
 
 Acceptance: sign into staging, open Notifications, register the browser, and confirm

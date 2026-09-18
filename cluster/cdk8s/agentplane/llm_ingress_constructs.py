@@ -9,8 +9,6 @@ image-pins/ Kustomize Component (hand-written, never generated) overrides it at
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from cdk8s import ApiObjectMetadata, Size
 from cdk8s_plus_34 import (
     ConfigMap,
@@ -19,7 +17,6 @@ from cdk8s_plus_34 import (
     Cpu,
     CpuResources,
     Deployment,
-    DeploymentStrategy,
     EnvValue,
     ImagePullPolicy,
     MemoryResources,
@@ -35,6 +32,7 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 
 from cluster.cdk8s.agentplane import cilium_helpers, container_security, node_scheduling
+from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.metadata import metadata
@@ -59,42 +57,29 @@ _SETTINGS_PATH = "/etc/agentplane-llm-ingress/settings.yaml"
 WORKLOAD_TOKEN_AUDIENCE = "agentplane-egress"
 
 
-@dataclass(frozen=True)
-class LlmIngressEnvSpec:
-    """Per-environment values for the LLM ingress Deployment."""
-
-    namespace: str
-    replicas: int
-    strategy: DeploymentStrategy
-    # staging spreads its 2 replicas across nodes; testing's single replica has
-    # nothing to spread.
-    topology_spread: bool
-    litellm_key_secret_name: str
-
-
 class LlmIngress(Construct):
     """ServiceAccount, cluster TokenReview RBAC, the settings ConfigMap, Deployment,
     Service, and CiliumNetworkPolicy for the LLM ingress.
     """
 
-    def __init__(self, scope: Construct, id: str, spec: LlmIngressEnvSpec) -> None:
+    def __init__(self, scope: Construct, id: str, env: Environment) -> None:
         super().__init__(scope, id)
-        self.spec = spec
+        self.env = env
 
         # cdk8s_plus_34 defaults ServiceAccounts to automount_token=False; the ingress
         # calls TokenReview as itself, so it needs its own mounted token -- opt back
         # in explicitly to preserve today's actual (and required) behavior.
         service_account = ServiceAccount(
-            self, "serviceaccount", metadata=metadata(_NAME, spec.namespace), automount_token=True
+            self, "serviceaccount", metadata=metadata(_NAME, env.namespace), automount_token=True
         )
         # TokenReview proves the Pod-bound workload bearer presented by the central
         # egress proxy. It grants none of that Pod's authority to the ingress.
         token_reviewer_cluster_rbac(
             self,
             "token-reviewer",
-            name=f"{spec.namespace}-llm-ingress-token-reviewer",
+            name=f"{env.namespace}-llm-ingress-token-reviewer",
             service_account_name=_NAME,
-            namespace=spec.namespace,
+            namespace=env.namespace,
         )
         settings_cm = self._add_settings_configmap()
         deployment = self._add_deployment(service_account, settings_cm)
@@ -105,10 +90,10 @@ class LlmIngress(Construct):
         return ConfigMap(
             self,
             "settings",
-            metadata=metadata(f"{_NAME}-settings", self.spec.namespace),
+            metadata=metadata(f"{_NAME}-settings", self.env.namespace),
             data={
                 "settings.yaml": yaml_config(
-                    settings_file(Settings, {"allowed_service_account_namespaces": [self.spec.namespace]})
+                    settings_file(Settings, {"allowed_service_account_namespaces": [self.env.namespace]})
                 )
             },
         )
@@ -119,13 +104,13 @@ class LlmIngress(Construct):
             "deployment",
             metadata=metadata(
                 _NAME,
-                self.spec.namespace,
+                self.env.namespace,
                 labels=_LABELS,
-                annotations={"secret.reloader.stakater.com/reload": self.spec.litellm_key_secret_name},
+                annotations={"secret.reloader.stakater.com/reload": self.env.llm_ingress.litellm_key_secret_name},
             ),
             pod_metadata=ApiObjectMetadata(labels=_LABELS),
-            replicas=self.spec.replicas,
-            strategy=self.spec.strategy,
+            replicas=self.env.replicas.count,
+            strategy=self.env.replicas.strategy,
             service_account=service_account,
             # cdk8s_plus_34 defaults this to False independent of the ServiceAccount's
             # own automount_token (Kubernetes uses whichever is explicitly set at the
@@ -149,7 +134,9 @@ class LlmIngress(Construct):
                 # The only real model credential in this service; runners never mount it.
                 env_name(Settings, "litellm_key"): EnvValue.from_secret_value(
                     SecretValue(
-                        secret=Secret.from_secret_name(self, "litellm-key-secret", self.spec.litellm_key_secret_name),
+                        secret=Secret.from_secret_name(
+                            self, "litellm-key-secret", self.env.llm_ingress.litellm_key_secret_name
+                        ),
                         key="api-key",
                     )
                 ),
@@ -171,14 +158,14 @@ class LlmIngress(Construct):
 
         node_scheduling.attract_to_zone(deployment)
         node_scheduling.tolerate_control_plane_taint(deployment)
-        apply_pod_spec_patches(deployment, labels=_LABELS, topology_spread=self.spec.topology_spread)
+        apply_pod_spec_patches(deployment, labels=_LABELS, topology_spread=self.env.replicas.topology_spread)
         return deployment
 
     def _add_service(self, deployment: Deployment) -> None:
         Service(
             self,
             "service",
-            metadata=metadata(_NAME, self.spec.namespace),
+            metadata=metadata(_NAME, self.env.namespace),
             selector=deployment,
             ports=[ServicePort(name="http", port=CONTAINER_PORT, target_port=CONTAINER_PORT, protocol=Protocol.TCP)],
         )
@@ -190,11 +177,11 @@ class LlmIngress(Construct):
         cilium_helpers.network_policy(
             self,
             "networkpolicy",
-            metadata=metadata(_NAME, self.spec.namespace),
+            metadata=metadata(_NAME, self.env.namespace),
             selector=_LABELS,
             ingress=[
                 cilium_helpers.ingress_from(
-                    cilium_helpers.endpoint_labels(self.spec.namespace, "agentplane-egress"), ports=[CONTAINER_PORT]
+                    cilium_helpers.endpoint_labels(self.env.namespace, "agentplane-egress"), ports=[CONTAINER_PORT]
                 )
             ],
             egress=[

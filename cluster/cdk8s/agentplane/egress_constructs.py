@@ -9,7 +9,6 @@ image-pins/ Kustomize Component (hand-written, never generated) overrides them a
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import cast
 
 from agentplane_egresscredential_crds.works.allegedly.agentplane import (
@@ -36,7 +35,6 @@ from cdk8s_plus_34 import (
     Cpu,
     CpuResources,
     Deployment,
-    DeploymentStrategy,
     EnvValue,
     IApiResource,
     ImagePullPolicy,
@@ -84,6 +82,7 @@ from cluster.cdk8s.agentplane import (
     node_scheduling,
 )
 from cluster.cdk8s.agentplane.app_settings import BASIC_POLICY, GITHUB_PUBLIC_POLICY
+from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
@@ -115,24 +114,6 @@ CA_BUNDLE_KEY = "ca-certificates.crt"
 # same cast for the same reason).
 def _custom(api_group: str, resource_type: str) -> IApiResource:
     return cast(IApiResource, ApiResource.custom(api_group=api_group, resource_type=resource_type))
-
-
-@dataclass(frozen=True)
-class EgressEnvSpec:
-    """Per-environment values for the egress proxy."""
-
-    namespace: str
-    # The interception CA's Secret/Bundle/ConfigMap name -- asymmetric between
-    # environments today (unprefixed for staging, namespace-prefixed for testing).
-    # Threaded through explicitly rather than derived, to preserve that as-is.
-    ca_secret_name: str
-    replicas: int
-    strategy: DeploymentStrategy
-    min_ready: Duration | None
-    # staging spreads its 2 replicas across nodes; testing's single replica has
-    # nothing to spread.
-    topology_spread: bool
-    pdb_min_available: int | None
 
 
 def _egress_credentials(scope: Construct, *, namespace: str) -> None:
@@ -240,14 +221,14 @@ class Egress(Construct):
     EgressCredential/EgressPolicy resources it reads.
     """
 
-    def __init__(self, scope: Construct, id: str, spec: EgressEnvSpec) -> None:
+    def __init__(self, scope: Construct, id: str, env: Environment) -> None:
         super().__init__(scope, id)
-        self.spec = spec
+        self.env = env
 
         # cdk8s_plus_34 defaults ServiceAccounts to automount_token=False; the proxy
         # calls TokenReview as itself, so it needs its own mounted token.
         service_account = ServiceAccount(
-            self, "serviceaccount", metadata=metadata(_NAME, spec.namespace), automount_token=True
+            self, "serviceaccount", metadata=metadata(_NAME, env.namespace), automount_token=True
         )
         self._add_rbac(service_account)
         self._add_certificate_and_bundle()
@@ -255,10 +236,10 @@ class Egress(Construct):
         deployment = self._add_deployment(service_account, settings_cm)
         self._add_services(deployment)
         self._add_network_policy()
-        if spec.pdb_min_available is not None:
-            self._add_pdb(spec.pdb_min_available)
-        _egress_credentials(self, namespace=spec.namespace)
-        _egress_policies(self, namespace=spec.namespace)
+        if env.replicas.pdb_min_available is not None:
+            self._add_pdb(env.replicas.pdb_min_available)
+        _egress_credentials(self, namespace=env.namespace)
+        _egress_policies(self, namespace=env.namespace)
 
     def _add_rbac(self, service_account: ServiceAccount) -> None:
         # TokenReview proves the sidecar's projected, audience-scoped ServiceAccount
@@ -267,9 +248,9 @@ class Egress(Construct):
         token_reviewer_cluster_rbac(
             self,
             "token-reviewer",
-            name=f"{self.spec.namespace}-egress-token-reviewer",
+            name=f"{self.env.namespace}-egress-token-reviewer",
             service_account_name=_NAME,
-            namespace=self.spec.namespace,
+            namespace=self.env.namespace,
         )
         # What the proxy reads to decide a request: policies, bindings, credentials.
         # No Pods (TokenReview already names the subject) and no Secrets (an
@@ -278,7 +259,7 @@ class Egress(Construct):
         Role(
             self,
             "role",
-            metadata=metadata(_NAME, self.spec.namespace),
+            metadata=metadata(_NAME, self.env.namespace),
             rules=[
                 RolePolicyRule(
                     resources=[
@@ -292,7 +273,7 @@ class Egress(Construct):
         RoleBinding(
             self,
             "rolebinding",
-            metadata=metadata(_NAME, self.spec.namespace),
+            metadata=metadata(_NAME, self.env.namespace),
             role=Role.from_role_name(self, "role-ref", _NAME),
         ).add_subjects(service_account)
 
@@ -304,11 +285,11 @@ class Egress(Construct):
         Certificate(
             self,
             "certificate",
-            metadata=metadata("agentplane-egress-root-ca", self.spec.namespace),
+            metadata=metadata("agentplane-egress-root-ca", self.env.namespace),
             spec=CertificateSpec(
                 is_ca=True,
                 common_name="agentplane-egress-root-ca",
-                secret_name=self.spec.ca_secret_name,
+                secret_name=self.env.egress.ca_secret_name,
                 duration="87600h",  # 10 years
                 renew_before="8760h",  # 1 year
                 private_key=CertificateSpecPrivateKey(algorithm=CertificateSpecPrivateKeyAlgorithm.ECDSA, size=256),
@@ -329,12 +310,14 @@ class Egress(Construct):
         Bundle(
             self,
             "bundle",
-            metadata=ApiObjectMetadata(name=self.spec.ca_secret_name),
+            metadata=ApiObjectMetadata(name=self.env.egress.ca_secret_name),
             spec=BundleSpec(
                 sources=[
                     BundleSpecSources(use_default_c_as=True),
                     BundleSpecSources(secret=BundleSpecSourcesSecret(name="cluster-root-ca-secret", key="ca.crt")),
-                    BundleSpecSources(secret=BundleSpecSourcesSecret(name=self.spec.ca_secret_name, key="tls.crt")),
+                    BundleSpecSources(
+                        secret=BundleSpecSourcesSecret(name=self.env.egress.ca_secret_name, key="tls.crt")
+                    ),
                 ],
                 target=BundleSpecTarget(
                     config_map=BundleSpecTargetConfigMap(
@@ -342,7 +325,7 @@ class Egress(Construct):
                         metadata=BundleSpecTargetConfigMapMetadata(
                             annotations={
                                 "description": (
-                                    f"Trust bundle for {self.spec.namespace} runner HTTPS traffic "
+                                    f"Trust bundle for {self.env.namespace} runner HTTPS traffic "
                                     "intercepted by the egress proxy"
                                 )
                             }
@@ -351,7 +334,7 @@ class Egress(Construct):
                     namespace_selector=BundleSpecTargetNamespaceSelector(
                         match_expressions=[
                             BundleSpecTargetNamespaceSelectorMatchExpressions(
-                                key="kubernetes.io/metadata.name", operator="In", values=[self.spec.namespace]
+                                key="kubernetes.io/metadata.name", operator="In", values=[self.env.namespace]
                             )
                         ]
                     ),
@@ -363,16 +346,16 @@ class Egress(Construct):
         return ConfigMap(
             self,
             "settings",
-            metadata=metadata(f"{_NAME}-settings", self.spec.namespace),
+            metadata=metadata(f"{_NAME}-settings", self.env.namespace),
             data={
                 "settings.yaml": yaml_config(
-                    settings_file(Settings, {"allowed_service_account_namespaces": [self.spec.namespace]})
+                    settings_file(Settings, {"allowed_service_account_namespaces": [self.env.namespace]})
                 )
             },
         )
 
     def _add_deployment(self, service_account: ServiceAccount, settings_cm: ConfigMap) -> Deployment:
-        ca_secret = Secret.from_secret_name(self, "ca-secret-ref", self.spec.ca_secret_name)
+        ca_secret = Secret.from_secret_name(self, "ca-secret-ref", self.env.egress.ca_secret_name)
         ca_volume = Volume.from_secret(self, "ca-volume", ca_secret, name="ca")
         confdir_volume = Volume.from_empty_dir(self, "confdir-volume", "confdir")
 
@@ -388,12 +371,12 @@ class Egress(Construct):
             self,
             "deployment",
             metadata=metadata(
-                _NAME, self.spec.namespace, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
+                _NAME, self.env.namespace, labels=_LABELS, annotations={"reloader.stakater.com/auto": "true"}
             ),
             pod_metadata=ApiObjectMetadata(labels=_LABELS),
-            replicas=self.spec.replicas,
-            strategy=self.spec.strategy,
-            min_ready=self.spec.min_ready,
+            replicas=self.env.replicas.count,
+            strategy=self.env.replicas.strategy,
+            min_ready=self.env.replicas.min_ready,
             termination_grace_period=Duration.seconds(60),
             service_account=service_account,
             automount_service_account_token=True,
@@ -407,7 +390,7 @@ class Egress(Construct):
             image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
             args=cli_args(
                 Settings,
-                rules_namespace=self.spec.namespace,
+                rules_namespace=self.env.namespace,
                 credentials_namespace="agentplane-egress-credentials",
                 listen_port=PROXY_PORT,
                 admin_port=ADMIN_PORT,
@@ -447,14 +430,14 @@ class Egress(Construct):
 
         node_scheduling.attract_to_zone(deployment)
         node_scheduling.tolerate_control_plane_taint(deployment)
-        apply_pod_spec_patches(deployment, labels=_LABELS, topology_spread=self.spec.topology_spread)
+        apply_pod_spec_patches(deployment, labels=_LABELS, topology_spread=self.env.replicas.topology_spread)
         return deployment
 
     def _add_services(self, deployment: Deployment) -> None:
         Service(
             self,
             "service",
-            metadata=metadata(_NAME, self.spec.namespace),
+            metadata=metadata(_NAME, self.env.namespace),
             selector=deployment,
             ports=[
                 ServicePort(name="http", port=80, target_port=_AGENT_API_PORT, protocol=Protocol.TCP),
@@ -464,7 +447,7 @@ class Egress(Construct):
         Service(
             self,
             "service-admin",
-            metadata=metadata(f"{_NAME}-admin", self.spec.namespace),
+            metadata=metadata(f"{_NAME}-admin", self.env.namespace),
             selector=deployment,
             ports=[ServicePort(name="admin", port=ADMIN_PORT, target_port=ADMIN_PORT, protocol=Protocol.TCP)],
         )
@@ -473,7 +456,7 @@ class Egress(Construct):
         k8s.KubePodDisruptionBudget(
             self,
             "pdb",
-            metadata=k8s.ObjectMeta(name=_NAME, namespace=self.spec.namespace),
+            metadata=k8s.ObjectMeta(name=_NAME, namespace=self.env.namespace),
             spec=k8s.PodDisruptionBudgetSpec(
                 min_available=k8s.IntOrString.from_number(min_available),
                 selector=k8s.LabelSelector(match_labels=_LABELS),
@@ -481,7 +464,7 @@ class Egress(Construct):
         )
 
     def _add_network_policy(self) -> None:
-        namespace = self.spec.namespace
+        namespace = self.env.namespace
         cilium_helpers.network_policy(
             self,
             "networkpolicy",

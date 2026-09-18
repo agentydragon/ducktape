@@ -12,20 +12,13 @@ explicitly:
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import Any, cast
 
 import pytest
-from cdk8s import App, Chart, Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
+from cdk8s import Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 
-from cluster.cdk8s import generate_manifests
-
-_AGENTPLANE_STAGING = "agentplane-staging"
-_AGENTPLANE_TESTING = "agentplane-testing"
-
-
-def _synth(chart_builder: Callable[[App], Chart]) -> list[dict[str, Any]]:
-    return cast(list[dict[str, Any]], Cdk8sTesting.synth(chart_builder(Cdk8sTesting.app())))
+from cluster.cdk8s.agentplane import staging, testing
+from cluster.cdk8s.agentplane.chart import environment_chart
 
 
 @pytest.fixture(scope="session")
@@ -33,9 +26,9 @@ def agentplane_manifests() -> dict[str, list[dict[str, Any]]]:
     """Each environment's full `agentplane.k8s.yaml` chart (Namespace/quota/RBAC, the
     model-catalog ConfigMap, and every workload), synthesized in memory -- the same
     objects `generate_manifests()` writes to disk, without the write/read round trip
-    through git. See `generate_manifests.staging_chart`/`testing_chart`.
+    through git.
     """
     return {
-        _AGENTPLANE_STAGING: _synth(generate_manifests.staging_chart),
-        _AGENTPLANE_TESTING: _synth(generate_manifests.testing_chart),
+        env.namespace: cast(list[dict[str, Any]], Cdk8sTesting.synth(environment_chart(Cdk8sTesting.app(), env)))
+        for env in (staging.ENV, testing.ENV)
     }

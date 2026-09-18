@@ -37,7 +37,7 @@ from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 
-NAMESPACE = "agentplane-testing"
+_NAMESPACE = "agentplane-testing"
 
 MCP_EVERYTHING_NAME = "agentplane-mcp-everything"
 _MCP_EVERYTHING_IMAGE = (
@@ -46,18 +46,18 @@ _MCP_EVERYTHING_IMAGE = (
 MCP_EVERYTHING_PORT = 3001
 _MCP_EVERYTHING_LABELS = {"app.kubernetes.io/name": MCP_EVERYTHING_NAME}
 
-_OAUTH_FIXTURE_NAME = "agentplane-oauth-fixture"
+OAUTH_FIXTURE_NAME = "agentplane-oauth-fixture"
 _OAUTH_FIXTURE_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-oauth-fixture"
 _OAUTH_FIXTURE_PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
-_OAUTH_FIXTURE_PORT = 8080
-_OAUTH_FIXTURE_LABELS = {"app.kubernetes.io/name": _OAUTH_FIXTURE_NAME}
+OAUTH_FIXTURE_PORT = 8080
+_OAUTH_FIXTURE_LABELS = {"app.kubernetes.io/name": OAUTH_FIXTURE_NAME}
 
 
 def _add_mcp_everything(scope: Construct) -> None:
     deployment = Deployment(
         scope,
         "mcp-everything-deployment",
-        metadata=metadata(MCP_EVERYTHING_NAME, NAMESPACE),
+        metadata=metadata(MCP_EVERYTHING_NAME, _NAMESPACE),
         pod_metadata=ApiObjectMetadata(labels=_MCP_EVERYTHING_LABELS),
         replicas=1,
         strategy=DeploymentStrategy.recreate(),
@@ -93,7 +93,7 @@ def _add_mcp_everything(scope: Construct) -> None:
     Service(
         scope,
         "mcp-everything-service",
-        metadata=metadata(MCP_EVERYTHING_NAME, NAMESPACE),
+        metadata=metadata(MCP_EVERYTHING_NAME, _NAMESPACE),
         selector=deployment,
         ports=[
             ServicePort(name="http", port=MCP_EVERYTHING_PORT, target_port=MCP_EVERYTHING_PORT, protocol=Protocol.TCP)
@@ -105,12 +105,12 @@ def _add_mcp_everything(scope: Construct) -> None:
     cilium_helpers.network_policy(
         scope,
         "mcp-everything-networkpolicy",
-        metadata=metadata(MCP_EVERYTHING_NAME, NAMESPACE),
+        metadata=metadata(MCP_EVERYTHING_NAME, _NAMESPACE),
         selector=_MCP_EVERYTHING_LABELS,
         ingress=[
             cilium_helpers.ingress_from(
-                cilium_helpers.endpoint_labels(NAMESPACE, "agentplane-app"),
-                cilium_helpers.endpoint_labels(NAMESPACE, "agentplane-actions"),
+                cilium_helpers.endpoint_labels(_NAMESPACE, "agentplane-app"),
+                cilium_helpers.endpoint_labels(_NAMESPACE, "agentplane-actions"),
                 ports=[MCP_EVERYTHING_PORT],
             )
         ],
@@ -121,7 +121,7 @@ def _add_mcp_everything(scope: Construct) -> None:
     cilium_helpers.network_policy(
         scope,
         "mcp-everything-callers-networkpolicy",
-        metadata=metadata(f"{MCP_EVERYTHING_NAME}-callers", NAMESPACE),
+        metadata=metadata(f"{MCP_EVERYTHING_NAME}-callers", _NAMESPACE),
         selector=CiliumNetworkPolicySpecEndpointSelector(
             match_expressions=[
                 CiliumNetworkPolicySpecEndpointSelectorMatchExpressions(
@@ -133,7 +133,7 @@ def _add_mcp_everything(scope: Construct) -> None:
         ),
         egress=[
             cilium_helpers.egress_to(
-                cilium_helpers.endpoint_labels(NAMESPACE, MCP_EVERYTHING_NAME), MCP_EVERYTHING_PORT
+                cilium_helpers.endpoint_labels(_NAMESPACE, MCP_EVERYTHING_NAME), MCP_EVERYTHING_PORT
             )
         ],
     )
@@ -144,8 +144,8 @@ def _add_oauth_fixture(scope: Construct) -> None:
         scope,
         "oauth-fixture-deployment",
         metadata=metadata(
-            _OAUTH_FIXTURE_NAME,
-            NAMESPACE,
+            OAUTH_FIXTURE_NAME,
+            _NAMESPACE,
             annotations={
                 "description": "Dex-backed OAuth-protected MCP server for acceptance-testing MCP OAuth linkage; the fixture verifies Dex JWTs locally and has no credentials."
             },
@@ -164,20 +164,20 @@ def _add_oauth_fixture(scope: Construct) -> None:
             # advertised to clients, while the fixture fetches signing keys over the
             # internal Dex Service.
             "OAUTH_FIXTURE_BASE_URL": EnvValue.from_value(
-                f"http://{_OAUTH_FIXTURE_NAME}.{NAMESPACE}.svc.cluster.local:{_OAUTH_FIXTURE_PORT}"
+                f"http://{OAUTH_FIXTURE_NAME}.{_NAMESPACE}.svc.cluster.local:{OAUTH_FIXTURE_PORT}"
             ),
             "OAUTH_FIXTURE_AUTHORIZATION_SERVER": EnvValue.from_value(
                 "https://agentplane-dex-testing.allegedly.works/dex"
             ),
             "OAUTH_FIXTURE_JWKS_URI": EnvValue.from_value(
-                f"http://agentplane-testing-dex.{NAMESPACE}.svc.cluster.local:5556/dex/keys"
+                f"http://agentplane-testing-dex.{_NAMESPACE}.svc.cluster.local:5556/dex/keys"
             ),
             "OAUTH_FIXTURE_AUDIENCE": EnvValue.from_value("agentplane-testing-mcp"),
         },
-        ports=[ContainerPort(name="http", number=_OAUTH_FIXTURE_PORT, protocol=Protocol.TCP)],
-        readiness=Probe.from_tcp_socket(port=_OAUTH_FIXTURE_PORT, period_seconds=Duration.seconds(5)),
+        ports=[ContainerPort(name="http", number=OAUTH_FIXTURE_PORT, protocol=Protocol.TCP)],
+        readiness=Probe.from_tcp_socket(port=OAUTH_FIXTURE_PORT, period_seconds=Duration.seconds(5)),
         liveness=Probe.from_tcp_socket(
-            port=_OAUTH_FIXTURE_PORT, initial_delay_seconds=Duration.seconds(15), period_seconds=Duration.seconds(30)
+            port=OAUTH_FIXTURE_PORT, initial_delay_seconds=Duration.seconds(15), period_seconds=Duration.seconds(30)
         ),
         resources=ContainerResources(
             cpu=CpuResources(request=Cpu.millis(25), limit=Cpu.millis(250)),
@@ -196,10 +196,10 @@ def _add_oauth_fixture(scope: Construct) -> None:
     Service(
         scope,
         "oauth-fixture-service",
-        metadata=metadata(_OAUTH_FIXTURE_NAME, NAMESPACE),
+        metadata=metadata(OAUTH_FIXTURE_NAME, _NAMESPACE),
         selector=deployment,
         ports=[
-            ServicePort(name="http", port=_OAUTH_FIXTURE_PORT, target_port=_OAUTH_FIXTURE_PORT, protocol=Protocol.TCP)
+            ServicePort(name="http", port=OAUTH_FIXTURE_PORT, target_port=OAUTH_FIXTURE_PORT, protocol=Protocol.TCP)
         ],
     )
     # Cluster-internal only, no public route. The Action Service reaches it for
@@ -209,16 +209,16 @@ def _add_oauth_fixture(scope: Construct) -> None:
     cilium_helpers.network_policy(
         scope,
         "oauth-fixture-networkpolicy",
-        metadata=metadata(_OAUTH_FIXTURE_NAME, NAMESPACE),
+        metadata=metadata(OAUTH_FIXTURE_NAME, _NAMESPACE),
         selector=_OAUTH_FIXTURE_LABELS,
         ingress=[
             cilium_helpers.ingress_from(
-                cilium_helpers.endpoint_labels(NAMESPACE, "agentplane-actions"), ports=[_OAUTH_FIXTURE_PORT]
+                cilium_helpers.endpoint_labels(_NAMESPACE, "agentplane-actions"), ports=[OAUTH_FIXTURE_PORT]
             )
         ],
         egress=[
             cilium_helpers.dns_egress(l7=True),
-            cilium_helpers.egress_to(cilium_helpers.endpoint_labels(NAMESPACE, "agentplane-testing-dex"), 5556),
+            cilium_helpers.egress_to(cilium_helpers.endpoint_labels(_NAMESPACE, "agentplane-testing-dex"), 5556),
         ],
         egress_deny=cilium_helpers.deny_all_egress(),
     )

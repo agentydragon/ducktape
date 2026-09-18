@@ -10,8 +10,6 @@ reasoning this module doesn't repeat.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from cdk8s import ApiObjectMetadata
 from cnpg_cluster_crds.io.cnpg.postgresql import (
     Cluster,
@@ -54,6 +52,7 @@ from external_secrets_crds.io.external_secrets import (
 )
 
 from cluster.cdk8s.agentplane import node_scheduling
+from cluster.cdk8s.agentplane.environment import Environment
 
 _CLUSTER_NAME = "postgres"
 _IMAGE_NAME = "ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie"
@@ -86,17 +85,6 @@ _OFF_CONTROL_PLANE_NODE_AFFINITY = ClusterSpecAffinityNodeAffinity(
         )
     ]
 )
-
-
-@dataclass(frozen=True)
-class DbEnvSpec:
-    """Per-environment values for the shared Postgres Cluster."""
-
-    namespace: str
-    instances: int
-    # staging runs 2 instances with preferred pod anti-affinity spread across nodes;
-    # testing runs 1 and sets none of these three fields at all (not just false).
-    pod_anti_affinity: bool
 
 
 def _role_credentials(scope: Construct, id: str, *, role: str, namespace: str) -> None:
@@ -151,18 +139,18 @@ class Db(Construct):
     credentials for the actions/egress managed roles.
     """
 
-    def __init__(self, scope: Construct, id: str, spec: DbEnvSpec) -> None:
+    def __init__(self, scope: Construct, id: str, env: Environment) -> None:
         super().__init__(scope, id)
 
         for role in _ROLE_NAMES:
-            _role_credentials(self, f"role-credentials-{role}", role=role, namespace=spec.namespace)
+            _role_credentials(self, f"role-credentials-{role}", role=role, namespace=env.namespace)
 
         Cluster(
             self,
             "cluster",
-            metadata=ApiObjectMetadata(name=_CLUSTER_NAME, namespace=spec.namespace),
+            metadata=ApiObjectMetadata(name=_CLUSTER_NAME, namespace=env.namespace),
             spec=ClusterSpec(
-                instances=spec.instances,
+                instances=env.db.instances,
                 image_name=_IMAGE_NAME,
                 probes=ClusterSpecProbes(
                     liveness=ClusterSpecProbesLiveness(
@@ -170,9 +158,9 @@ class Db(Construct):
                     )
                 ),
                 affinity=ClusterSpecAffinity(
-                    enable_pod_anti_affinity=True if spec.pod_anti_affinity else None,
-                    pod_anti_affinity_type="preferred" if spec.pod_anti_affinity else None,
-                    topology_key="kubernetes.io/hostname" if spec.pod_anti_affinity else None,
+                    enable_pod_anti_affinity=True if env.db.pod_anti_affinity else None,
+                    pod_anti_affinity_type="preferred" if env.db.pod_anti_affinity else None,
+                    topology_key="kubernetes.io/hostname" if env.db.pod_anti_affinity else None,
                     node_selector={"topology.kubernetes.io/zone": node_scheduling.ZONE},
                     tolerations=[_CONTROL_PLANE_TOLERATION],
                     node_affinity=_OFF_CONTROL_PLANE_NODE_AFFINITY,
@@ -198,7 +186,7 @@ class Db(Construct):
             Database(
                 self,
                 f"database-{role}",
-                metadata=ApiObjectMetadata(name=role, namespace=spec.namespace),
+                metadata=ApiObjectMetadata(name=role, namespace=env.namespace),
                 spec=DatabaseSpec(
                     cluster=DatabaseSpecCluster(name=_CLUSTER_NAME),
                     name=role,

@@ -22,7 +22,6 @@ resourceName-scoped references (see AGENTS.md).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import cast
 
 import jsii
@@ -40,6 +39,7 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 
+from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.metadata import metadata
 
 
@@ -116,36 +116,27 @@ _ACTION_POLICY_RULE = RolePolicyRule(
 )
 
 
-@dataclass(frozen=True)
-class EnvSpec:
-    """Per-environment values for the namespace + operator RBAC."""
-
-    namespace: str
-    description: str
-    include_action_policy_rule: bool = False
-
-
 class NamespaceQuota(Construct):
     """Namespace, ResourceQuota, and LimitRange bounding what Sandbox runner Pods
     and the integration app may consume.
     """
 
-    def __init__(self, scope: Construct, id: str, spec: EnvSpec) -> None:
+    def __init__(self, scope: Construct, id: str, env: Environment) -> None:
         super().__init__(scope, id)
         Namespace(
             self,
             "namespace",
             metadata=ApiObjectMetadata(
-                name=spec.namespace,
+                name=env.namespace,
                 labels={
-                    "name": spec.namespace,
+                    "name": env.namespace,
                     # Runner Pods are Sandbox-owned, not Deployments; nothing here is VPA-managed.
                     "goldilocks.fairwinds.com/enabled": "false",
                     # Standing agent access to metadata and logs (Kyverno-generated bindings);
                     # write access lives in the operator Role below.
                     "rbac.ducktape.io/agent-readable-logs": "true",
                 },
-                annotations={"description": spec.description},
+                annotations={"description": env.description},
             ),
         )
         # Bounds what runner sandboxes take from the node: the app stamps a Sandbox
@@ -164,7 +155,7 @@ class NamespaceQuota(Construct):
         k8s.KubeResourceQuota(
             self,
             "resourcequota",
-            metadata=k8s.ObjectMeta(name=f"{spec.namespace}-quota", namespace=spec.namespace),
+            metadata=k8s.ObjectMeta(name=f"{env.namespace}-quota", namespace=env.namespace),
             spec=k8s.ResourceQuotaSpec(
                 hard={
                     "requests.cpu": k8s.Quantity.from_string("4"),
@@ -178,7 +169,7 @@ class NamespaceQuota(Construct):
         k8s.KubeLimitRange(
             self,
             "limitrange",
-            metadata=k8s.ObjectMeta(name=f"{spec.namespace}-limits", namespace=spec.namespace),
+            metadata=k8s.ObjectMeta(name=f"{env.namespace}-limits", namespace=env.namespace),
             spec=k8s.LimitRangeSpec(
                 limits=[
                     k8s.LimitRangeItem(
@@ -206,19 +197,19 @@ class AgentRbac(Construct):
     to call the app's own API.
     """
 
-    def __init__(self, scope: Construct, id: str, spec: EnvSpec) -> None:
+    def __init__(self, scope: Construct, id: str, env: Environment) -> None:
         super().__init__(scope, id)
         rules = list(_SANDBOX_RULES)
-        if spec.include_action_policy_rule:
+        if env.include_action_policy_rule:
             rules.append(_ACTION_POLICY_RULE)
         rules.append(_TOKEN_RULE)
 
-        Role(self, "role", metadata=metadata("agentplane-operator", spec.namespace), rules=rules)
+        Role(self, "role", metadata=metadata("agentplane-operator", env.namespace), rules=rules)
 
         RoleBinding(
             self,
             "rolebinding",
-            metadata=metadata("agent-agentplane-operator", spec.namespace),
+            metadata=metadata("agent-agentplane-operator", env.namespace),
             role=Role.from_role_name(self, "role-ref", "agentplane-operator"),
         ).add_subjects(
             # Haku and public-coder agent identities plus the interactive

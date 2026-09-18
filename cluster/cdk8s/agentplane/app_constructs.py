@@ -15,7 +15,6 @@ Component also covers these.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
 from typing import cast
 from urllib.parse import urlsplit
 
@@ -59,7 +58,6 @@ from cdk8s_plus_34 import (
     Cpu,
     CpuResources,
     Deployment,
-    DeploymentStrategy,
     EnvValue,
     IApiResource,
     ImagePullPolicy,
@@ -89,6 +87,7 @@ from cluster.cdk8s.agentplane import (
     llm_ingress_constructs,
     node_scheduling,
 )
+from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.forgejo_images import (
     SECRET_NAME,
@@ -146,55 +145,29 @@ def _custom(api_group: str, resource_type: str) -> IApiResource:
     return cast(IApiResource, ApiResource.custom(api_group=api_group, resource_type=resource_type))
 
 
-@dataclass(frozen=True)
-class AppEnvSpec:
-    """Per-environment values for the integration app and its runner SandboxTemplate."""
-
-    namespace: str
-    replicas: int
-    strategy: DeploymentStrategy
-    min_ready: Duration | None
-    # staging spreads its 2 replicas across nodes; testing's single replica has
-    # nothing to spread.
-    topology_spread: bool
-    pdb_min_available: int | None
-    hostname: str
-    oidc_issuer: str
-    # staging's OIDC provider is the in-cluster Authentik Service, reached both by its
-    # public hostname and directly; testing's Dex is reached only by its public
-    # hostname (both environments' egress rule to that public hostname is unconditional).
-    reach_incluster_authentik: bool
-    # staging pins runner Pods to be near the database/LiteLLM; testing has no pin.
-    runner_zone: str | None
-    # The interception CA ConfigMap the egress Bundle (Stage 3) publishes -- same
-    # asymmetric (unprefixed staging / namespace-prefixed testing) name threaded
-    # through EgressEnvSpec.ca_secret_name.
-    runner_ca_configmap_name: str
-
-
 class App(Construct):
     """ServiceAccounts, RBAC, Deployment (+ migrate initContainer), Service,
     HTTPRoute, NetworkPolicy, optional PodDisruptionBudget, and the runner
     SandboxTemplate.
     """
 
-    def __init__(self, scope: Construct, id: str, spec: AppEnvSpec) -> None:
+    def __init__(self, scope: Construct, id: str, env: Environment) -> None:
         super().__init__(scope, id)
-        self.spec = spec
+        self.env = env
 
-        forgejo_images_creds_external_secret(self, "forgejo-images-creds", namespace=spec.namespace)
+        forgejo_images_creds_external_secret(self, "forgejo-images-creds", namespace=env.namespace)
         app_service_account = self._add_service_accounts()
         self._add_rbac(app_service_account)
         deployment = self._add_deployment(app_service_account)
         self._add_service(deployment)
         self._add_http_route()
         self._add_network_policy()
-        if spec.pdb_min_available is not None:
-            self._add_pdb(spec.pdb_min_available)
+        if env.replicas.pdb_min_available is not None:
+            self._add_pdb(env.replicas.pdb_min_available)
         self._add_sandbox_template()
 
     def _add_service_accounts(self) -> ServiceAccount:
-        namespace = self.spec.namespace
+        namespace = self.env.namespace
         # The identity an agent presents to the app's own API -- no Pod runs as it, so
         # it needs no mounted token (see serviceaccount-agentplane-agent.yaml's own
         # comment, preserved in the generated file).
@@ -214,7 +187,7 @@ class App(Construct):
         return app_service_account
 
     def _add_rbac(self, app_service_account: ServiceAccount) -> None:
-        namespace = self.spec.namespace
+        namespace = self.env.namespace
         # TokenReview proves a Bearer token the app itself was handed. Creating a
         # review grants none of the reviewed identity's authority.
         token_reviewer_cluster_rbac(
@@ -270,7 +243,7 @@ class App(Construct):
         ).add_subjects(app_service_account)
 
     def _container_env(self) -> dict[str, EnvValue]:
-        namespace = self.spec.namespace
+        namespace = self.env.namespace
         action_federation = ConfigMap.from_config_map_name(
             self, "action-federation-config-ref", "agentplane-action-federation"
         )
@@ -289,8 +262,8 @@ class App(Construct):
                 "postgresql+asyncpg://$(AGENTPLANE_DB_USER):$(AGENTPLANE_DB_PASSWORD)"
                 "@$(AGENTPLANE_DB_HOST):$(AGENTPLANE_DB_PORT)/$(AGENTPLANE_DB_NAME)"
             ),
-            env_name(OIDCSettings, "issuer"): EnvValue.from_value(self.spec.oidc_issuer),
-            env_name(OIDCSettings, "public_base_url"): EnvValue.from_value(f"https://{self.spec.hostname}"),
+            env_name(OIDCSettings, "issuer"): EnvValue.from_value(self.env.app.oidc_issuer),
+            env_name(OIDCSettings, "public_base_url"): EnvValue.from_value(f"https://{self.env.app.hostname}"),
             env_name(OIDCSettings, "client_id"): EnvValue.from_secret_value(
                 SecretValue(secret=oidc_secret, key="client-id")
             ),
@@ -304,7 +277,7 @@ class App(Construct):
         }
 
     def _add_deployment(self, app_service_account: ServiceAccount) -> Deployment:
-        namespace = self.spec.namespace
+        namespace = self.env.namespace
         env = self._container_env()
         deployment = Deployment(
             self,
@@ -321,9 +294,9 @@ class App(Construct):
                 },
             ),
             pod_metadata=ApiObjectMetadata(labels=_LABELS),
-            replicas=self.spec.replicas,
-            strategy=self.spec.strategy,
-            min_ready=self.spec.min_ready,
+            replicas=self.env.replicas.count,
+            strategy=self.env.replicas.strategy,
+            min_ready=self.env.replicas.min_ready,
             # 5s HTTP/SSE drain (--shutdown-timeout), with room for the bridge's lease
             # release and the store's close.
             termination_grace_period=Duration.seconds(60),
@@ -371,25 +344,25 @@ class App(Construct):
         # new constraint. Unlike llm-ingress/egress, the app carries no control-plane
         # toleration.
         node_scheduling.attract_to_zone(deployment)
-        apply_pod_spec_patches(deployment, labels=_LABELS, topology_spread=self.spec.topology_spread)
+        apply_pod_spec_patches(deployment, labels=_LABELS, topology_spread=self.env.replicas.topology_spread)
         return deployment
 
     def _add_service(self, deployment: Deployment) -> None:
         Service(
             self,
             "service",
-            metadata=metadata(_NAME, self.spec.namespace, labels=_LABELS),
+            metadata=metadata(_NAME, self.env.namespace, labels=_LABELS),
             selector=deployment,
             ports=[ServicePort(name="http", port=_CONTAINER_PORT, target_port=_CONTAINER_PORT, protocol=Protocol.TCP)],
         )
 
     def _add_http_route(self) -> None:
-        namespace = self.spec.namespace
+        namespace = self.env.namespace
         https_route(
             self,
             "httproute",
             metadata=metadata(namespace, namespace),
-            hostname=self.spec.hostname,
+            hostname=self.env.app.hostname,
             backend=_NAME,
             port=_CONTAINER_PORT,
             # A session stream stays attached for as long as the tab is open.
@@ -397,17 +370,17 @@ class App(Construct):
         )
 
     def _oidc_egress_rules(self) -> list[CiliumNetworkPolicySpecEgress]:
-        server_name = urlsplit(self.spec.oidc_issuer).hostname
-        assert server_name is not None, f"OIDC issuer has no hostname: {self.spec.oidc_issuer!r}"
+        server_name = urlsplit(self.env.app.oidc_issuer).hostname
+        assert server_name is not None, f"OIDC issuer has no hostname: {self.env.app.oidc_issuer!r}"
         rules = [cilium_helpers.egress_via_gateway(server_name)]
-        if self.spec.reach_incluster_authentik:
+        if self.env.app.reach_incluster_authentik:
             rules.append(
                 cilium_helpers.egress_to(cilium_helpers.AUTHENTIK_SERVER_LABELS, 9000, server_names=[server_name])
             )
         return rules
 
     def _add_network_policy(self) -> None:
-        namespace = self.spec.namespace
+        namespace = self.env.namespace
         dns_egress = cilium_helpers.dns_egress()
         # Runner Pods reach DNS and the egress proxy's listener, which the sidecar
         # relays to; port 7000 is open only to Pods in this namespace.
@@ -458,7 +431,7 @@ class App(Construct):
         k8s.KubePodDisruptionBudget(
             self,
             "pdb",
-            metadata=k8s.ObjectMeta(name=_NAME, namespace=self.spec.namespace),
+            metadata=k8s.ObjectMeta(name=_NAME, namespace=self.env.namespace),
             spec=k8s.PodDisruptionBudgetSpec(
                 min_available=k8s.IntOrString.from_number(min_available),
                 selector=k8s.LabelSelector(match_labels=_LABELS),
@@ -467,7 +440,7 @@ class App(Construct):
 
     def _runner_container(self) -> SandboxTemplateSpecPodTemplateSpecContainers:
         litellm_url = (
-            f"http://agentplane-llm-ingress.{self.spec.namespace}"
+            f"http://agentplane-llm-ingress.{self.env.namespace}"
             f".svc.cluster.local:{llm_ingress_constructs.CONTAINER_PORT}"
         )
         # The environment a harness child starts from: a bare NAME takes the runner's
@@ -547,7 +520,7 @@ class App(Construct):
         )
 
     def _egress_sidecar_container(self) -> SandboxTemplateSpecPodTemplateSpecContainers:
-        namespace = self.spec.namespace
+        namespace = self.env.namespace
         return SandboxTemplateSpecPodTemplateSpecContainers(
             name="egress-sidecar",
             image=f"{_EGRESS_SIDECAR_IMAGE}:{_PLACEHOLDER_TAG}",
@@ -585,9 +558,9 @@ class App(Construct):
         )
 
     def _add_sandbox_template(self) -> None:
-        namespace = self.spec.namespace
+        namespace = self.env.namespace
         node_selector = (
-            {"topology.kubernetes.io/zone": self.spec.runner_zone} if self.spec.runner_zone is not None else None
+            {"topology.kubernetes.io/zone": self.env.app.runner_zone} if self.env.app.runner_zone is not None else None
         )
 
         SandboxTemplate(
@@ -622,7 +595,7 @@ class App(Construct):
                             SandboxTemplateSpecPodTemplateSpecVolumes(
                                 name=_EGRESS_CA_VOLUME_NAME,
                                 config_map=SandboxTemplateSpecPodTemplateSpecVolumesConfigMap(
-                                    name=self.spec.runner_ca_configmap_name
+                                    name=self.env.egress.ca_secret_name
                                 ),
                             ),
                             # The Pod's identity to the central proxy: a ServiceAccount
