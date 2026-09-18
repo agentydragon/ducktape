@@ -1,0 +1,10 @@
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  annotations:
+    description: Stateful infrastructure (databases, object storage, quorum members). Deprioritizes these pods for descheduler eviction and scheduler preemption without making them system-critical.
+  name: stateful-infra
+description: "Stateful infrastructure: defer eviction/preemption, not system-critical."
+globalDefault: false
+preemptionPolicy: PreemptLowerPriority
+value: 1000000

@@ -42,6 +42,8 @@ exports_files(
         "agentplane-testing/kustomization.yaml",
         "agents/haku-openclaw-spike/app/haku-openclaw-spike-config.k8s.yaml",
         "agents/public-coder-agent/app/public-coder-agent-config.k8s.yaml",
+        "descheduler/helmrelease.k8s.yaml",
+        "seaweedfs/cluster/priorityclass.k8s.yaml",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
 )
@@ -232,13 +234,8 @@ filegroup(
     visibility = ["//cluster/validation/kyverno:__pkg__"],
 )
 
-filegroup(
-    name = "descheduler_priority_threshold_files",
-    srcs = [
-        "descheduler/helmrelease.yaml",
-        "seaweedfs/cluster/priorityclass.yaml",
-        "seaweedfs/cluster/seaweed.yaml",
-    ],
+exports_files(
+    ["seaweedfs/cluster/seaweed.yaml"],
     visibility = ["//cluster/validation:__pkg__"],
 )
 
