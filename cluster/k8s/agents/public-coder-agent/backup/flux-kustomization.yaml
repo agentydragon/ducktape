@@ -22,6 +22,19 @@ spec:
     provider: sops
     secretRef:
       name: sops-age-cluster-secrets
+  healthChecks:
+    - apiVersion: seaweed.seaweedfs.com/v1
+      kind: Bucket
+      name: public-coder-agent-backups
+      namespace: public-coder-agent
+    - apiVersion: seaweed.seaweedfs.com/v1
+      kind: S3Credentials
+      name: public-coder-agent-backups
+      namespace: public-coder-agent
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      name: public-coder-agent-state-v2-restic
+      namespace: public-coder-agent
   dependsOn:
     - name: seaweedfs-public-coder-agent-backups-bucket
       namespace: ducktape-flux
