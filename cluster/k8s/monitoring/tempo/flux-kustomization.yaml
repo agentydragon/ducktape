@@ -18,6 +18,14 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   healthChecks:
+    - apiVersion: seaweed.seaweedfs.com/v1
+      kind: Bucket
+      name: tempo
+      namespace: monitoring
+    - apiVersion: seaweed.seaweedfs.com/v1
+      kind: S3Credentials
+      name: tempo
+      namespace: monitoring
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
       name: tempo

@@ -53,6 +53,10 @@ cluster/k8s/agentplane-testing/kustomization.yaml linguist-generated=true
 # kubeconform schemas of the Agentplane CRDs — `bb run //x/agentplane/crds:generate_bin`
 # output, pinned by //x/agentplane/crds:test_generate.
 cluster/schemas/**/*.json linguist-generated=true
+# `bb run //cluster/ssh_targets:generate_bin` output (cluster/ssh_targets/generate.py).
+cluster/k8s/ssh-mcp/known_hosts linguist-generated=true
+cluster/k8s/ssh-mcp/settings.yaml linguist-generated=true
+cluster/k8s/agents/public-coder-agent/sshpiper/pipe-devbox.yaml linguist-generated=true
 
 # Artifacts captured from live Claude Code containers — not our source code
 devinfra/claude/web_env/rootfs/** rules-lint-ignored=true

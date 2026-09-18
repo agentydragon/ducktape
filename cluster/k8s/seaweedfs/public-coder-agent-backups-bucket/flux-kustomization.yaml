@@ -17,8 +17,3 @@ spec:
       namespace: ducktape-flux
   wait: true
   timeout: 5m
-  healthChecks:
-    - apiVersion: seaweed.seaweedfs.com/v1
-      kind: Bucket
-      name: public-coder-agent-backups
-      namespace: seaweedfs
