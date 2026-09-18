@@ -13,7 +13,7 @@ py_library(
     name = "fake_apiserver",
     srcs = ["fake_apiserver.py"],
     deps = [
-        "//x/agentplane:crds",
+        "//x/agentplane:crd_group",
         "//x/agentplane/egress:resources",
         "//x/agentplane/workload_auth:principal",
         "@pypi//aiohttp",

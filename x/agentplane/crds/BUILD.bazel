@@ -7,11 +7,11 @@
 
 # Each *_crds module below is generated at build time by cdk8s_import, not a pip
 # package -- gazelle can't resolve it from the requirements manifest.
-# gazelle:resolve py agentplane_actionpolicyset_crds //third_party/agentplane_crds:actionpolicyset
-# gazelle:resolve py agentplane_actionpolicybinding_crds //third_party/agentplane_crds:actionpolicybinding
-# gazelle:resolve py agentplane_egresspolicy_crds //third_party/agentplane_crds:egresspolicy
-# gazelle:resolve py agentplane_egresscredential_crds //third_party/agentplane_crds:egresscredential
-# gazelle:resolve py agentplane_egressbinding_crds //third_party/agentplane_crds:egressbinding
+# gazelle:resolve py agentplane_actionpolicyset_crds //x/agentplane/crds:actionpolicyset
+# gazelle:resolve py agentplane_actionpolicybinding_crds //x/agentplane/crds:actionpolicybinding
+# gazelle:resolve py agentplane_egresspolicy_crds //x/agentplane/crds:egresspolicy
+# gazelle:resolve py agentplane_egresscredential_crds //x/agentplane/crds:egresscredential
+# gazelle:resolve py agentplane_egressbinding_crds //x/agentplane/crds:egressbinding
 
 load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
 

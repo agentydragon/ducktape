@@ -26,8 +26,8 @@ py_library(
 )
 
 py_library(
-    name = "crds",
-    srcs = ["crds.py"],
+    name = "crd_group",
+    srcs = ["crd_group.py"],
     # Also the cluster validation that reads the checked-in manifests by apiVersion.
     visibility = [
         "//cluster/validation:__pkg__",

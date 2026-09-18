@@ -50,7 +50,7 @@ from x.agentplane.action_service.service import ActionService, UnsupportedAction
 from x.agentplane.action_service.test_fixtures.callers import in_sync_index
 from x.agentplane.action_service.test_fixtures.lifecycle import wait_available
 from x.agentplane.action_service.updates import ActionUpdates
-from x.agentplane.crds import GROUP, VERSION
+from x.agentplane.crd_group import GROUP, VERSION
 from x.agentplane.kubernetes_watch import Freshness
 from x.agentplane.subjects import ServiceAccountRef
 from x.agentplane.testing.fake_apiserver import fake_apiserver

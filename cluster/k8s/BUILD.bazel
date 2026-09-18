@@ -107,7 +107,7 @@ exports_files(
     ],
     visibility = [
         "//cluster/validation:__pkg__",
-        "//third_party/agentplane_crds:__pkg__",
+        "//x/agentplane/crds:__pkg__",
     ],
 )
 

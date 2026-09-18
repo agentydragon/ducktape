@@ -40,7 +40,7 @@ from x.agentplane.action_service.policy_view import (
 from x.agentplane.app.action_federation import UpstreamFailure
 from x.agentplane.app.egress import FLUX_KUSTOMIZATION_LABEL
 from x.agentplane.app.inventory import SANDBOX_API, InventoryError, SandboxView
-from x.agentplane.crds import GROUP, VERSION
+from x.agentplane.crd_group import GROUP, VERSION
 from x.agentplane.subjects import ServiceAccountRef
 
 ACTION_POLICY_API = (GROUP, VERSION)

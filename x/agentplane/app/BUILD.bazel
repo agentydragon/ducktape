@@ -497,7 +497,7 @@ py_library(
     deps = [
         ":inventory",
         "//util:kubernetes",
-        "//x/agentplane:crds",
+        "//x/agentplane:crd_group",
         "//x/agentplane:subjects",
         "//x/agentplane/egress:resources",
         "@pypi//kubernetes_asyncio",
@@ -802,7 +802,7 @@ py_library(
         ":egress",
         ":inventory",
         "//util:kubernetes",
-        "//x/agentplane:crds",
+        "//x/agentplane:crd_group",
         "//x/agentplane:subjects",
         "//x/agentplane/action_service:client",
         "//x/agentplane/action_service:policy_view",

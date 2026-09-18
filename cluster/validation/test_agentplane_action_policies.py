@@ -18,7 +18,7 @@ import yaml
 
 from util.bazel.runfiles import get_required_path
 from x.agentplane.action_service.policies.resources import BindingSpec, PolicySetSpec
-from x.agentplane.crds import GROUP, VERSION
+from x.agentplane.crd_group import GROUP, VERSION
 
 _K8S_DIR = get_required_path("_main/cluster/k8s/kustomization.yaml").parent
 _DOCUMENTS = [

@@ -44,7 +44,7 @@ from x.agentplane.action_service.policies.resources import BINDINGS_PLURAL, POLI
 from x.agentplane.action_service.policy_evaluation import PROVIDER_NAME
 from x.agentplane.app.client import Client
 from x.agentplane.app.inventory import SandboxView
-from x.agentplane.crds import GROUP, VERSION
+from x.agentplane.crd_group import GROUP, VERSION
 from x.agentplane.runner import protocol_pb2
 
 # `protocol_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.

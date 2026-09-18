@@ -20,7 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from util.kubernetes import CustomObjectsClient
 from x.agentplane.app.inventory import InventoryError, SandboxView
-from x.agentplane.crds import GROUP, VERSION
+from x.agentplane.crd_group import GROUP, VERSION
 from x.agentplane.egress.resources import (
     EgressBinding,
     EgressCredential,
