@@ -22,7 +22,7 @@ spec:
     global:
       extraEnvFrom:
         - secretRef:
-            name: mimir-s3-credentials
+            name: mimir-seaweedfs-credentials
 
     minio:
       enabled: false
