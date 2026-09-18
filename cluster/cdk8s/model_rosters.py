@@ -292,3 +292,8 @@ GEMINI_MAX_OUTPUT_TOKENS = 65_536
 # supported but not automatic-by-default -- this tracks capability/product
 # positioning, not the literal default toggle.
 GEMINI_NON_REASONING_MODELS: frozenset[str] = frozenset({"gemini-3.5-flash-lite"})
+
+# The self-hosted Ollama embedding route (litellm_config.py's `_ollama_entries()`),
+# also referenced by public-coder-agent's OpenClaw memory-search config so its
+# embedding backend names the same route it's actually served on.
+OLLAMA_EMBEDDING_MODEL = "qwen3-embedding-4b"

@@ -9,6 +9,7 @@ from cluster.cdk8s.model_rosters import (
     GEMINI_MAX_OUTPUT_TOKENS,
     GEMINI_MODELS,
     GEMINI_NON_REASONING_MODELS,
+    OLLAMA_EMBEDDING_MODEL,
     OPENCLAW_CLIPROXY_MODEL_LIMITS,
     ApiShape,
     Provider,
@@ -97,7 +98,7 @@ def config() -> dict:
                 "provider": "openai-compatible",
                 # This is a new embedding identity; changing it deliberately requires a
                 # full rebuild of the durable index after the rollout.
-                "model": exposed_name(Provider.OLLAMA, ApiShape.OLM_EMBED, "qwen3-embedding-4b"),
+                "model": exposed_name(Provider.OLLAMA, ApiShape.OLM_EMBED, OLLAMA_EMBEDDING_MODEL),
                 "remote": {
                     "baseUrl": "http://litellm.litellm.svc.cluster.local:4000/v1",
                     "apiKey": "${OPENCLAW_LITELLM_API_KEY}",

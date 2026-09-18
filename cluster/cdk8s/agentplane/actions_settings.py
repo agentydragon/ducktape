@@ -6,6 +6,13 @@ the Deployment. Not related to app_settings.py, which is the integration app's o
 
 from __future__ import annotations
 
+from cluster.cdk8s.agentplane.actions_testing_fixtures import MCP_EVERYTHING_NAME, MCP_EVERYTHING_PORT, NAMESPACE
+
+# The push services staging's web-push subscriptions are allowed to target -- also fed
+# into generate_manifests.py's CiliumNetworkPolicy egress rule for the actions Deployment,
+# so the policy can't drift from what the app actually accepts.
+WEB_PUSH_ALLOWED_HOSTS = ("fcm.googleapis.com", "updates.push.services.mozilla.com")
+
 
 def staging_settings() -> dict:
     return {
@@ -13,7 +20,7 @@ def staging_settings() -> dict:
         "web_push": {
             "subject": "mailto:agentydragon@gmail.com",
             "public_base_url": "https://agentplane-staging.allegedly.works",
-            "allowed_push_hosts": ["fcm.googleapis.com", "updates.push.services.mozilla.com"],
+            "allowed_push_hosts": list(WEB_PUSH_ALLOWED_HOSTS),
         },
         "mcp_servers": {
             "github": {
@@ -102,7 +109,7 @@ def testing_settings() -> dict:
                     "description": "Community-built Everything image; no user account, workload token, or mounted credentials.",
                     "config": {
                         "transport": "streamable-http",
-                        "url": "http://agentplane-mcp-everything.agentplane-testing.svc.cluster.local:3001/mcp",
+                        "url": f"http://{MCP_EVERYTHING_NAME}.{NAMESPACE}.svc.cluster.local:{MCP_EVERYTHING_PORT}/mcp",
                         "auth": "none",
                     },
                 },

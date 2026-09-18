@@ -52,14 +52,14 @@ from constructs import Construct
 
 from cluster.cdk8s.metadata import metadata
 
-_NAMESPACE = "agentplane-testing"
+NAMESPACE = "agentplane-testing"
 
-_MCP_EVERYTHING_NAME = "agentplane-mcp-everything"
+MCP_EVERYTHING_NAME = "agentplane-mcp-everything"
 _MCP_EVERYTHING_IMAGE = (
     "docker.io/tzolov/mcp-everything-server@sha256:96c4aa07420dd2a8dee0315763a8ea27de72fd054483c781894f6280cd3f56e7"
 )
-_MCP_EVERYTHING_PORT = 3001
-_MCP_EVERYTHING_LABELS = {"app.kubernetes.io/name": _MCP_EVERYTHING_NAME}
+MCP_EVERYTHING_PORT = 3001
+_MCP_EVERYTHING_LABELS = {"app.kubernetes.io/name": MCP_EVERYTHING_NAME}
 
 _OAUTH_FIXTURE_NAME = "agentplane-oauth-fixture"
 _OAUTH_FIXTURE_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-oauth-fixture"
@@ -72,7 +72,7 @@ def _add_mcp_everything(scope: Construct) -> None:
     deployment = Deployment(
         scope,
         "mcp-everything-deployment",
-        metadata=metadata(_MCP_EVERYTHING_NAME, _NAMESPACE),
+        metadata=metadata(MCP_EVERYTHING_NAME, NAMESPACE),
         pod_metadata=ApiObjectMetadata(labels=_MCP_EVERYTHING_LABELS),
         replicas=1,
         strategy=DeploymentStrategy.recreate(),
@@ -82,10 +82,10 @@ def _add_mcp_everything(scope: Construct) -> None:
         name="fixture",
         image=_MCP_EVERYTHING_IMAGE,
         command=["node", "dist/index.js", "streamableHttp"],
-        ports=[ContainerPort(name="http", number=_MCP_EVERYTHING_PORT, protocol=Protocol.TCP)],
-        readiness=Probe.from_tcp_socket(port=_MCP_EVERYTHING_PORT, period_seconds=Duration.seconds(5)),
+        ports=[ContainerPort(name="http", number=MCP_EVERYTHING_PORT, protocol=Protocol.TCP)],
+        readiness=Probe.from_tcp_socket(port=MCP_EVERYTHING_PORT, period_seconds=Duration.seconds(5)),
         liveness=Probe.from_tcp_socket(
-            port=_MCP_EVERYTHING_PORT, initial_delay_seconds=Duration.seconds(20), period_seconds=Duration.seconds(30)
+            port=MCP_EVERYTHING_PORT, initial_delay_seconds=Duration.seconds(20), period_seconds=Duration.seconds(30)
         ),
         resources=ContainerResources(
             cpu=CpuResources(request=Cpu.millis(25), limit=Cpu.millis(250)),
@@ -114,10 +114,10 @@ def _add_mcp_everything(scope: Construct) -> None:
     Service(
         scope,
         "mcp-everything-service",
-        metadata=metadata(_MCP_EVERYTHING_NAME, _NAMESPACE),
+        metadata=metadata(MCP_EVERYTHING_NAME, NAMESPACE),
         selector=deployment,
         ports=[
-            ServicePort(name="http", port=_MCP_EVERYTHING_PORT, target_port=_MCP_EVERYTHING_PORT, protocol=Protocol.TCP)
+            ServicePort(name="http", port=MCP_EVERYTHING_PORT, target_port=MCP_EVERYTHING_PORT, protocol=Protocol.TCP)
         ],
     )
     # Only the testing control-plane callers may reach this no-auth upstream reference
@@ -125,7 +125,7 @@ def _add_mcp_everything(scope: Construct) -> None:
     CiliumNetworkPolicy(
         scope,
         "mcp-everything-networkpolicy",
-        metadata=metadata(_MCP_EVERYTHING_NAME, _NAMESPACE),
+        metadata=metadata(MCP_EVERYTHING_NAME, NAMESPACE),
         spec=CiliumNetworkPolicySpec(
             endpoint_selector=CiliumNetworkPolicySpecEndpointSelector(match_labels=_MCP_EVERYTHING_LABELS),
             ingress=[
@@ -133,13 +133,13 @@ def _add_mcp_everything(scope: Construct) -> None:
                     from_endpoints=[
                         CiliumNetworkPolicySpecIngressFromEndpoints(
                             match_labels={
-                                "k8s:io.kubernetes.pod.namespace": _NAMESPACE,
+                                "k8s:io.kubernetes.pod.namespace": NAMESPACE,
                                 "app.kubernetes.io/name": "agentplane-app",
                             }
                         ),
                         CiliumNetworkPolicySpecIngressFromEndpoints(
                             match_labels={
-                                "k8s:io.kubernetes.pod.namespace": _NAMESPACE,
+                                "k8s:io.kubernetes.pod.namespace": NAMESPACE,
                                 "app.kubernetes.io/name": "agentplane-actions",
                             }
                         ),
@@ -148,7 +148,7 @@ def _add_mcp_everything(scope: Construct) -> None:
                         CiliumNetworkPolicySpecIngressToPorts(
                             ports=[
                                 CiliumNetworkPolicySpecIngressToPortsPorts(
-                                    port=str(_MCP_EVERYTHING_PORT),
+                                    port=str(MCP_EVERYTHING_PORT),
                                     protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP,
                                 )
                             ]
@@ -165,7 +165,7 @@ def _add_mcp_everything(scope: Construct) -> None:
     CiliumNetworkPolicy(
         scope,
         "mcp-everything-callers-networkpolicy",
-        metadata=metadata(f"{_MCP_EVERYTHING_NAME}-callers", _NAMESPACE),
+        metadata=metadata(f"{MCP_EVERYTHING_NAME}-callers", NAMESPACE),
         spec=CiliumNetworkPolicySpec(
             endpoint_selector=CiliumNetworkPolicySpecEndpointSelector(
                 match_expressions=[
@@ -181,8 +181,8 @@ def _add_mcp_everything(scope: Construct) -> None:
                     to_endpoints=[
                         CiliumNetworkPolicySpecEgressToEndpoints(
                             match_labels={
-                                "k8s:io.kubernetes.pod.namespace": _NAMESPACE,
-                                "app.kubernetes.io/name": _MCP_EVERYTHING_NAME,
+                                "k8s:io.kubernetes.pod.namespace": NAMESPACE,
+                                "app.kubernetes.io/name": MCP_EVERYTHING_NAME,
                             }
                         )
                     ],
@@ -190,7 +190,7 @@ def _add_mcp_everything(scope: Construct) -> None:
                         CiliumNetworkPolicySpecEgressToPorts(
                             ports=[
                                 CiliumNetworkPolicySpecEgressToPortsPorts(
-                                    port=str(_MCP_EVERYTHING_PORT),
+                                    port=str(MCP_EVERYTHING_PORT),
                                     protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP,
                                 )
                             ]
@@ -208,7 +208,7 @@ def _add_oauth_fixture(scope: Construct) -> None:
         "oauth-fixture-deployment",
         metadata=metadata(
             _OAUTH_FIXTURE_NAME,
-            _NAMESPACE,
+            NAMESPACE,
             annotations={
                 "description": "Dex-backed OAuth-protected MCP server for acceptance-testing MCP OAuth linkage; the fixture verifies Dex JWTs locally and has no credentials."
             },
@@ -229,13 +229,13 @@ def _add_oauth_fixture(scope: Construct) -> None:
             # advertised to clients, while the fixture fetches signing keys over the
             # internal Dex Service.
             "OAUTH_FIXTURE_BASE_URL": EnvValue.from_value(
-                f"http://{_OAUTH_FIXTURE_NAME}.{_NAMESPACE}.svc.cluster.local:{_OAUTH_FIXTURE_PORT}"
+                f"http://{_OAUTH_FIXTURE_NAME}.{NAMESPACE}.svc.cluster.local:{_OAUTH_FIXTURE_PORT}"
             ),
             "OAUTH_FIXTURE_AUTHORIZATION_SERVER": EnvValue.from_value(
                 "https://agentplane-dex-testing.allegedly.works/dex"
             ),
             "OAUTH_FIXTURE_JWKS_URI": EnvValue.from_value(
-                f"http://agentplane-testing-dex.{_NAMESPACE}.svc.cluster.local:5556/dex/keys"
+                f"http://agentplane-testing-dex.{NAMESPACE}.svc.cluster.local:5556/dex/keys"
             ),
             "OAUTH_FIXTURE_AUDIENCE": EnvValue.from_value("agentplane-testing-mcp"),
         },
@@ -269,7 +269,7 @@ def _add_oauth_fixture(scope: Construct) -> None:
     Service(
         scope,
         "oauth-fixture-service",
-        metadata=metadata(_OAUTH_FIXTURE_NAME, _NAMESPACE),
+        metadata=metadata(_OAUTH_FIXTURE_NAME, NAMESPACE),
         selector=deployment,
         ports=[
             ServicePort(name="http", port=_OAUTH_FIXTURE_PORT, target_port=_OAUTH_FIXTURE_PORT, protocol=Protocol.TCP)
@@ -281,7 +281,7 @@ def _add_oauth_fixture(scope: Construct) -> None:
     CiliumNetworkPolicy(
         scope,
         "oauth-fixture-networkpolicy",
-        metadata=metadata(_OAUTH_FIXTURE_NAME, _NAMESPACE),
+        metadata=metadata(_OAUTH_FIXTURE_NAME, NAMESPACE),
         spec=CiliumNetworkPolicySpec(
             endpoint_selector=CiliumNetworkPolicySpecEndpointSelector(match_labels=_OAUTH_FIXTURE_LABELS),
             ingress=[
@@ -289,7 +289,7 @@ def _add_oauth_fixture(scope: Construct) -> None:
                     from_endpoints=[
                         CiliumNetworkPolicySpecIngressFromEndpoints(
                             match_labels={
-                                "k8s:io.kubernetes.pod.namespace": _NAMESPACE,
+                                "k8s:io.kubernetes.pod.namespace": NAMESPACE,
                                 "app.kubernetes.io/name": "agentplane-actions",
                             }
                         )
@@ -333,7 +333,7 @@ def _add_oauth_fixture(scope: Construct) -> None:
                     to_endpoints=[
                         CiliumNetworkPolicySpecEgressToEndpoints(
                             match_labels={
-                                "k8s:io.kubernetes.pod.namespace": _NAMESPACE,
+                                "k8s:io.kubernetes.pod.namespace": NAMESPACE,
                                 "app.kubernetes.io/name": "agentplane-testing-dex",
                             }
                         )

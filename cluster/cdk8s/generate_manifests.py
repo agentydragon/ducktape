@@ -179,8 +179,7 @@ _AGENTPLANE_TESTING_OPERATOR_OIDC = {
 _AGENTPLANE_STAGING_ACTIONS_EXTRA_EGRESS = [
     CiliumNetworkPolicySpecEgress(
         to_fqd_ns=[
-            CiliumNetworkPolicySpecEgressToFqdNs(match_name=host)
-            for host in ("fcm.googleapis.com", "updates.push.services.mozilla.com")
+            CiliumNetworkPolicySpecEgressToFqdNs(match_name=host) for host in actions_settings.WEB_PUSH_ALLOWED_HOSTS
         ],
         to_ports=[
             CiliumNetworkPolicySpecEgressToPorts(
@@ -189,7 +188,7 @@ _AGENTPLANE_STAGING_ACTIONS_EXTRA_EGRESS = [
                         port="443", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
                     )
                 ],
-                server_names=["fcm.googleapis.com", "updates.push.services.mozilla.com"],
+                server_names=list(actions_settings.WEB_PUSH_ALLOWED_HOSTS),
             )
         ],
     ),

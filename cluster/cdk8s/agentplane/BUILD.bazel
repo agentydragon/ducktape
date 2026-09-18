@@ -106,6 +106,7 @@ py_library(
 py_library(
     name = "actions_settings",
     srcs = ["actions_settings.py"],
+    deps = [":actions_testing_fixtures"],
 )
 
 py_library(
