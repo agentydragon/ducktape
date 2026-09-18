@@ -38,7 +38,7 @@ VICTIM_DIR="$TEST_SRCDIR/_main/skills/reverse_engineer/cmd/garble_target"
 for f in "$VICTIM_DIR"/*.go; do
   cp "$f" "$SRCDIR/"
 done
-printf 'module garble_target\ngo 1.26.0\n' >"$SRCDIR/go.mod"
+printf 'module garble_target\ngo 1.27.1\n' >"$SRCDIR/go.mod"
 
 export GOCACHE="$TEST_TMPDIR/.gocache"
 export GOPATH="$TEST_TMPDIR/.gopath"
