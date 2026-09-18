@@ -14,16 +14,29 @@ from x.agentplane.egress.resources import EgressPolicy
 
 @pytest.fixture
 def manifests() -> dict[str, Any]:
-    return {
-        name: yaml.safe_load(get_required_path(f"_main/cluster/k8s/agentplane-staging/{path}").read_text())
-        for name, path in {
-            "route": "actions/httproute.yaml",
-            "service": "actions/service.yaml",
-            "deployment": "actions/deployment.yaml",
-            "policy": "egress/egresspolicy-basic.yaml",
-            "credential": "egress/egresscredential-agentplane-workload.yaml",
-        }.items()
+    actions_documents = list(
+        yaml.safe_load_all(
+            get_required_path("_main/cluster/k8s/agentplane-staging/actions/agentplane-actions.k8s.yaml").read_text()
+        )
+    )
+    result = {
+        name: one(doc for doc in actions_documents if doc["kind"] == kind)
+        for name, kind in {"route": "HTTPRoute", "service": "Service", "deployment": "Deployment"}.items()
     }
+    egress_documents = list(
+        yaml.safe_load_all(
+            get_required_path("_main/cluster/k8s/agentplane-staging/egress/agentplane-egress.k8s.yaml").read_text()
+        )
+    )
+    result["policy"] = one(
+        doc for doc in egress_documents if doc["kind"] == "EgressPolicy" and doc["metadata"]["name"] == "basic"
+    )
+    result["credential"] = one(
+        doc
+        for doc in egress_documents
+        if doc["kind"] == "EgressCredential" and doc["metadata"]["name"] == "agentplane-workload"
+    )
+    return result
 
 
 def test_public_route_exposes_protocol_paths_without_private_api(manifests: dict[str, Any]) -> None:

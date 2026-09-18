@@ -10,6 +10,7 @@ import httpx
 import pytest
 import yaml
 from fastmcp import FastMCP
+from more_itertools import one
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine
 from testcontainers.core.container import DockerContainer
@@ -71,8 +72,13 @@ def echo_catalog() -> ActionCatalog:
 
 @pytest.fixture
 def everything_url() -> Iterator[str]:
-    deployment = yaml.safe_load(
-        get_required_path("_main/cluster/k8s/agentplane-testing/actions/mcp-everything-deployment.yaml").read_text()
+    documents = yaml.safe_load_all(
+        get_required_path("_main/cluster/k8s/agentplane-testing/actions/agentplane-actions.k8s.yaml").read_text()
+    )
+    deployment = one(
+        doc
+        for doc in documents
+        if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "agentplane-mcp-everything"
     )
     container_spec = deployment["spec"]["template"]["spec"]["containers"][0]
     with (

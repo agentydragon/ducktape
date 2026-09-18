@@ -8,15 +8,14 @@ import yaml
 from more_itertools import one
 
 
-def manifest(root: Path, path: str) -> dict[str, Any]:
-    document = yaml.safe_load((root / path).read_text())
-    assert isinstance(document, dict)
-    return document
+def app_object(root: Path, kind: str, name: str | None = None) -> dict[str, Any]:
+    documents = yaml.safe_load_all((root / "app/agentplane-app.k8s.yaml").read_text())
+    return one(doc for doc in documents if doc["kind"] == kind and (name is None or doc["metadata"]["name"] == name))
 
 
 def test_agentplane_app_can_list_the_sandbox_templates_its_route_offers(k8s_dir: Path) -> None:
     for namespace in ("agentplane-staging", "agentplane-testing"):
-        role = manifest(k8s_dir / namespace, "app/role-agentplane-app.yaml")
+        role = app_object(k8s_dir / namespace, "Role", "agentplane-app")
         template_rule = one(
             rule
             for rule in role["rules"]

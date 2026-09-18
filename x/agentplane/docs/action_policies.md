@@ -78,10 +78,11 @@ with the message in its status, so a bad runtime edit is visible in `kubectl get
 
 ## Example
 
-Staging's Git-owned half is `actionpolicyset-github-reads.yaml`, `serviceaccount-claude-ai.yaml`
-and `actionpolicybinding-claude-ai-github-reads.yaml` under
-`cluster/k8s/agentplane-staging/actions/`. The runtime half, for a Sandbox `coder-7f3a` launched
-from a preset naming `github-reads`:
+Staging's Git-owned half is the `github-reads` `ActionPolicySet`, the `claude-ai`
+`ServiceAccount`, and the `claude-ai-github-reads` `ActionPolicyBinding`, defined in
+`cluster/cdk8s/agentplane_actions_staging_policies.py` and generated into
+`cluster/k8s/agentplane-staging/actions/agentplane-actions.k8s.yaml`. The runtime half,
+for a Sandbox `coder-7f3a` launched from a preset naming `github-reads`:
 
 ```yaml
 # Written by the integration app at launch.

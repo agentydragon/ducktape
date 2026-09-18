@@ -29,7 +29,7 @@ let
   # recognizes, so without maxContextTokens it assumes a 200k window and auto-compacts against
   # it — clipping a larger real window or (for Gemini's ~1M) discarding most of it. Set
   # maxContextTokens to the model's real window so compaction math is correct; the value's SSOT
-  # is cluster/k8s/litellm/app/model_rosters.py (CODEX_CONTEXT_WINDOW / GEMINI_CONTEXT_WINDOW) —
+  # is cluster/cdk8s/model_rosters.py (CODEX_CONTEXT_WINDOW / GEMINI_CONTEXT_WINDOW) —
   # keep them in sync. maxOutputTokens caps output below the model's real max.
   #
   # gatewayDiscovery and the `[1m]` suffix convention (see litellm-claude.nix) don't compose.

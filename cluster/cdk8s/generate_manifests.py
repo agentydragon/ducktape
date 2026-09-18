@@ -8,9 +8,20 @@ marker and overrides the real tag at `kustomize build` time. See
 cluster/docs/cdk8s.md.
 """
 
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from cdk8s import App, Chart, Yaml
+from cdk8s_plus_34 import ConfigMap
+from cilium_crds.io.cilium import (
+    CiliumNetworkPolicySpecEgress,
+    CiliumNetworkPolicySpecEgressToEndpoints,
+    CiliumNetworkPolicySpecEgressToEntities,
+    CiliumNetworkPolicySpecEgressToFqdNs,
+    CiliumNetworkPolicySpecEgressToPorts,
+    CiliumNetworkPolicySpecEgressToPortsPorts,
+    CiliumNetworkPolicySpecEgressToPortsPortsProtocol,
+)
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpec,
     KustomizationSpecDecryption,
@@ -22,13 +33,363 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRefKind,
 )
 
+from cluster.cdk8s import (
+    agentplane_actions_settings,
+    agentplane_replica_profile,
+    agentplane_staging_config,
+    agentplane_testing_config,
+    haku_openclaw_spike_config,
+    public_coder_agent_config,
+)
+from cluster.cdk8s.agentplane_actions_constructs import AgentplaneActions, AgentplaneActionsEnvSpec
+from cluster.cdk8s.agentplane_actions_staging_policies import add_staging_action_policies
+from cluster.cdk8s.agentplane_actions_testing_fixtures import add_testing_fixtures
+from cluster.cdk8s.agentplane_app_constructs import AgentplaneApp, AgentplaneAppEnvSpec
+from cluster.cdk8s.agentplane_constructs import AgentplaneAgentRbac, AgentplaneEnvSpec, AgentplaneNamespace
+from cluster.cdk8s.agentplane_db_constructs import AgentplaneDb, AgentplaneDbEnvSpec
+from cluster.cdk8s.agentplane_dex_constructs import AgentplaneDex
+from cluster.cdk8s.agentplane_egress_constructs import AgentplaneEgress, AgentplaneEgressEnvSpec
+from cluster.cdk8s.agentplane_llm_ingress_constructs import AgentplaneLlmIngress, AgentplaneLlmIngressEnvSpec
+from cluster.cdk8s.config_format import json5_config, yaml_config
 from cluster.cdk8s.flux_constructs import NAMESPACE, flux_kustomization, kustomize_kustomization
 from cluster.cdk8s.ha_mcp_constructs import HaMcp
 from cluster.cdk8s.litellm_constructs import LiteLLMProxy, LiteLLMServiceMonitor, proxy_specs
+from cluster.cdk8s.metadata import metadata
 from util.bazel.workspace import get_build_workspace_directory
 
 _LITELLM_APP_DIR = "cluster/k8s/litellm/app"
 _HA_MCP_DIR = "cluster/k8s/agents/ha-mcp/app"
+_AGENTPLANE_TESTING_DIR = "cluster/k8s/agentplane-testing"
+_AGENTPLANE_STAGING_DIR = "cluster/k8s/agentplane-staging"
+_AGENTPLANE_TESTING_APP_DIR = f"{_AGENTPLANE_TESTING_DIR}/app"
+_AGENTPLANE_STAGING_APP_DIR = f"{_AGENTPLANE_STAGING_DIR}/app"
+_AGENTPLANE_TESTING_DB_DIR = f"{_AGENTPLANE_TESTING_DIR}/db"
+_AGENTPLANE_STAGING_DB_DIR = f"{_AGENTPLANE_STAGING_DIR}/db"
+_AGENTPLANE_TESTING_LLM_INGRESS_DIR = f"{_AGENTPLANE_TESTING_DIR}/llm-ingress"
+_AGENTPLANE_STAGING_LLM_INGRESS_DIR = f"{_AGENTPLANE_STAGING_DIR}/llm-ingress"
+_AGENTPLANE_TESTING_EGRESS_DIR = f"{_AGENTPLANE_TESTING_DIR}/egress"
+_AGENTPLANE_STAGING_EGRESS_DIR = f"{_AGENTPLANE_STAGING_DIR}/egress"
+_AGENTPLANE_TESTING_ACTIONS_DIR = f"{_AGENTPLANE_TESTING_DIR}/actions"
+_AGENTPLANE_STAGING_ACTIONS_DIR = f"{_AGENTPLANE_STAGING_DIR}/actions"
+_AGENTPLANE_TESTING_DEX_DIR = f"{_AGENTPLANE_TESTING_DIR}/dex"
+
+_AGENTPLANE_STAGING_SPEC = AgentplaneEnvSpec(
+    namespace="agentplane-staging",
+    description=(
+        "Agentplane staging - sandboxed runner Pods (one per Sandbox) and the integration app that drives them."
+    ),
+)
+_AGENTPLANE_TESTING_SPEC = AgentplaneEnvSpec(
+    namespace="agentplane-testing",
+    description=(
+        "Agentplane testing - sandboxed runner Pods (one per Sandbox) and the integration app that drives them."
+    ),
+    include_action_policy_rule=True,
+)
+_AGENTPLANE_STAGING_DB_SPEC = AgentplaneDbEnvSpec(namespace="agentplane-staging", instances=2, pod_anti_affinity=True)
+_AGENTPLANE_TESTING_DB_SPEC = AgentplaneDbEnvSpec(namespace="agentplane-testing", instances=1, pod_anti_affinity=False)
+_STAGING_REPLICAS = agentplane_replica_profile.STAGING
+_TESTING_REPLICAS = agentplane_replica_profile.TESTING
+_AGENTPLANE_STAGING_LLM_INGRESS_SPEC = AgentplaneLlmIngressEnvSpec(
+    namespace="agentplane-staging",
+    replicas=_STAGING_REPLICAS.replicas,
+    strategy=_STAGING_REPLICAS.strategy,
+    topology_spread=_STAGING_REPLICAS.topology_spread,
+    litellm_key_secret_name="litellm-key-agentplane-staging",
+)
+_AGENTPLANE_TESTING_LLM_INGRESS_SPEC = AgentplaneLlmIngressEnvSpec(
+    namespace="agentplane-testing",
+    replicas=_TESTING_REPLICAS.replicas,
+    strategy=_TESTING_REPLICAS.strategy,
+    topology_spread=_TESTING_REPLICAS.topology_spread,
+    litellm_key_secret_name="litellm-key-cheap-experiments",
+)
+_AGENTPLANE_STAGING_EGRESS_SPEC = AgentplaneEgressEnvSpec(
+    namespace="agentplane-staging",
+    ca_secret_name="agentplane-egress-ca",
+    replicas=_STAGING_REPLICAS.replicas,
+    strategy=_STAGING_REPLICAS.strategy,
+    min_ready_seconds=_STAGING_REPLICAS.min_ready_seconds,
+    topology_spread=_STAGING_REPLICAS.topology_spread,
+    enable_pdb=True,
+)
+_AGENTPLANE_TESTING_EGRESS_SPEC = AgentplaneEgressEnvSpec(
+    namespace="agentplane-testing",
+    ca_secret_name="agentplane-testing-egress-ca",
+    replicas=_TESTING_REPLICAS.replicas,
+    strategy=_TESTING_REPLICAS.strategy,
+    min_ready_seconds=_TESTING_REPLICAS.min_ready_seconds,
+    topology_spread=_TESTING_REPLICAS.topology_spread,
+    enable_pdb=False,
+)
+_AGENTPLANE_STAGING_APP_SPEC = AgentplaneAppEnvSpec(
+    namespace="agentplane-staging",
+    replicas=_STAGING_REPLICAS.replicas,
+    strategy=_STAGING_REPLICAS.strategy,
+    min_ready_seconds=_STAGING_REPLICAS.min_ready_seconds,
+    topology_spread=_STAGING_REPLICAS.topology_spread,
+    enable_pdb=True,
+    hostname="agentplane-staging.allegedly.works",
+    oidc_issuer="https://auth.allegedly.works/application/o/agentplane/",
+    reach_incluster_authentik=True,
+    runner_zone="hil-ovh",
+    runner_ca_configmap_name=_AGENTPLANE_STAGING_EGRESS_SPEC.ca_secret_name,
+)
+_AGENTPLANE_TESTING_APP_SPEC = AgentplaneAppEnvSpec(
+    namespace="agentplane-testing",
+    replicas=_TESTING_REPLICAS.replicas,
+    strategy=_TESTING_REPLICAS.strategy,
+    min_ready_seconds=_TESTING_REPLICAS.min_ready_seconds,
+    topology_spread=_TESTING_REPLICAS.topology_spread,
+    enable_pdb=False,
+    hostname="agentplane-testing.allegedly.works",
+    oidc_issuer="https://agentplane-dex-testing.allegedly.works/dex",
+    reach_incluster_authentik=False,
+    runner_zone=None,
+    runner_ca_configmap_name=_AGENTPLANE_TESTING_EGRESS_SPEC.ca_secret_name,
+)
+_AGENTPLANE_STAGING_ACTION_FEDERATION = {
+    "mode": "exchange",
+    "service_url": "http://agentplane-actions.agentplane-staging.svc.cluster.local:8080",
+    "token_endpoint": "https://auth.allegedly.works/application/o/token/",
+    "login_jwks_uri": "https://auth.allegedly.works/application/o/agentplane/jwks/",
+    "target": {
+        "issuer": "https://auth.allegedly.works/application/o/agentplane-actions/",
+        "audience": "agentplane-actions",
+        "jwks_uri": "https://auth.allegedly.works/application/o/agentplane-actions/jwks/",
+    },
+    "scope": "openid",
+}
+_AGENTPLANE_STAGING_OPERATOR_OIDC = {
+    "issuer": "https://auth.allegedly.works/application/o/agentplane-actions/",
+    "audience": "agentplane-actions",
+    "jwks_uri": "https://auth.allegedly.works/application/o/agentplane-actions/jwks/",
+}
+_AGENTPLANE_TESTING_ACTION_FEDERATION = {
+    "mode": "direct",
+    "service_url": "http://agentplane-actions.agentplane-testing.svc.cluster.local:8080",
+    "login_jwks_uri": "https://agentplane-dex-testing.allegedly.works/dex/keys",
+    "login_token_profile": "dex",
+    "target": {
+        "issuer": "https://agentplane-dex-testing.allegedly.works/dex",
+        "audience": "agentplane-testing",
+        "jwks_uri": "https://agentplane-dex-testing.allegedly.works/dex/keys",
+        "token_profile": "dex",
+    },
+    "scope": "openid",
+}
+_AGENTPLANE_TESTING_OPERATOR_OIDC = {
+    "issuer": "https://agentplane-dex-testing.allegedly.works/dex",
+    "audience": "agentplane-testing",
+    "jwks_uri": "https://agentplane-dex-testing.allegedly.works/dex/keys",
+    "token_profile": "dex",
+}
+_AGENTPLANE_STAGING_ACTIONS_EXTRA_EGRESS = [
+    CiliumNetworkPolicySpecEgress(
+        to_fqd_ns=[
+            CiliumNetworkPolicySpecEgressToFqdNs(match_name=host)
+            for host in ("fcm.googleapis.com", "updates.push.services.mozilla.com")
+        ],
+        to_ports=[
+            CiliumNetworkPolicySpecEgressToPorts(
+                ports=[
+                    CiliumNetworkPolicySpecEgressToPortsPorts(
+                        port="443", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
+                    )
+                ],
+                server_names=["fcm.googleapis.com", "updates.push.services.mozilla.com"],
+            )
+        ],
+    ),
+    CiliumNetworkPolicySpecEgress(
+        to_endpoints=[
+            CiliumNetworkPolicySpecEgressToEndpoints(
+                match_labels={"k8s:io.kubernetes.pod.namespace": "ssh-mcp", "app.kubernetes.io/name": "ssh-mcp"}
+            )
+        ],
+        to_ports=[
+            CiliumNetworkPolicySpecEgressToPorts(
+                ports=[
+                    CiliumNetworkPolicySpecEgressToPortsPorts(
+                        port="8080", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
+                    )
+                ]
+            )
+        ],
+    ),
+    # Same public-origin Gateway path as the BFF: only Authentik SNI on node:443. The
+    # resolver fetches /application/o/agentplane-actions/jwks/ over HTTPS.
+    CiliumNetworkPolicySpecEgress(
+        to_entities=[
+            CiliumNetworkPolicySpecEgressToEntities.REMOTE_HYPHEN_NODE,
+            CiliumNetworkPolicySpecEgressToEntities.HOST,
+        ],
+        to_ports=[
+            CiliumNetworkPolicySpecEgressToPorts(
+                ports=[
+                    CiliumNetworkPolicySpecEgressToPortsPorts(
+                        port="443", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
+                    )
+                ],
+                server_names=["auth.allegedly.works"],
+            )
+        ],
+    ),
+    # GitHub MCP discovery advertises github.com as its OAuth authorization server.
+    CiliumNetworkPolicySpecEgress(
+        to_fqd_ns=[
+            CiliumNetworkPolicySpecEgressToFqdNs(match_name=host) for host in ("api.githubcopilot.com", "github.com")
+        ],
+        to_ports=[
+            CiliumNetworkPolicySpecEgressToPorts(
+                ports=[
+                    CiliumNetworkPolicySpecEgressToPortsPorts(
+                        port="443", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
+                    )
+                ],
+                server_names=["api.githubcopilot.com", "github.com"],
+            )
+        ],
+    ),
+    # `github_public_repository` policies confirm a repository is public with an
+    # unauthenticated GitHub REST call (github_policy/visibility.py); no credential
+    # rides this path.
+    CiliumNetworkPolicySpecEgress(
+        to_fqd_ns=[CiliumNetworkPolicySpecEgressToFqdNs(match_name="api.github.com")],
+        to_ports=[
+            CiliumNetworkPolicySpecEgressToPorts(
+                ports=[
+                    CiliumNetworkPolicySpecEgressToPortsPorts(
+                        port="443", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
+                    )
+                ],
+                server_names=["api.github.com"],
+            )
+        ],
+    ),
+    # The Kubernetes MCP server uses the public Gateway/remote-node path.
+    CiliumNetworkPolicySpecEgress(
+        to_entities=[
+            CiliumNetworkPolicySpecEgressToEntities.REMOTE_HYPHEN_NODE,
+            CiliumNetworkPolicySpecEgressToEntities.HOST,
+        ],
+        to_ports=[
+            CiliumNetworkPolicySpecEgressToPorts(
+                ports=[
+                    CiliumNetworkPolicySpecEgressToPortsPorts(
+                        port="443", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
+                    )
+                ],
+                server_names=["kubectl-passthrough-mcp.allegedly.works"],
+            )
+        ],
+    ),
+    # Gateway Service traffic is checked against the selected backend, with the
+    # client's original SNI. See cluster/docs/cilium_network_policy.md § Egress
+    # through the Gateway Service.
+    CiliumNetworkPolicySpecEgress(
+        to_endpoints=[
+            CiliumNetworkPolicySpecEgressToEndpoints(
+                match_labels={
+                    "k8s:io.kubernetes.pod.namespace": "authentik",
+                    "app.kubernetes.io/name": "authentik",
+                    "app.kubernetes.io/instance": "authentik",
+                    "app.kubernetes.io/component": "server",
+                }
+            )
+        ],
+        to_ports=[
+            CiliumNetworkPolicySpecEgressToPorts(
+                ports=[
+                    CiliumNetworkPolicySpecEgressToPortsPorts(
+                        port="9000", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
+                    )
+                ],
+                server_names=["auth.allegedly.works"],
+            )
+        ],
+    ),
+]
+_AGENTPLANE_TESTING_ACTIONS_EXTRA_EGRESS = [
+    # The direct federation verifier fetches Dex's JWKS over the public-origin Gateway path.
+    CiliumNetworkPolicySpecEgress(
+        to_entities=[
+            CiliumNetworkPolicySpecEgressToEntities.REMOTE_HYPHEN_NODE,
+            CiliumNetworkPolicySpecEgressToEntities.HOST,
+        ],
+        to_ports=[
+            CiliumNetworkPolicySpecEgressToPorts(
+                ports=[
+                    CiliumNetworkPolicySpecEgressToPortsPorts(
+                        port="443", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
+                    )
+                ],
+                server_names=["agentplane-dex-testing.allegedly.works"],
+            )
+        ],
+    ),
+    # MCP OAuth discovery/token exchange/tool calls for the linked "example" fixture:
+    # cluster-internal only, unlike the real GitHub/Kubernetes MCP OAuth providers
+    # linked in staging.
+    CiliumNetworkPolicySpecEgress(
+        to_endpoints=[
+            CiliumNetworkPolicySpecEgressToEndpoints(
+                match_labels={
+                    "k8s:io.kubernetes.pod.namespace": "agentplane-testing",
+                    "app.kubernetes.io/name": "agentplane-oauth-fixture",
+                }
+            )
+        ],
+        to_ports=[
+            CiliumNetworkPolicySpecEgressToPorts(
+                ports=[
+                    CiliumNetworkPolicySpecEgressToPortsPorts(
+                        port="8080", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
+                    )
+                ]
+            )
+        ],
+    ),
+]
+_AGENTPLANE_STAGING_ACTIONS_SPEC = AgentplaneActionsEnvSpec(
+    namespace="agentplane-staging",
+    replicas=_STAGING_REPLICAS.replicas,
+    strategy=_STAGING_REPLICAS.strategy,
+    min_ready_seconds=_STAGING_REPLICAS.min_ready_seconds,
+    topology_spread=_STAGING_REPLICAS.topology_spread,
+    enable_pdb=True,
+    hostname="agentplane-actions-staging.allegedly.works",
+    settings=agentplane_actions_settings.staging_settings(),
+    action_federation=_AGENTPLANE_STAGING_ACTION_FEDERATION,
+    action_federation_description="OIDC federation configuration for the Agentplane app and Action Service",
+    operator_oidc=_AGENTPLANE_STAGING_OPERATOR_OIDC,
+    extra_reload_secrets=(
+        "haku-console-github-mcp-client-credentials",
+        "agentplane-staging-web-push-vapid",
+        "ssh-mcp-bearer",
+    ),
+    oauth_secret_items=("client-secret", "jwt-signing-key", "encryption-key"),
+    web_push_secret_name="agentplane-staging-web-push-vapid",
+    github_mcp_client_secret_name="haku-console-github-mcp-client-credentials",
+    ssh_mcp_bearer=True,
+    extra_egress=_AGENTPLANE_STAGING_ACTIONS_EXTRA_EGRESS,
+)
+_AGENTPLANE_TESTING_ACTIONS_SPEC = AgentplaneActionsEnvSpec(
+    namespace="agentplane-testing",
+    replicas=_TESTING_REPLICAS.replicas,
+    strategy=_TESTING_REPLICAS.strategy,
+    min_ready_seconds=_TESTING_REPLICAS.min_ready_seconds,
+    topology_spread=_TESTING_REPLICAS.topology_spread,
+    enable_pdb=False,
+    hostname="agentplane-actions-testing.allegedly.works",
+    settings=agentplane_actions_settings.testing_settings(),
+    action_federation=_AGENTPLANE_TESTING_ACTION_FEDERATION,
+    action_federation_description="Direct Dex operator federation pins for the isolated testing Action Service.",
+    operator_oidc=_AGENTPLANE_TESTING_OPERATOR_OIDC,
+    extra_egress=_AGENTPLANE_TESTING_ACTIONS_EXTRA_EGRESS,
+)
+_HAKU_OPENCLAW_SPIKE_APP_DIR = "cluster/k8s/agents/haku-openclaw-spike/app"
+_PUBLIC_CODER_AGENT_APP_DIR = "cluster/k8s/agents/public-coder-agent/app"
 
 
 def _write_yaml(path: Path, manifest: dict[str, object]) -> None:
@@ -140,10 +501,249 @@ def _generate_ha_mcp(root: Path) -> None:
     )
 
 
+def _generate_agentplane_namespace_rbac(root: Path, app_dir: str, spec: AgentplaneEnvSpec) -> None:
+    """Synthesize into `app_dir`'s existing, otherwise hand-written top-level
+    Kustomization -- same mixed generated/hand-written pattern as
+    `_write_config_map_chart`, replacing what used to be the `namespace/` and
+    `agent-rbac/` subdirectory Kustomize bases.
+    """
+    out_dir = root / app_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+    app = App(outdir=str(out_dir))
+    chart = Chart(app, "agentplane-namespace-rbac", disable_resource_name_hashes=True)
+    AgentplaneNamespace(chart, "namespace", spec)
+    AgentplaneAgentRbac(chart, "rbac", spec)
+    app.synth()
+
+
+def _generate_agentplane_db(root: Path, db_dir: str, spec: AgentplaneDbEnvSpec) -> None:
+    """Synthesize into `db_dir`'s existing, otherwise hand-written Kustomization --
+    same mixed generated/hand-written pattern as `_generate_agentplane_namespace_rbac`,
+    replacing what used to be role-secrets.yaml, postgres-cluster.yaml, and
+    databases.yaml.
+    """
+    out_dir = root / db_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+    app = App(outdir=str(out_dir))
+    chart = Chart(app, "agentplane-db", disable_resource_name_hashes=True)
+    AgentplaneDb(chart, "db", spec)
+    app.synth()
+
+
+def _generate_agentplane_llm_ingress(root: Path, llm_ingress_dir: str, spec: AgentplaneLlmIngressEnvSpec) -> None:
+    """Synthesize into `llm_ingress_dir` -- replaces clusterrole-token-reviewer.yaml,
+    deployment.yaml, kustomization.yaml, networkpolicy.yaml, service.yaml, and
+    serviceaccount.yaml. The sibling image-pins/ Component (never generated) stays
+    hand-written, same as litellm/ha-mcp.
+    """
+    out_dir = root / llm_ingress_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+    app = App(outdir=str(out_dir))
+    chart = Chart(app, "agentplane-llm-ingress", disable_resource_name_hashes=True)
+    AgentplaneLlmIngress(chart, "llm-ingress", spec)
+    app.synth()
+
+    _write_yaml(
+        out_dir / "kustomization.yaml",
+        kustomize_kustomization(resources=["agentplane-llm-ingress.k8s.yaml"], components=["./image-pins"]),
+    )
+
+
+def _generate_agentplane_egress(root: Path, egress_dir: str, spec: AgentplaneEgressEnvSpec) -> None:
+    """Synthesize into `egress_dir` -- replaces certificate-agentplane-egress-ca.yaml,
+    clusterrole-*-egress-token-reviewer.yaml, deployment-agentplane-egress.yaml,
+    egresscredential-*.yaml, egresspolicy-*.yaml, kustomization.yaml,
+    networkpolicy.yaml, poddisruptionbudget-agentplane-egress.yaml (staging only),
+    role-agentplane-egress.yaml, rolebinding-agentplane-egress.yaml,
+    service-agentplane-egress[-admin].yaml, serviceaccount-agentplane-egress.yaml,
+    and trust-bundle.yaml. The sibling image-pins/ Component (never generated) stays
+    hand-written, same as litellm/ha-mcp/llm-ingress.
+    """
+    out_dir = root / egress_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+    app = App(outdir=str(out_dir))
+    chart = Chart(app, "agentplane-egress", disable_resource_name_hashes=True)
+    AgentplaneEgress(chart, "egress", spec)
+    app.synth()
+
+    _write_yaml(
+        out_dir / "kustomization.yaml",
+        kustomize_kustomization(resources=["agentplane-egress.k8s.yaml"], components=["./image-pins"]),
+    )
+
+
+def _generate_agentplane_app(root: Path, app_dir: str, spec: AgentplaneAppEnvSpec) -> None:
+    """Synthesize into `app_dir` -- replaces clusterrole-*-app-token-reviewer.yaml,
+    deployment-agentplane-app.yaml, forgejo-images-creds-eso.yaml (both environments
+    now generate it here, resolving the placement decision recorded in the plan;
+    testing's llm-ingress/ no longer carries it), httproute.yaml, kustomization.yaml,
+    networkpolicy.yaml, poddisruptionbudget-agentplane-app.yaml (staging only),
+    role-agentplane-app.yaml, rolebinding-agentplane-app.yaml,
+    sandboxtemplate-agentplane-runner.yaml, service-agentplane-app.yaml, and the three
+    serviceaccount-agentplane-*.yaml files. `agentplane-app-config.k8s.yaml` (a
+    separate chart -- see `_write_config_map_chart`) and the sibling image-pins/
+    Component (never generated) are untouched by this function but listed in the
+    Kustomization it writes.
+    """
+    out_dir = root / app_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+    app = App(outdir=str(out_dir))
+    chart = Chart(app, "agentplane-app", disable_resource_name_hashes=True)
+    AgentplaneApp(chart, "app", spec)
+    app.synth()
+
+    _write_yaml(
+        out_dir / "kustomization.yaml",
+        kustomize_kustomization(
+            resources=["agentplane-app.k8s.yaml", "agentplane-app-config.k8s.yaml"], components=["./image-pins"]
+        ),
+    )
+
+
+def _generate_agentplane_actions(
+    root: Path,
+    actions_dir: str,
+    spec: AgentplaneActionsEnvSpec,
+    *,
+    add_extra: Callable[[Chart], None],
+    extra_resources: Sequence[str] = (),
+) -> None:
+    """Synthesize into `actions_dir` -- replaces clusterrole-*-actions-token-reviewer.yaml,
+    configmap-action-federation.yaml, deployment.yaml, httproute.yaml, kustomization.yaml,
+    networkpolicy.yaml, poddisruptionbudget.yaml (staging only), rbac.yaml, service.yaml,
+    serviceaccount.yaml, settings.yaml, and (via `add_extra`) staging's
+    ActionPolicySet/Binding objects and claude-ai ServiceAccount, or testing's
+    mcp-everything/oauth-fixture fixtures. `web-push-vapid.sops.yaml` (staging only) and
+    the sibling image-pins/ Component (never generated) stay hand-written, listed in the
+    Kustomization this function writes.
+    """
+    out_dir = root / actions_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+    app = App(outdir=str(out_dir))
+    chart = Chart(app, "agentplane-actions", disable_resource_name_hashes=True)
+    AgentplaneActions(chart, "actions", spec)
+    add_extra(chart)
+    app.synth()
+
+    _write_yaml(
+        out_dir / "kustomization.yaml",
+        kustomize_kustomization(
+            resources=["agentplane-actions.k8s.yaml", *extra_resources], components=["./image-pins"]
+        ),
+    )
+
+
+def _generate_agentplane_dex(root: Path, dex_dir: str) -> None:
+    """Synthesize into `dex_dir` -- replaces credentials-eso.yaml, deployment.yaml,
+    httproute.yaml, kustomization.yaml, networkpolicy.yaml, and service.yaml.
+    `ghcr.io/dexidp/dex:v2.45.1` is a manually pinned upstream release, not a
+    Flux-automated build of this repo, so unlike every other converted Deployment there
+    is no placeholder tag and no sibling image-pins/ Component.
+    """
+    out_dir = root / dex_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+    app = App(outdir=str(out_dir))
+    chart = Chart(app, "agentplane-testing-dex", disable_resource_name_hashes=True)
+    AgentplaneDex(chart, "dex")
+    app.synth()
+
+    _write_yaml(out_dir / "kustomization.yaml", kustomize_kustomization(resources=["agentplane-testing-dex.k8s.yaml"]))
+
+
+def _write_config_map_chart(
+    root: Path, app_dir: str, *, chart_name: str, configmap_name: str, namespace: str, data: dict[str, str]
+) -> None:
+    """Synthesize a single-ConfigMap chart into `app_dir`'s existing, otherwise
+    hand-written Kustomization -- see cluster/docs/cdk8s.md's "SOPS secrets in a
+    converted directory" for the general pattern of a directory mixing generated and
+    hand-written files. `flux-kustomization.yaml`/`kustomization.yaml` stay hand-written;
+    only this one ConfigMap's content is generated, replacing what used to be a Kustomize
+    `configMapGenerator` entry.
+    """
+    out_dir = root / app_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+    app = App(outdir=str(out_dir))
+    chart = Chart(app, chart_name, disable_resource_name_hashes=True)
+    ConfigMap(chart, "config", metadata=metadata(configmap_name, namespace), data=data)
+    app.synth()
+
+
+def _generate_agentplane_testing_config(root: Path) -> None:
+    _write_config_map_chart(
+        root,
+        _AGENTPLANE_TESTING_APP_DIR,
+        chart_name="agentplane-app-config",
+        configmap_name="agentplane-app-config",
+        namespace="agentplane-testing",
+        data={"config.yaml": yaml_config(agentplane_testing_config.config())},
+    )
+
+
+def _generate_agentplane_staging_config(root: Path) -> None:
+    _write_config_map_chart(
+        root,
+        _AGENTPLANE_STAGING_APP_DIR,
+        chart_name="agentplane-app-config",
+        configmap_name="agentplane-app-config",
+        namespace="agentplane-staging",
+        data={"config.yaml": yaml_config(agentplane_staging_config.config())},
+    )
+
+
+def _generate_haku_openclaw_spike_config(root: Path) -> None:
+    _write_config_map_chart(
+        root,
+        _HAKU_OPENCLAW_SPIKE_APP_DIR,
+        chart_name="haku-openclaw-spike-config",
+        configmap_name="haku-openclaw-spike-config",
+        namespace="haku-openclaw-spike",
+        data={
+            "openclaw.json": json5_config(haku_openclaw_spike_config.config()),
+            "claude.json": json5_config(haku_openclaw_spike_config.claude_config()),
+        },
+    )
+
+
+def _generate_public_coder_agent_config(root: Path) -> None:
+    _write_config_map_chart(
+        root,
+        _PUBLIC_CODER_AGENT_APP_DIR,
+        chart_name="public-coder-agent-config",
+        configmap_name="public-coder-agent-config",
+        namespace="public-coder-agent",
+        data={"openclaw.json5": json5_config(public_coder_agent_config.config())},
+    )
+
+
 def generate_manifests(root: Path) -> None:
     """Write every converted directory's generated manifests under `root`."""
     _generate_litellm_app(root)
     _generate_ha_mcp(root)
+    _generate_agentplane_namespace_rbac(root, _AGENTPLANE_STAGING_DIR, _AGENTPLANE_STAGING_SPEC)
+    _generate_agentplane_namespace_rbac(root, _AGENTPLANE_TESTING_DIR, _AGENTPLANE_TESTING_SPEC)
+    _generate_agentplane_db(root, _AGENTPLANE_STAGING_DB_DIR, _AGENTPLANE_STAGING_DB_SPEC)
+    _generate_agentplane_db(root, _AGENTPLANE_TESTING_DB_DIR, _AGENTPLANE_TESTING_DB_SPEC)
+    _generate_agentplane_llm_ingress(root, _AGENTPLANE_STAGING_LLM_INGRESS_DIR, _AGENTPLANE_STAGING_LLM_INGRESS_SPEC)
+    _generate_agentplane_llm_ingress(root, _AGENTPLANE_TESTING_LLM_INGRESS_DIR, _AGENTPLANE_TESTING_LLM_INGRESS_SPEC)
+    _generate_agentplane_egress(root, _AGENTPLANE_STAGING_EGRESS_DIR, _AGENTPLANE_STAGING_EGRESS_SPEC)
+    _generate_agentplane_egress(root, _AGENTPLANE_TESTING_EGRESS_DIR, _AGENTPLANE_TESTING_EGRESS_SPEC)
+    _generate_agentplane_staging_config(root)
+    _generate_agentplane_testing_config(root)
+    _generate_agentplane_app(root, _AGENTPLANE_STAGING_APP_DIR, _AGENTPLANE_STAGING_APP_SPEC)
+    _generate_agentplane_app(root, _AGENTPLANE_TESTING_APP_DIR, _AGENTPLANE_TESTING_APP_SPEC)
+    _generate_agentplane_actions(
+        root,
+        _AGENTPLANE_STAGING_ACTIONS_DIR,
+        _AGENTPLANE_STAGING_ACTIONS_SPEC,
+        add_extra=add_staging_action_policies,
+        extra_resources=["web-push-vapid.sops.yaml"],
+    )
+    _generate_agentplane_actions(
+        root, _AGENTPLANE_TESTING_ACTIONS_DIR, _AGENTPLANE_TESTING_ACTIONS_SPEC, add_extra=add_testing_fixtures
+    )
+    _generate_agentplane_dex(root, _AGENTPLANE_TESTING_DEX_DIR)
+    _generate_haku_openclaw_spike_config(root)
+    _generate_public_coder_agent_config(root)
 
 
 def main() -> None:

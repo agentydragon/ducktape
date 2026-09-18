@@ -2,13 +2,15 @@
 
 ## Action policies
 
-`actionpolicyset-*.yaml` are this environment's Git-managed `ActionPolicySet`s and
-`actionpolicybinding-*.yaml` the bindings for labeled caller ServiceAccounts such as
-`claude-ai`; a new set, or a binding for a ServiceAccount, is a PR here. Bindings for
-Sandbox subjects are written by the integration app when it creates the Sandbox and are
-never checked in. `//cluster/validation:test_agentplane_action_policies` parses every set
-and binding with the Action Service's own models, so a spec the service would refuse fails
-CI instead of reporting `Ready=False` on the cluster.
+This environment's Git-managed `ActionPolicySet`s and the bindings for labeled caller
+ServiceAccounts such as `claude-ai` are defined in
+`cluster/cdk8s/agentplane_actions_staging_policies.py` and generated into
+`agentplane-actions.k8s.yaml`; a new set, or a binding for a ServiceAccount, is a PR to
+that Python module (regenerate with `bb run //cluster/cdk8s:generate_manifests`). Bindings
+for Sandbox subjects are written by the integration app when it creates the Sandbox and
+are never checked in. `//cluster/validation:test_agentplane_action_policies` parses every
+set and binding with the Action Service's own models, so a spec the service would refuse
+fails CI instead of reporting `Ready=False` on the cluster.
 
 ## Browser notifications
 
@@ -17,10 +19,11 @@ Action Service reads the private key through a Secret-backed environment variabl
 and derives the public subscription key at startup. Redeployment preserves the key;
 rotation requires browsers to register again. Do not reuse it for testing or Haku.
 
-The application allowlist in `settings.yaml` and HTTPS FQDN/SNI egress in
-`networkpolicy.yaml` must agree. Currently Chrome/Chromium (FCM) and Firefox
-(Mozilla Autopush) are allowed. Other browser push services require explicit review
-and changes to both lists. DNS inspection lets Cilium learn the endpoint IPs; it
+The application allowlist in `agentplane_actions_settings.py`'s `staging_settings()`
+and the HTTPS FQDN/SNI egress rules in `generate_manifests.py`'s
+`_AGENTPLANE_STAGING_ACTIONS_EXTRA_EGRESS` must agree. Currently Chrome/Chromium (FCM)
+and Firefox (Mozilla Autopush) are allowed. Other browser push services require explicit
+review and changes to both lists. DNS inspection lets Cilium learn the endpoint IPs; it
 does not authorize arbitrary outbound HTTPS.
 
 Acceptance: sign into staging, open Notifications, register the browser, and confirm

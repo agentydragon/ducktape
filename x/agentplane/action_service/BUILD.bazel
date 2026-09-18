@@ -274,7 +274,7 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
-    data = ["//cluster/k8s:agentplane-testing/actions/mcp-everything-deployment.yaml"],
+    data = ["//cluster/k8s:agentplane_testing_actions_manifest"],
     deps = [
         ":catalog",
         ":database_migrate",
@@ -289,6 +289,7 @@ py_library(
         "@pypi//asyncpg",
         "@pypi//fastmcp_slim",
         "@pypi//httpx",
+        "@pypi//more_itertools",
         "@pypi//psycopg",
         "@pypi//pytest",
         "@pypi//pyyaml",

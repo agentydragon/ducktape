@@ -188,8 +188,10 @@ def test_rendered_remote_binding_reaches_existing_service(settings: Settings, re
     )
     pod = deployment["spec"]["template"]["spec"]
     port = one(p for p in service["spec"]["ports"] if p["port"] == endpoint.port)
-    container = one(c for c in pod["containers"] if any(p["name"] == port["targetPort"] for p in c["ports"]))
-    assert one(p["containerPort"] for p in container["ports"] if p["name"] == port["targetPort"]) == endpoint.port
+    container = one(c for c in pod["containers"] if any(p["containerPort"] == port["targetPort"] for p in c["ports"]))
+    assert (
+        one(p["containerPort"] for p in container["ports"] if p["containerPort"] == port["targetPort"]) == endpoint.port
+    )
     # The existing image's streamableHttp entrypoint serves /mcp, not the legacy SSE endpoint.
     assert container["command"][-1] == "streamableHttp"
     assert endpoint.path == "/mcp"
@@ -224,7 +226,7 @@ async def test_reviewed_binding_errors_fail_before_any_connection(
         start.assert_not_awaited()
 
 
-def test_staging_push_key_config_and_egress_agree(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_staging_push_key_config_and_egress_agree(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     root = get_required_path("_main/cluster/k8s/agentplane-staging/actions/kustomization.yaml").parent
     kustomize = get_required_path("multitool/tools/kustomize/kustomize")
     resources = list(yaml.safe_load_all(subprocess.check_output([str(kustomize), "build", str(root)])))
@@ -246,7 +248,12 @@ def test_staging_push_key_config_and_egress_agree(monkeypatch: pytest.MonkeyPatc
         .decode()
     )
     monkeypatch.setenv(key_env["name"], private_key)
-    monkeypatch.setenv("AGENTPLANE_ACTIONS_CONFIG_FILE", str(root / "settings.yaml"))
+    config_map = one(
+        r for r in resources if r["kind"] == "ConfigMap" and r["metadata"]["name"] == "agentplane-actions-settings"
+    )
+    config_file = tmp_path / "settings.yaml"
+    config_file.write_text(config_map["data"]["settings.yaml"])
+    monkeypatch.setenv("AGENTPLANE_ACTIONS_CONFIG_FILE", str(config_file))
     settings = Settings(database_url="postgresql://test.invalid/test", _cli_parse_args=False)
     assert settings.web_push is not None
     assert settings.web_push.public_base_url == "https://agentplane-staging.allegedly.works"

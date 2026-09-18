@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch, Size, Yaml
+from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch, Size
 from cdk8s_plus_34 import (
     ConfigMap,
     ContainerPort,
@@ -43,6 +43,7 @@ from cdk8s_plus_34 import (
     TaintedNode,
     TaintEffect,
     Volume,
+    k8s,
 )
 from constructs import Construct
 from gateway_api_crds.io.k8s.networking.gateway import (
@@ -61,6 +62,7 @@ from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecSelector,
 )
 
+from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret
 from cluster.cdk8s.litellm_config import ConfigMapSpec, proxy_configs
 from cluster.cdk8s.metadata import metadata
@@ -111,10 +113,12 @@ class ProxySpec:
     termination_grace_period_seconds: int | None = None
     node_affinity: LabeledNode | None = None
     tolerations: tuple[TaintedNode, ...] = ()
-    # cdk8s_plus_34 has no typed builder for custom topologySpreadConstraints
-    # (only an all-or-nothing `spread: bool` auto-toggle) -- stays a raw dict,
-    # applied via the ApiObject escape hatch in _add_deployment.
-    topology_spread_constraints: tuple[dict[str, object], ...] = ()
+    # cdk8s_plus_34's fluent Deployment/Workload has no builder for custom
+    # topologySpreadConstraints (only an all-or-nothing `spread: bool`
+    # auto-toggle), but k8s.TopologySpreadConstraint (the raw generated struct)
+    # is real API-schema-validated input to the ApiObject escape hatch in
+    # _add_deployment, not a raw dict.
+    topology_spread_constraints: tuple[k8s.TopologySpreadConstraint, ...] = ()
     strategy: DeploymentStrategy | None = None
     service: ServiceSpec = field(default_factory=ServiceSpec)
     hostname: str | None = None
@@ -185,12 +189,12 @@ def proxy_specs() -> tuple[ProxySpec, ...]:
                 ),
             ),
             topology_spread_constraints=(
-                {
-                    "maxSkew": 1,
-                    "topologyKey": "kubernetes.io/hostname",
-                    "whenUnsatisfiable": "ScheduleAnyway",
-                    "labelSelector": {"matchLabels": {"app.kubernetes.io/name": "litellm"}},
-                },
+                k8s.TopologySpreadConstraint(
+                    max_skew=1,
+                    topology_key="kubernetes.io/hostname",
+                    when_unsatisfiable="ScheduleAnyway",
+                    label_selector=k8s.LabelSelector(match_labels={"app.kubernetes.io/name": "litellm"}),
+                ),
             ),
             strategy=DeploymentStrategy.rolling_update(
                 max_surge=PercentOrAbsolute.absolute(1), max_unavailable=PercentOrAbsolute.absolute(0)
@@ -202,15 +206,11 @@ def proxy_specs() -> tuple[ProxySpec, ...]:
     )
 
 
-def _yaml_config(config: dict) -> str:
-    return Yaml.format_objects([config])
-
-
 def _formatted_config_map_data(data: dict[str, object]) -> dict[str, str]:
     formatted: dict[str, str] = {}
     for filename, value in data.items():
         if isinstance(value, dict):
-            formatted[filename] = _yaml_config(value)
+            formatted[filename] = yaml_config(value)
         else:
             assert isinstance(value, str)
             formatted[filename] = value

@@ -1,0 +1,134 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  annotations:
+    description: Agentplane staging - sandboxed runner Pods (one per Sandbox) and the integration app that drives them.
+  labels:
+    goldilocks.fairwinds.com/enabled: "false"
+    name: agentplane-staging
+    rbac.ducktape.io/agent-readable-logs: "true"
+  name: agentplane-staging
+spec: {}
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: agentplane-staging-quota
+  namespace: agentplane-staging
+spec:
+  hard:
+    limits.cpu: "12"
+    limits.memory: 24Gi
+    requests.cpu: "4"
+    requests.memory: 8Gi
+    requests.storage: 80Gi
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: agentplane-staging-limits
+  namespace: agentplane-staging
+spec:
+  limits:
+    - default:
+        cpu: 500m
+        memory: 512Mi
+      defaultRequest:
+        cpu: 100m
+        memory: 128Mi
+      max:
+        cpu: "2"
+        memory: 4Gi
+      min:
+        cpu: 10m
+        memory: 16Mi
+      type: Container
+    - max:
+        cpu: "4"
+        memory: 8Gi
+      type: Pod
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-operator
+  namespace: agentplane-staging
+rules:
+  - apiGroups:
+      - extensions.agents.x-k8s.io
+    resources:
+      - sandboxtemplates
+    verbs:
+      - get
+  - apiGroups:
+      - agents.x-k8s.io
+    resources:
+      - sandboxes
+    verbs:
+      - create
+      - get
+      - list
+      - watch
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - pods/exec
+    verbs:
+      - create
+  - apiGroups:
+      - ""
+    resources:
+      - pods/portforward
+    verbs:
+      - create
+  - apiGroups:
+      - ""
+    resources:
+      - pods/log
+    verbs:
+      - get
+  - apiGroups:
+      - ""
+    resourceNames:
+      - agentplane-agent
+    resources:
+      - serviceaccounts/token
+    verbs:
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agent-agentplane-operator
+  namespace: agentplane-staging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-operator
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: oidc-ksbx-groups:haku
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: haku:access-profile:haku
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: haku:access-profile:public-coder
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: haku
+    namespace: haku-sandbox
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: oidc-ksbx-groups:kubectl-sandbox-users

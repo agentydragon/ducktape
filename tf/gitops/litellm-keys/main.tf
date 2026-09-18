@@ -47,7 +47,7 @@ provider "litellm" {
 locals {
   # Model names must match generated model_name entries in
   # cluster/k8s/litellm/app/litellm.k8s.yaml's embedded LiteLLM config ({provider}/{shape}/{model}
-  # scheme, derivations in cluster/k8s/litellm/app/model_rosters.py). Spelled out rather
+  # scheme, derivations in cluster/cdk8s/model_rosters.py). Spelled out rather
   # than built with a for-expression so the names are greppable and so the test
   # can compare structurally -- HCL2 returns a for-expression as unevaluated
   # source text, not a list.

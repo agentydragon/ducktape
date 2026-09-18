@@ -28,19 +28,46 @@ filegroup(
     visibility = ["//cluster:__subpackages__"],
 )
 
-filegroup(
-    name = "agentplane_staging_model_config",
-    srcs = ["agentplane-staging/app/config.yaml"],
-    visibility = ["//cluster/k8s/litellm/app:__pkg__"],
+# cdk8s-generated (cluster/cdk8s/{agentplane_testing,agentplane_staging,
+# haku_openclaw_spike,public_coder_agent}_config.py) -- the test_generate_manifests
+# pinning test reads the committed files directly, and cluster/k8s/litellm/app's tests
+# import the underlying config() functions directly rather than reading these rendered
+# manifests.
+exports_files(
+    [
+        "agentplane-staging/actions/agentplane-actions.k8s.yaml",
+        "agentplane-staging/actions/kustomization.yaml",
+        "agentplane-staging/agentplane-namespace-rbac.k8s.yaml",
+        "agentplane-staging/app/agentplane-app-config.k8s.yaml",
+        "agentplane-staging/app/agentplane-app.k8s.yaml",
+        "agentplane-staging/app/kustomization.yaml",
+        "agentplane-staging/db/agentplane-db.k8s.yaml",
+        "agentplane-staging/egress/agentplane-egress.k8s.yaml",
+        "agentplane-staging/egress/kustomization.yaml",
+        "agentplane-staging/llm-ingress/agentplane-llm-ingress.k8s.yaml",
+        "agentplane-staging/llm-ingress/kustomization.yaml",
+        "agentplane-testing/actions/agentplane-actions.k8s.yaml",
+        "agentplane-testing/actions/kustomization.yaml",
+        "agentplane-testing/agentplane-namespace-rbac.k8s.yaml",
+        "agentplane-testing/app/agentplane-app-config.k8s.yaml",
+        "agentplane-testing/app/agentplane-app.k8s.yaml",
+        "agentplane-testing/app/kustomization.yaml",
+        "agentplane-testing/db/agentplane-db.k8s.yaml",
+        "agentplane-testing/dex/agentplane-testing-dex.k8s.yaml",
+        "agentplane-testing/dex/kustomization.yaml",
+        "agentplane-testing/egress/agentplane-egress.k8s.yaml",
+        "agentplane-testing/egress/kustomization.yaml",
+        "agentplane-testing/llm-ingress/agentplane-llm-ingress.k8s.yaml",
+        "agentplane-testing/llm-ingress/kustomization.yaml",
+        "agents/haku-openclaw-spike/app/haku-openclaw-spike-config.k8s.yaml",
+        "agents/public-coder-agent/app/public-coder-agent-config.k8s.yaml",
+    ],
+    visibility = ["//cluster/cdk8s:__pkg__"],
 )
 
 filegroup(
     name = "openclaw_model_config",
-    srcs = [
-        "agents/haku-openclaw-spike/app/deployment.yaml",
-        "agents/haku-openclaw-spike/app/openclaw.json",
-        "agents/public-coder-agent/app/openclaw.json5",
-    ],
+    srcs = ["agents/haku-openclaw-spike/app/deployment.yaml"],
     visibility = ["//cluster/k8s/litellm/app:__pkg__"],
 )
 
@@ -78,7 +105,10 @@ exports_files(
         "monitoring/rules/github-quota-prometheus-rule.yaml",
         "monitoring/rules/roaming-node-prometheus-rule.yaml",
     ],
-    visibility = ["//cluster/validation:__pkg__"],
+    visibility = [
+        "//cluster/validation:__pkg__",
+        "//third_party/agentplane_crds:__pkg__",
+    ],
 )
 
 # Just the central ClusterPolicy manifests, so a per-policy test is not
@@ -98,7 +128,7 @@ filegroup(
     name = "haku_manifest_contract_files",
     srcs = [
         "activitywatch/activitywatch-read-token.sops.yaml",
-        "agentplane-staging/agent-rbac/rolebinding-agentplane-operator.yaml",
+        "agentplane-staging/agentplane-namespace-rbac.k8s.yaml",
         "agents/agent-rbac-base/clusterrole-agent-readable-namespace-logs.yaml",
         "agents/agent-rbac-base/clusterrole-agent-readable-namespace-metadata.yaml",
         "agents/agent-rbac-base/clusterrole-cluster-diagnostics-reader.yaml",
@@ -271,16 +301,17 @@ filegroup(
     visibility = ["//haku/console:__pkg__"],
 )
 
-exports_files(
-    ["agentplane-testing/actions/mcp-everything-deployment.yaml"],
+filegroup(
+    name = "agentplane_testing_actions_manifest",
+    srcs = ["agentplane-testing/actions/agentplane-actions.k8s.yaml"],
     visibility = ["//x/agentplane/action_service:__pkg__"],
 )
 
 filegroup(
     name = "agentplane_actions_remote_mcp",
     srcs = glob([
-        "agentplane-staging/actions/*.yaml",
-        "agentplane-testing/actions/*.yaml",
+        "agentplane-staging/actions/**/*.yaml",
+        "agentplane-testing/actions/**/*.yaml",
         "ssh-mcp/**/*",
         "agentplane-staging/flux-kustomization.yaml",
     ]),

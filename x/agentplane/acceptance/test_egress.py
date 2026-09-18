@@ -41,7 +41,7 @@ from x.agentplane.runner import protocol_pb2
 # gazelle:include_dep @pypi//protobuf
 
 # Staging's seeded policy and the credential it substitutes
-# (cluster/k8s/agentplane-staging/egress/egresspolicy-github-public.yaml).
+# (cluster/k8s/agentplane-staging/egress/agentplane-egress.k8s.yaml, EgressPolicy "github-public").
 GITHUB_PUBLIC = "github-public"
 GITHUB_HOST = "github.com"
 GITHUB_API_HOST = "api.github.com"
@@ -58,9 +58,10 @@ BOT_LOGIN = "agentydragon-agent"
 # Named by no policy staging has, so it is refused for want of a rule rather than by one.
 UNLISTED_HOST = "example.com"
 # The authenticated model ingress, on the same egress path as everything else
-# (cluster/k8s/agentplane-staging/egress/egresspolicy-basic.yaml). It holds the LiteLLM key and
-# is granted by the deployment's `default_policies` rather than by a caller, because an agent that
-# cannot reach it has nothing to run -- so a sandbox that names no policy still has this one.
+# (cluster/k8s/agentplane-staging/egress/agentplane-egress.k8s.yaml, EgressPolicy "basic"). It holds
+# the LiteLLM key and is granted by the deployment's `default_policies` rather than by a caller,
+# because an agent that cannot reach it has nothing to run -- so a sandbox that names no policy
+# still has this one.
 BASIC_POLICY = "basic"
 LLM_INGRESS_HOST = f"agentplane-llm-ingress.{ACCEPTANCE_NAMESPACE}.svc.cluster.local"
 

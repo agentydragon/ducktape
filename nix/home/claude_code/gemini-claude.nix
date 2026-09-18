@@ -7,7 +7,7 @@
 # throttled model degrades instead of hard-failing — but only at routing time: a model
 # outside the key's allowlist is refused during auth, before the router sees it, so both
 # names below must be ones the proxy serves and the key admits (GEMINI_MODELS in
-# cluster/k8s/litellm/app/model_rosters.py, gemini_client_models in
+# cluster/cdk8s/model_rosters.py, gemini_client_models in
 # tf/gitops/litellm-keys/main.tf). See ./gateway.nix for the shared wrapper pattern.
 #
 # Prompt caching (settled empirically 2026-07-18, do not relitigate): Claude Code's
@@ -30,7 +30,7 @@ import ./gateway.nix { inherit pkgs lib; } "gemini-claude" {
     "WebFetch"
     "WebSearch"
   ];
-  # Gemini's published window/output (SSOT: cluster/k8s/litellm/app/model_rosters.py
+  # Gemini's published window/output (SSOT: cluster/cdk8s/model_rosters.py
   # GEMINI_CONTEXT_WINDOW / GEMINI_MAX_OUTPUT_TOKENS). Without maxContextTokens Claude Code
   # assumes 200k for this unrecognized slug and compacts away ~80% of Gemini's ~1M window.
   maxContextTokens = 1048576;

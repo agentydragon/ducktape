@@ -9,7 +9,7 @@ from more_itertools import one
 
 def test_dex_config_and_operator_password_share_one_generator_invocation(k8s_dir: Path) -> None:
     root = k8s_dir / "agentplane-testing/dex"
-    resources = list(yaml.safe_load_all((root / "credentials-eso.yaml").read_text()))
+    resources = list(yaml.safe_load_all((root / "agentplane-testing-dex.k8s.yaml").read_text()))
     secrets = [resource for resource in resources if resource["kind"] == "ExternalSecret"]
     operator = one(secret for secret in secrets if "password" in secret["spec"]["target"]["template"]["data"])
     target = operator["spec"]["target"]
@@ -25,7 +25,7 @@ def test_dex_config_and_operator_password_share_one_generator_invocation(k8s_dir
     invocations = [source["sourceRef"]["generatorRef"] for secret in secrets for source in secret["spec"]["dataFrom"]]
     assert invocations.count(generator) == 1
 
-    deployment = yaml.safe_load((root / "deployment.yaml").read_text())
+    deployment = one(resource for resource in resources if resource["kind"] == "Deployment")
     pod = deployment["spec"]["template"]["spec"]
     container = one(pod["containers"])
     config_path = Path(container["args"][-1])

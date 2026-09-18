@@ -1,0 +1,245 @@
+"""Staging-only Action Service policy objects: the claude-ai caller ServiceAccount, its
+five reviewed GitHub-reads ActionPolicySets, and the ActionPolicyBinding granting them to
+that ServiceAccount. See cluster/k8s/agentplane-staging/actions/README.md § Action
+policies -- Sandbox-subject bindings are written by the integration app at runtime and
+are never checked in here.
+"""
+
+from __future__ import annotations
+
+from agentplane_actionpolicybinding_crds.works.allegedly.agentplane import (
+    ActionPolicyBinding,
+    ActionPolicyBindingSpec,
+    ActionPolicyBindingSpecSubject,
+)
+from agentplane_actionpolicyset_crds.works.allegedly.agentplane import (
+    ActionPolicySet,
+    ActionPolicySetSpec,
+    ActionPolicySetSpecAutoApproveIf,
+    ActionPolicySetSpecAutoApproveIfType,
+)
+from cdk8s import ApiObjectMetadata
+from cdk8s_plus_34 import ServiceAccount
+from constructs import Construct
+
+_NAMESPACE = "agentplane-staging"
+
+# The console's `github_reads` policy (cluster/k8s/haku/console/config.yaml) as an Action
+# policy set. GitHub MCP's normal endpoint exposes its default catalog, including writes.
+# This is the explicit 2026-08-14 upstream read-only subset: new upstream tools
+# intentionally stay manual until reviewed here. `ui_get` reads an MCP App UI resource,
+# not GitHub repository state.
+_GITHUB_READS_ACTIONS = [
+    "get_me",
+    "get_team_members",
+    "get_teams",
+    "ui_get",
+    "find_duplicate",
+    "get_label",
+    "issue_dependency_read",
+    "issue_read",
+    "list_issue_fields",
+    "list_issue_types",
+    "list_issues",
+    "search_issues",
+    "list_pull_requests",
+    "pull_request_read",
+    "search_pull_requests",
+    "get_commit",
+    "get_file_blame",
+    "get_file_contents",
+    "get_latest_release",
+    "get_release_by_tag",
+    "get_tag",
+    "list_branches",
+    "list_commits",
+    "list_releases",
+    "list_repository_collaborators",
+    "list_tags",
+    "search_code",
+    "search_commits",
+    "search_repositories",
+    "search_users",
+]
+
+# The tool list every repository-scoped read set shares -- only the trusted owner/repo
+# (or, for public-github-reads, a live visibility check) differs.
+_REPOSITORY_SCOPED_ACTIONS = [
+    "actions_get",
+    "actions_list",
+    "find_duplicate",
+    "get_commit",
+    "get_file_blame",
+    "get_file_contents",
+    "get_job_logs",
+    "get_label",
+    "get_latest_release",
+    "get_release_by_tag",
+    "get_tag",
+    "issue_dependency_read",
+    "issue_read",
+    "list_branches",
+    "list_commits",
+    "list_issue_fields",
+    "list_issue_types",
+    "list_issues",
+    "list_pull_requests",
+    "list_releases",
+    "list_repository_collaborators",
+    "list_tags",
+    "pull_request_read",
+    "search_issues",
+    "search_pull_requests",
+    "search_code",
+]
+
+
+def _repository_reads(scope: Construct, id: str, *, name: str, description: str, owner: str, repository: str) -> None:
+    ActionPolicySet(
+        scope,
+        id,
+        metadata=ApiObjectMetadata(name=name, namespace=_NAMESPACE, annotations={"description": description}),
+        spec=ActionPolicySetSpec(
+            auto_approve_if=[
+                ActionPolicySetSpecAutoApproveIf(
+                    type=ActionPolicySetSpecAutoApproveIfType.GITHUB_UNDERSCORE_REPOSITORY,
+                    owner=owner,
+                    repository=repository,
+                    actions={"github": _REPOSITORY_SCOPED_ACTIONS},
+                )
+            ]
+        ),
+    )
+
+
+def add_staging_action_policies(scope: Construct) -> None:
+    # The principal a Connection enrolled from the Claude.ai MCP connector acts as,
+    # picked by the operator at OAuth consent. No Pod runs as it and it holds no
+    # RoleBinding: the label is what makes it an Action caller, and removing the label
+    # or the object is how it is disabled. What it may do without an operator is an
+    # ActionPolicyBinding naming it; on its own it grants nothing.
+    ServiceAccount(
+        scope,
+        "serviceaccount-claude-ai",
+        metadata=ApiObjectMetadata(
+            name="claude-ai",
+            namespace=_NAMESPACE,
+            labels={"agentplane.allegedly.works/use-action-service": "true"},
+            annotations={
+                "description": "The principal for Connections enrolled from the Claude.ai MCP connector, selected at OAuth consent."
+            },
+        ),
+        automount_token=False,
+    )
+
+    ActionPolicySet(
+        scope,
+        "actionpolicyset-github-reads",
+        metadata=ApiObjectMetadata(
+            name="github-reads",
+            namespace=_NAMESPACE,
+            annotations={
+                "description": "The reviewed read-only subset of GitHub MCP's default catalog; every other GitHub Action stays on the human path."
+            },
+        ),
+        spec=ActionPolicySetSpec(
+            auto_approve_if=[
+                ActionPolicySetSpecAutoApproveIf(
+                    type=ActionPolicySetSpecAutoApproveIfType.EXACT_UNDERSCORE_ACTIONS,
+                    actions={"github": _GITHUB_READS_ACTIONS},
+                )
+            ]
+        ),
+    )
+    # `get_me` returns only the authenticated caller's own GitHub identity and has no
+    # repository or mutation surface. Kept separate so a caller can be granted the
+    # identity read without widening repository-scoped GitHub sets.
+    ActionPolicySet(
+        scope,
+        "actionpolicyset-github-identity-reads",
+        metadata=ApiObjectMetadata(
+            name="github-identity-reads",
+            namespace=_NAMESPACE,
+            annotations={
+                "description": "The caller's own GitHub identity read, with no repository or mutation surface."
+            },
+        ),
+        spec=ActionPolicySetSpec(
+            auto_approve_if=[
+                ActionPolicySetSpecAutoApproveIf(
+                    type=ActionPolicySetSpecAutoApproveIfType.EXACT_UNDERSCORE_ACTIONS, actions={"github": ["get_me"]}
+                )
+            ]
+        ),
+    )
+    # The coder Agent's own fork, used to stage branches before opening PRs into
+    # agentydragon/ducktape. It already has write access here (that's how it opens
+    # PRs), so a read grant on its own fork's content adds no exposure beyond what it
+    # can already write.
+    _repository_reads(
+        scope,
+        "actionpolicyset-public-ducktape-fork-reads",
+        name="public-ducktape-fork-reads",
+        description="Reviewed GitHub reads scoped to agentydragon-agent/ducktape, the coder Agent's fork.",
+        owner="agentydragon-agent",
+        repository="ducktape",
+    )
+    _repository_reads(
+        scope,
+        "actionpolicyset-public-ducktape-reads",
+        name="public-ducktape-reads",
+        description="Reviewed GitHub reads scoped to agentydragon/ducktape.",
+        owner="agentydragon",
+        repository="ducktape",
+    )
+    _repository_reads(
+        scope,
+        "actionpolicyset-public-gaffer-private-reads",
+        name="public-gaffer-private-reads",
+        description="Reviewed GitHub reads scoped to the private agentydragon/gaffer-private.",
+        owner="agentydragon",
+        repository="gaffer-private",
+    )
+    # Any repository confirmed genuinely public -- not bounded to a fixed owner/repo
+    # allowlist. `github_public_repository` positively confirms the target
+    # repository's visibility with a live, unauthenticated GitHub API call before
+    # approving, rather than inferring "public" from the absence of a restriction.
+    ActionPolicySet(
+        scope,
+        "actionpolicyset-public-github-reads",
+        metadata=ApiObjectMetadata(
+            name="public-github-reads",
+            namespace=_NAMESPACE,
+            annotations={
+                "description": "Reviewed GitHub reads of any repository a live unauthenticated lookup confirms public."
+            },
+        ),
+        spec=ActionPolicySetSpec(
+            auto_approve_if=[
+                ActionPolicySetSpecAutoApproveIf(
+                    type=ActionPolicySetSpecAutoApproveIfType.GITHUB_UNDERSCORE_PUBLIC_UNDERSCORE_REPOSITORY,
+                    actions={"github": _REPOSITORY_SCOPED_ACTIONS},
+                )
+            ]
+        ),
+    )
+
+    # What the console's `haku_v1` grants for GitHub (github-reads and
+    # github-identity-reads), attached to the Claude.ai connector's principal. The
+    # binding's existence is the grant: deleting it, or the label on the
+    # ServiceAccount, puts every GitHub Action back on the human path.
+    ActionPolicyBinding(
+        scope,
+        "actionpolicybinding-claude-ai-github-reads",
+        metadata=ApiObjectMetadata(
+            name="claude-ai-github-reads",
+            namespace=_NAMESPACE,
+            annotations={
+                "description": "Auto-approves the reviewed GitHub reads for Connections acting as the claude-ai ServiceAccount."
+            },
+        ),
+        spec=ActionPolicyBindingSpec(
+            subject=ActionPolicyBindingSpecSubject(namespace=_NAMESPACE, name="claude-ai"),
+            policy_sets=["github-reads", "github-identity-reads"],
+        ),
+    )

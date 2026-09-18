@@ -6,18 +6,20 @@ import pytest_bazel
 import yaml
 from more_itertools import one
 
+from cluster.cdk8s import agentplane_staging_config
 from util.bazel.runfiles import get_required_path
 
 
-def manifest(path: str) -> dict[str, Any]:
-    document = yaml.safe_load(get_required_path(f"_main/cluster/k8s/agentplane-staging/{path}").read_text())
-    assert isinstance(document, dict)
-    return document
+def egress_object(kind: str, name: str | None = None) -> dict[str, Any]:
+    documents = yaml.safe_load_all(
+        get_required_path("_main/cluster/k8s/agentplane-staging/egress/agentplane-egress.k8s.yaml").read_text()
+    )
+    return one(doc for doc in documents if doc["kind"] == kind and (name is None or doc["metadata"]["name"] == name))
 
 
 def test_service_routes_rules_to_the_separate_declared_listener() -> None:
-    service = manifest("egress/service-agentplane-egress.yaml")["spec"]
-    deployment = manifest("egress/deployment-agentplane-egress.yaml")["spec"]
+    service = egress_object("Service", "agentplane-egress")["spec"]
+    deployment = egress_object("Deployment")["spec"]
     pod = deployment["template"]
     container = one(c for c in pod["spec"]["containers"] if c["name"] == "proxy")
     ports = {p["name"]: p["containerPort"] for p in container["ports"]}
@@ -25,16 +27,15 @@ def test_service_routes_rules_to_the_separate_declared_listener() -> None:
     proxy = one(p for p in service["ports"] if p["port"] == 8888)
 
     assert service["selector"].items() <= pod["metadata"]["labels"].items()
-    assert ports[http["targetPort"]] not in (ports[proxy["targetPort"]], ports["admin"])
-    assert f"--agent-api-port={ports[http['targetPort']]}" in container["args"]
-    assert f"--listen-port={ports[proxy['targetPort']]}" in container["args"]
+    assert http["targetPort"] not in (proxy["targetPort"], ports["admin"])
+    assert f"--agent-api-port={http['targetPort']}" in container["args"]
+    assert f"--listen-port={proxy['targetPort']}" in container["args"]
 
 
 def test_public_coder_defaults_and_nonsecret_instructions_bootstrap_workload_credentials() -> None:
-    policy = manifest("egress/egresspolicy-basic.yaml")
-    credential = manifest("egress/egresscredential-agentplane-workload.yaml")
-    config = manifest("app/config.yaml")
-    resources = manifest("egress/kustomization.yaml")["resources"]
+    policy = egress_object("EgressPolicy", "basic")
+    credential = egress_object("EgressCredential", "agentplane-workload")
+    config = agentplane_staging_config.config()
     rules = {one(rule["hosts"]): rule for rule in policy["spec"]["rules"]}
     rules_host = "agentplane-egress.agentplane-staging.svc.cluster.local"
     actions_host = "agentplane-actions.agentplane-staging.svc.cluster.local"
@@ -42,8 +43,6 @@ def test_public_coder_defaults_and_nonsecret_instructions_bootstrap_workload_cre
     rule = rules[rules_host]
     target = one(credential["spec"]["targets"])
 
-    assert "egresspolicy-basic.yaml" in resources
-    assert "egresscredential-agentplane-workload.yaml" in resources
     assert policy["metadata"]["name"] == "basic"
     assert config["sandbox_presets"]["public-coder"]["policies"] == ["basic", "github-public"]
     assert config["default_policies"] == ["basic"]
@@ -69,24 +68,23 @@ def test_public_coder_defaults_and_nonsecret_instructions_bootstrap_workload_cre
 
 
 def test_staging_egress_retains_one_available_replica_during_voluntary_changes() -> None:
-    deployment = manifest("egress/deployment-agentplane-egress.yaml")["spec"]
-    budget = manifest("egress/poddisruptionbudget-agentplane-egress.yaml")["spec"]
+    deployment = egress_object("Deployment")["spec"]
+    budget = egress_object("PodDisruptionBudget")["spec"]
     pod = deployment["template"]
     assert deployment["replicas"] == 2  # Staging capacity requested by the operator.
     assert deployment["strategy"]["type"] == "RollingUpdate"
     rolling = deployment["strategy"]["rollingUpdate"]
     assert deployment["replicas"] - rolling["maxUnavailable"] >= budget["minAvailable"] == 1
     assert rolling["maxSurge"] == 1
-    assert budget["selector"] == deployment["selector"]
+    assert budget["selector"]["matchLabels"].items() <= pod["metadata"]["labels"].items()
     for spread in pod["spec"]["topologySpreadConstraints"]:
         assert spread["whenUnsatisfiable"] == "ScheduleAnyway"  # Placement must not block scheduling.
-        assert spread["labelSelector"] == deployment["selector"]
+        assert spread["labelSelector"]["matchLabels"].items() <= pod["metadata"]["labels"].items()
         assert spread["topologyKey"] == "kubernetes.io/hostname"
     assert pod["spec"]["terminationGracePeriodSeconds"] >= 60
     container = one(c for c in pod["spec"]["containers"] if c["name"] == "proxy")
     assert container["readinessProbe"]["httpGet"]["path"] == "/healthz"
     assert container["livenessProbe"]["httpGet"]["path"] == "/livez"
-    assert "poddisruptionbudget-agentplane-egress.yaml" in manifest("egress/kustomization.yaml")["resources"]
 
 
 if __name__ == "__main__":

@@ -1,0 +1,290 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: public-coder-agent-config
+  namespace: public-coder-agent
+data:
+  openclaw.json5: |
+    {
+      "agents": {
+        "ownership": "explicit",
+        "defaults": {
+          "userTimezone": "America/Los_Angeles",
+          "model": {
+            "primary": "litellm/chatgpt/oai-responses/gpt-5.6-luna"
+          },
+          "sandbox": {
+            "mode": "off"
+          },
+          "maxConcurrent": 16,
+          "subagents": {
+            "maxConcurrent": 16,
+            "maxChildrenPerAgent": 16
+          },
+          "skills": [],
+          "verboseDefault": "full"
+        },
+        "entries": {
+          "coder": {
+            "name": "Coder"
+          },
+          "haku_console_tpm": {
+            "name": "Haku Console TPM",
+            "model": {
+              "primary": "litellm/chatgpt/oai-responses/gpt-6-astra"
+            }
+          }
+        }
+      },
+      "bindings": [
+        {
+          "agentId": "coder",
+          "match": {
+            "channel": "matrix"
+          }
+        }
+      ],
+      "memory": {
+        "search": {
+          "enabled": true,
+          "sources": [
+            "memory"
+          ],
+          "provider": "openai-compatible",
+          "model": "ollama/olm-embed/qwen3-embedding-4b",
+          "remote": {
+            "baseUrl": "http://litellm.litellm.svc.cluster.local:4000/v1",
+            "apiKey": "${OPENCLAW_LITELLM_API_KEY}"
+          }
+        }
+      },
+      "commands": {
+        "config": false,
+        "mcp": false,
+        "restart": false
+      },
+      "channels": {
+        "matrix": {
+          "enabled": true,
+          "homeserver": "https://matrix.allegedly.works",
+          "proxy": "http://public-coder-agent-proxy.public-coder-agent.svc.cluster.local:8080",
+          "userId": "@public-coder-agent:allegedly.works",
+          "dm": {
+            "policy": "allowlist",
+            "allowFrom": [
+              "@agentydragon:allegedly.works"
+            ],
+            "sessionScope": "per-room"
+          },
+          "groupPolicy": "disabled",
+          "autoJoin": "always",
+          "threadReplies": "always"
+        }
+      },
+      "cron": {
+        "enabled": true,
+        "triggers": {
+          "enabled": true
+        }
+      },
+      "gateway": {
+        "auth": {
+          "mode": "trusted-proxy",
+          "trustedProxy": {
+            "allowLoopback": true,
+            "allowUsers": [
+              "agentydragon"
+            ],
+            "requiredHeaders": [
+              "x-authentik-email",
+              "x-forwarded-host",
+              "x-forwarded-proto"
+            ],
+            "userHeader": "x-authentik-username",
+            "deviceAutoApprove": {
+              "enabled": true,
+              "scopes": [
+                "operator.read",
+                "operator.write",
+                "operator.approvals",
+                "operator.questions",
+                "operator.admin"
+              ]
+            }
+          }
+        },
+        "bind": "lan",
+        "controlUi": {
+          "allowedOrigins": [
+            "https://public-coder-agent.allegedly.works"
+          ]
+        },
+        "mode": "local",
+        "trustedProxies": [
+          "10.0.0.0/8"
+        ]
+      },
+      "hooks": {
+        "internal": {
+          "entries": {
+            "session-memory": {
+              "enabled": true,
+              "llmSlug": false,
+              "messages": 15
+            }
+          }
+        }
+      },
+      "models": {
+        "providers": {
+          "litellm": {
+            "agentRuntime": {
+              "id": "openclaw"
+            },
+            "api": "openai-responses",
+            "apiKey": "${OPENCLAW_LITELLM_API_KEY}",
+            "baseUrl": "http://litellm.litellm.svc.cluster.local:4000/v1",
+            "models": [
+              {
+                "contextWindow": 872000,
+                "id": "chatgpt/oai-responses/gpt-6-astra",
+                "input": [
+                  "text",
+                  "image"
+                ],
+                "maxTokens": 128000,
+                "name": "GPT-6 Astra (Codex subscription via LiteLLM)",
+                "reasoning": true
+              },
+              {
+                "contextWindow": 372000,
+                "id": "chatgpt/oai-responses/gpt-5.6-luna",
+                "input": [
+                  "text",
+                  "image"
+                ],
+                "maxTokens": 128000,
+                "name": "GPT-5.6 Luna (Codex subscription via LiteLLM)",
+                "reasoning": true
+              },
+              {
+                "contextWindow": 372000,
+                "id": "chatgpt/oai-responses/gpt-5.6-terra",
+                "input": [
+                  "text",
+                  "image"
+                ],
+                "maxTokens": 128000,
+                "name": "GPT-5.6 Terra (Codex subscription via LiteLLM)",
+                "reasoning": true
+              },
+              {
+                "contextWindow": 372000,
+                "id": "chatgpt/oai-responses/gpt-5.6-sol",
+                "input": [
+                  "text",
+                  "image"
+                ],
+                "maxTokens": 128000,
+                "name": "GPT-5.6 Sol (Codex subscription via LiteLLM)",
+                "reasoning": true
+              },
+              {
+                "contextWindow": 1048576,
+                "id": "google/goog-generate/gemini-3.7-flash",
+                "input": [
+                  "text",
+                  "image"
+                ],
+                "maxTokens": 65536,
+                "name": "Gemini 3.7 Flash (Google AI via LiteLLM)",
+                "reasoning": true
+              },
+              {
+                "contextWindow": 1048576,
+                "id": "google/goog-generate/gemini-3.5-flash-lite",
+                "input": [
+                  "text",
+                  "image"
+                ],
+                "maxTokens": 65536,
+                "name": "Gemini 3.5 Flash-Lite (Google AI via LiteLLM)",
+                "reasoning": false
+              }
+            ],
+            "request": {
+              "allowPrivateNetwork": true
+            }
+          }
+        }
+      },
+      "mcp": {
+        "servers": {
+          "haku-console": {
+            "url": "https://haku.allegedly.works/mcp",
+            "transport": "streamable-http",
+            "supportsParallelToolCalls": true,
+            "requestTimeoutMs": 70000,
+            "headers": {
+              "Authorization": "Bearer ${HAKU_CONSOLE_TOKEN}"
+            }
+          }
+        }
+      },
+      "plugins": {
+        "entries": {
+          "matrix": {
+            "enabled": true
+          },
+          "brave": {
+            "enabled": true,
+            "config": {
+              "webSearch": {
+                "apiKey": {
+                  "source": "env",
+                  "id": "BRAVE_API_KEY"
+                },
+                "mode": "web"
+              }
+            }
+          },
+          "canvas": {
+            "enabled": false
+          },
+          "device-pair": {
+            "enabled": false
+          },
+          "file-transfer": {
+            "enabled": false
+          },
+          "talk-voice": {
+            "enabled": false
+          },
+          "ollama": {
+            "enabled": false
+          }
+        }
+      },
+      "tools": {
+        "sessions": {
+          "visibility": "all"
+        },
+        "agentToAgent": {
+          "enabled": true,
+          "allow": [
+            "haku_console_tpm",
+            "coder"
+          ]
+        },
+        "web": {
+          "search": {
+            "enabled": true,
+            "provider": "brave",
+            "maxResults": 5,
+            "timeoutSeconds": 30,
+            "cacheTtlMinutes": 15
+          }
+        }
+      }
+    }
+immutable: false

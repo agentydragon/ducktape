@@ -1,0 +1,61 @@
+# Typed cdk8s Python constructs generated from this repo's own Agentplane CRDs
+# (cluster/k8s/agentplane-crds/crd-*.yaml). These are first-party schemas -- their
+# authoritative source, not a copy of anything upstream -- so importing directly from
+# their in-repo location is correct (see devinfra/js/cdk8s_import.bzl's crd arg doc,
+# which only warns against vendoring a copy of an *upstream* CRD). See
+# cluster/docs/cdk8s.md.
+
+# Each *_crds module below is generated at build time by cdk8s_import, not a pip
+# package -- gazelle can't resolve it from the requirements manifest.
+# gazelle:resolve py agentplane_actionpolicyset_crds //third_party/agentplane_crds:actionpolicyset
+# gazelle:resolve py agentplane_actionpolicybinding_crds //third_party/agentplane_crds:actionpolicybinding
+# gazelle:resolve py agentplane_egresspolicy_crds //third_party/agentplane_crds:egresspolicy
+# gazelle:resolve py agentplane_egresscredential_crds //third_party/agentplane_crds:egresscredential
+# gazelle:resolve py agentplane_egressbinding_crds //third_party/agentplane_crds:egressbinding
+
+load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
+
+# All five CRDs share the agentplane.allegedly.works group; cdk8s import only ingests
+# one CRD per invocation, so each kind gets its own target and module_name (distinct
+# names so importing several together, as the actions/egress constructs will, doesn't
+# collide on one shared top-level Python package).
+
+cdk8s_import(
+    name = "actionpolicyset",
+    crd = "//cluster/k8s:agentplane-crds/crd-actionpolicysets.yaml",
+    module_name = "agentplane_actionpolicyset_crds",
+    module_path = "works/allegedly/agentplane",
+    visibility = ["//visibility:public"],
+)
+
+cdk8s_import(
+    name = "actionpolicybinding",
+    crd = "//cluster/k8s:agentplane-crds/crd-actionpolicybindings.yaml",
+    module_name = "agentplane_actionpolicybinding_crds",
+    module_path = "works/allegedly/agentplane",
+    visibility = ["//visibility:public"],
+)
+
+cdk8s_import(
+    name = "egresspolicy",
+    crd = "//cluster/k8s:agentplane-crds/crd-egresspolicies.yaml",
+    module_name = "agentplane_egresspolicy_crds",
+    module_path = "works/allegedly/agentplane",
+    visibility = ["//visibility:public"],
+)
+
+cdk8s_import(
+    name = "egresscredential",
+    crd = "//cluster/k8s:agentplane-crds/crd-egresscredentials.yaml",
+    module_name = "agentplane_egresscredential_crds",
+    module_path = "works/allegedly/agentplane",
+    visibility = ["//visibility:public"],
+)
+
+cdk8s_import(
+    name = "egressbinding",
+    crd = "//cluster/k8s:agentplane-crds/crd-egressbindings.yaml",
+    module_name = "agentplane_egressbinding_crds",
+    module_path = "works/allegedly/agentplane",
+    visibility = ["//visibility:public"],
+)

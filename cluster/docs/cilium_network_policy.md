@@ -162,7 +162,7 @@ through the Service the TLS handshake completes and the request gets HTTP 403
 
 Keep the node-entity rule and add the backend pods on their `targetPort` with the
 same `serverNames` — the Authentik server pods on 9000 in
-<../k8s/agentplane-staging/app/networkpolicy.yaml>. Verify all three from the
+<../k8s/agentplane-staging/app/agentplane-app.k8s.yaml>. Verify all three from the
 client's network namespace: canonical SNI → 200, wrong SNI with the canonical
 `Host` → 403, direct plaintext to `backend:9000` → reset (SNI scoping is intact).
 

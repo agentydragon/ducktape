@@ -41,7 +41,8 @@ waits for the Action Service's `Ready` condition on both. A matching echo comes 
 and executed, and the BFF receipt's Decision names the binding, the set and the matching policy;
 an over-long message waits for the operator; after the binding is patched to an expiry in the past
 and re-acknowledged, so does a match. The objects are deleted at teardown; the pending requests are
-denied through the BFF so nothing lingers. The role in `../../../cluster/k8s/agentplane-testing/agent-rbac/`
+denied through the BFF so nothing lingers. The role in
+`../../../cluster/k8s/agentplane-testing/agentplane-namespace-rbac.k8s.yaml`
 grants create/get/patch/delete on the two kinds for this.
 
 `test_agent_mcp_bff_decision` adds allow/deny cases on each harness: turn 1 submits

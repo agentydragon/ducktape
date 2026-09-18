@@ -26,19 +26,33 @@ CONFIG_FILE_ENV = "AGENTPLANE_EGRESS_CONFIG_FILE"
 DATABASE_URL = "--database-url=postgresql://validation-test/validation-test"
 
 
+def _egress_documents(namespace: str) -> list[dict[str, Any]]:
+    manifest = get_required_path(f"_main/cluster/k8s/{namespace}/egress/agentplane-egress.k8s.yaml")
+    return list(yaml.safe_load_all(Path(manifest).read_text()))
+
+
 def _proxy_args(namespace: str) -> list[str]:
-    manifest = get_required_path(f"_main/cluster/k8s/{namespace}/egress/deployment-agentplane-egress.yaml")
-    pod: dict[str, Any] = yaml.safe_load(Path(manifest).read_text())["spec"]["template"]["spec"]
+    deployment = one(doc for doc in _egress_documents(namespace) if doc["kind"] == "Deployment")
+    pod: dict[str, Any] = deployment["spec"]["template"]["spec"]
     return list(one(container for container in pod["containers"] if container["name"] == "proxy")["args"])
 
 
-def _settings_file(namespace: str) -> Path:
-    return Path(get_required_path(f"_main/cluster/k8s/{namespace}/egress/settings.yaml"))
+def _settings_file(tmp_path: Path, namespace: str) -> Path:
+    config_map = one(
+        doc
+        for doc in _egress_documents(namespace)
+        if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "agentplane-egress-settings"
+    )
+    config_file = tmp_path / "settings.yaml"
+    config_file.write_text(config_map["data"]["settings.yaml"])
+    return config_file
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)
-def test_the_deployed_configuration_parses_into_settings(namespace: str, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv(CONFIG_FILE_ENV, str(_settings_file(namespace)))
+def test_the_deployed_configuration_parses_into_settings(
+    namespace: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(CONFIG_FILE_ENV, str(_settings_file(tmp_path, namespace)))
 
     settings = Settings(_cli_parse_args=[*_proxy_args(namespace), DATABASE_URL])
 

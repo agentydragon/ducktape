@@ -1,25 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-namespace: agentplane-staging
 resources:
-  - serviceaccount.yaml
-  - serviceaccount-claude-ai.yaml
-  - actionpolicyset-github-reads.yaml
-  - actionpolicyset-github-identity-reads.yaml
-  - actionpolicybinding-claude-ai-github-reads.yaml
-  - actionpolicyset-public-ducktape-reads.yaml
-  - actionpolicyset-public-ducktape-fork-reads.yaml
-  - actionpolicyset-public-gaffer-private-reads.yaml
-  - actionpolicyset-public-github-reads.yaml
-  - rbac.yaml
-  - configmap-action-federation.yaml
-  - deployment.yaml
-  - poddisruptionbudget.yaml
-  - service.yaml
-  - networkpolicy.yaml
-  - httproute.yaml
+  - agentplane-actions.k8s.yaml
   - web-push-vapid.sops.yaml
-configMapGenerator:
-  - name: agentplane-actions-settings
-    files:
-      - settings.yaml
+components:
+  - ./image-pins

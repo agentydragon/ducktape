@@ -18,7 +18,7 @@ on:
       - "openclaw/proxy-setup.mjs"
       - "flake.nix"
       - "flake.lock"
-      - "cluster/k8s/agents/haku-openclaw-spike/app/openclaw.json"
+      - "cluster/k8s/agents/haku-openclaw-spike/app/haku-openclaw-spike-config.k8s.yaml"
       - ".github/workflows/haku-openclaw-spike-image.yml"
   push:
     branches: [devel]
@@ -34,7 +34,7 @@ on:
       - "openclaw/proxy-setup.mjs"
       - "flake.nix"
       - "flake.lock"
-      - "cluster/k8s/agents/haku-openclaw-spike/app/openclaw.json"
+      - "cluster/k8s/agents/haku-openclaw-spike/app/haku-openclaw-spike-config.k8s.yaml"
       - ".github/workflows/haku-openclaw-spike-image.yml"
   workflow_dispatch:
 
@@ -84,6 +84,17 @@ jobs:
       - name: Build image
         run: nix build .#haku-openclaw-spike-image --print-build-logs
 
+      - name: Extract deployed openclaw.json from the generated ConfigMap
+        run: |
+          pip install --quiet pyyaml
+          python3 -c '
+          import yaml
+          with open("cluster/k8s/agents/haku-openclaw-spike/app/haku-openclaw-spike-config.k8s.yaml") as f:
+              config_map = yaml.safe_load(f)
+          with open("/tmp/haku-openclaw-spike-openclaw.json", "w") as out:
+              out.write(config_map["data"]["openclaw.json"])
+          '
+
       - name: Smoke test Haku runtime surface
         run: |
           loaded="$(docker load -i "$(readlink -f result)")"
@@ -91,7 +102,7 @@ jobs:
           image="$(printf '%s\n' "$loaded" | sed -n -e 's/^Loaded image: //p' -e 's/^Loaded image ID: //p' | tail -n 1)"
           test -n "$image"
           docker run --rm --entrypoint /bin/sh \
-            --mount "type=bind,src=$PWD/cluster/k8s/agents/haku-openclaw-spike/app/openclaw.json,dst=/tmp/haku-openclaw-spike-openclaw.json,readonly" \
+            --mount "type=bind,src=/tmp/haku-openclaw-spike-openclaw.json,dst=/tmp/haku-openclaw-spike-openclaw.json,readonly" \
             "$image" -ceu '
             openclaw --version
             node --version

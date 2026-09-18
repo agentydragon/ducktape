@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
-from cluster.k8s.litellm.app.model_rosters import (
+from cluster.cdk8s.model_rosters import (
     ANTHROPIC_MODELS,
     ASTRA_CONTEXT_WINDOW,
     ASTRA_MAX_TOKENS,
