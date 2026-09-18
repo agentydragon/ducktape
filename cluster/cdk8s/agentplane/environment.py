@@ -80,10 +80,8 @@ class AppProps:
 @dataclass(frozen=True)
 class ActionsProps:
     hostname: str
+    # x/agentplane/action_service `Settings`, the settings ConfigMap; `operator_oidc` included.
     settings: dict
-    action_federation: dict
-    action_federation_description: str
-    operator_oidc: dict
     # Secrets whose rotation should roll the Deployment, beyond agentplane-mcp-oauth
     # (always reloaded).
     extra_reload_secrets: Sequence[str] = ()

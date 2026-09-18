@@ -327,8 +327,17 @@ re-assemble a bundle at runtime. Per-client details (`pygit2` ignores
   configuration use unmistakable test-specific names, hosts, URLs, paths, and
   placeholders. Do not copy production identifiers or addresses into such fixtures:
   they should not appear in production-value greps or look like live references.
-  Tests of the actual production manifest/config may assert literal production values
-  when those values are the contract under test.
+  A test of the actual production manifest/config may assert a literal production
+  value only when something outside the repo holds it (a registered OAuth redirect
+  URI, a Terraform allowlist), and names that consumer.
+- **Code is not its deployment.** A test of a package's code never reads the cluster's
+  manifests or synthesizes a cluster chart for its inputs; the code has to stay usable
+  outside the one deployment we happen to run. A test beside the manifests may parse
+  deployed configuration with the code's own model (moot once the generator renders
+  through it) but never exercises the code's behavior on it: a policy engine evaluated
+  against the deployed policy, a settings class run over the deployed flags, is a test
+  of the code that binds it to our cluster. Generated manifests:
+  <cluster/cdk8s/AGENTS.md>.
 - **Concise test bodies**: assertions in tests, setup in fixtures.
 - **Update tests with production code**: signature/behavior changes propagate to the
   tests that use them, in the same change.
@@ -360,13 +369,11 @@ re-assemble a bundle at runtime. Per-client details (`pygit2` ignores
     list" is rarely a useful property of the feature under test. Test each route's
     meaningful behavior and allow additive routes unless an explicit security boundary
     requires a closed world.
-  - Generated-output snapshots are valid when the test runs the generator — including
-    the inverted form where the test _builds_ the artifact in code (loops and functions
-    beating repetitive YAML) and asserts the checked-in file equals it: there the test
-    is the source of truth and the file is generated output pinned to it (the LiteLLM
-    config pattern). Exact
-    wire-format pins are valid only when an external contract or still-live consumer
-    requires that value; name that contract in the test.
+  - Generated-output snapshots are valid when the test runs the generator and asserts
+    the checked-in file equals its output (`//cluster/cdk8s:test_generate_manifests`);
+    that snapshot is the only pin a generated artifact gets, so no second test reads the
+    committed file. Exact wire-format pins are valid only when an external contract or
+    still-live consumer requires that value; name that contract in the test.
 - **Test value: what must break for this to fail?** Judge every test by that
   question. If the answer is bread-and-butter behavior of a standard library —
   pydantic parsing a plain `foo: int`, a StrEnum equalling its string, a
@@ -390,11 +397,14 @@ re-assemble a bundle at runtime. Per-client details (`pygit2` ignores
     the test. A relation against a second live artifact (the running
     database's enum, a generated config) stays a test.
   - **Multi-site constraints**: when several places must agree (the same rule
-    in JS and Python, a value mirrored across configs), prefer in order: an
-    integration/e2e test of the shared behavior; a test tying the sites
-    together (parse both files, assert the values agree); and only where both
-    are impractical or degenerate into pure change detectors, a concise sync
-    comment at _every_ site naming what must stay in sync and why — a long
+    in JS and Python, a value mirrored across configs), prefer in order: one
+    generator both sites are rendered from (cdk8s for manifests, a JSON export
+    Terraform `jsondecode`s, a shared roster module), after which the agreement
+    holds by construction and gets no test; an integration/e2e test of the
+    shared behavior; a test tying the sites together (parse both files, assert
+    the values agree) only where neither is reachable; and only where all of
+    those are impractical or degenerate into pure change detectors, a concise
+    sync comment at _every_ site naming what must stay in sync and why — a long
     why lives in one central place the other comments point to.
   - **Pin defaults where they act**: best is asserting the behavior the value
     produces; else assert the boundary artifact carries the value, as literals

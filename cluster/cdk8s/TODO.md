@@ -88,6 +88,23 @@ objects instead of reconstructing them. Worth a short design pass before touchin
 this broadly — it's the one item here big enough to warrant a plan, not a
 find-and-replace.
 
+## Follow-ups from the agentplane conversion
+
+- **A light `settings.py` per agentplane service.** Synth imports each service's
+  `main` for its `Settings`, pulling mitmproxy/fastapi in; the synth tests sit at
+  `size = "medium"` for that alone. Moving `Settings` and the sub-models it needs
+  into a `settings.py` the constructs import returns them to `small`.
+- **Fleet rules on the litellm and ha-mcp charts.** `fleet_rules.add_fleet_rules`
+  runs on the agentplane chart only; the other two need `provided_secrets` rosters.
+- **`Chart(namespace=...)`** once cluster-scoped objects (ClusterRole/Binding, the
+  trust-manager Bundle) move to their own chart; then `metadata(name, namespace)`
+  drops out of every namespaced object.
+- **One PodDisruptionBudget helper** for the three `_add_pdb` copies (actions, app,
+  egress).
+- **Cilium peers as constructs.** `cilium_helpers.endpoint_labels(namespace, name)`
+  takes strings; the target construct's exported labels would make a renamed workload
+  fail at synth instead of at runtime.
+
 ## Ready to convert — small, focused, and the pattern to copy already exists in this repo
 
 - **`cluster/k8s/agents/haku-egress-proxy/` and `cluster/k8s/agents/mitmproxy/`

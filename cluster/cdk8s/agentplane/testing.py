@@ -33,7 +33,22 @@ _DEX_ISSUER = f"https://{_DEX_HOSTNAME}/dex"
 _LITELLM_KEY_SECRET = "litellm-key-cheap-experiments"
 _OAUTH_FIXTURE_MCP_URL = f"http://{OAUTH_FIXTURE_NAME}.{_NAMESPACE}.svc.cluster.local:{OAUTH_FIXTURE_PORT}/mcp"
 
+_FEDERATION_TARGET = {
+    "issuer": _DEX_ISSUER,
+    "audience": "agentplane-testing",
+    "jwks_uri": f"{_DEX_ISSUER}/keys",
+    "token_profile": "dex",
+}
+_ACTION_FEDERATION = {
+    "mode": "direct",
+    "service_url": f"http://agentplane-actions.{_NAMESPACE}.svc.cluster.local:{actions_constructs.CONTAINER_PORT}",
+    "login_jwks_uri": f"{_DEX_ISSUER}/keys",
+    "login_token_profile": "dex",
+    "target": _FEDERATION_TARGET,
+    "scope": "openid",
+}
 _ACTIONS_SETTINGS = {
+    "operator_oidc": _FEDERATION_TARGET,
     "allowed_service_account_namespaces": [_NAMESPACE],
     "mcp_servers": {
         "example": {
@@ -76,12 +91,6 @@ _ACTIONS_SETTINGS = {
         },
     },
 }
-_FEDERATION_TARGET = {
-    "issuer": _DEX_ISSUER,
-    "audience": "agentplane-testing",
-    "jwks_uri": f"{_DEX_ISSUER}/keys",
-    "token_profile": "dex",
-}
 
 
 def _extra(chart: Chart) -> None:
@@ -105,7 +114,7 @@ ENV = Environment(
     replicas=ReplicaProfile(
         count=1, strategy=DeploymentStrategy.recreate(), topology_spread=False, min_ready=None, pdb_min_available=None
     ),
-    app_config=testing_config.config(),
+    app_config={**testing_config.config(), "action_federation": _ACTION_FEDERATION},
     db=DbProps(instances=1, pod_anti_affinity=False),
     llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET),
     egress=EgressProps(ca_secret_name="agentplane-testing-egress-ca"),
@@ -113,16 +122,6 @@ ENV = Environment(
     actions=ActionsProps(
         hostname="agentplane-actions-testing.allegedly.works",
         settings=_ACTIONS_SETTINGS,
-        action_federation={
-            "mode": "direct",
-            "service_url": f"http://agentplane-actions.{_NAMESPACE}.svc.cluster.local:{actions_constructs.CONTAINER_PORT}",
-            "login_jwks_uri": f"{_DEX_ISSUER}/keys",
-            "login_token_profile": "dex",
-            "target": _FEDERATION_TARGET,
-            "scope": "openid",
-        },
-        action_federation_description="Direct Dex operator federation pins for the isolated testing Action Service.",
-        operator_oidc=_FEDERATION_TARGET,
         extra_egress=[
             # The direct federation verifier fetches Dex's JWKS over the public-origin Gateway path.
             cilium_helpers.egress_via_gateway(_DEX_HOSTNAME),
