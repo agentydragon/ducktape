@@ -56,11 +56,6 @@ from x.agentplane.subjects import ServiceAccountRef
 from x.agentplane.testing.fake_apiserver import fake_apiserver
 from x.agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
-# pytest_plugins loads x.agentplane.action_service.agentplane_fixtures by name; gazelle
-# cannot see the dependency.
-# gazelle:include_dep //x/agentplane/action_service:agentplane_fixtures
-pytest_plugins = ("x.agentplane.action_service.agentplane_fixtures",)
-
 CALLER = CallerPrincipal(account=ServiceAccountRef(namespace="agentplane-test", name="fixture-caller"))
 OPERATOR = OperatorPrincipal(issuer="test", subject="operator")
 
@@ -381,7 +376,7 @@ async def test_main_failure_disposes_engine_after_owned_resources(failure: str) 
 
 
 async def test_main_auto_approves_the_bound_service_account_from_watched_policy_objects(
-    db_url: str, everything_url: str
+    db_url: str, echo_mcp_url: str
 ) -> None:
     """Real production composition + fixture HTTP + the fake API server the informer watches; only
     the in-cluster client configuration and the uvicorn loop are replaced."""
@@ -391,7 +386,7 @@ async def test_main_auto_approves_the_bound_service_account_from_watched_policy_
     bound_caller = CallerPrincipal(account=bound)
     settings = Settings(
         database_url=db_url,
-        action_groups={"fixture": _group({"transport": "streamable-http", "url": everything_url, "auth": "none"})},
+        action_groups={"fixture": _group({"transport": "streamable-http", "url": echo_mcp_url, "auth": "none"})},
         allowed_service_account_namespaces=frozenset({namespace}),
         _cli_parse_args=False,
     )
@@ -421,7 +416,7 @@ async def test_main_auto_approves_the_bound_service_account_from_watched_policy_
                 await asyncio.sleep(0.01)
                 view = await service.get(view.id, bound_caller)
         assert view.execution is not None
-        assert view.execution.result == {"content": ["Echo: MCP0-ok"]}
+        assert view.execution.result == {"result": "Echo: MCP0-ok"}
         with pytest.raises(ActionConflictError):
             await service.submit(body, bound_caller)
         recovered = one(await service.list_requests(bound_caller, idempotency_key=body.idempotency_key))

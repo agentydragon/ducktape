@@ -17,8 +17,12 @@ token, mounted credentials, writable root, public ingress, or outbound network a
 The broader upstream tool catalog is not a reason to maintain our own replacement server.
 
 The existing live acceptance suite sends real Claude/Codex agents the Action API task
-and checks their JSON reports. The remote Docker-backed runtime test exercises the same
-pinned upstream image and provider composition without claiming to be the live testing deployment.
+and checks their JSON reports against the deployed `everything` fixture. `test_runtime.py`'s
+policy-auto-approval test exercises the same production settings/catalog/policy-evaluation
+composition over a real `streamable-http` MCP server, but doesn't need `everything`'s
+broader tool catalog or the deployed image itself -- it uses an in-process FastMCP echo
+server (`echo_mcp_url` in `x/agentplane/action_service/conftest.py`), avoiding a Docker
+dependency for a test that isn't validating the image.
 
 The official `mcp/everything` latest image was also checked: its published May 2025
 digest lacks the streamable-HTTP entry point and failed the remote container test.

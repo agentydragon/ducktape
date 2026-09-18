@@ -281,6 +281,7 @@ py_library(
         ":mcp_executor",
         ":models",
         "//github_policy:visibility",
+        "//mcp_infra/testing:remote_server",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
         "//x/agentplane/action_service/test_fixtures:lifecycle",
@@ -290,19 +291,6 @@ py_library(
         "@pypi//psycopg",
         "@pypi//pytest",
         "@pypi//sqlalchemy",
-        "@pypi//testcontainers",
-    ],
-)
-
-py_library(
-    name = "agentplane_fixtures",
-    testonly = True,
-    srcs = ["agentplane_fixtures.py"],
-    deps = [
-        "//cluster/cdk8s:generate_manifests_lib",
-        "@pypi//cdk8s",
-        "@pypi//more_itertools",
-        "@pypi//pytest",
         "@pypi//testcontainers",
     ],
 )
@@ -458,13 +446,7 @@ py_test(
     name = "test_runtime",
     size = "medium",
     srcs = ["test_runtime.py"],
-    # everything_url (agentplane_fixtures.py, loaded via pytest_plugins) synthesizes a
-    # cdk8s chart in memory, which needs jsii's Node runtime.
-    data = [
-        "//x/agentplane/action_service/test_fixtures:fake_mcp_server.py",
-        "@nodejs_linux_amd64//:bin/node",
-    ],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    data = ["//x/agentplane/action_service/test_fixtures:fake_mcp_server.py"],
     requires_docker = True,
     deps = [
         ":api",
@@ -485,7 +467,6 @@ py_test(
         "//x/agentplane:crd_group",
         "//x/agentplane:kubernetes_watch",
         "//x/agentplane:subjects",
-        "//x/agentplane/action_service:agentplane_fixtures",
         "//x/agentplane/action_service/policies:resources",
         "//x/agentplane/action_service/test_fixtures:callers",
         "//x/agentplane/action_service/test_fixtures:lifecycle",
