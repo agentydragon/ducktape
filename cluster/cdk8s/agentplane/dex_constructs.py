@@ -268,6 +268,9 @@ def _add_credentials(scope: Construct) -> None:
                     },
                 ),
             ),
+            # Dex's config and the acceptance client's password both come from this one
+            # dataFrom entry: two ExternalSecrets naming the same Password generator get two
+            # independent values (#7042).
             data_from=[
                 ExternalSecretSpecDataFrom(
                     source_ref=ExternalSecretSpecDataFromSourceRef(

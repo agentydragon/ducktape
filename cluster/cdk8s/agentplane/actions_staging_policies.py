@@ -22,6 +22,13 @@ from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import ServiceAccount
 from constructs import Construct
 
+from cluster.cdk8s.agentplane.staging_config import (
+    PUBLIC_DUCKTAPE_FORK_READS_SET,
+    PUBLIC_DUCKTAPE_READS_SET,
+    PUBLIC_GAFFER_PRIVATE_READS_SET,
+    PUBLIC_GITHUB_READS_SET,
+)
+
 _NAMESPACE = "agentplane-staging"
 
 # The console's `github_reads` policy (cluster/k8s/haku/console/config.yaml) as an Action
@@ -179,7 +186,7 @@ def add_staging_action_policies(scope: Construct) -> None:
     _repository_reads(
         scope,
         "actionpolicyset-public-ducktape-fork-reads",
-        name="public-ducktape-fork-reads",
+        name=PUBLIC_DUCKTAPE_FORK_READS_SET,
         description="Reviewed GitHub reads scoped to agentydragon-agent/ducktape, the coder Agent's fork.",
         owner="agentydragon-agent",
         repository="ducktape",
@@ -187,7 +194,7 @@ def add_staging_action_policies(scope: Construct) -> None:
     _repository_reads(
         scope,
         "actionpolicyset-public-ducktape-reads",
-        name="public-ducktape-reads",
+        name=PUBLIC_DUCKTAPE_READS_SET,
         description="Reviewed GitHub reads scoped to agentydragon/ducktape.",
         owner="agentydragon",
         repository="ducktape",
@@ -195,7 +202,7 @@ def add_staging_action_policies(scope: Construct) -> None:
     _repository_reads(
         scope,
         "actionpolicyset-public-gaffer-private-reads",
-        name="public-gaffer-private-reads",
+        name=PUBLIC_GAFFER_PRIVATE_READS_SET,
         description="Reviewed GitHub reads scoped to the private agentydragon/gaffer-private.",
         owner="agentydragon",
         repository="gaffer-private",
@@ -208,7 +215,7 @@ def add_staging_action_policies(scope: Construct) -> None:
         scope,
         "actionpolicyset-public-github-reads",
         metadata=ApiObjectMetadata(
-            name="public-github-reads",
+            name=PUBLIC_GITHUB_READS_SET,
             namespace=_NAMESPACE,
             annotations={
                 "description": "Reviewed GitHub reads of any repository a live unauthenticated lookup confirms public."

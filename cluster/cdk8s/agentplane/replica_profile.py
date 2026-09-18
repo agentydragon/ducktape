@@ -18,6 +18,9 @@ class ReplicaProfile:
     strategy: DeploymentStrategy
     topology_spread: bool
     min_ready: Duration | None
+    # PodDisruptionBudget minAvailable, or None for no budget (one replica has nothing to
+    # keep). Sized so a zero-maxUnavailable rollout never trips it.
+    pdb_min_available: int | None
 
 
 STAGING = ReplicaProfile(
@@ -27,5 +30,8 @@ STAGING = ReplicaProfile(
     ),
     topology_spread=True,
     min_ready=Duration.seconds(5),
+    pdb_min_available=1,
 )
-TESTING = ReplicaProfile(replicas=1, strategy=DeploymentStrategy.recreate(), topology_spread=False, min_ready=None)
+TESTING = ReplicaProfile(
+    replicas=1, strategy=DeploymentStrategy.recreate(), topology_spread=False, min_ready=None, pdb_min_available=None
+)

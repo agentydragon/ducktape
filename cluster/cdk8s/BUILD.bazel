@@ -157,8 +157,8 @@ py_library(
     name = "generate_manifests_lib",
     srcs = ["generate_manifests.py"],
     visibility = [
+        "//cluster/cdk8s:__subpackages__",
         "//cluster/validation:__pkg__",
-        "//x/agentplane/action_service:__pkg__",
     ],
     deps = [
         ":config_format",

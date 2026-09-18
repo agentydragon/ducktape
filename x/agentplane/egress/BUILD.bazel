@@ -536,3 +536,16 @@ py_library(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_test(
+    name = "test_main",
+    srcs = ["test_main.py"],
+    deps = [
+        ":conftest",
+        ":main",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

@@ -108,6 +108,30 @@ async def test_invalid_binding_fails_before_any_adapter_starts(config: dict[str,
         start.assert_not_awaited()
 
 
+@pytest.mark.parametrize(
+    "config",
+    [
+        {"transport": "sse", "url": "https://test.invalid/mcp"},
+        {
+            "transport": "streamable-http",
+            "url": "https://test.invalid/mcp",
+            "headers": {"Authorization": "test-only-private"},
+        },
+        {"transport": "streamable-http", "url": "https://test.invalid/mcp?token=test-only-private"},
+    ],
+)
+async def test_malformed_http_binding_fails_before_any_connection_without_echoing_it(
+    config: dict[str, JsonValue],
+) -> None:
+    catalog = ActionCatalog(groups={"remote": _group(config)})
+    with patch.object(McpActionGroupExecutor, "start", new_callable=AsyncMock) as start:
+        with pytest.raises(ValueError, match="invalid MCP binding") as error:
+            async with running_executor(catalog):
+                pytest.fail("malformed binding was served")
+        assert "test-only-private" not in str(error.value)
+        start.assert_not_awaited()
+
+
 @pytest.mark.parametrize("kind", ["echo", "hostexec", "unknown"])
 def test_unsupported_executor_kind_is_rejected_by_settings(kind: str) -> None:
     with patch.object(sys, "argv", ["test_runtime"]), pytest.raises(ValidationError, match="union_tag_invalid"):

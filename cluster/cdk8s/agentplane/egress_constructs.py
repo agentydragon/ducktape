@@ -101,6 +101,7 @@ from cluster.cdk8s.agentplane import (
     llm_ingress_constructs,
     node_scheduling,
 )
+from cluster.cdk8s.agentplane.app_settings import BASIC_POLICY, GITHUB_PUBLIC_POLICY
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
@@ -146,7 +147,7 @@ class EgressEnvSpec:
     # staging spreads its 2 replicas across nodes; testing's single replica has
     # nothing to spread.
     topology_spread: bool
-    enable_pdb: bool
+    pdb_min_available: int | None
 
 
 def _egress_credentials(scope: Construct, *, namespace: str) -> None:
@@ -198,7 +199,7 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
     EgressPolicy(
         scope,
         "egresspolicy-basic",
-        metadata=ApiObjectMetadata(name="basic", namespace=namespace),
+        metadata=ApiObjectMetadata(name=BASIC_POLICY, namespace=namespace),
         spec=EgressPolicySpec(
             rules=[
                 EgressPolicySpecRules(
@@ -235,7 +236,7 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
     EgressPolicy(
         scope,
         "egresspolicy-github-public",
-        metadata=ApiObjectMetadata(name="github-public", namespace=namespace),
+        metadata=ApiObjectMetadata(name=GITHUB_PUBLIC_POLICY, namespace=namespace),
         spec=EgressPolicySpec(
             rules=[
                 EgressPolicySpecRules(
@@ -269,8 +270,8 @@ class Egress(Construct):
         deployment = self._add_deployment(service_account, settings_cm)
         self._add_services(deployment)
         self._add_network_policy()
-        if spec.enable_pdb:
-            self._add_pdb()
+        if spec.pdb_min_available is not None:
+            self._add_pdb(spec.pdb_min_available)
         _egress_credentials(self, namespace=spec.namespace)
         _egress_policies(self, namespace=spec.namespace)
 
@@ -478,13 +479,14 @@ class Egress(Construct):
             ports=[ServicePort(name="admin", port=ADMIN_PORT, target_port=ADMIN_PORT, protocol=Protocol.TCP)],
         )
 
-    def _add_pdb(self) -> None:
+    def _add_pdb(self, min_available: int) -> None:
         k8s.KubePodDisruptionBudget(
             self,
             "pdb",
             metadata=k8s.ObjectMeta(name=_NAME, namespace=self.spec.namespace),
             spec=k8s.PodDisruptionBudgetSpec(
-                min_available=k8s.IntOrString.from_number(1), selector=k8s.LabelSelector(match_labels=_LABELS)
+                min_available=k8s.IntOrString.from_number(min_available),
+                selector=k8s.LabelSelector(match_labels=_LABELS),
             ),
         )
 
