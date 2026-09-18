@@ -8,4 +8,4 @@ metadata:
   name: haku-console-image-metadata
   namespace: haku-console
 data:
-  image-tag: devel-20260916175501-b92451d # {"$imagepolicy": "flux-system:haku-console:tag"}
+  image-tag: devel-20260918220217-f291352 # {"$imagepolicy": "flux-system:haku-console:tag"}
