@@ -101,7 +101,7 @@ _AGENTPLANE_STAGING_EGRESS_SPEC = egress_constructs.EgressEnvSpec(
     ca_secret_name="agentplane-egress-ca",
     replicas=_STAGING_REPLICAS.replicas,
     strategy=_STAGING_REPLICAS.strategy,
-    min_ready_seconds=_STAGING_REPLICAS.min_ready_seconds,
+    min_ready=_STAGING_REPLICAS.min_ready,
     topology_spread=_STAGING_REPLICAS.topology_spread,
     enable_pdb=True,
 )
@@ -110,7 +110,7 @@ _AGENTPLANE_TESTING_EGRESS_SPEC = egress_constructs.EgressEnvSpec(
     ca_secret_name="agentplane-testing-egress-ca",
     replicas=_TESTING_REPLICAS.replicas,
     strategy=_TESTING_REPLICAS.strategy,
-    min_ready_seconds=_TESTING_REPLICAS.min_ready_seconds,
+    min_ready=_TESTING_REPLICAS.min_ready,
     topology_spread=_TESTING_REPLICAS.topology_spread,
     enable_pdb=False,
 )
@@ -118,7 +118,7 @@ _AGENTPLANE_STAGING_APP_SPEC = app_constructs.AppEnvSpec(
     namespace="agentplane-staging",
     replicas=_STAGING_REPLICAS.replicas,
     strategy=_STAGING_REPLICAS.strategy,
-    min_ready_seconds=_STAGING_REPLICAS.min_ready_seconds,
+    min_ready=_STAGING_REPLICAS.min_ready,
     topology_spread=_STAGING_REPLICAS.topology_spread,
     enable_pdb=True,
     hostname="agentplane-staging.allegedly.works",
@@ -131,7 +131,7 @@ _AGENTPLANE_TESTING_APP_SPEC = app_constructs.AppEnvSpec(
     namespace="agentplane-testing",
     replicas=_TESTING_REPLICAS.replicas,
     strategy=_TESTING_REPLICAS.strategy,
-    min_ready_seconds=_TESTING_REPLICAS.min_ready_seconds,
+    min_ready=_TESTING_REPLICAS.min_ready,
     topology_spread=_TESTING_REPLICAS.topology_spread,
     enable_pdb=False,
     hostname="agentplane-testing.allegedly.works",
@@ -142,7 +142,9 @@ _AGENTPLANE_TESTING_APP_SPEC = app_constructs.AppEnvSpec(
 )
 _AGENTPLANE_STAGING_ACTION_FEDERATION = {
     "mode": "exchange",
-    "service_url": "http://agentplane-actions.agentplane-staging.svc.cluster.local:8080",
+    "service_url": (
+        f"http://agentplane-actions.agentplane-staging.svc.cluster.local:{actions_constructs.CONTAINER_PORT}"
+    ),
     "token_endpoint": "https://auth.allegedly.works/application/o/token/",
     "login_jwks_uri": "https://auth.allegedly.works/application/o/agentplane/jwks/",
     "target": {
@@ -159,7 +161,9 @@ _AGENTPLANE_STAGING_OPERATOR_OIDC = {
 }
 _AGENTPLANE_TESTING_ACTION_FEDERATION = {
     "mode": "direct",
-    "service_url": "http://agentplane-actions.agentplane-testing.svc.cluster.local:8080",
+    "service_url": (
+        f"http://agentplane-actions.agentplane-testing.svc.cluster.local:{actions_constructs.CONTAINER_PORT}"
+    ),
     "login_jwks_uri": "https://agentplane-dex-testing.allegedly.works/dex/keys",
     "login_token_profile": "dex",
     "target": {
@@ -346,7 +350,7 @@ _AGENTPLANE_STAGING_ACTIONS_SPEC = actions_constructs.ActionsEnvSpec(
     namespace="agentplane-staging",
     replicas=_STAGING_REPLICAS.replicas,
     strategy=_STAGING_REPLICAS.strategy,
-    min_ready_seconds=_STAGING_REPLICAS.min_ready_seconds,
+    min_ready=_STAGING_REPLICAS.min_ready,
     topology_spread=_STAGING_REPLICAS.topology_spread,
     enable_pdb=True,
     hostname="agentplane-actions-staging.allegedly.works",
@@ -369,7 +373,7 @@ _AGENTPLANE_TESTING_ACTIONS_SPEC = actions_constructs.ActionsEnvSpec(
     namespace="agentplane-testing",
     replicas=_TESTING_REPLICAS.replicas,
     strategy=_TESTING_REPLICAS.strategy,
-    min_ready_seconds=_TESTING_REPLICAS.min_ready_seconds,
+    min_ready=_TESTING_REPLICAS.min_ready,
     topology_spread=_TESTING_REPLICAS.topology_spread,
     enable_pdb=False,
     hostname="agentplane-actions-testing.allegedly.works",

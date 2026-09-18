@@ -53,11 +53,15 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
 )
 
+from cluster.cdk8s.agentplane import node_scheduling
+
 _CLUSTER_NAME = "postgres"
 _IMAGE_NAME = "ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie"
-_ZONE = "hil-ovh"
 _STORAGE_CLASS = "local-path-ovh-ssd"
 _STORAGE_SIZE = "5Gi"
+# CNPG's fixed Postgres port -- egress/actions/app's CiliumNetworkPolicy rules allowing
+# traffic to this Cluster name the same port.
+POSTGRES_PORT = 5432
 
 # The two logical databases each service owns on the shared Cluster; the initdb-owned
 # "app"/trajectory database needs no Database/role of its own.
@@ -122,9 +126,9 @@ def _role_credentials(scope: Construct, id: str, *, role: str, namespace: str) -
                         "username": role,
                         "password": "{{ .password }}",
                         "host": host,
-                        "port": "5432",
+                        "port": str(POSTGRES_PORT),
                         "dbname": role,
-                        "uri": f"postgresql://{role}:{{{{ .password }}}}@{host}:5432/{role}",
+                        "uri": f"postgresql://{role}:{{{{ .password }}}}@{host}:{POSTGRES_PORT}/{role}",
                     },
                 ),
             ),
@@ -169,7 +173,7 @@ class Db(Construct):
                     enable_pod_anti_affinity=True if spec.pod_anti_affinity else None,
                     pod_anti_affinity_type="preferred" if spec.pod_anti_affinity else None,
                     topology_key="kubernetes.io/hostname" if spec.pod_anti_affinity else None,
-                    node_selector={"topology.kubernetes.io/zone": _ZONE},
+                    node_selector={"topology.kubernetes.io/zone": node_scheduling.ZONE},
                     tolerations=[_CONTROL_PLANE_TOLERATION],
                     node_affinity=_OFF_CONTROL_PLANE_NODE_AFFINITY,
                 ),

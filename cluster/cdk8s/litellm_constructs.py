@@ -49,7 +49,6 @@ from constructs import Construct
 from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRoute,
     HttpRouteSpec,
-    HttpRouteSpecParentRefs,
     HttpRouteSpecRules,
     HttpRouteSpecRulesBackendRefs,
     HttpRouteSpecRulesTimeouts,
@@ -64,6 +63,7 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret
+from cluster.cdk8s.gateway import cluster_gateway_parent_ref
 from cluster.cdk8s.litellm_config import ConfigMapSpec, proxy_configs
 from cluster.cdk8s.metadata import metadata
 from cluster.cdk8s.probes import http_probe
@@ -371,7 +371,7 @@ class LiteLLMProxy(Construct):
             "httproute",
             metadata=metadata(self.spec.name, self.spec.namespace),
             spec=HttpRouteSpec(
-                parent_refs=[HttpRouteSpecParentRefs(name="cluster-gateway", namespace="gateway-system")],
+                parent_refs=[cluster_gateway_parent_ref()],
                 hostnames=[self.spec.hostname],
                 rules=[
                     HttpRouteSpecRules(

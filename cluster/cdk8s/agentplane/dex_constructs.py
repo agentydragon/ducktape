@@ -9,7 +9,7 @@ Testing-only: staging has no Dex, it federates directly to the shared Authentik.
 
 from __future__ import annotations
 
-from cdk8s import ApiObject, ApiObjectMetadata, JsonPatch, Size
+from cdk8s import ApiObjectMetadata, Size
 from cdk8s_plus_34 import (
     Capability,
     ContainerPort,
@@ -31,7 +31,6 @@ from cdk8s_plus_34 import (
     Service,
     ServicePort,
     Volume,
-    k8s,
 )
 from cilium_crds.io.cilium import (
     CiliumNetworkPolicy,
@@ -72,7 +71,6 @@ from external_secrets_crds.io.external_secrets import (
 from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRoute,
     HttpRouteSpec,
-    HttpRouteSpecParentRefs,
     HttpRouteSpecRules,
     HttpRouteSpecRulesBackendRefs,
     HttpRouteSpecRulesFilters,
@@ -81,8 +79,11 @@ from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRouteSpecRulesFiltersType,
 )
 
+from cluster.cdk8s.agentplane import cilium_helpers
 from cluster.cdk8s.config_format import yaml_config
+from cluster.cdk8s.gateway import cluster_gateway_parent_ref
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 
 _NAMESPACE = "agentplane-testing"
@@ -333,13 +334,7 @@ def _add_deployment(scope: Construct) -> Deployment:
     deployment.containers[0].mount(_CONFIG_DIR, config_volume, read_only=True)
     deployment.containers[0].mount("/tmp", tmp_volume)
 
-    # cdk8s_plus_34's PodSecurityContextProps has no seccompProfile builder (only
-    # ContainerSecurityContextProps does) -- patch the pod-level field directly
-    # (same escape hatch used elsewhere for this exact gap; see
-    # llm_ingress_constructs.py).
-    ApiObject.of(deployment).add_json_patch(
-        JsonPatch.add("/spec/template/spec/securityContext/seccompProfile", k8s.SeccompProfile(type="RuntimeDefault"))
-    )
+    apply_pod_spec_patches(deployment, labels=_LABELS, topology_spread=False)
     return deployment
 
 
@@ -359,11 +354,7 @@ def _add_http_route(scope: Construct) -> None:
         "httproute",
         metadata=metadata(_NAME, _NAMESPACE),
         spec=HttpRouteSpec(
-            parent_refs=[
-                HttpRouteSpecParentRefs(
-                    name="cluster-gateway", namespace="gateway-system", section_name="https-wildcard"
-                )
-            ],
+            parent_refs=[cluster_gateway_parent_ref(section_name="https-wildcard")],
             hostnames=["agentplane-dex-testing.allegedly.works"],
             rules=[
                 HttpRouteSpecRules(
@@ -409,10 +400,7 @@ def _add_network_policy(scope: Construct) -> None:
                 CiliumNetworkPolicySpecIngress(
                     from_endpoints=[
                         CiliumNetworkPolicySpecIngressFromEndpoints(
-                            match_labels={
-                                "k8s:io.kubernetes.pod.namespace": _NAMESPACE,
-                                "app.kubernetes.io/name": "agentplane-app",
-                            }
+                            match_labels=cilium_helpers.endpoint_labels(_NAMESPACE, "agentplane-app")
                         )
                     ],
                     to_ports=[
@@ -428,10 +416,7 @@ def _add_network_policy(scope: Construct) -> None:
                 CiliumNetworkPolicySpecIngress(
                     from_endpoints=[
                         CiliumNetworkPolicySpecIngressFromEndpoints(
-                            match_labels={
-                                "k8s:io.kubernetes.pod.namespace": _NAMESPACE,
-                                "app.kubernetes.io/name": "agentplane-oauth-fixture",
-                            }
+                            match_labels=cilium_helpers.endpoint_labels(_NAMESPACE, "agentplane-oauth-fixture")
                         )
                     ],
                     to_ports=[
@@ -448,9 +433,7 @@ def _add_network_policy(scope: Construct) -> None:
             egress=[
                 CiliumNetworkPolicySpecEgress(
                     to_endpoints=[
-                        CiliumNetworkPolicySpecEgressToEndpoints(
-                            match_labels={"k8s:io.kubernetes.pod.namespace": "kube-system", "k8s-app": "kube-dns"}
-                        )
+                        CiliumNetworkPolicySpecEgressToEndpoints(match_labels=cilium_helpers.KUBE_DNS_LABELS)
                     ],
                     to_ports=[
                         CiliumNetworkPolicySpecEgressToPorts(

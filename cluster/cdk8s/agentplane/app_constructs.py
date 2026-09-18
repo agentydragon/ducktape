@@ -50,13 +50,12 @@ from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
     SandboxTemplateSpecVolumeClaimTemplatesSpecResources,
     SandboxTemplateSpecVolumeClaimTemplatesSpecResourcesRequests,
 )
-from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch, Size
+from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     ApiResource,
     Capability,
     ConfigMap,
     ContainerPort,
-    ContainerProps,
     ContainerResources,
     ContainerSecurityContextProps,
     ContainerSecutiryContextCapabilities,
@@ -68,8 +67,6 @@ from cdk8s_plus_34 import (
     IApiResource,
     ImagePullPolicy,
     MemoryResources,
-    Node,
-    NodeLabelQuery,
     PodSecurityContextProps,
     Protocol,
     Role,
@@ -104,7 +101,6 @@ from constructs import Construct
 from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRoute,
     HttpRouteSpec,
-    HttpRouteSpecParentRefs,
     HttpRouteSpecRules,
     HttpRouteSpecRulesBackendRefs,
     HttpRouteSpecRulesFilters,
@@ -114,8 +110,23 @@ from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRouteSpecRulesTimeouts,
 )
 
-from cluster.cdk8s.forgejo_images import forgejo_images_creds_external_secret
+from cluster.cdk8s.agentplane import (
+    actions_constructs,
+    cilium_helpers,
+    db_constructs,
+    egress_constructs,
+    llm_ingress_constructs,
+    node_scheduling,
+)
+from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
+from cluster.cdk8s.forgejo_images import (
+    SECRET_NAME,
+    forgejo_images_creds_external_secret,
+    forgejo_images_creds_secret_ref,
+)
+from cluster.cdk8s.gateway import cluster_gateway_parent_ref
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 
@@ -126,7 +137,8 @@ _MIGRATE_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-app-migrate"
 _RUNNER_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner"
 _EGRESS_SIDECAR_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-sidecar"
 _CONTAINER_PORT = 8080
-_ZONE = "hil-ovh"
+_RUNNER_PORT = 7000
+_SIDECAR_LISTEN_PORT = 3128
 _LABELS = {"app.kubernetes.io/name": _NAME}
 _RUNNER_LABELS = {"app.kubernetes.io/name": "agentplane-runner"}
 _CONFIG_DIR = "/etc/agentplane"
@@ -138,7 +150,7 @@ _STATE_DIR = "/state"
 # matches the two by this name.
 _EGRESS_CA_VOLUME_NAME = "egress-ca"
 
-_MITM_PROXY_URL = "http://127.0.0.1:3128"
+_MITM_PROXY_URL = f"http://127.0.0.1:{_SIDECAR_LISTEN_PORT}"
 _PROXY_VAR_NAMES = ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy")
 _NO_PROXY_HOSTS = "127.0.0.1,localhost"
 _NO_PROXY_VAR_NAMES = ("NO_PROXY", "no_proxy")
@@ -166,7 +178,7 @@ class AppEnvSpec:
     namespace: str
     replicas: int
     strategy: DeploymentStrategy
-    min_ready_seconds: int | None
+    min_ready: Duration | None
     # staging spreads its 2 replicas across nodes; testing's single replica has
     # nothing to spread.
     topology_spread: bool
@@ -333,9 +345,7 @@ class App(Construct):
             pod_metadata=ApiObjectMetadata(labels=_LABELS),
             replicas=self.spec.replicas,
             strategy=self.spec.strategy,
-            min_ready=Duration.seconds(self.spec.min_ready_seconds)
-            if self.spec.min_ready_seconds is not None
-            else None,
+            min_ready=self.spec.min_ready,
             # 5s HTTP/SSE drain (--shutdown-timeout), with room for the bridge's lease
             # release and the store's close.
             termination_grace_period=Duration.seconds(60),
@@ -343,27 +353,11 @@ class App(Construct):
             # cdk8s_plus_34 defaults this to False independent of the ServiceAccount's
             # own automount_token -- opt in for the same reason as the ServiceAccount.
             automount_service_account_token=True,
-            docker_registry_auth=Secret.from_secret_name(self, "forgejo-images-creds-ref", "forgejo-images-creds"),
+            docker_registry_auth=forgejo_images_creds_secret_ref(self, "forgejo-images-creds-ref"),
             security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000, fs_group=1000),
-            init_containers=[
-                # The app's Alembic history. The app itself creates no tables; it
-                # verifies the migrated schema at startup and fails if this hasn't run.
-                ContainerProps(
-                    name="migrate",
-                    image=f"{_MIGRATE_IMAGE}:{_PLACEHOLDER_TAG}",
-                    image_pull_policy=ImagePullPolicy.ALWAYS,
-                    env_variables=env,
-                    resources=ContainerResources(
-                        cpu=CpuResources(request=Cpu.millis(25)),
-                        memory=MemoryResources(request=Size.mebibytes(64), limit=Size.mebibytes(256)),
-                    ),
-                    security_context=ContainerSecurityContextProps(
-                        allow_privilege_escalation=False,
-                        capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
-                        read_only_root_filesystem=False,
-                    ),
-                )
-            ],
+            # The app's Alembic history. The app itself creates no tables; it verifies
+            # the migrated schema at startup and fails if this hasn't run.
+            init_containers=[migrate_init_container(f"{_MIGRATE_IMAGE}:{_PLACEHOLDER_TAG}", env_variables=env)],
         )
         deployment.add_container(
             name="app",
@@ -375,7 +369,7 @@ class App(Construct):
                 # separate change, which moves the Sandboxes, their template, and the
                 # runner ServiceAccount out of here.
                 f"--sandbox-namespace={namespace}",
-                "--runner-port=7000",
+                f"--runner-port={_RUNNER_PORT}",
                 "--host=0.0.0.0",
                 f"--port={_CONTAINER_PORT}",
             ],
@@ -403,32 +397,8 @@ class App(Construct):
         # database was Proxmox-single, which is the rule already unmet rather than a
         # new constraint. Unlike llm-ingress/egress, the app carries no control-plane
         # toleration.
-        deployment.scheduling.attract(Node.labeled(NodeLabelQuery.is_("topology.kubernetes.io/zone", _ZONE)))
-
-        # cdk8s_plus_34's PodSecurityContextProps has no seccompProfile builder (only
-        # ContainerSecurityContextProps does) -- patch the pod-level field directly,
-        # same escape hatch used elsewhere in this PR.
-        pod_spec_patches = [
-            JsonPatch.add(
-                "/spec/template/spec/securityContext/seccompProfile", k8s.SeccompProfile(type="RuntimeDefault")
-            )
-        ]
-        if self.spec.topology_spread:
-            pod_spec_patches.append(
-                JsonPatch.add(
-                    "/spec/template/spec/topologySpreadConstraints",
-                    [
-                        k8s.TopologySpreadConstraint(
-                            max_skew=1,
-                            topology_key="kubernetes.io/hostname",
-                            when_unsatisfiable="ScheduleAnyway",
-                            label_selector=k8s.LabelSelector(match_labels=_LABELS),
-                        )
-                    ],
-                )
-            )
-        for patch in pod_spec_patches:
-            ApiObject.of(deployment).add_json_patch(patch)
+        node_scheduling.attract_to_zone(deployment)
+        apply_pod_spec_patches(deployment, labels=_LABELS, topology_spread=self.spec.topology_spread)
         return deployment
 
     def _add_service(self, deployment: Deployment) -> None:
@@ -447,15 +417,9 @@ class App(Construct):
             "httproute",
             metadata=metadata(namespace, namespace),
             spec=HttpRouteSpec(
-                parent_refs=[
-                    HttpRouteSpecParentRefs(
-                        name="cluster-gateway",
-                        namespace="gateway-system",
-                        # Not the plaintext listener: the gateway's HTTP-only route
-                        # owns port 80 and redirects it.
-                        section_name="https-wildcard",
-                    )
-                ],
+                # Not the plaintext listener: the gateway's HTTP-only route owns port
+                # 80 and redirects it.
+                parent_refs=[cluster_gateway_parent_ref(section_name="https-wildcard")],
                 hostnames=[self.spec.hostname],
                 rules=[
                     HttpRouteSpecRules(
@@ -538,11 +502,7 @@ class App(Construct):
     def _add_network_policy(self) -> None:
         namespace = self.spec.namespace
         dns_egress = CiliumNetworkPolicySpecEgress(
-            to_endpoints=[
-                CiliumNetworkPolicySpecEgressToEndpoints(
-                    match_labels={"k8s:io.kubernetes.pod.namespace": "kube-system", "k8s-app": "kube-dns"}
-                )
-            ],
+            to_endpoints=[CiliumNetworkPolicySpecEgressToEndpoints(match_labels=cilium_helpers.KUBE_DNS_LABELS)],
             to_ports=[
                 CiliumNetworkPolicySpecEgressToPorts(
                     ports=[
@@ -575,7 +535,8 @@ class App(Construct):
                             CiliumNetworkPolicySpecIngressToPorts(
                                 ports=[
                                     CiliumNetworkPolicySpecIngressToPortsPorts(
-                                        port="7000", protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP
+                                        port=str(_RUNNER_PORT),
+                                        protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP,
                                     )
                                 ]
                             )
@@ -584,24 +545,8 @@ class App(Construct):
                 ],
                 egress=[
                     dns_egress,
-                    CiliumNetworkPolicySpecEgress(
-                        to_endpoints=[
-                            CiliumNetworkPolicySpecEgressToEndpoints(
-                                match_labels={
-                                    "k8s:io.kubernetes.pod.namespace": namespace,
-                                    "app.kubernetes.io/name": "agentplane-egress",
-                                }
-                            )
-                        ],
-                        to_ports=[
-                            CiliumNetworkPolicySpecEgressToPorts(
-                                ports=[
-                                    CiliumNetworkPolicySpecEgressToPortsPorts(
-                                        port="8888", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
-                                    )
-                                ]
-                            )
-                        ],
+                    cilium_helpers.tcp_egress_to(
+                        cilium_helpers.endpoint_labels(namespace, "agentplane-egress"), egress_constructs.PROXY_PORT
                     ),
                 ],
             ),
@@ -638,84 +583,22 @@ class App(Construct):
                         to_entities=[CiliumNetworkPolicySpecEgressToEntities.KUBE_HYPHEN_APISERVER]
                     ),
                     *self._oidc_egress_rules(),
-                    CiliumNetworkPolicySpecEgress(
-                        to_endpoints=[
-                            CiliumNetworkPolicySpecEgressToEndpoints(
-                                match_labels={
-                                    "k8s:io.kubernetes.pod.namespace": namespace,
-                                    "app.kubernetes.io/name": "agentplane-runner",
-                                }
-                            )
-                        ],
-                        to_ports=[
-                            CiliumNetworkPolicySpecEgressToPorts(
-                                ports=[
-                                    CiliumNetworkPolicySpecEgressToPortsPorts(
-                                        port="7000", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
-                                    )
-                                ]
-                            )
-                        ],
+                    cilium_helpers.tcp_egress_to(
+                        cilium_helpers.endpoint_labels(namespace, "agentplane-runner"), _RUNNER_PORT
                     ),
-                    CiliumNetworkPolicySpecEgress(
-                        to_endpoints=[
-                            CiliumNetworkPolicySpecEgressToEndpoints(
-                                match_labels={
-                                    "k8s:io.kubernetes.pod.namespace": namespace,
-                                    "app.kubernetes.io/name": "agentplane-egress",
-                                }
-                            )
-                        ],
-                        to_ports=[
-                            CiliumNetworkPolicySpecEgressToPorts(
-                                ports=[
-                                    CiliumNetworkPolicySpecEgressToPortsPorts(
-                                        port="8081", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
-                                    )
-                                ]
-                            )
-                        ],
+                    cilium_helpers.tcp_egress_to(
+                        cilium_helpers.endpoint_labels(namespace, "agentplane-egress"), egress_constructs.ADMIN_PORT
                     ),
                     # Separate BFF/operator transport boundary. The Action Service
                     # still requires its own configured operator authenticator;
                     # network reachability grants no review authority.
-                    CiliumNetworkPolicySpecEgress(
-                        to_endpoints=[
-                            CiliumNetworkPolicySpecEgressToEndpoints(
-                                match_labels={
-                                    "k8s:io.kubernetes.pod.namespace": namespace,
-                                    "app.kubernetes.io/name": "agentplane-actions",
-                                }
-                            )
-                        ],
-                        to_ports=[
-                            CiliumNetworkPolicySpecEgressToPorts(
-                                ports=[
-                                    CiliumNetworkPolicySpecEgressToPortsPorts(
-                                        port="8080", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
-                                    )
-                                ]
-                            )
-                        ],
+                    cilium_helpers.tcp_egress_to(
+                        cilium_helpers.endpoint_labels(namespace, "agentplane-actions"),
+                        actions_constructs.CONTAINER_PORT,
                     ),
-                    CiliumNetworkPolicySpecEgress(
-                        to_endpoints=[
-                            CiliumNetworkPolicySpecEgressToEndpoints(
-                                match_labels={
-                                    "k8s:io.kubernetes.pod.namespace": namespace,
-                                    "k8s:cnpg.io/cluster": "postgres",
-                                }
-                            )
-                        ],
-                        to_ports=[
-                            CiliumNetworkPolicySpecEgressToPorts(
-                                ports=[
-                                    CiliumNetworkPolicySpecEgressToPortsPorts(
-                                        port="5432", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
-                                    )
-                                ]
-                            )
-                        ],
+                    cilium_helpers.tcp_egress_to(
+                        {"k8s:io.kubernetes.pod.namespace": namespace, "k8s:cnpg.io/cluster": "postgres"},
+                        db_constructs.POSTGRES_PORT,
                     ),
                 ],
             ),
@@ -732,7 +615,10 @@ class App(Construct):
         )
 
     def _runner_container(self) -> SandboxTemplateSpecPodTemplateSpecContainers:
-        litellm_url = f"http://agentplane-llm-ingress.{self.spec.namespace}.svc.cluster.local:8080"
+        litellm_url = (
+            f"http://agentplane-llm-ingress.{self.spec.namespace}"
+            f".svc.cluster.local:{llm_ingress_constructs.CONTAINER_PORT}"
+        )
         # The environment a harness child starts from: a bare NAME takes the runner's
         # value, NAME=value sets one. Both spellings of proxy vars, since clients
         # disagree on case; NO_PROXY is loopback and nothing else.
@@ -747,7 +633,7 @@ class App(Construct):
             "--state-dir",
             _STATE_DIR,
             "--listen",
-            "0.0.0.0:7000",
+            f"0.0.0.0:{_RUNNER_PORT}",
             "--claude-binary",
             "/usr/local/bin/claude",
             "--anthropic-base-url",
@@ -763,7 +649,7 @@ class App(Construct):
             name="runner",
             image=f"{_RUNNER_IMAGE}:{_PLACEHOLDER_TAG}",
             args=args,
-            ports=[SandboxTemplateSpecPodTemplateSpecContainersPorts(name="runner", container_port=7000)],
+            ports=[SandboxTemplateSpecPodTemplateSpecContainersPorts(name="runner", container_port=_RUNNER_PORT)],
             security_context=SandboxTemplateSpecPodTemplateSpecContainersSecurityContext(
                 allow_privilege_escalation=False,
                 capabilities=SandboxTemplateSpecPodTemplateSpecContainersSecurityContextCapabilities(drop=["ALL"]),
@@ -803,7 +689,7 @@ class App(Construct):
                 SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(
                     name=_EGRESS_CA_VOLUME_NAME,
                     mount_path=_CA_BUNDLE_PATH,
-                    sub_path="ca-certificates.crt",
+                    sub_path=egress_constructs.CA_BUNDLE_KEY,
                     read_only=True,
                 ),
             ],
@@ -820,10 +706,10 @@ class App(Construct):
                     value=f"agentplane-egress.{namespace}.svc.cluster.local",
                 ),
                 SandboxTemplateSpecPodTemplateSpecContainersEnv(
-                    name="AGENTPLANE_EGRESS_SIDECAR_PROXY_PORT", value="8888"
+                    name="AGENTPLANE_EGRESS_SIDECAR_PROXY_PORT", value=str(egress_constructs.PROXY_PORT)
                 ),
                 SandboxTemplateSpecPodTemplateSpecContainersEnv(
-                    name="AGENTPLANE_EGRESS_SIDECAR_LISTEN_PORT", value="3128"
+                    name="AGENTPLANE_EGRESS_SIDECAR_LISTEN_PORT", value=str(_SIDECAR_LISTEN_PORT)
                 ),
                 SandboxTemplateSpecPodTemplateSpecContainersEnv(
                     name="AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE", value="/var/run/agentplane-egress/token"
@@ -866,9 +752,7 @@ class App(Construct):
                     spec=SandboxTemplateSpecPodTemplateSpec(
                         containers=[self._runner_container(), self._egress_sidecar_container()],
                         automount_service_account_token=False,
-                        image_pull_secrets=[
-                            SandboxTemplateSpecPodTemplateSpecImagePullSecrets(name="forgejo-images-creds")
-                        ],
+                        image_pull_secrets=[SandboxTemplateSpecPodTemplateSpecImagePullSecrets(name=SECRET_NAME)],
                         # With the rest of the namespace and with LiteLLM: a runner's
                         # model calls and its hop to the app both stay inside the zone.
                         node_selector=node_selector,

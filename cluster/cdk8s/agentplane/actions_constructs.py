@@ -17,13 +17,12 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import cast
 
-from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch, Size
+from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     ApiResource,
     Capability,
     ConfigMap,
     ContainerPort,
-    ContainerProps,
     ContainerResources,
     ContainerSecurityContextProps,
     ContainerSecutiryContextCapabilities,
@@ -35,8 +34,6 @@ from cdk8s_plus_34 import (
     IApiResource,
     ImagePullPolicy,
     MemoryResources,
-    Node,
-    NodeLabelQuery,
     PathMapping,
     PodSecurityContextProps,
     Protocol,
@@ -75,7 +72,6 @@ from constructs import Construct
 from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRoute,
     HttpRouteSpec,
-    HttpRouteSpecParentRefs,
     HttpRouteSpecRules,
     HttpRouteSpecRulesBackendRefs,
     HttpRouteSpecRulesFilters,
@@ -88,8 +84,13 @@ from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRouteSpecRulesTimeouts,
 )
 
+from cluster.cdk8s.agentplane import cilium_helpers, db_constructs, node_scheduling
+from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.config_format import json5_config, yaml_config
+from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
+from cluster.cdk8s.gateway import cluster_gateway_parent_ref
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 
@@ -97,8 +98,7 @@ _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _NAME = "agentplane-actions"
 _ACTIONS_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-action-service"
 _MIGRATE_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-action-service-migrate"
-_CONTAINER_PORT = 8080
-_ZONE = "hil-ovh"
+CONTAINER_PORT = 8080
 _LABELS = {"app.kubernetes.io/name": _NAME}
 _SETTINGS_DIR = "/etc/agentplane-actions"
 _MCP_PATHS = (
@@ -127,7 +127,7 @@ class ActionsEnvSpec:
     namespace: str
     replicas: int
     strategy: DeploymentStrategy
-    min_ready_seconds: int | None
+    min_ready: Duration | None
     # staging spreads its 2 replicas across nodes; testing's single replica has
     # nothing to spread.
     topology_spread: bool
@@ -310,47 +310,29 @@ class Actions(Construct):
             pod_metadata=ApiObjectMetadata(labels=_LABELS),
             replicas=self.spec.replicas,
             strategy=self.spec.strategy,
-            min_ready=Duration.seconds(self.spec.min_ready_seconds)
-            if self.spec.min_ready_seconds is not None
-            else None,
+            min_ready=self.spec.min_ready,
             # 20s execution drain + 5s forced persistence, with room for HTTP/adapter teardown.
             termination_grace_period=Duration.seconds(60),
             service_account=service_account,
             # cdk8s_plus_34 defaults this to False independent of the ServiceAccount's
             # own automount_token -- opt in for the same reason as the ServiceAccount.
             automount_service_account_token=True,
-            docker_registry_auth=Secret.from_secret_name(self, "forgejo-images-creds-ref", "forgejo-images-creds"),
+            docker_registry_auth=forgejo_images_creds_secret_ref(self, "forgejo-images-creds-ref"),
             security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000, fs_group=1000),
-            init_containers=[
-                ContainerProps(
-                    name="migrate",
-                    image=f"{_MIGRATE_IMAGE}:{_PLACEHOLDER_TAG}",
-                    image_pull_policy=ImagePullPolicy.ALWAYS,
-                    env_variables=env,
-                    resources=ContainerResources(
-                        cpu=CpuResources(request=Cpu.millis(25)),
-                        memory=MemoryResources(request=Size.mebibytes(64), limit=Size.mebibytes(256)),
-                    ),
-                    security_context=ContainerSecurityContextProps(
-                        allow_privilege_escalation=False,
-                        capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
-                        read_only_root_filesystem=False,
-                    ),
-                )
-            ],
+            init_containers=[migrate_init_container(f"{_MIGRATE_IMAGE}:{_PLACEHOLDER_TAG}", env_variables=env)],
         )
         deployment.add_container(
             name="actions",
             image=f"{_ACTIONS_IMAGE}:{_PLACEHOLDER_TAG}",
             image_pull_policy=ImagePullPolicy.ALWAYS,
-            args=["--host=0.0.0.0", "--port=8080", "--token-audience=agentplane-egress"],
+            args=["--host=0.0.0.0", f"--port={CONTAINER_PORT}", "--token-audience=agentplane-egress"],
             env_variables=env,
-            ports=[ContainerPort(name="http", number=_CONTAINER_PORT, protocol=Protocol.TCP)],
+            ports=[ContainerPort(name="http", number=CONTAINER_PORT, protocol=Protocol.TCP)],
             readiness=http_probe(
-                "/readyz", port=_CONTAINER_PORT, initial_delay_seconds=3, period_seconds=10, timeout_seconds=5
+                "/readyz", port=CONTAINER_PORT, initial_delay_seconds=3, period_seconds=10, timeout_seconds=5
             ),
             liveness=http_probe(
-                "/healthz", port=_CONTAINER_PORT, initial_delay_seconds=20, period_seconds=30, timeout_seconds=5
+                "/healthz", port=CONTAINER_PORT, initial_delay_seconds=20, period_seconds=30, timeout_seconds=5
             ),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50)),
@@ -397,32 +379,8 @@ class Actions(Construct):
             # settings volume (runc: "not a directory").
             deployment.containers[0].mount("/run/secrets/ssh-mcp", ssh_mcp_volume, read_only=True)
 
-        deployment.scheduling.attract(Node.labeled(NodeLabelQuery.is_("topology.kubernetes.io/zone", _ZONE)))
-
-        # cdk8s_plus_34's PodSecurityContextProps has no seccompProfile builder (only
-        # ContainerSecurityContextProps does) -- patch the pod-level field directly,
-        # same escape hatch used elsewhere in this PR.
-        pod_spec_patches = [
-            JsonPatch.add(
-                "/spec/template/spec/securityContext/seccompProfile", k8s.SeccompProfile(type="RuntimeDefault")
-            )
-        ]
-        if self.spec.topology_spread:
-            pod_spec_patches.append(
-                JsonPatch.add(
-                    "/spec/template/spec/topologySpreadConstraints",
-                    [
-                        k8s.TopologySpreadConstraint(
-                            max_skew=1,
-                            topology_key="kubernetes.io/hostname",
-                            when_unsatisfiable="ScheduleAnyway",
-                            label_selector=k8s.LabelSelector(match_labels=_LABELS),
-                        )
-                    ],
-                )
-            )
-        for patch in pod_spec_patches:
-            ApiObject.of(deployment).add_json_patch(patch)
+        node_scheduling.attract_to_zone(deployment)
+        apply_pod_spec_patches(deployment, labels=_LABELS, topology_spread=self.spec.topology_spread)
         return deployment
 
     def _add_service(self, deployment: Deployment) -> None:
@@ -431,7 +389,7 @@ class Actions(Construct):
             "service",
             metadata=metadata(_NAME, self.spec.namespace),
             selector=deployment,
-            ports=[ServicePort(name="http", port=_CONTAINER_PORT, target_port=_CONTAINER_PORT, protocol=Protocol.TCP)],
+            ports=[ServicePort(name="http", port=CONTAINER_PORT, target_port=CONTAINER_PORT, protocol=Protocol.TCP)],
         )
 
     def _add_http_route(self) -> None:
@@ -442,11 +400,7 @@ class Actions(Construct):
             "httproute",
             metadata=metadata(f"{_NAME}-mcp", self.spec.namespace),
             spec=HttpRouteSpec(
-                parent_refs=[
-                    HttpRouteSpecParentRefs(
-                        name="cluster-gateway", namespace="gateway-system", section_name="https-wildcard"
-                    )
-                ],
+                parent_refs=[cluster_gateway_parent_ref(section_name="https-wildcard")],
                 hostnames=[self.spec.hostname],
                 rules=[
                     HttpRouteSpecRules(
@@ -470,7 +424,7 @@ class Actions(Construct):
                                 ),
                             )
                         ],
-                        backend_refs=[HttpRouteSpecRulesBackendRefs(name=_NAME, port=_CONTAINER_PORT)],
+                        backend_refs=[HttpRouteSpecRulesBackendRefs(name=_NAME, port=CONTAINER_PORT)],
                         timeouts=HttpRouteSpecRulesTimeouts(request="3600s", backend_request="3600s"),
                     )
                 ],
@@ -492,7 +446,7 @@ class Actions(Construct):
                             CiliumNetworkPolicySpecIngressToPorts(
                                 ports=[
                                     CiliumNetworkPolicySpecIngressToPortsPorts(
-                                        port=str(_CONTAINER_PORT),
+                                        port=str(CONTAINER_PORT),
                                         protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP,
                                     )
                                 ]
@@ -512,7 +466,7 @@ class Actions(Construct):
                             CiliumNetworkPolicySpecIngressToPorts(
                                 ports=[
                                     CiliumNetworkPolicySpecIngressToPortsPorts(
-                                        port=str(_CONTAINER_PORT),
+                                        port=str(CONTAINER_PORT),
                                         protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP,
                                     )
                                 ]
@@ -532,7 +486,7 @@ class Actions(Construct):
                             CiliumNetworkPolicySpecIngressToPorts(
                                 ports=[
                                     CiliumNetworkPolicySpecIngressToPortsPorts(
-                                        port=str(_CONTAINER_PORT),
+                                        port=str(CONTAINER_PORT),
                                         protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP,
                                     )
                                 ]
@@ -543,9 +497,7 @@ class Actions(Construct):
                 egress=[
                     CiliumNetworkPolicySpecEgress(
                         to_endpoints=[
-                            CiliumNetworkPolicySpecEgressToEndpoints(
-                                match_labels={"k8s:io.kubernetes.pod.namespace": "kube-system", "k8s-app": "kube-dns"}
-                            )
+                            CiliumNetworkPolicySpecEgressToEndpoints(match_labels=cilium_helpers.KUBE_DNS_LABELS)
                         ],
                         to_ports=[
                             CiliumNetworkPolicySpecEgressToPorts(
@@ -580,24 +532,9 @@ class Actions(Construct):
                     CiliumNetworkPolicySpecEgress(
                         to_entities=[CiliumNetworkPolicySpecEgressToEntities.KUBE_HYPHEN_APISERVER]
                     ),
-                    CiliumNetworkPolicySpecEgress(
-                        to_endpoints=[
-                            CiliumNetworkPolicySpecEgressToEndpoints(
-                                match_labels={
-                                    "k8s:io.kubernetes.pod.namespace": namespace,
-                                    "k8s:cnpg.io/cluster": "postgres",
-                                }
-                            )
-                        ],
-                        to_ports=[
-                            CiliumNetworkPolicySpecEgressToPorts(
-                                ports=[
-                                    CiliumNetworkPolicySpecEgressToPortsPorts(
-                                        port="5432", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
-                                    )
-                                ]
-                            )
-                        ],
+                    cilium_helpers.tcp_egress_to(
+                        {"k8s:io.kubernetes.pod.namespace": namespace, "k8s:cnpg.io/cluster": "postgres"},
+                        db_constructs.POSTGRES_PORT,
                     ),
                     *self.spec.extra_egress,
                 ],

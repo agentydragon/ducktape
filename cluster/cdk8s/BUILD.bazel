@@ -104,11 +104,29 @@ py_library(
 )
 
 py_library(
+    name = "gateway",
+    srcs = ["gateway.py"],
+    visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
+    deps = ["//third_party/gateway_api:httproute"],
+)
+
+py_library(
+    name = "pod_spec_patches",
+    srcs = ["pod_spec_patches.py"],
+    visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
+    deps = [
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
     name = "litellm_constructs",
     srcs = ["litellm_constructs.py"],
     deps = [
         ":config_format",
         ":forgejo_images",
+        ":gateway",
         ":litellm_config",
         ":metadata",
         ":probes",

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from cdk8s import Duration
 from cdk8s_plus_34 import DeploymentStrategy, PercentOrAbsolute
 
 
@@ -16,7 +17,7 @@ class ReplicaProfile:
     replicas: int
     strategy: DeploymentStrategy
     topology_spread: bool
-    min_ready_seconds: int | None
+    min_ready: Duration | None
 
 
 STAGING = ReplicaProfile(
@@ -25,8 +26,6 @@ STAGING = ReplicaProfile(
         max_surge=PercentOrAbsolute.absolute(1), max_unavailable=PercentOrAbsolute.absolute(0)
     ),
     topology_spread=True,
-    min_ready_seconds=5,
+    min_ready=Duration.seconds(5),
 )
-TESTING = ReplicaProfile(
-    replicas=1, strategy=DeploymentStrategy.recreate(), topology_spread=False, min_ready_seconds=None
-)
+TESTING = ReplicaProfile(replicas=1, strategy=DeploymentStrategy.recreate(), topology_spread=False, min_ready=None)

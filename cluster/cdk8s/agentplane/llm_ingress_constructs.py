@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from cdk8s import ApiObject, ApiObjectMetadata, JsonPatch, Size
+from cdk8s import ApiObjectMetadata, Size
 from cdk8s_plus_34 import (
     Capability,
     ConfigMap,
@@ -26,9 +26,6 @@ from cdk8s_plus_34 import (
     EnvValue,
     ImagePullPolicy,
     MemoryResources,
-    Node,
-    NodeLabelQuery,
-    NodeTaintQuery,
     PodSecurityContextProps,
     Protocol,
     Secret,
@@ -36,9 +33,7 @@ from cdk8s_plus_34 import (
     Service,
     ServiceAccount,
     ServicePort,
-    TaintEffect,
     Volume,
-    k8s,
 )
 from cilium_crds.io.cilium import (
     CiliumNetworkPolicy,
@@ -58,16 +53,18 @@ from cilium_crds.io.cilium import (
 )
 from constructs import Construct
 
+from cluster.cdk8s.agentplane import cilium_helpers, node_scheduling
 from cluster.cdk8s.config_format import yaml_config
+from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _NAME = "agentplane-llm-ingress"
 _IMAGE_NAME = "git.allegedly.works/ducktape-ci/agentplane-llm-ingress"
-_CONTAINER_PORT = 8080
-_ZONE = "hil-ovh"
+CONTAINER_PORT = 8080
 _LABELS = {"app.kubernetes.io/name": _NAME}
 _SETTINGS_PATH = "/etc/agentplane-llm-ingress/settings.yaml"
 
@@ -140,7 +137,7 @@ class LlmIngress(Construct):
             # own automount_token (Kubernetes uses whichever is explicitly set at the
             # narrower pod scope) -- opt in for the same reason as the ServiceAccount above.
             automount_service_account_token=True,
-            docker_registry_auth=Secret.from_secret_name(self, "forgejo-images-creds-ref", "forgejo-images-creds"),
+            docker_registry_auth=forgejo_images_creds_secret_ref(self, "forgejo-images-creds-ref"),
             security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000, fs_group=1000),
         )
         deployment.add_container(
@@ -151,7 +148,7 @@ class LlmIngress(Construct):
                 "--token-audience=agentplane-egress",
                 "--litellm-url=http://litellm.litellm.svc.cluster.local:4000",
                 "--host=0.0.0.0",
-                f"--port={_CONTAINER_PORT}",
+                f"--port={CONTAINER_PORT}",
             ],
             env_variables={
                 # The only real model credential in this service; runners never mount it.
@@ -164,9 +161,9 @@ class LlmIngress(Construct):
                 # Settings this deployment supplies as YAML rather than flags, so a list is a list.
                 "AGENTPLANE_LLM_INGRESS_CONFIG_FILE": EnvValue.from_value(_SETTINGS_PATH),
             },
-            ports=[ContainerPort(name="http", number=_CONTAINER_PORT, protocol=Protocol.TCP)],
-            readiness=http_probe("/healthz", port=_CONTAINER_PORT, initial_delay_seconds=3, period_seconds=10),
-            liveness=http_probe("/healthz", port=_CONTAINER_PORT, initial_delay_seconds=20, period_seconds=30),
+            ports=[ContainerPort(name="http", number=CONTAINER_PORT, protocol=Protocol.TCP)],
+            readiness=http_probe("/healthz", port=CONTAINER_PORT, initial_delay_seconds=3, period_seconds=10),
+            liveness=http_probe("/healthz", port=CONTAINER_PORT, initial_delay_seconds=20, period_seconds=30),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
@@ -185,35 +182,9 @@ class LlmIngress(Construct):
         settings_volume = Volume.from_config_map(self, "settings-volume", settings_cm)
         deployment.containers[0].mount(_SETTINGS_PATH, settings_volume, sub_path="settings.yaml", read_only=True)
 
-        deployment.scheduling.attract(Node.labeled(NodeLabelQuery.is_("topology.kubernetes.io/zone", _ZONE)))
-        deployment.scheduling.tolerate(
-            Node.tainted(NodeTaintQuery.exists("node-role.kubernetes.io/control-plane", effect=TaintEffect.NO_SCHEDULE))
-        )
-
-        # cdk8s_plus_34's PodSecurityContextProps has no seccompProfile builder (only
-        # ContainerSecurityContextProps does) -- patch the pod-level field directly,
-        # same escape hatch litellm_constructs.py uses for topologySpreadConstraints.
-        pod_spec_patches = [
-            JsonPatch.add(
-                "/spec/template/spec/securityContext/seccompProfile", k8s.SeccompProfile(type="RuntimeDefault")
-            )
-        ]
-        if self.spec.topology_spread:
-            pod_spec_patches.append(
-                JsonPatch.add(
-                    "/spec/template/spec/topologySpreadConstraints",
-                    [
-                        k8s.TopologySpreadConstraint(
-                            max_skew=1,
-                            topology_key="kubernetes.io/hostname",
-                            when_unsatisfiable="ScheduleAnyway",
-                            label_selector=k8s.LabelSelector(match_labels=_LABELS),
-                        )
-                    ],
-                )
-            )
-        for patch in pod_spec_patches:
-            ApiObject.of(deployment).add_json_patch(patch)
+        node_scheduling.attract_to_zone(deployment)
+        node_scheduling.tolerate_control_plane_taint(deployment)
+        apply_pod_spec_patches(deployment, labels=_LABELS, topology_spread=self.spec.topology_spread)
         return deployment
 
     def _add_service(self, deployment: Deployment) -> None:
@@ -222,7 +193,7 @@ class LlmIngress(Construct):
             "service",
             metadata=metadata(_NAME, self.spec.namespace),
             selector=deployment,
-            ports=[ServicePort(name="http", port=_CONTAINER_PORT, target_port=_CONTAINER_PORT, protocol=Protocol.TCP)],
+            ports=[ServicePort(name="http", port=CONTAINER_PORT, target_port=CONTAINER_PORT, protocol=Protocol.TCP)],
         )
 
     def _add_network_policy(self) -> None:
@@ -249,7 +220,7 @@ class LlmIngress(Construct):
                             CiliumNetworkPolicySpecIngressToPorts(
                                 ports=[
                                     CiliumNetworkPolicySpecIngressToPortsPorts(
-                                        port=str(_CONTAINER_PORT),
+                                        port=str(CONTAINER_PORT),
                                         protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP,
                                     )
                                 ]
@@ -260,9 +231,7 @@ class LlmIngress(Construct):
                 egress=[
                     CiliumNetworkPolicySpecEgress(
                         to_endpoints=[
-                            CiliumNetworkPolicySpecEgressToEndpoints(
-                                match_labels={"k8s:io.kubernetes.pod.namespace": "kube-system", "k8s-app": "kube-dns"}
-                            )
+                            CiliumNetworkPolicySpecEgressToEndpoints(match_labels=cilium_helpers.KUBE_DNS_LABELS)
                         ],
                         to_ports=[
                             CiliumNetworkPolicySpecEgressToPorts(
@@ -280,24 +249,8 @@ class LlmIngress(Construct):
                     CiliumNetworkPolicySpecEgress(
                         to_entities=[CiliumNetworkPolicySpecEgressToEntities.KUBE_HYPHEN_APISERVER]
                     ),
-                    CiliumNetworkPolicySpecEgress(
-                        to_endpoints=[
-                            CiliumNetworkPolicySpecEgressToEndpoints(
-                                match_labels={
-                                    "k8s:io.kubernetes.pod.namespace": "litellm",
-                                    "k8s:app.kubernetes.io/name": "litellm",
-                                }
-                            )
-                        ],
-                        to_ports=[
-                            CiliumNetworkPolicySpecEgressToPorts(
-                                ports=[
-                                    CiliumNetworkPolicySpecEgressToPortsPorts(
-                                        port="4000", protocol=CiliumNetworkPolicySpecEgressToPortsPortsProtocol.TCP
-                                    )
-                                ]
-                            )
-                        ],
+                    cilium_helpers.tcp_egress_to(
+                        {"k8s:io.kubernetes.pod.namespace": "litellm", "k8s:app.kubernetes.io/name": "litellm"}, 4000
                     ),
                 ],
             ),

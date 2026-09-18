@@ -5,7 +5,7 @@ linkage flow without touching any real credential.
 
 from __future__ import annotations
 
-from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch, Size
+from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     Capability,
     ContainerPort,
@@ -22,10 +22,8 @@ from cdk8s_plus_34 import (
     PodSecurityContextProps,
     Probe,
     Protocol,
-    Secret,
     Service,
     ServicePort,
-    k8s,
 )
 from cilium_crds.io.cilium import (
     CiliumNetworkPolicy,
@@ -50,7 +48,10 @@ from cilium_crds.io.cilium import (
 )
 from constructs import Construct
 
+from cluster.cdk8s.agentplane import cilium_helpers
+from cluster.cdk8s.forgejo_images import forgejo_images_creds_secret_ref
 from cluster.cdk8s.metadata import metadata
+from cluster.cdk8s.pod_spec_patches import apply_pod_spec_patches
 
 NAMESPACE = "agentplane-testing"
 
@@ -104,13 +105,7 @@ def _add_mcp_everything(scope: Construct) -> None:
             capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
         ),
     )
-    # cdk8s_plus_34's PodSecurityContextProps has no seccompProfile builder (only
-    # ContainerSecurityContextProps does) -- patch the pod-level field directly
-    # (same escape hatch used elsewhere for this exact gap; see
-    # llm_ingress_constructs.py).
-    ApiObject.of(deployment).add_json_patch(
-        JsonPatch.add("/spec/template/spec/securityContext/seccompProfile", k8s.SeccompProfile(type="RuntimeDefault"))
-    )
+    apply_pod_spec_patches(deployment, labels=_MCP_EVERYTHING_LABELS, topology_spread=False)
     Service(
         scope,
         "mcp-everything-service",
@@ -216,9 +211,7 @@ def _add_oauth_fixture(scope: Construct) -> None:
         pod_metadata=ApiObjectMetadata(labels=_OAUTH_FIXTURE_LABELS),
         replicas=1,
         strategy=DeploymentStrategy.recreate(),
-        docker_registry_auth=Secret.from_secret_name(
-            scope, "oauth-fixture-forgejo-images-creds-ref", "forgejo-images-creds"
-        ),
+        docker_registry_auth=forgejo_images_creds_secret_ref(scope, "oauth-fixture-forgejo-images-creds-ref"),
         security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000),
     )
     deployment.add_container(
@@ -261,11 +254,7 @@ def _add_oauth_fixture(scope: Construct) -> None:
             read_only_root_filesystem=False,
         ),
     )
-    # See _add_mcp_everything's matching comment: seccompProfile has no
-    # PodSecurityContextProps builder.
-    ApiObject.of(deployment).add_json_patch(
-        JsonPatch.add("/spec/template/spec/securityContext/seccompProfile", k8s.SeccompProfile(type="RuntimeDefault"))
-    )
+    apply_pod_spec_patches(deployment, labels=_OAUTH_FIXTURE_LABELS, topology_spread=False)
     Service(
         scope,
         "oauth-fixture-service",
@@ -309,9 +298,7 @@ def _add_oauth_fixture(scope: Construct) -> None:
             egress=[
                 CiliumNetworkPolicySpecEgress(
                     to_endpoints=[
-                        CiliumNetworkPolicySpecEgressToEndpoints(
-                            match_labels={"k8s:io.kubernetes.pod.namespace": "kube-system", "k8s-app": "kube-dns"}
-                        )
+                        CiliumNetworkPolicySpecEgressToEndpoints(match_labels=cilium_helpers.KUBE_DNS_LABELS)
                     ],
                     to_ports=[
                         CiliumNetworkPolicySpecEgressToPorts(
