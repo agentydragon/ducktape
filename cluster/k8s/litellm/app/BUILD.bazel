@@ -14,27 +14,9 @@ exports_files(
 py_test(
     name = "test_litellm_config",
     srcs = ["test_litellm_config.py"],
-    data = ["//tf/gitops/litellm-keys:main.tf"],
     deps = [
         "//cluster/cdk8s:litellm_config",
         "//cluster/cdk8s:model_rosters",
-        "//cluster/validation:terraform_hcl",
-        "//util/bazel:runfiles",
-        "@pypi//more_itertools",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_model_roster_consumers",
-    srcs = ["test_model_roster_consumers.py"],
-    data = ["//tf/gitops/litellm-keys:main.tf"],
-    deps = [
-        "//cluster/cdk8s:model_rosters",
-        "//cluster/cdk8s/agentplane:staging_config",
-        "//cluster/validation:terraform_hcl",
-        "//util/bazel:runfiles",
-        "@pypi//more_itertools",
         "@pypi//pytest_bazel",
     ],
 )

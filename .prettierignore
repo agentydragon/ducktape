@@ -27,6 +27,9 @@ cluster/k8s/flux-system/**
 
 # kubeconform schemas dumped from the Agentplane CRDs by `bb run //x/agentplane/crds:generate_bin`
 cluster/schemas/**
+# cdk8s generator output pinned byte-for-byte by //cluster/cdk8s:test_generate_manifests;
+# prettier would collapse any lane short enough to fit one line and drift from it.
+tf/gitops/litellm-keys/model_allowlists.json
 
 # Root kustomization.yaml - prettier mangles the resources list
 cluster/k8s/kustomization.yaml

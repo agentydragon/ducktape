@@ -28,6 +28,12 @@ Convert at Kustomization-directory granularity. The `.k8s.yaml` suffix is cdk8s-
 `.gitattributes` marks every generated file `linguist-generated=true` (path-scoped
 lines for the shared filenames `flux-kustomization.yaml`/`kustomization.yaml`).
 
+The same run also writes a non-manifest: `tf/gitops/litellm-keys/model_allowlists.json`,
+the per-key model lanes `cluster/cdk8s/litellm_keys.py` derives from the roster, which
+that Terraform module's `locals` `jsondecode` instead of retyping model names in HCL. It
+is pinned by the same test and listed in `.prettierignore`, since prettier would collapse
+a lane short enough to fit one line.
+
 ### SOPS secrets in a converted directory
 
 A `.sops.yaml` Secret stays hand-written (cdk8s has no key material) in the same

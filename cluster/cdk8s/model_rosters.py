@@ -53,15 +53,17 @@ the request body (Claude Code, Codex, OpenClaw), and on this stack a model name 
 rides in a URL path or a Kubernetes resource name.
 
 The provider segment rides in front, not behind, because a key allowlist is a provider
-lane: each `litellm_key.models` list in tf/gitops/litellm-keys/main.tf enumerates one
-provider's names explicitly, so the lane is the common prefix (and a LiteLLM prefix
-wildcard would carve the same lane). Deliberately not renamed: the raw upstream model slugs
-inside the exposed names, and the two groq whisper entries, whose `audio_transcription`
-mode no shape slug covers yet. The bare `gemini-embedding-2`
-alias is exempt too: it predates the scheme and public-coder-agent's durable memory index
-stores that model identity, so it stays until the index is deliberately rebuilt.
+lane: each `litellm_key.models` list in tf/gitops/litellm-keys/main.tf (exported from
+litellm_keys.py) enumerates one provider's names explicitly, so the lane is the common
+prefix (and a LiteLLM prefix wildcard would carve the same lane). Deliberately not
+renamed: the raw upstream model slugs inside the exposed names, and the two groq whisper
+entries, whose `audio_transcription` mode no shape slug covers yet. The bare
+`gemini-embedding-2` alias (GEMINI_EMBEDDING_COMPAT_ALIAS) is exempt too: it predates the
+scheme and public-coder-agent's durable memory index stores that model identity, so it
+stays until the index is deliberately rebuilt.
 """
 
+from dataclasses import dataclass
 from enum import StrEnum
 
 
@@ -93,6 +95,18 @@ class ApiShape(StrEnum):
 def exposed_name(provider: Provider, shape: ApiShape, model: str) -> str:
     """#4823 scheme name, e.g. `chatgpt/oai-responses/gpt-5.6-luna`."""
     return f"{provider}/{shape}/{model}"
+
+
+def codex_responses_name(model: str) -> str:
+    """A Codex-subscription model as served on LiteLLM's Responses surface -- the route
+    Codex CLI clients and OpenClaw call."""
+    return exposed_name(Provider.CHATGPT, ApiShape.OAI_RESPONSES, model)
+
+
+def codex_messages_name(model: str) -> str:
+    """A Codex-subscription model as served on the Anthropic Messages surface -- the route
+    Claude Code clients call."""
+    return exposed_name(Provider.CHATGPT, ApiShape.ANT_MESSAGES, model)
 
 
 _SHAPE_MODE: dict[ApiShape, str] = {
@@ -174,10 +188,40 @@ CODEX_MAX_TOKENS = 128_000
 ASTRA_CONTEXT_WINDOW = 872_000
 ASTRA_MAX_TOKENS = 128_000
 
-# Only the probed 5.6 models carry the measured window in the LiteLLM manifest;
-# gpt-5.4/5.5/5.3-codex-spark were never probed and are left without model_info
-# token limits. A newly added 5.6 model must be probed before being added here.
-CODEX_MEASURED_MODELS: list[str] = ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"]
+
+@dataclass(frozen=True)
+class CodexModel:
+    """A Codex-subscription model whose serving-path limits are known."""
+
+    id: str
+    display_name: str
+    context_window: int
+    max_tokens: int
+
+
+# The Codex models with known serving-path limits: Astra from Codex's bundled metadata,
+# the 5.6 models measured (CODEX_CONTEXT_WINDOW above). The LiteLLM manifest advertises
+# these limits in model_info, and OpenClaw's model picker exposes exactly this subset,
+# declaring the limits itself because its bundled LiteLLM provider does not query the
+# proxy's authenticated /v1/models endpoint. gpt-5.4/5.5/5.3-codex-spark were never
+# probed and stay out; a newly added 5.6 model must be probed before joining.
+OPENCLAW_CODEX_MODELS: tuple[CodexModel, ...] = (
+    CodexModel(
+        id="gpt-6-astra", display_name="GPT-6 Astra", context_window=ASTRA_CONTEXT_WINDOW, max_tokens=ASTRA_MAX_TOKENS
+    ),
+    CodexModel(
+        id="gpt-5.6-luna", display_name="GPT-5.6 Luna", context_window=CODEX_CONTEXT_WINDOW, max_tokens=CODEX_MAX_TOKENS
+    ),
+    CodexModel(
+        id="gpt-5.6-terra",
+        display_name="GPT-5.6 Terra",
+        context_window=CODEX_CONTEXT_WINDOW,
+        max_tokens=CODEX_MAX_TOKENS,
+    ),
+    CodexModel(
+        id="gpt-5.6-sol", display_name="GPT-5.6 Sol", context_window=CODEX_CONTEXT_WINDOW, max_tokens=CODEX_MAX_TOKENS
+    ),
+)
 
 # Tana-UI models served by the main LiteLLM proxy's in-process Tana provider. Tana
 # encodes reasoning effort in the
@@ -192,23 +236,24 @@ TANA_MODELS: list[tuple[str, str]] = [
 ]
 
 # Current-generation Anthropic roster, verified against the authenticated /v1/models
-# endpoint. Mirrored into Haku OpenClaw and Terraform, and reused as the exposed set for
-# the cliproxyapi Claude-subscription `anthropic-max20/ant-messages/*` route: cliproxyapi's Claude
+# endpoint. Feeds Haku OpenClaw and the Terraform claude lane (litellm_keys.py), and is
+# the exposed set for the cliproxyapi Claude-subscription `anthropic-max20/ant-messages/*` route: cliproxyapi's Claude
 # OAuth session serves older generations too, but we expose only this current group — the
 # subscription and the direct API serve the same current models, and sharing one list
 # keeps them in sync ("newest group only", as with the Gemini roster).
 ANTHROPIC_MODELS: list[str] = ["claude-opus-5", "claude-sonnet-5", "claude-fable-5", "claude-haiku-4-5-20251001"]
 
-# The subset exposed in OpenClaw's model picker and the serving-path limits it
-# must declare because OpenClaw's bundled LiteLLM provider does not query the
-# proxy's authenticated /v1/models endpoint.
-OPENCLAW_CLIPROXY_MODEL_LIMITS: dict[str, tuple[int, int]] = {
-    "gpt-6-astra": (ASTRA_CONTEXT_WINDOW, ASTRA_MAX_TOKENS),
-    **dict.fromkeys(CODEX_MEASURED_MODELS, (CODEX_CONTEXT_WINDOW, CODEX_MAX_TOKENS)),
-}
-OPENCLAW_CODEX_MODELS: list[str] = [
-    exposed_name(Provider.CHATGPT, ApiShape.OAI_RESPONSES, model) for model in OPENCLAW_CLIPROXY_MODEL_LIMITS
-]
+
+@dataclass(frozen=True)
+class GeminiModel:
+    id: str
+    display_name: str
+    # Capability/product positioning, not the literal default toggle: the "-lite" tier
+    # is the deliberately cheap/fast one, while plain Flash is positioned around its
+    # reasoning ("thinking") capability -- Google's gemini-3.7-flash page notes thinking
+    # is supported but not automatic-by-default.
+    reasoning: bool
+
 
 # Google AI (Gemini). Key from the GEMINI_API_KEY env var (litellm-gemini-key
 # secret). Current-generation lineup only (Gemini 3.x) -- the 2.5 generation,
@@ -225,10 +270,12 @@ OPENCLAW_CODEX_MODELS: list[str] = [
 # intentionally excluded — add on demand. `gemini-3.1-pro-preview` was tested
 # on 2026-08-30 and did not work with the current credential: Google returned
 # RESOURCE_EXHAUSTED with a quota of 0. It may simply have no quota, but keep it
-# out of the roster until that is verified. Mirrored into the gemini-clients
-# Terraform key and public-coder-agent's OpenClaw catalog; both are pinned
-# against this list.
-GEMINI_MODELS: list[str] = ["gemini-3.7-flash", "gemini-3.5-flash-lite"]
+# out of the roster until that is verified. Feeds the gemini-clients Terraform
+# key (litellm_keys.py) and public-coder-agent's OpenClaw catalog.
+GEMINI_MODELS: tuple[GeminiModel, ...] = (
+    GeminiModel(id="gemini-3.7-flash", display_name="Gemini 3.7 Flash", reasoning=True),
+    GeminiModel(id="gemini-3.5-flash-lite", display_name="Gemini 3.5 Flash-Lite", reasoning=False),
+)
 
 # Mistral chat models that accepted a minimal completion with the cluster's API
 # key on 2026-08-31. Catalog entries that returned 403 are intentionally
@@ -277,6 +324,11 @@ MISTRAL_MODELS: list[str] = [
 # than per deployment, so neither entry pins a size.
 GEMINI_EMBEDDING_MODELS: list[str] = ["gemini-embedding-2", "gemini-embedding-001"]
 
+# Bare, pre-scheme alias of GEMINI_EMBEDDING_MODELS[0], served until the durable
+# OpenClaw index public-coder-agent built under this identity is deliberately rebuilt
+# under the prefixed name.
+GEMINI_EMBEDDING_COMPAT_ALIAS = "gemini-embedding-2"
+
 # Published input/output token limits shared across the current Gemini chat
 # generation: ai.google.dev/gemini-api/docs/models/gemini-3.7-flash and
 # .../gemini-3.5-flash-lite (2026-08-23). Unlike
@@ -286,12 +338,21 @@ GEMINI_EMBEDDING_MODELS: list[str] = ["gemini-embedding-2", "gemini-embedding-00
 GEMINI_CONTEXT_WINDOW = 1_048_576
 GEMINI_MAX_OUTPUT_TOKENS = 65_536
 
-# The "-lite" tier is the deliberately cheap/fast one; Pro and plain Flash are
-# both positioned around their reasoning ("thinking") capability, Pro's
-# effectively mandatory. Google's own gemini-3.7-flash page notes thinking is
-# supported but not automatic-by-default -- this tracks capability/product
-# positioning, not the literal default toggle.
-GEMINI_NON_REASONING_MODELS: frozenset[str] = frozenset({"gemini-3.5-flash-lite"})
+# Self-hosted Ollama chat models: (exposed model, Ollama model, num_ctx variants).
+# Each variant is served on both the OpenAI-compatible `/v1` and Ollama's native
+# wire; the context rides in the model segment (`ollama_chat_variant`) so the chat
+# entries stay distinct.
+OLLAMA_CHAT_MODELS: list[tuple[str, str, tuple[int, ...]]] = [
+    ("gpt-oss-20b", "gpt-oss:20b", (128 * 1024, 256 * 1024, 512 * 1024, 1024 * 1024)),
+    ("gpt-oss-120b", "gpt-oss:120b", (128 * 1024,)),
+    ("gemma4-31b-it-q8_0", "gemma4:31b-it-q8_0", (128 * 1024,)),
+]
+
+
+def ollama_chat_variant(model: str, context: int) -> str:
+    """The model segment of an Ollama chat entry at this `num_ctx`: `gpt-oss-20b-512k`."""
+    return f"{model}-1m" if context == 1024 * 1024 else f"{model}-{context // 1024}k"
+
 
 # The self-hosted Ollama embedding route (litellm_config.py's `_ollama_entries()`),
 # also referenced by public-coder-agent's OpenClaw memory-search config so its
